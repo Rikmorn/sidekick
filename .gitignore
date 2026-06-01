@@ -26,6 +26,8 @@ credentials.json
 # Git worktrees (isolated dev workspaces)
 .worktrees/
 
+docs/superpowers
+
 # NOTE: this is the harness *source* repo — it does not carry a consumer's
 # .sidekick/ working tree. If you ever run sidekick on this repo, `sidekick init`
 # adds `.sidekick/cache/` + `.sidekick/state/` here like any other consumer.
