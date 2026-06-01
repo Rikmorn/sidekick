@@ -1,0 +1,30 @@
+{
+  "name": "sidekick",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal AI engineering harness — installable Claude Code skills, agents, and rules plus the `sidekick` planning CLI.",
+  "packageManager": "pnpm@10.33.3",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bin": {
+    "sidekick": "dist/cli.js"
+  },
+  "files": ["dist", "skills", "agents", "rules", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "sidekick": "tsx bin/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "biome check .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^2.0.0"
+  }
+}

@@ -1,0 +1,313 @@
+# sidekick manual smokes
+
+End-to-end smokes for the sk-* engineering toolchain (`/sk-decide`, `/sk-design`, `/sk-build`, `/sk-review`, `/sk-goal-verify`, `/sk-regen-plan`). These can't run under Vitest because slash commands execute inside Claude Code's runtime — they orchestrate subagents over a real conversation. The TypeScript unit tests cover deterministic helpers; these smokes cover the orchestration paths.
+
+Run them at milestone-end, batched. The fixture under `fixtures/minimal-repo/` provides a self-contained substrate: a single `add(a, b)` function, one passing test, and a pre-populated `.sidekick/config.json` whose gates resolve to `pnpm typecheck` / `pnpm lint` / `pnpm test`.
+
+The fixture artifacts (RFC.md, PLAN.md drafts the smokes produce) are intentionally trivial. The goal is to exercise the orchestrator's wiring (dispatch → verdict → commit), not to produce a meaningful design document — thin smoke output is expected, not a regression.
+
+## Setup
+
+```bash
+# 0. Point AL at your sidekick worktree root (used throughout this procedure)
+AL=/path/to/sidekick         # set this to your sidekick worktree root
+
+# 1. Bootstrap workspace dependencies (skip if already installed)
+cd "$AL"
+pnpm install
+
+# 2. Copy the fixture into a fresh tmpdir
+TMP=$(mktemp -d)
+cp -R "$AL/smokes/fixtures/minimal-repo/." "$TMP/"
+cd "$TMP"
+
+# 3. Initialise git (sk-build atomic commits + drift detection need a repo)
+git init -q
+git add -A
+git commit -q -m "initial"
+
+# 4. Install fixture dev deps so gates can actually run
+pnpm install
+
+# 5. Build and install the sidekick harness from the worktree
+cd "$AL"
+pnpm build
+node dist/cli.js install
+# → writes ~/.claude/{skills,agents}/sk-*, ~/.claude/sidekick/rules/, manifest
+
+# 6. Make `sidekick` resolvable via npx from $TMP.
+#    The package isn't published to a registry, so `npx sidekick ...` won't
+#    resolve from a fresh tmpdir. Smoke 1 (`init`) and the `branch-precheck` /
+#    `check-drift` calls embedded in `/sk-decide` and `/sk-build` all need it
+#    locally linked.
+cd "$AL"
+pnpm link --global
+cd "$TMP"
+pnpm link --global sidekick
+
+# 7. Open Claude Code with $TMP as cwd, then run each smoke below
+cd "$TMP"
+claude
+```
+
+## Manual smokes (in Claude Code)
+
+Smokes 3 → 4 → 5 are sequential: smoke 4 needs the PLAN.md produced by smoke 3, and smoke 5 needs smoke 4's committed state. Smokes 1 and 2 are independent.
+
+### Smoke 1: init
+
+```
+npx sidekick init
+```
+
+Interactive. Walks the user through `defaultBranch` and the three gate commands.
+
+Expected:
+- Prompts appear in order: `defaultBranch`, `gates.typecheck`, `gates.lint`, `gates.test`.
+- On confirm, writes `.sidekick/config.json` matching `SidekickConfig` schema (schemaVersion: 1).
+- Idempotent — re-running offers to overwrite.
+
+### Smoke 2: /sk-decide
+
+First, no candidate:
+
+```
+/sk-decide
+```
+
+Expected: hard-stop with `no_topic_candidate` (no RFC.md exists under `.sidekick/plans/*/`, no explicit topic supplied).
+
+Then, explicit topic:
+
+```
+/sk-decide explicit-topic-here
+```
+
+Expected:
+- Dispatches `sk-decision-drafter` for adaptive Q&A.
+- Writes `.sidekick/decisions/explicit-topic-here.md` with MADR frontmatter + sections.
+- Dispatches `sk-structural-checker`; verdict `pass`.
+- Atomic commit lands on the current branch.
+
+### Smoke 3: /sk-design (low complexity, no research)
+
+```
+/sk-design rename-add-to-sum
+```
+
+Expected:
+- `sk-explorer` runs Q&A on scope (single function rename).
+- Complexity classified `low` — no research specialists dispatched.
+- `sk-rfc-drafter` produces `.sidekick/plans/rename-add-to-sum/RFC.md`.
+- `sk-plan-drafter` produces `.sidekick/plans/rename-add-to-sum/PLAN.md` with `pins-rfc:` matching the RFC hash.
+- `sk-structural-checker` + `sk-crossref-checker` run in parallel; both pass.
+- Atomic commit lands containing both files.
+
+### Smoke 4: /sk-build (single task)
+
+Using the PLAN.md from smoke 3:
+
+```
+/sk-build rename-add-to-sum
+```
+
+Expected:
+- `sk-branch-precheck` confirms branch state.
+- `sk-executor` rewrites `src/index.ts` (e.g. exports `sum` instead of `add`) and the test.
+- Gates run FRESH from `.sidekick/config.json` (no cached results): `pnpm typecheck`, `pnpm lint`, `pnpm test`. All pass.
+- `sk-spec-reviewer` verifies the change against the plan task.
+- Atomic commit lands per task.
+
+### Smoke 5: adversarial — drift
+
+After smoke 4 has committed at least one task, manually edit the RFC to simulate drift:
+
+```bash
+# Outside Claude Code
+echo "" >> .sidekick/plans/rename-add-to-sum/RFC.md
+echo "## Drift marker" >> .sidekick/plans/rename-add-to-sum/RFC.md
+git add .sidekick/plans/rename-add-to-sum/RFC.md
+git commit -m "simulate drift"
+```
+
+Then re-run build:
+
+```
+/sk-build rename-add-to-sum
+```
+
+Expected:
+- `sidekick check-drift rename-add-to-sum` reports `pins-rfc` mismatch.
+- The skill surfaces a warning to the user but continues (warn-only in M1; hard-stop is M2).
+
+## M2 setup (verification + reconciliation smokes)
+
+Smokes 6–8 need a feature branch with a mix of tagged/untagged commits and a deliberate reviewable issue. From `$TMP` (after the base Setup above):
+
+```bash
+git checkout -b feat/refund-window
+
+# T-01 with a deliberate correctness + maintainability issue for /sk-review to find
+cat > src/refund.ts <<'EOF'
+export function isWithinRefundWindow(orderDate: Date, now: Date) {
+  const ms = now.getTime() - (orderDate as any).getTime(); // `as any` → maintainability finding
+  return ms < 30 * 24 * 60 * 60 * 1000; // boundary not handled → correctness finding (g2)
+}
+EOF
+git add -A && git commit -q -m "feat(refund): add isWithinRefundWindow [T-01]"
+
+# T-02 tagged
+cat > src/refund.test.ts <<'EOF'
+import { expect, it } from 'vitest';
+import { isWithinRefundWindow } from './refund.js';
+it('in window', () => {
+  expect(isWithinRefundWindow(new Date('2026-05-01'), new Date('2026-05-10'))).toBe(true);
+});
+EOF
+git add -A && git commit -q -m "test(refund): in/out window [T-02]"
+
+# An UNTAGGED commit for /sk-regen-plan's reconciler to classify
+git commit -q --allow-empty -m "chore: tidy refund types"
+```
+
+### Smoke 6: /sk-review (quorum + --fix)
+
+```
+/sk-review refund-window --range main..HEAD
+```
+Expect: a sectioned report. **correctness** flags the unhandled boundary (g2) — likely `fixable: false` (intended behaviour is a judgment); **maintainability** flags the `as any` (`fixable: true`, cites sk-typescript); **goal** reports g2 as a GAP (boundary not satisfied) with a route. Roll-up `findings`/`gaps_found`.
+
+Then:
+```
+/sk-review refund-window --range main..HEAD --fix
+```
+Expect: `sk-branch-precheck` proceeds (on a feature branch, not default); the `as any` maintainability finding is fixed by `sk-fixer`, typecheck/test run FRESH, an atomic `fix(maintainability): … [review]` commit lands; the boundary correctness finding and the g2 goal gap are **not** auto-fixed (routed out). Confirm a `.sidekick/cache/reviews/refund-window/` trail was written and is gitignored.
+
+### Smoke 7: /sk-goal-verify
+
+```
+/sk-goal-verify refund-window --range main..HEAD
+```
+Expect: `# Goal Verification — refund-window`. g1 ACHIEVED (function exists, wired, tested in-window); g2 GAP (boundary returns true at exactly 30 days) routed to **finish-build** or **redesign**. Reconciliation: T-01 and T-02 are unchecked (`[ ]`) in PLAN.md but implemented in the diff → surface as `untracked`; T-03 is not entered (unchecked, no boundary test yet). (The untagged `chore: tidy refund types` commit isn't a `T-NN`, so it is not a goal-verify reconciliation entry — classifying untagged commits is `/sk-regen-plan`'s job in Smoke 8.)
+
+### Smoke 8: /sk-regen-plan
+
+```
+/sk-regen-plan refund-window
+```
+Expect: branch-precheck proceeds. The helper proposes flipping T-01 and T-02 (tagged matches). `sk-plan-reconciler` classifies the untagged `chore: tidy refund types` (likely `ignore`, low/medium confidence). You're asked to accept/modify. On accept, `PLAN.md` ticks T-01/T-02, T-03 stays `[ ]` (no boundary test yet). Re-run with `--dry-run` first to confirm it previews without writing.
+
+## M3 setup (wave-build smoke)
+
+Smoke 9 uses the `wave-build` fixture from `fixtures/wave-build/`. Copy it into a fresh tmpdir (same base Setup as above), then from that dir:
+
+```bash
+TMP_WAVE=$(mktemp -d)
+cp -R "$AL/smokes/fixtures/wave-build/." "$TMP_WAVE/"
+cd "$TMP_WAVE"
+git init -q
+git add -A
+git commit -q -m "initial"
+```
+
+Note: `sidekick init` normally gitignores `.sidekick/cache/` + `.sidekick/state/`. The `wave-build` fixture ships a pre-made `.sidekick/config.json` (don't re-init and overwrite it), so add the ignore line manually before the first build:
+
+```bash
+echo ".sidekick/state/" >> .gitignore
+git add .gitignore && git commit -q -m "chore: gitignore sidekick state"
+```
+
+### Smoke 9: /sk-build (wave-based) + /sk-review (architecture dimension)
+
+#### Part A — verify wave computation
+
+```
+wave-plan wave-build
+```
+
+(Invoked by the skill as `sidekick wave-plan wave-build --format=json`.)
+
+Expected JSON — three waves, one file-overlap warning:
+
+```json
+{
+  "verdict": "planned",
+  "slug": "wave-build",
+  "waves": [["T-01"], ["T-02", "T-03", "T-05"], ["T-04"]],
+  "task_count": 5,
+  "warnings": [
+    "T-01 and T-05 share file(s) [src/foo.ts] with no dependency between them — serialized (T-01 before T-05)."
+  ]
+}
+```
+
+Confirm: T-02 and T-03 share a wave (both depend only on T-01, disjoint files). T-05 is serialized into Wave 2 rather than Wave 1 because it shares `src/foo.ts` with T-01 (file-overlap edge). T-04 is alone in Wave 3.
+
+#### Part B — run the wave build
+
+```
+/sk-build wave-build
+```
+
+Expected:
+- `sk-branch-precheck` confirms branch state (proceed on `main` or a feature branch).
+- Waves computed from PLAN.md via `sidekick wave-plan wave-build --format=json`.
+- **Wave 1 — T-01:** `sk-executor` creates `src/foo.ts`. Gates run FRESH (`pnpm typecheck`, `pnpm lint`, `pnpm test`). Atomic commit lands: `feat(wave-build): scaffold foo module [T-01]`. Checklist checkbox for T-01 flipped in the same commit.
+- **Wave 2 — T-02, T-03, T-05:** All three tasks executed (T-02 and T-03 in parallel if the skill supports it, T-05 serially or parallel — order within the wave is T-NN ascending). Three atomic commits land. Checklist checkboxes for T-02, T-03, T-05 flipped.
+- **Wave 3 — T-04:** `sk-executor` creates `src/qux.ts`. Atomic commit lands.
+- After all waves: `.sidekick/state/wave-build/build.json` written. Confirm it exists and reflects completion per the `<build_state>` schema — every entry in `tasks` is `done`/`skipped` and `next_action` shows no remaining wave.
+
+#### Part C — adversarial deviation
+
+Inject a deliberately under-specified task to exercise the deviation path. Before running `/sk-build` on a fresh copy, edit T-02 in PLAN.md so its description is contradictory or empty (e.g. delete the description body). Then re-run:
+
+```
+/sk-build wave-build
+```
+
+Expected: when `sk-executor` produces output that doesn't match the task spec, `sk-spec-reviewer` returns a `deviation` verdict. With `buildCheckpoints: "deviations-only"`, the skill batches it and presents: `Wave 2 — 1 deviation(s) to route`. You're offered `amend`, `redesign`, `skip`, `decide`, or `pause` for each. Choosing `amend` re-dispatches the executor with the reviewer's feedback.
+
+#### Part D — /sk-review fires architecture dimension
+
+The `wave-build` RFC has a `## Architecture` section declaring that `src/qux.ts` must not import directly from `src/foo.ts`. After the wave build completes:
+
+```
+/sk-review wave-build --range main..HEAD
+```
+
+Expected:
+- Review dimensions dispatched include **architecture** (because the RFC has `## Architecture`).
+- `sk-architecture-reviewer` reads the RFC's architecture contract and checks the diff. If `src/qux.ts` was implemented to import directly from `src/foo.ts`, the reviewer surfaces a finding. If the executor respected the layering, the reviewer reports clean.
+- Confirm `.sidekick/cache/reviews/wave-build/` trail was written and is gitignored.
+
+## What's not covered by these smokes
+
+The smokes above exercise the happy path of each orchestrator plus one adversarial case (drift). The following M1 paths are NOT covered — they were deliberate deferrals, but listing them prevents future-you from assuming they were exercised:
+
+- Research path of `/sk-design` (medium/high complexity → research specialists dispatched).
+- Q1 deviation routing in `/sk-build` (`amend` / `redesign` / `skip` / `decide` / `pause` branches).
+- `group_created` path of `sk-explorer` (multi-plan fuzzy-text grouping).
+- Quorum disagreement in the design reviewer pair (structural pass + crossref fail, or vice versa) → re-dispatch with combined feedback.
+- `sk-spec-reviewer` `fail` verdict → re-dispatch executor with reviewer feedback.
+- Gate-failure retry semantics (first failure captures context for the executor; second failure hard-stops).
+
+These are candidates for the M2 smoke pass.
+
+## What to capture during smokes
+
+For each smoke, note:
+
+- Subagent prompts that produce unexpected output shapes (e.g. extra preambles around JSON deliverables, malformed fences).
+- Slash-command parse contracts that mis-extract JSON from specialist responses.
+- Verdict routing not matching expectation (e.g. a `pass` treated as `fail`, retry counters off-by-one).
+- Rough edges in the orchestrator's natural-language synthesis (over-confident summaries, missing the actual failure cause).
+
+When something is rough, iterate the relevant `.claude/agents/sk-*.md` or `skills/sk-*/SKILL.md` file in this worktree. Rebuild + reinstall the plugin between iterations:
+
+```bash
+pnpm build
+node dist/cli.js uninstall
+node dist/cli.js install
+```
+
+Re-run only the affected smoke. If a fix touches a shared agent, re-run every smoke that dispatches it.

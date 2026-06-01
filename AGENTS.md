@@ -1,0 +1,39 @@
+# sidekick — repository guide for AI agents
+
+This repo is the **source for a personal AI engineering harness**: installable Claude Code skills, agents, and rules plus the `sidekick` planning CLI. It is a single TypeScript package (not a monorepo).
+
+See `README.md` for the workflow overview and install instructions.
+
+## Project vs usage — the boundary
+
+Keep two things distinct when working here:
+
+- **The project (this repo):** the harness *source* — `bin/`, `agents/`, `skills/`, `rules/`. This is what you edit, build, and test.
+- **The usage (consumer repos):** the `.sidekick/` working tree the harness *creates elsewhere* when someone runs `/sk-*` in their project. This repo does **not** carry its own `.sidekick/` — the only ones present are under `smokes/fixtures/`, which deliberately simulate consumer repos.
+
+Consequence: tech-debt, config, or "should be gitignored" concerns about a `.sidekick/` tree belong to the *consumer's* repo, set up by `sidekick init` — not to this project. Don't add consumer `.sidekick/` rules to this repo's own `.gitignore`.
+
+## What lives where
+
+| Path | Purpose |
+|---|---|
+| `agents/sk-*.md` | Subagent specialist definitions (drafters, reviewers, checkers, researchers, executor, fixer, explorer) |
+| `skills/sk-*/SKILL.md` | Slash-command orchestrators that run in the main session and dispatch the agents |
+| `rules/sk-*.md` | Coding + working standards (`sk-clean-code`, `sk-typescript`, `sk-workflow`, `sk-working-standards`) |
+| `bin/` | The `sidekick` CLI — `cli.ts` + `helpers/*.ts`, with colocated `*.test.ts` |
+| `smokes/` | CLI smoke fixtures (`minimal-repo`, `wave-build`) using `.sidekick/` config + plans |
+| `.claude/rules/sk-agent-prompts.md` | Prompt-authoring discipline for the `sk-*` toolchain |
+
+## Working in this repo
+
+- **Single package.** `package.json` is the only manifest. Build with `tsc` (`bin/` → `dist/`); test with Vitest (`bin/**/*.test.ts`); lint/format with Biome.
+- **Commands:** `pnpm build`, `pnpm test`, `pnpm check`, `pnpm format`, `pnpm sidekick <cmd>` (runs the CLI via tsx).
+- **Naming:** lowercase, hyphens. Agents and skills are prefixed `sk-`; the per-project config dir is `.sidekick/`.
+- **Authoring agents/skills:** follow `.claude/rules/sk-agent-prompts.md`. In short — goal-oriented identity over procedures, constitutional constraints over step lists, few-shot examples *with reasoning*, minimal directive density. Orchestrators live in slash commands (skills), not subagents, because the runtime forbids subagents from dispatching subagents.
+- **Structured output at boundaries only:** a specialist's deliverable is one JSON object in a final ```json``` fence; everything else is natural-language reasoning.
+
+## Conventions the runtime depends on
+
+- `.sidekick/config.json` is the source of truth for branch + gate commands, read by `branch-precheck`, `check-drift`, and dispatched subagents. `rules/sk-workflow.md` documents its schema (it is reference, not a runtime input).
+- `.sidekick/plans/<slug>/{RFC.md, PLAN.md}` paths and the `T-NN` / `D-NN` / `A-NN` / `R-NN` symbol conventions are hardcoded in helpers and prompts.
+- `.sidekick/{cache,state}/` is gitignored and reconstructable from PLAN.md checkboxes + git commit scopes — never treat it as authority.

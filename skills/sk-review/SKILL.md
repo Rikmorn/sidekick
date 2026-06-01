@@ -1,0 +1,81 @@
+---
+name: sk-review
+description: General verification. Auto-selects a quorum of dimensional reviewers from the diff (correctness/security/maintainability/test always on code; goal when an RFC exists), dispatches them in parallel, and renders a sectioned report + roll-up verdict + judged route. --dims overrides selection; --fix runs a bounded mechanical-remediation loop. Read-only unless --fix. Writes a trail to .sidekick/cache/reviews/<slug-or-working>/.
+user-invocable: true
+disable-model-invocation: true
+argument-hint: "[slug] [--range <base>..<head>] [--dims a,b,c] [--fix] [--all]"
+allowed-tools: Read, Grep, Glob, Bash, Agent
+---
+
+You orchestrate verification of a diff. You reason about *which* dimensions are worth firing, dispatch the relevant reviewers in parallel, aggregate their findings into a sectioned report with a roll-up verdict and a judged route, and — only when `--fix` is set — drive a bounded loop that resolves the safely-fixable findings. You step into the work only when judgment is needed (selecting dimensions, classifying routes, deciding `--fix` scope); the reviewing itself lives in the focused agents.
+
+This runs in the main session (subagents can't dispatch subagents). Read-only unless `--fix`, which mutates and therefore gates on git state.
+
+<constraints>
+- Read-only by default. The only mutations are under `--fix` (per-finding commits) and the `.sidekick/cache/reviews/` trail.
+- Parallel dispatch: one `Agent` call per selected reviewer in ONE message, so each reasons independently. Never serialise the quorum.
+- `--fix` is bounded to findings the reviewers tagged `fixable: true`. Goal gaps and `fixable: false` findings are NEVER auto-fixed — they route out.
+- The orchestrator owns commits, the FRESH typecheck/test gate, and rollback. `sk-fixer` only edits.
+</constraints>
+
+<reasoning>
+Externalise before acting:
+- Resolving `diff_target` / `changed_files`: `--range` if given, else `<default_branch>..HEAD` (default branch from `.sidekick/config.json`, fallback `main`); `working_tree` allowed. `changed_files = git diff --name-only <diff_target>`.
+- Dimension auto-selection: the four code dimensions (correctness, security, maintainability, test) fire when the diff contains source changes; the `goal` dimension fires when `[slug]` is given and `.sidekick/plans/<slug>/RFC.md` exists; the `architecture` dimension fires when `[slug]` is given and `.sidekick/plans/<slug>/RFC.md` contains a `## Architecture` section (read-only conformance check; its findings are always `fixable: false`). (UI dimensions are not built yet — note their absence rather than firing them.) `--dims a,b,c` overrides the auto-selection entirely. Scale breadth to the change: for a tiny diff it's reasonable to fire fewer dimensions; say which you fired and why in the report's header.
+- Per-goal verdict (from the `goal` reviewer's `goals[]`, same derivation as `/sk-goal-verify`): a goal is a **GAP** if ANY of its `artifacts[].verdict` ∈ {MISSING, STUB, HOLLOW, ORPHANED}, OR any `anti_pattern` with `tied_to_goal == goal.id && severity == "blocker"`, OR any contributing truth `status == "failed"`; **INCONCLUSIVE** if `needs_human_verification == true` or any truth is `inconclusive`; else **ACHIEVED**. (The MISSING/STUB vs HOLLOW/ORPHANED split drives the route below.)
+- Roll-up verdict from the aggregated returns: any `goal` GAP → `gaps_found`; elif any code finding of severity `critical`/`important` → `findings`; elif any `inconclusive` goal → `inconclusive`; else `passed`.
+- Route per finding/gap: code finding with `fixable: true` → **fix** (via `--fix` or manual); code finding `fixable: false` → **human** (architecture findings → redesign/human, never fix); goal GAP (MISSING/STUB) → **finish-build**; goal GAP (HOLLOW/ORPHANED, design can't satisfy) → **redesign**; INCONCLUSIVE → **human-verify**.
+- `--fix` scope: default = `fixable && severity ∈ {critical, important}`; `--all` adds `minor`. Never includes goal gaps.
+</reasoning>
+
+<inputs>
+
+| Arg | Required | Notes |
+|---|---|---|
+| `[slug]` | no | optional enrichment — if `.sidekick/plans/<slug>/` exists, enables the goal dimension and RFC context |
+| `--range <base>..<head>` | no | default `<default_branch>..HEAD`; `working_tree` allowed |
+| `--dims a,b,c` | no | override auto-selection (`correctness,security,maintainability,test,goal,architecture`) |
+| `--fix` | no | run the bounded remediation loop on fixable findings |
+| `--all` | no | with `--fix`, include `minor` severity in fix scope |
+
+</inputs>
+
+<hard_stops>
+
+- `error: empty_diff` — resolved diff is empty. Hint: feature branch or `--range`.
+- `error: on_default_branch_for_fix` — `--fix` was set and `sk-branch-precheck` (operation `review`) returned `hard_stop` on the default branch. Don't commit auto-fixes to the integration line; surface the helper's message.
+- `error: subagent_failed` — a reviewer or `sk-fixer` returned malformed JSON / its own error shape.
+
+Format: `/sk-review halted.` then `error: <code>` + `Reason:`.
+</hard_stops>
+
+<workflow>
+
+### Step 1 — Resolve diff + ticket context
+Resolve `diff_target` and `changed_files` per `<reasoning>`; empty → hard-stop `empty_diff`. If `[slug]` is given, record whether `.sidekick/plans/<slug>/RFC.md` exists (enables `goal`).
+
+### Step 2 — Select dimensions
+Compute the dimension set per `<reasoning>` (or honour `--dims`). State the selected set and the rationale in prose (it becomes the report header).
+
+### Step 3 — Parallel dispatch
+In ONE message, dispatch one `Agent` call per selected dimension:
+- code dims → `subagent_type: sk-<dim>-reviewer` with `diff_target`, `changed_files`, and `ticket_slug` if present;
+- `goal` → `subagent_type: sk-goal-verifier` with `ticket_slug` + `diff_target`;
+- `architecture` → `subagent_type: sk-architecture-reviewer` with `diff_target`, `changed_files`, `ticket_slug`.
+Wait for all; parse each trailing ```json``` fence. A malformed return → `subagent_failed`.
+
+### Step 4 — Aggregate
+Collect all code findings (carry their `dimension`) and the goal result. Compute the roll-up verdict and per-finding routes per `<reasoning>`.
+
+### Step 5 — `--fix` loop (only if `--fix`)
+1. `sk-branch-precheck` `operation: review`; `hard_stop` on default branch → `on_default_branch_for_fix`.
+2. Select in-scope findings (`fixable && severity` in scope). Iterate, cap **3** rounds:
+   - For each in-scope finding (stable order by file:line): dispatch `sk-fixer` with the `finding` + `diff_target`. If `applied: false`, route it out (leave for the human) and continue.
+   - After a fix is applied, run the repo's FRESH typecheck + the relevant test command (read from `package.json`/`.sidekick/config.json`). On pass → `git add <files> && git commit` referencing the finding (`fix(<dim>): <summary> [review]`). On fail → `git checkout -- <files>` (rollback) and mark the finding `fix_failed`.
+   - After the round, re-dispatch only the *affected* dimensions on the new diff. If their findings are clear (or only non-fixable remain), stop; else next round.
+3. Stop at clean, at the 3-round cap, or when only non-fixable findings remain.
+
+### Step 6 — Render + trail
+Emit `# Review — <slug-or-working>` with the selected-dimensions header, then a **section per dimension** (status + findings with severity/file/line/description/why/route), the **goal section** if fired (per-goal verdict + route, plus any blocker `anti_patterns` and `human_verification` items), and — under `--fix` — a **remediation summary** (fixed / declined / fix_failed, with commit hashes). Close with the roll-up verdict + the routed next actions. Write raw returns + report to `.sidekick/cache/reviews/<slug-or-branch>/review-$(date +%Y%m%dT%H%M%S).json` (gitignored).
+
+</workflow>

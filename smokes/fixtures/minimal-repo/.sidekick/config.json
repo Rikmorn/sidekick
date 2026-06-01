@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "defaultBranch": "main",
+  "gates": {
+    "typecheck": "pnpm typecheck",
+    "lint": "pnpm lint",
+    "test": "pnpm test"
+  },
+  "waveSizeCap": 4,
+  "buildCheckpoints": "deviations-only"
+}
