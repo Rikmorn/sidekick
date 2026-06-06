@@ -70,12 +70,12 @@ export function install(opts: InstallOptions): void {
     throw new Error(`${pkgJsonPath}: missing or non-string "version" field`);
   }
 
-  // dist precondition: fail before ANY filesystem mutation so a missing build
+  // Bundle precondition: fail before ANY filesystem mutation so a missing build
   // leaves claudeHome untouched (no orphaned files, no uninstall path needed).
-  const distSrc = path.join(packageDir, 'dist');
-  if (!fs.existsSync(distSrc)) {
+  const bundleSrc = path.join(packageDir, 'dist', 'cli.js');
+  if (!fs.existsSync(bundleSrc)) {
     throw new Error(
-      `dist/ not found at ${distSrc}; run the build before installing.`,
+      `dist/cli.js not found at ${bundleSrc}; run \`bun run build\` before installing.`,
     );
   }
 
@@ -99,34 +99,22 @@ export function install(opts: InstallOptions): void {
     copyTreeRecording(rulesSrc, rulesDest, packageDir, manifestEntries);
   }
 
-  // dist subtree: copies packageDir/dist/* → claudeHome/sidekick/dist/
-  // Required — the launcher (written next) resolves dist/cli.js relative to itself.
+  // Node bundle: copies packageDir/dist/cli.js → claudeHome/sidekick/bin/sidekick
+  // The bundle starts with #!/usr/bin/env node (bun build preserves the shebang
+  // from bin/cli.ts), so copying it directly as "sidekick" lets it run via shebang
+  // without any wrapper script.
   // (Existence already verified above before any mutations.)
-  const distDest = path.join(claudeHome, STATE_DIR_NAME, 'dist');
-  copyTreeRecording(distSrc, distDest, packageDir, manifestEntries);
-
-  // Executable launcher: claudeHome/sidekick/bin/sidekick
-  // Resolves dist/cli.js relative to its own real path so symlinks are safe.
-  const launcherDir = path.join(claudeHome, STATE_DIR_NAME, 'bin');
-  fs.mkdirSync(launcherDir, { recursive: true });
-  const launcherPath = path.join(launcherDir, 'sidekick');
-  const launcherContent = [
-    '#!/bin/sh',
-    'root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)',
-    'exec node "$root/dist/cli.js" "$@"',
-    '',
-  ].join('\n');
-  fs.writeFileSync(launcherPath, launcherContent, { mode: 0o755 });
+  const binDestDir = path.join(claudeHome, STATE_DIR_NAME, 'bin');
+  fs.mkdirSync(binDestDir, { recursive: true });
+  const launcherDest = path.join(binDestDir, 'sidekick');
+  fs.copyFileSync(bundleSrc, launcherDest);
   // chmodSync ensures re-installs over an existing file honour 0o755:
-  // O_TRUNC (used by writeFileSync) does not fchmod, so permissions
+  // O_TRUNC (used by copyFileSync) does not fchmod, so permissions
   // from a prior install survive unchanged without this explicit call.
-  fs.chmodSync(launcherPath, 0o755);
+  fs.chmodSync(launcherDest, 0o755);
   manifestEntries.push({
-    // src is '<generated>' because this file is written by install(), not
-    // copied from packageDir — resolving path.join(packageDir, src) would
-    // be misleading. dest is the canonical uninstall target as normal.
-    src: '<generated>',
-    dest: launcherPath,
+    src: 'dist/cli.js',
+    dest: launcherDest,
   });
 
   const manifest: Manifest = {
@@ -273,8 +261,9 @@ if (_isEntry) {
       process.exit(1);
     }
     try {
-      // packageDir is the repo root — one level up from the compiled entry
-      // (dist/cli.js). It contains skills/, agents/, and rules/ to install.
+      // packageDir is the repo root — one level up from this entry file
+      // (bin/cli.ts, run from source via `bun bin/cli.ts`). It contains
+      // dist/sidekick plus skills/, agents/, and rules/ to install.
       const packageDir = path.resolve(
         path.dirname(fileURLToPath(import.meta.url)),
         '..',

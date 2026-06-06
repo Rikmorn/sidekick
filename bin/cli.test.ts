@@ -44,11 +44,14 @@ function writePackageJson(version = '0.1.0'): void {
 function writeMinimalDist(): void {
   if (!fakePackage) throw new Error('fakePackage not set');
   fs.mkdirSync(path.join(fakePackage, 'dist'), { recursive: true });
-  fs.writeFileSync(path.join(fakePackage, 'dist', 'cli.js'), '// cli\n');
+  fs.writeFileSync(
+    path.join(fakePackage, 'dist', 'cli.js'),
+    '#!/usr/bin/env node\nconsole.log("ok");\n',
+  );
 }
 
 describe('install', () => {
-  it('test 1: empty source dirs (with dist) — writes manifest containing only dist and launcher', () => {
+  it('test 1: empty source dirs (with dist) — writes manifest containing only the binary', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
     writeMinimalDist();
@@ -63,11 +66,17 @@ describe('install', () => {
     expect(typeof manifest.installedAt).toBe('string');
     // ISO date check (toISOString format)
     expect(() => new Date(manifest.installedAt).toISOString()).not.toThrow();
-    // dist/cli.js and the launcher must appear; no other files since managed dirs are absent
+    // dist/cli.js (bundle) must appear; no other files since managed dirs are absent
     const srcs: string[] = manifest.files.map((e: { src: string }) => e.src);
     expect(srcs).toContain('dist/cli.js');
-    const dests: string[] = manifest.files.map((e: { dest: string }) => e.dest);
     const launcherDest = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
+    // launcher is present, executable, and bytes match source bundle
+    expect(fs.existsSync(launcherDest)).toBe(true);
+    expect(fs.statSync(launcherDest).mode & 0o777).toBe(0o755);
+    expect(fs.readFileSync(launcherDest)).toEqual(
+      fs.readFileSync(path.join(fakePackage, 'dist', 'cli.js')),
+    );
+    const dests: string[] = manifest.files.map((e: { dest: string }) => e.dest);
     expect(dests).toContain(launcherDest);
   });
 
@@ -109,7 +118,7 @@ describe('install', () => {
         'utf-8',
       ),
     );
-    // Now includes dist/cli.js + launcher in addition to the 3 managed-dir files
+    // Now includes the dist/sidekick binary in addition to the 3 managed-dir files
     const srcs = manifest.files.map((e: { src: string }) => e.src).sort();
     expect(srcs).toContain('agents/default.md');
     expect(srcs).toContain('commands/foo.md');
@@ -210,31 +219,24 @@ describe('install', () => {
     expect(ruleEntry?.dest).toBe(rulesDest);
   });
 
-  it('test 10: install ships dist tree to <claudeHome>/sidekick/dist/ and records in manifest', () => {
+  it('test 10: install ships node bundle to <claudeHome>/sidekick/bin/sidekick and records in manifest', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
-    fs.mkdirSync(path.join(fakePackage, 'dist', 'helpers'), {
-      recursive: true,
-    });
-    fs.writeFileSync(path.join(fakePackage, 'dist', 'cli.js'), '// cli\n');
-    fs.writeFileSync(
-      path.join(fakePackage, 'dist', 'helpers', 'init.js'),
-      '// init\n',
+    fs.mkdirSync(path.join(fakePackage, 'dist'), { recursive: true });
+    // Write a fake bundle with distinct bytes to verify byte-for-byte copy
+    const fakeBundleBytes = Buffer.from(
+      '#!/usr/bin/env node\nconsole.log(42);\n',
     );
+    fs.writeFileSync(path.join(fakePackage, 'dist', 'cli.js'), fakeBundleBytes);
 
     install({ packageDir: fakePackage, claudeHome: fakeHome });
 
-    const distCliDest = path.join(fakeHome, 'sidekick', 'dist', 'cli.js');
-    const distInitDest = path.join(
-      fakeHome,
-      'sidekick',
-      'dist',
-      'helpers',
-      'init.js',
-    );
-    expect(fs.existsSync(distCliDest)).toBe(true);
-    expect(fs.readFileSync(distCliDest, 'utf-8')).toBe('// cli\n');
-    expect(fs.existsSync(distInitDest)).toBe(true);
+    const launcherDest = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
+    expect(fs.existsSync(launcherDest)).toBe(true);
+    // Bytes must match source exactly
+    expect(fs.readFileSync(launcherDest)).toEqual(fakeBundleBytes);
+    // Must be executable
+    expect(fs.statSync(launcherDest).mode & 0o777).toBe(0o755);
 
     const manifest = JSON.parse(
       fs.readFileSync(
@@ -244,33 +246,29 @@ describe('install', () => {
     );
     const srcs: string[] = manifest.files.map((e: { src: string }) => e.src);
     expect(srcs).toContain('dist/cli.js');
-    expect(srcs).toContain('dist/helpers/init.js');
     const dests: string[] = manifest.files.map((e: { dest: string }) => e.dest);
-    expect(dests).toContain(distCliDest);
-    expect(dests).toContain(distInitDest);
+    expect(dests).toContain(launcherDest);
   });
 
-  it('test 11: install writes executable launcher at <claudeHome>/sidekick/bin/sidekick with correct content and mode', () => {
+  it('test 11: install copies bundle to <claudeHome>/sidekick/bin/sidekick with mode 0o755 on re-install', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
     writeMinimalDist();
 
+    // First install
     install({ packageDir: fakePackage, claudeHome: fakeHome });
 
-    const launcherPath = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
-    expect(fs.existsSync(launcherPath)).toBe(true);
+    // Corrupt the mode to verify chmodSync on re-install restores it
+    const launcherDest = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
+    fs.chmodSync(launcherDest, 0o600);
+    expect(fs.statSync(launcherDest).mode & 0o777).toBe(0o600);
 
-    const stat = fs.statSync(launcherPath);
-    // Exact 0o755 — chmodSync after writeFileSync ensures this holds on re-install too
-    expect(stat.mode & 0o777).toBe(0o755);
+    // Re-install — must restore 0o755
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
 
-    const expectedContent = [
-      '#!/bin/sh',
-      'root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)',
-      'exec node "$root/dist/cli.js" "$@"',
-      '',
-    ].join('\n');
-    expect(fs.readFileSync(launcherPath, 'utf-8')).toBe(expectedContent);
+    expect(fs.existsSync(launcherDest)).toBe(true);
+    // chmodSync after copyFileSync ensures mode is correct even on overwrite
+    expect(fs.statSync(launcherDest).mode & 0o777).toBe(0o755);
 
     const manifest = JSON.parse(
       fs.readFileSync(
@@ -278,14 +276,17 @@ describe('install', () => {
         'utf-8',
       ),
     );
+    const srcs: string[] = manifest.files.map((e: { src: string }) => e.src);
+    expect(srcs).toContain('dist/cli.js');
     const dests: string[] = manifest.files.map((e: { dest: string }) => e.dest);
-    expect(dests).toContain(launcherPath);
+    expect(dests).toContain(launcherDest);
   });
 
-  it('test 12: install fails clearly when dist/ is missing from packageDir', () => {
+  it('test 12: install fails clearly when dist/cli.js bundle is missing from packageDir', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
-    // No dist/ created
+    // No dist/cli.js created — dist/ dir exists but bundle is absent
+    fs.mkdirSync(path.join(fakePackage, 'dist'), { recursive: true });
 
     let err: unknown;
     try {
@@ -295,7 +296,10 @@ describe('install', () => {
     }
     expect(err).toBeInstanceOf(Error);
     const msg = err instanceof Error ? err.message : String(err);
-    expect(msg).toMatch(/dist/i);
+    expect(msg).toMatch(/dist\/cli\.js/i);
+    expect(msg).toMatch(/bun run build/i);
+    // No side effects: claudeHome/sidekick must not have been created
+    expect(fs.existsSync(path.join(fakeHome, 'sidekick'))).toBe(false);
   });
 
   it('install round-trips the real package agents/ and skills/ into the manifest', () => {
@@ -306,7 +310,21 @@ describe('install', () => {
       '..',
     );
 
-    install({ packageDir: realPkg, claudeHome: fakeHome });
+    // The precondition guard requires dist/cli.js. In CI the bundle may not
+    // exist (it is gitignored). Write a stub and clean up after the test.
+    const realBundle = path.join(realPkg, 'dist', 'cli.js');
+    const stubWasCreated = !fs.existsSync(realBundle);
+    if (stubWasCreated) {
+      fs.mkdirSync(path.join(realPkg, 'dist'), { recursive: true });
+      fs.writeFileSync(realBundle, '#!/usr/bin/env node\n// stub\n');
+    }
+    try {
+      install({ packageDir: realPkg, claudeHome: fakeHome });
+    } finally {
+      if (stubWasCreated) {
+        fs.rmSync(realBundle, { force: true });
+      }
+    }
 
     const manifest = JSON.parse(
       fs.readFileSync(
@@ -464,24 +482,21 @@ describe('uninstall', () => {
     expect(fs.existsSync(path.join(fakeHome, 'sidekick'))).toBe(false);
   });
 
-  it('test 13: uninstall removes launcher and dist files recorded in manifest', () => {
+  it('test 13: uninstall removes the binary recorded in manifest', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
     writeMinimalDist();
 
     install({ packageDir: fakePackage, claudeHome: fakeHome });
 
-    const launcherPath = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
-    const distCliPath = path.join(fakeHome, 'sidekick', 'dist', 'cli.js');
-    // Confirm they exist after install
-    expect(fs.existsSync(launcherPath)).toBe(true);
-    expect(fs.existsSync(distCliPath)).toBe(true);
+    const binaryDest = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
+    // Confirm it exists after install
+    expect(fs.existsSync(binaryDest)).toBe(true);
 
     uninstall({ claudeHome: fakeHome });
 
-    // Both removed; state dir gone
-    expect(fs.existsSync(launcherPath)).toBe(false);
-    expect(fs.existsSync(distCliPath)).toBe(false);
+    // Binary removed; state dir gone
+    expect(fs.existsSync(binaryDest)).toBe(false);
     expect(fs.existsSync(path.join(fakeHome, 'sidekick'))).toBe(false);
   });
 });
