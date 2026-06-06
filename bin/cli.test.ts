@@ -1,8 +1,16 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { install, isMainEntrypoint, uninstall } from './cli.js';
 
 let fakeHome: string | undefined;
@@ -22,7 +30,7 @@ afterEach(() => {
   }
   fakeHome = undefined;
   fakePackage = undefined;
-  vi.restoreAllMocks();
+  mock.restore();
 });
 
 function writePackageJson(version = '0.1.0'): void {
@@ -132,7 +140,7 @@ describe('install', () => {
       'OLD\n',
     );
 
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
     install({ packageDir: fakePackage, claudeHome: fakeHome });
 
     expect(
@@ -394,7 +402,7 @@ describe('uninstall', () => {
     if (!fakeHome) throw new Error('fakeHome not set');
     const home = fakeHome;
     const expectedPath = path.join(home, 'sidekick', 'manifest.json');
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
 
     expect(() => uninstall({ claudeHome: home })).not.toThrow();
 

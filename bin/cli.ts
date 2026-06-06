@@ -4,6 +4,11 @@ import { realpathSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runBranchPrecheckCli } from './helpers/branch-precheck.js';
+import { runCheckDriftCli } from './helpers/check-drift.js';
+import { runInit } from './helpers/init.js';
+import { runReconcilePlanCli } from './helpers/reconcile-plan.js';
+import { runWavePlanCli } from './helpers/wave-plan.js';
 
 /**
  * Phase 10 D-02 manifest schema. schemaVersion allows future
@@ -280,7 +285,6 @@ if (_isEntry) {
       } else if (sub === 'uninstall') {
         uninstall({ claudeHome });
       } else if (sub === 'init') {
-        const { runInit } = await import('./helpers/init.js');
         const nonInteractive = process.argv.includes('--non-interactive');
         const exitCode = await runInit({
           repoRoot: process.cwd(),
@@ -288,9 +292,6 @@ if (_isEntry) {
         });
         process.exit(exitCode);
       } else if (sub === 'branch-precheck') {
-        const { runBranchPrecheckCli } = await import(
-          './helpers/branch-precheck.js'
-        );
         const args = process.argv.slice(3);
         const get = (flag: string): string | undefined => {
           const idx = args.indexOf(flag);
@@ -318,7 +319,6 @@ if (_isEntry) {
         console.log(stdout);
         process.exit(0);
       } else if (sub === 'check-drift') {
-        const { runCheckDriftCli } = await import('./helpers/check-drift.js');
         const slug = process.argv[3];
         if (!slug) {
           console.error(
@@ -336,9 +336,6 @@ if (_isEntry) {
         );
         process.exit(0);
       } else if (sub === 'reconcile-plan') {
-        const { runReconcilePlanCli } = await import(
-          './helpers/reconcile-plan.js'
-        );
         const args = process.argv.slice(3);
         const slug = args.find((a) => !a.startsWith('--'));
         if (!slug) {
@@ -373,7 +370,6 @@ if (_isEntry) {
         );
         process.exit(0);
       } else if (sub === 'wave-plan') {
-        const { runWavePlanCli } = await import('./helpers/wave-plan.js');
         const args = process.argv.slice(3);
         const slug = args.find((a) => !a.startsWith('--'));
         if (!slug) {

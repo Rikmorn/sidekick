@@ -1,3 +1,6 @@
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+
 export type BuildCheckpoints = 'deviations-only' | 'per-wave' | 'autonomous';
 
 export interface SidekickConfig {
@@ -106,8 +109,6 @@ export function parseConfig(raw: string): ParseResult {
  * ParseResult shape as parseConfig, plus a special error for absence.
  */
 export async function loadConfig(repoRoot: string): Promise<ParseResult> {
-  const fs = await import('node:fs/promises');
-  const path = await import('node:path');
   const filePath = path.join(repoRoot, '.sidekick', 'config.json');
   let raw: string;
   try {

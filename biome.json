@@ -13,7 +13,7 @@
       "!**/node_modules",
       "!**/smokes/fixtures",
       "!**/.claude/settings*.json",
-      "!**/pnpm-lock.yaml"
+      "!**/bun.lock"
     ]
   },
   "formatter": {
