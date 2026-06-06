@@ -17,14 +17,23 @@ Install once into Claude Code, then use it in any repo — same as gsd or superp
 
 ### Install
 
-`sidekick install` copies `skills/`, `agents/`, and `rules/` into `~/.claude/` and records a manifest at `~/.claude/sidekick/manifest.json` so `sidekick uninstall` is precise.
+**Requires** [Bun](https://bun.com) to build, and Node.js (≥20) to run the installed CLI.
+
+`sidekick` is a private, unpublished package, so you install it **from a clone**:
 
 ```bash
-pnpm build
-node dist/cli.js install
+git clone https://github.com/Rikmorn/sidekick.git
+cd sidekick
+bun install
+bun run build              # bundle bin/ → dist/cli.js (Node target)
+node dist/cli.js install   # or: bun bin/cli.ts install
 ```
 
-> Until this package is published to a registry, make `sidekick` resolvable: `pnpm link --global` after `pnpm build`, or call `node /path/to/sidekick/dist/cli.js`.
+`sidekick install` copies `skills/`, `agents/`, and `rules/` into `~/.claude/`, deploys the CLI bundle to `~/.claude/sidekick/bin/sidekick`, and writes a manifest at `~/.claude/sidekick/manifest.json` so `sidekick uninstall` is precise.
+
+> The installed CLI is a small Node-run bundle, so Node is the only runtime requirement. To call `sidekick` as a bare command in your own projects, add `~/.claude/sidekick/bin` to your `PATH`; otherwise use the full path. The `sk-*` agents already invoke it by full path, so they work either way.
+
+**Installing without a clone** isn't wired up yet: the package is unpublished and the build artifact (`dist/cli.js`) is gitignored, so `bunx github:…` / `npm i -g` have nothing to run. A no-clone install would require publishing to a registry (then `bunx sidekick install`) or adding a `prepare`-build and making the repo public.
 
 ### Set up a target project
 
@@ -35,7 +44,7 @@ node dist/cli.js install
 
 ```bash
 cd your-project
-sidekick init
+sidekick init   # not on PATH? use ~/.claude/sidekick/bin/sidekick init
 ```
 
 ### The workflow
@@ -48,6 +57,19 @@ sidekick init
 | `/sk-review <slug>` | Multi-dimension review (correctness, maintainability, security, tests, architecture) |
 | `/sk-goal-verify <slug>` | Goal-backward verification that the build delivered the plan's intent |
 | `/sk-regen-plan <slug>` | Reconciles a PLAN.md against a changed RFC.md |
+
+### A typical session
+
+The `sk-*` skills are slash commands you run **inside Claude Code**, in a project you've `init`-ed. A feature usually flows:
+
+```text
+/sk-design refund-window       # research → RFC.md + PLAN.md under .sidekick/plans/refund-window/
+/sk-build  refund-window       # execute the plan wave-by-wave; atomic commit per task
+/sk-review refund-window       # multi-dimension review of the diff
+/sk-goal-verify refund-window  # confirm the build delivered the plan's intent
+```
+
+On demand: `/sk-decide <topic>` records a MADR decision; `/sk-regen-plan <slug>` re-syncs a PLAN.md after its RFC.md changed. The CLI subcommands (`branch-precheck`, `check-drift`, `wave-plan`, `reconcile-plan`) are called by the skills and agents — you don't normally run them by hand.
 
 ### What sidekick writes into your repo (the usage contract)
 
@@ -69,11 +91,12 @@ Everything lives under `.sidekick/` at your repo root. `sidekick init` establish
 The harness source. A single TypeScript package (no monorepo).
 
 ```bash
-pnpm install          # dev dependencies
-pnpm build            # compile bin/ → dist/ (tsc)
-pnpm test             # CLI test suite (vitest)
-pnpm check            # biome lint + format check
-pnpm sidekick <cmd>   # run the CLI from source (tsx) — e.g. pnpm sidekick init
+bun install            # dev dependencies
+bun run build          # bundle bin/ → dist/cli.js (bun build, node target)
+bun run typecheck      # tsc --noEmit (types only)
+bun run test           # CLI test suite (bun test, scoped to bin/)
+bun run check          # biome lint + format check
+bun bin/cli.ts <cmd>   # run the CLI from source — e.g. bun bin/cli.ts init
 ```
 
 CLI subcommands: `install`, `uninstall`, `init`, `branch-precheck`, `check-drift`, `reconcile-plan`, `wave-plan`.

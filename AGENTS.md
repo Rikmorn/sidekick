@@ -26,8 +26,8 @@ Consequence: tech-debt, config, or "should be gitignored" concerns about a `.sid
 
 ## Working in this repo
 
-- **Single package.** `package.json` is the only manifest. Build with `tsc` (`bin/` → `dist/`); test with Vitest (`bin/**/*.test.ts`); lint/format with Biome.
-- **Commands:** `pnpm build`, `pnpm test`, `pnpm check`, `pnpm format`, `pnpm sidekick <cmd>` (runs the CLI via tsx).
+- **Single package.** `package.json` is the only manifest. Bundle with `bun build` (Node target, `bin/` → `dist/cli.js`); typecheck with `tsc --noEmit`; test with `bun test` (`bin/**/*.test.ts`); lint/format with Biome. The shipped CLI runs on Node; Bun is the dev toolchain.
+- **Commands:** `bun run build`, `bun run test`, `bun run typecheck`, `bun run check`, `bun run format`, `bun bin/cli.ts <cmd>` (runs the CLI from source).
 - **Naming:** lowercase, hyphens. Agents and skills are prefixed `sk-`; the per-project config dir is `.sidekick/`.
 - **Authoring agents/skills:** follow `.claude/rules/sk-agent-prompts.md`. In short — goal-oriented identity over procedures, constitutional constraints over step lists, few-shot examples *with reasoning*, minimal directive density. Orchestrators live in slash commands (skills), not subagents, because the runtime forbids subagents from dispatching subagents.
 - **Structured output at boundaries only:** a specialist's deliverable is one JSON object in a final ```json``` fence; everything else is natural-language reasoning.
