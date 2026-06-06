@@ -25,7 +25,7 @@ If `operation` is absent, return `verdict: hard_stop`, `reason: missing_operatio
 Invoke the CLI with the orchestrator's args, omitting flags for unset fields:
 
 ```bash
-npx sidekick branch-precheck \
+"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" branch-precheck \
   --operation <op> \
   [--ticket-id <id>] [--ticket-title <title>] [--branch-type <type>]
 ```

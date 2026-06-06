@@ -83,7 +83,7 @@ Confirm no deferred flags are present. If `--amend` or `--supersede` was passed 
 Invoke the helper CLI directly:
 
 ```bash
-npx sidekick branch-precheck --operation decide
+"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" branch-precheck --operation decide
 ```
 
 Parse the JSON object on stdout. On `verdict: "hard_stop"`, emit the `error: ambiguous_git_state` block surfacing the helper's `hard_stop_message` verbatim and stop. On `verdict: "proceed"`, continue silently. (The helper's policy explicitly allows the default branch for `--operation decide`; other reachable hard-stops include mid-rebase / mid-merge / mid-cherry-pick / detached_head / diverged_from_remote.)

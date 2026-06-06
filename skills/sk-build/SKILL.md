@@ -1,6 +1,6 @@
 ---
 name: sk-build
-description: Execute PLAN.md tasks wave-by-wave. Computes execution waves via `engineering wave-plan` (dependency + file-overlap order), then per wave: dispatches sk-executor sequentially, runs gates FRESH, dispatches sk-spec-reviewer in parallel, commits each verified task atomically in T-NN order, and batches any deviations for one routing pass. Writes sequential; verification parallel.
+description: Execute PLAN.md tasks wave-by-wave. Computes execution waves via `sidekick wave-plan` (dependency + file-overlap order), then per wave: dispatches sk-executor sequentially, runs gates FRESH, dispatches sk-spec-reviewer in parallel, commits each verified task atomically in T-NN order, and batches any deviations for one routing pass. Writes sequential; verification parallel.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: <slug>
@@ -11,7 +11,7 @@ You orchestrate task-by-task execution of an existing PLAN.md. Validate inputs, 
 
 This slash command runs in the user's main session because Claude Code's runtime forbids subagents from dispatching other subagents (per `.claude/rules/sk-agent-prompts.md` "Where orchestrators must live"). Orchestration shape: validate inputs → drift check (warn-only) → branch precheck → compute waves (`wave-plan`) → loop { re-read PLAN.md → find next wave → dispatch sk-executor per task (sequential) → verification gate FRESH → sk-spec-reviewer (parallel within wave) → handle deviation OR commit atomically → loop } → exit on `all_tasks_complete`.
 
-M3 executes wave-by-wave. A **wave** is a set of tasks whose dependencies are all satisfied by earlier waves (computed by `engineering wave-plan`). Within a wave, writes are **sequential** (the orchestrator commits one task at a time in T-NN order, so atomic commit attribution stays trivial); the `sk-spec-reviewer` verification fan-out runs in **parallel**, capped by `.sidekick/config.json` `waveSizeCap`. Worktree-parallel *writes* are an M4 concern — the per-wave executor dispatch (Step 5) is deliberately isolated as a **seam** so a worktree-isolated backend can replace it without changing the surrounding loop.
+M3 executes wave-by-wave. A **wave** is a set of tasks whose dependencies are all satisfied by earlier waves (computed by `sidekick wave-plan`). Within a wave, writes are **sequential** (the orchestrator commits one task at a time in T-NN order, so atomic commit attribution stays trivial); the `sk-spec-reviewer` verification fan-out runs in **parallel**, capped by `.sidekick/config.json` `waveSizeCap`. Worktree-parallel *writes* are an M4 concern — the per-wave executor dispatch (Step 5) is deliberately isolated as a **seam** so a worktree-isolated backend can replace it without changing the surrounding loop.
 
 <constraints>
 
@@ -108,7 +108,7 @@ Confirm `<slug>` is present. Confirm `.sidekick/plans/<slug>/RFC.md` exists and 
 Run the drift CLI via Bash:
 
 ```bash
-npx sidekick check-drift <slug>
+"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" check-drift <slug>
 ```
 
 The CLI writes a JSON object to stdout with shape `{ verdict, slug, expected_hash?, actual_hash?, rfc_line_count_at_pin?, reason? }`.
@@ -132,7 +132,7 @@ Dispatch `subagent_type: sk-branch-precheck` with `operation: build` and (option
 
 ### Step 4 — Compute waves, find the next incomplete wave
 
-Run `npx sidekick wave-plan <slug> --format=json` and parse the JSON. On `verdict: "planned"`, you get `waves` (an ordered array of `T-NN` arrays) — this is the single source of truth for execution order; do not infer order from document order. On `verdict: "dep_cycle"` / `"dangling_dep"` / `"no_tasks"`, hard-stop with `error: invalid_plan_graph` (surface the helper's `reason`). On `missing_plan`, hard-stop `error: missing_plan`.
+Run `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" wave-plan <slug> --format=json` and parse the JSON. On `verdict: "planned"`, you get `waves` (an ordered array of `T-NN` arrays) — this is the single source of truth for execution order; do not infer order from document order. On `verdict: "dep_cycle"` / `"dangling_dep"` / `"no_tasks"`, hard-stop with `error: invalid_plan_graph` (surface the helper's `reason`). On `missing_plan`, hard-stop `error: missing_plan`.
 
 Re-read `.sidekick/plans/<slug>/PLAN.md` for the current `[x]` state. The **next wave** is the first wave (in order) that contains at least one `[ ]` task. Tasks in that wave already `[x]` are skipped (already built). If every task in every wave is `[x]`, emit the `all_tasks_complete` clean-exit block.
 
@@ -360,7 +360,7 @@ inside a final ```json``` fence. `reasoning` is a non-empty string ≤200 words.
 
 <build_state>
 
-`/sk-build` maintains `.sidekick/state/<slug>/build.json` — a **gitignored, per-developer cache** of build progress. It is NOT authority: it is fully reconstructable from PLAN.md `[x]` checkboxes + `[T-NN]` git commit scopes (see Recovery in Step 1). Create `.sidekick/state/<slug>/` if absent. `.sidekick/state/` (and `.sidekick/cache/`) are already gitignored by `sidekick init` — if the entries are somehow missing (the repo was never initialised), surface a one-line note suggesting `npx sidekick init` rather than editing `.gitignore` mid-build.
+`/sk-build` maintains `.sidekick/state/<slug>/build.json` — a **gitignored, per-developer cache** of build progress. It is NOT authority: it is fully reconstructable from PLAN.md `[x]` checkboxes + `[T-NN]` git commit scopes (see Recovery in Step 1). Create `.sidekick/state/<slug>/` if absent. `.sidekick/state/` (and `.sidekick/cache/`) are already gitignored by `sidekick init` — if the entries are somehow missing (the repo was never initialised), surface a one-line note suggesting `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" init` rather than editing `.gitignore` mid-build.
 
 Shape:
 

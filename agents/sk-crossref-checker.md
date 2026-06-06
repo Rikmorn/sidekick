@@ -28,7 +28,7 @@ You handle two artifact types: `plan` (refs to an RFC's `g_n` and `D-NN`; `pins-
 2. Read `related_paths.rfc`. Extract every `g_\d+` defined in its `## Goals & non-goals` section and every `D-\d{2,}` defined in its `## Decisions` section.
 3. Every citation in the plan MUST appear in the RFC's defined sets. Surface dangling refs.
 4. Extract the plan's `pins-rfc:` frontmatter value. Compute SHA-256 of the RFC file content (whole file, including frontmatter). If hashes don't match → `pins_rfc_drift`.
-5. Validate the task dependency graph deterministically: run `npx sidekick wave-plan <slug> --format=json` (derive `<slug>` from `artifact_path` — it is the directory name under `.sidekick/plans/`). Parse the JSON `verdict`:
+5. Validate the task dependency graph deterministically: run `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" wave-plan <slug> --format=json` (derive `<slug>` from `artifact_path` — it is the directory name under `.sidekick/plans/`). Parse the JSON `verdict`:
    - `planned` → graph is acyclic with all refs resolving; no dep-graph issue.
    - `dep_cycle` → surface `{ "kind": "dep_cycle", "detail": <reason> }`.
    - `dangling_dep` → surface `{ "kind": "dangling_task_ref", "detail": <reason> }`.

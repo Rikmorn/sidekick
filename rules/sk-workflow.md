@@ -36,7 +36,7 @@ Runtime configuration lives in `.sidekick/config.json` (JSON, parsed by helpers)
 
 ## How to scaffold
 
-Run `npx sidekick init` at repo root. The command:
+Run `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" init` at repo root. The command:
 
 - Detects `defaultBranch` from `origin/HEAD` and a cascade (`main` / `master` / `dev` / `trunk` / `develop`).
 - Detects gate commands from `package.json scripts.*`.
@@ -79,7 +79,7 @@ Each task block in a PLAN.md's `## Tasks` section follows this shape:
 
 ### Wave computation
 
-`engineering wave-plan <slug>` reads the `**Deps:**` and `**Files:**` lines from `.sidekick/plans/<slug>/PLAN.md` and computes execution waves:
+`sidekick wave-plan <slug>` reads the `**Deps:**` and `**Files:**` lines from `.sidekick/plans/<slug>/PLAN.md` and computes execution waves:
 
 1. **Topological order from `Deps:`** — tasks whose deps are all satisfied in earlier waves move to the next wave.
 2. **File-overlap serialization** — two dependency-independent tasks that touch the same file are placed in different waves; the file overlap is treated as an ordering constraint even if no explicit dep is declared.
@@ -88,4 +88,4 @@ The result is a sequence of waves. Within each wave, `/sk-build` executes tasks 
 
 ### Build state cache
 
-`.sidekick/state/<slug>/build.json` is a **gitignored, reconstructable** cache of build progress and deviations for the current run. It is not the authority on what has been completed — that authority is PLAN.md checkboxes and git commit scopes. If the cache is lost or corrupt, `engineering wave-plan` can regenerate it from those sources.
+`.sidekick/state/<slug>/build.json` is a **gitignored, reconstructable** cache of build progress and deviations for the current run. It is not the authority on what has been completed — that authority is PLAN.md checkboxes and git commit scopes. If the cache is lost or corrupt, `sidekick wave-plan` can regenerate it from those sources.

@@ -49,7 +49,7 @@ Format: `/sk-regen-plan halted.` then `error: <code>` + `Reason:`.
 Dispatch `subagent_type: sk-branch-precheck` with `operation: regen-plan` and `ticket_id: <slug>`. `hard_stop` → `regen_plan_on_default_branch` (surface the message). `proceed` → continue.
 
 ### Step 2 — Deterministic analysis
-Run `npx sidekick reconcile-plan <slug> --default-branch <b> --format=json` (Bash). Parse: `tasks`, `unmapped_commits`, `proposed_flips`. `verdict: missing_plan|no_checklist` → the matching hard-stop.
+Run `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" reconcile-plan <slug> --default-branch <b> --format=json` (Bash). Parse: `tasks`, `unmapped_commits`, `proposed_flips`. `verdict: missing_plan|no_checklist` → the matching hard-stop.
 
 ### Step 3 — Judge untagged commits
 If `unmapped_commits` is non-empty, dispatch `subagent_type: sk-plan-reconciler` with `ticket_slug`, `unmapped_commits`, and `tasks`. Parse its `classifications[]`. (Empty unmapped → skip.)
