@@ -65,6 +65,15 @@ export function install(opts: InstallOptions): void {
     throw new Error(`${pkgJsonPath}: missing or non-string "version" field`);
   }
 
+  // dist precondition: fail before ANY filesystem mutation so a missing build
+  // leaves claudeHome untouched (no orphaned files, no uninstall path needed).
+  const distSrc = path.join(packageDir, 'dist');
+  if (!fs.existsSync(distSrc)) {
+    throw new Error(
+      `dist/ not found at ${distSrc}; run the build before installing.`,
+    );
+  }
+
   const manifestEntries: Array<{ src: string; dest: string }> = [];
 
   for (const sub of MANAGED_DIRS) {
@@ -84,6 +93,36 @@ export function install(opts: InstallOptions): void {
     const rulesDest = path.join(claudeHome, STATE_DIR_NAME, 'rules');
     copyTreeRecording(rulesSrc, rulesDest, packageDir, manifestEntries);
   }
+
+  // dist subtree: copies packageDir/dist/* → claudeHome/sidekick/dist/
+  // Required — the launcher (written next) resolves dist/cli.js relative to itself.
+  // (Existence already verified above before any mutations.)
+  const distDest = path.join(claudeHome, STATE_DIR_NAME, 'dist');
+  copyTreeRecording(distSrc, distDest, packageDir, manifestEntries);
+
+  // Executable launcher: claudeHome/sidekick/bin/sidekick
+  // Resolves dist/cli.js relative to its own real path so symlinks are safe.
+  const launcherDir = path.join(claudeHome, STATE_DIR_NAME, 'bin');
+  fs.mkdirSync(launcherDir, { recursive: true });
+  const launcherPath = path.join(launcherDir, 'sidekick');
+  const launcherContent = [
+    '#!/bin/sh',
+    'root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)',
+    'exec node "$root/dist/cli.js" "$@"',
+    '',
+  ].join('\n');
+  fs.writeFileSync(launcherPath, launcherContent, { mode: 0o755 });
+  // chmodSync ensures re-installs over an existing file honour 0o755:
+  // O_TRUNC (used by writeFileSync) does not fchmod, so permissions
+  // from a prior install survive unchanged without this explicit call.
+  fs.chmodSync(launcherPath, 0o755);
+  manifestEntries.push({
+    // src is '<generated>' because this file is written by install(), not
+    // copied from packageDir — resolving path.join(packageDir, src) would
+    // be misleading. dest is the canonical uninstall target as normal.
+    src: '<generated>',
+    dest: launcherPath,
+  });
 
   const manifest: Manifest = {
     schemaVersion: 1,

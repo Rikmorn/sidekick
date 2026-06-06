@@ -33,10 +33,17 @@ function writePackageJson(version = '0.1.0'): void {
   );
 }
 
+function writeMinimalDist(): void {
+  if (!fakePackage) throw new Error('fakePackage not set');
+  fs.mkdirSync(path.join(fakePackage, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(fakePackage, 'dist', 'cli.js'), '// cli\n');
+}
+
 describe('install', () => {
-  it('test 1: empty source dirs — writes manifest with empty files array', () => {
+  it('test 1: empty source dirs (with dist) — writes manifest containing only dist and launcher', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
+    writeMinimalDist();
 
     install({ packageDir: fakePackage, claudeHome: fakeHome });
 
@@ -48,12 +55,18 @@ describe('install', () => {
     expect(typeof manifest.installedAt).toBe('string');
     // ISO date check (toISOString format)
     expect(() => new Date(manifest.installedAt).toISOString()).not.toThrow();
-    expect(manifest.files).toEqual([]);
+    // dist/cli.js and the launcher must appear; no other files since managed dirs are absent
+    const srcs: string[] = manifest.files.map((e: { src: string }) => e.src);
+    expect(srcs).toContain('dist/cli.js');
+    const dests: string[] = manifest.files.map((e: { dest: string }) => e.dest);
+    const launcherDest = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
+    expect(dests).toContain(launcherDest);
   });
 
   it('test 2: copies skills/agents/commands recursively and records manifest entries', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
+    writeMinimalDist();
 
     fs.mkdirSync(path.join(fakePackage, 'skills', 'example'), {
       recursive: true,
@@ -88,13 +101,11 @@ describe('install', () => {
         'utf-8',
       ),
     );
-    expect(manifest.files).toHaveLength(3);
+    // Now includes dist/cli.js + launcher in addition to the 3 managed-dir files
     const srcs = manifest.files.map((e: { src: string }) => e.src).sort();
-    expect(srcs).toEqual([
-      'agents/default.md',
-      'commands/foo.md',
-      'skills/example/SKILL.md',
-    ]);
+    expect(srcs).toContain('agents/default.md');
+    expect(srcs).toContain('commands/foo.md');
+    expect(srcs).toContain('skills/example/SKILL.md');
     const dests = manifest.files.map((e: { dest: string }) => e.dest);
     expect(dests).toContain(skillDest);
     expect(dests).toContain(agentDest);
@@ -104,6 +115,7 @@ describe('install', () => {
   it('test 3: silent overwrite — existing files at dest are replaced without warnings (D-04)', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
+    writeMinimalDist();
 
     // Source has NEW content
     fs.mkdirSync(path.join(fakePackage, 'skills', 'example'), {
@@ -165,6 +177,7 @@ describe('install', () => {
   it('test 8: copies rules/ subtree to <claudeHome>/sidekick/rules/', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
+    writeMinimalDist();
 
     fs.mkdirSync(path.join(fakePackage, 'rules'), { recursive: true });
     fs.writeFileSync(path.join(fakePackage, 'rules', 'sk-test.md'), '# rule\n');
@@ -181,9 +194,100 @@ describe('install', () => {
         'utf-8',
       ),
     );
-    expect(manifest.files).toHaveLength(1);
-    expect(manifest.files[0].src).toBe('rules/sk-test.md');
-    expect(manifest.files[0].dest).toBe(rulesDest);
+    const srcs: string[] = manifest.files.map((e: { src: string }) => e.src);
+    expect(srcs).toContain('rules/sk-test.md');
+    const ruleEntry = manifest.files.find(
+      (e: { src: string }) => e.src === 'rules/sk-test.md',
+    );
+    expect(ruleEntry?.dest).toBe(rulesDest);
+  });
+
+  it('test 10: install ships dist tree to <claudeHome>/sidekick/dist/ and records in manifest', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    fs.mkdirSync(path.join(fakePackage, 'dist', 'helpers'), {
+      recursive: true,
+    });
+    fs.writeFileSync(path.join(fakePackage, 'dist', 'cli.js'), '// cli\n');
+    fs.writeFileSync(
+      path.join(fakePackage, 'dist', 'helpers', 'init.js'),
+      '// init\n',
+    );
+
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+
+    const distCliDest = path.join(fakeHome, 'sidekick', 'dist', 'cli.js');
+    const distInitDest = path.join(
+      fakeHome,
+      'sidekick',
+      'dist',
+      'helpers',
+      'init.js',
+    );
+    expect(fs.existsSync(distCliDest)).toBe(true);
+    expect(fs.readFileSync(distCliDest, 'utf-8')).toBe('// cli\n');
+    expect(fs.existsSync(distInitDest)).toBe(true);
+
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(fakeHome, 'sidekick', 'manifest.json'),
+        'utf-8',
+      ),
+    );
+    const srcs: string[] = manifest.files.map((e: { src: string }) => e.src);
+    expect(srcs).toContain('dist/cli.js');
+    expect(srcs).toContain('dist/helpers/init.js');
+    const dests: string[] = manifest.files.map((e: { dest: string }) => e.dest);
+    expect(dests).toContain(distCliDest);
+    expect(dests).toContain(distInitDest);
+  });
+
+  it('test 11: install writes executable launcher at <claudeHome>/sidekick/bin/sidekick with correct content and mode', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    writeMinimalDist();
+
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+
+    const launcherPath = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
+    expect(fs.existsSync(launcherPath)).toBe(true);
+
+    const stat = fs.statSync(launcherPath);
+    // Exact 0o755 — chmodSync after writeFileSync ensures this holds on re-install too
+    expect(stat.mode & 0o777).toBe(0o755);
+
+    const expectedContent = [
+      '#!/bin/sh',
+      'root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)',
+      'exec node "$root/dist/cli.js" "$@"',
+      '',
+    ].join('\n');
+    expect(fs.readFileSync(launcherPath, 'utf-8')).toBe(expectedContent);
+
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(fakeHome, 'sidekick', 'manifest.json'),
+        'utf-8',
+      ),
+    );
+    const dests: string[] = manifest.files.map((e: { dest: string }) => e.dest);
+    expect(dests).toContain(launcherPath);
+  });
+
+  it('test 12: install fails clearly when dist/ is missing from packageDir', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    // No dist/ created
+
+    let err: unknown;
+    try {
+      install({ packageDir: fakePackage, claudeHome: fakeHome });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(Error);
+    const msg = err instanceof Error ? err.message : String(err);
+    expect(msg).toMatch(/dist/i);
   });
 
   it('install round-trips the real package agents/ and skills/ into the manifest', () => {
@@ -251,6 +355,7 @@ describe('uninstall', () => {
   it('test 4: manifest-driven removal — removes listed files and the state dir (D-05)', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
+    writeMinimalDist();
 
     fs.mkdirSync(path.join(fakePackage, 'skills', 'example'), {
       recursive: true,
@@ -307,6 +412,7 @@ describe('uninstall', () => {
     const pkg = fakePackage;
     const home = fakeHome;
     writePackageJson('0.1.0');
+    writeMinimalDist();
 
     fs.mkdirSync(path.join(pkg, 'skills', 'example'), {
       recursive: true,
@@ -336,6 +442,7 @@ describe('uninstall', () => {
   it('test 9: uninstall removes rules/ files via manifest', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
+    writeMinimalDist();
 
     fs.mkdirSync(path.join(fakePackage, 'rules'), { recursive: true });
     fs.writeFileSync(path.join(fakePackage, 'rules', 'sk-test.md'), '# rule\n');
@@ -346,6 +453,27 @@ describe('uninstall', () => {
     expect(
       fs.existsSync(path.join(fakeHome, 'sidekick', 'rules', 'sk-test.md')),
     ).toBe(false);
+    expect(fs.existsSync(path.join(fakeHome, 'sidekick'))).toBe(false);
+  });
+
+  it('test 13: uninstall removes launcher and dist files recorded in manifest', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    writeMinimalDist();
+
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+
+    const launcherPath = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
+    const distCliPath = path.join(fakeHome, 'sidekick', 'dist', 'cli.js');
+    // Confirm they exist after install
+    expect(fs.existsSync(launcherPath)).toBe(true);
+    expect(fs.existsSync(distCliPath)).toBe(true);
+
+    uninstall({ claudeHome: fakeHome });
+
+    // Both removed; state dir gone
+    expect(fs.existsSync(launcherPath)).toBe(false);
+    expect(fs.existsSync(distCliPath)).toBe(false);
     expect(fs.existsSync(path.join(fakeHome, 'sidekick'))).toBe(false);
   });
 });
