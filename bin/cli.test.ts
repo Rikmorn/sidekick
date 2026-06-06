@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { install, uninstall } from './cli.js';
+import { install, isMainEntrypoint, uninstall } from './cli.js';
 
 let fakeHome: string | undefined;
 let fakePackage: string | undefined;
@@ -347,5 +347,46 @@ describe('uninstall', () => {
       fs.existsSync(path.join(fakeHome, 'sidekick', 'rules', 'sk-test.md')),
     ).toBe(false);
     expect(fs.existsSync(path.join(fakeHome, 'sidekick'))).toBe(false);
+  });
+});
+
+describe('isMainEntrypoint', () => {
+  let tmpDir: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'isMainEntrypoint-'));
+  });
+
+  afterEach(() => {
+    if (tmpDir && fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+    tmpDir = undefined;
+  });
+
+  it('returns true when argv1 is a symlink pointing to the same real file as importMetaUrl', () => {
+    if (!tmpDir) throw new Error('tmpDir not set');
+    const realFile = path.join(tmpDir, 'real.js');
+    const symlinkPath = path.join(tmpDir, 'link.js');
+    fs.writeFileSync(realFile, '// real\n');
+    fs.symlinkSync(realFile, symlinkPath);
+
+    expect(isMainEntrypoint(pathToFileURL(realFile).href, symlinkPath)).toBe(
+      true,
+    );
+  });
+
+  it('returns false for two different existing files', () => {
+    if (!tmpDir) throw new Error('tmpDir not set');
+    const fileA = path.join(tmpDir, 'a.js');
+    const fileB = path.join(tmpDir, 'b.js');
+    fs.writeFileSync(fileA, '// a\n');
+    fs.writeFileSync(fileB, '// b\n');
+
+    expect(isMainEntrypoint(pathToFileURL(fileA).href, fileB)).toBe(false);
+  });
+
+  it('returns false when argv1 is undefined', () => {
+    expect(isMainEntrypoint(import.meta.url, undefined)).toBe(false);
   });
 });

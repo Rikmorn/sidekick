@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as fs from 'node:fs';
+import { realpathSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -183,8 +184,33 @@ function walk(dir: string, fn: (filePath: string) => void): void {
   }
 }
 
+/**
+ * Symlink-robust check: resolves both paths to their real (canonical) paths
+ * before comparing, so npm/pnpm `.bin` symlinks and macOS /tmp→/private/tmp
+ * redirects don't prevent main() from running.
+ * Returns false if argv1 is falsy or if either path cannot be resolved.
+ */
+export function isMainEntrypoint(
+  importMetaUrl: string,
+  argv1: string | undefined,
+): boolean {
+  if (!argv1) return false;
+  try {
+    return realpathSync(fileURLToPath(importMetaUrl)) === realpathSync(argv1);
+  } catch {
+    return false;
+  }
+}
+
+const _importMetaMain =
+  'main' in import.meta && typeof import.meta.main === 'boolean'
+    ? import.meta.main
+    : undefined;
+const _isEntry =
+  _importMetaMain ?? isMainEntrypoint(import.meta.url, process.argv[1]);
+
 // CLI entry — runs only when invoked directly. Mirrors validate-frontmatter.ts:259-268.
-if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (_isEntry) {
   await (async () => {
     const sub = process.argv[2];
     const VALID_SUBS = new Set([
