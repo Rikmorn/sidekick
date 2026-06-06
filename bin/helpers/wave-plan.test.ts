@@ -2,9 +2,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { WavePlanError, computeWaves } from './wave-plan.js';
-import { parsePlanTasks } from './wave-plan.js';
-import { runWavePlanCli } from './wave-plan.js';
+import {
+  computeWaves,
+  parsePlanTasks,
+  runWavePlanCli,
+  WavePlanError,
+} from './wave-plan.js';
 
 const PLAN = `---
 slug: demo

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  type CommitRef,
   analyseReconciliation,
   applyFlips,
+  type CommitRef,
 } from './reconcile-plan.js';
 
 const PLAN = `---

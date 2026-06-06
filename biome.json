@@ -6,13 +6,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "include": ["bin/**/*.ts", "*.json"],
-    "ignore": [
-      "dist/**",
-      "node_modules/**",
-      "smokes/fixtures/**",
-      ".claude/settings*.json",
-      "pnpm-lock.yaml"
+    "includes": [
+      "**/bin/**/*.ts",
+      "**/*.json",
+      "!**/dist",
+      "!**/node_modules",
+      "!**/smokes/fixtures",
+      "!**/.claude/settings*.json",
+      "!**/pnpm-lock.yaml"
     ]
   },
   "formatter": {
