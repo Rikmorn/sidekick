@@ -28,7 +28,9 @@
 
 **Prior art → [`prior-art.md`](./prior-art.md)** — superpowers & gsd vs our findings. Convergent evolution validates the research; **gsd is ahead on memory + eval** (our two blind spots) — study before building E9/E12/E13/E15. Shared industry-wide gap: cross-family verification.
 
-**Design principles → [`../DESIGN-PRINCIPLES.md`](../DESIGN-PRINCIPLES.md)** — the durable decision-rule doctrine (proceduralize-meta/liberate-object; structure≠rigidity; build-the-harness/rent-the-wording; **context-management-as-architecture-driver**; etc.). Tier 1 = apply sk-agent-prompts edits + rules + small builds; Tier 2 = navigability layer / operator-dial / cross-family quorum; Tier 3 = episodic memory, substrate, MAS thresholds.
+**Design principles → [`../DESIGN-PRINCIPLES.md`](../DESIGN-PRINCIPLES.md)** — the durable decision-rule doctrine (proceduralize-meta/liberate-object; structure≠rigidity; build-the-harness/rent-the-wording; **context-management-as-architecture-driver**; etc.).
+
+**Decisions → [`../adr/`](../adr/README.md)** — architecture decision records (with the assumptions each rests on). ADR-0001: harness shape (behavioural-leaning, lifecycle-as-thin-skeleton, eval-gated). Tier 1 = apply sk-agent-prompts edits + rules + small builds; Tier 2 = navigability layer / operator-dial / cross-family quorum; Tier 3 = episodic memory, substrate, MAS thresholds.
 
 ---
 
