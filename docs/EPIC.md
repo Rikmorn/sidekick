@@ -6,6 +6,8 @@
 
 **Rationale & full detail:** [`research/ACTION-PLAN.md`](./research/ACTION-PLAN.md) + the six reports under [`research/`](./research/README.md), plus [`research/prior-art.md`](./research/prior-art.md) (superpowers & gsd vs our findings). Durability filter for every item: *build the oversight harness; rent the wording.*
 
+**Platform landscape (2026-06-07, notes — not decisions):** Claude Code now ships much of the autonomy/loop machinery (`/goal`, `/loop`, dynamic Workflows, `/effort ultracode`, agent-view, hooks). These are **inputs to weigh** in the per-item planning sessions below — especially **E10 / E11 / E15** — not committed reframes; they may shift by the time those discussions happen. Captured (with the candidate per-item implications) in [`research/platform-landscape.md`](./research/platform-landscape.md).
+
 ---
 
 ## Tier 1 — do now (cheap, durable, no new dependency)

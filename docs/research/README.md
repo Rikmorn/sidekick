@@ -44,6 +44,8 @@ Each: *why it matters · status.*
 
 **Emerging requirement:** operator-dial tooling — let a human set knobs (research depth, autonomy, risk, budget) *before* the AI tackles a task. [`../backlog/operator-dial-tooling.md`](../backlog/operator-dial-tooling.md).
 
+**Platform landscape (2026-06-07, notes — not a decision):** Claude Code now ships the loop/orchestration primitives the north star described (`/goal`, `/loop`, dynamic Workflows, `/effort ultracode`, agent-view, hooks). Observations + candidate per-item implications (E10/E11/E15) recorded in [`platform-landscape.md`](./platform-landscape.md) as inputs for the implementation discussions — *not* a committed reframe; they may shift. (Note: several primitives are research-preview; spot-check before treating versions as load-bearing.)
+
 **Surfaced by the research so far:**
 - **Track E — does "single-agent wins" hold on the REAL domain?** C's result is text-only multi-hop reasoning; the harness targets tool-heavy, long-horizon work. "Default to single agent" is a *prior*, not a law for us. · **open — candidate research track.**
 - **`CLAUDE.md`/`AGENTS.md` mechanics** — when persistent-instruction files are actually *consulted* vs *ignored*. Directly the placement dilemma (P4); **no verified source exists** — surprisingly unstudied. · **open — candidate track.**
