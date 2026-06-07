@@ -14,7 +14,7 @@
    - **Isolation (the zoo) and handoff (compaction) pay the same tax.** Finite context forces a fidelity cost *somewhere* — at the subagent boundary (isolate → lossy return) or at the compaction boundary (hand off → lossy summary). The design choice is *where* to pay it.
    - **Each isolation boundary is a tradeoff:** it buys fresh context budget + focused attention, and costs handoff fidelity (the DPI lossy-channel result; ~37% of multi-agent failures are inter-agent misalignment). Justified when the boundary **buys more context-headroom than it costs fidelity** (e.g. a verbose, self-contained reviewer returning a verdict) — *not* when the orchestrator needs to reason *with* the detail.
    - **Isolation only *delays* the orchestrator's own fill** — strategic handoff is still mandatory on top of it.
-   - **→ Candidate operator knob (E10):** bias the isolation↔handoff balance per task (fidelity-first vs context-budget-first). *(Track B; Track C / DPI.)*
+   - **→ Candidate operator knob (E11):** bias the isolation↔handoff balance per task (fidelity-first vs context-budget-first). *(Track B; Track C / DPI.)*
 
 6. **Verification needs independence; escalation on the irreversible is structural.** Producer ≠ verifier; cross-family where stakes warrant; human escalation is a load-bearing safety primitive, not a failure of autonomy. *(Track A.)*
 

@@ -21,7 +21,7 @@
 - **Weight / over-engineering.** gsd is heavy by default — the over-application risk the reasoning research flagged. It has `gsd-fast`/`gsd-quick` escape hatches (knows the dial) but defaults heavy.
 
 ## Where they're AHEAD of us
-- **gsd memory** (confirms the blind-spot): `gsd-graphify` = a real knowledge graph (`.planning/graphs/`) with confidence-tiered edges (EXTRACTED/INFERRED/AMBIGUOUS) + a `query` interface; plus `gsd-thread` (persistent context), pause/resume (handoff), `extract-learnings`. Token-level corpus + relationship graph + navigability + handoff — much of what our memory research said is needed, **built**. Study before E9/E12/E13.
+- **gsd memory** (confirms the blind-spot): `gsd-graphify` = a real knowledge graph (`.planning/graphs/`) with confidence-tiered edges (EXTRACTED/INFERRED/AMBIGUOUS) + a `query` interface; plus `gsd-thread` (persistent context), pause/resume (handoff), `extract-learnings`. Token-level corpus + relationship graph + navigability + handoff — much of what our memory research said is needed, **built**. Study before E10/E14/E15.
 - **gsd eval** — see deep-dive below. The keystone (verification), built.
 - **gsd determinism-in-code** — `gsd-sdk`/`gsd-tools.cjs`: the right home for deterministic logic.
 - **superpowers craft** — lightweight reasoning-leveraging discipline (our durability winner) + eval-tuned, rationalization-resistant skill content.

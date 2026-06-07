@@ -25,9 +25,9 @@
 | **Prompting** | declarative/guardrail vs imperative; evaluate sk-agent-prompts.md | thesis **vindicated**, surface form **refined** (positive guardrails > prohibitions); surprise: **reasoning degrades constraint-following**; wording-tuning being absorbed, constraint-design durable | [`prompting/REPORT.md`](./prompting/REPORT.md) (+ `FRAMING.md`) | high |
 | **Agentic loops** | when an outer loop beats a single agentic invocation; gates; design-as-workflow | **outer loop = context/independence/scale device, not reasoning**; the gate must be *independent + sound* (self-verification is net-negative); **gen-verification gap WIDENS with scale** (durability tailwind); compiled workflows **overfit** → keep the OBJECT dynamic; iteration is **non-monotonic** → cap it; **sizing-detection is the binding weak spot** | [`agentic-loops/REPORT.md`](./agentic-loops/REPORT.md) (+ `FRAMING.md`) | high (spot-checked) |
 
-**Execution tracker → [`../EPIC.md`](../EPIC.md)** — the work breakdown (Tier 1/2/3 as items E1–E15 + the role-grouped toolchain audit), each item a future planning session. Rationale behind the tiers → **[`ACTION-PLAN.md`](./ACTION-PLAN.md)** (consolidated across all six research areas; supersedes the A/B/C-only action-map in `SYNTHESIS.md`).
+**Execution tracker → [`../EPIC.md`](../EPIC.md)** — the work breakdown (Tier 1/2/3 as items E1–E13 + the role-grouped toolchain audit), each item a future planning session. Rationale behind the tiers → **[`ACTION-PLAN.md`](./ACTION-PLAN.md)** (consolidated across all six research areas; supersedes the A/B/C-only action-map in `SYNTHESIS.md`).
 
-**Prior art → [`prior-art.md`](./prior-art.md)** — superpowers & gsd vs our findings. Convergent evolution validates the research; **gsd is ahead on memory + eval** (our two blind spots) — study before building E9/E12/E13/E15. Shared industry-wide gap: cross-family verification.
+**Prior art → [`prior-art.md`](./prior-art.md)** — superpowers & gsd vs our findings. Convergent evolution validates the research; **gsd is ahead on memory + eval** (our two blind spots) — study before building E10/E14/E15/E13. Shared industry-wide gap: cross-family verification.
 
 **Design principles → [`../DESIGN-PRINCIPLES.md`](../DESIGN-PRINCIPLES.md)** — the durable decision-rule doctrine (proceduralize-meta/liberate-object; structure≠rigidity; build-the-harness/rent-the-wording; **context-management-as-architecture-driver**; etc.).
 
@@ -51,7 +51,7 @@ Each: *why it matters · status.*
 
 **Emerging requirement:** operator-dial tooling — let a human set knobs (research depth, autonomy, risk, budget) *before* the AI tackles a task. [`../backlog/operator-dial-tooling.md`](../backlog/operator-dial-tooling.md).
 
-**Platform landscape (2026-06-07, notes — not a decision):** Claude Code now ships the loop/orchestration primitives the north star described (`/goal`, `/loop`, dynamic Workflows, `/effort ultracode`, agent-view, hooks). Observations + candidate per-item implications (E10/E11/E15) recorded in [`platform-landscape.md`](./platform-landscape.md) as inputs for the implementation discussions — *not* a committed reframe; they may shift. (Note: several primitives are research-preview; spot-check before treating versions as load-bearing.)
+**Platform landscape (2026-06-07, notes — not a decision):** Claude Code now ships the loop/orchestration primitives the north star described (`/goal`, `/loop`, dynamic Workflows, `/effort ultracode`, agent-view, hooks). Observations + candidate per-item implications (E11/E12/E13) recorded in [`platform-landscape.md`](./platform-landscape.md) as inputs for the implementation discussions — *not* a committed reframe; they may shift. (Note: several primitives are research-preview; spot-check before treating versions as load-bearing.)
 
 **Surfaced by the research so far:**
 - **Track E — does "single-agent wins" hold on the REAL domain?** C's result is text-only multi-hop reasoning; the harness targets tool-heavy, long-horizon work. "Default to single agent" is a *prior*, not a law for us. · **open — candidate research track.**
