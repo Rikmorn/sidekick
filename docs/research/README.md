@@ -24,7 +24,11 @@
 | **Reasoning & Capability** | why AI doesn't default to the meta-process; the dial | **calibration + initiative problem, not a reasoning deficit**; defaulting gap is RLHF-amplified (structural); the dial is **bidirectional** (overthinking flips correct→wrong); operator-dial has precedent (bounded adaptive thinking) | [`reasoning-capability/REPORT.md`](./reasoning-capability/REPORT.md) (+ `FRAMING.md`) | high |
 | **Prompting** | declarative/guardrail vs imperative; evaluate sk-agent-prompts.md | thesis **vindicated**, surface form **refined** (positive guardrails > prohibitions); surprise: **reasoning degrades constraint-following**; wording-tuning being absorbed, constraint-design durable | [`prompting/REPORT.md`](./prompting/REPORT.md) (+ `FRAMING.md`) | high |
 
-**What to change → [`ACTION-PLAN.md`](./ACTION-PLAN.md)** — the consolidated, revisited tiers across ALL six research areas (supersedes the A/B/C-only action-map in `SYNTHESIS.md`). Tier 1 = apply sk-agent-prompts edits + rules + small builds; Tier 2 = navigability layer / operator-dial / cross-family quorum; Tier 3 = episodic memory, substrate, MAS thresholds.
+**Execution tracker → [`../EPIC.md`](../EPIC.md)** — the work breakdown (Tier 1/2/3 as items E1–E15 + the role-grouped toolchain audit), each item a future planning session. Rationale behind the tiers → **[`ACTION-PLAN.md`](./ACTION-PLAN.md)** (consolidated across all six research areas; supersedes the A/B/C-only action-map in `SYNTHESIS.md`).
+
+**Prior art → [`prior-art.md`](./prior-art.md)** — superpowers & gsd vs our findings. Convergent evolution validates the research; **gsd is ahead on memory + eval** (our two blind spots) — study before building E9/E12/E13/E15. Shared industry-wide gap: cross-family verification.
+
+**Design principles → [`../DESIGN-PRINCIPLES.md`](../DESIGN-PRINCIPLES.md)** — the durable decision-rule doctrine (proceduralize-meta/liberate-object; structure≠rigidity; build-the-harness/rent-the-wording; **context-management-as-architecture-driver**; etc.). Tier 1 = apply sk-agent-prompts edits + rules + small builds; Tier 2 = navigability layer / operator-dial / cross-family quorum; Tier 3 = episodic memory, substrate, MAS thresholds.
 
 ---
 
