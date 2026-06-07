@@ -34,5 +34,25 @@ The working hypothesis is that, with the loop substrate now in the platform, mor
 
 The `Workflow` runtime independently encodes several sidekick findings: **plan-in-script-variables-not-context** (≈ orchestrator-owns-writes + context isolation), **worktree isolation for parallel writers** (≈ the no-parallel-writers concern), and a hard **concurrency cap**. Another convergent-evolution data point alongside superpowers/gsd ([`prior-art.md`](./prior-art.md)) — the orchestration substrate arrived at the same principles the research did.
 
+## Candidate direction (not a decision): design emits a workflow, not a plan
+
+**Surfaced 2026-06-07 in discussion.** A candidate reframe of the design phase: its deliverable could be an **executable workflow with concrete gates**, rather than a declarative PLAN.md that `sk-build` later re-interprets. Recorded as an input for the E10 / E15 (and design/build phase) planning sessions — **not** committed.
+
+**The pull (why it's attractive):**
+- **Forces the gate forward into design.** A workflow won't *run* with a hand-waved exit condition — the runtime needs a real schema / `agent()` boundary / exit gate. Making the deliverable executable turns design into the place where fuzzy goals get decomposed into checkable leaf-gates (a forcing function). Tackles the gate-is-the-hard-part bottleneck head-on.
+- **Kills plan→execution drift by construction** — the plan *is* what runs; fewer lossy handoffs (the context-management tax).
+- **Offloads orchestration to the platform runtime.** Most of `sk-build`'s hand-coded machinery (waves, fresh gates, parallel verify, resume) is what the Workflow runtime already provides → potentially deletes a large bespoke orchestrator and refocuses sidekick's value on the two things the runtime does *not* give: generating a good workflow (design) + the gates inside it (eval). Concrete answer to this doc's open "what do our rules add on top of the runtime?" — not the orchestration; the design that emits it and the gates that close it.
+- **Unifies with ADR-0001** — the "thin, dial-able oversight skeleton + behavioural insides" becomes *executable* instead of a markdown lifecycle. Same direction, sharper form.
+
+**The trap (the guardrail that decides brilliant-vs-regression):** the workflow may proceduralize the **META** (gates, fan-out structure, what each agent sees, verification, escalation points) but must NOT proceduralize the **OBJECT** (how to actually do the work — that stays a high-level `agent("...")` call). A workflow that encodes the *logic of the work* in code is gsd's rigidity re-expressed in TypeScript = the durability filter's absorbed-by-next-model category. Tell of a healthy one: mostly `agent()` calls wired by gates + control flow; the moment the script knows *how* rather than *what-and-whether*, it has drifted.
+
+**Two costs (eyes open):**
+1. **Background workflows can't interactively route a deviation.** A detached workflow returns one result; it can't `AskUserQuestion` mid-run the way `sk-build` (a main-session slash command) routes amend/redesign/skip. On genuine novelty the design didn't foresee, its only honest move is **halt-and-return-state** (escalate at the divergence gate). The artifact doesn't eliminate the human — it relocates them to the divergence gates; for uncertain work those fire often. *(Runtime-model claim — verify against the Workflow tool's actual mid-run interaction support before relying on it.)*
+2. **Large-task output only** — emitting a workflow for a small task is over-engineering; the dial (E10) chooses (small → prose plan or just-do-it; large/long-horizon → executable workflow).
+
+**Suggested split:** keep RFC.md (the *why* + goals) as prose — it defines the gates and is the human-legible audit contract — and make *the plan* the executable workflow whose gates ARE the RFC's goals. Goal-backward verification (`sk-goal-verifier`) then becomes the workflow's exit condition rather than a separate post-hoc gate.
+
+**KEY OPEN TENSION (flagged by the operator): balancing large vs small.** The whole value is threshold-gated — workflow-as-artifact pays only past the context/independence/scale threshold, and is pure ceremony below it. Where that line sits, how the dial *detects* it (vs. relying on the model's over-confident self-assessment — Track B), and whether one design phase can emit *either* a prose plan *or* a workflow depending on size — open, to work through when E10 (operator-dial) and the design/build phases are planned. Ties to ADR-0001's task-size assumption (if most real tasks are small → the workflow-artifact is rarely the right output).
+
 ## Links
 [`README.md`](./README.md) (problem-space map) · [`../EPIC.md`](../EPIC.md) (E10/E11/E15 weigh these) · [`prior-art.md`](./prior-art.md) · [`../adr/0001-harness-shape.md`](../adr/0001-harness-shape.md) (the platform shift *strengthens* 0001's direction — the lifecycle skeleton's remaining justification leans more on oversight-legibility than mechanism; relevant when 0001 is revisited, not a change to it).

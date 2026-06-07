@@ -23,6 +23,7 @@
 | **Memory (first-principles)** | what is memory, from requirements | **episodic is the gap**; observability = property of *form* (token-level + a navigability layer); agent memory is unsolved/failing; **no tool pick** | [`memory/REPORT.md`](./memory/REPORT.md) | high |
 | **Reasoning & Capability** | why AI doesn't default to the meta-process; the dial | **calibration + initiative problem, not a reasoning deficit**; defaulting gap is RLHF-amplified (structural); the dial is **bidirectional** (overthinking flips correct→wrong); operator-dial has precedent (bounded adaptive thinking) | [`reasoning-capability/REPORT.md`](./reasoning-capability/REPORT.md) (+ `FRAMING.md`) | high |
 | **Prompting** | declarative/guardrail vs imperative; evaluate sk-agent-prompts.md | thesis **vindicated**, surface form **refined** (positive guardrails > prohibitions); surprise: **reasoning degrades constraint-following**; wording-tuning being absorbed, constraint-design durable | [`prompting/REPORT.md`](./prompting/REPORT.md) (+ `FRAMING.md`) | high |
+| **Agentic loops** | when an outer loop beats a single agentic invocation; gates; design-as-workflow | **outer loop = context/independence/scale device, not reasoning**; the gate must be *independent + sound* (self-verification is net-negative); **gen-verification gap WIDENS with scale** (durability tailwind); compiled workflows **overfit** → keep the OBJECT dynamic; iteration is **non-monotonic** → cap it; **sizing-detection is the binding weak spot** | [`agentic-loops/REPORT.md`](./agentic-loops/REPORT.md) (+ `FRAMING.md`) | high (spot-checked) |
 
 **Execution tracker → [`../EPIC.md`](../EPIC.md)** — the work breakdown (Tier 1/2/3 as items E1–E15 + the role-grouped toolchain audit), each item a future planning session. Rationale behind the tiers → **[`ACTION-PLAN.md`](./ACTION-PLAN.md)** (consolidated across all six research areas; supersedes the A/B/C-only action-map in `SYNTHESIS.md`).
 
@@ -38,7 +39,13 @@
 
 Each: *why it matters · status.*
 
-**No active research run.** (Both operator-opened threads — Reasoning & Capability, Prompting — are complete; see table.)
+**No active research run.** (Operator-opened threads — Reasoning & Capability, Prompting, and **Agentic loops** — are complete; see table.)
+
+**Top new tracks surfaced by the Agentic-loops research (highest value first):**
+- **Externalize the sizing/routing signal** — self-reported confidence is broken (agents predict ~73% success vs ~35% true), yet the whole "when to loop / how big a leaf" decision rides on it. Pick empirically among: conformal-over-N (KnowNo), a separate monitor agent, trace-length/variance proxies, escalate-to-human. *The single highest-value follow-up.*
+- **The fuzzy-goal gate gap** — every positive flow-engineering result presupposes a crisp executable oracle (tests). Is there *any* sound gate short of a human for "make this codebase better," or does decompose-to-crisp-leaves always bottom out in "ask the human" for taste/integration judgments?
+- **Instrument sidekick's own gates for absorption/inversion** — scaffolds flip net-positive→net-negative *silently* across one model generation (the "Prompting Inversion": a GPT-4o win becomes a GPT-5 tax). Detect when a structural element crosses zero rather than assuming durability.
+- **Outer-retry-budget vs correctness** — all the non-monotonic data is *inner* thinking-tokens; no clean study of *outer* retry budget exists. What's the optimal outer iteration cap per task-type?
 
 **Ready to apply:** [`../backlog/sk-agent-prompts-revisions.md`](../backlog/sk-agent-prompts-revisions.md) — surgical edits to `.claude/rules/sk-agent-prompts.md` from the prompting research (positive guardrails, ">10" as a smell, few-shot model-dependence, "reasoning is not a constraint-guarantee", directive priority).
 
