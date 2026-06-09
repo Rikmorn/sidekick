@@ -1,6 +1,6 @@
-# Backlog: sk-agent-prompts.md revisions (from the prompting research)
+# sk-agent-prompts.md revisions — shipped spec (E1)
 
-**Status:** Ready to apply (2026-06-07). Source: `docs/research/prompting/REPORT.md` (rule-by-rule table). These are **surgical edits, not a rewrite** — the doc's philosophy is vindicated.
+**Status:** Shipped — applied in E1 (2026-06-09, commits `3c5a340` + `d972545`). Promoted here from `docs/backlog/` as the provenance record for the change. The sk-* prompt itself is kept citation-free (it's machine context), so the sources below live here, not in the rule. Source: `docs/research/prompting/REPORT.md` (rule-by-rule table). These were **surgical edits, not a rewrite** — the doc's philosophy is vindicated.
 
 ## Edits
 1. **R2 — flip guardrails to POSITIVE framing (TOP PRIORITY).** Keep "constrain, don't proceduralize," but change the *form*: write guardrails as positive affordances/boundaries ("do X" / "stay within Y") rather than prohibitions ("don't do X"). Reserve explicit prohibitions for a small, non-negotiable **safety tier**. Why: negation is followed less reliably even on commercial models (2601.21433); Anthropic's own best-practices agree.

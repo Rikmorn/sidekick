@@ -74,7 +74,7 @@
 
 ## Action map (three buckets)
 
-**IN-REPO** (edits to `sk-agent-prompts.md` — see `../../backlog/sk-agent-prompts-revisions.md`):
+**IN-REPO** (edits to `sk-agent-prompts.md` — see `../../references/sk-agent-prompts-revisions.md`, shipped in E1):
 - Refine R2 to positive-framing (top priority); reframe R4's number as a smell; mark R3 few-shot as model-dependent; add the "reasoning-is-not-a-constraint-guarantee" rule; add a model-dependence note; add a directive-priority/tier pattern.
 
 **HARNESS/CONFIG:**

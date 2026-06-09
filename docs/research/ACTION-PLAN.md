@@ -12,7 +12,7 @@
 ## Tier 1 — do now (cheap, durable, no new dependency)
 
 ### 1a. Pure docs/rules edits (hours, no code — highest leverage per effort)
-1. **Apply the `sk-agent-prompts.md` revisions** → `../backlog/sk-agent-prompts-revisions.md`: positive guardrails (top), ">10" as a *smell*, few-shot model-dependent, add "reasoning ≠ constraint-guarantee", model-dependence note, directive-priority tiers. *(Prompting)*
+1. ✅ **Apply the `sk-agent-prompts.md` revisions** → `../references/sk-agent-prompts-revisions.md` (shipped in E1): positive guardrails (top), ">10" as a *smell*, few-shot model-dependent, add "reasoning ≠ constraint-guarantee", model-dependence note, directive-priority tiers. *(Prompting)*
 2. **Make "no parallel writers / default single-agent, justify fan-out" an explicit rule.** *(C)*
 3. **Codify the research-first framing pass as a rule** — always-on *cheap* framing pass that sets a difficulty tier; **symmetric guard**: justify *adding* depth as well as skipping it; prefer parallel-sample-and-select over ever-longer sequential chains. *(Reasoning F4/F5; revised from the original "default-heavy")*
 4. **Codify "orchestrator owns deliverable writes; subagents return data."** Proven necessary 6× this session (flaky subagent file-writes). *(Meta + C)*

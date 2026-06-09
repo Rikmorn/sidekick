@@ -47,7 +47,7 @@ Each: *why it matters · status.*
 - **Instrument sidekick's own gates for absorption/inversion** — scaffolds flip net-positive→net-negative *silently* across one model generation (the "Prompting Inversion": a GPT-4o win becomes a GPT-5 tax). Detect when a structural element crosses zero rather than assuming durability.
 - **Outer-retry-budget vs correctness** — all the non-monotonic data is *inner* thinking-tokens; no clean study of *outer* retry budget exists. What's the optimal outer iteration cap per task-type?
 
-**Ready to apply:** [`../backlog/sk-agent-prompts-revisions.md`](../backlog/sk-agent-prompts-revisions.md) — surgical edits to `.claude/rules/sk-agent-prompts.md` from the prompting research (positive guardrails, ">10" as a smell, few-shot model-dependence, "reasoning is not a constraint-guarantee", directive priority).
+**Shipped (E1):** [`../references/sk-agent-prompts-revisions.md`](../references/sk-agent-prompts-revisions.md) — surgical edits to `.claude/rules/sk-agent-prompts.md` from the prompting research (positive guardrails, ">10" as a smell, few-shot model-dependence, "reasoning is not a constraint-guarantee", directive priority).
 
 **Emerging requirement:** operator-dial tooling — let a human set knobs (research depth, autonomy, risk, budget) *before* the AI tackles a task. [`../backlog/operator-dial-tooling.md`](../backlog/operator-dial-tooling.md).
 
