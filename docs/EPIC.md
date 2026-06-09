@@ -1,6 +1,6 @@
 # EPIC — Apply the research learnings to the harness
 
-**Status:** Planning — nothing executed. **Each item below is its own future planning session.** Tiers = priority; **IDs now ascend with intended execution order** (renumbered 2026-06-07). **Sources** link the research that justifies each item; **Deps** note prerequisites.
+**Status:** In progress — **E1 done** (2026-06-09, commit `3c5a340`); the rest unstarted. **Each item below is its own future planning session.** Tiers = priority; **IDs now ascend with intended execution order** (renumbered 2026-06-07). **Sources** link the research that justifies each item; **Deps** note prerequisites.
 
 **Scope:** this epic changes the **shipped product** (`agents/`, `skills/`, `rules/`) and the **authoring discipline** (`.claude/rules/sk-agent-prompts.md`). The project-vs-product boundary is already documented in `AGENTS.md` ("Project vs usage") and `.claude/README.md`. Product changes are consumer-facing — treat with the same care as any shipped change (cover via `smokes/` fixtures).
 
@@ -18,7 +18,7 @@
 
 | ID | Item | Sources | Deps |
 |---|---|---|---|
-| **E1** | Apply the 6 surgical edits to `sk-agent-prompts.md` (positive guardrails; ">10" as a smell; few-shot model-dependent; "reasoning ≠ constraint-guarantee"; model-dependence; directive-priority) **+ reinforce R5 (no-self-validation) with hard evidence: self-verification is net-NEGATIVE and the gate must be a *different* invocation than the worker** | `backlog/sk-agent-prompts-revisions.md`, `research/prompting/REPORT.md`, `research/agentic-loops/REPORT.md` (R5/Angle-1) | — |
+| **E1** ✅ | Apply the 6 surgical edits to `sk-agent-prompts.md` (positive guardrails; ">10" as a smell; few-shot model-dependent; "reasoning ≠ constraint-guarantee"; model-dependence; directive-priority) **+ reinforce R5 (no-self-validation) with hard evidence: self-verification is net-NEGATIVE and the gate must be a *different* invocation than the worker** | `backlog/sk-agent-prompts-revisions.md`, `research/prompting/REPORT.md`, `research/agentic-loops/REPORT.md` (R5/Angle-1) | — |
 | **E2** | **Platform-primitives scoping decision** — given CC now ships `/goal` / `/loop` / dynamic Workflows / hooks / agent-view: decide what to **offload** (sk-build's wave/gate/resume orchestration → the Workflow runtime?) vs **keep** hand-rolled, and what sidekick adds on top. **Gates E4/E5/E13/E17/E18.** | `research/platform-landscape.md`, `research/agentic-loops/REPORT.md`, `research/orchestration/REPORT.md` | — |
 | **E3** | **Audit the shipped toolchain** against the revised discipline (by role — see below) | per-group below + `research/agentic-loops/REPORT.md` | E1 |
 | **E4** | Codify **"orchestrator owns deliverable writes; subagents return data"** (proven 6×) — *the Workflow runtime already provides this (plan-in-script-vars); scope = what we add on top* | `research/SYNTHESIS.md`, `research/orchestration/REPORT.md`, `research/platform-landscape.md` | E2 |
