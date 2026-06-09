@@ -28,7 +28,7 @@ The first gives purpose. The second gives a procedure that breaks on any input t
 
 ## Rule 2: Constitutional Constraints
 
-Define the boundary the agent works *within*, and leave the space inside it open for reasoning. Prefer positive affordances — "do X", "stay within Y" — over prohibitions, and reserve explicit "never" for a small, non-negotiable safety tier. Negation is followed less reliably than affirmative instruction, even on frontier commercial models (2601.21433), and Anthropic's own best-practices agree — so state the boundary as what to do, and keep "never" for the cases where the prohibition is the whole point.
+Define the boundary the agent works *within*, and leave the space inside it open for reasoning. Prefer positive affordances — "do X", "stay within Y" — over prohibitions, and reserve explicit "never" for a small, non-negotiable safety tier. Negation is followed less reliably than affirmative instruction, even on capable models — so state the boundary as what to do, and keep "never" for the cases where the prohibition is the whole point.
 
 **Do:**
 
@@ -112,17 +112,17 @@ Every MUST, ALWAYS, NEVER, IMPORTANT, CRITICAL, "binding", "unconditional", "for
 
 **The test:** if you can imagine a reasonable scenario where the agent should violate the directive, it shouldn't be a strong directive. If the directive would never be wrong in any context, it's a valid constraint.
 
-**Density is a smell, not a threshold.** A pile-up of strong directives — say, past ~10 in an orchestrator or ~5 in a worker — is a signal to stop and redesign: you are encoding a workflow, not guiding judgment. Treat the number as a smell, not a hard ceiling. There is no empirical cutoff, and the stronger claim that models reliably follow only 2-3 constraints is refuted — so don't slash counts to hit a magic number. The real failure mode is *simultaneous* satisfaction: per-instruction competence stays high (~0.85–0.90), but the odds of honouring every directive *at once* collapse as the count rises (ManyIFEval). Minimize the constraints that must hold at the same time, not the raw tally.
+**Density is a smell, not a threshold.** A pile-up of strong directives — say, past ~10 in an orchestrator or ~5 in a worker — is a signal to stop and redesign: you are encoding a workflow, not guiding judgment. Treat the number as a smell, not a hard ceiling — and don't slash counts to hit a magic number either. The real failure mode is *simultaneous* satisfaction: a model honours each directive in isolation far more reliably than it honours all of them at once, and the joint odds collapse as the count rises. Minimize the constraints that must hold at the same time, not the raw tally.
 
-**Rank, don't flatten.** When constraints can conflict, give them a priority order instead of a flat list — borrow the OpenAI Model Spec's chain-of-command: *safety > correctness > style*. Ranking resolves conflicts by precedence ("when these collide, safety wins"), which is exactly what the agent needs the moment two rules disagree; a flat enumeration forces it to guess. This is the direct antidote to the simultaneous-satisfaction trap above — it turns "satisfy all N at once" into "satisfy the highest-priority one that applies".
+**Rank, don't flatten.** When constraints can conflict, give them a priority order instead of a flat list — a chain of command: *safety > correctness > style*. Ranking resolves conflicts by precedence ("when these collide, safety wins"), which is exactly what the agent needs the moment two rules disagree; a flat enumeration forces it to guess. This is the direct antidote to the simultaneous-satisfaction trap above — it turns "satisfy all N at once" into "satisfy the highest-priority one that applies".
 
 ## Rule 5: Verifiers Are Dimensional, Not Artifact-Bound
 
 A reviewer checks one quality dimension — structural validity, cross-reference integrity, spec adherence, anti-pattern smell, goal coverage, etc. The same reviewer can apply across multiple artifact types if its dimension applies.
 
-**Producers and verifiers are distinct invocations — an evidenced invariant, not a style preference.** An agent that drafts an artifact does not also review it; a separate invocation does. The evidence runs one way and is strong: self-verification is *net-negative* — a model asked to critique its own output tends to suffer significant performance collapse, while a *sound external verifier* recovers the gains (Stechly / Valmeekam / Kambhampati). And the lever grows with capability — the generation-verification gap *widens* with model scale (Song, "Mind the Gap"), so this matters *more* as models improve, not less. Two consequences for wiring the gate:
+**Producers and verifiers are distinct invocations — a hard invariant, not a style preference.** An agent that drafts an artifact does not also review it; a separate invocation does. The evidence runs one way and is strong: self-verification is *net-negative* — a model critiquing its own output tends to degrade, while a sound external verifier recovers the gains. And the lever grows with capability — the generation-verification gap *widens* as models scale, so this matters *more* as models improve, not less. Two consequences for wiring the gate:
 - **Different invocation.** The verifier is a separate invocation from the producer — not the same agent reflecting in a later turn.
-- **Seal it from the producer's context.** Give the verifier the artifact and the spec, not the producer's reasoning or rationalisations. Reward-hacking scales with capability *and* with visibility into the gate (METR); the less of the producer's context leaks into the check, the harder it is to game.
+- **Seal it from the producer's context.** Give the verifier the artifact and the spec, not the producer's reasoning or rationalisations. Reward-hacking scales with capability *and* with visibility into the gate; the less of the producer's context leaks into the check, the harder it is to game.
 
 **Quorum pattern.** When more than one dimension matters, dispatch several dimensional reviewers in parallel against the same artifact and combine their verdicts. Any failing → re-dispatch the producer with the combined feedback.
 
@@ -154,7 +154,7 @@ Orchestrator contexts (slash commands or main-session orchestration that dispatc
 
 The purpose is debuggability, not ceremony. If the reasoning would just be "I'm reading this file because I need to understand the code," skip it.
 
-**Reasoning is not a constraint-guarantee.** Externalised reasoning improves *decisions*; it does not guarantee the agent honours its own *constraints*. Chain-of-thought can actually make a model neglect constraints it would otherwise have respected (2505.11423). The corollary cuts against over-trusting the trace: the more a decision rides on the agent reasoning its way to the right action, the more you must audit guardrail adherence *externally* at high stakes — with a separate verifier (Rule 5), not by trusting the reasoning to have enforced them.
+**Reasoning is not a constraint-guarantee.** Externalised reasoning improves *decisions*; it does not guarantee the agent honours its own *constraints*. Chain-of-thought can actually make a model neglect constraints it would otherwise have respected. The corollary cuts against over-trusting the trace: the more a decision rides on the agent reasoning its way to the right action, the more you must audit guardrail adherence *externally* at high stakes — with a separate verifier (Rule 5), not by trusting the reasoning to have enforced them.
 
 ## Rule 7: Structured Output at Boundaries Only
 
