@@ -62,7 +62,11 @@ Headlines: Workflows **stable** since May 2026 (landscape doc outdated); **no mi
 - **E21 wishlist** — everything you wished had been auto-recorded becomes the instrumentation schema.
 - **Absorption practice** — first datapoint for the per-upgrade scaffold check the durability filter demands.
 
-**The E20 recursion (the suggested pilot ticket, with its caveat).** E20 (tier-0 hooks base) is next in sequencing anyway and is genuinely medium-complexity with real research questions (which hook events, what deny rules are never-wrong, Stop-hook tree-scan mechanics). Designing it *through* the new seam means the pilot produces E20's RFC/PLAN as a side effect — the harness's loop applied to building the harness (the mission's positive recursive loop). **Caveat to decide at the time:** running `/sk-design` for E20 inside the sidekick repo creates a `.sidekick/plans/` tree *here*, crossing the documented project-vs-usage boundary (README says this repo carries no consumer tree; the .gitignore note anticipates it's possible). Options: (a) accept the boundary crossing deliberately for dogfooding — decide whether `.sidekick/plans/` here gets committed; (b) keep the boundary and pilot on a ticket in any other real project instead, designing E20 by ordinary session later. Either is fine; (b) is the conservative default if undecided.
+**The E20 recursion — DECIDED (operator, 2026-06-10), both halves:**
+1. **Pilot = a separate medium ticket in a separate project** (neutral ground), run when E19 tasks 1–6 are done. Fill the findings table.
+2. **Then E20 dogfoods**: designed via `/sk-design` *in this repo* (boundary crossing accepted — operator wants to dogfood), then `/sk-build`, `/sk-review`. The sidekick lifecycle replaces superpowers brainstorming/writing-plans/executing-plans for harness work from E20 on; superpowers stays as ambient discipline (TDD, debugging). When `sidekick init` runs here: update README's "this repo never carries a `.sidekick/` tree" line, and commit `.sidekick/plans/` like any consumer repo.
+
+**Failure semantics (so nobody re-litigates):** pilot failing ≠ rework — baseline stays the agents backend, findings recorded, ADR-0002 revisit triggers own the retry (adopt-where-strictly-better). E20 build failing mid-flight uses sk-build's own routing — `redesign` loops back to `/sk-design` (R-NN tasks), re-run `/sk-build` to resume. Toolchain fumbles while dogfooding are product feedback: fix the skill/agent, rebuild+reinstall, re-run (smokes/README iteration loop).
 
 ## Next steps
 
