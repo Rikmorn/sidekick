@@ -1,6 +1,6 @@
 # ADR-0002 — Platform primitives: own the loop, rent the fan-out
 
-**Status:** Proposed (2026-06-10) — pending operator review; flip to Accepted on approval. Resolves **EPIC E2**; unblocks E4/E5/E13/E17/E18.
+**Status:** Accepted (2026-06-10). Resolves **EPIC E2**; unblocks E4/E5/E13/E17/E18; spawns E19–E22.
 
 ## Context
 
