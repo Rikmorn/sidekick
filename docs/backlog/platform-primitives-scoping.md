@@ -45,6 +45,25 @@ Headlines: Workflows **stable** since May 2026 (landscape doc outdated); **no mi
 - **Document-the-limits posture** (operator): where a limit can't be engineered away (sealing, disabled Workflows, judge fallibility), *documenting the limit + operator guidance is itself a deliverable* — consumers make informed decisions or follow the minimisation guidance. "If 'read the output' is all we have, any invested operator should follow it — human-level guidance." This makes operator guidance a first-class output class of the harness, alongside gates.
 - **The loop applies to the harness itself**: enforcement generation, gate calibration (E13), prompt meta-optimization (GEPA), memory reconciliation (E16), absorption instrumentation — all legitimate meta-applications, each gated by the bidirectional over-engineering dial (E6; reasoning F4/F5). Threshold-gate every meta-application (e.g. small projects don't get a generated security agent).
 
+## Pilot briefing (E19 Task 7) — read this when picking the work back up
+
+**What the pilot is.** E19's plan (`docs/superpowers/plans/2026-06-10-e19-fanout-seam.md` — untracked, local-only; regenerate from ADR-0002 §2–§4 if missing) builds the fan-out seam: research dispatch in `/sk-design` goes through a configured backend (`auto|workflow|agents`) with budget tiers (`quick|standard|deep`, default `standard`). Tasks 1–6 are hands-off buildable. Task 7 — the pilot — is the part that needs the operator: one real design ticket run through the new seam, twice, with findings recorded. It is ADR-0002's fidelity/absorption experiment, not a demo.
+
+**Sequence when resuming:**
+1. Fresh session → execute the E19 plan (tasks 1–6) via superpowers:executing-plans or subagent-driven-development. Then rebuild + reinstall the harness (`pnpm build && node dist/cli.js install`).
+2. Pick a real medium-complexity ticket (see "the E20 recursion" below for the candidate and its caveat).
+3. **Run 1:** `/sk-design <slug> --research` with config `fanout: { backend: "auto", budget: "standard" }`. Note which backend `auto` resolved to (the RESEARCH.md header will say). If it used the workflow backend, open `/workflows` and note agent count + token total.
+4. **Run 2:** same question with `--budget quick` (fresh slug/copy) — the quick-vs-standard cost/quality delta is the single most useful calibration datapoint.
+5. Fill the `## Pilot findings (E19)` table (template in the plan, appended here when done): backend resolved, budget, researcher count, tokens, wall-clock, outcome-quality note; plus prose observations — workflow-vs-agents output fidelity, seam friction, fallback behaviour if it triggered, whether `standard` depth felt sufficient.
+
+**What the data decides (why bother recording):**
+- **E17** — whether the budget-tier defaults are right; the empirical fan-out value bar.
+- **ADR-0002 revisit triggers** — is the workflow backend worth keeping (fidelity vs agents at its token cost)?
+- **E21 wishlist** — everything you wished had been auto-recorded becomes the instrumentation schema.
+- **Absorption practice** — first datapoint for the per-upgrade scaffold check the durability filter demands.
+
+**The E20 recursion (the suggested pilot ticket, with its caveat).** E20 (tier-0 hooks base) is next in sequencing anyway and is genuinely medium-complexity with real research questions (which hook events, what deny rules are never-wrong, Stop-hook tree-scan mechanics). Designing it *through* the new seam means the pilot produces E20's RFC/PLAN as a side effect — the harness's loop applied to building the harness (the mission's positive recursive loop). **Caveat to decide at the time:** running `/sk-design` for E20 inside the sidekick repo creates a `.sidekick/plans/` tree *here*, crossing the documented project-vs-usage boundary (README says this repo carries no consumer tree; the .gitignore note anticipates it's possible). Options: (a) accept the boundary crossing deliberately for dogfooding — decide whether `.sidekick/plans/` here gets committed; (b) keep the boundary and pilot on a ticket in any other real project instead, designing E20 by ordinary session later. Either is fine; (b) is the conservative default if undecided.
+
 ## Next steps
 
 1. ✅ Research runs returned (2026-06-10) → `platform-coupling/{REPORT,sources}.md` + `enforcement-surface/{REPORT,sources}.md` written; load-bearing CC-docs quotes re-verified first-hand (workflows page + hooks-guide page).
