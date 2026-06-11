@@ -280,11 +280,74 @@ Expected:
 - `sk-architecture-reviewer` reads the RFC's architecture contract and checks the diff. If `src/qux.ts` was implemented to import directly from `src/foo.ts`, the reviewer surfaces a finding. If the executor respected the layering, the reviewer reports clean.
 - Confirm `.sidekick/cache/reviews/wave-build/` trail was written and is gitignored.
 
+## E19 setup (fan-out seam smoke)
+
+Smoke 10 exercises the research path of `/sk-design` — deferred from the earlier smoke pass because it requires E19's fan-out seam — through both backends. Use the base Setup above with the `minimal-repo` fixture. Parts B–C add a `fanout` key to the fixture's `.sidekick/config.json` (the base fixture does not include one).
+
+### Smoke 10: /sk-design research path via the seam
+
+#### Part A — probe
+
+```
+npx sidekick capabilities
+```
+
+Expected: JSON report with a `workflows.available` field set to one of `"likely"`, `false`, or `"unknown"`. Note the value — it determines which backend Part B's `auto` resolves to, and whether Part C is applicable.
+
+#### Part B — agents backend (the baseline; works everywhere)
+
+Set `.sidekick/config.json` → `"fanout": { "backend": "agents", "budget": "standard" }`, then:
+
+```
+/sk-design caching-layer-for-add --research
+```
+
+Expected:
+- `sk-explorer` Q&A; `--research` forces the research path regardless of complexity.
+- Researchers dispatched as parallel `Agent` calls, one per research hint.
+- `sk-research-synthesiser` merges; RFC.md / PLAN.md / RESEARCH.md land under `.sidekick/plans/caching-layer-for-add/`.
+- RESEARCH.md header carries `fanout: backend=agents, budget=standard`.
+
+#### Part C — workflow backend (only where Part A said `likely`)
+
+Part B writes artifacts under `.sidekick/plans/caching-layer-for-add/`; a re-run on the same slug would collide with those files. Start from a clean fixture copy:
+
+```bash
+TMP_C=$(mktemp -d)
+cp -R "$AL/smokes/fixtures/minimal-repo/." "$TMP_C/"
+cd "$TMP_C"
+git init -q
+git add -A
+git commit -q -m "initial"
+```
+
+Set `.sidekick/config.json` → `"fanout": { "backend": "workflow", "budget": "standard" }` in `$TMP_C`, then from Claude Code in that directory:
+
+```
+/sk-design caching-layer-for-add --research
+```
+
+Expected:
+- The researcher fan-out launches as a single Workflow run (`/workflows` shows it; researchers appear as agents with `agentType: sk-researcher-*`).
+- Downstream artifacts identical in shape to Part B; RESEARCH.md header says `backend=workflow` and records the run's token total.
+
+**Adversarial sub-case:** verify the seam falls back gracefully when Workflows are disabled.
+
+1. Exit Claude Code.
+2. In the shell: `export CLAUDE_CODE_DISABLE_WORKFLOWS=1`
+3. Relaunch: `cd "$TMP_C" && claude`
+4. Re-run: `/sk-design caching-layer-for-add --research`
+
+Expected: the seam falls back to the agents backend with a note in reasoning prose, not a hard-stop.
+
+#### Part D — quick tier
+
+Re-run Part B with `--budget quick`. Expected: exactly ONE researcher dispatched (first hint); synthesiser still runs; artifacts land; RESEARCH.md says `budget=quick`.
+
 ## What's not covered by these smokes
 
 The smokes above exercise the happy path of each orchestrator plus one adversarial case (drift). The following M1 paths are NOT covered — they were deliberate deferrals, but listing them prevents future-you from assuming they were exercised:
 
-- Research path of `/sk-design` (medium/high complexity → research specialists dispatched).
 - Q1 deviation routing in `/sk-build` (`amend` / `redesign` / `skip` / `decide` / `pause` branches).
 - `group_created` path of `sk-explorer` (multi-plan fuzzy-text grouping).
 - Quorum disagreement in the design reviewer pair (structural pass + crossref fail, or vice versa) → re-dispatch with combined feedback.
