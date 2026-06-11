@@ -17,7 +17,7 @@ Install once into Claude Code, then use it in any repo — same as gsd or superp
 
 ### Install
 
-**Requires** [Bun](https://bun.com) to build, and Node.js (≥20) to run the installed CLI.
+**Requires** [Bun](https://bun.com) to build, and Node.js (≥20) to run the installed CLI. The workflow fan-out backend is **optional** — it additionally needs Claude Code ≥ 2.1.154 with dynamic workflows enabled. Run `sidekick capabilities` to check; everything else works without it.
 
 `sidekick` is a private, unpublished package, so you install it **from a clone**:
 
@@ -46,6 +46,21 @@ node dist/cli.js install   # or: bun bin/cli.ts install
 cd your-project
 sidekick init   # not on PATH? use ~/.claude/sidekick/bin/sidekick init
 ```
+
+### Check what your environment supports
+
+```bash
+sidekick capabilities
+```
+
+Prints a JSON report: your Claude Code version, whether dynamic workflows are available (`likely` / `false` / `unknown` — plan-level gating isn't detectable), and what disabled them, if anything. The `/sk-design` research fan-out uses this probe to pick its backend automatically; everything in sidekick works without workflows (it falls back to in-session agents). See [docs/LIMITS.md](./docs/LIMITS.md) for the full limits-and-hardening picture.
+
+`.sidekick/config.json` knobs for fan-out:
+
+| Field | Values | Default | Meaning |
+|---|---|---|---|
+| `fanout.backend` | `auto` / `workflow` / `agents` | `auto` | How research fan-out dispatches. `auto` probes and prefers workflows when likely available. |
+| `fanout.budget` | `quick` / `standard` / `deep` | `standard` | Fan-out width + verification depth. `deep` (adversarial cross-checking) is token-expensive and never used unless you opt in. |
 
 ### The workflow
 
