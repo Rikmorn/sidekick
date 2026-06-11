@@ -3,7 +3,7 @@ name: sk-design
 description: Research-driven design phase. From a topic or slug, dispatches sk-explorer (pre-flight) + conditional research subagents + sk-pattern-mapper + sk-architectural-advisor + sk-rfc-drafter + sk-plan-drafter; verifies each artifact via dimensional reviewers. Writes RFC.md / PLAN.md / RESEARCH.md under .sidekick/plans/<slug>/.
 user-invocable: true
 disable-model-invocation: true
-argument-hint: <topic-or-slug> [--research|--no-research]
+argument-hint: <topic-or-slug> [--research|--no-research] [--budget <quick|standard|deep>]
 allowed-tools: Read, Grep, Glob, Bash, Agent, WebFetch, WebSearch, Write
 ---
 
@@ -40,13 +40,14 @@ The reasoning is internal scratchwork shaping dispatches and writes; it does not
 
 <inputs>
 
-User invokes `/sk-design <topic-or-slug> [--research|--no-research]`.
+User invokes `/sk-design <topic-or-slug> [--research|--no-research] [--budget <quick|standard|deep>]`.
 
 | Arg | Required | Notes |
 |---|---|---|
 | `<topic-or-slug>` | yes | A clean slug like `add-keyboard-shortcuts`, a nested group slug like `multi-tenant/auth`, or freeform text like `"add cmd+k to the admin UI"`. `sk-explorer` classifies and routes. |
 | `--research` | no | Force the research path regardless of `sk-explorer`'s complexity classification. |
 | `--no-research` | no | Skip the research path regardless of `sk-explorer`'s complexity classification. |
+| `--budget` | no | Override the configured fan-out budget tier for this invocation (`quick` / `standard` / `deep`). Defaults to `.sidekick/config.json` `fanout.budget` (`standard` when absent). |
 
 The two research flags are mutually exclusive. If both are passed, treat as `--research` and note the conflict in reasoning prose; the model picks the safer default (more context never harms a design phase).
 
@@ -136,13 +137,15 @@ Combine the explorer's `complexity` with the flag overrides:
 
 When research is skipped, note it in reasoning prose so Step 5 (the synthesiser dispatch) is also skipped.
 
+The budget tier never changes WHETHER research runs — only how wide the fan-out is and how much verification it gets (see `<fanout_seam>`).
+
 ### Step 4 — Parallel dispatch: design context
 
 In a single message, dispatch the design-context specialists. Each is a separate Agent call so they run concurrently:
 
 - `subagent_type: sk-pattern-mapper` with `intent: <scope_statement>`, `files: [<best-guess paths from scope>]` tagged `(new)` or `(modify)`, `scope: ui|infra|mixed` (best-guess from the scope statement). The drafter refines later — a coarse guess at this stage is fine.
 - `subagent_type: sk-architectural-advisor` with `topic: <slug>`, `rfc_context: <scope_statement>`, `scope_hint: <ui|infra|mixed>`. If the advisor's structured-return block surfaces `Recommendation: error` with `Off-stack rejection: (none) — error: missing_architecture_context`, hard-stop with `error: missing_architecture_context` (see `<hard_stops>`). Reserve `error: subagent_failed` for genuinely malformed advisor output (e.g., the `## Architecture` heading is absent, or the `### Structured return` block is missing required fields).
-- When research is going to run, ALSO dispatch one researcher per entry in `research_hints[]`, in the same parallel batch. Each hint maps to `sk-researcher-<hint>` (`impl` / `decision` / `context`). Pass `type: <hint>`, `question: <specific question derived from the scope statement>`, `cap_words: 800`, `sources_required: true`.
+- When research is going to run, ALSO dispatch researchers **through the fan-out seam** (see `<fanout_seam>`), in the same parallel batch as the baseline pair when the backend is `agents`. The budget tier picks how many: `quick` dispatches one researcher for the first entry in `research_hints[]`; `standard` and `deep` dispatch one per entry. Each hint maps to `sk-researcher-<hint>` (`impl` / `decision` / `context`). Pass `type: <hint>`, `question: <specific question derived from the scope statement>`, `cap_words: 800`, `sources_required: true` — identical fields regardless of backend.
 
 Wait for all dispatches to return, then move to Step 5.
 
@@ -235,6 +238,32 @@ design(<slug>): draft RFC and PLAN
 After commit, print the success block (`✓ <slug> — designed (RFC.md, PLAN.md{, RESEARCH.md})`) and exit cleanly.
 
 </workflow>
+
+<fanout_seam>
+
+The research fan-out runs through a backend seam so the orchestration logic stays backend-agnostic (ADR-0002 §3). Everything downstream of dispatch — synthesis, drafting, review — consumes the same researcher deliverables regardless of how they were produced.
+
+**Resolution.** Read `fanout` from `.sidekick/config.json` (absent → `{ backend: "auto", budget: "standard" }`). A `--budget` flag overrides the configured budget for this invocation.
+
+- `backend: agents` — dispatch researchers as parallel `Agent` calls in the main session (the default path; always works).
+- `backend: workflow` — compose the researcher fan-out as one Workflow run: each researcher is an `agent()` call with `agentType: "sk-researcher-<hint>"` and the same input fields; collect the structured returns when the run completes.
+- `backend: auto` — run the probe via Bash: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" capabilities`. Parse the JSON; `workflows.available === "likely"` → use the workflow backend, anything else → agents. If the probe itself fails, use agents.
+
+**Budget tiers** (the tier gates verification depth and researcher count, not just cost):
+
+| Tier | Researchers | Verification |
+|---|---|---|
+| `quick` | first hint only | none beyond the synthesiser pass |
+| `standard` | one per hint, parallel | synthesiser merge (current default behaviour) |
+| `deep` | one per hint + adversarial cross-check of load-bearing claims | requires the workflow backend; with agents, fall back to `standard` and note the downgrade in reasoning prose |
+
+`deep` is explicit opt-in (config or flag) — never escalate to it on your own judgment; it is a token-cost decision that belongs to the operator.
+
+**Failure semantics.** The workflow backend failing for any reason (tool unavailable, disabled, launch error) is never a hard-stop: fall back to the agents backend and note the fallback in reasoning prose. Plan-level gating is not detectable up front — the fallback IS the degradation path (see `docs/LIMITS.md` in the sidekick repo).
+
+**Observability (until E21 lands).** Record one line in RESEARCH.md's header when research ran: `fanout: backend=<agents|workflow>, budget=<tier>` — plus the run's token total when the workflow backend was used (visible in `/workflows`).
+
+</fanout_seam>
 
 <dispatcher_parse_contracts>
 
