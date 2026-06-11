@@ -211,6 +211,7 @@ describe('runInit (non-interactive flag path)', () => {
     );
     expect(cfg.waveSizeCap).toBe(4);
     expect(cfg.buildCheckpoints).toBe('deviations-only');
+    expect(cfg.fanout).toEqual({ backend: 'auto', budget: 'standard' });
   });
 
   it('ensures .gitignore covers the .sidekick working state', async () => {

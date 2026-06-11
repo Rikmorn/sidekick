@@ -142,6 +142,7 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
       },
       waveSizeCap: 4,
       buildCheckpoints: 'deviations-only',
+      fanout: { backend: 'auto', budget: 'standard' },
     };
   } else {
     const rl = readline.createInterface({
@@ -166,6 +167,7 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
         gates: { typecheck, lint, test },
         waveSizeCap: 4,
         buildCheckpoints: 'deviations-only',
+        fanout: { backend: 'auto', budget: 'standard' },
       };
     } finally {
       rl.close();

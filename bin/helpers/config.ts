@@ -3,6 +3,14 @@ import * as path from 'node:path';
 
 export type BuildCheckpoints = 'deviations-only' | 'per-wave' | 'autonomous';
 
+export type FanoutBackend = 'auto' | 'workflow' | 'agents';
+export type FanoutBudget = 'quick' | 'standard' | 'deep';
+
+export interface FanoutConfig {
+  backend: FanoutBackend; // default 'auto'
+  budget: FanoutBudget; // default 'standard' ('deep' is explicit opt-in per ADR-0002)
+}
+
 export interface SidekickConfig {
   schemaVersion: 1;
   defaultBranch: string;
@@ -13,6 +21,7 @@ export interface SidekickConfig {
   };
   waveSizeCap: number; // default 4
   buildCheckpoints: BuildCheckpoints; // default 'deviations-only'
+  fanout: FanoutConfig; // default { backend: 'auto', budget: 'standard' }
 }
 
 const BUILD_CHECKPOINTS: readonly BuildCheckpoints[] = [
@@ -20,6 +29,14 @@ const BUILD_CHECKPOINTS: readonly BuildCheckpoints[] = [
   'per-wave',
   'autonomous',
 ];
+
+const FANOUT_BACKENDS: readonly FanoutBackend[] = [
+  'auto',
+  'workflow',
+  'agents',
+];
+
+const FANOUT_BUDGETS: readonly FanoutBudget[] = ['quick', 'standard', 'deep'];
 
 export type ParseResult =
   | { ok: true; value: SidekickConfig }
@@ -88,6 +105,36 @@ export function parseConfig(raw: string): ParseResult {
     buildCheckpoints = obj.buildCheckpoints as BuildCheckpoints;
   }
 
+  let fanout: FanoutConfig = { backend: 'auto', budget: 'standard' };
+  if (obj.fanout !== undefined) {
+    if (
+      typeof obj.fanout !== 'object' ||
+      obj.fanout === null ||
+      Array.isArray(obj.fanout)
+    ) {
+      return { ok: false, error: '"fanout" must be an object' };
+    }
+    const f = obj.fanout as Record<string, unknown>;
+    const backend = f.backend === undefined ? 'auto' : f.backend;
+    if (!FANOUT_BACKENDS.includes(backend as FanoutBackend)) {
+      return {
+        ok: false,
+        error: `"fanout.backend" must be one of ${FANOUT_BACKENDS.join(' | ')}`,
+      };
+    }
+    const budget = f.budget === undefined ? 'standard' : f.budget;
+    if (!FANOUT_BUDGETS.includes(budget as FanoutBudget)) {
+      return {
+        ok: false,
+        error: `"fanout.budget" must be one of ${FANOUT_BUDGETS.join(' | ')}`,
+      };
+    }
+    fanout = {
+      backend: backend as FanoutBackend,
+      budget: budget as FanoutBudget,
+    };
+  }
+
   return {
     ok: true,
     value: {
@@ -100,6 +147,7 @@ export function parseConfig(raw: string): ParseResult {
       },
       waveSizeCap,
       buildCheckpoints,
+      fanout,
     },
   };
 }

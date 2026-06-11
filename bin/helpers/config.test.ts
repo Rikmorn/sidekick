@@ -142,6 +142,103 @@ describe('parseConfig — M3 fields', () => {
   });
 });
 
+describe('parseConfig — fanout block', () => {
+  it('defaults fanout when absent', () => {
+    const result = parseConfig(
+      JSON.stringify({
+        schemaVersion: 1,
+        defaultBranch: 'main',
+        gates: { typecheck: 't', lint: 'l', test: 'x' },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.fanout).toEqual({
+        backend: 'auto',
+        budget: 'standard',
+      });
+    }
+  });
+
+  it('parses an explicit fanout block', () => {
+    const result = parseConfig(
+      JSON.stringify({
+        schemaVersion: 1,
+        defaultBranch: 'main',
+        gates: { typecheck: 't', lint: 'l', test: 'x' },
+        fanout: { backend: 'workflow', budget: 'deep' },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.fanout).toEqual({
+        backend: 'workflow',
+        budget: 'deep',
+      });
+    }
+  });
+
+  it('defaults missing fanout sub-fields individually', () => {
+    const result = parseConfig(
+      JSON.stringify({
+        schemaVersion: 1,
+        defaultBranch: 'main',
+        gates: { typecheck: 't', lint: 'l', test: 'x' },
+        fanout: { budget: 'quick' },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.fanout).toEqual({ backend: 'auto', budget: 'quick' });
+    }
+  });
+
+  it('rejects invalid fanout.backend', () => {
+    const result = parseConfig(
+      JSON.stringify({
+        schemaVersion: 1,
+        defaultBranch: 'main',
+        gates: { typecheck: 't', lint: 'l', test: 'x' },
+        fanout: { backend: 'cloud' },
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('fanout.backend');
+    }
+  });
+
+  it('rejects invalid fanout.budget', () => {
+    const result = parseConfig(
+      JSON.stringify({
+        schemaVersion: 1,
+        defaultBranch: 'main',
+        gates: { typecheck: 't', lint: 'l', test: 'x' },
+        fanout: { budget: 'unlimited' },
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('fanout.budget');
+    }
+  });
+
+  it('rejects fanout that is not an object', () => {
+    const result = parseConfig(
+      JSON.stringify({
+        schemaVersion: 1,
+        defaultBranch: 'main',
+        gates: { typecheck: 't', lint: 'l', test: 'x' },
+        fanout: 'workflow',
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('fanout');
+    }
+  });
+});
+
 describe('loadConfig', () => {
   let tmpRoot: string;
   beforeEach(() => {
