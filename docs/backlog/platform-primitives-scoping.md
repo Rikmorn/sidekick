@@ -75,7 +75,7 @@ Headlines: Workflows **stable** since May 2026 (landscape doc outdated); **no mi
 | Run | Backend resolved | Budget | Researchers | Tokens (RFC phase) | Wall-clock (long poles) | Outcome |
 |---|---|---|---|---|---|---|
 | 1 | **workflow** (auto → probe `available: likely`) | standard | 3 (impl/decision/context) as one Workflow run | ~515k total; research wf ~125k | research wf 2m25s; RFC revise 3m25s | RFC.md (g1–g10, D-01–D-08) + RESEARCH.md, both passed structural check; 4 open Qs resolved with operator |
-| 2 (same question, `--budget quick`) | _pending_ | | | | | |
+| 2 (same ticket, `--budget quick`) | **agents** (probe said `likely`, but quick⇒1 researcher⇒no fan-out⇒workflow skipped *by design*) | quick | 1 (impl only) | **~625k** total | dominated by iteration (Option A→B rework: 2 advisors, 3 drafter passes, 3 structural checks) | RFC reworked through an A/B fork + 4 decisions; structurally valid; no PLAN drafted |
 
 RESEARCH.md header (the auto-resolution proof): `fanout: backend=workflow, budget=standard (workflow run tokens: ~125k)`.
 
@@ -93,11 +93,29 @@ Per-agent tokens (subagent-reported): explorer 40.0k · branch-precheck 19.5k ·
 
 4. **"How can research start if it doesn't know what we're looking for?"** + the worry that quality came from the repo's epic doc, not the seam. _The core fidelity finding, and the instinct is right. Research briefs are auto-derived from the explorer's scope_statement, which is only as rich as the repo context the explorer reads. Here a detailed epic doc + a clear code seam (level.ts) made the scope statement strong → good briefs. A thin repo would degrade the briefs to generic. Two levers: (a) the operator never SAW the actual research questions — only the hint types and the post-hoc summary; surfacing the derived briefs for a quick confirm/edit before dispatch directly answers the worry; (b) when repo grounding is thin, the explorer's Q&A should pull more from the operator. The "what if there were no epic doc" experiment is the real stress test of seam value-add vs pre-existing context — worth running deliberately._
 
-**Decision feed:**
-- **E17 (tier calibration):** standard ≈ 515k for an RFC phase. Need the `--budget quick` row for the delta — still pending.
-- **ADR-0002 revisit (workflow worth keeping?):** unanswerable yet — no controlled agents-backend run on the same ticket to compare fidelity at cost. Per-agent tokens don't show workflow researchers dramatically cheaper/pricier than Agent-dispatched specialists (~42k/researcher vs 45–78k/baseline agent), so the workflow case rests on isolation/observability, not raw cost. Needs the comparison run.
-- **E21 (instrumentation):** token totals + wall-clock were hand-scraped from the transcript; backend, tier, per-agent tokens, and the research briefs are the obvious auto-capture schema.
-- **Product backlog spawned:** init auto-detect (#1) · branch-create autonomy (#2) · explorer complexity-bucket review (#3) · research-brief surfacing + thin-repo grounding (#4).
+### Run 2 (`--budget quick`, same ticket) — 2026-06-15
+
+Header: `fanout: backend=agents, budget=quick`. Per-agent tokens summed to **~625k** — *higher* than Run 1's standard run, despite one researcher instead of three. Complexity classified **high** this run (medium in Run 1) — confirming the classifier non-determinism across three runs (high/medium/high). Operator hit the slug collision from Run 1's leftover plan dir (orchestrator handled it via an AskUserQuestion → cleared the empty stub → re-ran explorer).
+
+**The quick-vs-standard comparison is confounded — three variables moved at once.** Run 2 vs Run 1 differs on (a) budget quick→1 researcher, (b) complexity high→medium, (c) backend agents→workflow. No clean cost delta or fidelity read is available from this pair.
+
+1. **`quick` structurally can't exercise the workflow backend — and that's correct judgment, not a bug.** Probe returned `likely`; the orchestrator reasoned (verbatim) that a single-researcher "fan-out" gains nothing from a workflow and only adds plan-gating risk, so it used the agents backend. So `quick`⇒agents is a *property*. To compare backends you must hold researcher count >1: `standard`+workflow vs `standard`+`backend: agents` forced, same ticket.
+
+2. **The budget tier is NOT the dominant cost lever.** quick (1 researcher) cost *more* (~625k vs ~515k) because total cost is dominated by design iteration — 3 rfc-drafter passes (~169k) + 2 advisor passes (~122k) + 3 structural checks (~100k), driven by `high` framing and an Option A→B rework. Research fan-out width (the only thing the tier gates) was ~87k, a minor fraction. **E17 implication: tiering research width barely moves total cost; complexity-driven iteration depth does. The cost knob may be in the wrong place.**
+
+3. **Research recommendations are non-reproducible at the detail level.** Run 1 → sfc32; Run 2 → mulberry32 + xmur3. Interchangeable tiny PRNGs — pure researcher non-determinism. Seed-surfacing recommendation also flipped (Run 1 hardcode → Run 2 query-param). The *direction* converges (BSP, demo-local PRNG); the *specifics* drift run-to-run.
+
+4. **The depth difference (caves, scene format) traces to complexity + iteration, not more research.** Run 2 had *fewer* researchers yet engaged the scene format + caves-feasibility that Run 1 ignored — that breadth came from the `high` scope_statement and the A/B fork (orchestrator's own Reads of scene/loader files), not the lone impl researcher. The operator's hypothesis ("is this the high-vs-medium difference?") is largely right.
+
+5. **Concrete UX bug — options/questions referenced but never laid out.** The D-01 question offered "Confirm — Option A" / "Switch to Option B framing" but neither the question nor the chat stated what A or B *were*; the operator had to open the RFC. Same class: the "Answer open questions first" option never enumerated the questions inline. _Fix: when surfacing a fork or open questions, state them in the conversation, not by reference._
+
+6. **Directional finding — research should feed dialogue, not a fait-accompli RFC.** Run 2 asked 8 multiple-choice gates yet still felt like "no dialog": the gates are produce-then-confirm decisions with pre-baked "Recommended" picks — research is absorbed silently into the RFC, then surfaced as decisions to ratify, never discussed first. This is the dialogic quality ADR-0002 expected sk-design to inherit when it replaced superpowers brainstorming, and it's the gap. _Operator's proposed model (strong): `--auto` = current hands-off produce-and-confirm; default = brainstorming-style (surface what research found, discuss before committing); complexity becomes a signal to the operator ("lots here"/"little here") to decide in chat whether to dig or fill gaps. Also requested: invoke research at a chosen budget mid-conversation, not only via an upfront flag._ Bigger than a backlog tweak — a design-interaction-model decision (ADR-0002 revisit or new ADR).
+
+**Decision feed (both runs):**
+- **E17 (tier calibration):** standard ≈515k, quick ≈625k — quick cost *more* (confounded by complexity + iteration). Tiering research width barely moves total cost; rethink what the budget knob should gate, or move cost control to the iteration/complexity layer.
+- **ADR-0002 revisit (workflow worth keeping?):** still unanswerable — no clean workflow-vs-agents comparison exists (`quick`⇒agents by design; the two runs differ on 3 axes). Need `standard`+workflow vs `standard`+`backend: agents` forced on the same ticket to isolate the backend. And the explorer's complexity noise makes *any* controlled comparison hard — it changes scope, researcher set, and iteration depth between runs (ties back to finding #3).
+- **E21 (instrumentation):** token totals + wall-clock were hand-scraped from the transcript; backend, tier, per-agent tokens, complexity, and the research briefs are the obvious auto-capture schema.
+- **Product backlog spawned:** init auto-detect (#1) · branch-create autonomy (#2) · explorer complexity-bucket review (#3) · research-brief surfacing + thin-repo grounding (#4) · lay-out-options/questions-in-chat (#5) · **dialog/brainstorming interaction model + `--auto` flag rework + mid-conversation budget (#6, directional — candidate ADR)**.
 
 ## Next steps
 
