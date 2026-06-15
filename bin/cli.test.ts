@@ -7,6 +7,7 @@ import {
   mock,
   spyOn,
 } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -50,6 +51,19 @@ function writeMinimalDist(): void {
   );
 }
 
+// An ESM bundle, like the real one: top-level `import.meta` only evaluates
+// when Node loads the file as a module. If an up-tree package.json forces
+// CommonJS, Node mis-loads it and the launcher produces nothing — the exact
+// failure the co-located package.json fix prevents.
+function writeEsmDist(): void {
+  if (!fakePackage) throw new Error('fakePackage not set');
+  fs.mkdirSync(path.join(fakePackage, 'dist'), { recursive: true });
+  fs.writeFileSync(
+    path.join(fakePackage, 'dist', 'cli.js'),
+    '#!/usr/bin/env node\nconsole.log(JSON.stringify({ ran: true, url: import.meta.url }));\n',
+  );
+}
+
 describe('install', () => {
   it('test 1: empty source dirs (with dist) — writes manifest containing only the binary', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
@@ -78,6 +92,40 @@ describe('install', () => {
     );
     const dests: string[] = manifest.files.map((e: { dest: string }) => e.dest);
     expect(dests).toContain(launcherDest);
+  });
+
+  it('launcher runs as ESM even under an up-tree commonjs package.json', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    writeEsmDist();
+    // A pre-existing, non-sidekick package.json above the install dir that would
+    // otherwise make Node load the extension-less ESM launcher as CommonJS.
+    // Mirrors the real ~/.claude/package.json {"type":"commonjs"} on the host.
+    fs.writeFileSync(
+      path.join(fakeHome, 'package.json'),
+      JSON.stringify({ type: 'commonjs' }),
+    );
+
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+
+    const launcherDest = path.join(fakeHome, 'sidekick', 'bin', 'sidekick');
+    const result = spawnSync('node', [launcherDest], { encoding: 'utf-8' });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('"ran":true');
+  });
+
+  it('writes a type:module package.json beside the launcher', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    writeMinimalDist();
+
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+
+    const pkgPath = path.join(fakeHome, 'sidekick', 'package.json');
+    expect(fs.existsSync(pkgPath)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))).toEqual({
+      type: 'module',
+    });
   });
 
   it('test 2: copies skills/agents/commands recursively and records manifest entries', () => {

@@ -118,6 +118,17 @@ export function install(opts: InstallOptions): void {
     dest: launcherDest,
   });
 
+  // Pin the bundle's module type next to it. The launcher is an ESM bundle
+  // (it uses import.meta) with no file extension, so Node infers its type from
+  // the nearest package.json up the tree — and a stray ~/.claude/package.json
+  // {"type":"commonjs"} silently mis-loads it as CommonJS, leaving the entry
+  // guard false and the CLI a no-op (exit 0, no output). This co-located file
+  // wins over anything above it. Removed on uninstall with the rest of stateDir.
+  fs.writeFileSync(
+    path.join(stateDir, 'package.json'),
+    `${JSON.stringify({ type: 'module' }, null, 2)}\n`,
+  );
+
   const manifest: Manifest = {
     schemaVersion: 1,
     packageVersion: version,
