@@ -107,137 +107,87 @@ Reason: <one-line user-facing description (e.g., "User declined the branch advis
 
 <workflow>
 
-Thirteen steps. Steps 4 and 12 dispatch in parallel — one Agent call per specialist in one message. Steps 8 and 12 loop on reviewer feedback (capped); Step 9 loops on user feedback (uncapped).
+The shape is: **Groundwork** (scope + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → structural check → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation. Two places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-pattern-mapper` + `sk-architectural-advisor`) gathered at convergence, and the PLAN quorum (`sk-structural-checker` + `sk-crossref-checker`). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
 
-### Step 1 — Dispatch sk-explorer
+### Groundwork — scope and git state
 
-Dispatch `subagent_type: sk-explorer` with `topic_or_slug` and `repo_root`. Parse the trailing ```json``` fence. Branch on `mode`:
+Open by dispatching `sk-explorer` (`subagent_type: sk-explorer`, `topic_or_slug` + `repo_root`; contract in `<dispatcher_parse_contracts>`) to scope the work, then `sk-branch-precheck` (`operation: design`, `ticket_id: <slug>`) to read git state. The explorer's scoping verdict is final — work within it rather than re-scoping (how each outcome routes is mode-dependent, below).
 
-- `proceed` — capture `slug`, `scope_statement`, `complexity`, `research_hints`. Continue to Step 2.
-- `group_created` — emit the clean-exit "group scope detected" block surfacing the explorer's `continuation` text. No further work.
-- `hard_stop` — emit the matching error block (`slug_collision` / `user_rejected_slug` / `cannot_classify`) surfacing the explorer's `reason`. Halt.
+How the explorer's outcome flows depends on the mode. The hard structural outcomes short-circuit the same way in both modes: `group_created` is a clean-exit — emit the "group scope detected" block surfacing the explorer's `continuation` and stop, no branch precheck or downstream work; `slug_collision` halts with its error block (a plan already exists at that slug — the user can clear or rename). The soft stuck-states are mode-dependent. An unsized topic (`cannot_classify`) or a rejected slug (`user_rejected_slug`) is, in exploration, the *start* of the discussion rather than a dead-end — fold it into the opening understanding and resolve it with the user. In `--auto` the same stuck-state is the honest-autonomy trigger (g3): escalate or break out for one focused question, then continue. A clean `proceed` captures `slug`, `scope_statement`, `complexity`, and `research_hints` — `complexity` and the hints are signals you surface to the user, never a silent gate on whether research runs (g6).
 
-### Step 2 — Branch precheck
+`sk-branch-precheck` routes the same in both modes: `proceed` continues silently; `confirm_action` surfaces the advisory and offers confirm-and-proceed or cancel; `propose_branch` surfaces `proposed_branch` and offers create-and-re-invoke (clean-exit with the branch-name hint), proceed-in-place, or cancel; `hard_stop` emits `error: ambiguous_git_state` with the helper's `hard_stop_message` verbatim. (Verdict semantics in `<dispatcher_parse_contracts>`; the routing rationale is in `<reasoning>`.)
 
-Dispatch `subagent_type: sk-branch-precheck` with `operation: design` and `ticket_id: <slug>`. Parse the agent's structured-return block.
+### Default — collaborative exploration
 
-- `verdict: proceed` — continue silently.
-- `verdict: confirm_action` — surface the advisory text (or short summary of `reason`); ask the user to pick one of three options:
-  - (a) **Confirm and proceed** — continue silently with the workflow.
-  - (b) **Cancel** — emit the user-declined clean-exit shape and halt.
-  - (For `confirm_action`, "accept" and "confirm" are functionally the same — both continue.)
-- `verdict: propose_branch` — surface the helper's `proposed_branch` advisory and ask the user to pick one of three options:
-  - (a) **Create branch and re-invoke** — clean-exit with the suggested branch name as a hint (no git commands run; `/sk-design` is artifact-only and the user owns branch operations).
-  - (b) **Proceed in place** — continue silently with the workflow on the current branch.
-  - (c) **Cancel** — clean-exit with the cancelled shape.
-- `verdict: hard_stop` — emit `error: ambiguous_git_state` and surface the helper's `hard_stop_message` verbatim. Halt.
+The user is in the driver's seat. No research has run yet, by design — exploration is budget-conscious and earns each fan-out before spending it.
 
-### Step 3 — Decide whether to run research
+**Open with your understanding.** Before any research, lay out in prose what you take the problem to be, the angles and load-bearing decisions in play, the open questions, and the complexity signal the explorer surfaced ("this looks involved" / "this looks straightforward") — and name where research would likely pay off, without running it yet. This opening *is* the user's first contact with the work; it invites correction.
 
-Combine the explorer's `complexity` with the flag overrides:
+**Explore as a conversation.** Run research when the user asks, or when your own judgment says a gap is worth the tokens — and say what you're about to research and why before you run it. Research fans out through the `<fanout_seam>` to the researcher subagents (`sk-researcher-{impl,decision,context}`) and merges through `sk-research-synthesiser`; the dispatch fields and the empty-output / `no_canonical_sources_found` handling live in `<dispatcher_parse_contracts>` and `<fanout_seam>`. When a synthesis is produced, its `full_synthesis` is written to `.sidekick/plans/<slug>/RESEARCH.md`. Lay options and open questions out inline as they surface, stating each option's substance. The gap that's about intent or preference is the user's to close in conversation; the gap that's about prior art or tradeoffs is research's to close. Continue until the user signals the design is clear — goals, solution shape, and the load-bearing decisions settled, remaining unknowns small enough to ride as RFC questions rather than blockers.
 
-| Flag | Complexity | Decision |
-|---|---|---|
-| `--no-research` | (any) | Skip research |
-| `--research` | (any) | Run research |
-| (none) | `low` | Skip research |
-| (none) | `medium` or `high` | Run research |
+**Converge.** When the user is satisfied, gather the design context needed to draft and proceed to **Finalisation**. Because the substance was already worked out together, the confirm there is light.
 
-When research is skipped, note it in reasoning prose so Step 5 (the synthesiser dispatch) is also skipped.
+> *Worked shape (reasoning, not a script).* User runs `/sk-design "add a command palette to the settings page"`. The explorer proceeds with `complexity: medium`, hints `["impl", "decision"]`. I open: "Here's what I take this to be — a ⌘K-style palette scoped to settings actions; the decisions in play are where the index lives and whether it's keyboard-only; the open question is whether it reuses an existing palette component. Complexity looks moderate. Research would pay off on the palette-library landscape, but I haven't run it yet — want me to?" The user says the component question is the real one. That's prior art I can't infer, so I say "I'll survey the existing palette/overlay components and the two library options" and fan out one `impl` researcher. The synthesis surfaces a reusable overlay; I lay out the two options inline with their substance. The user picks one and says it's clear. I converge: gather analogues and architectural grounding, then draft.
 
-The budget tier never changes WHETHER research runs — only how wide the fan-out is and how much verification it gets (see `<fanout_seam>`).
+### Hands-off — `--auto <low|medium|high>`
 
-### Step 4 — Parallel dispatch: design context
+Produce-and-confirm end-to-end without stopping to talk. The stated effort drives depth through the `<fanout_seam>`: `low → quick`, `medium → standard`, `high → deep`. `deep`'s adversarial cross-check needs the workflow backend; with the agents backend it falls back to `standard`, noted in reasoning (per `<fanout_seam>`).
 
-In a single message, dispatch the design-context specialists. Each is a separate Agent call so they run concurrently:
+Run scope through Groundwork, then gather design context and run research at the effort's depth, synthesise, and flow into **Finalisation** — no conversational turn in between. Research dispatch, synthesis, and the `full_synthesis` → RESEARCH.md write follow the same contracts as exploration (`<fanout_seam>`, `<dispatcher_parse_contracts>`).
+
+Honest-autonomy (g3): `--auto` is trust to proceed, not blindness. Hold to the stated effort by default, but when the task is genuinely more complex than the effort implies, or you're missing information you can't reasonably infer from the topic and the repo, escalate the effort or break out for the one focused question that actually unblocks correct work — and say so in reasoning. This is judgment about the work in front of you, not a lookup. Finalisation still ends with its one-line confirm before commit.
+
+### Finalisation (shared — both modes converge here)
+
+Both mode bodies arrive here with the design settled. Gather design context, draft and gate the RFC, confirm (mode-aware), then draft and gate the PLAN and commit.
+
+**Gather design context.** In a single message, dispatch the design-context pair as separate concurrent Agent calls:
 
 - `subagent_type: sk-pattern-mapper` with `intent: <scope_statement>`, `files: [<best-guess paths from scope>]` tagged `(new)` or `(modify)`, `scope: ui|infra|mixed` (best-guess from the scope statement). The drafter refines later — a coarse guess at this stage is fine.
 - `subagent_type: sk-architectural-advisor` with `topic: <slug>`, `rfc_context: <scope_statement>`, `scope_hint: <ui|infra|mixed>`. If the advisor's structured-return block surfaces `Recommendation: error` with `Off-stack rejection: (none) — error: missing_architecture_context`, hard-stop with `error: missing_architecture_context` (see `<hard_stops>`). Reserve `error: subagent_failed` for genuinely malformed advisor output (e.g., the `## Architecture` heading is absent, or the `### Structured return` block is missing required fields).
-- When research is going to run, ALSO dispatch researchers **through the fan-out seam** (see `<fanout_seam>`), in the same parallel batch as the baseline pair when the backend is `agents`. The budget tier picks how many: `quick` dispatches one researcher for the first entry in `research_hints[]`; `standard` and `deep` dispatch one per entry. Each hint maps to `sk-researcher-<hint>` (`impl` / `decision` / `context`). Pass `type: <hint>`, `question: <specific question derived from the scope statement>`, `cap_words: 800`, `sources_required: true` — identical fields regardless of backend.
 
-Wait for all dispatches to return, then move to Step 5.
+Keep this pair's dispatch parallel — the independence note that applies to the quorum applies here too. Both must return before the RFC draft.
 
-### Step 5 — Synthesise research
-
-Skip this step entirely when research was skipped at Step 3.
-
-Before dispatching the synthesiser, pre-filter `per_agent_outputs[]`:
-
-- Drop any entry whose `output` is empty (token-limit truncation, silent failure, etc.). The synthesiser hard-stops with `empty_agent_output` if it receives even one such entry, so the orchestrator must filter rather than forward.
-- Apply the same rule as `no_canonical_sources_found`: if `--research` was set AND any researcher returned empty `output`, hard-stop with `error: research_failed`. If research was triggered by complexity heuristics (not the flag), drop the entry and continue with the remaining set; note the dropped researcher in reasoning.
-- Apply the equivalent for `error: no_canonical_sources_found`: with `--research` set, hard-stop with `error: research_failed`; otherwise drop and continue.
-
-Dispatch `subagent_type: sk-research-synthesiser` with:
-
-- `topic: <slug>`
-- `per_agent_outputs: [{ name, output, sources_cited, duration_ms }]` — the filtered subset
-- `synthesis_target: "recommendation"`
-- `cap_words_short: 200`
-- `cap_words_full: 2000`
-
-Parse the trailing ```json``` fence; extract `short_synthesis` and `full_synthesis`.
-
-Write `full_synthesis` directly to `.sidekick/plans/<slug>/RESEARCH.md` so it lives on disk before the RFC drafter runs. Hold `short_synthesis` for inclusion in the drafter's input — it lands in RFC.md `## Research notes` via the drafter, not via direct write.
-
-### Step 6 — Dispatch sk-rfc-drafter
-
-Dispatch `subagent_type: sk-rfc-drafter` with:
+**Draft the RFC.** Dispatch `subagent_type: sk-rfc-drafter` with:
 
 - `slug`, `scope_statement`, `complexity`
 - `synthesis_output: <full synthesiser JSON>` when research ran; omit when it didn't
 - `architecture_section: <advisor's "## Architecture" body, parsed per the dispatcher_parse_contracts>`
 - `analogues: [{ path, why_relevant }]` extracted from `sk-pattern-mapper`'s report (see `<dispatcher_parse_contracts>` for the parse semantics)
 
-Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable.
+Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/RFC.md`, creating parent directories as needed.
 
-### Step 7 — Write RFC.md
+**Verify RFC structure.** Dispatch `subagent_type: sk-structural-checker` with `artifact_path: .sidekick/plans/<slug>/RFC.md` and `artifact_type: "rfc"`. Parse the trailing ```json``` fence.
 
-Write `draft_text` to `.sidekick/plans/<slug>/RFC.md`, creating parent directories as needed.
-
-### Step 8 — Verify RFC structure
-
-Dispatch `subagent_type: sk-structural-checker` with `artifact_path: .sidekick/plans/<slug>/RFC.md` and `artifact_type: "rfc"`. Parse the trailing ```json``` fence.
-
-- `verdict: pass` — continue to Step 9.
+- `verdict: pass` — continue to the confirm.
 - `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <issues collapsed into a prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the structural check.
 - Cap at 3 drafter re-dispatches. On the third failure, emit `error: rfc_structural_check_loop_exhausted` and halt.
 
-### Step 9 — User review
+**Confirm (mode-aware).** The confirm before the PLAN draft is shaped by how the draft was reached:
 
-Show the RFC.md path and contents to the user; ask for confirmation, edits, or cancellation.
+- In exploration, the substance was already worked out together, so this is a *light* confirm: surface the RFC.md path and contents and ask "does the draft look right? ship / tweak / cancel." On "tweak," re-dispatch `sk-rfc-drafter` with `feedback: <user edit instructions as prose>`, write the updated `draft_text` through, re-run the RFC structural check, and re-surface. The loop is uncapped because the user drives it.
+- In `--auto`, this is a *one-line* confirm before commit — trust to proceed, not blindness. Surface the RFC.md path and a one-line summary and pause for go / cancel.
 
-- On confirm, continue to Step 10.
-- On edits, re-dispatch `sk-rfc-drafter` with `feedback: <user edit instructions as prose>`. Write the updated `draft_text` through. Re-run Step 8's structural check before re-surfacing. Loop until the user confirms — there is no cap because the user drives the loop.
-- On user cancel (the user explicitly cancels with "cancel" or similar), emit the cancelled clean-exit shape with `Reason: User cancelled during RFC review.` Do not commit. Leave RFC.md and RESEARCH.md on disk as drafts (the user may want to resume manually). No error code — this is a clean exit. The same pattern applies on any later turn of the user-review loop.
+In either mode, an explicit user cancel emits the cancelled clean-exit shape with `Reason: User cancelled during RFC review.`, leaves RFC.md and RESEARCH.md on disk as drafts, runs no commit and no cleanup, and exits. No error code — this is a clean exit. The same pattern applies on any later turn of the confirm loop.
 
-### Step 10 — Dispatch sk-plan-drafter
+**Draft the PLAN.** Compute the RFC content hash via `git hash-object .sidekick/plans/<slug>/RFC.md`. Capture stdout as `rfc_hash`.
 
-Compute the RFC content hash via `git hash-object .sidekick/plans/<slug>/RFC.md`. Capture stdout as `rfc_hash`.
+Dispatch `subagent_type: sk-plan-drafter` with `slug`, `rfc_path: .sidekick/plans/<slug>/RFC.md`, and `rfc_hash`. Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`.
 
-Dispatch `subagent_type: sk-plan-drafter` with `slug`, `rfc_path: .sidekick/plans/<slug>/RFC.md`, and `rfc_hash`. Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable.
-
-### Step 11 — Write PLAN.md
-
-Write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`.
-
-### Step 12 — Quorum verify PLAN.md
-
-In a single message, dispatch both reviewers in parallel:
+**Quorum verify the PLAN.** In a single message, dispatch both reviewers in parallel:
 
 - `subagent_type: sk-structural-checker` with `artifact_path: .sidekick/plans/<slug>/PLAN.md`, `artifact_type: "plan"`.
 - `subagent_type: sk-crossref-checker` with `artifact_path: .sidekick/plans/<slug>/PLAN.md`, `artifact_type: "plan"`, `related_paths: { rfc: .sidekick/plans/<slug>/RFC.md }`.
 
 Parse both ```json``` fences. Combine verdicts:
 
-- Both `verdict: pass` — continue to Step 13.
-- Either `verdict: fail` — re-dispatch `sk-plan-drafter` with `feedback: <failing reviewer(s)' issues collapsed into a single prose summary the drafter can act on>`. Before the re-dispatch, if any failing crossref issue has `kind: "pins_rfc_drift"`, re-compute `rfc_hash` via `git hash-object .sidekick/plans/<slug>/RFC.md` and pass the fresh value — the user may have edited RFC.md between Step 10 and Step 12. Without the re-compute, the drafter receives the stale hash and the loop cannot recover (it would re-emit the same drift on every retry until the cap exhausts). Write the updated `draft_text` through to PLAN.md. Re-run the quorum.
+- Both `verdict: pass` — continue to the commit.
+- Either `verdict: fail` — re-dispatch `sk-plan-drafter` with `feedback: <failing reviewer(s)' issues collapsed into a single prose summary the drafter can act on>`. Before the re-dispatch, if any failing crossref issue has `kind: "pins_rfc_drift"`, re-compute `rfc_hash` via `git hash-object .sidekick/plans/<slug>/RFC.md` and pass the fresh value — the user may have edited RFC.md between the PLAN draft and the quorum. Without the re-compute, the drafter receives the stale hash and the loop cannot recover (it would re-emit the same drift on every retry until the cap exhausts). Write the updated `draft_text` through to PLAN.md. Re-run the quorum.
 - Cap at 3 drafter re-dispatches. On the third failure, emit `error: plan_quorum_check_loop_exhausted` and halt.
 
 Verifier independence is the load-bearing property: the parallel dispatch keeps the two checkers' reasoning from contaminating each other via the orchestrator's intermediate state. A serialised dispatch (structural first, then crossref) defeats the dimensional separation.
 
-### Step 13 — Atomic commit
-
-Stage `.sidekick/plans/<slug>/RFC.md`, `.sidekick/plans/<slug>/PLAN.md`, and `.sidekick/plans/<slug>/RESEARCH.md` (the last only when it exists). Commit with Conventional Commits format:
+**Atomic commit.** Stage `.sidekick/plans/<slug>/RFC.md`, `.sidekick/plans/<slug>/PLAN.md`, and `.sidekick/plans/<slug>/RESEARCH.md` (the last only when it exists). Commit with Conventional Commits format:
 
 ```
 design(<slug>): draft RFC and PLAN
