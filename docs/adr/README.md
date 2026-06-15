@@ -7,4 +7,4 @@ Numbered, dated records of significant, hard-to-reverse design decisions for the
 ## Index
 - [0001](./0001-harness-shape.md) — Harness shape: behavioural-leaning, lifecycle as a thin skeleton — **Accepted (direction); execution gated on eval (E13)**
 - [0002](./0002-platform-primitives-scoping.md) — Platform primitives: own the loop, rent the fan-out — **Accepted (2026-06-10)**
-- [0003](./0003-design-interaction-model.md) — Design interaction model: research-as-dialogue vs produce-then-confirm — **Proposed (2026-06-15); EPIC E23, gates the sk-design slice of E3**
+- [0003](./0003-design-interaction-model.md) — Design interaction model: dialogue-by-default, `--auto` opts into one-shot — **Accepted (2026-06-15); implemented by EPIC E23**
