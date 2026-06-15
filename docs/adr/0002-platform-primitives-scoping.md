@@ -1,6 +1,6 @@
 # ADR-0002 — Platform primitives: own the loop, rent the fan-out
 
-**Status:** Accepted (2026-06-10). Resolves **EPIC E2**; unblocks E4/E5/E13/E17/E18; spawns E19–E22.
+**Status:** Accepted (2026-06-10). Resolves **EPIC E2**; unblocks E4/E5/E13/E17/E18; spawns E19–E22. **Follow-on:** the E19 pilot (this ADR's fidelity experiment) surfaced a distinct design-interaction question → [ADR-0003](./0003-design-interaction-model.md) (Proposed; EPIC E23).
 
 ## Context
 
