@@ -203,7 +203,7 @@ After commit, print the success block (`✓ <slug> — designed (RFC.md, PLAN.md
 
 The research fan-out runs through a backend seam so the orchestration logic stays backend-agnostic (ADR-0002 §3). Everything downstream of dispatch — synthesis, drafting, review — consumes the same researcher deliverables regardless of how they were produced.
 
-**Resolution.** Read `fanout` from `.sidekick/config.json` (absent → `{ backend: "auto", budget: "standard" }`). A `--budget` flag overrides the configured budget for this invocation.
+**Resolution.** Read `fanout` from `.sidekick/config.json` (absent → `{ backend: "auto", budget: "standard" }`). In `--auto <low|medium|high>` mode the stated effort sets the budget tier for the invocation (`low → quick`, `medium → standard`, `high → deep`); without `--auto`, the configured budget governs the research requested during exploration.
 
 - `backend: agents` — dispatch researchers as parallel `Agent` calls in the main session (the default path; always works).
 - `backend: workflow` — compose the researcher fan-out as one Workflow run: each researcher is an `agent()` call with `agentType: "sk-researcher-<hint>"` and the same input fields; collect the structured returns when the run completes.
@@ -217,7 +217,7 @@ The research fan-out runs through a backend seam so the orchestration logic stay
 | `standard` | one per hint, parallel | synthesiser merge (current default behaviour) |
 | `deep` | one per hint + adversarial cross-check of load-bearing claims | requires the workflow backend; with agents, fall back to `standard` and note the downgrade in reasoning prose |
 
-`deep` is explicit opt-in (config or flag) — never escalate to it on your own judgment; it is a token-cost decision that belongs to the operator.
+`deep` is explicit opt-in (config or `--auto high`) — never escalate to it on your own judgment; it is a token-cost decision that belongs to the operator.
 
 **Failure semantics.** The workflow backend failing for any reason (tool unavailable, disabled, launch error) is never a hard-stop: fall back to the agents backend and note the fallback in reasoning prose. Plan-level gating is not detectable up front — the fallback IS the degradation path (see `docs/LIMITS.md` in the sidekick repo).
 
@@ -235,7 +235,7 @@ Ten contracts, one per dispatched specialist. Each describes the input fields, t
 
 **Output modes** (one JSON object inside a ```json``` fence):
 
-- `{ mode: "proceed", slug, scope_statement, complexity, research_hints }` — scoping succeeded; continue to Step 2.
+- `{ mode: "proceed", slug, scope_statement, complexity, research_hints }` — scoping succeeded; continue to the branch precheck in Groundwork.
 - `{ mode: "group_created", group_slug, first_member_slug, continuation }` — input spans multiple plans; explorer wrote `OVERVIEW.md` + `MEMBERS.md` under `.sidekick/plans/<group-slug>/`; orchestrator clean-exits with the `continuation` hint.
 - `{ mode: "hard_stop", reason }` — `reason` is one of `slug_collision`, `user_rejected_slug`, `cannot_classify`; orchestrator emits the matching error code.
 
@@ -282,8 +282,7 @@ The explorer is the only entry point for scoping. Its verdict is final — the o
 **Routing:**
 
 - Success — append to `per_agent_outputs[]` for the synthesiser.
-- `no_canonical_sources_found` AND `--research` was set — hard-stop with `error: research_failed`.
-- `no_canonical_sources_found` AND research was triggered by complexity heuristics — log a warning in reasoning, drop the failing researcher, continue with the remaining set.
+- `no_canonical_sources_found` — resolve by mode (see `<hard_stops>`): in exploration it is a conversational event (tell the user; offer to retry or skip); in `--auto` it degrades per `<fanout_seam>` (drop the failing researcher, continue with the remaining set) rather than halting. `error: research_failed` is the residue when no degrade path remains.
 - Any other malformed shape — `error: subagent_failed`.
 
 ### 6. sk-research-synthesiser
@@ -294,7 +293,7 @@ The explorer is the only entry point for scoping. Its verdict is final — the o
 
 **Routing:** write `full_synthesis` to `.sidekick/plans/<slug>/RESEARCH.md`; pass the whole synthesiser JSON to `sk-rfc-drafter` as `synthesis_output`. The drafter selects which parts of `synthesis_output` to embed in RFC.md `## Research notes`.
 
-**Pre-dispatch contract:** the orchestrator pre-filters `per_agent_outputs[]` at Step 5 to drop entries with empty `output` before dispatching. The synthesiser's `empty_agent_output` hard-stop should therefore never fire in practice — if it does, treat as `error: subagent_failed` (programmer-error path: the pre-filter missed an entry).
+**Pre-dispatch contract:** the orchestrator pre-filters `per_agent_outputs[]` (dropping entries with empty `output`) before dispatching the synthesiser. The synthesiser's `empty_agent_output` hard-stop should therefore never fire in practice — if it does, treat as `error: subagent_failed` (programmer-error path: the pre-filter missed an entry).
 
 ### 7. sk-rfc-drafter
 
@@ -310,7 +309,7 @@ The explorer is the only entry point for scoping. Its verdict is final — the o
 
 **Output:** `{ mode: "draft_ready", draft_path, draft_text }` inside a ```json``` fence, or an error JSON.
 
-**Routing:** write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`. The drafter is responsible for embedding `pins-rfc: <rfc_hash>` in the PLAN.md frontmatter — the crossref-checker verifies the pin at Step 12.
+**Routing:** write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`. The drafter is responsible for embedding `pins-rfc: <rfc_hash>` in the PLAN.md frontmatter — the crossref-checker verifies the pin in the PLAN quorum.
 
 ### 9. sk-structural-checker
 
@@ -326,7 +325,7 @@ The explorer is the only entry point for scoping. Its verdict is final — the o
 
 **Output:** `{ verdict: "pass"|"fail", artifact_path, artifact_type, issues? }` inside a ```json``` fence.
 
-**Routing:** same shape as `sk-structural-checker`. At Step 12, the two checkers' failures are combined into a single prose `feedback` summary so the plan-drafter sees both dimensions in one re-dispatch.
+**Routing:** same shape as `sk-structural-checker`. In the PLAN quorum, the two checkers' failures are combined into a single prose `feedback` summary so the plan-drafter sees both dimensions in one re-dispatch.
 
 </dispatcher_parse_contracts>
 
@@ -427,6 +426,6 @@ This example demonstrates the orchestrator trusting `sk-explorer`'s scoping verd
 - `g_n` — goal ID in RFC.md `## Goals & non-goals`. Sequentially numbered from `g1`. Cited by PLAN.md tasks and verified by `sk-crossref-checker`.
 - `D-NN` — decision ID in RFC.md `## Decisions` (zero-padded from D-01). Cited by PLAN.md tasks and verified by `sk-crossref-checker`. Amendments and redesigns are owned by `/sk-build` and `/sk-design`'s downstream loops respectively — this skill writes only the initial set.
 - `T-NN` — task ID in PLAN.md `## Checklist` (zero-padded from T-01). Set by `sk-plan-drafter`; ticked by `/sk-build`.
-- `pins-rfc:` — PLAN.md frontmatter field carrying the `git hash-object` of RFC.md at the moment PLAN.md was authored. Set by `sk-plan-drafter`; verified by `sk-crossref-checker` at Step 12; consumed by `/sk-build`'s drift check.
+- `pins-rfc:` — PLAN.md frontmatter field carrying the `git hash-object` of RFC.md at the moment PLAN.md was authored. Set by `sk-plan-drafter`; verified by `sk-crossref-checker` in the PLAN quorum; consumed by `/sk-build`'s drift check.
 
 </symbol_conventions>
