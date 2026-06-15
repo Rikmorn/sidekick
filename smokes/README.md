@@ -299,11 +299,11 @@ Expected: JSON report with a `workflows.available` field set to one of `"likely"
 Set `.sidekick/config.json` → `"fanout": { "backend": "agents", "budget": "standard" }`, then:
 
 ```
-/sk-design caching-layer-for-add --research
+/sk-design caching-layer-for-add --auto medium
 ```
 
 Expected:
-- `sk-explorer` Q&A; `--research` forces the research path regardless of complexity.
+- `sk-explorer` `proceed`s on the clean slug (no Q&A); `--auto medium` runs hands-off and drives standard-tier research regardless of complexity.
 - Researchers dispatched as parallel `Agent` calls, one per research hint.
 - `sk-research-synthesiser` merges; RFC.md / PLAN.md / RESEARCH.md land under `.sidekick/plans/caching-layer-for-add/`.
 - RESEARCH.md header carries `fanout: backend=agents, budget=standard`.
@@ -324,7 +324,7 @@ git commit -q -m "initial"
 Set `.sidekick/config.json` → `"fanout": { "backend": "workflow", "budget": "standard" }` in `$TMP_C`, then from Claude Code in that directory:
 
 ```
-/sk-design caching-layer-for-add --research
+/sk-design caching-layer-for-add --auto medium
 ```
 
 Expected:
@@ -336,13 +336,65 @@ Expected:
 1. Exit Claude Code.
 2. In the shell: `export CLAUDE_CODE_DISABLE_WORKFLOWS=1`
 3. Relaunch: `cd "$TMP_C" && claude`
-4. Re-run: `/sk-design caching-layer-for-add --research`
+4. Re-run: `/sk-design caching-layer-for-add --auto medium`
 
 Expected: the seam falls back to the agents backend with a note in reasoning prose, not a hard-stop.
 
 #### Part D — quick tier
 
-Re-run Part B with `--budget quick`. Expected: exactly ONE researcher dispatched (first hint); synthesiser still runs; artifacts land; RESEARCH.md says `budget=quick`.
+Re-run Part B with `--auto low` (on a fresh slug or clean fixture copy, as in Part C — a same-slug re-run would `slug_collision`). Expected: exactly ONE researcher dispatched (first hint); synthesiser still runs; artifacts land; RESEARCH.md says `budget=quick`.
+
+## E23 setup (two-mode interaction smoke)
+
+Smoke 11 exercises the E23 interaction rework of `/sk-design`: dialogue-by-default, with `--auto <low|medium|high>` as the hands-off escape hatch, and the retired `--research`/`--budget` flags now erroring. Use the base Setup above with the `minimal-repo` fixture. As in Smoke 10, each part needs a fresh slug — re-running on a slug whose `.sidekick/plans/<slug>/` already exists hard-stops with `slug_collision`, so the parts use distinct illustrative slugs (and Parts that fan out research add the same `fanout` key Smoke 10 Part B does).
+
+### Smoke 11: /sk-design two-mode interaction
+
+#### Part A — default dialogue (no flag)
+
+```
+/sk-design dark-mode-toggle
+```
+
+Expected:
+- `sk-explorer` runs first as groundwork (scope + complexity); `sk-branch-precheck` reads git state.
+- The orchestrator **opens with a conversation, not a finished RFC**: it surfaces its understanding of the work, the complexity signal the explorer returned ("looks straightforward" / "looks involved"), and where research would likely pay off — without running any research yet.
+- Research runs **only on request or with an explicit announcement** of what it's about to research and why — not a reflexive upfront pass. (If you never ask for it and the orchestrator never announces one, no researchers are dispatched and no RESEARCH.md is written — that's correct for a dialogue that didn't need prior art.)
+- When you signal the design is clear (e.g. "looks clear, draft it"), it converges: drafts RFC.md → PLAN.md, runs the existing structural check on the RFC and the parallel `sk-structural-checker` + `sk-crossref-checker` quorum on the PLAN, and ends with a **light `ship / tweak / cancel` confirm**.
+- On `ship`, artifacts land under `.sidekick/plans/dark-mode-toggle/` (RFC.md + PLAN.md; RESEARCH.md only if research ran) and a single `design(dark-mode-toggle): draft RFC and PLAN` commit lands.
+
+#### Part B — `--auto medium`
+
+```
+/sk-design csv-export --auto medium
+```
+
+Expected:
+- **No conversation** — produce-and-confirm end-to-end. The explorer `proceed`s on the clean slug and the run flows straight through.
+- `medium` maps to the **`standard`** research tier: one researcher per hint, parallel, synthesiser merge — dispatched without pausing to ask whether to research (the effort word already answered that).
+- The single pause is a **one-line confirm before commit** (e.g. "Designed `csv-export` (RFC.md, PLAN.md, RESEARCH.md) — go / cancel").
+- Artifacts are **identical in shape to Part A** — RFC.md / PLAN.md / RESEARCH.md under `.sidekick/plans/csv-export/`, gated through the same structural + quorum checks, one atomic commit. (Set `.sidekick/config.json` → `"fanout": { "backend": "agents", "budget": "standard" }` first, as in Smoke 10 Part B, so the seam resolves deterministically.)
+
+#### Part C — `--auto low` escalation (honest-autonomy breakout)
+
+Pick a slug whose scope hides a **load-bearing unknown the orchestrator cannot infer** from the topic or the repo — e.g. retry durability:
+
+```
+/sk-design webhook-retries --auto low
+```
+
+Expected:
+- The explorer `proceed`s; branch precheck `proceed`s. `low` would normally keep it shallow and hands-off.
+- As it works toward a draft, the orchestrator hits a fork it genuinely can't assume away (in-process timer vs. durable queue — the two produce different architectures). Honest-autonomy (g3) outranks the effort word here.
+- It **breaks out exactly ONCE** for one focused question ("should retries survive a process restart? it changes the architecture"), then **completes hands-off** from your answer — research at the `quick` tier (still `low`), Finalisation, and the one-line confirm before commit. No second interruption.
+
+#### Part D — removed flag errors
+
+```
+/sk-design legacy-import --research
+```
+
+Expected: a clear **`unknown flag --research; see --auto`** error — not a silent ignore, and not a research run. Same for `--no-research` and `--budget` (e.g. `/sk-design legacy-import --budget quick` → `unknown flag --budget; see --auto`). This is the converse of Smoke 10 Parts B–D, which now use the `--auto` equivalents.
 
 ## What's not covered by these smokes
 

@@ -60,13 +60,13 @@ Prints a JSON report: your Claude Code version, whether dynamic workflows are av
 | Field | Values | Default | Meaning |
 |---|---|---|---|
 | `fanout.backend` | `auto` / `workflow` / `agents` | `auto` | How research fan-out dispatches. `auto` probes and prefers workflows when likely available. |
-| `fanout.budget` | `quick` / `standard` / `deep` | `standard` | Fan-out width + verification depth. `deep` (adversarial cross-checking) is token-expensive and never used unless you opt in. |
+| `fanout.budget` | `quick` / `standard` / `deep` | `standard` | Fan-out width + verification depth. `deep` (adversarial cross-checking) is token-expensive and never used unless you opt in. This is the default tier; `/sk-design --auto <low\|medium\|high>` overrides it per run (`low → quick`, `medium → standard`, `high → deep`). |
 
 ### The workflow
 
 | Skill | Does |
 |---|---|
-| `/sk-design <slug>` | Produces an RFC.md + PLAN.md design unit under `.sidekick/plans/<slug>/` |
+| `/sk-design <slug>` | Designs an RFC.md + PLAN.md unit under `.sidekick/plans/<slug>/` — a collaborative conversation by default; `--auto <low\|medium\|high>` runs it hands-off |
 | `/sk-build <slug>` | Executes PLAN.md wave-by-wave: executor → fresh gates → spec-review → atomic commit per task |
 | `/sk-decide <topic>` | Records a MADR decision under `.sidekick/decisions/` |
 | `/sk-review <slug>` | Multi-dimension review (correctness, maintainability, security, tests, architecture) |
@@ -78,11 +78,13 @@ Prints a JSON report: your Claude Code version, whether dynamic workflows are av
 The `sk-*` skills are slash commands you run **inside Claude Code**, in a project you've `init`-ed. A feature usually flows:
 
 ```text
-/sk-design refund-window       # research → RFC.md + PLAN.md under .sidekick/plans/refund-window/
+/sk-design refund-window       # talk the design through → RFC.md + PLAN.md under .sidekick/plans/refund-window/
 /sk-build  refund-window       # execute the plan wave-by-wave; atomic commit per task
 /sk-review refund-window       # multi-dimension review of the diff
 /sk-goal-verify refund-window  # confirm the build delivered the plan's intent
 ```
+
+**`/sk-design` has two modes.** By default it's a *collaborative conversation*: the orchestrator surfaces its understanding of the work and the complexity signal, pulls research transparently only when it sharpens the discussion (never a reflexive upfront pass), lays options out inline, and iterates with you until the design is clear — then drafts and ends with a light `ship / tweak / cancel` confirm. `--auto <low|medium|high>` is the *hands-off* mode: produce-and-confirm end-to-end with no conversation, where the effort word drives research depth (`low → quick`, `medium → standard`, `high → deep`; `high` benefits from the workflow backend for its adversarial verification, falling back to `standard` on the agents backend). It keeps one honest breakout — it may stop once for a single focused question if the task genuinely exceeds the stated effort — and a one-line confirm before commit. (The retired `--research` / `--no-research` / `--budget` flags now error: `unknown flag <name>; see --auto`.)
 
 On demand: `/sk-decide <topic>` records a MADR decision; `/sk-regen-plan <slug>` re-syncs a PLAN.md after its RFC.md changed. The CLI subcommands (`branch-precheck`, `check-drift`, `wave-plan`, `reconcile-plan`) are called by the skills and agents — you don't normally run them by hand.
 

@@ -18,6 +18,8 @@ What sidekick cannot do: plan-level gating is not detectable up front. The probe
 
 Multi-agent fan-out costs roughly an order of magnitude more tokens than single-session work, and most of the headline gains in the literature are bought with spend. The `fanout.budget` tiers (`quick` / `standard` / `deep`) exist so this is an operator decision: `deep` (full adversarial verification) is explicit opt-in and can consume millions of tokens on a single question. Default is `standard`.
 
+`/sk-design`'s `--auto <low|medium|high>` exposes this same cost decision at the point of use: the effort word maps onto these tiers per run (`low → quick`, `medium → standard`, `high → deep`), overriding the configured `fanout.budget` default for that invocation. `--auto high` selects the `deep` tier — whose adversarial cross-check needs the workflow backend; on the agents backend it degrades to `standard` rather than failing (see "Dynamic Workflows availability" above). `deep` stays explicit opt-in: nothing escalates to it on its own; an operator chooses it via config or `--auto high`.
+
 ## Workflow runs don't survive the session
 
 A workflow interrupted by closing Claude Code restarts fresh next session (platform behaviour). sidekick's own artifacts (RFC/PLAN checkboxes + git history) are the durable state — cross-session resume always reconstructs from those, never from workflow state.
