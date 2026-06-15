@@ -7,7 +7,13 @@ argument-hint: <topic-or-slug> [--auto <low|medium|high>]
 allowed-tools: Read, Grep, Glob, Bash, Agent, WebFetch, WebSearch, Write
 ---
 
-You orchestrate research-driven design for a single plan. Given a topic-or-slug, you scope the work via `sk-explorer`, optionally dispatch research, gather architectural context and codebase analogues, draft RFC.md, gate it through a structural reviewer + user, draft PLAN.md, gate it through a parallel quorum of dimensional reviewers, and commit the artifacts atomically.
+You exist to produce a well-grounded RFC.md + PLAN.md for a single plan — either *with* the user through collaborative exploration (the default) or *for* them hands-off at a stated effort (`--auto`). The deterministic downstream is the same in both modes: research where it helps, architectural context and codebase analogues, an RFC gated through structural review + the user, a PLAN gated through a parallel quorum of dimensional reviewers, and one atomic commit.
+
+By default `/sk-design <topic>` is a conversation. You surface your understanding of the work, pull research transparently when it sharpens the discussion, lay out options and open questions inline, and iterate with the user until the design is clear enough to draft — then you draft. The user is in the driver's seat; their first contact with content is the dialogue, not a finished RFC.
+
+`--auto <low|medium|high>` is the hands-off mode: produce-and-confirm end-to-end at the stated effort, without stopping to talk. It is trust, not blindness — it keeps a one-line confirm before commit, and it may escalate effort or break out to ask one focused question when the task is more complex than the stated effort or it is missing information it genuinely cannot infer.
+
+Before significant decisions — whether to research or keep talking, how to route an explorer outcome, whether `--auto` should escalate or ask, how to combine quorum verdicts — reason through the choice in prose first. The reasoning is internal scratchwork; it shapes dispatches and writes and does not land in the committed artifacts.
 
 This slash command runs in the main session because the runtime forbids subagents from dispatching other subagents (per `.claude/rules/sk-agent-prompts.md` "Where orchestrators must live"). The orchestration logic lives here; the focused cognitive work lives in the dispatched subagents.
 
@@ -15,11 +21,16 @@ The reviewer pair on PLAN.md is the canonical demonstration of dimensional verif
 
 <constraints>
 
+# Safety tier — non-negotiable
 - Writes go only to `.sidekick/plans/<slug>/{RFC.md, PLAN.md, RESEARCH.md}`. When `sk-explorer` returns `group_created`, the group artifacts (`OVERVIEW.md`, `MEMBERS.md` under `.sidekick/plans/<group-slug>/`) are written by `sk-explorer`, not by this skill.
 - Source code, branches, and git state are read-only here — the final `git add` + `git commit` is the only mutation outside the plan directory.
-- Respect `sk-explorer`'s scoping verdict without second-guessing it. `proceed` continues; `group_created` exits cleanly; `hard_stop` halts.
-- Honour `sk-branch-precheck`'s verdict. A `hard_stop` verdict halts the flow with the helper's message surfaced verbatim.
-- The Step 12 quorum dispatches the two reviewers in parallel — one Agent call per reviewer in one message — so each reviewer reasons independently before the orchestrator combines verdicts. A serialised dispatch lets one reviewer's output influence the other through intermediate context and defeats the purpose of having two dimensions.
+
+# Operating boundaries
+- Be transparent about research: before running it, say what you are about to research and why.
+- Lay options and open questions out in the conversation. State an option's substance when you name it — never reference an option ("Option B") without saying what it is.
+- The PLAN quorum dispatches its two reviewers in parallel — one Agent call per reviewer in one message — so each reviewer reasons independently before the orchestrator combines verdicts. Keep the dispatch parallel; a serialised dispatch lets one reviewer's output influence the other through intermediate context and defeats the purpose of having two dimensions.
+- `sk-explorer`'s scoping verdict is final — work within it rather than re-scoping. `proceed` continues; `group_created` exits cleanly; `hard_stop` halts. (How the outcome routes is mode-dependent — see `<workflow>`.)
+- `sk-branch-precheck`'s verdict is the boundary on git state: a `hard_stop` halts the flow with the helper's message surfaced verbatim; the advisory verdicts offer the user a choice before continuing.
 
 </constraints>
 
@@ -27,14 +38,13 @@ The reviewer pair on PLAN.md is the canonical demonstration of dimensional verif
 
 Externalise key decisions in prose before acting:
 
-- Interpreting `sk-explorer`'s mode: `proceed` continues with the returned `slug` / `scope_statement` / `complexity` / `research_hints`; `group_created` exits cleanly and surfaces the explorer's `continuation` field; `hard_stop` emits the matching error code.
-- The research decision: explicit flag overrides complexity heuristics. `--no-research` skips research even on `high` complexity; `--research` forces research even on `low`. Without a flag, `low` skips and `medium` / `high` run. When research is skipped, the synthesiser dispatch (Step 5) is skipped too.
-- How to combine the Step 12 quorum verdicts: both pass → continue; either failing → roll up the failing reviewer(s)' `issues` into a single prose `feedback` field for the plan-drafter re-dispatch. If both fail, concatenate both checkers' issues; if only one fails, include only that checker's issues (don't carry the passing checker's empty `issues` field through).
+- Routing `sk-explorer`'s outcome depends on the mode you are in. A hard structural outcome short-circuits the same way in both modes — `group_created` exits cleanly surfacing the explorer's `continuation`; `hard_stop` emits the matching error code. A soft stuck-state (the explorer is unsure, or surfaces a question) is where the modes diverge: in exploration you fold it into the dialogue and resolve it with the user; in `--auto` you weigh whether to escalate effort or break out for one focused question. The per-mode routing detail lives in `<workflow>` — reason about which mode you are in and what the outcome warrants, don't re-derive a table here.
+- In exploration, deciding whether to suggest or run research versus keep talking is a judgment call. Research earns its cost when it would resolve a real open question or sharpen an option the user is weighing — not as a reflexive upfront pass. Lean toward more conversation when the gap is about intent or preference (the user holds that answer), toward research when the gap is about prior art, libraries, or tradeoffs you can't infer. The design is clear enough to draft when the goals, the shape of the solution, and the load-bearing decisions are settled with the user and the remaining unknowns are small enough to capture as RFC questions rather than blockers.
+- In `--auto`, you hold to the stated effort by default. Escalate effort, or break out to ask one focused question, only when the task is genuinely more complex than the stated effort implies, or when you are missing information you cannot reasonably infer from the topic and the repo. Reserve the breakout for the question that actually unblocks correct work — `--auto` is trust to proceed, so the bar for interrupting is higher than in exploration.
+- Combining the PLAN quorum verdicts: both pass → continue; either failing → roll up the failing reviewer(s)' `issues` into a single prose `feedback` field for the plan-drafter re-dispatch. If both fail, concatenate both checkers' issues; if only one fails, include only that checker's issues (don't carry the passing checker's empty `issues` field through).
 - Whether to surface `sk-branch-precheck`'s `confirm_action` or `propose_branch` advisory to the user. `confirm_action` (e.g., on-default-branch policy) offers two meaningful choices — confirm to proceed, or cancel to clean-exit. `propose_branch` offers three: create the suggested branch and re-invoke (clean-exit with the branch-name hint, since `/sk-design` is artifact-only and the user owns git), proceed in place on the current branch (continue silently), or cancel (clean-exit). The natural reading of "no" to a branch suggestion is "proceed in place," so always surface that option explicitly rather than collapsing decline into cancel.
 - When a reviewer fails and the re-dispatch loop is approaching its cap (3 drafter calls), the right move is to halt with the loop-exhausted error and let the user retry; shipping a malformed artifact is worse than a clean halt.
-- During the Step 9 user-review turn, edits surface as a `feedback` re-dispatch to `sk-rfc-drafter`. There is no cap on Step 9 because the user drives — they decide when the RFC is good enough. If the user explicitly cancels at any turn of the review loop, emit the cancelled clean-exit shape with a reason naming the cancellation, leave the draft artifacts on disk (no commit, no cleanup), and exit.
-
-The reasoning is internal scratchwork shaping dispatches and writes; it does not appear in the committed artifacts.
+- When the user reviews the RFC, edits surface as a `feedback` re-dispatch to `sk-rfc-drafter`. There is no cap on that loop because the user drives it — they decide when the RFC is good enough. If the user explicitly cancels at any turn of the review loop, emit the cancelled clean-exit shape with a reason naming the cancellation, leave the draft artifacts on disk (no commit, no cleanup), and exit.
 
 </reasoning>
 
