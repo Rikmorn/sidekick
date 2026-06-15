@@ -39,6 +39,8 @@
 
 **Pilot (E19) inputs to this audit** (see `backlog/platform-primitives-scoping.md` Findings F1–F10): Researchers ← F3 (collapse `complexity` to a surfaced `should_research`), F4 (surface research briefs; thin-repo grounding), F7 (researcher non-reproducibility); Orchestrators ← F5 (lay options/questions out in chat) + the sk-design interaction rework, **gated by E23/ADR-0003 — do that first**; Utility ← F2.
 
+**E23-smoke inputs to this audit (2026-06-15):** Drafters ← `sk-rfc-drafter` pastes the architectural-advisor's `## Architecture` section verbatim even when the RFC Decisions override the advisor's recommendation, so Architecture can contradict Decisions — the drafter should reconcile Architecture to the *decided* design. Reviewers ← no verifier checks RFC internal *semantic* consistency (Architecture ↔ Decisions ↔ Goals not contradicting); structural checks shape, crossref checks references. Add a new dimensional reviewer for RFC internal-consistency — it also removes the orchestrator's need to catch contradictions ad-hoc, which is what caused a byte-preservation reconstruction in the smoke.
+
 ---
 
 ## Tier 2 — Scoped builds & decisions
