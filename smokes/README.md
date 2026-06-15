@@ -385,7 +385,7 @@ Pick a slug whose scope hides a **load-bearing unknown the orchestrator cannot i
 
 Expected:
 - The explorer `proceed`s; branch precheck `proceed`s. `low` would normally keep it shallow and hands-off.
-- As it works toward a draft, the orchestrator hits a fork it genuinely can't assume away (in-process timer vs. durable queue — the two produce different architectures). Honest-autonomy (g3) outranks the effort word here.
+- As it works toward a draft, the orchestrator hits a fork it genuinely can't assume away (in-process timer vs. durable queue — the two produce different architectures). Honest-autonomy outranks the effort word here.
 - It **breaks out exactly ONCE** for one focused question ("should retries survive a process restart? it changes the architecture"), then **completes hands-off** from your answer — research at the `quick` tier (still `low`), Finalisation, and the one-line confirm before commit. No second interruption.
 
 #### Part D — removed flag errors
