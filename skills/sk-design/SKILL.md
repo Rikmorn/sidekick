@@ -3,7 +3,7 @@ name: sk-design
 description: Research-driven design phase. From a topic or slug, dispatches sk-explorer (pre-flight) + conditional research subagents + sk-pattern-mapper + sk-architectural-advisor + sk-rfc-drafter + sk-plan-drafter; verifies each artifact via dimensional reviewers. Writes RFC.md / PLAN.md / RESEARCH.md under .sidekick/plans/<slug>/.
 user-invocable: true
 disable-model-invocation: true
-argument-hint: <topic-or-slug> [--research|--no-research] [--budget <quick|standard|deep>]
+argument-hint: <topic-or-slug> [--auto <low|medium|high>]
 allowed-tools: Read, Grep, Glob, Bash, Agent, WebFetch, WebSearch, Write
 ---
 
@@ -40,16 +40,14 @@ The reasoning is internal scratchwork shaping dispatches and writes; it does not
 
 <inputs>
 
-User invokes `/sk-design <topic-or-slug> [--research|--no-research] [--budget <quick|standard|deep>]`.
+User invokes `/sk-design <topic-or-slug> [--auto <low|medium|high>]`.
 
 | Arg | Required | Notes |
 |---|---|---|
 | `<topic-or-slug>` | yes | A clean slug like `add-keyboard-shortcuts`, a nested group slug like `multi-tenant/auth`, or freeform text like `"add cmd+k to the admin UI"`. `sk-explorer` classifies and routes. |
-| `--research` | no | Force the research path regardless of `sk-explorer`'s complexity classification. |
-| `--no-research` | no | Skip the research path regardless of `sk-explorer`'s complexity classification. |
-| `--budget` | no | Override the configured fan-out budget tier for this invocation (`quick` / `standard` / `deep`). Defaults to `.sidekick/config.json` `fanout.budget` (`standard` when absent). |
+| `--auto <low|medium|high>` | no | Hands-off mode at the stated effort. Absent → collaborative exploration (the default). `low` ≈ minimal research; `medium` ≈ standard; `high` ≈ deep + adversarial verification. Effort defaults to `.sidekick/config.json` `fanout.budget` (mapped) when `--auto` is given with no level. |
 
-The two research flags are mutually exclusive. If both are passed, treat as `--research` and note the conflict in reasoning prose; the model picks the safer default (more context never harms a design phase).
+The removed flags (`--research`, `--no-research`, `--budget`) error clearly if passed — surface `unknown flag <name>; see --auto` rather than silently ignoring them. Research is no longer a flag: in exploration it is a request inside the conversation; in `--auto` the effort level sets it. Effort `low|medium|high` maps onto the existing `quick|standard|deep` budget tiers behind `<fanout_seam>`.
 
 </inputs>
 
