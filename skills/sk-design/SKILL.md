@@ -63,18 +63,20 @@ The removed flags (`--research`, `--no-research`, `--budget`) error clearly if p
 
 <hard_stops>
 
-Emit only the structured-error block (no preamble, no progress narration, no sign-off) for any of:
+These are the unconditional halts — emit only the structured-error block (no preamble, no progress narration, no sign-off) for any of:
 
 - `error: missing_inputs` — `<topic-or-slug>` arg absent.
-- `error: slug_collision` — `sk-explorer` returned `hard_stop` with `reason: slug_collision` (a plan with this slug already exists at `.sidekick/plans/<slug>/`).
-- `error: user_rejected_slug` — `sk-explorer` returned `hard_stop` with `reason: user_rejected_slug` (the user declined every slug suggestion during Q&A).
-- `error: cannot_classify` — `sk-explorer` returned `hard_stop` with `reason: cannot_classify` (insufficient information after Q&A to set complexity).
+- `error: slug_collision` — `sk-explorer` returned `hard_stop` with `reason: slug_collision` (a plan with this slug already exists at `.sidekick/plans/<slug>/`). Short-circuits in both modes.
 - `error: ambiguous_git_state` — `sk-branch-precheck` returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
 - `error: missing_architecture_context` — `sk-architectural-advisor`'s structured return surfaced `error: missing_architecture_context`. The consuming repo has no CLAUDE.md or `.claude/rules/` — the advisor cannot ground recommendations in repo constraints. Surface to the user with a hint to author a minimal CLAUDE.md before re-running `/sk-design`.
-- `error: rfc_structural_check_loop_exhausted` — Step 8's drafter ↔ structural-checker loop hit its 3-dispatch cap without a `pass` verdict.
-- `error: plan_quorum_check_loop_exhausted` — Step 12's drafter ↔ quorum loop hit its 3-dispatch cap without both reviewers passing.
-- `error: research_failed` — `--research` was set and a researcher returned a hard error (`no_canonical_sources_found` or other). When research was triggered by complexity heuristics rather than the flag, the orchestrator drops the failing researcher and continues with the remaining set instead of halting.
+- `error: rfc_structural_check_loop_exhausted` — the RFC structural-check loop in Finalisation (drafter ↔ structural-checker) hit its 3-dispatch cap without a `pass` verdict.
+- `error: plan_quorum_check_loop_exhausted` — the PLAN quorum loop in Finalisation (drafter ↔ both reviewers) hit its 3-dispatch cap without both reviewers passing.
 - `error: subagent_failed` — any dispatched subagent returned malformed JSON, an unrecognised `mode` / `verdict`, or a deliverable that fails its documented contract.
+
+A few explorer and research outcomes are *not* unconditional halts — they resolve differently by mode, and only reach an error code in one of them:
+
+- A rejected slug (`sk-explorer` `hard_stop` `reason: user_rejected_slug`) or an unsized topic (`reason: cannot_classify`) is, in exploration, the *start* of the conversation, not a dead-end — fold it into the dialogue and resolve it with the user (per `<workflow>`). In `--auto` it is the honest-autonomy trigger: break out for the one focused question that disambiguates it. Either code (`error: user_rejected_slug` / `error: cannot_classify`) becomes a terminal halt only in `--auto`, and only when the user, asked to disambiguate, declines.
+- A researcher returning a hard error (`no_canonical_sources_found` or other) is `error: research_failed` only when it cannot be absorbed. In exploration that is a conversational event, not a halt — tell the user, offer to retry or skip, and continue from their answer. In `--auto` the `<fanout_seam>` governs: at higher effort the orchestrator escalates or degrades (drops the failing researcher, continues with the remaining set, or falls back a tier) rather than halting. The code is the residue when no degrade path remains.
 
 Hard-stop format:
 
