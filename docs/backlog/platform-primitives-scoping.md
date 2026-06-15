@@ -68,6 +68,37 @@ Headlines: Workflows **stable** since May 2026 (landscape doc outdated); **no mi
 
 **Failure semantics (so nobody re-litigates):** pilot failing ≠ rework — baseline stays the agents backend, findings recorded, ADR-0002 revisit triggers own the retry (adopt-where-strictly-better). E20 build failing mid-flight uses sk-build's own routing — `redesign` loops back to `/sk-design` (R-NN tasks), re-run `/sk-build` to resume. Toolchain fumbles while dogfooding are product feedback: fix the skill/agent, rebuild+reinstall, re-run (smokes/README iteration loop).
 
+## Pilot findings (E19)
+
+**Run 1 — 2026-06-15.** Ticket `epic-2-procgen` (procedural dungeon-level generation for `packages/dungeon`) in a separate game project. `/sk-design epic-2-procgen --research`, config `fanout: { backend: "auto", budget: "standard" }`. **First valid workflow-backend run** — the installed launcher had to be fixed first (`install-esm-module-resolution.md`); before that fix, `auto` silently fell back to agents because the probe returned empty.
+
+| Run | Backend resolved | Budget | Researchers | Tokens (RFC phase) | Wall-clock (long poles) | Outcome |
+|---|---|---|---|---|---|---|
+| 1 | **workflow** (auto → probe `available: likely`) | standard | 3 (impl/decision/context) as one Workflow run | ~515k total; research wf ~125k | research wf 2m25s; RFC revise 3m25s | RFC.md (g1–g10, D-01–D-08) + RESEARCH.md, both passed structural check; 4 open Qs resolved with operator |
+| 2 (same question, `--budget quick`) | _pending_ | | | | | |
+
+RESEARCH.md header (the auto-resolution proof): `fanout: backend=workflow, budget=standard (workflow run tokens: ~125k)`.
+
+Per-agent tokens (subagent-reported): explorer 40.0k · branch-precheck 19.5k · pattern-mapper 45.3k · architectural-advisor 78.1k · research Workflow (3 researchers) ~125k · synthesiser 38.3k · rfc-drafter 48.1k draft + 59.9k revise · structural-checker 29.7k + 30.8k. ≈ **515k for the RFC phase** (PLAN.md not drafted in this run).
+
+**Seam behaved to spec:** probe → `likely` → 3 researchers as one Workflow run, baseline pair (pattern-mapper + advisor) as parallel Agent calls alongside. `standard` = one researcher/hint, no adversarial cross-check. No fallback triggered. Research converged cleanly across all three angles + the advisor; synthesiser surfaced a real nuance (dungeon is the genuine first RNG consumer). Output quality high — with the grounding caveat in finding #4.
+
+### Operator observations (raw + analysis)
+
+1. **`init` is too generic** — wants auto-detection of project setup (stack/branch/gates) instead of blanket defaults. _Real enhancement. Tradeoff: detect-and-confirm (safe) vs detect-and-assume — a wrong-but-authoritative config is worse than an obviously-default one._
+
+2. **branch-precheck should offer to CREATE the branch**, not force the operator to do it manually. (Run 1 returned `proceed` — already on `feat/epic-2-procgen`; the friction was the earlier aborted run.) _Confirmed, and the fix is architecturally clean: precheck stays read-only and recommends `propose branch`; the orchestrator (`/sk-design`) acts on that recommendation with an AskUserQuestion offering "create `feat/<slug>`" and runs the checkout. Read-only specialist preserved, mutation owned by the orchestrator._
+
+3. **What is sk-explorer doing, and why non-deterministic?** Same ticket classified `high` one run, `medium` the next. _Two issues. (a) LLM bucketing is inherently noisy. (b) More important: the sk-agent-prompts discipline doc names "complexity classification gates" as an anti-pattern (buckets are state machines in disguise). The question to answer before stabilising the noise: what actually reads `complexity`? In run 1 `--research` forced research ON regardless, so the classification changed nothing. If little branches on it, drop the bucket rather than stabilise it._
+
+4. **"How can research start if it doesn't know what we're looking for?"** + the worry that quality came from the repo's epic doc, not the seam. _The core fidelity finding, and the instinct is right. Research briefs are auto-derived from the explorer's scope_statement, which is only as rich as the repo context the explorer reads. Here a detailed epic doc + a clear code seam (level.ts) made the scope statement strong → good briefs. A thin repo would degrade the briefs to generic. Two levers: (a) the operator never SAW the actual research questions — only the hint types and the post-hoc summary; surfacing the derived briefs for a quick confirm/edit before dispatch directly answers the worry; (b) when repo grounding is thin, the explorer's Q&A should pull more from the operator. The "what if there were no epic doc" experiment is the real stress test of seam value-add vs pre-existing context — worth running deliberately._
+
+**Decision feed:**
+- **E17 (tier calibration):** standard ≈ 515k for an RFC phase. Need the `--budget quick` row for the delta — still pending.
+- **ADR-0002 revisit (workflow worth keeping?):** unanswerable yet — no controlled agents-backend run on the same ticket to compare fidelity at cost. Per-agent tokens don't show workflow researchers dramatically cheaper/pricier than Agent-dispatched specialists (~42k/researcher vs 45–78k/baseline agent), so the workflow case rests on isolation/observability, not raw cost. Needs the comparison run.
+- **E21 (instrumentation):** token totals + wall-clock were hand-scraped from the transcript; backend, tier, per-agent tokens, and the research briefs are the obvious auto-capture schema.
+- **Product backlog spawned:** init auto-detect (#1) · branch-create autonomy (#2) · explorer complexity-bucket review (#3) · research-brief surfacing + thin-repo grounding (#4).
+
 ## Next steps
 
 1. ✅ Research runs returned (2026-06-10) → `platform-coupling/{REPORT,sources}.md` + `enforcement-surface/{REPORT,sources}.md` written; load-bearing CC-docs quotes re-verified first-hand (workflows page + hooks-guide page).
