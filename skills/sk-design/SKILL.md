@@ -359,63 +359,25 @@ Single atomic commit. Stage only the paths written by this skill — `git add .s
 
 <examples>
 
-Three worked examples covering happy path with no research, the parallel-research path with two reviewer re-dispatches, and the group-scope clean-exit.
+Three examples teaching the interaction judgment, not the pipeline mechanics. They show: research-as-dialogue inside a default exploration with a light confirm; a hands-off `--auto medium` run where effort drives depth and the only pause is a one-line confirm; and an honest-autonomy breakout where `--auto low` stops for one focused question rather than guessing. Each leads with the reasoning the orchestrator should do; the deterministic Finalisation (context → draft → structural check → confirm → PLAN → quorum → commit) is summarised because its mechanics live in `<workflow>`.
 
-### Example 1 — Happy path, low complexity, no research
+### Example 1 — Default exploration, research as dialogue, light confirm
 
-User invokes `/sk-design rename-add-to-sum`.
+A fuzzy topic is the *start* of the discussion, not a halt — an unsized topic is exactly what the exploration body is for. User runs `/sk-design "make the dashboard load faster"`. The explorer `proceed`s but flags it as broad (`complexity: medium`, "faster" unscoped); branch precheck `proceed`s. Rather than treat the vagueness as a stuck-state, the orchestrator opens with its own reading — the angles in play (query latency, payload size, render cost), the load-bearing decision (attack the data fetch or the render path first), and that it hasn't researched yet but wants the user's read first. That opening *is* the user's first contact with the work, and it invites correction.
 
-Internal reasoning (not emitted): clean slug, no flags. Dispatch `sk-explorer`; it returns `{ mode: "proceed", slug: "rename-add-to-sum", scope_statement: "Rename the helper currently named `add` to `sum` across the lib and update call sites.", complexity: "low", research_hints: [] }`. Continue.
+The user redirects: it's not render cost, the dashboard refetches everything on every tab switch — reframing toward caching, which is prior art the orchestrator can't infer from the repo. So it states the move before making it ("I'll survey the cache strategies for tab-switched data and their tradeoffs"), runs ONE research pass transparently through the fan-out, and lays the options out by substance — stale-while-revalidate keyed per tab vs. a normalised cache with explicit invalidation, naming what each means rather than "Option A / Option B." The user picks one; the design is clear enough to draft. The orchestrator converges — gathers design context, then Finalisation runs as always to a *light* "ship / tweak / cancel" confirm, light because the substance was worked out together. The teaching point: research is a move inside the dialogue (announced, single, earned), and the confirm is light precisely because the user already drove the substance.
 
-Step 2: dispatch `sk-branch-precheck`; verdict `proceed` (working on a feature branch already). Continue silently.
+### Example 2 — `--auto medium`, hands-off, effort drives depth
 
-Step 3: complexity `low`, no `--research` flag — skip research. Steps 4 dispatches only `sk-pattern-mapper` and `sk-architectural-advisor` in parallel (two Agent calls in one message). No researchers. Step 5 skipped because no `per_agent_outputs` to synthesise.
+`--auto` is trust to proceed, so there is no conversational turn — the stated effort is the whole instruction for how deep to go. A clean slug means the explorer has nothing to disambiguate, so the run flows straight through.
 
-Pattern-mapper returns a markdown report with `## Per-file Pattern Assignments` listing the existing `src/lib/math.ts` and `src/lib/math.test.ts` as the analogues. Parse the per-file H3s into `analogues: [{ path: "src/lib/math.ts", why_relevant: "utility — same module being renamed; rename is a refactor within this file" }, { path: "src/lib/math.test.ts", why_relevant: "test — colocated tests that need their imports updated" }]`. Advisor returns a 3-paragraph preamble followed by `## Architecture` and the body. Slice from `## Architecture` onwards; discard preamble.
+User runs `/sk-design export-csv --auto medium`. The explorer `proceed`s on the clean slug; branch precheck `proceed`s. Because `medium` maps to the `standard` research tier, the orchestrator gathers design context and runs research at standard depth (one researcher per hint, synthesiser merge) without pausing to ask whether to — the effort level already answered that. Synthesis flows into Finalisation: draft → structural check → PLAN → parallel quorum → commit, all hands-off. The single pause is the one-line confirm before commit — "Designed `export-csv` (RFC.md, PLAN.md, RESEARCH.md) — go / cancel" — trust to proceed, not blindness. The teaching point: in hands-off mode the effort word *is* the depth knob, so the orchestrator never stops to negotiate research; the only human touch is the one-line go.
 
-Step 6: dispatch `sk-rfc-drafter` with `slug`, `scope_statement`, `complexity: "low"`, `architecture_section`, `analogues`. No `synthesis_output`. Drafter returns `{ mode: "draft_ready", draft_path: ".sidekick/plans/rename-add-to-sum/RFC.md", draft_text: "<markdown>" }`.
+### Example 3 — `--auto low`, honest-autonomy breakout
 
-Step 7: write RFC.md. Step 8: dispatch `sk-structural-checker` with `artifact_type: "rfc"`; verdict `pass`. Step 9: surface RFC.md to the user; user replies "looks good". Continue.
+`--auto low` says "keep it shallow," but honest-autonomy (g3) outranks the effort word when proceeding would mean guessing at something load-bearing. The bar for interrupting is higher than in exploration — `--auto` is trust to proceed — so the breakout is reserved for the one unknown that actually changes the design, not for anything the orchestrator could reasonably infer.
 
-Step 10: compute `rfc_hash` via `git hash-object`; dispatch `sk-plan-drafter`. Returns `draft_text` with two tasks (T-01 rename in `src/lib/math.ts`, T-02 update tests). Step 11: write PLAN.md.
-
-Step 12: dispatch `sk-structural-checker` AND `sk-crossref-checker` in parallel (two Agent calls in one message). Structural verdict `pass`; crossref verdict `pass` (each cited `g_n` resolves; `pins-rfc:` matches the computed hash). Continue.
-
-Step 13: stage `RFC.md` + `PLAN.md` (no `RESEARCH.md` written); commit `design(rename-add-to-sum): draft RFC and PLAN`. Print the success block. Exit.
-
-### Example 2 — Research path with parallel quorum re-dispatch
-
-User invokes `/sk-design realtime-presence "Add live cursor presence to the editor for collaborative sessions"`.
-
-Internal reasoning (not emitted): freeform text. Dispatch `sk-explorer`; it runs Q&A (4 questions about overlay surface, session model, latency budget, prior art), the user confirms a suggested slug, and returns `{ mode: "proceed", slug: "realtime-presence", scope_statement: "Add live cursor presence to the collaborative editor; one cursor per active session; ≤300ms perceived latency.", complexity: "high", research_hints: ["impl", "decision", "context"] }`.
-
-Step 2: branch precheck — verdict `proceed`. Step 3: complexity `high`, no flag override — run research.
-
-Step 4 (parallel): five Agent calls in one message — `sk-pattern-mapper`, `sk-architectural-advisor`, `sk-researcher-impl` (presence-library survey), `sk-researcher-decision` (transport choice: WebSocket vs SSE vs WebRTC), `sk-researcher-context` (CRDT presence patterns, citations). All five return; researchers all report non-empty `output` with `sources_cited`.
-
-Step 5: dispatch `sk-research-synthesiser` with the three researcher outputs, `synthesis_target: "recommendation"`. Returns `{ short_synthesis, full_synthesis }`. Write `full_synthesis` directly to `.sidekick/plans/realtime-presence/RESEARCH.md`.
-
-Step 6: dispatch `sk-rfc-drafter` with `synthesis_output` (the synthesiser's full JSON), `architecture_section`, `analogues`. Drafter returns `draft_text`.
-
-Step 7: write RFC.md. Step 8: `sk-structural-checker` returns `verdict: "fail"`, `issues: [{ field: "section.## Risks", issue: "empty body" }]` — the drafter left a placeholder. Re-dispatch `sk-rfc-drafter` with `feedback: "## Risks section body is empty; populate from the synthesis's risk subsection."`. New `draft_text`; write through; re-check; verdict `pass`. Continue to Step 9. User confirms.
-
-Step 10–11: compute `rfc_hash`; dispatch `sk-plan-drafter`; write PLAN.md.
-
-Step 12 (parallel quorum): two Agent calls in one message — `sk-structural-checker` and `sk-crossref-checker`. Structural verdict `pass`; crossref verdict `fail`, `issues: [{ field: "task.T-04.decisions", issue: "cites D-09 but RFC.md ## Decisions defines D-01..D-04 only — dangling reference" }]`. Combine the two reviewers' issues into prose `feedback: "Crossref check flagged T-04 cites D-09 but the RFC defines D-01..D-04 only. Fix the dangling decision reference."`. Re-dispatch `sk-plan-drafter`. Returns updated `draft_text` (T-04 now cites D-02 instead). Write through; re-run quorum (parallel again). Both pass.
-
-Step 13: stage `RFC.md` + `PLAN.md` + `RESEARCH.md`; commit `design(realtime-presence): draft RFC and PLAN`. Print success block.
-
-The visible behaviour distinguishing this example from Example 1: RESEARCH.md exists; the RFC drafter ran twice (once fresh + one re-dispatch on feedback); the plan-drafter ran twice (once fresh + one re-dispatch with combined quorum feedback). Both reviewer-loop budgets were exercised but neither exhausted.
-
-### Example 3 — Group scope detected, clean exit
-
-User invokes `/sk-design "let's redesign the entire admin UI to support multi-tenant billing"`.
-
-Internal reasoning (not emitted): freeform text. Dispatch `sk-explorer`; it runs Q&A and detects the topic spans multiple distinct surfaces (auth, billing UI, tenant settings, audit log). The explorer writes `.sidekick/plans/multi-tenant/OVERVIEW.md` (group intent + sequencing rationale) and `.sidekick/plans/multi-tenant/MEMBERS.md` (ordered member list with status `pending` for each), then returns `{ mode: "group_created", group_slug: "multi-tenant", first_member_slug: "multi-tenant/auth", continuation: "Run /sk-design multi-tenant/auth" }`.
-
-Orchestrator interprets `group_created` as a clean-exit signal — the explorer has done the scoping work and routed forward. No branch precheck runs (no commit will happen), no research, no drafters. The orchestrator prints the clean-exit "group scope detected" block surfacing the `continuation` text and exits.
-
-This example demonstrates the orchestrator trusting `sk-explorer`'s scoping verdict without second-guessing it. The explorer is the only entry point for scoping; the orchestrator routes on its mode and does not attempt to re-scope a group as a single plan.
+User runs `/sk-design webhook-retries --auto low`. The explorer `proceed`s; branch precheck `proceed`s. As it works toward a draft, the orchestrator surfaces a fork it genuinely cannot infer from the topic or the repo: retries can be in-process (a timer) or durable (a queue with persistence across restarts), and the two produce completely different architectures — getting it wrong wastes the whole draft. This isn't complexity the effort word covers; it's a missing fact. So instead of guessing, the orchestrator breaks out for ONE focused question: "Before I draft — should retries survive a process restart (durable queue) or is in-process retry enough? It changes the architecture." The user answers "durable"; the orchestrator folds that in and continues hands-off from there — research at the `quick` tier (still `low`), then Finalisation through to the one-line confirm. The teaching point: honest autonomy means stopping for the one thing you can't responsibly assume, then proceeding — not turning `--auto` into a conversation.
 
 </examples>
 
