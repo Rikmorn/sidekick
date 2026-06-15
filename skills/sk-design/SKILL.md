@@ -165,10 +165,10 @@ Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready`
 - `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <issues collapsed into a prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the structural check.
 - Cap at 3 drafter re-dispatches. On the third failure, emit `error: rfc_structural_check_loop_exhausted` and halt.
 
-**Confirm (mode-aware).** The confirm before the PLAN draft is shaped by how the draft was reached:
+**Confirm (mode-aware).** The confirm before the PLAN draft is an approval gate — the PLAN draft, quorum, and commit all happen *after* it — so surface it as a structured `AskUserQuestion` with the affirmative labelled **Approve** (not "ship" / "go", which overstate a gate that precedes the commit). The `AskUserQuestion` tool's automatic free-text "Other" option covers any response that fits none of the choices. The choices are shaped by how the draft was reached:
 
-- In exploration, the substance was already worked out together, so this is a *light* confirm: surface the RFC.md path and contents and ask "does the draft look right? ship / tweak / cancel." On "tweak," re-dispatch `sk-rfc-drafter` with `feedback: <user edit instructions as prose>`, write the updated `draft_text` through, re-run the RFC structural check, and re-surface. The loop is uncapped because the user drives it.
-- In `--auto`, this is a *one-line* confirm before commit — trust to proceed, not blindness. Surface the RFC.md path and a one-line summary and pause for go / cancel.
+- In exploration, the substance was already worked out together, so this is a *light* approval: surface the RFC.md path and contents as an `AskUserQuestion` with `Approve` / `Tweak` / `Cancel`. On `Tweak`, re-dispatch `sk-rfc-drafter` with `feedback: <user edit instructions as prose>`, write the updated `draft_text` through, re-run the RFC structural check, and re-surface. The loop is uncapped because the user drives it.
+- In `--auto`, this is a one-line approval before commit — trust to proceed, not blindness. Surface the RFC.md path and a one-line summary as an `AskUserQuestion` with `Approve` / `Cancel` (a `Tweak` option is fine if it helps).
 
 In either mode, an explicit user cancel emits the cancelled clean-exit shape with `Reason: User cancelled during RFC review.`, leaves RFC.md and RESEARCH.md on disk as drafts, runs no commit and no cleanup, and exits. No error code — this is a clean exit. The same pattern applies on any later turn of the confirm loop.
 
@@ -206,7 +206,7 @@ The research fan-out runs through a backend seam so the orchestration logic stay
 **Resolution.** Read `fanout` from `.sidekick/config.json` (absent → `{ backend: "auto", budget: "standard" }`). In `--auto <low|medium|high>` mode the stated effort sets the budget tier for the invocation (`low → quick`, `medium → standard`, `high → deep`); a bare `--auto` with no level maps the configured `fanout.budget` onto the tier, and without `--auto` the configured budget governs the research requested during exploration.
 
 - `backend: agents` — dispatch researchers as parallel `Agent` calls in the main session (the default path; always works).
-- `backend: workflow` — compose the researcher fan-out as one Workflow run: each researcher is an `agent()` call with `agentType: "sk-researcher-<hint>"` and the same input fields; collect the structured returns when the run completes.
+- `backend: workflow` — compose the researcher fan-out as one Workflow run: each researcher is an `agent()` call with `agentType: "sk-researcher-<hint>"` and the same input fields; collect the structured returns when the run completes. The harness re-invokes the orchestrator automatically when the Workflow completes — await that notification rather than scheduling a `ScheduleWakeup` / `/loop` heartbeat to poll the background run; a scheduled wakeup dangles past a user cancel and fires a spurious resume.
 - `backend: auto` — run the probe via Bash: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" capabilities`. Parse the JSON; `workflows.available === "likely"` → use the workflow backend, anything else → agents. If the probe itself fails, use agents.
 
 **Budget tiers** (the tier gates verification depth and researcher count, not just cost):
