@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { decideGuardConfig, isSidekickConfigPath } from './hooks.js';
+import {
+  decideGuardConfig,
+  decideScanConfig,
+  isSidekickConfigPath,
+  runScanConfig,
+} from './hooks.js';
 
 describe('isSidekickConfigPath', () => {
   it('matches an absolute .sidekick/config.json', () => {
@@ -47,5 +52,40 @@ describe('decideGuardConfig', () => {
 
   it('returns null when file_path is absent', () => {
     expect(decideGuardConfig(JSON.stringify({ tool_name: 'Bash' }))).toBeNull();
+  });
+});
+
+describe('decideScanConfig', () => {
+  it('advises when config.json is modified', () => {
+    const a = decideScanConfig(' M .sidekick/config.json\n');
+    expect(a?.systemMessage).toContain('.sidekick/config.json');
+  });
+  it('advises when config.json is untracked/added', () => {
+    expect(decideScanConfig('?? .sidekick/config.json\n')).not.toBeNull();
+  });
+  it('returns null on a clean tree', () => {
+    expect(decideScanConfig('')).toBeNull();
+  });
+  it('returns null when only other files changed', () => {
+    expect(decideScanConfig(' M src/index.ts\n')).toBeNull();
+  });
+});
+
+describe('runScanConfig', () => {
+  it('uses the injected porcelain reader', () => {
+    const a = runScanConfig({
+      cwd: '/repo',
+      readPorcelain: () => ' M .sidekick/config.json\n',
+    });
+    expect(a?.systemMessage).toContain('.sidekick/config.json');
+  });
+  it('returns null when the reader throws (non-git / unavailable)', () => {
+    const a = runScanConfig({
+      cwd: '/repo',
+      readPorcelain: () => {
+        throw new Error('not a git repo');
+      },
+    });
+    expect(a).toBeNull();
   });
 });

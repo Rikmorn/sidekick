@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import * as path from 'node:path';
 
 const CONFIG_DENY_REASON =
@@ -50,4 +51,43 @@ export function decideGuardConfig(stdin: string): PreToolUseDeny | null {
       permissionDecisionReason: CONFIG_DENY_REASON,
     },
   };
+}
+
+const SCAN_ADVISORY =
+  'sidekick: .sidekick/config.json was modified this session. It defines your gate commands — review the change before committing (it was not made through `sidekick init`).';
+
+export interface StopAdvisory {
+  systemMessage: string;
+}
+
+/** Stop decision over `git status --porcelain` output (pure). */
+export function decideScanConfig(porcelain: string): StopAdvisory | null {
+  const touched = porcelain
+    .split('\n')
+    .some((line) => line.includes('.sidekick/config.json'));
+  return touched ? { systemMessage: SCAN_ADVISORY } : null;
+}
+
+export interface RunScanConfigOptions {
+  cwd: string;
+  /** Returns `git status --porcelain`; injectable for tests. */
+  readPorcelain?: () => string;
+}
+
+export function runScanConfig(opts: RunScanConfigOptions): StopAdvisory | null {
+  const read =
+    opts.readPorcelain ??
+    (() =>
+      execSync('git status --porcelain', {
+        cwd: opts.cwd,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }));
+  let porcelain: string;
+  try {
+    porcelain = read();
+  } catch {
+    return null; // not a git repo / git unavailable → silent
+  }
+  return decideScanConfig(porcelain);
 }
