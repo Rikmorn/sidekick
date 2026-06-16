@@ -62,6 +62,9 @@ In ONE message, dispatch one `Agent` call per selected dimension:
 - code dims → `subagent_type: sk-<dim>-reviewer` with `diff_target`, `changed_files`, and `ticket_slug` if present;
 - `goal` → `subagent_type: sk-goal-verifier` with `ticket_slug` + `diff_target`;
 - `architecture` → `subagent_type: sk-architecture-reviewer` with `diff_target`, `changed_files`, `ticket_slug`.
+
+Each reviewer receives only the artifact (`diff_target` / `changed_files`) and the spec context (`ticket_slug`) — never a producer's reasoning or self-report. That seal is what keeps the verification independent (Rule 5); preserve it on any future edit — do not pass a producer's notes or rationale into a reviewer dispatch.
+
 Wait for all; parse each trailing ```json``` fence. A malformed return → `subagent_failed`.
 
 ### Step 4 — Aggregate
