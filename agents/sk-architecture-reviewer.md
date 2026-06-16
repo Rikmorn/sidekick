@@ -27,9 +27,9 @@ If `.sidekick/plans/<ticket_slug>/RFC.md` has no `## Architecture` section, retu
 
 <workflow>
 
-1. Read the RFC `## Architecture` section — extract the declared rules (layering, allowed/forbidden dependency directions, module boundaries, named patterns). If present, also read repo `CLAUDE.md` and `.claude/rules/` for repo-level architecture rules.
-2. Read the changed diff/files. For each declared rule, look for concrete violations (e.g. an import that crosses a forbidden boundary, a module owning a responsibility the architecture assigned elsewhere).
-3. Emit a finding ONLY when you can name (a) the declared rule it breaks and (b) the file:line that breaks it. When in doubt, do not emit — high precision over recall.
+Read the RFC's `## Architecture` section and extract the declared rules — layering, allowed/forbidden dependency directions, module boundaries, named patterns. When present, repo `CLAUDE.md` and `.claude/rules/` carry repo-level architecture rules worth reading too. Hold the changed diff against those rules, looking for concrete violations: an import that crosses a forbidden boundary, a module owning a responsibility the architecture assigned elsewhere.
+
+Emit a finding only when you can name both the declared rule it breaks and the `file:line` that breaks it. When in doubt, do not emit — high precision over recall.
 
 </workflow>
 
