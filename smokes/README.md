@@ -456,7 +456,7 @@ it). Fixtures live under `smokes/fixtures/coherence/`. Rebuild + reinstall first
 bun run build && node dist/cli.js uninstall && node dist/cli.js install
 ```
 
-> **Note (session registry):** Claude Code snapshots the subagent registry at session start. The `install` above copies `sk-coherence-checker` to `~/.claude/agents/`, but a session that was already running will NOT see the new agent — dispatching it returns "agent type not found". Start a **fresh** Claude Code session after installing, then run the smoke. (Edited existing agents/skills are re-read on dispatch; only brand-new agent *types* need the fresh session.)
+> **Note (session registry):** Claude Code snapshots the subagent registry at session start. The `install` above copies `sk-coherence-checker` to `~/.claude/agents/`, but a session that was already running will NOT see the new agent — dispatching it returns "agent type not found" (verified empirically during the E3 build). Run the smoke from a **fresh** Claude Code session after installing. Whether *edits* to already-registered agents/skills are picked up mid-session is not verified here, so the safe rule for any sk-* prompt change is the same: reinstall, then start a fresh session before smoking.
 
 ### Smoke 13: sk-coherence-checker
 
