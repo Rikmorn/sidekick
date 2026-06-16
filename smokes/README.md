@@ -396,6 +396,52 @@ Expected:
 
 Expected: a clear **`unknown flag --research; see --auto`** error — not a silent ignore, and not a research run. Same for `--no-research` and `--budget` (e.g. `/sk-design legacy-import --budget quick` → `unknown flag --budget; see --auto`). This is the converse of Smoke 10 Parts B–D, which now use the `--auto` equivalents.
 
+## E20 setup (tier-0 config guard smoke)
+
+Smoke 12 exercises the E20 tier-0 hook: a Claude Code PreToolUse DENY of agent edits to `.sidekick/config.json`, plus a non-blocking Stop advisory backstop that catches the Bash-bypass channel, both installed by `sidekick init` into the consumer's `.claude/settings.local.json`. Hooks can't be unit-tested for "does CC actually fire it" — whether the runtime honours the deny and surfaces the advisory is exactly the gap this manual check fills (same rationale as Smokes 10 and 11). Use the base Setup above with the `minimal-repo` fixture.
+
+Because `bin/` changed, rebuild and reinstall the launcher, then re-init the consumer so the hook block lands in its `.claude/settings.local.json`:
+
+```bash
+pnpm build && node dist/cli.js install      # in the sidekick repo/worktree
+node ~/.claude/sidekick/bin/sidekick init    # in the consumer repo (writes the hook block)
+```
+
+### Smoke 12: Tier-0 config guard
+
+#### Part A — deny fires
+
+In the consumer repo, ask the agent to edit `.sidekick/config.json` directly — e.g. "change the test gate to `echo skip`".
+
+Expected:
+- The `Edit`/`Write` is **DENIED** by the PreToolUse hook, with a reason naming the gate commands.
+- `.sidekick/config.json` is unchanged on disk.
+- The deny holds even under an accept-edits / bypass-permissions session — confirm by repeating the ask in such a session and seeing the same denial.
+
+#### Part B — Bash-bypass advisory
+
+Have the agent modify the file via Bash instead (`echo '...' > .sidekick/config.json`). The PreToolUse deny only watches `Edit`/`Write`, so it won't see this write.
+
+Expected:
+- The Bash write goes through (the deny doesn't cover this channel).
+- At end-of-turn, the non-blocking Stop advisory surfaces ("`.sidekick/config.json` was modified this session…"), flagging the out-of-band change without blocking.
+- Revert the change afterwards so the fixture is clean.
+
+#### Part C — opt-out + idempotency
+
+```bash
+node ~/.claude/sidekick/bin/sidekick init --no-hooks
+```
+
+Expected:
+- `--no-hooks` removes the sidekick hook block from `.claude/settings.local.json`. Foreign hooks (e.g. a Biome formatter the consumer already had) survive untouched.
+- Re-running plain `node ~/.claude/sidekick/bin/sidekick init` twice produces **no duplicate** sidekick hook entries — the block is reconciled, not appended.
+- `.claude/settings.local.json` is gitignored, so none of this lands in the consumer's git history.
+
+#### Part D — foreign hooks preserved
+
+If the consumer already had a `.claude/settings.local.json` with its own hook before any sidekick install, confirm that hook is intact after both `init` (block added) and `init --no-hooks` (block removed) — sidekick only owns its own block and never rewrites or drops the consumer's entries.
+
 ## What's not covered by these smokes
 
 The smokes above exercise the happy path of each orchestrator plus one adversarial case (drift). The following M1 paths are NOT covered — they were deliberate deferrals, but listing them prevents future-you from assuming they were exercised:
