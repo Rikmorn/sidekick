@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as nodePath from 'node:path';
 import {
   decideGuardConfig,
   decideScanConfig,
+  installHooks,
   isSidekickConfigPath,
   runScanConfig,
 } from './hooks.js';
@@ -87,5 +91,130 @@ describe('runScanConfig', () => {
       },
     });
     expect(a).toBeNull();
+  });
+});
+
+describe('installHooks', () => {
+  let tmp: string;
+  let settingsPath: string;
+  const launcher = '/home/u/.claude/sidekick/bin/sidekick';
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'sk-hooks-'));
+    settingsPath = nodePath.join(tmp, '.claude', 'settings.local.json');
+  });
+  afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+  // Bare JSON.parse infers `any` (not an *explicit* `any`, so biome's
+  // noExplicitAny does not flag it) — same style as init.test.ts.
+  const read = () => JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+
+  it('creates settings with both hook entries when enabled', () => {
+    const r = installHooks({
+      settingsLocalPath: settingsPath,
+      launcherPath: launcher,
+      enabled: true,
+    });
+    expect(r.action).toBe('installed');
+    const s = read();
+    expect(s.hooks.PreToolUse[0].matcher).toBe('Edit|Write|MultiEdit');
+    expect(s.hooks.PreToolUse[0].hooks[0].command).toContain(launcher);
+    expect(s.hooks.PreToolUse[0].hooks[0].command).toContain(
+      'hook guard-config',
+    );
+    expect(s.hooks.Stop[0].hooks[0].command).toContain('hook scan-config');
+  });
+
+  it('is idempotent on re-run', () => {
+    installHooks({
+      settingsLocalPath: settingsPath,
+      launcherPath: launcher,
+      enabled: true,
+    });
+    const r2 = installHooks({
+      settingsLocalPath: settingsPath,
+      launcherPath: launcher,
+      enabled: true,
+    });
+    expect(r2.changed).toBe(false);
+    expect(read().hooks.PreToolUse).toHaveLength(1);
+  });
+
+  it('preserves a foreign hook across install', () => {
+    fs.mkdirSync(nodePath.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          PostToolUse: [
+            {
+              matcher: 'Edit',
+              hooks: [{ type: 'command', command: 'biome check' }],
+            },
+          ],
+        },
+      }),
+    );
+    installHooks({
+      settingsLocalPath: settingsPath,
+      launcherPath: launcher,
+      enabled: true,
+    });
+    const s = read();
+    expect(s.hooks.PostToolUse[0].hooks[0].command).toBe('biome check');
+    expect(s.hooks.PreToolUse).toHaveLength(1);
+  });
+
+  it('strips our entries when disabled, leaving foreign hooks', () => {
+    fs.mkdirSync(nodePath.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          PostToolUse: [
+            {
+              matcher: 'Edit',
+              hooks: [{ type: 'command', command: 'biome check' }],
+            },
+          ],
+        },
+      }),
+    );
+    installHooks({
+      settingsLocalPath: settingsPath,
+      launcherPath: launcher,
+      enabled: true,
+    });
+    const r = installHooks({
+      settingsLocalPath: settingsPath,
+      launcherPath: launcher,
+      enabled: false,
+    });
+    expect(r.action).toBe('removed');
+    const s = read();
+    expect(s.hooks.PreToolUse).toBeUndefined();
+    expect(s.hooks.Stop).toBeUndefined();
+    expect(s.hooks.PostToolUse[0].hooks[0].command).toBe('biome check');
+  });
+
+  it('is a no-op when disabling an absent guard', () => {
+    const r = installHooks({
+      settingsLocalPath: settingsPath,
+      launcherPath: launcher,
+      enabled: false,
+    });
+    expect(r.action).toBe('noop');
+    expect(fs.existsSync(settingsPath)).toBe(false);
+  });
+
+  it('throws on malformed existing settings (no write)', () => {
+    fs.mkdirSync(nodePath.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, '{ not valid json');
+    expect(() =>
+      installHooks({
+        settingsLocalPath: settingsPath,
+        launcherPath: launcher,
+        enabled: true,
+      }),
+    ).toThrow();
   });
 });

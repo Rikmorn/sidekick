@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const CONFIG_DENY_REASON =
@@ -90,4 +91,113 @@ export function runScanConfig(opts: RunScanConfigOptions): StopAdvisory | null {
     return null; // not a git repo / git unavailable → silent
   }
   return decideScanConfig(porcelain);
+}
+
+export const HOOK_MARKERS = {
+  guard: 'hook guard-config',
+  scan: 'hook scan-config',
+} as const;
+
+interface HookCommand {
+  type: string;
+  command: string;
+}
+interface HookEntry {
+  matcher?: string;
+  hooks?: HookCommand[];
+}
+
+export interface InstallHooksOptions {
+  settingsLocalPath: string;
+  launcherPath: string;
+  enabled: boolean;
+}
+export interface InstallHooksResult {
+  changed: boolean;
+  action: 'installed' | 'removed' | 'noop';
+}
+
+function entryHasMarker(entry: HookEntry, marker: string): boolean {
+  return (entry.hooks ?? []).some(
+    (h) => typeof h.command === 'string' && h.command.includes(marker),
+  );
+}
+
+/**
+ * Reconcile sidekick's tier-0 hook entries in `.claude/settings.local.json`:
+ * present when `enabled`, absent otherwise. Idempotent (re-running with the
+ * same launcher is a no-op) and non-destructive (foreign hooks are preserved).
+ * Throws on malformed existing settings rather than corrupting them.
+ */
+export function installHooks(opts: InstallHooksOptions): InstallHooksResult {
+  const { settingsLocalPath, launcherPath, enabled } = opts;
+
+  let settings: Record<string, unknown> = {};
+  if (fs.existsSync(settingsLocalPath)) {
+    const raw = fs.readFileSync(settingsLocalPath, 'utf-8');
+    if (raw.trim().length > 0) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (err) {
+        throw new Error(
+          `Cannot update ${settingsLocalPath}: invalid JSON (${err instanceof Error ? err.message : String(err)})`,
+        );
+      }
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        throw new Error(
+          `Cannot update ${settingsLocalPath}: root must be a JSON object`,
+        );
+      }
+      settings = parsed as Record<string, unknown>;
+    }
+  }
+
+  const before = JSON.stringify(settings);
+
+  const hooks: Record<string, HookEntry[]> =
+    typeof settings.hooks === 'object' &&
+    settings.hooks !== null &&
+    !Array.isArray(settings.hooks)
+      ? (settings.hooks as Record<string, HookEntry[]>)
+      : {};
+
+  const inv = `"${launcherPath}"`;
+
+  const pre = (Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : []).filter(
+    (e) => !entryHasMarker(e, HOOK_MARKERS.guard),
+  );
+  if (enabled) {
+    pre.push({
+      matcher: 'Edit|Write|MultiEdit',
+      hooks: [{ type: 'command', command: `${inv} ${HOOK_MARKERS.guard}` }],
+    });
+  }
+  if (pre.length) hooks.PreToolUse = pre;
+  else delete hooks.PreToolUse;
+
+  const stop = (Array.isArray(hooks.Stop) ? hooks.Stop : []).filter(
+    (e) => !entryHasMarker(e, HOOK_MARKERS.scan),
+  );
+  if (enabled) {
+    stop.push({
+      hooks: [{ type: 'command', command: `${inv} ${HOOK_MARKERS.scan}` }],
+    });
+  }
+  if (stop.length) hooks.Stop = stop;
+  else delete hooks.Stop;
+
+  if (Object.keys(hooks).length) settings.hooks = hooks;
+  else delete settings.hooks;
+
+  const after = JSON.stringify(settings);
+  if (after === before) return { changed: false, action: 'noop' };
+
+  fs.mkdirSync(path.dirname(settingsLocalPath), { recursive: true });
+  fs.writeFileSync(settingsLocalPath, `${JSON.stringify(settings, null, 2)}\n`);
+  return { changed: true, action: enabled ? 'installed' : 'removed' };
 }
