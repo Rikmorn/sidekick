@@ -7,7 +7,7 @@ argument-hint: <topic-or-slug> [--auto <low|medium|high>]
 allowed-tools: Read, Grep, Glob, Bash, Agent, WebFetch, WebSearch, Write
 ---
 
-You exist to produce a well-grounded RFC.md + PLAN.md for a single plan — either *with* the user through collaborative exploration (the default) or *for* them hands-off at a stated effort (`--auto`). The deterministic downstream is the same in both modes: research where it helps, architectural context and codebase analogues, an RFC gated through structural review + the user, a PLAN gated through a parallel quorum of dimensional reviewers, and one atomic commit.
+You exist to produce a well-grounded RFC.md + PLAN.md for a single plan — either *with* the user through collaborative exploration (the default) or *for* them hands-off at a stated effort (`--auto`). The deterministic downstream is the same in both modes: research where it helps, architectural context and codebase analogues, an RFC gated through a structural + coherence quorum + the user, a PLAN gated through a parallel quorum of dimensional reviewers, and one atomic commit.
 
 By default `/sk-design <topic>` is a conversation. You surface your understanding of the work, pull research transparently when it sharpens the discussion, lay out options and open questions inline, and iterate with the user until the design is clear enough to draft — then you draft. The user is in the driver's seat; their first contact with content is the dialogue, not a finished RFC.
 
@@ -69,7 +69,7 @@ These are the unconditional halts — emit only the structured-error block (no p
 - `error: slug_collision` — `sk-explorer` returned `hard_stop` with `reason: slug_collision` (a plan with this slug already exists at `.sidekick/plans/<slug>/`). Short-circuits in both modes.
 - `error: ambiguous_git_state` — `sk-branch-precheck` returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
 - `error: missing_architecture_context` — `sk-architectural-advisor`'s structured return surfaced `error: missing_architecture_context`. The consuming repo has no CLAUDE.md or `.claude/rules/` — the advisor cannot ground recommendations in repo constraints. Surface to the user with a hint to author a minimal CLAUDE.md before re-running `/sk-design`.
-- `error: rfc_structural_check_loop_exhausted` — the RFC structural-check loop in Finalisation (drafter ↔ structural-checker) hit its 3-dispatch cap without a `pass` verdict.
+- `error: rfc_quorum_check_loop_exhausted` — the RFC quorum loop in Finalisation (drafter ↔ structural + coherence checkers) hit its 3-dispatch cap without both reviewers passing.
 - `error: plan_quorum_check_loop_exhausted` — the PLAN quorum loop in Finalisation (drafter ↔ both reviewers) hit its 3-dispatch cap without both reviewers passing.
 - `error: subagent_failed` — any dispatched subagent returned malformed JSON, an unrecognised `mode` / `verdict`, or a deliverable that fails its documented contract.
 
@@ -109,7 +109,7 @@ Reason: <one-line user-facing description (e.g., "User declined the branch advis
 
 <workflow>
 
-The shape is: **Groundwork** (scope + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → structural check → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation. Two places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-pattern-mapper` + `sk-architectural-advisor`) gathered at convergence, and the PLAN quorum (`sk-structural-checker` + `sk-crossref-checker`). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
+The shape is: **Groundwork** (scope + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → RFC quorum → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation. Two places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-pattern-mapper` + `sk-architectural-advisor`) gathered at convergence, and the PLAN quorum (`sk-structural-checker` + `sk-crossref-checker`). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
 
 ### Groundwork — scope and git state
 
@@ -159,15 +159,22 @@ Keep this pair's dispatch parallel — the independence note that applies to the
 
 Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/RFC.md`, creating parent directories as needed.
 
-**Verify RFC structure.** Dispatch `subagent_type: sk-structural-checker` with `artifact_path: .sidekick/plans/<slug>/RFC.md` and `artifact_type: "rfc"`. Parse the trailing ```json``` fence.
+**Verify the RFC (quorum).** In a single message, dispatch both reviewers in parallel — one Agent call each:
 
-- `verdict: pass` — continue to the confirm.
-- `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <issues collapsed into a prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the structural check.
-- Cap at 3 drafter re-dispatches. On the third failure, emit `error: rfc_structural_check_loop_exhausted` and halt.
+- `subagent_type: sk-structural-checker` with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"`.
+- `subagent_type: sk-coherence-checker` with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"`.
+
+Parse both trailing ```json``` fences. Combine verdicts:
+
+- Both `verdict: pass` — continue to the confirm.
+- Either `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <both reviewers' issues collapsed into one prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the quorum.
+- Cap at 3 drafter re-dispatches. On the third failure, emit `error: rfc_quorum_check_loop_exhausted` and halt.
+
+The two checks run in parallel for the same independence reason as the PLAN quorum: a serialised dispatch lets one checker's output bleed into the other through the orchestrator's intermediate state.
 
 **Confirm (mode-aware).** The confirm before the PLAN draft is an approval gate — the PLAN draft, quorum, and commit all happen *after* it — so surface it as a structured `AskUserQuestion` with the affirmative labelled **Approve** (not "ship" / "go", which overstate a gate that precedes the commit). The `AskUserQuestion` tool's automatic free-text "Other" option covers any response that fits none of the choices. The choices are shaped by how the draft was reached:
 
-- In exploration, the substance was already worked out together, so this is a *light* approval: surface the RFC.md path and contents as an `AskUserQuestion` with `Approve` / `Tweak` / `Cancel`. On `Tweak`, re-dispatch `sk-rfc-drafter` with `feedback: <user edit instructions as prose>`, write the updated `draft_text` through, re-run the RFC structural check, and re-surface. The loop is uncapped because the user drives it.
+- In exploration, the substance was already worked out together, so this is a *light* approval: surface the RFC.md path and contents as an `AskUserQuestion` with `Approve` / `Tweak` / `Cancel`. On `Tweak`, re-dispatch `sk-rfc-drafter` with `feedback: <user edit instructions as prose>`, write the updated `draft_text` through, re-run the RFC quorum, and re-surface. The loop is uncapped because the user drives it.
 - In `--auto`, this is a one-line approval before commit — trust to proceed, not blindness. Surface the RFC.md path and a one-line summary as an `AskUserQuestion` with `Approve` / `Cancel` (a `Tweak` option is fine if it helps).
 
 In either mode, an explicit user cancel emits the cancelled clean-exit shape with `Reason: User cancelled during RFC review.`, leaves RFC.md and RESEARCH.md on disk as drafts, runs no commit and no cleanup, and exits. No error code — this is a clean exit. The same pattern applies on any later turn of the confirm loop.
@@ -227,7 +234,7 @@ The research fan-out runs through a backend seam so the orchestration logic stay
 
 <dispatcher_parse_contracts>
 
-Ten contracts, one per dispatched specialist. Each describes the input fields, the deliverable shape, and the parse semantics. All JSON deliverables come inside a final ```json``` fence — the parse extracts that fence and ignores reasoning prose surrounding it.
+Eleven contracts, one per dispatched specialist. Each describes the input fields, the deliverable shape, and the parse semantics. All JSON deliverables come inside a final ```json``` fence — the parse extracts that fence and ignores reasoning prose surrounding it.
 
 ### 1. sk-explorer
 
@@ -327,6 +334,14 @@ The explorer is the only entry point for scoping. Its verdict is final — the o
 
 **Routing:** same shape as `sk-structural-checker`. In the PLAN quorum, the two checkers' failures are combined into a single prose `feedback` summary so the plan-drafter sees both dimensions in one re-dispatch.
 
+### 11. sk-coherence-checker
+
+**Input:** `{ artifact_path, artifact_type: "rfc"|"plan"|"decision", related_paths?: { rfc: <abs path> } }`. `related_paths.rfc` is required for `plan`, optional for `decision`, omitted for `rfc`.
+
+**Output:** `{ verdict: "pass"|"fail", artifact_path, artifact_type, issues? }` inside a ```json``` fence. `issues` is REQUIRED iff `verdict === "fail"`; each issue is `{ kind: "contradiction", locus_a, locus_b, detail }`.
+
+**Routing:** same shape as `sk-structural-checker`. In the RFC and PLAN quorums, a `fail` rolls its `issues` into the combined prose `feedback` for the matching drafter's re-dispatch.
+
 </dispatcher_parse_contracts>
 
 <output_artifacts>
@@ -359,7 +374,7 @@ Single atomic commit. Stage only the paths written by this skill — `git add .s
 
 <examples>
 
-Three examples teaching the interaction judgment, not the pipeline mechanics. They show: research-as-dialogue inside a default exploration with a light confirm; a hands-off `--auto medium` run where effort drives depth and the only pause is a one-line confirm; and an honest-autonomy breakout where `--auto low` stops for one focused question rather than guessing. Each leads with the reasoning the orchestrator should do; the deterministic Finalisation (context → draft → structural check → confirm → PLAN → quorum → commit) is summarised because its mechanics live in `<workflow>`.
+Three examples teaching the interaction judgment, not the pipeline mechanics. They show: research-as-dialogue inside a default exploration with a light confirm; a hands-off `--auto medium` run where effort drives depth and the only pause is a one-line confirm; and an honest-autonomy breakout where `--auto low` stops for one focused question rather than guessing. Each leads with the reasoning the orchestrator should do; the deterministic Finalisation (context → draft → RFC quorum → confirm → PLAN quorum → commit) is summarised because its mechanics live in `<workflow>`.
 
 ### Example 1 — Default exploration, research as dialogue, light confirm
 
@@ -371,7 +386,7 @@ The user redirects: it's not render cost, the dashboard refetches everything on 
 
 `--auto` is trust to proceed, so there is no conversational turn — the stated effort is the whole instruction for how deep to go. A clean slug means the explorer has nothing to disambiguate, so the run flows straight through.
 
-User runs `/sk-design export-csv --auto medium`. The explorer `proceed`s on the clean slug; branch precheck `proceed`s. Because `medium` maps to the `standard` research tier, the orchestrator gathers design context and runs research at standard depth (one researcher per hint, synthesiser merge) without pausing to ask whether to — the effort level already answered that. Synthesis flows into Finalisation: draft → structural check → PLAN → parallel quorum → commit, all hands-off. The single pause is the one-line approval before commit — an `AskUserQuestion` like "Designed `export-csv` (RFC.md, PLAN.md, RESEARCH.md)" with `Approve` / `Cancel` — trust to proceed, not blindness. The teaching point: in hands-off mode the effort word *is* the depth knob, so the orchestrator never stops to negotiate research; the only human touch is the one-line approval.
+User runs `/sk-design export-csv --auto medium`. The explorer `proceed`s on the clean slug; branch precheck `proceed`s. Because `medium` maps to the `standard` research tier, the orchestrator gathers design context and runs research at standard depth (one researcher per hint, synthesiser merge) without pausing to ask whether to — the effort level already answered that. Synthesis flows into Finalisation: draft → RFC quorum → PLAN → parallel quorum → commit, all hands-off. The single pause is the one-line approval before commit — an `AskUserQuestion` like "Designed `export-csv` (RFC.md, PLAN.md, RESEARCH.md)" with `Approve` / `Cancel` — trust to proceed, not blindness. The teaching point: in hands-off mode the effort word *is* the depth knob, so the orchestrator never stops to negotiate research; the only human touch is the one-line approval.
 
 ### Example 3 — `--auto low`, honest-autonomy breakout
 
