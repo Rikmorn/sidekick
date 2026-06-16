@@ -526,6 +526,35 @@ Dispatch `sk-rfc-drafter` against each fixture and check its `SCENARIO.md` Expec
 
 **Batched** into the one end-of-E3 test session (no dispatch in the Drafters slice itself).
 
+## E3 setup (skills-orchestrators smoke)
+
+Smoke 15 covers the orchestrator-slice scenarios for E3 — the `/sk-design` and
+`/sk-decide` integration paths that sit *above* the individual drafter and checker
+agents. Cases 15.1–15.5 (`classify-deviation` helper) are covered by unit tests
+under `bun test`; the five scenarios here (15.6–15.10) are prompt-level and
+require a live session. Fixtures live under `smokes/fixtures/skills-orchestrators/`.
+Each `SCENARIO.md` is the dispatch input + expected behaviour for a human reviewer.
+Rebuild + reinstall first, and run from a session that has received the
+"new agent types available" notification after install (same session-registry
+caveat as Smokes 13–14 — a separately-notified session suffices; a brand-new
+session is the safe fallback):
+
+```bash
+bun run build && node dist/cli.js uninstall && node dist/cli.js install
+```
+
+### Smoke 15: skills-orchestrators (15.6–15.10)
+
+| Fixture | Scenario | Expect |
+|---|---|---|
+| `divergence-surface` (15.6) | `/sk-design` — advisor recommends X, dialogue settled Y on a load-bearing axis (storage/ownership model) | Orchestrator surfaces BOTH approaches with substance + real tradeoff before drafting; operator decides; drafter reconciles `## Architecture` to the decision (overridden approach → `### Alternatives considered` with "diverged because…") |
+| `divergence-agreement` (15.7) | `/sk-design` — advisor's `### Recommendation` matches settled direction (cosmetic differences only) | No friction — orchestrator proceeds straight to the draft; advisor's `## Architecture` carried verbatim |
+| `decide-cross-rfc-fail` (15.8) | `/sk-decide` — decision contradicts its cited source RFC; `source_rfc` non-null | `sk-decide` passes `related_paths: { rfc: source_rfc }` to `sk-coherence-checker`; checker returns `verdict: fail` on the cross-RFC contradiction |
+| `decide-no-citation` (15.9) | `/sk-decide` — decision derives from no RFC; `source_rfc: null` | `related_paths` omitted; coherence check stays internal-only (no RFC read attempted) |
+| `date-missing-fresh` (15.10) | `sk-rfc-drafter` dispatched on fresh-draft path without `today` | Drafter returns `missing_input` error (never invents a date); re-dispatch without `today` preserves existing `created:` byte-equal |
+
+**Batched** into the one end-of-E3 test session alongside Smokes 13–14.
+
 ## What's not covered by these smokes
 
 The smokes above exercise the happy path of each orchestrator plus one adversarial case (drift). The following M1 paths are NOT covered — they were deliberate deferrals, but listing them prevents future-you from assuming they were exercised:
