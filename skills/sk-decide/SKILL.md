@@ -119,7 +119,7 @@ Include `topic` only when the user supplied a positional arg. `repo_root` is the
 
 Extract the single JSON object from the trailing ```json``` fence of the drafter's return. Branch on `mode`:
 
-- `draft_ready` — capture `draft_path` and `draft_text`. Derive `slug` as the basename of `draft_path` minus the `.md` extension. Continue to Step 6.
+- `draft_ready` — capture `draft_path` and `draft_text` and `source_rfc` (an absolute path or `null`). Derive `slug` as the basename of `draft_path` minus the `.md` extension. Continue to Step 6.
 - `no_topic_candidate` — emit `error: no_topic_candidate`. Use the drafter's `reason` as the one-line reason. Stop.
 - `existing_decision` — emit `error: existing_decision`. Reason names the existing path and notes that `--amend` / `--supersede` are deferred to v1.x. Stop.
 
@@ -132,7 +132,7 @@ Use the `Write` tool to create the file at the absolute path derived from `draft
 In a single message, dispatch both reviewers in parallel — one Agent call each:
 
 - `subagent_type: "sk-structural-checker"` with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`.
-- `subagent_type: "sk-coherence-checker"` with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`.
+- `subagent_type: "sk-coherence-checker"` with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`. **When `source_rfc` is non-null, add `"related_paths": { "rfc": "<source_rfc>" }`** so the checker also verifies the decision against its source RFC (the agent's `decision` lens checks internal coherence by default, and against the RFC when `related_paths.rfc` is supplied). When `source_rfc` is `null`, omit `related_paths` — the check stays internal-only.
 
 Parse both trailing ```json``` fences. On both `verdict: "pass"`, continue to Step 8.
 
@@ -222,6 +222,8 @@ Verdict → next step:
 ```json
 { "artifact_path": "<absolute-path>", "artifact_type": "decision" }
 ```
+
+When `source_rfc` is non-null the dispatch carries `related_paths: { "rfc": "<source_rfc>" }`, so the checker also verifies the decision against its source RFC; when `source_rfc` is `null`, `related_paths` is omitted and the check is internal-only.
 
 **Output (one of):**
 

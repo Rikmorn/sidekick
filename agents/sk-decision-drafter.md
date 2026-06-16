@@ -77,6 +77,8 @@ date: <today>
 <What this locks in. Positive consequences + tradeoffs.>
 ```
 
+Report the source RFC at the boundary: set `source_rfc` to the absolute path of the hint RFC this decision derives from (the one you drew the candidate from on auto-scan, or the one you cite in `## Context`). When the decision derives from no RFC, set `source_rfc` to `null`. This is how `/sk-decide` decides whether to run the cross-RFC coherence check — don't make the orchestrator parse your prose.
+
 **Re-dispatch with feedback.**
 
 When `feedback` is present: read the existing `<repo_root>/.sidekick/decisions/<slug>.md`. Integrate the feedback into the section(s) it targets. Leave all other sections byte-equal. Return the updated full document as `draft_text`.
@@ -91,7 +93,8 @@ Your deliverable is ONE JSON object inside a final ```json``` fence:
 // Success
 { "mode": "draft_ready",
   "draft_path": ".sidekick/decisions/<slug>.md",
-  "draft_text": "<full markdown content>" }
+  "draft_text": "<full markdown content>",
+  "source_rfc": "<abs-path-to-the-RFC-this-decision-derives-from>" }
 
 // Hard-stops
 { "mode": "no_topic_candidate", "reason": "no recent RFC has unlocked decisions" }
