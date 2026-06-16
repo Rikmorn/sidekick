@@ -498,6 +498,34 @@ With a decision doc whose chosen option contradicts its Consequences (seed from
 `sk-structural-checker` ∥ `sk-coherence-checker`; coherence returns `fail`,
 re-dispatching `sk-decision-drafter`.
 
+## E3 setup (drafter-reconciliation smoke)
+
+Smoke 14 exercises `sk-rfc-drafter`'s reconciliation behaviour — the *reconcile*
+half of the catch→reconcile loop Smoke 13 opened. The drafter now aligns
+`## Architecture` to the *decided* design (one-directional authority: the
+decision outranks every agent, including the coherence checker). Fixtures live
+under `smokes/fixtures/drafter-reconciliation/`. Each `SCENARIO.md` is the
+dispatch input + the expected behaviour a reviewer checks. Rebuild + reinstall
+first, and run from a **fresh** Claude Code session (same session-registry
+caveat as Smoke 13):
+
+```bash
+bun run build && node dist/cli.js uninstall && node dist/cli.js install
+```
+
+### Smoke 14: sk-rfc-drafter reconciliation
+
+Dispatch `sk-rfc-drafter` against each fixture and check its `SCENARIO.md` Expected:
+
+| Fixture | Dispatch | Expect |
+|---|---|---|
+| `agree-verbatim` | fresh, no feedback | `## Architecture` inserted **verbatim**; Decisions agree (g_4, no regression) |
+| `divergence-reconcile` | fresh, no feedback | decided design (a listed alternative) promoted to `### Recommendation`; advisor's original rec demoted to `### Alternatives considered` with "diverged because…"; reasoning preserved (D-02) |
+| `redispatch-reconcile` | re-dispatch (coherence feedback) | reconcile Architecture to D-01; untargeted sections byte-equal (D-06). The seed `RFC.md` in the dir is the on-disk artifact the drafter reads |
+| `unanalysed-flag` | fresh, no feedback | decided approach stated only as far as the decision specifies + a `## Questions` flag; **no fabricated** architecture (D-05) |
+
+**Batched** into the one end-of-E3 test session (no dispatch in the Drafters slice itself).
+
 ## What's not covered by these smokes
 
 The smokes above exercise the happy path of each orchestrator plus one adversarial case (drift). The following M1 paths are NOT covered — they were deliberate deferrals, but listing them prevents future-you from assuming they were exercised:
