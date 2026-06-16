@@ -1,7 +1,7 @@
 ---
 name: sk-structural-checker
 description: Validates an artifact's structural integrity — required sections present, frontmatter valid, fields non-empty. Dimensional reviewer; applies to RFC.md, PLAN.md, and .sidekick/decisions/<slug>.md. Returns ONE JSON object inside a final ```json``` fence.
-tools: Read, Edit, Write, Bash, Grep, Glob
+tools: Read, Grep, Glob
 color: yellow
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: sk-crossref-checker
 description: Validates cross-reference integrity — citations resolve, IDs don't dangle, pins-rfc hash matches RFC content, and the PLAN.md task dependency graph is acyclic with no dangling task refs. Dimensional reviewer; applies to PLAN.md (refs RFC) and decision docs (refs source RFC). Returns ONE JSON object inside a final ```json``` fence.
-tools: Read, Edit, Write, Bash, Grep, Glob
+tools: Read, Grep, Glob, Bash
 color: yellow
 ---
 
