@@ -290,9 +290,12 @@ if (_isEntry) {
         uninstall({ claudeHome });
       } else if (sub === 'init') {
         const nonInteractive = process.argv.includes('--non-interactive');
+        const noHooks = process.argv.includes('--no-hooks');
         const exitCode = await runInit({
           repoRoot: process.cwd(),
+          claudeHome,
           nonInteractive,
+          hooks: noHooks ? false : undefined,
         });
         process.exit(exitCode);
       } else if (sub === 'hook') {

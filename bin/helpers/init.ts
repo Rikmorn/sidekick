@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as readline from 'node:readline/promises';
 import type { SidekickConfig } from './config.js';
+import { installHooks } from './hooks.js';
 
 const BRANCH_CASCADE = ['main', 'master', 'dev', 'trunk', 'develop'] as const;
 
@@ -80,7 +81,11 @@ export function writeConfig(repoRoot: string, config: SidekickConfig): void {
 
 const GITIGNORE_HEADER =
   '# sidekick — local working state (managed by `sidekick init`)';
-const GITIGNORE_ENTRIES = ['.sidekick/cache/', '.sidekick/state/'] as const;
+const GITIGNORE_ENTRIES = [
+  '.sidekick/cache/',
+  '.sidekick/state/',
+  '.claude/settings.local.json',
+] as const;
 
 /**
  * Ensure the consumer repo's .gitignore covers sidekick's local working state
@@ -111,11 +116,14 @@ export function ensureGitignore(repoRoot: string): {
 
 export interface RunInitOptions {
   repoRoot: string;
+  claudeHome: string;
   nonInteractive?: boolean;
+  /** Explicit override: false = skip/remove the guard, true = force. Undefined = decide by mode/prompt. */
+  hooks?: boolean;
 }
 
 export async function runInit(opts: RunInitOptions): Promise<number> {
-  const { repoRoot, nonInteractive = false } = opts;
+  const { repoRoot, claudeHome, nonInteractive = false, hooks } = opts;
   // Validate: must be a git repo.
   try {
     execSync('git rev-parse --show-toplevel', {
@@ -131,6 +139,7 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
   const detectedGates = detectGates(repoRoot);
 
   let config: SidekickConfig;
+  let hooksEnabled = true;
   if (nonInteractive) {
     config = {
       schemaVersion: 1,
@@ -144,6 +153,7 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
       buildCheckpoints: 'deviations-only',
       fanout: { backend: 'auto', budget: 'standard' },
     };
+    hooksEnabled = hooks ?? true;
   } else {
     const rl = readline.createInterface({
       input: process.stdin,
@@ -161,6 +171,15 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
       );
       const lint = await ask('Lint command', detectedGates.lint || 'pnpm lint');
       const test = await ask('Test command', detectedGates.test || 'pnpm test');
+      if (hooks !== undefined) {
+        hooksEnabled = hooks;
+      } else {
+        const guardAnswer = await ask(
+          'Install tier-0 config guard (blocks agent edits to .sidekick/config.json)?',
+          'Y',
+        );
+        hooksEnabled = !/^n/i.test(guardAnswer.trim());
+      }
       config = {
         schemaVersion: 1,
         defaultBranch,
@@ -182,6 +201,19 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
   const gitignore = ensureGitignore(repoRoot);
   if (gitignore.changed) {
     console.log(`Updated .gitignore (${gitignore.added.join(', ')})`);
+  }
+
+  const result = installHooks({
+    settingsLocalPath: path.join(repoRoot, '.claude', 'settings.local.json'),
+    launcherPath: path.join(claudeHome, 'sidekick', 'bin', 'sidekick'),
+    enabled: hooksEnabled,
+  });
+  if (result.changed) {
+    console.log(
+      result.action === 'installed'
+        ? 'Installed tier-0 config guard (.claude/settings.local.json)'
+        : 'Removed tier-0 config guard (.claude/settings.local.json)',
+    );
   }
   return 0;
 }

@@ -172,13 +172,17 @@ describe('ensureGitignore', () => {
       .split('\n')
       .filter((l) => l.trim() === '.sidekick/cache/').length;
     expect(cacheCount).toBe(1);
-    expect(result.added).toEqual(['.sidekick/state/']);
+    expect(result.added).toEqual([
+      '.sidekick/state/',
+      '.claude/settings.local.json',
+    ]);
     expect(content).toContain('.sidekick/state/');
   });
 });
 
 describe('runInit (non-interactive flag path)', () => {
   let tmpRoot: string;
+  let claudeHome: string;
   beforeEach(() => {
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-init-'));
     execSync('git init -q', { cwd: tmpRoot });
@@ -190,18 +194,30 @@ describe('runInit (non-interactive flag path)', () => {
         scripts: { typecheck: 'tsc', lint: 'biome', test: 'vitest' },
       }),
     );
+    claudeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-home-'));
   });
-  afterEach(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(claudeHome, { recursive: true, force: true });
+  });
 
   it('hard-stops with code 1 outside a git repo', async () => {
     const nonGit = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-init-nongit-'));
-    const exitCode = await runInit({ repoRoot: nonGit, nonInteractive: true });
+    const exitCode = await runInit({
+      repoRoot: nonGit,
+      claudeHome,
+      nonInteractive: true,
+    });
     expect(exitCode).toBe(1);
     fs.rmSync(nonGit, { recursive: true, force: true });
   });
 
   it('writes a valid config.json in --non-interactive mode using detected defaults', async () => {
-    const exitCode = await runInit({ repoRoot: tmpRoot, nonInteractive: true });
+    const exitCode = await runInit({
+      repoRoot: tmpRoot,
+      claudeHome,
+      nonInteractive: true,
+    });
     expect(exitCode).toBe(0);
     expect(fs.existsSync(path.join(tmpRoot, '.sidekick', 'config.json'))).toBe(
       true,
@@ -215,7 +231,7 @@ describe('runInit (non-interactive flag path)', () => {
   });
 
   it('ensures .gitignore covers the .sidekick working state', async () => {
-    await runInit({ repoRoot: tmpRoot, nonInteractive: true });
+    await runInit({ repoRoot: tmpRoot, claudeHome, nonInteractive: true });
     const content = fs.readFileSync(path.join(tmpRoot, '.gitignore'), 'utf-8');
     expect(content).toContain('.sidekick/cache/');
     expect(content).toContain('.sidekick/state/');
@@ -228,6 +244,7 @@ describe('runInit (non-interactive flag path)', () => {
     try {
       const exitCode = await runInit({
         repoRoot: tmpRoot2,
+        claudeHome,
         nonInteractive: true,
       });
       expect(exitCode).toBe(0);
@@ -243,5 +260,50 @@ describe('runInit (non-interactive flag path)', () => {
     } finally {
       fs.rmSync(tmpRoot2, { recursive: true, force: true });
     }
+  });
+});
+
+describe('runInit hook install', () => {
+  let tmpRoot: string;
+  let claudeHome: string;
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-init-'));
+    execSync('git init -q', { cwd: tmpRoot });
+    claudeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-home-'));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(claudeHome, { recursive: true, force: true });
+  });
+
+  const settingsPath = () =>
+    path.join(tmpRoot, '.claude', 'settings.local.json');
+
+  it('installs the guard hook block by default (non-interactive)', async () => {
+    await runInit({ repoRoot: tmpRoot, claudeHome, nonInteractive: true });
+    const s = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'));
+    expect(s.hooks.PreToolUse[0].hooks[0].command).toContain(
+      'hook guard-config',
+    );
+    expect(s.hooks.PreToolUse[0].hooks[0].command).toContain(
+      path.join(claudeHome, 'sidekick', 'bin', 'sidekick'),
+    );
+    expect(s.hooks.Stop[0].hooks[0].command).toContain('hook scan-config');
+  });
+
+  it('omits the guard hook when hooks:false (--no-hooks)', async () => {
+    await runInit({
+      repoRoot: tmpRoot,
+      claudeHome,
+      nonInteractive: true,
+      hooks: false,
+    });
+    expect(fs.existsSync(settingsPath())).toBe(false);
+  });
+
+  it('gitignores .claude/settings.local.json', async () => {
+    await runInit({ repoRoot: tmpRoot, claudeHome, nonInteractive: true });
+    const gi = fs.readFileSync(path.join(tmpRoot, '.gitignore'), 'utf-8');
+    expect(gi).toContain('.claude/settings.local.json');
   });
 });
