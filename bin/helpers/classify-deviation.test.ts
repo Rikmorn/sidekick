@@ -81,6 +81,17 @@ describe('classifyDeviation', () => {
     });
     expect(r.signal.word_count).toBe(3);
   });
+
+  it('treats an empty description as zero words (clean amendment still proceeds)', () => {
+    const r = classifyDeviation({
+      claimed_type: 'amendment',
+      d_nn_affected: ['D-01'],
+      goal_change: false,
+      description: '',
+    });
+    expect(r.signal.word_count).toBe(0);
+    expect(r.verdict).toBe('proceed'); // 1 D-NN, no goal change, 0 <= 150
+  });
 });
 
 describe('runClassifyDeviationCli', () => {
@@ -111,6 +122,34 @@ describe('runClassifyDeviationCli', () => {
       ),
     );
     expect(a.route).toBe('redesign');
+  });
+
+  it('defaults a missing description to zero words', () => {
+    const out = runClassifyDeviationCli(
+      JSON.stringify({
+        type: 'amendment',
+        d_nn_affected: ['D-01'],
+        goal_change: false,
+      }),
+    );
+    expect(JSON.parse(out).signal.word_count).toBe(0);
+  });
+
+  it('prefers claimed_type over type when both are present', () => {
+    const out = runClassifyDeviationCli(
+      JSON.stringify({
+        claimed_type: 'redesign',
+        type: 'amendment',
+        d_nn_affected: ['D-01', 'D-02'],
+        goal_change: false,
+        description: 'x',
+      }),
+    );
+    // claimed_type=redesign wins; the amendment-mismatch path is not taken.
+    expect(JSON.parse(out)).toMatchObject({
+      verdict: 'proceed',
+      route: 'redesign',
+    });
   });
 
   it('returns an error JSON on malformed stdin', () => {

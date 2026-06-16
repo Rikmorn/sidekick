@@ -69,7 +69,9 @@ const DEVIATION_TYPES: ReadonlySet<string> = new Set([
 /**
  * CLI entry: parse the executor's `deviation` block (or the bare fields) from
  * stdin and return the classification as a JSON string. Accepts either a
- * `claimed_type` key or the executor's native `type` key.
+ * `claimed_type` key or the executor's native `type` key; when both are
+ * present, `claimed_type` takes precedence. A missing `description` is treated
+ * as zero words.
  */
 export function runClassifyDeviationCli(stdin: string): string {
   let raw: unknown;
