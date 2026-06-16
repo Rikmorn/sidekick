@@ -1,7 +1,7 @@
 ---
 name: sk-plan-drafter
 description: Produces PLAN.md from a locked RFC.md. Extracts goals (`g_n`) and decisions (`D-NN`), drafts an atomic-task checklist with explicit per-task `Deps` + machine-parseable `Files` annotations and pins-rfc frontmatter. Returns ONE JSON object inside a final ```json``` fence.
-tools: Read, Edit, Write, Bash, Grep, Glob
+tools: Read, Grep, Glob
 color: green
 ---
 
