@@ -442,6 +442,62 @@ Expected:
 
 If the consumer already had a `.claude/settings.local.json` with its own hook before any sidekick install, confirm that hook is intact after both `init` (block added) and `init --no-hooks` (block removed) — sidekick only owns its own block and never rewrites or drops the consumer's entries.
 
+## E3 setup (semantic-coherence checker smoke)
+
+Smoke 13 exercises `sk-coherence-checker` — the dimensional reviewer that
+catches semantic contradictions a structural check misses (the E23-smoke gap:
+an RFC whose `## Architecture` describes a design its `## Decisions` rejected).
+Validation is agent-level (dispatch the checker against crafted fixtures and
+assert the JSON) plus integration (the RFC/PLAN/decision quorums now dispatch
+it). Fixtures live under `smokes/fixtures/coherence/`. Rebuild + reinstall first
+(new agent + edited skills):
+
+```bash
+bun run build && node dist/cli.js uninstall && node dist/cli.js install
+```
+
+> **Note (session registry):** Claude Code snapshots the subagent registry at session start. The `install` above copies `sk-coherence-checker` to `~/.claude/agents/`, but a session that was already running will NOT see the new agent — dispatching it returns "agent type not found". Start a **fresh** Claude Code session after installing, then run the smoke. (Edited existing agents/skills are re-read on dispatch; only brand-new agent *types* need the fresh session.)
+
+### Smoke 13: sk-coherence-checker
+
+#### Part A — agent-level verdicts
+
+Dispatch `sk-coherence-checker` against each fixture (absolute `artifact_path`):
+
+| Fixture | artifact_type | related_paths | Expect |
+|---|---|---|---|
+| `rfc-cross-section/RFC.md` | rfc | — | fail (Architecture↔Decisions) |
+| `rfc-intra-section/RFC.md` | rfc | — | fail (two Decisions) |
+| `rfc-clean/RFC.md` | rfc | — | pass |
+| `rfc-amended/RFC.md` | rfc | — | pass (A-01 supersedes D-02) |
+| `plan-vs-rfc/PLAN.md` | plan | `{ rfc: …/plan-vs-rfc/RFC.md }` | fail (T-06 vs D-04) |
+| `decision-internal/decision.md` | decision | — | fail (option vs Consequences) |
+
+Dimensional separation: `sk-structural-checker` on `rfc-cross-section/RFC.md`
+(`artifact_type: rfc`) returns **pass** — shape is valid; only coherence fails.
+
+#### Part B — RFC quorum integration (sk-design)
+
+Run `/sk-design` to a draft whose Architecture contradicts its Decisions (or
+seed `.sidekick/plans/<slug>/RFC.md` from `rfc-cross-section/RFC.md`). Expect:
+the RFC quorum dispatches `sk-structural-checker` ∥ `sk-coherence-checker` in
+parallel; coherence returns `fail`; the orchestrator re-dispatches
+`sk-rfc-drafter` with the coherence issue folded into `feedback`; on the third
+failure it halts with `error: rfc_quorum_check_loop_exhausted`.
+
+#### Part C — PLAN quorum integration (sk-design)
+
+With a PLAN whose task realises a rejected decision (seed from
+`plan-vs-rfc/`), the PLAN quorum's three checkers run in parallel and coherence
+returns `fail`, re-dispatching `sk-plan-drafter`.
+
+#### Part D — decision quorum integration (sk-decide)
+
+With a decision doc whose chosen option contradicts its Consequences (seed from
+`decision-internal/decision.md`), `/sk-decide` Step 7 dispatches
+`sk-structural-checker` ∥ `sk-coherence-checker`; coherence returns `fail`,
+re-dispatching `sk-decision-drafter`.
+
 ## What's not covered by these smokes
 
 The smokes above exercise the happy path of each orchestrator plus one adversarial case (drift). The following M1 paths are NOT covered — they were deliberate deferrals, but listing them prevents future-you from assuming they were exercised:
