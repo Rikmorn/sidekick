@@ -7,7 +7,7 @@ argument-hint: [topic]
 allowed-tools: Read, Grep, Bash, Agent, Write, Edit
 ---
 
-You orchestrate the capture of a single durable rule into a MADR decision doc at `.sidekick/decisions/<slug>.md`. The shape is: validate inputs, run branch precheck, resolve recent RFC hints, dispatch `sk-decision-drafter` for a draft, dispatch `sk-structural-checker` to verify the structure, write the file, iterate with the user, commit.
+You orchestrate the capture of a single durable rule into a MADR decision doc at `.sidekick/decisions/<slug>.md`. The shape is: validate inputs, run branch precheck, resolve recent RFC hints, dispatch `sk-decision-drafter` for a draft, dispatch `sk-structural-checker` and `sk-coherence-checker` in parallel to verify its structure and coherence, write the file, iterate with the user, commit.
 
 This slash command runs in the main session because the runtime forbids subagents from dispatching other subagents (per `.claude/rules/sk-agent-prompts.md` "Where orchestrators must live"). The orchestration logic lives here; the focused cognitive work lives in the two subagents named above plus the `branch-precheck` CLI helper.
 
@@ -28,8 +28,8 @@ Before each significant choice, externalise the reasoning in prose so the flow i
 - Whether the resolved git state lets the operation proceed, or whether the precheck CLI hard-stopped.
 - Which `.sidekick/plans/*/RFC.md` files are recent enough to pass as `rfc_hint_paths` (top 3 by commit time).
 - How to interpret the drafter's returned `mode` — `draft_ready` continues, `no_topic_candidate` and `existing_decision` hard-stop with distinct messages.
-- When the structural checker fails, what its `issues` list tells the drafter — re-dispatch the drafter with the issues collapsed into a prose `feedback` string so it can target its edits.
-- When the loop limit (3 drafter re-dispatches against the checker) is reached, the right move is to halt and let the user retry rather than ship a malformed doc.
+- When a checker fails, what its `issues` list tells the drafter — re-dispatch the drafter with the issues collapsed into a prose `feedback` string so it can target its edits.
+- When the loop limit (3 drafter re-dispatches against the quorum) is reached, the right move is to halt and let the user retry rather than ship a malformed doc.
 - When the user asks for edits during Step 8, the same re-dispatch shape applies, but there is no loop cap — the user drives.
 
 The reasoning is internal scratchwork shaping dispatches and writes; it does not appear in the final rendered output.
@@ -56,7 +56,7 @@ Emit only the structured-error block (no preamble, no progress narration, no sig
 - `error: ambiguous_git_state` — `sk-branch-precheck` returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
 - `error: no_topic_candidate` — drafter returned `mode: "no_topic_candidate"`. Surface the drafter's `reason` field.
 - `error: existing_decision` — drafter returned `mode: "existing_decision"`. Surface the existing path and note that `--amend` / `--supersede` are deferred to v1.x. (Informational hard-stop, not a failure.)
-- `error: structural_check_loop_exhausted` — 3 drafter re-dispatches all failed `sk-structural-checker`. The user can re-invoke after revising the source material.
+- `error: decision_quorum_check_loop_exhausted` — 3 drafter re-dispatches all failed the decision quorum (`sk-structural-checker` + `sk-coherence-checker`). The user can re-invoke after revising the source material.
 - `error: slug_collision` — the Write target already exists on disk and is not the path the drafter pointed at. Defensive guard; should be rare because the drafter checks for existing decisions itself.
 
 Hard-stop format:
@@ -126,25 +126,24 @@ Extract the single JSON object from the trailing ```json``` fence of the drafter
 
 Use the `Write` tool to create the file at the absolute path derived from `draft_path` with `draft_text` as its content. Before writing, defensively check whether the target already exists on disk; if it does and is not the path the drafter just pointed at, emit `error: slug_collision` with the path and stop. (The drafter checks for existing decisions before drafting, so this guard exists for race conditions and stale-state safety, not as the primary gate.)
 
-### Step 7 — Structural-checker loop
+### Step 7 — Decision quorum loop
 
-Dispatch `subagent_type: "sk-structural-checker"` with:
+In a single message, dispatch both reviewers in parallel — one Agent call each:
 
-```json
-{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }
-```
+- `subagent_type: "sk-structural-checker"` with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`.
+- `subagent_type: "sk-coherence-checker"` with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`.
 
-Parse the trailing ```json``` fence. On `verdict: "pass"`, continue to Step 8.
+Parse both trailing ```json``` fences. On both `verdict: "pass"`, continue to Step 8.
 
-On `verdict: "fail"`, collapse the `issues` array into a short prose summary (e.g., "## Consequences body is empty; frontmatter status is missing") and re-dispatch `sk-decision-drafter` with that summary as `feedback`. Take the returned `draft_text`, write it back through the `Write` tool (overwrite), and re-run the structural checker.
+On either `verdict: "fail"`, collapse both reviewers' issues into a short prose summary (e.g., "## Consequences contradicts the chosen option; frontmatter status is missing") and re-dispatch `sk-decision-drafter` with that summary as `feedback`. Take the returned `draft_text`, write it back through the `Write` tool (overwrite), and re-run the quorum.
 
-Cap this loop at 3 drafter re-dispatches. If the third re-dispatch still fails, emit `error: structural_check_loop_exhausted` with a one-line summary of the latest issues and stop.
+Cap this loop at 3 drafter re-dispatches. If the third re-dispatch still fails either checker, emit `error: decision_quorum_check_loop_exhausted` with a one-line summary of the latest issues and stop.
 
 ### Step 8 — User confirmation / edit loop
 
 Show the file path and its current content to the user, then ask whether to commit or what to change. A natural form is `AskUserQuestion` with two options ("commit as is" / "request edits") plus a free-text channel; a plain prompt works equally well.
 
-On a commit signal, continue to Step 9. On edit instructions, re-dispatch `sk-decision-drafter` with the user's edit text as `feedback`, write the updated `draft_text` back, run the structural checker again (Step 7's loop applies), and re-present to the user. The user drives this loop with no cap.
+On a commit signal, continue to Step 9. On edit instructions, re-dispatch `sk-decision-drafter` with the user's edit text as `feedback`, write the updated `draft_text` back, re-run the quorum (Step 7's loop applies), and re-present to the user. The user drives this loop with no cap.
 
 ### Step 9 — Commit
 
@@ -215,6 +214,24 @@ Verdict → next step:
 | `pass` | Step 8 (user confirmation) |
 | `fail` | Re-dispatch drafter with `feedback`; loop, capped at 3 |
 
+### sk-coherence-checker
+
+**Input:**
+
+```json
+{ "artifact_path": "<absolute-path>", "artifact_type": "decision" }
+```
+
+**Output (one of):**
+
+```json
+{ "verdict": "pass", "artifact_path": "<path>", "artifact_type": "decision" }
+{ "verdict": "fail", "artifact_path": "<path>", "artifact_type": "decision",
+  "issues": [ { "kind": "contradiction", "locus_a": { … }, "locus_b": { … }, "detail": "<text>" } ] }
+```
+
+Verdict → next step: `pass` continues; `fail` re-dispatches the drafter with `feedback` (loop, capped at 3 — shared with the structural checker's loop).
+
 ### branch-precheck CLI (stdout JSON)
 
 Relevant fields:
@@ -243,7 +260,7 @@ Source: <rfc-hint-path-or-"none">
 
 ## Validation
 
-Structural-validation gate: PASS
+Validation quorum (structural + coherence): PASS
 Drafter re-dispatches: <N>/3
 
 ## Result
@@ -260,7 +277,7 @@ For hard-stops, emit only the canonical block defined in `<hard_stops>` — no p
 
 Three worked examples covering the common path, a hard-stop path, and a judgment path.
 
-### Example 1 — Common path (explicit topic, clean checker pass)
+### Example 1 — Common path (explicit topic, clean quorum pass)
 
 User invokes `/sk-decide cache-strategy-default-in-memory` on the default branch. One `.sidekick/plans/cache-rework/RFC.md` exists and is the most recent.
 
@@ -276,7 +293,7 @@ Source: .sidekick/plans/cache-rework/RFC.md
 
 ## Validation
 
-Structural-validation gate: PASS
+Validation quorum (structural + coherence): PASS
 Drafter re-dispatches: 0/3
 
 ## Result
@@ -300,11 +317,11 @@ error: no_topic_candidate
 Reason: no recent RFC has unlocked decisions
 ```
 
-### Example 3 — Judgment path (checker fails once, drafter fixes, second pass)
+### Example 3 — Judgment path (a checker fails once, drafter fixes, second pass)
 
 User invokes `/sk-decide auth-token-rotation` on a feature branch. No existing decision at that slug.
 
-Reasoning: Step 1 passes. Branch precheck returns `proceed` (feature branch is fine). Step 3 yields the top 3 recent RFCs. The drafter returns `mode: "draft_ready"` with `draft_text`, but the Q&A skimmed the consequences section and the drafter left `## Consequences` as a single line `TBD`. Write the file. Structural checker returns `verdict: "fail"` with one issue: `{ "field": "section.## Consequences", "issue": "empty body (placeholder)" }`. Collapse the issues list into prose: `"sk-structural-checker reports section.## Consequences empty body (placeholder)"`. Re-dispatch the drafter with that as `feedback`. The drafter re-asks one focused question, integrates the answer, and returns updated `draft_text` with the Consequences section populated. Write the updated text back through the same path. Structural checker now returns `verdict: "pass"`. Show to the user; user confirms. Commit lands.
+Reasoning: Step 1 passes. Branch precheck returns `proceed` (feature branch is fine). Step 3 yields the top 3 recent RFCs. The drafter returns `mode: "draft_ready"` with `draft_text`, but the Q&A skimmed the consequences section and the drafter left `## Consequences` as a single line `TBD`. Write the file. The quorum runs: `sk-coherence-checker` passes (no contradiction), but `sk-structural-checker` returns `verdict: "fail"` with one issue: `{ "field": "section.## Consequences", "issue": "empty body (placeholder)" }`. Collapse the issues list into prose: `"sk-structural-checker reports section.## Consequences empty body (placeholder)"`. Re-dispatch the drafter with that as `feedback`. The drafter re-asks one focused question, integrates the answer, and returns updated `draft_text` with the Consequences section populated. Write the updated text back through the same path. The quorum now passes (both checkers). Show to the user; user confirms. Commit lands.
 
 Output:
 
@@ -316,7 +333,7 @@ Source: .sidekick/plans/auth-rework/RFC.md
 
 ## Validation
 
-Structural-validation gate: PASS
+Validation quorum (structural + coherence): PASS
 Drafter re-dispatches: 1/3
 
 ## Result
