@@ -153,6 +153,7 @@ Keep this pair's dispatch parallel — the independence note that applies to the
 **Draft the RFC.** Dispatch `subagent_type: sk-rfc-drafter` with:
 
 - `slug`, `scope_statement`, `complexity`
+- `today: <YYYY-MM-DD>` — the system date from `date +%Y-%m-%d` (run once via Bash; reused for the PLAN draft below)
 - `synthesis_output: <full synthesiser JSON>` when research ran; omit when it didn't
 - `architecture_section: <advisor's "## Architecture" body, parsed per the dispatcher_parse_contracts>`
 - `analogues: [{ path, why_relevant }]` extracted from `sk-pattern-mapper`'s report (see `<dispatcher_parse_contracts>` for the parse semantics)
@@ -181,7 +182,7 @@ In either mode, an explicit user cancel emits the cancelled clean-exit shape wit
 
 **Draft the PLAN.** Compute the RFC content hash via `git hash-object .sidekick/plans/<slug>/RFC.md`. Capture stdout as `rfc_hash`.
 
-Dispatch `subagent_type: sk-plan-drafter` with `slug`, `rfc_path: .sidekick/plans/<slug>/RFC.md`, and `rfc_hash`. Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`.
+Dispatch `subagent_type: sk-plan-drafter` with `slug`, `rfc_path: .sidekick/plans/<slug>/RFC.md`, `rfc_hash`, and `today: <YYYY-MM-DD>` (the same system date derived for the RFC draft). Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`.
 
 **Quorum verify the PLAN.** In a single message, dispatch all three reviewers in parallel:
 

@@ -108,11 +108,12 @@ Use the `Agent` tool with `subagent_type: "sk-decision-drafter"`. Pass the input
 {
   "topic": "<topic-or-omitted>",
   "repo_root": "<absolute-repo-root>",
-  "rfc_hint_paths": ["<abs-path-1>", "<abs-path-2>", "<abs-path-3>"]
+  "rfc_hint_paths": ["<abs-path-1>", "<abs-path-2>", "<abs-path-3>"],
+  "today": "<YYYY-MM-DD>"
 }
 ```
 
-Include `topic` only when the user supplied a positional arg. `repo_root` is the consuming repo's absolute root (the directory the slash command runs from).
+Include `topic` only when the user supplied a positional arg. `repo_root` is the consuming repo's absolute root (the directory the slash command runs from). `today` is the system date from `date +%Y-%m-%d` (Bash), passed so the drafter never guesses the decision's `date:`.
 
 ### Step 5 — Parse drafter mode
 
