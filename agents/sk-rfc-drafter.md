@@ -165,7 +165,6 @@ Reasoning: the decided design appears nowhere in the advisor's section — not e
 
 # Never (safety tier)
 - Never invent architecture the advisor did not provide; flag the gap as a `## Questions` item instead.
-- Never silently drop the advisor's reasoning — an overridden recommendation moves to `### Alternatives considered`, it does not vanish.
 - Never re-open or contradict a decision in `## Decisions`; the decision outranks every input you were given, including any reviewer's.
 - Never write the file or modify git state — return `draft_text`.
 
