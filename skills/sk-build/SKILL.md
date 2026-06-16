@@ -17,7 +17,7 @@ M3 executes wave-by-wave. A **wave** is a set of tasks whose dependencies are al
 
 - The orchestrator does not modify source files itself. Source writes happen exclusively through the dispatched `sk-executor`, and only after the verification gate runs FRESH from main session.
 - Run the verification gate FRESH from main session (typecheck + lint + tests + `sk-spec-reviewer`). Subagent output is a claim, not a fact (see § 2 — verification gate independence) — never substitute `sk-executor`'s `gate_summary` for the orchestrator's own gate run.
-- Apply Q1 heuristics validation deterministically on every surfaced deviation. On mismatch (subagent classified as `amendment` but heuristics suggest `redesign`), surface BOTH prompts with a `⚠` note rather than silently routing to the subagent's claimed type.
+- Classify every surfaced deviation through the `classify-deviation` CLI (`<dispatcher_contracts>` § 1) — the heuristics are deterministic, not a judgment call. On `verdict: "mismatch"`, surface BOTH prompts with a `⚠` note rather than routing to the subagent's claimed type.
 - Only the explicit `deviation` field in `sk-executor`'s JSON deliverable triggers deviation routing. Prose, test counts, and file paths are never scanned for implicit deviation signals.
 - Writes go to `.sidekick/plans/<slug>/{PLAN.md, RFC.md}` only. PLAN.md tick lands in the same atomic commit as the executor's source changes; RFC.md `## Amendments` append lands when the user picks `amend`. Frozen sections (`## Goals`, `## Decisions`, `## Architecture`) stay byte-equal pre/post.
 - Drift check is warn-only — never block on its verdict; surface the warning and continue.
@@ -29,7 +29,7 @@ M3 executes wave-by-wave. A **wave** is a set of tasks whose dependencies are al
 Externalise key decisions in prose before acting:
 
 - Which task is next: re-read PLAN.md after each commit; pick first `[ ]` in document order (H3 subsections like `### Core` / `### Polish` are organisational, not boundary-marking).
-- The heuristics-validation outcome on a surfaced deviation: count `d_nn_affected.length`, check `goal_change`, measure `description` word count; clean match vs mismatch.
+- The deviation route on a surfaced deviation: pipe the executor's `deviation` block to `classify-deviation`; the helper returns `proceed`/`mismatch` + the route. (This is computed, not judged — the externalised reasoning is just which prompt to render.)
 - The gate-failure retry decision: first failure → capture context + re-dispatch sk-executor once with the failure context appended; second failure on the same task → hard-stop.
 - Whether the user's routing verb (`amend` / `redesign` / `skip` / `decide` / `pause`) is unambiguous; on freeform replies, keyword-match the first verb and treat the rest as the argument; if genuinely ambiguous, ask one clarifying question rather than guessing.
 
@@ -214,14 +214,13 @@ Four load-bearing contracts the orchestration depends on. Each describes the par
 
 **Why it exists.** `sk-executor`'s self-classification is the spec, but trusting one party's classification papers over real disagreement. Surface signaled disagreement explicitly rather than silently routing.
 
-**Heuristics validation table:**
+**The classification is deterministic — compute it, don't judge it.** Pipe the executor's `deviation` block to the CLI:
 
-| Subagent says | D-NN count | `goal_change` | Word count | Verdict |
-|---|---|---|---|---|
-| `amendment` | 1 | `false` | ≤150 | proceed with amendment prompt |
-| `amendment` | ≥2 OR `true` OR >150 | (any) | (any) | **mismatch** — surface BOTH prompts with `⚠` note |
-| `redesign` | (any) | (any) | (any) | proceed with redesign prompt |
-| `decision_opportunity` | (any) | (any) | (any) | proceed with `/sk-decide` suggestion |
+```bash
+echo '<deviation-json>' | "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" classify-deviation
+```
+
+It returns `{ verdict, route, signal }`. `verdict: "proceed"` → render the prompt for `route` (`amendment` → amendment prompt; `redesign` → redesign prompt; `decision` → `/sk-decide` suggestion). `verdict: "mismatch"` (the executor claimed `amendment` but the signal — ≥2 D-NN affected, or `goal_change`, or a >150-word description — warrants a redesign) → render the `⚠` note above BOTH prompts. The thresholds live in the helper, not here.
 
 **Mismatch surface form** (prepended above the amendment prompt):
 
@@ -235,27 +234,6 @@ Four load-bearing contracts the orchestration depends on. Each describes the par
 ```
 
 User reads both, picks any verb. The concrete user verbs (`amend`, `redesign`, `skip`, `decide`, `pause`) are unchanged on mismatch; the orchestrator routes the chosen verb to the matching action.
-
-**Worked example.**
-
-Subagent return:
-
-```json
-{
-  "status": "deviation",
-  "files_changed": ["src/lib/format-number.ts"],
-  "deviation": {
-    "type": "amendment",
-    "description": "Special-case handling for Infinity / NaN affects both D-01 and D-02.",
-    "d_nn_affected": ["D-01", "D-02"],
-    "goal_change": false
-  }
-}
-```
-
-Internal reasoning (not emitted): subagent says `amendment`, but `d_nn_affected.length === 2` ≥ 2 → mismatch. Surface BOTH prompts.
-
-Rendered output: `⚠ Subagent classified as amendment, but 2 D-NN affected (D-01, D-02). This typically warrants a redesign loop — see redesign prompt below.` followed by both rendered prompts.
 
 ### 2. Verification gate independence (the subagent-output-is-a-claim contract)
 
@@ -340,6 +318,8 @@ Internal reasoning (not emitted): subagent claims pass, but the verification-gat
 | `goal_ids` | optional | Same as Executor | Cross-reference into RFC.md |
 | `decision_ids` | optional | Same as Executor | Cross-reference into RFC.md |
 | `rfc_path` | optional | Same as Executor | For resolving cited IDs |
+
+The reviewer receives the task description (spec) and the `diff` read fresh from git (artifact) — never `sk-executor`'s `notes`, `gate_summary`, or deliverable. That seal keeps the verification independent of the producer (Rule 5); the executor's output flows the *other* way (its `reasoning` feeds a re-dispatch on failure), never into the reviewer's input. Preserve this on any future edit.
 
 **Deliverable shape:**
 
@@ -519,7 +499,7 @@ Frozen sections — `## Goals`, `## Decisions`, `## Architecture`, `## Why`, `##
 
 <examples>
 
-Three worked examples covering happy path, amendment loop, and redesign-with-mismatch.
+Three worked examples: a happy path, a redesign-with-mismatch, and a mixed wave (clean task + amendment).
 
 ### Example 1 — Happy path with 3 tasks, all pass
 
@@ -533,53 +513,7 @@ T-02 and T-03 follow the same pattern. After T-03's commit, PLAN.md re-read show
 
 Output: 3 atomic commits + clean exit. No routing prompts fired.
 
-### Example 2 — A-NN amendment loop
-
-User invokes `/sk-build add-format-helpers`. T-01 passes through normally. T-02 dispatched. Executor returns:
-
-```json
-{
-  "status": "deviation",
-  "files_changed": ["src/lib/format-number.ts"],
-  "deviation": {
-    "type": "amendment",
-    "description": "Implementation requires special-case handling for Infinity / NaN. D-02 specifies fixed 2-digit decimal precision but Infinity has no decimal representation.",
-    "d_nn_affected": ["D-02"],
-    "goal_change": false
-  },
-  "gate_summary": { "typecheck": { "result": "pass", "output": "" }, "lint": { "result": "pass", "output": "" }, "tests": { "result": "pass", "output": "" } },
-  "fix_attempts": 0
-}
-```
-
-Internal reasoning (not emitted): heuristics — `d_nn_affected.length === 1`, `goal_change === false`, description word count ~20 (well under 150) → CLEAN amendment match. No mismatch. Render the amendment prompt with template fields filled.
-
-Output (rendered to user):
-
-```
-/sk-build paused at T-02.
-
-Implementation introduces a deviation from RFC.md:
-
-  Design said:  D-02 — fixed 2-digit decimal precision
-  Discovered:   Implementation requires special-case handling for Infinity / NaN
-  Proposed:     Special-case handling per the description
-
-Classify:
-  /sk-build amend "<rationale>"   → append A-NN to RFC.md, continue
-  /sk-design add-format-helpers   → loop back, redesign approach
-  /sk-build skip                  → continue without recording
-  /sk-decide <topic>              → record as system rule first
-  /sk-build pause                 → halt for thinking
-```
-
-User responds: `/sk-build amend "Non-finite values render via toString()"`.
-
-Internal reasoning (not emitted): user picked amend; A-NN counter for this RFC.md is currently 0 → A-01. Append the A-01 block to `## Amendments`. Atomic commit: `feat(lib): handle Infinity/NaN in formatNumber [T-02]` touching `src/lib/format-number.ts` + `.sidekick/plans/add-format-helpers/RFC.md` + `.sidekick/plans/add-format-helpers/PLAN.md`.
-
-After commit: loop to Step 4. PLAN.md re-read shows the next task or, if T-02 was the last, the `all_tasks_complete` clean-exit block.
-
-### Example 3 — Redesign suggested, mismatch flagged, user pauses
+### Example 2 — Redesign suggested, mismatch flagged, user pauses
 
 User invokes `/sk-build rework-iso-dates`. T-01 dispatched. Executor returns:
 
@@ -598,7 +532,7 @@ User invokes `/sk-build rework-iso-dates`. T-01 dispatched. Executor returns:
 }
 ```
 
-Internal reasoning (not emitted): executor labelled this `amendment`, but heuristics — `d_nn_affected.length === 3` (≥2) AND `goal_change === true`. Either signal alone is sufficient to flag. MISMATCH. Surface the `⚠` note and render BOTH prompts.
+Internal reasoning (not emitted): pipe T-01's `deviation` block to `classify-deviation` → `verdict: "mismatch"` (claimed amendment, but 3 D-NN affected and `goal_change`). Surface the `⚠` note and render BOTH prompts.
 
 Output (rendered to user):
 
@@ -650,7 +584,7 @@ Internal reasoning (not emitted): user picked pause. Exit cleanly. No commit. Th
 
 Output: zero new commits + clean exit.
 
-### Example 4 — a wave with one clean task and one deviation
+### Example 3 — a wave with one clean task and one deviation
 
 User invokes `/sk-build add-keyboard-shortcuts`. Wave 2 contains T-03 and T-04 (dependency-independent — both depend only on T-01 and T-02, which are already `[x]`).
 
@@ -692,7 +626,7 @@ Dispatch `sk-executor` for T-04. Executor returns:
 
 **Step 6 — Verification gate FRESH (T-03).** Run typecheck → pass. Run lint → pass. Run tests → pass. Dispatch `sk-spec-reviewer` for T-03 → `{ "verdict": "pass", "reasoning": "Diff adds KeyboardRegistry class at the named path; all T-03 acceptance criteria met." }`.
 
-Internal reasoning (not emitted): T-03 is clean (gate passed). T-04 has a deviation — collect it for batching. Validate Q1 heuristics for T-04's deviation: `d_nn_affected.length === 1`, `goal_change === false`, description ~28 words (well under 150) → CLEAN amendment match. No mismatch.
+Internal reasoning (not emitted): T-03 is clean (gate passed). T-04 has a deviation — collect it for batching. Pipe T-04's `deviation` block to `classify-deviation` → `verdict: "proceed"`, route `amendment` (1 D-NN, no goal change, short description). No mismatch.
 
 **Step 7 — Resolve wave 2.**
 
