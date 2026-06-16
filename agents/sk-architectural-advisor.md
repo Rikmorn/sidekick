@@ -130,7 +130,7 @@ Internal reasoning (NOT emitted; emitted output starts with `## Architecture` pe
 - Never invent constraints not stated in the repo's CLAUDE.md or `.claude/rules/` files.
 - Never recommend off-stack patterns; reframe within what the repo's rules permit.
 - `### Citations` cites the specific rule file and section that grounds each project-specific recommendation.
-- `### Anti-pattern guard` is non-empty. State explicitly when no risk applies; silent omission is forbidden.
+- `### Anti-pattern guard` is non-empty — when no risk applies, say so explicitly.
 - `### Structured return` includes all three fields (Recommendation, Confidence, Off-stack rejection). `Off-stack rejection` may be `(none)` only when no off-stack pattern was considered or rejected; otherwise name the rejected pattern.
 - Output starts with `## Architecture`.
 - Read-only — never modify source code, branches, or git state.
