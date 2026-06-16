@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { runBranchPrecheckCli } from './helpers/branch-precheck.js';
 import { runCapabilitiesCli } from './helpers/capabilities.js';
 import { runCheckDriftCli } from './helpers/check-drift.js';
+import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
 import { runInit } from './helpers/init.js';
 import { runReconcilePlanCli } from './helpers/reconcile-plan.js';
 import { runWavePlanCli } from './helpers/wave-plan.js';
@@ -266,10 +267,11 @@ if (_isEntry) {
       'check-drift',
       'reconcile-plan',
       'wave-plan',
+      'hook',
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|hook> [options]',
       );
       process.exit(1);
     }
@@ -293,6 +295,26 @@ if (_isEntry) {
           nonInteractive,
         });
         process.exit(exitCode);
+      } else if (sub === 'hook') {
+        const handler = process.argv[3];
+        let stdin = '';
+        try {
+          stdin = fs.readFileSync(0, 'utf-8');
+        } catch {
+          stdin = '';
+        }
+        if (handler === 'guard-config') {
+          const decision = decideGuardConfig(stdin);
+          if (decision) console.log(JSON.stringify(decision));
+          process.exit(0);
+        } else if (handler === 'scan-config') {
+          const advisory = runScanConfig({ cwd: process.cwd() });
+          if (advisory) console.log(JSON.stringify(advisory));
+          process.exit(0);
+        } else {
+          console.error('Usage: sidekick hook <guard-config|scan-config>');
+          process.exit(1);
+        }
       } else if (sub === 'capabilities') {
         console.log(
           runCapabilitiesCli({ repoRoot: process.cwd(), claudeHome }),

@@ -589,3 +589,34 @@ describe('isMainEntrypoint', () => {
     expect(isMainEntrypoint(import.meta.url, undefined)).toBe(false);
   });
 });
+
+describe('hook subcommand', () => {
+  const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
+
+  it('denies an Edit to .sidekick/config.json (stdout JSON, exit 0)', () => {
+    const input = JSON.stringify({
+      tool_name: 'Edit',
+      tool_input: { file_path: '/repo/.sidekick/config.json' },
+    });
+    const res = spawnSync('bun', [cli, 'hook', 'guard-config'], {
+      input,
+      encoding: 'utf-8',
+    });
+    expect(res.status).toBe(0);
+    const out = JSON.parse(res.stdout);
+    expect(out.hookSpecificOutput.permissionDecision).toBe('deny');
+  });
+
+  it('emits nothing for an unrelated file (no auto-allow)', () => {
+    const input = JSON.stringify({
+      tool_name: 'Edit',
+      tool_input: { file_path: '/repo/src/index.ts' },
+    });
+    const res = spawnSync('bun', [cli, 'hook', 'guard-config'], {
+      input,
+      encoding: 'utf-8',
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout.trim()).toBe('');
+  });
+});
