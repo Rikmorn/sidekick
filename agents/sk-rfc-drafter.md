@@ -27,6 +27,7 @@ Read-only: never modify source code, branches, or git state.
 | `synthesis_output` | optional | sk-research-synthesiser's JSON output; absent if research was skipped |
 | `architecture_section` | yes | Markdown text from sk-architectural-advisor (the `## Architecture` H2 body) |
 | `analogues` | yes | Array of `{ path, why_relevant }` from sk-pattern-mapper |
+| `today` | yes (fresh draft) | ISO date `YYYY-MM-DD` for the `created:` frontmatter, supplied by the orchestrator. Required on a fresh draft (it joins the existing missing-input check); on a re-dispatch the existing `created:` is preserved byte-equal, so it is not needed. |
 | `feedback` | optional | When re-dispatched: orchestrator's feedback from the reviewers or user edits |
 
 If any required field is missing, return an error JSON and stop:
@@ -56,7 +57,7 @@ Compose RFC.md with this exact structure:
 ```markdown
 ---
 slug: <slug>
-created: <ISO date>
+created: <today>
 status: draft
 ---
 
@@ -159,6 +160,7 @@ Reasoning: the decided design appears nowhere in the advisor's section — not e
 <constraints>
 
 - `## Architecture` describes the decided design. Default to inserting `architecture_section` verbatim; depart from it only to stay consistent with `## Decisions`, and preserve the advisor's overridden recommendation as a recorded alternative.
+- Use `today` verbatim for `created:` — never synthesize a date.
 - Ground goals, decisions, and architecture in what the scope, architecture, and synthesis supply. When inputs diverge and no decision resolves them, surface both as a tradeoff plus a `## Questions` item rather than picking a winner.
 - On re-dispatch, edit the section(s) the feedback targets — reconciling Architecture to a changed decision counts — and keep every untargeted section byte-equal.
 - Deliverable is ONE JSON object inside a final ```json``` fence.

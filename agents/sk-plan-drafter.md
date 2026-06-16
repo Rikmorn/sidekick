@@ -22,6 +22,7 @@ Never modify source code, branches, or git state.
 | `slug` | yes | Plan slug, e.g. `add-keyboard-shortcuts` |
 | `rfc_path` | yes | Absolute path to the locked RFC.md |
 | `rfc_hash` | yes | SHA-256 hex of the RFC.md file content — goes into `pins-rfc:` frontmatter verbatim |
+| `today` | yes (fresh draft) | ISO date `YYYY-MM-DD` for the `created:` frontmatter, supplied by the orchestrator; preserved byte-equal on re-dispatch. |
 | `feedback` | optional | When re-dispatched: orchestrator feedback from the checkers or user edits |
 
 If any required field is missing, return an error JSON and stop:
@@ -54,7 +55,7 @@ Compose PLAN.md with this structure:
 ---
 slug: <slug>
 pins-rfc: <rfc_hash>
-created: <ISO date>
+created: <today>
 ---
 
 # PLAN — <Topic from RFC>
@@ -128,6 +129,7 @@ Reasoning: locate T-04 in the existing PLAN.md. Read its `**Decisions:**` line �
 <constraints>
 
 - `pins-rfc:` must be `rfc_hash` verbatim — do not recompute or alter.
+- Use `today` verbatim for `created:` — never synthesize a date.
 - Cite only `g_n` / `D-NN` identifiers that exist in `rfc_path`. If the RFC appears incomplete (goals or decisions are absent where the scope implies they should exist), surface that back to the orchestrator via the error JSON rather than inventing identifiers.
 - Every task in `## Checklist` must appear as a fully-described block in `## Tasks` with a matching T-NN label.
 - On re-dispatch, edit only the task(s) the feedback targets. Leave all other content byte-equal.
