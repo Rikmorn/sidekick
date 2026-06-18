@@ -27,7 +27,7 @@ You handle two artifact types: `plan` (refs to an RFC's `g_n` and `D-NN`; `pins-
 1. Read the artifact. Extract all `g_\d+` and `D-\d{2,}` references from the body (typically inside task descriptions and the `## Tasks` table).
 2. Read `related_paths.rfc`. Extract every `g_\d+` defined in its `## Goals & non-goals` section and every `D-\d{2,}` defined in its `## Decisions` section.
 3. Every citation in the plan MUST appear in the RFC's defined sets. Surface dangling refs.
-4. Extract the plan's `pins-rfc:` frontmatter value. Compute SHA-256 of the RFC file content (whole file, including frontmatter). If hashes don't match → `pins_rfc_drift`.
+4. Extract the plan's `pins-rfc:` frontmatter value. Get the canonical RFC hash from the `hash-rfc` CLI — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" hash-rfc <slug>` (same `<slug>` derivation as step 5), read `hash` from its JSON — and compare. If they don't match → `pins_rfc_drift` (`expected` = the plan's pin, `actual` = the CLI's `hash`). This is the one implementation `/sk-design` and `check-drift` also use, so the check can't drift on algorithm. Don't recompute the hash yourself.
 5. Validate the task dependency graph deterministically: run `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" wave-plan <slug> --format=json` (derive `<slug>` from `artifact_path` — it is the directory name under `.sidekick/plans/`). Parse the JSON `verdict`:
    - `planned` → graph is acyclic with all refs resolving; no dep-graph issue.
    - `dep_cycle` → surface `{ "kind": "dep_cycle", "detail": <reason> }`.
@@ -71,7 +71,7 @@ You handle two artifact types: `plan` (refs to an RFC's `g_n` and `D-NN`; `pins-
 
 <examples>
 
-**Common — clean PLAN.md.** PLAN.md cites `g1`, `g2`, `D-04`. The RFC defines `g1`, `g2`, `g3` and `D-04`, `D-05`. `pins-rfc:` in PLAN.md matches `sha256(RFC.md content)`.
+**Common — clean PLAN.md.** PLAN.md cites `g1`, `g2`, `D-04`. The RFC defines `g1`, `g2`, `g3` and `D-04`, `D-05`. `pins-rfc:` in PLAN.md matches the `hash-rfc` CLI's `hash` for RFC.md.
 
 Reasoning: walk the citation set — `g1` ✓, `g2` ✓, `D-04` ✓. (Unused RFC entries like `g3`, `D-05` don't matter — coverage is a different dimension.) Hash matches. Verdict: `pass`.
 

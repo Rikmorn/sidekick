@@ -6,7 +6,7 @@ The "where are we right now" view. Complements [`EPIC.md`](./EPIC.md): the **roa
 
 ## TL;DR
 
-**Architecture is settled** (four accepted ADRs — ADR-0004 accepted 2026-06-18: loop identity + redesign re-entry + the autonomy seam, implemented by `1.2`). **The toolchain is built and works** — 6 orchestrator skills + 23 agents + 10 CLI helpers + a tier-0 hook. **Phase 0 complete**; in **Phase 1** (`1.1`–`1.5` done). **Re-baselined 2026-06-18** off a whole-architecture review → *foundations-then-memory*: the eval keystone was pulled forward (`3.4`), memory consolidated into a dedicated **Phase 4**, the Rules group dropped.
+**Architecture is settled** (four accepted ADRs — ADR-0004 accepted 2026-06-18: loop identity + redesign re-entry + the autonomy seam, implemented by `1.2`). **The toolchain is built and works** — 6 orchestrator skills + 23 agents + 11 CLI helpers + a tier-0 hook. **Phase 0 complete**; **Phase 1 items `1.1`–`1.6` all done** (closes after the owed batched integration smokes). **Re-baselined 2026-06-18** off a whole-architecture review → *foundations-then-memory*: the eval keystone was pulled forward (`3.4`), memory consolidated into a dedicated **Phase 4**, the Rules group dropped.
 
 **Two threads drove the re-baseline.** (1) The drift sweep: ~10/24 agents drifted when `0.4` moved the ground under the agents it dispatches (`1.1` cleared it — §4). (2) The **whole-architecture review** ([`reviews/2026-06-18-architecture-review.md`](./reviews/2026-06-18-architecture-review.md)): the harness is a strong *open-loop pipeline* but not yet the *closed-loop ratchet* the north-star describes — the two layers that close it (**eval**, **memory**) are unbuilt, and several seams snapped (the **redesign loop**, the pre-`1.1` pin-hash). The respec sequences those fixes: foundations (incl. eval) → memory.
 
@@ -32,7 +32,7 @@ This EPIC applies the research-program learnings to the harness itself. Durabili
 ### The shipped toolchain (the lifecycle)
 
 ```
-/sk-design   (dialogic)  → explorer · pattern-mapper · architectural-advisor   (+ branch-precheck CLI)
+/sk-design   (dialogic)  → explorer · pattern-mapper · architectural-advisor   (+ branch-precheck · hash-rfc CLIs)
                             · researcher-{impl,decision,context} → research-synthesiser
                             · rfc-drafter · plan-drafter  +  RFC/PLAN quorum
                             (structural · crossref · coherence)        → writes RFC.md / PLAN.md / RESEARCH.md
@@ -46,7 +46,7 @@ tier-0 enforcement       → config-guard hook (hooks.ts), installed opt-in by `
 
 - **6 orchestrator skills** (slash commands — orchestrators must live here; subagents can't dispatch subagents).
 - **23 agents** (subagents, tool-restricted), grouped by role in §4 / EPIC.md. (Was 24; `sk-branch-precheck` retired in `1.4` — the orchestrators call the `branch-precheck` CLI directly.)
-- **10 CLI helpers** (the "own the loop" kernel, TDD'd): `branch-precheck`, `capabilities`, `check-drift`, `classify-deviation`, `config`, `goal-verdict`, `hooks`, `init`, `reconcile-plan`, `wave-plan`.
+- **11 CLI helpers** (the "own the loop" kernel, TDD'd): `branch-precheck`, `capabilities`, `check-drift`, `classify-deviation`, `config`, `goal-verdict`, `hash-rfc`, `hooks`, `init`, `reconcile-plan`, `wave-plan`.
 
 ---
 
@@ -63,7 +63,7 @@ Phase 1 (current) at a glance:
 | **1.3** | Research-quality F4/F7 → Researchers group done | ✅ done 2026-06-18 |
 | **1.4** | Branch-precheck F2 (create-and-continue) + agent/CLI consolidation (`sk-branch-precheck` retired → CLI) → audit complete | ✅ done 2026-06-18 |
 | **1.5** | Consistency cleanup: verdict-matrix → new `goal-verdict` CLI (both orchestrators call it) · `commands/` vestige removed · `architect-review` external coupling dropped · tool-drift verified no-op (files already narrow) | ✅ done 2026-06-18 |
-| **1.6** | Shared pin-hash CLI subcommand (`sidekick hash-rfc`) | pending |
+| **1.6** | Shared pin-hash CLI subcommand (`sidekick hash-rfc`) — new `hash-rfc.ts` owns the canonical hash; `check-drift` imports it; `/sk-design` + `sk-crossref-checker` switched off `shasum`/ad-hoc to the CLI (10→11 helpers) | ✅ done 2026-06-18 |
 
 Rules group **dropped** (rules retired; the need → `5.1`). Owed action: **run the batched integration smokes**.
 

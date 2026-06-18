@@ -1,6 +1,6 @@
-import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { hashRfcContent, rfcPathFor } from './hash-rfc.js';
 
 export type DriftVerdict =
   | 'pinned'
@@ -26,13 +26,6 @@ export interface CheckDriftResult {
 // ---- helpers ----------------------------------------------------------------
 
 /**
- * Compute SHA-256 hash of a string.
- */
-function hashSha256(content: string): string {
-  return crypto.createHash('sha256').update(content).digest('hex');
-}
-
-/**
  * Count lines in a string (newline separated).
  */
 function countLines(content: string): number {
@@ -55,7 +48,7 @@ function extractPinHash(planContent: string): string | null {
 export function runCheckDrift(input: CheckDriftInput): CheckDriftResult {
   const { repoRoot, slug } = input;
 
-  const rfcPath = path.join(repoRoot, '.sidekick', 'plans', slug, 'RFC.md');
+  const rfcPath = rfcPathFor(repoRoot, slug);
   const planPath = path.join(repoRoot, '.sidekick', 'plans', slug, 'PLAN.md');
 
   // Check for missing RFC
@@ -81,7 +74,7 @@ export function runCheckDrift(input: CheckDriftInput): CheckDriftResult {
   const planContent = fs.readFileSync(planPath, 'utf-8');
 
   // Compute actual RFC hash
-  const actualHash = hashSha256(rfcContent);
+  const actualHash = hashRfcContent(rfcContent);
 
   // Extract pinned hash from PLAN.md
   const expectedHash = extractPinHash(planContent);

@@ -9,6 +9,7 @@ import { runCapabilitiesCli } from './helpers/capabilities.js';
 import { runCheckDriftCli } from './helpers/check-drift.js';
 import { runClassifyDeviationCli } from './helpers/classify-deviation.js';
 import { runGoalVerdictCli } from './helpers/goal-verdict.js';
+import { runHashRfcCli } from './helpers/hash-rfc.js';
 import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
 import { runInit } from './helpers/init.js';
 import { runReconcilePlanCli } from './helpers/reconcile-plan.js';
@@ -271,11 +272,12 @@ if (_isEntry) {
       'wave-plan',
       'classify-deviation',
       'goal-verdict',
+      'hash-rfc',
       'hook',
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|hook> [options]',
       );
       process.exit(1);
     }
@@ -370,6 +372,19 @@ if (_isEntry) {
         console.log(
           runCheckDriftCli({ repoRoot: process.cwd(), slug, format }),
         );
+        process.exit(0);
+      } else if (sub === 'hash-rfc') {
+        const slug = process.argv[3];
+        if (!slug) {
+          console.error('Usage: sidekick hash-rfc <slug> [--format=<json|kv>]');
+          process.exit(1);
+        }
+        const format: 'json' | 'kv' =
+          process.argv.find((a) => a.startsWith('--format='))?.split('=')[1] ===
+          'kv'
+            ? 'kv'
+            : 'json';
+        console.log(runHashRfcCli({ repoRoot: process.cwd(), slug, format }));
         process.exit(0);
       } else if (sub === 'reconcile-plan') {
         const args = process.argv.slice(3);
