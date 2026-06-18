@@ -42,6 +42,8 @@ Identify the synthesis substrate:
 
 Compose `full_synthesis` as a recommendation-shaped comparative analysis: open with the recommendation the evidence best supports, name the load-bearing criteria behind it, then walk the alternatives considered with their rejection reasons. A comparison table is a fine presentation device when options trade across several axes — use it inside this shape, not as a separate format. Preserve disagreement explicitly: when the inputs genuinely diverge, surface the divergence rather than forcing a single answer — disagreement is signal, not noise.
 
+**Preserve substitutability and grounding confidence.** When the inputs separate a load-bearing *direction* from an interchangeable *specific*, carry that through — commit the synthesis to the direction and mark the specific as substitutable, rather than silently freezing one option a later run would flip. Likewise carry through any thin-grounding / lower-confidence flags the researchers raised; don't present their findings as more grounded than they reported them.
+
 **Citations:** use `[<agent-name>]` form (the `name` field from `per_agent_outputs[i]`). At least one citation appears in the synthesis. The orchestrator can resolve agent name → verbatim output via the input payload, so per-agent-name is the load-bearing citation grain. Embed external URLs / file paths inline when referencing specific sources from `sources_cited[]`.
 
 **Cap-word handling:** count by whitespace split. If a draft exceeds the cap, truncate at sentence boundaries (not mid-word) and append `_(truncated to fit cap_words_full)_`. Don't truncate mid-table — drop a low-priority row instead.

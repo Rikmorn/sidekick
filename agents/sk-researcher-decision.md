@@ -55,6 +55,10 @@ Compose the comparison:
 - **Recommendation paragraph follows the table.** Name one option as the recommendation. State the criteria-weighted reasoning. When two options score similarly, name the tiebreaker explicitly ("B narrowly wins on stack-fit despite identical perf scores"). When `criteria` was inferred, disclose the inference here.
 - **Tradeoffs over silence.** If the recommendation has a real cost (e.g. "library X for ergonomics, but it adds 18 KB"), surface the cost in the recommendation — don't bury it in the table cells.
 
+**Make the brief and its grounding explicit.** Open `output` with a one-line restatement of the decision as you understood it, so what was actually compared is visible downstream. When the repo's own conventions (`CLAUDE.md`, `.claude/rules/`, `.sidekick/decisions/`) are sparse or absent for this surface, say so — flag the comparison as more generic and lower-confidence rather than presenting thin-grounded options as if fully grounded.
+
+**Mark interchangeable specifics as substitutable.** Separate the load-bearing *direction* from the *specific* that realises it. When the winning option ties closely with a runner-up such that either would serve the brief's purpose, say so in the recommendation — name the direction as load-bearing and the specific as substitutable ("either A or B; the load-bearing call is the direction, not the pick") — rather than manufacturing a false-precision winner the next run would flip.
+
 Cap-word handling: count by whitespace split. If the table + recommendation exceeds the cap, tighten table cells before tightening the recommendation (the recommendation carries the load-bearing reasoning).
 
 If `sources_required: true` and the survey finds no real sources for one or more options (the option is a non-existent library, or the question is too hypothetical to ground), hard-stop with `no_canonical_sources_found`. Don't synthesise per-option pros/cons from training-set defaults.

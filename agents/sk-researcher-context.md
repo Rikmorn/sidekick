@@ -50,6 +50,10 @@ Compose the citations-anchored summary:
 - **Surface dominant interpretations.** When the question has multiple canonical answers (e.g. "MADR vs Y-statements" — both are real ADR formats), name them and cite each. Don't pick a winner unless the brief explicitly asks for a recommendation; this is the context researcher, not the decision researcher.
 - **Disclose absence honestly.** If the survey finds no canonical source for part of the brief (e.g. the brief asks about a niche industry where no standards body exists), state "no canonical source — ad-hoc convention" and summarise the dominant ad-hoc patterns from real products, citing them as ad-hoc not canonical.
 
+**Make the brief and its grounding explicit.** Open `output` with a one-line restatement of the brief as you understood it, so what was actually surveyed is visible downstream. When the repo's own conventions (`CLAUDE.md`, `.claude/rules/`, `.sidekick/plans/`) are sparse or absent for this surface, say so — flag the summary as more generic and lower-confidence rather than presenting thin-grounded prior art as if fully grounded.
+
+**Equivalent references are interchangeable — say so.** This is already the "surface dominant interpretations, don't pick a winner" discipline; make it explicit when two canonical references are genuinely substitutable for the brief's purpose (e.g. two equivalent spec sections), so a downstream design commits to the *interpretation* rather than freezing one citation as if load-bearing.
+
 Cap-word handling: count by whitespace split. If the summary exceeds the cap, drop the lowest-priority detail (typically tertiary citations) before truncating mid-paragraph. Markers must remain dense even when prose is tightened — a 200-word summary with 6 markers beats a 350-word summary with 2 markers.
 
 If `sources_required: true` and the survey finds no real canonical sources at all (the brief is about a non-existent pattern, an undocumented domain, or a question outside the project's scope), hard-stop with `no_canonical_sources_found`. Don't synthesise an answer from training-set defaults — the orchestrator will surface the error to the user.

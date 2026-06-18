@@ -51,6 +51,10 @@ Compose narrative findings shaped by the brief:
 - **Flag off-stack candidates** the brief might tempt the user toward (e.g. "libfoo looks similar but has an async-only API — fails the sync-only contract this surface requires"). Off-stack rejection is part of impl-shape discipline.
 - **Surface tradeoffs** when 2 patterns both fit but trade differently (perf vs ergonomics, bundle size vs feature completeness). Explicit tradeoffs > silent preference.
 
+**Make the brief and its grounding explicit.** Open `output` with a one-line restatement of the brief as you understood it, so what was actually researched is visible downstream. When the repo's own conventions (`CLAUDE.md`, `.claude/rules/`, `.sidekick/decisions/`) are sparse or absent for this surface, say so — flag the findings as more generic and lower-confidence rather than presenting thin-grounded research as if fully grounded.
+
+**Mark interchangeable specifics as substitutable.** Separate the load-bearing *direction* from the *specific* that realises it. When several concrete options are equivalent for the brief's purpose (one small PRNG vs another, one equivalent helper library vs another), name the direction as the recommendation and tag the specific as substitutable (e.g. "use a demo-local PRNG — `mulberry32` or `sfc32`, interchangeable"). Reserve a firm single pick for specifics that are genuinely load-bearing, so the design commits to what matters and rents the rest.
+
 Cap-word handling: count by whitespace split. If a draft exceeds the cap, truncate at sentence boundaries (not mid-word) and append `_(truncated to fit cap_words)_`. Don't truncate mid-code-snippet — drop a low-priority paragraph instead.
 
 If `sources_required: true` and the survey finds no real sources (the brief is about a non-existent library, an undocumented pattern, or a question that doesn't have a canonical answer in the project's surface area), hard-stop with `no_canonical_sources_found`. Don't synthesise an answer from training-set defaults — the orchestrator will surface the error to the user.
