@@ -6,7 +6,7 @@ The "where are we right now" view. Complements [`EPIC.md`](./EPIC.md): the **roa
 
 ## TL;DR
 
-**Architecture is settled** (three accepted ADRs; ADR-0004 pending in `1.2`). **The toolchain is built and works** — 6 orchestrator skills + 24 agents + 9 CLI helpers + a tier-0 hook. **Phase 0 complete**; in **Phase 1** (`1.1` done). **Re-baselined 2026-06-18** off a whole-architecture review → *foundations-then-memory*: the eval keystone was pulled forward (`3.4`), memory consolidated into a dedicated **Phase 4**, the Rules group dropped.
+**Architecture is settled** (four accepted ADRs — ADR-0004 accepted 2026-06-18: loop identity + redesign re-entry + the autonomy seam, implemented by `1.2`). **The toolchain is built and works** — 6 orchestrator skills + 24 agents + 9 CLI helpers + a tier-0 hook. **Phase 0 complete**; in **Phase 1** (`1.1` done). **Re-baselined 2026-06-18** off a whole-architecture review → *foundations-then-memory*: the eval keystone was pulled forward (`3.4`), memory consolidated into a dedicated **Phase 4**, the Rules group dropped.
 
 **Two threads drove the re-baseline.** (1) The drift sweep: ~10/24 agents drifted when `0.4` moved the ground under the agents it dispatches (`1.1` cleared it — §4). (2) The **whole-architecture review** ([`reviews/2026-06-18-architecture-review.md`](./reviews/2026-06-18-architecture-review.md)): the harness is a strong *open-loop pipeline* but not yet the *closed-loop ratchet* the north-star describes — the two layers that close it (**eval**, **memory**) are unbuilt, and several seams snapped (the **redesign loop**, the pre-`1.1` pin-hash). The respec sequences those fixes: foundations (incl. eval) → memory.
 
@@ -25,9 +25,9 @@ This EPIC applies the research-program learnings to the harness itself. Durabili
 | **0001** | **Harness shape** — behavioural-leaning; the lifecycle is a thin skeleton, not a rigid state machine. Execution gated on the eval layer (`4.1`). | Accepted as direction (2026-06-07) |
 | **0002** | **Own the loop, rent the fan-out** — the write-path loop (sk-build) stays hand-rolled and *shrinks*; read-only breadth fan-out (research) rents Workflow behind a seam + probe + budget tiers; hooks are the tier-0 base. | Accepted (2026-06-10) |
 | **0003** | **Design = dialogue-by-default** — `/sk-design` explores *with* the user; `--auto` is hands-off; complexity is a *surfaced signal, not a silent gate*. | Accepted (2026-06-15) |
-| **0004** | **Explorer rethink + redesign re-entry** — repurpose `sk-explorer` to repo-grounding/scope-evidence; move scoping into sk-design's dialogue; decide how redesign re-enters dialogic `/sk-design`. | Pending — authored when `1.2` lands |
+| **0004** | **Loop identity, re-entry, autonomy seam** — identity *derived*-not-demanded; an existing plan is *re-entry*, not `slug_collision`; redesign re-enters dialogic `/sk-design` on a sealed externalized gate (`classify-deviation` / `sk-goal-verifier`), appending `## Redesigns` R-NN, capped; `sk-explorer` dissolves + F3 dropped; autonomy-dial *seamed* (supersedes ADR-0003's `--auto`-as-mode, built at `3.5`/`3.3`). | Accepted (2026-06-18); impl `1.2` |
 
-**ADR-0003 (`0.4`) is the load-bearing recent change** — it rewrote `/sk-design` and is the source of both the coherence debt in §4 and the broken redesign loop. The open architecture question — repurposing `sk-explorer` + fixing redesign re-entry — is **ADR-0004** (pending, item `1.2`); authored when 1.2 lands, not stubbed early.
+**ADR-0003 (`0.4`) is the load-bearing recent change** — it rewrote `/sk-design` and is the source of both the coherence debt in §4 and the broken redesign loop. That architecture question — loop identity + redesign re-entry + the autonomy seam — is resolved by **ADR-0004** (accepted 2026-06-18); item `1.2` implements it. A from-evidence loop sanity-check (re-grounded against the research corpus, not its distillation) confirmed the *skeleton* is vindicated — the drift is at the seams: the up-front slug is a best-in-class outlier (derive, don't demand), autonomy belongs on a cross-cutting dial (ADR-0001 #4), and every loop transition must ride a **sealed externalized gate**, never the orchestrator's self-assessment (self-confidence is near-random: 73% predicted vs 35% true).
 
 ### The shipped toolchain (the lifecycle)
 
@@ -59,7 +59,7 @@ Phase 1 (current) at a glance:
 | Item | Work | Status |
 |---|---|---|
 | **1.1** | Coherence reconciliation (the §4 debt) + blast-radius guard | ✅ done 2026-06-18 |
-| **1.2** | Explorer rethink → **ADR-0004** + repair the broken redesign loop (folds F3) | pending |
+| **1.2** | Implement **ADR-0004** — identity-as-derived + redesign re-entry; `sk-explorer` dissolves; F3 dropped; autonomy-dial seamed (built later) | pending |
 | **1.3** | Research-quality F4/F7 → Researchers group done | pending |
 | **1.4** | Branch-precheck F2 + agent/CLI consolidation → audit complete | pending |
 | **1.5** | Consistency cleanup (verdict-matrix dedup · `commands/` vestige · tool-drift · external ref) | pending |
@@ -114,10 +114,11 @@ A three-auditor sweep checked all 24 agents against the **current orchestrators*
 - **Memory consolidated into a dedicated Phase 4**, after the foundations (hard-deps `3.2` + `3.4`).
 - **Rules group dropped** — rules are being retired. `sk-maintainability-reviewer` falls back to mainstream conventions short-term; the real answer is **`5.1` per-project generated gates** (the reviewer-enforcing-bespoke-rules was the seed/demonstration of that pattern — the recovered "helpers to author gates on the target repo" thread).
 - **New Phase 1 items** for the review's cross-cutting findings: `1.5` consistency cleanup, `1.6` pin-hash CLI; the broken redesign loop folded into `1.2`/ADR-0004.
+- **ADR-0004 accepted (2026-06-18)** — loop identity + redesign re-entry + the autonomy seam, from a from-evidence loop sanity-check. Identity is *derived*-not-demanded; an existing plan is *re-entry*, not a collision; redesign re-enters dialogic `/sk-design` on a **sealed externalized gate** (`classify-deviation` / `sk-goal-verifier`), capped + best-so-far; `sk-explorer` dissolves; autonomy moves to a cross-cutting dial (**supersedes ADR-0003's `--auto`-as-mode**), *seamed now, built at `3.5`/`3.3`*. Item `1.2` implements it.
 
 **Still open:**
-- **Explorer rethink + redesign re-entry** (`1.2`, → **ADR-0004**) — repurpose sk-explorer to repo-grounding/scope-evidence; move scoping into sk-design's dialogue; **and decide how redesign re-enters dialogic `/sk-design`** (today `--resume` and `<slug>` are both rejected by `slug_collision` — the loop is broken end-to-end). Absorbs F3. ADR-0004 authored when 1.2 lands (no hollow stub).
-- **F3 — explorer's signal** — *decided 2026-06-18*: drop the `low\|medium\|high` bucket for an **evidence-grounded signal** (analogues / prior decisions / new libraries). Leaves a clean seam for `3.1`.
+- **F3 — explorer's sizing signal** — *resolved by ADR-0004*: the `low\|medium\|high` self-rating is **dropped** (self-assessed complexity is an unreliable basis for the dial — F3/F6; models overthink trivial input). Any surviving signal is at most an *evidence-grounded, overridable soft prior under an operator cap* (analogues / prior decisions / new libraries), never an authoritative gate; the authoritative routing/sizing signal is `3.1`'s job.
+- **Frozen-`PLAN.md` vs meta-skeleton** — *parked by ADR-0004* (relates `5.2`): the loop research calls a frozen object-level DAG the "half-right-wrong-half bet" (static plans overfit / invert out-of-distribution). The `1.2` redesign-as-append loop is a step *toward* a revisable plan, not a resolution. Taken up at `5.2`.
 - **F4 / F7** (`1.3`) — F4 explicit brief construction + thin-repo grounding (now satisfied by `4.5` codebase-map); F7 mark interchangeable specifics substitutable.
 - **Cross-family dependency** (`3.6`) — needs the non-Anthropic-verifier decision.
 - **Memory substrate** (`4.4`) — do NOT pre-pick.
@@ -129,7 +130,7 @@ A three-auditor sweep checked all 24 agents against the **current orchestrators*
 
 - **Roadmap, phase ordering, crosswalk, execution log:** [`EPIC.md`](./EPIC.md)
 - **Whole-architecture review (drove the re-baseline):** [`reviews/2026-06-18-architecture-review.md`](./reviews/2026-06-18-architecture-review.md)
-- **Architecture decisions:** [`adr/`](./adr/) (0001 shape · 0002 platform · 0003 design-interaction; 0004 explorer-rethink + redesign-re-entry pending)
+- **Architecture decisions:** [`adr/`](./adr/) (0001 shape · 0002 platform · 0003 design-interaction · 0004 loop-identity + redesign-re-entry + autonomy-seam, accepted 2026-06-18)
 - **Pilot findings F1–F10:** [`backlog/platform-primitives-scoping.md`](./backlog/platform-primitives-scoping.md)
 - **Open backlog:** work-item-doc-format · cross-family-quorum (`3.6`) · operator-dial-tooling (`3.5`) · gate-command-defaults · install-config-dir-divergence (usage-instrumentation promoted to `3.8`)
 - **Research program:** [`research/README.md`](./research/README.md) — most cross-cutting are `agentic-loops` and `reasoning-capability`
