@@ -22,7 +22,7 @@ Externalise these before acting:
 - Resolving `diff_target`: `--range` if given; else `<default_branch>..HEAD` (read default branch from `.sidekick/config.json`, fallback `main`); the literal `working_tree` is allowed.
 - Per-goal verdict (apply to each goal in the verifier's `goals[]`): if ANY artifact verdict ∈ {MISSING, STUB, HOLLOW, ORPHANED} OR ANY `anti_pattern` with `tied_to_goal == goal.id && severity == "blocker"` OR ANY contributing truth `status == "failed"` → **GAP**; elif `needs_human_verification == true` OR any truth `status == "inconclusive"` → **INCONCLUSIVE**; else **ACHIEVED**.
 - Overall verdict: ANY goal GAP → `gaps_found`; elif ANY goal INCONCLUSIVE → `inconclusive`; else `passed`.
-- Route per gap: a GAP whose artifacts are MISSING/STUB → **finish-build** (`/sk-build`); a GAP whose artifacts exist but are HOLLOW/ORPHANED such that the design can't satisfy the goal → **redesign** (`/sk-design --resume`); an INCONCLUSIVE goal → **human-verify**. When the evidence is ambiguous between finish-build and redesign, surface both and let the user choose.
+- Route per gap: a GAP whose artifacts are MISSING/STUB → **finish-build** (`/sk-build <slug>`); a GAP whose artifacts exist but are HOLLOW/ORPHANED such that the design can't satisfy the goal → **redesign** (`/sk-design <slug>` — re-enters the design as a redesign on the existing plan; the user re-runs `/sk-build <slug>` after); an INCONCLUSIVE goal → **human-verify**. When the evidence is ambiguous between finish-build and redesign, surface both and let the user choose.
 </reasoning>
 
 <inputs>

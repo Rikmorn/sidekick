@@ -1,6 +1,6 @@
 ---
 name: sk-design
-description: Research-driven design phase. From a topic or slug, dispatches sk-explorer (pre-flight) + conditional research subagents + sk-pattern-mapper + sk-architectural-advisor + sk-rfc-drafter + sk-plan-drafter; verifies each artifact via dimensional reviewers. Writes RFC.md / PLAN.md / RESEARCH.md under .sidekick/plans/<slug>/.
+description: Research-driven design phase. From a topic or an existing slug, resolves identity (a new design, or a redesign re-entry on an existing plan), grounds the dialogue via sk-explorer + conditional research subagents + sk-pattern-mapper + sk-architectural-advisor, drafts via sk-rfc-drafter + sk-plan-drafter, and verifies each artifact via dimensional reviewers. Writes RFC.md / PLAN.md / RESEARCH.md under .sidekick/plans/<slug>/.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: <topic-or-slug> [--auto <low|medium|high>]
@@ -13,7 +13,9 @@ By default `/sk-design <topic>` is a conversation. You surface your understandin
 
 `--auto <low|medium|high>` is the hands-off mode: produce-and-confirm end-to-end at the stated effort, without stopping to talk. It is trust, not blindness — it keeps a one-line confirm before commit, and it may escalate effort or break out to ask one focused question when the task is more complex than the stated effort or it is missing information it genuinely cannot infer.
 
-Before significant decisions — whether to research or keep talking, how to route an explorer outcome, whether `--auto` should escalate or ask, how to combine quorum verdicts — reason through the choice in prose first. The reasoning is internal scratchwork; it shapes dispatches and writes and does not land in the committed artifacts.
+A `/sk-design` invocation either starts a **new** plan or **re-enters an existing one**. The argument resolves it: if `.sidekick/plans/<slug>/` already exists, you open a *redesign* dialogue on that plan — seeded by its RFC/PLAN and what triggered the rework (a `/sk-build` blocker or a `/sk-goal-verify` gap); otherwise you derive a slug from the topic, confirm it, and open a *new-design* dialogue. An existing plan is re-entry, not a collision — the design↔build loop is meant to cycle.
+
+Before significant decisions — whether to research or keep talking, how to resolve identity (a new design vs a redesign re-entry), whether `--auto` should escalate or ask, how to combine quorum verdicts — reason through the choice in prose first. The reasoning is internal scratchwork; it shapes dispatches and writes and does not land in the committed artifacts.
 
 This slash command runs in the main session because the runtime forbids subagents from dispatching other subagents (per `.claude/rules/sk-agent-prompts.md` "Where orchestrators must live"). The orchestration logic lives here; the focused cognitive work lives in the dispatched subagents.
 
@@ -22,14 +24,14 @@ The reviewer quorum on PLAN.md is the canonical demonstration of dimensional ver
 <constraints>
 
 # Safety tier — non-negotiable
-- Writes go only to `.sidekick/plans/<slug>/{RFC.md, PLAN.md, RESEARCH.md}`. When `sk-explorer` returns `group_created`, the group artifacts (`OVERVIEW.md`, `MEMBERS.md` under `.sidekick/plans/<group-slug>/`) are written by `sk-explorer`, not by this skill.
+- Writes go only to `.sidekick/plans/<slug>/{RFC.md, PLAN.md, RESEARCH.md}` (plus a `## Redesigns` append to RFC.md on a redesign re-entry). When the dialogue reveals the topic spans multiple plans, the group artifacts (`OVERVIEW.md`, `MEMBERS.md` under `.sidekick/plans/<group-slug>/`) are written by this skill.
 - Source code, branches, and git state are read-only here — the final `git add` + `git commit` is the only mutation outside the plan directory.
 
 # Operating boundaries
 - Be transparent about research: before running it, say what you are about to research and why.
 - Lay options and open questions out in the conversation. State an option's substance when you name it — never reference an option ("Option B") without saying what it is.
 - The PLAN quorum dispatches its reviewers in parallel — one Agent call per reviewer in one message — so each reviewer reasons independently before the orchestrator combines verdicts. Keep the dispatch parallel; a serialised dispatch lets one reviewer's output influence the others through intermediate context and defeats the purpose of having multiple dimensions.
-- `sk-explorer`'s scoping verdict is final — work within it rather than re-scoping. `proceed` continues; `group_created` exits cleanly; `hard_stop` halts. (How the outcome routes is mode-dependent — see `<workflow>`.)
+- `sk-explorer`'s output is *evidence to open the dialogue with*, not a verdict — you ground the conversation in it; you and the user (or you, in `--auto`) set scope, slug, and direction.
 - `sk-branch-precheck`'s verdict is the boundary on git state: a `hard_stop` halts the flow with the helper's message surfaced verbatim; the advisory verdicts offer the user a choice before continuing.
 
 </constraints>
@@ -38,7 +40,7 @@ The reviewer quorum on PLAN.md is the canonical demonstration of dimensional ver
 
 Externalise key decisions in prose before acting:
 
-- Routing `sk-explorer`'s outcome depends on the mode you are in. A hard structural outcome short-circuits the same way in both modes — `group_created` exits cleanly surfacing the explorer's `continuation`; `hard_stop` emits the matching error code. A soft stuck-state (the explorer is unsure, or surfaces a question) is where the modes diverge: in exploration you fold it into the dialogue and resolve it with the user; in `--auto` you weigh whether to escalate effort or break out for one focused question. The per-mode routing detail lives in `<workflow>` — reason about which mode you are in and what the outcome warrants, don't re-derive a table here.
+- Resolving identity is the first decision, because it picks the whole path: does the argument point at an existing `.sidekick/plans/<slug>/` (re-enter as a redesign) or a new plan (derive + confirm a slug, then ground and explore)? For a new plan, `sk-explorer`'s evidence is what you open the dialogue with; for a redesign, the existing RFC/PLAN + what triggered the rework is what you open with. The per-path detail lives in `<workflow>`.
 - In exploration, deciding whether to suggest or run research versus keep talking is a judgment call. Research earns its cost when it would resolve a real open question or sharpen an option the user is weighing — not as a reflexive upfront pass. Lean toward more conversation when the gap is about intent or preference (the user holds that answer), toward research when the gap is about prior art, libraries, or tradeoffs you can't infer. The design is clear enough to draft when the goals, the shape of the solution, and the load-bearing decisions are settled with the user and the remaining unknowns are small enough to capture as RFC questions rather than blockers.
 - In `--auto`, you hold to the stated effort by default. Escalate effort, or break out to ask one focused question, only when the task is genuinely more complex than the stated effort implies, or when you are missing information you cannot reasonably infer from the topic and the repo. Reserve the breakout for the question that actually unblocks correct work — `--auto` is trust to proceed, so the bar for interrupting is higher than in exploration.
 - Combining the PLAN quorum verdicts is a roll-up, not a judgment call: fold every failing reviewer's `issues` into one prose `feedback` field for the plan-drafter re-dispatch, and don't carry a passing checker's empty `issues` through. (The dispatch mechanics live in `<workflow>`.)
@@ -55,10 +57,10 @@ User invokes `/sk-design <topic-or-slug> [--auto <low|medium|high>]`.
 
 | Arg | Required | Notes |
 |---|---|---|
-| `<topic-or-slug>` | yes | A clean slug like `add-keyboard-shortcuts`, a nested group slug like `multi-tenant/auth`, or freeform text like `"add cmd+k to the admin UI"`. `sk-explorer` classifies and routes. |
+| `<topic-or-slug>` | yes | Freeform text (`"add cmd+k to the admin UI"`), a clean slug (`add-keyboard-shortcuts`), or a nested member slug (`multi-tenant/auth`). The orchestrator resolves it: an existing plan → redesign re-entry; otherwise → new-design dialogue (slug derived from the topic and confirmed). |
 | `--auto <low|medium|high>` | no | Hands-off mode at the stated effort. Absent → collaborative exploration (the default). `low` ≈ minimal research; `medium` ≈ standard; `high` ≈ deep + adversarial verification. Effort defaults to `.sidekick/config.json` `fanout.budget` (mapped) when `--auto` is given with no level. |
 
-The removed flags (`--research`, `--no-research`, `--budget`) error clearly if passed — surface `unknown flag <name>; see --auto` rather than silently ignoring them. Research is no longer a flag: in exploration it is a request inside the conversation; in `--auto` the effort level sets it. Effort `low|medium|high` maps onto the existing `quick|standard|deep` budget tiers behind `<fanout_seam>`.
+The removed/unsupported flags (`--research`, `--no-research`, `--budget`, `--resume`) error clearly if passed — surface `unknown flag <name>; see --auto` rather than silently ignoring them (`--resume` is explicitly rejected so it can't mis-parse as a topic; redesign re-entry is just `/sk-design <slug>` on an existing plan). Research is no longer a flag: in exploration it is a request inside the conversation; in `--auto` the effort level sets it. Effort `low|medium|high` maps onto the existing `quick|standard|deep` budget tiers behind `<fanout_seam>`.
 
 </inputs>
 
@@ -67,16 +69,14 @@ The removed flags (`--research`, `--no-research`, `--budget`) error clearly if p
 These are the unconditional halts — emit only the structured-error block (no preamble, no progress narration, no sign-off) for any of:
 
 - `error: missing_inputs` — `<topic-or-slug>` arg absent.
-- `error: slug_collision` — `sk-explorer` returned `hard_stop` with `reason: slug_collision` (a plan with this slug already exists at `.sidekick/plans/<slug>/`). Short-circuits in both modes.
 - `error: ambiguous_git_state` — `sk-branch-precheck` returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
 - `error: missing_architecture_context` — `sk-architectural-advisor`'s structured return surfaced `error: missing_architecture_context`. The consuming repo has no CLAUDE.md or `.claude/rules/` — the advisor cannot ground recommendations in repo constraints. Surface to the user with a hint to author a minimal CLAUDE.md before re-running `/sk-design`.
 - `error: rfc_quorum_check_loop_exhausted` — the RFC quorum loop in Finalisation (drafter ↔ structural + coherence checkers) hit its 3-dispatch cap without both reviewers passing.
 - `error: plan_quorum_check_loop_exhausted` — the PLAN quorum loop in Finalisation (drafter ↔ all three reviewers) hit its 3-dispatch cap without all reviewers passing.
 - `error: subagent_failed` — any dispatched subagent returned malformed JSON, an unrecognised `mode` / `verdict`, or a deliverable that fails its documented contract.
 
-A few explorer and research outcomes are *not* unconditional halts — they resolve differently by mode, and only reach an error code in one of them:
+A research outcome is *not* an unconditional halt:
 
-- A rejected slug (`sk-explorer` `hard_stop` `reason: user_rejected_slug`) or an unsized topic (`reason: cannot_classify`) is, in exploration, the *start* of the conversation, not a dead-end — fold it into the dialogue and resolve it with the user (per `<workflow>`). In `--auto` it is the honest-autonomy trigger: break out for the one focused question that disambiguates it. Either code (`error: user_rejected_slug` / `error: cannot_classify`) becomes a terminal halt only in `--auto`, and only when the user, asked to disambiguate, declines.
 - A researcher returning a hard error (`no_canonical_sources_found` or other) is `error: research_failed` only when it cannot be absorbed. In exploration that is a conversational event, not a halt — tell the user, offer to retry or skip, and continue from their answer. In `--auto` the `<fanout_seam>` governs: at higher effort the orchestrator escalates or degrades (drops the failing researcher, continues with the remaining set, or falls back a tier) rather than halting. The code is the residue when no degrade path remains.
 
 Hard-stop format:
@@ -93,7 +93,7 @@ Clean-exit shapes (no `error:` prefix):
 ```
 /sk-design — group scope detected.
 
-<sk-explorer.continuation field>
+<the first member to design — e.g. "Run /sk-design multi-tenant/auth">
 ```
 
 ```
@@ -110,13 +110,28 @@ Reason: <one-line user-facing description (e.g., "User declined the branch advis
 
 <workflow>
 
-The shape is: **Groundwork** (scope + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → RFC quorum → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation. Three places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-pattern-mapper` + `sk-architectural-advisor`) gathered at convergence, the RFC quorum (`sk-structural-checker` + `sk-coherence-checker`), and the PLAN quorum (`sk-structural-checker` + `sk-crossref-checker` + `sk-coherence-checker`). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
+The shape is: **Groundwork** (resolve identity → new-design grounding *or* redesign re-entry; + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → RFC quorum → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation; a redesign re-entry enters Finalisation with the design already revised. Three places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-pattern-mapper` + `sk-architectural-advisor`) gathered at convergence, the RFC quorum (`sk-structural-checker` + `sk-coherence-checker`), and the PLAN quorum (`sk-structural-checker` + `sk-crossref-checker` + `sk-coherence-checker`). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
 
-### Groundwork — scope and git state
+### Groundwork — resolve identity, then ground or re-enter
 
-Open by dispatching `sk-explorer` (`subagent_type: sk-explorer`, `topic_or_slug` + `repo_root`; contract in `<dispatcher_parse_contracts>`) to scope the work, then `sk-branch-precheck` (`operation: design`, `ticket_id: <slug>`) to read git state. The explorer's scoping verdict is final — work within it rather than re-scoping (how each outcome routes is mode-dependent, below).
+First, **resolve identity** from the argument. Check whether it points at an existing plan directory `.sidekick/plans/<slug>/` at `repo_root` (a clean slug or nested member slug resolves directly; freeform text is a new topic).
 
-How the explorer's outcome flows depends on the mode. The hard structural outcomes short-circuit the same way in both modes: `group_created` is a clean-exit — emit the "group scope detected" block surfacing the explorer's `continuation` and stop, no branch precheck or downstream work; `slug_collision` halts with its error block (a plan already exists at that slug — the user can clear or rename). The soft stuck-states are mode-dependent. An unsized topic (`cannot_classify`) or a rejected slug (`user_rejected_slug`) is, in exploration, the *start* of the discussion rather than a dead-end — fold it into the opening understanding and resolve it with the user. In `--auto` the same stuck-state is the honest-autonomy trigger: escalate or break out for one focused question, then continue. A clean `proceed` captures `slug`, `scope_statement`, `complexity`, and `research_hints` — `complexity` and the hints are signals you surface to the user, never a silent gate on whether research runs.
+- **Existing plan → redesign re-entry.** The argument names a plan that already exists. This is the loop closing, not a collision — go to **Redesign re-entry** below. (The lone exception: if the user clearly meant a *new* topic that happens to collide with an existing slug, surface it — "a plan `<slug>` already exists; redesign it, or pick another name?" — and branch on their answer. Never halt.)
+- **New plan → derive and confirm a slug.** For freeform text, propose a slug from the topic and confirm it with the user; in `--auto`, derive it and proceed, breaking out only if the topic is too thin to name. For a clean slug that doesn't yet exist, use it directly.
+
+Then run `sk-branch-precheck` (`subagent_type: sk-branch-precheck`, `operation: design`, `ticket_id: <slug>`) to read git state.
+
+**Ground a new design.** Dispatch `sk-explorer` (`subagent_type: sk-explorer`, `topic` + `repo_root`; contract in `<dispatcher_parse_contracts>`) for the repo grounding the dialogue opens with — the closest analogues, the prior decisions that touch the topic, new-vs-existing libraries, and a `scope_signal`. This evidence is what you surface first; `scope_signal` and `research_hints` are signals you weigh and surface, never silent gates on whether research runs.
+
+### Redesign re-entry (existing plan)
+
+The argument named an existing plan — you are re-entering its design to revise it, because `/sk-build` or `/sk-goal-verify` hit something the current design can't satisfy, or the user wants to rethink. This is the design↔build loop closing.
+
+**Seed from what exists.** Read the plan's `RFC.md`, `PLAN.md`, and `RESEARCH.md` (when present), and the build state — `git log` for `[T-NN]` commits on this slug and any `## Amendments` already recorded. Reconstruct *what triggered the rework*: the deviation a build surfaced (the affected `D-NN`, the blocked task) or the goal-verify gap. The argument carries only the slug, so you reconstruct the trigger from the artifacts and git rather than receiving it as input.
+
+**Open with what broke.** Open by stating what you found — the existing design's relevant decisions, what the build or verify hit, and the options for revising — and settle the new direction with the user (in `--auto`, decide it informed). This is a redesign *conversation*; like the RFC-review loop it is user-driven and uncapped.
+
+**Record and re-draft.** Once the direction is settled, append a `## Redesigns` `R-NN` block to RFC.md capturing the trigger, the affected IDs, and the change (see `<output_artifacts>`). Then enter **Finalisation** with the redesign as the settled direction: re-dispatch `sk-rfc-drafter` with `feedback` describing the redesign so it re-drafts only the affected `## Decisions` / `## Architecture` / goals and leaves the rest byte-equal, re-run the RFC quorum, then re-draft and **re-pin** PLAN.md for the changed tasks, re-run the PLAN quorum, and commit. Redesign reuses Finalisation's machinery exactly — it just enters with the design already revised, the way exploration enters with it already settled.
 
 `sk-branch-precheck` routes the same in both modes: `proceed` continues silently; `confirm_action` surfaces the advisory and offers confirm-and-proceed or cancel; `propose_branch` surfaces `proposed_branch` and offers create-and-re-invoke (clean-exit with the branch-name hint), proceed-in-place, or cancel; `hard_stop` emits `error: ambiguous_git_state` with the helper's `hard_stop_message` verbatim. (Verdict semantics in `<dispatcher_parse_contracts>`; the routing rationale is in `<reasoning>`.)
 
@@ -124,13 +139,13 @@ How the explorer's outcome flows depends on the mode. The hard structural outcom
 
 The user is in the driver's seat. No research has run yet, by design — exploration is budget-conscious and earns each fan-out before spending it.
 
-**Open with your understanding.** Before any research, lay out in prose what you take the problem to be, the angles and load-bearing decisions in play, the open questions, and the complexity signal the explorer surfaced ("this looks involved" / "this looks straightforward") — and name where research would likely pay off, without running it yet. This opening *is* the user's first contact with the work; it invites correction.
+**Open with your understanding.** Before any research, lay out in prose what you take the problem to be, the angles and load-bearing decisions in play, the open questions, and what the repo grounding shows — the analogues, the prior decisions, and the explorer's `scope_signal` ("this looks involved" / "this looks straightforward") — and name where research would likely pay off, without running it yet. This opening *is* the user's first contact with the work; it invites correction.
 
 **Explore as a conversation.** Run research when the user asks, or when your own judgment says a gap is worth the tokens — and say what you're about to research and why before you run it. Research fans out through the `<fanout_seam>` to the researcher subagents (`sk-researcher-{impl,decision,context}`) and merges through `sk-research-synthesiser`; the dispatch fields and the empty-output / `no_canonical_sources_found` handling live in `<dispatcher_parse_contracts>` and `<fanout_seam>`. When a synthesis is produced, its `full_synthesis` is written to `.sidekick/plans/<slug>/RESEARCH.md`. Lay options and open questions out inline as they surface, stating each option's substance. The gap that's about intent or preference is the user's to close in conversation; the gap that's about prior art or tradeoffs is research's to close. Continue until the user signals the design is clear — goals, solution shape, and the load-bearing decisions settled, remaining unknowns small enough to ride as RFC questions rather than blockers.
 
-**Converge.** When the user is satisfied, gather the design context needed to draft and proceed to **Finalisation**. Because the substance was already worked out together, the confirm there is light.
+**Converge.** When the user is satisfied, gather the design context needed to draft and proceed to **Finalisation**. Because the substance was already worked out together, the confirm there is light. (If the dialogue instead revealed the topic spans several distinct surfaces — each needing its own RFC/PLAN — treat it as a multi-plan group: write `OVERVIEW.md` + `MEMBERS.md` under `.sidekick/plans/<group-slug>/` per `<output_artifacts>` and clean-exit with the "group scope detected" block naming the first member to design, rather than drafting here.)
 
-> *Worked shape (reasoning, not a script).* User runs `/sk-design "add a command palette to the settings page"`. The explorer proceeds with `complexity: medium`, hints `["impl", "decision"]`. I open: "Here's what I take this to be — a ⌘K-style palette scoped to settings actions; the decisions in play are where the index lives and whether it's keyboard-only; the open question is whether it reuses an existing palette component. Complexity looks moderate. Research would pay off on the palette-library landscape, but I haven't run it yet — want me to?" The user says the component question is the real one. That's prior art I can't infer, so I say "I'll survey the existing palette/overlay components and the two library options" and fan out one `impl` researcher. The synthesis surfaces a reusable overlay; I lay out the two options inline with their substance. The user picks one and says it's clear. I converge: gather analogues and architectural grounding, then draft.
+> *Worked shape (reasoning, not a script).* User runs `/sk-design "add a command palette to the settings page"`. No such plan exists, so it's a new design — I derive and confirm the slug `settings-command-palette`, then ground via `sk-explorer`: it finds an existing overlay analogue, no prior decision on command palettes, and a `scope_signal` of "moderate" with `research_hints: ["impl", "decision"]`. I open: "Here's what I take this to be — a ⌘K-style palette scoped to settings actions; the decisions in play are where the index lives and whether it's keyboard-only; the open question is whether it reuses an existing palette component. Complexity looks moderate. Research would pay off on the palette-library landscape, but I haven't run it yet — want me to?" The user says the component question is the real one. That's prior art I can't infer, so I say "I'll survey the existing palette/overlay components and the two library options" and fan out one `impl` researcher. The synthesis surfaces a reusable overlay; I lay out the two options inline with their substance. The user picks one and says it's clear. I converge: gather analogues and architectural grounding, then draft.
 
 ### Hands-off — `--auto <low|medium|high>`
 
@@ -159,7 +174,7 @@ When they diverge on a load-bearing axis, the decision is made informed — dive
 
 **Draft the RFC.** Dispatch `subagent_type: sk-rfc-drafter` with:
 
-- `slug`, `scope_statement`, `complexity`
+- `slug`, `scope_statement` (the one-line scope settled in the dialogue)
 - `today: <YYYY-MM-DD>` — the system date from `date +%Y-%m-%d` (run once via Bash; reused for the PLAN draft below)
 - `synthesis_output: <full synthesiser JSON>` when research ran; omit when it didn't
 - `architecture_section: <advisor's "## Architecture" body, parsed per the dispatcher_parse_contracts>`
@@ -247,15 +262,11 @@ Eleven contracts, one per dispatched specialist. Each describes the input fields
 
 ### 1. sk-explorer
 
-**Input:** `{ topic_or_slug, repo_root }`.
+**Input:** `{ topic, repo_root }` — dispatched only on the new-design path, for repo grounding.
 
-**Output modes** (one JSON object inside a ```json``` fence):
+**Output** (one JSON object inside a ```json``` fence): `{ analogues: [{ path, why_relevant }], prior_decisions: [{ ref, relevance }], libraries: { existing, likely_new }, scope_signal, research_hints }`.
 
-- `{ mode: "proceed", slug, scope_statement, complexity, research_hints }` — scoping succeeded; continue to the branch precheck in Groundwork.
-- `{ mode: "group_created", group_slug, first_member_slug, continuation }` — input spans multiple plans; explorer wrote `OVERVIEW.md` + `MEMBERS.md` under `.sidekick/plans/<group-slug>/`; orchestrator clean-exits with the `continuation` hint.
-- `{ mode: "hard_stop", reason }` — `reason` is one of `slug_collision`, `user_rejected_slug`, `cannot_classify`; orchestrator emits the matching error code.
-
-The explorer is the only entry point for scoping. Its verdict is final — the orchestrator does not re-scope.
+**Routing:** this is *evidence*, not a verdict. Open the dialogue with the analogues, prior decisions, and `scope_signal`; weigh `research_hints` when deciding what to research. None of it gates — scope, slug, and direction are settled with the user. Empty arrays are valid (thin grounding / new ground is itself a real signal). A malformed shape (not the field set above) is `error: subagent_failed`.
 
 ### 2. sk-branch-precheck
 
@@ -313,11 +324,11 @@ The explorer is the only entry point for scoping. Its verdict is final — the o
 
 ### 7. sk-rfc-drafter
 
-**Input:** `{ slug, scope_statement, complexity, synthesis_output?, architecture_section, analogues: [{ path, why_relevant }], feedback? }`.
+**Input:** `{ slug, scope_statement, synthesis_output?, architecture_section, analogues: [{ path, why_relevant }], feedback? }`.
 
-**Output:** `{ mode: "draft_ready", draft_path, draft_text }` inside a ```json``` fence, or an error JSON of the form `{ error: "missing_input"|"invalid_complexity", reason }`.
+**Output:** `{ mode: "draft_ready", draft_path, draft_text }` inside a ```json``` fence, or an error JSON of the form `{ error: "missing_input", reason }`.
 
-**Routing:** write `draft_text` to `.sidekick/plans/<slug>/RFC.md`. On a re-dispatch with `feedback`, the drafter integrates the targeted section only and leaves every other section byte-equal.
+**Routing:** write `draft_text` to `.sidekick/plans/<slug>/RFC.md`. On a re-dispatch with `feedback`, the drafter integrates the targeted section only and leaves every other section byte-equal — this is also how a **redesign re-entry** re-drafts the affected sections (the `feedback` describes the redesign).
 
 ### 8. sk-plan-drafter
 
@@ -357,25 +368,43 @@ The explorer is the only entry point for scoping. Its verdict is final — the o
 
 ```
 .sidekick/plans/<slug>/
-├─ RFC.md         (YAML frontmatter + Goals & non-goals, Architecture, Decisions, Questions, Risks, optional Research notes)
+├─ RFC.md         (YAML frontmatter + Goals & non-goals, Architecture, Decisions, Questions, Risks, optional Research notes; ## Redesigns appended on re-entry, ## Amendments by /sk-build)
 ├─ PLAN.md        (YAML frontmatter with pins-rfc: <rfc_hash> + per-task entries + ## Checklist)
 └─ RESEARCH.md    (full synthesiser narrative — only when research ran)
 ```
 
-`<slug>` may be a flat slug (`add-keyboard-shortcuts`) or a nested member-of-group slug (`multi-tenant/auth`). The explorer's `proceed` mode returns the canonical form.
+`<slug>` may be a flat slug (`add-keyboard-shortcuts`) or a nested member-of-group slug (`multi-tenant/auth`). The orchestrator derives it from the topic (and confirms it) on a new design, or takes it verbatim on a redesign re-entry.
 
 ### Commit shape
 
 ```
-design(<slug>): draft RFC and PLAN
+design(<slug>): draft RFC and PLAN          # new design
+design(<slug>): redesign — <one-line>        # redesign re-entry (R-NN)
 ```
 
-Single atomic commit. Stage only the paths written by this skill — `git add .sidekick/plans/<slug>/RFC.md .sidekick/plans/<slug>/PLAN.md` plus `RESEARCH.md` when it exists. Never `git add -A`.
+Single atomic commit. Stage only the paths written by this skill — `git add .sidekick/plans/<slug>/RFC.md .sidekick/plans/<slug>/PLAN.md` plus `RESEARCH.md` when it exists (and `OVERVIEW.md` / `MEMBERS.md` on the group path). Never `git add -A`.
+
+### R-NN block (written on a redesign re-entry)
+
+Append to RFC.md `## Redesigns`. If the section doesn't exist, create it after `## Decisions` (or after `## Amendments` when present).
+
+```markdown
+## Redesigns
+
+### R-NN (YYYY-MM-DD)
+
+**Trigger:** <what surfaced the rework — e.g. "/sk-build T-04 structural blocker: D-03, D-07 unworkable as locked" or "/sk-goal-verify: g2 HOLLOW">
+
+**Affected:** D-XX[, D-YY...][, g_n...]
+
+**Change:** <what the design now does differently, and why>
+```
+
+`R-NN` increments per redesign within the ticket's RFC.md (R-01 first). Date is ISO `YYYY-MM-DD` from the system clock. The re-draft then reconciles `## Decisions` / `## Architecture` to match.
 
 ### What is NOT written by this skill
 
-- `OVERVIEW.md` / `MEMBERS.md` (written by `sk-explorer` when it returns `group_created`).
-- Amendment or redesign blocks in RFC.md (those are written by downstream skills during execution).
+- `## Amendments` blocks in RFC.md — written by `/sk-build` during execution (single-decision tweaks). (`## Redesigns` R-NN, by contrast, *is* written here on a re-entry.)
 - Source code (touched only by `/sk-build` via `sk-executor`).
 - `.sidekick/decisions/*.md` (owned by `/sk-decide`).
 
@@ -383,35 +412,42 @@ Single atomic commit. Stage only the paths written by this skill — `git add .s
 
 <examples>
 
-Three examples teaching the interaction judgment, not the pipeline mechanics. They show: research-as-dialogue inside a default exploration with a light confirm; a hands-off `--auto medium` run where effort drives depth and the only pause is a one-line confirm; and an honest-autonomy breakout where `--auto low` stops for one focused question rather than guessing. Each leads with the reasoning the orchestrator should do; the deterministic Finalisation (context → draft → RFC quorum → confirm → PLAN quorum → commit) is summarised because its mechanics live in `<workflow>`.
+Four examples teaching the interaction judgment, not the pipeline mechanics. They show: research-as-dialogue inside a default exploration with a light confirm; a hands-off `--auto medium` run where effort drives depth and the only pause is a one-line confirm; an honest-autonomy breakout where `--auto low` stops for one focused question rather than guessing; and a redesign re-entry where an existing plan re-opens design seeded by what broke. Each leads with the reasoning the orchestrator should do; the deterministic Finalisation (context → draft → RFC quorum → confirm → PLAN quorum → commit) is summarised because its mechanics live in `<workflow>`.
 
 ### Example 1 — Default exploration, research as dialogue, light confirm
 
-A fuzzy topic is the *start* of the discussion, not a halt — an unsized topic is exactly what the exploration body is for. User runs `/sk-design "make the dashboard load faster"`. The explorer `proceed`s but flags it as broad (`complexity: medium`, "faster" unscoped); branch precheck `proceed`s. Rather than treat the vagueness as a stuck-state, the orchestrator opens with its own reading — the angles in play (query latency, payload size, render cost), the load-bearing decision (attack the data fetch or the render path first), and that it hasn't researched yet but wants the user's read first. That opening *is* the user's first contact with the work, and it invites correction.
+A fuzzy topic is the *start* of the discussion, not a halt — an unsized topic is exactly what the exploration body is for. User runs `/sk-design "make the dashboard load faster"`. No plan by that name exists, so it's a new design: the orchestrator derives a slug (`dashboard-load-speed`, confirmed) and grounds via `sk-explorer` (analogues in the data-fetch layer, no prior decision on caching, `scope_signal` broad — "faster" unscoped); branch precheck `proceed`s. Rather than treat the vagueness as a stuck-state, the orchestrator opens with its own reading — the angles in play (query latency, payload size, render cost), the load-bearing decision (attack the data fetch or the render path first), and that it hasn't researched yet but wants the user's read first. That opening *is* the user's first contact with the work, and it invites correction.
 
 The user redirects: it's not render cost, the dashboard refetches everything on every tab switch — reframing toward caching, which is prior art the orchestrator can't infer from the repo. So it states the move before making it ("I'll survey the cache strategies for tab-switched data and their tradeoffs"), runs ONE research pass transparently through the fan-out, and lays the options out by substance — stale-while-revalidate keyed per tab vs. a normalised cache with explicit invalidation, naming what each means rather than "Option A / Option B." The user picks one; the design is clear enough to draft. The orchestrator converges — gathers design context, then Finalisation runs as always to a *light* `Approve` / `Tweak` / `Cancel` approval (surfaced as an `AskUserQuestion`), light because the substance was worked out together. The teaching point: research is a move inside the dialogue (announced, single, earned), and the approval is light precisely because the user already drove the substance.
 
 ### Example 2 — `--auto medium`, hands-off, effort drives depth
 
-`--auto` is trust to proceed, so there is no conversational turn — the stated effort is the whole instruction for how deep to go. A clean slug means the explorer has nothing to disambiguate, so the run flows straight through.
+`--auto` is trust to proceed, so there is no conversational turn — the stated effort is the whole instruction for how deep to go. A clean, unused slug needs no derivation, so the run flows straight through.
 
-User runs `/sk-design export-csv --auto medium`. The explorer `proceed`s on the clean slug; branch precheck `proceed`s. Because `medium` maps to the `standard` research tier, the orchestrator gathers design context and runs research at standard depth (one researcher per hint, synthesiser merge) without pausing to ask whether to — the effort level already answered that. Synthesis flows into Finalisation: draft → RFC quorum → PLAN → parallel quorum → commit, all hands-off. The single pause is the one-line approval before commit — an `AskUserQuestion` like "Designed `export-csv` (RFC.md, PLAN.md, RESEARCH.md)" with `Approve` / `Cancel` — trust to proceed, not blindness. The teaching point: in hands-off mode the effort word *is* the depth knob, so the orchestrator never stops to negotiate research; the only human touch is the one-line approval.
+User runs `/sk-design export-csv --auto medium`. No `export-csv` plan exists, so it's a new design on a clean slug (no derivation needed); branch precheck `proceed`s; `sk-explorer` grounds it. Because `medium` maps to the `standard` research tier, the orchestrator gathers design context and runs research at standard depth (one researcher per hint, synthesiser merge) without pausing to ask whether to — the effort level already answered that. Synthesis flows into Finalisation: draft → RFC quorum → PLAN → parallel quorum → commit, all hands-off. The single pause is the one-line approval before commit — an `AskUserQuestion` like "Designed `export-csv` (RFC.md, PLAN.md, RESEARCH.md)" with `Approve` / `Cancel` — trust to proceed, not blindness. The teaching point: in hands-off mode the effort word *is* the depth knob, so the orchestrator never stops to negotiate research; the only human touch is the one-line approval.
 
 ### Example 3 — `--auto low`, honest-autonomy breakout
 
 `--auto low` says "keep it shallow," but honest-autonomy outranks the effort word when proceeding would mean guessing at something load-bearing. The bar for interrupting is higher than in exploration — `--auto` is trust to proceed — so the breakout is reserved for the one unknown that actually changes the design, not for anything the orchestrator could reasonably infer.
 
-User runs `/sk-design webhook-retries --auto low`. The explorer `proceed`s; branch precheck `proceed`s. As it works toward a draft, the orchestrator surfaces a fork it genuinely cannot infer from the topic or the repo: retries can be in-process (a timer) or durable (a queue with persistence across restarts), and the two produce completely different architectures — getting it wrong wastes the whole draft. This isn't complexity the effort word covers; it's a missing fact. So instead of guessing, the orchestrator breaks out for ONE focused question: "Before I draft — should retries survive a process restart (durable queue) or is in-process retry enough? It changes the architecture." The user answers "durable"; the orchestrator folds that in and continues hands-off from there — research at the `quick` tier (still `low`), then Finalisation through to the one-line confirm. The teaching point: honest autonomy means stopping for the one thing you can't responsibly assume, then proceeding — not turning `--auto` into a conversation.
+User runs `/sk-design webhook-retries --auto low`. New design on a clean slug; branch precheck `proceed`s; `sk-explorer` grounds it. As it works toward a draft, the orchestrator surfaces a fork it genuinely cannot infer from the topic or the repo: retries can be in-process (a timer) or durable (a queue with persistence across restarts), and the two produce completely different architectures — getting it wrong wastes the whole draft. This isn't complexity the effort word covers; it's a missing fact. So instead of guessing, the orchestrator breaks out for ONE focused question: "Before I draft — should retries survive a process restart (durable queue) or is in-process retry enough? It changes the architecture." The user answers "durable"; the orchestrator folds that in and continues hands-off from there — research at the `quick` tier (still `low`), then Finalisation through to the one-line confirm. The teaching point: honest autonomy means stopping for the one thing you can't responsibly assume, then proceeding — not turning `--auto` into a conversation.
+
+### Example 4 — redesign re-entry from a build blocker
+
+An existing plan is re-entry, not a collision — this is the loop closing. `/sk-build export-csv` hit a structural blocker at T-04 (D-03 and D-07 unworkable as locked) and its redesign prompt told the user to run `/sk-design export-csv`. The user does.
+
+The orchestrator resolves the argument to the existing `.sidekick/plans/export-csv/` and enters **Redesign re-entry**: it reads RFC/PLAN, `git log` for the `[T-NN]` commits done so far, and reconstructs the trigger (the T-04 deviation naming D-03/D-07). It opens by stating what broke — "the build hit a wall at T-04: D-03 (streaming writer) and D-07 (request-layer auth) can't both hold as written; here's the fork" — and settles the new direction. Then it appends `## Redesigns` R-01 (trigger + affected D-03/D-07 + the change), re-dispatches `sk-rfc-drafter` with `feedback` describing the redesign so only `## Decisions` / `## Architecture` change, re-runs the RFC quorum, re-drafts and **re-pins** PLAN.md, runs the PLAN quorum, and commits `design(export-csv): redesign — durable streaming writer`. The user then re-runs `/sk-build export-csv` to resume through the revised tasks. The teaching point: redesign re-enters the *same* dialogic design, seeded by what broke, and the loop cycles.
 
 </examples>
 
 <symbol_conventions>
 
 - `<slug>` — positional argument identifying the plan directory (`.sidekick/plans/<slug>/`). Flat (`add-keyboard-shortcuts`) or nested member-of-group (`multi-tenant/auth`).
-- `<group-slug>` — set by `sk-explorer` when input spans multiple plans. Used for `.sidekick/plans/<group-slug>/OVERVIEW.md` and `MEMBERS.md`. Not written by this skill.
+- `<group-slug>` — set when the dialogue reveals the topic spans multiple plans. Used for `.sidekick/plans/<group-slug>/OVERVIEW.md` and `MEMBERS.md`, written by this skill.
 - `g_n` — goal ID in RFC.md `## Goals & non-goals`. Sequentially numbered from `g1`. Cited by PLAN.md tasks and verified by `sk-crossref-checker`.
-- `D-NN` — decision ID in RFC.md `## Decisions` (zero-padded from D-01). Cited by PLAN.md tasks and verified by `sk-crossref-checker`. Amendments and redesigns are owned by `/sk-build` and `/sk-design`'s downstream loops respectively — this skill writes only the initial set.
+- `D-NN` — decision ID in RFC.md `## Decisions` (zero-padded from D-01). Cited by PLAN.md tasks and verified by `sk-crossref-checker`. This skill writes the initial set and any redesign revisions (`R-NN`); single-decision `## Amendments` (`A-NN`) are written by `/sk-build`.
 - `T-NN` — task ID in PLAN.md `## Checklist` (zero-padded from T-01). Set by `sk-plan-drafter`; ticked by `/sk-build`.
+- `R-NN` — redesign ID in RFC.md `## Redesigns` (zero-padded from R-01). Written by this skill on a redesign re-entry; it reconciles `## Decisions` / `## Architecture` to match. (`/sk-build` defers to this via its redesign prompt — it does not write `## Redesigns`.)
 - `pins-rfc:` — PLAN.md frontmatter field carrying the SHA-256 of RFC.md's content at the moment PLAN.md was authored. Set by `sk-plan-drafter`; verified by `sk-crossref-checker` in the PLAN quorum; consumed by `/sk-build`'s drift check (`check-drift` CLI). All three compute SHA-256 of the file content — keep them aligned.
 
 </symbol_conventions>

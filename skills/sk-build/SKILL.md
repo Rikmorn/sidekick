@@ -413,7 +413,7 @@ Classify:
   /sk-build pause       → halt for thinking
 
 After /sk-design <slug> completes, re-invoke /sk-build <slug> to resume
-through the new R-NN tasks.
+through the revised tasks.
 ```
 
 The `Recommended:` line is concrete and ready to paste — the user copies-and-runs it in their next message. Slash commands cannot dispatch other slash commands.
@@ -575,7 +575,7 @@ Classify:
   /sk-build pause             → halt for thinking
 
 After /sk-design rework-iso-dates completes, re-invoke /sk-build rework-iso-dates to resume
-through the new R-NN tasks.
+through the revised tasks.
 ```
 
 User responds: `/sk-build pause`.

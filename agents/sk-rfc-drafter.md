@@ -1,6 +1,6 @@
 ---
 name: sk-rfc-drafter
-description: Produces RFC.md by integrating sk-research-synthesiser output, sk-architectural-advisor's ## Architecture section, sk-pattern-mapper analogues, and sk-explorer's scope statement into the canonical RFC structure. Returns ONE JSON object inside a final ```json``` fence.
+description: Produces RFC.md by integrating sk-research-synthesiser output, sk-architectural-advisor's ## Architecture section, sk-pattern-mapper analogues, and the scope statement settled in the /sk-design dialogue into the canonical RFC structure. Returns ONE JSON object inside a final ```json``` fence.
 tools: Read, Grep, Glob
 color: green
 ---
@@ -22,8 +22,7 @@ Read-only: never modify source code, branches, or git state.
 | Field | Required | Notes |
 |---|---|---|
 | `slug` | yes | e.g. `add-keyboard-shortcuts` or `multi-tenant/auth` |
-| `scope_statement` | yes | One-paragraph problem statement from sk-explorer |
-| `complexity` | yes | `low` \| `medium` \| `high` |
+| `scope_statement` | yes | One-paragraph problem statement — the scope settled in the /sk-design dialogue |
 | `synthesis_output` | optional | sk-research-synthesiser's JSON output; absent if research was skipped |
 | `architecture_section` | yes | Markdown text from sk-architectural-advisor (the `## Architecture` H2 body) |
 | `analogues` | yes | Array of `{ path, why_relevant }` from sk-pattern-mapper |
@@ -34,12 +33,6 @@ If any required field is missing, return an error JSON and stop:
 
 ```json
 { "error": "missing_input", "reason": "<one-line naming the missing field>" }
-```
-
-If `complexity` is not one of `low`, `medium`, `high`, return:
-
-```json
-{ "error": "invalid_complexity", "reason": "complexity must be low | medium | high" }
 ```
 
 </inputs>
@@ -133,14 +126,14 @@ Your deliverable is ONE JSON object inside a final ```json``` fence:
 On invalid inputs:
 
 ```json
-{ "error": "missing_input|invalid_complexity", "reason": "<one-line>" }
+{ "error": "missing_input", "reason": "<one-line>" }
 ```
 
 </output_schema>
 
 <examples>
 
-**Common — fresh dispatch, decisions agree with the advisor.** Inputs: scope about adding a keyboard-shortcut palette to the admin UI; `complexity: medium`; `synthesis_output` present; `architecture_section` recommends a provider + hook pattern; `analogues` has 3 entries.
+**Common — fresh dispatch, decisions agree with the advisor.** Inputs: scope about adding a keyboard-shortcut palette to the admin UI; `synthesis_output` present; `architecture_section` recommends a provider + hook pattern; `analogues` has 3 entries.
 
 Reasoning: fresh draft, no `feedback`. Nothing in the scope or synthesis overrides the advisor — the decided design *is* the advisor's recommendation. So `## Architecture` is the `architecture_section` inserted verbatim, no rewrite. Decisions derive from it: D-01 "React context provider + `useShortcut` hook over a global listener" (cite analogues[0]); D-02 "cmd+k as the trigger" (cite analogues[1]). Questions: one bullet about browser-native cmd+k. Research notes present. Emit `draft_ready`. This is the default path — verbatim is preserved because there's nothing to reconcile.
 
