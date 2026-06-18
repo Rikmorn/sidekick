@@ -43,7 +43,7 @@ Externalise before acting:
 <hard_stops>
 
 - `error: empty_diff` — resolved diff is empty. Hint: feature branch or `--range`.
-- `error: on_default_branch_for_fix` — `--fix` was set and `sk-branch-precheck` (operation `review`) returned `hard_stop` on the default branch. Don't commit auto-fixes to the integration line; surface the helper's message.
+- `error: on_default_branch_for_fix` — `--fix` was set and the `branch-precheck` CLI (operation `review`) returned `hard_stop` on the default branch. Don't commit auto-fixes to the integration line; surface the helper's message.
 - `error: subagent_failed` — a reviewer or `sk-fixer` returned malformed JSON / its own error shape.
 
 Format: `/sk-review halted.` then `error: <code>` + `Reason:`.
@@ -71,7 +71,7 @@ Wait for all; parse each trailing ```json``` fence. A malformed return → `suba
 Collect all code findings (carry their `dimension`) and the goal result. Compute the roll-up verdict and per-finding routes per `<reasoning>`.
 
 ### Step 5 — `--fix` loop (only if `--fix`)
-1. `sk-branch-precheck` `operation: review`; `hard_stop` on default branch → `on_default_branch_for_fix`.
+1. Run the `branch-precheck` CLI (`"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" branch-precheck --operation review`, Bash) and parse stdout JSON; `hard_stop` on the default branch → `on_default_branch_for_fix`.
 2. Select in-scope findings (`fixable && severity` in scope). Iterate, cap **3** rounds:
    - For each in-scope finding (stable order by file:line): dispatch `sk-fixer` with the `finding` + `diff_target`. If `applied: false`, route it out (leave for the human) and continue.
    - After a fix is applied, run the repo's FRESH typecheck + the relevant test command (read from `package.json`/`.sidekick/config.json`). On pass → `git add <files> && git commit` referencing the finding (`fix(<dim>): <summary> [review]`). On fail → `git checkout -- <files>` (rollback) and mark the finding `fix_failed`.

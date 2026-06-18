@@ -15,7 +15,7 @@ This slash command runs in the main session because the runtime forbids subagent
 
 - Write only to `.sidekick/decisions/<slug>.md`. The skill does not modify `src/`, RFC source files, or any other tracked path.
 - Source RFC files (`.sidekick/plans/*/RFC.md`) are read-only from this skill's perspective — the drafter reads them; nothing in this flow edits them.
-- Honour `sk-branch-precheck`'s verdict. A `hard_stop` verdict halts the flow with the helper's message surfaced verbatim.
+- Honour the `branch-precheck` CLI's verdict. A `hard_stop` verdict halts the flow with the helper's message surfaced verbatim.
 - `--amend` and `--supersede` are deferred to v1.x and rejected at Step 1.
 
 </constraints>
@@ -53,7 +53,7 @@ User invokes `/sk-decide [<topic>]`.
 Emit only the structured-error block (no preamble, no progress narration, no sign-off) for any of:
 
 - `error: deferred_flags` — `--amend` or `--supersede` was passed. M1 does not implement either.
-- `error: ambiguous_git_state` — `sk-branch-precheck` returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
+- `error: ambiguous_git_state` — the `branch-precheck` CLI returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
 - `error: no_topic_candidate` — drafter returned `mode: "no_topic_candidate"`. Surface the drafter's `reason` field.
 - `error: existing_decision` — drafter returned `mode: "existing_decision"`. Surface the existing path and note that `--amend` / `--supersede` are deferred to v1.x. (Informational hard-stop, not a failure.)
 - `error: decision_quorum_check_loop_exhausted` — 3 drafter re-dispatches all failed the decision quorum (`sk-structural-checker` + `sk-coherence-checker`). The user can re-invoke after revising the source material.

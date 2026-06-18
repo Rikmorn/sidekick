@@ -6,7 +6,7 @@ The "where are we right now" view. Complements [`EPIC.md`](./EPIC.md): the **roa
 
 ## TL;DR
 
-**Architecture is settled** (four accepted ADRs — ADR-0004 accepted 2026-06-18: loop identity + redesign re-entry + the autonomy seam, implemented by `1.2`). **The toolchain is built and works** — 6 orchestrator skills + 24 agents + 9 CLI helpers + a tier-0 hook. **Phase 0 complete**; in **Phase 1** (`1.1`–`1.3` done). **Re-baselined 2026-06-18** off a whole-architecture review → *foundations-then-memory*: the eval keystone was pulled forward (`3.4`), memory consolidated into a dedicated **Phase 4**, the Rules group dropped.
+**Architecture is settled** (four accepted ADRs — ADR-0004 accepted 2026-06-18: loop identity + redesign re-entry + the autonomy seam, implemented by `1.2`). **The toolchain is built and works** — 6 orchestrator skills + 23 agents + 9 CLI helpers + a tier-0 hook. **Phase 0 complete**; in **Phase 1** (`1.1`–`1.4` done). **Re-baselined 2026-06-18** off a whole-architecture review → *foundations-then-memory*: the eval keystone was pulled forward (`3.4`), memory consolidated into a dedicated **Phase 4**, the Rules group dropped.
 
 **Two threads drove the re-baseline.** (1) The drift sweep: ~10/24 agents drifted when `0.4` moved the ground under the agents it dispatches (`1.1` cleared it — §4). (2) The **whole-architecture review** ([`reviews/2026-06-18-architecture-review.md`](./reviews/2026-06-18-architecture-review.md)): the harness is a strong *open-loop pipeline* but not yet the *closed-loop ratchet* the north-star describes — the two layers that close it (**eval**, **memory**) are unbuilt, and several seams snapped (the **redesign loop**, the pre-`1.1` pin-hash). The respec sequences those fixes: foundations (incl. eval) → memory.
 
@@ -32,11 +32,11 @@ This EPIC applies the research-program learnings to the harness itself. Durabili
 ### The shipped toolchain (the lifecycle)
 
 ```
-/sk-design   (dialogic)  → explorer · branch-precheck · pattern-mapper · architectural-advisor
+/sk-design   (dialogic)  → explorer · pattern-mapper · architectural-advisor   (+ branch-precheck CLI)
                             · researcher-{impl,decision,context} → research-synthesiser
                             · rfc-drafter · plan-drafter  +  RFC/PLAN quorum
                             (structural · crossref · coherence)        → writes RFC.md / PLAN.md / RESEARCH.md
-/sk-build                → branch-precheck · executor · spec-reviewer   (+ classify-deviation CLI)  → executes PLAN tasks
+/sk-build                → executor · spec-reviewer   (+ branch-precheck · classify-deviation CLIs)  → executes PLAN tasks
 /sk-review               → correctness · security · maintainability · test · architecture · goal-verifier  (+ fixer on --fix)
 /sk-decide               → decision-drafter  +  decision quorum (structural · coherence)              → .sidekick/decisions/<slug>.md
 /sk-goal-verify          → goal-verifier
@@ -45,7 +45,7 @@ tier-0 enforcement       → config-guard hook (hooks.ts), installed opt-in by `
 ```
 
 - **6 orchestrator skills** (slash commands — orchestrators must live here; subagents can't dispatch subagents).
-- **24 agents** (subagents, tool-restricted), grouped by role in §4 / EPIC.md.
+- **23 agents** (subagents, tool-restricted), grouped by role in §4 / EPIC.md. (Was 24; `sk-branch-precheck` retired in `1.4` — the orchestrators call the `branch-precheck` CLI directly.)
 - **9 CLI helpers** (the "own the loop" kernel, TDD'd): `branch-precheck`, `capabilities`, `check-drift`, `classify-deviation`, `config`, `hooks`, `init`, `reconcile-plan`, `wave-plan`.
 
 ---
@@ -61,7 +61,7 @@ Phase 1 (current) at a glance:
 | **1.1** | Coherence reconciliation (the §4 debt) + blast-radius guard | ✅ done 2026-06-18 |
 | **1.2** | Implement **ADR-0004** — identity-as-derived + redesign re-entry; `sk-explorer` dissolves; F3 dropped; autonomy-dial seamed (built later) | ✅ done 2026-06-18 |
 | **1.3** | Research-quality F4/F7 → Researchers group done | ✅ done 2026-06-18 |
-| **1.4** | Branch-precheck F2 + agent/CLI consolidation → audit complete | pending |
+| **1.4** | Branch-precheck F2 (create-and-continue) + agent/CLI consolidation (`sk-branch-precheck` retired → CLI) → audit complete | ✅ done 2026-06-18 |
 | **1.5** | Consistency cleanup (verdict-matrix dedup · `commands/` vestige · tool-drift · external ref) | pending |
 | **1.6** | Shared pin-hash CLI subcommand (`sidekick hash-rfc`) | pending |
 
@@ -85,7 +85,7 @@ A three-auditor sweep checked all 24 agents against the **current orchestrators*
 | **sk-decision-drafter** | latent-incoherence | Names only `sk-structural-checker`; sk-decide now runs a structural **+ coherence** quorum. |
 | sk-plan-drafter | stale-ref (minor) | Calls `rfc_hash` "SHA-256"; it's `git hash-object` (SHA-1). Cosmetic. |
 
-**~14 agents are clean** — every dimensional reviewer, the checkers, advisor, branch-precheck, executor (the earlier fix held), fixer, goal-verifier, plan-reconciler.
+**~14 agents are clean** — every dimensional reviewer, the checkers, advisor, executor (the earlier fix held), fixer, goal-verifier, plan-reconciler. (`branch-precheck`, also clean at the time of this audit, was later retired to a CLI in `1.4`.)
 
 **Process lesson (→ the `1.1` guard):** a big-bang orchestrator rewrite (`0.4`) left reconciliation debt because nothing reconciled its blast radius atomically, and the follow-on audits used the wrong lens. Candidate guard: *when an orchestrator's flow/contracts change, reconcile every agent it dispatches in the same change* — and/or a cheap standing check (no agent cites a "Step N"; every agent's named dispatcher/verifier matches the live orchestrator). Landed as the **"Rewrites reconcile their blast radius"** section in `.claude/rules/sk-agent-prompts.md`.
 

@@ -10,4 +10,4 @@
 
 **Recommendation when picked up:** make `install()` resolve the Claude home the same way the launcher convention does — `process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude')` — and add a test asserting the install target tracks `CLAUDE_CONFIG_DIR`. Audit for any other `os.homedir()`-derived path that should defer to the env var.
 
-**Refs:** `bin/cli.ts` (`install`, `claudeHome`); the launcher path convention in `skills/sk-design/SKILL.md` `<fanout_seam>` and sibling agents (`agents/sk-branch-precheck.md`, `agents/sk-crossref-checker.md`).
+**Refs:** `bin/cli.ts` (`install`, `claudeHome`); the launcher path convention in `skills/sk-design/SKILL.md` `<fanout_seam>`, the orchestrators' `branch-precheck` calls, and sibling agents (`agents/sk-crossref-checker.md`).

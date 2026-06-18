@@ -112,7 +112,7 @@ Using the PLAN.md from smoke 3:
 ```
 
 Expected:
-- `sk-branch-precheck` confirms branch state.
+- the `branch-precheck` CLI confirms branch state.
 - `sk-executor` rewrites `src/index.ts` (e.g. exports `sum` instead of `add`) and the test.
 - Gates run FRESH from `.sidekick/config.json` (no cached results): `pnpm typecheck`, `pnpm lint`, `pnpm test`. All pass.
 - `sk-spec-reviewer` verifies the change against the plan task.
@@ -181,7 +181,7 @@ Then:
 ```
 /sk-review refund-window --range main..HEAD --fix
 ```
-Expect: `sk-branch-precheck` proceeds (on a feature branch, not default); the `as any` maintainability finding is fixed by `sk-fixer`, typecheck/test run FRESH, an atomic `fix(maintainability): … [review]` commit lands; the boundary correctness finding and the g2 goal gap are **not** auto-fixed (routed out). Confirm a `.sidekick/cache/reviews/refund-window/` trail was written and is gitignored.
+Expect: the `branch-precheck` CLI proceeds (on a feature branch, not default); the `as any` maintainability finding is fixed by `sk-fixer`, typecheck/test run FRESH, an atomic `fix(maintainability): … [review]` commit lands; the boundary correctness finding and the g2 goal gap are **not** auto-fixed (routed out). Confirm a `.sidekick/cache/reviews/refund-window/` trail was written and is gitignored.
 
 ### Smoke 7: /sk-goal-verify
 
@@ -250,7 +250,7 @@ Confirm: T-02 and T-03 share a wave (both depend only on T-01, disjoint files). 
 ```
 
 Expected:
-- `sk-branch-precheck` confirms branch state (proceed on `main` or a feature branch).
+- the `branch-precheck` CLI confirms branch state (proceed on `main` or a feature branch).
 - Waves computed from PLAN.md via `sidekick wave-plan wave-build --format=json`.
 - **Wave 1 — T-01:** `sk-executor` creates `src/foo.ts`. Gates run FRESH (`pnpm typecheck`, `pnpm lint`, `pnpm test`). Atomic commit lands: `feat(wave-build): scaffold foo module [T-01]`. Checklist checkbox for T-01 flipped in the same commit.
 - **Wave 2 — T-02, T-03, T-05:** All three tasks executed (T-02 and T-03 in parallel if the skill supports it, T-05 serially or parallel — order within the wave is T-NN ascending). Three atomic commits land. Checklist checkboxes for T-02, T-03, T-05 flipped.
@@ -357,7 +357,7 @@ Smoke 11 exercises the E23 interaction rework of `/sk-design`: dialogue-by-defau
 ```
 
 Expected:
-- `sk-explorer` runs first as groundwork (scope + complexity); `sk-branch-precheck` reads git state.
+- `sk-explorer` runs first as groundwork (read-only repo grounding — analogues, prior decisions, `scope_signal`); the `branch-precheck` CLI reads git state.
 - The orchestrator **opens with a conversation, not a finished RFC**: it surfaces its understanding of the work, the complexity signal the explorer returned ("looks straightforward" / "looks involved"), and where research would likely pay off — without running any research yet.
 - Research runs **only on request or with an explicit announcement** of what it's about to research and why — not a reflexive upfront pass. (If you never ask for it and the orchestrator never announces one, no researchers are dispatched and no RESEARCH.md is written — that's correct for a dialogue that didn't need prior art.)
 - When you signal the design is clear (e.g. "looks clear, draft it"), it converges: drafts RFC.md → PLAN.md, runs the existing structural check on the RFC and the parallel `sk-structural-checker` + `sk-crossref-checker` quorum on the PLAN, and ends with a **light `ship / tweak / cancel` confirm**.

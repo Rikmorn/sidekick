@@ -58,7 +58,7 @@ Emit only the structured-error block (no preamble, no progress narration, no sig
 - `error: missing_plan` — `.sidekick/plans/<slug>/PLAN.md` missing or empty.
 - `error: empty_checklist` — PLAN.md has no `## Checklist` section, or the section has zero items.
 - `error: all_tasks_complete` — every checklist item is now `[x]`. Informational; not a failure. Use the success-exit shape below.
-- `error: ambiguous_git_state` — `sk-branch-precheck` verdict is `hard_stop`. Surface the helper's `hard_stop_message` verbatim. Reachable reasons for `--operation build`: `mid_rebase`, `mid_merge`, `mid_cherry-pick`, `mid_bisect`, `detached_head`, `diverged_from_remote`, `cannot_determine_default_branch`.
+- `error: ambiguous_git_state` — the `branch-precheck` CLI verdict is `hard_stop`. Surface the helper's `hard_stop_message` verbatim. Reachable reasons for `--operation build`: `mid_rebase`, `mid_merge`, `mid_cherry-pick`, `mid_bisect`, `detached_head`, `diverged_from_remote`, `cannot_determine_default_branch`.
 - `error: gate_failed_twice` — the verification gate failed on the same task across two `sk-executor` dispatches.
 - `error: subagent_failed` — `sk-executor` or `sk-spec-reviewer`'s deliverable is malformed (missing required keys, JSON parse failure, missing `deviation` block when `status === "deviation"`, or `deviation` block present but incomplete — any of `type` / `description` / `d_nn_affected` / `goal_change` missing or wrong type).
 - `error: invalid_plan_graph` — `wave-plan` returned `dep_cycle` / `dangling_dep` / `no_tasks`. Surface the helper's `reason`.
@@ -123,12 +123,18 @@ If the CLI exits non-zero, or stdout cannot be parsed as JSON, or the `verdict` 
 
 ### Step 3 — Branch precheck
 
-Dispatch `subagent_type: sk-branch-precheck` with `operation: build` and (optionally) `ticket_id: <slug>`. Parse the agent's structured-return block. The helper can return four verdicts:
+Run the `branch-precheck` CLI:
+
+```bash
+"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" branch-precheck --operation build --ticket-id <slug>
+```
+
+Parse the JSON object on stdout (the `--ticket-id` is optional). The helper can return these verdicts:
 
 - `verdict: proceed` — continue silently.
 - `verdict: confirm_action` — the helper is asking the user to confirm before proceeding. Surface the helper's advisory text (or a short summary including the `reason`) and ask the user whether to proceed. Reachable reason for `--operation build`: `on_default_for_build` (the user invoked `/sk-build` while on the default branch). If the user confirms, continue. If the user declines, emit the user-declined clean-exit shape (see `<hard_stops>`) and stop — this is a normal cancellation, not an error.
-- `verdict: propose_branch` — unreachable for `--operation build` per the helper's policy. If somehow surfaced, treat as `error: subagent_failed`.
-- `verdict: hard_stop` — emit `error: ambiguous_git_state` and halt; surface the helper's `hard_stop_message` verbatim. Reachable reasons for `--operation build`: `mid_rebase`, `mid_merge`, `mid_cherry-pick`, `mid_bisect`, `detached_head`, `diverged_from_remote`, `cannot_determine_default_branch`.
+- `verdict: propose_branch` — unreachable for `--operation build` per the helper's policy. If somehow surfaced, treat it as a malformed precheck result and emit `error: ambiguous_git_state`.
+- `verdict: hard_stop` — emit `error: ambiguous_git_state` and halt; surface the helper's `hard_stop_message` verbatim. Reachable reasons for `--operation build`: `mid_rebase`, `mid_merge`, `mid_cherry-pick`, `mid_bisect`, `detached_head`, `diverged_from_remote`, `cannot_determine_default_branch`. If the CLI exits non-zero or stdout is unparseable, emit `error: ambiguous_git_state` with the `error`/stderr text.
 
 ### Step 4 — Compute waves, find the next incomplete wave
 
@@ -505,7 +511,7 @@ Three worked examples: a happy path, a redesign-with-mismatch, and a mixed wave 
 
 User invokes `/sk-build add-format-helpers`. PLAN.md has 3 tasks (T-01, T-02, T-03) implementing a small `format-task-id` utility module.
 
-Internal reasoning (not emitted): inputs validate; drift check returns `pinned` (silent); `sk-branch-precheck` returns `proceed`; PLAN.md re-read shows T-01 as next. Dispatch `sk-executor` for T-01. Executor returns `{ status: "passed", files_changed: ["src/lib/format-task-id.ts", "src/lib/format-task-id.test.ts"], gate_summary: { ... all pass ... }, fix_attempts: 0 }`. No `deviation` field — proceed to gate FRESH.
+Internal reasoning (not emitted): inputs validate; drift check returns `pinned` (silent); the `branch-precheck` CLI returns `proceed`; PLAN.md re-read shows T-01 as next. Dispatch `sk-executor` for T-01. Executor returns `{ status: "passed", files_changed: ["src/lib/format-task-id.ts", "src/lib/format-task-id.test.ts"], gate_summary: { ... all pass ... }, fix_attempts: 0 }`. No `deviation` field — proceed to gate FRESH.
 
 Run typecheck → pass. Run lint → pass. Run tests on the changed files → pass. Dispatch `sk-spec-reviewer` → `{ verdict: "pass", reasoning: "Diff adds formatTaskId(n) at the named path; implementation matches T-01's intent." }`. Stage `files_changed` + PLAN.md tick. Commit: `feat(lib): add formatTaskId helper [T-01]`. Print `✓ T-01 — committed <sha>`. Loop.
 

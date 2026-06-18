@@ -25,14 +25,14 @@ The reviewer quorum on PLAN.md is the canonical demonstration of dimensional ver
 
 # Safety tier — non-negotiable
 - Writes go only to `.sidekick/plans/<slug>/{RFC.md, PLAN.md, RESEARCH.md}` (plus a `## Redesigns` append to RFC.md on a redesign re-entry). When the dialogue reveals the topic spans multiple plans, the group artifacts (`OVERVIEW.md`, `MEMBERS.md` under `.sidekick/plans/<group-slug>/`) are written by this skill.
-- Source code, branches, and git state are read-only here — the final `git add` + `git commit` is the only mutation outside the plan directory.
+- Source code and git history are read-only here. The only mutations outside the plan directory are both git-state, both gated on the user choosing them: the optional feature-branch create/switch on a `propose_branch` precheck, and the final `git add` + `git commit`.
 
 # Operating boundaries
 - Be transparent about research: before running it, say what you are about to research and why.
 - Lay options and open questions out in the conversation. State an option's substance when you name it — never reference an option ("Option B") without saying what it is.
 - The PLAN quorum dispatches its reviewers in parallel — one Agent call per reviewer in one message — so each reviewer reasons independently before the orchestrator combines verdicts. Keep the dispatch parallel; a serialised dispatch lets one reviewer's output influence the others through intermediate context and defeats the purpose of having multiple dimensions.
 - `sk-explorer`'s output is *evidence to open the dialogue with*, not a verdict — you ground the conversation in it; you and the user (or you, in `--auto`) set scope, slug, and direction.
-- `sk-branch-precheck`'s verdict is the boundary on git state: a `hard_stop` halts the flow with the helper's message surfaced verbatim; the advisory verdicts offer the user a choice before continuing.
+- The `branch-precheck` CLI's verdict is the boundary on git state: a `hard_stop` halts the flow with the helper's message surfaced verbatim; the advisory verdicts offer the user a choice before continuing.
 
 </constraints>
 
@@ -44,7 +44,7 @@ Externalise key decisions in prose before acting:
 - In exploration, deciding whether to suggest or run research versus keep talking is a judgment call. Research earns its cost when it would resolve a real open question or sharpen an option the user is weighing — not as a reflexive upfront pass. Lean toward more conversation when the gap is about intent or preference (the user holds that answer), toward research when the gap is about prior art, libraries, or tradeoffs you can't infer. The design is clear enough to draft when the goals, the shape of the solution, and the load-bearing decisions are settled with the user and the remaining unknowns are small enough to capture as RFC questions rather than blockers.
 - In `--auto`, you hold to the stated effort by default. Escalate effort, or break out to ask one focused question, only when the task is genuinely more complex than the stated effort implies, or when you are missing information you cannot reasonably infer from the topic and the repo. Reserve the breakout for the question that actually unblocks correct work — `--auto` is trust to proceed, so the bar for interrupting is higher than in exploration.
 - Combining the PLAN quorum verdicts is a roll-up, not a judgment call: fold every failing reviewer's `issues` into one prose `feedback` field for the plan-drafter re-dispatch, and don't carry a passing checker's empty `issues` through. (The dispatch mechanics live in `<workflow>`.)
-- Whether to surface `sk-branch-precheck`'s `confirm_action` or `propose_branch` advisory to the user. `confirm_action` (e.g., on-default-branch policy) offers two meaningful choices — confirm to proceed, or cancel to clean-exit. `propose_branch` offers three: create the suggested branch and re-invoke (clean-exit with the branch-name hint, since `/sk-design` is artifact-only and the user owns git), proceed in place on the current branch (continue silently), or cancel (clean-exit). The natural reading of "no" to a branch suggestion is "proceed in place," so always surface that option explicitly rather than collapsing decline into cancel.
+- Whether to surface the `branch-precheck` CLI's `confirm_action` or `propose_branch` advisory to the user. `confirm_action` (e.g., on-default-branch policy) offers two meaningful choices — confirm to proceed, or cancel to clean-exit. `propose_branch` offers three: create `proposed_branch` and continue the design on it (you run `git switch -c <proposed_branch>`, or switch to it if it already exists, then proceed — so the RFC/PLAN commit lands off the default branch, no re-invoke), proceed in place on the current branch (continue silently), or cancel (clean-exit). Creating the branch is a real git mutation, so make it only when the user picks it. The natural reading of "no" to a branch suggestion is "proceed in place," so always surface that option explicitly rather than collapsing decline into cancel.
 - When a reviewer fails and the re-dispatch loop is approaching its cap (3 drafter calls), the right move is to halt with the loop-exhausted error and let the user retry; shipping a malformed artifact is worse than a clean halt.
 - When the user reviews the RFC, edits surface as a `feedback` re-dispatch to `sk-rfc-drafter`. There is no cap on that loop because the user drives it — they decide when the RFC is good enough. If the user explicitly cancels at any turn of the review loop, emit the cancelled clean-exit shape with a reason naming the cancellation, leave the draft artifacts on disk (no commit, no cleanup), and exit.
 - Whether the architectural advisor's recommendation diverges from the direction settled in the dialogue is a judgment, not a diff — material divergence is a different decision on a load-bearing axis (mechanism, storage/ownership, boundary), not cosmetic wording. On divergence, surface both approaches by substance + tradeoff and decide (operator in exploration, you in `--auto`); the decision is authoritative and the drafter reconciles Architecture to it.
@@ -69,7 +69,7 @@ The removed/unsupported flags (`--research`, `--no-research`, `--budget`, `--res
 These are the unconditional halts — emit only the structured-error block (no preamble, no progress narration, no sign-off) for any of:
 
 - `error: missing_inputs` — `<topic-or-slug>` arg absent.
-- `error: ambiguous_git_state` — `sk-branch-precheck` returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
+- `error: ambiguous_git_state` — the `branch-precheck` CLI returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
 - `error: missing_architecture_context` — `sk-architectural-advisor`'s structured return surfaced `error: missing_architecture_context`. The consuming repo has no CLAUDE.md or `.claude/rules/` — the advisor cannot ground recommendations in repo constraints. Surface to the user with a hint to author a minimal CLAUDE.md before re-running `/sk-design`.
 - `error: rfc_quorum_check_loop_exhausted` — the RFC quorum loop in Finalisation (drafter ↔ structural + coherence checkers) hit its 3-dispatch cap without both reviewers passing.
 - `error: plan_quorum_check_loop_exhausted` — the PLAN quorum loop in Finalisation (drafter ↔ all three reviewers) hit its 3-dispatch cap without all reviewers passing.
@@ -119,7 +119,13 @@ First, **resolve identity** from the argument. Check whether it points at an exi
 - **Existing plan → redesign re-entry.** The argument names a plan that already exists. This is the loop closing, not a collision — go to **Redesign re-entry** below. (The lone exception: if the user clearly meant a *new* topic that happens to collide with an existing slug, surface it — "a plan `<slug>` already exists; redesign it, or pick another name?" — and branch on their answer. Never halt.)
 - **New plan → derive and confirm a slug.** For freeform text, propose a slug from the topic and confirm it with the user; in `--auto`, derive it and proceed, breaking out only if the topic is too thin to name. For a clean slug that doesn't yet exist, use it directly.
 
-Then run `sk-branch-precheck` (`subagent_type: sk-branch-precheck`, `operation: design`, `ticket_id: <slug>`) to read git state.
+Then run the `branch-precheck` CLI to read git state:
+
+```bash
+"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" branch-precheck --operation design --ticket-id <slug>
+```
+
+Parse the JSON object on stdout and route on `verdict` (contract in `<dispatcher_parse_contracts>`).
 
 **Ground a new design.** Dispatch `sk-explorer` (`subagent_type: sk-explorer`, `topic` + `repo_root`; contract in `<dispatcher_parse_contracts>`) for the repo grounding the dialogue opens with — the closest analogues, the prior decisions that touch the topic, new-vs-existing libraries, and a `scope_signal`. This evidence is what you surface first; `scope_signal` and `research_hints` are signals you weigh and surface, never silent gates on whether research runs.
 
@@ -133,7 +139,7 @@ The argument named an existing plan — you are re-entering its design to revise
 
 **Record and re-draft.** Once the direction is settled, append a `## Redesigns` `R-NN` block to RFC.md capturing the trigger, the affected IDs, and the change (see `<output_artifacts>`). Then enter **Finalisation** with the redesign as the settled direction: re-dispatch `sk-rfc-drafter` with `feedback` describing the redesign so it re-drafts only the affected `## Decisions` / `## Architecture` / goals and leaves the rest byte-equal, re-run the RFC quorum, then re-draft and **re-pin** PLAN.md for the changed tasks, re-run the PLAN quorum, and commit. Redesign reuses Finalisation's machinery exactly — it just enters with the design already revised, the way exploration enters with it already settled.
 
-`sk-branch-precheck` routes the same in both modes: `proceed` continues silently; `confirm_action` surfaces the advisory and offers confirm-and-proceed or cancel; `propose_branch` surfaces `proposed_branch` and offers create-and-re-invoke (clean-exit with the branch-name hint), proceed-in-place, or cancel; `hard_stop` emits `error: ambiguous_git_state` with the helper's `hard_stop_message` verbatim. (Verdict semantics in `<dispatcher_parse_contracts>`; the routing rationale is in `<reasoning>`.)
+The `branch-precheck` CLI routes the same in both modes: `proceed` continues silently; `confirm_action` surfaces the advisory and offers confirm-and-proceed or cancel; `propose_branch` surfaces `proposed_branch` and offers create-and-continue (you `git switch -c <proposed_branch>`, or switch to it if it already exists, then proceed), proceed-in-place, or cancel; `hard_stop` emits `error: ambiguous_git_state` with the helper's `hard_stop_message` verbatim. (Verdict semantics in `<dispatcher_parse_contracts>`; the routing rationale is in `<reasoning>`.)
 
 ### Default — collaborative exploration
 
@@ -268,15 +274,19 @@ Eleven contracts, one per dispatched specialist. Each describes the input fields
 
 **Routing:** this is *evidence*, not a verdict. Open the dialogue with the analogues, prior decisions, and `scope_signal`; weigh `research_hints` when deciding what to research. None of it gates — scope, slug, and direction are settled with the user. Empty arrays are valid (thin grounding / new ground is itself a real signal). A malformed shape (not the field set above) is `error: subagent_failed`.
 
-### 2. sk-branch-precheck
+### 2. branch-precheck CLI
 
-**Input:** `{ operation: "design", ticket_id: <slug> }`.
+**Invocation** (Bash, not a subagent):
 
-**Output** (structured-return block): `verdict` is one of `proceed`, `confirm_action`, `propose_branch`, `hard_stop`. For `--operation design`, all four verdicts are reachable.
+```bash
+"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" branch-precheck --operation design --ticket-id <slug>
+```
+
+**Output:** one JSON object on stdout (plain JSON, no fence). `verdict` is one of `proceed`, `confirm_action`, `propose_branch`, `hard_stop`. For `--operation design` all four are reachable, though since a slug is always passed the on-default case resolves to `propose_branch` rather than `confirm_action`. If the CLI exits non-zero or stdout is unparseable, emit `error: ambiguous_git_state` with the `error`/stderr text.
 
 - `proceed` — continue silently.
 - `confirm_action` — surface the advisory (or a summary of `reason`); pause for the user to either confirm (continue) or cancel (clean-exit). Two options only — accept and confirm are functionally the same.
-- `propose_branch` — surface `proposed_branch` with three options: (a) create the branch and re-invoke (clean-exit with the branch name as a hint), (b) proceed in place on the current branch (continue), (c) cancel (clean-exit). "Proceed in place" is the natural reading of declining the branch suggestion; surface it as a distinct option rather than folding it into cancel.
+- `propose_branch` — surface `proposed_branch` with three options: (a) create the branch and continue the design on it (run `git switch -c <proposed_branch>`, or `git switch <proposed_branch>` if it already exists, then proceed — no re-invoke), (b) proceed in place on the current branch (continue), (c) cancel (clean-exit). "Proceed in place" is the natural reading of declining the branch suggestion; surface it as a distinct option rather than folding it into cancel.
 - `hard_stop` — emit `error: ambiguous_git_state` with `hard_stop_message` surfaced verbatim.
 
 ### 3. sk-pattern-mapper

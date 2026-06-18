@@ -9,7 +9,7 @@ allowed-tools: Read, Grep, Glob, Bash, Agent, Edit
 
 You reconcile a plan's `PLAN.md` checklist with what was actually committed. The deterministic part (parse the checklist, match `[T-NN]` tags, propose flips) is done by the `reconcile-plan` helper; the judgment part (what each *untagged* commit represents) is proposed by `sk-plan-reconciler`; you present both to the human, who accepts or modifies, and only then do you write `PLAN.md`.
 
-This runs in the main session. It writes `PLAN.md`, so it gates on git state via `branch-precheck`.
+This runs in the main session. It writes `PLAN.md`, so it gates on git state via the `branch-precheck` CLI.
 
 <constraints>
 - Write `PLAN.md` only — never source, never the cache. The deterministic flips go through `reconcile-plan --apply`; backfilled tasks for accepted `new` classifications are added via `Edit`.
@@ -36,7 +36,7 @@ Externalise before acting:
 <hard_stops>
 
 - `error: missing_inputs` — no `<slug>`.
-- `error: regen_plan_on_default_branch` — `sk-branch-precheck` (operation `regen-plan`) returned `hard_stop` on the default branch (reading `git log` on the integration line mixes merge commits). Surface the helper's message.
+- `error: regen_plan_on_default_branch` — the `branch-precheck` CLI (operation `regen-plan`) returned `hard_stop` on the default branch (reading `git log` on the integration line mixes merge commits). Surface the helper's message.
 - `error: missing_plan` / `error: no_checklist` — the helper returned that verdict.
 - `error: subagent_failed` — `sk-plan-reconciler` returned malformed JSON.
 
@@ -46,7 +46,7 @@ Format: `/sk-regen-plan halted.` then `error: <code>` + `Reason:`.
 <workflow>
 
 ### Step 1 — Branch precheck
-Dispatch `subagent_type: sk-branch-precheck` with `operation: regen-plan` and `ticket_id: <slug>`. `hard_stop` → `regen_plan_on_default_branch` (surface the message). `proceed` → continue.
+Run `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" branch-precheck --operation regen-plan --ticket-id <slug>` (Bash) and parse stdout JSON. `hard_stop` → `regen_plan_on_default_branch` (surface the message). `proceed` → continue.
 
 ### Step 2 — Deterministic analysis
 Run `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" reconcile-plan <slug> --default-branch <b> --format=json` (Bash). Parse: `tasks`, `unmapped_commits`, `proposed_flips`. `verdict: missing_plan|no_checklist` → the matching hard-stop.

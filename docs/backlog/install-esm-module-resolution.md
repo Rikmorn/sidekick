@@ -26,7 +26,7 @@ Tests (`bin/cli.test.ts`, the `install` describe):
 - **Behavioral** — install with a real `import.meta`-using ESM fake-bundle *and* an up-tree `<claudeHome>/package.json` `{"type":"commonjs"}`, then spawn `node` on the installed launcher and assert it emits output (`main()` actually runs). Reproduces the symptom and guards the fix end-to-end.
 - **Structural** — assert install writes the `{"type":"module"}` file beside the launcher.
 
-**Alternative considered — emit the bundle as `.mjs`** (forces ESM by extension regardless of up-tree config): rejected as more invasive — the launcher is invoked by its extension-less path (`.../sidekick/bin/sidekick`) in every skill/agent file (`agents/sk-branch-precheck.md`, `agents/sk-crossref-checker.md`, `skills/sk-design/SKILL.md` `<fanout_seam>`), so renaming touches all those call sites. Co-locating `package.json` changes nothing about the invocation contract.
+**Alternative considered — emit the bundle as `.mjs`** (forces ESM by extension regardless of up-tree config): rejected as more invasive — the launcher is invoked by its extension-less path (`.../sidekick/bin/sidekick`) in every skill/agent file (`agents/sk-crossref-checker.md`, `skills/sk-design/SKILL.md` `<fanout_seam>`, the orchestrators' `branch-precheck` calls), so renaming touches all those call sites. Co-locating `package.json` changes nothing about the invocation contract.
 
 **Maintenance note:** keep the co-located `type` in sync with the build format. The bundle is ESM today (`bun build` default). If the build ever switches to CJS, this must follow.
 
