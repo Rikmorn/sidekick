@@ -8,6 +8,7 @@ import { runBranchPrecheckCli } from './helpers/branch-precheck.js';
 import { runCapabilitiesCli } from './helpers/capabilities.js';
 import { runCheckDriftCli } from './helpers/check-drift.js';
 import { runClassifyDeviationCli } from './helpers/classify-deviation.js';
+import { runGoalVerdictCli } from './helpers/goal-verdict.js';
 import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
 import { runInit } from './helpers/init.js';
 import { runReconcilePlanCli } from './helpers/reconcile-plan.js';
@@ -25,13 +26,13 @@ interface Manifest {
   files: Array<{ src: string; dest: string }>;
 }
 
-const MANAGED_DIRS = ['skills', 'agents', 'commands'] as const;
+const MANAGED_DIRS = ['skills', 'agents'] as const;
 const STATE_DIR_NAME = 'sidekick';
 
 export interface InstallOptions {
   /**
    * Absolute path to the engineering package root (the dir that
-   * contains package.json, skills/, agents/, commands/). At runtime
+   * contains package.json, skills/, and agents/). At runtime
    * this is resolved from import.meta.url; tests inject a fake.
    */
   packageDir: string;
@@ -269,11 +270,12 @@ if (_isEntry) {
       'reconcile-plan',
       'wave-plan',
       'classify-deviation',
+      'goal-verdict',
       'hook',
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hook> [options]',
       );
       process.exit(1);
     }
@@ -426,6 +428,15 @@ if (_isEntry) {
           stdin = '';
         }
         console.log(runClassifyDeviationCli(stdin));
+        process.exit(0);
+      } else if (sub === 'goal-verdict') {
+        let stdin = '';
+        try {
+          stdin = fs.readFileSync(0, 'utf-8');
+        } catch {
+          stdin = '';
+        }
+        console.log(runGoalVerdictCli(stdin));
         process.exit(0);
       }
     } catch (err) {

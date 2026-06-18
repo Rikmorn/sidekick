@@ -1,27 +1,26 @@
 ---
 name: sk-goal-verify
-description: Goal-backward verification gate. Dispatches sk-goal-verifier against a slug's RFC goals + a diff, applies the per-goal and overall verdict matrices, and renders a sectioned report with a judged route (finish-build / redesign / human-verify). Read-only. Writes a trail to .sidekick/cache/reviews/<slug>/.
+description: Goal-backward verification gate. Dispatches sk-goal-verifier against a slug's RFC goals + a diff, gets the per-goal and overall verdicts from the goal-verdict CLI, and renders a sectioned report with a judged route (finish-build / redesign / human-verify). Read-only. Writes a trail to .sidekick/cache/reviews/<slug>/.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: <slug> [--range <base>..<head>]
 allowed-tools: Read, Grep, Glob, Bash, Agent
 ---
 
-You orchestrate goal-backward verification for one plan: does the diff achieve the RFC's goals, not just complete its tasks? You dispatch `sk-goal-verifier`, apply the verdict matrices to its structured return, render a sectioned report, and propose a route for each gap. You never modify code — this is a read-only gate.
+You orchestrate goal-backward verification for one plan: does the diff achieve the RFC's goals, not just complete its tasks? You dispatch `sk-goal-verifier`, get the per-goal and overall verdicts from the `goal-verdict` CLI, render a sectioned report, and propose a route for each gap. You never modify code — this is a read-only gate.
 
-This slash command runs in the main session (the runtime forbids subagents dispatching subagents). The judgment lives in `sk-goal-verifier`; the verdict arithmetic, routing, and report composition live here.
+This slash command runs in the main session (the runtime forbids subagents dispatching subagents). The judgment lives in `sk-goal-verifier`; the verdict arithmetic lives in the `goal-verdict` CLI; routing and report composition live here.
 
 <constraints>
 - Read-only — no source/branch/git mutation. The only writes are to `.sidekick/cache/reviews/<slug>/` (gitignored).
-- Apply the verdict matrices mechanically from the verifier's JSON; don't re-derive goal achievement yourself.
+- Get the per-goal and overall verdicts from the `goal-verdict` CLI (the single source for that rollup); don't re-derive them in prose. Routing is yours to judge.
 - Surface the verifier's `error` JSON verbatim rather than reinterpreting it.
 </constraints>
 
 <reasoning>
 Externalise these before acting:
 - Resolving `diff_target`: `--range` if given; else `<default_branch>..HEAD` (read default branch from `.sidekick/config.json`, fallback `main`); the literal `working_tree` is allowed.
-- Per-goal verdict (apply to each goal in the verifier's `goals[]`): if ANY artifact verdict ∈ {MISSING, STUB, HOLLOW, ORPHANED} OR ANY `anti_pattern` with `tied_to_goal == goal.id && severity == "blocker"` OR ANY contributing truth `status == "failed"` → **GAP**; elif `needs_human_verification == true` OR any truth `status == "inconclusive"` → **INCONCLUSIVE**; else **ACHIEVED**.
-- Overall verdict: ANY goal GAP → `gaps_found`; elif ANY goal INCONCLUSIVE → `inconclusive`; else `passed`.
+- Per-goal and overall verdicts come from the `goal-verdict` CLI, not from prose here: pass the verifier's deliverable JSON to `sidekick goal-verdict` on stdin and read back `{ goals: [{ id, verdict }], overall }` — `verdict` ∈ GAP|INCONCLUSIVE|ACHIEVED, `overall` ∈ gaps_found|inconclusive|passed. The CLI is the single source for that rollup (shared with `/sk-review`); don't restate the rule. An `error` shape back means the verifier JSON was malformed — treat as `subagent_failed`.
 - Route per gap: a GAP whose artifacts are MISSING/STUB → **finish-build** (`/sk-build <slug>`); a GAP whose artifacts exist but are HOLLOW/ORPHANED such that the design can't satisfy the goal → **redesign** (`/sk-design <slug>` — re-enters the design as a redesign on the existing plan; the user re-runs `/sk-build <slug>` after); an INCONCLUSIVE goal → **human-verify**. When the evidence is ambiguous between finish-build and redesign, surface both and let the user choose.
 </reasoning>
 
@@ -59,8 +58,14 @@ Confirm `<slug>` and `.sidekick/plans/<slug>/RFC.md` exist (else the matching ha
 ### Step 2 — Dispatch sk-goal-verifier
 Dispatch `subagent_type: sk-goal-verifier` with `ticket_slug: <slug>` and `diff_target`. Parse the trailing ```json``` fence. If it's an `error` shape, emit `subagent_failed` with the reason.
 
-### Step 3 — Apply verdict matrices
-Apply the per-goal verdict to each `goals[]` entry and the overall verdict, per `<reasoning>`. Determine the route for each GAP/INCONCLUSIVE goal.
+### Step 3 — Compute verdicts (CLI) + routes
+Write the verifier's deliverable JSON to a file (the Step 5 trail, or a temp) and pipe it to the `goal-verdict` CLI; parse its `{ goals: [{ id, verdict }], overall }`:
+
+```bash
+"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" goal-verdict < <verifier-json-file>
+```
+
+Then determine the route for each GAP/INCONCLUSIVE goal per `<reasoning>` — routing stays here, reading the CLI's per-goal verdict plus each goal's `artifacts[].verdict` from the verifier output.
 
 ### Step 4 — Render the report
 Emit `# Goal Verification — <slug>` then:

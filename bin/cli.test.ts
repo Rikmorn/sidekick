@@ -128,7 +128,7 @@ describe('install', () => {
     });
   });
 
-  it('test 2: copies skills/agents/commands recursively and records manifest entries', () => {
+  it('test 2: copies skills/agents recursively (commands/ is not managed) and records manifest entries', () => {
     if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
     writePackageJson('0.1.0');
     writeMinimalDist();
@@ -155,10 +155,12 @@ describe('install', () => {
 
     const skillDest = path.join(fakeHome, 'skills', 'example', 'SKILL.md');
     const agentDest = path.join(fakeHome, 'agents', 'default.md');
-    const commandDest = path.join(fakeHome, 'commands', 'foo.md');
     expect(fs.readFileSync(skillDest, 'utf-8')).toBe('skill body\n');
     expect(fs.readFileSync(agentDest, 'utf-8')).toBe('agent body\n');
-    expect(fs.readFileSync(commandDest, 'utf-8')).toBe('command body\n');
+    // commands/ is not a managed dir — it is skipped, not copied.
+    expect(fs.existsSync(path.join(fakeHome, 'commands', 'foo.md'))).toBe(
+      false,
+    );
 
     const manifest = JSON.parse(
       fs.readFileSync(
@@ -166,15 +168,14 @@ describe('install', () => {
         'utf-8',
       ),
     );
-    // Now includes the dist/sidekick binary in addition to the 3 managed-dir files
+    // Includes the dist/sidekick binary in addition to the 2 managed-dir files.
     const srcs = manifest.files.map((e: { src: string }) => e.src).sort();
     expect(srcs).toContain('agents/default.md');
-    expect(srcs).toContain('commands/foo.md');
     expect(srcs).toContain('skills/example/SKILL.md');
+    expect(srcs).not.toContain('commands/foo.md');
     const dests = manifest.files.map((e: { dest: string }) => e.dest);
     expect(dests).toContain(skillDest);
     expect(dests).toContain(agentDest);
-    expect(dests).toContain(commandDest);
   });
 
   it('test 3: silent overwrite — existing files at dest are replaced without warnings (D-04)', () => {
@@ -443,12 +444,6 @@ describe('uninstall', () => {
       path.join(fakePackage, 'agents', 'default.md'),
       'agent body\n',
     );
-    fs.mkdirSync(path.join(fakePackage, 'commands'), { recursive: true });
-    fs.writeFileSync(
-      path.join(fakePackage, 'commands', 'foo.md'),
-      'command body\n',
-    );
-
     install({ packageDir: fakePackage, claudeHome: fakeHome });
     uninstall({ claudeHome: fakeHome });
 
@@ -456,9 +451,6 @@ describe('uninstall', () => {
       fs.existsSync(path.join(fakeHome, 'skills', 'example', 'SKILL.md')),
     ).toBe(false);
     expect(fs.existsSync(path.join(fakeHome, 'agents', 'default.md'))).toBe(
-      false,
-    );
-    expect(fs.existsSync(path.join(fakeHome, 'commands', 'foo.md'))).toBe(
       false,
     );
     expect(fs.existsSync(path.join(fakeHome, 'sidekick'))).toBe(false);
@@ -497,9 +489,6 @@ describe('uninstall', () => {
     );
     fs.mkdirSync(path.join(pkg, 'agents'), { recursive: true });
     fs.writeFileSync(path.join(pkg, 'agents', 'default.md'), 'agent body\n');
-    fs.mkdirSync(path.join(pkg, 'commands'), { recursive: true });
-    fs.writeFileSync(path.join(pkg, 'commands', 'foo.md'), 'command body\n');
-
     install({ packageDir: pkg, claudeHome: home });
 
     // Manually remove one file before uninstall
@@ -509,7 +498,6 @@ describe('uninstall', () => {
 
     // Remaining files removed; state dir gone
     expect(fs.existsSync(path.join(home, 'agents', 'default.md'))).toBe(false);
-    expect(fs.existsSync(path.join(home, 'commands', 'foo.md'))).toBe(false);
     expect(fs.existsSync(path.join(home, 'sidekick'))).toBe(false);
   });
 

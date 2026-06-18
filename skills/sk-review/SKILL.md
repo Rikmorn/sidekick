@@ -22,7 +22,7 @@ This runs in the main session (subagents can't dispatch subagents). Read-only un
 Externalise before acting:
 - Resolving `diff_target` / `changed_files`: `--range` if given, else `<default_branch>..HEAD` (default branch from `.sidekick/config.json`, fallback `main`); `working_tree` allowed. `changed_files = git diff --name-only <diff_target>`.
 - Dimension auto-selection: the four code dimensions (correctness, security, maintainability, test) fire when the diff contains source changes; the `goal` dimension fires when `[slug]` is given and `.sidekick/plans/<slug>/RFC.md` exists; the `architecture` dimension fires when `[slug]` is given and `.sidekick/plans/<slug>/RFC.md` contains a `## Architecture` section (read-only conformance check; its findings are always `fixable: false`). (UI dimensions are not built yet — note their absence rather than firing them.) `--dims a,b,c` overrides the auto-selection entirely. Scale breadth to the change: for a tiny diff it's reasonable to fire fewer dimensions; say which you fired and why in the report's header.
-- Per-goal verdict (from the `goal` reviewer's `goals[]`, same derivation as `/sk-goal-verify`): a goal is a **GAP** if ANY of its `artifacts[].verdict` ∈ {MISSING, STUB, HOLLOW, ORPHANED}, OR any `anti_pattern` with `tied_to_goal == goal.id && severity == "blocker"`, OR any contributing truth `status == "failed"`; **INCONCLUSIVE** if `needs_human_verification == true` or any truth is `inconclusive`; else **ACHIEVED**. (The MISSING/STUB vs HOLLOW/ORPHANED split drives the route below.)
+- Per-goal verdict (from the `goal` reviewer's deliverable): get it from the `goal-verdict` CLI — pass the verifier JSON to `sidekick goal-verdict` on stdin and read each goal's `verdict` (GAP|INCONCLUSIVE|ACHIEVED). This is the single source for that rollup, shared with `/sk-goal-verify` (no restated rule). (The MISSING/STUB vs HOLLOW/ORPHANED split in the verifier's `artifacts[]` drives the route below.)
 - Roll-up verdict from the aggregated returns: any `goal` GAP → `gaps_found`; elif any code finding of severity `critical`/`important` → `findings`; elif any `inconclusive` goal → `inconclusive`; else `passed`.
 - Route per finding/gap: code finding with `fixable: true` → **fix** (via `--fix` or manual); code finding `fixable: false` → **human** (architecture findings → redesign/human, never fix); goal GAP (MISSING/STUB) → **finish-build**; goal GAP (HOLLOW/ORPHANED, design can't satisfy) → **redesign**; INCONCLUSIVE → **human-verify**.
 - `--fix` scope: default = `fixable && severity ∈ {critical, important}`; `--all` adds `minor`. Never includes goal gaps.
@@ -68,7 +68,7 @@ Each reviewer receives only the artifact (`diff_target` / `changed_files`) and t
 Wait for all; parse each trailing ```json``` fence. A malformed return → `subagent_failed`.
 
 ### Step 4 — Aggregate
-Collect all code findings (carry their `dimension`) and the goal result. Compute the roll-up verdict and per-finding routes per `<reasoning>`.
+Collect all code findings (carry their `dimension`) and the goal result; if the goal dimension ran, get its per-goal verdicts from the `goal-verdict` CLI (`<reasoning>`). Compute the roll-up verdict and per-finding routes per `<reasoning>`.
 
 ### Step 5 — `--fix` loop (only if `--fix`)
 1. Run the `branch-precheck` CLI (`"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" branch-precheck --operation review`, Bash) and parse stdout JSON; `hard_stop` on the default branch → `on_default_branch_for_fix`.
