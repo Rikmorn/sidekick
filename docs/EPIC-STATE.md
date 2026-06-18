@@ -6,9 +6,9 @@ The "where are we right now" view. Complements [`EPIC.md`](./EPIC.md): the **roa
 
 ## TL;DR
 
-**Architecture is settled** (three accepted ADRs). **The toolchain is built and works** — 6 orchestrator skills + 24 agents + 9 CLI helpers + a tier-0 hook. **Phase 0 is complete**; we are in **Phase 1** — finishing the toolchain audit and clearing the coherence debt the 2026-06-18 drift sweep surfaced. Phases 2–5 are unstarted.
+**Architecture is settled** (three accepted ADRs; ADR-0004 pending in `1.2`). **The toolchain is built and works** — 6 orchestrator skills + 24 agents + 9 CLI helpers + a tier-0 hook. **Phase 0 complete**; in **Phase 1** (`1.1` done). **Re-baselined 2026-06-18** off a whole-architecture review → *foundations-then-memory*: the eval keystone was pulled forward (`3.4`), memory consolidated into a dedicated **Phase 4**, the Rules group dropped.
 
-**The thing that triggered this re-baseline:** the per-slice audits ran *one lens* (prose-discipline) when the toolchain needs *two*. **~10 of 24 agents carry architectural-coherence debt** — self-descriptions that drifted when `0.4` (the sk-design dialogue rework) moved the ground under the agents it dispatches. Bounded, one root cause, mostly mechanical, two real bugs. It's a **pattern, not a one-off** — which is why Phase 1 opens with a dedicated reconciliation pass (`1.1`) before more behaviour-change work lands.
+**Two threads drove the re-baseline.** (1) The drift sweep: ~10/24 agents drifted when `0.4` moved the ground under the agents it dispatches (`1.1` cleared it — §4). (2) The **whole-architecture review** ([`reviews/2026-06-18-architecture-review.md`](./reviews/2026-06-18-architecture-review.md)): the harness is a strong *open-loop pipeline* but not yet the *closed-loop ratchet* the north-star describes — the two layers that close it (**eval**, **memory**) are unbuilt, and several seams snapped (the **redesign loop**, the pre-`1.1` pin-hash). The respec sequences those fixes: foundations (incl. eval) → memory.
 
 ---
 
@@ -25,8 +25,9 @@ This EPIC applies the research-program learnings to the harness itself. Durabili
 | **0001** | **Harness shape** — behavioural-leaning; the lifecycle is a thin skeleton, not a rigid state machine. Execution gated on the eval layer (`4.1`). | Accepted as direction (2026-06-07) |
 | **0002** | **Own the loop, rent the fan-out** — the write-path loop (sk-build) stays hand-rolled and *shrinks*; read-only breadth fan-out (research) rents Workflow behind a seam + probe + budget tiers; hooks are the tier-0 base. | Accepted (2026-06-10) |
 | **0003** | **Design = dialogue-by-default** — `/sk-design` explores *with* the user; `--auto` is hands-off; complexity is a *surfaced signal, not a silent gate*. | Accepted (2026-06-15) |
+| **0004** | **Explorer rethink + redesign re-entry** — repurpose `sk-explorer` to repo-grounding/scope-evidence; move scoping into sk-design's dialogue; decide how redesign re-enters dialogic `/sk-design`. | Pending — authored when `1.2` lands |
 
-**ADR-0003 (`0.4`) is the load-bearing recent change** — it rewrote `/sk-design` and is the source of the coherence debt in §4. The one open architecture question — repurposing `sk-explorer` — is **ADR-0004** (pending, item `1.2`).
+**ADR-0003 (`0.4`) is the load-bearing recent change** — it rewrote `/sk-design` and is the source of both the coherence debt in §4 and the broken redesign loop. The open architecture question — repurposing `sk-explorer` + fixing redesign re-entry — is **ADR-0004** (pending, item `1.2`); authored when 1.2 lands, not stubbed early.
 
 ### The shipped toolchain (the lifecycle)
 
@@ -51,17 +52,20 @@ tier-0 enforcement       → config-guard hook (hooks.ts), installed opt-in by `
 
 ## 3. Where we are in the roadmap
 
-**Phase 0 ✅ done** · **Phase 1 → in progress** · Phases 2–5 unstarted. Full phased roadmap + per-item sources/deps: [`EPIC.md`](./EPIC.md).
+**Re-baselined 2026-06-18 → foundations-then-memory.** New phase shape: **0** foundations/toolchain ✅ · **1** coherence/consistency/loop (current) · **2** codified patterns · **3** verification & capability foundations (incl. the pulled-forward eval keystone `3.4` + cross-family `3.6`) · **4** Memory (the dedicated focus) · **5** generative/advanced. Full roadmap + crosswalk: [`EPIC.md`](./EPIC.md).
 
 Phase 1 (current) at a glance:
 
 | Item | Work | Status |
 |---|---|---|
 | **1.1** | Coherence reconciliation (the §4 debt) + blast-radius guard | ✅ done 2026-06-18 |
-| **1.2** | Explorer/pattern-mapper rethink → **ADR-0004** (folds in F3) | pending |
+| **1.2** | Explorer rethink → **ADR-0004** + repair the broken redesign loop (folds F3) | pending |
 | **1.3** | Research-quality F4/F7 → Researchers group done | pending |
-| **1.4** | Rules group (4) | pending |
-| **1.5** | Utility (branch-precheck, F2) → **toolchain audit complete** | pending |
+| **1.4** | Branch-precheck F2 + agent/CLI consolidation → audit complete | pending |
+| **1.5** | Consistency cleanup (verdict-matrix dedup · `commands/` vestige · tool-drift · external ref) | pending |
+| **1.6** | Shared pin-hash CLI subcommand (`sidekick hash-rfc`) | pending |
+
+Rules group **dropped** (rules retired; the need → `5.1`). Owed action: **run the batched integration smokes**.
 
 ---
 
@@ -103,21 +107,30 @@ A three-auditor sweep checked all 24 agents against the **current orchestrators*
 
 ---
 
-## 5. Open decisions pending
+## 5. Open decisions & recent calls
 
-- **Explorer-role rethink** (`1.2`, → **ADR-0004**) — agreed *direction*: repurpose sk-explorer to a **repo-grounding / scope-evidence** subagent that sk-design *calls*; move scoping (slug, single-vs-group) into sk-design's dialogue, where it belongs post-`0.4`. Entangles F3 and absorbs F4's thin-repo grounding. Not yet specced.
-- **F3 — explorer's signal** — *decided 2026-06-18*: drop the `low\|medium\|high` difficulty bucket for an **evidence-grounded signal** (analogues found / prior decisions / new libraries), grounded in `agentic-loops` (self-assessed difficulty is broken) + `reasoning-capability` F5. Leaves a clean seam for `3.1` (E8); does not pre-build it.
-- **F4 / F7** (`1.3`, independent of the explorer question) — F4: make brief construction explicit + surface briefs + flag thin-repo grounding. F7: researcher/synthesiser output should mark interchangeable specifics as substitutable so run-to-run drift reads as examples, not mandates.
-- **`4.1` (eval keystone) pull-forward** — flagged at the Phase 2→3 **checkpoint** in EPIC.md; decide explicitly there.
-- **Work-item documentation format** — the meta-gap behind this whole re-baseline; backlogged at [`backlog/work-item-doc-format.md`](./backlog/work-item-doc-format.md).
+**Decided in the 2026-06-18 re-baseline** (from the whole-architecture review):
+- **Eval keystone pulled forward** → `3.4`, a Phase 3 foundation (the old Phase 2→3 checkpoint is resolved).
+- **Memory consolidated into a dedicated Phase 4**, after the foundations (hard-deps `3.2` + `3.4`).
+- **Rules group dropped** — rules are being retired. `sk-maintainability-reviewer` falls back to mainstream conventions short-term; the real answer is **`5.1` per-project generated gates** (the reviewer-enforcing-bespoke-rules was the seed/demonstration of that pattern — the recovered "helpers to author gates on the target repo" thread).
+- **New Phase 1 items** for the review's cross-cutting findings: `1.5` consistency cleanup, `1.6` pin-hash CLI; the broken redesign loop folded into `1.2`/ADR-0004.
+
+**Still open:**
+- **Explorer rethink + redesign re-entry** (`1.2`, → **ADR-0004**) — repurpose sk-explorer to repo-grounding/scope-evidence; move scoping into sk-design's dialogue; **and decide how redesign re-enters dialogic `/sk-design`** (today `--resume` and `<slug>` are both rejected by `slug_collision` — the loop is broken end-to-end). Absorbs F3. ADR-0004 authored when 1.2 lands (no hollow stub).
+- **F3 — explorer's signal** — *decided 2026-06-18*: drop the `low\|medium\|high` bucket for an **evidence-grounded signal** (analogues / prior decisions / new libraries). Leaves a clean seam for `3.1`.
+- **F4 / F7** (`1.3`) — F4 explicit brief construction + thin-repo grounding (now satisfied by `4.5` codebase-map); F7 mark interchangeable specifics substitutable.
+- **Cross-family dependency** (`3.6`) — needs the non-Anthropic-verifier decision.
+- **Memory substrate** (`4.4`) — do NOT pre-pick.
+- **Work-item documentation format** — the meta-gap behind two re-baselines; backlogged at [`backlog/work-item-doc-format.md`](./backlog/work-item-doc-format.md).
 
 ---
 
 ## 6. Where to look
 
 - **Roadmap, phase ordering, crosswalk, execution log:** [`EPIC.md`](./EPIC.md)
-- **Architecture decisions:** [`adr/`](./adr/) (0001 shape · 0002 platform · 0003 design-interaction; 0004 explorer-rethink pending)
+- **Whole-architecture review (drove the re-baseline):** [`reviews/2026-06-18-architecture-review.md`](./reviews/2026-06-18-architecture-review.md)
+- **Architecture decisions:** [`adr/`](./adr/) (0001 shape · 0002 platform · 0003 design-interaction; 0004 explorer-rethink + redesign-re-entry pending)
 - **Pilot findings F1–F10:** [`backlog/platform-primitives-scoping.md`](./backlog/platform-primitives-scoping.md)
-- **Open backlog:** work-item-doc-format · cross-family-quorum (`4.3`) · operator-dial-tooling (`4.2`) · usage-instrumentation (E21) · gate-command-defaults · install-config-dir-divergence
+- **Open backlog:** work-item-doc-format · cross-family-quorum (`3.6`) · operator-dial-tooling (`3.5`) · gate-command-defaults · install-config-dir-divergence (usage-instrumentation promoted to `3.8`)
 - **Research program:** [`research/README.md`](./research/README.md) — most cross-cutting are `agentic-loops` and `reasoning-capability`
 - **Authoring discipline:** [`.claude/rules/sk-agent-prompts.md`](../.claude/rules/sk-agent-prompts.md)
