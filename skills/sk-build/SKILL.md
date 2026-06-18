@@ -493,7 +493,7 @@ Append to RFC.md `## Amendments`. If the section doesn't exist, create it after 
 
 ### What is NOT auto-edited
 
-Frozen sections — `## Goals`, `## Decisions`, `## Architecture`, `## Why`, `## Comparative analysis` — are not auto-edited by `/sk-build`. If the amendment requires re-wording an existing decision, that is a user action — the user edits RFC.md manually, then continues `/sk-build`. Auto-editing frozen sections corrupts the design narrative.
+Frozen sections — `## Goals & non-goals`, `## Architecture`, `## Decisions`, `## Research notes` — are not auto-edited by `/sk-build`. If the amendment requires re-wording an existing decision, that is a user action — the user edits RFC.md manually, then continues `/sk-build`. Auto-editing frozen sections corrupts the design narrative.
 
 </output_artifacts>
 

@@ -187,7 +187,7 @@ The two checks run in parallel for the same independence reason as the PLAN quor
 
 In either mode, an explicit user cancel emits the cancelled clean-exit shape with `Reason: User cancelled during RFC review.`, leaves RFC.md and RESEARCH.md on disk as drafts, runs no commit and no cleanup, and exits. No error code — this is a clean exit. The same pattern applies on any later turn of the confirm loop.
 
-**Draft the PLAN.** Compute the RFC content hash via `git hash-object .sidekick/plans/<slug>/RFC.md`. Capture stdout as `rfc_hash`.
+**Draft the PLAN.** Compute the RFC content hash via `shasum -a 256 .sidekick/plans/<slug>/RFC.md` and take the first field — the 64-char SHA-256 of the file content. This is the hash `sk-crossref-checker` and the `check-drift` CLI recompute to verify the pin, so the producer must use the same algorithm. Capture it as `rfc_hash`.
 
 Dispatch `subagent_type: sk-plan-drafter` with `slug`, `rfc_path: .sidekick/plans/<slug>/RFC.md`, `rfc_hash`, and `today: <YYYY-MM-DD>` (the same system date derived for the RFC draft). Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`.
 
@@ -200,7 +200,7 @@ Dispatch `subagent_type: sk-plan-drafter` with `slug`, `rfc_path: .sidekick/plan
 Parse all three ```json``` fences. Combine verdicts:
 
 - All `verdict: pass` — continue to the commit.
-- Any `verdict: fail` — re-dispatch `sk-plan-drafter` with `feedback: <failing reviewer(s)' issues collapsed into a single prose summary the drafter can act on>`. Before the re-dispatch, if any failing crossref issue has `kind: "pins_rfc_drift"`, re-compute `rfc_hash` via `git hash-object .sidekick/plans/<slug>/RFC.md` and pass the fresh value — the user may have edited RFC.md between the PLAN draft and the quorum. Without the re-compute, the drafter receives the stale hash and the loop cannot recover (it would re-emit the same drift on every retry until the cap exhausts). Write the updated `draft_text` through to PLAN.md. Re-run the quorum.
+- Any `verdict: fail` — re-dispatch `sk-plan-drafter` with `feedback: <failing reviewer(s)' issues collapsed into a single prose summary the drafter can act on>`. Before the re-dispatch, if any failing crossref issue has `kind: "pins_rfc_drift"`, re-compute `rfc_hash` via `shasum -a 256 .sidekick/plans/<slug>/RFC.md` (first field) and pass the fresh value — the user may have edited RFC.md between the PLAN draft and the quorum. Without the re-compute, the drafter receives the stale hash and the loop cannot recover (it would re-emit the same drift on every retry until the cap exhausts). Write the updated `draft_text` through to PLAN.md. Re-run the quorum.
 - Cap at 3 drafter re-dispatches. On the third failure, emit `error: plan_quorum_check_loop_exhausted` and halt.
 
 Verifier independence is the load-bearing property: the parallel dispatch keeps the checkers' reasoning from contaminating each other via the orchestrator's intermediate state. A serialised dispatch (structural first, then crossref) defeats the dimensional separation.
@@ -293,7 +293,7 @@ The explorer is the only entry point for scoping. Its verdict is final — the o
 
 **Input:** `{ type: "impl"|"decision"|"context", question, cap_words: 800, sources_required: true }`.
 
-**Output:** `{ name, output, sources_cited, duration_ms }` inside a ```json``` fence, or an error JSON of the form `{ error: "no_canonical_sources_found", reason }`.
+**Output:** `{ name, output, sources_cited }` inside a ```json``` fence, or an error JSON of the form `{ error: "no_canonical_sources_found", reason }`.
 
 **Routing:**
 
@@ -303,11 +303,11 @@ The explorer is the only entry point for scoping. Its verdict is final — the o
 
 ### 6. sk-research-synthesiser
 
-**Input:** `{ topic, per_agent_outputs: [{ name, output, sources_cited, duration_ms }], synthesis_target: "recommendation", cap_words_short: 200, cap_words_full: 2000 }`.
+**Input:** `{ topic, per_agent_outputs: [{ name, output, sources_cited }], cap_words_full: 2000 }`.
 
-**Output:** `{ short_synthesis, full_synthesis }` inside a ```json``` fence (both non-empty markdown strings).
+**Output:** `{ full_synthesis }` inside a ```json``` fence (a non-empty markdown string).
 
-**Routing:** write `full_synthesis` to `.sidekick/plans/<slug>/RESEARCH.md`; pass the whole synthesiser JSON to `sk-rfc-drafter` as `synthesis_output`. The drafter selects which parts of `synthesis_output` to embed in RFC.md `## Research notes`.
+**Routing:** write `full_synthesis` to `.sidekick/plans/<slug>/RESEARCH.md`; pass the whole synthesiser JSON to `sk-rfc-drafter` as `synthesis_output`. The full synthesis lives only in RESEARCH.md — the drafter writes a brief pointer to it in RFC.md `## Research notes` rather than embedding the synthesis.
 
 **Pre-dispatch contract:** the orchestrator pre-filters `per_agent_outputs[]` (dropping entries with empty `output`) before dispatching the synthesiser. The synthesiser's `empty_agent_output` hard-stop should therefore never fire in practice — if it does, treat as `error: subagent_failed` (programmer-error path: the pre-filter missed an entry).
 
@@ -412,6 +412,6 @@ User runs `/sk-design webhook-retries --auto low`. The explorer `proceed`s; bran
 - `g_n` — goal ID in RFC.md `## Goals & non-goals`. Sequentially numbered from `g1`. Cited by PLAN.md tasks and verified by `sk-crossref-checker`.
 - `D-NN` — decision ID in RFC.md `## Decisions` (zero-padded from D-01). Cited by PLAN.md tasks and verified by `sk-crossref-checker`. Amendments and redesigns are owned by `/sk-build` and `/sk-design`'s downstream loops respectively — this skill writes only the initial set.
 - `T-NN` — task ID in PLAN.md `## Checklist` (zero-padded from T-01). Set by `sk-plan-drafter`; ticked by `/sk-build`.
-- `pins-rfc:` — PLAN.md frontmatter field carrying the `git hash-object` of RFC.md at the moment PLAN.md was authored. Set by `sk-plan-drafter`; verified by `sk-crossref-checker` in the PLAN quorum; consumed by `/sk-build`'s drift check.
+- `pins-rfc:` — PLAN.md frontmatter field carrying the SHA-256 of RFC.md's content at the moment PLAN.md was authored. Set by `sk-plan-drafter`; verified by `sk-crossref-checker` in the PLAN quorum; consumed by `/sk-build`'s drift check (`check-drift` CLI). All three compute SHA-256 of the file content — keep them aligned.
 
 </symbol_conventions>

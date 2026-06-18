@@ -37,7 +37,7 @@ If `task_id`, `task_description`, or `files_changed` is missing or empty, return
 
 <execution_flow>
 
-Read project conventions silently first: `./CLAUDE.md`, `./.claude/rules/*.md`, and any `./docs/decisions/*.md` whose name matches the task's surface area. Skip `node_modules/`, `.next/`, `dist/`, `build/`.
+Read project conventions silently first: `./CLAUDE.md`, `./.claude/rules/*.md`, and any `./.sidekick/decisions/*.md` whose name matches the task's surface area. Skip `node_modules/`, `.next/`, `dist/`, `build/`.
 
 If `rfc_path` is provided, read it once to resolve cited `g_n` / `D-NN` text — context only; you don't verify against the design (that's `sk-spec-reviewer`'s job).
 

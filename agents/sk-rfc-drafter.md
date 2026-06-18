@@ -107,10 +107,11 @@ is acceptable.>
 
 ## Research notes
 
-<Only include this section if `synthesis_output` is present. Verbatim
-insertion of the synthesiser's narrative section + sources_cited list.
-Omit the section entirely if research was skipped (`complexity: low`
-path).>
+<Only include this section when `synthesis_output` is present. Write a brief
+pointer to the full research record — e.g. "Research synthesis: see
+RESEARCH.md" — rather than embedding the synthesis verbatim; the full
+narrative and its citations live in RESEARCH.md. Omit the section entirely
+when research was skipped (no `synthesis_output`).>
 ```
 
 Return `draft_text` in your JSON output; the orchestrator writes the file.

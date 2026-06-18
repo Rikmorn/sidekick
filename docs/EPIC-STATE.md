@@ -57,7 +57,7 @@ Phase 1 (current) at a glance:
 
 | Item | Work | Status |
 |---|---|---|
-| **1.1** | Coherence reconciliation (the §4 debt) + blast-radius guard | next |
+| **1.1** | Coherence reconciliation (the §4 debt) + blast-radius guard | ✅ done 2026-06-18 |
 | **1.2** | Explorer/pattern-mapper rethink → **ADR-0004** (folds in F3) | pending |
 | **1.3** | Research-quality F4/F7 → Researchers group done | pending |
 | **1.4** | Rules group (4) | pending |
@@ -83,7 +83,23 @@ A three-auditor sweep checked all 24 agents against the **current orchestrators*
 
 **~14 agents are clean** — every dimensional reviewer, the checkers, advisor, branch-precheck, executor (the earlier fix held), fixer, goal-verifier, plan-reconciler.
 
-**Process lesson (→ the `1.1` guard):** a big-bang orchestrator rewrite (`0.4`) left reconciliation debt because nothing reconciled its blast radius atomically, and the follow-on audits used the wrong lens. Candidate guard: *when an orchestrator's flow/contracts change, reconcile every agent it dispatches in the same change* — and/or a cheap standing check (no agent cites a "Step N"; every agent's named dispatcher/verifier matches the live orchestrator).
+**Process lesson (→ the `1.1` guard):** a big-bang orchestrator rewrite (`0.4`) left reconciliation debt because nothing reconciled its blast radius atomically, and the follow-on audits used the wrong lens. Candidate guard: *when an orchestrator's flow/contracts change, reconcile every agent it dispatches in the same change* — and/or a cheap standing check (no agent cites a "Step N"; every agent's named dispatcher/verifier matches the live orchestrator). Landed as the **"Rewrites reconcile their blast radius"** section in `.claude/rules/sk-agent-prompts.md`.
+
+### 1.1 reconciliation outcome (2026-06-18) — corrections to the sweep
+
+`1.1` fixed the table above — and in doing so found the sweep itself was incomplete, which is the whole case for the guard. Reconciling against the **live orchestrators and the tested CLI kernel** (not prompt-vs-prompt) gives the corrected picture:
+
+**Fixed (the enumerated debt):** `Step-N` / `Researchers-T-08` refs → role-relationship language (3 researchers + spec-reviewer); rfc-drafter's `## Research notes` keyed off `synthesis_output` only (the `complexity: low` proxy is gone); the dead `synthesis_target` modes dropped; the fabricated `duration_ms` telemetry dropped (3 researchers + synthesiser input + sk-design contracts #5/#6); `docs/decisions/` → `.sidekick/decisions/`; decision-drafter names both quorum checkers; pattern-mapper's `--resume`/amend dispatch claim removed. Per the Q2 call, `short_synthesis` was removed and the RFC `## Research notes` reduced to a **pointer** — the synthesis lives only in RESEARCH.md.
+
+**One sweep item was backwards.** The table calls the `pins-rfc` hash "cosmetic — plan-drafter says SHA-256 but it's `git hash-object`." The **tested CLI is ground truth** (`bin/helpers/check-drift.ts` computes SHA-256 of file content) and `sk-crossref-checker` already computes SHA-256 — so plan-drafter's "SHA-256" was *correct*. The real bug was **`/sk-design` producing the pin via `git hash-object` (SHA-1)**, which can never equal a SHA-256. That is **functional, not cosmetic**: every PLAN crossref quorum and every `/sk-build` drift check would report perpetual `pins_rfc_drift` → quorum loop-exhaustion → `/sk-design` can't finish. Masked only because the integration smokes are unrun. Fixed by aligning `/sk-design` to SHA-256; the four hashing sites (CLI, crossref-checker, plan-drafter doc, sk-design) now agree.
+
+**The sweep under-counted** (it checked the 24 agents against the orchestrators, but didn't grep the strings against the tested kernel or check the orchestrators against each other):
+- The `docs/decisions/` path bug was also in **sk-executor** (the table marked it "clean") and two researchers — not just pattern-mapper.
+- The stale `## Comparative analysis` heading (0.4 renamed it `## Research notes`) was also in the **sk-build** frozen-sections list, not just the synthesiser.
+
+**New finding — redesign re-entry is broken (deferred to `1.2`).** The 0.4 rework removed sk-design's resume/redesign re-entry but left two orchestrators pointing at invocations sk-design now rejects: `sk-goal-verify` routes redesign to `/sk-design --resume` (unsupported flag), and `sk-build`'s redesign prompts say `/sk-design <slug>` (which hard-stops on `slug_collision` for an already-designed plan). Both documented redesign loops are user-facing-broken. Fixing it needs a design call on how redesign re-enters the now-dialogic sk-design, so it belongs with the **`1.2` explorer/sk-design rework** (the explorer owns slug-collision + scoping) — parked there, not patched blindly.
+
+**Explicitly deferred to `1.2`:** rfc-drafter's `complexity` input is now inert (validated, otherwise unused) — left as-is because F3/ADR-0004 redesigns that signal; and sk-explorer's `low|medium|high` self-rating is untouched (F3).
 
 ---
 

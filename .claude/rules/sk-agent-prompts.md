@@ -303,3 +303,21 @@ For most single-user workflows, prompt-level guidance ("design mode writes only 
 ### Case study
 
 The `sk-ui-auditor` T-19/T-20 split (orchestrator subagent + 6 topic-scoped specialist subagents) was authored before this constraint was understood. SK-SMOKE-05 surfaced it: the orchestrator subagent hard-stopped on its first specialist dispatch because Task isn't granted nested. The fix is to move the orchestrator's logic into a slash command; the 6 topic specialists are reusable as-is.
+
+## Rewrites reconcile their blast radius
+
+When you change an orchestrator's flow or its dispatch/return contracts, reconcile every agent it dispatches *in the same change*. The orchestrator is the ground its subagents stand on; moving it silently strands their self-descriptions. A subagent's identity line ("dispatched by X at step N"), its input/output schema, and the paths and section names it reads are all contracts with the orchestrator — an orchestrator rewrite that renames a section, drops a flag, or reorders steps invalidates them at a distance.
+
+This is not optional tidiness — unreconciled drift is latent breakage, not cosmetics:
+- A stale path silently no-ops: the agent reads nothing and loses its grounding, with no error.
+- A stale schema field becomes fabricated or ignored data that flows through contracts no one reasons on.
+- A producer and its checker that compute the same value two different ways never agree, and the gate they share can never pass.
+
+**Reconcile against the live artifact, not the prose that describes it.** When a contract is implemented in tested kernel code (a CLI helper, a hook), that code is the ground truth — reconcile prompts to *it*, not to another prompt's description of it. A sweep that checks prompts against prompts will miss the case where a prompt and the code disagree (e.g. a hash the orchestrator's prose says is `git hash-object` but the tested CLI computes as SHA-256 — the prose is the bug, and only reading the code reveals it).
+
+**Cheap standing checks** — grep-able, run after any orchestrator change:
+- No agent cites a literal "Step N" of an orchestrator. Describe the *role relationship* instead ("during the verification gate", "when gathering design context"), so reordering steps can't strand the reference.
+- Every agent's named dispatcher and verifier, and every path / section name it reads, resolves against the live orchestrator and the tested kernel.
+- A value computed in two places (a hash, an ID format, a filename convention) is computed the same way in both.
+
+**Two senses of blast radius.** There is the *forward* radius — what an orchestrator change breaks downstream — and there is the audit-lens trap: coherence-with-the-orchestrator is a different dimension than prose-discipline, so a discipline-only review will pass agents that are quietly broken. It needs its own pass.
