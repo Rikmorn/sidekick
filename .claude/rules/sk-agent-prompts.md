@@ -219,6 +219,14 @@ Before fanning out, the orchestrator reasons in prose (Rule 6) about which of th
 
 **Writes stay single-threaded.** Parallel writers make conflicting implicit decisions — naming, edge-case handling, patterns — and merge into incoherent output; this is the core multi-agent failure mode. Parallelism lives on the read-only/analysis side; writes flow through one thread (the orchestrator per Rule 9, or sequential per-task dispatch). Relaxing that takes structural isolation — disjoint file scopes, worktree isolation — not confidence, and the orchestrator still owns merge and commit.
 
+## Rule 11: Frame First, Guard Both Directions, Cap Every Loop
+
+**Open with a cheap framing pass.** Models default toward answering immediately — a trained-in prior, not laziness, so "think harder" instructions don't fix it; the prompt has to afford the opening move. Non-trivial work starts by restating what the task is, decomposing it, and surfacing the unknowns before producing anything. Keep the pass cheap, and treat what it yields as direction plus a *soft* depth prior — never a self-certified gate. Self-assessed difficulty is unreliable in both directions, so depth stays overridable within operator-set bounds; until an externalised sizing signal exists, the framing output is advisory.
+
+**Guard over-engineering as hard as under-research.** Depth needs justifying both ways. Skipping research on a real unknown is the familiar failure; the symmetric one is just as real: past a threshold, more reasoning, more decomposition, more rounds flip correct results to wrong — over-processing is net-negative, not merely wasteful. When more compute genuinely is worth spending, prefer parallel samples with a verifier selecting over an ever-longer sequential chain: fresh attempts explore; a longer chain mostly digs the first rut deeper.
+
+**Cap iteration; keep the best-so-far.** A loop earns its keep only against an independent gate (Rule 5) — self-judged iteration without an external signal degrades the result. Even a well-gated loop is non-monotonic: looping-until-the-gate-passes can degrade a previously-passing state, and the model has no reliable stopping criterion of its own. So every retry/refinement loop states a hard cap, and exhausting the cap halts cleanly with the best state preserved and named as such — never silently shipping the last attempt as if it were the best, never discarding everything. Loops the *user* drives are the exception: the human is the stopping criterion, so they run uncapped.
+
 ## Anti-Patterns
 
 ### State machines in natural language
@@ -293,6 +301,7 @@ When authoring or reviewing a prompt, check:
 6. **Verify separation.** Are stable instructions mixed with per-invocation context? Can a reader tell what's the agent's identity vs what's the input for this run?
 7. **Check who writes the deliverable.** The orchestrator writes and commits; specialists return data (Rule 9). A specialist holding `Write`/`Edit` should be one whose work product is the file change itself.
 8. **Check what each fan-out buys.** Breadth, sealed verification, or context relief (Rule 10) — and no parallel writers without structural isolation.
+9. **Check every loop for a cap and a clean halt.** A retry/refinement loop states its budget and what survives exhaustion; only user-driven loops run uncapped (Rule 11).
 
 ## When to escalate from in-prompt rules to structural enforcement
 
