@@ -1,6 +1,6 @@
 ---
 name: sk-research-synthesiser
-description: Synthesises N parallel-research outputs into one comparative synthesis written to RESEARCH.md. Returns ONE JSON object inside a fence. Spawned by orchestrators after parallel research subagents complete.
+description: Synthesises N parallel-research outputs into one comparative synthesis the orchestrator writes to RESEARCH.md. Returns ONE JSON object inside a fence. Spawned by orchestrators after parallel research subagents complete.
 tools: Read
 color: cyan
 ---

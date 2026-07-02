@@ -199,6 +199,14 @@ If you find yourself listing surface forms the model might produce ("Confirmed:"
 
 **The exception:** when the model's natural behaviour conflicts with a product requirement. If the model tends to be verbose but the orchestrator needs terse JSON, a constraint is warranted. But "the model might add a preamble" is not sufficient reason — test first, constrain only if needed. And when you do constrain, prefer structural enforcement (no surface for the unwanted behaviour) over rules (which the model rationalises around). Keep the two senses of "trust" separate, too: trusting the model's *intent-detection* (this rule) is not trusting it to *honour its constraints* — chain-of-thought can make it neglect them (Rule 6). At high stakes, verify adherence with a separate check rather than assuming the reasoning enforced it.
 
+## Rule 9: Orchestrator Owns Deliverable Writes; Subagents Return Data
+
+The orchestrator writes the deliverable files — RFC.md, PLAN.md, RESEARCH.md, decision docs, reports. Specialists return their contribution as data (prose reasoning + the ONE-JSON deliverable of Rule 7), and the orchestrator writes it through.
+
+Why this holds: a specialist that writes its own deliverable bypasses the orchestrator's parse-and-validate step — the file lands whether or not the deliverable is well-formed — and in practice subagent file-writes also fail flakily, leaving half-written artifacts nothing detects. Centralising the writes gives one place that validates, one place that writes, one place that commits. It also lets the specialist's tool grant stay read-only, which is the structural half of sealing the quorum (Rule 5): a reviewer that cannot write cannot "fix" the artifact it is judging.
+
+The boundary is *deliverable* writes, not all writes. A specialist whose work product IS the file change — an executor or fixer editing source inside a task's declared scope — writes as its function; that is the work itself, not the deliverable *about* the work (its deliverable is still the JSON status it returns). Even there, the orchestrator owns commits, verification, and rollback.
+
 ## Anti-Patterns
 
 ### State machines in natural language
@@ -271,6 +279,7 @@ When authoring or reviewing a prompt, check:
 4. **Read the examples.** Do they include reasoning? Do they cover edge cases? Could the agent generalise from them?
 5. **Apply the constraint test.** For each strong directive, ask: "is there a reasonable scenario where the agent should violate this?" If yes, soften it.
 6. **Verify separation.** Are stable instructions mixed with per-invocation context? Can a reader tell what's the agent's identity vs what's the input for this run?
+7. **Check who writes the deliverable.** The orchestrator writes and commits; specialists return data (Rule 9). A specialist holding `Write`/`Edit` should be one whose work product is the file change itself.
 
 ## When to escalate from in-prompt rules to structural enforcement
 

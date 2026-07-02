@@ -60,7 +60,7 @@ Backlog at Phase 0 close: **usage instrumentation** (was E21) is no longer a def
 
 | ID | Was | Item | Sources | Deps |
 |---|---|---|---|---|
-| **2.1** | E4 | Codify **"orchestrator owns deliverable writes; subagents return data"** (proven 6×). | `orchestration`, `platform-landscape` | 0.2 |
+| **2.1** ✅ | E4 | Codify **"orchestrator owns deliverable writes; subagents return data"** (proven 6×). Done 2026-07-02: **Rule 9** in `sk-agent-prompts.md` (+ review-checklist item 7) — deliverable writes centralised in the orchestrator (validate/write/commit in one place; read-only tool grants as the structural half of Rule 5 sealing), with the executor/fixer source-edit boundary stated (work-product ≠ deliverable). Toolchain verified conformant before codifying: all drafters/reviewers/researchers are read-only, orchestrators write RFC/PLAN/RESEARCH/decision docs; one ambiguity fixed (`sk-research-synthesiser` description implied it writes RESEARCH.md). | `orchestration`, `platform-landscape` | 0.2 |
 | **2.2** | E5 | Codify **"no parallel writers / default single-agent, justify fan-out"** (single-agent ≥ MAS at matched budget + DPI). | `orchestration` (F10), `agentic-loops` | 0.2 |
 | **2.3** | E6 | Research-first **framing pass + bidirectional over-engineering guard + cap-iteration & best-so-far checkpoint** (non-monotonic: looping-to-gate can degrade a correct result; prefer parallel-sample-and-select). | `reasoning-capability` (F4/F5), `agentic-loops` | 0.2; calibration ← **3.1** |
 
