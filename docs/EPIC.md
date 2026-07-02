@@ -2,7 +2,7 @@
 
 > **North-star.** Sidekick is an **oversight harness** for AI-assisted engineering — it owns the loop (research → design → build → verify), the gates, the verification, and the escalation, and *rents* the wording. This EPIC applies the research program's learnings to that harness. The durability filter on every item: **build the oversight harness; rent the wording** — own the structure, treat specific prompt phrasings as rentable and re-checkable per model generation. The aim is a harness that gets **more** reliable as the underlying models improve, not one that becomes a tax on them.
 
-**Status (2026-07-02):** Architecture settled (ADR-0001–0005 — ADR-0004 *accepted 2026-06-18*: loop identity + redesign re-entry + the autonomy seam, implemented by `1.2`; **ADR-0005 *accepted 2026-07-02***: operator-authored verifiers — quorum membership becomes data; appends `3.9`, narrows `5.1`, subsumes the ui-audit backlog item). Toolchain built and working (6 skills + 23 agents + 11 CLI helpers + tier-0 hook). **Phase 0 complete**; **Phase 1 closed 2026-06-18** — items `1.1`–`1.6` done; the kernel is unit-tested, the prose/agent wiring is coherence-swept but not yet behaviourally smoked, so end-to-end integration smokes are **folded into `3.4`** as its first eval cases (operator elected to close on progress, surfacing issues ad hoc). **Re-baselined 2026-06-18** (foundations-then-memory: eval keystone pulled forward into Phase 3; memory consolidated into a dedicated Phase 4; Rules group dropped). Phases 2–5 unstarted. Live state snapshot: [`EPIC-STATE.md`](./EPIC-STATE.md).
+**Status (2026-07-02):** Architecture settled (ADR-0001–0005 — ADR-0004 *accepted 2026-06-18*: loop identity + redesign re-entry + the autonomy seam, implemented by `1.2`; **ADR-0005 *accepted 2026-07-02***: operator-authored verifiers — quorum membership becomes data; appends `3.9`, narrows `5.1`, subsumes the ui-audit backlog item). Toolchain built and working (6 skills + 23 agents + 11 CLI helpers + tier-0 hook). **Phase 0 complete**; **Phase 1 closed 2026-06-18** — items `1.1`–`1.6` done; the kernel is unit-tested, the prose/agent wiring is coherence-swept but not yet behaviourally smoked, so end-to-end integration smokes are **folded into `3.4`** as its first eval cases (operator elected to close on progress, surfacing issues ad hoc). **Re-baselined 2026-06-18** (foundations-then-memory: eval keystone pulled forward into Phase 3; memory consolidated into a dedicated Phase 4; Rules group dropped). **Phase 2 done 2026-07-02** — the three patterns codified as `sk-agent-prompts.md` **Rules 9–11**, live toolchain verified conformant first. Phases 3–5 unstarted. Live state snapshot: [`EPIC-STATE.md`](./EPIC-STATE.md).
 
 ---
 
@@ -56,7 +56,9 @@ Backlog at Phase 0 close: **usage instrumentation** (was E21) is no longer a def
 
 > **Owed validation → folded into `3.4`.** The batched integration smokes (Smoke 13/14/15 + the redesign loop, branch-precheck→CLI, `goal-verdict`, `hash-rfc`) were never run; Phase 1 was closed on operator decision (2026-06-18) on the strength of the unit-tested kernel + coherence sweeps, with end-to-end behavioural validation **deferred into `3.4`** — which builds the very harness to run them as its first eval cases. Standing risk, recorded honestly: the `1.1` SHA bug (a load-bearing check silently inverted, undetected *because* the smokes are unrun) is the proof the prose/agent layer's rigour is still unverified. `3.4` is what closes that gap; until then, issues surface ad hoc.
 
-### Phase 2 — Codified patterns
+### Phase 2 — Codified patterns  ✅ done 2026-07-02
+
+The three research-proven orchestration patterns became discipline rules — **Rules 9–11** in `.claude/rules/sk-agent-prompts.md`, each with a review-checklist item — after verifying the live toolchain already conforms (no reconciliation debt created; one description ambiguity fixed).
 
 | ID | Was | Item | Sources | Deps |
 |---|---|---|---|---|
