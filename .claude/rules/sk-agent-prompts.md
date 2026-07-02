@@ -207,6 +207,18 @@ Why this holds: a specialist that writes its own deliverable bypasses the orches
 
 The boundary is *deliverable* writes, not all writes. A specialist whose work product IS the file change — an executor or fixer editing source inside a task's declared scope — writes as its function; that is the work itself, not the deliverable *about* the work (its deliverable is still the JSON status it returns). Even there, the orchestrator owns commits, verification, and rollback.
 
+## Rule 10: Default Single-Agent; Fan-Out Must Buy Something
+
+One agent holding the full context is the baseline, not the fallback. Anything passed between agents is a lossy slice of that context, so a fan-out has to buy something the single context structurally cannot supply — at matched token budget a single agent matches or beats a multi-agent arrangement, and most celebrated multi-agent wins were bought with extra compute, not architecture. Three things are worth buying:
+
+- **Breadth** — genuinely independent read-only directions (research angles, review dimensions) where no worker needs another's findings.
+- **Independent verification** — reviewers sealed from the producer (Rule 5). Here parallelism isn't a speed-up; the independence is the point.
+- **Context relief** — the work exceeds one *reliable* context window (well below the advertised one), or the input is noisy enough that a single trajectory can't separate signal from distractors.
+
+Before fanning out, the orchestrator reasons in prose (Rule 6) about which of these the task offers. "It feels decomposable" buys nothing — decomposition without one of the three is pure handoff loss.
+
+**Writes stay single-threaded.** Parallel writers make conflicting implicit decisions — naming, edge-case handling, patterns — and merge into incoherent output; this is the core multi-agent failure mode. Parallelism lives on the read-only/analysis side; writes flow through one thread (the orchestrator per Rule 9, or sequential per-task dispatch). Relaxing that takes structural isolation — disjoint file scopes, worktree isolation — not confidence, and the orchestrator still owns merge and commit.
+
 ## Anti-Patterns
 
 ### State machines in natural language
@@ -280,6 +292,7 @@ When authoring or reviewing a prompt, check:
 5. **Apply the constraint test.** For each strong directive, ask: "is there a reasonable scenario where the agent should violate this?" If yes, soften it.
 6. **Verify separation.** Are stable instructions mixed with per-invocation context? Can a reader tell what's the agent's identity vs what's the input for this run?
 7. **Check who writes the deliverable.** The orchestrator writes and commits; specialists return data (Rule 9). A specialist holding `Write`/`Edit` should be one whose work product is the file change itself.
+8. **Check what each fan-out buys.** Breadth, sealed verification, or context relief (Rule 10) — and no parallel writers without structural isolation.
 
 ## When to escalate from in-prompt rules to structural enforcement
 
