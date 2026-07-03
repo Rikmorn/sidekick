@@ -8,11 +8,14 @@ When a consumer repo's `.sidekick/config.json` does not set `gates.*`, both `sk-
 
 This is a **functionality** default, not a prompt-discipline issue, which is why the E3 Executors slice deliberately left it untouched (audit scope = discipline). It spans two files and the dispatch contract between them, so it wants its own small change.
 
-## Proposed direction (not yet decided)
+## Direction (operator, 2026-07-03)
 
-- **Detect** the package manager from the lockfile (`pnpm-lock.yaml` / `package-lock.json` / `yarn.lock` / `bun.lockb`) and pick the matching runner — likely a small CLI helper (`bin/helpers/`) so the detection is deterministic and testable, consistent with the own-the-loop kernel posture (ADR-0002).
-- **Or** require `gates.*` in config (no guess) and have `sidekick init` populate it from the detected manager.
-- Either way, keep `sk-executor` and `sk-build` reading the *same* resolved value so they cannot diverge.
+**No defaults at all.** Falling back to *any* runner bakes in assumptions about the consumer that don't generalise — pnpm-vs-bun is the visible symptom, but the consumer may not be a Node repo at all (the harness is deliberately stack-generic). So:
+
+- `gates.*` becomes **explicitly configured, never guessed**: `sidekick init` populates it (lockfile/stack detection may *suggest* values at init time — a deterministic, testable helper per ADR-0002 — but what runs is always what config says).
+- With no `gates.*` set, the gate **surfaces "gates unconfigured"** loudly rather than silently running a wrong command; `sk-executor` and `sk-build` read the *same* resolved value so they cannot diverge.
+
+Timing: fine to leave until it bites (the operator's furnace dogfood sets `gates.*` explicitly); natural batching is with the `3.1` config-surface work, since both touch `.sidekick/config.json` schema + `init`.
 
 ## Why it matters
 
