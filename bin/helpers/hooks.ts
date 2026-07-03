@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const CONFIG_DENY_REASON =
-  'Edits to .sidekick/config.json are blocked: it defines the gate commands (test/lint/typecheck) for this project. Change it with `sidekick init`, not an agent edit.';
+  'Edits to .sidekick/config.json are blocked: it defines the gate commands (test/lint/typecheck) and the verifiers registry for this project. The operator changes it by hand or via `sidekick init` — never an agent edit.';
 
 export interface PreToolUseDeny {
   hookSpecificOutput: {
@@ -55,7 +55,7 @@ export function decideGuardConfig(stdin: string): PreToolUseDeny | null {
 }
 
 const SCAN_ADVISORY =
-  'sidekick: .sidekick/config.json was modified this session. It defines your gate commands — review the change before committing (it was not made through `sidekick init`).';
+  'sidekick: .sidekick/config.json was modified this session. It defines your gate commands and verifiers registry — review the change before committing (it was not made through `sidekick init`).';
 
 export interface StopAdvisory {
   systemMessage: string;
