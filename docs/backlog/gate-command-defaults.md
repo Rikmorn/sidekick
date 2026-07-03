@@ -1,6 +1,6 @@
 # Gate-command defaults assume `pnpm`
 
-**Status:** Backlog (surfaced 2026-06-16 during the E3 Executors audit).
+**Status:** ✅ Resolved 2026-07-03 — implemented in the `3.1` batch (as this note anticipated: both touch `.sidekick/config.json` schema + `init`). What landed: `gates.*` optional-but-loud in the config schema; `sidekick gates` as the single resolver both `sk-build` and `sk-executor` read (`gates_unconfigured` hard-stop in sk-build; `gate_commands` required in sk-executor — its pnpm defaults are gone); `init` suggests only what a lockfile identifies (bun/pnpm/yarn/npm) and writes only detected/answered values, warning loudly on the rest. Kept for the problem statement and direction record below.
 
 ## Issue
 
