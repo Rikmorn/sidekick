@@ -149,7 +149,7 @@ Re-read `.sidekick/plans/<slug>/PLAN.md` for the current `[x]` state. The **next
 
 Before the run's first dispatch, resolve the gates once: run `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" gates` (Bash) and parse the JSON. On `configured: false`, hard-stop `error: gates_unconfigured` naming `missing`. The resolved `gates` values feed both the executor dispatches and the FRESH gate — one resolution, so the two cannot diverge.
 
-For each `[ ]` task in the current wave, **in T-NN order, one at a time** (sequential writes — M3): dispatch `subagent_type: sk-executor` with the input fields from `<dispatcher_contracts>` § 3 (`task_id`, `task_description`, `files_changed` parsed from the task's `**Files:**` bullets, `goal_ids`, `decision_ids`, `rfc_path`, `gate_commands` from the resolved gates). After each executor returns, run the verification gate FRESH for that task (Step 6) before dispatching the next task's executor.
+For each `[ ]` task in the current wave, **in T-NN order, one at a time** (sequential writes — M3): capture that task's **baseline** first — the repo-relative paths already dirty in the working tree, from one `git status --porcelain=v1` Bash call — then dispatch `subagent_type: sk-executor` with the input fields from `<dispatcher_contracts>` § 3 (`task_id`, `task_description`, `files_changed` parsed from the task's `**Files:**` bullets, `goal_ids`, `decision_ids`, `rfc_path`, `gate_commands` from the resolved gates). After each executor returns, run the verification gate FRESH for that task (Step 6) before dispatching the next task's executor. The baseline feeds the scope gate (Step 6): a wave's clean tasks aren't committed until Step 7, so an earlier same-wave task's writes are still uncommitted when a later task runs — subtracting the baseline keeps them from being misattributed.
 
 > **Seam (M4):** this sequential per-task dispatch is the single point a worktree-isolated parallel backend replaces. Everything downstream (gate, commit, deviation batching) consumes the same per-task executor deliverables regardless of how they were produced. Do not couple commit/deviation logic to sequential ordering beyond "commit clean tasks in T-NN order."
 
@@ -164,11 +164,20 @@ The gate runs from main session via direct Bash invocations and a parallel `sk-s
 | 1 | Typecheck | resolved `gates.typecheck` (Step 5's `sidekick gates` resolution) |
 | 1 | Lint | resolved `gates.lint` |
 | 1 | Tests | resolved `gates.test` + `<changed-files-glob>` |
+| 1 | Scope | `sidekick scope-check` (declared `**Files:**` vs actual writes) |
 | 2 | Spec-reviewer | `sk-spec-reviewer` subagent dispatch |
 
 **Tests-tier soft-pass.** If `sk-executor`'s `gate_summary.tests.result === "no_tests_in_scope"` (no `*.test.*` path in `files_changed` AND no sibling test file on disk for any non-test path in `files_changed`), the orchestrator soft-passes the tests tier — no test-gate invocation; emit `(no tests in scope for T-NN)` to the gate-context output. Typecheck, lint, and spec-reviewer run regardless.
 
 **Spec-reviewer dispatch.** Pass `task_id`, `task_description`, `diff` (e.g., the staged diff produced by `git diff --staged` after Step 5's writes, or a `diff_command` for the reviewer to run), `goal_ids`, `decision_ids`, `rfc_path`. Parse the trailing ```json``` fence for the `verdict` field.
+
+**Scope gate.** Run `scope-check` for the just-executed task, passing its Step-5 baseline and the executor's returned `files_changed` as `--reported`:
+
+```bash
+"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" scope-check --slug <slug> --task <T-NN> --baseline <csv> --reported <csv>
+```
+
+It scores the task's declared `**Files:**` scope against the actual working-tree changes (baseline subtracted) — the one gate the executor's self-report cannot stand in for, since a write the executor omits from `files_changed` is invisible to the self-report but not to git. On `verdict: "clean"`, proceed; a non-empty `unreported` or `reported_unchanged` is surfaced as a one-line note in the gate-context output, never a failure (the reported-set deltas are informational). `verdict: "out_of_scope"` is a tier-1 gate failure whose failure context is the `out_of_scope` list plus the instruction to revert those writes or return `status: "deviation"` with a rationale; it feeds the same single re-dispatch as the other tiers. If the task is still `out_of_scope` after that re-dispatch, route it into the wave's deviation batch (Step 7) as a scope deviation for the user — unlike a twice-failed typecheck/lint/test, it does not `gate_failed_twice`.
 
 **Gate failure handling:**
 
@@ -181,7 +190,7 @@ The gate runs from main session via direct Bash invocations and a parallel `sk-s
 
 A wave runs to completion before resolving deviations — its tasks are dependency-independent, so a deviation in one never blocks its siblings.
 
-1. **Commit clean tasks.** For each wave task whose executor returned `status: "passed"` AND whose FRESH gate passed (Step 6), commit it atomically in **T-NN order** (Step 8) — staging the executor's `files_changed` + the PLAN.md `[ ]`→`[x]` tick for that task **in the same commit**.
+1. **Commit clean tasks.** For each wave task whose executor returned `status: "passed"` AND whose FRESH gate passed (Step 6), commit it atomically in **T-NN order** (Step 8) — staging the scope-verified **actual** change set (from `scope-check`, baseline subtracted) + the PLAN.md `[ ]`→`[x]` tick for that task **in the same commit**.
 2. **Collect deviations.** Gather every wave task with `status: "deviation"` (or a twice-failed gate routed as a deviation) into one batch. For each, validate Q1 heuristics (`<dispatcher_contracts>` § 1) and record the routing context to `.sidekick/state/<slug>/build.json` (the build-state cache — see `<build_state>`).
 3. **Surface the batch.** If the batch is non-empty, render each deviation's routing prompt (`<routing_prompts>`) under a single heading `Wave N — M deviation(s) to route`, in T-NN order. Pause for the user.
 4. **Apply each routing verb** (`amend` / `redesign` / `skip` / `decide` / `pause`) as defined in `<routing_prompts>`. `redesign`/`decide`/`pause` exit cleanly (the wave's clean tasks are already committed in step 1). `amend`/`skip` commit and continue.
@@ -191,7 +200,7 @@ The verb actions themselves (`amend` appends an A-NN block to RFC.md + commits; 
 
 ### Step 8 — Atomic commit (no deviation, gate passed)
 
-Stage `sk-executor`'s `files_changed` + the PLAN.md tick (`[ ]` → `[x]` on the executed T-NN). Commit atomically with Conventional Commits format:
+Stage the scope-verified **actual** change set (`scope-check`'s `actual`, baseline subtracted) + the PLAN.md tick (`[ ]` → `[x]` on the executed T-NN) — staging the actual set rather than the executor's self-reported `files_changed` closes the lingering-unreported-write hole: a write the executor omitted from its report still gets committed and gated, not left dirty in the working tree. Commit atomically with Conventional Commits format:
 
 ```
 <scope>(<area>): <one-line summary> [T-NN]
@@ -254,9 +263,10 @@ User reads both, picks any verb. The concrete user verbs (`amend`, `redesign`, `
 2. Run the resolved `gates.typecheck` (Step 5's `sidekick gates` resolution — never a guessed runner) via Bash. Capture stderr on failure.
 3. Run the resolved `gates.lint` via Bash. Capture stderr on failure.
 4. Run the resolved `gates.test` + `<changed-files-glob>` via Bash unless the tests-tier soft-pass predicate fires. Capture stderr on failure.
-5. Dispatch `sk-spec-reviewer`. Capture `reasoning` if `verdict === "fail"`.
-6. If any tier fails: capture failure context, re-dispatch `sk-executor` ONCE with the failure context appended to the prompt body. The orchestrator runs the gate FRESH again on the next return.
-7. If the second dispatch fails on the same task: emit `error: gate_failed_twice` and halt.
+5. Run `scope-check` (declared `**Files:**` vs the actual working-tree changes, baseline subtracted) — the orchestrator-side check the executor's self-reported `files_changed` structurally cannot satisfy, since an omitted write is invisible to the self-report but not to git. `verdict: "out_of_scope"` is a gate failure (see Step 6 — Scope gate).
+6. Dispatch `sk-spec-reviewer`. Capture `reasoning` if `verdict === "fail"`.
+7. If any tier fails: capture failure context, re-dispatch `sk-executor` ONCE with the failure context appended to the prompt body. The orchestrator runs the gate FRESH again on the next return.
+8. If the second dispatch fails a deterministic tier or the spec-reviewer on the same task: emit `error: gate_failed_twice` and halt. (A persistent `out_of_scope` verdict is the exception — it routes into the wave's deviation batch per Step 6's Scope gate, not a hard-stop.)
 
 The orchestrator runs the gate from scratch regardless of what the deliverable claims. `status: "passed"` is informational, not a substitute for the gate.
 
@@ -516,7 +526,7 @@ User invokes `/sk-build add-format-helpers`. PLAN.md has 3 tasks (T-01, T-02, T-
 
 Internal reasoning (not emitted): inputs validate; drift check returns `pinned` (silent); the `branch-precheck` CLI returns `proceed`; PLAN.md re-read shows T-01 as next. Dispatch `sk-executor` for T-01. Executor returns `{ status: "passed", files_changed: ["src/lib/format-task-id.ts", "src/lib/format-task-id.test.ts"], gate_summary: { ... all pass ... }, fix_attempts: 0 }`. No `deviation` field — proceed to gate FRESH.
 
-Run typecheck → pass. Run lint → pass. Run tests on the changed files → pass. Dispatch `sk-spec-reviewer` → `{ verdict: "pass", reasoning: "Diff adds formatTaskId(n) at the named path; implementation matches T-01's intent." }`. Stage `files_changed` + PLAN.md tick. Commit: `feat(lib): add formatTaskId helper [T-01]`. Print `✓ T-01 — committed <sha>`. Loop.
+Run typecheck → pass. Run lint → pass. Run tests on the changed files → pass. `scope-check` → `clean` (the two writes match T-01's `**Files:**`). Dispatch `sk-spec-reviewer` → `{ verdict: "pass", reasoning: "Diff adds formatTaskId(n) at the named path; implementation matches T-01's intent." }`. Stage the scope-verified actual set + PLAN.md tick. Commit: `feat(lib): add formatTaskId helper [T-01]`. Print `✓ T-01 — committed <sha>`. Loop.
 
 T-02 and T-03 follow the same pattern. After T-03's commit, PLAN.md re-read shows all `[x]`. Emit the `all_tasks_complete` clean-exit block.
 
@@ -633,7 +643,7 @@ Dispatch `sk-executor` for T-04. Executor returns:
 }
 ```
 
-**Step 6 — Verification gate FRESH (T-03).** Run typecheck → pass. Run lint → pass. Run tests → pass. Dispatch `sk-spec-reviewer` for T-03 → `{ "verdict": "pass", "reasoning": "Diff adds KeyboardRegistry class at the named path; all T-03 acceptance criteria met." }`.
+**Step 6 — Verification gate FRESH (T-03).** Run typecheck → pass. Run lint → pass. Run tests → pass. `scope-check` → `clean`. Dispatch `sk-spec-reviewer` for T-03 → `{ "verdict": "pass", "reasoning": "Diff adds KeyboardRegistry class at the named path; all T-03 acceptance criteria met." }`.
 
 Internal reasoning (not emitted): T-03 is clean (gate passed). T-04 has a deviation — collect it for batching. Pipe T-04's `deviation` block to `classify-deviation` → `verdict: "proceed"`, route `amendment` (1 D-NN, no goal change, short description). No mismatch.
 

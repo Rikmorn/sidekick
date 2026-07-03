@@ -76,8 +76,10 @@ Collect all code findings (carry their `dimension`) and the goal result; if the 
 ### Step 5 — `--fix` loop (only if `--fix`)
 1. Run the `branch-precheck` CLI (`"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" branch-precheck --operation review`, Bash) and parse stdout JSON; `hard_stop` on the default branch → `on_default_branch_for_fix`.
 2. Select in-scope findings (`fixable && severity` in scope). Iterate, cap **3** rounds:
-   - For each in-scope finding (stable order by file:line): dispatch `sk-fixer` with the `finding` + `diff_target`. If `applied: false`, route it out (leave for the human) and continue.
-   - After a fix is applied, run the repo's FRESH typecheck + the relevant test command (read from `package.json`/`.sidekick/config.json`). On pass → `git add <files> && git commit` referencing the finding (`fix(<dim>): <summary> [review]`). On fail → `git checkout -- <files>` (rollback) and mark the finding `fix_failed`.
+   - For each in-scope finding (stable order by file:line): capture the **baseline** first (`git status --porcelain=v1` paths), then dispatch `sk-fixer` with the `finding` + `diff_target`. If `applied: false`, route it out (leave for the human) and continue.
+   - After `applied: true`, run the scope gate to get the **actual** change set the fix produced (baseline subtracted): `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" scope-check --declared <finding's file> --baseline <csv> --reported <fixer's files_changed csv>`.
+     - `verdict: "clean"` → run the repo's FRESH typecheck + the relevant test command (read from `package.json`/`.sidekick/config.json`). On pass → stage and commit the **actual** set (`git add <actual> && git commit`, `fix(<dim>): <summary> [review]`). On fail → roll back the actual set to the baseline (`git checkout --` for tracked paths, delete untracked paths the fix created) and mark the finding `fix_failed`.
+     - `verdict: "out_of_scope"` → the fix wrote outside the finding's file. Roll back the actual set the same way (restore baseline) and mark the finding `fix_failed` — no commit, and no retry: unlike sk-build's executor, a fixer that wandered outside its finding gets no second attempt; the finding is left for the human.
    - After the round, re-dispatch only the *affected* dimensions on the new diff. If their findings are clear (or only non-fixable remain), stop; else next round.
 3. Stop at clean, at the 3-round cap, or when only non-fixable findings remain.
 
