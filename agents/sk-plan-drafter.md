@@ -81,7 +81,7 @@ created: <today>
 
 **Description:** <2–5 sentences. Concrete enough that sk-executor knows exactly what to write.>
 
-**Gate commands:** typecheck, lint, test (use `.sidekick/config.json gates.*`).
+**Gate commands:** typecheck, lint, test (the build orchestrator resolves them via the `gates` CLI — explicitly configured, never guessed).
 
 ### T-02: ...
 ```

@@ -7,7 +7,7 @@ argument-hint: [topic]
 allowed-tools: Read, Grep, Bash, Agent, Write, Edit
 ---
 
-You orchestrate the capture of a single durable rule into a MADR decision doc at `.sidekick/decisions/<slug>.md`. The shape is: validate inputs, run branch precheck, resolve recent RFC hints, dispatch `sk-decision-drafter` for a draft, dispatch `sk-structural-checker` and `sk-coherence-checker` in parallel to verify its structure and coherence, write the file, iterate with the user, commit.
+You orchestrate the capture of a single durable rule into a MADR decision doc at `.sidekick/decisions/<slug>.md`. The shape is: validate inputs, run branch precheck, resolve recent RFC hints, dispatch `sk-decision-drafter` for a draft, dispatch the decision quorum in parallel (membership from the `verifiers` CLI — bundled structural + coherence checkers plus any operator-mounted verifiers), write the file, iterate with the user, commit.
 
 This slash command runs in the main session because the runtime forbids subagents from dispatching other subagents (per `.claude/rules/sk-agent-prompts.md` "Where orchestrators must live"). The orchestration logic lives here; the focused cognitive work lives in the two subagents named above plus the `branch-precheck` CLI helper.
 
@@ -56,7 +56,7 @@ Emit only the structured-error block (no preamble, no progress narration, no sig
 - `error: ambiguous_git_state` — the `branch-precheck` CLI returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
 - `error: no_topic_candidate` — drafter returned `mode: "no_topic_candidate"`. Surface the drafter's `reason` field.
 - `error: existing_decision` — drafter returned `mode: "existing_decision"`. Surface the existing path and note that `--amend` / `--supersede` are deferred to v1.x. (Informational hard-stop, not a failure.)
-- `error: decision_quorum_check_loop_exhausted` — 3 drafter re-dispatches all failed the decision quorum (`sk-structural-checker` + `sk-coherence-checker`). The user can re-invoke after revising the source material.
+- `error: decision_quorum_check_loop_exhausted` — 3 drafter re-dispatches all failed a binding member of the decision quorum. The user can re-invoke after revising the source material.
 - `error: slug_collision` — the Write target already exists on disk and is not the path the drafter pointed at. Defensive guard; should be rare because the drafter checks for existing decisions itself.
 
 Hard-stop format:
@@ -129,16 +129,13 @@ Use the `Write` tool to create the file at the absolute path derived from `draft
 
 ### Step 7 — Decision quorum loop
 
-In a single message, dispatch both reviewers in parallel — one Agent call each:
+Resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface decision` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`. **When `source_rfc` is non-null, add `"related_paths": { "rfc": "<source_rfc>" }`** to every member except `sk-structural-checker` (whose contract takes no related paths) — so the coherence check also verifies the decision against its source RFC (internal coherence by default, against the RFC when `related_paths.rfc` is supplied). When `source_rfc` is `null`, omit `related_paths` — the check stays internal-only.
 
-- `subagent_type: "sk-structural-checker"` with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`.
-- `subagent_type: "sk-coherence-checker"` with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`. **When `source_rfc` is non-null, add `"related_paths": { "rfc": "<source_rfc>" }`** so the checker also verifies the decision against its source RFC (the agent's `decision` lens checks internal coherence by default, and against the RFC when `related_paths.rfc` is supplied). When `source_rfc` is `null`, omit `related_paths` — the check stays internal-only.
+Parse each trailing ```json``` fence (`{ verdict, issues? }`; operator members follow the same artifact-checker contract). On all **binding** members `verdict: "pass"`, continue to Step 8 — advisory (operator) findings never gate; carry their `issues` into Step 8 and show them to the user alongside the draft. A malformed return from an *advisory* member is noted in prose and its verdict ignored (a misauthored operator verifier must not brick the flow); a malformed *binding* return stays `error: subagent_failed`.
 
-Parse both trailing ```json``` fences. On both `verdict: "pass"`, continue to Step 8.
+On any **binding** member's `verdict: "fail"`, collapse the failing binding members' issues into a short prose summary (e.g., "## Consequences contradicts the chosen option; frontmatter status is missing") and re-dispatch `sk-decision-drafter` with that summary as `feedback`. Take the returned `draft_text`, write it back through the `Write` tool (overwrite), and re-run the quorum.
 
-On either `verdict: "fail"`, collapse both reviewers' issues into a short prose summary (e.g., "## Consequences contradicts the chosen option; frontmatter status is missing") and re-dispatch `sk-decision-drafter` with that summary as `feedback`. Take the returned `draft_text`, write it back through the `Write` tool (overwrite), and re-run the quorum.
-
-Cap this loop at 3 drafter re-dispatches. If the third re-dispatch still fails either checker, emit `error: decision_quorum_check_loop_exhausted` with a one-line summary of the latest issues and stop.
+Cap this loop at 3 drafter re-dispatches. If the third re-dispatch still fails a binding checker, emit `error: decision_quorum_check_loop_exhausted` with a one-line summary of the latest issues and stop.
 
 ### Step 8 — User confirmation / edit loop
 
@@ -263,8 +260,10 @@ Source: <rfc-hint-path-or-"none">
 
 ## Validation
 
-Validation quorum (structural + coherence): PASS
+Validation quorum (<the dispatched dimensions, e.g. structural + coherence>): PASS
 Drafter re-dispatches: <N>/3
+<one line per advisory finding, when any surfaced>
+
 
 ## Result
 

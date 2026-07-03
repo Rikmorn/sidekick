@@ -1,6 +1,6 @@
 ---
 name: sk-review
-description: General verification. Auto-selects a quorum of dimensional reviewers from the diff (correctness/security/maintainability/test always on code; goal when an RFC exists), dispatches them in parallel, and renders a sectioned report + roll-up verdict + judged route. --dims overrides selection; --fix runs a bounded mechanical-remediation loop. Read-only unless --fix. Writes a trail to .sidekick/cache/reviews/<slug-or-working>/.
+description: General verification. Loads the review quorum from the verifiers registry (bundled dimensions + operator-authored ones), auto-selects which fire from the diff (correctness/security/maintainability/test always on code; goal when an RFC exists), dispatches them in parallel, and renders a sectioned report + roll-up verdict + judged route. --dims overrides selection; --fix runs a bounded mechanical-remediation loop. Read-only unless --fix. Writes a trail to .sidekick/cache/reviews/<slug-or-working>/.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "[slug] [--range <base>..<head>] [--dims a,b,c] [--fix] [--all]"
@@ -21,7 +21,9 @@ This runs in the main session (subagents can't dispatch subagents). Read-only un
 <reasoning>
 Externalise before acting:
 - Resolving `diff_target` / `changed_files`: `--range` if given, else `<default_branch>..HEAD` (default branch from `.sidekick/config.json`, fallback `main`); `working_tree` allowed. `changed_files = git diff --name-only <diff_target>`.
-- Dimension auto-selection: the four code dimensions (correctness, security, maintainability, test) fire when the diff contains source changes; the `goal` dimension fires when `[slug]` is given and `.sidekick/plans/<slug>/RFC.md` exists; the `architecture` dimension fires when `[slug]` is given and `.sidekick/plans/<slug>/RFC.md` contains a `## Architecture` section (read-only conformance check; its findings are always `fixable: false`). (UI dimensions are not built yet — note their absence rather than firing them.) `--dims a,b,c` overrides the auto-selection entirely. Scale breadth to the change: for a tiny diff it's reasonable to fire fewer dimensions; say which you fired and why in the report's header.
+- Quorum membership vs selection: membership comes from the verifiers registry — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface review` returns the members (bundled + operator-authored) plus any registry warnings; relay those warnings in the report header. *Which members fire* stays your judgment, over that membership.
+- Dimension auto-selection: the four code dimensions (correctness, security, maintainability, test) fire when the diff contains source changes; the `goal` dimension fires when `[slug]` is given and `.sidekick/plans/<slug>/RFC.md` exists; the `architecture` dimension fires when `[slug]` is given and `.sidekick/plans/<slug>/RFC.md` contains a `## Architecture` section (read-only conformance check; its findings are always `fixable: false`). Operator-authored members (`builtin: false`) fire whenever the review runs — they exist because the operator mounted them. `--dims a,b,c` overrides the auto-selection entirely and may name operator dimensions. Scale breadth to the change: for a tiny diff it's reasonable to fire fewer dimensions; say which you fired and why in the report's header.
+- Advisory tier: operator members are `advisory` — their findings get their own report sections, marked advisory, and route like any finding, but they are excluded from the roll-up verdict and from `--fix` scope (an advisory dimension surfaces; it never fails the review or triggers edits on its own authority).
 - Per-goal verdict (from the `goal` reviewer's deliverable): get it from the `goal-verdict` CLI — pass the verifier JSON to `sidekick goal-verdict` on stdin and read each goal's `verdict` (GAP|INCONCLUSIVE|ACHIEVED). This is the single source for that rollup, shared with `/sk-goal-verify` (no restated rule). (The MISSING/STUB vs HOLLOW/ORPHANED split in the verifier's `artifacts[]` drives the route below.)
 - Roll-up verdict from the aggregated returns: any `goal` GAP → `gaps_found`; elif any code finding of severity `critical`/`important` → `findings`; elif any `inconclusive` goal → `inconclusive`; else `passed`.
 - Route per finding/gap: code finding with `fixable: true` → **fix** (via `--fix` or manual); code finding `fixable: false` → **human** (architecture findings → redesign/human, never fix); goal GAP (MISSING/STUB) → **finish-build**; goal GAP (HOLLOW/ORPHANED, design can't satisfy) → **redesign**; INCONCLUSIVE → **human-verify**.
@@ -54,14 +56,15 @@ Format: `/sk-review halted.` then `error: <code>` + `Reason:`.
 ### Step 1 — Resolve diff + ticket context
 Resolve `diff_target` and `changed_files` per `<reasoning>`; empty → hard-stop `empty_diff`. If `[slug]` is given, record whether `.sidekick/plans/<slug>/RFC.md` exists (enables `goal`).
 
-### Step 2 — Select dimensions
-Compute the dimension set per `<reasoning>` (or honour `--dims`). State the selected set and the rationale in prose (it becomes the report header).
+### Step 2 — Load the quorum, select dimensions
+Run the `verifiers` CLI (review surface, per `<reasoning>`) and parse its JSON for the membership and warnings. Compute the fired set per `<reasoning>` (or honour `--dims`). State the selected set, the rationale, and any registry warnings in prose (it becomes the report header).
 
 ### Step 3 — Parallel dispatch
-In ONE message, dispatch one `Agent` call per selected dimension:
+In ONE message, dispatch one `Agent` call per fired dimension, using each member's `agent` as the `subagent_type`:
 - code dims → `subagent_type: sk-<dim>-reviewer` with `diff_target`, `changed_files`, and `ticket_slug` if present;
 - `goal` → `subagent_type: sk-goal-verifier` with `ticket_slug` + `diff_target`;
-- `architecture` → `subagent_type: sk-architecture-reviewer` with `diff_target`, `changed_files`, `ticket_slug`.
+- `architecture` → `subagent_type: sk-architecture-reviewer` with `diff_target`, `changed_files`, `ticket_slug`;
+- operator members → their registry `agent` with the same fields as code dims (`diff_target`, `changed_files`, `ticket_slug` if present).
 
 Each reviewer receives only the artifact (`diff_target` / `changed_files`) and the spec context (`ticket_slug`) — never a producer's reasoning or self-report. That seal is what keeps the verification independent (Rule 5); preserve it on any future edit — do not pass a producer's notes or rationale into a reviewer dispatch.
 
@@ -79,6 +82,6 @@ Collect all code findings (carry their `dimension`) and the goal result; if the 
 3. Stop at clean, at the 3-round cap, or when only non-fixable findings remain.
 
 ### Step 6 — Render + trail
-Emit `# Review — <slug-or-working>` with the selected-dimensions header, then a **section per dimension** (status + findings with severity/file/line/description/why/route), the **goal section** if fired (per-goal verdict + route, plus any blocker `anti_patterns` and `human_verification` items), and — under `--fix` — a **remediation summary** (fixed / declined / fix_failed, with commit hashes). Close with the roll-up verdict + the routed next actions. Write raw returns + report to `.sidekick/cache/reviews/<slug-or-branch>/review-$(date +%Y%m%dT%H%M%S).json` (gitignored).
+Emit `# Review — <slug-or-working>` with the selected-dimensions header (including registry warnings), then a **section per dimension** (status + findings with severity/file/line/description/why/route; operator sections labelled *advisory*), the **goal section** if fired (per-goal verdict + route, plus any blocker `anti_patterns` and `human_verification` items), and — under `--fix` — a **remediation summary** (fixed / declined / fix_failed, with commit hashes). Close with the roll-up verdict + the routed next actions. Write raw returns + report to `.sidekick/cache/reviews/<slug-or-branch>/review-$(date +%Y%m%dT%H%M%S).json` (gitignored).
 
 </workflow>

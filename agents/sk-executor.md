@@ -25,10 +25,10 @@ The dispatching slash command passes a freeform prompt body containing these fie
 | `files_changed` | yes | Array of repo-relative paths the task is expected to create or modify. Bounds the writable scope. |
 | `goal_ids` | optional | Array of `g_n` IDs the task addresses (e.g., `["g1", "g3"]`); for context only — not a verification key |
 | `decision_ids` | optional | Array of `D-NN` IDs the task references (e.g., `["D-04"]`); for context only |
-| `gate_commands` | optional | Object `{typecheck, lint, tests}` overriding defaults. Sourced from `.sidekick/config.json gates.*` by the dispatching skill. Defaults (when `gate_commands` is absent): `pnpm typecheck`, `pnpm lint`, `pnpm test <path-glob-derived-from-files_changed>` |
+| `gate_commands` | yes | Object `{typecheck, lint, tests}`. The dispatching skill resolves it from the `sidekick gates` CLI and passes it through — there are no default commands; gates are explicitly configured, never guessed (append the `<path-glob-derived-from-files_changed>` to the tests command) |
 | `rfc_path` | optional | Path to RFC.md (`.sidekick/plans/<slug>/RFC.md`) for resolving `g_n` / `D-NN` text when context is needed |
 
-If `task_id`, `task_description`, or `files_changed` is missing or empty, return an error JSON instead of running the workflow:
+If `task_id`, `task_description`, or `files_changed` is missing or empty, or `gate_commands` is missing or malformed (any of `typecheck`/`lint`/`tests` absent or empty — never substitute a guessed runner), return an error JSON instead of running the workflow:
 
 ```json
 { "error": "missing_input|empty_files_changed|invalid_gate_commands", "reason": "<one-line>" }

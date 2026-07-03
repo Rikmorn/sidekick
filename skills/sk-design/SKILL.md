@@ -19,7 +19,7 @@ Before significant decisions — whether to research or keep talking, how to res
 
 This slash command runs in the main session because the runtime forbids subagents from dispatching other subagents (per `.claude/rules/sk-agent-prompts.md` "Where orchestrators must live"). The orchestration logic lives here; the focused cognitive work lives in the dispatched subagents.
 
-The reviewer quorum on PLAN.md is the canonical demonstration of dimensional verification: `sk-structural-checker` checks shape (frontmatter, required headings, checklist well-formedness), `sk-crossref-checker` checks references (every cited `g_n` / `D-NN` resolves into RFC.md; `pins-rfc:` matches RFC content), and `sk-coherence-checker` checks that the tasks don't contradict the decided design. All three review the same artifact in parallel; any failing re-dispatches the drafter with combined feedback.
+The reviewer quorum on PLAN.md is the canonical demonstration of dimensional verification: `sk-structural-checker` checks shape (frontmatter, required headings, checklist well-formedness), `sk-crossref-checker` checks references (every cited `g_n` / `D-NN` resolves into RFC.md; `pins-rfc:` matches RFC content), and `sk-coherence-checker` checks that the tasks don't contradict the decided design. All three review the same artifact in parallel; any failing re-dispatches the drafter with combined feedback. Quorum membership is data, not prose: the `verifiers` CLI resolves each quorum's members — these bundled checkers (binding) plus any operator-authored verifiers mounted on the surface (advisory) — so the names here are the bundled defaults, not a closed list.
 
 <constraints>
 
@@ -43,7 +43,7 @@ Externalise key decisions in prose before acting:
 - Resolving identity is the first decision, because it picks the whole path: does the argument point at an existing `.sidekick/plans/<slug>/` (re-enter as a redesign) or a new plan (derive + confirm a slug, then ground and explore)? For a new plan, `sk-explorer`'s evidence is what you open the dialogue with; for a redesign, the existing RFC/PLAN + what triggered the rework is what you open with. The per-path detail lives in `<workflow>`.
 - In exploration, deciding whether to suggest or run research versus keep talking is a judgment call. Research earns its cost when it would resolve a real open question or sharpen an option the user is weighing — not as a reflexive upfront pass. Lean toward more conversation when the gap is about intent or preference (the user holds that answer), toward research when the gap is about prior art, libraries, or tradeoffs you can't infer. The design is clear enough to draft when the goals, the shape of the solution, and the load-bearing decisions are settled with the user and the remaining unknowns are small enough to capture as RFC questions rather than blockers.
 - In `--auto`, you hold to the stated effort by default. Escalate effort, or break out to ask one focused question, only when the task is genuinely more complex than the stated effort implies, or when you are missing information you cannot reasonably infer from the topic and the repo. Reserve the breakout for the question that actually unblocks correct work — `--auto` is trust to proceed, so the bar for interrupting is higher than in exploration.
-- Combining the PLAN quorum verdicts is a roll-up, not a judgment call: fold every failing reviewer's `issues` into one prose `feedback` field for the plan-drafter re-dispatch, and don't carry a passing checker's empty `issues` through. (The dispatch mechanics live in `<workflow>`.)
+- Combining the PLAN quorum verdicts is a roll-up, not a judgment call: fold every failing **binding** member's `issues` into one prose `feedback` field for the plan-drafter re-dispatch, and don't carry a passing checker's empty `issues` through. Advisory members never gate a quorum or feed the drafter loop — their findings route to the user (at the confirm for the RFC, in the closing block for the PLAN). (The dispatch mechanics live in `<workflow>`.)
 - Whether to surface the `branch-precheck` CLI's `confirm_action` or `propose_branch` advisory to the user. `confirm_action` (e.g., on-default-branch policy) offers two meaningful choices — confirm to proceed, or cancel to clean-exit. `propose_branch` offers three: create `proposed_branch` and continue the design on it (you run `git switch -c <proposed_branch>`, or switch to it if it already exists, then proceed — so the RFC/PLAN commit lands off the default branch, no re-invoke), proceed in place on the current branch (continue silently), or cancel (clean-exit). Creating the branch is a real git mutation, so make it only when the user picks it. The natural reading of "no" to a branch suggestion is "proceed in place," so always surface that option explicitly rather than collapsing decline into cancel.
 - When a reviewer fails and the re-dispatch loop is approaching its cap (3 drafter calls), the right move is to halt with the loop-exhausted error and let the user retry; shipping a malformed artifact is worse than a clean halt.
 - When the user reviews the RFC, edits surface as a `feedback` re-dispatch to `sk-rfc-drafter`. There is no cap on that loop because the user drives it — they decide when the RFC is good enough. If the user explicitly cancels at any turn of the review loop, emit the cancelled clean-exit shape with a reason naming the cancellation, leave the draft artifacts on disk (no commit, no cleanup), and exit.
@@ -71,8 +71,8 @@ These are the unconditional halts — emit only the structured-error block (no p
 - `error: missing_inputs` — `<topic-or-slug>` arg absent.
 - `error: ambiguous_git_state` — the `branch-precheck` CLI returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
 - `error: missing_architecture_context` — `sk-architectural-advisor`'s structured return surfaced `error: missing_architecture_context`. The consuming repo has no CLAUDE.md or `.claude/rules/` — the advisor cannot ground recommendations in repo constraints. Surface to the user with a hint to author a minimal CLAUDE.md before re-running `/sk-design`.
-- `error: rfc_quorum_check_loop_exhausted` — the RFC quorum loop in Finalisation (drafter ↔ structural + coherence checkers) hit its 3-dispatch cap without both reviewers passing.
-- `error: plan_quorum_check_loop_exhausted` — the PLAN quorum loop in Finalisation (drafter ↔ all three reviewers) hit its 3-dispatch cap without all reviewers passing.
+- `error: rfc_quorum_check_loop_exhausted` — the RFC quorum loop in Finalisation hit its 3-dispatch cap without every binding member passing.
+- `error: plan_quorum_check_loop_exhausted` — the PLAN quorum loop in Finalisation hit its 3-dispatch cap without every binding member passing.
 - `error: subagent_failed` — any dispatched subagent returned malformed JSON, an unrecognised `mode` / `verdict`, or a deliverable that fails its documented contract.
 
 A research outcome is *not* an unconditional halt:
@@ -110,7 +110,7 @@ Reason: <one-line user-facing description (e.g., "User declined the branch advis
 
 <workflow>
 
-The shape is: **Groundwork** (resolve identity → new-design grounding *or* redesign re-entry; + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → RFC quorum → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation; a redesign re-entry enters Finalisation with the design already revised. Three places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-pattern-mapper` + `sk-architectural-advisor`) gathered at convergence, the RFC quorum (`sk-structural-checker` + `sk-coherence-checker`), and the PLAN quorum (`sk-structural-checker` + `sk-crossref-checker` + `sk-coherence-checker`). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
+The shape is: **Groundwork** (resolve identity → new-design grounding *or* redesign re-entry; + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → RFC quorum → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation; a redesign re-entry enters Finalisation with the design already revised. Three places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-pattern-mapper` + `sk-architectural-advisor`) gathered at convergence, the RFC quorum, and the PLAN quorum (each quorum's membership resolved via the `verifiers` CLI at its step). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
 
 ### Groundwork — resolve identity, then ground or re-enter
 
@@ -188,15 +188,12 @@ When they diverge on a load-bearing axis, the decision is made informed — dive
 
 Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/RFC.md`, creating parent directories as needed.
 
-**Verify the RFC (quorum).** In a single message, dispatch both reviewers in parallel — one Agent call each:
+**Verify the RFC (quorum).** Resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface rfc` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"` (bundled contracts in `<dispatcher_parse_contracts>`; operator members follow contract 12).
 
-- `subagent_type: sk-structural-checker` with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"`.
-- `subagent_type: sk-coherence-checker` with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"`.
+Parse each trailing ```json``` fence. Combine verdicts by tier:
 
-Parse both trailing ```json``` fences. Combine verdicts:
-
-- Both `verdict: pass` — continue to the confirm.
-- Either `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <both reviewers' issues collapsed into one prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the quorum.
+- All **binding** members `verdict: pass` — continue to the confirm. Advisory (operator) findings never gate: carry their `issues` forward and surface them at the confirm alongside the RFC.
+- Any **binding** member `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <the failing binding members' issues collapsed into one prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the quorum.
 - Cap at 3 drafter re-dispatches. On the third failure, emit `error: rfc_quorum_check_loop_exhausted` and halt.
 
 The two checks run in parallel for the same independence reason as the PLAN quorum: a serialised dispatch lets one checker's output bleed into the other through the orchestrator's intermediate state.
@@ -212,16 +209,12 @@ In either mode, an explicit user cancel emits the cancelled clean-exit shape wit
 
 Dispatch `subagent_type: sk-plan-drafter` with `slug`, `rfc_path: .sidekick/plans/<slug>/RFC.md`, `rfc_hash`, and `today: <YYYY-MM-DD>` (the same system date derived for the RFC draft). Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`.
 
-**Quorum verify the PLAN.** In a single message, dispatch all three reviewers in parallel:
+**Quorum verify the PLAN.** Resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface plan` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/PLAN.md`, `artifact_type: "plan"`, and `related_paths: { rfc: .sidekick/plans/<slug>/RFC.md }` for every member except `sk-structural-checker` (whose contract takes no related paths).
 
-- `subagent_type: sk-structural-checker` with `artifact_path: .sidekick/plans/<slug>/PLAN.md`, `artifact_type: "plan"`.
-- `subagent_type: sk-crossref-checker` with `artifact_path: .sidekick/plans/<slug>/PLAN.md`, `artifact_type: "plan"`, `related_paths: { rfc: .sidekick/plans/<slug>/RFC.md }`.
-- `subagent_type: sk-coherence-checker` with `artifact_path: .sidekick/plans/<slug>/PLAN.md`, `artifact_type: "plan"`, `related_paths: { rfc: .sidekick/plans/<slug>/RFC.md }`.
+Parse each ```json``` fence. Combine verdicts by tier:
 
-Parse all three ```json``` fences. Combine verdicts:
-
-- All `verdict: pass` — continue to the commit.
-- Any `verdict: fail` — re-dispatch `sk-plan-drafter` with `feedback: <failing reviewer(s)' issues collapsed into a single prose summary the drafter can act on>`. Before the re-dispatch, if any failing crossref issue has `kind: "pins_rfc_drift"`, re-compute `rfc_hash` via the `hash-rfc` CLI (`"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" hash-rfc <slug>`, read `hash`) and pass the fresh value — the user may have edited RFC.md between the PLAN draft and the quorum. Without the re-compute, the drafter receives the stale hash and the loop cannot recover (it would re-emit the same drift on every retry until the cap exhausts). Write the updated `draft_text` through to PLAN.md. Re-run the quorum.
+- All **binding** members `verdict: pass` — continue to the commit. Advisory (operator) findings never gate: surface their `issues` in the closing success block.
+- Any **binding** member `verdict: fail` — re-dispatch `sk-plan-drafter` with `feedback: <the failing binding members' issues collapsed into a single prose summary the drafter can act on>`. Before the re-dispatch, if any failing crossref issue has `kind: "pins_rfc_drift"`, re-compute `rfc_hash` via the `hash-rfc` CLI (`"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" hash-rfc <slug>`, read `hash`) and pass the fresh value — the user may have edited RFC.md between the PLAN draft and the quorum. Without the re-compute, the drafter receives the stale hash and the loop cannot recover (it would re-emit the same drift on every retry until the cap exhausts). Write the updated `draft_text` through to PLAN.md. Re-run the quorum.
 - Cap at 3 drafter re-dispatches. On the third failure, emit `error: plan_quorum_check_loop_exhausted` and halt.
 
 Verifier independence is the load-bearing property: the parallel dispatch keeps the checkers' reasoning from contaminating each other via the orchestrator's intermediate state. A serialised dispatch (structural first, then crossref) defeats the dimensional separation.
@@ -264,7 +257,7 @@ The research fan-out runs through a backend seam so the orchestration logic stay
 
 <dispatcher_parse_contracts>
 
-Eleven contracts, one per dispatched specialist. Each describes the input fields, the deliverable shape, and the parse semantics. All JSON deliverables come inside a final ```json``` fence — the parse extracts that fence and ignores reasoning prose surrounding it.
+Twelve contracts, one per dispatched specialist (the twelfth covers any operator-authored registry member). Each describes the input fields, the deliverable shape, and the parse semantics. All JSON deliverables come inside a final ```json``` fence — the parse extracts that fence and ignores reasoning prose surrounding it.
 
 ### 1. sk-explorer
 
@@ -371,6 +364,14 @@ Eleven contracts, one per dispatched specialist. Each describes the input fields
 **Output:** `{ verdict: "pass"|"fail", artifact_path, artifact_type, issues? }` inside a ```json``` fence. `issues` is REQUIRED iff `verdict === "fail"`; each issue is `{ kind: "contradiction", locus_a, locus_b, detail }`.
 
 **Routing:** same shape as `sk-structural-checker`. In the RFC and PLAN quorums, a `fail` rolls its `issues` into the combined prose `feedback` for the matching drafter's re-dispatch.
+
+### 12. Operator-authored verifiers (registry members with `builtin: false`)
+
+**Input:** the same dispatch shape as the surface's bundled checkers: `{ artifact_path, artifact_type, related_paths? }` (`related_paths` as the quorum step passes it).
+
+**Output:** `{ verdict: "pass"|"fail", artifact_path, artifact_type, issues? }` inside a ```json``` fence — the artifact-checker contract the verifier-authoring skill teaches.
+
+**Routing:** advisory — findings surface, never gate (see the quorum steps). A malformed return from an operator member is noted in prose (which member, what was wrong) and its verdict ignored; it is NOT `subagent_failed` — a misauthored operator verifier must not brick the design flow, and the note tells the operator what to fix.
 
 </dispatcher_parse_contracts>
 

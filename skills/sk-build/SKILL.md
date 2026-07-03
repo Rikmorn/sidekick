@@ -62,6 +62,7 @@ Emit only the structured-error block (no preamble, no progress narration, no sig
 - `error: gate_failed_twice` — the verification gate failed on the same task across two `sk-executor` dispatches.
 - `error: subagent_failed` — `sk-executor` or `sk-spec-reviewer`'s deliverable is malformed (missing required keys, JSON parse failure, missing `deviation` block when `status === "deviation"`, or `deviation` block present but incomplete — any of `type` / `description` / `d_nn_affected` / `goal_change` missing or wrong type).
 - `error: invalid_plan_graph` — `wave-plan` returned `dep_cycle` / `dangling_dep` / `no_tasks`. Surface the helper's `reason`.
+- `error: gates_unconfigured` — the `gates` CLI reports `configured: false` (resolved in Step 5 before the first executor dispatch). Name the `missing` gates and the fix (set `gates.*` in `.sidekick/config.json`, or re-run `sidekick init`). The harness never guesses a runner — an unconfigured gate halts rather than silently running a wrong command.
 
 Hard-stop format:
 
@@ -146,7 +147,9 @@ Re-read `.sidekick/plans/<slug>/PLAN.md` for the current `[x]` state. The **next
 
 ### Step 5 — Execute the wave (executor dispatch seam)
 
-For each `[ ]` task in the current wave, **in T-NN order, one at a time** (sequential writes — M3): dispatch `subagent_type: sk-executor` with the input fields from `<dispatcher_contracts>` § 3 (`task_id`, `task_description`, `files_changed` parsed from the task's `**Files:**` bullets, `goal_ids`, `decision_ids`, `rfc_path`, `gate_commands` from `.sidekick/config.json`). After each executor returns, run the verification gate FRESH for that task (Step 6) before dispatching the next task's executor.
+Before the run's first dispatch, resolve the gates once: run `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" gates` (Bash) and parse the JSON. On `configured: false`, hard-stop `error: gates_unconfigured` naming `missing`. The resolved `gates` values feed both the executor dispatches and the FRESH gate — one resolution, so the two cannot diverge.
+
+For each `[ ]` task in the current wave, **in T-NN order, one at a time** (sequential writes — M3): dispatch `subagent_type: sk-executor` with the input fields from `<dispatcher_contracts>` § 3 (`task_id`, `task_description`, `files_changed` parsed from the task's `**Files:**` bullets, `goal_ids`, `decision_ids`, `rfc_path`, `gate_commands` from the resolved gates). After each executor returns, run the verification gate FRESH for that task (Step 6) before dispatching the next task's executor.
 
 > **Seam (M4):** this sequential per-task dispatch is the single point a worktree-isolated parallel backend replaces. Everything downstream (gate, commit, deviation batching) consumes the same per-task executor deliverables regardless of how they were produced. Do not couple commit/deviation logic to sequential ordering beyond "commit clean tasks in T-NN order."
 
@@ -158,12 +161,12 @@ The gate runs from main session via direct Bash invocations and a parallel `sk-s
 
 | Tier | Gate | Tool |
 |---|---|---|
-| 1 | Typecheck | `pnpm typecheck` (override via `.sidekick/config.json gates.typecheck`) |
-| 1 | Lint | `pnpm lint` (override via `.sidekick/config.json gates.lint`) |
-| 1 | Tests | `pnpm test <changed-files-glob>` (override via `.sidekick/config.json gates.test`) |
+| 1 | Typecheck | resolved `gates.typecheck` (Step 5's `sidekick gates` resolution) |
+| 1 | Lint | resolved `gates.lint` |
+| 1 | Tests | resolved `gates.test` + `<changed-files-glob>` |
 | 2 | Spec-reviewer | `sk-spec-reviewer` subagent dispatch |
 
-**Tests-tier soft-pass.** If `sk-executor`'s `gate_summary.tests.result === "no_tests_in_scope"` (no `*.test.*` path in `files_changed` AND no sibling test file on disk for any non-test path in `files_changed`), the orchestrator soft-passes the tests tier — no `pnpm test` invocation; emit `(no tests in scope for T-NN)` to the gate-context output. Typecheck, lint, and spec-reviewer run regardless.
+**Tests-tier soft-pass.** If `sk-executor`'s `gate_summary.tests.result === "no_tests_in_scope"` (no `*.test.*` path in `files_changed` AND no sibling test file on disk for any non-test path in `files_changed`), the orchestrator soft-passes the tests tier — no test-gate invocation; emit `(no tests in scope for T-NN)` to the gate-context output. Typecheck, lint, and spec-reviewer run regardless.
 
 **Spec-reviewer dispatch.** Pass `task_id`, `task_description`, `diff` (e.g., the staged diff produced by `git diff --staged` after Step 5's writes, or a `diff_command` for the reviewer to run), `goal_ids`, `decision_ids`, `rfc_path`. Parse the trailing ```json``` fence for the `verdict` field.
 
@@ -248,9 +251,9 @@ User reads both, picks any verb. The concrete user verbs (`amend`, `redesign`, `
 **Steps after subagent return:**
 
 1. Parse the deliverable JSON. If malformed, hard-stop with `error: subagent_failed`.
-2. Run `pnpm typecheck` (or `.sidekick/config.json gates.typecheck`) via Bash. Capture stderr on failure.
-3. Run `pnpm lint` (or `.sidekick/config.json gates.lint`) via Bash. Capture stderr on failure.
-4. Run `pnpm test <changed-files-glob>` (or `.sidekick/config.json gates.test`) via Bash unless the tests-tier soft-pass predicate fires. Capture stderr on failure.
+2. Run the resolved `gates.typecheck` (Step 5's `sidekick gates` resolution — never a guessed runner) via Bash. Capture stderr on failure.
+3. Run the resolved `gates.lint` via Bash. Capture stderr on failure.
+4. Run the resolved `gates.test` + `<changed-files-glob>` via Bash unless the tests-tier soft-pass predicate fires. Capture stderr on failure.
 5. Dispatch `sk-spec-reviewer`. Capture `reasoning` if `verdict === "fail"`.
 6. If any tier fails: capture failure context, re-dispatch `sk-executor` ONCE with the failure context appended to the prompt body. The orchestrator runs the gate FRESH again on the next return.
 7. If the second dispatch fails on the same task: emit `error: gate_failed_twice` and halt.
@@ -261,7 +264,7 @@ The orchestrator runs the gate from scratch regardless of what the deliverable c
 
 Subagent return: `{ "status": "passed", "files_changed": ["src/lib/foo.ts"], "notes": "tests pass locally" }`.
 
-Internal reasoning (not emitted): subagent claims pass, but the verification-gate-independence contract says verify independently. Run `pnpm typecheck` → exit code 1, stderr names a `TS2322` mismatch in `src/lib/foo.ts`. Tier-1 gate failed; capture context; re-dispatch `sk-executor` with the failure context. If the second attempt also fails, hard-stop with `error: gate_failed_twice`.
+Internal reasoning (not emitted): subagent claims pass, but the verification-gate-independence contract says verify independently. Run the resolved `gates.typecheck` → exit code 1, stderr names a `TS2322` mismatch in `src/lib/foo.ts`. Tier-1 gate failed; capture context; re-dispatch `sk-executor` with the failure context. If the second attempt also fails, hard-stop with `error: gate_failed_twice`.
 
 ### 3. sk-executor dispatch
 
@@ -275,7 +278,7 @@ Internal reasoning (not emitted): subagent claims pass, but the verification-gat
 | `goal_ids` | optional | `[g_n, ...]` annotation prefix | Context only |
 | `decision_ids` | optional | `[D-NN, ...]` annotation prefix | Context only |
 | `rfc_path` | optional | `.sidekick/plans/<slug>/RFC.md` | For resolving cited IDs |
-| `gate_commands` | optional | `.sidekick/config.json gates.*` | Override defaults only when config specifies |
+| `gate_commands` | yes | Step 5's `sidekick gates` resolution | The orchestrator resolves and passes them; neither side guesses a runner |
 
 **Deliverable shape** (ONE JSON object inside a final ```json``` fence):
 
