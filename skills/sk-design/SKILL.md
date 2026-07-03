@@ -196,7 +196,7 @@ Parse each trailing ```json``` fence. Combine verdicts by tier:
 - Any **binding** member `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <the failing binding members' issues collapsed into one prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the quorum.
 - Cap at 3 drafter re-dispatches. On the third failure, emit `error: rfc_quorum_check_loop_exhausted` and halt.
 
-The two checks run in parallel for the same independence reason as the PLAN quorum: a serialised dispatch lets one checker's output bleed into the other through the orchestrator's intermediate state.
+The two checks run in parallel for the same independence reason as the PLAN quorum: a serialised dispatch lets one checker's output bleed into the other through the orchestrator's intermediate state. Both quorums are also sealed from the producer: each checker receives the artifact by path and reads it fresh from disk — never `sk-rfc-drafter`'s / `sk-plan-drafter`'s reasoning, their returned JSON, or a prior round's verdicts. Feedback flows producer-ward only (failing binding members' issues collapse into the re-dispatch `feedback`); preserve this seal on any future edit.
 
 **Confirm (mode-aware).** The confirm before the PLAN draft is an approval gate — the PLAN draft, quorum, and commit all happen *after* it — so surface it as a structured `AskUserQuestion` with the affirmative labelled **Approve** (not "ship" / "go", which overstate a gate that precedes the commit). The `AskUserQuestion` tool's automatic free-text "Other" option covers any response that fits none of the choices. The choices are shaped by how the draft was reached:
 

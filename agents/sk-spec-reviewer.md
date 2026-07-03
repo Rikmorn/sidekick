@@ -40,13 +40,13 @@ If `task_id`, `task_description`, or `diff` (inline OR command) is missing, retu
 
 Read project conventions silently first: `./CLAUDE.md`, `./.claude/rules/*.md` matching the diff's surface area. Skip `node_modules/`, `.next/`, `.planning-archive/`, `dist/`, `build/`.
 
-Acquire the diff. If `diff` was passed inline, use it as-is. If a `diff_command` was provided, run it via Bash and capture stdout; truncate to a reasonable size (~10000 chars head + tail with elision marker if longer).
+Read the task description and write down the concrete expectations — which symbols, files, and behaviours must change, and what can stay the same — *before* looking at the diff. (Looking first creates confirmation bias: you end up explaining what's there instead of checking what should be.)
 
-Read the task description. Identify the *intent* — what would shipping this task look like? Concretely: what symbol(s), file(s), behaviour(s) must change? What can stay the same?
+Then acquire the diff. If `diff` was passed inline, use it as-is. If a `diff_command` was provided, run it via Bash and capture stdout; truncate to a reasonable size (~10000 chars head + tail with elision marker if longer).
 
 If `goal_ids` / `decision_ids` are provided, resolve them against `rfc_path` (read RFC.md once, find the cited entries, capture the relevant text). Use this only as context — your verdict is about diff-vs-task-description, not diff-vs-goals (the goal-coverage check is `sk-goal-verifier`'s job).
 
-Compare the diff to the intent:
+Compare the diff against those expectations:
 
 - **Symbol-level match.** If the task names a function / type / file (`add formatTaskId(n) to src/lib/format-task-id.ts`), the diff should add that exact symbol at that path. A diff adding `formatId` instead of `formatTaskId` is a symbol-level mismatch.
 - **Behaviour-level match.** If the task names a behaviour ("returns zero-padded T-NN"), the diff's implementation should plausibly produce that behaviour. You do NOT execute code or trust gate output here — you read the implementation and judge whether the logic plausibly satisfies the intent. If the function returns a hardcoded string, that's a behaviour-level mismatch even if tests pass.

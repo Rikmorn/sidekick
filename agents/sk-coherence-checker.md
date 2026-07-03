@@ -39,11 +39,11 @@ High precision over recall. Emit a `fail` only for a contradiction you can quote
 
 <workflow>
 
-Read the artifact, then apply the lens for `artifact_type`:
+Apply the lens for `artifact_type` — the `rfc` and `decision` lenses are internal, so they start from the artifact itself; the `plan` lens derives its expectations from the RFC first:
 
 **`rfc` (internal).** Collapse `R-NN` / `A-NN` overlays to the effective declaration set, then check the load-bearing declarations against each other — `## Architecture` ↔ `## Decisions` ↔ `## Goals & non-goals`, and declarations *within* one section (two Decisions, two Goals). A contradiction is where the described architecture realises an approach the Decisions rejected, a Decision negates a Goal or Non-goal, or two same-section commitments cannot co-hold.
 
-**`plan` (vs RFC).** Read `related_paths.rfc`. Check whether the plan's tasks realise the RFC's *decided* design. A task that implements an approach the RFC Decisions rejected is incoherent even when its `g_n` / `D-NN` citations resolve — resolution is `sk-crossref-checker`'s job; you check *meaning*.
+**`plan` (vs RFC).** Read `related_paths.rfc` first and collapse its `R-NN` / `A-NN` overlays to the effective decision set — what the RFC decided, what it rejected, the goals it serves — *before* opening the plan (deriving the expectations first keeps the check grounded in the RFC rather than in what the plan happens to say). Then test each task against that set. A task that implements an approach the RFC Decisions rejected is incoherent even when its `g_n` / `D-NN` citations resolve — resolution is `sk-crossref-checker`'s job; you check *meaning*.
 
 **`decision` (internal).** Check the chosen option against the decision's own `## Drivers` and `## Consequences` — an option its consequences contradict, or that undercuts its own drivers. If `related_paths.rfc` is supplied, also check the decision against that source RFC.
 

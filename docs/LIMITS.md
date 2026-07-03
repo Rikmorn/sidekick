@@ -32,3 +32,9 @@ Forthcoming with the tier-0 hooks base (EPIC E20): Claude Code hooks can tighten
 
 Claude Code's `/goal` completion check is a single fixed same-family model judging from conversation surface only. Don't treat it as independent verification; sidekick's review/verify skills exist precisely because producer ≠ verifier.
 
+## Read-only agents that hold Bash are restrained by prompt, not enforcement
+
+Several read-only agents (the review dimensions, the researchers, `sk-spec-reviewer`) hold `Bash` because they need it to read git state — `git diff`, `git log`, `git status`. Their "never modify source, branches, or git state" boundary is therefore prompt-level restraint, not a structural guarantee: nothing stops a `Bash`-holding agent from running a mutating git command. Making it structural would mean withdrawing the `Bash` grant, which also withdraws the read access those agents depend on.
+
+The scope gate (`sidekick scope-check`, wired into `/sk-build` and `/sk-review --fix`) is the enforcement layer where it matters most: it's the *orchestrator* — not the read-only agent — that runs it, and it catches out-of-scope writes after the fact regardless of who made them. The residual risk (a read-only agent mutating git state directly) is accepted for interactive runs, where a human is watching each step. Revisit it for long autonomous loops, where the hardening ladder is the same as elsewhere: a tool-restricted specialist for the step that must not mutate, or org-managed settings / CI-side gates the agent cannot reach.
+
