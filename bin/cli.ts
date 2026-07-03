@@ -133,18 +133,77 @@ export function install(opts: InstallOptions): void {
     `${JSON.stringify({ type: 'module' }, null, 2)}\n`,
   );
 
+  // Prune files a prior install recorded that this version no longer ships.
+  // Without this, a retired agent/skill lingers at claudeHome forever — and
+  // because the manifest below is overwritten, even uninstall loses track of
+  // it. The prune list is exactly the prior manifest (paths sidekick itself
+  // wrote), so files it never recorded — a user's own agents — are
+  // structurally untouchable.
+  const manifestPath = path.join(stateDir, 'manifest.json');
+  const newDests = new Set(manifestEntries.map((e) => e.dest));
+  let pruned = 0;
+  if (fs.existsSync(manifestPath)) {
+    let priorFiles: Array<{ src: string; dest: string }> | undefined;
+    try {
+      const prior = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      if (Array.isArray(prior?.files)) priorFiles = prior.files;
+    } catch {
+      // handled below — an unreadable manifest means no safe prune list
+    }
+    if (priorFiles === undefined) {
+      console.warn(
+        `Prior manifest at ${manifestPath} is unreadable; skipping stale-file prune (nothing deleted).`,
+      );
+    } else {
+      const managedRoots = [
+        ...MANAGED_DIRS.map((sub) => path.join(claudeHome, sub)),
+        stateDir,
+      ];
+      for (const entry of priorFiles) {
+        if (typeof entry?.dest !== 'string') continue;
+        if (newDests.has(entry.dest)) continue;
+        // Containment guard: prune runs implicitly on every install, so never
+        // follow a (possibly hand-mangled) manifest outside claudeHome.
+        if (!entry.dest.startsWith(claudeHome + path.sep)) continue;
+        if (!fs.existsSync(entry.dest)) continue;
+        fs.rmSync(entry.dest, { force: true });
+        pruned++;
+        removeEmptyParents(path.dirname(entry.dest), managedRoots);
+      }
+    }
+  }
+
   const manifest: Manifest = {
     schemaVersion: 1,
     packageVersion: version,
     installedAt: new Date().toISOString(),
     files: manifestEntries,
   };
-  const manifestPath = path.join(stateDir, 'manifest.json');
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
+  const prunedNote = pruned > 0 ? `; pruned ${pruned} stale file(s)` : '';
   console.log(
-    `Installed ${name}@${version} (${manifestEntries.length} file(s)). Manifest: ${manifestPath}`,
+    `Installed ${name}@${version} (${manifestEntries.length} file(s)${prunedNote}). Manifest: ${manifestPath}`,
   );
+}
+
+/**
+ * After pruning a stale file, remove now-empty parent directories — but only
+ * strictly inside a managed root (claudeHome/skills, claudeHome/agents, the
+ * state dir). A retired skill would otherwise leave an empty skills/<name>/
+ * behind as registry noise. The roots themselves are never removed.
+ */
+function removeEmptyParents(dir: string, roots: string[]): void {
+  let current = dir;
+  while (
+    roots.some(
+      (root) => current !== root && current.startsWith(root + path.sep),
+    )
+  ) {
+    if (fs.readdirSync(current).length > 0) return;
+    fs.rmdirSync(current);
+    current = path.dirname(current);
+  }
 }
 
 export function uninstall(opts: UninstallOptions): void {

@@ -424,6 +424,122 @@ describe('install', () => {
       ),
     ).toBe(true);
   });
+
+  it('re-install prunes files the package no longer ships (manifest-scoped)', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    writeMinimalDist();
+    fs.mkdirSync(path.join(fakePackage, 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(fakePackage, 'agents', 'sk-kept.md'), 'kept');
+    fs.writeFileSync(
+      path.join(fakePackage, 'agents', 'sk-retired.md'),
+      'retired',
+    );
+
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+    const retiredDest = path.join(fakeHome, 'agents', 'sk-retired.md');
+    expect(fs.existsSync(retiredDest)).toBe(true);
+
+    // The next package version retires the agent.
+    fs.rmSync(path.join(fakePackage, 'agents', 'sk-retired.md'));
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+
+    expect(fs.existsSync(retiredDest)).toBe(false);
+    expect(fs.existsSync(path.join(fakeHome, 'agents', 'sk-kept.md'))).toBe(
+      true,
+    );
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(fakeHome, 'sidekick', 'manifest.json'),
+        'utf-8',
+      ),
+    );
+    const dests: string[] = manifest.files.map((f: { dest: string }) => f.dest);
+    expect(dests).not.toContain(retiredDest);
+  });
+
+  it('prune never touches files outside the prior manifest (foreign agents survive)', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    writeMinimalDist();
+    fs.mkdirSync(path.join(fakePackage, 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(fakePackage, 'agents', 'sk-retired.md'), 'x');
+
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+
+    // A user/other-tool agent that no sidekick manifest ever recorded.
+    const foreign = path.join(fakeHome, 'agents', 'my-personal-agent.md');
+    fs.writeFileSync(foreign, 'mine');
+
+    fs.rmSync(path.join(fakePackage, 'agents', 'sk-retired.md'));
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+
+    expect(fs.existsSync(foreign)).toBe(true);
+    expect(fs.existsSync(path.join(fakeHome, 'agents', 'sk-retired.md'))).toBe(
+      false,
+    );
+  });
+
+  it('re-install prunes a retired skill file and removes its now-empty dir', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    writeMinimalDist();
+    fs.mkdirSync(path.join(fakePackage, 'skills', 'sk-old'), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(fakePackage, 'skills', 'sk-old', 'SKILL.md'),
+      'old',
+    );
+
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+    const oldSkillDir = path.join(fakeHome, 'skills', 'sk-old');
+    expect(fs.existsSync(path.join(oldSkillDir, 'SKILL.md'))).toBe(true);
+
+    fs.rmSync(path.join(fakePackage, 'skills'), {
+      recursive: true,
+      force: true,
+    });
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+
+    // File pruned AND the empty per-skill dir cleaned up — an empty dir under
+    // skills/ would otherwise linger as registry noise.
+    expect(fs.existsSync(path.join(oldSkillDir, 'SKILL.md'))).toBe(false);
+    expect(fs.existsSync(oldSkillDir)).toBe(false);
+    // The managed root itself is never removed.
+    expect(fs.existsSync(path.join(fakeHome, 'skills'))).toBe(true);
+  });
+
+  it('corrupt prior manifest: install succeeds and skips pruning rather than guessing', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    writePackageJson('0.1.0');
+    writeMinimalDist();
+    fs.mkdirSync(path.join(fakePackage, 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(fakePackage, 'agents', 'sk-kept.md'), 'kept');
+
+    install({ packageDir: fakePackage, claudeHome: fakeHome });
+    // Simulate a stray file from an older install whose record is now lost.
+    const orphan = path.join(fakeHome, 'agents', 'sk-orphan.md');
+    fs.writeFileSync(orphan, 'orphan');
+    fs.writeFileSync(
+      path.join(fakeHome, 'sidekick', 'manifest.json'),
+      'not json{{',
+    );
+
+    expect(() =>
+      install({ packageDir: fakePackage, claudeHome: fakeHome }),
+    ).not.toThrow();
+    // Without a trustworthy prior manifest there is no safe prune list.
+    expect(fs.existsSync(orphan)).toBe(true);
+    // And the new manifest is valid again.
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(fakeHome, 'sidekick', 'manifest.json'),
+        'utf-8',
+      ),
+    );
+    expect(Array.isArray(manifest.files)).toBe(true);
+  });
 });
 
 describe('uninstall', () => {
