@@ -14,6 +14,7 @@ import { runHashRfcCli } from './helpers/hash-rfc.js';
 import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
 import { runInit } from './helpers/init.js';
 import { runReconcilePlanCli } from './helpers/reconcile-plan.js';
+import { runVerifiersCli } from './helpers/verifiers.js';
 import { runWavePlanCli } from './helpers/wave-plan.js';
 
 /**
@@ -334,11 +335,12 @@ if (_isEntry) {
       'goal-verdict',
       'hash-rfc',
       'gates',
+      'verifiers',
       'hook',
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|hook> [options]',
       );
       process.exit(1);
     }
@@ -393,6 +395,15 @@ if (_isEntry) {
       } else if (sub === 'gates') {
         const { stdout, exitCode } = await runGatesCli({
           repoRoot: process.cwd(),
+        });
+        console.log(stdout);
+        process.exit(exitCode);
+      } else if (sub === 'verifiers') {
+        const surfaceIdx = process.argv.indexOf('--surface');
+        const { stdout, exitCode } = runVerifiersCli({
+          repoRoot: process.cwd(),
+          claudeHome,
+          surface: surfaceIdx >= 0 ? process.argv[surfaceIdx + 1] : undefined,
         });
         console.log(stdout);
         process.exit(exitCode);
