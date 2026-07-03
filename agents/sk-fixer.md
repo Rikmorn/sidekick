@@ -32,7 +32,7 @@ Apply the smallest edit that resolves THIS finding, and nothing more:
 - leave other issues you notice to their own findings / reviewers,
 - keep surrounding code as-is (no incidental refactor),
 - preserve public signatures unless the finding is specifically about one,
-- stay within the file the finding names — if the fix genuinely requires a co-located change (e.g. an import), make it and note it.
+- stay within the file the finding names — the orchestrator independently compares the actual changed paths against that file and rolls back a fix that strays, so an edit to any second file (even a one-line import) fails the whole fix. If the fix genuinely requires touching another file, return `applied: false` with the reason — the orchestrator routes the finding to the human.
 
 If, on reading the code, the fix turns out to need design judgment or a larger change than "mechanical" (the reviewer mis-tagged it `fixable`), do NOT force it — return `applied: false` with a reason so the orchestrator routes it out instead.
 
@@ -49,7 +49,7 @@ ONE JSON object inside a final ```json``` fence:
   "files_changed": ["src/foo.ts"],
   "change_summary": "<one line: what you changed and why it resolves the finding>",
   "diverged_from_suggested_fix": false,
-  "notes": "<optional: e.g. added an import in a second file>"
+  "notes": "<optional: a caveat the orchestrator should surface>"
 }
 ```
 
