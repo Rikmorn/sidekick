@@ -87,7 +87,7 @@ The `sk-*` skills are slash commands you run **inside Claude Code**, in a projec
 
 **`/sk-design` has two modes.** By default it's a *collaborative conversation*: the orchestrator surfaces its understanding of the work and the complexity signal, pulls research transparently only when it sharpens the discussion (never a reflexive upfront pass), lays options out inline, and iterates with you until the design is clear — then drafts and ends with a light `ship / tweak / cancel` confirm. `--auto <low|medium|high>` is the *hands-off* mode: produce-and-confirm end-to-end with no conversation, where the effort word drives research depth (`low → quick`, `medium → standard`, `high → deep`; `high` benefits from the workflow backend for its adversarial verification, falling back to `standard` on the agents backend). It keeps one honest breakout — it may stop once for a single focused question if the task genuinely exceeds the stated effort — and a one-line confirm before commit. (The retired `--research` / `--no-research` / `--budget` flags now error: `unknown flag <name>; see --auto`.)
 
-On demand: `/sk-decide <topic>` records a MADR decision; `/sk-regen-plan <slug>` re-syncs a PLAN.md after its RFC.md changed; `/sk-write-verifier` authors a project-specific quality dimension onto the quorums. The CLI subcommands (`branch-precheck`, `check-drift`, `wave-plan`, `reconcile-plan`, `gates`, `verifiers`) are called by the skills and agents — you don't normally run them by hand.
+On demand: `/sk-decide <topic>` records a MADR decision; `/sk-regen-plan <slug>` re-syncs a PLAN.md after its RFC.md changed; `/sk-write-verifier` authors a project-specific quality dimension onto the quorums. The CLI subcommands (`branch-precheck`, `check-drift`, `wave-plan`, `reconcile-plan`, `gates`, `verifiers`, `scope-check`) are called by the skills and agents — you don't normally run them by hand.
 
 ### What sidekick writes into your repo (the usage contract)
 
@@ -117,7 +117,7 @@ bun run check          # biome lint + format check
 bun bin/cli.ts <cmd>   # run the CLI from source — e.g. bun bin/cli.ts init
 ```
 
-CLI subcommands: `install`, `uninstall`, `init`, `branch-precheck`, `check-drift`, `reconcile-plan`, `wave-plan`.
+CLI subcommands: `install`, `uninstall`, `init`, `branch-precheck`, `check-drift`, `reconcile-plan`, `wave-plan`, `scope-check`.
 
 ### Layout
 

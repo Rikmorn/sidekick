@@ -14,6 +14,7 @@ import { runHashRfcCli } from './helpers/hash-rfc.js';
 import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
 import { runInit } from './helpers/init.js';
 import { runReconcilePlanCli } from './helpers/reconcile-plan.js';
+import { runScopeCheckCli } from './helpers/scope-check.js';
 import { runVerifiersCli } from './helpers/verifiers.js';
 import { runWavePlanCli } from './helpers/wave-plan.js';
 
@@ -336,11 +337,12 @@ if (_isEntry) {
       'hash-rfc',
       'gates',
       'verifiers',
+      'scope-check',
       'hook',
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|hook> [options]',
       );
       process.exit(1);
     }
@@ -404,6 +406,32 @@ if (_isEntry) {
           repoRoot: process.cwd(),
           claudeHome,
           surface: surfaceIdx >= 0 ? process.argv[surfaceIdx + 1] : undefined,
+        });
+        console.log(stdout);
+        process.exit(exitCode);
+      } else if (sub === 'scope-check') {
+        const args = process.argv.slice(3);
+        const getVal = (flag: string): string | undefined => {
+          const idx = args.indexOf(flag);
+          return idx >= 0 ? args[idx + 1] : undefined;
+        };
+        // Presence of the flag selects mode B / enables a delta, even when the
+        // value is empty — so distinguish "absent" (undefined) from "empty" ([]).
+        const csv = (flag: string): string[] | undefined => {
+          const idx = args.indexOf(flag);
+          if (idx < 0) return undefined;
+          return (args[idx + 1] ?? '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        };
+        const { stdout, exitCode } = runScopeCheckCli({
+          repoRoot: process.cwd(),
+          slug: getVal('--slug'),
+          task: getVal('--task'),
+          declared: csv('--declared'),
+          baseline: csv('--baseline'),
+          reported: csv('--reported'),
         });
         console.log(stdout);
         process.exit(exitCode);
