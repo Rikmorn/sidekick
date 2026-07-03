@@ -2,7 +2,11 @@ import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as readline from 'node:readline/promises';
-import type { SidekickConfig } from './config.js';
+import {
+  type GatesConfig,
+  resolveGates,
+  type SidekickConfig,
+} from './config.js';
 import { installHooks } from './hooks.js';
 
 const BRANCH_CASCADE = ['main', 'master', 'dev', 'trunk', 'develop'] as const;
@@ -47,26 +51,48 @@ export function detectDefaultBranch(repoRoot: string): string {
   return 'main';
 }
 
+const LOCKFILE_RUNNERS: ReadonlyArray<{
+  lockfile: string;
+  run: (script: string) => string;
+}> = [
+  { lockfile: 'bun.lock', run: (s) => `bun run ${s}` },
+  { lockfile: 'bun.lockb', run: (s) => `bun run ${s}` },
+  { lockfile: 'pnpm-lock.yaml', run: (s) => `pnpm ${s}` },
+  { lockfile: 'yarn.lock', run: (s) => `yarn ${s}` },
+  { lockfile: 'package-lock.json', run: (s) => `npm run ${s}` },
+];
+
+/**
+ * Detection is a suggestion, never a decision: what runs is always what
+ * config says (gates are explicitly configured — no fallback runner). A
+ * suggestion is only made when a lockfile identifies the runner AND the
+ * script exists; anything else returns '' (unconfigured).
+ */
 export function detectGates(repoRoot: string): {
   typecheck: string;
   lint: string;
   test: string;
 } {
+  const none = { typecheck: '', lint: '', test: '' };
   const pkgPath = path.join(repoRoot, 'package.json');
-  if (!fs.existsSync(pkgPath)) return { typecheck: '', lint: '', test: '' };
+  if (!fs.existsSync(pkgPath)) return none;
   let pkg: { scripts?: Record<string, string> };
   try {
     pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as {
       scripts?: Record<string, string>;
     };
   } catch {
-    return { typecheck: '', lint: '', test: '' };
+    return none;
   }
+  const runner = LOCKFILE_RUNNERS.find(({ lockfile }) =>
+    fs.existsSync(path.join(repoRoot, lockfile)),
+  );
+  if (!runner) return none;
   const scripts = pkg.scripts ?? {};
   return {
-    typecheck: scripts.typecheck ? 'pnpm typecheck' : '',
-    lint: scripts.lint ? 'pnpm lint' : '',
-    test: scripts.test ? 'pnpm test' : '',
+    typecheck: scripts.typecheck ? runner.run('typecheck') : '',
+    lint: scripts.lint ? runner.run('lint') : '',
+    test: scripts.test ? runner.run('test') : '',
   };
 }
 
@@ -140,18 +166,26 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
 
   let config: SidekickConfig;
   let hooksEnabled = true;
+  // '' means undetected/skipped — the gate stays unconfigured (never a guess).
+  const toGates = (values: {
+    typecheck: string;
+    lint: string;
+    test: string;
+  }): GatesConfig => ({
+    ...(values.typecheck ? { typecheck: values.typecheck } : {}),
+    ...(values.lint ? { lint: values.lint } : {}),
+    ...(values.test ? { test: values.test } : {}),
+  });
+
   if (nonInteractive) {
     config = {
       schemaVersion: 1,
       defaultBranch: detectedBranch,
-      gates: {
-        typecheck: detectedGates.typecheck || 'pnpm typecheck',
-        lint: detectedGates.lint || 'pnpm lint',
-        test: detectedGates.test || 'pnpm test',
-      },
+      gates: toGates(detectedGates),
       waveSizeCap: 4,
       buildCheckpoints: 'deviations-only',
       fanout: { backend: 'auto', budget: 'standard' },
+      verifiers: [],
     };
     hooksEnabled = hooks ?? true;
   } else {
@@ -165,12 +199,20 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
         return answer.length > 0 ? answer : def;
       };
       const defaultBranch = await ask('Default branch', detectedBranch);
+      // Detected values are suggestions; an empty answer with no suggestion
+      // leaves that gate unconfigured rather than writing a runner guess.
       const typecheck = await ask(
-        'Typecheck command',
-        detectedGates.typecheck || 'pnpm typecheck',
+        'Typecheck command (empty = unconfigured)',
+        detectedGates.typecheck,
       );
-      const lint = await ask('Lint command', detectedGates.lint || 'pnpm lint');
-      const test = await ask('Test command', detectedGates.test || 'pnpm test');
+      const lint = await ask(
+        'Lint command (empty = unconfigured)',
+        detectedGates.lint,
+      );
+      const test = await ask(
+        'Test command (empty = unconfigured)',
+        detectedGates.test,
+      );
       if (hooks !== undefined) {
         hooksEnabled = hooks;
       } else {
@@ -183,10 +225,11 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
       config = {
         schemaVersion: 1,
         defaultBranch,
-        gates: { typecheck, lint, test },
+        gates: toGates({ typecheck, lint, test }),
         waveSizeCap: 4,
         buildCheckpoints: 'deviations-only',
         fanout: { backend: 'auto', budget: 'standard' },
+        verifiers: [],
       };
     } finally {
       rl.close();
@@ -197,6 +240,13 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
   console.log(
     `Wrote .sidekick/config.json (defaultBranch: ${config.defaultBranch})`,
   );
+
+  const resolvedGates = resolveGates(config);
+  if (!resolvedGates.configured) {
+    console.warn(
+      `⚠ gates unconfigured: ${resolvedGates.missing.join(', ')} — set gates.* in .sidekick/config.json. Verification gates surface this instead of guessing a runner.`,
+    );
+  }
 
   const gitignore = ensureGitignore(repoRoot);
   if (gitignore.changed) {

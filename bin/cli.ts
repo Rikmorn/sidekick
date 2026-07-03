@@ -8,6 +8,7 @@ import { runBranchPrecheckCli } from './helpers/branch-precheck.js';
 import { runCapabilitiesCli } from './helpers/capabilities.js';
 import { runCheckDriftCli } from './helpers/check-drift.js';
 import { runClassifyDeviationCli } from './helpers/classify-deviation.js';
+import { runGatesCli } from './helpers/config.js';
 import { runGoalVerdictCli } from './helpers/goal-verdict.js';
 import { runHashRfcCli } from './helpers/hash-rfc.js';
 import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
@@ -332,11 +333,12 @@ if (_isEntry) {
       'classify-deviation',
       'goal-verdict',
       'hash-rfc',
+      'gates',
       'hook',
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|hook> [options]',
       );
       process.exit(1);
     }
@@ -388,6 +390,12 @@ if (_isEntry) {
           runCapabilitiesCli({ repoRoot: process.cwd(), claudeHome }),
         );
         process.exit(0);
+      } else if (sub === 'gates') {
+        const { stdout, exitCode } = await runGatesCli({
+          repoRoot: process.cwd(),
+        });
+        console.log(stdout);
+        process.exit(exitCode);
       } else if (sub === 'branch-precheck') {
         const args = process.argv.slice(3);
         const get = (flag: string): string | undefined => {

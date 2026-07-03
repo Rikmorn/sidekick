@@ -42,34 +42,52 @@ describe('detectGates', () => {
   });
   afterEach(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
 
-  it('reads package.json scripts to detect gate commands', () => {
+  const writePkg = (scripts: Record<string, string>) => {
     fs.writeFileSync(
       path.join(tmpRoot, 'package.json'),
-      JSON.stringify({
-        name: 't',
-        version: '0.0.0',
-        scripts: {
-          typecheck: 'tsc --noEmit',
-          lint: 'biome check .',
-          test: 'vitest run',
-        },
-      }),
+      JSON.stringify({ name: 't', version: '0.0.0', scripts }),
     );
+  };
+  const fullScripts = {
+    typecheck: 'tsc --noEmit',
+    lint: 'biome check .',
+    test: 'vitest run',
+  };
+
+  it('suggests pnpm commands when pnpm-lock.yaml identifies the runner', () => {
+    writePkg(fullScripts);
+    fs.writeFileSync(path.join(tmpRoot, 'pnpm-lock.yaml'), '');
     const gates = detectGates(tmpRoot);
     expect(gates.typecheck).toBe('pnpm typecheck');
     expect(gates.lint).toBe('pnpm lint');
     expect(gates.test).toBe('pnpm test');
   });
 
-  it('returns empty strings for missing scripts', () => {
-    fs.writeFileSync(
-      path.join(tmpRoot, 'package.json'),
-      JSON.stringify({
-        name: 't',
-        version: '0.0.0',
-        scripts: { test: 'vitest run' },
-      }),
-    );
+  it('suggests bun commands when a bun lockfile identifies the runner', () => {
+    writePkg(fullScripts);
+    fs.writeFileSync(path.join(tmpRoot, 'bun.lock'), '');
+    const gates = detectGates(tmpRoot);
+    expect(gates.typecheck).toBe('bun run typecheck');
+    expect(gates.lint).toBe('bun run lint');
+    expect(gates.test).toBe('bun run test');
+  });
+
+  it('suggests npm commands when package-lock.json identifies the runner', () => {
+    writePkg(fullScripts);
+    fs.writeFileSync(path.join(tmpRoot, 'package-lock.json'), '{}');
+    const gates = detectGates(tmpRoot);
+    expect(gates.typecheck).toBe('npm run typecheck');
+  });
+
+  it('suggests nothing without a lockfile — the runner would be a guess', () => {
+    writePkg(fullScripts);
+    const gates = detectGates(tmpRoot);
+    expect(gates).toEqual({ typecheck: '', lint: '', test: '' });
+  });
+
+  it('suggests only the scripts that exist', () => {
+    writePkg({ test: 'vitest run' });
+    fs.writeFileSync(path.join(tmpRoot, 'pnpm-lock.yaml'), '');
     const gates = detectGates(tmpRoot);
     expect(gates.typecheck).toBe('');
     expect(gates.lint).toBe('');
@@ -212,7 +230,8 @@ describe('runInit (non-interactive flag path)', () => {
     fs.rmSync(nonGit, { recursive: true, force: true });
   });
 
-  it('writes a valid config.json in --non-interactive mode using detected defaults', async () => {
+  it('writes a valid config.json in --non-interactive mode using detected values', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'bun.lock'), '');
     const exitCode = await runInit({
       repoRoot: tmpRoot,
       claudeHome,
@@ -228,6 +247,12 @@ describe('runInit (non-interactive flag path)', () => {
     expect(cfg.waveSizeCap).toBe(4);
     expect(cfg.buildCheckpoints).toBe('deviations-only');
     expect(cfg.fanout).toEqual({ backend: 'auto', budget: 'standard' });
+    expect(cfg.gates).toEqual({
+      typecheck: 'bun run typecheck',
+      lint: 'bun run lint',
+      test: 'bun run test',
+    });
+    expect(cfg.verifiers).toEqual([]);
   });
 
   it('ensures .gitignore covers the .sidekick working state', async () => {
@@ -237,7 +262,7 @@ describe('runInit (non-interactive flag path)', () => {
     expect(content).toContain('.sidekick/state/');
   });
 
-  it('uses gate defaults when package.json is absent', async () => {
+  it('leaves gates unconfigured when nothing is detected — never a runner guess', async () => {
     // Fresh tmp repo with git but no package.json (overrides the describe-level beforeEach setup)
     const tmpRoot2 = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-init-nopkg-'));
     execSync('git init -q', { cwd: tmpRoot2 });
@@ -254,12 +279,23 @@ describe('runInit (non-interactive flag path)', () => {
           'utf-8',
         ),
       );
-      expect(cfg.gates.typecheck).toBe('pnpm typecheck');
-      expect(cfg.gates.lint).toBe('pnpm lint');
-      expect(cfg.gates.test).toBe('pnpm test');
+      expect(cfg.gates).toEqual({});
     } finally {
       fs.rmSync(tmpRoot2, { recursive: true, force: true });
     }
+  });
+
+  it('writes only the detected gates when detection is partial', async () => {
+    fs.writeFileSync(
+      path.join(tmpRoot, 'package.json'),
+      JSON.stringify({ name: 't', version: '0.0.0', scripts: { test: 'v' } }),
+    );
+    fs.writeFileSync(path.join(tmpRoot, 'pnpm-lock.yaml'), '');
+    await runInit({ repoRoot: tmpRoot, claudeHome, nonInteractive: true });
+    const cfg = JSON.parse(
+      fs.readFileSync(path.join(tmpRoot, '.sidekick', 'config.json'), 'utf-8'),
+    );
+    expect(cfg.gates).toEqual({ test: 'pnpm test' });
   });
 });
 
