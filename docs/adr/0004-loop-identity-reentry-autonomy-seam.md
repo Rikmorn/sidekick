@@ -1,5 +1,7 @@
 # ADR-0004 — Loop identity, re-entry, and the autonomy seam
 
+> *Editorial pointer (2026-07-03, body kept as-authored):* EPIC re-baseline 3 renumbered Phase 3 after this ADR was accepted. In this body, `3.5` (operator-dial) is now **`3.6`**, `3.3` (forcing-function) is now **`3.5`**, `3.1` (sizing signal) is now **`3.4`**, and `3.7` (zoo reduction) is now **`3.9`**. Full delta: [`../EPIC.md` crosswalk](../EPIC.md#crosswalk--legacy-e--phaseitem).
+
 **Status:** Accepted (2026-06-18, operator sign-off). **Supersedes ADR-0003's `--auto`-as-a-design-mode** (Decision §5). Executed by EPIC `1.2`; the autonomy driver is *seamed here, built later* (`3.5` operator-dial + `3.3` forcing-function / durable interrupt); relates `5.2` (design-emits-workflow) and `3.7` (eval-gated zoo reduction). Driven by the [2026-06-18 whole-architecture review](../reviews/2026-06-18-architecture-review.md) and a from-evidence loop sanity-check (re-grounded against `../research/`, not its distillation).
 
 ## Context

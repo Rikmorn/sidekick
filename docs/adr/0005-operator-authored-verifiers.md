@@ -1,5 +1,7 @@
 # ADR-0005 — Operator-authored verifiers: quorum membership as configuration
 
+> *Editorial pointer (2026-07-03, body kept as-authored):* EPIC re-baseline 3 renumbered Phase 3 after this ADR was accepted. In this body, `3.9` (the seam) is now **`3.1`**, `3.4` (eval keystone) is now **`3.3`**, `3.6` (cross-family) is now **`3.7`**, and `3.7` (zoo) is now **`3.9`**. Full delta: [`../EPIC.md` crosswalk](../EPIC.md#crosswalk--legacy-e--phaseitem).
+
 **Status:** Accepted (2026-07-02, operator sign-off). Extends Rule 5's dimensional-verifier doctrine (`.claude/rules/sk-agent-prompts.md`) and ADR-0004's sealed-gate principle to an *operator-facing* surface. Carves the seam out of EPIC `5.1` into the new **`3.9`**; **subsumes the bundled UI-audit layer** (the never-built `/sk-ui-audit` + 6 pillar specialists — the original master spec's "7th command") — UI dimensions become an authored *example pack*, never bundled commands. Relates `3.2` / `3.4` / `3.6` / `3.7`.
 
 ## Context
