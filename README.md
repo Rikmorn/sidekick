@@ -117,7 +117,7 @@ bun run check          # biome lint + format check
 bun bin/cli.ts <cmd>   # run the CLI from source — e.g. bun bin/cli.ts init
 ```
 
-CLI subcommands: `install`, `uninstall`, `init`, `branch-precheck`, `check-drift`, `reconcile-plan`, `wave-plan`, `scope-check`.
+CLI subcommands: `install`, `uninstall`, `init`, `branch-precheck`, `check-drift`, `reconcile-plan`, `wave-plan`, `scope-check`, `verifiers`, `gates`, `eval` (`eval run|report|calibrate` — the 3.3 eval harness that drives headless Claude Code over agent/skill cases under `evals/cases/` and, per dimension, graduates a verifier to `binding` via a calibration certificate).
 
 ### Layout
 

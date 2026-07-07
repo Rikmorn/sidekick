@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { hashRfcContent } from './hash-rfc.js';
 import { runVerifiersCli } from './verifiers.js';
 
 describe('runVerifiersCli', () => {
@@ -213,16 +214,16 @@ describe('runVerifiersCli', () => {
       expect(result.warnings).toEqual([]);
     });
 
-    it('propagates parse-layer warnings (e.g. a binding-tier entry)', () => {
+    it('propagates parse-layer warnings (e.g. an unknown-tier entry)', () => {
       writeConfig({
         schemaVersion: 1,
         defaultBranch: 'main',
-        verifiers: [{ ...entry, tier: 'binding' }],
+        verifiers: [{ ...entry, tier: 'nonsense' }],
       });
       const result = parse('review');
       expect(result.members.every((m) => m.builtin)).toBe(true);
       expect(result.warnings.length).toBe(1);
-      expect(result.warnings[0]).toMatch(/binding/);
+      expect(result.warnings[0]).toMatch(/tier/);
     });
 
     it('degrades to bundled-only on an unparseable config, loudly', () => {
@@ -232,6 +233,92 @@ describe('runVerifiersCli', () => {
       expect(result.warnings.length).toBe(1);
       expect(result.warnings[0]).toMatch(/invalid/i);
       expect(result.warnings[0]).toMatch(/operator verifiers unavailable/i);
+    });
+  });
+
+  describe('binding graduation (D7)', () => {
+    const AGENT = 'my-ui-color-verifier';
+    const agentBody = `---\nname: ${AGENT}\n---\n`;
+    const bindingEntry = {
+      dimension: 'ui-color',
+      agent: AGENT,
+      surfaces: ['review'],
+      tier: 'binding',
+    };
+    const writeCert = (hash: string) => {
+      const dir = path.join(repoRoot, '.sidekick', 'calibrations');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, `${AGENT}.json`),
+        JSON.stringify({
+          schemaVersion: 1,
+          verifier: AGENT,
+          agent_file_hash: hash,
+        }),
+      );
+    };
+    const writeRawCert = (raw: string) => {
+      const dir = path.join(repoRoot, '.sidekick', 'calibrations');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, `${AGENT}.json`), raw);
+    };
+    const lastMember = () => {
+      const r = parse('review');
+      return { member: r.members[r.members.length - 1], warnings: r.warnings };
+    };
+
+    beforeEach(() => {
+      writeConfig({
+        schemaVersion: 1,
+        defaultBranch: 'main',
+        verifiers: [bindingEntry],
+      });
+      writeAgent(path.join(repoRoot, '.claude'), AGENT);
+    });
+
+    it('honours binding when the certificate matches the live agent hash', () => {
+      writeCert(hashRfcContent(agentBody));
+      const { member, warnings } = lastMember();
+      expect(member).toEqual({
+        dimension: 'ui-color',
+        agent: AGENT,
+        tier: 'binding',
+        builtin: false,
+      });
+      expect(warnings).toEqual([]);
+    });
+
+    it('degrades to advisory when no certificate exists', () => {
+      const { member, warnings } = lastMember();
+      expect(member.tier).toBe('advisory');
+      expect(warnings.some((w) => /binding not honoured/.test(w))).toBe(true);
+      expect(warnings.some((w) => /certificate/.test(w))).toBe(true);
+    });
+
+    it('degrades to advisory when the agent hash no longer matches', () => {
+      writeCert('deadbeef-stale-hash');
+      const { member, warnings } = lastMember();
+      expect(member.tier).toBe('advisory');
+      expect(warnings.some((w) => /hash mismatch/.test(w))).toBe(true);
+    });
+
+    it('degrades to advisory when the certificate is unparseable', () => {
+      writeRawCert('{not json');
+      const { member, warnings } = lastMember();
+      expect(member.tier).toBe('advisory');
+      expect(warnings.some((w) => /unparseable/.test(w))).toBe(true);
+    });
+
+    it('leaves builtin binding members untouched (no certificate needed)', () => {
+      // structural/coherence are binding builtins on plan — no cert on disk.
+      const plan = runVerifiersCli({ repoRoot, claudeHome, surface: 'plan' });
+      const members = JSON.parse(plan.stdout).members as Array<{
+        builtin: boolean;
+        tier: string;
+      }>;
+      expect(
+        members.filter((m) => m.builtin).every((m) => m.tier === 'binding'),
+      ).toBe(true);
     });
   });
 });

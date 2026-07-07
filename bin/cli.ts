@@ -9,6 +9,13 @@ import { runCapabilitiesCli } from './helpers/capabilities.js';
 import { runCheckDriftCli } from './helpers/check-drift.js';
 import { runClassifyDeviationCli } from './helpers/classify-deviation.js';
 import { runGatesCli } from './helpers/config.js';
+import { runCalibrate } from './helpers/eval-calibrate.js';
+import { runEvalReportCli } from './helpers/eval-report.js';
+import {
+  realClaudeRunner,
+  realShellRunner,
+  runEvalSuite,
+} from './helpers/eval-run.js';
 import { runGoalVerdictCli } from './helpers/goal-verdict.js';
 import { runHashRfcCli } from './helpers/hash-rfc.js';
 import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
@@ -338,11 +345,12 @@ if (_isEntry) {
       'gates',
       'verifiers',
       'scope-check',
+      'eval',
       'hook',
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|eval|hook> [options]',
       );
       process.exit(1);
     }
@@ -435,6 +443,94 @@ if (_isEntry) {
         });
         console.log(stdout);
         process.exit(exitCode);
+      } else if (sub === 'eval') {
+        const evalCmd = process.argv[3];
+        const args = process.argv.slice(4);
+        const getVal = (flag: string): string | undefined => {
+          const idx = args.indexOf(flag);
+          return idx >= 0 ? args[idx + 1] : undefined;
+        };
+        const has = (flag: string): boolean => args.includes(flag);
+        const num = (flag: string): number | undefined => {
+          const v = getVal(flag);
+          return v !== undefined ? Number(v) : undefined;
+        };
+        const claudeBin = getVal('--claude-bin') ?? 'claude';
+
+        if (evalCmd === 'run') {
+          const target = args.find((a) => !a.startsWith('--'));
+          if (!target) {
+            console.error(
+              'Usage: sidekick eval run <suite|case.json path> [--k N] [--model X] [--max-turns M] [--run-id ID] [--resume-run ID] [--keep-workspace] [--validate-only] [--claude-bin PATH]',
+            );
+            process.exit(1);
+          }
+          const resume = getVal('--resume-run');
+          const runId = resume ?? getVal('--run-id') ?? `run-${Date.now()}`;
+          const res = runEvalSuite({
+            repoRoot: process.cwd(),
+            suiteOrCasePath: target,
+            runId,
+            k: num('--k'),
+            model: getVal('--model'),
+            maxTurns: num('--max-turns'),
+            resumeRunId: resume,
+            keepWorkspace: has('--keep-workspace'),
+            validateOnly: has('--validate-only'),
+            deps: {
+              claude: realClaudeRunner(claudeBin),
+              shell: realShellRunner(),
+            },
+          });
+          console.log(res.stdout);
+          process.exit(res.exitCode);
+        } else if (evalCmd === 'report') {
+          const runId = getVal('--run-id');
+          if (!runId) {
+            console.error(
+              'Usage: sidekick eval report --run-id ID [--suite S]',
+            );
+            process.exit(1);
+          }
+          const { stdout, exitCode } = runEvalReportCli({
+            repoRoot: process.cwd(),
+            runId,
+            suite: getVal('--suite'),
+          });
+          console.log(stdout);
+          process.exit(exitCode);
+        } else if (evalCmd === 'calibrate') {
+          const verifier = args.find((a) => !a.startsWith('--'));
+          const suite = getVal('--suite');
+          if (!verifier || !suite) {
+            console.error(
+              'Usage: sidekick eval calibrate <verifier-agent> --suite S [--k N] [--verdict-path P] [--min-cases N] [--fail-precision F] [--fail-recall F] [--unanimity U] [--model X] [--claude-bin PATH]',
+            );
+            process.exit(1);
+          }
+          const res = runCalibrate({
+            repoRoot: process.cwd(),
+            claudeHome,
+            verifier,
+            suite,
+            k: num('--k'),
+            verdictPath: getVal('--verdict-path'),
+            minCases: num('--min-cases'),
+            failPrecision: num('--fail-precision'),
+            failRecall: num('--fail-recall'),
+            unanimity: num('--unanimity'),
+            model: getVal('--model'),
+            maxTurns: num('--max-turns'),
+            deps: { claude: realClaudeRunner(claudeBin) },
+          });
+          console.log(res.stdout);
+          process.exit(res.exitCode);
+        } else {
+          console.error(
+            'Usage: sidekick eval <run|report|calibrate> [options]',
+          );
+          process.exit(1);
+        }
       } else if (sub === 'branch-precheck') {
         const args = process.argv.slice(3);
         const get = (flag: string): string | undefined => {

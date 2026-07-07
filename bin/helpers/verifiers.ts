@@ -6,6 +6,7 @@ import {
   type VerifierSurface,
   type VerifierTier,
 } from './config.js';
+import { hashRfcContent } from './hash-rfc.js';
 
 /**
  * 3.1 (ADR-0005): quorum membership as data. This is the single source the
@@ -91,15 +92,69 @@ export interface ResolvedQuorum {
   warnings: string[];
 }
 
+/** Resolve an agent .md by the canonical order: repo `.claude/agents/` then `~/.claude/agents/`. */
+function resolveAgentPath(
+  agent: string,
+  repoRoot: string,
+  claudeHome: string,
+): string | null {
+  const candidates = [
+    path.join(repoRoot, '.claude', 'agents', `${agent}.md`),
+    path.join(claudeHome, 'agents', `${agent}.md`),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) ?? null;
+}
+
 function agentDefinitionExists(
   agent: string,
   repoRoot: string,
   claudeHome: string,
 ): boolean {
-  return [
-    path.join(repoRoot, '.claude', 'agents', `${agent}.md`),
-    path.join(claudeHome, 'agents', `${agent}.md`),
-  ].some((p) => fs.existsSync(p));
+  return resolveAgentPath(agent, repoRoot, claudeHome) !== null;
+}
+
+/**
+ * D7 (ADR-0006) resolve-time binding validation. A binding operator entry only
+ * BINDS when a calibration certificate exists, parses, and still pins the live
+ * agent file's hash. The check is existence + parse + hash match — stats are
+ * NOT re-judged here (the certificate is only ever written when thresholds
+ * passed). Editing a graduated prompt changes its hash and auto-revokes binding.
+ */
+function validateBinding(
+  agent: string,
+  repoRoot: string,
+  claudeHome: string,
+): { ok: true } | { ok: false; reason: string } {
+  const certPath = path.join(
+    repoRoot,
+    '.sidekick',
+    'calibrations',
+    `${agent}.json`,
+  );
+  if (!fs.existsSync(certPath)) {
+    return { ok: false, reason: 'no calibration certificate' };
+  }
+  let cert: { agent_file_hash?: unknown };
+  try {
+    cert = JSON.parse(fs.readFileSync(certPath, 'utf-8'));
+  } catch {
+    return { ok: false, reason: 'unparseable calibration certificate' };
+  }
+  if (typeof cert.agent_file_hash !== 'string') {
+    return { ok: false, reason: 'certificate missing agent_file_hash' };
+  }
+  const agentPath = resolveAgentPath(agent, repoRoot, claudeHome);
+  if (agentPath === null) {
+    return { ok: false, reason: 'agent file no longer resolves' };
+  }
+  const liveHash = hashRfcContent(fs.readFileSync(agentPath, 'utf-8'));
+  if (liveHash !== cert.agent_file_hash) {
+    return {
+      ok: false,
+      reason: 'agent file hash mismatch — prompt edited since calibration',
+    };
+  }
+  return { ok: true };
 }
 
 export function resolveVerifiers(input: ResolveVerifiersInput): ResolvedQuorum {
@@ -142,10 +197,22 @@ export function resolveVerifiers(input: ResolveVerifiersInput): ResolvedQuorum {
       );
       continue;
     }
+    // D7: a binding operator entry is only honoured with a valid, hash-matched
+    // certificate; otherwise it degrades to advisory (loudly) but still mounts.
+    let tier: VerifierTier = entry.tier;
+    if (entry.tier === 'binding') {
+      const check = validateBinding(entry.agent, repoRoot, claudeHome);
+      if (!check.ok) {
+        warnings.push(
+          `verifier "${entry.dimension}": binding not honoured (${check.reason}) — degraded to advisory`,
+        );
+        tier = 'advisory';
+      }
+    }
     members.push({
       dimension: entry.dimension,
       agent: entry.agent,
-      tier: entry.tier,
+      tier,
       builtin: false,
     });
   }

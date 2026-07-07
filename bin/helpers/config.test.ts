@@ -231,16 +231,35 @@ describe('parseConfig — verifiers registry (3.1)', () => {
     }
   });
 
-  it('skips a binding-tier entry with a graduation warning', () => {
+  it('accepts a binding-tier entry syntactically (validated at resolve time)', () => {
+    // D7 (ADR-0006): parseConfig no longer rejects binding; whether it actually
+    // binds is a resolve-time certificate check in verifiers.ts.
     const r = parseConfig(
       JSON.stringify({ ...base, verifiers: [{ ...entry, tier: 'binding' }] }),
     );
     expect(r.ok).toBe(true);
     if (r.ok) {
+      expect(r.value.verifiers).toEqual([
+        {
+          dimension: 'ui-color',
+          agent: 'my-ui-color-verifier',
+          surfaces: ['review'],
+          tier: 'binding',
+        },
+      ]);
+      expect(r.warnings).toEqual([]);
+    }
+  });
+
+  it('skips an entry with an unknown tier', () => {
+    const r = parseConfig(
+      JSON.stringify({ ...base, verifiers: [{ ...entry, tier: 'nonsense' }] }),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
       expect(r.value.verifiers).toEqual([]);
       expect(r.warnings.length).toBe(1);
-      expect(r.warnings[0]).toMatch(/binding/);
-      expect(r.warnings[0]).toMatch(/advisory/);
+      expect(r.warnings[0]).toMatch(/tier/);
     }
   });
 
@@ -311,7 +330,7 @@ describe('parseConfig — verifiers registry (3.1)', () => {
       JSON.stringify({
         ...base,
         verifiers: [
-          { ...entry, tier: 'binding' },
+          { ...entry, surfaces: ['ui'] }, // unknown surface → skipped
           { ...entry, dimension: 'ui-spacing' },
         ],
       }),

@@ -99,17 +99,17 @@ function parseVerifierEntry(raw: unknown, index: number): EntryResult {
       issue: `${name}: "surfaces" must be a non-empty array of ${VERIFIER_SURFACES.join(' | ')} — skipped`,
     };
   }
+  // D7 (ADR-0006): `binding` is accepted syntactically here. parseConfig is
+  // pure, so it cannot check whether the entry has actually graduated — that
+  // needs the calibration certificate on disk. `resolveVerifiers` (which has
+  // filesystem access) validates a binding entry at resolve time and degrades
+  // it to advisory, loudly, when the certificate is missing, unparseable, or
+  // its hash no longer matches the live agent file.
   const tier = e.tier === undefined ? 'advisory' : e.tier;
-  if (tier === 'binding') {
+  if (tier !== 'advisory' && tier !== 'binding') {
     return {
       ok: false,
-      issue: `${name}: tier "binding" is graduated through calibration, never asserted — use "advisory" (the entry is skipped until then)`,
-    };
-  }
-  if (tier !== 'advisory') {
-    return {
-      ok: false,
-      issue: `${name}: "tier" must be advisory (binding is reserved for calibration graduation) — skipped`,
+      issue: `${name}: "tier" must be "advisory" or "binding" — skipped`,
     };
   }
   if (
@@ -127,7 +127,7 @@ function parseVerifierEntry(raw: unknown, index: number): EntryResult {
       dimension: e.dimension,
       agent: e.agent,
       surfaces: e.surfaces as VerifierSurface[],
-      tier,
+      tier: tier as VerifierTier,
       ...(e.family !== undefined ? { family: e.family as string } : {}),
     },
   };

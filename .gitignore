@@ -18,6 +18,10 @@ node_modules/
 dist/
 *.log
 
+# Eval harness (3.3): raw per-run records are local run artifacts, never committed.
+# The case corpus under evals/cases/ and fixtures under evals/fixtures/ ARE tracked.
+evals/results/
+
 # Secrets
 credentials.json
 *.key
