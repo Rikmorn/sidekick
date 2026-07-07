@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-coherence-checker"
+  },
+  "fixture": "evals/fixtures/coherence/clean-rate-limiter",
+  "prompt": "You are dispatched to check ONE artifact for semantic coherence.\n- artifact_path: {{WORKSPACE}}/RFC.md\n- artifact_type: rfc\nRead the artifact and return your ONE JSON deliverable.",
+  "label": {
+    "expected_verdict": "pass"
+  },
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "verdict",
+      "op": "equals",
+      "value": "pass"
+    }
+  ]
+}

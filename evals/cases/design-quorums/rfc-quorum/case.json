@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "skill",
+    "invocation": "/sk-design <slug seeded from rfc-cross-section>"
+  },
+  "fixture": "smokes/fixtures/coherence/rfc-cross-section",
+  "manual": true,
+  "expect": "RFC quorum dispatches sk-structural-checker ∥ sk-coherence-checker in parallel; coherence returns fail (Architecture↔Decisions); orchestrator re-dispatches sk-rfc-drafter with the coherence issue folded into feedback; on the third failure it halts with error: rfc_quorum_check_loop_exhausted. (Smoke 13 Part B.)"
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-rfc-drafter"
+  },
+  "prompt": "You are dispatched as sk-rfc-drafter. Inputs:\n- fresh draft (no feedback)\n- slug: config-sync\n- today: 2026-06-20\n- scope_statement: Sync config to edge nodes. The team has DECIDED on webhook push for latency reasons.\n- complexity: medium\n- architecture_section:\n## Architecture\n\n### Recommendation\nLong-poll the config service from each edge node. Forced by: simplicity — no inbound endpoint to maintain.\n\n### Alternatives considered\n- Webhook push — rejected because it adds an inbound endpoint to maintain.\n- analogues: [{ path: src/edge/config-client.ts, why_relevant: existing config fetch loop }]\n\nReason in prose if you like, then return your ONE JSON deliverable.",
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "mode",
+      "op": "equals",
+      "value": "draft_ready"
+    },
+    {
+      "type": "judge",
+      "path": "draft_text",
+      "rubric": "The team DECIDED on webhook push, but the advisor's Architecture recommended long-poll (with webhook push listed as a rejected alternative). A correct RFC.md reconciles: `## Architecture` `### Recommendation` should now be WEBHOOK PUSH; the long-poll approach should be demoted to `### Alternatives considered` with a 'diverged because…' note that PRESERVES the advisor's inbound-endpoint reasoning (not deleted); `## Decisions` should state webhook push. PASS if the recommendation is flipped to webhook push AND the long-poll reasoning is retained as a tradeoff AND Decisions agree; FAIL if it still recommends long-poll, or deletes the advisor reasoning, or the Decisions contradict the Architecture.",
+      "n": 3,
+      "threshold": 0.66
+    }
+  ]
+}

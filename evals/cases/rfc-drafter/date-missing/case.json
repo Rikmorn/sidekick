@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-rfc-drafter"
+  },
+  "prompt": "You are dispatched as sk-rfc-drafter. Inputs:\n- fresh draft (no feedback)\n- slug: rate-limit-middleware\n- scope_statement: Add a per-tenant rate-limiting middleware to the API gateway.\n- complexity: medium\n- architecture_section: ## Architecture\\n\\n### Recommendation\\nToken-bucket per tenant.\n- analogues: [{ path: src/middleware/auth.ts, why_relevant: same middleware shape }]\n- NOTE: `today` is deliberately NOT provided, and there is no existing RFC on disk (this is a fresh draft).\n\nReason in prose if you like, then return your ONE JSON deliverable.",
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "error",
+      "op": "equals",
+      "value": "missing_input"
+    }
+  ]
+}

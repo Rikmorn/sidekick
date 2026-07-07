@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "skill",
+    "invocation": "/sk-build <slug> (branch-precheck CLI embedded)"
+  },
+  "manual": true,
+  "expect": "The branch-precheck CLI is invoked by /sk-build, /sk-decide, /sk-review, /sk-regen-plan at entry; it reports git branch state and the create-and-continue (F2) path proceeds on a feature branch / offers to branch off default. Verifies the sk-branch-precheck→CLI retirement wiring. (Owed Phase-1 batch.)"
+}

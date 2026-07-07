@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "skill",
+    "invocation": "/sk-goal-verify <slug> --range main..HEAD"
+  },
+  "manual": true,
+  "expect": "The goal-verdict CLI computes the ACHIEVED/GAP roll-up from the goal-verifier deliverable (the verdict-matrix→CLI move); /sk-goal-verify and /sk-review consume the same CLI so they cannot diverge. (Owed Phase-1 batch.)"
+}

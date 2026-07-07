@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-coherence-checker"
+  },
+  "fixture": "evals/fixtures/coherence/plan-aligned",
+  "prompt": "You are dispatched to check ONE artifact for semantic coherence.\n- artifact_path: {{WORKSPACE}}/PLAN.md\n- artifact_type: plan\n- related_paths: { rfc: {{WORKSPACE}}/RFC.md }\nRead the artifact and the related RFC and return your ONE JSON deliverable.",
+  "label": {
+    "expected_verdict": "pass"
+  },
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "verdict",
+      "op": "equals",
+      "value": "pass"
+    }
+  ]
+}

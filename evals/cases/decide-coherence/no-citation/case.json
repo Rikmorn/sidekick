@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-coherence-checker"
+  },
+  "fixture": "evals/fixtures/decide-coherence/no-citation",
+  "prompt": "You are dispatched to check ONE artifact for semantic coherence.\n- artifact_path: {{WORKSPACE}}/decision.md\n- artifact_type: decision\nRead the artifact and return your ONE JSON deliverable.",
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "verdict",
+      "op": "equals",
+      "value": "pass"
+    }
+  ]
+}

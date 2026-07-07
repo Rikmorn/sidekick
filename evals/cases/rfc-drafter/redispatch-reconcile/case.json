@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-rfc-drafter"
+  },
+  "fixture": "evals/fixtures/rfc-drafter/redispatch-reconcile",
+  "prompt": "You are dispatched as sk-rfc-drafter. Inputs:\n- re-dispatch (feedback present)\n- slug: config-sync\n- scope_statement: Sync config to edge nodes.\n- complexity: medium\n- feedback: sk-coherence-checker: `## Architecture` recommends long-poll but D-01 decides webhook push — reconcile.\n- The existing RFC.md is on disk at .sidekick/plans/config-sync/RFC.md in your working directory; read it and integrate the feedback.\n- (no `today` needed on a re-dispatch — preserve the existing `created:`)\n\nReason in prose if you like, then return your ONE JSON deliverable.",
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "mode",
+      "op": "equals",
+      "value": "draft_ready"
+    },
+    {
+      "type": "judge",
+      "path": "draft_text",
+      "rubric": "This RFC.md was REDRAFTED to fix a coherence issue: the original `## Architecture` recommended long-poll but `## Decisions` D-01 decides webhook push. The redraft should: (1) reconcile `## Architecture` `### Recommendation` to WEBHOOK PUSH; (2) demote long-poll to `### Alternatives considered` with a divergence note; (3) keep `created: 2026-06-16` byte-equal; (4) leave Goals & non-goals, Decisions, Questions, and Risks substantively unchanged from a config-sync RFC. PASS if Architecture now agrees with D-01 (webhook push) and the untargeted sections are preserved; FAIL if Architecture still recommends long-poll, or `created:` changed, or untargeted sections were rewritten.",
+      "n": 3,
+      "threshold": 0.66
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "skill",
+    "invocation": "/sk-design <slug seeded from plan-vs-rfc>"
+  },
+  "fixture": "smokes/fixtures/coherence/plan-vs-rfc",
+  "manual": true,
+  "expect": "PLAN quorum's three checkers (structural, crossref, coherence) run in parallel; coherence returns fail (T-06 realises rejected D-04); orchestrator re-dispatches sk-plan-drafter with feedback. (Smoke 13 Part C.)"
+}

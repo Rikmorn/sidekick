@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-rfc-drafter"
+  },
+  "prompt": "You are dispatched as sk-rfc-drafter. Inputs:\n- fresh draft (no feedback)\n- slug: shortcut-palette\n- today: 2026-06-20\n- scope_statement: Add a discoverable cmd+k shortcut palette to the admin UI.\n- complexity: medium\n- architecture_section:\n## Architecture\n\n### Recommendation\nA React context provider plus a useShortcut hook registers palette shortcuts declaratively.\n\n### Alternatives considered\n- Global event listener — rejected: leaks handlers and is hard to scope per view.\n- analogues: [{ path: src/admin/shell.tsx, why_relevant: admin shell mount point }, { path: src/admin/commands.ts, why_relevant: existing command registry }]\n- Nothing in scope overrides the advisor recommendation.\n\nReason in prose if you like, then return your ONE JSON deliverable.",
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "mode",
+      "op": "equals",
+      "value": "draft_ready"
+    },
+    {
+      "type": "judge",
+      "path": "draft_text",
+      "rubric": "This is an RFC.md draft. Its `## Architecture` should carry the advisor's recommendation VERBATIM: a `### Recommendation` of a React context provider + useShortcut hook, and a `### Alternatives considered` listing the rejected global event listener. `## Decisions` should agree with (never contradict) that Architecture. PASS if the Architecture is present with that recommendation and the Decisions are consistent with it; FAIL if the Architecture was paraphrased away, the recommendation changed, or the Decisions contradict it.",
+      "n": 3,
+      "threshold": 0.66
+    }
+  ]
+}

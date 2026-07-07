@@ -6,6 +6,8 @@ Run them at milestone-end, batched. The fixture under `fixtures/minimal-repo/` p
 
 The fixture artifacts (RFC.md, PLAN.md drafts the smokes produce) are intentionally trivial. The goal is to exercise the orchestrator's wiring (dispatch → verdict → commit), not to produce a meaningful design document — thin smoke output is expected, not a regression.
 
+> **Smokes 13–15 now also live as eval cases (3.3).** The eval harness (`sidekick eval run`, ADR-0006) ports Smokes 13/14/15 into repeatable cases under `evals/cases/`: the non-interactive agent dispatches (coherence-checker verdicts, rfc-drafter reconciliation, decide cross-RFC coherence) run under the runner as `coherence-agent/`, `rfc-drafter/`, `decide-coherence/`; the dialogic segments (`/sk-design` quorum re-dispatch loops, divergence dialogue, orchestrator wiring) carry `manual: true` and still follow **this README's** procedures — their expectations are captured in the case's `expect` field for reference. Run the agent-lane cases with `sidekick eval run <suite>`; run the manual-lane cases here.
+
 ## Setup
 
 ```bash

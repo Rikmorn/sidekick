@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "skill",
+    "invocation": "/sk-design event-driven-notifications"
+  },
+  "fixture": "smokes/fixtures/skills-orchestrators/divergence-surface",
+  "manual": true,
+  "expect": "Advisor recommends direct HTTP webhook dispatch; dialogue settled on async event bus — divergence on a load-bearing axis. Orchestrator surfaces BOTH approaches by substance + real tradeoff (not bare labels, not \"advisor disagrees\") before drafting; operator decides; drafter reconciles ## Architecture to the decision, overridden approach demoted to ### Alternatives considered with \"diverged because…\". (Smoke 15.6.)"
+}

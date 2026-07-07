@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "skill",
+    "invocation": "/sk-design cache-layer-for-user-profiles"
+  },
+  "fixture": "smokes/fixtures/skills-orchestrators/divergence-agreement",
+  "manual": true,
+  "expect": "Advisor's ### Recommendation matches the settled direction (cosmetic wording differences only). No friction: orchestrator proceeds straight to the draft without an AskUserQuestion; advisor's ## Architecture carried verbatim; Decisions agree. (Smoke 15.7.)"
+}

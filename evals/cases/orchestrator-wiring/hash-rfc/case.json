@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "skill",
+    "invocation": "/sk-design then /sk-build <slug> (hash-rfc pin + check-drift)"
+  },
+  "manual": true,
+  "expect": "The shared hash-rfc CLI computes the pins-rfc hash that /sk-design sets, sk-crossref-checker verifies in the PLAN quorum, and check-drift verifies at build time — all via the ONE hashRfcContent function (structurally prevents the 1.1 SHA bug class). A hand-edited RFC after pinning surfaces a drift warning. (Owed Phase-1 batch.)"
+}

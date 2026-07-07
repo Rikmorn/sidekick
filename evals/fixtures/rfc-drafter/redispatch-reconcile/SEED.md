@@ -1,0 +1,1 @@
+Seed RFC placed at .sidekick/plans/config-sync/RFC.md (the path the drafter reads on re-dispatch). Architecture recommends long-poll but D-01 decides webhook push — the coherence checker bounced it back for reconciliation.

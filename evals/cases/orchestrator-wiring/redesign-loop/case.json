@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "skill",
+    "invocation": "/sk-design <existing-slug>"
+  },
+  "manual": true,
+  "expect": "Redesign re-entry: /sk-design on an existing plan re-opens design seeded by what broke (build/verify failure), settles a new direction with the operator (uncapped, user-driven), then enters shared Finalisation with the design already revised. Verifies ADR-0004 loop identity + redesign re-entry wiring. (Owed Phase-1 batch.)"
+}

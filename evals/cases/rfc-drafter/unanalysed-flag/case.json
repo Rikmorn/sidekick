@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-rfc-drafter"
+  },
+  "prompt": "You are dispatched as sk-rfc-drafter. Inputs:\n- fresh draft (no feedback)\n- slug: event-store\n- today: 2026-06-20\n- scope_statement: Adopt an event-sourced store for the orders domain (team decision).\n- complexity: high\n- architecture_section:\n## Architecture\n\n### Recommendation\nA CRUD service over Postgres: orders are rows, updated in place.\n\n### Alternatives considered\n- Denormalised read models — deferred.\n- (the architecture pass analysed ONLY CRUD-over-Postgres; it never mentions event sourcing, not even as a rejected alternative)\n- analogues: [{ path: src/orders/repo.ts, why_relevant: current CRUD repo }]\n\nReason in prose if you like, then return your ONE JSON deliverable.",
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "mode",
+      "op": "equals",
+      "value": "draft_ready"
+    },
+    {
+      "type": "judge",
+      "path": "draft_text",
+      "rubric": "The team DECIDED on an event-sourced store, but the advisor's architecture section only analysed CRUD-over-Postgres and never described event sourcing. A correct RFC.md should state the event-sourced approach in `## Architecture` ONLY as far as the decision specifies it, must NOT fabricate event-sourcing design details (projections, event schema, replay) the advisor never provided, and should add a `## Questions` bullet flagging that the event-store architecture was not analysed. PASS if it avoids inventing event-sourcing internals AND flags the gap in Questions; FAIL if it fabricates a full event-sourcing architecture, or silently ships CRUD, or omits the flag.",
+      "n": 3,
+      "threshold": 0.66
+    }
+  ]
+}

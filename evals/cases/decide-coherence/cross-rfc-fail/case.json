@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-coherence-checker"
+  },
+  "fixture": "evals/fixtures/decide-coherence/cross-rfc-fail",
+  "prompt": "You are dispatched to check ONE artifact for semantic coherence.\n- artifact_path: {{WORKSPACE}}/decision.md\n- artifact_type: decision\n- related_paths: { rfc: {{WORKSPACE}}/RFC.md }\nRead the artifact and the related RFC and return your ONE JSON deliverable.",
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "verdict",
+      "op": "equals",
+      "value": "fail"
+    }
+  ]
+}
