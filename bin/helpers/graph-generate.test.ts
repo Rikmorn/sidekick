@@ -354,3 +354,38 @@ describe('generated surfaces on a repo', () => {
     expect(res.exitCode).toBe(0);
   });
 });
+
+describe('regeneration leaves a current file alone', () => {
+  let repo: string;
+
+  beforeEach(() => {
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-nowrite-'));
+    execSync('git init -q -b master', { cwd: repo });
+    execSync('git config user.email t@t.example', { cwd: repo });
+    execSync('git config user.name T', { cwd: repo });
+    fs.mkdirSync(path.join(repo, 'docs/work/ops'), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, 'docs/work/ops/epic.md'),
+      '---\nid: ops\nkind: epic\nstatus: open\n---\n\n# ops — layer',
+    );
+    execSync('git add -A && git commit -q -m seed', { cwd: repo });
+  });
+
+  afterEach(() => {
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('does not rewrite the file just to refresh the commit stamp', () => {
+    runGenerateCli(repo, 'state', false);
+    execSync('git add -A && git commit -q -m generated', { cwd: repo });
+    fs.writeFileSync(path.join(repo, 'unrelated.txt'), 'x');
+    execSync('git add -A && git commit -q -m unrelated', { cwd: repo });
+
+    const res = runGenerateCli(repo, 'state', false);
+    expect(res.stdout).toContain('already current');
+    // HEAD moved, but the surface is unchanged — so the tree stays clean.
+    expect(execSync('git status --porcelain', { cwd: repo }).toString()).toBe(
+      '',
+    );
+  });
+});

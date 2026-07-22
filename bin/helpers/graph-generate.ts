@@ -424,8 +424,13 @@ export function runGenerateCli(
   const changed =
     before === null || normalizeForDrift(before) !== normalizeForDrift(content);
 
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, content);
+  // Only write when the content actually moved. Rewriting just to refresh the
+  // commit stamp would dirty the tree on every run, so the command could not be
+  // used freely to check a surface is current.
+  if (changed) {
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content);
+  }
 
   const lineCount = content.split('\n').length;
   if (json) {
@@ -439,7 +444,9 @@ export function runGenerateCli(
     };
   }
   return {
-    stdout: `wrote ${relPath} (${lineCount} lines)${changed ? '' : ' — unchanged'}`,
+    stdout: changed
+      ? `wrote ${relPath} (${lineCount} lines)`
+      : `${relPath} already current (${lineCount} lines)`,
     exitCode: 0,
   };
 }
