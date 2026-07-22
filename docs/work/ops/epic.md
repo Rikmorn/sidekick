@@ -4,6 +4,7 @@ kind: epic
 status: open
 implements: [adr-0007]
 grounds: [research/knowledge-layer]
+advances: [ns-project-visibility, ns-adaptive-harness]
 ---
 
 # ops — the knowledge/visibility layer (ADR-0007 v1)
