@@ -10,45 +10,43 @@ Charts are Observable Plot (ships with Quarto's OJS); tables are Inputs.table.
 No mermaid, no decoration — the numbers are the point.
 -->
 
+::: {.hidden}
 {{< include _generated-data.qmd >}}
+:::
 
 # State
 
 ## Row {height="20%"}
 
-```{ojs}
-//| content: valuebox
-//| title: "Entities"
-({ icon: "diagram-3", color: "primary", value: state.freshness.entities })
-```
+::: {.valuebox icon="diagram-3" color="primary"}
+Entities
 
-```{ojs}
-//| content: valuebox
-//| title: "Edges"
-({ icon: "share", color: "primary", value: state.freshness.edges })
-```
+`{ojs} state.freshness.entities`
+:::
 
-```{ojs}
-//| content: valuebox
-//| title: "Open backlog"
-({ icon: "inbox", color: "secondary", value: state.backlog.open })
-```
+::: {.valuebox icon="share" color="primary"}
+Edges
 
-```{ojs}
-//| content: valuebox
-//| title: "Lint errors"
-({
-  icon: state.freshness.lint.errors > 0 ? "exclamation-triangle" : "check-circle",
-  color: state.freshness.lint.errors > 0 ? "danger" : "success",
-  value: state.freshness.lint.errors
-})
-```
+`{ojs} state.freshness.edges`
+:::
 
-```{ojs}
-//| content: valuebox
-//| title: "Lint advisories"
-({ icon: "info-circle", color: "light", value: state.freshness.lint.advisories })
-```
+::: {.valuebox icon="inbox" color="secondary"}
+Open backlog
+
+`{ojs} state.backlog.open`
+:::
+
+::: {.valuebox icon="exclamation-triangle" color="warning"}
+Lint errors
+
+`{ojs} state.freshness.lint.errors`
+:::
+
+::: {.valuebox icon="info-circle" color="light"}
+Lint advisories
+
+`{ojs} state.freshness.lint.advisories`
+:::
 
 ## Row {height="18%"}
 
@@ -232,6 +230,7 @@ Inputs.table(
 state.bench.suites.length === 0
   ? md`No runs.`
   : Plot.plot({
+      height: 300,
       marginLeft: 55,
       x: { label: "suite" },
       y: { label: "pass rate", domain: [0, 1], percent: true, grid: true },
@@ -249,6 +248,7 @@ state.bench.suites.length === 0
 runs.length === 0
   ? md`No run records.`
   : Plot.plot({
+      height: 320,
       marginLeft: 55,
       x: { label: "run time", type: "utc", grid: true },
       y: { label: "cost (USD)", grid: true, zero: true },

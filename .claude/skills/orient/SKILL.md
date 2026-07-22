@@ -26,7 +26,7 @@ Written for a reader catching up, in complete sentences — lead with what happe
 3. **What needs attention** — lint *errors* always (a drift error usually means in-flight work whose surfaces need regenerating before commit); advisories and gaps only when they bear on this session's likely work.
 4. **If the session has a stated goal** — what `applies` to it, and the two or three entities worth reading before touching anything.
 
-The human's visual surface is the dashboard: `bun run dashboard` regenerates it (prepare step + Quarto render) into [`.kb/site/index.html`](../../../.kb/site/index.html) — one self-contained page, opened locally over `file://`, laying out the same rollup this briefing draws on across four views (state, since-last-visit, coverage, bench). Point the reader at it for the visual read; MAP and STATE stay the readable text views. Link all three.
+The human's visual surface is the dashboard: `bun run dashboard` regenerates it (prepare step + Quarto render), then `bun run dashboard:view` serves it at `http://localhost:4173` — served, not `file://`-opened, because Quarto's OJS runtime refuses `file://` by design (the page itself is still one self-contained HTML under `.kb/site/`; only the *viewing* needs the throwaway server, which runs only while looking). Four views: state, since-last-visit, coverage, bench — the same rollup this briefing draws on. Point the reader at it for the visual read; MAP and STATE stay the readable text views.
 
 ## Bounds
 

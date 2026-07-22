@@ -121,7 +121,10 @@ function embed(name, file) {
   const raw = fs.readFileSync(path.join(DATA, file), 'utf-8');
   const compact = JSON.stringify(JSON.parse(raw)); // validate + shrink
   const b64 = Buffer.from(asciiEscape(compact), 'ascii').toString('base64');
-  return '```{ojs}\n//| echo: false\n' + name + ' = JSON.parse(atob("' + b64 + '"))\n```';
+  // output: false — in `format: dashboard`, cells without it get no DOM slot when
+  // they sit outside a page's card layout, and Quarto's OJS connector then crashes
+  // on cellDiv.classList, taking dependent cells' rendering down with it.
+  return '```{ojs}\n//| echo: false\n//| output: false\n' + name + ' = JSON.parse(atob("' + b64 + '"))\n```';
 }
 
 const cells = [
