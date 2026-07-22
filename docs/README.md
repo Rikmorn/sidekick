@@ -25,7 +25,9 @@
 
 **Migration note:** [`EPIC.md`](./EPIC.md) and [`EPIC-STATE.md`](./EPIC-STATE.md) are interleaved entity soups dissolving into `work/platform/`: new work takes the new shape immediately; the monoliths remain compiler parse-sources until empty, then freeze as records. Until then they are still the authoritative roadmap/state pair.
 
-**Declared foreign enclave:** `docs/superpowers/` (gitignored) is the superpowers plugin's hardcoded output path for its specs/plans — a third-party tool's working directory that happens to live inside docs/. It is outside this taxonomy and invisible to the graph; its lifecycle belongs to the plugin, and the model-split plan-doc handoff workflow continues to use it as-is.
+**Declared foreign enclave:** `docs/superpowers/` (gitignored) is the superpowers plugin's hardcoded output path for its specs/plans — a third-party tool's working directory that happens to live inside docs/. It is outside this taxonomy and invisible to the graph; its lifecycle belongs to the plugin.
+
+**Execution convention (superpowers as the execution engine):** work items are *executed* via the superpowers workflow (brainstorm → plan → execute) until sk-* graduates its confidence gate. The layering: the committed item file is the record (*what/why*, then *what happened*); the enclave plan is the ephemeral *how*. Pointers run **plan → item** — a superpowers plan opens with `Implements: <item-id> (<path>)`; on conflict the item spec wins (it is the decided artifact). The item's `status:` field (open → active → done) is the graph-visible execution signal; the completion synthesis may cite the plan by name as provenance but must stand without it.
 
 ## Machine artifacts live elsewhere
 
