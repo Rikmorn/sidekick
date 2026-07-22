@@ -19,7 +19,7 @@
 | [`references/`](./references/) | Provenance records of shipped changes — the "want to know more" home, so shipped artifacts (prompts, rules) stay lean and citation-free | Record — append-only via promotion from `backlog/` |
 | [`reviews/`](./reviews/) | Point-in-time whole-system audits | Record — dated, immutable, superseded by later reviews |
 
-**Not knowledge, not here:** plan-doc handoff residue (today under gitignored `docs/superpowers/`) relocates out of `docs/` per ADR-0007 Decision 6 — pending the operator confirming the new path, since the model-split execution workflow currently names `docs/superpowers/plans/` as its handoff location.
+**Declared foreign enclave:** `docs/superpowers/` (gitignored) is the superpowers plugin's hardcoded output path for its specs/plans — a third-party tool's working directory that happens to live inside docs/. It is outside this taxonomy and invisible to the graph; its lifecycle belongs to the plugin, and the model-split plan-doc handoff workflow continues to use it as-is.
 
 ## Machine artifacts live elsewhere
 
