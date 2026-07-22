@@ -2,7 +2,7 @@
 id: ops-3
 epic: ops
 kind: item
-status: active
+status: done
 deps: [ops-2]
 implements: [adr-0007]
 ---
@@ -24,7 +24,7 @@ implements: [adr-0007]
 
 ---
 
-## Completion synthesis (draft — pending verification)
+## Completion synthesis (finalized 2026-07-22)
 
 **Outcome.** All six commands ship: `query`, `coverage`, `gaps`, `applies`, `diff`, `lint`, each `--json`-capable, TDD'd, and exercised against the live tree. All three integration gates met:
 
@@ -48,3 +48,5 @@ implements: [adr-0007]
 - **`runs` deltas in `diff` are structurally always zero** on this repo: `evals/results/` is gitignored, so run records are not in committed content. The field is wired and correct; it will read non-zero wherever records are committed. Recorded rather than papered over.
 
 **Note for verification.** `graph gaps` currently reports 30: six north-star objectives that nothing declares it advances, one item implementing a superseded ADR (`plat-0.4` → ADR-0003), and 23 unmeasured subjects. These are findings about the corpus, not about the code.
+
+**Verification (2026-07-22, reviewing session).** All three integration gates independently re-run and matching (`coverage` 7 suites/7 measured/23 unmeasured · `applies fixer` → `backlog:fixer-scope-widening` with its applies-to reason · `diff` at the 3.3 landing → `plat-3.3: open → done` plus adr-0006 arriving). Deviations accepted: `git archive` preserves D6's actual property (working tree untouched, directly tested); the two backlog `applies-to` additions and the empty coverage-exceptions ledger are the ADR's own conventions, added minimally. The 30 gaps are acknowledged as true corpus findings — six unadvanced objectives reflect that platform items don't carry `advances` edges pre-migration, and the 23 unmeasured subjects are the honest coverage baseline the ledger exists to annotate.

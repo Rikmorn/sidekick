@@ -2,7 +2,7 @@
 id: ops-2
 epic: ops
 kind: item
-status: active
+status: done
 deps: []
 implements: [adr-0007]
 grounds: [research/knowledge-layer]
@@ -35,7 +35,7 @@ grounds: [research/knowledge-layer]
 
 ---
 
-## Completion synthesis (draft — pending verification)
+## Completion synthesis (finalized 2026-07-22)
 
 **Outcome.** `sidekick graph build` compiles the live tree into `.kb/graph.db`: **214 entities, 228 edges, 14 run records, 7 lint findings, zero unresolvable references**. Every parser named in the spec landed with unit tests against fixture snippets taken from the tree, plus a live-tree integration test that asserts the cross-source links the graph exists to provide. Helpers: `graph-model` (vocabulary, identity, crosswalk), `graph-store` (SQLite + FTS5), `graph-parse-monoliths` (EPIC + ADRs), `graph-parse-work` (work/, north-star, research, backlog), `graph-parse-machine` (eval cases, run records, certificates, inventory), `graph-build`, `graph-cli`.
 
@@ -55,3 +55,5 @@ grounds: [research/knowledge-layer]
 **Fork-policy finding (parse target as-is).** EPIC.md item cells contain markdown-**escaped pipes** (`` `low\|medium\|high` ``, `` `eval run\|report\|calibrate` ``). Splitting rows on every pipe shifted the later columns, so item prose was read as a Deps cell. Fixed in the splitter (escaped pipes are markdown, not structure) rather than by editing EPIC.md — this is parser correctness, not a heuristic. It recovered 15 edges.
 
 **Standing lint findings (7, all `ambiguous-ref`, none blocking).** Five EPIC Deps cells carry prose around an ID (`calibration ← 3.4` — itself a surviving v2 residue in a current document; `binding ← 3.3`; `4.2 reuses`; `pick rides 3.3's harness`; `mounts on 0.5`); ADR-0002 spawns an ID *range*; ADR-0003 cites `E3`, which the crosswalk records as split. Each is a real ambiguity in the source, which is what the fork policy asks for. Triage is the operator's at verification.
+
+**Verification (2026-07-22, reviewing session).** Independently reproduced: 481/0 tests, typecheck clean, **zero graph code in the built bundle** (grep on a fresh `bun run build`), live build = 218 entities / 231 edges. Both deviations accepted — the `bun:sqlite` + dynamic-import one is an *upgrade*: it makes the repo-internal seam structural rather than manifest-promised. Advisory triage: the `EPIC.md:67` finding was a genuine v2 residue the 2026-07-03 renumber missed (`calibration ← 3.4` meant the eval keystone, now `3.3` — the same line uses `3.4` correctly elsewhere, vindicating the no-guess policy); fixed in the verification commit. Note the fix corrects the *referent*, not the advisory: the segment remains prose-around-an-ID (direction indeterminable), so all seven advisories legitimately stand — they are properties of how the monolith writes Deps cells, and they dissolve with the monolith at migration.

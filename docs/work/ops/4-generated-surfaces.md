@@ -2,7 +2,7 @@
 id: ops-4
 epic: ops
 kind: item
-status: active
+status: done
 deps: [ops-3]
 implements: [adr-0007]
 ---
@@ -22,7 +22,7 @@ implements: [adr-0007]
 
 ---
 
-## Completion synthesis (draft — pending verification)
+## Completion synthesis (finalized 2026-07-22)
 
 **Outcome.** Both surfaces ship, generated and committed: **`docs/STATE.md` (37 lines, cap 120)** and **`MAP.md` (138 lines)**, each produced by `sidekick graph state|map`, idempotent, and drift-checked by lint. Live lint after generation: **0 errors, 7 advisories.**
 
@@ -41,3 +41,5 @@ implements: [adr-0007]
 **Adoption wiring (Decision 8).** AGENTS.md opens with "read MAP.md first" plus the question→command table; `docs/EPIC-STATE.md` gains exactly one pointer line delegating its status duties to STATE.md, with no table surgery.
 
 **Deviation.** None beyond the two recorded above and those noted in ops-2/ops-3.
+
+**Verification (2026-07-22, reviewing session).** STATE.md read in full and reproduced live (18/32 platform items confirmed — the three-spellings-of-done catch was real; the surface also flagged ADR-0006 as still awaiting sign-off, a pending decision nobody was tracking). The stamp-normalization and surfaces-excluded-from-parse decisions are correct reconciliations of contracts that genuinely conflicted — accepted. Drift-check and idempotency re-verified after the status flips this verification itself caused.
