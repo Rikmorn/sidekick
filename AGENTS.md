@@ -52,6 +52,8 @@ The repo compiles itself into a queryable graph (ADR-0007): entities (epics, ite
 
 - Authored edges use the typed convention: frontmatter fields (`implements:`, `deps:`, `grounds:`, `advances:`, `applies-to:`) and body links of the form `- <relation> [[<target>]]`, drawn from a closed vocabulary the lint enforces.
 - `sidekick graph` is repo-internal — it ships with the harness source, not with an installed copy.
+- **Retrieval ordering:** MAP.md → graph commands → `Read` for depth → grep only when the graph misses. A graph miss on something the layer should know is a layer bug — note it in one line rather than silently routing around it.
+- **Session start:** run the orient ritual — [`.claude/skills/orient/SKILL.md`](.claude/skills/orient/SKILL.md): build, diff since last visit, briefing. It is the cheap version of the catch-up this repo used to cost an afternoon.
 
 ## Conventions the runtime depends on
 
