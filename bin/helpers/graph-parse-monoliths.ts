@@ -26,14 +26,20 @@ import {
 
 // ---- shared helpers ---------------------------------------------------------
 
-/** Split a markdown table row into trimmed cells, dropping the outer pipes. */
+/**
+ * Split a markdown table row into trimmed cells, dropping the outer pipes.
+ *
+ * Escaped pipes are the load-bearing detail: EPIC item cells contain prose like
+ * `low\|medium\|high` and `eval run\|report\|calibrate`. Splitting on every pipe
+ * shifts the later columns, which silently makes prose look like a Deps cell.
+ */
 function tableCells(line: string): string[] {
   const trimmed = line.trim();
   if (!trimmed.startsWith('|')) return [];
   return trimmed
     .slice(1, trimmed.endsWith('|') ? -1 : undefined)
-    .split('|')
-    .map((c) => c.trim());
+    .split(/(?<!\\)\|/)
+    .map((c) => c.replace(/\\\|/g, '|').trim());
 }
 
 /** Strip markdown decoration so a cell's text can be matched as plain prose. */

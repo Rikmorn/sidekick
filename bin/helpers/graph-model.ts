@@ -259,6 +259,60 @@ export function resolveItemRef(
   return { ok: true, id: platItemId(id) };
 }
 
+/**
+ * Turn an authored edge target into a canonical entity ID.
+ *
+ * Authors write targets the short way — `adr-0007`, `research/knowledge-layer`,
+ * `ns-project-visibility`, `3.3`, `agents/sk-fixer.md`. Every form resolves
+ * here so that two documents naming the same thing land on the same node.
+ * A path-shaped target becomes a `glob:` node: `applies-to` deliberately points
+ * at file patterns, and a pattern is a legitimate destination, not a dangling
+ * reference.
+ */
+export function normalizeEdgeTarget(
+  raw: string,
+  crosswalk: Crosswalk,
+  asOf?: string,
+): RefResolution {
+  const token = raw.trim().replace(/^[`*[]+|[`*\]]+$/g, '');
+  if (token === '') return { ok: false, reason: 'unresolvable', raw };
+
+  // Already-namespaced IDs and north-star objectives pass through untouched.
+  if (
+    /^(agent|skill|helper|suite|case|research|backlog|cert|doc|glob):/.test(
+      token,
+    ) ||
+    /^ns-[a-z0-9-]+$/.test(token)
+  ) {
+    return { ok: true, id: token };
+  }
+
+  const adr = normalizeAdrRef(token);
+  if (adr !== null) return { ok: true, id: adr };
+
+  const slashNamespaced = /^(research|backlog)\/([A-Za-z0-9._-]+)$/.exec(token);
+  if (slashNamespaced) {
+    return {
+      ok: true,
+      id: `${slashNamespaced[1]}:${slashNamespaced[2].replace(/\.md$/, '')}`,
+    };
+  }
+
+  if (/^(E\d{1,2}|\d+\.\d+)$/.test(token)) {
+    return resolveItemRef(token, crosswalk, asOf);
+  }
+
+  // Path- or glob-shaped targets address files, not entities.
+  if (/[/*]/.test(token) || /\.(md|ts|json|jsonl)$/.test(token)) {
+    return { ok: true, id: `glob:${token}` };
+  }
+
+  // Bare slugs are epic-scoped work IDs (`ops`, `ops-2`) resolved at link time.
+  if (/^[a-z][a-z0-9-]*$/.test(token)) return { ok: true, id: token };
+
+  return { ok: false, reason: 'unresolvable', raw: token };
+}
+
 // ---- frontmatter ------------------------------------------------------------
 
 export interface Frontmatter {

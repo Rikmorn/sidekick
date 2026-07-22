@@ -32,6 +32,15 @@ Consequence: tech-debt, config, or "should be gitignored" concerns about a `.sid
 - **Authoring agents/skills:** follow `.claude/rules/sk-agent-prompts.md`. In short — goal-oriented identity over procedures, constitutional constraints over step lists, few-shot examples *with reasoning*, minimal directive density. Orchestrators live in slash commands (skills), not subagents, because the runtime forbids subagents from dispatching subagents.
 - **Structured output at boundaries only:** a specialist's deliverable is one JSON object in a final ```json``` fence; everything else is natural-language reasoning.
 
+## The project knowledge graph
+
+The repo compiles itself into a queryable graph (ADR-0007): entities (epics, items, ADRs, objectives, agents, skills, helpers, eval suites, research, backlog) and typed edges between them, derived from the text sources and rebuilt on demand.
+
+- **Build it:** `bun bin/cli.ts graph build` — writes `.kb/graph.db` (gitignored, derived, safe to delete).
+- **Use it:** the database exists so status, coverage, applicability, and what-changed questions are *queried*, not reconstructed by grep archaeology. Sources stay the authority; the graph is a rebuildable index of them.
+- Authored edges use the typed convention: frontmatter fields (`implements:`, `deps:`, `grounds:`, `advances:`, `applies-to:`) and body links of the form `- <relation> [[<target>]]`, drawn from a closed vocabulary the lint enforces.
+- `sidekick graph` is repo-internal — it ships with the harness source, not with an installed copy.
+
 ## Conventions the runtime depends on
 
 - `.sidekick/config.json` is the source of truth for branch + gate commands, read by `branch-precheck`, `check-drift`, and dispatched subagents. `rules/sk-workflow.md` documents its schema (it is reference, not a runtime input).

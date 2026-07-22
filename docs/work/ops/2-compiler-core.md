@@ -32,3 +32,26 @@ grounds: [research/knowledge-layer]
 **Gates.** Unit tests per parser against fixture snippets taken from the live tree; one integration test: build on the real repo, assert known entities/edges exist (e.g. `3.3 implements adr-0006`, `coherence-agent measures sk-coherence-checker`), zero unresolvable-ref findings on the current tree or each finding triaged in the synthesis.
 
 **Fork policy.** The parse target is the live tree as-is. If a source file's structure defeats conservative parsing, the answer is a lint finding plus a note in the synthesis — never a silent parser heuristic, and file edits to aid parsing are their own follow-up decision.
+
+---
+
+## Completion synthesis (draft — pending verification)
+
+**Outcome.** `sidekick graph build` compiles the live tree into `.kb/graph.db`: **214 entities, 228 edges, 14 run records, 7 lint findings, zero unresolvable references**. Every parser named in the spec landed with unit tests against fixture snippets taken from the tree, plus a live-tree integration test that asserts the cross-source links the graph exists to provide. Helpers: `graph-model` (vocabulary, identity, crosswalk), `graph-store` (SQLite + FTS5), `graph-parse-monoliths` (EPIC + ADRs), `graph-parse-work` (work/, north-star, research, backlog), `graph-parse-machine` (eval cases, run records, certificates, inventory), `graph-build`, `graph-cli`.
+
+**Decisions made during execution.**
+
+1. **Crosswalk normalization is date-guarded.** The literal `3.4` is a v2 ID in a document written before the 2026-07-03 re-baseline and a *different, valid current* ID after it, so applying the v2→v3 delta unconditionally would corrupt live references. Refs are normalized only when their source document's own date predates the re-baseline. The rule reproduces the editorial pointers ADR-0004 and ADR-0005 carry by hand — those pointers are now derived rather than trusted, and the live-tree test asserts it.
+2. **`implements` has one canonical direction: work item → decision.** Work frontmatter writes `implements: [adr-0007]`; ADR-0006's status line writes the same relation the other way round ("Implements the eval keystone EPIC `3.3`"). Both canonicalize to item→ADR so the two sources cannot disagree about which way the edge runs.
+3. **Ambiguity is surfaced, never resolved by guess.** An EPIC Deps cell yields edges only when a segment is *purely* ID tokens or an explicit `relates` list. Prose like "4.2 reuses" names an ID in the *reverse* direction, and "spawns E19–E22" names members it never spells out; both become findings. Same for `E3`, which the crosswalk itself records as a split mapping.
+4. **The store is Bun's built-in SQLite** (`bun:sqlite`) rather than `better-sqlite3` — zero dependencies, FTS5 included, and it matches the repo's existing Bun toolchain. See the deviation note below for the bundling consequence, which turned out to be what makes the repo-internal seam structural.
+5. **Heading nesting is the objective tree.** A `###` objective under a `##` objective emits `advances` — deterministic from document structure, and the thing that makes the north-star a rollup rather than a list.
+
+**Deviations from the plan (full detail in the run report).**
+
+- **`bun:sqlite` over `better-sqlite3`** (plan D2 named the latter as the fallback "if none exists in deps"): Bun *is* the repo's existing tooling choice, and a native module cannot be bundled into the single-file `dist/cli.js` a consumer receives.
+- **The `graph` subcommand loads through a runtime dynamic import, not a static one** (plan D1 said "wired like existing subcommands"). Forced and load-bearing: `bun build --target node` hoists a `bun:sqlite` import to the top of the bundle, which would break the shipped Node CLI *on every code path*. Using a specifier the bundler cannot resolve statically keeps the graph code out of `dist/cli.js` entirely — so D1's own requirement ("a consumer install must not receive graph helpers") is satisfied *structurally* rather than by a manifest promise. Verified: zero occurrences of `bun:sqlite` or graph code in the built bundle; a consumer invoking `sidekick graph` gets a clear repo-internal message.
+
+**Fork-policy finding (parse target as-is).** EPIC.md item cells contain markdown-**escaped pipes** (`` `low\|medium\|high` ``, `` `eval run\|report\|calibrate` ``). Splitting rows on every pipe shifted the later columns, so item prose was read as a Deps cell. Fixed in the splitter (escaped pipes are markdown, not structure) rather than by editing EPIC.md — this is parser correctness, not a heuristic. It recovered 15 edges.
+
+**Standing lint findings (7, all `ambiguous-ref`, none blocking).** Five EPIC Deps cells carry prose around an ID (`calibration ← 3.4` — itself a surviving v2 residue in a current document; `binding ← 3.3`; `4.2 reuses`; `pick rides 3.3's harness`; `mounts on 0.5`); ADR-0002 spawns an ID *range*; ADR-0003 cites `E3`, which the crosswalk records as split. Each is a real ambiguity in the source, which is what the fork policy asks for. Triage is the operator's at verification.

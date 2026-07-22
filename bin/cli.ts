@@ -346,11 +346,12 @@ if (_isEntry) {
       'verifiers',
       'scope-check',
       'eval',
+      'graph',
       'hook',
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|eval|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|eval|graph|hook> [options]',
       );
       process.exit(1);
     }
@@ -531,6 +532,33 @@ if (_isEntry) {
           );
           process.exit(1);
         }
+      } else if (sub === 'graph') {
+        // Loaded through a runtime-computed specifier, not a static import.
+        // The graph helpers need `bun:sqlite` and are repo-internal by
+        // contract; a specifier the bundler cannot resolve keeps them out of
+        // dist/cli.js entirely, so a consumer install cannot receive them and
+        // the Node bundle never sees a Bun-only import.
+        const spec = new URL('./helpers/graph-cli.js', import.meta.url).href;
+        let mod: {
+          runGraphCli: (opts: {
+            repoRoot: string;
+            argv: string[];
+          }) => Promise<{ stdout: string; exitCode: number }>;
+        };
+        try {
+          mod = await import(spec);
+        } catch {
+          console.error(
+            'sidekick graph is a repo-internal command; it ships with the harness source, not with an installed copy.',
+          );
+          process.exit(1);
+        }
+        const { stdout, exitCode } = await mod.runGraphCli({
+          repoRoot: process.cwd(),
+          argv: process.argv.slice(3),
+        });
+        console.log(stdout);
+        process.exit(exitCode);
       } else if (sub === 'branch-precheck') {
         const args = process.argv.slice(3);
         const get = (flag: string): string | undefined => {
