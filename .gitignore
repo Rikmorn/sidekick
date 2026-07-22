@@ -32,6 +32,10 @@ credentials.json
 
 docs/superpowers
 
+# Knowledge layer (ops-2 / ADR-0007): the graph is a derived, rebuildable cache
+# of the text sources in git — never authority, never committed.
+.kb/
+
 # NOTE: this is the harness *source* repo — it does not carry a consumer's
 # .sidekick/ working tree. If you ever run sidekick on this repo, `sidekick init`
 # adds `.sidekick/cache/` + `.sidekick/state/` here like any other consumer.

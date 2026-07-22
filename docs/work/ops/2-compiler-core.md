@@ -2,7 +2,7 @@
 id: ops-2
 epic: ops
 kind: item
-status: open
+status: active
 deps: []
 implements: [adr-0007]
 grounds: [research/knowledge-layer]
