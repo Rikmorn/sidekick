@@ -58,6 +58,16 @@ export const EXCLUDED_PREFIXES = [
   'dist/',
 ] as const;
 
+/**
+ * The committed generated surfaces. They are derived views of the graph, so
+ * they are not parsed back into it: a file that describes the corpus cannot be
+ * part of the corpus it counts without making its own regeneration unstable.
+ */
+export const GENERATED_PATHS: ReadonlySet<string> = new Set([
+  'docs/STATE.md',
+  'MAP.md',
+]);
+
 /** True when a repo-relative POSIX path sits under an excluded prefix. */
 export function isExcluded(relPath: string): boolean {
   const p = relPath.replace(/\\/g, '/').replace(/^\.\//, '');

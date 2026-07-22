@@ -20,6 +20,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DEFAULT_DB_PATH, runGraphBuildCli } from './graph-build.js';
 import { runGraphDiff } from './graph-diff.js';
+import {
+  MAP_PATH,
+  normalizeForDrift,
+  renderSurfaces,
+  runGenerateCli,
+  STATE_PATH,
+} from './graph-generate.js';
 import { runGraphLint } from './graph-lint.js';
 import { runApplies, runCoverage, runGaps, runQuery } from './graph-query.js';
 import { type GraphDb, openGraphDb } from './graph-store.js';
@@ -127,8 +134,30 @@ export async function runGraphCli(
     });
   }
 
+  if (sub === 'state' || sub === 'map') {
+    return runGenerateCli(opts.repoRoot, sub, json);
+  }
+
   if (sub === 'lint') {
-    return runGraphLint({ repoRoot: opts.repoRoot, json });
+    // The generators are handed in here so lint stays free of a dependency on
+    // them: one place decides which derived surfaces are drift-checked.
+    return runGraphLint({
+      repoRoot: opts.repoRoot,
+      json,
+      statePath: STATE_PATH,
+      generated: [
+        {
+          path: STATE_PATH,
+          regenerate: () => renderSurfaces(opts.repoRoot).state,
+          normalize: normalizeForDrift,
+        },
+        {
+          path: MAP_PATH,
+          regenerate: () => renderSurfaces(opts.repoRoot).map,
+          normalize: normalizeForDrift,
+        },
+      ],
+    });
   }
 
   // Everything below reads the store, so it must exist first. Building

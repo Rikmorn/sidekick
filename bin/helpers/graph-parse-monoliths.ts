@@ -108,6 +108,8 @@ interface TableShape {
   item: number;
   sources: number;
   deps: number;
+  /** Phase 0's table records completion as a date column instead of a tick. */
+  done: number;
 }
 
 /** Match a header row to column positions; phases differ (some carry `Was`). */
@@ -121,6 +123,7 @@ function readHeader(cells: string[]): TableShape | null {
     item,
     sources: lower.indexOf('sources'),
     deps: lower.indexOf('deps'),
+    done: lower.indexOf('done'),
   };
 }
 
@@ -149,6 +152,7 @@ export function parseEpic(
   const lines = text.split('\n');
   let shape: TableShape | null = null;
   let phase: string | null = null;
+  let phaseDone = false;
 
   lines.forEach((line, index) => {
     const lineNo = index + 1;
@@ -157,6 +161,9 @@ export function parseEpic(
     const heading = /^###\s+Phase\s+(\d+)/.exec(line);
     if (heading) {
       phase = heading[1];
+      // A phase can be marked complete at its heading rather than per row
+      // (Phase 0 does exactly that), so the heading carries status too.
+      phaseDone = /✅|\bclosed\b|\bDONE\b/.test(line);
       shape = null;
       return;
     }
@@ -178,11 +185,19 @@ export function parseEpic(
 
     const id = platItemId(idMatch[1]);
     const itemCell = cells[shape.item] ?? '';
+    // Completion is spelled three ways across the phases: a tick in the ID
+    // cell, a date in a Done column, or a completed phase heading. All three
+    // are explicit structure; reading only one of them under-reports progress.
+    const doneCell = shape.done >= 0 ? plain(cells[shape.done] ?? '') : '';
+    const done =
+      idCell.includes('✅') ||
+      phaseDone ||
+      /^\d{4}-\d{2}-\d{2}$/.test(doneCell);
     const entity: Entity = {
       id,
       kind: 'item',
       title: itemTitle(itemCell),
-      status: idCell.includes('✅') ? 'done' : 'open',
+      status: done ? 'done' : 'open',
       path: relPath,
       data: phase !== null ? { phase } : undefined,
     };

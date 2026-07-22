@@ -19,6 +19,7 @@ import {
   type Entity,
   emptyCrosswalk,
   emptyParse,
+  GENERATED_PATHS,
   isExcluded,
   type LintFinding,
   mergeParse,
@@ -213,13 +214,32 @@ export function collectGraph(repoRoot: string): BuildResult {
   const claimed = new Set(
     merged.entities.map((e) => e.path).filter((p): p is string => p !== null),
   );
+  // A doc entity may already exist as a citation target, created by whichever
+  // parser referenced it and titled with its path. Give it the real heading:
+  // an entry that names a file twice tells a reader nothing.
+  // Grouped, not keyed: the same doc is often cited by several sources, so
+  // every instance needs the upgrade — dedupe picks one of them arbitrarily.
+  const docEntities = new Map<string, Entity[]>();
+  for (const e of merged.entities) {
+    if (e.kind !== 'doc') continue;
+    docEntities.set(e.id, [...(docEntities.get(e.id) ?? []), e]);
+  }
   for (const rel of [...walk(repoRoot, 'docs'), 'AGENTS.md', 'README.md']) {
     if (!rel.endsWith('.md') || !exists(repoRoot, rel)) continue;
+    if (GENERATED_PATHS.has(rel)) continue;
+    const heading = firstHeading(read(repoRoot, rel)) ?? rel;
+    const existing = docEntities.get(`doc:${rel}`);
+    if (existing !== undefined) {
+      for (const entity of existing) {
+        if (entity.title === rel) entity.title = heading;
+      }
+      continue;
+    }
     if (claimed.has(rel)) continue;
     merged.entities.push({
       id: `doc:${rel}`,
       kind: 'doc',
-      title: firstHeading(read(repoRoot, rel)) ?? rel,
+      title: heading,
       status: null,
       path: rel,
     });

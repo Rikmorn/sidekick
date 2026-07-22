@@ -80,6 +80,12 @@ export interface GeneratedFile {
   path: string;
   /** Regenerated content to compare against. */
   regenerate: () => string;
+  /**
+   * Optional canonicalizer applied to both sides before comparing. The commit
+   * stamp a generated file carries would otherwise guarantee drift on the very
+   * next commit, and a check that always fires is a check nobody reads.
+   */
+  normalize?: (text: string) => string;
 }
 
 /**
@@ -98,7 +104,8 @@ export function checkGeneratedDrift(
     if (!fs.existsSync(abs)) continue;
     const committed = fs.readFileSync(abs, 'utf-8');
     const fresh = file.regenerate();
-    if (committed !== fresh) {
+    const normalize = file.normalize ?? ((t: string) => t);
+    if (normalize(committed) !== normalize(fresh)) {
       findings.push({
         code: 'generated-drift',
         message: `${file.path} differs from what regenerating produces. It is a derived file committed on purpose; regenerate it so readers and tools see the same graph.`,
@@ -147,12 +154,26 @@ export interface LintOptions {
  * against a stale database would be worse than no lint.
  */
 export function collectLint(opts: LintOptions): LintFinding[] {
-  const { findings, snapshot } = collectGraph(opts.repoRoot);
+  return [
+    ...collectSourceLint(opts.repoRoot),
+    ...checkGeneratedDrift(opts.repoRoot, opts.generated ?? []),
+    ...checkStateSize(opts.repoRoot, opts.statePath ?? 'docs/STATE.md'),
+  ].sort(bySeverityThenCode);
+}
+
+/**
+ * The checks that read only the sources — no derived surfaces.
+ *
+ * STATE.md reports lint health, and lint drift-checks STATE.md. Reporting the
+ * *source* findings breaks that loop: regenerating STATE.md cannot depend on
+ * whether STATE.md is currently stale.
+ */
+export function collectSourceLint(repoRoot: string): LintFinding[] {
+  const { findings, snapshot } = collectGraph(repoRoot);
   const all: LintFinding[] = [...findings];
+  const opts = { repoRoot };
 
   all.push(...checkTaxonomy(opts.repoRoot));
-  all.push(...checkGeneratedDrift(opts.repoRoot, opts.generated ?? []));
-  all.push(...checkStateSize(opts.repoRoot, opts.statePath ?? 'docs/STATE.md'));
 
   // Dangling applies-to reuses the gap query so the two views cannot disagree.
   const handle = openGraphDb(':memory:');
@@ -190,13 +211,26 @@ export function collectLint(opts: LintOptions): LintFinding[] {
     handle.close();
   }
 
-  return all.sort((a, b) => {
-    const ea = isError(a) ? 0 : 1;
-    const eb = isError(b) ? 0 : 1;
-    if (ea !== eb) return ea - eb;
-    if (a.code !== b.code) return a.code < b.code ? -1 : 1;
-    return (a.origin ?? '') < (b.origin ?? '') ? -1 : 1;
-  });
+  return all.sort(bySeverityThenCode);
+}
+
+function bySeverityThenCode(a: LintFinding, b: LintFinding): number {
+  const ea = isError(a) ? 0 : 1;
+  const eb = isError(b) ? 0 : 1;
+  if (ea !== eb) return ea - eb;
+  if (a.code !== b.code) return a.code < b.code ? -1 : 1;
+  return (a.origin ?? '') < (b.origin ?? '') ? -1 : 1;
+}
+
+/** Error/advisory split, the shape STATE.md reports. */
+export function lintSummary(findings: LintFinding[]): {
+  errors: number;
+  advisories: number;
+} {
+  return {
+    errors: findings.filter(isError).length,
+    advisories: findings.filter((f) => !isError(f)).length,
+  };
 }
 
 export function runGraphLint(opts: LintOptions): CliResult {

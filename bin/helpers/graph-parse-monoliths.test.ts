@@ -74,6 +74,37 @@ describe('parseEpic', () => {
     );
   });
 
+  it('reads completion however the phase spells it', () => {
+    // Three spellings live in EPIC.md: a tick in the ID cell (Phase 1-3), a
+    // date in a Done column, and a phase heading marked complete (Phase 0).
+    // Reading only the tick under-reports finished work by a whole phase.
+    const phase0 = [
+      '### Phase 0 — Foundations & toolchain — ✅ DONE',
+      '',
+      '| ID | Was | Item | Done |',
+      '|---|---|---|---|',
+      '| **0.1** | E1 | Revise the authoring discipline | 2026-06-09 |',
+      '| **0.2** | E2 | Platform-primitives scoping | 2026-06-10 |',
+    ].join('\n');
+    const cw0 = parseCrosswalk(phase0);
+    const result0 = parseEpic(phase0, 'docs/EPIC.md', cw0);
+    expect(result0.entities.map((e) => e.status)).toEqual(['done', 'done']);
+
+    const openPhase = [
+      '### Phase 4 — Memory',
+      '',
+      '| ID | Was | Item | Sources | Deps |',
+      '|---|---|---|---|---|',
+      '| **4.1** | E10 | **Navigability layer** | `memory` | — |',
+    ].join('\n');
+    const result4 = parseEpic(
+      openPhase,
+      'docs/EPIC.md',
+      parseCrosswalk(openPhase),
+    );
+    expect(result4.entities[0].status).toBe('open');
+  });
+
   it('grounds items in the ADRs their Sources column cites', () => {
     const grounds = result.edges.filter(
       (e) => e.src === 'plat-5.1' && e.rel === 'grounds',

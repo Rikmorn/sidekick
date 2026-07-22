@@ -2,6 +2,8 @@
 
 This repo is the **source for a personal AI engineering harness**: installable Claude Code skills, agents, and rules plus the `sidekick` planning CLI. It is a single TypeScript package (not a monorepo).
 
+**Read [`MAP.md`](MAP.md) first** — the generated entry map: what exists here, how much of it, and where. [`docs/STATE.md`](docs/STATE.md) says where it all stands right now. Both are regenerated from the knowledge graph (below), never hand-edited.
+
 See `README.md` for the workflow overview and install instructions.
 
 ## Project vs usage — the boundary
