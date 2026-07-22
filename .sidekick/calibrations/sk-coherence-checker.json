@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "verifier": "sk-coherence-checker",
+  "agent_file_hash": "31d07905968e04b5cdbc2bb36d3f10d8766acdc660d48aa27078193942f8aa65",
+  "corpus_hash": "29c401a818b25c61797f892049bd9c41a91e2f047e81c7697b9fbe1eee31f3a9",
+  "stats": {
+    "cases": 20,
+    "runs": 60,
+    "accuracy": 0.9833333333333333,
+    "fail_precision": 1,
+    "fail_recall": 0.9666666666666667,
+    "unanimity_rate": 0.95,
+    "confusion": {
+      "tp": 29,
+      "fp": 0,
+      "fn": 1,
+      "tn": 30
+    },
+    "errors": 1
+  },
+  "thresholds": {
+    "min_cases": 20,
+    "fail_precision": 0.9,
+    "fail_recall": 0.8,
+    "unanimity": 0.8
+  },
+  "model": "claude-opus-4-8[1m]",
+  "k": 3,
+  "created": "2026-07-07T08:28:40.351Z"
+}
