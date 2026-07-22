@@ -1,0 +1,13 @@
+# ops-6 (ADR-0007 D8) — the dashboard project.
+#
+# One self-contained HTML file, rendered to .kb/site/ (gitignored, under .kb/
+# like the rest of the derived layer). embed-resources inlines every asset so the
+# site opens over file:// with no server — the data is embedded at prepare time
+# (see dashboards/prepare.sh), never fetched at runtime.
+project:
+  output-dir: ../.kb/site
+
+format:
+  dashboard:
+    embed-resources: true
+    theme: default

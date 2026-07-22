@@ -24,7 +24,8 @@
     "test:watch": "bun test --watch bin/",
     "typecheck": "tsc --noEmit",
     "check": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "dashboard": "bash dashboards/prepare.sh && quarto render dashboards"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",

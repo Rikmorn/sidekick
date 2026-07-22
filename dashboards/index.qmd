@@ -1,0 +1,268 @@
+---
+title: "sidekick — project state"
+---
+
+<!--
+ops-6 (ADR-0007 D8) — the operator's re-entry surface. Generated, never authored
+by hand: the four data sources (state, coverage, diff, runs) are embedded by
+dashboards/prepare.sh into _generated-data.qmd and read here as OJS values.
+Charts are Observable Plot (ships with Quarto's OJS); tables are Inputs.table.
+No mermaid, no decoration — the numbers are the point.
+-->
+
+{{< include _generated-data.qmd >}}
+
+# State
+
+## Row {height="20%"}
+
+```{ojs}
+//| content: valuebox
+//| title: "Entities"
+({ icon: "diagram-3", color: "primary", value: state.freshness.entities })
+```
+
+```{ojs}
+//| content: valuebox
+//| title: "Edges"
+({ icon: "share", color: "primary", value: state.freshness.edges })
+```
+
+```{ojs}
+//| content: valuebox
+//| title: "Open backlog"
+({ icon: "inbox", color: "secondary", value: state.backlog.open })
+```
+
+```{ojs}
+//| content: valuebox
+//| title: "Lint errors"
+({
+  icon: state.freshness.lint.errors > 0 ? "exclamation-triangle" : "check-circle",
+  color: state.freshness.lint.errors > 0 ? "danger" : "success",
+  value: state.freshness.lint.errors
+})
+```
+
+```{ojs}
+//| content: valuebox
+//| title: "Lint advisories"
+({ icon: "info-circle", color: "light", value: state.freshness.lint.advisories })
+```
+
+## Row {height="18%"}
+
+```{ojs}
+//| echo: false
+//| title: "Open epics"
+md`${state.epics.length === 0
+  ? "No open epics."
+  : state.epics.map(e => `- **\`${e.id}\`** — ${e.title} · ${e.counts.done}/${e.counts.total} done · ${e.counts.active} active · ${e.counts.open} open`).join("\n")}`
+```
+
+```{ojs}
+//| echo: false
+//| title: "Awaiting sign-off"
+md`${state.freshness.awaiting_sign_off.length === 0
+  ? "Nothing awaiting sign-off."
+  : "Decisions still **Proposed**: " + state.freshness.awaiting_sign_off.map(id => "`" + id + "`").join(", ") + " — these are the easiest thing to lose across a gap."}
+
+Built at commit \`${(state.built_at_commit ?? "unknown").slice(0, 8)}\`.`
+```
+
+## Row {height="62%"}
+
+```{ojs}
+//| echo: false
+//| title: "Items — every open epic, per-item status"
+Inputs.table(
+  state.epics.flatMap(e =>
+    e.items.map(it => ({ epic: e.id, item: it.id, title: it.title, status: it.status }))
+  ),
+  { rows: 40, layout: "auto" }
+)
+```
+
+# Since last visit
+
+```{ojs}
+//| echo: false
+diffPresent = diff.entities !== undefined
+```
+
+```{ojs}
+//| echo: false
+diffTotals = diffPresent
+  ? ({
+      status: diff.entities.status_changed.length,
+      added: diff.entities.added.length,
+      removed: diff.entities.removed.length,
+      edgesAdded: diff.edges.added.length,
+      edgesRemoved: diff.edges.removed.length,
+      total:
+        diff.entities.status_changed.length +
+        diff.entities.added.length +
+        diff.entities.removed.length +
+        diff.edges.added.length +
+        diff.edges.removed.length
+    })
+  : null
+```
+
+## Row {height="20%"}
+
+```{ojs}
+//| echo: false
+//| title: "What changed"
+!diffPresent
+  ? md`No prior \`docs/STATE.md\` commit to anchor on — this is the first heartbeat, so there is no “last visit” to diff against.`
+  : diffTotals.total === 0
+    ? md`**Nothing since the last heartbeat** (\`${diff.from.commit.slice(0,8)}\` → \`${diff.to.commit.slice(0,8)}\`). Any work in progress is in the uncommitted working tree, not here.`
+    : md`From \`${diff.from.commit.slice(0,8)}\` → \`${diff.to.commit.slice(0,8)}\`: **${diffTotals.status}** status move(s), **${diffTotals.added}** new / **${diffTotals.removed}** removed entit(y/ies), **${diffTotals.edgesAdded}** / **${diffTotals.edgesRemoved}** edge(s) added / removed.`
+```
+
+## Row {height="80%"}
+
+```{ojs}
+//| echo: false
+//| title: "Status moves"
+!diffPresent || diff.entities.status_changed.length === 0
+  ? md`_none_`
+  : Inputs.table(
+      diff.entities.status_changed.map(s => ({ id: s.id, from: s.from, to: s.to })),
+      { rows: 30 }
+    )
+```
+
+```{ojs}
+//| echo: false
+//| title: "Arrivals & departures"
+!diffPresent || (diff.entities.added.length === 0 && diff.entities.removed.length === 0)
+  ? md`_no entities added or removed_`
+  : Inputs.table(
+      [
+        ...diff.entities.added.map(e => ({ change: "+ new", id: e.id, kind: e.kind, title: e.title })),
+        ...diff.entities.removed.map(e => ({ change: "− gone", id: e.id, kind: e.kind, title: e.title }))
+      ],
+      { rows: 30 }
+    )
+```
+
+```{ojs}
+//| echo: false
+//| title: "Edges moved"
+!diffPresent || (diff.edges.added.length === 0 && diff.edges.removed.length === 0)
+  ? md`_no edges added or removed_`
+  : md`${[
+      ...diff.edges.added.map(e => "\`+ " + e + "\`"),
+      ...diff.edges.removed.map(e => "\`− " + e + "\`")
+    ].join("\n\n")}`
+```
+
+# Coverage
+
+```{ojs}
+//| echo: false
+coverageRows = coverage.measured.map(m => {
+  const row = { subject: m.id };
+  for (const s of coverage.suites) row[s] = m.counts[s] ?? 0;
+  row.total = m.total;
+  return row;
+})
+```
+
+## Row {height="55%"}
+
+```{ojs}
+//| echo: false
+//| title: "Measured — subject × suite (case counts)"
+coverageRows.length === 0
+  ? md`No measured subjects yet.`
+  : Inputs.table(coverageRows, { rows: 40, layout: "auto" })
+```
+
+## Row {height="45%"}
+
+```{ojs}
+//| echo: false
+//| title: "Unmeasured — the honest complement"
+coverage.unmeasured.length === 0
+  ? md`Every agent and skill has at least one eval case naming it.`
+  : Inputs.table(
+      coverage.unmeasured.map(u => ({
+        id: u.id,
+        kind: u.kind,
+        reason: u.reason ?? "— no stated reason (add one to evals/coverage-exceptions.md) —"
+      })),
+      { rows: 40, layout: "auto" }
+    )
+```
+
+# Bench
+
+```{ojs}
+//| echo: false
+//| title: "Bench state"
+md`Latest committed run: \`${state.bench.latest_run ?? "none"}\` — **${runs.length}** record(s) across **${state.bench.suites.length}** suite(s). This is the only committed run set, so the marks below are a baseline read of points, not yet a trend; each new run adds a column in time.`
+```
+
+## Row {height="30%"}
+
+```{ojs}
+//| echo: false
+//| title: "Per suite — pass rate & cost"
+Inputs.table(
+  state.bench.suites.map(s => ({
+    suite: s.suite,
+    runs: s.runs,
+    pass: s.pass,
+    fail: s.fail,
+    pass_rate: s.runs ? (100 * s.pass / s.runs).toFixed(0) + "%" : "—",
+    cost_usd: "$" + s.cost_usd.toFixed(3)
+  })),
+  { layout: "auto" }
+)
+```
+
+## Row {height="70%"}
+
+```{ojs}
+//| echo: false
+//| title: "Pass rate by suite"
+state.bench.suites.length === 0
+  ? md`No runs.`
+  : Plot.plot({
+      marginLeft: 55,
+      x: { label: "suite" },
+      y: { label: "pass rate", domain: [0, 1], percent: true, grid: true },
+      color: { legend: false },
+      marks: [
+        Plot.barY(state.bench.suites, { x: "suite", y: d => d.runs ? d.pass / d.runs : 0, fill: "suite" }),
+        Plot.ruleY([0])
+      ]
+    })
+```
+
+```{ojs}
+//| echo: false
+//| title: "Cost per case over run time (faceted by model)"
+runs.length === 0
+  ? md`No run records.`
+  : Plot.plot({
+      marginLeft: 55,
+      x: { label: "run time", type: "utc", grid: true },
+      y: { label: "cost (USD)", grid: true, zero: true },
+      color: { legend: true },
+      fy: { label: "model" },
+      marks: [
+        Plot.dot(runs, {
+          x: d => new Date(d.started_at),
+          y: "cost_usd",
+          stroke: "suite",
+          fy: "model",
+          r: 4,
+          tip: true
+        })
+      ]
+    })
+```
