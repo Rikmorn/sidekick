@@ -2,7 +2,7 @@
 id: ops-3
 epic: ops
 kind: item
-status: open
+status: active
 deps: [ops-2]
 implements: [adr-0007]
 ---

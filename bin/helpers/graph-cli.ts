@@ -16,7 +16,11 @@
  * and reports a clear, actionable message from an installed consumer copy.
  */
 
-import { runGraphBuildCli } from './graph-build.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { DEFAULT_DB_PATH, runGraphBuildCli } from './graph-build.js';
+import { runApplies, runCoverage, runGaps, runQuery } from './graph-query.js';
+import { type GraphDb, openGraphDb } from './graph-store.js';
 
 export const GRAPH_SUBCOMMANDS = [
   'build',
@@ -103,8 +107,46 @@ export async function runGraphCli(
     });
   }
 
-  return {
-    stdout: `sidekick graph ${sub} is not implemented yet.`,
-    exitCode: 1,
-  };
+  // Everything below reads the store, so it must exist first. Building
+  // implicitly would hide staleness behind a command that looks like a read.
+  const dbPath = path.join(
+    opts.repoRoot,
+    flagValue(rest, '--db') ?? DEFAULT_DB_PATH,
+  );
+  if (!fs.existsSync(dbPath)) {
+    return {
+      stdout: `no graph at ${path.relative(opts.repoRoot, dbPath)} — run \`sidekick graph build\` first.`,
+      exitCode: 1,
+    };
+  }
+
+  const handle: GraphDb = openGraphDb(dbPath);
+  try {
+    const args = positionals(rest);
+    if (sub === 'query') {
+      const term = args[0];
+      if (term === undefined) {
+        return {
+          stdout: 'Usage: sidekick graph query <term|id> [--budget N] [--json]',
+          exitCode: 1,
+        };
+      }
+      const budgetRaw = flagValue(rest, '--budget');
+      return runQuery(handle, {
+        term,
+        budget: budgetRaw !== undefined ? Number(budgetRaw) : undefined,
+        json,
+      });
+    }
+    if (sub === 'coverage') return runCoverage(handle, opts.repoRoot, json);
+    if (sub === 'gaps') return runGaps(handle, opts.repoRoot, json);
+    if (sub === 'applies') return runApplies(handle, opts.repoRoot, args, json);
+
+    return {
+      stdout: `sidekick graph ${sub} is not implemented yet.`,
+      exitCode: 1,
+    };
+  } finally {
+    handle.close();
+  }
 }

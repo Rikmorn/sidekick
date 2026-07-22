@@ -1,3 +1,7 @@
+---
+applies-to: [bin/cli.ts]
+---
+
 # Backlog: `install` ignores `CLAUDE_CONFIG_DIR`
 
 **Status:** Parked 2026-06-11. Surfaced by the E19 final integration review (fan-out seam build).
