@@ -38,6 +38,16 @@ The repo compiles itself into a queryable graph (ADR-0007): entities (epics, ite
 
 - **Build it:** `bun bin/cli.ts graph build` — writes `.kb/graph.db` (gitignored, derived, safe to delete).
 - **Use it:** the database exists so status, coverage, applicability, and what-changed questions are *queried*, not reconstructed by grep archaeology. Sources stay the authority; the graph is a rebuildable index of them.
+
+  | Question | Command |
+  |---|---|
+  | What is this, and what is it wired to? | `graph query <id\|term> [--budget N]` |
+  | What changed since I was last here? | `graph diff <ref> [ref]` — the session catch-up |
+  | What is tested, and what is not? | `graph coverage` |
+  | What is unfinished or unlinked? | `graph gaps` |
+  | Is there a backlog note about what I am about to touch? | `graph applies <path\|name>` — run before starting work |
+  | Is the corpus still coherent? | `graph lint` |
+
 - Authored edges use the typed convention: frontmatter fields (`implements:`, `deps:`, `grounds:`, `advances:`, `applies-to:`) and body links of the form `- <relation> [[<target>]]`, drawn from a closed vocabulary the lint enforces.
 - `sidekick graph` is repo-internal — it ships with the harness source, not with an installed copy.
 

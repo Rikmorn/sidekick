@@ -19,6 +19,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DEFAULT_DB_PATH, runGraphBuildCli } from './graph-build.js';
+import { runGraphDiff } from './graph-diff.js';
+import { runGraphLint } from './graph-lint.js';
 import { runApplies, runCoverage, runGaps, runQuery } from './graph-query.js';
 import { type GraphDb, openGraphDb } from './graph-store.js';
 
@@ -105,6 +107,28 @@ export async function runGraphCli(
       force: hasFlag(rest, '--force'),
       json,
     });
+  }
+
+  // diff and lint parse the tree themselves, so neither needs a built store —
+  // and lint must not be able to pass against a stale one.
+  if (sub === 'diff') {
+    const args = positionals(rest);
+    if (args[0] === undefined) {
+      return {
+        stdout: 'Usage: sidekick graph diff <ref> [ref] [--json]',
+        exitCode: 1,
+      };
+    }
+    return runGraphDiff({
+      repoRoot: opts.repoRoot,
+      fromRef: args[0],
+      toRef: args[1],
+      json,
+    });
+  }
+
+  if (sub === 'lint') {
+    return runGraphLint({ repoRoot: opts.repoRoot, json });
   }
 
   // Everything below reads the store, so it must exist first. Building
