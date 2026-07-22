@@ -1,6 +1,6 @@
 # ADR-0007 — Project knowledge layer: glue-with-thin-build over typed text, generated rich views
 
-**Status:** Proposed (2026-07-22, from the knowledge-layer research pass; operator acceptance pending). Grounds the visibility/ops track that gates sk-* self-use confidence. Partially subsumes the *mechanism* halves of EPIC `4.1` (navigability), `3.8` (observability rendering), and `4.5` (cached codebase-map — pulled forward as the agent-facing map, Decision 7) — those items narrow to their residues when this is accepted. Research: [`../research/knowledge-layer/REPORT.md`](../research/knowledge-layer/REPORT.md).
+**Status:** Accepted (2026-07-22, operator sign-off — **as a first iteration**: the operator anticipates schema extensions around agent/skill testing and their metrics; those concepts are deliberately deferred until this base layer lands, see Revisit when). Grounds the visibility/ops track that gates sk-* self-use confidence. Partially subsumes the *mechanism* halves of EPIC `4.1` (navigability), `3.8` (observability rendering), and `4.5` (cached codebase-map — pulled forward as the agent-facing map, Decision 7) — those items narrow to their residues when this is accepted. Research: [`../research/knowledge-layer/REPORT.md`](../research/knowledge-layer/REPORT.md).
 
 ## Context
 
@@ -50,6 +50,7 @@ A four-leg research pass (repo grounding · gsd-graphify code inspection · dual
 
 ## Revisit when
 
+- **The base layer lands (planned extension, operator-flagged at acceptance):** agent/skill testing concepts enter the schema — bench subjects, per-subject metrics, calibration/graduation state as first-class entities the views can trend and the graph can traverse. Extend the schema then; do not pre-model it now.
 - A collaborator joins (Outline-class projection moves up sharply; multi-user editing changes the substrate calculus).
 - basic-memory ships schema-validated relation vocabularies (rent-more becomes plausible).
 - FTS recall measurably fails or the corpus scale flips assumption 2 (embeddings re-enter).
