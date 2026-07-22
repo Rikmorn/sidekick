@@ -6,10 +6,12 @@ import * as path from 'node:path';
 import {
   generateMap,
   generateState,
+  generateStateData,
   MAP_PATH,
   normalizeForDrift,
   parseTaxonomy,
   renderSurfaces,
+  runExportCli,
   runGenerateCli,
   STATE_PATH,
 } from './graph-generate.js';
@@ -36,6 +38,24 @@ const entity = (id: string, kind: string, over: Record<string, unknown> = {}) =>
     path: `docs/${id}.md`,
     ...over,
   }) as GraphSnapshot['entities'][number];
+
+const run = (
+  suite: string,
+  verdict: string,
+  cost: number,
+): GraphSnapshot['runs'][number] => ({
+  run_id: 'r1',
+  case_id: 'c',
+  suite,
+  subject_kind: 'agent',
+  subject_name: 'a',
+  model: 'claude-opus-4-8[1m]',
+  cost_usd: cost,
+  num_turns: 1,
+  verdict,
+  started_at: null,
+  duration_ms: null,
+});
 
 describe('normalizeForDrift', () => {
   it('blanks the commit stamp so a new commit is not itself drift', () => {
@@ -126,6 +146,113 @@ describe('generateState', () => {
 
   it('is deterministic', () => {
     expect(generateState(inputs)).toBe(generateState(inputs));
+  });
+});
+
+describe('generateStateData', () => {
+  const inputs = {
+    snapshot: snapshot({
+      entities: [
+        entity('ops', 'epic', {
+          title: 'the knowledge layer',
+          status: 'active',
+          path: 'docs/work/ops/epic.md',
+        }),
+        entity('ops-1', 'item', {
+          title: 'Compiler',
+          status: 'done',
+          path: 'docs/work/ops/1.md',
+          data: { epic: 'ops' },
+        }),
+        entity('ops-2', 'item', {
+          title: 'Queries',
+          status: 'active',
+          path: 'docs/work/ops/2.md',
+          data: { epic: 'ops' },
+        }),
+        entity('ops-3', 'item', {
+          title: 'Diff',
+          status: 'open',
+          path: 'docs/work/ops/3.md',
+          data: { epic: 'ops' },
+        }),
+        entity('done-epic', 'epic', { status: 'done' }),
+        entity('adr-0006', 'adr', { status: 'Proposed' }),
+        entity('adr-0007', 'adr', { status: 'Accepted' }),
+        entity('backlog:open-one', 'backlog', { status: 'open' }),
+        entity('backlog:done-one', 'backlog', { status: 'resolved' }),
+      ],
+      edges: [
+        {
+          src: 'case:s/a',
+          rel: 'measures',
+          dst: 'agent:a',
+          tier: 'EXTRACTED',
+          origin: 'x:1',
+        },
+      ],
+      runs: [
+        run('coherence-agent', 'pass', 0.1),
+        run('coherence-agent', 'fail', 0.2),
+        run('scope-agent', 'pass', 0.05),
+      ],
+    }),
+    lint: { errors: 0, advisories: 7 },
+  };
+
+  it('rolls up open epics with per-item status, title, and path', () => {
+    const data = generateStateData(inputs);
+    expect(data.epics.length).toBe(1);
+    const [ops] = data.epics;
+    expect(ops.id).toBe('ops');
+    expect(ops.counts).toEqual({ done: 1, active: 1, open: 1, total: 3 });
+    expect(ops.items.map((i) => i.id)).toEqual(['ops-1', 'ops-2', 'ops-3']);
+    expect(ops.items[1]).toEqual({
+      id: 'ops-2',
+      title: 'Queries',
+      status: 'active',
+      path: 'docs/work/ops/2.md',
+    });
+  });
+
+  it('drops done and closed epics, mirroring STATE.md', () => {
+    expect(generateStateData(inputs).epics.map((e) => e.id)).toEqual(['ops']);
+  });
+
+  it('counts the open backlog', () => {
+    expect(generateStateData(inputs).backlog).toEqual({ open: 1, total: 2 });
+  });
+
+  it('summarises the bench per suite with pass/fail/cost and the latest run', () => {
+    const { bench } = generateStateData(inputs);
+    expect(bench.latest_run).toBe('r1');
+    const coherence = bench.suites.find((s) => s.suite === 'coherence-agent');
+    expect(coherence).toEqual({
+      suite: 'coherence-agent',
+      runs: 2,
+      pass: 1,
+      fail: 1,
+      cost_usd: 0.30000000000000004,
+    });
+    expect(bench.suites.map((s) => s.suite)).toEqual([
+      'coherence-agent',
+      'scope-agent',
+    ]);
+  });
+
+  it('reports freshness: commit, counts, lint, and decisions awaiting sign-off', () => {
+    const { freshness, built_at_commit } = generateStateData(inputs);
+    expect(built_at_commit).toBe('abc1234');
+    expect(freshness.entities).toBe(inputs.snapshot.entities.length);
+    expect(freshness.edges).toBe(1);
+    expect(freshness.lint).toEqual({ errors: 0, advisories: 7 });
+    expect(freshness.awaiting_sign_off).toEqual(['adr-0006']);
+  });
+
+  it('is deterministic', () => {
+    expect(JSON.stringify(generateStateData(inputs))).toBe(
+      JSON.stringify(generateStateData(inputs)),
+    );
   });
 });
 
@@ -283,6 +410,18 @@ describe('generated surfaces on a repo', () => {
       .readFileSync(path.join(repo, STATE_PATH), 'utf-8')
       .split('\n').length;
     expect(lines).toBeLessThanOrEqual(STATE_LINE_CAP);
+  });
+
+  it('exports the current state as JSON from the live tree', () => {
+    const res = runExportCli(repo);
+    expect(res.exitCode).toBe(0);
+    const data = JSON.parse(res.stdout);
+    const ops = data.epics.find((e: { id: string }) => e.id === 'ops');
+    expect(ops).toBeDefined();
+    expect(ops.items.some((i: { id: string }) => i.id === 'ops-2')).toBe(true);
+    expect(typeof data.freshness.entities).toBe('number');
+    expect(data.freshness.lint).toHaveProperty('errors');
+    expect(data.built_at_commit).not.toBe('unknown');
   });
 
   it('lint catches drift after a source changes, and passes once regenerated', () => {

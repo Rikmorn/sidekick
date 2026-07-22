@@ -24,6 +24,7 @@ import {
   MAP_PATH,
   normalizeForDrift,
   renderSurfaces,
+  runExportCli,
   runGenerateCli,
   STATE_PATH,
 } from './graph-generate.js';
@@ -41,6 +42,7 @@ export const GRAPH_SUBCOMMANDS = [
   'lint',
   'state',
   'map',
+  'export',
 ] as const;
 
 export type GraphSubcommand = (typeof GRAPH_SUBCOMMANDS)[number];
@@ -90,6 +92,7 @@ const USAGE = `Usage: sidekick graph <${GRAPH_SUBCOMMANDS.join('|')}> [options]
   lint                       vocabulary, refs, taxonomy, drift, size cap
   state                      regenerate docs/STATE.md
   map                        regenerate MAP.md
+  export                     current-state rollup as JSON (dashboard data source)
 
 Common flags: --json (machine output), --budget <tokens> (query), --force (build)`;
 
@@ -136,6 +139,11 @@ export async function runGraphCli(
 
   if (sub === 'state' || sub === 'map') {
     return runGenerateCli(opts.repoRoot, sub, json);
+  }
+
+  // export parses the tree fresh like state/map, so it needs no built store.
+  if (sub === 'export') {
+    return runExportCli(opts.repoRoot);
   }
 
   if (sub === 'lint') {

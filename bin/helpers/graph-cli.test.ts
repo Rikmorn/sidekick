@@ -23,6 +23,7 @@ describe('graph CLI surface', () => {
       'lint',
       'state',
       'map',
+      'export',
     ]);
   });
 

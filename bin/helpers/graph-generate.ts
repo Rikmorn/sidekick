@@ -200,6 +200,127 @@ function benchLines(runs: RunRow[]): string[] {
   return out;
 }
 
+// ---- state export (ops-6 D2) ------------------------------------------------
+
+export interface StateEpicItem {
+  id: string;
+  title: string;
+  status: string | null;
+  path: string | null;
+}
+
+export interface StateEpic {
+  id: string;
+  title: string;
+  status: string | null;
+  path: string | null;
+  counts: { done: number; active: number; open: number; total: number };
+  items: StateEpicItem[];
+}
+
+export interface StateBenchSuite {
+  suite: string;
+  runs: number;
+  pass: number;
+  fail: number;
+  cost_usd: number;
+}
+
+/**
+ * The machine-readable current state. Same rollup as STATE.md, as data: epics
+ * with per-item status, the open backlog, a per-suite bench summary, and the
+ * freshness flags. The dashboard prepare step embeds this so the visual surface
+ * reads the same snapshot STATE.md renders — the two cannot disagree about where
+ * the project stands.
+ */
+export interface StateData {
+  built_at_commit: string | null;
+  /** Open epics only (done/closed drop out), mirroring STATE.md. */
+  epics: StateEpic[];
+  backlog: { open: number; total: number };
+  bench: { latest_run: string | null; suites: StateBenchSuite[] };
+  freshness: {
+    entities: number;
+    edges: number;
+    lint: { errors: number; advisories: number };
+    /** ADR ids still Proposed — decisions the operator owes a sign-off. */
+    awaiting_sign_off: string[];
+  };
+}
+
+export function generateStateData(inputs: StateInputs): StateData {
+  const { snapshot, lint } = inputs;
+
+  const epics: StateEpic[] = entitiesOf(snapshot, 'epic')
+    .filter((e) => e.status !== 'done' && e.status !== 'closed')
+    .map((epic) => {
+      const items = itemsOfEpic(snapshot, epic.id);
+      const count = (status: string): number =>
+        items.filter((i) => i.status === status).length;
+      return {
+        id: epic.id,
+        title: epic.title,
+        status: epic.status,
+        path: epic.path,
+        counts: {
+          done: count('done'),
+          active: count('active'),
+          open: count('open'),
+          total: items.length,
+        },
+        items: items.map((i) => ({
+          id: i.id,
+          title: i.title,
+          status: i.status,
+          path: i.path,
+        })),
+      };
+    });
+
+  const backlog = entitiesOf(snapshot, 'backlog');
+  const openBacklog = backlog.filter((b) => b.status !== 'resolved');
+  const proposed = entitiesOf(snapshot, 'adr').filter(
+    (a) => a.status === 'Proposed',
+  );
+
+  return {
+    built_at_commit: snapshot.meta.built_at_commit ?? null,
+    epics,
+    backlog: { open: openBacklog.length, total: backlog.length },
+    bench: benchSummary(snapshot.runs),
+    freshness: {
+      entities: snapshot.entities.length,
+      edges: snapshot.edges.length,
+      lint,
+      awaiting_sign_off: proposed.map((a) => a.id),
+    },
+  };
+}
+
+/** Per-suite pass/fail/cost fold over the run rows, plus the latest run id. */
+function benchSummary(runs: RunRow[]): StateData['bench'] {
+  const bySuite = new Map<string, StateBenchSuite>();
+  for (const r of runs) {
+    const row = bySuite.get(r.suite) ?? {
+      suite: r.suite,
+      runs: 0,
+      pass: 0,
+      fail: 0,
+      cost_usd: 0,
+    };
+    row.runs += 1;
+    if (r.verdict === 'pass') row.pass += 1;
+    if (r.verdict === 'fail') row.fail += 1;
+    row.cost_usd += r.cost_usd ?? 0;
+    bySuite.set(r.suite, row);
+  }
+  const runIds = [...new Set(runs.map((r) => r.run_id))].sort();
+  return {
+    latest_run: runIds.length > 0 ? runIds[runIds.length - 1] : null,
+    suites: [...bySuite.values()].sort((a, b) => (a.suite < b.suite ? -1 : 1)),
+  };
+}
+
 // ---- MAP.md -----------------------------------------------------------------
 
 export interface TaxonomyRow {
@@ -408,6 +529,21 @@ export function renderSurfaces(repoRoot: string): {
 export interface GenerateCliResult {
   stdout: string;
   exitCode: number;
+}
+
+/**
+ * Emit the current-state export as JSON. Reads the live tree like `state`, so it
+ * needs no built store and always reflects now — the dashboard prepare step
+ * rebuilds the graph before rendering regardless. JSON is the whole point of the
+ * command, so it has no human-text variant.
+ */
+export function runExportCli(repoRoot: string): GenerateCliResult {
+  const { snapshot } = collectGraph(repoRoot);
+  const lint = lintSummary(collectSourceLint(repoRoot));
+  return {
+    stdout: JSON.stringify(generateStateData({ snapshot, lint }), null, 2),
+    exitCode: 0,
+  };
 }
 
 /** Write one surface and report whether the write changed anything. */
