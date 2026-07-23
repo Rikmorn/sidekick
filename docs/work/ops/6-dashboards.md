@@ -2,7 +2,7 @@
 id: ops-6
 epic: ops
 kind: item
-status: active
+status: done
 deps: [ops-3]
 implements: [adr-0007]
 grounds: [research/knowledge-layer]
@@ -43,3 +43,15 @@ Built across two waves. **Done is not yet granted** — the acceptance test (Gat
 3. **The `content: valuebox` OJS-object form doesn't render values** — rewritten to the documented div form with inline `{ojs}` expressions; explicit heights added to both Plot calls (negative-`<rect>` errors).
 
 Diagnosed and verified with **Playwright headless Chromium** (console capture + per-page text + screenshots), now a standing check: `dashboards/smoke.mjs` (`bun run dashboard:smoke`) serves the built page, loads it in a real browser, and fails on any console/page error or unpopulated page — closing exactly the verification lane whose absence shipped these bugs. `playwright` added as a devDependency. Final state: **0 browser errors, all four pages populated with live data** (value boxes, epic table, coverage matrix, both charts). The operator's eyeball remains the gate.
+
+## Operator review round → accepted (2026-07-23)
+
+The operator's visual read came back: "it works" — with a defect/gap list, fixed same-session:
+
+- **Blank cards on Since-last-visit and Coverage** — three definition-only OJS cells lacked `//| output: false`, so `format: dashboard` gave each an empty card that also stole the page's height budget. Same family as browser-truth defect 2, caught in the authored cells this time.
+- **Bench squeezed** — the "Bench state" text cell sat outside any `## Row`, grabbing an implicit full row; the per-suite table compressed to a scroll strip. All three pages now carry explicit row heights.
+- **Counts without drill-down** — `graph export` gained `freshness.entities_by_kind`, `freshness.edges_by_kind`, and `backlog.items` (open entries; TDD'd, additive); the State page renders by-kind bar charts and an open-backlog table so 219/234/7 resolve to something inspectable.
+- **Since-last-visit unexplained** — the "What changed" card now opens with the anchor semantics (previous STATE.md heartbeat commit → HEAD).
+- **A transient the smoke caught during the fix round:** switching tabs re-renders hidden charts at container width 0, driving horizontal-bar `<rect>` widths negative (0 − margins) — 75 console errors. Horizontal bars need explicit `width` + `max-width: 100%`; the width-0 re-render is Quarto's card-fill sizing, so any future `barX` here inherits the same guard.
+
+Closed at 490/0 tests, smoke clean, all four tabs screenshot-reviewed. **Done granted** — the operator judges it beats reading EPIC-STATE, with two recorded reservations: the Quarto dependency and its render-time-only layout. Direction captured in [`backlog/own-dashboard-renderer.md`](../../backlog/own-dashboard-renderer.md) — an owned self-contained renderer over the same four JSON contracts, bundleable with sk-*; [`backlog/dashboard-verdict-rule-duplication.md`](../../backlog/dashboard-verdict-rule-duplication.md) stands from verification.
