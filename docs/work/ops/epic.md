@@ -1,7 +1,7 @@
 ---
 id: ops
 kind: epic
-status: open
+status: done
 implements: [adr-0007]
 grounds: [research/knowledge-layer]
 advances: [ns-project-visibility, ns-adaptive-harness]
@@ -27,3 +27,5 @@ advances: [ns-project-visibility, ns-adaptive-harness]
 **Ordering.** ops-1 is independent (operator dialogue; do first or in parallel). ops-2 → ops-3 → ops-4 → ops-5 is the dependency spine. ops-6 needs only ops-3. Sized one-session-per-item; the repo is coherent at every item boundary.
 
 **Done means:** all six items record-class with syntheses; the compiler runs green on the live tree; a cold session (either audience) reaches current state without grep; then two consequences unlock — the eval-metrics schema extension (ADR-0007 Revisit-when) and the sk-* self-use confidence reassessment ([[sidekick-execution-prefs]] item 3's gate).
+
+**Closed 2026-07-23 (operator).** All six items done with syntheses; ops-6 accepted on visual review. The two unlocked consequences were dispositioned at closure, sequenced: the first unlock was **redefined broader than the schema extension** — a full agent/skill measurement program (metrics vocabulary, scenario corpora, bias-acknowledged judging, persisted trends), captured in [`backlog/agent-measurement-program.md`](../../backlog/agent-measurement-program.md) as the next-epic candidate; the sk-* self-use reassessment comes **after** that program exists — measurement tools are the confidence gate, per the operator: "sk-reassessment comes after we have tools to measure."
