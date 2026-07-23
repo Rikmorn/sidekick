@@ -237,15 +237,28 @@ export interface StateData {
   built_at_commit: string | null;
   /** Open epics only (done/closed drop out), mirroring STATE.md. */
   epics: StateEpic[];
-  backlog: { open: number; total: number };
+  /** items lists the open entries — the drill-down behind the count. */
+  backlog: { open: number; total: number; items: StateEpicItem[] };
   bench: { latest_run: string | null; suites: StateBenchSuite[] };
   freshness: {
     entities: number;
     edges: number;
+    /** Per-kind counts (keys sorted) — what the totals are made of. */
+    entities_by_kind: Record<string, number>;
+    edges_by_kind: Record<string, number>;
     lint: { errors: number; advisories: number };
     /** ADR ids still Proposed — decisions the operator owes a sign-off. */
     awaiting_sign_off: string[];
   };
+}
+
+/** Sorted-key fold so the export stays byte-deterministic run to run. */
+function countByKind(kinds: string[]): Record<string, number> {
+  const counts = new Map<string, number>();
+  for (const kind of kinds) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  return Object.fromEntries(
+    [...counts.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
+  );
 }
 
 export function generateStateData(inputs: StateInputs): StateData {
@@ -286,11 +299,22 @@ export function generateStateData(inputs: StateInputs): StateData {
   return {
     built_at_commit: snapshot.meta.built_at_commit ?? null,
     epics,
-    backlog: { open: openBacklog.length, total: backlog.length },
+    backlog: {
+      open: openBacklog.length,
+      total: backlog.length,
+      items: openBacklog.map((b) => ({
+        id: b.id,
+        title: b.title,
+        status: b.status,
+        path: b.path,
+      })),
+    },
     bench: benchSummary(snapshot.runs),
     freshness: {
       entities: snapshot.entities.length,
       edges: snapshot.edges.length,
+      entities_by_kind: countByKind(snapshot.entities.map((e) => e.kind)),
+      edges_by_kind: countByKind(snapshot.edges.map((e) => e.rel)),
       lint,
       awaiting_sign_off: proposed.map((a) => a.id),
     },

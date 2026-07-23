@@ -219,8 +219,19 @@ describe('generateStateData', () => {
     expect(generateStateData(inputs).epics.map((e) => e.id)).toEqual(['ops']);
   });
 
-  it('counts the open backlog', () => {
-    expect(generateStateData(inputs).backlog).toEqual({ open: 1, total: 2 });
+  it('counts the open backlog and lists its open items', () => {
+    expect(generateStateData(inputs).backlog).toEqual({
+      open: 1,
+      total: 2,
+      items: [
+        {
+          id: 'backlog:open-one',
+          title: 'backlog:open-one title',
+          status: 'open',
+          path: 'docs/backlog:open-one.md',
+        },
+      ],
+    });
   });
 
   it('summarises the bench per suite with pass/fail/cost and the latest run', () => {
@@ -237,6 +248,23 @@ describe('generateStateData', () => {
     expect(bench.suites.map((s) => s.suite)).toEqual([
       'coherence-agent',
       'scope-agent',
+    ]);
+  });
+
+  it('breaks the entity and edge totals down by kind, keys sorted', () => {
+    const { freshness } = generateStateData(inputs);
+    expect(freshness.entities_by_kind).toEqual({
+      adr: 2,
+      backlog: 2,
+      epic: 2,
+      item: 3,
+    });
+    expect(freshness.edges_by_kind).toEqual({ measures: 1 });
+    expect(Object.keys(freshness.entities_by_kind)).toEqual([
+      'adr',
+      'backlog',
+      'epic',
+      'item',
     ]);
   });
 

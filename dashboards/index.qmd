@@ -16,7 +16,7 @@ No mermaid, no decoration — the numbers are the point.
 
 # State
 
-## Row {height="20%"}
+## Row {height="17%"}
 
 ::: {.valuebox icon="diagram-3" color="primary"}
 Entities
@@ -48,7 +48,7 @@ Lint advisories
 `{ojs} state.freshness.lint.advisories`
 :::
 
-## Row {height="18%"}
+## Row {height="15%"}
 
 ```{ojs}
 //| echo: false
@@ -68,7 +68,53 @@ md`${state.freshness.awaiting_sign_off.length === 0
 Built at commit \`${(state.built_at_commit ?? "unknown").slice(0, 8)}\`.`
 ```
 
-## Row {height="62%"}
+## Row {height="38%"}
+
+```{ojs}
+//| echo: false
+//| title: "Entities by kind"
+{
+  const rows = Object.entries(state.freshness.entities_by_kind)
+    .map(([kind, count]) => ({ kind, count }));
+  return Plot.plot({
+    width: 560,
+    style: { maxWidth: "100%" },
+    height: Math.max(140, rows.length * 17 + 35),
+    marginLeft: 80,
+    x: { label: "entities", grid: true },
+    y: { label: null },
+    marks: [
+      Plot.barX(rows, { y: "kind", x: "count", fill: "#4269d0", sort: { y: "-x" }, tip: true }),
+      Plot.text(rows, { y: "kind", x: "count", text: d => String(d.count), dx: 8, textAnchor: "start", fill: "currentColor" }),
+      Plot.ruleX([0])
+    ]
+  });
+}
+```
+
+```{ojs}
+//| echo: false
+//| title: "Edges by kind"
+{
+  const rows = Object.entries(state.freshness.edges_by_kind)
+    .map(([kind, count]) => ({ kind, count }));
+  return Plot.plot({
+    width: 560,
+    style: { maxWidth: "100%" },
+    height: Math.max(140, rows.length * 17 + 35),
+    marginLeft: 110,
+    x: { label: "edges", grid: true },
+    y: { label: null },
+    marks: [
+      Plot.barX(rows, { y: "kind", x: "count", fill: "#4269d0", sort: { y: "-x" }, tip: true }),
+      Plot.text(rows, { y: "kind", x: "count", text: d => String(d.count), dx: 8, textAnchor: "start", fill: "currentColor" }),
+      Plot.ruleX([0])
+    ]
+  });
+}
+```
+
+## Row {height="30%"}
 
 ```{ojs}
 //| echo: false
@@ -81,15 +127,28 @@ Inputs.table(
 )
 ```
 
+```{ojs}
+//| echo: false
+//| title: "Open backlog — the unscheduled pool"
+state.backlog.items.length === 0
+  ? md`Backlog is clear.`
+  : Inputs.table(
+      state.backlog.items.map(b => ({ id: b.id.replace("backlog:", ""), title: b.title })),
+      { rows: 20, layout: "auto" }
+    )
+```
+
 # Since last visit
 
 ```{ojs}
 //| echo: false
+//| output: false
 diffPresent = diff.entities !== undefined
 ```
 
 ```{ojs}
 //| echo: false
+//| output: false
 diffTotals = diffPresent
   ? ({
       status: diff.entities.status_changed.length,
@@ -107,19 +166,23 @@ diffTotals = diffPresent
   : null
 ```
 
-## Row {height="20%"}
+## Row {height="26%"}
 
 ```{ojs}
 //| echo: false
 //| title: "What changed"
-!diffPresent
-  ? md`No prior \`docs/STATE.md\` commit to anchor on — this is the first heartbeat, so there is no “last visit” to diff against.`
-  : diffTotals.total === 0
-    ? md`**Nothing since the last heartbeat** (\`${diff.from.commit.slice(0,8)}\` → \`${diff.to.commit.slice(0,8)}\`). Any work in progress is in the uncommitted working tree, not here.`
-    : md`From \`${diff.from.commit.slice(0,8)}\` → \`${diff.to.commit.slice(0,8)}\`: **${diffTotals.status}** status move(s), **${diffTotals.added}** new / **${diffTotals.removed}** removed entit(y/ies), **${diffTotals.edgesAdded}** / **${diffTotals.edgesRemoved}** edge(s) added / removed.`
+{
+  const framing = md`This page diffs the project graph across the last "visit": from the previous \`docs/STATE.md\` heartbeat commit (STATE regenerates when work concludes, so its history marks session ends) to \`HEAD\`. Status moves, arrivals, and edge changes below are everything that landed in between.`;
+  const detail = !diffPresent
+    ? md`No prior \`docs/STATE.md\` commit to anchor on — this is the first heartbeat, so there is no “last visit” to diff against.`
+    : diffTotals.total === 0
+      ? md`**Nothing since the last heartbeat** (\`${diff.from.commit.slice(0,8)}\` → \`${diff.to.commit.slice(0,8)}\`). Any work in progress is in the uncommitted working tree, not here.`
+      : md`From \`${diff.from.commit.slice(0,8)}\` → \`${diff.to.commit.slice(0,8)}\`: **${diffTotals.status}** status move(s), **${diffTotals.added}** new / **${diffTotals.removed}** removed entit(y/ies), **${diffTotals.edgesAdded}** / **${diffTotals.edgesRemoved}** edge(s) added / removed.`;
+  return html`${framing}${detail}`;
+}
 ```
 
-## Row {height="80%"}
+## Row {height="74%"}
 
 ```{ojs}
 //| echo: false
@@ -161,6 +224,7 @@ diffTotals = diffPresent
 
 ```{ojs}
 //| echo: false
+//| output: false
 coverageRows = coverage.measured.map(m => {
   const row = { subject: m.id };
   for (const s of coverage.suites) row[s] = m.counts[s] ?? 0;
@@ -198,6 +262,8 @@ coverage.unmeasured.length === 0
 
 # Bench
 
+## Row {height="16%"}
+
 ```{ojs}
 //| echo: false
 //| title: "Bench state"
@@ -222,7 +288,7 @@ Inputs.table(
 )
 ```
 
-## Row {height="70%"}
+## Row {height="54%"}
 
 ```{ojs}
 //| echo: false
@@ -236,7 +302,7 @@ state.bench.suites.length === 0
       y: { label: "pass rate", domain: [0, 1], percent: true, grid: true },
       color: { legend: false },
       marks: [
-        Plot.barY(state.bench.suites, { x: "suite", y: d => d.runs ? d.pass / d.runs : 0, fill: "suite" }),
+        Plot.barY(state.bench.suites, { x: "suite", y: d => d.runs ? d.pass / d.runs : 0, fill: "suite", tip: true }),
         Plot.ruleY([0])
       ]
     })
