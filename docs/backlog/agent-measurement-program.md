@@ -4,6 +4,8 @@ applies-to: [evals/cases, bin/helpers/eval-run.ts, bin/helpers/eval-report.ts, b
 
 # Agent/skill measurement program — the sk-* confidence gate (next-epic candidate)
 
+**Status:** Resolved — promoted 2026-07-29 to [ADR-0008](../adr/0008-agent-measurement-program.md) + the [`bench` epic](../work/bench/epic.md) after the design dialogue of 2026-07-23. The direction below is the operator's original framing; the ADR is now the binding record.
+
 Operator direction at ops-epic closure (2026-07-23), redefining the "eval-metrics schema extension" unlock as something bigger than graph plumbing: **we have ~30 agents and skills and nothing that measures their quality, consistency, adherence, or reasoning (or lack thereof), nor a designed set of scenarios to measure them against.** The operator expects the metric and scenario list to grow beyond what's named here. This program — not the visibility layer alone — is what grants the confidence that opens sk-* self-use; the reassessment is explicitly sequenced after it ("sk-reassessment comes after we have tools to measure").
 
 **Method constraints (operator-set, grounded in what's already built and researched):**
