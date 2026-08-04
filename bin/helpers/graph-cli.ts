@@ -201,7 +201,7 @@ export async function runGraphCli(
     }
     if (sub === 'coverage') return runCoverage(handle, opts.repoRoot, json);
     if (sub === 'gaps') return runGaps(handle, opts.repoRoot, json);
-    if (sub === 'applies') return runApplies(handle, opts.repoRoot, args, json);
+    if (sub === 'applies') return runApplies(handle, args, json);
 
     return {
       stdout: `sidekick graph ${sub} is not implemented yet.`,

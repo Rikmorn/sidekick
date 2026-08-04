@@ -16,7 +16,6 @@ import {
   type EntityKind,
   emptyParse,
   type Frontmatter,
-  fieldAsList,
   fieldAsScalar,
   isEdgeRelation,
   type LintFinding,

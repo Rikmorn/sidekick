@@ -300,7 +300,7 @@ export function runCoverage(
   lines.push('', `unmeasured (${report.unmeasured.length}):`);
   for (const row of report.unmeasured) {
     lines.push(
-      `  ${row.id} — ${row.reason ?? 'no stated reason (add one to ' + COVERAGE_EXCEPTIONS_PATH + ')'}`,
+      `  ${row.id} — ${row.reason ?? `no stated reason (add one to ${COVERAGE_EXCEPTIONS_PATH})`}`,
     );
   }
   return { stdout: lines.join('\n'), exitCode: 0 };
@@ -421,9 +421,9 @@ export function runGaps(
 export function globToRegExp(pattern: string): RegExp {
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, ' ')
-    .replace(/\*/g, '[^/]*')
-    .replace(/ /g, '.*');
+    .split('**')
+    .map((part) => part.replace(/\*/g, '[^/]*'))
+    .join('.*');
   return new RegExp(`^${escaped}$`);
 }
 
@@ -463,11 +463,7 @@ export interface AppliesHit {
  * The bare-name form is what makes `applies fixer` work the way an operator
  * would type it, rather than demanding `agent:sk-fixer`.
  */
-export function findApplies(
-  handle: GraphDb,
-  repoRoot: string,
-  args: string[],
-): AppliesHit[] {
+export function findApplies(handle: GraphDb, args: string[]): AppliesHit[] {
   const entities = allEntities(handle);
   const byId = new Map(entities.map((e) => [e.id, e]));
   const edges = allEdges(handle).filter((e) => e.rel === 'applies-to');
@@ -517,7 +513,6 @@ function argMatchesTarget(
 
 export function runApplies(
   handle: GraphDb,
-  repoRoot: string,
   args: string[],
   json: boolean,
 ): CliResult {
@@ -527,7 +522,7 @@ export function runApplies(
       exitCode: 1,
     };
   }
-  const hits = findApplies(handle, repoRoot, args);
+  const hits = findApplies(handle, args);
   if (json) {
     return {
       stdout: JSON.stringify({ args, applies: hits }, null, 2),

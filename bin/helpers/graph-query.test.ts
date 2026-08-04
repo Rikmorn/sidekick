@@ -317,30 +317,30 @@ describe('findApplies', () => {
   });
 
   it('matches an exact path', () => {
-    expect(
-      findApplies(h, repo, ['agents/sk-fixer.md']).map((x) => x.id),
-    ).toEqual(['backlog:fixer-scope-widening']);
+    expect(findApplies(h, ['agents/sk-fixer.md']).map((x) => x.id)).toEqual([
+      'backlog:fixer-scope-widening',
+    ]);
   });
 
   it('matches a bare name the way an operator types it', () => {
-    expect(findApplies(h, repo, ['fixer']).map((x) => x.id)).toEqual([
+    expect(findApplies(h, ['fixer']).map((x) => x.id)).toEqual([
       'backlog:fixer-scope-widening',
     ]);
   });
 
   it('excludes resolved items — the pool is the open set', () => {
-    const hits = findApplies(h, repo, ['agents/sk-fixer.md']);
+    const hits = findApplies(h, ['agents/sk-fixer.md']);
     expect(hits.some((x) => x.id === 'backlog:closed-note')).toBe(false);
   });
 
   it('returns nothing for an unrelated argument, and says so', () => {
-    expect(findApplies(h, repo, ['docs/README.md'])).toEqual([]);
-    const res = runApplies(h, repo, ['docs/README.md'], false);
+    expect(findApplies(h, ['docs/README.md'])).toEqual([]);
+    const res = runApplies(h, ['docs/README.md'], false);
     expect(res.stdout).toContain('no open backlog item applies');
     expect(res.exitCode).toBe(0);
   });
 
   it('requires an argument', () => {
-    expect(runApplies(h, repo, [], false).exitCode).toBe(1);
+    expect(runApplies(h, [], false).exitCode).toBe(1);
   });
 });
