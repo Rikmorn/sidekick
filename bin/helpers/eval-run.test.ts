@@ -45,7 +45,7 @@ const deliverableText = (obj: unknown) =>
   `reasoning prose\n\`\`\`json\n${JSON.stringify(obj)}\n\`\`\``;
 
 describe('argv builders', () => {
-  it('builds an agent dispatch argv', () => {
+  it('builds an agent dispatch argv with the lane Bash allowance', () => {
     expect(
       buildAgentArgv('sk-coherence-checker', 'PROMPT', { maxTurns: 25 }),
     ).toEqual([
@@ -57,6 +57,8 @@ describe('argv builders', () => {
       'json',
       '--max-turns',
       '25',
+      '--allowedTools',
+      'Bash',
     ]);
   });
 
@@ -75,6 +77,8 @@ describe('argv builders', () => {
       'json',
       '--max-turns',
       '10',
+      '--allowedTools',
+      'Bash',
     ]);
     expect(argv).not.toContain('--agent');
   });

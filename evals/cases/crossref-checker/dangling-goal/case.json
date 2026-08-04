@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "agent",
+    "name": "sk-crossref-checker"
+  },
+  "fixture": "evals/fixtures/crossref-checker/dangling-goal",
+  "prompt": "You are dispatched to check ONE artifact for cross-reference integrity.\n- artifact_path: {{WORKSPACE}}/.sidekick/plans/csv-export/PLAN.md\n- artifact_type: plan\n- related_paths: { rfc: {{WORKSPACE}}/.sidekick/plans/csv-export/RFC.md }\nRead the artifact and return your ONE JSON deliverable.",
+  "label": {
+    "expected_verdict": "fail"
+  },
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "verdict",
+      "op": "equals",
+      "value": "fail"
+    },
+    {
+      "type": "structured",
+      "path": "issues",
+      "op": "matches",
+      "value": "\"kind\":\\s*\"dangling_goal\""
+    }
+  ]
+}

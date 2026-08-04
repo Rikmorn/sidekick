@@ -75,6 +75,8 @@ These are the unconditional halts — emit only the structured-error block (no p
 - `error: plan_quorum_check_loop_exhausted` — the PLAN quorum loop in Finalisation hit its 3-dispatch cap without every binding member passing.
 - `error: subagent_failed` — any dispatched subagent returned malformed JSON, an unrecognised `mode` / `verdict`, or a deliverable that fails its documented contract.
 
+Harvest ritual (bench-5): when a dispatched specialist fails for real — a malformed deliverable, a quorum member's verdict the operator later shows was wrong — log it at the moment you see it, one command: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" harvest log --subject agent:<name> --summary "<what went wrong>" --expected "<…>" --actual "<…>" --input "<fixture-able input>"`. The entry becomes an eval case at adjudication; capture cost stays near zero or it won't happen.
+
 A research outcome is *not* an unconditional halt:
 
 - A researcher returning a hard error (`no_canonical_sources_found` or other) is `error: research_failed` only when it cannot be absorbed. In exploration that is a conversational event, not a halt — tell the user, offer to retry or skip, and continue from their answer. In `--auto` the `<fanout_seam>` governs: at higher effort the orchestrator escalates or degrades (drops the failing researcher, continues with the remaining set, or falls back a tier) rather than halting. The code is the residue when no degrade path remains.

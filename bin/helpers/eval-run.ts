@@ -46,6 +46,16 @@ const JUDGE_MAX_TURNS = 3;
 // argv builders (pure)
 // ---------------------------------------------------------------------------
 
+/**
+ * Headless dispatches auto-deny permission prompts, and subjects that invoke
+ * the installed sidekick CLI (crossref's hash-rfc/wave-plan, executors running
+ * gates) get sandbox-denied on the out-of-workspace binary — the subject then
+ * fails closed and the corpus records a false miss. The workspace is a
+ * throwaway fixture copy, so Bash is allowed wholesale in the lane; write
+ * discipline stays with each agent's own tool grant.
+ */
+const LANE_ALLOWED_TOOLS = ['--allowedTools', 'Bash'];
+
 export function buildAgentArgv(
   name: string,
   prompt: string,
@@ -60,6 +70,7 @@ export function buildAgentArgv(
     'json',
     '--max-turns',
     String(opts.maxTurns),
+    ...LANE_ALLOWED_TOOLS,
     ...(opts.model ? ['--model', opts.model] : []),
   ];
 }
@@ -76,6 +87,7 @@ export function buildSkillArgv(
     'json',
     '--max-turns',
     String(opts.maxTurns),
+    ...LANE_ALLOWED_TOOLS,
     ...(opts.model ? ['--model', opts.model] : []),
   ];
 }

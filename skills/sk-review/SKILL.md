@@ -48,6 +48,8 @@ Externalise before acting:
 - `error: on_default_branch_for_fix` — `--fix` was set and the `branch-precheck` CLI (operation `review`) returned `hard_stop` on the default branch. Don't commit auto-fixes to the integration line; surface the helper's message.
 - `error: subagent_failed` — a reviewer or `sk-fixer` returned malformed JSON / its own error shape.
 
+Harvest ritual (bench-5): when a dispatched specialist fails for real — a malformed deliverable here, or a verdict the operator later shows was wrong — log it at the moment you see it, one command: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" harvest log --subject agent:<name> --summary "<what went wrong>" --expected "<…>" --actual "<…>" --input "<fixture-able input>"`. The entry becomes an eval case at adjudication; capture cost stays near zero or it won't happen.
+
 Format: `/sk-review halted.` then `error: <code>` + `Reason:`.
 </hard_stops>
 

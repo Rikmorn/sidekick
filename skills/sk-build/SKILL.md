@@ -62,6 +62,8 @@ Emit only the structured-error block (no preamble, no progress narration, no sig
 - `error: gate_failed_twice` — the verification gate failed on the same task across two `sk-executor` dispatches.
 - `error: subagent_failed` — `sk-executor` or `sk-spec-reviewer`'s deliverable is malformed (missing required keys, JSON parse failure, missing `deviation` block when `status === "deviation"`, or `deviation` block present but incomplete — any of `type` / `description` / `d_nn_affected` / `goal_change` missing or wrong type).
 - `error: invalid_plan_graph` — `wave-plan` returned `dep_cycle` / `dangling_dep` / `no_tasks`. Surface the helper's `reason`.
+
+Harvest ritual (bench-5): when a dispatched specialist fails for real — `subagent_failed`, a `gate_failed_twice` whose cause was the executor's own doing, a spec-review verdict later shown wrong — log it at the moment you see it, one command: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" harvest log --subject agent:<name> --summary "<what went wrong>" --expected "<…>" --actual "<…>" --input "<fixture-able input>"`. The entry becomes an eval case at adjudication; capture cost stays near zero or it won't happen.
 - `error: gates_unconfigured` — the `gates` CLI reports `configured: false` (resolved in Step 5 before the first executor dispatch). Name the `missing` gates and the fix (set `gates.*` in `.sidekick/config.json`, or re-run `sidekick init`). The harness never guesses a runner — an unconfigured gate halts rather than silently running a wrong command.
 
 Hard-stop format:

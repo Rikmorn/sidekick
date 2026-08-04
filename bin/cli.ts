@@ -17,6 +17,11 @@ import {
   runEvalSuite,
 } from './helpers/eval-run.js';
 import { runGoalVerdictCli } from './helpers/goal-verdict.js';
+import {
+  runHarvestImport,
+  runHarvestList,
+  runHarvestLog,
+} from './helpers/harvest.js';
 import { runHashRfcCli } from './helpers/hash-rfc.js';
 import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
 import { runInit } from './helpers/init.js';
@@ -347,11 +352,12 @@ if (_isEntry) {
       'scope-check',
       'eval',
       'graph',
+      'harvest',
       'hook',
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|eval|graph|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|eval|graph|harvest|hook> [options]',
       );
       process.exit(1);
     }
@@ -444,6 +450,59 @@ if (_isEntry) {
         });
         console.log(stdout);
         process.exit(exitCode);
+      } else if (sub === 'harvest') {
+        const harvestCmd = process.argv[3];
+        const args = process.argv.slice(4);
+        const getVal = (flag: string): string | undefined => {
+          const idx = args.indexOf(flag);
+          return idx >= 0 ? args[idx + 1] : undefined;
+        };
+        if (harvestCmd === 'log') {
+          const subject = getVal('--subject');
+          const summary = getVal('--summary');
+          if (!subject || !summary) {
+            console.error(
+              'Usage: sidekick harvest log --subject <agent:name|skill:name> --summary "<what went wrong>" [--expected X] [--actual Y] [--input Z]',
+            );
+            process.exit(1);
+          }
+          const { stdout, exitCode } = runHarvestLog({
+            repoRoot: process.cwd(),
+            subject,
+            summary,
+            expected: getVal('--expected'),
+            actual: getVal('--actual'),
+            input: getVal('--input'),
+          });
+          console.log(stdout);
+          process.exit(exitCode);
+        } else if (harvestCmd === 'list') {
+          const { stdout, exitCode } = runHarvestList({
+            repoRoot: process.cwd(),
+            json: args.includes('--json'),
+          });
+          console.log(stdout);
+          process.exit(exitCode);
+        } else if (harvestCmd === 'import') {
+          const id = args.find((a) => !a.startsWith('--'));
+          if (!id) {
+            console.error(
+              'Usage: sidekick harvest import <id> [--suite S] [--case-id C]',
+            );
+            process.exit(1);
+          }
+          const { stdout, exitCode } = runHarvestImport({
+            repoRoot: process.cwd(),
+            id,
+            suite: getVal('--suite'),
+            caseId: getVal('--case-id'),
+          });
+          console.log(stdout);
+          process.exit(exitCode);
+        } else {
+          console.error('Usage: sidekick harvest <log|list|import> [options]');
+          process.exit(1);
+        }
       } else if (sub === 'eval') {
         const evalCmd = process.argv[3];
         const args = process.argv.slice(4);

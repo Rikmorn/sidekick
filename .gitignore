@@ -22,6 +22,10 @@ dist/
 # run sets accreting over distinct dates (append-only; the graph parses them).
 # Scratch/aborted runs: delete the run dir rather than ignoring it.
 
+# Harvest inbox (bench-5): local scratch; the durable artifact is the
+# adjudicated case a `harvest import` produces, never the log line.
+.sidekick/harvest.jsonl
+
 # Secrets
 credentials.json
 *.key
