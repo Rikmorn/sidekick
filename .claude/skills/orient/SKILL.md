@@ -22,7 +22,7 @@ All `bun bin/cli.ts graph <cmd>`, all `--json`-capable:
 Written for a reader catching up, in complete sentences — lead with what happened, not with mechanics:
 
 1. **What changed since last visit** — status moves, new or resolved entities, arrivals (from `diff`). "Nothing" is a fine answer when it is the true one; say it plainly.
-2. **Where things stand** — open epics and items, backlog count, bench state, freshness flags, and anything awaiting sign-off (STATE surfaces these; repeat them — pending decisions are the easiest thing to lose across a gap).
+2. **Where things stand** — open epics and items, backlog count, bench state, freshness flags, and anything awaiting sign-off (STATE surfaces these; repeat them — pending decisions are the easiest thing to lose across a gap). Bench state is per-metric: STATE's "Metric frame" line says how many subjects meet each metric and which metrics nothing feeds yet; `bun bin/cli.ts graph coverage` has the per-subject drill-down when a metric looks off.
 3. **What needs attention** — lint *errors* always (a drift error usually means in-flight work whose surfaces need regenerating before commit); advisories and gaps only when they bear on this session's likely work.
 4. **If the session has a stated goal** — what `applies` to it, and the two or three entities worth reading before touching anything.
 

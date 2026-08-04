@@ -14,6 +14,7 @@ import type { Edge, EdgeTier, Entity } from './graph-model.js';
 import {
   allEdges,
   allEntities,
+  allMetricValues,
   edgesFor,
   type GraphDb,
   getEntity,
@@ -216,10 +217,22 @@ export interface CoverageRow {
   total: number;
 }
 
+/** One subject x metric cell from the LATEST run set that computed it. */
+export interface MetricCoverageCell {
+  metric: string;
+  run_id: string;
+  value: number | null;
+  n: number;
+  meets_threshold: boolean | null;
+  reason: string | null;
+}
+
 export interface CoverageReport {
   suites: string[];
   measured: CoverageRow[];
   unmeasured: Array<{ id: string; kind: string; reason: string | null }>;
+  /** Per-metric read (bench-2): subject → latest cell per metric. */
+  per_metric: Record<string, MetricCoverageCell[]>;
 }
 
 /**
@@ -273,7 +286,29 @@ export function buildCoverage(
 
   measured.sort((a, b) => (a.id < b.id ? -1 : 1));
   unmeasured.sort((a, b) => (a.id < b.id ? -1 : 1));
-  return { suites, measured, unmeasured };
+
+  // allMetricValues is ordered by started_at, so the last row per
+  // subject x metric IS the latest run set's cell.
+  const latest = new Map<string, Map<string, MetricCoverageCell>>();
+  for (const row of allMetricValues(handle)) {
+    if (!latest.has(row.subject)) latest.set(row.subject, new Map());
+    latest.get(row.subject)?.set(row.metric, {
+      metric: row.metric,
+      run_id: row.run_id,
+      value: row.value,
+      n: row.n,
+      meets_threshold: row.meets === null ? null : row.meets === 1,
+      reason: row.reason,
+    });
+  }
+  const perMetric: Record<string, MetricCoverageCell[]> = {};
+  for (const [subject, cells] of [...latest.entries()].sort()) {
+    perMetric[subject] = [...cells.values()].sort((a, b) =>
+      a.metric < b.metric ? -1 : 1,
+    );
+  }
+
+  return { suites, measured, unmeasured, per_metric: perMetric };
 }
 
 export function runCoverage(
@@ -296,6 +331,25 @@ export function runCoverage(
       .map(([suite, n]) => `${suite} ${n}`)
       .join(', ');
     lines.push(`  ${row.id}  —  ${cells}`);
+  }
+  const perMetricIds = Object.keys(report.per_metric);
+  if (perMetricIds.length > 0) {
+    lines.push('', 'per-metric (latest run set per subject):');
+    for (const id of perMetricIds) {
+      const cells = report.per_metric[id]
+        .map((c) => {
+          if (c.value === null) return `${c.metric} —`;
+          const mark =
+            c.meets_threshold === null
+              ? ''
+              : c.meets_threshold
+                ? ' ok'
+                : ' BELOW';
+          return `${c.metric} ${c.value.toFixed(2)}${mark}`;
+        })
+        .join(' · ');
+      lines.push(`  ${id}  —  ${cells}`);
+    }
   }
   lines.push('', `unmeasured (${report.unmeasured.length}):`);
   for (const row of report.unmeasured) {
@@ -387,6 +441,23 @@ export function findGaps(handle: GraphDb, repoRoot: string): Gap[] {
         why: 'no eval case names it as a subject, so a regression in it would not be caught by the bench.',
       });
     }
+  }
+
+  // Partially measured (bench-2): the subject runs on the bench, but a metric
+  // that applies to it has never computed a value in any run set.
+  const valueSeen = new Map<string, boolean>();
+  for (const row of allMetricValues(handle)) {
+    const key = `${row.subject} ${row.metric}`;
+    valueSeen.set(key, (valueSeen.get(key) ?? false) || row.value !== null);
+  }
+  for (const [key, everComputed] of [...valueSeen.entries()].sort()) {
+    if (everComputed) continue;
+    const [subject, metric] = key.split(' ');
+    gaps.push({
+      type: 'metric-unmeasured',
+      id: subject,
+      why: `measured on the bench, but "${metric}" has never computed a value for it — nothing in its corpus feeds that metric.`,
+    });
   }
 
   return gaps.sort((a, b) =>

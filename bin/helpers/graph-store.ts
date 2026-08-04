@@ -16,7 +16,7 @@ import * as path from 'node:path';
 import type { Edge, Entity } from './graph-model.js';
 
 /** Bumped when the schema changes shape; `build` refuses a stale db by rebuilding. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** A run record derived from the eval harness records.jsonl files. */
 export interface RunRow {
@@ -29,6 +29,8 @@ export interface RunRow {
   cost_usd: number | null;
   num_turns: number | null;
   verdict: string | null;
+  /** The subject's own normalized verdict (eval-metrics), kept beside ours. */
+  deliverable_status: string | null;
   started_at: string | null;
   duration_ms: number | null;
 }
@@ -40,10 +42,31 @@ export interface DocText {
   body: string;
 }
 
+/**
+ * One subject x metric value inside one run set (bench-2) — the kernel's
+ * computeMetrics output persisted so coverage, gaps, STATE, and the dashboard
+ * all read the same numbers instead of re-deriving them.
+ */
+export interface MetricValueRow {
+  run_id: string;
+  subject: string;
+  metric: string;
+  computation: string | null;
+  value: number | null;
+  n: number;
+  threshold: number;
+  /** 1 / 0 / null mirrors meets_threshold true / false / not-computable. */
+  meets: number | null;
+  reason: string | null;
+  /** Latest record start in the run set — the trend x-axis. */
+  started_at: string | null;
+}
+
 export interface GraphSnapshot {
   entities: Entity[];
   edges: Edge[];
   runs: RunRow[];
+  metricValues: MetricValueRow[];
   docs: DocText[];
   meta: Record<string, string>;
 }
@@ -53,8 +76,10 @@ const SCHEMA_STATEMENTS = [
   "CREATE TABLE IF NOT EXISTS edges (src TEXT NOT NULL, rel TEXT NOT NULL, dst TEXT NOT NULL, tier TEXT NOT NULL DEFAULT 'EXTRACTED', origin TEXT, PRIMARY KEY (src, rel, dst))",
   'CREATE INDEX IF NOT EXISTS edges_dst ON edges (dst)',
   'CREATE INDEX IF NOT EXISTS entities_kind ON entities (kind)',
-  'CREATE TABLE IF NOT EXISTS runs (run_id TEXT NOT NULL, case_id TEXT NOT NULL, suite TEXT NOT NULL, subject_kind TEXT, subject_name TEXT, model TEXT, cost_usd REAL, num_turns INTEGER, verdict TEXT, started_at TEXT, duration_ms INTEGER)',
+  'CREATE TABLE IF NOT EXISTS runs (run_id TEXT NOT NULL, case_id TEXT NOT NULL, suite TEXT NOT NULL, subject_kind TEXT, subject_name TEXT, model TEXT, cost_usd REAL, num_turns INTEGER, verdict TEXT, deliverable_status TEXT, started_at TEXT, duration_ms INTEGER)',
   'CREATE INDEX IF NOT EXISTS runs_suite ON runs (suite)',
+  'CREATE TABLE IF NOT EXISTS metric_values (run_id TEXT NOT NULL, subject TEXT NOT NULL, metric TEXT NOT NULL, computation TEXT, value REAL, n INTEGER NOT NULL, threshold REAL NOT NULL, meets INTEGER, reason TEXT, started_at TEXT, PRIMARY KEY (run_id, subject, metric))',
+  'CREATE INDEX IF NOT EXISTS metric_values_subject ON metric_values (subject)',
   'CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)',
   'CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(id UNINDEXED, title, body)',
 ] as const;
@@ -106,7 +131,10 @@ export function writeGraph(handle: GraphDb, snapshot: GraphSnapshot): void {
     'INSERT OR IGNORE INTO edges (src, rel, dst, tier, origin) VALUES (?, ?, ?, ?, ?)',
   );
   const insertRun = db.prepare(
-    'INSERT INTO runs (run_id, case_id, suite, subject_kind, subject_name, model, cost_usd, num_turns, verdict, started_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO runs (run_id, case_id, suite, subject_kind, subject_name, model, cost_usd, num_turns, verdict, deliverable_status, started_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  );
+  const insertMetricValue = db.prepare(
+    'INSERT OR REPLACE INTO metric_values (run_id, subject, metric, computation, value, n, threshold, meets, reason, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   );
   const insertDoc = db.prepare(
     'INSERT INTO docs_fts (id, title, body) VALUES (?, ?, ?)',
@@ -119,6 +147,7 @@ export function writeGraph(handle: GraphDb, snapshot: GraphSnapshot): void {
     db.run('DELETE FROM entities');
     db.run('DELETE FROM edges');
     db.run('DELETE FROM runs');
+    db.run('DELETE FROM metric_values');
     db.run('DELETE FROM docs_fts');
     db.run('DELETE FROM meta');
     for (const e of entities) {
@@ -145,8 +174,23 @@ export function writeGraph(handle: GraphDb, snapshot: GraphSnapshot): void {
         r.cost_usd,
         r.num_turns,
         r.verdict,
+        r.deliverable_status,
         r.started_at,
         r.duration_ms,
+      );
+    }
+    for (const m of snapshot.metricValues) {
+      insertMetricValue.run(
+        m.run_id,
+        m.subject,
+        m.metric,
+        m.computation,
+        m.value,
+        m.n,
+        m.threshold,
+        m.meets,
+        m.reason,
+        m.started_at,
       );
     }
     for (const d of snapshot.docs) {
@@ -236,6 +280,14 @@ export function allRuns(handle: GraphDb): RunRow[] {
   return handle.db
     .query<RunRow, []>(
       'SELECT * FROM runs ORDER BY suite, case_id, run_id, started_at',
+    )
+    .all();
+}
+
+export function allMetricValues(handle: GraphDb): MetricValueRow[] {
+  return handle.db
+    .query<MetricValueRow, []>(
+      'SELECT * FROM metric_values ORDER BY subject, metric, started_at, run_id',
     )
     .all();
 }

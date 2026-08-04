@@ -9,7 +9,10 @@
  * string that identifies an entity.
  */
 
-import { parseMetricsRegistry } from './eval-metrics.js';
+import {
+  normalizeDeliverableVerdict,
+  parseMetricsRegistry,
+} from './eval-metrics.js';
 import {
   type Entity,
   emptyParse,
@@ -140,6 +143,7 @@ interface RecordLine {
   num_turns?: number;
   started_at?: string;
   duration_ms?: number;
+  deliverable?: unknown;
   assertions?: Array<{ outcome?: string }>;
 }
 
@@ -206,6 +210,7 @@ export function parseRunRecords(
       cost_usd: rec.cost_usd ?? null,
       num_turns: rec.num_turns ?? null,
       verdict,
+      deliverable_status: normalizeDeliverableVerdict(rec.deliverable ?? null),
       started_at: rec.started_at ?? null,
       duration_ms: rec.duration_ms ?? null,
     });
@@ -217,10 +222,10 @@ export function parseRunRecords(
 // ---- metrics registry -------------------------------------------------------
 
 /**
- * Validate `evals/metrics.json` (bench-1). The registry's closed-vocabulary
- * discipline surfaces here as error-tier `invalid-metric` findings — a registry
- * the kernel cannot validate would silently corrupt every metric the report
- * computes. Findings only for now: metric/run-set entities land with bench-2.
+ * Validate `evals/metrics.json` (bench-1) and emit its metric entities
+ * (bench-2). The registry's closed-vocabulary discipline surfaces here as
+ * error-tier `invalid-metric` findings — a registry the kernel cannot validate
+ * would silently corrupt every metric the report computes.
  */
 export function parseMetricsRegistrySource(
   json: string,
@@ -234,6 +239,23 @@ export function parseMetricsRegistrySource(
         finding('invalid-metric', `${relPath}: ${error}`, `${relPath}:1`),
       );
     }
+    return out;
+  }
+  for (const m of res.registry.metrics) {
+    out.entities.push({
+      id: `metric:${m.name}`,
+      kind: 'metric',
+      title: `${m.name} — ${typeof m.computation === 'string' ? m.computation : 'per-class'}, threshold ${m.thresholds.default}`,
+      status: null,
+      path: relPath,
+      data: {
+        applies_to: m.applies_to,
+        feeds_from: m.feeds_from,
+        computation: m.computation,
+        bias: m.bias,
+        thresholds: m.thresholds,
+      },
+    });
   }
   return out;
 }

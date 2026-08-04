@@ -163,7 +163,7 @@ describe('parseRunRecords', () => {
 });
 
 describe('parseMetricsRegistrySource', () => {
-  it('a valid registry yields no findings and no entities yet (bench-2)', () => {
+  it('a valid registry yields metric entities and no findings', () => {
     const r = parseMetricsRegistrySource(
       JSON.stringify({
         schemaVersion: 1,
@@ -182,7 +182,9 @@ describe('parseMetricsRegistrySource', () => {
       'evals/metrics.json',
     );
     expect(r.findings).toEqual([]);
-    expect(r.entities).toEqual([]);
+    expect(r.entities.map((e) => e.id)).toEqual(['metric:adherence']);
+    expect(r.entities[0].kind).toBe('metric');
+    expect(r.entities[0].data?.bias).toBe('mechanical only');
     expect(r.edges).toEqual([]);
   });
 

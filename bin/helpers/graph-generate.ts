@@ -16,7 +16,7 @@ import * as path from 'node:path';
 import { collectGraph } from './graph-build.js';
 import { collectSourceLint, lintSummary } from './graph-lint.js';
 import type { Entity } from './graph-model.js';
-import type { GraphSnapshot, RunRow } from './graph-store.js';
+import type { GraphSnapshot, MetricValueRow, RunRow } from './graph-store.js';
 
 export const STATE_PATH = 'docs/STATE.md';
 export const MAP_PATH = 'MAP.md';
@@ -145,7 +145,12 @@ export function generateState(inputs: StateInputs): string {
     '',
   );
 
-  lines.push('## Bench', '', ...benchLines(snapshot.runs), '');
+  lines.push(
+    '## Bench',
+    '',
+    ...benchLines(snapshot.runs, snapshot.metricValues),
+    '',
+  );
 
   const proposed = entitiesOf(snapshot, 'adr').filter(
     (a) => a.status === 'Proposed',
@@ -167,10 +172,30 @@ function names(items: Entity[]): string {
 }
 
 /**
+ * Run ids ordered by when their last record started (id as tie-break) — the
+ * trend axis. Alphabetical ids are not chronology: `bench-3-w1` happening to
+ * sort after `3-3-w4` is luck, not a rule.
+ */
+export function runIdsByDate(runs: RunRow[]): string[] {
+  const lastStarted = new Map<string, string>();
+  for (const r of runs) {
+    const prev = lastStarted.get(r.run_id) ?? '';
+    const at = r.started_at ?? '';
+    if (at > prev) lastStarted.set(r.run_id, at);
+    if (!lastStarted.has(r.run_id)) lastStarted.set(r.run_id, at);
+  }
+  return [...lastStarted.entries()]
+    .sort((a, b) =>
+      a[1] === b[1] ? (a[0] < b[0] ? -1 : 1) : a[1] < b[1] ? -1 : 1,
+    )
+    .map(([id]) => id);
+}
+
+/**
  * Latest run against the one before it. With a single run set there is nothing
  * to compare to, and saying so beats implying a trend from one point.
  */
-function benchLines(runs: RunRow[]): string[] {
+function benchLines(runs: RunRow[], metricValues: MetricValueRow[]): string[] {
   if (runs.length === 0) {
     return ['No run records in committed content.'];
   }
@@ -178,7 +203,7 @@ function benchLines(runs: RunRow[]): string[] {
   for (const run of runs) {
     byRun.set(run.run_id, [...(byRun.get(run.run_id) ?? []), run]);
   }
-  const runIds = [...byRun.keys()].sort();
+  const runIds = runIdsByDate(runs);
   const latest = runIds[runIds.length - 1];
   const rows = byRun.get(latest) ?? [];
   const pass = rows.filter((r) => r.verdict === 'pass').length;
@@ -188,6 +213,26 @@ function benchLines(runs: RunRow[]): string[] {
   const out = [
     `Latest run \`${latest}\`: ${rows.length} record(s), ${pass} pass, ${fail} fail across ${suites.length} suite(s) (${suites.join(', ')}).`,
   ];
+
+  // Per-metric read over the latest run set (bench-2): how many measured
+  // subjects meet each metric, and where nothing feeds it at all.
+  const latestCells = metricValues.filter((m) => m.run_id === latest);
+  if (latestCells.length > 0) {
+    const byMetric = new Map<string, MetricValueRow[]>();
+    for (const cell of latestCells) {
+      byMetric.set(cell.metric, [...(byMetric.get(cell.metric) ?? []), cell]);
+    }
+    const parts = [...byMetric.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([metric, cells]) => {
+        const fed = cells.filter((c) => c.value !== null);
+        if (fed.length === 0) return `${metric} 0/${cells.length} fed`;
+        const meets = fed.filter((c) => c.meets === 1).length;
+        return `${metric} ${meets}/${fed.length} ok`;
+      });
+    out.push(`Metric frame (latest): ${parts.join(' · ')}.`);
+  }
+
   if (runIds.length > 1) {
     const prev = byRun.get(runIds[runIds.length - 2]) ?? [];
     const prevPass = prev.filter((r) => r.verdict === 'pass').length;
@@ -226,6 +271,20 @@ export interface StateBenchSuite {
   cost_usd: number;
 }
 
+/** One subject x metric value in one run set, as the export carries it. */
+export interface StateMetricValue {
+  run_id: string;
+  subject: string;
+  metric: string;
+  computation: string | null;
+  value: number | null;
+  n: number;
+  threshold: number;
+  meets_threshold: boolean | null;
+  reason: string | null;
+  started_at: string | null;
+}
+
 /**
  * The machine-readable current state. Same rollup as STATE.md, as data: epics
  * with per-item status, the open backlog, a per-suite bench summary, and the
@@ -239,7 +298,16 @@ export interface StateData {
   epics: StateEpic[];
   /** items lists the open entries — the drill-down behind the count. */
   backlog: { open: number; total: number; items: StateEpicItem[] };
-  bench: { latest_run: string | null; suites: StateBenchSuite[] };
+  bench: {
+    latest_run: string | null;
+    /** Run ids in chronological order — the trend axis (bench-2). */
+    run_ids: string[];
+    suites: StateBenchSuite[];
+    /** Per-record rows, kernel verdict rule — the dashboard detail source. */
+    runs: RunRow[];
+    /** Per run-set x subject x metric — the trend substrate (bench-2). */
+    metric_values: StateMetricValue[];
+  };
   freshness: {
     entities: number;
     edges: number;
@@ -309,7 +377,7 @@ export function generateStateData(inputs: StateInputs): StateData {
         path: b.path,
       })),
     },
-    bench: benchSummary(snapshot.runs),
+    bench: benchSummary(snapshot.runs, snapshot.metricValues),
     freshness: {
       entities: snapshot.entities.length,
       edges: snapshot.edges.length,
@@ -321,8 +389,11 @@ export function generateStateData(inputs: StateInputs): StateData {
   };
 }
 
-/** Per-suite pass/fail/cost fold over the run rows, plus the latest run id. */
-function benchSummary(runs: RunRow[]): StateData['bench'] {
+/** Per-suite pass/fail/cost fold over the run rows, plus the trend substrate. */
+function benchSummary(
+  runs: RunRow[],
+  metricValues: MetricValueRow[],
+): StateData['bench'] {
   const bySuite = new Map<string, StateBenchSuite>();
   for (const r of runs) {
     const row = bySuite.get(r.suite) ?? {
@@ -338,10 +409,28 @@ function benchSummary(runs: RunRow[]): StateData['bench'] {
     row.cost_usd += r.cost_usd ?? 0;
     bySuite.set(r.suite, row);
   }
-  const runIds = [...new Set(runs.map((r) => r.run_id))].sort();
+  const runIds = runIdsByDate(runs);
   return {
     latest_run: runIds.length > 0 ? runIds[runIds.length - 1] : null,
+    run_ids: runIds,
     suites: [...bySuite.values()].sort((a, b) => (a.suite < b.suite ? -1 : 1)),
+    runs: [...runs].sort((a, b) => {
+      const ka = `${a.suite} ${a.case_id} ${a.run_id} ${a.started_at ?? ''}`;
+      const kb = `${b.suite} ${b.case_id} ${b.run_id} ${b.started_at ?? ''}`;
+      return ka < kb ? -1 : 1;
+    }),
+    metric_values: metricValues.map((m) => ({
+      run_id: m.run_id,
+      subject: m.subject,
+      metric: m.metric,
+      computation: m.computation,
+      value: m.value,
+      n: m.n,
+      threshold: m.threshold,
+      meets_threshold: m.meets === null ? null : m.meets === 1,
+      reason: m.reason,
+      started_at: m.started_at,
+    })),
   };
 }
 

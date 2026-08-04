@@ -4,8 +4,10 @@ title: "sidekick — project state"
 
 <!--
 ops-6 (ADR-0007 D8) — the operator's re-entry surface. Generated, never authored
-by hand: the four data sources (state, coverage, diff, runs) are embedded by
-dashboards/prepare.sh into _generated-data.qmd and read here as OJS values.
+by hand: the three data sources (state, coverage, diff) are embedded by
+dashboards/prepare.sh into _generated-data.qmd and read here as OJS values;
+per-record bench detail and the per-metric trend ride inside state.bench
+(kernel-computed — bench-2 removed the dashboard's own verdict rule).
 Charts are Observable Plot (ships with Quarto's OJS); tables are Inputs.table.
 No mermaid, no decoration — the numbers are the point.
 -->
@@ -267,7 +269,7 @@ coverage.unmeasured.length === 0
 ```{ojs}
 //| echo: false
 //| title: "Bench state"
-md`Latest committed run: \`${state.bench.latest_run ?? "none"}\` — **${runs.length}** record(s) across **${state.bench.suites.length}** suite(s). This is the only committed run set, so the marks below are a baseline read of points, not yet a trend; each new run adds a column in time.`
+md`Latest committed run: \`${state.bench.latest_run ?? "none"}\` — **${state.bench.runs.length}** record(s) across **${state.bench.suites.length}** suite(s), **${state.bench.run_ids.length}** committed run set(s) (${state.bench.run_ids.map(r => "\`" + r + "\`").join(" → ")}). ${state.bench.run_ids.length < 2 ? "One run set is a baseline read of points, not yet a trend; each new run adds a column in time." : "Each run set is a column in time; the per-metric table below reads left to right."}`
 ```
 
 ## Row {height="30%"}
@@ -286,6 +288,24 @@ Inputs.table(
   })),
   { layout: "auto" }
 )
+```
+
+```{ojs}
+//| echo: false
+//| title: "Per-metric trend (kernel-computed; columns = run sets, chronological)"
+{
+  const mv = state.bench.metric_values;
+  if (mv.length === 0) return md`No metric values — commit a run set and \`evals/metrics.json\`.`;
+  const rows = new Map();
+  for (const m of mv) {
+    const key = m.subject + " " + m.metric;
+    if (!rows.has(key)) rows.set(key, { subject: m.subject.replace(/^(agent|skill):/, ""), metric: m.metric });
+    rows.get(key)[m.run_id] =
+      m.value === null ? "—" : m.value.toFixed(2) + (m.meets_threshold === false ? " ✗" : "");
+  }
+  const columns = ["subject", "metric", ...state.bench.run_ids];
+  return Inputs.table([...rows.values()], { columns, layout: "auto" });
+}
 ```
 
 ## Row {height="54%"}
@@ -311,7 +331,7 @@ state.bench.suites.length === 0
 ```{ojs}
 //| echo: false
 //| title: "Cost per case over run time (faceted by model)"
-runs.length === 0
+state.bench.runs.length === 0
   ? md`No run records.`
   : Plot.plot({
       height: 320,
@@ -321,7 +341,7 @@ runs.length === 0
       color: { legend: true },
       fy: { label: "model" },
       marks: [
-        Plot.dot(runs, {
+        Plot.dot(state.bench.runs, {
           x: d => new Date(d.started_at),
           y: "cost_usd",
           stroke: "suite",

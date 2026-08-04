@@ -96,6 +96,8 @@ export type EntityKind =
   | 'research'
   | 'backlog'
   | 'cert'
+  | 'metric'
+  | 'runset'
   | 'doc'
   | 'glob';
 

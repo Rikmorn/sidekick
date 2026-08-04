@@ -44,7 +44,14 @@ function seed(
   docs: Array<{ id: string; title: string; body: string }> = [],
 ): GraphDb {
   const h = openGraphDb(':memory:');
-  writeGraph(h, { entities, edges, runs: [], docs, meta: {} });
+  writeGraph(h, {
+    entities,
+    edges,
+    runs: [],
+    metricValues: [],
+    docs,
+    meta: {},
+  });
   return h;
 }
 
@@ -212,6 +219,80 @@ describe('readCoverageExceptions', () => {
 
   it('treats an absent ledger as no stated reasons', () => {
     expect(readCoverageExceptions(repo).size).toBe(0);
+  });
+});
+
+describe('per-metric coverage + metric gaps (bench-2)', () => {
+  const mv = (
+    run_id: string,
+    subject: string,
+    metric: string,
+    value: number | null,
+    started_at: string,
+  ) => ({
+    run_id,
+    subject,
+    metric,
+    computation: value === null ? null : 'label-match-rate',
+    value,
+    n: value === null ? 0 : 10,
+    threshold: 0.8,
+    meets: value === null ? null : value >= 0.8 ? 1 : 0,
+    reason: value === null ? 'nothing feeds this metric' : null,
+    started_at,
+  });
+
+  const seedWithMetrics = () => {
+    const h = openGraphDb(':memory:');
+    writeGraph(h, {
+      entities: [entity('agent:v', 'agent'), entity('suite:s', 'suite')],
+      edges: [
+        {
+          src: 'case:s/c1',
+          rel: 'measures',
+          dst: 'agent:v',
+          tier: 'EXTRACTED',
+          origin: 'x:1',
+        },
+      ],
+      runs: [],
+      metricValues: [
+        mv('w1', 'agent:v', 'quality', 0.7, '2026-08-01T00:00:00Z'),
+        mv('w2', 'agent:v', 'quality', 0.9, '2026-08-02T00:00:00Z'),
+        mv('w1', 'agent:v', 'grounding', null, '2026-08-01T00:00:00Z'),
+        mv('w2', 'agent:v', 'grounding', null, '2026-08-02T00:00:00Z'),
+      ],
+      docs: [],
+      meta: {},
+    });
+    return h;
+  };
+
+  it('coverage per_metric reports the latest run set per subject x metric', () => {
+    const h = seedWithMetrics();
+    const report = buildCoverage(h, new Map());
+    const cells = report.per_metric['agent:v'];
+    const quality = cells.find((c) => c.metric === 'quality');
+    expect(quality?.run_id).toBe('w2');
+    expect(quality?.value).toBe(0.9);
+    expect(quality?.meets_threshold).toBe(true);
+    const grounding = cells.find((c) => c.metric === 'grounding');
+    expect(grounding?.value).toBe(null);
+    expect(grounding?.reason).toBe('nothing feeds this metric');
+    h.close();
+  });
+
+  it('gaps distinguishes a never-computed metric from unmeasured-entirely', () => {
+    const h = seedWithMetrics();
+    const gaps = findGaps(h, '/nonexistent');
+    const metricGaps = gaps.filter((g) => g.type === 'metric-unmeasured');
+    expect(metricGaps.length).toBe(1);
+    expect(metricGaps[0].id).toBe('agent:v');
+    expect(metricGaps[0].why).toContain('grounding');
+    expect(
+      gaps.some((g) => g.type === 'subject-unmeasured' && g.id === 'agent:v'),
+    ).toBe(false);
+    h.close();
   });
 });
 

@@ -41,6 +41,7 @@ const snapshot = (over: Partial<GraphSnapshot> = {}): GraphSnapshot => ({
   entities: [],
   edges: [],
   runs: [],
+  metricValues: [],
   docs: [],
   meta: {},
   ...over,

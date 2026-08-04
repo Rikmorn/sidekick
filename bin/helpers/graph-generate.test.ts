@@ -13,6 +13,7 @@ import {
   renderSurfaces,
   runExportCli,
   runGenerateCli,
+  runIdsByDate,
   STATE_PATH,
 } from './graph-generate.js';
 import { runGraphLint, STATE_LINE_CAP } from './graph-lint.js';
@@ -23,6 +24,7 @@ function snapshot(over: Partial<GraphSnapshot> = {}): GraphSnapshot {
     entities: [],
     edges: [],
     runs: [],
+    metricValues: [],
     docs: [],
     meta: { built_at_commit: 'abc1234' },
     ...over,
@@ -132,6 +134,83 @@ describe('generateState', () => {
     expect(out).toContain('0 error(s), 7 advisory finding(s)');
     expect(out).toContain('1 record(s), 1 pass, 0 fail');
     expect(out).toContain('no baseline to compare to');
+  });
+
+  it('orders run sets by date, not run-id spelling (bench-2)', () => {
+    const run = (run_id: string, started_at: string) => ({
+      run_id,
+      case_id: 'c',
+      suite: 's',
+      subject_kind: 'agent',
+      subject_name: 'v',
+      model: null,
+      cost_usd: null,
+      num_turns: null,
+      verdict: 'pass',
+      deliverable_status: null,
+      started_at,
+      duration_ms: null,
+    });
+    expect(
+      runIdsByDate([
+        run('z-early', '2026-08-01T00:00:00Z'),
+        run('a-late', '2026-08-02T00:00:00Z'),
+      ]),
+    ).toEqual(['z-early', 'a-late']);
+  });
+
+  it('renders the per-metric frame line for the latest run set (bench-2)', () => {
+    const s = snapshot({
+      runs: [
+        {
+          run_id: 'w1',
+          case_id: 'c',
+          suite: 's',
+          subject_kind: 'agent',
+          subject_name: 'v',
+          model: null,
+          cost_usd: null,
+          num_turns: null,
+          verdict: 'pass',
+          deliverable_status: 'pass',
+          started_at: '2026-08-01T00:00:00Z',
+          duration_ms: 1,
+        },
+      ],
+      metricValues: [
+        {
+          run_id: 'w1',
+          subject: 'agent:v',
+          metric: 'quality',
+          computation: 'label-match-rate',
+          value: 1,
+          n: 1,
+          threshold: 0.8,
+          meets: 1,
+          reason: null,
+          started_at: '2026-08-01T00:00:00Z',
+        },
+        {
+          run_id: 'w1',
+          subject: 'agent:v',
+          metric: 'grounding',
+          computation: 'judge-pass-rate',
+          value: null,
+          n: 0,
+          threshold: 0.8,
+          meets: null,
+          reason: 'nothing feeds it',
+          started_at: '2026-08-01T00:00:00Z',
+        },
+      ],
+    });
+    const out = generateState({
+      snapshot: s,
+      lint: { errors: 0, advisories: 0 },
+    });
+    expect(out).toContain(
+      'Metric frame (latest): grounding 0/1 fed · quality 1/1 ok.',
+    );
   });
 
   it('carries no timestamp other than the commit it was built from', () => {

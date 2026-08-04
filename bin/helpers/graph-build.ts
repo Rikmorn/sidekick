@@ -13,6 +13,12 @@
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { loadMetricsRegistry } from './eval-metrics.js';
+import {
+  buildLabelIndex,
+  computeMetrics,
+  type MetricRecordLike,
+} from './eval-report.js';
 import {
   type Crosswalk,
   type Edge,
@@ -49,8 +55,11 @@ import {
   countEntities,
   type DocText,
   type GraphSnapshot,
+  getMeta,
+  type MetricValueRow,
   openGraphDb,
   type RunRow,
+  SCHEMA_VERSION,
   writeGraph,
 } from './graph-store.js';
 
@@ -175,11 +184,15 @@ export function collectGraph(repoRoot: string): BuildResult {
     results.push(parseEvalCase(read(repoRoot, rel), rel, m[1], m[2]));
   }
 
+  const rawRecordsByPath = new Map<string, string>();
   for (const rel of walk(repoRoot, 'evals/results')) {
     if (!rel.endsWith('records.jsonl')) continue;
-    const parsed = parseRunRecords(read(repoRoot, rel), rel);
+    const raw = read(repoRoot, rel);
+    rawRecordsByPath.set(rel, raw);
+    const parsed = parseRunRecords(raw, rel);
     runs.push(...parsed.runs);
     results.push({ entities: [], edges: [], findings: parsed.findings });
+    results.push(runsetParse(parsed.runs, rel));
   }
 
   const metricsRegistry = 'evals/metrics.json';
@@ -191,6 +204,7 @@ export function collectGraph(repoRoot: string): BuildResult {
       ),
     );
   }
+  const metricValues = computeStoredMetricValues(repoRoot, rawRecordsByPath);
 
   for (const rel of walk(repoRoot, '.sidekick/calibrations')) {
     if (!rel.endsWith('.json')) continue;
@@ -274,12 +288,125 @@ export function collectGraph(repoRoot: string): BuildResult {
       entities: deduped,
       edges: merged.edges,
       runs,
+      metricValues,
       docs,
       meta: { built_at_commit: headCommit(repoRoot) },
     },
     findings: merged.findings,
     crosswalk,
   };
+}
+
+/**
+ * A run set is one committed sweep: entity `runset:<run_id>` plus a `measures`
+ * edge per subject it exercised (bench-2). Coverage keeps counting cases, not
+ * run sets — its counter filters on `case:` sources — so these edges add
+ * traversal, not double-counting.
+ */
+function runsetParse(runRows: RunRow[], relPath: string): ParseResult {
+  const out = emptyParse();
+  const byRunId = new Map<string, RunRow[]>();
+  for (const r of runRows) {
+    if (!byRunId.has(r.run_id)) byRunId.set(r.run_id, []);
+    byRunId.get(r.run_id)?.push(r);
+  }
+  for (const [runId, rows] of byRunId) {
+    const suites = [...new Set(rows.map((r) => r.suite))].sort();
+    const dates = rows
+      .map((r) => r.started_at)
+      .filter((d): d is string => d !== null)
+      .sort();
+    out.entities.push({
+      id: `runset:${runId}`,
+      kind: 'runset',
+      title: `run set ${runId} — ${rows.length} record(s), ${suites.length} suite(s)`,
+      status: null,
+      path: relPath,
+      data: {
+        records: rows.length,
+        suites,
+        first_started: dates[0] ?? null,
+        last_started: dates[dates.length - 1] ?? null,
+      },
+    });
+    const subjects = new Set(
+      rows
+        .filter((r) => r.subject_kind !== '' && r.subject_name !== '')
+        .map((r) => `${r.subject_kind}:${r.subject_name}`),
+    );
+    for (const subject of [...subjects].sort()) {
+      out.edges.push({
+        src: `runset:${runId}`,
+        rel: 'measures',
+        dst: subject,
+        tier: 'EXTRACTED',
+        origin: `${relPath}:1`,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The kernel's computeMetrics, run per run set at build time and persisted —
+ * one computation point that coverage, gaps, STATE, and the dashboard all
+ * read (bench-2). An absent or invalid registry yields no rows; the registry
+ * parse already reports invalidity as error-tier findings.
+ */
+function computeStoredMetricValues(
+  repoRoot: string,
+  rawRecordsByPath: Map<string, string>,
+): MetricValueRow[] {
+  const registry = loadMetricsRegistry(repoRoot);
+  if (registry.status !== 'ok') return [];
+
+  const byRunId = new Map<string, MetricRecordLike[]>();
+  for (const raw of rawRecordsByPath.values()) {
+    for (const line of raw.split('\n')) {
+      if (line.trim() === '') continue;
+      let rec: MetricRecordLike & { run_id?: string };
+      try {
+        rec = JSON.parse(line);
+      } catch {
+        continue; // the record parser already reported the corrupt line
+      }
+      const runId = rec.run_id;
+      if (typeof runId !== 'string' || runId === '') continue;
+      if (!byRunId.has(runId)) byRunId.set(runId, []);
+      byRunId.get(runId)?.push(rec);
+    }
+  }
+
+  const rows: MetricValueRow[] = [];
+  for (const [runId, records] of [...byRunId.entries()].sort()) {
+    const labels = buildLabelIndex(
+      repoRoot,
+      new Set(records.map((r) => r.suite)),
+    );
+    const section = computeMetrics(records, registry.registry, labels);
+    const dates = records
+      .map((r) => (r as { started_at?: string }).started_at ?? null)
+      .filter((d): d is string => d !== null)
+      .sort();
+    const lastStarted = dates[dates.length - 1] ?? null;
+    for (const [subject, sm] of Object.entries(section.per_subject)) {
+      for (const [metric, v] of Object.entries(sm.metrics)) {
+        rows.push({
+          run_id: runId,
+          subject,
+          metric,
+          computation: v.computation,
+          value: v.value,
+          n: v.n,
+          threshold: v.threshold,
+          meets: v.meets_threshold === null ? null : v.meets_threshold ? 1 : 0,
+          reason: v.reason ?? null,
+          started_at: lastStarted,
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 function firstHeading(text: string): string | null {
@@ -353,6 +480,27 @@ function headCommit(repoRoot: string): string {
 
 // ---- CLI --------------------------------------------------------------------
 
+/** Delete the store (and WAL companions) when its stamped schema is not ours. */
+function recreateIfStaleSchema(dbPath: string): void {
+  if (!fs.existsSync(dbPath)) return;
+  let stale = false;
+  try {
+    const handle = openGraphDb(dbPath);
+    try {
+      stale = getMeta(handle, 'schema_version') !== String(SCHEMA_VERSION);
+    } finally {
+      handle.close();
+    }
+  } catch {
+    stale = true; // unreadable is stale
+  }
+  if (stale) {
+    for (const suffix of ['', '-wal', '-shm']) {
+      fs.rmSync(`${dbPath}${suffix}`, { force: true });
+    }
+  }
+}
+
 export interface BuildCliOptions {
   repoRoot: string;
   dbPath?: string;
@@ -375,6 +523,9 @@ export function runGraphBuildCli(opts: BuildCliOptions): CliResult {
   const dbPath = path.join(opts.repoRoot, opts.dbPath ?? DEFAULT_DB_PATH);
   const built = collectGraph(opts.repoRoot);
 
+  // A stale-schema store cannot be migrated by CREATE IF NOT EXISTS; the db is
+  // a derived cache, so the version check just recreates the file.
+  recreateIfStaleSchema(dbPath);
   const handle = openGraphDb(dbPath);
   try {
     const before = countEntities(handle);

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { EvalCase } from './eval-case.js';
+import { type GoalVerdictInput, goalVerdict } from './goal-verdict.js';
 
 /**
  * bench-1 (ADR-0008) metric registry — the metrics vocabulary as data the
@@ -337,6 +338,36 @@ export function loadMetricsRegistry(repoRoot: string): RegistryLoadResult {
     return { status: 'invalid', errors: res.errors, path: REGISTRY_RELPATH };
   }
   return { status: 'ok', registry: res.registry, path: REGISTRY_RELPATH };
+}
+
+/**
+ * The classifier verdict a deliverable encodes, normalized across the
+ * verifier-class deliverable shapes: an explicit `verdict` string wins; a
+ * dimensional reviewer's `status` maps passed→pass / findings→fail; a
+ * goal-verifier deliverable (has `goals[]`) resolves through the shared
+ * goal-verdict rule (never restated) — passed→pass, gaps_found→fail,
+ * inconclusive stays 'inconclusive' (a stable string that matches no label).
+ * Lives here so eval-report and the graph parsers share ONE implementation.
+ */
+export function normalizeDeliverableVerdict(
+  deliverable: unknown,
+): string | null {
+  if (deliverable === null || typeof deliverable !== 'object') return null;
+  const d = deliverable as Record<string, unknown>;
+  if (typeof d.verdict === 'string') return d.verdict;
+  if (d.status === 'passed') return 'pass';
+  if (d.status === 'findings') return 'fail';
+  if (Array.isArray(d.goals)) {
+    try {
+      const overall = goalVerdict(d as unknown as GoalVerdictInput).overall;
+      if (overall === 'passed') return 'pass';
+      if (overall === 'gaps_found') return 'fail';
+      return 'inconclusive';
+    } catch {
+      return null; // malformed goals — not classifiable
+    }
+  }
+  return null;
 }
 
 /**
