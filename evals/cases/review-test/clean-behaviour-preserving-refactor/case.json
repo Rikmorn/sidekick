@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "subject": { "kind": "agent", "name": "sk-test-reviewer" },
+  "fixture": "evals/fixtures/review-test/clean-behaviour-preserving-refactor",
+  "prompt": "You are dispatched to review a changed diff for the test dimension.\n- diff_target: HEAD~1..HEAD\n- changed_files: src/headers.ts\nCapture the diff, read surrounding context as needed, and return your ONE JSON deliverable.",
+  "label": { "expected_verdict": "pass" },
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "status",
+      "op": "equals",
+      "value": "passed"
+    }
+  ]
+}

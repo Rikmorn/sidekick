@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "subject": { "kind": "agent", "name": "sk-maintainability-reviewer" },
+  "fixture": "evals/fixtures/review-maintainability/clean-lookup-table",
+  "prompt": "You are dispatched to review a changed diff for the maintainability dimension.\n- diff_target: HEAD~1..HEAD\n- changed_files: src/notify.ts\nCapture the diff, read surrounding context as needed, and return your ONE JSON deliverable.",
+  "label": { "expected_verdict": "pass" },
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "status",
+      "op": "equals",
+      "value": "passed"
+    }
+  ]
+}

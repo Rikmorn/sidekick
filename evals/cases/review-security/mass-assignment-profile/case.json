@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "subject": { "kind": "agent", "name": "sk-security-reviewer" },
+  "fixture": "evals/fixtures/review-security/mass-assignment-profile",
+  "prompt": "You are dispatched to review a changed diff for the security dimension.\n- diff_target: HEAD~1..HEAD\n- changed_files: src/profile.ts\nCapture the diff, read surrounding context as needed, and return your ONE JSON deliverable.",
+  "label": { "expected_verdict": "fail" },
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "status",
+      "op": "equals",
+      "value": "findings"
+    },
+    {
+      "type": "structured",
+      "path": "findings",
+      "op": "matches",
+      "value": "profile\\.ts"
+    }
+  ]
+}

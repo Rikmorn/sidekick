@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "subject": { "kind": "agent", "name": "sk-architecture-reviewer" },
+  "fixture": "evals/fixtures/review-architecture/inverted-dependency",
+  "prompt": "You are dispatched to review a changed diff for the architecture dimension.\n- diff_target: HEAD~1..HEAD\n- changed_files: src/repositories/invoice-repository.ts\n- ticket_slug: inverted-dependency\nCapture the diff, read the RFC's Architecture section, and return your ONE JSON deliverable.",
+  "label": { "expected_verdict": "fail" },
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "status",
+      "op": "equals",
+      "value": "findings"
+    },
+    {
+      "type": "structured",
+      "path": "findings",
+      "op": "matches",
+      "value": "repositories/invoice-repository\\.ts"
+    }
+  ]
+}

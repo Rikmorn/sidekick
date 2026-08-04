@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "subject": { "kind": "agent", "name": "sk-test-reviewer" },
+  "fixture": "evals/fixtures/review-test/clean-new-branch-covered",
+  "prompt": "You are dispatched to review a changed diff for the test dimension.\n- diff_target: HEAD~1..HEAD\n- changed_files: src/quota.ts, src/quota.test.ts\nCapture the diff, read surrounding context as needed, and return your ONE JSON deliverable.",
+  "label": { "expected_verdict": "pass" },
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "status",
+      "op": "equals",
+      "value": "passed"
+    }
+  ]
+}

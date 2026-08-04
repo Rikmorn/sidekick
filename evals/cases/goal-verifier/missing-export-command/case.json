@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "subject": { "kind": "agent", "name": "sk-goal-verifier" },
+  "fixture": "evals/fixtures/goal-verifier/missing-export-command",
+  "prompt": "You are dispatched for goal-backward verification.\n- ticket_slug: report-export\n- diff_target: HEAD~1..HEAD\nRead the RFC goals and PLAN checklist, verify against the diff and codebase, and return your ONE JSON deliverable.",
+  "label": { "expected_verdict": "fail" },
+  "assertions": [
+    {
+      "type": "structured",
+      "path": "goals",
+      "op": "matches",
+      "value": "\"verdict\":\\s*\"(MISSING|STUB|HOLLOW|ORPHANED)\""
+    }
+  ]
+}
