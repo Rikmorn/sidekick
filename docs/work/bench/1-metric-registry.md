@@ -2,7 +2,7 @@
 id: bench-1
 epic: bench
 kind: item
-status: open
+status: active
 deps: []
 implements: [adr-0008]
 grounds: [research/eval-harness]

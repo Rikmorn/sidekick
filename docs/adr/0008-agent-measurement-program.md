@@ -1,6 +1,6 @@
 # ADR-0008 — Agent measurement program: metric registry, corpus strategy, and the sk-* gate
 
-**Status:** Proposed (2026-07-29, from the measurement-program design dialogue of 2026-07-23; the design was approved conversationally — this document is its durable record, operator sign-off pending on the written form). Extends ADR-0006 (the harness this program runs on) and ADR-0007 (the graph its registry and trends live in) — it reopens neither. Implemented by the `bench` epic ([`../work/bench/epic.md`](../work/bench/epic.md)). Resolves [`../backlog/agent-measurement-program.md`](../backlog/agent-measurement-program.md) by promotion; spawns [`../backlog/failure-capture-pipeline.md`](../backlog/failure-capture-pipeline.md) (v1 rides item 5).
+**Status:** Accepted (2026-08-04, operator sign-off on the written form; the design was approved conversationally in the measurement-program dialogue of 2026-07-23 and this document recorded it as Proposed on 2026-07-29). Extends ADR-0006 (the harness this program runs on) and ADR-0007 (the graph its registry and trends live in) — it reopens neither. Implemented by the `bench` epic ([`../work/bench/epic.md`](../work/bench/epic.md)). Resolves [`../backlog/agent-measurement-program.md`](../backlog/agent-measurement-program.md) by promotion; spawns [`../backlog/failure-capture-pipeline.md`](../backlog/failure-capture-pipeline.md) (v1 rides item 5).
 
 ## Context
 
