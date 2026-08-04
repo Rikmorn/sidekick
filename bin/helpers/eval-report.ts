@@ -11,6 +11,7 @@ import {
   type SubjectClass,
 } from './eval-metrics.js';
 import type { EvalRecord } from './eval-run.js';
+import { type GoalVerdictInput, goalVerdict } from './goal-verdict.js';
 import { subjectEntityId } from './graph-parse-machine.js';
 
 /**
@@ -197,12 +198,31 @@ function feedsMetric(a: RecordedAssertionLike, metricName: string): boolean {
   return metricName === DEFAULT_METRIC;
 }
 
+/**
+ * The classifier verdict a deliverable encodes, normalized across the
+ * verifier-class deliverable shapes (bench-3): an explicit `verdict` wins;
+ * a dimensional reviewer's `status` maps passed→pass / findings→fail; a
+ * goal-verifier deliverable (has `goals[]`) resolves through the shared
+ * goal-verdict rule (never restated here) — passed→pass, gaps_found→fail,
+ * inconclusive stays 'inconclusive' (stable for unanimity, matches no label).
+ */
 const deliverableVerdict = (r: MetricRecordLike): string | null => {
-  const v =
-    r.deliverable !== null && typeof r.deliverable === 'object'
-      ? (r.deliverable as Record<string, unknown>).verdict
-      : undefined;
-  return typeof v === 'string' ? v : null;
+  if (r.deliverable === null || typeof r.deliverable !== 'object') return null;
+  const d = r.deliverable as Record<string, unknown>;
+  if (typeof d.verdict === 'string') return d.verdict;
+  if (d.status === 'passed') return 'pass';
+  if (d.status === 'findings') return 'fail';
+  if (Array.isArray(d.goals)) {
+    try {
+      const overall = goalVerdict(d as unknown as GoalVerdictInput).overall;
+      if (overall === 'passed') return 'pass';
+      if (overall === 'gaps_found') return 'fail';
+      return 'inconclusive';
+    } catch {
+      return null; // malformed goals — not classifiable
+    }
+  }
+  return null;
 };
 
 const nullValue = (

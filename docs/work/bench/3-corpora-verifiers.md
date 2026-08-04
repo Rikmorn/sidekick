@@ -2,7 +2,7 @@
 id: bench-3
 epic: bench
 kind: item
-status: open
+status: active
 deps: [bench-1]
 implements: [adr-0008]
 grounds: [research/eval-harness, research/verification-autonomy]

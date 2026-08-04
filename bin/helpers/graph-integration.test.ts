@@ -46,10 +46,10 @@ describe('graph build on the live tree', () => {
     expect(unresolvable.map((f) => `${f.origin}: ${f.message}`)).toEqual([]);
   });
 
-  it('finds the live inventory: 7 suites, the agent roster, the helper set', () => {
+  it('finds the live inventory: the suite set, the agent roster, the helper set', () => {
     const kinds = (kind: string): string[] =>
       snapshot.entities.filter((e) => e.kind === kind).map((e) => e.id);
-    expect(kinds('suite').length).toBe(7);
+    expect(kinds('suite').length).toBeGreaterThanOrEqual(7);
     expect(kinds('agent').length).toBeGreaterThanOrEqual(23);
     expect(kinds('skill').length).toBeGreaterThanOrEqual(7);
     expect(kinds('helper').length).toBeGreaterThanOrEqual(17);

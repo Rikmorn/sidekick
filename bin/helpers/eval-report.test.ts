@@ -373,6 +373,57 @@ describe('computeMetrics', () => {
     ]);
   });
 
+  it('normalizes dimensional-reviewer status deliverables for label-match', () => {
+    const labels = new Map<string, 'pass' | 'fail'>([
+      ['s/planted', 'fail'],
+      ['s/clean', 'pass'],
+    ]);
+    const section = computeMetrics(
+      [
+        mrec(v, 's', 'planted', 0, {
+          deliverable: { dimension: 'correctness', status: 'findings' },
+        }),
+        mrec(v, 's', 'clean', 0, {
+          deliverable: { dimension: 'correctness', status: 'passed' },
+        }),
+      ],
+      testRegistry(),
+      labels,
+    );
+    const q = section.per_subject['agent:v'].metrics.quality;
+    expect(q.value).toBe(1);
+    expect(q.n).toBe(2);
+  });
+
+  it('normalizes goal-verifier deliverables through the shared goal-verdict rule', () => {
+    const labels = new Map<string, 'pass' | 'fail'>([
+      ['s/gap', 'fail'],
+      ['s/achieved', 'pass'],
+      ['s/unclear', 'pass'],
+    ]);
+    const gapDeliverable = {
+      goals: [{ id: 'g1', artifacts: [{ verdict: 'STUB' }] }],
+    };
+    const achievedDeliverable = {
+      goals: [{ id: 'g1', artifacts: [{ verdict: 'VERIFIED' }] }],
+    };
+    const inconclusiveDeliverable = {
+      goals: [{ id: 'g1', needs_human_verification: true }],
+    };
+    const section = computeMetrics(
+      [
+        mrec(v, 's', 'gap', 0, { deliverable: gapDeliverable }),
+        mrec(v, 's', 'achieved', 0, { deliverable: achievedDeliverable }),
+        mrec(v, 's', 'unclear', 0, { deliverable: inconclusiveDeliverable }),
+      ],
+      testRegistry(),
+      labels,
+    );
+    const q = section.per_subject['agent:v'].metrics.quality;
+    expect(q.value).toBeCloseTo(2 / 3); // inconclusive matches no label
+    expect(q.n).toBe(3);
+  });
+
   it('consistency is verdict unanimity when deliverables carry verdicts — consistently wrong is stable', () => {
     const stable = computeMetrics(
       [

@@ -176,8 +176,12 @@ export function evaluateStructured(
     return { outcome: 'fail', detail: `${a.path} is undefined` };
   }
   const re = new RegExp(String(a.value));
+  // Objects/arrays match against their JSON, not "[object Object]" — this is
+  // what lets a case assert over a structured deliverable's shape (bench-3).
+  const haystack =
+    typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val);
   return {
-    outcome: re.test(String(val)) ? 'pass' : 'fail',
+    outcome: re.test(haystack) ? 'pass' : 'fail',
     detail: `${a.path} ~ /${a.value}/ against ${JSON.stringify(val)}`,
   };
 }
@@ -277,34 +281,66 @@ export function evaluateJudge(
 // workspace prep (real fs + git)
 // ---------------------------------------------------------------------------
 
+/** The fixture subdir committed as the pre-change state (bench-3). */
+export const FIXTURE_BASE_DIR = '__base__';
+
+/**
+ * Prepare the per-run workspace. A flat fixture becomes a single commit. A
+ * fixture containing `__base__/` becomes TWO commits — base first, then the
+ * remaining files overlaid on top — so diff-reviewing subjects have a real
+ * change to review (`diff_target: HEAD~1..HEAD`). The overlay can add and
+ * modify files but not delete base files; a corpus needing deletions should
+ * express them another way.
+ */
 function prepareWorkspace(fixtureAbsDir: string | null, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
-  if (fixtureAbsDir !== null) {
-    if (!fs.existsSync(fixtureAbsDir)) {
-      throw new Error(`fixture dir not found: ${fixtureAbsDir}`);
-    }
-    fs.cpSync(fixtureAbsDir, dest, { recursive: true });
+  if (fixtureAbsDir !== null && !fs.existsSync(fixtureAbsDir)) {
+    throw new Error(`fixture dir not found: ${fixtureAbsDir}`);
   }
+  const commit = (message: string) =>
+    // -c flags keep the commit self-contained regardless of the host git identity.
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.email=eval@sidekick.local',
+        '-c',
+        'user.name=sidekick-eval',
+        'commit',
+        '-q',
+        '--allow-empty',
+        '-m',
+        message,
+      ],
+      { cwd: dest, stdio: 'ignore' },
+    );
   const git = (args: string[]) =>
     execFileSync('git', args, { cwd: dest, stdio: 'ignore' });
+
+  const baseDir =
+    fixtureAbsDir === null ? null : path.join(fixtureAbsDir, FIXTURE_BASE_DIR);
+  if (fixtureAbsDir !== null && baseDir !== null && fs.existsSync(baseDir)) {
+    fs.cpSync(baseDir, dest, { recursive: true });
+    git(['init', '-q']);
+    git(['add', '-A']);
+    commit('eval-fixture-base');
+    for (const entry of fs.readdirSync(fixtureAbsDir)) {
+      if (entry === FIXTURE_BASE_DIR) continue;
+      fs.cpSync(path.join(fixtureAbsDir, entry), path.join(dest, entry), {
+        recursive: true,
+      });
+    }
+    git(['add', '-A']);
+    commit('eval-fixture-change');
+    return;
+  }
+
+  if (fixtureAbsDir !== null) {
+    fs.cpSync(fixtureAbsDir, dest, { recursive: true });
+  }
   git(['init', '-q']);
   git(['add', '-A']);
-  // -c flags keep the commit self-contained regardless of the host git identity.
-  execFileSync(
-    'git',
-    [
-      '-c',
-      'user.email=eval@sidekick.local',
-      '-c',
-      'user.name=sidekick-eval',
-      'commit',
-      '-q',
-      '--allow-empty',
-      '-m',
-      'eval-fixture',
-    ],
-    { cwd: dest, stdio: 'ignore' },
-  );
+  commit('eval-fixture');
 }
 
 // ---------------------------------------------------------------------------

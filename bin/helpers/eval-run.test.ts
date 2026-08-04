@@ -172,6 +172,26 @@ describe('evaluateStructured', () => {
       }).outcome,
     ).toBe('pass');
   });
+  it('matches — objects and arrays match against their JSON, not [object Object]', () => {
+    expect(
+      evaluateStructured(d, {
+        type: 'structured',
+        target: 'artifact',
+        path: 'issues',
+        op: 'matches',
+        value: '"kind":\\s*"x"',
+      }).outcome,
+    ).toBe('pass');
+    expect(
+      evaluateStructured(d, {
+        type: 'structured',
+        target: 'artifact',
+        path: 'issues',
+        op: 'matches',
+        value: 'object Object',
+      }).outcome,
+    ).toBe('fail');
+  });
 });
 
 describe('buildJudgePrompt — sealing', () => {
@@ -315,6 +335,62 @@ describe('runEvalSuite (injected runner)', () => {
     const dispatched = argvLog[0].join(' ');
     expect(dispatched).not.toContain('{{WORKSPACE}}');
     expect(dispatched).toContain('/RFC.md');
+  });
+
+  it('a __base__ fixture produces two commits with the overlay as the change (real git)', () => {
+    const fixtureDir = path.join(repoRoot, 'evals', 'fixtures', 'overlay');
+    fs.mkdirSync(path.join(fixtureDir, '__base__', 'src'), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(fixtureDir, '__base__', 'src', 'app.ts'),
+      'export const mode = "clean";\n',
+    );
+    fs.mkdirSync(path.join(fixtureDir, 'src'), { recursive: true });
+    fs.writeFileSync(
+      path.join(fixtureDir, 'src', 'app.ts'),
+      'export const mode = "changed";\n',
+    );
+    fs.writeFileSync(
+      path.join(fixtureDir, 'src', 'new.ts'),
+      'export const added = true;\n',
+    );
+    writeCase('c1', {
+      schemaVersion: 1,
+      subject: { kind: 'agent', name: 'sk-correctness-reviewer' },
+      fixture: 'evals/fixtures/overlay',
+      prompt: 'review {{WORKSPACE}}',
+      assertions: [
+        { type: 'code', cmd: 'test "$(git rev-list --count HEAD)" = "2"' },
+        {
+          type: 'code',
+          cmd: 'git diff HEAD~1..HEAD --name-only | grep -q "src/new.ts"',
+        },
+        {
+          type: 'code',
+          cmd: 'git diff HEAD~1..HEAD --name-only | grep -q "src/app.ts"',
+        },
+        {
+          type: 'code',
+          cmd: 'git show HEAD~1:src/app.ts | grep -q "clean"',
+        },
+      ],
+    });
+    // Real shell (deps.shell omitted) so the git assertions run in the workspace.
+    const res = runEvalSuite({
+      repoRoot,
+      suiteOrCasePath: 's1',
+      runId: 'r-overlay',
+      deps: { claude: claudeOk({ status: 'passed' }) },
+    });
+    expect(res.exitCode).toBe(0);
+    const rec = readRecords('r-overlay')[0];
+    expect(rec.assertions.map((a: { outcome: string }) => a.outcome)).toEqual([
+      'pass',
+      'pass',
+      'pass',
+      'pass',
+    ]);
   });
 
   it('records a failing structured assertion', () => {
