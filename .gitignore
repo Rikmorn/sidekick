@@ -18,9 +18,9 @@ node_modules/
 dist/
 *.log
 
-# Eval harness (3.3): raw per-run records are local run artifacts, never committed.
-# The case corpus under evals/cases/ and fixtures under evals/fixtures/ ARE tracked.
-evals/results/
+# Eval harness: run records ARE tracked — ADR-0008 D6 gates on committed
+# run sets accreting over distinct dates (append-only; the graph parses them).
+# Scratch/aborted runs: delete the run dir rather than ignoring it.
 
 # Secrets
 credentials.json
