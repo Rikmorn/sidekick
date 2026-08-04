@@ -163,6 +163,7 @@ const testRegistry = (): MetricsRegistry => ({
   subjects: {
     'agent:v': { class: 'verifier' },
     'agent:p': { class: 'producer' },
+    'agent:e': { class: 'executor' },
     'skill:o': { class: 'orchestrator' },
   },
   metrics: [
@@ -301,6 +302,26 @@ describe('computeMetrics', () => {
     );
     const q = section.per_subject['agent:p'].metrics.quality;
     expect(q.computation).toBe('judge-pass-rate');
+    expect(q.value).toBeCloseTo(0.5);
+    expect(q.n).toBe(2);
+  });
+
+  it('executor quality is mechanical-pass-rate over code+structured assertions; judges do not feed it', () => {
+    const section = computeMetrics(
+      [
+        mrec({ kind: 'agent', name: 'e' }, 's', 'c1', 0, {
+          assertions: [
+            { type: 'code', outcome: 'pass' },
+            { type: 'structured', outcome: 'fail' },
+            { type: 'judge', outcome: 'fail' },
+          ],
+        }),
+      ],
+      testRegistry(),
+      new Map(),
+    );
+    const q = section.per_subject['agent:e'].metrics.quality;
+    expect(q.computation).toBe('mechanical-pass-rate');
     expect(q.value).toBeCloseTo(0.5);
     expect(q.n).toBe(2);
   });

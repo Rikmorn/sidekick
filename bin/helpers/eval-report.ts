@@ -25,7 +25,8 @@ import { subjectEntityId } from './graph-parse-machine.js';
  * pass^k folds into the frame as consistency's run-stability computation
  * rather than living beside it.
  *
- * `--json` contract (the substrate bench-2's graph parser consumes):
+ * JSON output contract (the substrate bench-2's graph parser consumes; the
+ * report always emits JSON — there is no flag):
  * `{ run_id, metrics, suites, totals }` where `metrics` is
  * `{ registry, per_subject, unknown_metric_tags } | null` (null + a top-level
  * `metrics_note` when no registry exists). `per_subject` keys are graph entity
