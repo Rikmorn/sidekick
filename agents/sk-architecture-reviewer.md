@@ -21,7 +21,7 @@ Your deliverable is ONE JSON object inside a final ```json``` fence. Reason in p
 | `changed_files` | yes | the files in scope |
 | `ticket_slug` | yes | used to locate `.sidekick/plans/<slug>/RFC.md` and read its `## Architecture` section |
 
-If `.sidekick/plans/<ticket_slug>/RFC.md` has no `## Architecture` section, return `{ "verdict": "pass", "findings": [], "note": "no declared architecture to check" }`.
+If `.sidekick/plans/<ticket_slug>/RFC.md` has no `## Architecture` section, return `{ "dimension": "architecture", "status": "passed", "summary": "no declared architecture to check", "findings": [] }`.
 
 </inputs>
 
@@ -37,14 +37,14 @@ Emit a finding only when you can name both the declared rule it breaks and the `
 
 ```json
 {
-  "verdict": "pass" | "findings",
   "dimension": "architecture",
+  "status": "passed|findings",
+  "summary": "<one line>",
   "findings": [
     {
-      "dimension": "architecture",
       "severity": "important",
       "file": "src/domain/orders.ts",
-      "line": 3,
+      "line": "3",
       "description": "domain module imports infra/stripe directly",
       "why_it_matters": "RFC ## Architecture declares the domain layer must not import infra; external I/O goes through an injected port. This import couples the domain to a concrete vendor client.",
       "suggested_fix": "inject a payment port interface; implement it in infra/",
@@ -54,17 +54,17 @@ Emit a finding only when you can name both the declared rule it breaks and the `
 }
 ```
 
-`verdict` is `findings` when `findings` is non-empty, else `pass`. Every finding carries `fixable: false` — architecture deviations route to a human or a redesign, never to sk-fixer.
+`status: "passed"` iff `findings` is empty. Every finding carries `fixable: false` — architecture deviations route to a human or a redesign, never to sk-fixer. No keys beyond the schema.
 
 </output_schema>
 
 <examples>
 
-**Pass — conforms.** RFC declares "API handlers call domain services, never infra directly." The diff adds `api/orders.ts` calling `domainOrderService.create()`. Reasoning: the call goes through the domain service as declared; no boundary crossed. → `verdict: "pass"`, empty findings.
+**Pass — conforms.** RFC declares "API handlers call domain services, never infra directly." The diff adds `api/orders.ts` calling `domainOrderService.create()`. Reasoning: the call goes through the domain service as declared; no boundary crossed. → `status: "passed"`, empty findings.
 
 **Finding — boundary violation.** RFC declares the domain layer must not import infra. The diff adds `import { stripeClient } from '../infra/stripe'` in `src/domain/orders.ts`. Reasoning: a concrete declared rule (domain ⊅ infra) and a concrete violating line. → one finding, `severity: important`, `fixable: false`, route to redesign.
 
-**Pass — no contract.** The plan's RFC has no `## Architecture` section. Reasoning: nothing was declared, so there is no conformance to check — emitting taste-based findings here is exactly the failure mode this agent avoids. → `verdict: "pass"`, `findings: []`, `note: "no declared architecture to check"`.
+**Pass — no contract.** The plan's RFC has no `## Architecture` section. Reasoning: nothing was declared, so there is no conformance to check — emitting taste-based findings here is exactly the failure mode this agent avoids. → `status: "passed"`, `findings: []`, `summary: "no declared architecture to check"`.
 
 </examples>
 
