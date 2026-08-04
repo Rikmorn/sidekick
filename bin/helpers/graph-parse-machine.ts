@@ -9,6 +9,7 @@
  * string that identifies an entity.
  */
 
+import { parseMetricsRegistry } from './eval-metrics.js';
 import {
   type Entity,
   emptyParse,
@@ -211,6 +212,30 @@ export function parseRunRecords(
   });
 
   return { runs, findings };
+}
+
+// ---- metrics registry -------------------------------------------------------
+
+/**
+ * Validate `evals/metrics.json` (bench-1). The registry's closed-vocabulary
+ * discipline surfaces here as error-tier `invalid-metric` findings — a registry
+ * the kernel cannot validate would silently corrupt every metric the report
+ * computes. Findings only for now: metric/run-set entities land with bench-2.
+ */
+export function parseMetricsRegistrySource(
+  json: string,
+  relPath: string,
+): ParseResult {
+  const out = emptyParse();
+  const res = parseMetricsRegistry(json);
+  if (!res.ok) {
+    for (const error of res.errors) {
+      out.findings.push(
+        finding('invalid-metric', `${relPath}: ${error}`, `${relPath}:1`),
+      );
+    }
+  }
+  return out;
 }
 
 // ---- calibration certificates -----------------------------------------------

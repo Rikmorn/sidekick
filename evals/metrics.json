@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "subjects": {
+    "agent:sk-correctness-reviewer": { "class": "verifier" },
+    "agent:sk-security-reviewer": { "class": "verifier" },
+    "agent:sk-maintainability-reviewer": { "class": "verifier" },
+    "agent:sk-test-reviewer": { "class": "verifier" },
+    "agent:sk-architecture-reviewer": { "class": "verifier" },
+    "agent:sk-goal-verifier": { "class": "verifier" },
+    "agent:sk-coherence-checker": { "class": "verifier" },
+    "agent:sk-structural-checker": { "class": "verifier" },
+    "agent:sk-crossref-checker": { "class": "verifier" },
+    "agent:sk-spec-reviewer": { "class": "verifier" },
+    "agent:sk-rfc-drafter": { "class": "producer" },
+    "agent:sk-plan-drafter": { "class": "producer" },
+    "agent:sk-decision-drafter": { "class": "producer" },
+    "agent:sk-executor": { "class": "executor" },
+    "agent:sk-fixer": { "class": "executor" },
+    "skill:sk-build": { "class": "orchestrator" },
+    "skill:sk-review": { "class": "orchestrator" },
+    "skill:sk-design": { "class": "orchestrator" }
+  },
+  "metrics": [
+    {
+      "name": "quality",
+      "applies_to": ["verifier", "producer", "executor", "orchestrator"],
+      "feeds_from": ["code", "structured", "judge"],
+      "computation": {
+        "verifier": "label-match-rate",
+        "producer": "judge-pass-rate",
+        "executor": "mechanical-pass-rate",
+        "orchestrator": "mechanical-pass-rate"
+      },
+      "bias": "Verifier labels come mostly from seeded corpora, which measure catches-what-we-plant and can flatter; producer quality rides same-family judges (self-preference, correlated errors) and is trusted only alongside a valid calibration certificate.",
+      "thresholds": { "default": 0.8 }
+    },
+    {
+      "name": "consistency",
+      "applies_to": ["verifier", "producer", "executor", "orchestrator"],
+      "feeds_from": ["code", "structured", "judge"],
+      "computation": "run-stability",
+      "bias": "Stability is not correctness — a subject that is consistently wrong scores as stable; k per case is small, so unanimity over k runs is a weak sample of the output distribution.",
+      "thresholds": { "default": 0.9 }
+    },
+    {
+      "name": "adherence",
+      "applies_to": ["verifier", "producer", "executor", "orchestrator"],
+      "feeds_from": ["code", "structured"],
+      "computation": "deliverable-shape-rate",
+      "bias": "Mechanical shape checks only — a well-formed deliverable can still be wrong, and scope/read-only compliance beyond deliverable shape is not yet captured in run records.",
+      "thresholds": { "default": 0.9 }
+    },
+    {
+      "name": "grounding",
+      "applies_to": ["verifier", "producer", "executor", "orchestrator"],
+      "feeds_from": ["judge"],
+      "computation": "judge-pass-rate",
+      "bias": "Judge-checked by a same-family judge (self-preference, correlated errors) — evidence-existence is checkable but conclusion-follows is judgment, so grounding verdicts gate nothing without a valid calibration certificate.",
+      "thresholds": { "default": 0.8 }
+    }
+  ]
+}

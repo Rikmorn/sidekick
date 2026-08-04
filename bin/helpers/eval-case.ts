@@ -37,6 +37,8 @@ export interface CodeAssertion {
   type: 'code';
   target: AssertionTarget;
   cmd: string;
+  /** Optional metric this assertion feeds (bench-1); untagged feeds quality. */
+  metric?: string;
 }
 export interface StructuredAssertion {
   type: 'structured';
@@ -44,6 +46,8 @@ export interface StructuredAssertion {
   path: string;
   op: StructuredOp;
   value?: unknown;
+  /** Optional metric this assertion feeds (bench-1); untagged feeds quality. */
+  metric?: string;
 }
 export interface JudgeAssertion {
   type: 'judge';
@@ -55,6 +59,8 @@ export interface JudgeAssertion {
   file?: string;
   /** Optional dot-path into the deliverable whose value is judged (else the whole deliverable). */
   path?: string;
+  /** Optional metric this assertion feeds (bench-1); untagged feeds quality. */
+  metric?: string;
 }
 export type Assertion = CodeAssertion | StructuredAssertion | JudgeAssertion;
 
@@ -98,11 +104,21 @@ function parseAssertion(
   }
   const t = target as AssertionTarget;
 
+  if (a.metric !== undefined) {
+    if (typeof a.metric !== 'string' || a.metric.length === 0) {
+      return {
+        error: `${label}: "metric" must be a non-empty string when present`,
+      };
+    }
+  }
+  const metric =
+    a.metric !== undefined ? { metric: a.metric as string } : undefined;
+
   if (a.type === 'code') {
     if (typeof a.cmd !== 'string' || a.cmd.length === 0) {
       return { error: `${label}: code assertion needs a non-empty "cmd"` };
     }
-    return { type: 'code', target: t, cmd: a.cmd };
+    return { type: 'code', target: t, cmd: a.cmd, ...metric };
   }
   if (a.type === 'structured') {
     if (typeof a.path !== 'string' || a.path.length === 0) {
@@ -122,6 +138,7 @@ function parseAssertion(
       path: a.path,
       op: a.op as StructuredOp,
       ...(a.op === 'exists' ? {} : { value: a.value }),
+      ...metric,
     };
   }
   if (a.type === 'judge') {
@@ -150,6 +167,7 @@ function parseAssertion(
       threshold,
       ...(a.file !== undefined ? { file: a.file } : {}),
       ...(a.path !== undefined ? { path: a.path } : {}),
+      ...metric,
     };
   }
   return { error: `${label}: "type" must be code | structured | judge` };

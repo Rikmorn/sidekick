@@ -49,6 +49,12 @@ describe('checkTaxonomy', () => {
     expect(findings[0].message).toContain('retrieval axis');
     expect(isError(findings[0])).toBe(true);
   });
+
+  it('invalid-metric findings are error-tier (bench-1 gate)', () => {
+    expect(
+      isError({ code: 'invalid-metric', message: 'x', origin: null }),
+    ).toBe(true);
+  });
 });
 
 describe('checkGeneratedDrift', () => {

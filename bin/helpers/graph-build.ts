@@ -30,6 +30,7 @@ import {
   parseCalibration,
   parseEvalCase,
   parseHelperFile,
+  parseMetricsRegistrySource,
   parseRunRecords,
   parseSkillFile,
 } from './graph-parse-machine.js';
@@ -179,6 +180,16 @@ export function collectGraph(repoRoot: string): BuildResult {
     const parsed = parseRunRecords(read(repoRoot, rel), rel);
     runs.push(...parsed.runs);
     results.push({ entities: [], edges: [], findings: parsed.findings });
+  }
+
+  const metricsRegistry = 'evals/metrics.json';
+  if (exists(repoRoot, metricsRegistry)) {
+    results.push(
+      parseMetricsRegistrySource(
+        read(repoRoot, metricsRegistry),
+        metricsRegistry,
+      ),
+    );
   }
 
   for (const rel of walk(repoRoot, '.sidekick/calibrations')) {

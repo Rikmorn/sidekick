@@ -4,6 +4,7 @@ import {
   parseCalibration,
   parseEvalCase,
   parseHelperFile,
+  parseMetricsRegistrySource,
   parseRunRecords,
   parseSkillFile,
   subjectEntityId,
@@ -158,6 +159,56 @@ describe('parseRunRecords', () => {
     expect(runs.length).toBe(1);
     expect(findings.length).toBe(2);
     expect(findings[0].origin).toBe('r.jsonl:2');
+  });
+});
+
+describe('parseMetricsRegistrySource', () => {
+  it('a valid registry yields no findings and no entities yet (bench-2)', () => {
+    const r = parseMetricsRegistrySource(
+      JSON.stringify({
+        schemaVersion: 1,
+        subjects: { 'agent:sk-fixer': { class: 'executor' } },
+        metrics: [
+          {
+            name: 'adherence',
+            applies_to: ['executor'],
+            feeds_from: ['code'],
+            computation: 'deliverable-shape-rate',
+            bias: 'mechanical only',
+            thresholds: { default: 0.9 },
+          },
+        ],
+      }),
+      'evals/metrics.json',
+    );
+    expect(r.findings).toEqual([]);
+    expect(r.entities).toEqual([]);
+    expect(r.edges).toEqual([]);
+  });
+
+  it('an unknown subject class and a missing bias are error-tier invalid-metric findings', () => {
+    const r = parseMetricsRegistrySource(
+      JSON.stringify({
+        schemaVersion: 1,
+        subjects: { 'agent:sk-fixer': { class: 'wizard' } },
+        metrics: [
+          {
+            name: 'adherence',
+            applies_to: ['executor'],
+            feeds_from: ['code'],
+            computation: 'deliverable-shape-rate',
+            thresholds: { default: 0.9 },
+          },
+        ],
+      }),
+      'evals/metrics.json',
+    );
+    expect(r.findings.length).toBe(2);
+    for (const f of r.findings) {
+      expect(f.code).toBe('invalid-metric');
+      expect(f.origin).toBe('evals/metrics.json:1');
+    }
+    expect(r.findings.map((f) => f.message).join(' ')).toMatch(/bias/);
   });
 });
 

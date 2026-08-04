@@ -317,6 +317,8 @@ export interface RecordedAssertion {
   target: string;
   outcome: AssertionOutcome;
   detail: string;
+  /** The metric this assertion feeds, copied from the case (bench-1). */
+  metric?: string;
 }
 
 export interface EvalRecord {
@@ -361,7 +363,12 @@ function evaluateAssertions(
   model: string | undefined,
 ): RecordedAssertion[] {
   return evalCase.assertions.map((a, index) => {
-    const base = { index, type: a.type, target: a.target };
+    const base = {
+      index,
+      type: a.type,
+      target: a.target,
+      ...(a.metric !== undefined ? { metric: a.metric } : {}),
+    };
     if (a.type === 'code') {
       const r = evaluateCode(a, workspace, deps.shell);
       return { ...base, ...r };
@@ -554,6 +561,7 @@ export function runCase(
           index,
           type: a.type,
           target: a.target,
+          ...(a.metric !== undefined ? { metric: a.metric } : {}),
           outcome: 'error' as const,
           detail: `skipped: ${invocationError}`,
         }));
@@ -572,6 +580,7 @@ export function runCase(
         index,
         type: a.type,
         target: a.target,
+        ...(a.metric !== undefined ? { metric: a.metric } : {}),
         outcome: 'error' as const,
         detail: invocationError ?? '',
       }));

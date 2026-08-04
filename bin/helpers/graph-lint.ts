@@ -36,6 +36,7 @@ const ERROR_CODES = new Set<LintCode>([
   'generated-drift',
   'state-size-cap',
   'dangling-applies-to',
+  'invalid-metric',
 ]);
 
 export function isError(finding: LintFinding): boolean {

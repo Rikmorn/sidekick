@@ -129,7 +129,8 @@ export type LintCode =
   | 'missing-frontmatter'
   | 'generated-drift'
   | 'state-size-cap'
-  | 'dangling-applies-to';
+  | 'dangling-applies-to'
+  | 'invalid-metric';
 
 export interface LintFinding {
   code: LintCode;
