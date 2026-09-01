@@ -2,6 +2,8 @@
 
 **Status:** Accepted (2026-08-04, operator sign-off on the written form; the design was approved conversationally in the measurement-program dialogue of 2026-07-23 and this document recorded it as Proposed on 2026-07-29). Extends ADR-0006 (the harness this program runs on) and ADR-0007 (the graph its registry and trends live in) — it reopens neither. Implemented by the `bench` epic ([`../work/bench/epic.md`](../work/bench/epic.md)). Resolves [`../backlog/agent-measurement-program.md`](../backlog/agent-measurement-program.md) by promotion; spawns [`../backlog/failure-capture-pipeline.md`](../backlog/failure-capture-pipeline.md) (v1 rides item 5).
 
+> **Amended 2026-09 (CR #1):** D6’s gate condition (18 subjects × ≥3 run sets) is superseded by shadow-usage evidence + harvest on home repos, per the R1 restructure. The metric registry, corpora, and calibration protocol stand unchanged.
+
 ## Context
 
 1. **The fleet is unmeasured.** ~30 agents and skills; `graph gaps` names 23 with no eval case. Nothing measures their quality, consistency, adherence, or grounding, and no designed scenario set exists to measure them against. The operator named this — not the visibility layer — as the confidence gate for sk-* self-use: "sk-reassessment comes after we have tools to measure."

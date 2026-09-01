@@ -10,6 +10,8 @@ resolves: [backlog:agent-measurement-program]
 
 # bench — the agent measurement program (ADR-0008)
 
+> **Status now tracked on GitHub** — bench-4 (#14) and bench-6 (#15) are parked issues pending CR #1; this folder remains the record of bench 1–3/5.
+
 **Why this epic exists.** ~30 agents and skills, 23 of them unmeasured; no metrics vocabulary, no scenario corpora, no trends. The operator named measurement — not visibility — as the confidence gate for sk-* self-use: "sk-reassessment comes after we have tools to measure." This epic builds the tools: a typed metric registry the kernel validates, chain-subject corpora that trend over committed run sets, bias acknowledgment as schema, and an explicit computed gate the operator reads to decide.
 
 **Scope guard.** Gate-driven, depth-first (ADR-0008 D1): the sk-* execution chain only — 15 agents + 3 orchestrator skills. The rest of the fleet extends later via registry entries + corpora through the authoring skill; no new machinery. Judges stay same-family in v1 (the bias ledger names it); cross-family is the `3.7` seam, not this epic.
