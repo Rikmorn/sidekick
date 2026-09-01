@@ -343,3 +343,61 @@ describe('runInit hook install', () => {
     expect(gi).toContain('.claude/settings.local.json');
   });
 });
+
+describe('installRules via runInit', () => {
+  let repoRoot: string;
+  let claudeHome: string;
+  beforeEach(() => {
+    repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-init-repo-'));
+    claudeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-init-home-'));
+    execSync('git init -q', { cwd: repoRoot });
+    execSync('git config user.email t@t.example && git config user.name T', {
+      cwd: repoRoot,
+    });
+    const rulesDir = path.join(claudeHome, 'sidekick', 'rules');
+    fs.mkdirSync(rulesDir, { recursive: true });
+    fs.writeFileSync(path.join(rulesDir, 'sk-language.md'), '# v1\n');
+  });
+  afterEach(() => {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+    fs.rmSync(claudeHome, { recursive: true, force: true });
+  });
+
+  it('copies installed sk-*.md rules into the repo .claude/rules/', async () => {
+    const code = await runInit({
+      repoRoot,
+      claudeHome,
+      nonInteractive: true,
+      hooks: false,
+    });
+    expect(code).toBe(0);
+    const dest = path.join(repoRoot, '.claude', 'rules', 'sk-language.md');
+    expect(fs.readFileSync(dest, 'utf-8')).toBe('# v1\n');
+  });
+
+  it('overwrites sk-* files on re-init but never touches non-sk files', async () => {
+    const destDir = path.join(repoRoot, '.claude', 'rules');
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(path.join(destDir, 'sk-language.md'), 'stale\n');
+    fs.writeFileSync(path.join(destDir, 'my-own.md'), 'mine\n');
+    await runInit({ repoRoot, claudeHome, nonInteractive: true, hooks: false });
+    expect(fs.readFileSync(path.join(destDir, 'sk-language.md'), 'utf-8')).toBe(
+      '# v1\n',
+    );
+    expect(fs.readFileSync(path.join(destDir, 'my-own.md'), 'utf-8')).toBe(
+      'mine\n',
+    );
+  });
+
+  it('is a no-op when the installed rules dir is absent', async () => {
+    fs.rmSync(path.join(claudeHome, 'sidekick', 'rules'), { recursive: true });
+    const code = await runInit({
+      repoRoot,
+      claudeHome,
+      nonInteractive: true,
+      hooks: false,
+    });
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(repoRoot, '.claude', 'rules'))).toBe(false);
+  });
+});

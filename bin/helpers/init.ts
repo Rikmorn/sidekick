@@ -140,6 +140,29 @@ export function ensureGitignore(repoRoot: string): {
   return { changed: true, added: [...missing] };
 }
 
+/**
+ * Copy the installed portable rules (~/.claude/sidekick/rules/sk-*.md) into
+ * the consumer repo's .claude/rules/. sk-*-prefixed files are managed
+ * (overwritten on re-init); anything else in the directory is left alone.
+ */
+export function installRules(
+  repoRoot: string,
+  claudeHome: string,
+): { installed: string[] } {
+  const src = path.join(claudeHome, 'sidekick', 'rules');
+  if (!fs.existsSync(src)) return { installed: [] };
+  const files = fs
+    .readdirSync(src)
+    .filter((f) => f.startsWith('sk-') && f.endsWith('.md'));
+  if (files.length === 0) return { installed: [] };
+  const dest = path.join(repoRoot, '.claude', 'rules');
+  fs.mkdirSync(dest, { recursive: true });
+  for (const f of files) {
+    fs.copyFileSync(path.join(src, f), path.join(dest, f));
+  }
+  return { installed: files };
+}
+
 export interface RunInitOptions {
   repoRoot: string;
   claudeHome: string;
@@ -251,6 +274,13 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
   const gitignore = ensureGitignore(repoRoot);
   if (gitignore.changed) {
     console.log(`Updated .gitignore (${gitignore.added.join(', ')})`);
+  }
+
+  const rules = installRules(repoRoot, claudeHome);
+  if (rules.installed.length > 0) {
+    console.log(
+      `Installed ${rules.installed.length} rule(s) to .claude/rules/`,
+    );
   }
 
   const result = installHooks({
