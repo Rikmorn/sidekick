@@ -8,8 +8,6 @@
     "agent:sk-architecture-reviewer": { "class": "verifier" },
     "agent:sk-goal-verifier": { "class": "verifier" },
     "agent:sk-coherence-checker": { "class": "verifier" },
-    "agent:sk-structural-checker": { "class": "verifier" },
-    "agent:sk-crossref-checker": { "class": "verifier" },
     "agent:sk-spec-reviewer": { "class": "verifier" },
     "agent:sk-rfc-drafter": { "class": "producer" },
     "agent:sk-plan-drafter": { "class": "producer" },

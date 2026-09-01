@@ -6,5 +6,5 @@
   },
   "fixture": "smokes/fixtures/coherence/decision-internal",
   "manual": true,
-  "expect": "sk-decide Step 7 dispatches sk-structural-checker ∥ sk-coherence-checker; coherence returns fail (option contradicts Consequences); orchestrator re-dispatches sk-decision-drafter. (Smoke 13 Part D.)"
+  "expect": "sk-decide Step 7 runs the check-artifact gate, then dispatches sk-coherence-checker; coherence returns fail (option contradicts Consequences); orchestrator re-dispatches sk-decision-drafter. (Smoke 13 Part D.)"
 }
