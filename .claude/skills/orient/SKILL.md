@@ -5,6 +5,8 @@ description: Use at the start of a session in this repo, or whenever returning a
 
 # orient — re-ground a cold session
 
+> **Work state moved (2026-09, R1).** Open work, releases, and the backlog are now authoritative on **GitHub** — issues + milestones on `Rikmorn/sidekick` and the "sidekick" project board (`gh issue list`, `gh issue list --milestone <m>`, board: github.com/users/Rikmorn/projects/2). EPIC.md / EPIC-STATE.md are archived records, and STATE.md's work sections describe the pre-R1 world. The graph and the surfaces below remain authoritative for the *knowledge* corpus (agents, evals, research, coverage). Conventions: `rules/sk-pm-conventions.md`. Full reconciliation of this skill is tracked in issue #52.
+
 You are re-entering a repo built by two intermittent minds — an operator who returns after weeks away, and an agent that starts every session cold. Its knowledge layer (ADR-0007) exists so that re-entry costs one ritual instead of an afternoon of grep. Your goal: a briefing that hands whoever is reading the current state, what changed while they were away, and what deserves attention — grounded in the layer, written for someone who has paged everything out.
 
 ## Instruments
