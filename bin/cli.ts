@@ -6,6 +6,10 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runBranchPrecheckCli } from './helpers/branch-precheck.js';
 import { runCapabilitiesCli } from './helpers/capabilities.js';
+import {
+  isArtifactType,
+  runCheckArtifactCli,
+} from './helpers/check-artifact.js';
 import { runCheckDriftCli } from './helpers/check-drift.js';
 import { runClassifyDeviationCli } from './helpers/classify-deviation.js';
 import { runGatesCli } from './helpers/config.js';
@@ -341,6 +345,7 @@ if (_isEntry) {
       'init',
       'capabilities',
       'branch-precheck',
+      'check-artifact',
       'check-drift',
       'reconcile-plan',
       'wave-plan',
@@ -357,7 +362,7 @@ if (_isEntry) {
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|eval|graph|harvest|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-artifact|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|eval|graph|harvest|hook> [options]',
       );
       process.exit(1);
     }
@@ -644,6 +649,29 @@ if (_isEntry) {
           format,
         });
         console.log(stdout);
+        process.exit(0);
+      } else if (sub === 'check-artifact') {
+        const args = process.argv.slice(3);
+        const artifactPath = args.find((a) => !a.startsWith('--'));
+        const getVal = (flag: string): string | undefined => {
+          const idx = args.indexOf(flag);
+          return idx >= 0 ? args[idx + 1] : undefined;
+        };
+        const artifactType = getVal('--type');
+        if (!artifactPath || !isArtifactType(artifactType)) {
+          console.error(
+            'Usage: sidekick check-artifact <path> --type <rfc|plan|decision> [--rfc <path>]',
+          );
+          process.exit(1);
+        }
+        console.log(
+          runCheckArtifactCli({
+            repoRoot: process.cwd(),
+            artifactPath: path.resolve(artifactPath),
+            artifactType,
+            rfcPath: getVal('--rfc'),
+          }),
+        );
         process.exit(0);
       } else if (sub === 'check-drift') {
         const slug = process.argv[3];
