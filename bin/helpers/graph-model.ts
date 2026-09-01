@@ -132,7 +132,8 @@ export type LintCode =
   | 'generated-drift'
   | 'state-size-cap'
   | 'dangling-applies-to'
-  | 'invalid-metric';
+  | 'invalid-metric'
+  | 'historical-ref';
 
 export interface LintFinding {
   code: LintCode;

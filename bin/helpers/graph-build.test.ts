@@ -206,6 +206,33 @@ describe('collectGraph', () => {
     expect(dangling).toBeDefined();
   });
 
+  it('downgrades a dangling runset measures edge to advisory historical-ref', () => {
+    write(
+      repo,
+      'evals/results/old-run/records.jsonl',
+      `${JSON.stringify({
+        run_id: 'old-run',
+        case_id: 'c1',
+        suite: 's1',
+        subject: { kind: 'agent', name: 'sk-departed' },
+        status: 'ok',
+        started_at: '2026-01-01T00:00:00.000Z',
+      })}\n`,
+    );
+    const { findings } = collectGraph(repo);
+    expect(
+      findings.find(
+        (f) => f.code === 'historical-ref' && f.message.includes('sk-departed'),
+      ),
+    ).toBeDefined();
+    expect(
+      findings.find(
+        (f) =>
+          f.code === 'unresolvable-ref' && f.message.includes('sk-departed'),
+      ),
+    ).toBeUndefined();
+  });
+
   it('never reads the declared foreign enclave or seeded fixtures', () => {
     write(
       repo,

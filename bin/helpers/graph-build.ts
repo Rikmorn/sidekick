@@ -457,11 +457,21 @@ function linkCheck(entities: Entity[], edges: Edge[]): LintFinding[] {
     const key = `${edge.src}|${edge.rel}|${edge.dst}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    findings.push({
-      code: 'unresolvable-ref',
-      message: `edge "${edge.src} ${edge.rel} ${edge.dst}" points at an entity the build did not find.`,
-      origin: edge.origin,
-    });
+    if (edge.rel === 'measures' && edge.src.startsWith('runset:')) {
+      // Run history is append-only: a runset measuring a since-retired subject
+      // is a true record, not a broken reference.
+      findings.push({
+        code: 'historical-ref',
+        message: `edge "${edge.src} ${edge.rel} ${edge.dst}" points at a retired subject; run history keeps the record.`,
+        origin: edge.origin,
+      });
+    } else {
+      findings.push({
+        code: 'unresolvable-ref',
+        message: `edge "${edge.src} ${edge.rel} ${edge.dst}" points at an entity the build did not find.`,
+        origin: edge.origin,
+      });
+    }
   }
   return findings;
 }
