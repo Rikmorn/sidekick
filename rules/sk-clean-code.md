@@ -56,9 +56,9 @@ const fetchJson = (url: string) => request(url, { timeoutMs: REQUEST_TIMEOUT_MS 
 const fetchJson = (url: string, timeoutMs = 5_000) => request(url, { timeoutMs });
 ```
 
-Keep it a module constant when more than one site must agree on it (it is the single source of truth — e.g. a chunk size that is also sent as the API's page size) or when a different value would simply be wrong (an API path, an HTTP status code). Either way the *rationale* travels with the value: move the comment onto the default, don't drop it with the constant.
+Keep it a module constant when more than one site must agree on it. It is then the single source of truth — a chunk size also sent as the API's page size, say. Keep it a constant too when a different value would be wrong: an API path, an HTTP status code. Either way the *rationale* travels with the value: move the comment onto the default, don't drop it with the constant.
 
-Where a function takes several such defaults, put them in an options object with the defaults in the destructure, and pass them explicitly to any private helper that needs them — defaults belong in exactly one place, and duplicating them into the helper reintroduces the drift the constant was avoiding.
+Where a function takes several such defaults, put them in an options object with the defaults in the destructure. Pass them explicitly to any private helper that needs them: defaults belong in exactly one place, and duplicating them into the helper reintroduces the drift the constant was avoiding.
 
 Don't invert this into parameterising everything. A function with eight knobs nobody sets is worse than a constant. The test is whether a caller could *knowledgeably* want it different, not whether it could theoretically vary.
 
@@ -93,9 +93,9 @@ The fix is almost always: extract a private helper, split a file by concern, or 
 
 ## Exemptions
 
-These don't trigger the rules above:
+These don't trigger the rules in this file:
 
-- **Declarative code.** Schema definitions (Zod, io-ts, etc.), framework construct props (CDK, etc.), and type/interface definitions — line count and "single purpose" don't apply. The function-size rule is about *function bodies*, not structural declarations.
+- **Declarative code.** Schema definitions (Zod, io-ts, etc.), framework construct/builder props, and type/interface definitions — line count and "single purpose" don't apply. The function-size rule is about *function bodies*, not structural declarations.
 - **Fluent / builder APIs.** Methods that return `this` (or the same builder type) to enable chaining are intentional and don't violate single-responsibility. Keep each method short and focused on one step of the chain.
 - **Guard-clause prefixes.** A handler that opens with 5–10 early-return guards (metadata checks, missing field checks, "not applicable to this caller") is filtering, not over-nesting. That's the pattern we want, not a smell.
 
