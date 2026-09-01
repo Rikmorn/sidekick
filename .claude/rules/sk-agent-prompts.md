@@ -321,7 +321,7 @@ Orchestrators that compose specialists must therefore run in the main session vi
 
 The slash command coordinates: reads inputs, dispatches specialists in parallel, synthesises their structured returns, emits the final output. Specialists remain subagents — tool-restricted as appropriate to the work they do.
 
-When the agent does one cognitive task that doesn't need parallel dispatch (e.g. `sk-pattern-mapper`, `sk-goal-verifier`), a flat subagent is the right shape.
+When the agent does one cognitive task that doesn't need parallel dispatch (e.g. `sk-goal-verifier`), a flat subagent is the right shape.
 
 When the agent coordinates multiple parallel cognitive tasks (e.g. a 6-pillar UI audit, parallel research synthesis), the orchestrator is a slash command and the per-task specialists are subagents.
 

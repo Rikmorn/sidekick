@@ -1,6 +1,6 @@
 ---
 name: sk-design
-description: Research-driven design phase. From a topic or an existing slug, resolves identity (a new design, or a redesign re-entry on an existing plan), grounds the dialogue via sk-explorer + conditional research subagents + sk-pattern-mapper + sk-architectural-advisor, drafts via sk-rfc-drafter + sk-plan-drafter, and verifies each artifact via dimensional reviewers. Writes RFC.md / PLAN.md / RESEARCH.md under .sidekick/plans/<slug>/.
+description: Research-driven design phase. From a topic or an existing slug, resolves identity (a new design, or a redesign re-entry on an existing plan), grounds the dialogue via sk-explorer (survey + pattern map) + conditional research + sk-architectural-advisor, drafts via sk-rfc-drafter + sk-plan-drafter, and verifies each artifact via dimensional reviewers. Writes RFC.md / PLAN.md / RESEARCH.md under .sidekick/plans/<slug>/.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: <topic-or-slug> [--auto <low|medium|high>]
@@ -31,7 +31,7 @@ The reviewer quorum on PLAN.md is the canonical demonstration of dimensional ver
 - Be transparent about research: before running it, say what you are about to research and why.
 - Lay options and open questions out in the conversation. State an option's substance when you name it — never reference an option ("Option B") without saying what it is.
 - The PLAN quorum dispatches its reviewers in parallel — one Agent call per reviewer in one message — so each reviewer reasons independently before the orchestrator combines verdicts. Keep the dispatch parallel; a serialised dispatch lets one reviewer's output influence the others through intermediate context and defeats the purpose of having multiple dimensions.
-- `sk-explorer`'s output is *evidence to open the dialogue with*, not a verdict — you ground the conversation in it; you and the user (or you, in `--auto`) set scope, slug, and direction.
+- `sk-explorer`'s survey output is *evidence to open the dialogue with*, not a verdict — you ground the conversation in it; you and the user (or you, in `--auto`) set scope, slug, and direction.
 - The `branch-precheck` CLI's verdict is the boundary on git state: a `hard_stop` halts the flow with the helper's message surfaced verbatim; the advisory verdicts offer the user a choice before continuing.
 
 </constraints>
@@ -112,7 +112,7 @@ Reason: <one-line user-facing description (e.g., "User declined the branch advis
 
 <workflow>
 
-The shape is: **Groundwork** (resolve identity → new-design grounding *or* redesign re-entry; + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → RFC quorum → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation; a redesign re-entry enters Finalisation with the design already revised. Three places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-pattern-mapper` + `sk-architectural-advisor`) gathered at convergence, the RFC quorum, and the PLAN quorum (each quorum's membership resolved via the `verifiers` CLI at its step). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
+The shape is: **Groundwork** (resolve identity → new-design grounding *or* redesign re-entry; + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → RFC quorum → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation; a redesign re-entry enters Finalisation with the design already revised. Three places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-explorer` in map mode + `sk-architectural-advisor`) gathered at convergence, the RFC quorum, and the PLAN quorum (each quorum's membership resolved via the `verifiers` CLI at its step). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
 
 ### Groundwork — resolve identity, then ground or re-enter
 
@@ -129,7 +129,7 @@ Then run the `branch-precheck` CLI to read git state:
 
 Parse the JSON object on stdout and route on `verdict` (contract in `<dispatcher_parse_contracts>`).
 
-**Ground a new design.** Dispatch `sk-explorer` (`subagent_type: sk-explorer`, `topic` + `repo_root`; contract in `<dispatcher_parse_contracts>`) for the repo grounding the dialogue opens with — the closest analogues, the prior decisions that touch the topic, new-vs-existing libraries, and a `scope_signal`. This evidence is what you surface first; `scope_signal` and `research_hints` are signals you weigh and surface, never silent gates on whether research runs.
+**Ground a new design.** Dispatch `sk-explorer` (`subagent_type: sk-explorer`, `mode: "survey"`, `topic` + `repo_root`; contract in `<dispatcher_parse_contracts>`) for the repo grounding the dialogue opens with — the closest analogues, the prior decisions that touch the topic, new-vs-existing libraries, and a `scope_signal`. This evidence is what you surface first; `scope_signal` and `research_hints` are signals you weigh and surface, never silent gates on whether research runs.
 
 ### Redesign re-entry (existing plan)
 
@@ -169,7 +169,7 @@ Both mode bodies arrive here with the design settled. Gather design context, dra
 
 **Gather design context.** In a single message, dispatch the design-context pair as separate concurrent Agent calls:
 
-- `subagent_type: sk-pattern-mapper` with `intent: <scope_statement>`, `files: [<best-guess paths from scope>]` tagged `(new)` or `(modify)`, `scope: ui|infra|mixed` (best-guess from the scope statement). The drafter refines later — a coarse guess at this stage is fine.
+- `subagent_type: sk-explorer` with `mode: "map"`, `intent: <scope_statement>`, `files: [{ path, status: "new"|"modify" }]` (best-guess paths from scope), `scope: ui|infra|mixed` (best-guess from the scope statement). The drafter refines later — a coarse guess at this stage is fine.
 - `subagent_type: sk-architectural-advisor` with `topic: <slug>`, `rfc_context: <scope_statement>`, `scope_hint: <ui|infra|mixed>`. If the advisor's structured-return block surfaces `Recommendation: error` with `Off-stack rejection: (none) — error: missing_architecture_context`, hard-stop with `error: missing_architecture_context` (see `<hard_stops>`). Reserve `error: subagent_failed` for genuinely malformed advisor output (e.g., the `## Architecture` heading is absent, or the `### Structured return` block is missing required fields).
 
 Keep this pair's dispatch parallel — the independence note that applies to the quorum applies here too. Both must return before the RFC draft.
@@ -186,7 +186,7 @@ When they diverge on a load-bearing axis, the decision is made informed — dive
 - `today: <YYYY-MM-DD>` — the system date from `date +%Y-%m-%d` (run once via Bash; reused for the PLAN draft below)
 - `synthesis_output: { full_synthesis }` (the orchestrator-side synthesis, per `<fanout_seam>`) when research ran; omit when it didn't
 - `architecture_section: <advisor's "## Architecture" body, parsed per the dispatcher_parse_contracts>`
-- `analogues: [{ path, why_relevant }]` extracted from `sk-pattern-mapper`'s report (see `<dispatcher_parse_contracts>` for the parse semantics)
+- `analogues: [{ path, why_relevant }]` — `sk-explorer`'s map-mode `assignments[].analogues`, flattened and deduplicated by path (see `<dispatcher_parse_contracts>`)
 
 Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/RFC.md`, creating parent directories as needed.
 
@@ -265,11 +265,17 @@ One contract per dispatched specialist, numbered below (the final contract cover
 
 ### 1. sk-explorer
 
-**Input:** `{ topic, repo_root }` — dispatched only on the new-design path, for repo grounding.
+One repo-grounding specialist, dispatched at two moments with a `mode` discriminator.
 
-**Output** (one JSON object inside a ```json``` fence): `{ analogues: [{ path, why_relevant }], prior_decisions: [{ ref, relevance }], libraries: { existing, likely_new }, scope_signal, research_hints }`.
+**Input (survey):** `{ mode: "survey", topic, repo_root }` — new-design path only, for the grounding the dialogue opens with.
 
-**Routing:** this is *evidence*, not a verdict. Open the dialogue with the analogues, prior decisions, and `scope_signal`; weigh `research_hints` when deciding what to research. None of it gates — scope, slug, and direction are settled with the user. Empty arrays are valid (thin grounding / new ground is itself a real signal). A malformed shape (not the field set above) is `error: subagent_failed`.
+**Input (map):** `{ mode: "map", intent: <scope_statement>, files: [{ path, status: "new"|"modify" }], scope: "ui"|"infra"|"mixed" }` — Finalisation's design-context gathering, every path.
+
+**Output (survey)** (one JSON object inside a ```json``` fence): `{ analogues: [{ path, why_relevant }], prior_decisions: [{ ref, relevance }], libraries: { existing, likely_new }, scope_signal, research_hints }`.
+
+**Output (map)** (one JSON object inside a ```json``` fence): `{ assignments: [{ path, status, analogues: [{ path, why_relevant }], patterns }], shared_patterns: [{ name, source, apply_to, excerpt }] }`. `patterns` is a markdown string of verbatim excerpts with `file:line-line` refs; a `modify` entry's `analogues` is the file itself (the shape to preserve); an empty `analogues` on a `new` entry is an honest no-analogue.
+
+**Routing:** survey output is *evidence*, not a verdict — open the dialogue with the analogues, prior decisions, and `scope_signal`; weigh `research_hints` when deciding what to research; none of it gates, and empty arrays are valid (thin grounding is itself a real signal). Map output feeds the drafter: flatten `assignments[].analogues`, deduplicate by path, and pass the result as `sk-rfc-drafter`'s `analogues`. The agent's own error JSONs (`missing_input` on an absent/unknown mode, `missing_files` on map with an empty file list) indicate a malformed dispatch — treat as `error: subagent_failed` (programmer-error path: the dispatch site owns those fields). Any other malformed shape is `error: subagent_failed`.
 
 ### 2. branch-precheck CLI
 
@@ -286,16 +292,7 @@ One contract per dispatched specialist, numbered below (the final contract cover
 - `propose_branch` — surface `proposed_branch` with three options: (a) create the branch and continue the design on it (run `git switch -c <proposed_branch>`, or `git switch <proposed_branch>` if it already exists, then proceed — no re-invoke), (b) proceed in place on the current branch (continue), (c) cancel (clean-exit). "Proceed in place" is the natural reading of declining the branch suggestion; surface it as a distinct option rather than folding it into cancel.
 - `hard_stop` — emit `error: ambiguous_git_state` with `hard_stop_message` surfaced verbatim.
 
-### 3. sk-pattern-mapper
-
-**Input:** `{ intent: <scope_statement>, files: [{ path, status: "new"|"modify" }], scope: "ui"|"infra"|"mixed" }`.
-
-**Output:** markdown report (NOT JSON-fenced — the agent emits markdown directly). Parse two regions:
-
-- The trailing structured-return summary block: `PATTERN MAPPING COMPLETE` line, `Files classified: N`, `Analogues: matched/total ...`, `Top shared patterns: ...`, `Notable gaps: ...`. Used to detect malformed returns (missing block → `error: subagent_failed`).
-- The `## Per-file Pattern Assignments` H2 section. For each per-file entry of the form `### \`<path>\` (new — role, flow)` or `### \`<path>\` (modify — role, flow)`, extract `{ path: <path>, why_relevant: <role + analogue summary from the entry body> }`. This list becomes the `analogues` field passed into `sk-rfc-drafter`.
-
-### 4. sk-architectural-advisor
+### 3. sk-architectural-advisor
 
 **Input:** `{ topic: <slug>, rfc_context: <scope_statement>, scope_hint: "ui"|"infra"|"mixed" }`.
 
@@ -307,7 +304,7 @@ One contract per dispatched specialist, numbered below (the final contract cover
 - `### Structured return` surfaces `Recommendation: error` with `Off-stack rejection: (none) — error: missing_architecture_context` → hard-stop with `error: missing_architecture_context`. Surface the advisor's reason (no CLAUDE.md / `.claude/rules/` constraint sources) so the user knows to author a minimal CLAUDE.md before re-running.
 - Otherwise — pass the parsed `## Architecture` slice through to `sk-rfc-drafter`.
 
-### 5. sk-researcher
+### 4. sk-researcher
 
 **Input — a research brief the orchestrator constructs** (one dispatch per brief):
 
@@ -323,7 +320,7 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 - `no_canonical_sources_found` — resolve by mode (see `<hard_stops>`): in exploration it is a conversational event (tell the user; offer to retry or skip); in `--auto` it degrades per `<fanout_seam>` (drop the failing researcher, continue with the remaining set) rather than halting. `error: research_failed` is the residue when no degrade path remains.
 - Any other malformed shape — `error: subagent_failed`.
 
-### 6. sk-rfc-drafter
+### 5. sk-rfc-drafter
 
 **Input:** `{ slug, scope_statement, synthesis_output?, architecture_section, analogues: [{ path, why_relevant }], feedback? }`.
 
@@ -331,7 +328,7 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 
 **Routing:** write `draft_text` to `.sidekick/plans/<slug>/RFC.md`. On a re-dispatch with `feedback`, the drafter integrates the targeted section only and leaves every other section byte-equal — this is also how a **redesign re-entry** re-drafts the affected sections (the `feedback` describes the redesign).
 
-### 7. sk-plan-drafter
+### 6. sk-plan-drafter
 
 **Input:** `{ slug, rfc_path, rfc_hash, feedback? }`.
 
@@ -339,7 +336,7 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 
 **Routing:** write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`. The drafter is responsible for embedding `pins-rfc: <rfc_hash>` in the PLAN.md frontmatter — the crossref-checker verifies the pin in the PLAN quorum.
 
-### 8. sk-structural-checker
+### 7. sk-structural-checker
 
 **Input:** `{ artifact_path, artifact_type: "rfc"|"plan"|"decision" }`.
 
@@ -347,7 +344,7 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 
 **Routing:** `pass` continues; `fail` rolls `issues` into a prose `feedback` field for the matching drafter's re-dispatch.
 
-### 9. sk-crossref-checker
+### 8. sk-crossref-checker
 
 **Input:** `{ artifact_path, artifact_type: "plan"|"decision", related_paths: { rfc: <abs path> } }`.
 
@@ -355,7 +352,7 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 
 **Routing:** same shape as `sk-structural-checker`. In the PLAN quorum, the checkers' failures are combined into a single prose `feedback` summary so the plan-drafter sees all dimensions in one re-dispatch.
 
-### 10. sk-coherence-checker
+### 9. sk-coherence-checker
 
 **Input:** `{ artifact_path, artifact_type: "rfc"|"plan"|"decision", related_paths?: { rfc: <abs path> } }`. `related_paths.rfc` is required for `plan`, optional for `decision`, omitted for `rfc`.
 
@@ -363,7 +360,7 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 
 **Routing:** same shape as `sk-structural-checker`. In the RFC and PLAN quorums, a `fail` rolls its `issues` into the combined prose `feedback` for the matching drafter's re-dispatch.
 
-### 11. Operator-authored verifiers (registry members with `builtin: false`)
+### 10. Operator-authored verifiers (registry members with `builtin: false`)
 
 **Input:** the same dispatch shape as the surface's bundled checkers: `{ artifact_path, artifact_type, related_paths? }` (`related_paths` as the quorum step passes it).
 

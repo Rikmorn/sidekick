@@ -19,7 +19,7 @@ Consequence: tech-debt, config, or "should be gitignored" concerns about a `.sid
 
 | Path | Purpose |
 |---|---|
-| `agents/sk-*.md` | Subagent specialist definitions (drafters, reviewers, checkers, researchers, executor, fixer, explorer) |
+| `agents/sk-*.md` | Subagent specialist definitions (drafters, reviewers, checkers, the researcher, executor, fixer, explorer) |
 | `skills/sk-*/SKILL.md` | Slash-command orchestrators that run in the main session and dispatch the agents |
 | `rules/sk-*.md` | Coding + working standards (`sk-clean-code`, `sk-typescript`, `sk-language`, `sk-guidance-authoring`, `sk-working-standards`, `sk-pm-conventions`) |
 | `bin/` | The `sidekick` CLI — `cli.ts` + `helpers/*.ts`, with colocated `*.test.ts` |
