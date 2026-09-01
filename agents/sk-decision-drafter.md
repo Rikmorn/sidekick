@@ -31,7 +31,7 @@ Your deliverable is ONE JSON object inside a final ```json``` fence.
 
 If `topic` is provided: kebab-case it to derive the slug. Check whether `<repo_root>/.sidekick/decisions/<slug>.md` exists — if it does, emit `{ "mode": "existing_decision", "path": "..." }` and stop.
 
-If `topic` is absent: scan each `rfc_hint_paths` entry's `## Decisions` and `## Locked decisions` sections for candidate rules or decision identifiers that haven't yet been captured as standalone decision docs. If every path is absent or yields zero candidates, emit `{ "mode": "no_topic_candidate", "reason": "no recent RFC has unlocked decisions" }` and stop. Otherwise pick the most prominent candidate and propose it as the slug.
+If `topic` is absent: scan each `rfc_hint_paths` entry's `## Decisions` section for candidate rules or decision identifiers that haven't yet been captured as standalone decision docs. If every path is absent or yields zero candidates, emit `{ "mode": "no_topic_candidate", "reason": "no recent RFC has uncaptured decisions" }` and stop. Otherwise pick the most prominent candidate and propose it as the slug.
 
 **Gather evidence.**
 
@@ -97,7 +97,7 @@ Your deliverable is ONE JSON object inside a final ```json``` fence:
   "source_rfc": "<abs-path-to-the-RFC-this-decision-derives-from>" }
 
 // Hard-stops
-{ "mode": "no_topic_candidate", "reason": "no recent RFC has unlocked decisions" }
+{ "mode": "no_topic_candidate", "reason": "no recent RFC has uncaptured decisions" }
 { "mode": "existing_decision",   "path":   ".sidekick/decisions/<slug>.md" }
 ```
 

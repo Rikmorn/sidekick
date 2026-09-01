@@ -308,9 +308,9 @@ Commit: 7a3b1cd decide: capture cache-strategy-default-in-memory
 
 ### Example 2 — Hard-stop on no_topic_candidate
 
-User invokes `/sk-decide` with no arg. Two `.sidekick/plans/*/RFC.md` files exist but neither has a `## Decisions` or `## Locked decisions` section with unbatched candidates.
+User invokes `/sk-decide` with no arg. Two `.sidekick/plans/*/RFC.md` files exist but neither has a `## Decisions` section with uncaptured candidates.
 
-Reasoning: Step 1 passes (no flags, no topic). Branch precheck returns `proceed`. Step 3 finds two RFC files; both become `rfc_hint_paths`. The drafter scans them, finds no candidates worth surfacing, and returns `mode: "no_topic_candidate"` with `reason: "no recent RFC has unlocked decisions"`. The skill emits the hard-stop block and stops. No write, no commit.
+Reasoning: Step 1 passes (no flags, no topic). Branch precheck returns `proceed`. Step 3 finds two RFC files; both become `rfc_hint_paths`. The drafter scans them, finds no candidates worth surfacing, and returns `mode: "no_topic_candidate"` with `reason: "no recent RFC has uncaptured decisions"`. The skill emits the hard-stop block and stops. No write, no commit.
 
 Output:
 
@@ -318,7 +318,7 @@ Output:
 /sk-decide halted.
 
 error: no_topic_candidate
-Reason: no recent RFC has unlocked decisions
+Reason: no recent RFC has uncaptured decisions
 ```
 
 ### Example 3 — Judgment path (a checker fails once, drafter fixes, second pass)
