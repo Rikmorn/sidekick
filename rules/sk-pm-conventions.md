@@ -19,6 +19,10 @@ Issue titles are **content names** — say what the work is, never a position co
 - A parked item is an issue labelled `parked` whose body states its unblock condition.
 - Closure is GH-native: done, or closed-as-not-planned with a one-line reason. When there is something worth keeping, write a learning record in the repo and link it from the close comment.
 
+## Breakdown and labels
+- Inside a work item, use a **task list** in the body for steps that need no independent tracking. Promote a chunk to a **sub-issue** only when it needs its own status, assignee, or milestone presence — a sub-issue is a real work item, not a checklist line.
+- Every open issue carries exactly one `area:*` label (the what); `parked` and `change-request` are the only process labels (the how).
+
 ## Change control
 Objective or scope changes enter as issues labelled `change-request` and are prioritised explicitly before any work absorbs them. This applies to the releases' own gates.
 
