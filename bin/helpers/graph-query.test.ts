@@ -205,13 +205,13 @@ describe('readCoverageExceptions', () => {
         '# ledger',
         '',
         '- agent:sk-fixer — mechanical, covered elsewhere',
-        '- `skill:sk-regen-plan` - interactive; no headless lane',
+        '- `skill:sk-demo-interactive` - interactive; no headless lane',
         'not an entry',
       ].join('\n'),
     );
     const map = readCoverageExceptions(repo);
     expect(map.get('agent:sk-fixer')).toBe('mechanical, covered elsewhere');
-    expect(map.get('skill:sk-regen-plan')).toBe(
+    expect(map.get('skill:sk-demo-interactive')).toBe(
       'interactive; no headless lane',
     );
     expect(map.size).toBe(2);

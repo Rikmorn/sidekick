@@ -385,7 +385,7 @@ describe('install', () => {
 
     // Every file under the real agents/ and skills/ trees must round-trip into
     // the manifest. This auto-covers the M2 deliverables (sk-correctness-reviewer,
-    // sk-fixer, sk-review/, sk-regen-plan/) once P3–P5 create them — no edit
+    // sk-fixer, sk-review/) once P3–P5 create them — no edit
     // needed. The real M2 install round-trip is also exercised in Task 13.
     for (const sub of ['agents', 'skills'] as const) {
       const srcRoot = path.join(realPkg, sub);

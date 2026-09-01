@@ -1,6 +1,6 @@
 # sidekick manual smokes
 
-End-to-end smokes for the sk-* engineering toolchain (`/sk-decide`, `/sk-design`, `/sk-build`, `/sk-review`, `/sk-goal-verify`, `/sk-regen-plan`). These can't run under Vitest because slash commands execute inside Claude Code's runtime — they orchestrate subagents over a real conversation. The TypeScript unit tests cover deterministic helpers; these smokes cover the orchestration paths.
+End-to-end smokes for the sk-* engineering toolchain (`/sk-decide`, `/sk-design`, `/sk-build`, `/sk-review`). These can't run under Vitest because slash commands execute inside Claude Code's runtime — they orchestrate subagents over a real conversation. The TypeScript unit tests cover deterministic helpers; these smokes cover the orchestration paths.
 
 Run them at milestone-end, batched. The fixture under `fixtures/minimal-repo/` provides a self-contained substrate: a single `add(a, b)` function, one passing test, and a pre-populated `.sidekick/config.json` whose gates resolve to `pnpm typecheck` / `pnpm lint` / `pnpm test`.
 
@@ -142,9 +142,9 @@ Expected:
 - `sidekick check-drift rename-add-to-sum` reports `pins-rfc` mismatch.
 - The skill surfaces a warning to the user but continues (warn-only in M1; hard-stop is M2).
 
-## M2 setup (verification + reconciliation smokes)
+## M2 setup (verification smokes)
 
-Smokes 6–8 need a feature branch with a mix of tagged/untagged commits and a deliberate reviewable issue. From `$TMP` (after the base Setup above):
+Smoke 6 needs a feature branch with a mix of tagged/untagged commits and a deliberate reviewable issue. From `$TMP` (after the base Setup above):
 
 ```bash
 git checkout -b feat/refund-window
@@ -168,7 +168,7 @@ it('in window', () => {
 EOF
 git add -A && git commit -q -m "test(refund): in/out window [T-02]"
 
-# An UNTAGGED commit for /sk-regen-plan's reconciler to classify
+# An untagged commit (exercised the retired /sk-regen-plan smoke; harmless to keep)
 git commit -q --allow-empty -m "chore: tidy refund types"
 ```
 
@@ -177,7 +177,7 @@ git commit -q --allow-empty -m "chore: tidy refund types"
 ```
 /sk-review refund-window --range main..HEAD
 ```
-Expect: a sectioned report. **correctness** flags the unhandled boundary (g2) — likely `fixable: false` (intended behaviour is a judgment); **maintainability** flags the `as any` (`fixable: true`, cites sk-typescript); **goal** reports g2 as a GAP (boundary not satisfied) with a route. Roll-up `findings`/`gaps_found`.
+Expect: a sectioned report. **correctness** flags the unhandled boundary (g2) — likely `fixable: false` (intended behaviour is a judgment); **maintainability** flags the `as any` (`fixable: true`, cites sk-typescript); **goal** reports g2 as a GAP (boundary not satisfied) with a route, and its reconciliation lists T-01/T-02 as untracked (implemented but unchecked in PLAN.md). Roll-up `findings`/`gaps_found`.
 
 Then:
 ```
@@ -185,19 +185,13 @@ Then:
 ```
 Expect: the `branch-precheck` CLI proceeds (on a feature branch, not default); the `as any` maintainability finding is fixed by `sk-fixer`, typecheck/test run FRESH, an atomic `fix(maintainability): … [review]` commit lands; the boundary correctness finding and the g2 goal gap are **not** auto-fixed (routed out). Confirm a `.sidekick/cache/reviews/refund-window/` trail was written and is gitignored.
 
-### Smoke 7: /sk-goal-verify
+### Smoke 7: /sk-goal-verify — retired (#25)
 
-```
-/sk-goal-verify refund-window --range main..HEAD
-```
-Expect: `# Goal Verification — refund-window`. g1 ACHIEVED (function exists, wired, tested in-window); g2 GAP (boundary returns true at exactly 30 days) routed to **finish-build** or **redesign**. Reconciliation: T-01 and T-02 are unchecked (`[ ]`) in PLAN.md but implemented in the diff → surface as `untracked`; T-03 is not entered (unchecked, no boundary test yet). (The untagged `chore: tidy refund types` commit isn't a `T-NN`, so it is not a goal-verify reconciliation entry — classifying untagged commits is `/sk-regen-plan`'s job in Smoke 8.)
+Folded into `/sk-review`'s goal dimension. Smoke 6's goal-section expectation now carries the reconciliation assertion this smoke held.
 
-### Smoke 8: /sk-regen-plan
+### Smoke 8: /sk-regen-plan — retired (#26)
 
-```
-/sk-regen-plan refund-window
-```
-Expect: branch-precheck proceeds. The helper proposes flipping T-01 and T-02 (tagged matches). `sk-plan-reconciler` classifies the untagged `chore: tidy refund types` (likely `ignore`, low/medium confidence). You're asked to accept/modify. On accept, `PLAN.md` ticks T-01/T-02, T-03 stays `[ ]` (no boundary test yet). Re-run with `--dry-run` first to confirm it previews without writing.
+The skill and `sk-plan-reconciler` are retired; the `reconcile-plan` CLI and `branch-precheck`'s `regen-plan` operation remain in the kernel until R3 reworks the plan machinery (#29).
 
 ## M3 setup (wave-build smoke)
 

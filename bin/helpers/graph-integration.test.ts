@@ -53,9 +53,12 @@ describe('graph build on the live tree', () => {
     const agentFiles = readdirSync(path.join(REPO_ROOT, 'agents')).filter((f) =>
       f.endsWith('.md'),
     ).length;
+    const skillDirs = readdirSync(path.join(REPO_ROOT, 'skills'), {
+      withFileTypes: true,
+    }).filter((d) => d.isDirectory()).length;
     expect(kinds('suite').length).toBeGreaterThanOrEqual(7);
     expect(kinds('agent').length).toBe(agentFiles);
-    expect(kinds('skill').length).toBeGreaterThanOrEqual(7);
+    expect(kinds('skill').length).toBe(skillDirs);
     expect(kinds('helper').length).toBeGreaterThanOrEqual(17);
     expect(kinds('adr').length).toBeGreaterThanOrEqual(7);
     expect(kinds('objective').length).toBeGreaterThanOrEqual(7);
