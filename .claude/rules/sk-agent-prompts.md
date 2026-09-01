@@ -126,13 +126,13 @@ A reviewer checks one quality dimension — structural validity, cross-reference
 
 **Quorum pattern.** When more than one dimension matters, dispatch several dimensional reviewers in parallel against the same artifact and combine their verdicts. Any failing → re-dispatch the producer with the combined feedback.
 
-**M1 example (sk-* toolchain):** PLAN.md is produced by `sk-plan-drafter` and reviewed in parallel by `sk-structural-checker` (does the document have the right sections / frontmatter?) and `sk-crossref-checker` (do task references to `g_n` / `D-NN` resolve to real entries in the source RFC; does `pins-rfc:` match the RFC content hash?). Either failing → re-dispatch the drafter with both verdicts.
+**M1 example (sk-* toolchain):** PLAN.md is produced by `sk-plan-drafter`, gated by the deterministic `check-artifact` CLI (sections / frontmatter shape; `g_n` / `D-NN` references resolve; `pins-rfc:` matches the RFC content hash), and reviewed by `sk-coherence-checker` (do the tasks contradict the decided design?). Either failing → re-dispatch the drafter with the combined feedback.
 
 **When to add a new verifier vs widen an existing one.**
 - Add a new agent if the dimension is genuinely distinct (different schema, different reasoning shape, different sources to consult).
 - Widen an existing agent's `<inputs>` if the new artifact type fits the agent's existing dimension and schema knowledge.
 
-**Naming.** Reviewers SHOULD be named after the dimension they check (`sk-structural-checker`, not `sk-rfc-checker`). Producers MAY be named after the artifact they produce (`sk-rfc-drafter`).
+**Naming.** Reviewers SHOULD be named after the dimension they check (`sk-coherence-checker`, not `sk-rfc-checker`). Producers MAY be named after the artifact they produce (`sk-rfc-drafter`).
 
 ## Rule 6: Chain of Thought for Orchestrators
 
@@ -350,7 +350,7 @@ This is not optional tidiness — unreconciled drift is latent breakage, not cos
 - No agent cites a literal "Step N" of an orchestrator. Describe the *role relationship* instead ("during the verification gate", "when gathering design context"), so reordering steps can't strand the reference.
 - Every agent's named dispatcher and verifier, and every path / section name it reads, resolves against the live orchestrator and the tested kernel.
 - A value computed in two places (a hash, an ID format, a filename convention) is computed the same way in both.
-- Quorum membership resolves through the registry, not prose: the bundled-defaults table in `bin/helpers/verifiers.ts` is the ground truth for who sits on each surface's quorum (operator entries extend it via `.sidekick/config.json`). An orchestrator that names quorum members inline as *the* membership — rather than as the bundled defaults the `verifiers` CLI returns — has drifted; and a bundled member added, renamed, or retired must move in that table, the agent files, and the install set together.
+- Quorum membership resolves through the registry, not prose: the bundled-defaults table in `bin/helpers/verifiers.ts` is the ground truth for who sits on each surface's quorum (operator entries extend it via `.sidekick/config.json`). An orchestrator that names quorum members inline as *the* membership — rather than as the bundled defaults the `verifiers` CLI returns — has drifted; and a bundled member added, renamed, or retired must move in that table, the agent files, and the install set together. Deterministic gates are the exception: a check implemented as a kernel CLI (`check-artifact`) is invoked by name in the skill — self-enforcing, since a renamed command fails loudly at run time.
 - Every producer→verifier dispatch stays sealed: the verifier receives the artifact (by path, read fresh) and the spec it is judged against — never the producer's reasoning, returned deliverable, or a prior round's verdicts; feedback flows producer-ward only.
 
 **Two senses of blast radius.** There is the *forward* radius — what an orchestrator change breaks downstream — and there is the audit-lens trap: coherence-with-the-orchestrator is a different dimension than prose-discipline, so a discipline-only review will pass agents that are quietly broken. It needs its own pass.

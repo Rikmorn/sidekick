@@ -1,7 +1,7 @@
 /**
  * The canonical `pins-rfc` hash — the single implementation that `/sk-design`
- * (which sets the pin), `sk-crossref-checker` (which verifies it in the PLAN
- * quorum), and `check-drift` (which verifies it at build time) all use. Before
+ * (which sets the pin), the `check-artifact` gate (which verifies it before
+ * the PLAN quorum), and `check-drift` (which verifies it at build time) all use. Before
  * this, each computed the hash its own way (Node crypto vs a `shasum -a 256`
  * shell call vs the agent's discretion); they happened to agree for UTF-8 files
  * but "everyone computes the pin the same way" was a prose promise. This makes

@@ -127,9 +127,11 @@ Extract the single JSON object from the trailing ```json``` fence of the drafter
 
 Use the `Write` tool to create the file at the absolute path derived from `draft_path` with `draft_text` as its content. Before writing, defensively check whether the target already exists on disk; if it does and is not the path the drafter just pointed at, emit `error: slug_collision` with the path and stop. (The drafter checks for existing decisions before drafting, so this guard exists for race conditions and stale-state safety, not as the primary gate.)
 
-### Step 7 — Decision quorum loop
+### Step 7 — Gate, then decision quorum loop
 
-Resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface decision` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`. **When `source_rfc` is non-null, add `"related_paths": { "rfc": "<source_rfc>" }`** to every member except `sk-structural-checker` (whose contract takes no related paths) — so the coherence check also verifies the decision against its source RFC (internal coherence by default, against the RFC when `related_paths.rfc` is supplied). When `source_rfc` is `null`, omit `related_paths` — the check stays internal-only.
+Run the deterministic gate via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" check-artifact <abs-path-to-.sidekick/decisions/<slug>.md> --type decision` — and parse its JSON. The gate checks shape (frontmatter `status`/`date`; the four MADR H2s with non-placeholder bodies) and, when the doc cites a source RFC, that the reference resolves. On `verdict: "fail"`, collapse the issues into a short prose summary and re-dispatch `sk-decision-drafter` with it as `feedback`; write the returned `draft_text` back through the `Write` tool (overwrite) and re-run the gate — without dispatching the quorum. An `error` shape from the gate is an orchestration bug: halt with `error: artifact_gate_failed`.
+
+On gate `verdict: "pass"`, resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface decision` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `{ "artifact_path": "<abs-path-to-.sidekick/decisions/<slug>.md>", "artifact_type": "decision" }`. **When `source_rfc` is non-null, add `"related_paths": { "rfc": "<source_rfc>" }`** to every member — so the coherence check also verifies the decision against its source RFC (internal coherence by default, against the RFC when `related_paths.rfc` is supplied). When `source_rfc` is `null`, omit `related_paths` — the check stays internal-only.
 
 The quorum is sealed from the producer: each checker receives the decision doc by path and reads it fresh from disk — never `sk-decision-drafter`'s reasoning, its returned JSON, or a prior round's verdicts. Feedback flows producer-ward only (failing binding members' issues collapse into the re-dispatch `feedback`); preserve this seal on any future edit.
 
@@ -137,7 +139,7 @@ Parse each trailing ```json``` fence (`{ verdict, issues? }`; operator members f
 
 On any **binding** member's `verdict: "fail"`, collapse the failing binding members' issues into a short prose summary (e.g., "## Consequences contradicts the chosen option; frontmatter status is missing") and re-dispatch `sk-decision-drafter` with that summary as `feedback`. Take the returned `draft_text`, write it back through the `Write` tool (overwrite), and re-run the quorum.
 
-Cap this loop at 3 drafter re-dispatches. If the third re-dispatch still fails a binding checker, emit `error: decision_quorum_check_loop_exhausted` with a one-line summary of the latest issues and stop.
+Cap this loop at 3 drafter re-dispatches across gate and quorum failures combined. If the third re-dispatch still fails a binding checker, emit `error: decision_quorum_check_loop_exhausted` with a one-line summary of the latest issues and stop.
 
 ### Step 8 — User confirmation / edit loop
 
@@ -191,28 +193,27 @@ Mode → next step:
 | `no_topic_candidate` | Hard-stop `error: no_topic_candidate` |
 | `existing_decision` | Hard-stop `error: existing_decision` |
 
-### sk-structural-checker
+### check-artifact gate (CLI)
 
-**Input:**
-
-```json
-{ "artifact_path": "<absolute-path>", "artifact_type": "decision" }
-```
+Not a subagent — a Bash invocation: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" check-artifact <absolute-path> --type decision`.
 
 **Output (one of):**
 
 ```json
 { "verdict": "pass", "artifact_path": "<path>", "artifact_type": "decision" }
 { "verdict": "fail", "artifact_path": "<path>", "artifact_type": "decision",
-  "issues": [ { "field": "<dotted>", "issue": "<text>" } ] }
+  "issues": [ { "dimension": "structural", "field": "<dotted>", "issue": "<text>" },
+              { "dimension": "crossref", "kind": "missing_source_rfc", "path": "<path>", "detail": "<text>" } ] }
+{ "error": "missing_artifact", "detail": "<text>" }
 ```
 
 Verdict → next step:
 
 | Verdict | Next step |
 |---|---|
-| `pass` | Step 8 (user confirmation) |
+| `pass` | Resolve and dispatch the quorum |
 | `fail` | Re-dispatch drafter with `feedback`; loop, capped at 3 |
+| `error` | Hard-stop `error: artifact_gate_failed` |
 
 ### sk-coherence-checker
 
@@ -321,11 +322,11 @@ error: no_topic_candidate
 Reason: no recent RFC has uncaptured decisions
 ```
 
-### Example 3 — Judgment path (a checker fails once, drafter fixes, second pass)
+### Example 3 — Judgment path (the gate fails once, drafter fixes, second pass)
 
 User invokes `/sk-decide auth-token-rotation` on a feature branch. No existing decision at that slug.
 
-Reasoning: Step 1 passes. Branch precheck returns `proceed` (feature branch is fine). Step 3 yields the top 3 recent RFCs. The drafter returns `mode: "draft_ready"` with `draft_text`, but the Q&A skimmed the consequences section and the drafter left `## Consequences` as a single line `TBD`. Write the file. The quorum runs: `sk-coherence-checker` passes (no contradiction), but `sk-structural-checker` returns `verdict: "fail"` with one issue: `{ "field": "section.## Consequences", "issue": "empty body (placeholder)" }`. Collapse the issues list into prose: `"sk-structural-checker reports section.## Consequences empty body (placeholder)"`. Re-dispatch the drafter with that as `feedback`. The drafter re-asks one focused question, integrates the answer, and returns updated `draft_text` with the Consequences section populated. Write the updated text back through the same path. The quorum now passes (both checkers). Show to the user; user confirms. Commit lands.
+Reasoning: Step 1 passes. Branch precheck returns `proceed` (feature branch is fine). Step 3 yields the top 3 recent RFCs. The drafter returns `mode: "draft_ready"` with `draft_text`, but the Q&A skimmed the consequences section and the drafter left `## Consequences` as a single line `TBD`. Write the file. The check-artifact gate runs: `verdict: "fail"` with one issue: `{ "dimension": "structural", "field": "section.## Consequences", "issue": "empty body (placeholder)" }` — the quorum is not dispatched. Collapse the issues list into prose: `"the artifact gate reports section.## Consequences empty body (placeholder)"`. Re-dispatch the drafter with that as `feedback`. The drafter re-asks one focused question, integrates the answer, and returns updated `draft_text` with the Consequences section populated. Write the updated text back through the same path. The gate now passes, and the quorum (`sk-coherence-checker`) passes. Show to the user; user confirms. Commit lands.
 
 Output:
 

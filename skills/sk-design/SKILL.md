@@ -19,7 +19,7 @@ Before significant decisions — whether to research or keep talking, how to res
 
 This slash command runs in the main session because the runtime forbids subagents from dispatching other subagents (per `.claude/rules/sk-agent-prompts.md` "Where orchestrators must live"). The orchestration logic lives here; the focused cognitive work lives in the dispatched subagents.
 
-The reviewer quorum on PLAN.md is the canonical demonstration of dimensional verification: `sk-structural-checker` checks shape (frontmatter, required headings, checklist well-formedness), `sk-crossref-checker` checks references (every cited `g_n` / `D-NN` resolves into RFC.md; `pins-rfc:` matches RFC content), and `sk-coherence-checker` checks that the tasks don't contradict the decided design. All three review the same artifact in parallel; any failing re-dispatches the drafter with combined feedback. Quorum membership is data, not prose: the `verifiers` CLI resolves each quorum's members — these bundled checkers (binding) plus any operator-authored verifiers mounted on the surface (advisory) — so the names here are the bundled defaults, not a closed list.
+The PLAN verification is the canonical demonstration of layered verification: the `check-artifact` CLI gates shape and references deterministically (frontmatter, required headings, checklist well-formedness; every cited `g_n` / `D-NN` resolves into RFC.md; `pins-rfc:` matches RFC content), and `sk-coherence-checker` checks that the tasks don't contradict the decided design. The gate runs first; any failure re-dispatches the drafter with the issues collapsed into feedback. Quorum membership is data, not prose: the `verifiers` CLI resolves each quorum's members — the bundled coherence checker (binding) plus any operator-authored verifiers mounted on the surface (advisory) — so the names here are the bundled defaults, not a closed list.
 
 <constraints>
 
@@ -190,15 +190,17 @@ When they diverge on a load-bearing axis, the decision is made informed — dive
 
 Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/RFC.md`, creating parent directories as needed.
 
-**Verify the RFC (quorum).** Resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface rfc` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"` (bundled contracts in `<dispatcher_parse_contracts>`; operator members follow the operator-verifier contract (the final one in <dispatcher_parse_contracts>)).
+**Verify the RFC (gate, then quorum).** Run the deterministic gate via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" check-artifact .sidekick/plans/<slug>/RFC.md --type rfc` — and parse its JSON. On `verdict: "fail"`, re-dispatch `sk-rfc-drafter` with `feedback: <the gate's issues collapsed into one prose summary the drafter can act on>`, write the updated `draft_text` through to RFC.md, and re-run the gate — without dispatching the quorum (no model spend on a mechanically broken draft). An `error` shape from the gate (e.g. `missing_artifact`) is an orchestration bug, not a draft defect: halt with `error: artifact_gate_failed` rather than looping.
+
+On gate `verdict: "pass"`, resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface rfc` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"` (bundled contracts in `<dispatcher_parse_contracts>`; operator members follow the operator-verifier contract (the final one in <dispatcher_parse_contracts>)).
 
 Parse each trailing ```json``` fence. Combine verdicts by tier:
 
 - All **binding** members `verdict: pass` — continue to the confirm. Advisory (operator) findings never gate: carry their `issues` forward and surface them at the confirm alongside the RFC.
-- Any **binding** member `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <the failing binding members' issues collapsed into one prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the quorum.
-- Cap at 3 drafter re-dispatches. On the third failure, emit `error: rfc_quorum_check_loop_exhausted` and halt.
+- Any **binding** member `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <the failing binding members' issues collapsed into one prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the gate, then the quorum.
+- Cap at 3 drafter re-dispatches across gate and quorum failures combined. On the third failure, emit `error: rfc_quorum_check_loop_exhausted` and halt.
 
-The two checks run in parallel for the same independence reason as the PLAN quorum: a serialised dispatch lets one checker's output bleed into the other through the orchestrator's intermediate state. Both quorums are also sealed from the producer: each checker receives the artifact by path and reads it fresh from disk — never `sk-rfc-drafter`'s / `sk-plan-drafter`'s reasoning, their returned JSON, or a prior round's verdicts. Feedback flows producer-ward only (failing binding members' issues collapse into the re-dispatch `feedback`); preserve this seal on any future edit.
+The quorum members dispatch in parallel in a single message, and the quorum is sealed from the producer: each member receives the artifact by path and reads it fresh from disk — never `sk-rfc-drafter`'s / `sk-plan-drafter`'s reasoning, their returned JSON, or a prior round's verdicts. Feedback flows producer-ward only (gate and failing binding members' issues collapse into the re-dispatch `feedback`); preserve this seal on any future edit. The gate itself has no reasoning to contaminate — it runs first precisely because a deterministic fail makes the model dispatch pointless.
 
 **Confirm (mode-aware).** The confirm before the PLAN draft is an approval gate — the PLAN draft, quorum, and commit all happen *after* it — so surface it as a structured `AskUserQuestion` with the affirmative labelled **Approve** (not "ship" / "go", which overstate a gate that precedes the commit). The `AskUserQuestion` tool's automatic free-text "Other" option covers any response that fits none of the choices. The choices are shaped by how the draft was reached:
 
@@ -207,19 +209,21 @@ The two checks run in parallel for the same independence reason as the PLAN quor
 
 In either mode, an explicit user cancel emits the cancelled clean-exit shape with `Reason: User cancelled during RFC review.`, leaves RFC.md and RESEARCH.md on disk as drafts, runs no commit and no cleanup, and exits. No error code — this is a clean exit. The same pattern applies on any later turn of the confirm loop.
 
-**Draft the PLAN.** Compute the RFC content hash via the `hash-rfc` CLI — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" hash-rfc <slug>` — and read `hash` from its JSON (the 64-char SHA-256 of the file content). This is the one implementation `sk-crossref-checker` and the `check-drift` CLI also use to verify the pin, so the value is computed identically everywhere by construction. Capture it as `rfc_hash`.
+**Draft the PLAN.** Compute the RFC content hash via the `hash-rfc` CLI — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" hash-rfc <slug>` — and read `hash` from its JSON (the 64-char SHA-256 of the file content). This is the one implementation the `check-artifact` gate and the `check-drift` CLI also use to verify the pin, so the value is computed identically everywhere by construction. Capture it as `rfc_hash`.
 
 Dispatch `subagent_type: sk-plan-drafter` with `slug`, `rfc_path: .sidekick/plans/<slug>/RFC.md`, `rfc_hash`, and `today: <YYYY-MM-DD>` (the same system date derived for the RFC draft). Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`.
 
-**Quorum verify the PLAN.** Resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface plan` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/PLAN.md`, `artifact_type: "plan"`, and `related_paths: { rfc: .sidekick/plans/<slug>/RFC.md }` for every member except `sk-structural-checker` (whose contract takes no related paths).
+**Verify the PLAN (gate, then quorum).** Run the deterministic gate via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" check-artifact .sidekick/plans/<slug>/PLAN.md --type plan` — and parse its JSON (the gate derives the RFC as `RFC.md` beside the plan and checks shape and references in one run; issues are tagged `dimension: "structural" | "crossref"`). On `verdict: "fail"`, re-dispatch `sk-plan-drafter` with `feedback: <the gate's issues collapsed into a single prose summary the drafter can act on>` — without dispatching the quorum. Before the re-dispatch, if any failing issue has `kind: "pins_rfc_drift"`, re-compute `rfc_hash` via the `hash-rfc` CLI (`"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" hash-rfc <slug>`, read `hash`) and pass the fresh value — the user may have edited RFC.md between the PLAN draft and the gate. Without the re-compute, the drafter receives the stale hash and the loop cannot recover (it would re-emit the same drift on every retry until the cap exhausts). Write the updated `draft_text` through to PLAN.md. Re-run the gate. An `error` shape from the gate (`missing_artifact`, `missing_rfc`) is an orchestration bug, not a draft defect: halt with `error: artifact_gate_failed`.
+
+On gate `verdict: "pass"`, resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface plan` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/PLAN.md`, `artifact_type: "plan"`, and `related_paths: { rfc: .sidekick/plans/<slug>/RFC.md }`.
 
 Parse each ```json``` fence. Combine verdicts by tier:
 
 - All **binding** members `verdict: pass` — continue to the commit. Advisory (operator) findings never gate: surface their `issues` in the closing success block.
-- Any **binding** member `verdict: fail` — re-dispatch `sk-plan-drafter` with `feedback: <the failing binding members' issues collapsed into a single prose summary the drafter can act on>`. Before the re-dispatch, if any failing crossref issue has `kind: "pins_rfc_drift"`, re-compute `rfc_hash` via the `hash-rfc` CLI (`"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" hash-rfc <slug>`, read `hash`) and pass the fresh value — the user may have edited RFC.md between the PLAN draft and the quorum. Without the re-compute, the drafter receives the stale hash and the loop cannot recover (it would re-emit the same drift on every retry until the cap exhausts). Write the updated `draft_text` through to PLAN.md. Re-run the quorum.
-- Cap at 3 drafter re-dispatches. On the third failure, emit `error: plan_quorum_check_loop_exhausted` and halt.
+- Any **binding** member `verdict: fail` — re-dispatch `sk-plan-drafter` with `feedback: <the failing binding members' issues collapsed into a single prose summary the drafter can act on>`. Write the updated `draft_text` through to PLAN.md. Re-run the gate, then the quorum.
+- Cap at 3 drafter re-dispatches across gate and quorum failures combined. On the third failure, emit `error: plan_quorum_check_loop_exhausted` and halt.
 
-Verifier independence is the load-bearing property: the parallel dispatch keeps the checkers' reasoning from contaminating each other via the orchestrator's intermediate state. A serialised dispatch (structural first, then crossref) defeats the dimensional separation.
+The quorum stays sealed from the producer and its members dispatch in parallel in one message; the deterministic gate runs first because a mechanically broken draft makes the model dispatch pointless, and the gate has no reasoning to contaminate.
 
 **Atomic commit.** Stage `.sidekick/plans/<slug>/RFC.md`, `.sidekick/plans/<slug>/PLAN.md`, and `.sidekick/plans/<slug>/RESEARCH.md` (the last only when it exists). Commit with Conventional Commits format:
 
@@ -334,33 +338,17 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 
 **Output:** `{ mode: "draft_ready", draft_path, draft_text }` inside a ```json``` fence, or an error JSON.
 
-**Routing:** write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`. The drafter is responsible for embedding `pins-rfc: <rfc_hash>` in the PLAN.md frontmatter — the crossref-checker verifies the pin in the PLAN quorum.
+**Routing:** write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`. The drafter is responsible for embedding `pins-rfc: <rfc_hash>` in the PLAN.md frontmatter — the `check-artifact` gate verifies the pin before the PLAN quorum.
 
-### 7. sk-structural-checker
-
-**Input:** `{ artifact_path, artifact_type: "rfc"|"plan"|"decision" }`.
-
-**Output:** `{ verdict: "pass"|"fail", artifact_path, artifact_type, issues? }` inside a ```json``` fence. `issues` is REQUIRED iff `verdict === "fail"` and ABSENT otherwise.
-
-**Routing:** `pass` continues; `fail` rolls `issues` into a prose `feedback` field for the matching drafter's re-dispatch.
-
-### 8. sk-crossref-checker
-
-**Input:** `{ artifact_path, artifact_type: "plan"|"decision", related_paths: { rfc: <abs path> } }`.
-
-**Output:** `{ verdict: "pass"|"fail", artifact_path, artifact_type, issues? }` inside a ```json``` fence.
-
-**Routing:** same shape as `sk-structural-checker`. In the PLAN quorum, the checkers' failures are combined into a single prose `feedback` summary so the plan-drafter sees all dimensions in one re-dispatch.
-
-### 9. sk-coherence-checker
+### 7. sk-coherence-checker
 
 **Input:** `{ artifact_path, artifact_type: "rfc"|"plan"|"decision", related_paths?: { rfc: <abs path> } }`. `related_paths.rfc` is required for `plan`, optional for `decision`, omitted for `rfc`.
 
 **Output:** `{ verdict: "pass"|"fail", artifact_path, artifact_type, issues? }` inside a ```json``` fence. `issues` is REQUIRED iff `verdict === "fail"`; each issue is `{ kind: "contradiction", locus_a, locus_b, detail }`.
 
-**Routing:** same shape as `sk-structural-checker`. In the RFC and PLAN quorums, a `fail` rolls its `issues` into the combined prose `feedback` for the matching drafter's re-dispatch.
+**Routing:** `pass` continues; in the RFC and PLAN quorums, a `fail` rolls its `issues` into the combined prose `feedback` for the matching drafter's re-dispatch.
 
-### 10. Operator-authored verifiers (registry members with `builtin: false`)
+### 8. Operator-authored verifiers (registry members with `builtin: false`)
 
 **Input:** the same dispatch shape as the surface's bundled checkers: `{ artifact_path, artifact_type, related_paths? }` (`related_paths` as the quorum step passes it).
 
@@ -450,10 +438,10 @@ The orchestrator resolves the argument to the existing `.sidekick/plans/export-c
 
 - `<slug>` — positional argument identifying the plan directory (`.sidekick/plans/<slug>/`). Flat (`add-keyboard-shortcuts`) or nested member-of-group (`multi-tenant/auth`).
 - `<group-slug>` — set when the dialogue reveals the topic spans multiple plans. Used for `.sidekick/plans/<group-slug>/OVERVIEW.md` and `MEMBERS.md`, written by this skill.
-- `g_n` — goal ID in RFC.md `## Goals & non-goals`. Sequentially numbered from `g1`. Cited by PLAN.md tasks and verified by `sk-crossref-checker`.
-- `D-NN` — decision ID in RFC.md `## Decisions` (zero-padded from D-01). Cited by PLAN.md tasks and verified by `sk-crossref-checker`. This skill writes the initial set and any redesign revisions (`R-NN`); single-decision `## Amendments` (`A-NN`) are written by `/sk-build`.
+- `g_n` — goal ID in RFC.md `## Goals & non-goals`. Sequentially numbered from `g1`. Cited by PLAN.md tasks and verified by the `check-artifact` CLI.
+- `D-NN` — decision ID in RFC.md `## Decisions` (zero-padded from D-01). Cited by PLAN.md tasks and verified by the `check-artifact` CLI. This skill writes the initial set and any redesign revisions (`R-NN`); single-decision `## Amendments` (`A-NN`) are written by `/sk-build`.
 - `T-NN` — task ID in PLAN.md `## Checklist` (zero-padded from T-01). Set by `sk-plan-drafter`; ticked by `/sk-build`.
 - `R-NN` — redesign ID in RFC.md `## Redesigns` (zero-padded from R-01). Written by this skill on a redesign re-entry; it reconciles `## Decisions` / `## Architecture` to match. (`/sk-build` defers to this via its redesign prompt — it does not write `## Redesigns`.)
-- `pins-rfc:` — PLAN.md frontmatter field carrying the SHA-256 of RFC.md's content at the moment PLAN.md was authored. Set by `sk-plan-drafter` (the orchestrator passes it `rfc_hash` from the `hash-rfc` CLI); verified by `sk-crossref-checker` in the PLAN quorum and by `/sk-build`'s drift check (`check-drift` CLI). All three get the hash from the one `hash-rfc` CLI, so they compute it identically by construction.
+- `pins-rfc:` — PLAN.md frontmatter field carrying the SHA-256 of RFC.md's content at the moment PLAN.md was authored. Set by `sk-plan-drafter` (the orchestrator passes it `rfc_hash` from the `hash-rfc` CLI); verified by the `check-artifact` gate before the PLAN quorum and by `/sk-build`'s drift check (`check-drift` CLI). All three get the hash from the one `hash-rfc` implementation (`hashRfcContent`), so they compute it identically by construction.
 
 </symbol_conventions>

@@ -88,7 +88,7 @@ Then, explicit topic:
 Expected:
 - Dispatches `sk-decision-drafter` for adaptive Q&A.
 - Writes `.sidekick/decisions/explicit-topic-here.md` with MADR frontmatter + sections.
-- Dispatches `sk-structural-checker`; verdict `pass`.
+- Runs the `check-artifact` gate (`--type decision`); verdict `pass`.
 - Atomic commit lands on the current branch.
 
 ### Smoke 3: /sk-design (low complexity, no research)
@@ -102,7 +102,7 @@ Expected:
 - Complexity classified `low` — no research specialists dispatched.
 - `sk-rfc-drafter` produces `.sidekick/plans/rename-add-to-sum/RFC.md`.
 - `sk-plan-drafter` produces `.sidekick/plans/rename-add-to-sum/PLAN.md` with `pins-rfc:` matching the RFC hash.
-- `sk-structural-checker` + `sk-crossref-checker` run in parallel; both pass.
+- The `check-artifact` gate (structural + crossref) passes.
 - Atomic commit lands containing both files.
 
 ### Smoke 4: /sk-build (single task)
@@ -362,7 +362,7 @@ Expected:
 - `sk-explorer` runs first as groundwork (read-only repo grounding — analogues, prior decisions, `scope_signal`); the `branch-precheck` CLI reads git state.
 - The orchestrator **opens with a conversation, not a finished RFC**: it surfaces its understanding of the work, the complexity signal the explorer returned ("looks straightforward" / "looks involved"), and where research would likely pay off — without running any research yet.
 - Research runs **only on request or with an explicit announcement** of what it's about to research and why — not a reflexive upfront pass. (If you never ask for it and the orchestrator never announces one, no researchers are dispatched and no RESEARCH.md is written — that's correct for a dialogue that didn't need prior art.)
-- When you signal the design is clear (e.g. "looks clear, draft it"), it converges: drafts RFC.md → PLAN.md, runs the existing structural check on the RFC and the parallel `sk-structural-checker` + `sk-crossref-checker` quorum on the PLAN, and ends with a **light `ship / tweak / cancel` confirm**.
+- When you signal the design is clear (e.g. "looks clear, draft it"), it converges: drafts RFC.md → PLAN.md, runs the `check-artifact` gate on each (structural on the RFC; structural + crossref on the PLAN) and the `sk-coherence-checker` quorum, and ends with a **light `ship / tweak / cancel` confirm**.
 - On `ship`, artifacts land under `.sidekick/plans/dark-mode-toggle/` (RFC.md + PLAN.md; RESEARCH.md only if research ran) and a single `design(dark-mode-toggle): draft RFC and PLAN` commit lands.
 
 #### Part B — `--auto medium`
@@ -475,29 +475,29 @@ Dispatch `sk-coherence-checker` against each fixture (absolute `artifact_path`):
 | `plan-vs-rfc/PLAN.md` | plan | `{ rfc: …/plan-vs-rfc/RFC.md }` | fail (T-06 vs D-04) |
 | `decision-internal/decision.md` | decision | — | fail (option vs Consequences) |
 
-Dimensional separation: `sk-structural-checker` on `rfc-cross-section/RFC.md`
-(`artifact_type: rfc`) returns **pass** — shape is valid; only coherence fails.
+Dimensional separation: `check-artifact` on `rfc-cross-section/RFC.md`
+(`--type rfc`) returns **pass** — shape is valid; only coherence fails.
 
 #### Part B — RFC quorum integration (sk-design)
 
 Run `/sk-design` to a draft whose Architecture contradicts its Decisions (or
 seed `.sidekick/plans/<slug>/RFC.md` from `rfc-cross-section/RFC.md`). Expect:
-the RFC quorum dispatches `sk-structural-checker` ∥ `sk-coherence-checker` in
-parallel; coherence returns `fail`; the orchestrator re-dispatches
+the RFC gate (`check-artifact`) passes; the quorum dispatches
+`sk-coherence-checker`; coherence returns `fail`; the orchestrator re-dispatches
 `sk-rfc-drafter` with the coherence issue folded into `feedback`; on the third
 failure it halts with `error: rfc_quorum_check_loop_exhausted`.
 
 #### Part C — PLAN quorum integration (sk-design)
 
 With a PLAN whose task realises a rejected decision (seed from
-`plan-vs-rfc/`), the PLAN quorum's three checkers run in parallel and coherence
+`plan-vs-rfc/`), the `check-artifact` gate passes and `sk-coherence-checker`
 returns `fail`, re-dispatching `sk-plan-drafter`.
 
 #### Part D — decision quorum integration (sk-decide)
 
 With a decision doc whose chosen option contradicts its Consequences (seed from
-`decision-internal/decision.md`), `/sk-decide` Step 7 dispatches
-`sk-structural-checker` ∥ `sk-coherence-checker`; coherence returns `fail`,
+`decision-internal/decision.md`), `/sk-decide` Step 7 runs the `check-artifact` gate, then dispatches
+`sk-coherence-checker`; coherence returns `fail`,
 re-dispatching `sk-decision-drafter`.
 
 ## E3 setup (drafter-reconciliation smoke)

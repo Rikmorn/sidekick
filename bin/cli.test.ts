@@ -408,7 +408,7 @@ describe('install', () => {
     // Named anchors: known M1 deliverables present.
     expect(
       dests.some((d) =>
-        d.endsWith(path.join('agents', 'sk-structural-checker.md')),
+        d.endsWith(path.join('agents', 'sk-coherence-checker.md')),
       ),
     ).toBe(true);
     expect(
