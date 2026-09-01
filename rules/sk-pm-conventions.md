@@ -11,7 +11,7 @@ How work is tracked across the home projects (sidekick, furnace, aesir).
 True now → reference doc · happened → ADR / learning record · to do or doing → GitHub issue.
 
 ## Board discipline
-- Columns: Backlog · Next · In progress · Verify · Done. At most **one item in Next per repo** — Next is the answer to "what do I pick up", not a queue.
+- Columns: Backlog · Next · In Progress · Verify · Done. At most **one item in Next per repo** — Next is the answer to "what do I pick up", not a queue.
 - A parked item is an issue labelled `parked` whose body states its unblock condition.
 - Closure is GH-native: done, or closed-as-not-planned with a one-line reason. When there is something worth keeping, write a learning record in the repo and link it from the close comment.
 
