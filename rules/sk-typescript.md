@@ -1,14 +1,16 @@
 ---
 paths:
-  - "*.ts"
-  - "*.tsx"
+  - "**/*.ts"
+  - "**/*.tsx"
 ---
+
+# sk-* TypeScript
 
 Assumes `tsconfig.json` has `strict: true` and `noFallthroughCasesInSwitch: true`. If either is off, re-enable it rather than working around.
 
 ## Don't bypass the compiler
 
-Never bypass the compiler (`as Type`, `!`, `// @ts-ignore`, `// @ts-expect-error`, `// biome-ignore`). If the types don't work, fix the types — don't silence them. The only exception is test files deliberately passing invalid inputs.
+Never bypass the compiler (`as Type`, `!`, `// @ts-ignore`, `// @ts-expect-error`, or the linter's suppression comment). If the types don't work, fix the types — don't silence them. The only exception is test files deliberately passing invalid inputs.
 
 Never use `{}`, `Object`, or `Function` as types — they erase type information and are effectively `any`. Use `Record<string, unknown>` for genuinely unknown objects, specific function signatures instead of `Function`, and proper interfaces for known shapes.
 
@@ -33,6 +35,8 @@ Force exhaustiveness with `never`. In `switch` statements over a discriminated u
 Use `as const` for literal unions, not `enum`. Enums compile to runtime JavaScript, have confusing bidirectional key/value semantics, and block tree-shaking. Prefer `const Reason = { Damaged: "damaged", WrongItem: "wrong_item" } as const; type Reason = (typeof Reason)[keyof typeof Reason]`, or a plain string union if iteration isn't needed.
 
 ## Idiomatic code
+
+Prefer `const` over `let`. `let` should signal intentional reassignment across statements, not be the default. Two patterns to refactor: `let result` outside a `for` loop that accumulates is a `reduce`/`map`/`filter` in disguise — the loop is rewriting the same variable, which is what `reduce` does. `let x` outside a `try/catch` to assign from inside should be a function returning the value (or an IIFE). Loop counters (`for (let i = 0; ...)`) are exempt. If reassignment is genuinely the simplest option, `let` is fine — but be honest about whether that's the case.
 
 Use `??` (nullish coalescing), not `||`, when defaulting a potentially nullish value. `||` treats `0`, `''`, and `false` as falsy — a real bug source for numeric and boolean fields. `??` only triggers on `null` and `undefined`.
 

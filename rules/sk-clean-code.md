@@ -8,7 +8,7 @@ paths:
 
 Applies to **new code** and **substantial edits**. Drive-by changes to legacy files don't trigger restructuring — if you notice a violation in surrounding code you weren't asked to change, mention it but don't silently expand scope. Refactor work happens in dedicated sessions where the task is explicitly "clean up X".
 
-This rule covers structure and readability. For type-system hygiene see `typescript.md`. For naming conventions (camelCase, PascalCase, ALL_CAPS) see CLAUDE.md.
+This rule covers structure and readability. For type-system hygiene see `sk-typescript.md`. For how comments and other prose are worded see `sk-language.md`. For naming conventions (camelCase, PascalCase, ALL_CAPS) see the project's CLAUDE.md.
 
 ## Functions
 
@@ -39,20 +39,44 @@ A `for...of` loop is the right tool when:
 - **Extract complex conditions into named variables.** A multi-clause boolean inside an `if` forces the reader to parse precedence and reconstruct intent. `if (order.amount > 0 && order.status === 'COMPLETED' && !order.refunded)` becomes `const isEligibleForRefund = ...; if (isEligibleForRefund)`. The variable name carries the meaning the condition is supposed to express.
 - **No nested ternaries.** A ternary inside a ternary forces the reader to parse precedence. Pull the inner expression into a named variable, or use an early return.
 - **Lookup tables beat long `if/else if` chains.** When dispatching on a discriminator (string, enum), prefer `Record<Discriminator, Handler>` or a `switch` over an `if (x === 'a') … else if (x === 'b') …` chain.
-- **Don't paper over nullability with `?.`.** If a value can be null, handle it explicitly with an early return, guard, or default — chaining past it and hoping for the best obscures control flow. See `typescript.md` for the type-system angle.
+- **Don't paper over nullability with `?.`.** If a value can be null, handle it explicitly with an early return, guard, or default — chaining past it and hoping for the best obscures control flow. See `sk-typescript.md` for the type-system angle.
 
 ## Constants and Literals
 
-**No magic literals in logic.** A numeric or string literal inside a conditional, comparison, or arithmetic should be a named constant whose name explains its purpose: `if (attempts >= MAX_RETRY_ATTEMPTS)` not `if (attempts >= 3)`. The values `0`, `1`, `-1`, and empty strings are usually fine as-is. Test fixtures, schema bounds (e.g. Zod `.min()` / `.max()`), and framework config values are exempt — there the literal *is* the spec.
+**No magic literals in logic.** A numeric or string literal inside a conditional, comparison, or arithmetic should be a named constant whose name explains its purpose: `if (attempts >= maxAttempts)` not `if (attempts >= 3)`. The values `0`, `1`, `-1`, and empty strings are usually fine as-is. Test fixtures, schema bounds (e.g. Zod `.min()` / `.max()`), and framework config values are exempt — there the literal *is* the spec.
+
+**Constants must be invariants or contracts, not defaults.** Naming a literal is required; putting it at module scope is not. If a value is read by one function and a caller could reasonably vary it — units, timeouts, retry counts, backoff, margins — it belongs in the signature as a defaulted parameter. A defaulted parameter names the value just as clearly as a constant does *and* leaves the function generic, pure, and overridable:
+
+```typescript
+// Fake constant: one reader, and the caller has no way to say otherwise.
+const REQUEST_TIMEOUT_MS = 5_000;
+const fetchJson = (url: string) => request(url, { timeoutMs: REQUEST_TIMEOUT_MS });
+
+// Real default: same name, now a seam.
+const fetchJson = (url: string, timeoutMs = 5_000) => request(url, { timeoutMs });
+```
+
+Keep it a module constant when more than one site must agree on it (it is the single source of truth — e.g. a chunk size that is also sent as the API's page size) or when a different value would simply be wrong (an API path, an HTTP status code). Either way the *rationale* travels with the value: move the comment onto the default, don't drop it with the constant.
+
+Where a function takes several such defaults, put them in an options object with the defaults in the destructure, and pass them explicitly to any private helper that needs them — defaults belong in exactly one place, and duplicating them into the helper reintroduces the drift the constant was avoiding.
+
+Don't invert this into parameterising everything. A function with eight knobs nobody sets is worse than a constant. The test is whether a caller could *knowledgeably* want it different, not whether it could theoretically vary.
 
 ## Comments
 
 Default to none. Well-named identifiers explain *what*. A good comment explains *why*: a constraint that isn't visible in the code, a workaround for a specific bug (link the issue), behaviour that would surprise a reader.
 
+One line by default. State the constraint — the external cap, spec quirk, invariant, known gap — not the argument for it. Don't refute alternatives ("not X, because X would…"): the constraint that rules them out *is* the comment.
+
+**Match the syntax to the audience, not to the length.** `/** JSDoc */` is for comments a consumer of the code reads — exported functions, types, and constants. `// line comments` are for notes that only concern the implementation, which includes every module-private helper. The split is mechanical rather than stylistic: editors and documentation generators consume JSDoc and ignore the rest. A multi-line implementation note is stacked `//` lines, never a `/* */` block.
+
 Don't:
 - Restate the code (`// increment counter`)
+- Write in reviewer register — "would otherwise…", "note that we…", "rather than…" is the PR conversation leaking into the source
 - Reference the current PR, ticket, or "added for X" — that belongs in the commit message and rots in the source
 - Leave commented-out code — delete it; git has the history
+
+Litmus: deleting the comment should cost the next reader a fact, not reassurance. Doc comments on schemas and public contracts may run longer — as terse rules, not essay prose.
 
 ## Cognitive Load
 
