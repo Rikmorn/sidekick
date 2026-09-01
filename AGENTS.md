@@ -21,7 +21,7 @@ Consequence: tech-debt, config, or "should be gitignored" concerns about a `.sid
 |---|---|
 | `agents/sk-*.md` | Subagent specialist definitions (drafters, reviewers, checkers, researchers, executor, fixer, explorer) |
 | `skills/sk-*/SKILL.md` | Slash-command orchestrators that run in the main session and dispatch the agents |
-| `rules/sk-*.md` | Coding + working standards (`sk-clean-code`, `sk-typescript`, `sk-workflow`, `sk-working-standards`) |
+| `rules/sk-*.md` | Coding + working standards (`sk-clean-code`, `sk-typescript`, `sk-language`, `sk-guidance-authoring`, `sk-working-standards`, `sk-pm-conventions`) |
 | `bin/` | The `sidekick` CLI — `cli.ts` + `helpers/*.ts`, with colocated `*.test.ts` |
 | `smokes/` | CLI smoke fixtures (`minimal-repo`, `wave-build`) using `.sidekick/` config + plans |
 | `.claude/rules/sk-agent-prompts.md` | Prompt-authoring discipline for the `sk-*` toolchain |
@@ -57,6 +57,6 @@ The repo compiles itself into a queryable graph (ADR-0007): entities (epics, ite
 
 ## Conventions the runtime depends on
 
-- `.sidekick/config.json` is the source of truth for branch + gate commands, read by `branch-precheck`, `check-drift`, and dispatched subagents. `rules/sk-workflow.md` documents its schema (it is reference, not a runtime input).
+- `.sidekick/config.json` is the source of truth for branch + gate commands, read by `branch-precheck`, `check-drift`, and dispatched subagents. `bin/helpers/config.ts` defines its schema; `README.md` carries the scaffolding and usage-contract table.
 - `.sidekick/plans/<slug>/{RFC.md, PLAN.md}` paths and the `T-NN` / `D-NN` / `A-NN` / `R-NN` symbol conventions are hardcoded in helpers and prompts.
 - `.sidekick/{cache,state}/` is gitignored and reconstructable from PLAN.md checkboxes + git commit scopes — never treat it as authority.
