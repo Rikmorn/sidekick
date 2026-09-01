@@ -1,8 +1,9 @@
 /**
  * The per-goal verdict rule (GAP / INCONCLUSIVE / ACHIEVED), lifted out of
  * prompt prose into deterministic code. It was duplicated verbatim in the
- * `<reasoning>` of skills/sk-goal-verify and skills/sk-review — the project's
- * own "a value computed in two places" smell. This is the single source.
+ * `<reasoning>` of the goal-verify and review skills — the project's own
+ * "a value computed in two places" smell; the goal-verify orchestrator has
+ * since folded into `/sk-review`'s goal dimension. This is the single source.
  *
  * Input is sk-goal-verifier's deliverable (the relevant subset). The agent does
  * all the *reasoning* (deriving each artifact's MISSING/STUB/HOLLOW/ORPHANED

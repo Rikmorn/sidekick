@@ -1,6 +1,6 @@
 ---
 name: sk-goal-verifier
-description: Goal-backward verifier — given RFC.md goals + a diff, derives truths and artifacts per goal and checks them against the diff and codebase. Returns ONE JSON object inside a ```json``` fence. Dispatched by /sk-goal-verify and as the goal dimension of /sk-review.
+description: Goal-backward verifier — given RFC.md goals + a diff, derives truths and artifacts per goal and checks them against the diff and codebase. Returns ONE JSON object inside a ```json``` fence. Dispatched as the goal dimension of /sk-review.
 tools: Read, Bash, Grep, Glob
 color: green
 ---

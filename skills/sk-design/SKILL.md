@@ -13,7 +13,7 @@ By default `/sk-design <topic>` is a conversation. You surface your understandin
 
 `--auto <low|medium|high>` is the hands-off mode: produce-and-confirm end-to-end at the stated effort, without stopping to talk. It is trust, not blindness — it keeps a one-line confirm before commit, and it may escalate effort or break out to ask one focused question when the task is more complex than the stated effort or it is missing information it genuinely cannot infer.
 
-A `/sk-design` invocation either starts a **new** plan or **re-enters an existing one**. The argument resolves it: if `.sidekick/plans/<slug>/` already exists, you open a *redesign* dialogue on that plan — seeded by its RFC/PLAN and what triggered the rework (a `/sk-build` blocker or a `/sk-goal-verify` gap); otherwise you derive a slug from the topic, confirm it, and open a *new-design* dialogue. An existing plan is re-entry, not a collision — the design↔build loop is meant to cycle.
+A `/sk-design` invocation either starts a **new** plan or **re-enters an existing one**. The argument resolves it: if `.sidekick/plans/<slug>/` already exists, you open a *redesign* dialogue on that plan — seeded by its RFC/PLAN and what triggered the rework (a `/sk-build` blocker or a goal gap from `/sk-review`); otherwise you derive a slug from the topic, confirm it, and open a *new-design* dialogue. An existing plan is re-entry, not a collision — the design↔build loop is meant to cycle.
 
 Before significant decisions — whether to research or keep talking, how to resolve identity (a new design vs a redesign re-entry), whether `--auto` should escalate or ask, how to combine quorum verdicts — reason through the choice in prose first. The reasoning is internal scratchwork; it shapes dispatches and writes and does not land in the committed artifacts.
 
@@ -133,7 +133,7 @@ Parse the JSON object on stdout and route on `verdict` (contract in `<dispatcher
 
 ### Redesign re-entry (existing plan)
 
-The argument named an existing plan — you are re-entering its design to revise it, because `/sk-build` or `/sk-goal-verify` hit something the current design can't satisfy, or the user wants to rethink. This is the design↔build loop closing.
+The argument named an existing plan — you are re-entering its design to revise it, because `/sk-build` or `/sk-review`'s goal dimension hit something the current design can't satisfy, or the user wants to rethink. This is the design↔build loop closing.
 
 **Seed from what exists.** Read the plan's `RFC.md`, `PLAN.md`, and `RESEARCH.md` (when present), and the build state — `git log` for `[T-NN]` commits on this slug and any `## Amendments` already recorded. Reconstruct *what triggered the rework*: the deviation a build surfaced (the affected `D-NN`, the blocked task) or the goal-verify gap. The argument carries only the slug, so you reconstruct the trigger from the artifacts and git rather than receiving it as input.
 
@@ -387,7 +387,7 @@ Append to RFC.md `## Redesigns`. If the section doesn't exist, create it after `
 
 ### R-NN (YYYY-MM-DD)
 
-**Trigger:** <what surfaced the rework — e.g. "/sk-build T-04 structural blocker: D-03, D-07 unworkable as locked" or "/sk-goal-verify: g2 HOLLOW">
+**Trigger:** <what surfaced the rework — e.g. "/sk-build T-04 structural blocker: D-03, D-07 unworkable as locked" or "/sk-review goal dimension: g2 HOLLOW">
 
 **Affected:** D-XX[, D-YY...][, g_n...]
 
