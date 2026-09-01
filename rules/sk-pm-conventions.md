@@ -10,6 +10,9 @@ How work is tracked across the home projects (sidekick, furnace, aesir).
 ## Placement test (tense)
 True now → reference doc · happened → ADR / learning record · to do or doing → GitHub issue.
 
+## Naming
+Issue titles are **content names** — say what the work is, never a position code (`3.4 — …`, `bench-6 — …`, `wave 2 of…` as identity are all out). Ordering lives on the board and in milestones; legacy or external IDs live in the issue body as source pointers.
+
 ## Board discipline
 - One project board per repo; that board is the repo's status surface. Columns: Backlog · Next · In Progress · Verify · Done. At most **one item in Next per board** — Next is the answer to "what do I pick up", not a queue.
 - A parked item is an issue labelled `parked` whose body states its unblock condition.
