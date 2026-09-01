@@ -47,29 +47,25 @@ describe('runVerifiersCli', () => {
   };
 
   describe('bundled defaults (no config)', () => {
-    it('returns the PLAN quorum: structural + crossref + coherence, binding', () => {
+    it('returns the PLAN quorum: coherence only, binding', () => {
       const result = parse('plan');
       expect(result.members.map((m) => [m.dimension, m.agent])).toEqual([
-        ['structural', 'sk-structural-checker'],
-        ['crossref', 'sk-crossref-checker'],
         ['coherence', 'sk-coherence-checker'],
       ]);
       expect(result.members.every((m) => m.tier === 'binding')).toBe(true);
       expect(result.members.every((m) => m.builtin)).toBe(true);
     });
 
-    it('returns the RFC quorum: structural + coherence', () => {
+    it('returns the RFC quorum: coherence only', () => {
       const result = parse('rfc');
       expect(result.members.map((m) => m.agent)).toEqual([
-        'sk-structural-checker',
         'sk-coherence-checker',
       ]);
     });
 
-    it('returns the decision quorum: structural + coherence', () => {
+    it('returns the decision quorum: coherence only', () => {
       const result = parse('decision');
       expect(result.members.map((m) => m.agent)).toEqual([
-        'sk-structural-checker',
         'sk-coherence-checker',
       ]);
     });
@@ -176,18 +172,18 @@ describe('runVerifiersCli', () => {
         schemaVersion: 1,
         defaultBranch: 'main',
         verifiers: [
-          { dimension: 'structural', agent: 'my-checker', surfaces: ['plan'] },
+          { dimension: 'coherence', agent: 'my-checker', surfaces: ['plan'] },
         ],
       });
       writeAgent(path.join(repoRoot, '.claude'), 'my-checker');
       const result = parse('plan');
-      const structural = result.members.filter(
-        (m) => m.dimension === 'structural',
+      const coherence = result.members.filter(
+        (m) => m.dimension === 'coherence',
       );
-      expect(structural).toEqual([
+      expect(coherence).toEqual([
         {
-          dimension: 'structural',
-          agent: 'sk-structural-checker',
+          dimension: 'coherence',
+          agent: 'sk-coherence-checker',
           tier: 'binding',
           builtin: true,
         },
@@ -196,13 +192,13 @@ describe('runVerifiersCli', () => {
     });
 
     it('allows a builtin dimension name on a surface where no builtin holds it', () => {
-      // "structural" is bundled on rfc/plan/decision, not on review.
+      // "coherence" is bundled on rfc/plan/decision, not on review.
       writeConfig({
         schemaVersion: 1,
         defaultBranch: 'main',
         verifiers: [
           {
-            dimension: 'structural',
+            dimension: 'coherence',
             agent: 'my-checker',
             surfaces: ['review'],
           },
@@ -210,7 +206,7 @@ describe('runVerifiersCli', () => {
       });
       writeAgent(path.join(repoRoot, '.claude'), 'my-checker');
       const result = parse('review');
-      expect(result.members.map((m) => m.dimension)).toContain('structural');
+      expect(result.members.map((m) => m.dimension)).toContain('coherence');
       expect(result.warnings).toEqual([]);
     });
 
@@ -310,7 +306,7 @@ describe('runVerifiersCli', () => {
     });
 
     it('leaves builtin binding members untouched (no certificate needed)', () => {
-      // structural/coherence are binding builtins on plan — no cert on disk.
+      // coherence is a binding builtin on plan — no cert on disk.
       const plan = runVerifiersCli({ repoRoot, claudeHome, surface: 'plan' });
       const members = JSON.parse(plan.stdout).members as Array<{
         builtin: boolean;

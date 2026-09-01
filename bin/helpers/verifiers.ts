@@ -26,7 +26,9 @@ export interface QuorumMember {
 type BundledMember = Omit<QuorumMember, 'builtin'>;
 
 /**
- * The de-facto quorums the skills hardcoded before 3.1, verbatim. The
+ * The de-facto quorums the skills hardcoded before 3.1, minus the checks that
+ * moved into the kernel (R2 #23/#24: structural and crossref validation now
+ * run as the `check-artifact` CLI gate before each artifact quorum). The
  * artifact quorums gate a capped drafter loop (binding); the review
  * dimensions inform a judged route (advisory). Which review dimensions
  * *fire* on a given diff stays orchestrator judgment — this table is
@@ -54,28 +56,12 @@ const BUNDLED: Record<VerifierSurface, BundledMember[]> = {
     },
   ],
   rfc: [
-    {
-      dimension: 'structural',
-      agent: 'sk-structural-checker',
-      tier: 'binding',
-    },
     { dimension: 'coherence', agent: 'sk-coherence-checker', tier: 'binding' },
   ],
   plan: [
-    {
-      dimension: 'structural',
-      agent: 'sk-structural-checker',
-      tier: 'binding',
-    },
-    { dimension: 'crossref', agent: 'sk-crossref-checker', tier: 'binding' },
     { dimension: 'coherence', agent: 'sk-coherence-checker', tier: 'binding' },
   ],
   decision: [
-    {
-      dimension: 'structural',
-      agent: 'sk-structural-checker',
-      tier: 'binding',
-    },
     { dimension: 'coherence', agent: 'sk-coherence-checker', tier: 'binding' },
   ],
 };
