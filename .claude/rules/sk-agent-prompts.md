@@ -1,8 +1,14 @@
+---
+paths:
+  - "agents/**"
+  - "skills/**"
+---
+
 # sk-* Agent Prompt Authoring
 
-Rules for writing and reviewing `.claude/agents/*.md` subagent definitions when authoring the sk-* engineering toolchain in this repository. Adapted from the broader Anthropic agent-prompts discipline — these rules codify lessons from in-spec prompt engineering across multiple projects.
+Rules for writing and reviewing the sk-* toolchain's subagent definitions (`agents/*.md`) and orchestrator prose (`skills/`). Adapted from the broader Anthropic agent-prompts discipline — these rules codify lessons from in-spec prompt engineering across multiple projects.
 
-These rules apply when authoring or modifying any subagent prompt for the sk-* toolchain. They sit above the third-party skills (per CLAUDE.md "Rules Override Skills") and govern agent behaviour.
+This rule extends the portable sk-* set rather than replacing any of it: `sk-guidance-authoring.md` decides what earns a place in standing guidance of any kind, and `sk-working-standards.md` and `sk-language.md` govern this file's prose as they do any doc. What this file adds is the surface the portable set doesn't cover — the agent-prompt control surface — and on that surface it takes precedence over any third-party skill's authoring advice.
 
 **Scope assumption — capable frontier models.** This discipline is calibrated for the capable frontier models the sk-* toolchain runs on. Several rules lean on that: trusting the model's intent-detection (Rule 8), preferring zero-shot reasoning over worked examples (Rule 3), and treating directive-density as a smell rather than a hard cap (Rule 4). On a weaker model you would lean harder on explicit examples and structure. Where a rule is frontier-specific, it says so inline.
 
@@ -12,7 +18,7 @@ Agent prompts are the primary control surface for agent behaviour. Three rounds 
 
 The rules below describe how to author prompts that hold up under model rationalisation.
 
-## Rule 1: Goal-Oriented Identity
+## Rule 1: Goal-oriented identity
 
 Identity sections state what the agent exists to achieve. They do not describe how it should work.
 
@@ -26,7 +32,7 @@ Identity sections state what the agent exists to achieve. They do not describe h
 
 The first gives purpose. The second gives a procedure that breaks on any input that doesn't fit the steps.
 
-## Rule 2: Constitutional Constraints
+## Rule 2: Constitutional constraints
 
 Define the boundary the agent works *within*, and leave the space inside it open for reasoning. Prefer positive affordances — "do X", "stay within Y" — over prohibitions, and reserve explicit "never" for a small, non-negotiable safety tier. Negation is followed less reliably than affirmative instruction, even on capable models — so state the boundary as what to do, and keep "never" for the cases where the prohibition is the whole point.
 
@@ -58,7 +64,7 @@ When to use a constraint vs leave it to judgment:
 - **Constraint:** the violation would cause real harm (modifying state, fabricating findings, returning malformed structured output the orchestrator can't parse).
 - **Judgment:** reasonable people might disagree on the right action (which lines count as one violation vs two; how much context to capture in evidence).
 
-## Rule 3: Few-Shot Examples WITH Reasoning
+## Rule 3: Few-shot examples with reasoning
 
 Replace if/then branching with examples that teach the reasoning pattern. Always include the reasoning — without it, examples become a lookup table the model pattern-matches against.
 
@@ -96,7 +102,7 @@ Examples teach pattern recognition. Rules teach rule-following. The agent that l
 
 **How many examples:** 3-5 covering the common case, an edge case, and a case requiring judgment. Don't try to cover every scenario.
 
-## Rule 4: Minimize Directive Density
+## Rule 4: Minimise directive density
 
 Every MUST, ALWAYS, NEVER, IMPORTANT, CRITICAL, "binding", "unconditional", "forbidden", "verbatim" overrides the agent's reasoning. Each one should earn its place.
 
@@ -110,13 +116,13 @@ Every MUST, ALWAYS, NEVER, IMPORTANT, CRITICAL, "binding", "unconditional", "for
 - "When in doubt, lean toward X" instead of "MUST do X"
 - "X tends to produce better outcomes because..." instead of "NEVER do Y"
 
-**The test:** if you can imagine a reasonable scenario where the agent should violate the directive, it shouldn't be a strong directive. If the directive would never be wrong in any context, it's a valid constraint.
+**The test** is `sk-guidance-authoring.md` §Form's constraint test, applied to prompts: if you can imagine a reasonable scenario where the agent should violate the directive, it shouldn't be a strong directive. If the directive would never be wrong in any context, it's a valid constraint.
 
-**Density is a smell, not a threshold.** A pile-up of strong directives — say, past ~10 in an orchestrator or ~5 in a worker — is a signal to stop and redesign: you are encoding a workflow, not guiding judgment. Treat the number as a smell, not a hard ceiling — and don't slash counts to hit a magic number either. The real failure mode is *simultaneous* satisfaction: a model honours each directive in isolation far more reliably than it honours all of them at once, and the joint odds collapse as the count rises. Minimize the constraints that must hold at the same time, not the raw tally.
+**Density is a smell, not a threshold.** A pile-up of strong directives — say, past ~10 in an orchestrator or ~5 in a worker — is a signal to stop and redesign: you are encoding a workflow, not guiding judgment. Treat the number as a smell, not a hard ceiling — and don't slash counts to hit a magic number either. The real failure mode is *simultaneous* satisfaction: a model honours each directive in isolation far more reliably than it honours all of them at once, and the joint odds collapse as the count rises. Minimise the constraints that must hold at the same time, not the raw tally.
 
 **Rank, don't flatten.** When constraints can conflict, give them a priority order instead of a flat list — a chain of command: *safety > correctness > style*. Ranking resolves conflicts by precedence ("when these collide, safety wins"), which is exactly what the agent needs the moment two rules disagree; a flat enumeration forces it to guess. This is the direct antidote to the simultaneous-satisfaction trap above — it turns "satisfy all N at once" into "satisfy the highest-priority one that applies".
 
-## Rule 5: Verifiers Are Dimensional, Not Artifact-Bound
+## Rule 5: Verifiers are dimensional, not artifact-bound
 
 A reviewer checks one quality dimension — structural validity, cross-reference integrity, spec adherence, anti-pattern smell, goal coverage, etc. The same reviewer can apply across multiple artifact types if its dimension applies.
 
@@ -134,7 +140,7 @@ A reviewer checks one quality dimension — structural validity, cross-reference
 
 **Naming.** Reviewers SHOULD be named after the dimension they check (`sk-coherence-checker`, not `sk-rfc-checker`). Producers MAY be named after the artifact they produce (`sk-rfc-drafter`).
 
-## Rule 6: Chain of Thought for Orchestrators
+## Rule 6: Chain of thought for orchestrators
 
 Orchestrator contexts (slash commands or main-session orchestration that dispatches subagents and synthesises their returns) externalise their reasoning before significant decisions. Worker agents (those that do one focused task) do not — they just execute.
 
@@ -156,7 +162,7 @@ The purpose is debuggability, not ceremony. If the reasoning would just be "I'm 
 
 **Reasoning is not a constraint-guarantee.** Externalised reasoning improves *decisions*; it does not guarantee the agent honours its own *constraints*. Chain-of-thought can actually make a model neglect constraints it would otherwise have respected. The corollary cuts against over-trusting the trace: the more a decision rides on the agent reasoning its way to the right action, the more you must audit guardrail adherence *externally* at high stakes — with a separate verifier (Rule 5), not by trusting the reasoning to have enforced them.
 
-## Rule 7: Structured Output at Boundaries Only
+## Rule 7: Structured output at boundaries only
 
 Use structured output (JSON blocks, fenced code blocks, specific markdown templates) only where another agent or piece of code parses it. Everything else stays natural language.
 
@@ -174,7 +180,7 @@ Don't invent new structured formats unless something parses them. Unused structu
 
 **Specialist contract pattern.** Specialists may reason in prose freely. Their *deliverable* is one JSON object inside a final ```json ``` fence. The orchestrator extracts that block and ignores everything else. This is the same shape as Anthropic's structured tool use — model can think out loud, runtime parses just the call.
 
-## Rule 8: Trust the Model
+## Rule 8: Trust the model
 
 LLMs are good at understanding intent, reading context, and choosing appropriate actions. Don't encode things the model does natively.
 
@@ -199,7 +205,7 @@ If you find yourself listing surface forms the model might produce ("Confirmed:"
 
 **The exception:** when the model's natural behaviour conflicts with a product requirement. If the model tends to be verbose but the orchestrator needs terse JSON, a constraint is warranted. But "the model might add a preamble" is not sufficient reason — test first, constrain only if needed. And when you do constrain, prefer structural enforcement (no surface for the unwanted behaviour) over rules (which the model rationalises around). Keep the two senses of "trust" separate, too: trusting the model's *intent-detection* (this rule) is not trusting it to *honour its constraints* — chain-of-thought can make it neglect them (Rule 6). At high stakes, verify adherence with a separate check rather than assuming the reasoning enforced it.
 
-## Rule 9: Orchestrator Owns Deliverable Writes; Subagents Return Data
+## Rule 9: Orchestrator owns deliverable writes; subagents return data
 
 The orchestrator writes the deliverable files — RFC.md, PLAN.md, RESEARCH.md, decision docs, reports. Specialists return their contribution as data (prose reasoning + the ONE-JSON deliverable of Rule 7), and the orchestrator writes it through.
 
@@ -207,7 +213,7 @@ Why this holds: a specialist that writes its own deliverable bypasses the orches
 
 The boundary is *deliverable* writes, not all writes. A specialist whose work product IS the file change — an executor or fixer editing source inside a task's declared scope — writes as its function; that is the work itself, not the deliverable *about* the work (its deliverable is still the JSON status it returns). Even there, the orchestrator owns commits, verification, and rollback.
 
-## Rule 10: Default Single-Agent; Fan-Out Must Buy Something
+## Rule 10: Default single-agent; fan-out must buy something
 
 One agent holding the full context is the baseline, not the fallback. Anything passed between agents is a lossy slice of that context, so a fan-out has to buy something the single context structurally cannot supply — at matched token budget a single agent matches or beats a multi-agent arrangement, and most celebrated multi-agent wins were bought with extra compute, not architecture. Three things are worth buying:
 
@@ -219,7 +225,7 @@ Before fanning out, the orchestrator reasons in prose (Rule 6) about which of th
 
 **Writes stay single-threaded.** Parallel writers make conflicting implicit decisions — naming, edge-case handling, patterns — and merge into incoherent output; this is the core multi-agent failure mode. Parallelism lives on the read-only/analysis side; writes flow through one thread (the orchestrator per Rule 9, or sequential per-task dispatch). Relaxing that takes structural isolation — disjoint file scopes, worktree isolation — not confidence, and the orchestrator still owns merge and commit.
 
-## Rule 11: Frame First, Guard Both Directions, Cap Every Loop
+## Rule 11: Frame first, guard both directions, cap every loop
 
 **Open with a cheap framing pass.** Models default toward answering immediately — a trained-in prior, not laziness, so "think harder" instructions don't fix it; the prompt has to afford the opening move. Non-trivial work starts by restating what the task is, decomposing it, and surfacing the unknowns before producing anything. Keep the pass cheap, and treat what it yields as direction plus a *soft* depth prior — never a self-certified gate. Self-assessed difficulty is unreliable in both directions, so depth stays overridable within operator-set bounds; until an externalised sizing signal exists, the framing output is advisory.
 
@@ -227,7 +233,7 @@ Before fanning out, the orchestrator reasons in prose (Rule 6) about which of th
 
 **Cap iteration; keep the best-so-far.** A loop earns its keep only against an independent gate (Rule 5) — self-judged iteration without an external signal degrades the result. Even a well-gated loop is non-monotonic: looping-until-the-gate-passes can degrade a previously-passing state, and the model has no reliable stopping criterion of its own. So every retry/refinement loop states a hard cap, and exhausting the cap halts cleanly with the best state preserved and named as such — never silently shipping the last attempt as if it were the best, never discarding everything. Loops the *user* drives are the exception: the human is the stopping criterion, so they run uncapped.
 
-## Anti-Patterns
+## Anti-patterns
 
 ### State machines in natural language
 
@@ -276,7 +282,7 @@ T-18 worked example: <preamble form B>. Also banned because...
 T-19 worked example: <preamble form C>. Also banned because...
 ```
 
-Each new example teaches the model another surface form to avoid. The model learns to distinguish its own draft from each example individually, not to internalise the underlying rule. Two rounds of "more examples" is the signal that the lever is wrong; redesign before adding a third.
+Each new example teaches the model another surface form to avoid. The model learns to distinguish its own draft from each example individually, not to internalise the underlying rule. Two rounds of "more examples" is the signal that the lever is wrong (`sk-guidance-authoring.md` §Form states the same signal for rules files); redesign before adding a third.
 
 ### Complexity classification gates
 
@@ -297,7 +303,7 @@ When authoring or reviewing a prompt, check:
 2. **Look for if/then branches.** Any "IF [condition] THEN [steps]" is a state machine. Replace with examples or move to executor code.
 3. **Check for prescribed tool sequences.** The agent should choose tools, not follow a script.
 4. **Read the examples.** Do they include reasoning? Do they cover edge cases? Could the agent generalise from them?
-5. **Apply the constraint test.** For each strong directive, ask: "is there a reasonable scenario where the agent should violate this?" If yes, soften it.
+5. **Apply the constraint test** (`sk-guidance-authoring.md` §Form). For each strong directive, ask: "is there a reasonable scenario where the agent should violate this?" If yes, soften it.
 6. **Verify separation.** Are stable instructions mixed with per-invocation context? Can a reader tell what's the agent's identity vs what's the input for this run?
 7. **Check who writes the deliverable.** The orchestrator writes and commits; specialists return data (Rule 9). A specialist holding `Write`/`Edit` should be one whose work product is the file change itself.
 8. **Check what each fan-out buys.** Breadth, sealed verification, or context relief (Rule 10) — and no parallel writers without structural isolation.
@@ -305,7 +311,7 @@ When authoring or reviewing a prompt, check:
 
 ## When to escalate from in-prompt rules to structural enforcement
 
-If a behavioural rule keeps failing across rounds of tightening (worked example #2, worked example #3, more `MUST` directives), escalate to structural enforcement:
+If a behavioural rule keeps failing across rounds of tightening (worked example #2, worked example #3, more `MUST` directives), escalate to structural enforcement — the prompt-surface rung of `sk-guidance-authoring.md` §Placement's enforcement-first ladder:
 
 - **Split** the agent into smaller specialists, each with narrower context.
 - **Validate post-hoc** — orchestrator parses specialist returns and rejects mismatches arithmetically.
