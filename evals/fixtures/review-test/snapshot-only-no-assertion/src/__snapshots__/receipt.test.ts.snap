@@ -1,0 +1,20 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`buildReceipt matches the recorded receipt 1`] = `
+{
+  "lines": [
+    "mug 12.50",
+    "beans 8.99",
+  ],
+  "taxCents": 430,
+  "totalCents": 2579,
+}
+`;
+
+exports[`buildReceipt matches the recorded receipt for an empty order 1`] = `
+{
+  "lines": [],
+  "taxCents": 0,
+  "totalCents": 0,
+}
+`;
