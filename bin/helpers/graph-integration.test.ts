@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { readdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectGraph } from './graph-build.js';
@@ -49,8 +50,11 @@ describe('graph build on the live tree', () => {
   it('finds the live inventory: the suite set, the agent roster, the helper set', () => {
     const kinds = (kind: string): string[] =>
       snapshot.entities.filter((e) => e.kind === kind).map((e) => e.id);
+    const agentFiles = readdirSync(path.join(REPO_ROOT, 'agents')).filter((f) =>
+      f.endsWith('.md'),
+    ).length;
     expect(kinds('suite').length).toBeGreaterThanOrEqual(7);
-    expect(kinds('agent').length).toBeGreaterThanOrEqual(23);
+    expect(kinds('agent').length).toBe(agentFiles);
     expect(kinds('skill').length).toBeGreaterThanOrEqual(7);
     expect(kinds('helper').length).toBeGreaterThanOrEqual(17);
     expect(kinds('adr').length).toBeGreaterThanOrEqual(7);
