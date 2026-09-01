@@ -1,6 +1,6 @@
 ---
 name: sk-rfc-drafter
-description: Produces RFC.md by integrating sk-research-synthesiser output, sk-architectural-advisor's ## Architecture section, sk-pattern-mapper analogues, and the scope statement settled in the /sk-design dialogue into the canonical RFC structure. Returns ONE JSON object inside a final ```json``` fence.
+description: Produces RFC.md by integrating the orchestrator's research synthesis, sk-architectural-advisor's ## Architecture section, sk-pattern-mapper analogues, and the scope statement settled in the /sk-design dialogue into the canonical RFC structure. Returns ONE JSON object inside a final ```json``` fence.
 tools: Read, Grep, Glob
 color: green
 ---
@@ -23,7 +23,7 @@ Read-only: never modify source code, branches, or git state.
 |---|---|---|
 | `slug` | yes | e.g. `add-keyboard-shortcuts` or `multi-tenant/auth` |
 | `scope_statement` | yes | One-paragraph problem statement — the scope settled in the /sk-design dialogue |
-| `synthesis_output` | optional | sk-research-synthesiser's JSON output; absent if research was skipped |
+| `synthesis_output` | optional | The orchestrator's research synthesis (`{ full_synthesis }`); absent if research was skipped |
 | `architecture_section` | yes | Markdown text from sk-architectural-advisor (the `## Architecture` H2 body) |
 | `analogues` | yes | Array of `{ path, why_relevant }` from sk-pattern-mapper |
 | `today` | yes (fresh draft) | ISO date `YYYY-MM-DD` for the `created:` frontmatter, supplied by the orchestrator. Required on a fresh draft (it joins the existing missing-input check); on a re-dispatch the existing `created:` is preserved byte-equal, so it is not needed. |

@@ -149,7 +149,7 @@ The user is in the driver's seat. No research has run yet, by design — explora
 
 **Open with your understanding.** Before any research, lay out in prose what you take the problem to be, the angles and load-bearing decisions in play, the open questions, and what the repo grounding shows — the analogues, the prior decisions, and the explorer's `scope_signal` ("this looks involved" / "this looks straightforward") — and name where research would likely pay off, without running it yet. This opening *is* the user's first contact with the work; it invites correction.
 
-**Explore as a conversation.** Run research when the user asks, or when your own judgment says a gap is worth the tokens — and say what you're about to research and why before you run it. Research fans out through the `<fanout_seam>` to the researcher subagents (`sk-researcher-{impl,decision,context}`) and merges through `sk-research-synthesiser`; the dispatch fields and the empty-output / `no_canonical_sources_found` handling live in `<dispatcher_parse_contracts>` and `<fanout_seam>`. When a synthesis is produced, its `full_synthesis` is written to `.sidekick/plans/<slug>/RESEARCH.md`. Lay options and open questions out inline as they surface, stating each option's substance. The gap that's about intent or preference is the user's to close in conversation; the gap that's about prior art or tradeoffs is research's to close. Continue until the user signals the design is clear — goals, solution shape, and the load-bearing decisions settled, remaining unknowns small enough to ride as RFC questions rather than blockers.
+**Explore as a conversation.** Run research when the user asks, or when your own judgment says a gap is worth the tokens — and say what you're about to research and why before you run it. Research fans out through the `<fanout_seam>` to the researcher subagents (`sk-researcher-{impl,decision,context}`), and you merge the returns yourself in the orchestrator-side synthesis (`<fanout_seam>`); the dispatch fields and the empty-output / `no_canonical_sources_found` handling live in `<dispatcher_parse_contracts>` and `<fanout_seam>`. When a synthesis is produced, it is written to `.sidekick/plans/<slug>/RESEARCH.md`. Lay options and open questions out inline as they surface, stating each option's substance. The gap that's about intent or preference is the user's to close in conversation; the gap that's about prior art or tradeoffs is research's to close. Continue until the user signals the design is clear — goals, solution shape, and the load-bearing decisions settled, remaining unknowns small enough to ride as RFC questions rather than blockers.
 
 **Converge.** When the user is satisfied, gather the design context needed to draft and proceed to **Finalisation**. Because the substance was already worked out together, the confirm there is light. (If the dialogue instead revealed the topic spans several distinct surfaces — each needing its own RFC/PLAN — treat it as a multi-plan group: write `OVERVIEW.md` + `MEMBERS.md` under `.sidekick/plans/<group-slug>/` per `<output_artifacts>` and clean-exit with the "group scope detected" block naming the first member to design, rather than drafting here.)
 
@@ -159,7 +159,7 @@ The user is in the driver's seat. No research has run yet, by design — explora
 
 Produce-and-confirm end-to-end without stopping to talk. The stated effort drives depth through the `<fanout_seam>`: `low → quick`, `medium → standard`, `high → deep`. `deep`'s adversarial cross-check needs the workflow backend; with the agents backend it falls back to `standard`, noted in reasoning (per `<fanout_seam>`).
 
-Run scope through Groundwork, then gather design context and run research at the effort's depth, synthesise, and flow into **Finalisation** — no conversational turn in between. Research dispatch, synthesis, and the `full_synthesis` → RESEARCH.md write follow the same contracts as exploration (`<fanout_seam>`, `<dispatcher_parse_contracts>`).
+Run scope through Groundwork, then gather design context and run research at the effort's depth, synthesise, and flow into **Finalisation** — no conversational turn in between. Research dispatch, the orchestrator-side synthesis, and the RESEARCH.md write follow the same contracts as exploration (`<fanout_seam>`, `<dispatcher_parse_contracts>`).
 
 Honest-autonomy: `--auto` is trust to proceed, not blindness. Hold to the stated effort by default, but when the task is genuinely more complex than the effort implies, or you're missing information you can't reasonably infer from the topic and the repo, escalate the effort or break out for the one focused question that actually unblocks correct work — and say so in reasoning. This is judgment about the work in front of you, not a lookup. Finalisation still ends with its one-line confirm before commit.
 
@@ -184,13 +184,13 @@ When they diverge on a load-bearing axis, the decision is made informed — dive
 
 - `slug`, `scope_statement` (the one-line scope settled in the dialogue)
 - `today: <YYYY-MM-DD>` — the system date from `date +%Y-%m-%d` (run once via Bash; reused for the PLAN draft below)
-- `synthesis_output: <full synthesiser JSON>` when research ran; omit when it didn't
+- `synthesis_output: { full_synthesis }` (the orchestrator-side synthesis, per `<fanout_seam>`) when research ran; omit when it didn't
 - `architecture_section: <advisor's "## Architecture" body, parsed per the dispatcher_parse_contracts>`
 - `analogues: [{ path, why_relevant }]` extracted from `sk-pattern-mapper`'s report (see `<dispatcher_parse_contracts>` for the parse semantics)
 
 Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/RFC.md`, creating parent directories as needed.
 
-**Verify the RFC (quorum).** Resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface rfc` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"` (bundled contracts in `<dispatcher_parse_contracts>`; operator members follow contract 12).
+**Verify the RFC (quorum).** Resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface rfc` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"` (bundled contracts in `<dispatcher_parse_contracts>`; operator members follow the operator-verifier contract (the final one in <dispatcher_parse_contracts>)).
 
 Parse each trailing ```json``` fence. Combine verdicts by tier:
 
@@ -245,11 +245,13 @@ The research fan-out runs through a backend seam so the orchestration logic stay
 
 | Tier | Researchers | Verification |
 |---|---|---|
-| `quick` | first hint only | none beyond the synthesiser pass |
-| `standard` | one per hint, parallel | synthesiser merge (current default behaviour) |
+| `quick` | first hint only | none beyond the synthesis pass |
+| `standard` | one per hint, parallel | orchestrator-side synthesis (default behaviour) |
 | `deep` | one per hint + adversarial cross-check of load-bearing claims | requires the workflow backend; with agents, fall back to `standard` and note the downgrade in reasoning prose |
 
 `deep` is explicit opt-in (config or `--auto high`) — never escalate to it on your own judgment; it is a token-cost decision that belongs to the operator.
+
+**Synthesis (orchestrator-side).** When researchers return, you compose the synthesis yourself — no dispatch. Drop entries with empty `output` first; when some dispatched researchers were dropped or failed, open the synthesis with the gap notation `_(N of M researchers reported)_`. Merge the collected `{ name, output, sources_cited }` returns into one recommendation-shaped comparative analysis, ≤2000 words (whitespace-split): open with the recommendation the evidence best supports, name the load-bearing criteria behind it, then walk the alternatives with their rejection reasons. Preserve genuine disagreement between researchers explicitly rather than smoothing it — disagreement is signal. Carry through the substitutability markers and thin-grounding flags the researchers raised; don't present findings as more grounded than they reported them. Cite per researcher in `[<name>]` form, embedding external URLs / paths inline where they carry weight. Write the result to `.sidekick/plans/<slug>/RESEARCH.md` under the `fanout:` header line, and pass `{ full_synthesis: <the same markdown> }` to `sk-rfc-drafter` as `synthesis_output` — the drafter's contract is unchanged. The full synthesis lives only in RESEARCH.md; the drafter writes a brief pointer to it in RFC.md `## Research notes`.
 
 **Failure semantics.** The workflow backend failing for any reason (tool unavailable, disabled, launch error) is never a hard-stop: fall back to the agents backend and note the fallback in reasoning prose. Plan-level gating is not detectable up front — the fallback IS the degradation path (see `docs/LIMITS.md` in the sidekick repo).
 
@@ -259,7 +261,7 @@ The research fan-out runs through a backend seam so the orchestration logic stay
 
 <dispatcher_parse_contracts>
 
-Twelve contracts, one per dispatched specialist (the twelfth covers any operator-authored registry member). Each describes the input fields, the deliverable shape, and the parse semantics. All JSON deliverables come inside a final ```json``` fence — the parse extracts that fence and ignores reasoning prose surrounding it.
+One contract per dispatched specialist, numbered below (the final contract covers any operator-authored registry member). Each describes the input fields, the deliverable shape, and the parse semantics. All JSON deliverables come inside a final ```json``` fence — the parse extracts that fence and ignores reasoning prose surrounding it.
 
 ### 1. sk-explorer
 
@@ -313,21 +315,11 @@ Twelve contracts, one per dispatched specialist (the twelfth covers any operator
 
 **Routing:**
 
-- Success — append to `per_agent_outputs[]` for the synthesiser.
+- Success — collect for the orchestrator-side synthesis (`<fanout_seam>`).
 - `no_canonical_sources_found` — resolve by mode (see `<hard_stops>`): in exploration it is a conversational event (tell the user; offer to retry or skip); in `--auto` it degrades per `<fanout_seam>` (drop the failing researcher, continue with the remaining set) rather than halting. `error: research_failed` is the residue when no degrade path remains.
 - Any other malformed shape — `error: subagent_failed`.
 
-### 6. sk-research-synthesiser
-
-**Input:** `{ topic, per_agent_outputs: [{ name, output, sources_cited }], cap_words_full: 2000 }`.
-
-**Output:** `{ full_synthesis }` inside a ```json``` fence (a non-empty markdown string).
-
-**Routing:** write `full_synthesis` to `.sidekick/plans/<slug>/RESEARCH.md`; pass the whole synthesiser JSON to `sk-rfc-drafter` as `synthesis_output`. The full synthesis lives only in RESEARCH.md — the drafter writes a brief pointer to it in RFC.md `## Research notes` rather than embedding the synthesis.
-
-**Pre-dispatch contract:** the orchestrator pre-filters `per_agent_outputs[]` (dropping entries with empty `output`) before dispatching the synthesiser. The synthesiser's `empty_agent_output` hard-stop should therefore never fire in practice — if it does, treat as `error: subagent_failed` (programmer-error path: the pre-filter missed an entry).
-
-### 7. sk-rfc-drafter
+### 6. sk-rfc-drafter
 
 **Input:** `{ slug, scope_statement, synthesis_output?, architecture_section, analogues: [{ path, why_relevant }], feedback? }`.
 
@@ -335,7 +327,7 @@ Twelve contracts, one per dispatched specialist (the twelfth covers any operator
 
 **Routing:** write `draft_text` to `.sidekick/plans/<slug>/RFC.md`. On a re-dispatch with `feedback`, the drafter integrates the targeted section only and leaves every other section byte-equal — this is also how a **redesign re-entry** re-drafts the affected sections (the `feedback` describes the redesign).
 
-### 8. sk-plan-drafter
+### 7. sk-plan-drafter
 
 **Input:** `{ slug, rfc_path, rfc_hash, feedback? }`.
 
@@ -343,7 +335,7 @@ Twelve contracts, one per dispatched specialist (the twelfth covers any operator
 
 **Routing:** write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`. The drafter is responsible for embedding `pins-rfc: <rfc_hash>` in the PLAN.md frontmatter — the crossref-checker verifies the pin in the PLAN quorum.
 
-### 9. sk-structural-checker
+### 8. sk-structural-checker
 
 **Input:** `{ artifact_path, artifact_type: "rfc"|"plan"|"decision" }`.
 
@@ -351,7 +343,7 @@ Twelve contracts, one per dispatched specialist (the twelfth covers any operator
 
 **Routing:** `pass` continues; `fail` rolls `issues` into a prose `feedback` field for the matching drafter's re-dispatch.
 
-### 10. sk-crossref-checker
+### 9. sk-crossref-checker
 
 **Input:** `{ artifact_path, artifact_type: "plan"|"decision", related_paths: { rfc: <abs path> } }`.
 
@@ -359,7 +351,7 @@ Twelve contracts, one per dispatched specialist (the twelfth covers any operator
 
 **Routing:** same shape as `sk-structural-checker`. In the PLAN quorum, the checkers' failures are combined into a single prose `feedback` summary so the plan-drafter sees all dimensions in one re-dispatch.
 
-### 11. sk-coherence-checker
+### 10. sk-coherence-checker
 
 **Input:** `{ artifact_path, artifact_type: "rfc"|"plan"|"decision", related_paths?: { rfc: <abs path> } }`. `related_paths.rfc` is required for `plan`, optional for `decision`, omitted for `rfc`.
 
@@ -367,7 +359,7 @@ Twelve contracts, one per dispatched specialist (the twelfth covers any operator
 
 **Routing:** same shape as `sk-structural-checker`. In the RFC and PLAN quorums, a `fail` rolls its `issues` into the combined prose `feedback` for the matching drafter's re-dispatch.
 
-### 12. Operator-authored verifiers (registry members with `builtin: false`)
+### 11. Operator-authored verifiers (registry members with `builtin: false`)
 
 **Input:** the same dispatch shape as the surface's bundled checkers: `{ artifact_path, artifact_type, related_paths? }` (`related_paths` as the quorum step passes it).
 
@@ -383,7 +375,7 @@ Twelve contracts, one per dispatched specialist (the twelfth covers any operator
 .sidekick/plans/<slug>/
 ├─ RFC.md         (YAML frontmatter + Goals & non-goals, Architecture, Decisions, Questions, Risks, optional Research notes; ## Redesigns appended on re-entry, ## Amendments by /sk-build)
 ├─ PLAN.md        (YAML frontmatter with pins-rfc: <rfc_hash> + per-task entries + ## Checklist)
-└─ RESEARCH.md    (full synthesiser narrative — only when research ran)
+└─ RESEARCH.md    (the research synthesis — only when research ran)
 ```
 
 `<slug>` may be a flat slug (`add-keyboard-shortcuts`) or a nested member-of-group slug (`multi-tenant/auth`). The orchestrator derives it from the topic (and confirms it) on a new design, or takes it verbatim on a redesign re-entry.
@@ -437,7 +429,7 @@ The user redirects: it's not render cost, the dashboard refetches everything on 
 
 `--auto` is trust to proceed, so there is no conversational turn — the stated effort is the whole instruction for how deep to go. A clean, unused slug needs no derivation, so the run flows straight through.
 
-User runs `/sk-design export-csv --auto medium`. No `export-csv` plan exists, so it's a new design on a clean slug (no derivation needed); branch precheck `proceed`s; `sk-explorer` grounds it. Because `medium` maps to the `standard` research tier, the orchestrator gathers design context and runs research at standard depth (one researcher per hint, synthesiser merge) without pausing to ask whether to — the effort level already answered that. Synthesis flows into Finalisation: draft → RFC quorum → PLAN → parallel quorum → commit, all hands-off. The single pause is the one-line approval before commit — an `AskUserQuestion` like "Designed `export-csv` (RFC.md, PLAN.md, RESEARCH.md)" with `Approve` / `Cancel` — trust to proceed, not blindness. The teaching point: in hands-off mode the effort word *is* the depth knob, so the orchestrator never stops to negotiate research; the only human touch is the one-line approval.
+User runs `/sk-design export-csv --auto medium`. No `export-csv` plan exists, so it's a new design on a clean slug (no derivation needed); branch precheck `proceed`s; `sk-explorer` grounds it. Because `medium` maps to the `standard` research tier, the orchestrator gathers design context and runs research at standard depth (one researcher per hint, orchestrator-side synthesis) without pausing to ask whether to — the effort level already answered that. Synthesis flows into Finalisation: draft → RFC quorum → PLAN → parallel quorum → commit, all hands-off. The single pause is the one-line approval before commit — an `AskUserQuestion` like "Designed `export-csv` (RFC.md, PLAN.md, RESEARCH.md)" with `Approve` / `Cancel` — trust to proceed, not blindness. The teaching point: in hands-off mode the effort word *is* the depth knob, so the orchestrator never stops to negotiate research; the only human touch is the one-line approval.
 
 ### Example 3 — `--auto low`, honest-autonomy breakout
 
