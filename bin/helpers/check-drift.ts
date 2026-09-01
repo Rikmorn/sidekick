@@ -38,7 +38,7 @@ function countLines(content: string): number {
  * Looks for the pattern `^pins-rfc:\s*([a-f0-9]{16,128})\s*$` with multiline flag.
  * Returns the hash string if found, null otherwise.
  */
-function extractPinHash(planContent: string): string | null {
+export function extractPinHash(planContent: string): string | null {
   const match = planContent.match(/^pins-rfc:\s*([a-f0-9]{16,128})\s*$/m);
   return match ? match[1] : null;
 }

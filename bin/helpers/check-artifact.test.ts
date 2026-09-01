@@ -366,3 +366,242 @@ Low.
     expect('error' in r && r.error).toBe('missing_artifact');
   });
 });
+
+describe('check-artifact crossref', () => {
+  it('ignores unused RFC entries — coverage is not crossref', () => {
+    // VALID_RFC defines g1, g2, D-01, D-02; the default plan cites only g1/D-01.
+    const p = writePlanPair({});
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'plan',
+    });
+    expect('verdict' in r && r.verdict).toBe('pass');
+  });
+
+  it('flags a dangling goal ref', () => {
+    const p = writePlanPair({
+      tasks: `### T-01 build the helper
+
+**Goals:** g4
+**Decisions:** D-01
+**Deps:** —
+**Files:**
+- Create: bin/helpers/x.ts`,
+    });
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'plan',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail');
+    expect(r.issues).toContainEqual({
+      dimension: 'crossref',
+      kind: 'dangling_goal',
+      ref: 'g4',
+      detail: 'Not defined in RFC.md ## Goals & non-goals',
+    });
+  });
+
+  it('flags a dangling decision ref', () => {
+    const p = writePlanPair({
+      tasks: `### T-01 build the helper
+
+**Goals:** g1
+**Decisions:** D-09
+**Deps:** —
+**Files:**
+- Create: bin/helpers/x.ts`,
+    });
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'plan',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail');
+    expect(r.issues).toContainEqual({
+      dimension: 'crossref',
+      kind: 'dangling_decision',
+      ref: 'D-09',
+      detail: 'Not defined in RFC.md ## Decisions',
+    });
+  });
+
+  it('flags pins_rfc_drift', () => {
+    const stale = 'a1b2c3d4e5f60718';
+    const p = writePlanPair({ pin: stale });
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'plan',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail');
+    expect(r.issues).toContainEqual({
+      dimension: 'crossref',
+      kind: 'pins_rfc_drift',
+      expected: stale,
+      actual: hashRfcContent(VALID_RFC),
+    });
+  });
+
+  it('flags a dependency cycle', () => {
+    const p = writePlanPair({
+      checklist: '- [ ] T-01 first\n- [ ] T-02 second',
+      tasks: `### T-01 first
+
+**Goals:** g1
+**Decisions:** D-01
+**Deps:** T-02
+**Files:**
+- Create: a.ts
+
+### T-02 second
+
+**Goals:** g1
+**Decisions:** D-01
+**Deps:** T-01
+**Files:**
+- Create: b.ts`,
+    });
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'plan',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail');
+    expect(
+      r.issues.some(
+        (i) => i.dimension === 'crossref' && i.kind === 'dep_cycle',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a dangling task dep', () => {
+    const p = writePlanPair({
+      tasks: `### T-01 build the helper
+
+**Goals:** g1
+**Decisions:** D-01
+**Deps:** T-99
+**Files:**
+- Create: bin/helpers/x.ts`,
+    });
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'plan',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail');
+    expect(
+      r.issues.some(
+        (i) => i.dimension === 'crossref' && i.kind === 'dangling_task_ref',
+      ),
+    ).toBe(true);
+  });
+
+  it('reports no_task_blocks when ## Tasks has no blocks', () => {
+    const p = writePlanPair({ tasks: 'no blocks here' });
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'plan',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail');
+    expect(
+      r.issues.some(
+        (i) => i.dimension === 'crossref' && i.kind === 'no_task_blocks',
+      ),
+    ).toBe(true);
+  });
+
+  it('errors when the RFC is missing', () => {
+    const p = write(
+      '.sidekick/plans/solo/PLAN.md',
+      planWith({ pin: hashRfcContent(VALID_RFC) }),
+    );
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'plan',
+    });
+    expect('error' in r && r.error).toBe('missing_rfc');
+  });
+
+  it('honours an explicit rfcPath override', () => {
+    const rfcAbs = write('elsewhere/RFC.md', VALID_RFC);
+    const p = write(
+      '.sidekick/plans/solo/PLAN.md',
+      planWith({ pin: hashRfcContent(VALID_RFC) }),
+    );
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'plan',
+      rfcPath: rfcAbs,
+    });
+    expect('verdict' in r && r.verdict).toBe('pass');
+  });
+
+  it('passes a decision citing an existing source RFC via frontmatter', () => {
+    write('docs/x/RFC.md', VALID_RFC);
+    const p = write(
+      'd.md',
+      VALID_DECISION.replace(
+        'date: 2026-09-01\n',
+        'date: 2026-09-01\nsource-rfc: docs/x/RFC.md\n',
+      ),
+    );
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'decision',
+    });
+    expect('verdict' in r && r.verdict).toBe('pass');
+  });
+
+  it('flags a missing source RFC', () => {
+    const p = write(
+      'd.md',
+      VALID_DECISION.replace(
+        'date: 2026-09-01\n',
+        'date: 2026-09-01\nsource-rfc: nope/RFC.md\n',
+      ),
+    );
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'decision',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail');
+    expect(r.issues).toContainEqual({
+      dimension: 'crossref',
+      kind: 'missing_source_rfc',
+      path: 'nope/RFC.md',
+      detail: 'Referenced RFC does not exist',
+    });
+  });
+
+  it('resolves a markdown-link source RFC', () => {
+    write('plans/t/RFC.md', VALID_RFC);
+    const p = write(
+      'd.md',
+      VALID_DECISION.replace(
+        'We needed a cache.',
+        'We needed a cache. See [RFC](plans/t/RFC.md).',
+      ),
+    );
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'decision',
+    });
+    expect('verdict' in r && r.verdict).toBe('pass');
+  });
+});

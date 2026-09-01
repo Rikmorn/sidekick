@@ -6,8 +6,11 @@
  */
 
 import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { extractPinHash } from './check-drift.js';
 import { fieldAsScalar, parseFrontmatter } from './graph-model.js';
-import { parsePlanTasks } from './wave-plan.js';
+import { hashRfcContent } from './hash-rfc.js';
+import { computeWaves, parsePlanTasks, WavePlanError } from './wave-plan.js';
 
 type Frontmatter = ReturnType<typeof parseFrontmatter>;
 
@@ -227,6 +230,122 @@ function checkPlanChecklist(
   return issues;
 }
 
+const GOAL_REF = /\bg\d+\b/g;
+const DECISION_REF = /\bD-\d{2,}\b/g;
+const MD_LINK_RFC = /\]\(([^)\s]*RFC\.md)\)/;
+const TASKS_HEADING = /^##\s+Tasks\s*$/m;
+
+function extractRefs(text: string, pattern: RegExp): Set<string> {
+  return new Set(text.match(pattern) ?? []);
+}
+
+function sectionBody(sections: Section[], name: string): string {
+  return (sections.find((s) => s.name === name)?.body ?? []).join('\n');
+}
+
+function checkPlanCrossref(
+  planContent: string,
+  rfcContent: string,
+): CrossrefIssue[] {
+  const issues: CrossrefIssue[] = [];
+  const rfcSections = splitSections(
+    parseFrontmatter(rfcContent).body.split('\n'),
+  );
+  const definedGoals = extractRefs(
+    sectionBody(rfcSections, 'Goals & non-goals'),
+    GOAL_REF,
+  );
+  const definedDecisions = extractRefs(
+    sectionBody(rfcSections, 'Decisions'),
+    DECISION_REF,
+  );
+
+  const planBody = parseFrontmatter(planContent).body;
+  for (const ref of extractRefs(planBody, GOAL_REF)) {
+    if (!definedGoals.has(ref)) {
+      issues.push({
+        dimension: 'crossref',
+        kind: 'dangling_goal',
+        ref,
+        detail: 'Not defined in RFC.md ## Goals & non-goals',
+      });
+    }
+  }
+  for (const ref of extractRefs(planBody, DECISION_REF)) {
+    if (!definedDecisions.has(ref)) {
+      issues.push({
+        dimension: 'crossref',
+        kind: 'dangling_decision',
+        ref,
+        detail: 'Not defined in RFC.md ## Decisions',
+      });
+    }
+  }
+
+  // Pin drift. A missing/malformed pin is already a structural issue, so the
+  // extractor returning null skips the comparison rather than double-reporting.
+  const pin = extractPinHash(planContent);
+  if (pin !== null) {
+    const actual = hashRfcContent(rfcContent);
+    if (pin !== actual) {
+      issues.push({
+        dimension: 'crossref',
+        kind: 'pins_rfc_drift',
+        expected: pin,
+        actual,
+      });
+    }
+  }
+
+  // Dep graph — wave-plan's parser and topology are the single source of truth.
+  const tasks = parsePlanTasks(planContent);
+  if (TASKS_HEADING.test(planContent) && tasks.length === 0) {
+    issues.push({
+      dimension: 'crossref',
+      kind: 'no_task_blocks',
+      detail: 'PLAN.md has no ### T-NN task blocks under ## Tasks',
+    });
+  } else if (tasks.length > 0) {
+    try {
+      computeWaves(tasks);
+    } catch (err) {
+      if (!(err instanceof WavePlanError)) throw err;
+      issues.push({
+        dimension: 'crossref',
+        kind: err.kind === 'dep_cycle' ? 'dep_cycle' : 'dangling_task_ref',
+        detail: err.message,
+      });
+    }
+  }
+  return issues;
+}
+
+function checkDecisionCrossref(
+  content: string,
+  fm: Frontmatter,
+  artifactPath: string,
+  repoRoot: string,
+): CrossrefIssue[] {
+  const ref =
+    fieldAsScalar(fm, 'source-rfc') ?? content.match(MD_LINK_RFC)?.[1] ?? null;
+  if (ref === null) return [];
+  const candidates = path.isAbsolute(ref)
+    ? [ref]
+    : [
+        path.resolve(path.dirname(artifactPath), ref),
+        path.resolve(repoRoot, ref),
+      ];
+  if (candidates.some((p) => fs.existsSync(p))) return [];
+  return [
+    {
+      dimension: 'crossref',
+      kind: 'missing_source_rfc',
+      path: ref,
+      detail: 'Referenced RFC does not exist',
+    },
+  ];
+}
+
 export function runCheckArtifact(
   input: CheckArtifactInput,
 ): CheckArtifactResult {
@@ -244,6 +363,21 @@ export function runCheckArtifact(
   ];
   if (artifactType === 'plan') {
     issues.push(...checkPlanChecklist(sections, content));
+  }
+
+  if (artifactType === 'plan') {
+    const rfcPath =
+      input.rfcPath ?? path.join(path.dirname(artifactPath), 'RFC.md');
+    if (!fs.existsSync(rfcPath)) {
+      return { error: 'missing_rfc', detail: `RFC not found at ${rfcPath}` };
+    }
+    issues.push(
+      ...checkPlanCrossref(content, fs.readFileSync(rfcPath, 'utf-8')),
+    );
+  } else if (artifactType === 'decision') {
+    issues.push(
+      ...checkDecisionCrossref(content, fm, artifactPath, input.repoRoot),
+    );
   }
 
   return issues.length === 0
