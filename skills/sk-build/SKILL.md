@@ -171,7 +171,7 @@ The gate runs from main session via direct Bash invocations and a parallel `sk-s
 
 **Tests-tier soft-pass.** If `sk-executor`'s `gate_summary.tests.result === "no_tests_in_scope"` (no `*.test.*` path in `files_changed` AND no sibling test file on disk for any non-test path in `files_changed`), the orchestrator soft-passes the tests tier — no test-gate invocation; emit `(no tests in scope for T-NN)` to the gate-context output. Typecheck, lint, and spec-reviewer run regardless.
 
-**Spec-reviewer dispatch.** Pass `task_id`, `task_description`, `diff` (e.g., the staged diff produced by `git diff --staged` after Step 5's writes, or a `diff_command` for the reviewer to run), `goal_ids`, `decision_ids`, `rfc_path`. Parse the trailing ```json``` fence for the `verdict` field.
+**Spec-reviewer dispatch.** Pass `task_id`, `task_description`, `diff` (the task's uncommitted working-tree diff, scoped to its change set — e.g. `git diff -- <paths>` over `scope-check`'s `actual` set, baseline-subtracted — or a `diff_command` for the reviewer to run), `goal_ids`, `decision_ids`, `rfc_path`. Parse the trailing ```json``` fence for the `verdict` field. Nothing is staged at this point — staging happens at Step 7/8 from the scope-verified actual set.
 
 **Scope gate.** Run `scope-check` for the just-executed task, passing its Step-5 baseline and the executor's returned `files_changed` as `--reported`:
 
@@ -335,7 +335,7 @@ Internal reasoning (not emitted): subagent claims pass, but the verification-gat
 |---|---|---|---|
 | `task_id` | yes | Same as Executor | Citation in `reasoning` |
 | `task_description` | yes | Verbatim from PLAN.md | Source of truth for intent |
-| `diff` | yes | Inline OR `diff_command` | The staged diff after Step 5 writes |
+| `diff` | yes | Inline OR `diff_command` | The task's uncommitted working-tree diff (scope-verified `actual` set, baseline-subtracted) |
 | `goal_ids` | optional | Same as Executor | Cross-reference into RFC.md |
 | `decision_ids` | optional | Same as Executor | Cross-reference into RFC.md |
 | `rfc_path` | optional | Same as Executor | For resolving cited IDs |
