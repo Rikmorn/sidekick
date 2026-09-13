@@ -39,7 +39,7 @@ Consequence: tech-debt, config, or "should be gitignored" concerns about a `.sid
 The repo compiles itself into a queryable graph (ADR-0007): entities (ADRs, agents, skills, CLI helpers, eval suites and cases, run sets, metrics, calibration certificates, research topics, documents) and typed edges between them, derived from the text sources and rebuilt on demand. It models the *content corpus* only — work state is GitHub's.
 
 - **Build it:** `bun bin/cli.ts graph build` — writes `.kb/graph.db` (gitignored, derived, safe to delete).
-- **Use it:** the database exists so status, coverage, applicability, and what-changed questions are *queried*, not reconstructed by grep archaeology. Sources stay the authority; the graph is a rebuildable index of them.
+- **Use it:** the database exists so coverage, wiring, and what-changed questions about the content corpus are *queried*, not reconstructed by grep archaeology. Sources stay the authority; the graph is a rebuildable index of them. Work status is a board query, not a graph one.
 
   | Question | Command |
   |---|---|
