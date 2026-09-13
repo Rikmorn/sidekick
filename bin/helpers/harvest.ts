@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 /**
@@ -11,19 +13,21 @@ import * as path from 'node:path';
  * drops `manual` — the label is cheapest at failure time, but it is still the
  * operator's to confirm.
  *
- * The log is repo-local scratch (gitignored): the durable artifact is the
- * adjudicated case, not the log line. Import marks the entry in place —
- * append-only discipline belongs to run records, not to a scratch inbox.
- * The hosted variant stays parked (backlog/failure-capture-pipeline.md).
+ * The inbox is per-user, not per-repo: failures happen wherever the operator
+ * works, and one file keeps them together. The durable artifact is the
+ * adjudicated case under the sidekick repo, not the log line. Import marks the
+ * entry in place — append-only discipline belongs to run records, not to a
+ * scratch inbox. The hosted variant stays parked
+ * (backlog/failure-capture-pipeline.md).
  */
-
-export const HARVEST_LOG_RELPATH = path.join('.sidekick', 'harvest.jsonl');
 
 const SUBJECT_RE = /^(agent|skill):([a-z][a-z0-9-]*)$/;
 
 export interface HarvestEntry {
   id: string;
   at: string;
+  /** Basename of the git root the entry was logged from; null outside a repo. */
+  repo: string | null;
   subject: string;
   summary: string;
   expected: string | null;
@@ -38,11 +42,44 @@ export interface CliResult {
   exitCode: number;
 }
 
-function readEntries(repoRoot: string): HarvestEntry[] {
-  const file = path.join(repoRoot, HARVEST_LOG_RELPATH);
-  if (!fs.existsSync(file)) return [];
+/** Shell `${VAR:-default}`: an unset *or* empty variable falls through. */
+const orDefault = (value: string | undefined, fallback: string): string =>
+  value === undefined || value === '' ? fallback : value;
+
+/**
+ * Resolve the inbox the way the installed launcher resolves its own root —
+ * `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` — so every repo logs to one file.
+ * `install` still derives its target from os.homedir(); that divergence is
+ * issue #17 and is not this path's to fix.
+ */
+export function resolveInboxPath(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const configDir = orDefault(
+    env.CLAUDE_CONFIG_DIR,
+    path.join(orDefault(env.HOME, os.homedir()), '.claude'),
+  );
+  return path.join(configDir, 'sidekick', 'harvest.jsonl');
+}
+
+/** Basename of the git root containing `cwd`, or null when there is none. */
+function gitRepoName(cwd: string): string | null {
+  try {
+    const top = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return top === '' ? null : path.basename(top);
+  } catch {
+    return null;
+  }
+}
+
+function readEntries(inbox: string): HarvestEntry[] {
+  if (!fs.existsSync(inbox)) return [];
   const entries: HarvestEntry[] = [];
-  for (const line of fs.readFileSync(file, 'utf-8').split('\n')) {
+  for (const line of fs.readFileSync(inbox, 'utf-8').split('\n')) {
     if (line.trim() === '') continue;
     try {
       entries.push(JSON.parse(line) as HarvestEntry);
@@ -53,10 +90,12 @@ function readEntries(repoRoot: string): HarvestEntry[] {
   return entries;
 }
 
-function writeEntries(repoRoot: string, entries: HarvestEntry[]): void {
-  const file = path.join(repoRoot, HARVEST_LOG_RELPATH);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, entries.map((e) => `${JSON.stringify(e)}\n`).join(''));
+function writeEntries(inbox: string, entries: HarvestEntry[]): void {
+  fs.mkdirSync(path.dirname(inbox), { recursive: true });
+  fs.writeFileSync(
+    inbox,
+    entries.map((e) => `${JSON.stringify(e)}\n`).join(''),
+  );
 }
 
 export interface HarvestLogOptions {
@@ -66,6 +105,8 @@ export interface HarvestLogOptions {
   expected?: string;
   actual?: string;
   input?: string;
+  /** Defaults to process.env; injectable for tests. */
+  env?: Record<string, string | undefined>;
   /** Injected clock for tests; the CLI uses the real one. */
   now?: () => string;
 }
@@ -85,10 +126,12 @@ export function runHarvestLog(opts: HarvestLogOptions): CliResult {
       exitCode: 1,
     };
   }
-  const entries = readEntries(opts.repoRoot);
+  const inbox = resolveInboxPath(opts.env);
+  const entries = readEntries(inbox);
   const entry: HarvestEntry = {
     id: `h-${entries.length + 1}`,
     at: (opts.now ?? (() => new Date().toISOString()))(),
+    repo: gitRepoName(opts.repoRoot),
     subject: opts.subject,
     summary: opts.summary.trim(),
     expected: opts.expected?.trim() || null,
@@ -96,19 +139,19 @@ export function runHarvestLog(opts: HarvestLogOptions): CliResult {
     input: opts.input?.trim() || null,
     imported_case: null,
   };
-  const file = path.join(opts.repoRoot, HARVEST_LOG_RELPATH);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, `${JSON.stringify(entry)}\n`);
+  fs.mkdirSync(path.dirname(inbox), { recursive: true });
+  fs.appendFileSync(inbox, `${JSON.stringify(entry)}\n`);
   return { stdout: JSON.stringify(entry, null, 2), exitCode: 0 };
 }
 
 export interface HarvestListOptions {
-  repoRoot: string;
+  /** Defaults to process.env; injectable for tests. */
+  env?: Record<string, string | undefined>;
   json?: boolean;
 }
 
 export function runHarvestList(opts: HarvestListOptions): CliResult {
-  const entries = readEntries(opts.repoRoot);
+  const entries = readEntries(resolveInboxPath(opts.env));
   const unimported = entries.filter((e) => e.imported_case === null).length;
   if (opts.json === true) {
     return {
@@ -124,7 +167,7 @@ export function runHarvestList(opts: HarvestListOptions): CliResult {
   ];
   for (const e of entries) {
     lines.push(
-      `  ${e.id} ${e.imported_case === null ? '[inbox]' : `[imported -> ${e.imported_case}]`} ${e.subject} — ${e.summary}`,
+      `  ${e.id} ${e.imported_case === null ? '[inbox]' : `[imported -> ${e.imported_case}]`} ${e.repo ?? '—'} ${e.subject} — ${e.summary}`,
     );
   }
   return { stdout: lines.join('\n'), exitCode: 0 };
@@ -143,10 +186,13 @@ export interface HarvestImportOptions {
   id: string;
   suite?: string;
   caseId?: string;
+  /** Defaults to process.env; injectable for tests. */
+  env?: Record<string, string | undefined>;
 }
 
 export function runHarvestImport(opts: HarvestImportOptions): CliResult {
-  const entries = readEntries(opts.repoRoot);
+  const inbox = resolveInboxPath(opts.env);
+  const entries = readEntries(inbox);
   const entry = entries.find((e) => e.id === opts.id);
   if (entry === undefined) {
     return {
@@ -201,7 +247,7 @@ export function runHarvestImport(opts: HarvestImportOptions): CliResult {
   fs.writeFileSync(abs, `${JSON.stringify(skeleton, null, 2)}\n`);
 
   entry.imported_case = relPath;
-  writeEntries(opts.repoRoot, entries);
+  writeEntries(inbox, entries);
   return {
     stdout: JSON.stringify({ imported: entry.id, case_path: relPath }, null, 2),
     exitCode: 0,

@@ -483,7 +483,6 @@ if (_isEntry) {
           process.exit(exitCode);
         } else if (harvestCmd === 'list') {
           const { stdout, exitCode } = runHarvestList({
-            repoRoot: process.cwd(),
             json: args.includes('--json'),
           });
           console.log(stdout);
@@ -492,7 +491,7 @@ if (_isEntry) {
           const id = args.find((a) => !a.startsWith('--'));
           if (!id) {
             console.error(
-              'Usage: sidekick harvest import <id> [--suite S] [--case-id C]',
+              'Usage: sidekick harvest import <id> [--suite S] [--case-id C] — run from the sidekick repo; the case skeleton is written under its evals/cases/',
             );
             process.exit(1);
           }
