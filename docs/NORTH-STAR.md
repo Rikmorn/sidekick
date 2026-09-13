@@ -9,7 +9,7 @@ status: living
 >
 > — `docs/research/README.md` §"North star" (reproduced verbatim)
 
-The objectives below are that statement decomposed into addressable entities. Each carries an `ns-*` ID that work items point at, so "where are we on the path" becomes a rollup query instead of a feeling. This tree is **consolidation with IDs, not new strategy**: every objective traces to text that already existed, and each section cites where. **Ratified by the operator 2026-07-22.** Two forks the drafting surfaced — the harness's reach, and visibility's placement — were settled at ratification; each section records its resolution.
+The objectives below are that statement decomposed into addressable entities. Each carries an `ns-*` ID so that an issue, a milestone, or an ADR can name the objective it advances; since work moved to GitHub (2026-09, #30) that link is a citation in the issue or milestone text, not a graph rollup. This tree is **consolidation with IDs, not new strategy**: every objective traces to text that already existed, and each section cites where. **Ratified by the operator 2026-07-22.** Two forks the drafting surfaced — the harness's reach, and visibility's placement — were settled at ratification; each section records its resolution.
 
 ---
 
