@@ -7,11 +7,8 @@ import {
   buildCoverage,
   COVERAGE_EXCEPTIONS_PATH,
   estimateTokens,
-  findApplies,
   findGaps,
-  globToRegExp,
   readCoverageExceptions,
-  runApplies,
   runCoverage,
   runQuery,
 } from './graph-query.js';
@@ -284,7 +281,7 @@ describe('per-metric coverage + metric gaps (bench-2)', () => {
 
   it('gaps distinguishes a never-computed metric from unmeasured-entirely', () => {
     const h = seedWithMetrics();
-    const gaps = findGaps(h, '/nonexistent');
+    const gaps = findGaps(h);
     const metricGaps = gaps.filter((g) => g.type === 'metric-unmeasured');
     expect(metricGaps.length).toBe(1);
     expect(metricGaps[0].id).toBe('agent:v');
@@ -300,128 +297,26 @@ describe('findGaps', () => {
   it('types each gap and gives it a why line', () => {
     const h = seed(
       [
-        entity('ns-alone', 'objective'),
-        entity('ns-reached', 'objective'),
-        entity('ops', 'epic'),
         entity('adr-0003', 'adr'),
         entity('adr-0004', 'adr'),
-        entity('plat-0.4', 'item'),
+        entity('adr-0005', 'adr'),
         entity('agent:sk-measured', 'agent'),
         entity('agent:sk-unmeasured', 'agent'),
         entity('suite:s', 'suite'),
         entity('case:s/c', 'case'),
       ],
       [
-        edge('ops', 'advances', 'ns-reached'),
         edge('adr-0004', 'supersedes', 'adr-0003'),
-        edge('plat-0.4', 'implements', 'adr-0003'),
+        edge('adr-0005', 'implements', 'adr-0003'),
         edge('case:s/c', 'measures', 'agent:sk-measured'),
       ],
     );
-    const gaps = findGaps(h, '/nonexistent');
+    const gaps = findGaps(h);
     const byType = (t: string): string[] =>
       gaps.filter((g) => g.type === t).map((g) => g.id);
 
-    expect(byType('objective-unadvanced')).toEqual(['ns-alone']);
-    expect(byType('cites-superseded')).toEqual(['plat-0.4']);
+    expect(byType('cites-superseded')).toEqual(['adr-0005']);
     expect(byType('subject-unmeasured')).toEqual(['agent:sk-unmeasured']);
     expect(gaps.every((g) => g.why.length > 20)).toBe(true);
-  });
-
-  it('flags an open backlog applies-to that matches no file', () => {
-    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-gap-'));
-    fs.mkdirSync(path.join(repo, 'agents'), { recursive: true });
-    fs.writeFileSync(path.join(repo, 'agents', 'sk-fixer.md'), 'x');
-
-    const h = seed(
-      [
-        entity('backlog:live', 'backlog', { status: 'open' }),
-        entity('backlog:stale', 'backlog', { status: 'open' }),
-        entity('backlog:done', 'backlog', { status: 'resolved' }),
-      ],
-      [
-        edge('backlog:live', 'applies-to', 'glob:agents/sk-fixer.md'),
-        edge('backlog:stale', 'applies-to', 'glob:agents/sk-retired.md'),
-        edge('backlog:done', 'applies-to', 'glob:agents/sk-gone.md'),
-      ],
-    );
-    const dangling = findGaps(h, repo).filter(
-      (g) => g.type === 'dangling-applies-to',
-    );
-    expect(dangling.map((g) => g.id)).toEqual(['backlog:stale']);
-    fs.rmSync(repo, { recursive: true, force: true });
-  });
-});
-
-describe('globToRegExp', () => {
-  it('keeps * inside a segment and lets ** cross directories', () => {
-    expect(globToRegExp('agents/*.md').test('agents/sk-fixer.md')).toBe(true);
-    expect(globToRegExp('agents/*.md').test('agents/sub/sk-fixer.md')).toBe(
-      false,
-    );
-    expect(globToRegExp('skills/**/SKILL.md').test('skills/a/SKILL.md')).toBe(
-      true,
-    );
-    expect(globToRegExp('bin/cli.ts').test('bin/cli.ts')).toBe(true);
-    expect(globToRegExp('bin/cli.ts').test('bin/other.ts')).toBe(false);
-  });
-});
-
-describe('findApplies', () => {
-  let repo: string;
-  let h: GraphDb;
-
-  beforeEach(() => {
-    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-app-'));
-    h = seed(
-      [
-        entity('backlog:fixer-scope-widening', 'backlog', {
-          status: 'open',
-          title: 'fix scope gate',
-        }),
-        entity('backlog:closed-note', 'backlog', { status: 'resolved' }),
-        entity('agent:sk-fixer', 'agent', { path: 'agents/sk-fixer.md' }),
-      ],
-      [
-        edge(
-          'backlog:fixer-scope-widening',
-          'applies-to',
-          'glob:agents/sk-fixer.md',
-        ),
-        edge('backlog:closed-note', 'applies-to', 'glob:agents/sk-fixer.md'),
-      ],
-    );
-  });
-  afterEach(() => {
-    fs.rmSync(repo, { recursive: true, force: true });
-    h.close();
-  });
-
-  it('matches an exact path', () => {
-    expect(findApplies(h, ['agents/sk-fixer.md']).map((x) => x.id)).toEqual([
-      'backlog:fixer-scope-widening',
-    ]);
-  });
-
-  it('matches a bare name the way an operator types it', () => {
-    expect(findApplies(h, ['fixer']).map((x) => x.id)).toEqual([
-      'backlog:fixer-scope-widening',
-    ]);
-  });
-
-  it('excludes resolved items — the pool is the open set', () => {
-    const hits = findApplies(h, ['agents/sk-fixer.md']);
-    expect(hits.some((x) => x.id === 'backlog:closed-note')).toBe(false);
-  });
-
-  it('returns nothing for an unrelated argument, and says so', () => {
-    expect(findApplies(h, ['docs/README.md'])).toEqual([]);
-    const res = runApplies(h, ['docs/README.md'], false);
-    expect(res.stdout).toContain('no open backlog item applies');
-    expect(res.exitCode).toBe(0);
-  });
-
-  it('requires an argument', () => {
-    expect(runApplies(h, [], false).exitCode).toBe(1);
   });
 });

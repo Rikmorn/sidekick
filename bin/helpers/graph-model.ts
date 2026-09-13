@@ -131,7 +131,6 @@ export type LintCode =
   | 'missing-frontmatter'
   | 'generated-drift'
   | 'state-size-cap'
-  | 'dangling-applies-to'
   | 'invalid-metric'
   | 'historical-ref';
 

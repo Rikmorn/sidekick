@@ -18,7 +18,6 @@ describe('graph CLI surface', () => {
       'query',
       'coverage',
       'gaps',
-      'applies',
       'diff',
       'lint',
       'state',

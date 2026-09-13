@@ -236,29 +236,6 @@ describe('collectLint / runGraphLint', () => {
     expect(res.exitCode).toBe(0);
   });
 
-  it('flags a dangling applies-to on an open backlog item', () => {
-    write(
-      repo,
-      'docs/backlog/note.md',
-      [
-        '---',
-        'applies-to: [agents/sk-nonexistent.md]',
-        '---',
-        '',
-        '# Note',
-        '',
-        '**Status:** Open.',
-      ].join('\n'),
-    );
-    const res = runGraphLint({ repoRoot: repo, json: true });
-    expect(res.exitCode).toBe(1);
-    expect(
-      JSON.parse(res.stdout).findings.some(
-        (f: { code: string }) => f.code === 'dangling-applies-to',
-      ),
-    ).toBe(true);
-  });
-
   it('orders errors before advisories', () => {
     write(repo, 'docs/notes/x.md', '# stray folder');
     write(

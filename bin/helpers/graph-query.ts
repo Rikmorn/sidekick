@@ -1,5 +1,5 @@
 /**
- * ops-3 — the consumption half: `query`, `coverage`, `gaps`, `applies`.
+ * ops-3 — the consumption half: `query`, `coverage`, `gaps`.
  *
  * Each of the operator's standing questions becomes a command rather than a
  * grep expedition. Two properties matter more than the queries themselves:
@@ -372,29 +372,14 @@ export interface Gap {
  * Unmatched-edge queries. Each gap is typed and carries a `why` line, because a
  * gap list without reasons produces exactly one reaction: disbelief.
  */
-export function findGaps(handle: GraphDb, repoRoot: string): Gap[] {
+export function findGaps(handle: GraphDb): Gap[] {
   const entities = allEntities(handle);
   const edges = allEdges(handle);
   const gaps: Gap[] = [];
 
-  const incoming = new Map<string, Edge[]>();
   const outgoing = new Map<string, Edge[]>();
   for (const edge of edges) {
-    incoming.set(edge.dst, [...(incoming.get(edge.dst) ?? []), edge]);
     outgoing.set(edge.src, [...(outgoing.get(edge.src) ?? []), edge]);
-  }
-
-  for (const objective of entities.filter((e) => e.kind === 'objective')) {
-    const pointed = (incoming.get(objective.id) ?? []).filter(
-      (e) => e.rel === 'advances' || e.rel === 'implements',
-    );
-    if (pointed.length === 0) {
-      gaps.push({
-        type: 'objective-unadvanced',
-        id: objective.id,
-        why: 'no work item or epic declares that it advances this objective, so progress on it is not derivable.',
-      });
-    }
   }
 
   const superseded = new Set(
@@ -409,22 +394,6 @@ export function findGaps(handle: GraphDb, repoRoot: string): Gap[] {
         id: entity.id,
         why: `it ${edge.rel} ${edge.dst}, which a later decision supersedes.`,
       });
-    }
-  }
-
-  for (const backlog of entities.filter(
-    (e) => e.kind === 'backlog' && e.status !== 'resolved',
-  )) {
-    for (const edge of outgoing.get(backlog.id) ?? []) {
-      if (edge.rel !== 'applies-to' || !edge.dst.startsWith('glob:')) continue;
-      const pattern = edge.dst.slice('glob:'.length);
-      if (matchRepoPaths(repoRoot, pattern).length === 0) {
-        gaps.push({
-          type: 'dangling-applies-to',
-          id: backlog.id,
-          why: `its applies-to pattern "${pattern}" matches no file in the repo, so the pre-work check can never fire.`,
-        });
-      }
     }
   }
 
@@ -465,12 +434,8 @@ export function findGaps(handle: GraphDb, repoRoot: string): Gap[] {
   );
 }
 
-export function runGaps(
-  handle: GraphDb,
-  repoRoot: string,
-  json: boolean,
-): CliResult {
-  const gaps = findGaps(handle, repoRoot);
+export function runGaps(handle: GraphDb, json: boolean): CliResult {
+  const gaps = findGaps(handle);
   if (json) return { stdout: JSON.stringify({ gaps }, null, 2), exitCode: 0 };
   if (gaps.length === 0) return { stdout: 'no gaps found.', exitCode: 0 };
 
@@ -482,136 +447,6 @@ export function runGaps(
       lastType = gap.type;
     }
     lines.push(`  ${gap.id}`, `      why: ${gap.why}`);
-  }
-  return { stdout: lines.join('\n'), exitCode: 0 };
-}
-
-// ---- applies ----------------------------------------------------------------
-
-/** Translate a repo glob into a regexp. `**` crosses directories, `*` does not. */
-export function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .split('**')
-    .map((part) => part.replace(/\*/g, '[^/]*'))
-    .join('.*');
-  return new RegExp(`^${escaped}$`);
-}
-
-function matchRepoPaths(repoRoot: string, pattern: string): string[] {
-  const re = globToRegExp(pattern);
-  const out: string[] = [];
-  const walk = (rel: string): void => {
-    const abs = path.join(repoRoot, rel);
-    if (!fs.existsSync(abs)) return;
-    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
-      const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
-      if (child.startsWith('.git') || child === 'node_modules') continue;
-      if (entry.isDirectory()) walk(child);
-      else if (re.test(child)) out.push(child);
-    }
-  };
-  // A pattern with no wildcard is just a path.
-  if (!pattern.includes('*')) {
-    return fs.existsSync(path.join(repoRoot, pattern)) ? [pattern] : [];
-  }
-  walk('');
-  return out;
-}
-
-export interface AppliesHit {
-  id: string;
-  title: string;
-  target: string;
-  matched: string;
-}
-
-/**
- * The pre-work check: which open backlog items bear on what I am about to touch.
- *
- * An argument matches a target four ways — same entity ID, a path the target's
- * glob covers, the path an entity lives at, or a bare name naming an entity.
- * The bare-name form is what makes `applies fixer` work the way an operator
- * would type it, rather than demanding `agent:sk-fixer`.
- */
-export function findApplies(handle: GraphDb, args: string[]): AppliesHit[] {
-  const entities = allEntities(handle);
-  const byId = new Map(entities.map((e) => [e.id, e]));
-  const edges = allEdges(handle).filter((e) => e.rel === 'applies-to');
-  const hits: AppliesHit[] = [];
-
-  for (const edge of edges) {
-    const item = byId.get(edge.src);
-    if (item === undefined || item.status === 'resolved') continue;
-    const target = edge.dst.startsWith('glob:')
-      ? edge.dst.slice('glob:'.length)
-      : edge.dst;
-
-    for (const arg of args) {
-      if (!argMatchesTarget(arg, edge.dst, target, byId)) continue;
-      hits.push({
-        id: item.id,
-        title: item.title,
-        target,
-        matched: arg,
-      });
-      break;
-    }
-  }
-  return hits.sort((a, b) => (a.id < b.id ? -1 : 1));
-}
-
-function argMatchesTarget(
-  arg: string,
-  dst: string,
-  target: string,
-  byId: Map<string, Entity>,
-): boolean {
-  if (arg === dst || arg === target) return true;
-
-  const looksLikePath = arg.includes('/') || /\.[a-z]+$/.test(arg);
-  if (looksLikePath) {
-    if (dst.startsWith('glob:') && globToRegExp(target).test(arg)) return true;
-    const entity = byId.get(dst);
-    return entity?.path === arg;
-  }
-
-  // A bare name: does it name the entity this target addresses?
-  const entity = byId.get(dst);
-  const haystacks = [dst, target, entity?.path ?? ''];
-  return haystacks.some((h) => h.toLowerCase().includes(arg.toLowerCase()));
-}
-
-export function runApplies(
-  handle: GraphDb,
-  args: string[],
-  json: boolean,
-): CliResult {
-  if (args.length === 0) {
-    return {
-      stdout: 'Usage: sidekick graph applies <item-id|path|name>...',
-      exitCode: 1,
-    };
-  }
-  const hits = findApplies(handle, args);
-  if (json) {
-    return {
-      stdout: JSON.stringify({ args, applies: hits }, null, 2),
-      exitCode: 0,
-    };
-  }
-  if (hits.length === 0) {
-    return {
-      stdout: `no open backlog item applies to ${args.join(', ')}.`,
-      exitCode: 0,
-    };
-  }
-  const lines = [`${hits.length} open backlog item(s) apply:`];
-  for (const hit of hits) {
-    lines.push(
-      `  ${hit.id} — ${hit.title}`,
-      `      via applies-to ${hit.target}`,
-    );
   }
   return { stdout: lines.join('\n'), exitCode: 0 };
 }

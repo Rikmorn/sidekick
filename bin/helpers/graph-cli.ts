@@ -29,7 +29,7 @@ import {
   STATE_PATH,
 } from './graph-generate.js';
 import { runGraphLint } from './graph-lint.js';
-import { runApplies, runCoverage, runGaps, runQuery } from './graph-query.js';
+import { runCoverage, runGaps, runQuery } from './graph-query.js';
 import { type GraphDb, openGraphDb } from './graph-store.js';
 
 export const GRAPH_SUBCOMMANDS = [
@@ -37,7 +37,6 @@ export const GRAPH_SUBCOMMANDS = [
   'query',
   'coverage',
   'gaps',
-  'applies',
   'diff',
   'lint',
   'state',
@@ -87,7 +86,6 @@ const USAGE = `Usage: sidekick graph <${GRAPH_SUBCOMMANDS.join('|')}> [options]
   query <term|id>            an entity and its typed neighbours
   coverage                   subject x suite matrix from measures edges
   gaps                       typed unmatched-edge findings
-  applies <id|path...>       open backlog items that apply to the argument
   diff <ref> [ref]           entity/edge/status delta between two commits
   lint                       vocabulary, refs, taxonomy, drift, size cap
   state                      regenerate docs/STATE.md
@@ -200,8 +198,7 @@ export async function runGraphCli(
       });
     }
     if (sub === 'coverage') return runCoverage(handle, opts.repoRoot, json);
-    if (sub === 'gaps') return runGaps(handle, opts.repoRoot, json);
-    if (sub === 'applies') return runApplies(handle, args, json);
+    if (sub === 'gaps') return runGaps(handle, json);
 
     return {
       stdout: `sidekick graph ${sub} is not implemented yet.`,

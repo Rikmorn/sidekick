@@ -1,9 +1,9 @@
 /**
  * ops-3 — `sidekick graph lint`: the checks that keep the corpus honest.
  *
- * Seven checks with stable codes. Four are structural properties of the sources
- * (vocabulary, references, taxonomy conformance, required frontmatter); three
- * guard the derived surfaces (drift, size cap, dangling applies-to).
+ * Six checks with stable codes. Four are structural properties of the sources
+ * (vocabulary, references, taxonomy conformance, required frontmatter); two
+ * guard the derived surfaces (drift, size cap).
  *
  * Severity is the design point. A broken reference or a drifted generated file
  * is an error — something downstream is now lying. Ambiguity in legacy prose is
@@ -16,8 +16,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { collectGraph } from './graph-build.js';
 import type { LintCode, LintFinding } from './graph-model.js';
-import { findGaps } from './graph-query.js';
-import { openGraphDb } from './graph-store.js';
 
 export interface CliResult {
   stdout: string;
@@ -35,7 +33,6 @@ const ERROR_CODES = new Set<LintCode>([
   'missing-frontmatter',
   'generated-drift',
   'state-size-cap',
-  'dangling-applies-to',
   'invalid-metric',
 ]);
 
@@ -46,13 +43,18 @@ export function isError(finding: LintFinding): boolean {
 // ---- taxonomy ---------------------------------------------------------------
 
 /**
- * Folders `docs/README.md` declares. `references/` and `reviews/` are declared
- * *dissolving* rather than undeclared — their occupants get claimed at
- * migration — and `backlog/` is the pool in its pre-migration location, so none
- * of the three is a conformance failure today.
+ * Folders `docs/README.md` declares. `work/`, `backlog/`, `references/` and
+ * `reviews/` are record directories since #30 retired the graph's PM half —
+ * their files are kept prose, not lifecycles, so none of them is dissolving.
  */
-const DECLARED_DOC_DIRS = ['adr', 'research', 'work'];
-const DISSOLVING_DOC_DIRS = ['references', 'reviews', 'backlog'];
+const DECLARED_DOC_DIRS = [
+  'adr',
+  'backlog',
+  'references',
+  'research',
+  'reviews',
+  'work',
+];
 
 export function checkTaxonomy(repoRoot: string): LintFinding[] {
   const docsDir = path.join(repoRoot, 'docs');
@@ -64,7 +66,6 @@ export function checkTaxonomy(repoRoot: string): LintFinding[] {
     if (!entry.isDirectory()) continue;
     if (entry.name === 'superpowers') continue; // the declared foreign enclave
     if (DECLARED_DOC_DIRS.includes(entry.name)) continue;
-    if (DISSOLVING_DOC_DIRS.includes(entry.name)) continue;
     findings.push({
       code: 'undeclared-location',
       message: `docs/${entry.name}/ is not a folder docs/README.md declares. Every top-level folder is meant to be a distinct retrieval axis — give it a declared meaning and lifecycle, or file its contents on an existing axis.`,
@@ -170,49 +171,8 @@ export function collectLint(opts: LintOptions): LintFinding[] {
  * whether STATE.md is currently stale.
  */
 export function collectSourceLint(repoRoot: string): LintFinding[] {
-  const { findings, snapshot } = collectGraph(repoRoot);
-  const all: LintFinding[] = [...findings];
-  const opts = { repoRoot };
-
-  all.push(...checkTaxonomy(opts.repoRoot));
-
-  // Dangling applies-to reuses the gap query so the two views cannot disagree.
-  const handle = openGraphDb(':memory:');
-  try {
-    handle.db.run('BEGIN');
-    const insertEntity = handle.db.prepare(
-      'INSERT OR REPLACE INTO entities (id, kind, title, status, path, data) VALUES (?, ?, ?, ?, ?, ?)',
-    );
-    for (const e of snapshot.entities) {
-      insertEntity.run(
-        e.id,
-        e.kind,
-        e.title,
-        e.status ?? null,
-        e.path ?? null,
-        null,
-      );
-    }
-    const insertEdge = handle.db.prepare(
-      'INSERT OR IGNORE INTO edges (src, rel, dst, tier, origin) VALUES (?, ?, ?, ?, ?)',
-    );
-    for (const e of snapshot.edges) {
-      insertEdge.run(e.src, e.rel, e.dst, e.tier, e.origin);
-    }
-    handle.db.run('COMMIT');
-    for (const gap of findGaps(handle, opts.repoRoot)) {
-      if (gap.type !== 'dangling-applies-to') continue;
-      all.push({
-        code: 'dangling-applies-to',
-        message: `${gap.id}: ${gap.why}`,
-        origin: gap.id,
-      });
-    }
-  } finally {
-    handle.close();
-  }
-
-  return all.sort(bySeverityThenCode);
+  const { findings } = collectGraph(repoRoot);
+  return [...findings, ...checkTaxonomy(repoRoot)].sort(bySeverityThenCode);
 }
 
 function bySeverityThenCode(a: LintFinding, b: LintFinding): number {
