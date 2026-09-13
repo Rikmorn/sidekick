@@ -4,7 +4,9 @@ title: "sidekick — project state"
 
 <!--
 ops-6 (ADR-0007 D8) — the operator's re-entry surface. Generated, never authored
-by hand: the three data sources (state, coverage, diff) are embedded by
+by hand. Work state is not here: it lives on GitHub (#30), and the State page
+covers the corpus and the bench. The three data sources (state, coverage, diff)
+are embedded by
 dashboards/prepare.sh into _generated-data.qmd and read here as OJS values;
 per-record bench detail and the per-metric trend ride inside state.bench
 (kernel-computed — bench-2 removed the dashboard's own verdict rule).
@@ -32,12 +34,6 @@ Edges
 `{ojs} state.freshness.edges`
 :::
 
-::: {.valuebox icon="inbox" color="secondary"}
-Open backlog
-
-`{ojs} state.backlog.open`
-:::
-
 ::: {.valuebox icon="exclamation-triangle" color="warning"}
 Lint errors
 
@@ -54,14 +50,6 @@ Lint advisories
 
 ```{ojs}
 //| echo: false
-//| title: "Open epics"
-md`${state.epics.length === 0
-  ? "No open epics."
-  : state.epics.map(e => `- **\`${e.id}\`** — ${e.title} · ${e.counts.done}/${e.counts.total} done · ${e.counts.active} active · ${e.counts.open} open`).join("\n")}`
-```
-
-```{ojs}
-//| echo: false
 //| title: "Awaiting sign-off"
 md`${state.freshness.awaiting_sign_off.length === 0
   ? "Nothing awaiting sign-off."
@@ -70,7 +58,7 @@ md`${state.freshness.awaiting_sign_off.length === 0
 Built at commit \`${(state.built_at_commit ?? "unknown").slice(0, 8)}\`.`
 ```
 
-## Row {height="38%"}
+## Row {height="68%"}
 
 ```{ojs}
 //| echo: false
@@ -114,30 +102,6 @@ Built at commit \`${(state.built_at_commit ?? "unknown").slice(0, 8)}\`.`
     ]
   });
 }
-```
-
-## Row {height="30%"}
-
-```{ojs}
-//| echo: false
-//| title: "Items — every open epic, per-item status"
-Inputs.table(
-  state.epics.flatMap(e =>
-    e.items.map(it => ({ epic: e.id, item: it.id, title: it.title, status: it.status }))
-  ),
-  { rows: 40, layout: "auto" }
-)
-```
-
-```{ojs}
-//| echo: false
-//| title: "Open backlog — the unscheduled pool"
-state.backlog.items.length === 0
-  ? md`Backlog is clear.`
-  : Inputs.table(
-      state.backlog.items.map(b => ({ id: b.id.replace("backlog:", ""), title: b.title })),
-      { rows: 20, layout: "auto" }
-    )
 ```
 
 # Since last visit
