@@ -4,6 +4,8 @@ applies-to: [agents/sk-fixer.md, skills/sk-review/SKILL.md]
 
 # `--fix` scope gate is finding-file-only; cross-file mechanical fixes route to the human
 
+> Tracked as #16.
+
 **Status:** Open (deliberate `3.2` narrowing, 2026-07-03). Not a bug — a conservative policy with a known cost, recorded so the widening path is ready if the cost turns out to be material.
 
 ## Issue

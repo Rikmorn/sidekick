@@ -1,5 +1,7 @@
 # Usage instrumentation (E21) — backlogged
 
+> Tracked as #6.
+
 **Status:** Backlogged 2026-06-16 after a design brainstorm. Deprioritised in favour of carrying on in EPIC order (E3 → E4/E5/E6). Not killed — "more useful in the future" (operator). EPIC E21 row points here.
 
 ## Why backlogged (the load-bearing distinction)

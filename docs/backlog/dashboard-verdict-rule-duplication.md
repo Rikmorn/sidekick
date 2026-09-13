@@ -4,6 +4,8 @@ applies-to: [dashboards/prepare.sh, bin/helpers/graph-parse-machine.ts, bin/help
 
 # Dashboard runs.json verdict rule duplicates the kernel's
 
+> Tracked as #44.
+
 **Status:** Resolved (2026-08-04, bench-2) — `graph export` now carries per-record rows and per-metric values inside `bench` (kernel-computed by `parseRunRecords`/`computeMetrics`); `dashboards/prepare.sh` extracts instead of re-deriving, so the second verdict implementation is gone.
 
 `dashboards/prepare.sh` transforms `evals/results/*/records.jsonl` into the dashboard's `runs.json` with its own pass/fail verdict rule, kept deliberately identical to the kernel's `parseRunRecords`. Two implementations of one rule is a sync hazard: if the kernel's verdict logic changes (new assertion types, new deliverable shapes), the dashboard silently reports stale semantics.

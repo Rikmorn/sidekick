@@ -1,5 +1,7 @@
 # Work-item documentation format
 
+> Tracked as #34.
+
 **Status:** Backlog (surfaced 2026-06-18 during the EPIC renumber).
 
 ## The gap

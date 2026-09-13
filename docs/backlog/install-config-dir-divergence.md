@@ -4,6 +4,8 @@ applies-to: [bin/cli.ts]
 
 # Backlog: `install` ignores `CLAUDE_CONFIG_DIR`
 
+> Tracked as #17.
+
 **Status:** Parked 2026-06-11. Surfaced by the E19 final integration review (fan-out seam build).
 
 **What:** `install()` derives the Claude home from `os.homedir()` + `.claude` (`bin/cli.ts`, the `claudeHome` binding) and does **not** honour the `CLAUDE_CONFIG_DIR` environment variable. Every skill/agent invocation of the installed launcher — including E19's `<fanout_seam>` capability probe and the existing helpers (branch-precheck, check-drift, wave-plan, reconcile-plan, init) — reads `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`. The two disagree when `CLAUDE_CONFIG_DIR` points somewhere other than `~/.claude`.

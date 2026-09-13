@@ -1,5 +1,7 @@
 # Backlog: Cross-family verification quorum
 
+> Tracked as #5.
+
 **Status:** Parked 2026-06-07. From Track A + `docs/research/SYNTHESIS.md` (Tier 2).
 
 **What:** Route the *verification* step of the quorum to a **different model family** than the producer, instead of the current all-Claude (same-family) quorum.
