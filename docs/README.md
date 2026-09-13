@@ -8,22 +8,22 @@
 - **Record** — immutable once landed; *superseded via edges, never deleted or rewritten*, so the graph always knows what still binds. History is part of the value.
 - **Ephemeral** — present only while open; removal on resolution is the mechanism, git history is the archive.
 
-## Folders (target structure — migration is incremental, see note below)
+## Folders
 
 | Folder | Meaning | Lifecycle |
 |---|---|---|
-| `docs/` root | Steering docs: `NORTH-STAR.md` (objective tree), `LIMITS.md`, `DESIGN-PRINCIPLES.md` — plus generated `STATE.md` | Living (STATE.md: generated, committed, **size-capped** — current state only, pointers and counts, completed items drop out; the timeline lives in `git log -p STATE.md`) |
-| `work/<epic>/` | **One folder per epic**: authored `epic.md` (narrative frame) + one file per item — frontmatter (id, status, deps, grounds, implements) + spec before execution + a *self-contained* completion synthesis after (may cite ephemeral plan files, never depend on them). **IDs are epic-scoped** (`ops-2`, `plat-3.4`) — the folder is the namespace | Items: living-while-open → record-on-completion. Completed epics freeze in place |
-| `work/backlog/` | The **single unscheduled pool** (deliberately not per-epic — items predate knowing their owner). Frontmatter `applies-to` edges make applicability-to-current-work a standing pre-work query | Ephemeral — on scheduling: **promote** into the owning epic; on resolution without work: **delete**, with a `resolves` edge on the resolver |
+| `docs/` root | Steering docs: `NORTH-STAR.md`, `LIMITS.md`, `DESIGN-PRINCIPLES.md` — plus the archived `EPIC.md` / `EPIC-STATE.md` and the generated `STATE.md` | Living for the steering docs; record for the monoliths; `STATE.md` is generated, committed and **size-capped** (bench and freshness only — the timeline lives in `git log -p STATE.md`) |
+| [`work/`](./work/) | Per-epic work records from before the move to GitHub: an `epic.md` frame plus one file per item, each a synthesis of what happened | Record — frozen 2026-09 (R1); open work is a GitHub issue |
+| [`backlog/`](./backlog/) | Notes that predate or outlive an issue: the problem statement, the direction, and why something was parked or resolved. Each note that is still live names its issue | Record — the live question is the issue it points at |
 | [`adr/`](./adr/) | Architecture decisions — **deliberately top-level, never nested in epics**: their scope is the system and they remain binding after the spawning epic freezes. Epics get their ADR listing via `spawned-by`/`implements` edges | Record — status transitions (Proposed → Accepted → Superseded-by-edge) only |
 | [`research/`](./research/) | Grounding reports + the research program map | Record — kept as-authored; freshness/supersession expressed as edges; index table generated |
 **The folder-earning test — every top-level folder is a distinct retrieval axis:** `work/` is temporal (what happened, what's open), `adr/` is binding (what constrains now), `research/` is topical (what we know about X, consumed across epics). Anything retrievable on an existing axis gets no folder of its own — it gets a `kind` and edges, and derived views collect it.
 
-**Dissolving (occupants claimed at migration; folders retire when empty):**
+**Also records:**
 - [`references/`](./references/) — the pre-item-file workaround for shipped-change provenance; item completion syntheses subsume it (occupant → the E1 item record).
 - [`reviews/`](./reviews/) — assessments are work products, conducted and frozen-at-birth: each is an item whose synthesis *is* the assessment (`kind: assessment`, `assesses`/`triggered-by` edges; "all assessments" is a derived view). Unlike ADRs they carry no live binding force, so freezing with their epic is their nature (occupant → a platform item record).
 
-**Migration note:** [`EPIC.md`](./EPIC.md) and [`EPIC-STATE.md`](./EPIC-STATE.md) are interleaved entity soups dissolving into `work/platform/`: new work takes the new shape immediately; the monoliths remain compiler parse-sources until empty, then freeze as records. Until then they are still the authoritative roadmap/state pair.
+**Archived (2026-09, #30):** [`EPIC.md`](./EPIC.md), [`EPIC-STATE.md`](./EPIC-STATE.md) and everything under [`work/`](./work/) are records of how the project was run before work moved to GitHub. No parser reads them; the graph carries them as plain documents. Open work, releases and priorities are issues, milestones and the project board on `Rikmorn/sidekick` — see `rules/sk-pm-conventions.md`.
 
 **Declared foreign enclave:** `docs/superpowers/` (gitignored) is the superpowers plugin's hardcoded output path for its specs/plans — a third-party tool's working directory that happens to live inside docs/. It is outside this taxonomy and invisible to the graph; its lifecycle belongs to the plugin.
 

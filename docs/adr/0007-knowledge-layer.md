@@ -1,5 +1,7 @@
 # ADR-0007 — Project knowledge layer: glue-with-thin-build over typed text, generated rich views
 
+> **Amended 2026-09 (#30):** Decisions 6–7 (work structure, STATE work rollup, objective rollup) are superseded — work state lives on GitHub (R1); the graph models the content corpus only.
+
 **Status:** Accepted (2026-07-22, operator sign-off — **as a first iteration**: the operator anticipates schema extensions around agent/skill testing and their metrics; those concepts are deliberately deferred until this base layer lands, see Revisit when). Grounds the visibility/ops track that gates sk-* self-use confidence. Partially subsumes the *mechanism* halves of EPIC `4.1` (navigability), `3.8` (observability rendering), and `4.5` (cached codebase-map — pulled forward as the agent-facing map, Decision 7) — those items narrow to their residues when this is accepted. Research: [`../research/knowledge-layer/REPORT.md`](../research/knowledge-layer/REPORT.md).
 
 ## Context

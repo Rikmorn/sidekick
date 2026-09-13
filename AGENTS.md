@@ -2,7 +2,7 @@
 
 This repo is the **source for a personal AI engineering harness**: installable Claude Code skills, agents, and rules plus the `sidekick` planning CLI. It is a single TypeScript package (not a monorepo).
 
-**Read [`MAP.md`](MAP.md) first** — the generated entry map: what exists here, how much of it, and where. [`docs/STATE.md`](docs/STATE.md) says where it all stands right now. Both are regenerated from the knowledge graph (below), never hand-edited.
+**Read [`MAP.md`](MAP.md) first** — the generated entry map: what exists here, how much of it, and where. [`docs/STATE.md`](docs/STATE.md) carries the bench rollup and corpus freshness. Both are regenerated from the knowledge graph (below), never hand-edited. Work state is not in either: it lives on GitHub — issues, milestones and the board on `Rikmorn/sidekick` (`rules/sk-pm-conventions.md`).
 
 See `README.md` for the workflow overview and install instructions.
 
@@ -36,7 +36,7 @@ Consequence: tech-debt, config, or "should be gitignored" concerns about a `.sid
 
 ## The project knowledge graph
 
-The repo compiles itself into a queryable graph (ADR-0007): entities (epics, items, ADRs, objectives, agents, skills, helpers, eval suites, research, backlog) and typed edges between them, derived from the text sources and rebuilt on demand.
+The repo compiles itself into a queryable graph (ADR-0007): entities (ADRs, agents, skills, CLI helpers, eval suites and cases, run sets, metrics, calibration certificates, research topics, documents) and typed edges between them, derived from the text sources and rebuilt on demand. It models the *content corpus* only — work state is GitHub's.
 
 - **Build it:** `bun bin/cli.ts graph build` — writes `.kb/graph.db` (gitignored, derived, safe to delete).
 - **Use it:** the database exists so status, coverage, applicability, and what-changed questions are *queried*, not reconstructed by grep archaeology. Sources stay the authority; the graph is a rebuildable index of them.
@@ -47,12 +47,12 @@ The repo compiles itself into a queryable graph (ADR-0007): entities (epics, ite
   | What changed since I was last here? | `graph diff <ref> [ref]` — the session catch-up |
   | What is tested, and what is not? | `graph coverage` |
   | What is unfinished or unlinked? | `graph gaps` |
-  | Is there a backlog note about what I am about to touch? | `graph applies <path\|name>` — run before starting work |
+  | Is anything already filed about what I am about to touch? | `gh issue list -R Rikmorn/sidekick --state all --search "<topic\|path>"` — run before starting work |
   | Is the corpus still coherent? | `graph lint` |
 
-- Authored edges use the typed convention: frontmatter fields (`implements:`, `deps:`, `grounds:`, `advances:`, `applies-to:`) and body links of the form `- <relation> [[<target>]]`, drawn from a closed vocabulary the lint enforces.
+- Edges are extracted, not authored: ADR status lines state decision-to-decision relations, eval cases name their subject, run records name what they measured. The relation set is closed (`bin/helpers/graph-model.ts`).
 - `sidekick graph` is repo-internal — it ships with the harness source, not with an installed copy.
-- **Retrieval ordering:** MAP.md → graph commands → `Read` for depth → grep only when the graph misses. A graph miss on something the layer should know is a layer bug — note it in one line rather than silently routing around it.
+- **Retrieval ordering:** board and issues (`gh`) for work state → MAP.md for what exists → graph commands for content questions → `Read` for depth → grep only when all of those miss. A graph miss on something the layer should know is a layer bug — note it in one line rather than silently routing around it.
 - **Session start:** run the orient ritual — [`.claude/skills/orient/SKILL.md`](.claude/skills/orient/SKILL.md): build, diff since last visit, briefing. It is the cheap version of the catch-up this repo used to cost an afternoon.
 
 ## Conventions the runtime depends on
