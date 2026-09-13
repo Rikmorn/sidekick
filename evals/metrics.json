@@ -12,6 +12,7 @@
     "agent:sk-rfc-drafter": { "class": "producer" },
     "agent:sk-plan-drafter": { "class": "producer" },
     "agent:sk-decision-drafter": { "class": "producer" },
+    "agent:sk-architectural-advisor": { "class": "producer" },
     "agent:sk-executor": { "class": "executor" },
     "agent:sk-fixer": { "class": "executor" },
     "skill:sk-build": { "class": "orchestrator" },
