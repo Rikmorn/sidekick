@@ -1,47 +1,42 @@
 import { describe, expect, it } from 'bun:test';
 import {
   adrIdFromFilename,
-  backlogIdFromPath,
-  type Crosswalk,
   EDGE_RELATIONS,
-  emptyCrosswalk,
   fieldAsList,
   fieldAsScalar,
   isEdgeRelation,
   isExcluded,
   normalizeAdrRef,
-  objectiveIdFromHeading,
   parseFrontmatter,
-  researchIdFromPath,
-  resolveItemRef,
 } from './graph-model.js';
 
 describe('edge vocabulary', () => {
-  it('is the closed 14-relation set from the reconciled ADR-0007 D1', () => {
+  it('is the closed set ADR-0007 D1 declares, narrowed by the #30 retirement', () => {
     expect([...EDGE_RELATIONS]).toEqual([
       'grounds',
       'implements',
       'measures',
-      'advances',
       'supersedes',
       'subsumes',
       'resolves',
       'unblocks',
       'spawns',
       'relates',
-      'deps',
       'assesses',
       'triggered-by',
-      'applies-to',
     ]);
-    expect(EDGE_RELATIONS.length).toBe(14);
+    expect(new Set(EDGE_RELATIONS).size).toBe(EDGE_RELATIONS.length);
   });
 
   it('rejects relations outside the vocabulary', () => {
     expect(isEdgeRelation('implements')).toBe(true);
-    expect(isEdgeRelation('applies-to')).toBe(true);
+    expect(isEdgeRelation('supersedes')).toBe(true);
     expect(isEdgeRelation('consumes')).toBe(false);
     expect(isEdgeRelation('implemented-by')).toBe(false);
+    // Retired with the PM half (#30): no source emits these any more.
+    expect(isEdgeRelation('advances')).toBe(false);
+    expect(isEdgeRelation('deps')).toBe(false);
+    expect(isEdgeRelation('applies-to')).toBe(false);
   });
 });
 
@@ -54,7 +49,7 @@ describe('isExcluded', () => {
     expect(isExcluded('.kb/graph.db')).toBe(true);
   });
 
-  it('keeps real sources, including eval cases next to the fixtures', () => {
+  it('keeps real sources, including the archived records and eval cases', () => {
     expect(isExcluded('docs/work/ops/2-compiler-core.md')).toBe(false);
     expect(isExcluded('evals/cases/coherence-agent/rfc-clean/case.json')).toBe(
       false,
@@ -81,115 +76,6 @@ describe('deterministic IDs', () => {
     expect(normalizeAdrRef('adr 7')).toBe('adr-0007');
     expect(normalizeAdrRef('ADR')).toBeNull();
   });
-
-  it('derives research and backlog ids from their paths', () => {
-    expect(researchIdFromPath('docs/research/knowledge-layer/REPORT.md')).toBe(
-      'research:knowledge-layer',
-    );
-    expect(researchIdFromPath('docs/research/README.md')).toBeNull();
-    expect(backlogIdFromPath('docs/backlog/fixer-scope-widening.md')).toBe(
-      'backlog:fixer-scope-widening',
-    );
-    expect(backlogIdFromPath('docs/work/backlog/some-item.md')).toBe(
-      'backlog:some-item',
-    );
-  });
-
-  it('reads north-star objective ids from their headings', () => {
-    expect(
-      objectiveIdFromHeading('## ns-oversight-harness — External oversight'),
-    ).toBe('ns-oversight-harness');
-    expect(objectiveIdFromHeading('### ns-calibrated-gates — Gates bind')).toBe(
-      'ns-calibrated-gates',
-    );
-    expect(objectiveIdFromHeading('## Options considered')).toBeNull();
-  });
-});
-
-describe('resolveItemRef', () => {
-  const crosswalk = (): Crosswalk => {
-    const cw = emptyCrosswalk();
-    cw.legacy.set('E13', '3.3');
-    cw.legacy.set('E7', '3.2');
-    cw.legacy.set('E3', null); // the crosswalk records E3 as split — not a single ID
-    cw.v2ToV3.set('3.4', '3.3');
-    cw.v2ToV3.set('3.9', '3.1');
-    cw.v2ToV3.set('3.3', '3.5');
-    for (const id of ['0.2', '1.2', '3.1', '3.2', '3.3', '3.4', '3.5', '5.1']) {
-      cw.known.add(id);
-    }
-    return cw;
-  };
-
-  it('maps legacy E# through the crosswalk table', () => {
-    expect(resolveItemRef('E13', crosswalk())).toEqual({
-      ok: true,
-      id: 'plat-3.3',
-    });
-  });
-
-  it('refuses to guess when the crosswalk records a split mapping', () => {
-    expect(resolveItemRef('E3', crosswalk())).toEqual({
-      ok: false,
-      reason: 'ambiguous',
-      raw: 'E3',
-    });
-  });
-
-  it('reports an unknown E# as unresolvable rather than dropping it', () => {
-    expect(resolveItemRef('E99', crosswalk())).toEqual({
-      ok: false,
-      reason: 'unresolvable',
-      raw: 'E99',
-    });
-  });
-
-  it('reads a bare item ref as current when the source is undated', () => {
-    expect(resolveItemRef('3.4', crosswalk())).toEqual({
-      ok: true,
-      id: 'plat-3.4',
-    });
-  });
-
-  it('applies the v2→v3 delta only to sources predating re-baseline 3', () => {
-    // ADR-0005 (2026-07-02) says `3.4` and means the eval keystone, now 3.3.
-    expect(resolveItemRef('3.4', crosswalk(), '2026-07-02')).toEqual({
-      ok: true,
-      id: 'plat-3.3',
-    });
-    // ADR-0006 (2026-07-07) says `3.4` and means the sizing signal.
-    expect(resolveItemRef('3.4', crosswalk(), '2026-07-07')).toEqual({
-      ok: true,
-      id: 'plat-3.4',
-    });
-  });
-
-  it('reproduces ADR-0004s hand-authored editorial pointer', () => {
-    // "In this body, `3.3` (forcing-function) is now **`3.5`**"
-    expect(resolveItemRef('3.3', crosswalk(), '2026-06-18')).toEqual({
-      ok: true,
-      id: 'plat-3.5',
-    });
-  });
-
-  it('flags an item ref no EPIC table declares', () => {
-    expect(resolveItemRef('9.9', crosswalk())).toEqual({
-      ok: false,
-      reason: 'unresolvable',
-      raw: '9.9',
-    });
-  });
-
-  it('strips backtick and bold decoration around refs', () => {
-    expect(resolveItemRef('`3.2`', crosswalk())).toEqual({
-      ok: true,
-      id: 'plat-3.2',
-    });
-    expect(resolveItemRef('**3.2**', crosswalk())).toEqual({
-      ok: true,
-      id: 'plat-3.2',
-    });
-  });
 });
 
 describe('parseFrontmatter', () => {
@@ -197,33 +83,33 @@ describe('parseFrontmatter', () => {
     const fm = parseFrontmatter(
       [
         '---',
-        'id: ops-2',
-        'kind: item',
+        'slug: knowledge-layer',
+        'kind: rfc',
         'status: open',
-        'deps: []',
+        'tags: []',
         'implements: [adr-0007]',
-        'advances:',
-        '  - ns-project-visibility',
-        '  - ns-adaptive-harness',
+        'reviewers:',
+        '  - sk-coherence-checker',
+        '  - sk-crossref-checker',
         '---',
         '',
-        '# ops-2 — Compiler core',
+        '# Knowledge layer — RFC',
       ].join('\n'),
     );
     expect(fm.present).toBe(true);
-    expect(fieldAsScalar(fm, 'id')).toBe('ops-2');
+    expect(fieldAsScalar(fm, 'slug')).toBe('knowledge-layer');
     expect(fieldAsScalar(fm, 'status')).toBe('open');
-    expect(fieldAsList(fm, 'deps')).toEqual([]);
+    expect(fieldAsList(fm, 'tags')).toEqual([]);
     expect(fieldAsList(fm, 'implements')).toEqual(['adr-0007']);
-    expect(fieldAsList(fm, 'advances')).toEqual([
-      'ns-project-visibility',
-      'ns-adaptive-harness',
+    expect(fieldAsList(fm, 'reviewers')).toEqual([
+      'sk-coherence-checker',
+      'sk-crossref-checker',
     ]);
-    expect(fm.body.trimStart().startsWith('# ops-2')).toBe(true);
+    expect(fm.body.trimStart().startsWith('# Knowledge layer')).toBe(true);
   });
 
   it('reports absence rather than throwing on a file with no frontmatter', () => {
-    const fm = parseFrontmatter('# Backlog: something\n\n**Status:** Parked.');
+    const fm = parseFrontmatter('# A note\n\n**Status:** Parked.');
     expect(fm.present).toBe(false);
     expect(fm.fields.size).toBe(0);
     expect(fm.bodyStartLine).toBe(1);
@@ -231,14 +117,14 @@ describe('parseFrontmatter', () => {
 
   it('tracks the body start line so body findings cite real line numbers', () => {
     const fm = parseFrontmatter(
-      ['---', 'id: ops', 'kind: epic', '---', '', '# ops'].join('\n'),
+      ['---', 'slug: thing', 'kind: rfc', '---', '', '# Thing'].join('\n'),
     );
     expect(fm.bodyStartLine).toBe(5);
   });
 
   it('reads a scalar field as a single-element list', () => {
-    const fm = parseFrontmatter('---\napplies-to: agents/sk-fixer.md\n---\n');
-    expect(fieldAsList(fm, 'applies-to')).toEqual(['agents/sk-fixer.md']);
+    const fm = parseFrontmatter('---\nsubject: agents/sk-fixer.md\n---\n');
+    expect(fieldAsList(fm, 'subject')).toEqual(['agents/sk-fixer.md']);
     expect(fieldAsList(fm, 'absent')).toEqual([]);
     expect(fieldAsScalar(fm, 'absent')).toBeNull();
   });

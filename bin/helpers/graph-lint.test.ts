@@ -35,7 +35,7 @@ describe('checkTaxonomy', () => {
     expect(checkTaxonomy(repo)).toEqual([]);
   });
 
-  it('accepts the dissolving folders and the declared enclave', () => {
+  it('accepts the record folders and the declared enclave', () => {
     for (const dir of ['references', 'reviews', 'backlog', 'superpowers']) {
       write(repo, `docs/${dir}/x.md`, '# x');
     }
@@ -131,20 +131,29 @@ describe('collectLint / runGraphLint', () => {
     execSync('git init -q -b master', { cwd: repo });
     execSync('git config user.email t@t.example', { cwd: repo });
     execSync('git config user.name T', { cwd: repo });
+    write(repo, 'docs/work/ops/1.md', '# ops-1\n\nArchived work record.');
     write(
       repo,
-      'docs/work/ops/1.md',
-      [
-        '---',
-        'id: ops-1',
-        'kind: item',
-        'status: done',
-        '---',
-        '',
-        '# ops-1',
-      ].join('\n'),
+      'docs/adr/0001-one.md',
+      '# ADR-0001 — One\n\n**Status:** Accepted (2026-01-01).',
     );
   });
+
+  /** A run set measuring a subject the tree no longer declares — advisory. */
+  function writeHistoricalRun(repo: string): void {
+    write(
+      repo,
+      'evals/results/old-run/records.jsonl',
+      `${JSON.stringify({
+        run_id: 'old-run',
+        case_id: 'c1',
+        suite: 's1',
+        subject: { kind: 'agent', name: 'sk-departed' },
+        status: 'ok',
+        started_at: '2026-01-01T00:00:00.000Z',
+      })}\n`,
+    );
+  }
 
   afterEach(() => {
     fs.rmSync(repo, { recursive: true, force: true });
@@ -159,17 +168,8 @@ describe('collectLint / runGraphLint', () => {
   it('fails on a broken reference', () => {
     write(
       repo,
-      'docs/work/ops/2.md',
-      [
-        '---',
-        'id: ops-2',
-        'kind: item',
-        'status: open',
-        'deps: [ops-99]',
-        '---',
-        '',
-        '# ops-2',
-      ].join('\n'),
+      'docs/adr/0002-two.md',
+      '# ADR-0002 — Two\n\n**Status:** Accepted (2026-01-02). Supersedes ADR-0099.',
     );
     const res = runGraphLint({ repoRoot: repo, json: true });
     expect(res.exitCode).toBe(1);
@@ -182,27 +182,8 @@ describe('collectLint / runGraphLint', () => {
     ).toBe(true);
   });
 
-  it('fails on a relation outside the closed vocabulary', () => {
-    write(
-      repo,
-      'docs/work/ops/2.md',
-      [
-        '---',
-        'id: ops-2',
-        'kind: item',
-        'status: open',
-        '---',
-        '',
-        '# ops-2',
-        '',
-        '- blocks [[ops-1]]',
-      ].join('\n'),
-    );
-    expect(runGraphLint({ repoRoot: repo }).exitCode).toBe(1);
-  });
-
-  it('fails on a work file with no frontmatter', () => {
-    write(repo, 'docs/work/ops/loose.md', '# just prose');
+  it('fails on an ADR with no status line', () => {
+    write(repo, 'docs/adr/0003-loose.md', '# ADR-0003 — Loose');
     const res = runGraphLint({ repoRoot: repo, json: true });
     expect(res.exitCode).toBe(1);
     expect(
@@ -212,23 +193,17 @@ describe('collectLint / runGraphLint', () => {
     ).toBe(true);
   });
 
-  it('exempts the legacy monoliths from the frontmatter requirement', () => {
-    write(repo, 'docs/EPIC.md', '# EPIC\n\nNo frontmatter here.');
-    write(repo, 'docs/EPIC-STATE.md', '# EPIC-STATE\n\nNor here.');
+  it('keeps the archived records lint-clean as plain prose', () => {
+    write(repo, 'docs/EPIC.md', '# EPIC\n\nArchived roadmap.');
+    write(repo, 'docs/EPIC-STATE.md', '# EPIC-STATE\n\nArchived rollup.');
+    write(repo, 'docs/NORTH-STAR.md', '# North star\n\n## ns-thing — A thing');
+    write(repo, 'docs/backlog/note.md', '# Note\n\n**Status:** Open.');
     write(repo, 'docs/LIMITS.md', '# Limits');
     expect(runGraphLint({ repoRoot: repo }).exitCode).toBe(0);
   });
 
-  it('reports ambiguity as advisory, not as a gate failure', () => {
-    write(
-      repo,
-      'docs/adr/0002-x.md',
-      [
-        '# ADR-0002 — Something',
-        '',
-        '**Status:** Accepted (2026-06-10). Spawns E19–E22.',
-      ].join('\n'),
-    );
+  it('reports a historical reference as advisory, not as a gate failure', () => {
+    writeHistoricalRun(repo);
     const res = runGraphLint({ repoRoot: repo, json: true });
     const parsed = JSON.parse(res.stdout);
     expect(parsed.advisories).toBeGreaterThan(0);
@@ -238,11 +213,7 @@ describe('collectLint / runGraphLint', () => {
 
   it('orders errors before advisories', () => {
     write(repo, 'docs/notes/x.md', '# stray folder');
-    write(
-      repo,
-      'docs/adr/0002-x.md',
-      '# ADR-0002 — X\n\n**Status:** Accepted (2026-06-10). Spawns E19–E22.',
-    );
+    writeHistoricalRun(repo);
     const findings = collectLint({ repoRoot: repo });
     const firstAdvisory = findings.findIndex((f) => !isError(f));
     const lastError = findings.map(isError).lastIndexOf(true);

@@ -47,17 +47,6 @@ function entitiesOf(snapshot: GraphSnapshot, kind: string): Entity[] {
   return snapshot.entities.filter((e) => e.kind === kind).sort(byId);
 }
 
-/** Work items belonging to an epic, in ID order. */
-function itemsOfEpic(snapshot: GraphSnapshot, epicId: string): Entity[] {
-  return snapshot.entities
-    .filter(
-      (e) =>
-        e.kind === 'item' &&
-        (e.data as { epic?: string } | undefined)?.epic === epicId,
-    )
-    .sort(byId);
-}
-
 // ---- STATE.md ---------------------------------------------------------------
 
 export interface StateInputs {
@@ -66,9 +55,11 @@ export interface StateInputs {
 }
 
 /**
- * The current-state rollup. Completed items drop out by construction — their
- * story lives in their own record, and keeping them here is what turns a status
- * file into an unbounded log.
+ * The current-state rollup: bench health and corpus freshness.
+ *
+ * Work state is not here. It lives on GitHub — issues, milestones and the board
+ * (#30) — and duplicating it into a generated file is what made the old rollup
+ * an unbounded log that disagreed with the board.
  */
 export function generateState(inputs: StateInputs): string {
   const { snapshot, lint } = inputs;
@@ -81,69 +72,6 @@ export function generateState(inputs: StateInputs): string {
     stamp(snapshot),
     '',
   ];
-
-  const epics = entitiesOf(snapshot, 'epic').filter(
-    (e) => e.status !== 'done' && e.status !== 'closed',
-  );
-  lines.push(`## Open epics (${epics.length})`, '');
-  if (epics.length === 0) {
-    lines.push('None.', '');
-  } else {
-    lines.push(
-      '| Epic | Done | Active | Open | Spec |',
-      '|---|---|---|---|---|',
-    );
-    for (const epic of epics) {
-      const items = itemsOfEpic(snapshot, epic.id);
-      const done = items.filter((i) => i.status === 'done');
-      const active = items.filter((i) => i.status === 'active');
-      const open = items.filter((i) => i.status === 'open');
-      lines.push(
-        `| \`${epic.id}\` — ${epic.title} | ${done.length}/${items.length} | ${names(active)} | ${names(open)} | [spec](${epic.path ?? ''}) |`,
-      );
-    }
-    lines.push('');
-  }
-
-  const active = snapshot.entities
-    .filter((e) => e.kind === 'item' && e.status === 'active')
-    .sort(byId);
-  lines.push(`## Active items (${active.length})`, '');
-  if (active.length === 0) {
-    lines.push('None.', '');
-  } else {
-    for (const item of active) {
-      lines.push(
-        `- \`${item.id}\` — ${item.title} → [${item.path}](${item.path})`,
-      );
-    }
-    lines.push('');
-  }
-
-  // The platform monolith still carries the roadmap, so it gets counts too.
-  const platItems = snapshot.entities
-    .filter((e) => e.id.startsWith('plat-'))
-    .sort(byId);
-  if (platItems.length > 0) {
-    const openPlat = platItems.filter((e) => e.status !== 'done');
-    lines.push(
-      `## Platform roadmap ([EPIC.md](docs/EPIC.md))`,
-      '',
-      `${platItems.length - openPlat.length}/${platItems.length} items done · ${openPlat.length} open: ${openPlat
-        .map((e) => `\`${e.id.replace('plat-', '')}\``)
-        .join(', ')}`,
-      '',
-    );
-  }
-
-  const backlog = entitiesOf(snapshot, 'backlog');
-  const openBacklog = backlog.filter((b) => b.status !== 'resolved');
-  lines.push(
-    '## Backlog',
-    '',
-    `${openBacklog.length} open of ${backlog.length} → [docs/backlog/](docs/backlog/)`,
-    '',
-  );
 
   lines.push(
     '## Bench',
@@ -165,10 +93,6 @@ export function generateState(inputs: StateInputs): string {
   );
 
   return `${lines.join('\n').trimEnd()}\n`;
-}
-
-function names(items: Entity[]): string {
-  return items.length === 0 ? '—' : items.map((i) => `\`${i.id}\``).join(', ');
 }
 
 /**
@@ -247,22 +171,6 @@ function benchLines(runs: RunRow[], metricValues: MetricValueRow[]): string[] {
 
 // ---- state export (ops-6 D2) ------------------------------------------------
 
-export interface StateEpicItem {
-  id: string;
-  title: string;
-  status: string | null;
-  path: string | null;
-}
-
-export interface StateEpic {
-  id: string;
-  title: string;
-  status: string | null;
-  path: string | null;
-  counts: { done: number; active: number; open: number; total: number };
-  items: StateEpicItem[];
-}
-
 export interface StateBenchSuite {
   suite: string;
   runs: number;
@@ -286,18 +194,13 @@ export interface StateMetricValue {
 }
 
 /**
- * The machine-readable current state. Same rollup as STATE.md, as data: epics
- * with per-item status, the open backlog, a per-suite bench summary, and the
- * freshness flags. The dashboard prepare step embeds this so the visual surface
- * reads the same snapshot STATE.md renders — the two cannot disagree about where
- * the project stands.
+ * The machine-readable current state. Same rollup as STATE.md, as data: a
+ * per-suite bench summary and the freshness flags. The dashboard prepare step
+ * embeds this so the visual surface reads the same snapshot STATE.md renders —
+ * the two cannot disagree about where the project stands.
  */
 export interface StateData {
   built_at_commit: string | null;
-  /** Open epics only (done/closed drop out), mirroring STATE.md. */
-  epics: StateEpic[];
-  /** items lists the open entries — the drill-down behind the count. */
-  backlog: { open: number; total: number; items: StateEpicItem[] };
   bench: {
     latest_run: string | null;
     /** Run ids in chronological order — the trend axis (bench-2). */
@@ -332,51 +235,12 @@ function countByKind(kinds: string[]): Record<string, number> {
 export function generateStateData(inputs: StateInputs): StateData {
   const { snapshot, lint } = inputs;
 
-  const epics: StateEpic[] = entitiesOf(snapshot, 'epic')
-    .filter((e) => e.status !== 'done' && e.status !== 'closed')
-    .map((epic) => {
-      const items = itemsOfEpic(snapshot, epic.id);
-      const count = (status: string): number =>
-        items.filter((i) => i.status === status).length;
-      return {
-        id: epic.id,
-        title: epic.title,
-        status: epic.status,
-        path: epic.path,
-        counts: {
-          done: count('done'),
-          active: count('active'),
-          open: count('open'),
-          total: items.length,
-        },
-        items: items.map((i) => ({
-          id: i.id,
-          title: i.title,
-          status: i.status,
-          path: i.path,
-        })),
-      };
-    });
-
-  const backlog = entitiesOf(snapshot, 'backlog');
-  const openBacklog = backlog.filter((b) => b.status !== 'resolved');
   const proposed = entitiesOf(snapshot, 'adr').filter(
     (a) => a.status === 'Proposed',
   );
 
   return {
     built_at_commit: snapshot.meta.built_at_commit ?? null,
-    epics,
-    backlog: {
-      open: openBacklog.length,
-      total: backlog.length,
-      items: openBacklog.map((b) => ({
-        id: b.id,
-        title: b.title,
-        status: b.status,
-        path: b.path,
-      })),
-    },
     bench: benchSummary(snapshot.runs, snapshot.metricValues),
     freshness: {
       entities: snapshot.entities.length,
@@ -510,9 +374,9 @@ export function generateMap(
     '',
     stamp(snapshot),
     '',
-    '**Retrieval ordering:** read this map → query the graph (`bun bin/cli.ts graph query|coverage|gaps|applies|diff`) → grep only when both miss.',
+    '**Retrieval ordering:** GitHub issues and the board for work state → read this map → query the graph (`bun bin/cli.ts graph query|coverage|gaps|diff`) → grep only when all three miss.',
     '',
-    'Current state is [docs/STATE.md](docs/STATE.md). This file says what exists; that one says where it stands.',
+    'Current state is [docs/STATE.md](docs/STATE.md). This file says what exists; that one says where the bench and the corpus stand.',
     '',
   ];
 
@@ -525,19 +389,6 @@ export function generateMap(
       ...taxonomy.map((t) => `| ${t.folder} | ${t.meaning} | ${t.lifecycle} |`),
       '',
     );
-  }
-
-  const epics = entitiesOf(snapshot, 'epic');
-  if (epics.length > 0) {
-    lines.push(`## Work — ${epics.length} epic(s)`, '');
-    for (const epic of epics) {
-      const items = itemsOfEpic(snapshot, epic.id);
-      const done = items.filter((i) => i.status === 'done').length;
-      lines.push(
-        `- \`${epic.id}\` — ${epic.title} · ${done}/${items.length} items done → [${epic.path}](${epic.path})`,
-      );
-    }
-    lines.push('');
   }
 
   const adrs = entitiesOf(snapshot, 'adr');

@@ -77,18 +77,9 @@ describe('generateState', () => {
   const inputs = {
     snapshot: snapshot({
       entities: [
-        entity('ops', 'epic', {
-          title: 'the knowledge layer',
-          status: 'open',
-          path: 'docs/work/ops/epic.md',
-        }),
-        entity('ops-1', 'item', { status: 'done', data: { epic: 'ops' } }),
-        entity('ops-2', 'item', { status: 'active', data: { epic: 'ops' } }),
-        entity('ops-3', 'item', { status: 'open', data: { epic: 'ops' } }),
         entity('adr-0006', 'adr', { status: 'Proposed' }),
         entity('adr-0007', 'adr', { status: 'Accepted' }),
-        entity('backlog:open-one', 'backlog', { status: 'open' }),
-        entity('backlog:done-one', 'backlog', { status: 'resolved' }),
+        entity('research:memory', 'research'),
       ],
       runs: [
         {
@@ -109,24 +100,22 @@ describe('generateState', () => {
     lint: { errors: 0, advisories: 7 },
   };
 
-  it('rolls up open epics with progress counts', () => {
+  it('carries no work rollup — work state lives on GitHub (#30)', () => {
     const out = generateState(inputs);
-    expect(out).toContain('## Open epics (1)');
-    expect(out).toContain('| 1/3 |');
-    expect(out).toContain('`ops-2`');
+    for (const heading of [
+      '## Open epics',
+      '## Active items',
+      '## Platform roadmap',
+      '## Backlog',
+    ]) {
+      expect(out).not.toContain(heading);
+    }
+    expect(out).toContain('## Bench');
+    expect(out).toContain('## Freshness');
   });
 
-  it('lists active items and drops completed ones', () => {
-    const out = generateState(inputs);
-    expect(out).toContain('## Active items (1)');
-    expect(out).toContain('- `ops-2`');
-    expect(out).not.toContain('- `ops-1`');
-  });
-
-  it('counts the open backlog and names decisions awaiting sign-off', () => {
-    const out = generateState(inputs);
-    expect(out).toContain('1 open of 2');
-    expect(out).toContain('`adr-0006`');
+  it('names decisions awaiting sign-off', () => {
+    expect(generateState(inputs)).toContain('`adr-0006`');
   });
 
   it('reports lint health and the bench summary', () => {
@@ -232,34 +221,10 @@ describe('generateStateData', () => {
   const inputs = {
     snapshot: snapshot({
       entities: [
-        entity('ops', 'epic', {
-          title: 'the knowledge layer',
-          status: 'active',
-          path: 'docs/work/ops/epic.md',
-        }),
-        entity('ops-1', 'item', {
-          title: 'Compiler',
-          status: 'done',
-          path: 'docs/work/ops/1.md',
-          data: { epic: 'ops' },
-        }),
-        entity('ops-2', 'item', {
-          title: 'Queries',
-          status: 'active',
-          path: 'docs/work/ops/2.md',
-          data: { epic: 'ops' },
-        }),
-        entity('ops-3', 'item', {
-          title: 'Diff',
-          status: 'open',
-          path: 'docs/work/ops/3.md',
-          data: { epic: 'ops' },
-        }),
-        entity('done-epic', 'epic', { status: 'done' }),
         entity('adr-0006', 'adr', { status: 'Proposed' }),
         entity('adr-0007', 'adr', { status: 'Accepted' }),
-        entity('backlog:open-one', 'backlog', { status: 'open' }),
-        entity('backlog:done-one', 'backlog', { status: 'resolved' }),
+        entity('agent:a', 'agent'),
+        entity('case:s/a', 'case'),
       ],
       edges: [
         {
@@ -279,38 +244,13 @@ describe('generateStateData', () => {
     lint: { errors: 0, advisories: 7 },
   };
 
-  it('rolls up open epics with per-item status, title, and path', () => {
+  it('carries only bench and freshness — no work rollup (#30)', () => {
     const data = generateStateData(inputs);
-    expect(data.epics.length).toBe(1);
-    const [ops] = data.epics;
-    expect(ops.id).toBe('ops');
-    expect(ops.counts).toEqual({ done: 1, active: 1, open: 1, total: 3 });
-    expect(ops.items.map((i) => i.id)).toEqual(['ops-1', 'ops-2', 'ops-3']);
-    expect(ops.items[1]).toEqual({
-      id: 'ops-2',
-      title: 'Queries',
-      status: 'active',
-      path: 'docs/work/ops/2.md',
-    });
-  });
-
-  it('drops done and closed epics, mirroring STATE.md', () => {
-    expect(generateStateData(inputs).epics.map((e) => e.id)).toEqual(['ops']);
-  });
-
-  it('counts the open backlog and lists its open items', () => {
-    expect(generateStateData(inputs).backlog).toEqual({
-      open: 1,
-      total: 2,
-      items: [
-        {
-          id: 'backlog:open-one',
-          title: 'backlog:open-one title',
-          status: 'open',
-          path: 'docs/backlog:open-one.md',
-        },
-      ],
-    });
+    expect(Object.keys(data).sort()).toEqual([
+      'bench',
+      'built_at_commit',
+      'freshness',
+    ]);
   });
 
   it('summarises the bench per suite with pass/fail/cost and the latest run', () => {
@@ -332,18 +272,12 @@ describe('generateStateData', () => {
 
   it('breaks the entity and edge totals down by kind, keys sorted', () => {
     const { freshness } = generateStateData(inputs);
-    expect(freshness.entities_by_kind).toEqual({
-      adr: 2,
-      backlog: 2,
-      epic: 2,
-      item: 3,
-    });
+    expect(freshness.entities_by_kind).toEqual({ adr: 2, agent: 1, case: 1 });
     expect(freshness.edges_by_kind).toEqual({ measures: 1 });
     expect(Object.keys(freshness.entities_by_kind)).toEqual([
       'adr',
-      'backlog',
-      'epic',
-      'item',
+      'agent',
+      'case',
     ]);
   });
 
@@ -396,8 +330,6 @@ describe('parseTaxonomy', () => {
 describe('generateMap', () => {
   const snap = snapshot({
     entities: [
-      entity('ops', 'epic', { status: 'open', path: 'docs/work/ops/epic.md' }),
-      entity('ops-1', 'item', { status: 'done', data: { epic: 'ops' } }),
       entity('adr-0007', 'adr', { status: 'Accepted' }),
       entity('research:memory', 'research'),
       entity('suite:coherence-agent', 'suite'),
@@ -420,20 +352,21 @@ describe('generateMap', () => {
     ],
   });
 
-  it('states the retrieval ordering, map first and grep last', () => {
+  it('routes work state to GitHub first and grep last', () => {
     const out = generateMap(snap, []);
     expect(out).toContain('**Retrieval ordering:**');
-    expect(out).toContain('grep only when both miss');
+    expect(out).toContain('GitHub issues and the board for work state');
+    expect(out).toContain('grep only when all three miss');
   });
 
   it('lists every live entity class with counts and entry links', () => {
     const out = generateMap(snap, []);
-    expect(out).toContain('## Work — 1 epic(s)');
+    expect(out).not.toContain('## Work —');
     expect(out).toContain('## Decisions — 1 ADR(s)');
     expect(out).toContain('## Research — 1 topic(s)');
     expect(out).toContain('## Eval suites — 1');
     expect(out).toContain('coherence-agent` — 1 case(s) → agent:sk-fixer');
-    expect(out).toContain('[docs/work/ops/epic.md](docs/work/ops/epic.md)');
+    expect(out).toContain('[docs/LIMITS.md](docs/LIMITS.md)');
   });
 
   it('groups decisions by status so superseded ones are visible as such', () => {
@@ -465,13 +398,10 @@ describe('generated surfaces on a repo', () => {
       fs.writeFileSync(path.join(repo, rel), content);
     };
     write(
-      'docs/work/ops/epic.md',
-      '---\nid: ops\nkind: epic\nstatus: open\n---\n\n# ops — layer',
+      'docs/adr/0007-knowledge-layer.md',
+      '# ADR-0007 — Knowledge layer\n\n**Status:** Accepted (2026-07-22).',
     );
-    write(
-      'docs/work/ops/2.md',
-      '---\nid: ops-2\nepic: ops\nkind: item\nstatus: active\n---\n\n# ops-2 — Compiler',
-    );
+    write('docs/work/ops/2.md', '# ops-2 — Compiler\n\nArchived record.');
     write(
       'docs/README.md',
       [
@@ -523,12 +453,12 @@ describe('generated surfaces on a repo', () => {
     const res = runExportCli(repo);
     expect(res.exitCode).toBe(0);
     const data = JSON.parse(res.stdout);
-    const ops = data.epics.find((e: { id: string }) => e.id === 'ops');
-    expect(ops).toBeDefined();
-    expect(ops.items.some((i: { id: string }) => i.id === 'ops-2')).toBe(true);
+    expect(data.freshness.entities_by_kind.adr).toBe(1);
     expect(typeof data.freshness.entities).toBe('number');
     expect(data.freshness.lint).toHaveProperty('errors');
     expect(data.built_at_commit).not.toBe('unknown');
+    expect(data.epics).toBeUndefined();
+    expect(data.backlog).toBeUndefined();
   });
 
   it('lint catches drift after a source changes, and passes once regenerated', () => {
@@ -551,10 +481,10 @@ describe('generated surfaces on a repo', () => {
       runGraphLint({ repoRoot: repo, generated: generated() }).exitCode,
     ).toBe(0);
 
-    // Mutate a source: a new item must show up in both surfaces.
+    // Mutate a source: a new ADR must show up in both surfaces.
     fs.writeFileSync(
-      path.join(repo, 'docs/work/ops/3.md'),
-      '---\nid: ops-3\nepic: ops\nkind: item\nstatus: active\n---\n\n# ops-3 — Queries',
+      path.join(repo, 'docs/adr/0009-new.md'),
+      '# ADR-0009 — New\n\n**Status:** Proposed (2026-09-13).',
     );
 
     const drifted = runGraphLint({
@@ -563,8 +493,8 @@ describe('generated surfaces on a repo', () => {
       json: true,
     });
     expect(drifted.exitCode).toBe(1);
-    // A new item changes both surfaces: STATE lists it as active, MAP counts it
-    // under its epic. Both must be flagged, or one of them ships stale.
+    // A new ADR changes both surfaces: STATE counts it and names it as awaiting
+    // sign-off, MAP lists it. Both must be flagged, or one of them ships stale.
     expect(
       JSON.parse(drifted.stdout)
         .findings.filter((f: { code: string }) => f.code === 'generated-drift')
@@ -609,10 +539,10 @@ describe('regeneration leaves a current file alone', () => {
     execSync('git init -q -b master', { cwd: repo });
     execSync('git config user.email t@t.example', { cwd: repo });
     execSync('git config user.name T', { cwd: repo });
-    fs.mkdirSync(path.join(repo, 'docs/work/ops'), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'docs/adr'), { recursive: true });
     fs.writeFileSync(
-      path.join(repo, 'docs/work/ops/epic.md'),
-      '---\nid: ops\nkind: epic\nstatus: open\n---\n\n# ops — layer',
+      path.join(repo, 'docs/adr/0007-knowledge-layer.md'),
+      '# ADR-0007 — Knowledge layer\n\n**Status:** Accepted (2026-07-22).',
     );
     execSync('git add -A && git commit -q -m seed', { cwd: repo });
   });

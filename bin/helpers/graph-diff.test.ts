@@ -22,19 +22,13 @@ function commit(repo: string, message: string): string {
   return execSync('git rev-parse HEAD', { cwd: repo }).toString().trim();
 }
 
-function item(id: string, status: string, extra = ''): string {
+/** An ADR file: the content kind whose status the diff still tracks (#30). */
+function adr(num: string, state: string, extra = ''): string {
   return [
-    '---',
-    `id: ${id}`,
-    'kind: item',
-    `status: ${status}`,
-    extra,
-    '---',
+    `# ADR-${num} — A decision`,
     '',
-    `# ${id} — An item`,
-  ]
-    .filter((l) => l !== '')
-    .join('\n');
+    `**Status:** ${state} (2026-01-0${num.slice(-1)}).${extra}`,
+  ].join('\n');
 }
 
 describe('isSafeRef', () => {
@@ -52,14 +46,14 @@ describe('isSafeRef', () => {
 describe('diffSnapshots', () => {
   const e = (id: string, status: string | null) => ({
     id,
-    kind: 'item' as const,
+    kind: 'adr' as const,
     title: id,
     status,
     path: null,
   });
   const edge = (src: string, dst: string) => ({
     src,
-    rel: 'deps' as const,
+    rel: 'supersedes' as const,
     dst,
     tier: 'EXTRACTED' as const,
     origin: 'x:1',
@@ -83,8 +77,8 @@ describe('diffSnapshots', () => {
     expect(delta.entities.status_changed).toEqual([
       { id: 'a', from: 'open', to: 'done' },
     ]);
-    expect(delta.edges.added).toEqual(['a deps c']);
-    expect(delta.edges.removed).toEqual(['a deps b']);
+    expect(delta.edges.added).toEqual(['a supersedes c']);
+    expect(delta.edges.removed).toEqual(['a supersedes b']);
     expect(delta.runs).toMatchObject({ from: 0, to: 1 });
   });
 
@@ -107,8 +101,8 @@ describe('runGraphDiff', () => {
     execSync('git init -q -b master', { cwd: repo });
     execSync('git config user.email test@test.example', { cwd: repo });
     execSync('git config user.name Test', { cwd: repo });
-    write(repo, 'docs/work/ops/1.md', item('ops-1', 'open'));
-    write(repo, 'docs/work/ops/2.md', item('ops-2', 'open'));
+    write(repo, 'docs/adr/0001-one.md', adr('0001', 'Proposed'));
+    write(repo, 'docs/adr/0002-two.md', adr('0002', 'Proposed'));
     first = commit(repo, 'first');
   });
 
@@ -116,29 +110,33 @@ describe('runGraphDiff', () => {
     fs.rmSync(repo, { recursive: true, force: true });
   });
 
-  it('reports the item flips and new entities between two commits', () => {
-    write(repo, 'docs/work/ops/1.md', item('ops-1', 'done'));
-    write(repo, 'docs/work/ops/3.md', item('ops-3', 'open', 'deps: [ops-2]'));
+  it('reports the status flips and new entities between two commits', () => {
+    write(repo, 'docs/adr/0001-one.md', adr('0001', 'Accepted'));
+    write(
+      repo,
+      'docs/adr/0003-three.md',
+      adr('0003', 'Accepted', ' Supersedes ADR-0002.'),
+    );
     commit(repo, 'second');
 
     const res = runGraphDiff({ repoRoot: repo, fromRef: first, json: true });
     expect(res.exitCode).toBe(0);
     const delta = JSON.parse(res.stdout);
     expect(delta.entities.status_changed).toEqual([
-      { id: 'ops-1', from: 'open', to: 'done' },
+      { id: 'adr-0001', from: 'Proposed', to: 'Accepted' },
     ]);
     expect(delta.entities.added.map((e: { id: string }) => e.id)).toContain(
-      'ops-3',
+      'adr-0003',
     );
-    expect(delta.edges.added).toContain('ops-3 deps ops-2');
+    expect(delta.edges.added).toContain('adr-0003 supersedes adr-0002');
   });
 
   it('never touches the working tree, even with uncommitted work present', () => {
-    write(repo, 'docs/work/ops/1.md', item('ops-1', 'done'));
+    write(repo, 'docs/adr/0001-one.md', adr('0001', 'Accepted'));
     commit(repo, 'second');
 
     // Dirty the tree the way a real mid-work catch-up would be.
-    write(repo, 'docs/work/ops/4.md', item('ops-4', 'active'));
+    write(repo, 'docs/adr/0004-four.md', adr('0004', 'Proposed'));
     write(repo, 'scratch.txt', 'uncommitted');
     const before = execSync('git status --porcelain', { cwd: repo }).toString();
 
@@ -154,16 +152,16 @@ describe('runGraphDiff', () => {
       runGraphDiff({ repoRoot: repo, fromRef: first, json: true }).stdout,
     );
     expect(
-      delta.entities.added.some((e: { id: string }) => e.id === 'ops-4'),
+      delta.entities.added.some((e: { id: string }) => e.id === 'adr-0004'),
     ).toBe(false);
   });
 
   it('renders a grouped human view', () => {
-    write(repo, 'docs/work/ops/1.md', item('ops-1', 'done'));
+    write(repo, 'docs/adr/0001-one.md', adr('0001', 'Accepted'));
     commit(repo, 'second');
     const res = runGraphDiff({ repoRoot: repo, fromRef: first });
     expect(res.stdout).toContain('status moved:');
-    expect(res.stdout).toContain('ops-1: open → done');
+    expect(res.stdout).toContain('adr-0001: Proposed → Accepted');
   });
 
   it('says so plainly when nothing graph-visible changed', () => {
@@ -187,7 +185,7 @@ describe('runGraphDiff', () => {
     write(repo, 'uncommitted.md', 'not in the tree');
     const dest = path.join(repo, '..', `mat-${path.basename(repo)}`);
     materializeRef(repo, first, dest);
-    expect(fs.existsSync(path.join(dest, 'docs/work/ops/1.md'))).toBe(true);
+    expect(fs.existsSync(path.join(dest, 'docs/adr/0001-one.md'))).toBe(true);
     expect(fs.existsSync(path.join(dest, 'uncommitted.md'))).toBe(false);
     fs.rmSync(dest, { recursive: true, force: true });
   });

@@ -20,10 +20,8 @@ import {
   type MetricRecordLike,
 } from './eval-report.js';
 import {
-  type Crosswalk,
   type Edge,
   type Entity,
-  emptyCrosswalk,
   emptyParse,
   GENERATED_PATHS,
   isExcluded,
@@ -40,17 +38,8 @@ import {
   parseRunRecords,
   parseSkillFile,
 } from './graph-parse-machine.js';
-import {
-  parseAdr,
-  parseCrosswalk,
-  parseEpic,
-} from './graph-parse-monoliths.js';
-import {
-  parseBacklogFile,
-  parseNorthStar,
-  parseResearchReport,
-  parseWorkFile,
-} from './graph-parse-work.js';
+import { parseAdr } from './graph-parse-monoliths.js';
+import { parseResearchReport } from './graph-parse-work.js';
 import {
   countEntities,
   type DocText,
@@ -71,7 +60,6 @@ const SHRINK_THRESHOLD = 0.5;
 export interface BuildResult {
   snapshot: GraphSnapshot;
   findings: LintFinding[];
-  crosswalk: Crosswalk;
 }
 
 // ---- filesystem helpers -----------------------------------------------------
@@ -129,53 +117,17 @@ export function collectGraph(repoRoot: string): BuildResult {
   const results: ParseResult[] = [];
   const runs: RunRow[] = [];
   const docs: DocText[] = [];
-  const topics = new Set(researchTopics(repoRoot));
-
-  // The crosswalk has to exist before any parser resolves an item reference.
-  const epicPath = 'docs/EPIC.md';
-  const crosswalk = exists(repoRoot, epicPath)
-    ? parseCrosswalk(read(repoRoot, epicPath))
-    : emptyCrosswalk();
-
-  if (exists(repoRoot, epicPath)) {
-    results.push(
-      parseEpic(read(repoRoot, epicPath), epicPath, crosswalk, topics),
-    );
-  }
+  const topics = researchTopics(repoRoot);
 
   for (const rel of walk(repoRoot, 'docs/adr')) {
     const m = /^docs\/adr\/(\d{4})-.*\.md$/.exec(rel);
     if (!m) continue;
-    results.push(parseAdr(read(repoRoot, rel), rel, `adr-${m[1]}`, crosswalk));
-  }
-
-  for (const rel of walk(repoRoot, 'docs/work')) {
-    if (!rel.endsWith('.md')) continue;
-    if (/^docs\/work\/backlog\//.test(rel)) continue; // handled with the pool
-    results.push(parseWorkFile(read(repoRoot, rel), rel, crosswalk));
-  }
-
-  const northStar = 'docs/NORTH-STAR.md';
-  if (exists(repoRoot, northStar)) {
-    results.push(
-      parseNorthStar(read(repoRoot, northStar), northStar, (p) =>
-        exists(repoRoot, p),
-      ),
-    );
+    results.push(parseAdr(read(repoRoot, rel), rel, `adr-${m[1]}`));
   }
 
   for (const topic of topics) {
     const rel = `docs/research/${topic}/REPORT.md`;
     results.push(parseResearchReport(read(repoRoot, rel), rel, topic));
-  }
-
-  for (const dir of ['docs/backlog', 'docs/work/backlog']) {
-    for (const rel of walk(repoRoot, dir)) {
-      if (!rel.endsWith('.md')) continue;
-      const stem = (rel.split('/').pop() ?? rel).replace(/\.md$/, '');
-      if (stem === 'README') continue;
-      results.push(parseBacklogFile(read(repoRoot, rel), rel, stem, crosswalk));
-    }
   }
 
   for (const rel of walk(repoRoot, 'evals/cases')) {
@@ -234,8 +186,9 @@ export function collectGraph(repoRoot: string): BuildResult {
 
   const merged = mergeParse(...results);
 
-  // Steering docs, reviews, and the remaining prose get plain doc entities so
-  // citations to them resolve and the map can list what actually exists.
+  // Steering docs, archived records (EPIC.md, docs/work/**, docs/backlog/*.md)
+  // and the remaining prose get plain doc entities so citations to them resolve
+  // and the map can list what actually exists.
   const claimed = new Set(
     merged.entities.map((e) => e.path).filter((p): p is string => p !== null),
   );
@@ -293,7 +246,6 @@ export function collectGraph(repoRoot: string): BuildResult {
       meta: { built_at_commit: headCommit(repoRoot) },
     },
     findings: merged.findings,
-    crosswalk,
   };
 }
 
@@ -444,8 +396,7 @@ function richness(entity: Entity): number {
 
 /**
  * Every edge endpoint must name an entity that exists. `glob:` destinations are
- * patterns rather than nodes — `applies-to` points at file shapes on purpose —
- * so they are checked by the dangling-applies-to lint instead.
+ * patterns rather than nodes, so they are skipped rather than reported.
  */
 function linkCheck(entities: Entity[], edges: Edge[]): LintFinding[] {
   const ids = new Set(entities.map((e) => e.id));

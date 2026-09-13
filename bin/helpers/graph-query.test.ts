@@ -63,19 +63,19 @@ describe('estimateTokens', () => {
 describe('runQuery', () => {
   const h = seed(
     [
-      entity('ops-2', 'item', {
-        title: 'Compiler core',
-        status: 'active',
-        path: 'docs/work/ops/2.md',
+      entity('adr-0006', 'adr', {
+        title: 'Eval harness contracts',
+        status: 'Accepted',
+        path: 'docs/adr/0006-eval-harness-contracts.md',
       }),
       entity('adr-0007', 'adr', { title: 'Knowledge layer' }),
-      entity('ops-3', 'item', { title: 'Queries' }),
+      entity('adr-0008', 'adr', { title: 'Measurement program' }),
       entity('research:knowledge-layer', 'research', { title: 'Report' }),
     ],
     [
-      edge('ops-2', 'implements', 'adr-0007'),
-      edge('ops-2', 'grounds', 'research:knowledge-layer'),
-      edge('ops-3', 'deps', 'ops-2'),
+      edge('adr-0006', 'implements', 'adr-0007'),
+      edge('adr-0006', 'grounds', 'research:knowledge-layer'),
+      edge('adr-0008', 'relates', 'adr-0006'),
     ],
     [
       {
@@ -87,19 +87,21 @@ describe('runQuery', () => {
   );
 
   it('renders an entity with its typed neighbours in both directions', () => {
-    const res = runQuery(h, { term: 'ops-2' });
+    const res = runQuery(h, { term: 'adr-0006' });
     expect(res.exitCode).toBe(0);
-    expect(res.stdout).toContain('ops-2 (item) — Compiler core');
-    expect(res.stdout).toContain('status: active · docs/work/ops/2.md');
+    expect(res.stdout).toContain('adr-0006 (adr) — Eval harness contracts');
+    expect(res.stdout).toContain(
+      'status: Accepted · docs/adr/0006-eval-harness-contracts.md',
+    );
     expect(res.stdout).toContain('implements → adr-0007 — Knowledge layer');
-    expect(res.stdout).toContain('ops-3 deps →');
+    expect(res.stdout).toContain('adr-0008 relates →');
   });
 
   it('returns machine output under --json', () => {
     const parsed = JSON.parse(
-      runQuery(h, { term: 'ops-2', json: true }).stdout,
+      runQuery(h, { term: 'adr-0006', json: true }).stdout,
     );
-    expect(parsed.entity.id).toBe('ops-2');
+    expect(parsed.entity.id).toBe('adr-0006');
     expect(parsed.neighbours.length).toBe(3);
     expect(parsed.omitted).toBe(0);
   });
@@ -117,17 +119,17 @@ describe('runQuery', () => {
   });
 
   it('trims to a budget and says how much it dropped', () => {
-    const res = runQuery(h, { term: 'ops-2', budget: 30 });
+    const res = runQuery(h, { term: 'adr-0006', budget: 30 });
     expect(estimateTokens(res.stdout)).toBeLessThanOrEqual(35);
     expect(res.stdout).toContain('omitted for budget');
     const parsed = JSON.parse(
-      runQuery(h, { term: 'ops-2', budget: 30, json: true }).stdout,
+      runQuery(h, { term: 'adr-0006', budget: 30, json: true }).stdout,
     );
     expect(parsed.omitted).toBeGreaterThan(0);
   });
 
   it('leaves output whole when the budget is ample', () => {
-    const res = runQuery(h, { term: 'ops-2', budget: 10_000 });
+    const res = runQuery(h, { term: 'adr-0006', budget: 10_000 });
     expect(res.stdout).not.toContain('omitted for budget');
   });
 });

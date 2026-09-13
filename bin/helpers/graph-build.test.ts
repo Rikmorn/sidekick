@@ -21,74 +21,32 @@ function write(repo: string, rel: string, content: string): void {
   fs.writeFileSync(full, content);
 }
 
-const EPIC = [
-  '# EPIC',
-  '',
-  '### Phase 3 — Foundations',
-  '',
-  '| ID | Was | Item | Sources | Deps |',
-  '|---|---|---|---|---|',
-  '| **3.3** ✅ | E13 | **Eval keystone** — the harness. | ADR-0006 | 3.2 |',
-  '| **3.2** ✅ | E7 | **Scope gate** — independent verification. | ADR-0005 | — |',
-  '',
-  '## Crosswalk — legacy `E#`',
-  '',
-  '| E# | New | E# | New |',
-  '|---|---|---|---|',
-  '| E7 | 3.2 | E13 | 3.3 |',
-].join('\n');
-
 function seedRepo(repo: string): void {
-  write(repo, 'docs/EPIC.md', EPIC);
   write(
     repo,
     'docs/adr/0006-eval-harness.md',
     [
       '# ADR-0006 — Eval harness',
       '',
-      '**Status:** Accepted (2026-07-07). Implements the eval keystone EPIC `3.3`.',
+      '**Status:** Accepted (2026-07-07). Supersedes ADR-0005.',
     ].join('\n'),
   );
   write(
     repo,
-    'docs/work/ops/epic.md',
+    'docs/adr/0005-verifiers.md',
     [
-      '---',
-      'id: ops',
-      'kind: epic',
-      'status: open',
-      'advances: [ns-project-visibility]',
-      'grounds: [research/knowledge-layer]',
-      '---',
+      '# ADR-0005 — Operator-authored verifiers',
       '',
-      '# ops — the knowledge layer',
+      '**Status:** Superseded (2026-07-02).',
     ].join('\n'),
   );
+  // Archived records: they carry no parser of their own any more, so they
+  // enter the graph through the docs walk as plain `doc` entities (#30).
+  write(repo, 'docs/EPIC.md', '# EPIC\n\nArchived roadmap.');
   write(
     repo,
     'docs/work/ops/2-compiler.md',
-    [
-      '---',
-      'id: ops-2',
-      'epic: ops',
-      'kind: item',
-      'status: active',
-      'deps: []',
-      '---',
-      '',
-      '# ops-2 — Compiler core',
-    ].join('\n'),
-  );
-  write(
-    repo,
-    'docs/NORTH-STAR.md',
-    [
-      '# North star',
-      '',
-      '## ns-project-visibility — State is retrievable',
-      '',
-      '**Sources:** `docs/EPIC.md` §Phase 3.',
-    ].join('\n'),
+    '# ops-2 — Compiler core\n\nArchived work record.',
   );
   write(
     repo,
@@ -151,13 +109,8 @@ describe('collectGraph', () => {
     const { snapshot } = collectGraph(repo);
     const ids = new Set(snapshot.entities.map((e) => e.id));
     for (const id of [
-      'plat-3.3',
       'adr-0006',
-      'ops',
-      'ops-2',
-      'ns-project-visibility',
       'research:knowledge-layer',
-      'backlog:fixer-scope-widening',
       'suite:coherence-agent',
       'case:coherence-agent/rfc-clean',
       'cert:sk-coherence-checker',
@@ -170,15 +123,25 @@ describe('collectGraph', () => {
     expect(snapshot.runs.length).toBe(1);
   });
 
+  it('walks the archived records in as plain docs, not as work items', () => {
+    const { snapshot } = collectGraph(repo);
+    const byId = new Map(snapshot.entities.map((e) => [e.id, e]));
+    for (const id of [
+      'doc:docs/EPIC.md',
+      'doc:docs/work/ops/2-compiler.md',
+      'doc:docs/backlog/fixer-scope-widening.md',
+    ]) {
+      expect(byId.get(id)?.kind).toBe('doc');
+    }
+  });
+
   it('links across sources that never mention each other directly', () => {
     const { snapshot } = collectGraph(repo);
     const edges = snapshot.edges.map(key);
-    expect(edges).toContain('plat-3.3 implements adr-0006');
+    expect(edges).toContain('adr-0006 supersedes adr-0005');
     expect(edges).toContain(
       'suite:coherence-agent measures agent:sk-coherence-checker',
     );
-    expect(edges).toContain('ops advances ns-project-visibility');
-    expect(edges).toContain('ops grounds research:knowledge-layer');
     expect(edges).toContain(
       'cert:sk-coherence-checker assesses agent:sk-coherence-checker',
     );
@@ -187,21 +150,16 @@ describe('collectGraph', () => {
   it('reports an edge whose destination no source declares', () => {
     write(
       repo,
-      'docs/work/ops/3-queries.md',
+      'docs/adr/0009-dangling.md',
       [
-        '---',
-        'id: ops-3',
-        'kind: item',
-        'status: open',
-        'deps: [ops-99]',
-        '---',
+        '# ADR-0009 — Dangling',
         '',
-        '# ops-3 — Queries',
+        '**Status:** Accepted (2026-09-13). Supersedes ADR-0099.',
       ].join('\n'),
     );
     const { findings } = collectGraph(repo);
     const dangling = findings.find(
-      (f) => f.code === 'unresolvable-ref' && f.message.includes('ops-99'),
+      (f) => f.code === 'unresolvable-ref' && f.message.includes('adr-0099'),
     );
     expect(dangling).toBeDefined();
   });
@@ -234,17 +192,12 @@ describe('collectGraph', () => {
   });
 
   it('never reads the declared foreign enclave or seeded fixtures', () => {
-    write(
-      repo,
-      'docs/superpowers/plans/secret.md',
-      '---\nid: enclave-1\nkind: item\nstatus: open\n---\n\n# Enclave',
-    );
+    write(repo, 'docs/superpowers/plans/secret.md', '# Enclave');
     write(repo, 'evals/fixtures/coherence/x/RFC.md', '# Fake RFC');
     const { snapshot } = collectGraph(repo);
     const paths = snapshot.entities.map((e) => e.path ?? '');
     expect(paths.some((p) => p.startsWith('docs/superpowers/'))).toBe(false);
     expect(paths.some((p) => p.startsWith('evals/fixtures/'))).toBe(false);
-    expect(snapshot.entities.some((e) => e.id === 'enclave-1')).toBe(false);
   });
 
   it('is deterministic — two collections of one tree agree exactly', () => {
@@ -291,7 +244,7 @@ describe('runGraphBuildCli', () => {
     const parsed = JSON.parse(res.stdout);
     expect(parsed.entities).toBeGreaterThan(10);
     expect(Array.isArray(parsed.lint)).toBe(true);
-    expect(parsed.by_kind.item).toBeGreaterThan(0);
+    expect(parsed.by_kind.adr).toBeGreaterThan(0);
   });
 
   it('refuses a rebuild that would drop most of the graph', () => {

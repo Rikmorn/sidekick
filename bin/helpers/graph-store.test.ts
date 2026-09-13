@@ -62,19 +62,19 @@ describe('graph store', () => {
       h,
       snapshot({
         entities: [
-          entity('ops-2', 'item', {
+          entity('research:knowledge-layer', 'research', {
             status: 'open',
-            path: 'docs/work/ops/2-compiler-core.md',
-            data: { epic: 'ops' },
+            path: 'docs/research/knowledge-layer/REPORT.md',
+            data: { topic: 'knowledge-layer' },
           }),
           entity('adr-0007', 'adr', { status: 'Accepted' }),
         ],
       }),
     );
-    const found = getEntity(h, 'ops-2');
-    expect(found?.kind).toBe('item');
+    const found = getEntity(h, 'research:knowledge-layer');
+    expect(found?.kind).toBe('research');
     expect(found?.status).toBe('open');
-    expect(found?.data).toEqual({ epic: 'ops' });
+    expect(found?.data).toEqual({ topic: 'knowledge-layer' });
     expect(getEntity(h, 'nope')).toBeNull();
     expect(entitiesOfKind(h, 'adr').map((e) => e.id)).toEqual(['adr-0007']);
     expect(countEntities(h)).toBe(2);
@@ -85,9 +85,9 @@ describe('graph store', () => {
     const h = openGraphDb(':memory:');
     writeGraph(
       h,
-      snapshot({ entities: [entity('a', 'item'), entity('b', 'item')] }),
+      snapshot({ entities: [entity('a', 'doc'), entity('b', 'doc')] }),
     );
-    writeGraph(h, snapshot({ entities: [entity('a', 'item')] }));
+    writeGraph(h, snapshot({ entities: [entity('a', 'doc')] }));
     expect(allEntities(h).map((e) => e.id)).toEqual(['a']);
     h.close();
   });
@@ -98,17 +98,17 @@ describe('graph store', () => {
       h,
       snapshot({
         edges: [
-          edge('ops-2', 'implements', 'adr-0007'),
-          edge('ops', 'advances', 'ns-project-visibility'),
-          edge('ops-2', 'implements', 'adr-0007'),
+          edge('adr-0006', 'implements', 'adr-0007'),
+          edge('adr-0008', 'relates', 'adr-0007'),
+          edge('adr-0006', 'implements', 'adr-0007'),
         ],
       }),
     );
     const stored = allEdges(h);
     expect(stored.length).toBe(2);
     expect(stored.map((e) => `${e.src} ${e.rel} ${e.dst}`)).toEqual([
-      'ops advances ns-project-visibility',
-      'ops-2 implements adr-0007',
+      'adr-0006 implements adr-0007',
+      'adr-0008 relates adr-0007',
     ]);
     expect(stored[0].tier).toBe('EXTRACTED');
     h.close();
@@ -120,14 +120,14 @@ describe('graph store', () => {
       h,
       snapshot({
         edges: [
-          edge('ops-2', 'implements', 'adr-0007'),
-          edge('ops-3', 'deps', 'ops-2'),
+          edge('adr-0006', 'implements', 'adr-0007'),
+          edge('adr-0008', 'relates', 'adr-0006'),
         ],
       }),
     );
-    const n = edgesFor(h, 'ops-2');
+    const n = edgesFor(h, 'adr-0006');
     expect(n.out.map((e) => e.dst)).toEqual(['adr-0007']);
-    expect(n.in.map((e) => e.src)).toEqual(['ops-3']);
+    expect(n.in.map((e) => e.src)).toEqual(['adr-0008']);
     h.close();
   });
 
