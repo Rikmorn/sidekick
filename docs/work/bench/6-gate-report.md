@@ -10,6 +10,8 @@ grounds: [research/verification-autonomy]
 
 # bench-6 — Gate report + reassessment ritual
 
+> Re-scoped 2026-09-13 by #31: parked until #42 has three logged cycles; see the issue.
+
 **Goal.** The sk-* confidence gate as a computed report the operator reads to decide — explicit, data-derived, never auto-opening.
 
 **Spec.**

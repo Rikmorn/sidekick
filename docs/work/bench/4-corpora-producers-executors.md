@@ -10,6 +10,8 @@ grounds: [research/eval-harness, research/verification-autonomy]
 
 # bench-4 — Chain corpora wave 2: producers, executors, orchestrators
 
+> Re-scoped 2026-09-13 by #31: parked until #42 has three logged cycles; see the issue.
+
 **Goal.** The rest of the chain measured in its kind-appropriate shape: drafters by artifact quality, executor/fixer by outcome, orchestrator skills by wiring.
 
 **Spec.**

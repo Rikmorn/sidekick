@@ -10,11 +10,11 @@ resolves: [backlog:agent-measurement-program]
 
 # bench — the agent measurement program (ADR-0008)
 
-> **Status now tracked on GitHub** — bench-4 (#14) and bench-6 (#15) are parked issues pending CR #1; this folder remains the record of bench 1–3/5.
+> **Status now tracked on GitHub** — CR #1's re-scope landed via #31 in R3 (ADR-0008 D6 as amended), and bench-4 (#14) and bench-6 (#15) stay parked against #42's logged cycles; this folder remains the record of bench 1–3/5.
 
 **Why this epic exists.** ~30 agents and skills, 23 of them unmeasured; no metrics vocabulary, no scenario corpora, no trends. The operator named measurement — not visibility — as the confidence gate for sk-* self-use: "sk-reassessment comes after we have tools to measure." This epic builds the tools: a typed metric registry the kernel validates, chain-subject corpora that trend over committed run sets, bias acknowledgment as schema, and an explicit computed gate the operator reads to decide.
 
-**Scope guard.** Gate-driven, depth-first (ADR-0008 D1): the sk-* execution chain only — 15 agents + 3 orchestrator skills. The rest of the fleet extends later via registry entries + corpora through the authoring skill; no new machinery. Judges stay same-family in v1 (the bias ledger names it); cross-family is the `3.7` seam, not this epic.
+**Scope guard.** Gate-driven, depth-first (ADR-0008 D1): the sk-* execution chain only — the subjects `evals/metrics.json` lists under `subjects`, which is the roster of record rather than a count fixed here. The rest of the fleet extends later via registry entries + corpora through the authoring skill; no new machinery. Judges stay same-family in v1 (the bias ledger names it); cross-family is the `3.7` seam, not this epic.
 
 **Items** (specs in this folder; `deps` in frontmatter; each item includes its adoption wiring per ADR-0007 Decision 8):
 
@@ -29,4 +29,4 @@ resolves: [backlog:agent-measurement-program]
 
 **Ordering.** bench-1 is the spine's head; bench-2 and bench-5 hang off it; bench-3 → bench-4 is the corpus sequence (wave 2 learns from wave 1's shape); bench-6 needs the registry, the trends, and both waves. Sized one-session-per-item; the repo is coherent at every item boundary.
 
-**Done means:** every chain subject measured on the four metrics with ≥3 committed run sets; gating judges certificated; the gate report computes green-or-not from data; the authoring skill has added at least one metric or corpus end-to-end (proof the extension path works); then the sk-* self-use reassessment — the operator decision this epic exists to inform — has what it needs.
+**Done means:** re-scoped by #31 (ADR-0008 D6). The epic built its machinery — registry, trends, wave-1 corpora, the authoring skill, harvest capture — and that is where it stops. The sk-* self-use reassessment it was built to inform is now an operator read: #42's logged design → build → review cycles, the harvest inbox, and the existing reports (`harvest list`, `graph coverage`, `eval report`). bench-4 (#14) and bench-6 (#15) are parked against that gate; what those cycles show decides whether either is worth building.
