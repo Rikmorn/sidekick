@@ -1,6 +1,6 @@
 ---
 name: sk-architecture-reviewer
-description: Finds architecture-conformance violations — places where a changed diff diverges from the architecture its RFC.md ## Architecture section declared (layering, dependency direction, module boundaries, declared patterns). Read-only dimensional reviewer dispatched by /sk-review; fires only when an RFC ## Architecture section exists. Returns ONE JSON object inside a ```json``` fence.
+description: "Finds architecture-conformance violations — places where a changed diff diverges from the architecture its RFC.md ## Architecture section declared (layering, dependency direction, module boundaries, declared patterns). Read-only dimensional reviewer dispatched by /sk-review; fires only when an RFC ## Architecture section exists. Returns ONE JSON object inside a ```json``` fence."
 tools: Read, Grep, Glob, Bash
 color: blue
 ---

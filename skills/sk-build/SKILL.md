@@ -1,6 +1,6 @@
 ---
 name: sk-build
-description: Execute PLAN.md tasks wave-by-wave. Computes execution waves via `sidekick wave-plan` (dependency + file-overlap order), then per wave: dispatches sk-executor sequentially, runs gates FRESH, dispatches sk-spec-reviewer in parallel, commits each verified task atomically in T-NN order, and batches any deviations for one routing pass. Writes sequential; verification parallel.
+description: "Execute PLAN.md tasks wave-by-wave. Computes execution waves via `sidekick wave-plan` (dependency + file-overlap order), then per wave: dispatches sk-executor sequentially, runs gates FRESH, dispatches sk-spec-reviewer in parallel, commits each verified task atomically in T-NN order, and batches any deviations for one routing pass. Writes sequential; verification parallel."
 user-invocable: true
 disable-model-invocation: true
 argument-hint: <slug>

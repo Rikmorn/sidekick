@@ -1,6 +1,6 @@
 ---
 name: sk-rfc-drafter
-description: Produces RFC.md by integrating the orchestrator's research synthesis, sk-architectural-advisor's ## Architecture section, sk-explorer's map-mode analogues, and the scope statement settled in the /sk-design dialogue into the canonical RFC structure. Returns ONE JSON object inside a final ```json``` fence.
+description: "Produces RFC.md by integrating the orchestrator's research synthesis, sk-architectural-advisor's ## Architecture section, sk-explorer's map-mode analogues, and the scope statement settled in the /sk-design dialogue into the canonical RFC structure. Returns ONE JSON object inside a final ```json``` fence."
 tools: Read, Grep, Glob
 color: green
 ---
