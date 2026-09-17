@@ -14,7 +14,7 @@ This slash command runs in the main session because the runtime forbids subagent
 <constraints>
 
 - Write only to `.sidekick/decisions/<slug>.md`. The skill does not modify `src/`, RFC source files, or any other tracked path.
-- Source RFC files (`.sidekick/plans/*/RFC.md`) are read-only from this skill's perspective — the drafter reads them; nothing in this flow edits them.
+- Source RFC files (`.sidekick/work/*/RFC.md`) are read-only from this skill's perspective — the drafter reads them; nothing in this flow edits them.
 - Honour the `branch-precheck` CLI's verdict. A `hard_stop` verdict halts the flow with the helper's message surfaced verbatim.
 - `--amend` and `--supersede` are deferred to v1.x and rejected at Step 1.
 
@@ -26,7 +26,7 @@ Before each significant choice, externalise the reasoning in prose so the flow i
 
 - Whether the invocation includes a deferred flag (`--amend` / `--supersede`) — these short-circuit the flow before any dispatch.
 - Whether the resolved git state lets the operation proceed, or whether the precheck CLI hard-stopped.
-- Which `.sidekick/plans/*/RFC.md` files are recent enough to pass as `rfc_hint_paths` (top 3 by commit time).
+- Which `.sidekick/work/*/RFC.md` files are recent enough to pass as `rfc_hint_paths` (top 3 by commit time).
 - How to interpret the drafter's returned `mode` — `draft_ready` continues, `no_topic_candidate` and `existing_decision` hard-stop with distinct messages.
 - When a checker fails, what its `issues` list tells the drafter — re-dispatch the drafter with the issues collapsed into a prose `feedback` string so it can target its edits.
 - When the loop limit (3 drafter re-dispatches against the quorum) is reached, the right move is to halt and let the user retry rather than ship a malformed doc.
@@ -90,10 +90,10 @@ Parse the JSON object on stdout. On `verdict: "hard_stop"`, emit the `error: amb
 
 ### Step 3 — Resolve `rfc_hint_paths`
 
-Walk `.sidekick/plans/*/RFC.md`, sort by the last-commit timestamp, and take the top 3. A natural form is:
+Walk `.sidekick/work/*/RFC.md`, sort by the last-commit timestamp, and take the top 3. A natural form is:
 
 ```bash
-for f in $(ls .sidekick/plans/*/RFC.md 2>/dev/null); do
+for f in $(ls .sidekick/work/*/RFC.md 2>/dev/null); do
   printf '%s %s\n' "$(git log -1 --format=%at -- "$f" 2>/dev/null || echo 0)" "$f"
 done | sort -rn | awk '{print $2}' | head -3
 ```
@@ -284,7 +284,7 @@ Three worked examples covering the common path, a hard-stop path, and a judgment
 
 ### Example 1 — Common path (explicit topic, clean quorum pass)
 
-User invokes `/sk-decide cache-strategy-default-in-memory` on the default branch. One `.sidekick/plans/cache-rework/RFC.md` exists and is the most recent.
+User invokes `/sk-decide cache-strategy-default-in-memory` on the default branch. One `.sidekick/work/51-cache-rework/RFC.md` exists and is the most recent.
 
 Reasoning: no deferred flags, so Step 1 passes. Branch precheck returns `proceed` (default branch is allowed for `decide`). The single RFC becomes the only entry in `rfc_hint_paths`. Dispatch the drafter with `{ topic: "cache-strategy-default-in-memory", repo_root, rfc_hint_paths }`. The drafter conducts Q&A, drafts the MADR, and returns `mode: "draft_ready"` with `draft_path: ".sidekick/decisions/cache-strategy-default-in-memory.md"` and a full `draft_text`. Slug derives to `cache-strategy-default-in-memory`. Write the file. Structural checker returns `verdict: "pass"`. Show the file to the user; the user replies "ship it". Commit lands as `decide: capture cache-strategy-default-in-memory`.
 
@@ -294,7 +294,7 @@ Output:
 # /sk-decide — cache-strategy-default-in-memory
 
 Mode: explicit-topic
-Source: .sidekick/plans/cache-rework/RFC.md
+Source: .sidekick/work/51-cache-rework/RFC.md
 
 ## Validation
 
@@ -309,7 +309,7 @@ Commit: 7a3b1cd decide: capture cache-strategy-default-in-memory
 
 ### Example 2 — Hard-stop on no_topic_candidate
 
-User invokes `/sk-decide` with no arg. Two `.sidekick/plans/*/RFC.md` files exist but neither has a `## Decisions` section with uncaptured candidates.
+User invokes `/sk-decide` with no arg. Two `.sidekick/work/*/RFC.md` files exist but neither has a `## Decisions` section with uncaptured candidates.
 
 Reasoning: Step 1 passes (no flags, no topic). Branch precheck returns `proceed`. Step 3 finds two RFC files; both become `rfc_hint_paths`. The drafter scans them, finds no candidates worth surfacing, and returns `mode: "no_topic_candidate"` with `reason: "no recent RFC has uncaptured decisions"`. The skill emits the hard-stop block and stops. No write, no commit.
 
@@ -334,7 +334,7 @@ Output:
 # /sk-decide — auth-token-rotation
 
 Mode: explicit-topic
-Source: .sidekick/plans/auth-rework/RFC.md
+Source: .sidekick/work/74-auth-rework/RFC.md
 
 ## Validation
 
@@ -353,7 +353,7 @@ Commit: 9bd4f2a decide: capture auth-token-rotation
 
 - `<topic>` — explicit positional argument; a kebab-case slug seed. The drafter derives the final slug.
 - `<slug>` — kebab-case + lowercase form derived from the drafter's `draft_path` basename; the filename component of `.sidekick/decisions/<slug>.md`.
-- `rfc_hint_paths` — top 3 most-recently-committed `.sidekick/plans/*/RFC.md` files, passed to the drafter as input.
+- `rfc_hint_paths` — top 3 most-recently-committed `.sidekick/work/*/RFC.md` files, passed to the drafter as input.
 - `feedback` — prose summary passed back to the drafter on re-dispatch. Sourced from `check-artifact` issues (Step 7) or user edit instructions (Step 8).
 
 </symbol_conventions>
