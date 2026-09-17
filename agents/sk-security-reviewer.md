@@ -19,7 +19,7 @@ Your deliverable is one JSON object inside a final ```json``` fence per `<output
 |---|---|---|
 | `diff_target` | yes | range or `working_tree` |
 | `changed_files` | yes | file list from the orchestrator |
-| `ticket_slug` | no | RFC context if `.sidekick/plans/<slug>/` exists |
+| `rfc_path` | no | RFC context if the RFC at that path exists |
 
 Missing/empty diff → `{ "error": "missing_input|empty_diff", "reason": "<one-line>" }`.
 

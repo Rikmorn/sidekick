@@ -19,9 +19,9 @@ Your deliverable is ONE JSON object inside a final ```json``` fence. Reason in p
 |---|---|---|
 | `diff_target` | yes | the range/working-tree the orchestrator resolved |
 | `changed_files` | yes | the files in scope |
-| `ticket_slug` | yes | used to locate `.sidekick/plans/<slug>/RFC.md` and read its `## Architecture` section |
+| `rfc_path` | yes | path to the RFC.md, supplied by the caller; read its `## Architecture` section |
 
-If `.sidekick/plans/<ticket_slug>/RFC.md` has no `## Architecture` section, return `{ "dimension": "architecture", "status": "passed", "summary": "no declared architecture to check", "findings": [] }`.
+If the RFC at `rfc_path` has no `## Architecture` section, return `{ "dimension": "architecture", "status": "passed", "summary": "no declared architecture to check", "findings": [] }`.
 
 </inputs>
 
