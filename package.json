@@ -30,7 +30,7 @@
     "dashboard": "bash dashboards/prepare.sh && quarto render dashboards"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.16",
+    "@biomejs/biome": "2.4.16",
     "@types/node": "^24.13.1",
     "playwright": "^1.61.1",
     "typescript": "^6.0.3"
