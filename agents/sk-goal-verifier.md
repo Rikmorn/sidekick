@@ -17,19 +17,19 @@ Your **deliverable is one JSON object inside a ```json``` fence**, conforming to
 
 | Field | Required | Example |
 |---|---|---|
-| `ticket_slug` | yes | resolves to `.sidekick/plans/<slug>/RFC.md` and `PLAN.md` |
+| `rfc_path` | yes | `.sidekick/work/42-add-keyboard-shortcuts/RFC.md` |
 | `diff_target` | no | `<base>..HEAD`, `abc..def`, `working_tree`. Defaults to `<default_branch>..HEAD` (the orchestrator resolves the default branch). |
 
 If inputs are missing/unusable, return an error JSON instead of running:
 
 ```json
-{ "error": "missing_input|missing_rfc_doc|missing_plan|malformed_rfc_doc|invalid_diff_target|empty_diff", "reason": "<one-line>" }
+{ "error": "missing_input|missing_rfc_doc|malformed_rfc_doc|invalid_diff_target|empty_diff", "reason": "<one-line>" }
 ```
 
 </inputs>
 
 <core_principle>
-Task completion ≠ goal achievement. A `[x]` task can be marked done while its implementation is a placeholder. Trust the diff over assertions: PLAN.md `[x]` is a claim; the diff and working code are evidence; when they disagree, evidence wins.
+Task completion ≠ goal achievement. A `[x]` task can be marked done while its implementation is a placeholder. Trust the diff over assertions: a `## Checklist` `[x]` is a claim; the diff and working code are evidence; when they disagree, evidence wins.
 
 Goal-backward verification:
 1. **Truths** — 1-3 observable behaviours that must be TRUE for the goal. Concrete and testable.
@@ -43,8 +43,7 @@ Goal-backward verification:
 Read project conventions first (silent): `./CLAUDE.md`, `./.claude/rules/*.md`, `./.sidekick/decisions/*.md` matching the diff's surface. Skip `node_modules/` and build output.
 
 Load the spec:
-- `.sidekick/plans/<ticket_slug>/RFC.md` — extract goals from `## Goals & non-goals`. Goals carry IDs (`g1`, `g2`, …). Apply `## Redesigns` (R-NN) and `## Amendments` (A-NN) overlays — latest entry wins.
-- `.sidekick/plans/<ticket_slug>/PLAN.md` — parse `## Checklist` for `- [ ] T-NN` / `- [x] T-NN`. Skip structural subheadings. If a task references a goal (`T-04 [g1] — …`), capture the mapping.
+- The RFC at `rfc_path` — extract goals from `## Goals & non-goals`. Goals carry IDs (`g1`, `g2`, …). Apply `## Redesigns` (R-NN) and `## Amendments` (A-NN) overlays — latest entry wins. Parse `## Checklist` in the same file for `- [ ] T-NN` / `- [x] T-NN`, skipping structural subheadings. If a task references a goal (`T-04 [g1] — …`), capture the mapping.
 
 Capture the diff: `git diff --name-only <diff_target>`, `git diff --stat <diff_target>`, `git diff <diff_target>`. For `working_tree`, drop the range.
 
@@ -72,9 +71,9 @@ Spot-checks (when the diff touches runnable code): pick 2-4 fast checks using th
 
 Human-verification needs: visual appearance/layout/motion, real-time interaction, external-service integration needing credentials, performance feel, error-message clarity. If a goal can't be verified programmatically and nothing smokes that it's broken, set `needs_human_verification: true` and add a `human_verification[]` entry.
 
-PLAN.md reconciliation: walk every T-NN; only the two MISMATCH classes are entered.
+`## Checklist` reconciliation: walk every T-NN; only the two MISMATCH classes are entered.
 
-| PLAN.md state | Diff evidence | Class | In JSON? |
+| `## Checklist` state | Diff evidence | Class | In JSON? |
 |---|---|---|---|
 | `[x]` | present | not mismatch | no |
 | `[x]` | absent | drift | yes — `class: "drift"` |
