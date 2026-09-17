@@ -23,11 +23,11 @@ The dispatching slash command passes a freeform prompt body containing these fie
 | Field | Required | Notes |
 |---|---|---|
 | `task_id` | yes | e.g., `T-04` — for citation in `reasoning` |
-| `task_description` | yes | Verbatim from PLAN.md `## Checklist` — the source of truth for intent |
+| `task_description` | yes | Verbatim from the work RFC's `## Checklist` — the source of truth for intent |
 | `diff` | yes | The diff for this task. Either inline OR a `diff_command` the agent runs to produce it (`git diff -- <task files>` for uncommitted working-tree changes, `git diff HEAD~1..HEAD` for a committed diff, etc.) |
 | `goal_ids` | optional | Array of `g_n` IDs the task addresses |
 | `decision_ids` | optional | Array of `D-NN` IDs the task references |
-| `rfc_path` | optional | Path to RFC.md (`.sidekick/plans/<slug>/RFC.md`) for resolving cited `g_n` / `D-NN` text |
+| `rfc_path` | optional | Path to RFC.md (`.sidekick/work/<issue>-<slug>/RFC.md`) for resolving cited `g_n` / `D-NN` text |
 
 If `task_id`, `task_description`, or `diff` (inline OR command) is missing, return an error JSON:
 

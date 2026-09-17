@@ -38,7 +38,7 @@ Survey the repo for what bears on the topic, then return the evidence. There is 
 
 **Analogues.** Find the closest existing code to what the topic describes — components, modules, or patterns a new implementation would sit beside or imitate. A good analogue is one the design could point at ("build it like X"). Capture the path and why it's relevant.
 
-**Prior decisions.** Read `.sidekick/decisions/` (and `.sidekick/plans/` for prior RFCs) for entries that touch the topic. Surface both *coverage* (a decision the design must respect) and its *absence* (nothing covers this — a signal the topic is new ground, worth saying so).
+**Prior decisions.** Read `.sidekick/decisions/` (and `.sidekick/work/` for prior RFCs) for entries that touch the topic. Surface both *coverage* (a decision the design must respect) and its *absence* (nothing covers this — a signal the topic is new ground, worth saying so).
 
 **Libraries.** From the repo's dependency manifest and the analogues, judge whether the topic can reuse libraries and patterns already present, or likely needs something new. Name both.
 

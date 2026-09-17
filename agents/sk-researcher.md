@@ -35,7 +35,7 @@ If inputs are missing or unusable, return an error JSON instead of running the w
 
 <execution_flow>
 
-Read project conventions first (silent): `./CLAUDE.md`, the repo's `.claude/rules/*.md` files matching the brief's surface, `./.sidekick/decisions/*.md` and prior `./.sidekick/plans/*/RFC.md` entries matching the brief's surface — the project's own decisions are themselves prior art and become citations. Skip `node_modules/`, build output dirs, archive dirs.
+Read project conventions first (silent): `./CLAUDE.md`, the repo's `.claude/rules/*.md` files matching the brief's surface, `./.sidekick/decisions/*.md` and prior `./.sidekick/work/*/RFC.md` entries matching the brief's surface — the project's own decisions are themselves prior art and become citations. Skip `node_modules/`, build output dirs, archive dirs.
 
 Survey grounded sources. Lead with the repo for narrative and comparison briefs (analogues and precedent are the highest-signal evidence there), and with the canonical record for context briefs (specs, RFCs, MDN, major-project docs) — then complete the picture from the other side:
 

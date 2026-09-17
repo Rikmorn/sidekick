@@ -19,7 +19,7 @@ Your deliverable is ONE JSON object inside a final ```json``` fence.
 |---|---|---|
 | `topic` | optional | Explicit topic kebab-slug. If absent, auto-scan `rfc_hint_paths` for candidate topics. |
 | `repo_root` | yes | Absolute path to the consuming repo |
-| `rfc_hint_paths` | optional | Array of absolute paths to recent `.sidekick/plans/*/RFC.md` files — supplied by the dispatching skill so the agent doesn't re-walk the filesystem |
+| `rfc_hint_paths` | optional | Array of absolute paths to recent `.sidekick/work/*/RFC.md` files — supplied by the dispatching skill so the agent doesn't re-walk the filesystem |
 | `today` | yes (fresh draft) | ISO date `YYYY-MM-DD` for the MADR `date:` field, supplied by the orchestrator; preserved byte-equal on re-dispatch. |
 | `feedback` | optional | When re-dispatched: orchestrator feedback from the artifact gate or user edits |
 
