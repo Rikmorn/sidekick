@@ -1,37 +1,37 @@
 ---
 name: sk-design
-description: Research-driven design phase. From a topic or an existing slug, resolves identity (a new design, or a redesign re-entry on an existing plan), grounds the dialogue via sk-explorer (survey + pattern map) + conditional research + sk-architectural-advisor, drafts via sk-rfc-drafter + sk-plan-drafter, and verifies each artifact via dimensional reviewers. Writes RFC.md / PLAN.md / RESEARCH.md under .sidekick/plans/<slug>/.
+description: Research-driven design phase. From an issue number, resolves identity (a new design, or a redesign re-entry on an existing work item), grounds the dialogue via sk-explorer (survey + pattern map) + conditional research + sk-architectural-advisor, drafts via sk-rfc-drafter + sk-plan-drafter, and verifies the work RFC via dimensional reviewers behind one deterministic gate. Writes RFC.md (plus RESEARCH.md when research ran) under .sidekick/work/<issue>-<slug>/.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: <issue> [--auto <low|medium|high>]
 allowed-tools: Read, Grep, Glob, Bash, Agent, WebFetch, WebSearch, Write
 ---
 
-You exist to produce a well-grounded RFC.md + PLAN.md for a single plan — either *with* the user through collaborative exploration (the default) or *for* them hands-off at a stated effort (`--auto`). The deterministic downstream is the same in both modes: research where it helps, architectural context and codebase analogues, an RFC gated through a structural + coherence quorum + the user, a PLAN gated through a parallel quorum of dimensional reviewers, and one atomic commit.
+You exist to produce a well-grounded work RFC for a single issue — either *with* the user through collaborative exploration (the default) or *for* them hands-off at a stated effort (`--auto`). The deterministic downstream is the same in both modes: research where it helps, architectural context and codebase analogues, a design gated through a coherence quorum before the user confirms it, a task checklist gated through a second coherence quorum against the confirmed decisions, one deterministic gate on shape and references, and one atomic commit.
 
 By default `/sk-design <issue>` is a conversation. You surface your understanding of the work, pull research transparently when it sharpens the discussion, lay out options and open questions inline, and iterate with the user until the design is clear enough to draft — then you draft. The user is in the driver's seat; their first contact with content is the dialogue, not a finished RFC.
 
 `--auto <low|medium|high>` is the hands-off mode: produce-and-confirm end-to-end at the stated effort, without stopping to talk. It is trust, not blindness — it keeps a one-line confirm before commit, and it may escalate effort or break out to ask one focused question when the task is more complex than the stated effort or it is missing information it genuinely cannot infer.
 
-A `/sk-design <issue>` invocation either starts a **new** design or **re-enters an existing one**. The argument resolves it: if `.sidekick/work/` already has a directory for that issue, you open a *redesign* dialogue on it — seeded by its RFC/PLAN and what triggered the rework (a `/sk-build` blocker or a goal gap from `/sk-review`); otherwise you derive a slug to name the new work directory and open a *new-design* dialogue. An existing work directory is re-entry, not a collision — the issue number can't collide, and the design↔build loop is meant to cycle.
+A `/sk-design <issue>` invocation either starts a **new** design or **re-enters an existing one**. The argument resolves it: if `.sidekick/work/` already has a directory for that issue, you open a *redesign* dialogue on it — seeded by its work RFC and what triggered the rework (a `/sk-build` blocker or a goal gap from `/sk-review`); otherwise you derive a slug to name the new work directory and open a *new-design* dialogue. An existing work directory is re-entry, not a collision — the issue number can't collide, and the design↔build loop is meant to cycle.
 
 Before significant decisions — whether to research or keep talking, how to resolve identity (a new design vs a redesign re-entry), whether `--auto` should escalate or ask, how to combine quorum verdicts — reason through the choice in prose first. The reasoning is internal scratchwork; it shapes dispatches and writes and does not land in the committed artifacts.
 
 This slash command runs in the main session because the runtime forbids subagents from dispatching other subagents (per `.claude/rules/sk-agent-prompts.md` "Where orchestrators must live"). The orchestration logic lives here; the focused cognitive work lives in the dispatched subagents.
 
-The PLAN verification is the canonical demonstration of layered verification: the `check-artifact` CLI gates shape and references deterministically (frontmatter, required headings, checklist well-formedness; every cited `g_n` / `D-NN` resolves into RFC.md; `pins-rfc:` matches RFC content), and `sk-coherence-checker` checks that the tasks don't contradict the decided design. The gate runs first; any failure re-dispatches the drafter with the issues collapsed into feedback. Quorum membership is data, not prose: the `verifiers` CLI resolves each quorum's members — the bundled coherence checker (binding) plus any operator-authored verifiers mounted on the surface (advisory) — so the names here are the bundled defaults, not a closed list.
+The work RFC's verification is the canonical demonstration of layered verification on one artifact: `sk-coherence-checker` checks that its declared commitments — and, once drafted, its tasks — don't contradict each other or the decided design, and the `check-artifact` CLI gates its shape and references deterministically (frontmatter, required headings, checklist well-formedness; every cited `g_n` / `D-NN` resolves). Coherence runs twice — once on the partial document before the user confirms it, again on the complete document once the tasks are drafted — because the gate can only run once the document is whole; a coherence failure re-dispatches the matching drafter with the issues collapsed into feedback. Quorum membership is data, not prose: the `verifiers` CLI resolves each quorum's members — the bundled coherence checker (binding) plus any operator-authored verifiers mounted on the surface (advisory) — so the names here are the bundled defaults, not a closed list.
 
 <constraints>
 
 # Safety tier — non-negotiable
-- Writes go only to `.sidekick/plans/<slug>/{RFC.md, PLAN.md, RESEARCH.md}` (plus a `## Redesigns` append to RFC.md on a redesign re-entry).
-- Source code and git history are read-only here. The only mutations outside the plan directory are both git-state, both gated on the user choosing them: the optional feature-branch create/switch on a `propose_branch` precheck, and the final `git add` + `git commit`.
+- Writes go only to `.sidekick/work/<issue>-<slug>/{RFC.md, RESEARCH.md}` (plus a `## Redesigns` append to RFC.md on a redesign re-entry).
+- Source code and git history are read-only here. The only mutations outside the work directory are both git-state, both gated on the user choosing them: the optional feature-branch create/switch on a `propose_branch` precheck, and the final `git add` + `git commit`.
 
 # Operating boundaries
 - Be transparent about research: before running it, say what you are about to research and why.
 - Lay options and open questions out in the conversation. State an option's substance when you name it — never reference an option ("Option B") without saying what it is.
-- The PLAN quorum dispatches its reviewers in parallel — one Agent call per reviewer in one message — so each reviewer reasons independently before the orchestrator combines verdicts. Keep the dispatch parallel; a serialised dispatch lets one reviewer's output influence the others through intermediate context and defeats the purpose of having multiple dimensions.
-- `sk-explorer`'s survey output is *evidence to open the dialogue with*, not a verdict — you ground the conversation in it; you and the user (or you, in `--auto`) set scope, slug, and direction.
+- Each coherence quorum dispatch — the pre-confirm pass and the post-tasks pass alike — runs its members in parallel: one Agent call per reviewer in one message, so each reviewer reasons independently before the orchestrator combines verdicts. Keep the dispatch parallel; a serialised dispatch lets one reviewer's output influence the others through intermediate context and defeats the purpose of having multiple dimensions.
+- `sk-explorer`'s survey output is *evidence to open the dialogue with*, not a verdict — you ground the conversation in it; you and the user (or you, in `--auto`) settle scope and direction. The slug is derived from that settled scope, not confirmed with the user.
 - The `branch-precheck` CLI's verdict is the boundary on git state: a `hard_stop` halts the flow with the helper's message surfaced verbatim; the advisory verdicts offer the user a choice before continuing.
 
 </constraints>
@@ -40,12 +40,12 @@ The PLAN verification is the canonical demonstration of layered verification: th
 
 Externalise key decisions in prose before acting:
 
-- Resolving identity is the first decision, because it picks the whole path: does the `<issue>` argument resolve to an existing `.sidekick/work/<issue>-<slug>/` directory (re-enter as a redesign) or does none exist yet (derive a slug, then ground and explore)? For a new design, `sk-explorer`'s evidence is what you open the dialogue with; for a redesign, the existing RFC/PLAN + what triggered the rework is what you open with. The per-path detail lives in `<workflow>`.
+- Resolving identity is the first decision, because it picks the whole path: does the `<issue>` argument resolve to an existing `.sidekick/work/<issue>-<slug>/` directory (re-enter as a redesign) or does none exist yet (derive a slug, then ground and explore)? For a new design, `sk-explorer`'s evidence is what you open the dialogue with; for a redesign, the existing work RFC + what triggered the rework is what you open with. The per-path detail lives in `<workflow>`.
 - In exploration, deciding whether to suggest or run research versus keep talking is a judgment call. Research earns its cost when it would resolve a real open question or sharpen an option the user is weighing — not as a reflexive upfront pass. Lean toward more conversation when the gap is about intent or preference (the user holds that answer), toward research when the gap is about prior art, libraries, or tradeoffs you can't infer. The design is clear enough to draft when the goals, the shape of the solution, and the load-bearing decisions are settled with the user and the remaining unknowns are small enough to capture as RFC questions rather than blockers.
 - The design's properties are weighed in the dialogue, before direction settles — not discovered in the advisor's section afterwards. Who writes each field and what its terminal states are; where a seam belongs now, with a trivial first implementation behind it; what the second delivery of a message or a retry after success does; how a failure is seen; what can be undone. Bring the ones that bear into the conversation as the options take shape, and let the ones that don't stay out — a settings toggle has no idempotency story to tell. The explorer's analogues are evidence of what exists, not of what is right: matching the surrounding code is a choice, so say why, or why not, rather than defaulting to it. And before anything is hand-built, a short look for a library or platform feature that already handles it is the cheapest research there is.
 - In `--auto`, you hold to the stated effort by default. Escalate effort, or break out to ask one focused question, only when the task is genuinely more complex than the stated effort implies, or when you are missing information you cannot reasonably infer from the topic and the repo. Reserve the breakout for the question that actually unblocks correct work — `--auto` is trust to proceed, so the bar for interrupting is higher than in exploration.
-- Combining the PLAN quorum verdicts is a roll-up, not a judgment call: fold every failing **binding** member's `issues` into one prose `feedback` field for the plan-drafter re-dispatch, and don't carry a passing checker's empty `issues` through. Advisory members never gate a quorum or feed the drafter loop — their findings route to the user (at the confirm for the RFC, in the closing block for the PLAN). (The dispatch mechanics live in `<workflow>`.)
-- Whether to surface the `branch-precheck` CLI's `confirm_action` or `propose_branch` advisory to the user. `confirm_action` (e.g., on-default-branch policy) offers two meaningful choices — confirm to proceed, or cancel to clean-exit. `propose_branch` offers three: create `proposed_branch` and continue the design on it (you run `git switch -c <proposed_branch>`, or switch to it if it already exists, then proceed — so the RFC/PLAN commit lands off the default branch, no re-invoke), proceed in place on the current branch (continue silently), or cancel (clean-exit). Creating the branch is a real git mutation, so make it only when the user picks it. The natural reading of "no" to a branch suggestion is "proceed in place," so always surface that option explicitly rather than collapsing decline into cancel.
+- Combining a coherence quorum's verdicts is a roll-up, not a judgment call: fold every failing **binding** member's `issues` into one prose `feedback` field for the matching drafter's re-dispatch (`sk-rfc-drafter` for the pre-confirm pass, `sk-plan-drafter` for the post-tasks pass), and don't carry a passing checker's empty `issues` through. Advisory members never gate a quorum or feed a drafter loop — their findings route to the user: at the confirm for the pre-confirm pass, in the closing block for the post-tasks pass. (The dispatch mechanics live in `<workflow>`.)
+- Whether to surface the `branch-precheck` CLI's `confirm_action` or `propose_branch` advisory to the user. `confirm_action` (e.g., on-default-branch policy) offers two meaningful choices — confirm to proceed, or cancel to clean-exit. `propose_branch` offers three: create `proposed_branch` and continue the design on it (you run `git switch -c <proposed_branch>`, or switch to it if it already exists, then proceed — so the RFC commit lands off the default branch, no re-invoke), proceed in place on the current branch (continue silently), or cancel (clean-exit). Creating the branch is a real git mutation, so make it only when the user picks it. The natural reading of "no" to a branch suggestion is "proceed in place," so always surface that option explicitly rather than collapsing decline into cancel.
 - When a reviewer fails and the re-dispatch loop is approaching its cap (3 drafter calls), the right move is to halt with the loop-exhausted error and let the user retry; shipping a malformed artifact is worse than a clean halt.
 - When the user reviews the RFC, edits surface as a `feedback` re-dispatch to `sk-rfc-drafter`. There is no cap on that loop because the user drives it — they decide when the RFC is good enough. If the user explicitly cancels at any turn of the review loop, emit the cancelled clean-exit shape with a reason naming the cancellation, leave the draft artifacts on disk (no commit, no cleanup), and exit.
 - Whether the architectural advisor's recommendation diverges from the direction settled in the dialogue is a judgment, not a diff — material divergence is a different decision on a load-bearing axis (mechanism, storage/ownership, boundary), not cosmetic wording. On divergence, surface both approaches by substance + tradeoff and decide (operator in exploration, you in `--auto`); the decision is authoritative and the drafter reconciles Architecture to it.
@@ -73,8 +73,7 @@ These are the unconditional halts — emit only the structured-error block (no p
 - `error: ambiguous_work_dir` — more than one directory under `.sidekick/work/` starts with `<issue>-`. Surface the matching directory names; the fix is to remove one, never to add one.
 - `error: ambiguous_git_state` — the `branch-precheck` CLI returned `verdict: hard_stop`. Surface the helper's `hard_stop_message` verbatim.
 - `error: missing_architecture_context` — `sk-architectural-advisor` returned `{ error: "missing_architecture_context" }`. The consuming repo has no CLAUDE.md or `.claude/rules/` — the advisor cannot ground recommendations in repo constraints. Surface to the user with a hint to author a minimal CLAUDE.md before re-running `/sk-design`.
-- `error: rfc_quorum_check_loop_exhausted` — the RFC quorum loop in Finalisation hit its 3-dispatch cap without every binding member passing.
-- `error: plan_quorum_check_loop_exhausted` — the PLAN quorum loop in Finalisation hit its 3-dispatch cap without every binding member passing.
+- `error: rfc_quorum_check_loop_exhausted` — a coherence quorum loop in Finalisation (the pre-confirm pass or the post-tasks pass) hit its 3-dispatch cap without every binding member passing.
 - `error: subagent_failed` — any dispatched subagent returned malformed JSON, an unrecognised `mode` / `verdict`, or a deliverable that fails its documented contract.
 
 Harvest ritual (bench-5): when a dispatched specialist fails for real — a malformed deliverable, a quorum member's verdict the operator later shows was wrong — log it at the moment you see it, one command: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" harvest log --subject agent:<name> --summary "<what went wrong>" --expected "<…>" --actual "<…>" --input "<fixture-able input>"`. The entry becomes an eval case at adjudication; capture cost stays near zero or it won't happen.
@@ -101,14 +100,14 @@ Reason: <one-line user-facing description (e.g., "User declined the branch advis
 ```
 
 ```
-✓ <slug> — designed (RFC.md, PLAN.md{, RESEARCH.md})
+✓ <slug> — designed (RFC.md{, RESEARCH.md})
 ```
 
 </hard_stops>
 
 <workflow>
 
-The shape is: **Groundwork** (resolve identity → new-design grounding *or* redesign re-entry; + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (RFC draft → RFC quorum → mode-aware confirm → PLAN draft → parallel quorum → atomic commit). Both mode bodies converge into the same Finalisation; a redesign re-entry enters Finalisation with the design already revised. Three places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-explorer` in map mode + `sk-architectural-advisor`) gathered at convergence, the RFC quorum, and the PLAN quorum (each quorum's membership resolved via the `verifiers` CLI at its step). Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
+The shape is: **Groundwork** (resolve identity → new-design grounding *or* redesign re-entry; + git state) → **a mode body** (collaborative exploration by default, or hands-off `--auto`) → **shared Finalisation** (draft the design → coherence quorum on the partial document → mode-aware confirm → draft the tasks → coherence quorum on the complete document → one deterministic gate → atomic commit). Both mode bodies converge into the same Finalisation; a redesign re-entry enters Finalisation with the design already revised. Three places dispatch in parallel — one Agent call per specialist in one message: the design-context pair (`sk-explorer` in map mode + `sk-architectural-advisor`) gathered at convergence, and the coherence quorum — dispatched once on the partial document and again on the complete document, its membership resolved via the `verifiers` CLI each time. Research, when it runs, also fans out in parallel through the `<fanout_seam>`.
 
 ### Groundwork — resolve identity, then ground or re-enter
 
@@ -132,11 +131,11 @@ Parse the JSON object on stdout and route on `verdict` (contract in `<dispatcher
 
 The argument named an existing plan — you are re-entering its design to revise it, because `/sk-build` or `/sk-review`'s goal dimension hit something the current design can't satisfy, or the user wants to rethink. This is the design↔build loop closing.
 
-**Seed from what exists.** Read the plan's `RFC.md`, `PLAN.md`, and `RESEARCH.md` (when present), and the build state — `git log` for `[T-NN]` commits on this slug and any `## Amendments` already recorded. Reconstruct *what triggered the rework*: the deviation a build surfaced (the affected `D-NN`, the blocked task) or the goal-verify gap. The argument carries only the slug, so you reconstruct the trigger from the artifacts and git rather than receiving it as input.
+**Seed from what exists.** Read the work RFC's `RFC.md` and `RESEARCH.md` (when present), and the build state — `git log` for `[T-NN]` commits on this slug and any `## Amendments` already recorded. Reconstruct *what triggered the rework*: the deviation a build surfaced (the affected `D-NN`, the blocked task) or the goal-verify gap. The `<issue>` argument carries no detail about what triggered the rework, so you reconstruct that from the artifacts and git rather than receiving it as input.
 
 **Open with what broke.** Open by stating what you found — the existing design's relevant decisions, what the build or verify hit, and the options for revising — and settle the new direction with the user (in `--auto`, decide it informed). This is a redesign *conversation*; like the RFC-review loop it is user-driven and uncapped.
 
-**Record and re-draft.** Once the direction is settled, append a `## Redesigns` `R-NN` block to RFC.md capturing the trigger, the affected IDs, and the change (see `<output_artifacts>`). Then enter **Finalisation** with the redesign as the settled direction: re-dispatch `sk-rfc-drafter` with `feedback` describing the redesign so it re-drafts only the affected `## Decisions` / `## Architecture` / goals and leaves the rest byte-equal, re-run the RFC quorum, then re-draft and **re-pin** PLAN.md for the changed tasks, re-run the PLAN quorum, and commit. Redesign reuses Finalisation's machinery exactly — it just enters with the design already revised, the way exploration enters with it already settled.
+**Record and re-draft.** Once the direction is settled, append a `## Redesigns` `R-NN` block to RFC.md capturing the trigger, the affected IDs, and the change (see `<output_artifacts>`). Then enter **Finalisation** with the redesign as the settled direction: re-dispatch `sk-rfc-drafter` with `feedback` describing the redesign so it re-drafts only the affected `## Decisions` / `## Architecture` / goals and leaves the rest byte-equal, re-run the pre-confirm coherence quorum, re-draft the affected `## Checklist` / `## Tasks` entries via `sk-plan-drafter`, re-run the post-tasks coherence quorum, run the gate once, and commit. Redesign reuses Finalisation's machinery exactly — it just enters with the design already revised, the way exploration enters with it already settled.
 
 The `branch-precheck` CLI routes the same in both modes: `proceed` continues silently; `confirm_action` surfaces the advisory and offers confirm-and-proceed or cancel; `propose_branch` surfaces `proposed_branch` and offers create-and-continue (you `git switch -c <proposed_branch>`, or switch to it if it already exists, then proceed), proceed-in-place, or cancel; `hard_stop` emits `error: ambiguous_git_state` with the helper's `hard_stop_message` verbatim. (Verdict semantics in `<dispatcher_parse_contracts>`; the routing rationale is in `<reasoning>`.)
 
@@ -146,7 +145,7 @@ The user is in the driver's seat. No research has run yet, by design — explora
 
 **Open with your understanding.** Before any research, lay out in prose what you take the problem to be, the angles and load-bearing decisions in play, the open questions, and what the repo grounding shows — the analogues, the prior decisions, and the explorer's `scope_signal` ("this looks involved" / "this looks straightforward") — and name where research would likely pay off, without running it yet. This opening *is* the user's first contact with the work; it invites correction.
 
-**Explore as a conversation.** Run research when the user asks, or when your own judgment says a gap is worth the tokens — and say what you're about to research and why before you run it. Research fans out through the `<fanout_seam>` to the researcher subagent (`sk-researcher`, one dispatch per brief), and you merge the returns yourself in the orchestrator-side synthesis (`<fanout_seam>`); the dispatch fields and the empty-output / `no_canonical_sources_found` handling live in `<dispatcher_parse_contracts>` and `<fanout_seam>`. When a synthesis is produced, it is written to `.sidekick/plans/<slug>/RESEARCH.md`. Lay options and open questions out inline as they surface, stating each option's substance. The gap that's about intent or preference is the user's to close in conversation; the gap that's about prior art or tradeoffs is research's to close. Continue until the user signals the design is clear — goals, solution shape, and the load-bearing decisions settled, remaining unknowns small enough to ride as RFC questions rather than blockers.
+**Explore as a conversation.** Run research when the user asks, or when your own judgment says a gap is worth the tokens — and say what you're about to research and why before you run it. Research fans out through the `<fanout_seam>` to the researcher subagent (`sk-researcher`, one dispatch per brief), and you merge the returns yourself in the orchestrator-side synthesis (`<fanout_seam>`); the dispatch fields and the empty-output / `no_canonical_sources_found` handling live in `<dispatcher_parse_contracts>` and `<fanout_seam>`. When a synthesis is produced, it is written to `.sidekick/work/<issue>-<slug>/RESEARCH.md`. Lay options and open questions out inline as they surface, stating each option's substance. The gap that's about intent or preference is the user's to close in conversation; the gap that's about prior art or tradeoffs is research's to close. Continue until the user signals the design is clear — goals, solution shape, and the load-bearing decisions settled, remaining unknowns small enough to ride as RFC questions rather than blockers.
 
 **Converge.** When the user is satisfied, gather the design context needed to draft and proceed to **Finalisation**. Because the substance was already worked out together, the confirm there is light.
 
@@ -162,7 +161,7 @@ Honest-autonomy: `--auto` is trust to proceed, not blindness. Hold to the stated
 
 ### Finalisation (shared — both modes converge here)
 
-Both mode bodies arrive here with the design settled. Gather design context, draft and gate the RFC, confirm (mode-aware), then draft and gate the PLAN and commit.
+Both mode bodies arrive here with the design settled. Gather design context, draft and confirm the design, then draft and gate the tasks, then commit.
 
 **Gather design context.** In a single message, dispatch the design-context pair as separate concurrent Agent calls:
 
@@ -177,58 +176,55 @@ When they agree — the common case — proceed straight to the draft; the advis
 
 When they diverge on a load-bearing axis, the decision is made informed — divergence is a decision point, not an error, and the advisor's dissent is genuine signal worth weighing. Surface *both* approaches by their substance and the real tradeoff between them: state what each approach is, what it buys, and what it costs — never "the advisor disagrees," never bare labels like "Option A / Option B." A thin or one-sided surface turns the choice into a rubber stamp, which defeats the point of making it. In exploration, lay the two side by side for the user — an `AskUserQuestion` whose options each carry their substance, or inline prose when that reads better — and let them choose; their choice is authoritative. In `--auto`, you are the informed decider: weigh the two, pick one (or a considered blend), and record the reasoning in prose. Either way the chosen approach becomes a decision the design now owns — it flows into the settled direction the drafter turns into `## Decisions`, and `sk-rfc-drafter` reconciles `## Architecture` to it (chosen approach in `### Recommendation`, the overridden one demoted to `### Alternatives considered` with a "diverged because…"). You don't edit the advisor's output yourself; you make the decision and let the drafter reconcile.
 
-**Draft the RFC.** Dispatch `subagent_type: sk-rfc-drafter` with:
+**Draft the design sections.** Dispatch `subagent_type: sk-rfc-drafter` with:
 
-- `slug`, `scope_statement` (the one-line scope settled in the dialogue)
-- `today: <YYYY-MM-DD>` — the system date from `date +%Y-%m-%d` (run once via Bash; reused for the PLAN draft below)
+- `issue`, `rfc_path: .sidekick/work/<issue>-<slug>/RFC.md`
+- `scope_statement` (the one-line scope settled in the dialogue)
+- `today: <YYYY-MM-DD>` — the system date from `date +%Y-%m-%d` (run once via Bash; reused for the tasks draft below)
 - `synthesis_output: { full_synthesis }` (the orchestrator-side synthesis, per `<fanout_seam>`) when research ran; omit when it didn't
 - `architecture_section: <advisor's "## Architecture" body, parsed per the dispatcher_parse_contracts>`
 - `analogues: [{ path, why_relevant }]` — `sk-explorer`'s map-mode `assignments[].analogues`, flattened and deduplicated by path (see `<dispatcher_parse_contracts>`)
 
-Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/RFC.md`, creating parent directories as needed.
+Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/work/<issue>-<slug>/RFC.md`, creating parent directories as needed. The document is **partial at this point** — the design sections only, with no `## Checklist` / `## Tasks` yet — so the deterministic gate can't run against it: the folded schema requires all seven sections, `## Checklist` and `## Tasks` among them.
 
-**Verify the RFC (gate, then quorum).** Run the deterministic gate via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" check-artifact .sidekick/plans/<slug>/RFC.md --type rfc` — and parse its JSON. On `verdict: "fail"`, re-dispatch `sk-rfc-drafter` with `feedback: <the gate's issues collapsed into one prose summary the drafter can act on>`, write the updated `draft_text` through to RFC.md, and re-run the gate — without dispatching the quorum (no model spend on a mechanically broken draft). An `error` shape from the gate (e.g. `missing_artifact`) is an orchestration bug, not a draft defect: halt with `error: artifact_gate_failed` rather than looping.
-
-On gate `verdict: "pass"`, resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface rfc` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/RFC.md`, `artifact_type: "rfc"` (bundled contracts in `<dispatcher_parse_contracts>`; operator members follow the operator-verifier contract (the final one in <dispatcher_parse_contracts>)).
+**Coherence on the partial document.** Resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface rfc` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). This dispatch runs unconditionally: with no `## Checklist` / `## Tasks` yet, there's no gate ahead of it on this pass, so nothing mechanical is checked before the quorum here (the economy that skips model spend on a mechanically broken draft belongs to the gate, later in the pipeline, once the document is whole). In a single message, dispatch every member in parallel — one Agent call each, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/work/<issue>-<slug>/RFC.md`, `artifact_type: "rfc"` (bundled contracts in `<dispatcher_parse_contracts>`; operator members follow the operator-verifier contract (the final one in <dispatcher_parse_contracts>)). `sk-coherence-checker`'s `rfc` lens tolerates the missing `## Checklist` / `## Tasks` at this stage — with no task sections yet, it checks the design sections against each other and stops there.
 
 Parse each trailing ```json``` fence. Combine verdicts by tier:
 
 - All **binding** members `verdict: pass` — continue to the confirm. Advisory (operator) findings never gate: carry their `issues` forward and surface them at the confirm alongside the RFC.
-- Any **binding** member `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <the failing binding members' issues collapsed into one prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the gate, then the quorum.
-- Cap at 3 drafter re-dispatches across gate and quorum failures combined. On the third failure, emit `error: rfc_quorum_check_loop_exhausted` and halt.
+- Any **binding** member `verdict: fail` — re-dispatch `sk-rfc-drafter` with `feedback: <the failing binding members' issues collapsed into one prose summary the drafter can act on>`. Write the updated `draft_text` through to RFC.md. Re-run the quorum.
+- Cap at 3 `sk-rfc-drafter` re-dispatches. On the third failure, emit `error: rfc_quorum_check_loop_exhausted` and halt.
 
-The quorum members dispatch in parallel in a single message, and the quorum is sealed from the producer: each member receives the artifact by path and reads it fresh from disk — never `sk-rfc-drafter`'s / `sk-plan-drafter`'s reasoning, their returned JSON, or a prior round's verdicts. Feedback flows producer-ward only (gate and failing binding members' issues collapse into the re-dispatch `feedback`); preserve this seal on any future edit. The gate itself has no reasoning to contaminate — it runs first precisely because a deterministic fail makes the model dispatch pointless.
+The quorum members dispatch in parallel in a single message, and the quorum is sealed from the producer: each member receives the artifact by path and reads it fresh from disk — never `sk-rfc-drafter`'s reasoning, its returned JSON, or a prior round's verdict. Feedback flows producer-ward only (failing binding members' issues collapse into the re-dispatch `feedback`); preserve this seal on any future edit.
 
-**Confirm (mode-aware).** The confirm before the PLAN draft is an approval gate — the PLAN draft, quorum, and commit all happen *after* it — so surface it as a structured `AskUserQuestion` with the affirmative labelled **Approve** (not "ship" / "go", which overstate a gate that precedes the commit). The `AskUserQuestion` tool's automatic free-text "Other" option covers any response that fits none of the choices. The choices are shaped by how the draft was reached:
+**Confirm (mode-aware).** The confirm before the tasks are drafted is an approval gate — the tasks draft, the second coherence pass, the deterministic gate, and the commit all happen *after* it — so surface it as a structured `AskUserQuestion` with the affirmative labelled **Approve** (not "ship" / "go", which overstate a gate that precedes the commit). The `AskUserQuestion` tool's automatic free-text "Other" option covers any response that fits none of the choices. The choices are shaped by how the draft was reached:
 
-- In exploration, the substance was already worked out together, so this is a *light* approval: surface the RFC.md path and contents as an `AskUserQuestion` with `Approve` / `Tweak` / `Cancel`. On `Tweak`, re-dispatch `sk-rfc-drafter` with `feedback: <user edit instructions as prose>`, write the updated `draft_text` through, re-run the RFC quorum, and re-surface. The loop is uncapped because the user drives it.
+- In exploration, the substance was already worked out together, so this is a *light* approval: surface the RFC.md path and contents as an `AskUserQuestion` with `Approve` / `Tweak` / `Cancel`. On `Tweak`, re-dispatch `sk-rfc-drafter` with `feedback: <user edit instructions as prose>`, write the updated `draft_text` through, re-run the coherence quorum on the partial document, and re-surface. The loop is uncapped because the user drives it.
 - In `--auto`, this is a one-line approval before commit — trust to proceed, not blindness. Surface the RFC.md path and a one-line summary as an `AskUserQuestion` with `Approve` / `Cancel` (a `Tweak` option is fine if it helps).
 
 In either mode, an explicit user cancel emits the cancelled clean-exit shape with `Reason: User cancelled during RFC review.`, leaves RFC.md and RESEARCH.md on disk as drafts, runs no commit and no cleanup, and exits. No error code — this is a clean exit. The same pattern applies on any later turn of the confirm loop.
 
-**Draft the PLAN.** Compute the RFC content hash via the `hash-rfc` CLI — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" hash-rfc <slug>` — and read `hash` from its JSON (the 64-char SHA-256 of the file content). This is the one implementation the `check-artifact` gate and the `check-drift` CLI also use to verify the pin, so the value is computed identically everywhere by construction. Capture it as `rfc_hash`.
+**Draft the checklist and tasks.** Dispatch `subagent_type: sk-plan-drafter` with `issue`, `rfc_path: .sidekick/work/<issue>-<slug>/RFC.md`, `feedback?`. Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable — the `## Checklist` and `## Tasks` sections. Append `draft_text` to the work RFC.
 
-Dispatch `subagent_type: sk-plan-drafter` with `slug`, `rfc_path: .sidekick/plans/<slug>/RFC.md`, `rfc_hash`, and `today: <YYYY-MM-DD>` (the same system date derived for the RFC draft). Parse the trailing ```json``` fence; extract `draft_text` from the `draft_ready` deliverable. Write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`.
+**Coherence on the complete document.** With `## Checklist` / `## Tasks` now appended, resolve and dispatch the quorum again — same `verifiers --surface rfc` resolution, same `artifact_path: .sidekick/work/<issue>-<slug>/RFC.md`, `artifact_type: "rfc"` — this time against a complete document. This is `sk-coherence-checker`'s second dispatch in Finalisation: its `rfc` lens now checks each task in `## Tasks` against the effective decision set — the check the retired `plan` lens carried before the fold, and the one the deterministic gate cannot do. `check-artifact` only verifies that a task's cited `g_n` / `D-NN` *resolves*; it never asks whether the task *agrees* with what it cites. Skipping this pass would let a task implementing an approach `## Decisions` rejected ship with every reference resolving and every gate green.
 
-**Verify the PLAN (gate, then quorum).** Run the deterministic gate via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" check-artifact .sidekick/plans/<slug>/PLAN.md --type plan` — and parse its JSON (the gate derives the RFC as `RFC.md` beside the plan and checks shape and references in one run; issues are tagged `dimension: "structural" | "crossref"`). On `verdict: "fail"`, re-dispatch `sk-plan-drafter` with `feedback: <the gate's issues collapsed into a single prose summary the drafter can act on>` — without dispatching the quorum. Before the re-dispatch, if any failing issue has `kind: "pins_rfc_drift"`, re-compute `rfc_hash` via the `hash-rfc` CLI (`"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" hash-rfc <slug>`, read `hash`) and pass the fresh value — the user may have edited RFC.md between the PLAN draft and the gate. Without the re-compute, the drafter receives the stale hash and the loop cannot recover (it would re-emit the same drift on every retry until the cap exhausts). Write the updated `draft_text` through to PLAN.md. Re-run the gate. An `error` shape from the gate (`missing_artifact`, `missing_rfc`) is an orchestration bug, not a draft defect: halt with `error: artifact_gate_failed`.
+Parse each trailing ```json``` fence. Combine verdicts by tier:
 
-On gate `verdict: "pass"`, resolve the quorum via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" verifiers --surface plan` — and parse its JSON for `members` + `warnings` (surface any warnings in prose). In a single message, dispatch every member in parallel, `subagent_type` = the member's `agent`, with `artifact_path: .sidekick/plans/<slug>/PLAN.md`, `artifact_type: "plan"`, and `related_paths: { rfc: .sidekick/plans/<slug>/RFC.md }`.
+- All **binding** members `verdict: pass` — continue to the gate. Advisory (operator) findings never gate: surface their `issues` in the closing success block.
+- Any **binding** member `verdict: fail` — re-dispatch `sk-plan-drafter` (not `sk-rfc-drafter` — the design sections already cleared their own coherence pass) with `feedback: <the failing binding members' issues collapsed into one prose summary the drafter can act on>`. Append the updated `## Checklist` / `## Tasks` to RFC.md in place of the prior draft. Re-run this quorum.
+- Cap at 3 `sk-plan-drafter` re-dispatches across this quorum and the gate below, combined. On the third failure, emit `error: rfc_quorum_check_loop_exhausted` and halt.
 
-Parse each ```json``` fence. Combine verdicts by tier:
+This pass stays sealed from the producer the same way the first one is — members read the artifact fresh from disk, never `sk-plan-drafter`'s reasoning or a prior round's verdict.
 
-- All **binding** members `verdict: pass` — continue to the commit. Advisory (operator) findings never gate: surface their `issues` in the closing success block.
-- Any **binding** member `verdict: fail` — re-dispatch `sk-plan-drafter` with `feedback: <the failing binding members' issues collapsed into a single prose summary the drafter can act on>`. Write the updated `draft_text` through to PLAN.md. Re-run the gate, then the quorum.
-- Cap at 3 drafter re-dispatches across gate and quorum failures combined. On the third failure, emit `error: plan_quorum_check_loop_exhausted` and halt.
+**The gate, once.** Run the deterministic gate via Bash — `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/bin/sidekick" check-artifact .sidekick/work/<issue>-<slug>/RFC.md --type rfc` — and parse its JSON. The document is complete by this point, so this is the only place in Finalisation the gate needs to run: one call checks frontmatter, required headings, checklist well-formedness, and that every cited `g_n` / `D-NN` resolves. On `verdict: "fail"`, re-dispatch `sk-plan-drafter` with `feedback: <the gate's issues collapsed into one prose summary the drafter can act on>`, append the updated `## Checklist` / `## Tasks` to RFC.md, and re-run the gate — this failure counts toward the same 3-dispatch cap as the coherence pass above. The gate's only error is `missing_artifact`: an orchestration bug, not a draft defect, so halt with `error: artifact_gate_failed` rather than looping.
 
-The quorum stays sealed from the producer and its members dispatch in parallel in one message; the deterministic gate runs first because a mechanically broken draft makes the model dispatch pointless, and the gate has no reasoning to contaminate.
-
-**Atomic commit.** Stage `.sidekick/plans/<slug>/RFC.md`, `.sidekick/plans/<slug>/PLAN.md`, and `.sidekick/plans/<slug>/RESEARCH.md` (the last only when it exists). Commit with Conventional Commits format:
+**Atomic commit.** Stage `.sidekick/work/<issue>-<slug>/RFC.md` and `.sidekick/work/<issue>-<slug>/RESEARCH.md` (the last only when it exists). Never `git add -A`. Commit with Conventional Commits format:
 
 ```
-design(<slug>): draft RFC and PLAN
+design(<slug>): draft RFC
 ```
 
-After commit, print the success block (`✓ <slug> — designed (RFC.md, PLAN.md{, RESEARCH.md})`) and exit cleanly.
+After commit, print the success block (`✓ <slug> — designed (RFC.md{, RESEARCH.md})`) and exit cleanly.
 
 </workflow>
 
@@ -252,7 +248,7 @@ The research fan-out runs through a backend seam so the orchestration logic stay
 
 `deep` is explicit opt-in (config or `--auto high`) — never escalate to it on your own judgment; it is a token-cost decision that belongs to the operator.
 
-**Synthesis (orchestrator-side).** When researchers return, you compose the synthesis yourself — no dispatch. Drop entries with empty `output` first; when some dispatched researchers were dropped or failed, open the synthesis with the gap notation `_(N of M researchers reported)_`. Merge the collected `{ name, output, sources_cited }` returns into one recommendation-shaped comparative analysis, ≤2000 words (whitespace-split): open with the recommendation the evidence best supports, name the load-bearing criteria behind it, then walk the alternatives with their rejection reasons. Preserve genuine disagreement between researchers explicitly rather than smoothing it — disagreement is signal. Carry through the substitutability markers and thin-grounding flags the researchers raised; don't present findings as more grounded than they reported them. Cite per researcher in `[<name>]` form, embedding external URLs / paths inline where they carry weight. Write the result to `.sidekick/plans/<slug>/RESEARCH.md` under the `fanout:` header line, and pass `{ full_synthesis: <the same markdown> }` to `sk-rfc-drafter` as `synthesis_output` — the drafter's contract is unchanged. The full synthesis lives only in RESEARCH.md; the drafter writes a brief pointer to it in RFC.md `## Research notes`.
+**Synthesis (orchestrator-side).** When researchers return, you compose the synthesis yourself — no dispatch. Drop entries with empty `output` first; when some dispatched researchers were dropped or failed, open the synthesis with the gap notation `_(N of M researchers reported)_`. Merge the collected `{ name, output, sources_cited }` returns into one recommendation-shaped comparative analysis, ≤2000 words (whitespace-split): open with the recommendation the evidence best supports, name the load-bearing criteria behind it, then walk the alternatives with their rejection reasons. Preserve genuine disagreement between researchers explicitly rather than smoothing it — disagreement is signal. Carry through the substitutability markers and thin-grounding flags the researchers raised; don't present findings as more grounded than they reported them. Cite per researcher in `[<name>]` form, embedding external URLs / paths inline where they carry weight. Write the result to `.sidekick/work/<issue>-<slug>/RESEARCH.md` under the `fanout:` header line, and pass `{ full_synthesis: <the same markdown> }` to `sk-rfc-drafter` as `synthesis_output` — the drafter's contract is unchanged. The full synthesis lives only in RESEARCH.md; the drafter writes a brief pointer to it in RFC.md `## Research notes`.
 
 **Failure semantics.** The workflow backend failing for any reason (tool unavailable, disabled, launch error) is never a hard-stop: fall back to the agents backend and note the fallback in reasoning prose. Plan-level gating is not detectable up front — the fallback IS the degradation path (see `docs/LIMITS.md` in the sidekick repo).
 
@@ -323,27 +319,27 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 
 ### 5. sk-rfc-drafter
 
-**Input:** `{ slug, scope_statement, synthesis_output?, architecture_section, analogues: [{ path, why_relevant }], feedback? }`.
+**Input:** `{ issue, rfc_path, scope_statement, synthesis_output?, architecture_section, analogues: [{ path, why_relevant }], today (fresh draft only), feedback? }`.
 
 **Output:** `{ mode: "draft_ready", draft_path, draft_text }` inside a ```json``` fence, or an error JSON of the form `{ error: "missing_input", reason }`.
 
-**Routing:** write `draft_text` to `.sidekick/plans/<slug>/RFC.md`. On a re-dispatch with `feedback`, the drafter integrates the targeted section only and leaves every other section byte-equal — this is also how a **redesign re-entry** re-drafts the affected sections (the `feedback` describes the redesign).
+**Routing:** write `draft_text` to `.sidekick/work/<issue>-<slug>/RFC.md`. On a re-dispatch with `feedback`, the drafter integrates the targeted section only and leaves every other section byte-equal — this is also how a **redesign re-entry** re-drafts the affected sections (the `feedback` describes the redesign).
 
 ### 6. sk-plan-drafter
 
-**Input:** `{ slug, rfc_path, rfc_hash, feedback? }`.
+**Input:** `{ issue, rfc_path, feedback? }`.
 
 **Output:** `{ mode: "draft_ready", draft_path, draft_text }` inside a ```json``` fence, or an error JSON.
 
-**Routing:** write `draft_text` to `.sidekick/plans/<slug>/PLAN.md`. The drafter is responsible for embedding `pins-rfc: <rfc_hash>` in the PLAN.md frontmatter — the `check-artifact` gate verifies the pin before the PLAN quorum.
+**Routing:** `draft_text` carries the `## Checklist` and `## Tasks` sections only. Append them to the work RFC at `rfc_path`. On a re-dispatch with `feedback`, the drafter integrates the targeted task(s) only and leaves the rest byte-equal.
 
 ### 7. sk-coherence-checker
 
-**Input:** `{ artifact_path, artifact_type: "rfc"|"plan"|"decision", related_paths?: { rfc: <abs path> } }`. `related_paths.rfc` is required for `plan`, optional for `decision`, omitted for `rfc`.
+**Input:** `{ artifact_path, artifact_type: "rfc"|"decision", related_paths?: { rfc: <abs path> } }`. `related_paths.rfc` is optional for `decision` (only when it cites a source RFC), omitted for `rfc`.
 
 **Output:** `{ verdict: "pass"|"fail", artifact_path, artifact_type, issues? }` inside a ```json``` fence. `issues` is REQUIRED iff `verdict === "fail"`; each issue is `{ kind: "contradiction", locus_a, locus_b, detail }`.
 
-**Routing:** `pass` continues; in the RFC and PLAN quorums, a `fail` rolls its `issues` into the combined prose `feedback` for the matching drafter's re-dispatch.
+**Routing:** `pass` continues. This skill dispatches it twice against the work RFC with `artifact_type: "rfc"` — once on the partial document (design sections only; the lens tolerates the missing `## Checklist` / `## Tasks`), again on the complete document (tasks checked against the effective decision set). A `fail` on the first pass rolls its `issues` into `sk-rfc-drafter`'s re-dispatch `feedback`; a `fail` on the second rolls into `sk-plan-drafter`'s.
 
 ### 8. Operator-authored verifiers (registry members with `builtin: false`)
 
@@ -358,9 +354,8 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 <output_artifacts>
 
 ```
-.sidekick/plans/<slug>/
-├─ RFC.md         (YAML frontmatter + Goals & non-goals, Architecture, Decisions, Questions, Risks, optional Research notes; ## Redesigns appended on re-entry, ## Amendments by /sk-build)
-├─ PLAN.md        (YAML frontmatter with pins-rfc: <rfc_hash> + per-task entries + ## Checklist)
+.sidekick/work/<issue>-<slug>/
+├─ RFC.md         (YAML frontmatter + Goals & non-goals, Architecture, Decisions, Questions, Risks, Checklist, Tasks, optional Research notes; ## Redesigns appended on re-entry, ## Amendments by /sk-build)
 └─ RESEARCH.md    (the research synthesis — only when research ran)
 ```
 
@@ -369,11 +364,11 @@ Compose each brief from the settled dialogue state and the survey's `research_hi
 ### Commit shape
 
 ```
-design(<slug>): draft RFC and PLAN          # new design
+design(<slug>): draft RFC                    # new design
 design(<slug>): redesign — <one-line>        # redesign re-entry (R-NN)
 ```
 
-Single atomic commit. Stage only the paths written by this skill — `git add .sidekick/plans/<slug>/RFC.md .sidekick/plans/<slug>/PLAN.md` plus `RESEARCH.md` when it exists. Never `git add -A`.
+Single atomic commit. Stage only the paths written by this skill — `git add .sidekick/work/<issue>-<slug>/RFC.md` plus `RESEARCH.md` when it exists. Never `git add -A`.
 
 ### R-NN block (written on a redesign re-entry)
 
@@ -403,7 +398,7 @@ Append to RFC.md `## Redesigns`. If the section doesn't exist, create it after `
 
 <examples>
 
-Four examples teaching the interaction judgment, not the pipeline mechanics. They show: research-as-dialogue inside a default exploration with a light confirm; a hands-off `--auto medium` run where effort drives depth and the only pause is a one-line confirm; an honest-autonomy breakout where `--auto low` stops for one focused question rather than guessing; and a redesign re-entry where an existing plan re-opens design seeded by what broke. Each leads with the reasoning the orchestrator should do; the deterministic Finalisation (context → draft → RFC quorum → confirm → PLAN quorum → commit) is summarised because its mechanics live in `<workflow>`.
+Four examples teaching the interaction judgment, not the pipeline mechanics. They show: research-as-dialogue inside a default exploration with a light confirm; a hands-off `--auto medium` run where effort drives depth and the only pause is a one-line confirm; an honest-autonomy breakout where `--auto low` stops for one focused question rather than guessing; and a redesign re-entry where an existing plan re-opens design seeded by what broke. Each leads with the reasoning the orchestrator should do; the deterministic Finalisation (context → draft the design → coherence quorum → confirm → draft the tasks → coherence quorum → gate → commit) is summarised because its mechanics live in `<workflow>`.
 
 ### Example 1 — Default exploration, research as dialogue, light confirm
 
@@ -415,7 +410,7 @@ The user redirects: it's not render cost, the dashboard refetches everything on 
 
 `--auto` is trust to proceed, so there is no conversational turn — the stated effort is the whole instruction for how deep to go. A new issue needs no confirmation on its derived slug, so the run flows straight through.
 
-User runs `/sk-design 63 --auto medium` for the CSV-export issue. No work directory exists for issue 63, so it's a new design — the orchestrator derives the slug `export-csv` without stopping to confirm it; branch precheck `proceed`s; `sk-explorer` grounds it. Because `medium` maps to the `standard` research tier, the orchestrator gathers design context and runs research at standard depth (one researcher per hint, orchestrator-side synthesis) without pausing to ask whether to — the effort level already answered that. Synthesis flows into Finalisation: draft → RFC quorum → PLAN → parallel quorum → commit, all hands-off. The single pause is the one-line approval before commit — an `AskUserQuestion` like "Designed `export-csv` (RFC.md, PLAN.md, RESEARCH.md)" with `Approve` / `Cancel` — trust to proceed, not blindness. The teaching point: in hands-off mode the effort word *is* the depth knob, so the orchestrator never stops to negotiate research; the only human touch is the one-line approval.
+User runs `/sk-design 63 --auto medium` for the CSV-export issue. No work directory exists for issue 63, so it's a new design — the orchestrator derives the slug `export-csv` without stopping to confirm it; branch precheck `proceed`s; `sk-explorer` grounds it. Because `medium` maps to the `standard` research tier, the orchestrator gathers design context and runs research at standard depth (one researcher per hint, orchestrator-side synthesis) without pausing to ask whether to — the effort level already answered that. Synthesis flows into Finalisation: draft the design → coherence quorum → confirm → draft the tasks → coherence quorum → gate → commit, all hands-off. The single pause is the one-line approval before the tasks are drafted and the run heads to the gate and commit — an `AskUserQuestion` like "Designed `export-csv` (RFC.md, RESEARCH.md)" with `Approve` / `Cancel` — trust to proceed, not blindness. The teaching point: in hands-off mode the effort word *is* the depth knob, so the orchestrator never stops to negotiate research; the only human touch is the one-line approval.
 
 ### Example 3 — `--auto low`, honest-autonomy breakout
 
@@ -427,17 +422,16 @@ User runs `/sk-design 74 --auto low` for the webhook-retries issue. No work dire
 
 An existing work directory is re-entry, not a collision — this is the loop closing. `/sk-build 63` hit a structural blocker at T-04 (D-03 and D-07 unworkable as locked) and its redesign prompt told the user to run `/sk-design 63`. The user does.
 
-The orchestrator resolves the argument to the existing `.sidekick/work/63-export-csv/` and enters **Redesign re-entry**: it reads RFC/PLAN, `git log` for the `[T-NN]` commits done so far, and reconstructs the trigger (the T-04 deviation naming D-03/D-07). It opens by stating what broke — "the build hit a wall at T-04: D-03 (streaming writer) and D-07 (request-layer auth) can't both hold as written; here's the fork" — and settles the new direction. Then it appends `## Redesigns` R-01 (trigger + affected D-03/D-07 + the change), re-dispatches `sk-rfc-drafter` with `feedback` describing the redesign so only `## Decisions` / `## Architecture` change, re-runs the RFC quorum, re-drafts and **re-pins** PLAN.md, runs the PLAN quorum, and commits `design(export-csv): redesign — durable streaming writer`. The user then re-runs `/sk-build 63` to resume through the revised tasks. The teaching point: redesign re-enters the *same* dialogic design, seeded by what broke, and the loop cycles.
+The orchestrator resolves the argument to the existing `.sidekick/work/63-export-csv/` and enters **Redesign re-entry**: it reads the work RFC, `git log` for the `[T-NN]` commits done so far, and reconstructs the trigger (the T-04 deviation naming D-03/D-07). It opens by stating what broke — "the build hit a wall at T-04: D-03 (streaming writer) and D-07 (request-layer auth) can't both hold as written; here's the fork" — and settles the new direction. Then it appends `## Redesigns` R-01 (trigger + affected D-03/D-07 + the change), re-dispatches `sk-rfc-drafter` with `feedback` describing the redesign so only `## Decisions` / `## Architecture` change, re-runs the pre-confirm coherence quorum, re-drafts the affected `## Tasks` via `sk-plan-drafter`, re-runs the post-tasks coherence quorum, gates once, and commits `design(export-csv): redesign — durable streaming writer`. The user then re-runs `/sk-build 63` to resume through the revised tasks. The teaching point: redesign re-enters the *same* dialogic design, seeded by what broke, and the loop cycles.
 
 </examples>
 
 <symbol_conventions>
 
 - `<slug>` — the readable half of the work directory name (`.sidekick/work/<issue>-<slug>/`); the issue number is the identity, so a retitled issue can leave the slug stale without breaking resolution.
-- `g_n` — goal ID in RFC.md `## Goals & non-goals`. Sequentially numbered from `g1`. Cited by PLAN.md tasks and verified by the `check-artifact` CLI.
-- `D-NN` — decision ID in RFC.md `## Decisions` (zero-padded from D-01). Cited by PLAN.md tasks and verified by the `check-artifact` CLI. This skill writes the initial set and any redesign revisions (`R-NN`); single-decision `## Amendments` (`A-NN`) are written by `/sk-build`.
-- `T-NN` — task ID in PLAN.md `## Checklist` (zero-padded from T-01). Set by `sk-plan-drafter`; ticked by `/sk-build`.
+- `g_n` — goal ID in RFC.md `## Goals & non-goals`. Sequentially numbered from `g1`. Cited by `## Tasks` entries and verified by the `check-artifact` CLI.
+- `D-NN` — decision ID in RFC.md `## Decisions` (zero-padded from D-01). Cited by `## Tasks` entries and verified by the `check-artifact` CLI. This skill writes the initial set and any redesign revisions (`R-NN`); single-decision `## Amendments` (`A-NN`) are written by `/sk-build`.
+- `T-NN` — task ID in RFC.md `## Checklist` (zero-padded from T-01). Set by `sk-plan-drafter`; ticked by `/sk-build`.
 - `R-NN` — redesign ID in RFC.md `## Redesigns` (zero-padded from R-01). Written by this skill on a redesign re-entry; it reconciles `## Decisions` / `## Architecture` to match. (`/sk-build` defers to this via its redesign prompt — it does not write `## Redesigns`.)
-- `pins-rfc:` — PLAN.md frontmatter field carrying the SHA-256 of RFC.md's content at the moment PLAN.md was authored. Set by `sk-plan-drafter` (the orchestrator passes it `rfc_hash` from the `hash-rfc` CLI); verified by the `check-artifact` gate before the PLAN quorum and by `/sk-build`'s drift check (`check-drift` CLI). All three get the hash from the one `hash-rfc` implementation (`hashRfcContent`), so they compute it identically by construction.
 
 </symbol_conventions>
