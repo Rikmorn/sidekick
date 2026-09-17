@@ -7,36 +7,15 @@ import {
   resolveGates,
   type SidekickConfig,
 } from './config.js';
+import { originHeadOrCascade } from './default-branch.js';
 import { installHooks } from './hooks.js';
 
-const BRANCH_CASCADE = ['main', 'master', 'dev', 'trunk', 'develop'] as const;
-
+/**
+ * Kept exported because `init.test.ts` and `init`'s own callers use it; the
+ * resolution itself now lives in `default-branch.ts`.
+ */
 export function detectDefaultBranch(repoRoot: string): string {
-  // Try origin/HEAD first.
-  try {
-    const out = execSync('git symbolic-ref --short refs/remotes/origin/HEAD', {
-      cwd: repoRoot,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
-    if (out.startsWith('origin/')) return out.slice('origin/'.length);
-  } catch {
-    /* fall through */
-  }
-  // Cascade through common names that exist as local branches.
-  for (const candidate of BRANCH_CASCADE) {
-    try {
-      execSync(`git rev-parse --verify --quiet refs/heads/${candidate}`, {
-        cwd: repoRoot,
-        stdio: 'ignore',
-      });
-      return candidate;
-    } catch {
-      /* not present */
-    }
-  }
-  return 'main';
+  return originHeadOrCascade(repoRoot);
 }
 
 const LOCKFILE_RUNNERS: ReadonlyArray<{

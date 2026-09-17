@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { resolveFromGit } from './default-branch.js';
 
 export type Operation = 'design' | 'build' | 'decide' | 'review' | 'regen-plan';
 export type Verdict =
@@ -111,6 +112,8 @@ function slugifyBranch(
  * 1. .sidekick/config.json (highest precedence)
  * 2. origin/HEAD
  * 3. Cascade through common branch names
+ *
+ * Steps 2 and 3 are `default-branch.ts`, shared with `init`.
  */
 function resolveDefaultBranch(
   repoRoot: string,
@@ -124,31 +127,9 @@ function resolveDefaultBranch(
     return { defaultBranch: configDefaultBranch, source: 'config' };
   }
 
-  // 2. origin/HEAD
-  const originHead = safeExec(
-    'git symbolic-ref --short refs/remotes/origin/HEAD',
-    repoRoot,
-  ).trim();
-  if (originHead.startsWith('origin/')) {
-    return {
-      defaultBranch: originHead.slice('origin/'.length),
-      source: 'origin_head',
-    };
-  }
-
-  // 3. Cascade
-  const cascade = ['main', 'master', 'dev', 'trunk', 'develop'] as const;
-  for (const candidate of cascade) {
-    const out = safeExec(
-      `git rev-parse --verify --quiet refs/heads/${candidate}`,
-      repoRoot,
-    );
-    if (out !== '') {
-      return { defaultBranch: candidate, source: 'cascade' };
-    }
-  }
-
-  return { defaultBranch: '', source: 'unknown' };
+  // 2. origin/HEAD, then 3. the cascade.
+  const { branch, source } = resolveFromGit(repoRoot);
+  return { defaultBranch: branch, source };
 }
 
 /**
