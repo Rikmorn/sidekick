@@ -33,6 +33,24 @@ describe('detectDefaultBranch', () => {
   it('falls back through the cascade when origin/HEAD unset and no commits', () => {
     expect(detectDefaultBranch(tmpRoot)).toBe('main');
   });
+
+  it('ignores a checked-out feature branch with no cascade name present (#67)', () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a'), 'x');
+    execSync('git add a && git commit -q -m initial', { cwd: tmpRoot });
+    execSync('git branch -m feature/sk-67', { cwd: tmpRoot });
+    // Only feature/sk-67 exists, so the cascade finds nothing and the final
+    // fallback wins. Before #67 the checked-out branch was returned instead.
+    expect(detectDefaultBranch(tmpRoot)).toBe('main');
+  });
+
+  it('prefers a cascade branch over the checked-out feature branch (#67)', () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a'), 'x');
+    execSync('git add a && git commit -q -m initial', { cwd: tmpRoot });
+    execSync('git branch -m master', { cwd: tmpRoot });
+    execSync('git checkout -q -b feature/sk-67', { cwd: tmpRoot });
+    // The aesir case: a real default branch exists but is not checked out.
+    expect(detectDefaultBranch(tmpRoot)).toBe('master');
+  });
 });
 
 describe('detectGates', () => {

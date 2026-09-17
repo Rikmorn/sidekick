@@ -24,18 +24,6 @@ export function detectDefaultBranch(repoRoot: string): string {
   } catch {
     /* fall through */
   }
-  // Try the currently-checked-out branch.
-  try {
-    const out = execSync('git rev-parse --abbrev-ref HEAD', {
-      cwd: repoRoot,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
-    if (out && out !== 'HEAD') return out;
-  } catch {
-    /* fall through */
-  }
   // Cascade through common names that exist as local branches.
   for (const candidate of BRANCH_CASCADE) {
     try {
@@ -260,6 +248,11 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
   }
 
   writeConfig(repoRoot, config);
+  if (config.defaultBranch !== 'main' && config.defaultBranch !== 'master') {
+    console.warn(
+      `⚠ defaultBranch detected as "${config.defaultBranch}" — origin/HEAD is probably unset, so detection fell through to a local branch name. Run \`git remote set-head origin -a\` and re-run \`sidekick init\` to detect it from the remote.`,
+    );
+  }
   console.log(
     `Wrote .sidekick/config.json (defaultBranch: ${config.defaultBranch})`,
   );
