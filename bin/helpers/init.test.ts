@@ -7,6 +7,7 @@ import {
   detectDefaultBranch,
   detectGates,
   ensureGitignore,
+  installRules,
   runInit,
   writeConfig,
 } from './init.js';
@@ -454,5 +455,76 @@ describe('installRules via runInit', () => {
     });
     expect(code).toBe(0);
     expect(fs.existsSync(path.join(repoRoot, '.claude', 'rules'))).toBe(false);
+  });
+});
+
+// #43: the `sk-` prefix is the whole ownership argument. These cases pin what
+// must survive it, and they pass against copy-only behaviour.
+describe('installRules ownership filter (#43)', () => {
+  let repoRoot: string;
+  let claudeHome: string;
+  let srcRules: string;
+  let destRules: string;
+
+  beforeEach(() => {
+    repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-rules-repo-'));
+    claudeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-rules-home-'));
+    srcRules = path.join(claudeHome, 'sidekick', 'rules');
+    destRules = path.join(repoRoot, '.claude', 'rules');
+    fs.mkdirSync(srcRules, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+    fs.rmSync(claudeHome, { recursive: true, force: true });
+  });
+
+  const writeSrc = (name: string, body = '# src\n'): void => {
+    fs.writeFileSync(path.join(srcRules, name), body);
+  };
+  const writeDest = (name: string, body: string): void => {
+    fs.mkdirSync(destRules, { recursive: true });
+    fs.writeFileSync(path.join(destRules, name), body);
+  };
+  const readDest = (name: string): string =>
+    fs.readFileSync(path.join(destRules, name), 'utf-8');
+
+  it('reports every copied file in its installed[] contract', () => {
+    writeSrc('sk-language.md');
+    writeSrc('sk-typescript.md');
+    const result = installRules(repoRoot, claudeHome);
+    expect([...result.installed].sort()).toEqual([
+      'sk-language.md',
+      'sk-typescript.md',
+    ]);
+  });
+
+  it('copies every matching rule, not just the first', () => {
+    writeSrc('sk-language.md', '# a\n');
+    writeSrc('sk-typescript.md', '# b\n');
+    installRules(repoRoot, claudeHome);
+    expect(readDest('sk-language.md')).toBe('# a\n');
+    expect(readDest('sk-typescript.md')).toBe('# b\n');
+  });
+
+  it("leaves a consumer's own notes.md alone", () => {
+    writeSrc('sk-language.md');
+    writeDest('notes.md', 'mine\n');
+    installRules(repoRoot, claudeHome);
+    expect(readDest('notes.md')).toBe('mine\n');
+  });
+
+  it('leaves sk-notes.txt alone: right prefix, wrong extension', () => {
+    writeSrc('sk-language.md');
+    writeDest('sk-notes.txt', 'mine\n');
+    installRules(repoRoot, claudeHome);
+    expect(readDest('sk-notes.txt')).toBe('mine\n');
+  });
+
+  it('does nothing when the source holds no sk-*.md files', () => {
+    writeSrc('readme.md');
+    const result = installRules(repoRoot, claudeHome);
+    expect(result.installed).toEqual([]);
+    expect(fs.existsSync(destRules)).toBe(false);
   });
 });
