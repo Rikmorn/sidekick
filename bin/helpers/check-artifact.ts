@@ -7,14 +7,12 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { extractPinHash } from './check-drift.js';
 import { fieldAsScalar, parseFrontmatter } from './graph-model.js';
-import { hashRfcContent } from './hash-rfc.js';
 import { computeWaves, parsePlanTasks, WavePlanError } from './wave-plan.js';
 
 type Frontmatter = ReturnType<typeof parseFrontmatter>;
 
-export const ARTIFACT_TYPES = ['rfc', 'plan', 'decision'] as const;
+export const ARTIFACT_TYPES = ['rfc', 'decision'] as const;
 export type ArtifactType = (typeof ARTIFACT_TYPES)[number];
 
 export function isArtifactType(v: string | undefined): v is ArtifactType {
@@ -36,12 +34,6 @@ export type CrossrefIssue =
     }
   | {
       dimension: 'crossref';
-      kind: 'pins_rfc_drift';
-      expected: string;
-      actual: string;
-    }
-  | {
-      dimension: 'crossref';
       kind: 'missing_source_rfc';
       path: string;
       detail: string;
@@ -58,8 +50,6 @@ export interface CheckArtifactInput {
   repoRoot: string;
   artifactPath: string;
   artifactType: ArtifactType;
-  /** Override for the RFC a plan is checked against; defaults to RFC.md beside the plan. */
-  rfcPath?: string;
 }
 
 export type CheckArtifactResult =
@@ -70,10 +60,9 @@ export type CheckArtifactResult =
       artifact_type: ArtifactType;
       issues: CheckArtifactIssue[];
     }
-  | { error: 'missing_artifact' | 'missing_rfc'; detail: string };
+  | { error: 'missing_artifact'; detail: string };
 
 const PLACEHOLDER = /^(TBD|TODO|\?\?\?|—)\s*$/i;
-const PIN_PATTERN = /^[a-f0-9]{16,128}$/;
 const CHECKLIST_ROW = /^- \[[ xX]\]\s+(T-\d{2,})\s+\S/;
 const H2 = /^##\s+(.+?)\s*$/;
 
@@ -83,18 +72,16 @@ const SCHEMAS: Record<
   { frontmatter: string[]; sections: string[] }
 > = {
   rfc: {
-    frontmatter: ['slug', 'created', 'status'],
+    frontmatter: ['issue', 'created', 'status'],
     sections: [
       'Goals & non-goals',
       'Architecture',
       'Decisions',
       'Questions',
       'Risks',
+      'Checklist',
+      'Tasks',
     ],
-  },
-  plan: {
-    frontmatter: ['slug', 'pins-rfc', 'created'],
-    sections: ['Checklist', 'Tasks'],
   },
   decision: {
     frontmatter: ['status', 'date'],
@@ -135,14 +122,6 @@ function checkFrontmatter(
         issue: 'missing',
       });
     }
-  }
-  const pin = fieldAsScalar(fm, 'pins-rfc');
-  if (type === 'plan' && pin !== null && !PIN_PATTERN.test(pin)) {
-    issues.push({
-      dimension: 'structural',
-      field: 'frontmatter.pins-rfc',
-      issue: 'malformed (does not match hash pattern)',
-    });
   }
   return issues;
 }
@@ -243,24 +222,24 @@ function sectionBody(sections: Section[], name: string): string {
   return (sections.find((s) => s.name === name)?.body ?? []).join('\n');
 }
 
-function checkPlanCrossref(
-  planContent: string,
-  rfcContent: string,
-): CrossrefIssue[] {
+/**
+ * Cross-reference checks for one folded work item. Goals are defined by
+ * `## Goals & non-goals` and decisions by `## Decisions`; refs are drawn from
+ * the whole body, so a `g9` or `D-99` cited in a task and never defined fires.
+ */
+function checkCrossref(content: string): CrossrefIssue[] {
   const issues: CrossrefIssue[] = [];
-  const rfcSections = splitSections(
-    parseFrontmatter(rfcContent).body.split('\n'),
-  );
+  const sections = splitSections(parseFrontmatter(content).body.split('\n'));
   const definedGoals = extractRefs(
-    sectionBody(rfcSections, 'Goals & non-goals'),
+    sectionBody(sections, 'Goals & non-goals'),
     GOAL_REF,
   );
   const definedDecisions = extractRefs(
-    sectionBody(rfcSections, 'Decisions'),
+    sectionBody(sections, 'Decisions'),
     DECISION_REF,
   );
 
-  const planBody = parseFrontmatter(planContent).body;
+  const planBody = parseFrontmatter(content).body;
   for (const ref of extractRefs(planBody, GOAL_REF)) {
     if (!definedGoals.has(ref)) {
       issues.push({
@@ -282,24 +261,9 @@ function checkPlanCrossref(
     }
   }
 
-  // Pin drift. A missing/malformed pin is already a structural issue, so the
-  // extractor returning null skips the comparison rather than double-reporting.
-  const pin = extractPinHash(planContent);
-  if (pin !== null) {
-    const actual = hashRfcContent(rfcContent);
-    if (pin !== actual) {
-      issues.push({
-        dimension: 'crossref',
-        kind: 'pins_rfc_drift',
-        expected: pin,
-        actual,
-      });
-    }
-  }
-
   // Dep graph — wave-plan's parser and topology are the single source of truth.
-  const tasks = parsePlanTasks(planContent);
-  if (TASKS_HEADING.test(planContent) && tasks.length === 0) {
+  const tasks = parsePlanTasks(content);
+  if (TASKS_HEADING.test(content) && tasks.length === 0) {
     issues.push({
       dimension: 'crossref',
       kind: 'no_task_blocks',
@@ -361,19 +325,9 @@ export function runCheckArtifact(
     ...checkFrontmatter(fm, artifactType),
     ...checkSections(sections, artifactType),
   ];
-  if (artifactType === 'plan') {
+  if (artifactType === 'rfc') {
     issues.push(...checkPlanChecklist(sections, content));
-  }
-
-  if (artifactType === 'plan') {
-    const rfcPath =
-      input.rfcPath ?? path.join(path.dirname(artifactPath), 'RFC.md');
-    if (!fs.existsSync(rfcPath)) {
-      return { error: 'missing_rfc', detail: `RFC not found at ${rfcPath}` };
-    }
-    issues.push(
-      ...checkPlanCrossref(content, fs.readFileSync(rfcPath, 'utf-8')),
-    );
+    issues.push(...checkCrossref(content));
   } else if (artifactType === 'decision') {
     issues.push(
       ...checkDecisionCrossref(content, fm, artifactPath, input.repoRoot),

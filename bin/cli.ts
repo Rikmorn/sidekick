@@ -757,7 +757,7 @@ if (_isEntry) {
         const artifactType = getVal('--type');
         if (!artifactPath || !isArtifactType(artifactType)) {
           console.error(
-            'Usage: sidekick check-artifact <path> --type <rfc|plan|decision> [--rfc <path>]',
+            'Usage: sidekick check-artifact <path> --type <rfc|decision>',
           );
           process.exit(1);
         }
@@ -766,7 +766,6 @@ if (_isEntry) {
             repoRoot: process.cwd(),
             artifactPath: path.resolve(artifactPath),
             artifactType,
-            rfcPath: getVal('--rfc'),
           }),
         );
         process.exit(0);

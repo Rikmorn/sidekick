@@ -2,11 +2,22 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { runCheckArtifact } from './check-artifact.js';
-import { hashRfcContent } from './hash-rfc.js';
+import { isArtifactType, runCheckArtifact } from './check-artifact.js';
 
-const VALID_RFC = `---
-slug: test-topic
+const FOLDED_TASKS = `### T-01 build the helper
+
+**Goals:** g1
+**Decisions:** D-01
+**Deps:** \u2014
+**Files:**
+- Create: bin/helpers/x.ts`;
+
+/** A folded work item: RFC sections + Checklist + Tasks, keyed by issue. */
+function foldedWith(opts: { checklist?: string; tasks?: string } = {}): string {
+  const checklist = opts.checklist ?? '- [ ] T-01 build the helper';
+  const tasks = opts.tasks ?? FOLDED_TASKS;
+  return `---
+issue: 42
 created: 2026-09-01
 status: draft
 ---
@@ -32,7 +43,18 @@ None open.
 ## Risks
 
 Low.
+
+## Checklist
+
+${checklist}
+
+## Tasks
+
+${tasks}
 `;
+}
+
+const VALID_RFC = foldedWith();
 
 const VALID_DECISION = `---
 status: accepted
@@ -56,37 +78,6 @@ In-memory cache.
 Restart clears it.
 `;
 
-function planWith(opts: {
-  pin: string;
-  checklist?: string;
-  tasks?: string;
-}): string {
-  const checklist = opts.checklist ?? '- [ ] T-01 build the helper';
-  const tasks =
-    opts.tasks ??
-    `### T-01 build the helper
-
-**Goals:** g1
-**Decisions:** D-01
-**Deps:** —
-**Files:**
-- Create: bin/helpers/x.ts`;
-  return `---
-slug: test-topic
-pins-rfc: ${opts.pin}
-created: 2026-09-01
----
-
-## Checklist
-
-${checklist}
-
-## Tasks
-
-${tasks}
-`;
-}
-
 let dir: string;
 
 beforeEach(() => {
@@ -104,18 +95,11 @@ function write(rel: string, content: string): string {
   return abs;
 }
 
-/** Write PLAN.md and a matching RFC.md beside it; pin defaults to correct. */
-function writePlanPair(plan: {
-  pin?: string;
-  checklist?: string;
-  tasks?: string;
-}): string {
-  write('.sidekick/plans/t/RFC.md', VALID_RFC);
-  const pin = plan.pin ?? hashRfcContent(VALID_RFC);
-  return write(
-    '.sidekick/plans/t/PLAN.md',
-    planWith({ pin, checklist: plan.checklist, tasks: plan.tasks }),
-  );
+/** Write one folded work item at `.sidekick/work/<issue>-<slug>/RFC.md`. */
+function writeFolded(
+  opts: { checklist?: string; tasks?: string } = {},
+): string {
+  return write('.sidekick/work/42-t/RFC.md', foldedWith(opts));
 }
 
 describe('check-artifact structural', () => {
@@ -255,40 +239,22 @@ Low.
     expect('verdict' in r && r.verdict).toBe('pass');
   });
 
-  it('passes a clean plan', () => {
-    const p = writePlanPair({});
+  it('passes a clean folded work item', () => {
+    const p = writeFolded();
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     expect('verdict' in r && r.verdict).toBe('pass');
   });
 
-  it('flags a malformed pins-rfc and nothing else', () => {
-    const p = writePlanPair({ pin: 'not-a-hash' });
-    const r = runCheckArtifact({
-      repoRoot: dir,
-      artifactPath: p,
-      artifactType: 'plan',
-    });
-    if (!('verdict' in r) || r.verdict !== 'fail')
-      throw new Error('expected fail');
-    expect(r.issues).toEqual([
-      {
-        dimension: 'structural',
-        field: 'frontmatter.pins-rfc',
-        issue: 'malformed (does not match hash pattern)',
-      },
-    ]);
-  });
-
   it('flags a checklist with no task rows', () => {
-    const p = writePlanPair({ checklist: 'nothing here' });
+    const p = writeFolded({ checklist: 'nothing here' });
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     if (!('verdict' in r) || r.verdict !== 'fail')
       throw new Error('expected fail');
@@ -301,13 +267,13 @@ Low.
   });
 
   it('flags a checklist ID with no task block', () => {
-    const p = writePlanPair({
+    const p = writeFolded({
       checklist: '- [ ] T-01 build the helper\n- [ ] T-02 wire it',
     });
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     if (!('verdict' in r) || r.verdict !== 'fail')
       throw new Error('expected fail');
@@ -319,11 +285,11 @@ Low.
   });
 
   it('accepts a fully-checked checklist', () => {
-    const p = writePlanPair({ checklist: '- [x] T-01 build the helper' });
+    const p = writeFolded({ checklist: '- [x] T-01 build the helper' });
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     expect('verdict' in r && r.verdict).toBe('pass');
   });
@@ -370,17 +336,17 @@ Low.
 describe('check-artifact crossref', () => {
   it('ignores unused RFC entries — coverage is not crossref', () => {
     // VALID_RFC defines g1, g2, D-01, D-02; the default plan cites only g1/D-01.
-    const p = writePlanPair({});
+    const p = writeFolded();
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     expect('verdict' in r && r.verdict).toBe('pass');
   });
 
   it('flags a dangling goal ref', () => {
-    const p = writePlanPair({
+    const p = writeFolded({
       tasks: `### T-01 build the helper
 
 **Goals:** g4
@@ -392,7 +358,7 @@ describe('check-artifact crossref', () => {
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     if (!('verdict' in r) || r.verdict !== 'fail')
       throw new Error('expected fail');
@@ -405,7 +371,7 @@ describe('check-artifact crossref', () => {
   });
 
   it('flags a dangling decision ref', () => {
-    const p = writePlanPair({
+    const p = writeFolded({
       tasks: `### T-01 build the helper
 
 **Goals:** g1
@@ -417,7 +383,7 @@ describe('check-artifact crossref', () => {
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     if (!('verdict' in r) || r.verdict !== 'fail')
       throw new Error('expected fail');
@@ -429,26 +395,8 @@ describe('check-artifact crossref', () => {
     });
   });
 
-  it('flags pins_rfc_drift', () => {
-    const stale = 'a1b2c3d4e5f60718';
-    const p = writePlanPair({ pin: stale });
-    const r = runCheckArtifact({
-      repoRoot: dir,
-      artifactPath: p,
-      artifactType: 'plan',
-    });
-    if (!('verdict' in r) || r.verdict !== 'fail')
-      throw new Error('expected fail');
-    expect(r.issues).toContainEqual({
-      dimension: 'crossref',
-      kind: 'pins_rfc_drift',
-      expected: stale,
-      actual: hashRfcContent(VALID_RFC),
-    });
-  });
-
   it('flags a dependency cycle', () => {
-    const p = writePlanPair({
+    const p = writeFolded({
       checklist: '- [ ] T-01 first\n- [ ] T-02 second',
       tasks: `### T-01 first
 
@@ -469,7 +417,7 @@ describe('check-artifact crossref', () => {
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     if (!('verdict' in r) || r.verdict !== 'fail')
       throw new Error('expected fail');
@@ -481,7 +429,7 @@ describe('check-artifact crossref', () => {
   });
 
   it('flags a dangling task dep', () => {
-    const p = writePlanPair({
+    const p = writeFolded({
       tasks: `### T-01 build the helper
 
 **Goals:** g1
@@ -493,7 +441,7 @@ describe('check-artifact crossref', () => {
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     if (!('verdict' in r) || r.verdict !== 'fail')
       throw new Error('expected fail');
@@ -505,11 +453,11 @@ describe('check-artifact crossref', () => {
   });
 
   it('reports no_task_blocks when ## Tasks has no blocks', () => {
-    const p = writePlanPair({ tasks: 'no blocks here' });
+    const p = writeFolded({ tasks: 'no blocks here' });
     const r = runCheckArtifact({
       repoRoot: dir,
       artifactPath: p,
-      artifactType: 'plan',
+      artifactType: 'rfc',
     });
     if (!('verdict' in r) || r.verdict !== 'fail')
       throw new Error('expected fail');
@@ -518,34 +466,6 @@ describe('check-artifact crossref', () => {
         (i) => i.dimension === 'crossref' && i.kind === 'no_task_blocks',
       ),
     ).toBe(true);
-  });
-
-  it('errors when the RFC is missing', () => {
-    const p = write(
-      '.sidekick/plans/solo/PLAN.md',
-      planWith({ pin: hashRfcContent(VALID_RFC) }),
-    );
-    const r = runCheckArtifact({
-      repoRoot: dir,
-      artifactPath: p,
-      artifactType: 'plan',
-    });
-    expect('error' in r && r.error).toBe('missing_rfc');
-  });
-
-  it('honours an explicit rfcPath override', () => {
-    const rfcAbs = write('elsewhere/RFC.md', VALID_RFC);
-    const p = write(
-      '.sidekick/plans/solo/PLAN.md',
-      planWith({ pin: hashRfcContent(VALID_RFC) }),
-    );
-    const r = runCheckArtifact({
-      repoRoot: dir,
-      artifactPath: p,
-      artifactType: 'plan',
-      rfcPath: rfcAbs,
-    });
-    expect('verdict' in r && r.verdict).toBe('pass');
   });
 
   it('passes a decision citing an existing source RFC via frontmatter', () => {
@@ -603,5 +523,114 @@ describe('check-artifact crossref', () => {
       artifactType: 'decision',
     });
     expect('verdict' in r && r.verdict).toBe('pass');
+  });
+});
+
+describe('check-artifact folded rfc', () => {
+  it('passes a folded work item with all seven sections in order', () => {
+    const p = write('.sidekick/work/42-t/RFC.md', VALID_RFC);
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'rfc',
+    });
+    expect(r).toEqual({
+      verdict: 'pass',
+      artifact_path: p,
+      artifact_type: 'rfc',
+    });
+  });
+
+  it('fails a folded document missing ## Checklist', () => {
+    const p = write(
+      '.sidekick/work/42-t/RFC.md',
+      VALID_RFC.replace(
+        /## Checklist\n\n- \[ \] T-01 build the helper\n\n/,
+        '',
+      ),
+    );
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'rfc',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail');
+    expect(r.issues).toContainEqual({
+      dimension: 'structural',
+      field: 'section.## Checklist',
+      issue: 'missing',
+    });
+  });
+
+  it('fails a folded document carrying slug instead of issue', () => {
+    const p = write(
+      '.sidekick/work/42-t/RFC.md',
+      VALID_RFC.replace('issue: 42', 'slug: test-topic'),
+    );
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'rfc',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail');
+    expect(r.issues).toContainEqual({
+      dimension: 'structural',
+      field: 'frontmatter.issue',
+      issue: 'missing',
+    });
+  });
+
+  it('ignores a leftover pins-rfc field rather than rejecting it', () => {
+    const p = write(
+      '.sidekick/work/42-t/RFC.md',
+      VALID_RFC.replace('issue: 42', 'issue: 42\npins-rfc: notahash'),
+    );
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'rfc',
+    });
+    expect(r).toEqual({
+      verdict: 'pass',
+      artifact_path: p,
+      artifact_type: 'rfc',
+    });
+  });
+
+  // Positive control for the fold. The crossref checks used to sit behind an
+  // `artifactType === 'plan'` guard; folding the schema without moving that
+  // guard leaves them present in the file but unreachable. This test fails to
+  // fail if that ever regresses — see the plan's Step 6a.
+  it('still runs crossref on the folded document — dangling goal fires', () => {
+    const p = writeFolded({
+      tasks: `### T-01 build the helper
+
+**Goals:** g9
+**Decisions:** D-01
+**Deps:** \u2014
+**Files:**
+- Create: bin/helpers/x.ts`,
+    });
+    const r = runCheckArtifact({
+      repoRoot: dir,
+      artifactPath: p,
+      artifactType: 'rfc',
+    });
+    if (!('verdict' in r) || r.verdict !== 'fail')
+      throw new Error('expected fail — crossref did not run');
+    expect(r.issues).toContainEqual({
+      dimension: 'crossref',
+      kind: 'dangling_goal',
+      ref: 'g9',
+      detail: 'Not defined in RFC.md ## Goals & non-goals',
+    });
+  });
+
+  it('rejects the retired plan type as unknown', () => {
+    expect(isArtifactType('plan')).toBe(false);
+    expect(isArtifactType('rfc')).toBe(true);
+    expect(isArtifactType('decision')).toBe(true);
   });
 });
