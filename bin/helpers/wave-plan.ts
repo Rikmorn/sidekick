@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { resolveWorkDir, WorkDirError } from './work-dir.js';
 
 export interface PlanTask {
   id: string; // canonical literal, e.g. "T-04"
@@ -205,19 +205,20 @@ function reachable(
 
 export type WavePlanVerdict =
   | 'planned'
-  | 'missing_plan'
+  | 'missing_rfc'
+  | 'ambiguous_work_dir'
   | 'no_tasks'
   | WavePlanErrorKind;
 
 export interface WavePlanCliInput {
   repoRoot: string;
-  slug: string;
+  issue: number;
   format: 'json' | 'kv';
 }
 
 export interface WavePlanResult {
   verdict: WavePlanVerdict;
-  slug: string;
+  issue: number;
   waves?: string[][];
   task_count?: number;
   warnings?: string[];
@@ -225,37 +226,54 @@ export interface WavePlanResult {
 }
 
 export function runWavePlanCli(opts: WavePlanCliInput): string {
-  const { repoRoot, slug, format } = opts;
-  const planPath = path.join(repoRoot, '.sidekick', 'plans', slug, 'PLAN.md');
-  let result: WavePlanResult;
+  const { repoRoot, issue, format } = opts;
+  let rfcPath: string;
+  try {
+    rfcPath = resolveWorkDir(repoRoot, issue).rfcPath;
+  } catch (err) {
+    if (!(err instanceof WorkDirError)) throw err;
+    // `not_found` and an absent RFC.md share a remedy — create it — so they
+    // share a verdict. `ambiguous` needs its own: the fix is to remove a
+    // directory, never to add one.
+    return render(
+      {
+        verdict:
+          err.kind === 'ambiguous' ? 'ambiguous_work_dir' : 'missing_rfc',
+        issue,
+        reason: err.message,
+      },
+      format,
+    );
+  }
 
-  if (!fs.existsSync(planPath)) {
+  let result: WavePlanResult;
+  if (!fs.existsSync(rfcPath)) {
     result = {
-      verdict: 'missing_plan',
-      slug,
-      reason: `PLAN.md not found at ${planPath}`,
+      verdict: 'missing_rfc',
+      issue,
+      reason: `RFC.md not found at ${rfcPath}`,
     };
   } else {
-    const tasks = parsePlanTasks(fs.readFileSync(planPath, 'utf-8'));
+    const tasks = parsePlanTasks(fs.readFileSync(rfcPath, 'utf-8'));
     if (tasks.length === 0) {
       result = {
         verdict: 'no_tasks',
-        slug,
-        reason: 'no ## Tasks section or no ### T-NN blocks in PLAN.md',
+        issue,
+        reason: 'no ## Tasks section or no ### T-NN blocks in RFC.md',
       };
     } else {
       try {
         const { waves, warnings } = computeWaves(tasks);
         result = {
           verdict: 'planned',
-          slug,
+          issue,
           waves,
           task_count: tasks.length,
           warnings,
         };
       } catch (err) {
         if (err instanceof WavePlanError) {
-          result = { verdict: err.kind, slug, reason: err.message };
+          result = { verdict: err.kind, issue, reason: err.message };
         } else {
           throw err;
         }
@@ -263,6 +281,10 @@ export function runWavePlanCli(opts: WavePlanCliInput): string {
     }
   }
 
+  return render(result, format);
+}
+
+function render(result: WavePlanResult, format: 'json' | 'kv'): string {
   if (format === 'kv') {
     return Object.entries(result)
       .map(

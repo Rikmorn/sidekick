@@ -141,7 +141,7 @@ describe('runWavePlanCli', () => {
   let dir: string;
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wave-plan-'));
-    fs.mkdirSync(path.join(dir, '.sidekick', 'plans', 'demo'), {
+    fs.mkdirSync(path.join(dir, '.sidekick', 'work', '42-demo'), {
       recursive: true,
     });
   });
@@ -149,7 +149,7 @@ describe('runWavePlanCli', () => {
 
   const writePlan = (body: string) =>
     fs.writeFileSync(
-      path.join(dir, '.sidekick', 'plans', 'demo', 'PLAN.md'),
+      path.join(dir, '.sidekick', 'work', '42-demo', 'RFC.md'),
       body,
     );
 
@@ -158,17 +158,35 @@ describe('runWavePlanCli', () => {
       '# PLAN\n\n## Tasks\n\n### T-01: a\n**Deps:**\n**Files:**\n- Create: `a.ts`\n\n### T-02: b\n**Deps:** T-01\n**Files:**\n- Create: `b.ts`\n',
     );
     const out = JSON.parse(
-      runWavePlanCli({ repoRoot: dir, slug: 'demo', format: 'json' }),
+      runWavePlanCli({ repoRoot: dir, issue: 42, format: 'json' }),
     );
     expect(out.verdict).toBe('planned');
     expect(out.waves).toEqual([['T-01'], ['T-02']]);
   });
 
-  it('reports missing_plan', () => {
+  it('reports missing_rfc when no work directory matches the issue', () => {
     const out = JSON.parse(
-      runWavePlanCli({ repoRoot: dir, slug: 'nope', format: 'json' }),
+      runWavePlanCli({ repoRoot: dir, issue: 99, format: 'json' }),
     );
-    expect(out.verdict).toBe('missing_plan');
+    expect(out.verdict).toBe('missing_rfc');
+  });
+
+  it('reports missing_rfc when the work directory has no RFC.md', () => {
+    const out = JSON.parse(
+      runWavePlanCli({ repoRoot: dir, issue: 42, format: 'json' }),
+    );
+    expect(out.verdict).toBe('missing_rfc');
+  });
+
+  it('reports ambiguous_work_dir when two directories share an issue', () => {
+    fs.mkdirSync(path.join(dir, '.sidekick', 'work', '42-duplicate'), {
+      recursive: true,
+    });
+    const out = JSON.parse(
+      runWavePlanCli({ repoRoot: dir, issue: 42, format: 'json' }),
+    );
+    expect(out.verdict).toBe('ambiguous_work_dir');
+    expect(out.reason).toContain('42-duplicate');
   });
 
   it('reports dep_cycle as a verdict (not a throw)', () => {
@@ -176,7 +194,7 @@ describe('runWavePlanCli', () => {
       '# PLAN\n\n## Tasks\n\n### T-01: a\n**Deps:** T-02\n**Files:**\n- Create: `a.ts`\n\n### T-02: b\n**Deps:** T-01\n**Files:**\n- Create: `b.ts`\n',
     );
     const out = JSON.parse(
-      runWavePlanCli({ repoRoot: dir, slug: 'demo', format: 'json' }),
+      runWavePlanCli({ repoRoot: dir, issue: 42, format: 'json' }),
     );
     expect(out.verdict).toBe('dep_cycle');
   });

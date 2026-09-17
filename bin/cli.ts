@@ -835,10 +835,13 @@ if (_isEntry) {
         process.exit(0);
       } else if (sub === 'wave-plan') {
         const args = process.argv.slice(3);
-        const slug = args.find((a) => !a.startsWith('--'));
-        if (!slug) {
+        const raw = args.find((a) => !a.startsWith('--'));
+        // Number() not parseInt(): parseInt('42abc') is 42, which would
+        // silently resolve the wrong work directory.
+        const issue = raw === undefined ? Number.NaN : Number(raw);
+        if (!Number.isInteger(issue) || issue <= 0) {
           console.error(
-            'Usage: sidekick wave-plan <slug> [--format=<json|kv>]',
+            'Usage: sidekick wave-plan <issue> [--format=<json|kv>] — issue must be a positive integer',
           );
           process.exit(1);
         }
@@ -846,7 +849,7 @@ if (_isEntry) {
           args.find((a) => a.startsWith('--format='))?.split('=')[1] === 'kv'
             ? 'kv'
             : 'json';
-        console.log(runWavePlanCli({ repoRoot: process.cwd(), slug, format }));
+        console.log(runWavePlanCli({ repoRoot: process.cwd(), issue, format }));
         process.exit(0);
       } else if (sub === 'classify-deviation') {
         let stdin = '';
