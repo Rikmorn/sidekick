@@ -21,13 +21,16 @@ describe('detectDefaultBranch', () => {
   });
   afterEach(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
 
-  it('returns the local default branch from `git symbolic-ref HEAD`', () => {
+  it('prefers origin/HEAD over every local branch', () => {
     fs.writeFileSync(path.join(tmpRoot, 'a'), 'x');
     execSync('git add a && git commit -q -m initial', { cwd: tmpRoot });
-    const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: tmpRoot })
-      .toString()
-      .trim();
-    expect(detectDefaultBranch(tmpRoot)).toBe(branch);
+    // No remote is needed — the resolver reads the ref, not the network. And
+    // `release` sits outside BRANCH_CASCADE, so only origin/HEAD can yield it.
+    execSync(
+      'git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/release',
+      { cwd: tmpRoot },
+    );
+    expect(detectDefaultBranch(tmpRoot)).toBe('release');
   });
 
   it('falls back through the cascade when origin/HEAD unset and no commits', () => {

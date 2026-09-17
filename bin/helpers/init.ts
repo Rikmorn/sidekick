@@ -250,7 +250,7 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
   writeConfig(repoRoot, config);
   if (config.defaultBranch !== 'main' && config.defaultBranch !== 'master') {
     console.warn(
-      `⚠ defaultBranch detected as "${config.defaultBranch}" — origin/HEAD is probably unset, so detection fell through to a local branch name. Run \`git remote set-head origin -a\` and re-run \`sidekick init\` to detect it from the remote.`,
+      `⚠ defaultBranch detected as "${config.defaultBranch}", which is neither main nor master. If that is not your default branch, origin/HEAD may be unset — run \`git remote set-head origin -a\` and re-run \`sidekick init\`.`,
     );
   }
   console.log(
