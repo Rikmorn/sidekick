@@ -2,8 +2,8 @@
  * ops-3 — `sidekick graph lint`: the checks that keep the corpus honest.
  *
  * Six checks with stable codes. Four are structural properties of the sources
- * (vocabulary, references, taxonomy conformance, required frontmatter); two
- * guard the derived surfaces (drift, size cap).
+ * (references, taxonomy conformance, required frontmatter, metric-registry
+ * validity); two guard the derived surfaces (drift, size cap).
  *
  * Severity is the design point. A broken reference or a drifted generated file
  * is an error — something downstream is now lying. Ambiguity in legacy prose is

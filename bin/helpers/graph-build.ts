@@ -29,6 +29,7 @@ import {
   mergeParse,
   type ParseResult,
 } from './graph-model.js';
+import { parseAdr } from './graph-parse-adr.js';
 import {
   parseAgentFile,
   parseCalibration,
@@ -38,8 +39,7 @@ import {
   parseRunRecords,
   parseSkillFile,
 } from './graph-parse-machine.js';
-import { parseAdr } from './graph-parse-monoliths.js';
-import { parseResearchReport } from './graph-parse-work.js';
+import { parseResearchReport } from './graph-parse-research.js';
 import {
   countEntities,
   type DocText,
@@ -394,16 +394,12 @@ function richness(entity: Entity): number {
   );
 }
 
-/**
- * Every edge endpoint must name an entity that exists. `glob:` destinations are
- * patterns rather than nodes, so they are skipped rather than reported.
- */
+/** Every edge endpoint must name an entity that exists. */
 function linkCheck(entities: Entity[], edges: Edge[]): LintFinding[] {
   const ids = new Set(entities.map((e) => e.id));
   const findings: LintFinding[] = [];
   const seen = new Set<string>();
   for (const edge of edges) {
-    if (edge.dst.startsWith('glob:')) continue;
     if (ids.has(edge.dst)) continue;
     const key = `${edge.src}|${edge.rel}|${edge.dst}`;
     if (seen.has(key)) continue;

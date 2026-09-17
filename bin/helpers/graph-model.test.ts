@@ -4,7 +4,6 @@ import {
   EDGE_RELATIONS,
   fieldAsList,
   fieldAsScalar,
-  isEdgeRelation,
   isExcluded,
   normalizeAdrRef,
   parseFrontmatter,
@@ -26,17 +25,6 @@ describe('edge vocabulary', () => {
       'triggered-by',
     ]);
     expect(new Set(EDGE_RELATIONS).size).toBe(EDGE_RELATIONS.length);
-  });
-
-  it('rejects relations outside the vocabulary', () => {
-    expect(isEdgeRelation('implements')).toBe(true);
-    expect(isEdgeRelation('supersedes')).toBe(true);
-    expect(isEdgeRelation('consumes')).toBe(false);
-    expect(isEdgeRelation('implemented-by')).toBe(false);
-    // Retired with the PM half (#30): no source emits these any more.
-    expect(isEdgeRelation('advances')).toBe(false);
-    expect(isEdgeRelation('deps')).toBe(false);
-    expect(isEdgeRelation('applies-to')).toBe(false);
   });
 });
 

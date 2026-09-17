@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseAdr, parseAdrHeader } from './graph-parse-monoliths.js';
+import { parseAdr, parseAdrHeader } from './graph-parse-adr.js';
 
 const ADR_0002 = [
   '# ADR-0002 — Platform primitives: own the loop, rent the fan-out',

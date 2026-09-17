@@ -1,10 +1,6 @@
 /**
- * ops-2 — the research-report parser.
- *
- * The `docs/work/**` item parser, the north-star objective parser and the
- * backlog-pool parser lived here until #30 retired the graph's PM half. Those
- * files stay in the tree as records and enter the graph through the docs walk,
- * as plain `doc` entities; work state itself lives on GitHub.
+ * ops-2 — the research parser: `docs/research/<topic>/REPORT.md` as the topic's
+ * record, titled by its first H1.
  */
 
 import { emptyParse, type ParseResult } from './graph-model.js';

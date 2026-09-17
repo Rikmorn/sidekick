@@ -4,10 +4,6 @@
  * Parsing is deliberately conservative: only an `ADR-NNNN` token inside the
  * clause a status verb governs becomes an edge, so a construct the parser does
  * not recognise is dropped rather than guessed at.
- *
- * The `docs/EPIC.md` roadmap/crosswalk parser lived here until #30 retired the
- * graph's PM half. EPIC.md and EPIC-STATE.md stay in the tree as archived
- * records and enter the graph through the docs walk, as plain `doc` entities.
  */
 
 import {

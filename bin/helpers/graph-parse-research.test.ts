@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseResearchReport } from './graph-parse-work.js';
+import { parseResearchReport } from './graph-parse-research.js';
 
 describe('parseResearchReport', () => {
   it('names the topic entity from its directory', () => {

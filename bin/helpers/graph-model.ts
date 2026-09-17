@@ -32,12 +32,6 @@ export const EDGE_RELATIONS = [
 
 export type EdgeRelation = (typeof EDGE_RELATIONS)[number];
 
-const RELATION_SET: ReadonlySet<string> = new Set(EDGE_RELATIONS);
-
-export function isEdgeRelation(value: string): value is EdgeRelation {
-  return RELATION_SET.has(value);
-}
-
 /** Confidence tiers. v1 extracts only; INFERRED/AMBIGUOUS have no producers yet. */
 export type EdgeTier = 'EXTRACTED' | 'INFERRED' | 'AMBIGUOUS';
 
@@ -98,8 +92,7 @@ export type EntityKind =
   | 'cert'
   | 'metric'
   | 'runset'
-  | 'doc'
-  | 'glob';
+  | 'doc';
 
 export interface Entity {
   id: string;
