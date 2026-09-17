@@ -354,6 +354,6 @@ Commit: 9bd4f2a decide: capture auth-token-rotation
 - `<topic>` — explicit positional argument; a kebab-case slug seed. The drafter derives the final slug.
 - `<slug>` — kebab-case + lowercase form derived from the drafter's `draft_path` basename; the filename component of `.sidekick/decisions/<slug>.md`.
 - `rfc_hint_paths` — top 3 most-recently-committed `.sidekick/plans/*/RFC.md` files, passed to the drafter as input.
-- `feedback` — prose summary passed back to the drafter on re-dispatch. Sourced from structural-checker issues (Step 7) or user edit instructions (Step 8).
+- `feedback` — prose summary passed back to the drafter on re-dispatch. Sourced from `check-artifact` issues (Step 7) or user edit instructions (Step 8).
 
 </symbol_conventions>
