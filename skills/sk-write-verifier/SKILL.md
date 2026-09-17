@@ -1,6 +1,6 @@
 ---
 name: sk-write-verifier
-description: Author one operator-defined verifier — a dimensional reviewer the harness mounts on its quorums (review/rfc/plan/decision) through the .sidekick/config.json verifiers registry. Walks from quality dimension to a conforming .claude/agents/ definition plus a registry entry to paste, then validates resolution via `sidekick verifiers`. UI dimensions ship as the worked example pack.
+description: Author one operator-defined verifier — a dimensional reviewer the harness mounts on its quorums (review/rfc/decision) through the .sidekick/config.json verifiers registry. Walks from quality dimension to a conforming .claude/agents/ definition plus a registry entry to paste, then validates resolution via `sidekick verifiers`. UI dimensions ship as the worked example pack.
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "[dimension]"
@@ -18,7 +18,7 @@ What the loaders parse. A conforming verifier has:
 1. **Dimensional identity** — named for the one thing it checks (`ui-color-verifier`, not `my-project-checker`), per the dimensional-verifier doctrine. Two dimensions in one ask means two verifiers.
 2. **Read-only tools** — `tools: Read, Grep, Glob` (add `Bash` only on the review surface, for `git diff` / `git show` reads). A verifier that can write can "fix" the artifact it judges; the restriction is structural sealing, not style.
 3. **ONE JSON deliverable** in a final ```json``` fence — prose reasoning around it is fine; the orchestrator extracts only the fence. Schema by surface:
-   - **review** (diff-shaped input: `diff_target`, `changed_files`, `ticket_slug?`):
+   - **review** (diff-shaped input: `diff_target`, `changed_files`, `rfc_path?`):
      ```json
      {
        "dimension": "<the dimension>",
@@ -31,7 +31,7 @@ What the loaders parse. A conforming verifier has:
        ]
      }
      ```
-   - **rfc / plan / decision** (artifact-shaped input: `artifact_path`, `artifact_type`, `related_paths?`):
+   - **rfc / decision** (artifact-shaped input: `artifact_path`, `artifact_type`, `related_paths?`):
      ```json
      { "verdict": "pass|fail", "artifact_path": "...", "artifact_type": "...", "issues": [ ... ] }
      ```
@@ -41,7 +41,7 @@ What the loaders parse. A conforming verifier has:
    ```json
    { "dimension": "<name>", "agent": "<agent-file-basename>", "surfaces": ["review"], "tier": "advisory" }
    ```
-   `surfaces` ⊆ `review | rfc | plan | decision`; the optional `family` field records a model/family preference for future cross-family quorums.
+   `surfaces` ⊆ `review | rfc | decision`; the optional `family` field records a model/family preference for future cross-family quorums.
 
 </contract>
 
