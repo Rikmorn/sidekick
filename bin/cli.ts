@@ -253,12 +253,18 @@ export function uninstall(opts: UninstallOptions): void {
     );
   }
 
+  const managedRoots = [
+    ...MANAGED_DIRS.map((sub) => path.join(claudeHome, sub)),
+    stateDir,
+  ];
+
   let removed = 0;
   let alreadyGone = 0;
   for (const entry of manifest.files) {
     if (fs.existsSync(entry.dest)) {
       fs.rmSync(entry.dest, { force: true });
       removed++;
+      removeEmptyParents(path.dirname(entry.dest), managedRoots);
     } else {
       alreadyGone++;
     }

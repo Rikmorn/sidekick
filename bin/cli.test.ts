@@ -651,6 +651,30 @@ describe('uninstall', () => {
     expect(fs.existsSync(binaryDest)).toBe(false);
     expect(fs.existsSync(path.join(fakeHome, 'sidekick'))).toBe(false);
   });
+
+  it('test 14: uninstall removes the emptied skill dir but keeps the root (#69)', () => {
+    if (!fakePackage || !fakeHome) throw new Error('fixtures not set');
+    const pkg = fakePackage;
+    const home = fakeHome;
+    writePackageJson('0.1.0');
+    writeMinimalDist();
+
+    fs.mkdirSync(path.join(pkg, 'skills', 'example'), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkg, 'skills', 'example', 'SKILL.md'),
+      'skill body\n',
+    );
+
+    install({ packageDir: pkg, claudeHome: home });
+    expect(fs.existsSync(path.join(home, 'skills', 'example'))).toBe(true);
+
+    uninstall({ claudeHome: home });
+
+    // The emptied skill directory goes — it is registry noise otherwise.
+    expect(fs.existsSync(path.join(home, 'skills', 'example'))).toBe(false);
+    // The managed root survives — removeEmptyParents never removes a root.
+    expect(fs.existsSync(path.join(home, 'skills'))).toBe(true);
+  });
 });
 
 describe('isMainEntrypoint', () => {
