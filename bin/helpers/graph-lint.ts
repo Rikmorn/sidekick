@@ -27,7 +27,6 @@ export const STATE_LINE_CAP = 120;
 
 /** Findings that make something downstream wrong, rather than merely unclear. */
 const ERROR_CODES = new Set<LintCode>([
-  'unknown-relation',
   'unresolvable-ref',
   'undeclared-location',
   'missing-frontmatter',

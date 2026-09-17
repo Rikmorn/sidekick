@@ -117,9 +117,7 @@ export interface Edge {
 
 /** Stable lint codes (plan D7 + the parse-time findings ops-2 mandates). */
 export type LintCode =
-  | 'unknown-relation'
   | 'unresolvable-ref'
-  | 'ambiguous-ref'
   | 'undeclared-location'
   | 'missing-frontmatter'
   | 'generated-drift'
