@@ -122,4 +122,72 @@ describe('runCapabilities', () => {
     const report = runCapabilities(base());
     expect(report.workflows.disabled_by).toBe(null);
   });
+
+  // #81: "where does the roster come from" needs an answer even when the
+  // answer is "nothing installed it".
+  describe('install provenance', () => {
+    const writeManifest = (body: string): void => {
+      fs.mkdirSync(path.join(claudeHome, 'sidekick'), { recursive: true });
+      fs.writeFileSync(
+        path.join(claudeHome, 'sidekick', 'manifest.json'),
+        body,
+      );
+    };
+
+    it('reports the root, version, date and on-disk counts', () => {
+      writeManifest(
+        JSON.stringify({
+          schemaVersion: 1,
+          packageVersion: '9.9.9',
+          installedAt: '2026-09-17T00:00:00.000Z',
+          files: [],
+        }),
+      );
+      fs.mkdirSync(path.join(claudeHome, 'agents'), { recursive: true });
+      fs.writeFileSync(path.join(claudeHome, 'agents', 'sk-a.md'), '');
+      fs.writeFileSync(path.join(claudeHome, 'agents', 'sk-b.md'), '');
+      fs.mkdirSync(path.join(claudeHome, 'skills', 'sk-one'), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(claudeHome, 'skills', 'sk-one', 'SKILL.md'),
+        '',
+      );
+      // A directory without a SKILL.md is not a skill.
+      fs.mkdirSync(path.join(claudeHome, 'skills', 'not-a-skill'), {
+        recursive: true,
+      });
+      fs.mkdirSync(path.join(claudeHome, 'sidekick', 'rules'), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(claudeHome, 'sidekick', 'rules', 'sk-x.md'),
+        '',
+      );
+
+      const report = runCapabilities(base());
+      expect(report.schemaVersion).toBe(2);
+      expect(report.install.root).toBe(claudeHome);
+      expect(report.install.package_version).toBe('9.9.9');
+      expect(report.install.installed_at).toBe('2026-09-17T00:00:00.000Z');
+      expect(report.install.counts).toEqual({ agents: 2, skills: 1, rules: 1 });
+      expect(report.install.note).toBe(null);
+    });
+
+    it('reports the absence explicitly when no manifest exists', () => {
+      const report = runCapabilities(base());
+      expect(report.install.root).toBe(claudeHome);
+      expect(report.install.package_version).toBe(null);
+      expect(report.install.installed_at).toBe(null);
+      expect(report.install.counts).toEqual({ agents: 0, skills: 0, rules: 0 });
+      expect(report.install.note).toContain('No install manifest');
+    });
+
+    it('reports the absence explicitly when the manifest is unreadable', () => {
+      writeManifest('{not json');
+      const report = runCapabilities(base());
+      expect(report.install.package_version).toBe(null);
+      expect(report.install.note).toContain('unreadable');
+    });
+  });
 });

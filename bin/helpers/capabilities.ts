@@ -26,9 +26,24 @@ export interface CapabilitiesOptions {
   readClaudeVersion?: () => string | null;
 }
 
+/** Where the installed agent, skill and rule roster came from (#81). */
+export interface InstallProvenance {
+  /** The Claude home this roster is read from. */
+  root: string;
+  /** From the install manifest; null when there is no readable manifest. */
+  package_version: string | null;
+  /** ISO date from the manifest; null when there is no readable manifest. */
+  installed_at: string | null;
+  /** Counted on disk under `root`, so hand-placed files are included too. */
+  counts: { agents: number; skills: number; rules: number };
+  /** Says why the version and date are null, when they are. */
+  note: string | null;
+}
+
 export interface CapabilitiesReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   cc_version: string | null;
+  install: InstallProvenance;
   workflows: {
     min_version: string;
     version_ok: boolean | 'unknown';
@@ -90,6 +105,80 @@ function disablesWorkflows(filePath: string): boolean {
   }
 }
 
+function countMatching(dir: string, match: (name: string) => boolean): number {
+  if (!fs.existsSync(dir)) return 0;
+  return fs.readdirSync(dir).filter(match).length;
+}
+
+function countSkillDirs(skillsDir: string): number {
+  if (!fs.existsSync(skillsDir)) return 0;
+  return fs
+    .readdirSync(skillsDir, { withFileTypes: true })
+    .filter(
+      (e) =>
+        e.isDirectory() &&
+        fs.existsSync(path.join(skillsDir, e.name, 'SKILL.md')),
+    ).length;
+}
+
+function readManifestFields(
+  manifestPath: string,
+): { version: string | null; installedAt: string | null } | null {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const rec = parsed as Record<string, unknown>;
+    return {
+      version:
+        typeof rec.packageVersion === 'string' ? rec.packageVersion : null,
+      installedAt: typeof rec.installedAt === 'string' ? rec.installedAt : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Answers "where did this roster come from" even when nothing was installed,
+ * because that is exactly when the question gets asked.
+ */
+function readInstallProvenance(claudeHome: string): InstallProvenance {
+  const counts = {
+    agents: countMatching(path.join(claudeHome, 'agents'), (n) =>
+      n.endsWith('.md'),
+    ),
+    skills: countSkillDirs(path.join(claudeHome, 'skills')),
+    rules: countMatching(path.join(claudeHome, 'sidekick', 'rules'), (n) =>
+      n.endsWith('.md'),
+    ),
+  };
+  const base = { root: claudeHome, counts };
+  const manifestPath = path.join(claudeHome, 'sidekick', 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    return {
+      ...base,
+      package_version: null,
+      installed_at: null,
+      note: `No install manifest at ${manifestPath}; anything counted above was not placed by \`sidekick install\`.`,
+    };
+  }
+  const fields = readManifestFields(manifestPath);
+  if (fields === null) {
+    return {
+      ...base,
+      package_version: null,
+      installed_at: null,
+      note: `Install manifest at ${manifestPath} is unreadable, so the version and date are unknown.`,
+    };
+  }
+  return {
+    ...base,
+    package_version: fields.version,
+    installed_at: fields.installedAt,
+    note: null,
+  };
+}
+
 export function runCapabilities(opts: CapabilitiesOptions): CapabilitiesReport {
   const env = opts.env ?? process.env;
   const readVersion = opts.readClaudeVersion ?? defaultReadClaudeVersion;
@@ -142,8 +231,9 @@ export function runCapabilities(opts: CapabilitiesOptions): CapabilitiesReport {
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     cc_version: ccVersion,
+    install: readInstallProvenance(opts.claudeHome),
     workflows: {
       min_version: WORKFLOWS_MIN_CC_VERSION,
       version_ok: versionOk,
