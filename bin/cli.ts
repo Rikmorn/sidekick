@@ -206,6 +206,88 @@ export function install(opts: InstallOptions): void {
   );
 }
 
+/** How one installed file differs from the source it came from (#65). */
+type InstallDriftKind = 'stale' | 'orphaned' | 'missing';
+
+interface InstallDrift {
+  kind: InstallDriftKind;
+  /** Manifest `src`, relative to the package tree. */
+  src: string;
+  /** Absolute path the file was installed to. */
+  dest: string;
+}
+
+const DRIFT_EXPLANATIONS: Record<InstallDriftKind, string> = {
+  stale: 'installed copy differs from the source',
+  orphaned: 'installed, but the source no longer ships it',
+  missing: 'shipped by the source, but not installed',
+};
+
+function classifyInstalledFile(
+  entry: { src: string; dest: string },
+  packageDir: string,
+): InstallDrift | undefined {
+  const srcPath = path.join(packageDir, entry.src);
+  const srcExists = fs.existsSync(srcPath);
+  const destExists = fs.existsSync(entry.dest);
+  if (srcExists && destExists) {
+    const same = fs.readFileSync(srcPath).equals(fs.readFileSync(entry.dest));
+    return same ? undefined : { kind: 'stale', ...entry };
+  }
+  if (destExists) return { kind: 'orphaned', ...entry };
+  if (srcExists) return { kind: 'missing', ...entry };
+  // Neither side exists: the retirement already completed.
+  return undefined;
+}
+
+/**
+ * Read-only drift report for `sidekick install --check`. Compares every
+ * manifest entry against the source it was copied from, so it needs the
+ * package tree. Reports; never mutates, and never fails the caller.
+ */
+export function checkInstall(opts: InstallOptions): InstallDrift[] {
+  const { packageDir, claudeHome } = opts;
+  const manifestPath = path.join(claudeHome, STATE_DIR_NAME, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    console.warn(
+      `No manifest found at ${manifestPath}; nothing to check. (Rule: install --check is manifest-driven.)`,
+    );
+    return [];
+  }
+  let manifest: Manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  } catch (err) {
+    throw new Error(
+      `Could not parse manifest at ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!Array.isArray(manifest.files)) {
+    throw new Error(
+      `${manifestPath}: invalid manifest — "files" must be an array`,
+    );
+  }
+
+  const drift = manifest.files
+    .map((entry) => classifyInstalledFile(entry, packageDir))
+    .filter((d): d is InstallDrift => d !== undefined);
+
+  const total = manifest.files.length;
+  if (drift.length === 0) {
+    console.log(
+      `install --check: all ${total} file(s) match the source at ${packageDir}.`,
+    );
+    return drift;
+  }
+  console.log(
+    `install --check: ${drift.length} of ${total} file(s) differ from the source at ${packageDir}.`,
+  );
+  for (const d of drift) {
+    console.log(`  [${d.kind}] ${d.src} — ${DRIFT_EXPLANATIONS[d.kind]}`);
+  }
+  return drift;
+}
+
 /**
  * After pruning a stale file, remove now-empty parent directories — but only
  * strictly inside a managed root (claudeHome/skills, claudeHome/agents, the
@@ -370,6 +452,9 @@ if (_isEntry) {
       console.error(
         'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-artifact|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|eval|graph|harvest|hook> [options]',
       );
+      console.error(
+        '  install --check — report how installed files differ from the source; compares against the package tree, so run it from the package.',
+      );
       process.exit(1);
     }
     try {
@@ -385,7 +470,11 @@ if (_isEntry) {
       const claudeHome =
         process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
       if (sub === 'install') {
-        install({ packageDir, claudeHome });
+        if (process.argv.includes('--check')) {
+          checkInstall({ packageDir, claudeHome });
+        } else {
+          install({ packageDir, claudeHome });
+        }
       } else if (sub === 'uninstall') {
         uninstall({ claudeHome });
       } else if (sub === 'init') {

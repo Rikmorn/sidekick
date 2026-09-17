@@ -12,7 +12,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { install, isMainEntrypoint, uninstall } from './cli.js';
+import { checkInstall, install, isMainEntrypoint, uninstall } from './cli.js';
 
 let fakeHome: string | undefined;
 let fakePackage: string | undefined;
@@ -807,5 +807,75 @@ describe('CLAUDE_CONFIG_DIR', () => {
     expect(fs.existsSync(manifestIn(path.join(surrogateHome, '.claude')))).toBe(
       true,
     );
+  });
+});
+
+describe('install --check (#65)', () => {
+  // Narrows the module-level fixtures without a non-null assertion.
+  function dirs(): { pkg: string; home: string } {
+    if (!fakePackage || !fakeHome) throw new Error('fixture dirs not set');
+    return { pkg: fakePackage, home: fakeHome };
+  }
+
+  const AGENT_SRC = 'agents/sk-probe.md';
+
+  function installFixture(): { srcPath: string; destPath: string } {
+    const { pkg, home } = dirs();
+    writePackageJson();
+    writeMinimalDist();
+    fs.mkdirSync(path.join(pkg, 'agents'), { recursive: true });
+    const srcPath = path.join(pkg, 'agents', 'sk-probe.md');
+    fs.writeFileSync(srcPath, '# probe\n');
+    install({ packageDir: pkg, claudeHome: home });
+    return { srcPath, destPath: path.join(home, 'agents', 'sk-probe.md') };
+  }
+
+  it('reports no drift straight after an install', () => {
+    installFixture();
+    const { pkg, home } = dirs();
+    expect(checkInstall({ packageDir: pkg, claudeHome: home })).toEqual([]);
+  });
+
+  it('reports stale, naming the file, when the installed copy is edited', () => {
+    const { destPath } = installFixture();
+    fs.writeFileSync(destPath, '# edited by hand\n');
+    const { pkg, home } = dirs();
+    expect(checkInstall({ packageDir: pkg, claudeHome: home })).toEqual([
+      { kind: 'stale', src: AGENT_SRC, dest: destPath },
+    ]);
+  });
+
+  it('reports orphaned, naming the file, when the source stops shipping it', () => {
+    const { srcPath, destPath } = installFixture();
+    fs.rmSync(srcPath);
+    const { pkg, home } = dirs();
+    expect(checkInstall({ packageDir: pkg, claudeHome: home })).toEqual([
+      { kind: 'orphaned', src: AGENT_SRC, dest: destPath },
+    ]);
+  });
+
+  it('reports missing, naming the file, when the installed copy is gone', () => {
+    const { destPath } = installFixture();
+    fs.rmSync(destPath);
+    const { pkg, home } = dirs();
+    expect(checkInstall({ packageDir: pkg, claudeHome: home })).toEqual([
+      { kind: 'missing', src: AGENT_SRC, dest: destPath },
+    ]);
+  });
+
+  it('changes nothing on disk', () => {
+    const { destPath } = installFixture();
+    fs.writeFileSync(destPath, '# edited by hand\n');
+    const { pkg, home } = dirs();
+    checkInstall({ packageDir: pkg, claudeHome: home });
+    expect(fs.readFileSync(destPath, 'utf-8')).toBe('# edited by hand\n');
+  });
+
+  it('warns and reports nothing when no manifest exists', () => {
+    const { pkg, home } = dirs();
+    expect(fs.existsSync(path.join(home, 'sidekick', 'manifest.json'))).toBe(
+      false,
+    );
+    expect(checkInstall({ packageDir: pkg, claudeHome: home })).toEqual([]);
   });
 });
