@@ -93,6 +93,40 @@ describe('detectGates', () => {
     expect(gates.test).toBe('bun run test');
   });
 
+  // #68: a narrower script is likelier to run without Docker or a live
+  // service, which `detectGates` has no way to check.
+  const withBunLock = (scripts: Record<string, string>) => {
+    writePkg(scripts);
+    fs.writeFileSync(path.join(tmpRoot, 'bun.lock'), '');
+    return detectGates(tmpRoot).test;
+  };
+
+  it('prefers test:fast over test', () => {
+    expect(
+      withBunLock({ ...fullScripts, 'test:fast': 'vitest run --changed' }),
+    ).toBe('bun run test:fast');
+  });
+
+  it('prefers test:unit over test when no test:fast exists', () => {
+    expect(
+      withBunLock({ ...fullScripts, 'test:unit': 'vitest run unit' }),
+    ).toBe('bun run test:unit');
+  });
+
+  it('prefers test:fast over test:unit', () => {
+    expect(
+      withBunLock({
+        ...fullScripts,
+        'test:unit': 'vitest run unit',
+        'test:fast': 'vitest run --changed',
+      }),
+    ).toBe('bun run test:fast');
+  });
+
+  it('falls back to test when it is the only test script', () => {
+    expect(withBunLock(fullScripts)).toBe('bun run test');
+  });
+
   it('suggests npm commands when package-lock.json identifies the runner', () => {
     writePkg(fullScripts);
     fs.writeFileSync(path.join(tmpRoot, 'package-lock.json'), '{}');

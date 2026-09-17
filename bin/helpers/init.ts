@@ -35,6 +35,12 @@ const LOCKFILE_RUNNERS: ReadonlyArray<{
  * suggestion is only made when a lockfile identifies the runner AND the
  * script exists; anything else returns '' (unconfigured).
  */
+/**
+ * Test scripts in preference order. A narrower script is likelier to run
+ * without Docker or a live database, which `init` cannot detect (#68).
+ */
+const TEST_SCRIPT_PREFERENCE = ['test:fast', 'test:unit', 'test'] as const;
+
 export function detectGates(repoRoot: string): {
   typecheck: string;
   lint: string;
@@ -56,10 +62,11 @@ export function detectGates(repoRoot: string): {
   );
   if (!runner) return none;
   const scripts = pkg.scripts ?? {};
+  const testScript = TEST_SCRIPT_PREFERENCE.find((name) => scripts[name]);
   return {
     typecheck: scripts.typecheck ? runner.run('typecheck') : '',
     lint: scripts.lint ? runner.run('lint') : '',
-    test: scripts.test ? runner.run('test') : '',
+    test: testScript ? runner.run(testScript) : '',
   };
 }
 
@@ -240,6 +247,17 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
   if (!resolvedGates.configured) {
     console.warn(
       `⚠ gates unconfigured: ${resolvedGates.missing.join(', ')} — set gates.* in .sidekick/config.json. Verification gates surface this instead of guessing a runner.`,
+    );
+  }
+
+  // `init` cannot tell whether a script needs Docker or a live service, so it
+  // names what it picked and asks (#68).
+  const chosenGates = (['typecheck', 'lint', 'test'] as const)
+    .filter((gate) => config.gates[gate])
+    .map((gate) => `${gate}: ${config.gates[gate]}`);
+  if (chosenGates.length > 0) {
+    console.log(
+      `Gates chosen — ${chosenGates.join(', ')}. Confirm each runs without Docker or other external services; if not, set gates.* in .sidekick/config.json.`,
     );
   }
 
