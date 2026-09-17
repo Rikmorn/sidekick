@@ -380,7 +380,10 @@ if (_isEntry) {
         path.dirname(fileURLToPath(import.meta.url)),
         '..',
       );
-      const claudeHome = path.join(os.homedir(), '.claude');
+      // An empty CLAUDE_CONFIG_DIR means unset: '' resolves the install
+      // root to a relative path, scattering the package into the cwd.
+      const claudeHome =
+        process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
       if (sub === 'install') {
         install({ packageDir, claudeHome });
       } else if (sub === 'uninstall') {

@@ -748,3 +748,64 @@ describe('hook subcommand', () => {
     expect(res.stdout.trim()).toBe('');
   });
 });
+
+describe('CLAUDE_CONFIG_DIR', () => {
+  const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
+  let configDir = '';
+  let surrogateHome = '';
+
+  beforeEach(() => {
+    configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-config-dir-'));
+    surrogateHome = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'sk-surrogate-home-'),
+    );
+  });
+
+  afterEach(() => {
+    for (const dir of [configDir, surrogateHome]) {
+      if (dir && fs.existsSync(dir)) {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  // `os.homedir()` follows HOME, so the fallback cases resolve into a
+  // surrogate home and never write to the operator's real ~/.claude.
+  function runInstall(configDirValue: string | undefined) {
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: surrogateHome };
+    if (configDirValue === undefined) delete env.CLAUDE_CONFIG_DIR;
+    else env.CLAUDE_CONFIG_DIR = configDirValue;
+    return spawnSync('bun', [cli, 'install'], { encoding: 'utf-8', env });
+  }
+
+  const manifestIn = (home: string): string =>
+    path.join(home, 'sidekick', 'manifest.json');
+
+  it('installs under CLAUDE_CONFIG_DIR when it is set', () => {
+    const res = runInstall(configDir);
+    expect(res.status).toBe(0);
+    expect(fs.existsSync(manifestIn(configDir))).toBe(true);
+    expect(fs.existsSync(manifestIn(path.join(surrogateHome, '.claude')))).toBe(
+      false,
+    );
+  });
+
+  it('falls back to ~/.claude when CLAUDE_CONFIG_DIR is unset', () => {
+    const res = runInstall(undefined);
+    expect(res.status).toBe(0);
+    expect(fs.existsSync(manifestIn(path.join(surrogateHome, '.claude')))).toBe(
+      true,
+    );
+    expect(fs.existsSync(manifestIn(configDir))).toBe(false);
+  });
+
+  // Guards the `||`-not-`??` choice at the call site: `??` would resolve an
+  // empty CLAUDE_CONFIG_DIR to '' and install to a relative path.
+  it('falls back to ~/.claude when CLAUDE_CONFIG_DIR is empty', () => {
+    const res = runInstall('');
+    expect(res.status).toBe(0);
+    expect(fs.existsSync(manifestIn(path.join(surrogateHome, '.claude')))).toBe(
+      true,
+    );
+  });
+});
