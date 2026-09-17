@@ -57,6 +57,6 @@ The repo compiles itself into a queryable graph (ADR-0007): entities (ADRs, agen
 
 ## Conventions the runtime depends on
 
-- `.sidekick/config.json` is the source of truth for branch + gate commands, read by `branch-precheck`, `check-drift`, and dispatched subagents. `bin/helpers/config.ts` defines its schema; `README.md` carries the scaffolding and usage-contract table.
-- `.sidekick/plans/<slug>/{RFC.md, PLAN.md}` paths and the `T-NN` / `D-NN` / `A-NN` / `R-NN` symbol conventions are hardcoded in helpers and prompts.
-- `.sidekick/{cache,state}/` is gitignored and reconstructable from PLAN.md checkboxes + git commit scopes — never treat it as authority.
+- `.sidekick/config.json` is the source of truth for branch + gate commands, read by `branch-precheck` and dispatched subagents. `bin/helpers/config.ts` defines its schema; `README.md` carries the scaffolding and usage-contract table.
+- `.sidekick/work/<issue>-<slug>/RFC.md` paths and the `T-NN` / `D-NN` / `A-NN` / `R-NN` symbol conventions are hardcoded in helpers and prompts.
+- `.sidekick/{cache,state}/` is gitignored and reconstructable from the RFC's `## Checklist` + git commit scopes — never treat it as authority.

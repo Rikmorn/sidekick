@@ -66,10 +66,10 @@ Prints a JSON report: your Claude Code version, whether dynamic workflows are av
 
 | Skill | Does |
 |---|---|
-| `/sk-design <slug>` | Designs an RFC.md + PLAN.md unit under `.sidekick/plans/<slug>/` — a collaborative conversation by default; `--auto <low\|medium\|high>` runs it hands-off |
-| `/sk-build <slug>` | Executes PLAN.md wave-by-wave: executor → fresh gates → spec-review → atomic commit per task |
+| `/sk-design <issue>` | Designs the work RFC under `.sidekick/work/<issue>-<slug>/` — a collaborative conversation by default; `--auto <low\|medium\|high>` runs it hands-off |
+| `/sk-build <issue>` | Executes the work RFC's `## Tasks` wave-by-wave: executor → fresh gates → spec-review → atomic commit per task |
 | `/sk-decide <topic>` | Records a MADR decision under `.sidekick/decisions/` |
-| `/sk-review <slug>` | Multi-dimension review (correctness, maintainability, security, tests, architecture, goal-backward verification — plus any verifiers you've registered) |
+| `/sk-review <issue>` | Multi-dimension review (correctness, maintainability, security, tests, architecture, goal-backward verification — plus any verifiers you've registered) |
 | `/sk-write-verifier [dimension]` | Authors your own quality dimension (a UI example pack ships with it) and mounts it on the review/design/decide quorums via the `verifiers` registry in `.sidekick/config.json` — advisory findings alongside the bundled dimensions |
 
 ### A typical session
@@ -77,9 +77,9 @@ Prints a JSON report: your Claude Code version, whether dynamic workflows are av
 The `sk-*` skills are slash commands you run **inside Claude Code**, in a project you've `init`-ed. A feature usually flows:
 
 ```text
-/sk-design refund-window       # talk the design through → RFC.md + PLAN.md under .sidekick/plans/refund-window/
-/sk-build  refund-window       # execute the plan wave-by-wave; atomic commit per task
-/sk-review refund-window       # multi-dimension review of the diff, incl. goal-backward verification
+/sk-design <issue>             # talk the design through → the work RFC under .sidekick/work/<issue>-refund-window/
+/sk-build  <issue>             # execute the work RFC's ## Tasks wave-by-wave; atomic commit per task
+/sk-review <issue>             # multi-dimension review of the diff, incl. goal-backward verification
 ```
 
 **`/sk-design` has two modes.** By default it's a *collaborative conversation*: the orchestrator surfaces its understanding of the work and the complexity signal, pulls research transparently only when it sharpens the discussion (never a reflexive upfront pass), lays options out inline, and iterates with you until the design is clear — then drafts and ends with a light `ship / tweak / cancel` confirm. `--auto <low|medium|high>` is the *hands-off* mode: produce-and-confirm end-to-end with no conversation, where the effort word drives research depth (`low → quick`, `medium → standard`, `high → deep`; `high` benefits from the workflow backend for its adversarial verification, falling back to `standard` on the agents backend). It keeps one honest breakout — it may stop once for a single focused question if the task genuinely exceeds the stated effort — and a one-line confirm before commit. (The retired `--research` / `--no-research` / `--budget` flags now error: `unknown flag <name>; see --auto`.)
@@ -93,11 +93,11 @@ Everything lives under `.sidekick/` at your repo root. `sidekick init` establish
 | Path | Tracked | Contents |
 |---|---|---|
 | `.sidekick/config.json` | **committed** | runtime config — default branch, gate commands, `waveSizeCap`, `buildCheckpoints`, the `verifiers` registry |
-| `.sidekick/plans/<slug>/` | **committed** | `RFC.md`, `PLAN.md`, `RESEARCH.md` |
+| `.sidekick/work/<issue>-<slug>/` | **committed** | `RFC.md`, `RESEARCH.md` |
 | `.sidekick/decisions/<slug>.md` | **committed** | MADR decision records |
-| `.sidekick/backlog/<slug>.md` | **committed** | deferred ideas, one per file |
+| `.sidekick/calibrations/<verifier>.json` | **committed** | calibration certificates (stats, thresholds, corpus hash, verifier-file hash) |
 | `.sidekick/cache/` | gitignored | review / goal-verify trails |
-| `.sidekick/state/` | gitignored | reconstructable build progress (authority is PLAN.md + git) |
+| `.sidekick/state/` | gitignored | reconstructable build progress (authority is the RFC checklist + git) |
 
 ---
 
