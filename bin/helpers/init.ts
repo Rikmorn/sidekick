@@ -119,22 +119,43 @@ export function ensureGitignore(repoRoot: string): {
  * the consumer repo's .claude/rules/. sk-*-prefixed files are managed
  * (overwritten on re-init); anything else in the directory is left alone.
  */
+/** The ownership filter: sidekick owns `sk-*.md` in a consumer's rules dir. */
+const isOwnedRule = (name: string): boolean =>
+  name.startsWith('sk-') && name.endsWith('.md');
+
+// Deletes inside the consumer's repo, so it removes only what the ownership
+// filter claims, only regular files, and only names the source no longer has.
+function pruneRetiredRules(
+  destDir: string,
+  stillInSource: ReadonlySet<string>,
+): string[] {
+  if (!fs.existsSync(destDir)) return [];
+  const retired = fs.readdirSync(destDir).filter((name) => {
+    if (!isOwnedRule(name) || stillInSource.has(name)) return false;
+    return fs.statSync(path.join(destDir, name)).isFile();
+  });
+  for (const name of retired) {
+    fs.rmSync(path.join(destDir, name));
+  }
+  return retired;
+}
+
 export function installRules(
   repoRoot: string,
   claudeHome: string,
-): { installed: string[] } {
+): { installed: string[]; removed: string[] } {
   const src = path.join(claudeHome, 'sidekick', 'rules');
-  if (!fs.existsSync(src)) return { installed: [] };
-  const files = fs
-    .readdirSync(src)
-    .filter((f) => f.startsWith('sk-') && f.endsWith('.md'));
-  if (files.length === 0) return { installed: [] };
+  if (!fs.existsSync(src)) return { installed: [], removed: [] };
+  const files = fs.readdirSync(src).filter(isOwnedRule);
+  // An empty source means a broken install far more often than it means every
+  // rule was retired, so it prunes nothing.
+  if (files.length === 0) return { installed: [], removed: [] };
   const dest = path.join(repoRoot, '.claude', 'rules');
   fs.mkdirSync(dest, { recursive: true });
   for (const f of files) {
     fs.copyFileSync(path.join(src, f), path.join(dest, f));
   }
-  return { installed: files };
+  return { installed: files, removed: pruneRetiredRules(dest, new Set(files)) };
 }
 
 export interface RunInitOptions {
@@ -267,9 +288,11 @@ export async function runInit(opts: RunInitOptions): Promise<number> {
   }
 
   const rules = installRules(repoRoot, claudeHome);
-  if (rules.installed.length > 0) {
+  if (rules.installed.length > 0 || rules.removed.length > 0) {
+    const retired =
+      rules.removed.length > 0 ? `, retired ${rules.removed.join(', ')}` : '';
     console.log(
-      `Installed ${rules.installed.length} rule(s) to .claude/rules/`,
+      `Installed ${rules.installed.length} rule(s) to .claude/rules/${retired}`,
     );
   }
 

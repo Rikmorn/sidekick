@@ -527,4 +527,42 @@ describe('installRules ownership filter (#43)', () => {
     expect(result.installed).toEqual([]);
     expect(fs.existsSync(destRules)).toBe(false);
   });
+
+  // #45: a rule deleted from source is retired from the consumer too.
+  it('retires an sk- rule the source no longer has', () => {
+    writeSrc('sk-language.md');
+    writeDest('sk-departed.md', 'retired\n');
+    const result = installRules(repoRoot, claudeHome);
+    expect(result.removed).toEqual(['sk-departed.md']);
+    expect(fs.existsSync(path.join(destRules, 'sk-departed.md'))).toBe(false);
+  });
+
+  it('retires only what it owns, with consumer files beside it', () => {
+    writeSrc('sk-language.md');
+    writeDest('notes.md', 'mine\n');
+    writeDest('sk-notes.txt', 'mine\n');
+    writeDest('sk-departed.md', 'retired\n');
+    const result = installRules(repoRoot, claudeHome);
+    expect(result.removed).toEqual(['sk-departed.md']);
+    expect(readDest('notes.md')).toBe('mine\n');
+    expect(readDest('sk-notes.txt')).toBe('mine\n');
+  });
+
+  it('retires nothing when the consumer has no rules directory yet', () => {
+    writeSrc('sk-language.md');
+    expect(fs.existsSync(destRules)).toBe(false);
+    const result = installRules(repoRoot, claudeHome);
+    expect(result.installed).toEqual(['sk-language.md']);
+    expect(result.removed).toEqual([]);
+  });
+
+  // An empty source is a broken install far more often than a full retirement,
+  // so it must not read as "every rule was retired".
+  it('retires nothing when the source holds no sk-*.md files', () => {
+    writeSrc('readme.md');
+    writeDest('sk-language.md', 'kept\n');
+    const result = installRules(repoRoot, claudeHome);
+    expect(result.removed).toEqual([]);
+    expect(readDest('sk-language.md')).toBe('kept\n');
+  });
 });
