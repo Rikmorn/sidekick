@@ -545,7 +545,10 @@ if (_isEntry) {
         };
         const { stdout, exitCode } = runScopeCheckCli({
           repoRoot: process.cwd(),
-          slug: getVal('--slug'),
+          issue:
+            getVal('--issue') === undefined
+              ? undefined
+              : Number(getVal('--issue')),
           task: getVal('--task'),
           declared: csv('--declared'),
           baseline: csv('--baseline'),

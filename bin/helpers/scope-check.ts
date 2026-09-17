@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { parsePlanTasks } from './wave-plan.js';
+import { resolveWorkDir, WorkDirError } from './work-dir.js';
 
 export interface ScopeCheckCliInput {
   repoRoot: string;
-  /** Mode A: plan slug under `.sidekick/plans/<slug>/PLAN.md`. */
-  slug?: string;
+  /** Mode A: issue number, resolved to `.sidekick/work/<issue>-<slug>/RFC.md`. */
+  issue?: number;
   /** Mode A: task id, e.g. "T-04". */
   task?: string;
   /** Mode B: explicit declared scope. Presence (even empty) selects mode B. */
@@ -88,18 +88,18 @@ export function runScopeCheckCli(
   opts: ScopeCheckCliInput,
 ): ScopeCheckCliResult {
   const { repoRoot } = opts;
-  const modeA = opts.slug !== undefined || opts.task !== undefined;
+  const modeA = opts.issue !== undefined || opts.task !== undefined;
   const modeB = opts.declared !== undefined;
 
   // Mode resolution — mutually exclusive, one required.
   if (modeA && modeB) {
     return err(
-      'mode conflict: pass either --slug/--task (plan-backed) or --declared (explicit), not both',
+      'mode conflict: pass either --issue/--task (plan-backed) or --declared (explicit), not both',
     );
   }
   if (!modeA && !modeB) {
     return err(
-      'no scope given: pass --slug <slug> --task <T-NN> or --declared <p1,p2,...>',
+      'no scope given: pass --issue <n> --task <T-NN> or --declared <p1,p2,...>',
     );
   }
 
@@ -107,20 +107,20 @@ export function runScopeCheckCli(
   let declared: string[];
   let taskId: string | null;
   if (modeA) {
-    if (opts.slug === undefined || opts.task === undefined) {
+    if (opts.issue === undefined || opts.task === undefined) {
       return err(
-        'plan mode needs both --slug and --task (e.g. --slug my-feature --task T-04)',
+        'plan mode needs both --issue and --task (e.g. --issue 42 --task T-04)',
       );
     }
-    const planPath = path.join(
-      repoRoot,
-      '.sidekick',
-      'plans',
-      opts.slug,
-      'PLAN.md',
-    );
+    let planPath: string;
+    try {
+      planPath = resolveWorkDir(repoRoot, opts.issue).rfcPath;
+    } catch (e) {
+      if (!(e instanceof WorkDirError)) throw e;
+      return err(e.message);
+    }
     if (!fs.existsSync(planPath)) {
-      return err(`PLAN.md not found at ${planPath}`);
+      return err(`RFC.md not found at ${planPath}`);
     }
     const tasks = parsePlanTasks(fs.readFileSync(planPath, 'utf-8'));
     const wantNum = Number.parseInt(opts.task.replace(/\D/g, ''), 10);

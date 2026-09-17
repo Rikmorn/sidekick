@@ -24,10 +24,10 @@ function writeFile(dir: string, rel: string, content: string): void {
   fs.writeFileSync(full, content);
 }
 
-function writePlan(dir: string, slug: string, body: string): void {
-  const planDir = path.join(dir, '.sidekick', 'plans', slug);
+function writePlan(dir: string, issue: number, body: string): void {
+  const planDir = path.join(dir, '.sidekick', 'work', `${issue}-demo`);
   fs.mkdirSync(planDir, { recursive: true });
-  fs.writeFileSync(path.join(planDir, 'PLAN.md'), body);
+  fs.writeFileSync(path.join(planDir, 'RFC.md'), body);
   // Commit the plan so it mirrors the real flow (PLAN.md is a committed
   // artifact) and isn't itself reported as a producer-run dirty path.
   execSync('git add .sidekick && git commit -q -m plan', { cwd: dir });
@@ -80,10 +80,10 @@ describe('runScopeCheckCli', () => {
 
   describe('mode A (plan-backed)', () => {
     it('clean when every changed path is declared for the task', () => {
-      writePlan(repo, 'demo', planWithTask('T-01', ['src/a.ts', 'src/b.ts']));
+      writePlan(repo, 42, planWithTask('T-01', ['src/a.ts', 'src/b.ts']));
       writeFile(repo, 'src/a.ts', 'a');
       writeFile(repo, 'src/b.ts', 'b');
-      const r = parseOk({ slug: 'demo', task: 'T-01' });
+      const r = parseOk({ issue: 42, task: 'T-01' });
       expect(r.verdict).toBe('clean');
       expect(r.task_id).toBe('T-01');
       expect(r.out_of_scope).toEqual([]);
@@ -92,51 +92,51 @@ describe('runScopeCheckCli', () => {
     });
 
     it('flags an untracked out-of-scope write', () => {
-      writePlan(repo, 'demo', planWithTask('T-01', ['src/a.ts']));
+      writePlan(repo, 42, planWithTask('T-01', ['src/a.ts']));
       writeFile(repo, 'src/a.ts', 'a');
       writeFile(repo, 'src/evil.ts', 'not declared');
-      const r = parseOk({ slug: 'demo', task: 'T-01' });
+      const r = parseOk({ issue: 42, task: 'T-01' });
       expect(r.verdict).toBe('out_of_scope');
       expect(r.out_of_scope).toEqual(['src/evil.ts']);
     });
 
     it('errors on an unknown task id', () => {
-      writePlan(repo, 'demo', planWithTask('T-01', ['src/a.ts']));
+      writePlan(repo, 42, planWithTask('T-01', ['src/a.ts']));
       const { stdout, exitCode } = run({
         repoRoot: repo,
-        slug: 'demo',
+        issue: 42,
         task: 'T-99',
       });
       expect(exitCode).toBe(1);
       expect(JSON.parse(stdout).error).toMatch(/T-99|task/i);
     });
 
-    it('errors when PLAN.md is missing', () => {
+    it('errors when no work directory matches the issue', () => {
       const { stdout, exitCode } = run({
         repoRoot: repo,
-        slug: 'ghost',
+        issue: 99,
         task: 'T-01',
       });
       expect(exitCode).toBe(1);
-      expect(JSON.parse(stdout).error).toMatch(/PLAN\.md/i);
+      expect(JSON.parse(stdout).error).toMatch(/RFC\.md|work directory/i);
     });
   });
 
   describe('baseline subtraction', () => {
     it('does not attribute a pre-dirty path to this run', () => {
-      writePlan(repo, 'demo', planWithTask('T-01', ['src/a.ts']));
+      writePlan(repo, 42, planWithTask('T-01', ['src/a.ts']));
       writeFile(repo, 'src/pre.ts', 'was already dirty');
       writeFile(repo, 'src/a.ts', 'a');
 
       // Without a baseline, the pre-existing dirty file is attributed and
       // scored out-of-scope.
-      const without = parseOk({ slug: 'demo', task: 'T-01' });
+      const without = parseOk({ issue: 42, task: 'T-01' });
       expect(without.out_of_scope).toEqual(['src/pre.ts']);
       expect(without.verdict).toBe('out_of_scope');
 
       // With the baseline, it is subtracted before scoring.
       const withBaseline = parseOk({
-        slug: 'demo',
+        issue: 42,
         task: 'T-01',
         baseline: ['src/pre.ts'],
       });
@@ -196,7 +196,7 @@ describe('runScopeCheckCli', () => {
     it('rejects supplying both a plan mode flag and --declared', () => {
       const { stdout, exitCode } = run({
         repoRoot: repo,
-        slug: 'demo',
+        issue: 42,
         task: 'T-01',
         declared: ['src/a.ts'],
       });
@@ -207,13 +207,13 @@ describe('runScopeCheckCli', () => {
     it('rejects supplying neither mode', () => {
       const { stdout, exitCode } = run({ repoRoot: repo });
       expect(exitCode).toBe(1);
-      expect(JSON.parse(stdout).error).toMatch(/mode|declared|slug/i);
+      expect(JSON.parse(stdout).error).toMatch(/mode|declared|issue/i);
     });
 
-    it('rejects an incomplete plan mode (--slug without --task)', () => {
-      const { stdout, exitCode } = run({ repoRoot: repo, slug: 'demo' });
+    it('rejects an incomplete plan mode (--issue without --task)', () => {
+      const { stdout, exitCode } = run({ repoRoot: repo, issue: 42 });
       expect(exitCode).toBe(1);
-      expect(JSON.parse(stdout).error).toMatch(/task|slug/i);
+      expect(JSON.parse(stdout).error).toMatch(/task|issue/i);
     });
 
     it('errors when the target directory is not a git repo', () => {
