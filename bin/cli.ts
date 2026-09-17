@@ -10,7 +10,6 @@ import {
   isArtifactType,
   runCheckArtifactCli,
 } from './helpers/check-artifact.js';
-import { runCheckDriftCli } from './helpers/check-drift.js';
 import { runClassifyDeviationCli } from './helpers/classify-deviation.js';
 import { runGatesCli } from './helpers/config.js';
 import { runCalibrate } from './helpers/eval-calibrate.js';
@@ -26,10 +25,8 @@ import {
   runHarvestList,
   runHarvestLog,
 } from './helpers/harvest.js';
-import { runHashRfcCli } from './helpers/hash-rfc.js';
 import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
 import { runInit } from './helpers/init.js';
-import { runReconcilePlanCli } from './helpers/reconcile-plan.js';
 import { runScopeCheckCli } from './helpers/scope-check.js';
 import { runVerifiersCli } from './helpers/verifiers.js';
 import { runWavePlanCli } from './helpers/wave-plan.js';
@@ -434,12 +431,9 @@ if (_isEntry) {
       'capabilities',
       'branch-precheck',
       'check-artifact',
-      'check-drift',
-      'reconcile-plan',
       'wave-plan',
       'classify-deviation',
       'goal-verdict',
-      'hash-rfc',
       'gates',
       'verifiers',
       'scope-check',
@@ -450,7 +444,7 @@ if (_isEntry) {
     ]);
     if (!sub || !VALID_SUBS.has(sub)) {
       console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-artifact|check-drift|reconcile-plan|wave-plan|classify-deviation|goal-verdict|hash-rfc|gates|verifiers|scope-check|eval|graph|harvest|hook> [options]',
+        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-artifact|wave-plan|classify-deviation|goal-verdict|gates|verifiers|scope-check|eval|graph|harvest|hook> [options]',
       );
       console.error(
         '  install --check — report how installed files differ from the source; compares against the package tree, so run it from the package.',
@@ -769,70 +763,6 @@ if (_isEntry) {
             repoRoot: process.cwd(),
             artifactPath: path.resolve(artifactPath),
             artifactType,
-          }),
-        );
-        process.exit(0);
-      } else if (sub === 'check-drift') {
-        const slug = process.argv[3];
-        if (!slug) {
-          console.error(
-            'Usage: sidekick check-drift <slug> [--format=<json|kv>]',
-          );
-          process.exit(1);
-        }
-        const format: 'json' | 'kv' =
-          process.argv.find((a) => a.startsWith('--format='))?.split('=')[1] ===
-          'kv'
-            ? 'kv'
-            : 'json';
-        console.log(
-          runCheckDriftCli({ repoRoot: process.cwd(), slug, format }),
-        );
-        process.exit(0);
-      } else if (sub === 'hash-rfc') {
-        const slug = process.argv[3];
-        if (!slug) {
-          console.error('Usage: sidekick hash-rfc <slug> [--format=<json|kv>]');
-          process.exit(1);
-        }
-        const format: 'json' | 'kv' =
-          process.argv.find((a) => a.startsWith('--format='))?.split('=')[1] ===
-          'kv'
-            ? 'kv'
-            : 'json';
-        console.log(runHashRfcCli({ repoRoot: process.cwd(), slug, format }));
-        process.exit(0);
-      } else if (sub === 'reconcile-plan') {
-        const args = process.argv.slice(3);
-        const slug = args.find((a) => !a.startsWith('--'));
-        if (!slug) {
-          console.error(
-            'Usage: sidekick reconcile-plan <slug> [--default-branch <name>] [--apply T-01,T-03] [--format=<json|kv>]',
-          );
-          process.exit(1);
-        }
-        const getVal = (flag: string): string | undefined => {
-          const idx = args.indexOf(flag);
-          return idx >= 0 ? args[idx + 1] : undefined;
-        };
-        const applyRaw = getVal('--apply');
-        const apply = applyRaw
-          ? applyRaw
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : undefined;
-        const format: 'json' | 'kv' =
-          args.find((a) => a.startsWith('--format='))?.split('=')[1] === 'kv'
-            ? 'kv'
-            : 'json';
-        console.log(
-          runReconcilePlanCli({
-            repoRoot: process.cwd(),
-            slug,
-            defaultBranch: getVal('--default-branch') ?? 'main',
-            apply,
-            format,
           }),
         );
         process.exit(0);
