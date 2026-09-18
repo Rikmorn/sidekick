@@ -1,38 +1,24 @@
 {
   "name": "sidekick",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Personal AI engineering harness",
+  "description": "Personal everyday loop for Claude Code, packaged as a plugin bundle",
   "engines": {
     "node": ">=20.0.0"
   },
-  "bin": {
-    "sidekick": "dist/cli.js"
-  },
-  "files": [
-    "dist",
-    "skills",
-    "agents",
-    "rules",
-    "README.md"
-  ],
   "scripts": {
-    "build": "bun build bin/cli.ts --target node --outfile dist/cli.js",
+    "build": "bun build bin/cli.ts --target node --outfile plugin/bin/sidekick && chmod +x plugin/bin/sidekick",
     "sidekick": "bun bin/cli.ts",
-    "dashboard:view": "python3 -m http.server 4173 -d .kb/site",
-    "dashboard:smoke": "node dashboards/smoke.mjs",
     "test": "bun test bin/",
     "test:watch": "bun test --watch bin/",
     "typecheck": "tsc --noEmit",
     "check": "biome check .",
-    "format": "biome format --write .",
-    "dashboard": "bash dashboards/prepare.sh && quarto render dashboards"
+    "format": "biome format --write ."
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
     "@types/node": "^24.13.1",
-    "playwright": "^1.61.1",
     "typescript": "^6.0.3"
   },
   "trustedDependencies": [

@@ -8,20 +8,26 @@ import { fileURLToPath } from 'node:url';
  *
  * Claude Code's frontmatter reader is not a strict YAML parser. It truncates an
  * unquoted value at ` #` — comment behaviour — so a description mentioning
- * `## Architecture` silently loses everything after it, and the agent ships with
+ * `## Architecture` silently loses everything after it, and the skill ships with
  * half a description. A `: ` inside an unquoted value is the mirror hazard: a
  * strict parser rejects the whole block as a nested mapping.
  *
- * Quoting the value defeats both. This walks the live tree rather than a
- * fixture, because the hazard arrives with the next agent someone writes. The
+ * Quoting the value defeats both. This walks the live plugin tree rather than a
+ * fixture, because the hazard arrives with the next skill someone writes. The
  * file list is derived from the directories (#56) so a new agent or skill is
  * covered the day it lands, and no count or filename is pinned here.
+ *
+ * Repointed at `plugin/` with ADR-0009. The bundle ships skills now and agents
+ * later, so `plugin/agents/` may be absent — but never present and empty.
  */
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 );
+
+const AGENTS_DIR = path.join('plugin', 'agents');
+const SKILLS_DIR = path.join('plugin', 'skills');
 
 /** A value opening with one of these is quoted, block, or flow — already safe. */
 const SAFE_OPENERS = ['"', "'", '>', '|', '[', '{'];
@@ -33,18 +39,23 @@ const HAZARDS: ReadonlyArray<readonly [string, string]> = [
   [': ', 'is rejected as a nested mapping'],
 ];
 
-const agentFiles = (): string[] =>
-  fs
-    .readdirSync(path.join(REPO_ROOT, 'agents'))
+const agentsDirExists = (): boolean =>
+  fs.existsSync(path.join(REPO_ROOT, AGENTS_DIR));
+
+const agentFiles = (): string[] => {
+  if (!agentsDirExists()) return [];
+  return fs
+    .readdirSync(path.join(REPO_ROOT, AGENTS_DIR))
     .filter((name) => name.endsWith('.md'))
-    .map((name) => path.join('agents', name))
+    .map((name) => path.join(AGENTS_DIR, name))
     .sort();
+};
 
 const skillFiles = (): string[] =>
   fs
-    .readdirSync(path.join(REPO_ROOT, 'skills'), { withFileTypes: true })
+    .readdirSync(path.join(REPO_ROOT, SKILLS_DIR), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join('skills', entry.name, 'SKILL.md'))
+    .map((entry) => path.join(SKILLS_DIR, entry.name, 'SKILL.md'))
     .filter((rel) => fs.existsSync(path.join(REPO_ROOT, rel)))
     .sort();
 
@@ -79,10 +90,13 @@ const hazardsIn = (rel: string): string[] => {
 };
 
 describe('frontmatter hazards (#74)', () => {
-  it('finds frontmatter files in both agents/ and skills/', () => {
+  it('finds skill frontmatter, and agent frontmatter when that directory exists', () => {
     // A broken glob must fail loudly, not pass vacuously over an empty list.
-    expect(agentFiles().length).toBeGreaterThan(0);
     expect(skillFiles().length).toBeGreaterThan(0);
+    // Absent is the deliberate state today; present and empty is a broken glob.
+    if (agentsDirExists()) {
+      expect(agentFiles().length).toBeGreaterThan(0);
+    }
   });
 
   it('every file opens and closes its frontmatter block', () => {

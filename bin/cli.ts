@@ -1,406 +1,45 @@
 #!/usr/bin/env node
+/**
+ * sidekick — the plugin's executable. One command family: `rules`.
+ * Shipped as plugin/bin/sidekick (a Node bundle built from this file) and run
+ * from source as `bun bin/cli.ts`; both resolve the shipped rules relative to
+ * this file.
+ */
 import * as fs from 'node:fs';
 import { realpathSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runBranchPrecheckCli } from './helpers/branch-precheck.js';
-import { runCapabilitiesCli } from './helpers/capabilities.js';
-import {
-  isArtifactType,
-  runCheckArtifactCli,
-} from './helpers/check-artifact.js';
-import { runClassifyDeviationCli } from './helpers/classify-deviation.js';
-import { runGatesCli } from './helpers/config.js';
-import { runCalibrate } from './helpers/eval-calibrate.js';
-import { runEvalReportCli } from './helpers/eval-report.js';
-import {
-  realClaudeRunner,
-  realShellRunner,
-  runEvalSuite,
-} from './helpers/eval-run.js';
-import { runGoalVerdictCli } from './helpers/goal-verdict.js';
-import {
-  runHarvestImport,
-  runHarvestList,
-  runHarvestLog,
-} from './helpers/harvest.js';
-import { decideGuardConfig, runScanConfig } from './helpers/hooks.js';
-import { runInit } from './helpers/init.js';
-import { runScopeCheckCli } from './helpers/scope-check.js';
-import { runVerifiersCli } from './helpers/verifiers.js';
-import { runWavePlanCli } from './helpers/wave-plan.js';
+import { runRulesCli } from './helpers/rules.js';
 
 /**
- * Phase 10 D-02 manifest schema. schemaVersion allows future
- * migration (e.g., adding per-file checksums as schemaVersion: 2)
- * without breaking already-installed manifests.
+ * The plugin directory holds `rules/` and `.claude-plugin/plugin.json`.
+ * Bundled: plugin/bin/sidekick → plugin. Source: bin/cli.ts → plugin.
  */
-interface Manifest {
-  schemaVersion: 1;
-  packageVersion: string;
-  installedAt: string; // ISO date
-  files: Array<{ src: string; dest: string }>;
-}
-
-const MANAGED_DIRS = ['skills', 'agents'] as const;
-const STATE_DIR_NAME = 'sidekick';
-
-export interface InstallOptions {
-  /**
-   * Absolute path to the engineering package root (the dir that
-   * contains package.json, skills/, and agents/). At runtime
-   * this is resolved from import.meta.url; tests inject a fake.
-   */
-  packageDir: string;
-  /**
-   * Absolute path to the Claude home dir (~/.claude). Tests inject
-   * a fake; runtime uses os.homedir() + '.claude'.
-   */
-  claudeHome: string;
-}
-
-export interface UninstallOptions {
-  claudeHome: string;
-}
-
-export function install(opts: InstallOptions): void {
-  const { packageDir, claudeHome } = opts;
-
-  // D-04 / D-12 bootstrap check: package.json must have name + version.
-  const pkgJsonPath = path.join(packageDir, 'package.json');
-  if (!fs.existsSync(pkgJsonPath)) {
-    throw new Error(
-      `package.json not found at ${pkgJsonPath}; cannot install.`,
-    );
-  }
-  let pkgJson: Record<string, unknown>;
-  try {
-    pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
-  } catch (err) {
-    throw new Error(
-      `Could not parse ${pkgJsonPath}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-  const name = pkgJson.name;
-  const version = pkgJson.version;
-  if (typeof name !== 'string' || name.length === 0) {
-    throw new Error(`${pkgJsonPath}: missing or non-string "name" field`);
-  }
-  if (typeof version !== 'string' || version.length === 0) {
-    throw new Error(`${pkgJsonPath}: missing or non-string "version" field`);
-  }
-
-  // Bundle precondition: fail before ANY filesystem mutation so a missing build
-  // leaves claudeHome untouched (no orphaned files, no uninstall path needed).
-  const bundleSrc = path.join(packageDir, 'dist', 'cli.js');
-  if (!fs.existsSync(bundleSrc)) {
-    throw new Error(
-      `dist/cli.js not found at ${bundleSrc}; run \`bun run build\` before installing.`,
-    );
-  }
-
-  const manifestEntries: Array<{ src: string; dest: string }> = [];
-
-  for (const sub of MANAGED_DIRS) {
-    const srcRoot = path.join(packageDir, sub);
-    if (!fs.existsSync(srcRoot)) continue; // empty sources are fine (D-04)
-    const destRoot = path.join(claudeHome, sub);
-    copyTreeRecording(srcRoot, destRoot, packageDir, manifestEntries);
-  }
-
-  // D-03: state lives only at ~/.claude/sidekick/.
-  const stateDir = path.join(claudeHome, STATE_DIR_NAME);
-  fs.mkdirSync(stateDir, { recursive: true });
-
-  // Rules subtree: copies packageDir/rules/* → claudeHome/sidekick/rules/
-  const rulesSrc = path.join(packageDir, 'rules');
-  if (fs.existsSync(rulesSrc)) {
-    const rulesDest = path.join(claudeHome, STATE_DIR_NAME, 'rules');
-    copyTreeRecording(rulesSrc, rulesDest, packageDir, manifestEntries);
-  }
-
-  // Node bundle: copies packageDir/dist/cli.js → claudeHome/sidekick/bin/sidekick
-  // The bundle starts with #!/usr/bin/env node (bun build preserves the shebang
-  // from bin/cli.ts), so copying it directly as "sidekick" lets it run via shebang
-  // without any wrapper script.
-  // (Existence already verified above before any mutations.)
-  const binDestDir = path.join(claudeHome, STATE_DIR_NAME, 'bin');
-  fs.mkdirSync(binDestDir, { recursive: true });
-  const launcherDest = path.join(binDestDir, 'sidekick');
-  fs.copyFileSync(bundleSrc, launcherDest);
-  // chmodSync ensures re-installs over an existing file honour 0o755:
-  // O_TRUNC (used by copyFileSync) does not fchmod, so permissions
-  // from a prior install survive unchanged without this explicit call.
-  fs.chmodSync(launcherDest, 0o755);
-  manifestEntries.push({
-    src: 'dist/cli.js',
-    dest: launcherDest,
-  });
-
-  // Pin the bundle's module type next to it. The launcher is an ESM bundle
-  // (it uses import.meta) with no file extension, so Node infers its type from
-  // the nearest package.json up the tree — and a stray ~/.claude/package.json
-  // {"type":"commonjs"} silently mis-loads it as CommonJS, leaving the entry
-  // guard false and the CLI a no-op (exit 0, no output). This co-located file
-  // wins over anything above it. Removed on uninstall with the rest of stateDir.
-  fs.writeFileSync(
-    path.join(stateDir, 'package.json'),
-    `${JSON.stringify({ type: 'module' }, null, 2)}\n`,
-  );
-
-  // Prune files a prior install recorded that this version no longer ships.
-  // Without this, a retired agent/skill lingers at claudeHome forever — and
-  // because the manifest below is overwritten, even uninstall loses track of
-  // it. The prune list is exactly the prior manifest (paths sidekick itself
-  // wrote), so files it never recorded — a user's own agents — are
-  // structurally untouchable.
-  const manifestPath = path.join(stateDir, 'manifest.json');
-  const newDests = new Set(manifestEntries.map((e) => e.dest));
-  let pruned = 0;
-  if (fs.existsSync(manifestPath)) {
-    let priorFiles: Array<{ src: string; dest: string }> | undefined;
-    try {
-      const prior = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-      if (Array.isArray(prior?.files)) priorFiles = prior.files;
-    } catch {
-      // handled below — an unreadable manifest means no safe prune list
-    }
-    if (priorFiles === undefined) {
-      console.warn(
-        `Prior manifest at ${manifestPath} is unreadable; skipping stale-file prune (nothing deleted).`,
-      );
-    } else {
-      const managedRoots = [
-        ...MANAGED_DIRS.map((sub) => path.join(claudeHome, sub)),
-        stateDir,
-      ];
-      for (const entry of priorFiles) {
-        if (typeof entry?.dest !== 'string') continue;
-        if (newDests.has(entry.dest)) continue;
-        // Containment guard: prune runs implicitly on every install, so never
-        // follow a (possibly hand-mangled) manifest outside claudeHome.
-        if (!entry.dest.startsWith(claudeHome + path.sep)) continue;
-        if (!fs.existsSync(entry.dest)) continue;
-        fs.rmSync(entry.dest, { force: true });
-        pruned++;
-        removeEmptyParents(path.dirname(entry.dest), managedRoots);
-      }
-    }
-  }
-
-  const manifest: Manifest = {
-    schemaVersion: 1,
-    packageVersion: version,
-    installedAt: new Date().toISOString(),
-    files: manifestEntries,
-  };
-  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  const prunedNote = pruned > 0 ? `; pruned ${pruned} stale file(s)` : '';
-  console.log(
-    `Installed ${name}@${version} (${manifestEntries.length} file(s)${prunedNote}). Manifest: ${manifestPath}`,
-  );
-}
-
-/** How one installed file differs from the source it came from (#65). */
-type InstallDriftKind = 'stale' | 'orphaned' | 'missing';
-
-interface InstallDrift {
-  kind: InstallDriftKind;
-  /** Manifest `src`, relative to the package tree. */
-  src: string;
-  /** Absolute path the file was installed to. */
-  dest: string;
-}
-
-const DRIFT_EXPLANATIONS: Record<InstallDriftKind, string> = {
-  stale: 'installed copy differs from the source',
-  orphaned: 'installed, but the source no longer ships it',
-  missing: 'shipped by the source, but not installed',
-};
-
-function classifyInstalledFile(
-  entry: { src: string; dest: string },
-  packageDir: string,
-): InstallDrift | undefined {
-  const srcPath = path.join(packageDir, entry.src);
-  const srcExists = fs.existsSync(srcPath);
-  const destExists = fs.existsSync(entry.dest);
-  if (srcExists && destExists) {
-    const same = fs.readFileSync(srcPath).equals(fs.readFileSync(entry.dest));
-    return same ? undefined : { kind: 'stale', ...entry };
-  }
-  if (destExists) return { kind: 'orphaned', ...entry };
-  if (srcExists) return { kind: 'missing', ...entry };
-  // Neither side exists: the retirement already completed.
-  return undefined;
-}
-
-/**
- * Read-only drift report for `sidekick install --check`. Compares every
- * manifest entry against the source it was copied from, so it needs the
- * package tree. Reports; never mutates, and never fails the caller.
- */
-export function checkInstall(opts: InstallOptions): InstallDrift[] {
-  const { packageDir, claudeHome } = opts;
-  const manifestPath = path.join(claudeHome, STATE_DIR_NAME, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.warn(
-      `No manifest found at ${manifestPath}; nothing to check. (Rule: install --check is manifest-driven.)`,
-    );
-    return [];
-  }
-  let manifest: Manifest;
-  try {
-    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  } catch (err) {
-    throw new Error(
-      `Could not parse manifest at ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-  if (!Array.isArray(manifest.files)) {
-    throw new Error(
-      `${manifestPath}: invalid manifest — "files" must be an array`,
-    );
-  }
-
-  const drift = manifest.files
-    .map((entry) => classifyInstalledFile(entry, packageDir))
-    .filter((d): d is InstallDrift => d !== undefined);
-
-  const total = manifest.files.length;
-  if (drift.length === 0) {
-    console.log(
-      `install --check: all ${total} file(s) match the source at ${packageDir}.`,
-    );
-    return drift;
-  }
-  console.log(
-    `install --check: ${drift.length} of ${total} file(s) differ from the source at ${packageDir}.`,
-  );
-  for (const d of drift) {
-    console.log(`  [${d.kind}] ${d.src} — ${DRIFT_EXPLANATIONS[d.kind]}`);
-  }
-  return drift;
-}
-
-/**
- * After pruning a stale file, remove now-empty parent directories — but only
- * strictly inside a managed root (claudeHome/skills, claudeHome/agents, the
- * state dir). A retired skill would otherwise leave an empty skills/<name>/
- * behind as registry noise. The roots themselves are never removed.
- */
-function removeEmptyParents(dir: string, roots: string[]): void {
-  let current = dir;
-  while (
-    roots.some(
-      (root) => current !== root && current.startsWith(root + path.sep),
-    )
-  ) {
-    if (fs.readdirSync(current).length > 0) return;
-    fs.rmdirSync(current);
-    current = path.dirname(current);
-  }
-}
-
-export function uninstall(opts: UninstallOptions): void {
-  const { claudeHome } = opts;
-  const stateDir = path.join(claudeHome, STATE_DIR_NAME);
-  const manifestPath = path.join(stateDir, 'manifest.json');
-
-  if (!fs.existsSync(manifestPath)) {
-    // D-05: missing manifest → no-op with clear warning naming the path AND the rule.
-    console.warn(
-      `No manifest found at ${manifestPath}; nothing to remove. (Rule: uninstall is manifest-driven.)`,
-    );
-    return;
-  }
-
-  let manifest: Manifest;
-  try {
-    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  } catch (err) {
-    throw new Error(
-      `Could not parse manifest at ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  if (!Array.isArray(manifest.files)) {
-    throw new Error(
-      `${manifestPath}: invalid manifest — "files" must be an array`,
-    );
-  }
-
-  const managedRoots = [
-    ...MANAGED_DIRS.map((sub) => path.join(claudeHome, sub)),
-    stateDir,
+export function resolvePluginDir(entryFileUrl: string): string {
+  const here = path.dirname(fileURLToPath(entryFileUrl));
+  const candidates = [
+    path.resolve(here, '..'),
+    path.resolve(here, '..', 'plugin'),
   ];
-
-  let removed = 0;
-  let alreadyGone = 0;
-  for (const entry of manifest.files) {
-    if (fs.existsSync(entry.dest)) {
-      fs.rmSync(entry.dest, { force: true });
-      removed++;
-      removeEmptyParents(path.dirname(entry.dest), managedRoots);
-    } else {
-      alreadyGone++;
-    }
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, 'rules'))) return c;
   }
-
-  // D-05 final step: remove the state dir entirely.
-  fs.rmSync(stateDir, { recursive: true, force: true });
-
-  console.log(
-    `Uninstalled. Removed ${removed} file(s); ${alreadyGone} already gone. State dir cleared.`,
-  );
+  return candidates[0];
 }
 
-/**
- * Recursive copy that records each leaf-file copy in the manifest.
- * D-04: silent overwrite — no conflict check, no --force flag.
- * Empty subdirs are skipped (npm strips them from tarballs anyway).
- *
- * `src` in manifest is relative to packageDir using POSIX separators
- * so the manifest is portable across host platforms (we author on
- * macOS/Linux per project scope).
- */
-function copyTreeRecording(
-  srcRoot: string,
-  destRoot: string,
-  packageDir: string,
-  out: Array<{ src: string; dest: string }>,
-): void {
-  walk(srcRoot, (src) => {
-    const rel = path.relative(srcRoot, src);
-    const dest = path.join(destRoot, rel);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(src, dest);
-    out.push({
-      src: path.relative(packageDir, src).split(path.sep).join('/'),
-      dest,
-    });
-  });
-}
-
-function walk(dir: string, fn: (filePath: string) => void): void {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(full, fn);
-    } else if (entry.isFile()) {
-      fn(full);
-    }
+export function readVersion(pluginDir: string): string {
+  const manifest = path.join(pluginDir, '.claude-plugin', 'plugin.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(manifest, 'utf-8')) as {
+      version?: unknown;
+    };
+    return typeof parsed.version === 'string' ? parsed.version : 'unknown';
+  } catch {
+    return 'unknown';
   }
 }
 
-/**
- * Symlink-robust check: resolves both paths to their real (canonical) paths
- * before comparing, so npm/pnpm `.bin` symlinks and macOS /tmp→/private/tmp
- * redirects don't prevent main() from running.
- * Returns false if argv1 is falsy or if either path cannot be resolved.
- */
 export function isMainEntrypoint(
   importMetaUrl: string,
   argv1: string | undefined,
@@ -413,6 +52,38 @@ export function isMainEntrypoint(
   }
 }
 
+export const USAGE =
+  'usage: sidekick rules <install|check> --project|--user\n       sidekick --version';
+
+export interface MainContext {
+  env: NodeJS.ProcessEnv;
+  cwd: string;
+  entryFileUrl: string;
+}
+
+export function main(
+  argv: string[],
+  ctx: MainContext,
+  out: (line: string) => void,
+  err: (line: string) => void,
+): number {
+  const [sub, ...rest] = argv;
+  const pluginDir = resolvePluginDir(ctx.entryFileUrl);
+  if (sub === '--version') {
+    out(readVersion(pluginDir));
+    return 0;
+  }
+  if (sub !== 'rules') {
+    err(USAGE);
+    return 1;
+  }
+  // An empty CLAUDE_CONFIG_DIR means unset.
+  const claudeHome =
+    ctx.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  const src = ctx.env.SIDEKICK_RULES_DIR || path.join(pluginDir, 'rules');
+  return runRulesCli(rest, { src, cwd: ctx.cwd, claudeHome }, out);
+}
+
 const _importMetaMain =
   'main' in import.meta && typeof import.meta.main === 'boolean'
     ? import.meta.main
@@ -420,394 +91,13 @@ const _importMetaMain =
 const _isEntry =
   _importMetaMain ?? isMainEntrypoint(import.meta.url, process.argv[1]);
 
-// CLI entry — runs only when invoked directly. Mirrors validate-frontmatter.ts:259-268.
 if (_isEntry) {
-  await (async () => {
-    const sub = process.argv[2];
-    const VALID_SUBS = new Set([
-      'install',
-      'uninstall',
-      'init',
-      'capabilities',
-      'branch-precheck',
-      'check-artifact',
-      'wave-plan',
-      'classify-deviation',
-      'goal-verdict',
-      'gates',
-      'verifiers',
-      'scope-check',
-      'eval',
-      'graph',
-      'harvest',
-      'hook',
-    ]);
-    if (!sub || !VALID_SUBS.has(sub)) {
-      console.error(
-        'Usage: sidekick <install|uninstall|init|capabilities|branch-precheck|check-artifact|wave-plan|classify-deviation|goal-verdict|gates|verifiers|scope-check|eval|graph|harvest|hook> [options]',
-      );
-      console.error(
-        '  install --check — report how installed files differ from the source; compares against the package tree, so run it from the package.',
-      );
-      process.exit(1);
-    }
-    try {
-      // packageDir is the repo root — one level up from this entry file
-      // (bin/cli.ts, run from source via `bun bin/cli.ts`). It contains
-      // dist/sidekick plus skills/, agents/, and rules/ to install.
-      const packageDir = path.resolve(
-        path.dirname(fileURLToPath(import.meta.url)),
-        '..',
-      );
-      // An empty CLAUDE_CONFIG_DIR means unset: '' resolves the install
-      // root to a relative path, scattering the package into the cwd.
-      const claudeHome =
-        process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-      if (sub === 'install') {
-        if (process.argv.includes('--check')) {
-          checkInstall({ packageDir, claudeHome });
-        } else {
-          install({ packageDir, claudeHome });
-        }
-      } else if (sub === 'uninstall') {
-        uninstall({ claudeHome });
-      } else if (sub === 'init') {
-        const nonInteractive = process.argv.includes('--non-interactive');
-        const noHooks = process.argv.includes('--no-hooks');
-        const exitCode = await runInit({
-          repoRoot: process.cwd(),
-          claudeHome,
-          nonInteractive,
-          hooks: noHooks ? false : undefined,
-        });
-        process.exit(exitCode);
-      } else if (sub === 'hook') {
-        const handler = process.argv[3];
-        let stdin = '';
-        try {
-          stdin = fs.readFileSync(0, 'utf-8');
-        } catch {
-          stdin = '';
-        }
-        if (handler === 'guard-config') {
-          const decision = decideGuardConfig(stdin);
-          if (decision) console.log(JSON.stringify(decision));
-          process.exit(0);
-        } else if (handler === 'scan-config') {
-          const advisory = runScanConfig({ cwd: process.cwd() });
-          if (advisory) console.log(JSON.stringify(advisory));
-          process.exit(0);
-        } else {
-          console.error('Usage: sidekick hook <guard-config|scan-config>');
-          process.exit(1);
-        }
-      } else if (sub === 'capabilities') {
-        console.log(
-          runCapabilitiesCli({ repoRoot: process.cwd(), claudeHome }),
-        );
-        process.exit(0);
-      } else if (sub === 'gates') {
-        const { stdout, exitCode } = await runGatesCli({
-          repoRoot: process.cwd(),
-        });
-        console.log(stdout);
-        process.exit(exitCode);
-      } else if (sub === 'verifiers') {
-        const surfaceIdx = process.argv.indexOf('--surface');
-        const { stdout, exitCode } = runVerifiersCli({
-          repoRoot: process.cwd(),
-          claudeHome,
-          surface: surfaceIdx >= 0 ? process.argv[surfaceIdx + 1] : undefined,
-        });
-        console.log(stdout);
-        process.exit(exitCode);
-      } else if (sub === 'scope-check') {
-        const args = process.argv.slice(3);
-        const getVal = (flag: string): string | undefined => {
-          const idx = args.indexOf(flag);
-          return idx >= 0 ? args[idx + 1] : undefined;
-        };
-        // Presence of the flag selects mode B / enables a delta, even when the
-        // value is empty — so distinguish "absent" (undefined) from "empty" ([]).
-        const csv = (flag: string): string[] | undefined => {
-          const idx = args.indexOf(flag);
-          if (idx < 0) return undefined;
-          return (args[idx + 1] ?? '')
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean);
-        };
-        const { stdout, exitCode } = runScopeCheckCli({
-          repoRoot: process.cwd(),
-          issue:
-            getVal('--issue') === undefined
-              ? undefined
-              : Number(getVal('--issue')),
-          task: getVal('--task'),
-          declared: csv('--declared'),
-          baseline: csv('--baseline'),
-          reported: csv('--reported'),
-        });
-        console.log(stdout);
-        process.exit(exitCode);
-      } else if (sub === 'harvest') {
-        const harvestCmd = process.argv[3];
-        const args = process.argv.slice(4);
-        const getVal = (flag: string): string | undefined => {
-          const idx = args.indexOf(flag);
-          return idx >= 0 ? args[idx + 1] : undefined;
-        };
-        if (harvestCmd === 'log') {
-          const subject = getVal('--subject');
-          const summary = getVal('--summary');
-          if (!subject || !summary) {
-            console.error(
-              'Usage: sidekick harvest log --subject <agent:name|skill:name> --summary "<what went wrong>" [--expected X] [--actual Y] [--input Z]',
-            );
-            process.exit(1);
-          }
-          const { stdout, exitCode } = runHarvestLog({
-            repoRoot: process.cwd(),
-            subject,
-            summary,
-            expected: getVal('--expected'),
-            actual: getVal('--actual'),
-            input: getVal('--input'),
-          });
-          console.log(stdout);
-          process.exit(exitCode);
-        } else if (harvestCmd === 'list') {
-          const { stdout, exitCode } = runHarvestList({
-            json: args.includes('--json'),
-          });
-          console.log(stdout);
-          process.exit(exitCode);
-        } else if (harvestCmd === 'import') {
-          const id = args.find((a) => !a.startsWith('--'));
-          if (!id) {
-            console.error(
-              'Usage: sidekick harvest import <id> [--suite S] [--case-id C] — run from the sidekick repo; the case skeleton is written under its evals/cases/',
-            );
-            process.exit(1);
-          }
-          const { stdout, exitCode } = runHarvestImport({
-            repoRoot: process.cwd(),
-            id,
-            suite: getVal('--suite'),
-            caseId: getVal('--case-id'),
-          });
-          console.log(stdout);
-          process.exit(exitCode);
-        } else {
-          console.error('Usage: sidekick harvest <log|list|import> [options]');
-          process.exit(1);
-        }
-      } else if (sub === 'eval') {
-        const evalCmd = process.argv[3];
-        const args = process.argv.slice(4);
-        const getVal = (flag: string): string | undefined => {
-          const idx = args.indexOf(flag);
-          return idx >= 0 ? args[idx + 1] : undefined;
-        };
-        const has = (flag: string): boolean => args.includes(flag);
-        const num = (flag: string): number | undefined => {
-          const v = getVal(flag);
-          return v !== undefined ? Number(v) : undefined;
-        };
-        const claudeBin = getVal('--claude-bin') ?? 'claude';
-
-        if (evalCmd === 'run') {
-          const target = args.find((a) => !a.startsWith('--'));
-          if (!target) {
-            console.error(
-              'Usage: sidekick eval run <suite|case.json path> [--k N] [--model X] [--max-turns M] [--run-id ID] [--resume-run ID] [--keep-workspace] [--validate-only] [--claude-bin PATH]',
-            );
-            process.exit(1);
-          }
-          const resume = getVal('--resume-run');
-          const runId = resume ?? getVal('--run-id') ?? `run-${Date.now()}`;
-          const res = runEvalSuite({
-            repoRoot: process.cwd(),
-            suiteOrCasePath: target,
-            runId,
-            k: num('--k'),
-            model: getVal('--model'),
-            maxTurns: num('--max-turns'),
-            resumeRunId: resume,
-            keepWorkspace: has('--keep-workspace'),
-            validateOnly: has('--validate-only'),
-            deps: {
-              claude: realClaudeRunner(claudeBin),
-              shell: realShellRunner(),
-            },
-          });
-          console.log(res.stdout);
-          process.exit(res.exitCode);
-        } else if (evalCmd === 'report') {
-          const runId = getVal('--run-id');
-          if (!runId) {
-            console.error(
-              'Usage: sidekick eval report --run-id ID [--suite S]',
-            );
-            process.exit(1);
-          }
-          const { stdout, exitCode } = runEvalReportCli({
-            repoRoot: process.cwd(),
-            runId,
-            suite: getVal('--suite'),
-          });
-          console.log(stdout);
-          process.exit(exitCode);
-        } else if (evalCmd === 'calibrate') {
-          const verifier = args.find((a) => !a.startsWith('--'));
-          const suite = getVal('--suite');
-          if (!verifier || !suite) {
-            console.error(
-              'Usage: sidekick eval calibrate <verifier-agent> --suite S [--k N] [--verdict-path P] [--min-cases N] [--fail-precision F] [--fail-recall F] [--unanimity U] [--model X] [--claude-bin PATH]',
-            );
-            process.exit(1);
-          }
-          const res = runCalibrate({
-            repoRoot: process.cwd(),
-            claudeHome,
-            verifier,
-            suite,
-            k: num('--k'),
-            verdictPath: getVal('--verdict-path'),
-            minCases: num('--min-cases'),
-            failPrecision: num('--fail-precision'),
-            failRecall: num('--fail-recall'),
-            unanimity: num('--unanimity'),
-            model: getVal('--model'),
-            maxTurns: num('--max-turns'),
-            deps: { claude: realClaudeRunner(claudeBin) },
-          });
-          console.log(res.stdout);
-          process.exit(res.exitCode);
-        } else {
-          console.error(
-            'Usage: sidekick eval <run|report|calibrate> [options]',
-          );
-          process.exit(1);
-        }
-      } else if (sub === 'graph') {
-        // Loaded through a runtime-computed specifier, not a static import.
-        // The graph helpers need `bun:sqlite` and are repo-internal by
-        // contract; a specifier the bundler cannot resolve keeps them out of
-        // dist/cli.js entirely, so a consumer install cannot receive them and
-        // the Node bundle never sees a Bun-only import.
-        const spec = new URL('./helpers/graph-cli.js', import.meta.url).href;
-        let mod: {
-          runGraphCli: (opts: {
-            repoRoot: string;
-            argv: string[];
-          }) => Promise<{ stdout: string; exitCode: number }>;
-        };
-        try {
-          mod = await import(spec);
-        } catch {
-          console.error(
-            'sidekick graph is a repo-internal command; it ships with the harness source, not with an installed copy.',
-          );
-          process.exit(1);
-        }
-        const { stdout, exitCode } = await mod.runGraphCli({
-          repoRoot: process.cwd(),
-          argv: process.argv.slice(3),
-        });
-        console.log(stdout);
-        process.exit(exitCode);
-      } else if (sub === 'branch-precheck') {
-        const args = process.argv.slice(3);
-        const get = (flag: string): string | undefined => {
-          const idx = args.indexOf(flag);
-          return idx >= 0 ? args[idx + 1] : undefined;
-        };
-        const operation = get('--operation');
-        if (!operation) {
-          console.error(
-            'Usage: sidekick branch-precheck --operation <design|build|decide|review|regen-plan> [--ticket-id <id>] [--ticket-title <title>] [--branch-type <type>] [--format=<json|kv>]',
-          );
-          process.exit(1);
-        }
-        const format: 'json' | 'kv' =
-          args.find((a) => a.startsWith('--format='))?.split('=')[1] === 'kv'
-            ? 'kv'
-            : 'json';
-        const stdout = runBranchPrecheckCli({
-          repoRoot: process.cwd(),
-          operation: operation as never,
-          ticketId: get('--ticket-id'),
-          ticketTitle: get('--ticket-title'),
-          branchType: get('--branch-type') as never,
-          format,
-        });
-        console.log(stdout);
-        process.exit(0);
-      } else if (sub === 'check-artifact') {
-        const args = process.argv.slice(3);
-        const artifactPath = args.find((a) => !a.startsWith('--'));
-        const getVal = (flag: string): string | undefined => {
-          const idx = args.indexOf(flag);
-          return idx >= 0 ? args[idx + 1] : undefined;
-        };
-        const artifactType = getVal('--type');
-        if (!artifactPath || !isArtifactType(artifactType)) {
-          console.error(
-            'Usage: sidekick check-artifact <path> --type <rfc|decision>',
-          );
-          process.exit(1);
-        }
-        console.log(
-          runCheckArtifactCli({
-            repoRoot: process.cwd(),
-            artifactPath: path.resolve(artifactPath),
-            artifactType,
-          }),
-        );
-        process.exit(0);
-      } else if (sub === 'wave-plan') {
-        const args = process.argv.slice(3);
-        const raw = args.find((a) => !a.startsWith('--'));
-        // Number() not parseInt(): parseInt('42abc') is 42, which would
-        // silently resolve the wrong work directory.
-        const issue = raw === undefined ? Number.NaN : Number(raw);
-        if (!Number.isInteger(issue) || issue <= 0) {
-          console.error(
-            'Usage: sidekick wave-plan <issue> [--format=<json|kv>] — issue must be a positive integer',
-          );
-          process.exit(1);
-        }
-        const format: 'json' | 'kv' =
-          args.find((a) => a.startsWith('--format='))?.split('=')[1] === 'kv'
-            ? 'kv'
-            : 'json';
-        console.log(runWavePlanCli({ repoRoot: process.cwd(), issue, format }));
-        process.exit(0);
-      } else if (sub === 'classify-deviation') {
-        let stdin = '';
-        try {
-          stdin = fs.readFileSync(0, 'utf-8');
-        } catch {
-          stdin = '';
-        }
-        console.log(runClassifyDeviationCli(stdin));
-        process.exit(0);
-      } else if (sub === 'goal-verdict') {
-        let stdin = '';
-        try {
-          stdin = fs.readFileSync(0, 'utf-8');
-        } catch {
-          stdin = '';
-        }
-        console.log(runGoalVerdictCli(stdin));
-        process.exit(0);
-      }
-    } catch (err) {
-      console.error(
-        `sidekick ${sub} failed: ${err instanceof Error ? err.message : err}`,
-      );
-      process.exit(1);
-    }
-  })();
+  process.exit(
+    main(
+      process.argv.slice(2),
+      { env: process.env, cwd: process.cwd(), entryFileUrl: import.meta.url },
+      (l) => console.log(l),
+      (l) => console.error(l),
+    ),
+  );
 }

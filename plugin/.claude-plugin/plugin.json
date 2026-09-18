@@ -1,0 +1,17 @@
+{
+  "name": "sidekick",
+  "version": "0.2.0",
+  "description": "Personal everyday loop for Claude Code: superpowers plus house guidance, GitHub project management, and design-side extensions",
+  "author": { "name": "Roberto Sousa" },
+  "repository": "https://github.com/Rikmorn/sidekick",
+  "license": "MIT",
+  "keywords": ["workflow", "guidance", "project-management", "superpowers"],
+  "dependencies": [
+    {
+      "name": "superpowers",
+      "version": "^6.3.0",
+      "marketplace": "claude-plugins-official"
+    },
+    { "name": "code-review", "marketplace": "claude-plugins-official" }
+  ]
+}
