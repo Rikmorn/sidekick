@@ -6,4 +6,5 @@ Claude Code configuration for this repo. The repo consumes its own plugin like a
 |---|---|
 | `settings.json` | Shared settings: the plugin enablement and a PostToolUse hook that runs Biome on edited code files |
 | `settings.local.json` | Local-only settings (permissions), untracked |
-| `rules/sk-*.md` | The installed copies of the plugin's own rules, written by `sidekick rules install --project`; edit the source under `plugin/rules/` instead |
+
+No `rules/` directory: the plugin's own rules reach this repo through user-level delivery (`sidekick rules install --user`), the same as the other home repos.

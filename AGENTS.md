@@ -12,14 +12,13 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 | `plugin/skills/` | Skills the plugin ships; `sidekick` today, the PM layer and the extensions later |
 | `plugin/bin/sidekick` | The built executable, committed; rebuild with `bun run build` before a release |
 | `bin/cli.ts`, `bin/helpers/rules.ts` | The executable's TypeScript source and its tests (`*.test.ts` beside them) |
-| `.claude/rules/sk-*.md` | This repo's installed copies of its own rules, byte-identical to `plugin/rules/` |
 | `docs/` | Records and steering docs; `docs/README.md` is the taxonomy |
 
 ## Working here
 
 - One package, `package.json`. `bun run test`, `bun run typecheck`, `bun run check`, `bun run build`. Bun builds and tests; Node runs the executable.
 - `claude plugin validate --strict .` and `claude plugin validate --strict plugin` gate the manifests. `tsc --noEmit` does not see `*.test.ts`; only `bun test` does.
-- Rules are edited in `plugin/rules/`, then `node plugin/bin/sidekick rules install --project` refreshes this repo's copies. Never edit `.claude/rules/sk-*.md` directly.
+- Rules are edited in `plugin/rules/`. This repo carries no copies: like the other home repos it runs on user-level delivery, so after editing run `sidekick rules install --user` and let `sidekick rules check --user` catch drift.
 - Prose follows `plugin/rules/sk-language.md`; guidance changes follow `plugin/rules/sk-guidance-authoring.md`; agent and skill prompts follow `plugin/rules/sk-agent-prompts.md`.
 - Specs and plans live under `docs/superpowers/`, gitignored and transient. The durable record of a piece of work is its issue, its close comment, and any ADR or review it produced.
 
