@@ -18,7 +18,7 @@ sidekick rules install --user      # writes them into the user-level rules direc
 sidekick rules check --project     # reports drift and overlap; changes nothing
 ```
 
-`sidekick` is on the Bash tool's PATH whenever the plugin is enabled. The command writes and removes only files named `sk-*.md`. Other rule files are never edited; when one overlaps an sk rule by heading or opening sentence, the check reports it and leaves the decision to you.
+`sidekick` is on the Bash tool's PATH whenever the plugin is enabled. The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a hand-written file under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. Other rule files are never edited; when one overlaps an sk rule by heading or opening sentence, the check reports it and leaves the decision to you.
 
 ## What is coming
 

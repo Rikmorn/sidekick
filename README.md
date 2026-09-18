@@ -30,7 +30,7 @@ sidekick rules install --user      # the user-level rules directory
 sidekick rules check --project     # drift and overlap report; changes nothing
 ```
 
-The command writes and removes only files named `sk-*.md`. It never edits another file. When a repo keeps its own rule that overlaps an sk rule by heading or opening sentence, the check reports the pair and leaves the decision to you; repetition is accepted where colleagues who do not use sidekick rely on the repo's copy.
+The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a file you hand-write under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. It never edits another file. When a repo keeps its own rule that overlaps an sk rule by heading or opening sentence, the check reports the pair and leaves the decision to you; repetition is accepted where colleagues who do not use sidekick rely on the repo's copy.
 
 ## What is in the bundle
 
