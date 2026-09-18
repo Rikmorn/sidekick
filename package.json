@@ -1,6 +1,6 @@
 {
   "name": "sidekick",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Personal everyday loop for Claude Code, packaged as a plugin bundle",

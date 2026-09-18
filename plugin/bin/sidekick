@@ -10,6 +10,7 @@ import * as path2 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // bin/helpers/rules.ts
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
@@ -30,6 +31,17 @@ function ownedRulesIn(dir) {
 }
 function resolveDest(scope, cwd, claudeHome) {
   return scope === "project" ? path.join(cwd, ".claude", "rules") : path.join(claudeHome, "rules");
+}
+function repoRootOf(cwd) {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return cwd;
+  }
 }
 function installRules(src, dest) {
   const shipped = ownedRulesIn(src);
@@ -150,7 +162,10 @@ function runRulesCli(args, env, out) {
     out(USAGE);
     return 1;
   }
-  const dest = resolveDest(scope, env.cwd, env.claudeHome);
+  const root = scope === "project" ? repoRootOf(env.cwd) : env.cwd;
+  if (scope === "project")
+    out(`project root: ${root}`);
+  const dest = resolveDest(scope, root, env.claudeHome);
   if (ownedRulesIn(env.src).length === 0) {
     out(`no sk-*.md rules found at ${env.src}; refusing to touch ${dest}`);
     return 1;
