@@ -1,6 +1,6 @@
 # Design Principles — sidekick
 
-*Distilled from the research program ([`research/`](./research/README.md)). This is **doctrine** — the durable decision-rules for how the harness is built, above any specific agent/skill. Each is a decision rule, not a spec. Companion to `research/SYNTHESIS.md` (the analysis), `EPIC.md` (the work), and `research/ACTION-PLAN.md` (the tiers).*
+*Distilled from the research program ([`research/`](./research/README.md)). This is **doctrine** — the durable decision-rules for how the harness is built, above any specific agent/skill. Each is a decision rule, not a spec. Companion to `research/SYNTHESIS.md` (the analysis) and `research/ACTION-PLAN.md` (the tiers).*
 
 1. **Proceduralize the meta, liberate the object.** Trust the reasoning engine to do the *work*; build external scaffolding only for *oversight* (verification, resource-governance, coordination) — because the model cannot reliably police itself: not its correctness, confidence, context, or coordination. *(SYNTHESIS — the through-line.)*
 

@@ -1,40 +1,19 @@
-# Known limits & hardening guidance
+# Known limits
 
-sidekick's posture (ADR-0002): where a limit can't be engineered away, we document it and tell you how to minimise it. If "read this page" is all the mitigation available, an invested operator should read it.
-
-## Dynamic Workflows availability (the fan-out backend)
-
-The `workflow` fan-out backend rides Claude Code's dynamic workflows, which are:
-
-- **Version-gated** — CC ≥ v2.1.154.
-- **Plan-gated** — off by default on Pro (enable via `/config`); available on paid plans.
-- **Disableable** — per-user (`disableWorkflows` in settings, `CLAUDE_CODE_DISABLE_WORKFLOWS=1`) and org-wide (managed settings). The platform documents **no fallback** when disabled.
-
-What sidekick does about it: `sidekick capabilities` probes what is detectable (version, the disable hierarchy) and the fan-out seam **falls back to in-session agent dispatch** whenever workflows are unavailable — sidekick's baseline never requires workflows.
-
-What sidekick cannot do: plan-level gating is not detectable up front. The probe reports `available: "likely"` at best — if a workflow launch then fails, the seam degrades to the agents backend at runtime.
-
-## Token cost of fan-out
-
-Multi-agent fan-out costs roughly an order of magnitude more tokens than single-session work, and most of the headline gains in the literature are bought with spend. The `fanout.budget` tiers (`quick` / `standard` / `deep`) exist so this is an operator decision: `deep` (full adversarial verification) is explicit opt-in and can consume millions of tokens on a single question. Default is `standard`.
-
-`/sk-design`'s `--auto <low|medium|high>` exposes this same cost decision at the point of use: the effort word maps onto these tiers per run (`low → quick`, `medium → standard`, `high → deep`), overriding the configured `fanout.budget` default for that invocation. `--auto high` selects the `deep` tier — whose adversarial cross-check needs the workflow backend; on the agents backend it degrades to `standard` rather than failing (see "Dynamic Workflows availability" above). `deep` stays explicit opt-in: nothing escalates to it on its own; an operator chooses it via config or `--auto high`.
-
-## Workflow runs don't survive the session
-
-A workflow interrupted by closing Claude Code restarts fresh next session (platform behaviour). sidekick's own artifacts (RFC/PLAN checkboxes + git history) are the durable state — cross-session resume always reconstructs from those, never from workflow state.
+Where a limit cannot be engineered away, this page says what it is and what to do about it. Pruned 2026-09-18 with ADR-0009 to the facts that survive the pivot; the earlier entries about the fan-out backend and the retired kernel live in git history.
 
 ## Enforcement is tamper-resistant, not tamper-proof
 
-Forthcoming with the tier-0 hooks base (EPIC E20): Claude Code hooks can tighten but not loosen permissions, and a PreToolUse deny holds even in bypass mode — but an agent with write access to settings files can in principle defeat local hooks (documented upstream issues). The hardening ladder when stakes demand more: org-managed settings → CI-side gates the agent cannot write to. Details land with E20.
+Claude Code hooks can tighten but not loosen permissions, and a PreToolUse deny holds even in bypass mode. An agent with write access to settings files can in principle edit the hook away. Treat hooks as the floor for a solo developer, and move binding gates to CI when stakes demand it.
 
 ## `/goal` is not a verification gate
 
-Claude Code's `/goal` completion check is a single fixed same-family model judging from conversation surface only. Don't treat it as independent verification; sidekick's review/verify skills exist precisely because producer ≠ verifier.
+Claude Code's `/goal` completion check is a single fixed same-family model judging from the conversation surface only. Do not treat it as independent verification; independent verification is a separate invocation that sees the artifact and the spec, not the producer's reasoning.
 
-## Read-only agents that hold Bash are restrained by prompt, not enforcement
+## Read-only subagents that hold Bash are restrained by prompt, not enforcement
 
-Several read-only agents (the review dimensions, the researchers, `sk-spec-reviewer`) hold `Bash` because they need it to read git state — `git diff`, `git log`, `git status`. Their "never modify source, branches, or git state" boundary is therefore prompt-level restraint, not a structural guarantee: nothing stops a `Bash`-holding agent from running a mutating git command. Making it structural would mean withdrawing the `Bash` grant, which also withdraws the read access those agents depend on.
+A subagent that needs `git diff` or `git log` holds `Bash`, and `Bash` can write. Its "never modify" is prose. Where a step must not modify state, the orchestrator runs the check from its own session, or the subagent's `tools:` drops `Bash` and takes the diff as input.
 
-The scope gate (`sidekick scope-check`, wired into `/sk-build` and `/sk-review --fix`) is the enforcement layer where it matters most: it's the *orchestrator* — not the read-only agent — that runs it, and it catches out-of-scope writes after the fact regardless of who made them. The residual risk (a read-only agent mutating git state directly) is accepted for interactive runs, where a human is watching each step. Revisit it for long autonomous loops, where the hardening ladder is the same as elsewhere: a tool-restricted specialist for the step that must not mutate, or org-managed settings / CI-side gates the agent cannot reach.
+## Plugins cannot ship path-scoped rules, or compose with each other at runtime
 
+A plugin ships skills, agents, hooks, executables, and settings, but not `.claude/rules/` files, so sidekick delivers its rules through an explicit command. A skill in one plugin cannot override or hook into a skill in another, so sidekick's extensions run before or after superpowers' skills, or as rule lines those skills read, never inside them.

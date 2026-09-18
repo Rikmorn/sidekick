@@ -1,15 +1,9 @@
 # .claude/
 
-Claude Code configuration for developing the sidekick harness itself (not distributed by `sidekick install`).
-
-## Contents
+Claude Code configuration for this repo. The repo consumes its own plugin like any other repo, so nothing here is special to sidekick as a product.
 
 | File | Purpose |
 |---|---|
-| `settings.json` | Shared settings — a PostToolUse hook that runs Biome on edited code files. |
-| `settings.local.json` | Local-only settings (permissions). |
-| `rules/sk-agent-prompts.md` | Prompt-authoring discipline for the `sk-*` agents and skills. Loaded as project context. |
-
-## Note
-
-The harness's own agents and skills live at the repo root (`agents/`, `skills/`, `rules/`) because they are **source to be installed** into `~/.claude/` via `sidekick install` — they are not this repo's own Claude Code agents. The only rule loaded for working *in* this repo is `rules/sk-agent-prompts.md`.
+| `settings.json` | Shared settings: the plugin enablement and a PostToolUse hook that runs Biome on edited code files |
+| `settings.local.json` | Local-only settings (permissions), untracked |
+| `rules/sk-*.md` | The installed copies of the plugin's own rules, written by `sidekick rules install --project`; edit the source under `plugin/rules/` instead |

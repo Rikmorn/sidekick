@@ -1,132 +1,62 @@
 # sidekick
 
-A personal AI engineering harness for Claude Code — a structured **design → build → review** workflow, packaged as installable skills, agents, and rules plus a small planning CLI.
+The loop I use every day in every repo, packaged as a Claude Code plugin bundle. Superpowers and the official code-review plugin do the work and install as dependencies. sidekick adds the house guidance, a project-management layer on GitHub for the repos where I own the tracking, and design-side extensions the ecosystem lacks. ADR-0009 under `docs/adr/` records the pivot from the harness this repo used to be.
 
-Inspired by [superpowers](https://github.com/) and GSD, shaped to one developer's way of breaking problems down and solutioning for them.
+## Install
 
-sidekick has **two sides**, kept deliberately separate:
-
-- **The product** — the harness *source* in this repo: the `sidekick` CLI, the `sk-*` agents, skills, and rules. You build and test it here.
-- **The usage** — what sidekick *creates in your other projects* when you run it there: a `.sidekick/` working tree. This repo never carries one (the only `.sidekick/` here lives under `smokes/fixtures/`, simulating a consumer repo).
-
----
-
-## Using sidekick (in your projects)
-
-Install once into Claude Code, then use it in any repo — same as gsd or superpowers.
-
-### Install
-
-**Requires** [Bun](https://bun.com) to build, and Node.js (≥20) to run the installed CLI. The workflow fan-out backend is **optional** — it additionally needs Claude Code ≥ 2.1.154 with dynamic workflows enabled. Run `sidekick capabilities` to check; everything else works without it.
-
-`sidekick` is a private, unpublished package, so you install it **from a clone**:
+Add the marketplace once, then install the plugin. Dependencies resolve on install.
 
 ```bash
-git clone https://github.com/Rikmorn/sidekick.git
-cd sidekick
+claude plugin marketplace add Rikmorn/sidekick
+claude plugin install sidekick@rikmorn
+```
+
+Enable it where you want it: user scope makes it available in every repo on the machine; project scope commits it to a repo's `.claude/settings.json` so everyone who opens that repo gets it.
+
+```bash
+claude plugin enable sidekick@rikmorn --scope user
+# or, inside a repo the team should share it in:
+claude plugin marketplace add Rikmorn/sidekick --scope project
+claude plugin enable sidekick@rikmorn --scope project
+```
+
+## The rules
+
+The `sk-*` rules ship inside the plugin. Claude Code reads rules from a repo's `.claude/rules/` or the user-level `~/.claude/rules/`, and a plugin cannot write there on its own, so delivery is one explicit command, available on the Bash tool's PATH whenever the plugin is enabled:
+
+```bash
+sidekick rules install --project   # this repo's .claude/rules/
+sidekick rules install --user      # the user-level rules directory
+sidekick rules check --project     # drift and overlap report; changes nothing
+```
+
+The command writes and removes only files named `sk-*.md`. It never edits another file. When a repo keeps its own rule that overlaps an sk rule by heading or opening sentence, the check reports the pair and leaves the decision to you; repetition is accepted where colleagues who do not use sidekick rely on the repo's copy.
+
+## What is in the bundle
+
+| Path | What |
+|---|---|
+| `plugin/.claude-plugin/plugin.json` | The manifest: name, version, dependencies |
+| `plugin/rules/` | The portable rules: clean code, TypeScript, language, working standards, guidance authoring, PM conventions, agent-prompt authoring |
+| `plugin/skills/sidekick/` | The reference skill that explains the bundle |
+| `plugin/bin/sidekick` | The executable, built from `bin/cli.ts` |
+| `.claude-plugin/marketplace.json` | The one-plugin marketplace this repo is |
+
+The PM layer and the design-side extensions arrive in later releases, each beside a superpowers skill rather than in place of one. The roadmap is the milestone list on GitHub.
+
+## Developing
+
+Bun is the dev toolchain; the executable runs on Node 22 (exact patch in `.nvmrc`).
+
+```bash
 bun install
-bun run build              # bundle bin/ → dist/cli.js (Node target)
-node dist/cli.js install   # or: bun bin/cli.ts install
+bun run test        # bun test bin/
+bun run typecheck   # tsc --noEmit
+bun run check       # biome
+bun run build       # bin/cli.ts → plugin/bin/sidekick (committed)
+claude plugin validate --strict . && claude plugin validate --strict plugin
 ```
 
-`sidekick install` copies `skills/`, `agents/`, and `rules/` into `~/.claude/`, deploys the CLI bundle to `~/.claude/sidekick/bin/sidekick`, and writes a manifest at `~/.claude/sidekick/manifest.json` so `sidekick uninstall` is precise.
+A release is a milestone closed: `claude plugin tag plugin --push` creates `sidekick--v<version>` from the manifest, and `gh release create` publishes it. This repo consumes its own plugin like any other repo; its `.claude/rules/` copies are what `sidekick rules install --project` writes.
 
-> The installed CLI is a small Node-run bundle, so Node is the only runtime requirement. To call `sidekick` as a bare command in your own projects, add `~/.claude/sidekick/bin` to your `PATH`; otherwise use the full path. The `sk-*` agents already invoke it by full path, so they work either way.
-
-**Installing without a clone** isn't wired up yet: the package is unpublished and the build artifact (`dist/cli.js`) is gitignored, so `bunx github:…` / `npm i -g` have nothing to run. A no-clone install would require publishing to a registry (then `bunx sidekick install`) or adding a `prepare`-build and making the repo public.
-
-### Set up a target project
-
-`sidekick init` is the **single setup step** for a repo you want to work in. It:
-
-- writes `.sidekick/config.json` (auto-detecting the default branch; gate commands are suggested only when a lockfile identifies your runner — anything undetected stays **unconfigured** and is surfaced loudly rather than guessed, because your repo may not be a Node project at all), and
-- ensures that repo's `.gitignore` covers `.sidekick/cache/` and `.sidekick/state/`.
-
-```bash
-cd your-project
-sidekick init   # not on PATH? use ~/.claude/sidekick/bin/sidekick init
-```
-
-### Check what your environment supports
-
-```bash
-sidekick capabilities
-```
-
-Prints a JSON report: your Claude Code version, whether dynamic workflows are available (`likely` / `false` / `unknown` — plan-level gating isn't detectable), and what disabled them, if anything. The `/sk-design` research fan-out uses this probe to pick its backend automatically; everything in sidekick works without workflows (it falls back to in-session agents). See [docs/LIMITS.md](./docs/LIMITS.md) for the full limits-and-hardening picture.
-
-`.sidekick/config.json` knobs for fan-out:
-
-| Field | Values | Default | Meaning |
-|---|---|---|---|
-| `fanout.backend` | `auto` / `workflow` / `agents` | `auto` | How research fan-out dispatches. `auto` probes and prefers workflows when likely available. |
-| `fanout.budget` | `quick` / `standard` / `deep` | `standard` | Fan-out width + verification depth. `deep` (adversarial cross-checking) is token-expensive and never used unless you opt in. This is the default tier; `/sk-design --auto <low\|medium\|high>` overrides it per run (`low → quick`, `medium → standard`, `high → deep`). |
-
-### The workflow
-
-| Skill | Does |
-|---|---|
-| `/sk-design <issue>` | Designs the work RFC under `.sidekick/work/<issue>-<slug>/` — a collaborative conversation by default; `--auto <low\|medium\|high>` runs it hands-off |
-| `/sk-build <issue>` | Executes the work RFC's `## Tasks` wave-by-wave: executor → fresh gates → spec-review → atomic commit per task |
-| `/sk-decide <topic>` | Records a MADR decision under `.sidekick/decisions/` |
-| `/sk-review <issue>` | Multi-dimension review (correctness, maintainability, security, tests, architecture, goal-backward verification — plus any verifiers you've registered) |
-| `/sk-write-verifier [dimension]` | Authors your own quality dimension (a UI example pack ships with it) and mounts it on the review/design/decide quorums via the `verifiers` registry in `.sidekick/config.json` — advisory findings alongside the bundled dimensions |
-
-### A typical session
-
-The `sk-*` skills are slash commands you run **inside Claude Code**, in a project you've `init`-ed. A feature usually flows:
-
-```text
-/sk-design <issue>             # talk the design through → the work RFC under .sidekick/work/<issue>-refund-window/
-/sk-build  <issue>             # execute the work RFC's ## Tasks wave-by-wave; atomic commit per task
-/sk-review <issue>             # multi-dimension review of the diff, incl. goal-backward verification
-```
-
-**`/sk-design` has two modes.** By default it's a *collaborative conversation*: the orchestrator surfaces its understanding of the work and the complexity signal, pulls research transparently only when it sharpens the discussion (never a reflexive upfront pass), lays options out inline, and iterates with you until the design is clear — then drafts and ends with a light `ship / tweak / cancel` confirm. `--auto <low|medium|high>` is the *hands-off* mode: produce-and-confirm end-to-end with no conversation, where the effort word drives research depth (`low → quick`, `medium → standard`, `high → deep`; `high` benefits from the workflow backend for its adversarial verification, falling back to `standard` on the agents backend). It keeps one honest breakout — it may stop once for a single focused question if the task genuinely exceeds the stated effort — and a one-line confirm before commit. (The retired `--research` / `--no-research` / `--budget` flags now error: `unknown flag <name>; see --auto`.)
-
-On demand: `/sk-decide <topic>` records a MADR decision; `/sk-write-verifier` authors a project-specific quality dimension onto the quorums. The CLI subcommands (`branch-precheck`, `wave-plan`, `gates`, `verifiers`, `scope-check`) are called by the skills and agents — you don't normally run them by hand.
-
-### What sidekick writes into your repo (the usage contract)
-
-Everything lives under `.sidekick/` at your repo root. `sidekick init` establishes it; the orchestrators maintain it. You never hand-edit the gitignore entries.
-
-| Path | Tracked | Contents |
-|---|---|---|
-| `.sidekick/config.json` | **committed** | runtime config — default branch, gate commands, `waveSizeCap`, `buildCheckpoints`, the `verifiers` registry |
-| `.sidekick/work/<issue>-<slug>/` | **committed** | `RFC.md`, `RESEARCH.md` |
-| `.sidekick/decisions/<slug>.md` | **committed** | MADR decision records |
-| `.sidekick/calibrations/<verifier>.json` | **committed** | calibration certificates (stats, thresholds, corpus hash, verifier-file hash) |
-| `.sidekick/cache/` | gitignored | review / goal-verify trails |
-| `.sidekick/state/` | gitignored | reconstructable build progress (authority is the RFC checklist + git) |
-
----
-
-## Developing sidekick (this repo)
-
-The harness source. A single TypeScript package (no monorepo).
-
-```bash
-bun install            # dev dependencies
-bun run build          # bundle bin/ → dist/cli.js (bun build, node target)
-bun run typecheck      # tsc --noEmit (types only)
-bun run test           # CLI test suite (bun test, scoped to bin/)
-bun run check          # biome lint + format check
-bun bin/cli.ts <cmd>   # run the CLI from source — e.g. bun bin/cli.ts init
-```
-
-CLI subcommands: `install`, `uninstall`, `init`, `branch-precheck`, `wave-plan`, `scope-check`, `verifiers`, `gates`, `eval` (`eval run|report|calibrate` — the 3.3 eval harness that drives headless Claude Code over agent/skill cases under `evals/cases/` and, per dimension, graduates a verifier to `binding` via a calibration certificate).
-
-### Layout
-
-| Path | Purpose |
-|---|---|
-| `agents/` | `sk-*` subagent specialist definitions |
-| `skills/` | `sk-*` slash-command orchestrators |
-| `rules/` | `sk-*` coding + working standards |
-| `bin/` | the `sidekick` CLI (TypeScript source + tests) |
-| `smokes/` | end-to-end CLI smoke fixtures (each simulates a consumer repo) |
-| `.claude/` | this repo's own Claude Code config + the `sk-agent-prompts` authoring rule |
-
-### Authoring
-
-When writing or editing `sk-*` agents and skills, follow `.claude/rules/sk-agent-prompts.md` — the prompt-engineering discipline for this toolchain (goal-oriented identity, constitutional constraints, few-shot examples with reasoning, minimal directive density).
+`docs/` holds the records: ADRs, research, reviews, and the frozen work history. `docs/README.md` says what each folder means.
