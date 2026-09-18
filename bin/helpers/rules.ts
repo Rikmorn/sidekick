@@ -63,15 +63,18 @@ export function resolveDest(
     : path.join(claudeHome, 'rules');
 }
 
+/**
+ * `dest` must be a directory or absent — a plain file there throws
+ * EEXIST here; that case is guarded in `runRulesCli`, not this function.
+ */
 export function installRules(
   src: string,
   dest: string,
-): { installed: string[]; removed: string[]; skipped?: Skipped[] } {
+): { installed: string[]; removed: string[]; skipped: Skipped[] } {
   const shipped = ownedRulesIn(src);
   // An empty source is a broken install far more often than a full
-  // retirement, so it installs nothing and prunes nothing. Nothing is
-  // attempted, so `skipped` is omitted rather than reported as empty.
-  if (shipped.length === 0) return { installed: [], removed: [] };
+  // retirement, so it installs nothing and prunes nothing.
+  if (shipped.length === 0) return { installed: [], removed: [], skipped: [] };
   fs.mkdirSync(dest, { recursive: true });
 
   // Snapshot the destination once. A shipped name is checked against this
@@ -242,7 +245,7 @@ export function runRulesCli(
   let skipped: Skipped[] = [];
   if (verb === 'install') {
     const result = installRules(env.src, dest);
-    skipped = result.skipped ?? [];
+    skipped = result.skipped;
     out(
       `installed ${result.installed.length} rule(s) into ${dest}: ${result.installed.join(', ')}`,
     );

@@ -67,7 +67,11 @@ describe('installRules', () => {
     const src = tmp();
     const dest = tmp();
     write(dest, 'sk-old.md', 'retired');
-    expect(installRules(src, dest)).toEqual({ installed: [], removed: [] });
+    expect(installRules(src, dest)).toEqual({
+      installed: [],
+      removed: [],
+      skipped: [],
+    });
     expect(fs.existsSync(path.join(dest, 'sk-old.md'))).toBe(true);
   });
 });
