@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -9,6 +10,10 @@ import {
   resolveDest,
   runRulesCli,
 } from './rules.js';
+
+function gitInit(dir: string): void {
+  execFileSync('git', ['init', '-q'], { cwd: dir });
+}
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sk-rules-'));
@@ -170,6 +175,50 @@ describe('runRulesCli', () => {
       true,
     );
     expect(lines.join('\n')).toContain('installed 1 rule');
+  });
+
+  test('install --project run from a repo subdirectory writes at the repo root', () => {
+    const src = tmp();
+    const repo = tmp();
+    gitInit(repo);
+    const sub = path.join(repo, 'packages', 'web');
+    fs.mkdirSync(sub, { recursive: true });
+    const home = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    const lines: string[] = [];
+    const code = runRulesCli(
+      ['install', '--project'],
+      { src, cwd: sub, claudeHome: home },
+      (l) => lines.push(l),
+    );
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(repo, '.claude', 'rules', 'sk-a.md'))).toBe(
+      true,
+    );
+    expect(fs.existsSync(path.join(sub, '.claude', 'rules', 'sk-a.md'))).toBe(
+      false,
+    );
+    expect(lines.join('\n')).toContain(
+      `project root: ${fs.realpathSync(repo)}`,
+    );
+  });
+
+  test('install --project falls back to cwd when it is outside a git work tree', () => {
+    const src = tmp();
+    const cwd = tmp();
+    const home = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    const lines: string[] = [];
+    const code = runRulesCli(
+      ['install', '--project'],
+      { src, cwd, claudeHome: home },
+      (l) => lines.push(l),
+    );
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(cwd, '.claude', 'rules', 'sk-a.md'))).toBe(
+      true,
+    );
+    expect(lines.join('\n')).toContain(`project root: ${cwd}`);
   });
 
   test('check --user reports drift and overlap, exit 0 when clean, 2 when drifted', () => {

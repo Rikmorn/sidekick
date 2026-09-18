@@ -4,6 +4,7 @@
  * them. Ownership is the `sk-` prefix: this module writes and removes only
  * `sk-*.md`, and reports (never resolves) overlap with anything else.
  */
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -61,6 +62,24 @@ export function resolveDest(
   return scope === 'project'
     ? path.join(cwd, '.claude', 'rules')
     : path.join(claudeHome, 'rules');
+}
+
+/**
+ * `--project` means the repo, not wherever the shell happens to be — a
+ * monorepo subdirectory has its own writable `.claude/rules`, so a plain
+ * cwd join silently scopes the install to that subtree. Falls back to
+ * `cwd` outside a git work tree, so callers never need a second branch.
+ */
+export function repoRootOf(cwd: string): string {
+  try {
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return cwd;
+  }
 }
 
 /**
@@ -227,7 +246,9 @@ export function runRulesCli(
     out(USAGE);
     return 1;
   }
-  const dest = resolveDest(scope, env.cwd, env.claudeHome);
+  const root = scope === 'project' ? repoRootOf(env.cwd) : env.cwd;
+  if (scope === 'project') out(`project root: ${root}`);
+  const dest = resolveDest(scope, root, env.claudeHome);
   if (ownedRulesIn(env.src).length === 0) {
     out(`no sk-*.md rules found at ${env.src}; refusing to touch ${dest}`);
     return 1;
