@@ -225,3 +225,113 @@ describe('runRulesCli', () => {
     ).toBe(1);
   });
 });
+
+describe('installRules hazards', () => {
+  test('never writes through a symlink and leaves the linked file untouched', () => {
+    const src = tmp();
+    const dest = tmp();
+    const outside = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    write(outside, 'real.md', 'do not touch me');
+    fs.symlinkSync(path.join(outside, 'real.md'), path.join(dest, 'sk-a.md'));
+    const result = installRules(src, dest);
+    expect(result.installed).toEqual([]);
+    expect(result.skipped).toEqual([
+      { name: 'sk-a.md', why: 'not-a-regular-file' },
+    ]);
+    expect(fs.lstatSync(path.join(dest, 'sk-a.md')).isSymbolicLink()).toBe(
+      true,
+    );
+    expect(fs.readFileSync(path.join(outside, 'real.md'), 'utf-8')).toBe(
+      'do not touch me',
+    );
+  });
+
+  test('never writes through a case-insensitive collision and leaves the colliding file untouched', () => {
+    const src = tmp();
+    const dest = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    write(dest, 'SK-A.MD', 'colleague content, do not touch');
+    const result = installRules(src, dest);
+    expect(result.installed).toEqual([]);
+    expect(result.skipped).toEqual([
+      { name: 'sk-a.md', why: 'case-collision' },
+    ]);
+    expect(fs.readdirSync(dest)).toEqual(['SK-A.MD']);
+    expect(fs.readFileSync(path.join(dest, 'SK-A.MD'), 'utf-8')).toBe(
+      'colleague content, do not touch',
+    );
+  });
+
+  test('never writes through a directory shaped like a shipped rule name', () => {
+    const src = tmp();
+    const dest = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    write(path.join(dest, 'sk-a.md'), 'inner.txt', 'do not touch');
+    const result = installRules(src, dest);
+    expect(result.installed).toEqual([]);
+    expect(result.skipped).toEqual([
+      { name: 'sk-a.md', why: 'not-a-regular-file' },
+    ]);
+    expect(fs.lstatSync(path.join(dest, 'sk-a.md')).isDirectory()).toBe(true);
+    expect(
+      fs.readFileSync(path.join(dest, 'sk-a.md', 'inner.txt'), 'utf-8'),
+    ).toBe('do not touch');
+  });
+});
+
+describe('ownedRulesIn crash-proofing', () => {
+  test('a broken symlink named sk-*.md in dest does not throw and survives pruning untouched', () => {
+    const src = tmp();
+    const dest = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    fs.symlinkSync(
+      path.join(dest, 'nonexistent-target.md'),
+      path.join(dest, 'sk-old.md'),
+    );
+    expect(checkRules(src, dest)).toEqual([
+      { kind: 'missing', name: 'sk-a.md' },
+    ]);
+    const result = installRules(src, dest);
+    expect(result.installed).toEqual(['sk-a.md']);
+    expect(result.removed).toEqual([]);
+    expect(result.skipped).toEqual([]);
+    expect(fs.lstatSync(path.join(dest, 'sk-old.md')).isSymbolicLink()).toBe(
+      true,
+    );
+    expect(fs.readlinkSync(path.join(dest, 'sk-old.md'))).toBe(
+      path.join(dest, 'nonexistent-target.md'),
+    );
+  });
+});
+
+describe('runRulesCli hazards', () => {
+  test('refuses when dest exists as a plain file, without writing or throwing', () => {
+    const src = tmp();
+    const cwd = tmp();
+    const home = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    write(path.join(cwd, '.claude'), 'rules', 'not a directory, do not touch');
+    const lines: string[] = [];
+    const code = runRulesCli(
+      ['install', '--project'],
+      { src, cwd, claudeHome: home },
+      (l) => lines.push(l),
+    );
+    expect(code).toBe(1);
+    expect(lines.join('\n')).toContain('is not a directory');
+    expect(fs.readFileSync(path.join(cwd, '.claude', 'rules'), 'utf-8')).toBe(
+      'not a directory, do not touch',
+    );
+    expect(fs.statSync(path.join(cwd, '.claude', 'rules')).isFile()).toBe(true);
+
+    const checkLines: string[] = [];
+    const checkCode = runRulesCli(
+      ['check', '--project'],
+      { src, cwd, claudeHome: home },
+      (l) => checkLines.push(l),
+    );
+    expect(checkCode).toBe(1);
+    expect(checkLines.join('\n')).toContain('is not a directory');
+  });
+});
