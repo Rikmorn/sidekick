@@ -13,6 +13,7 @@ import {
   PmError,
   parseGhVersion,
   parseIssues,
+  parseItemsPage,
   parseOrigin,
   runnerKey,
   versionAtLeast,
@@ -215,6 +216,93 @@ describe('fetchItems', () => {
       expect(['OPEN', 'CLOSED']).toContain(i.state);
       expect(i.repo).toBe('Rikmorn/sidekick');
     }
+  });
+});
+
+describe('parseItemsPage', () => {
+  test('keeps only Issue nodes from the tracked repo; tallies every kind seen', () => {
+    const fullName = 'Rikmorn/sidekick';
+    const page = {
+      user: {
+        projectV2: {
+          items: {
+            totalCount: 5,
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [
+              {
+                id: 'PVTI_1',
+                updatedAt: '2026-09-01T00:00:00Z',
+                fieldValueByName: { name: 'Backlog' },
+                content: {
+                  __typename: 'Issue',
+                  number: 101,
+                  title: 'kept: an issue in the tracked repo',
+                  state: 'OPEN',
+                  stateReason: null,
+                  updatedAt: '2026-09-01T00:00:00Z',
+                  url: 'https://github.com/Rikmorn/sidekick/issues/101',
+                  milestone: null,
+                  labels: { nodes: [] },
+                  assignees: { nodes: [] },
+                  repository: { nameWithOwner: fullName },
+                },
+              },
+              {
+                id: 'PVTI_2',
+                updatedAt: '2026-09-01T00:00:00Z',
+                fieldValueByName: null,
+                content: {
+                  __typename: 'Issue',
+                  number: 202,
+                  title: 'skipped: an issue in a different repository',
+                  state: 'OPEN',
+                  stateReason: null,
+                  updatedAt: '2026-09-01T00:00:00Z',
+                  url: 'https://github.com/Rikmorn/furnace/issues/202',
+                  milestone: null,
+                  labels: { nodes: [] },
+                  assignees: { nodes: [] },
+                  repository: { nameWithOwner: 'Rikmorn/furnace' },
+                },
+              },
+              {
+                id: 'PVTI_3',
+                updatedAt: '2026-09-01T00:00:00Z',
+                fieldValueByName: null,
+                content: {
+                  __typename: 'DraftIssue',
+                  title: 'skipped: a draft',
+                },
+              },
+              {
+                id: 'PVTI_4',
+                updatedAt: '2026-09-01T00:00:00Z',
+                fieldValueByName: null,
+                content: {
+                  __typename: 'PullRequest',
+                  number: 303,
+                  repository: { nameWithOwner: fullName },
+                },
+              },
+              {
+                id: 'PVTI_5',
+                updatedAt: '2026-09-01T00:00:00Z',
+                fieldValueByName: null,
+                content: null,
+              },
+            ],
+          },
+        },
+      },
+    };
+    const result = parseItemsPage(page, fullName);
+    expect(result.items.map((i) => i.number)).toEqual([101]);
+    expect(result.kinds).toEqual({
+      Issue: 2,
+      DraftIssue: 1,
+      PullRequest: 1,
+      Unknown: 1,
+    });
   });
 });
 

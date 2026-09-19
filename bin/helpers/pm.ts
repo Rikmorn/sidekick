@@ -9,7 +9,9 @@ import {
   execRunner,
   fetchDiscovery,
   fetchGhVersion,
+  fetchItems,
   fetchLocalLogin,
+  fetchMilestones,
   fetchScopeHeaders,
   fetchStatusField,
   hasProjectScope,
@@ -19,6 +21,7 @@ import {
   PmError,
   parseOrigin,
   type Runner,
+  STALE_DAYS,
   type StatusField,
   versionAtLeast,
 } from './pm-data.js';
@@ -164,6 +167,34 @@ export function runPmCli(
       emit(shown);
       return 0;
     }
+    const now = env.now ?? new Date();
+    const owner = info.owner as string;
+    const repo = info.repo as string;
+    const project = info.project as NonNullable<BoardInfo['project']>;
+    const fullName = `${owner}/${repo}`;
+    const viewer = fetchLocalLogin(run, info.root) ?? owner;
+    if (verb === 'pickup') {
+      const active = activeMilestone(
+        fetchMilestones(run, info.root, owner, repo, 'open'),
+      );
+      const { items, kinds } = fetchItems(
+        run,
+        info.root,
+        viewer,
+        project.number,
+        fullName,
+      );
+      const t = tiers(items, active, now);
+      emit({
+        board: { ...shown, item_kinds: kinds },
+        milestone: active,
+        in_progress: t.in_progress,
+        candidates: t.candidates,
+        order_basis: 'number',
+        drift: drift(run, info.root, t.in_progress),
+      });
+      return 0;
+    }
     err(`${verb}: not implemented yet`);
     return 1;
   } catch (e) {
@@ -251,5 +282,72 @@ export function tiers(
       ...tier1.sort(byNumber).map(cand(1)),
       ...tier2.sort(byNumber).map(cand(2)),
     ],
+  };
+}
+
+export interface Drift {
+  unpushed: {
+    count: number | null;
+    basis: 'upstream' | 'origin-branch' | 'none';
+  };
+  stale_in_progress: InProgress[];
+  open_pr: { number: number; title: string } | null;
+}
+
+export function drift(
+  run: Runner,
+  root: string,
+  inProgress: InProgress[],
+): Drift {
+  const branch = run('git', ['branch', '--show-current'], root).stdout.trim();
+  let basis: Drift['unpushed']['basis'] = 'none';
+  let base: string | null = null;
+  if (run('git', ['rev-parse', '--abbrev-ref', '@{u}'], root).code === 0) {
+    basis = 'upstream';
+    base = '@{u}';
+  } else if (
+    branch &&
+    run(
+      'git',
+      ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`],
+      root,
+    ).code === 0
+  ) {
+    basis = 'origin-branch';
+    base = `origin/${branch}`;
+  }
+  let count: number | null = null;
+  if (base) {
+    const r = run('git', ['rev-list', '--count', `${base}..HEAD`], root);
+    count = r.code === 0 ? Number(r.stdout.trim()) : null;
+  }
+  let open_pr: Drift['open_pr'] = null;
+  if (branch) {
+    const r = run(
+      'gh',
+      [
+        'pr',
+        'list',
+        '--head',
+        branch,
+        '--state',
+        'open',
+        '--json',
+        'number,title',
+      ],
+      root,
+    );
+    if (r.code === 0) {
+      const list = JSON.parse(r.stdout) as Array<{
+        number: number;
+        title: string;
+      }>;
+      open_pr = list[0] ?? null;
+    }
+  }
+  return {
+    unpushed: { count, basis },
+    stale_in_progress: inProgress.filter((i) => i.age_days > STALE_DAYS),
+    open_pr,
   };
 }

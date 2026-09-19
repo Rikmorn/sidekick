@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
+import { fixture, fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
 import {
   activeMilestone,
   chooseBoard,
   discover,
+  drift,
   GH_MIN,
   PM_USAGE,
   runPmCli,
@@ -294,5 +295,88 @@ describe('tiers', () => {
       now,
     );
     expect(t.candidates.map((c) => [c.tier, c.number])).toEqual([[2, 3]]);
+  });
+});
+
+describe('drift', () => {
+  test('falls back to origin/<branch> when the branch has no upstream', () => {
+    const d = drift(fixtureRunner(sidekickMap()), '/', []);
+    expect(d.unpushed).toEqual({ count: 0, basis: 'origin-branch' });
+    expect(d.open_pr).toBeNull();
+  });
+  test('uses the upstream when configured', () => {
+    const map = sidekickMap();
+    map['git rev-parse --abbrev-ref @{u}'] = 'origin/master\n';
+    map['git rev-list --count @{u}..HEAD'] = '3\n';
+    expect(drift(fixtureRunner(map), '/', []).unpushed).toEqual({
+      count: 3,
+      basis: 'upstream',
+    });
+  });
+  test('reports none when neither exists', () => {
+    const map = sidekickMap();
+    map['git rev-parse --verify --quiet refs/remotes/origin/master'] = {
+      code: 1,
+      stdout: '',
+      stderr: '',
+    };
+    expect(drift(fixtureRunner(map), '/', []).unpushed).toEqual({
+      count: null,
+      basis: 'none',
+    });
+  });
+  test('stale in progress is age over seven days; an open PR is reported', () => {
+    const map = sidekickMap();
+    map['gh pr list --head master --state open --json number,title'] =
+      '[{"number":9,"title":"wip"}]';
+    const d = drift(fixtureRunner(map), '/', [
+      { number: 1, title: 'a', age_days: 8, assignees: [], milestone: null },
+      { number: 2, title: 'b', age_days: 7, assignees: [], milestone: null },
+    ]);
+    expect(d.stale_in_progress.map((i) => i.number)).toEqual([1]);
+    expect(d.open_pr).toEqual({ number: 9, title: 'wip' });
+  });
+});
+
+describe('runPmCli pickup', () => {
+  test('joins the board, the active milestone, and drift into one object', () => {
+    const c = capture();
+    const code = runPmCli(
+      ['pickup'],
+      {
+        cwd: '/',
+        run: fixtureRunner(sidekickMap()),
+        now: new Date('2026-09-19T12:00:00Z'),
+      },
+      c.o,
+      c.e,
+    );
+    expect(code).toBe(0);
+    const j = JSON.parse(c.out[0]) as {
+      board: { tracked: boolean; item_kinds: Record<string, number> };
+      milestone: { title: string } | null;
+      in_progress: unknown[];
+      candidates: Array<{ tier: number; number: number }>;
+      order_basis: string;
+      drift: { unpushed: { basis: string } };
+    };
+    expect(j.board.tracked).toBe(true);
+    expect(j.order_basis).toBe('number');
+    expect(j.drift.unpushed.basis).toBe('origin-branch');
+    const open = JSON.parse(fixture('milestones-open.json')) as Array<{
+      title: string;
+    }>;
+    expect(open.map((m) => m.title)).toContain(j.milestone?.title ?? '');
+    for (const cand of j.candidates) expect([1, 2]).toContain(cand.tier);
+    // `item_kinds` tallies every node the Items page saw; its values must
+    // sum to the same totalCount fetchItems reports.
+    const p1 = JSON.parse(fixture('items-p1.json')) as {
+      data: { user: { projectV2: { items: { totalCount: number } } } };
+    };
+    const kindsSum = Object.values(j.board.item_kinds).reduce(
+      (a, b) => a + b,
+      0,
+    );
+    expect(kindsSum).toBe(p1.data.user.projectV2.items.totalCount);
   });
 });
