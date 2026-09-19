@@ -564,6 +564,12 @@ function discover(run, cwd) {
   if (!parsed)
     return untracked("not-github");
   const login = fetchLocalLogin(run, root);
+  if (login === null) {
+    return untracked("no-local-login", {
+      owner: parsed.owner,
+      repo: parsed.repo
+    });
+  }
   if (login !== parsed.owner) {
     return untracked("remote-owner-mismatch", {
       owner: parsed.owner,
@@ -590,6 +596,7 @@ function discover(run, cwd) {
     reason: null,
     owner: parsed.owner,
     repo: parsed.repo,
+    viewer: d.viewer,
     project: { number: first.number, id: f2.id, url: f2.url, title: f2.title },
     status_field: f2.statusField,
     linked: d.boards,
@@ -632,7 +639,7 @@ function runPmCli(args, env, out, err) {
     const repo = info.repo;
     const project = info.project;
     const fullName = `${owner}/${repo}`;
-    const viewer = fetchLocalLogin(run, info.root) ?? owner;
+    const viewer = info.viewer;
     if (verb === "pickup") {
       const active = activeMilestone(fetchMilestones(run, info.root, owner, repo, "open"));
       const { items, kinds } = fetchItems(run, info.root, viewer, project.number, fullName);
@@ -706,6 +713,7 @@ function tiers(items, active, now) {
   const in_progress = open2.filter((i) => i.status === "In Progress").map((i) => ({
     number: i.number,
     title: i.title,
+    item_id: i.itemId,
     age_days: ageDays(i.updatedAt, now),
     assignees: i.assignees,
     milestone: i.milestone
@@ -717,6 +725,7 @@ function tiers(items, active, now) {
     tier,
     number: i.number,
     title: i.title,
+    item_id: i.itemId,
     labels: i.labels
   });
   return {
@@ -756,8 +765,12 @@ function drift(run, root, inProgress) {
       "number,title"
     ], root);
     if (r.code === 0) {
-      const list = JSON.parse(r.stdout);
-      open_pr = list[0] ?? null;
+      try {
+        const list = JSON.parse(r.stdout);
+        open_pr = list[0] ?? null;
+      } catch {
+        open_pr = null;
+      }
     }
   }
   return {
@@ -767,11 +780,12 @@ function drift(run, root, inProgress) {
   };
 }
 function gateVerdict(ms, issues, items) {
-  const status = new Map(items.map((i) => [i.number, i.status]));
+  const itemByNumber = new Map(items.map((i) => [i.number, i]));
   const open2 = issues.filter((i) => i.milestone === ms.title).sort((a, b) => a.number - b.number).map((i) => ({
     number: i.number,
     title: i.title,
-    status: status.get(i.number) ?? null,
+    status: itemByNumber.get(i.number)?.status ?? null,
+    item_id: itemByNumber.get(i.number)?.itemId ?? null,
     labels: i.labels
   }));
   return { ready: ms.open_issues === 0 && open2.length === 0, open: open2 };
