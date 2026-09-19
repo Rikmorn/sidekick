@@ -179,7 +179,10 @@ export function runPmCli(
 const byTitle = (a: string, b: string): number =>
   a.localeCompare(b, 'en', { numeric: true });
 
-/** Earliest `due_on` first with nulls last, then title (numeric-aware), then number. */
+/**
+ * Earliest `due_on` first with nulls last, then title (numeric-aware),
+ * then number.
+ */
 export function activeMilestone(list: Milestone[]): Milestone | null {
   const open = list.filter((m) => m.state === 'open');
   if (open.length === 0) return null;

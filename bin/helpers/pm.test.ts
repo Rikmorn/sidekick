@@ -273,7 +273,7 @@ describe('tiers', () => {
         updatedAt: '2026-09-10T00:00:00Z',
         assignees: ['Rikmorn'],
       }),
-      item({ number: 2, milestone: 'R6' }),
+      item({ number: 9, milestone: 'R6' }),
       item({ number: 3 }),
       item({ number: 4, labels: ['backlog'] }),
       item({ number: 5, milestone: 'R7' }),
@@ -283,7 +283,7 @@ describe('tiers', () => {
     expect(t.in_progress.map((i) => i.number)).toEqual([1]);
     expect(t.in_progress[0].age_days).toBe(9);
     expect(t.candidates.map((c) => [c.tier, c.number])).toEqual([
-      [1, 2],
+      [1, 9],
       [2, 3],
     ]);
   });
