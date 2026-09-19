@@ -329,6 +329,7 @@ export function activeMilestone(list: Milestone[]): Milestone | null {
 export interface InProgress {
   number: number;
   title: string;
+  item_id: string;
   age_days: number;
   assignees: string[];
   milestone: string | null;
@@ -337,6 +338,7 @@ export interface Candidate {
   tier: 1 | 2;
   number: number;
   title: string;
+  item_id: string;
   labels: string[];
 }
 
@@ -353,6 +355,7 @@ export function tiers(
     .map((i) => ({
       number: i.number,
       title: i.title,
+      item_id: i.itemId,
       age_days: ageDays(i.updatedAt, now),
       assignees: i.assignees,
       milestone: i.milestone,
@@ -371,6 +374,7 @@ export function tiers(
       tier,
       number: i.number,
       title: i.title,
+      item_id: i.itemId,
       labels: i.labels,
     });
   return {
@@ -463,17 +467,20 @@ export function gateVerdict(
     number: number;
     title: string;
     status: string | null;
+    /** `null` when the issue is `unboarded` (no card at all). */
+    item_id: string | null;
     labels: string[];
   }>;
 } {
-  const status = new Map(items.map((i) => [i.number, i.status]));
+  const itemByNumber = new Map(items.map((i) => [i.number, i]));
   const open = issues
     .filter((i) => i.milestone === ms.title)
     .sort((a, b) => a.number - b.number)
     .map((i) => ({
       number: i.number,
       title: i.title,
-      status: status.get(i.number) ?? null,
+      status: itemByNumber.get(i.number)?.status ?? null,
+      item_id: itemByNumber.get(i.number)?.itemId ?? null,
       labels: i.labels,
     }));
   return { ready: ms.open_issues === 0 && open.length === 0, open };

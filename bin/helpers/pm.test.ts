@@ -426,8 +426,22 @@ describe('drift', () => {
     map['gh pr list --head master --state open --json number,title'] =
       '[{"number":9,"title":"wip"}]';
     const d = drift(fixtureRunner(map), '/', [
-      { number: 1, title: 'a', age_days: 8, assignees: [], milestone: null },
-      { number: 2, title: 'b', age_days: 7, assignees: [], milestone: null },
+      {
+        number: 1,
+        title: 'a',
+        item_id: 'PVTI_1',
+        age_days: 8,
+        assignees: [],
+        milestone: null,
+      },
+      {
+        number: 2,
+        title: 'b',
+        item_id: 'PVTI_2',
+        age_days: 7,
+        assignees: [],
+        milestone: null,
+      },
     ]);
     expect(d.stale_in_progress.map((i) => i.number)).toEqual([1]);
     expect(d.open_pr).toEqual({ number: 9, title: 'wip' });
@@ -453,6 +467,7 @@ describe('runPmCli pickup', () => {
       milestone: { title: string } | null;
       in_progress: Array<{
         number: number;
+        item_id: string;
         assignees: string[];
         milestone: string | null;
       }>;
@@ -479,6 +494,10 @@ describe('runPmCli pickup', () => {
     );
     expect(j.in_progress[0].assignees).toEqual(expectedInProgress[0].assignees);
     expect(j.in_progress[0].milestone).toBe(expectedInProgress[0].milestone);
+    // `item_id` is the board item's node id (Task item 1, #109 follow-up):
+    // every id `fetchItems` parses is a `PVTI_…` project-item id, never the
+    // issue's own node id.
+    expect(j.in_progress[0].item_id).toMatch(/^PVTI_/);
 
     const tier1 = issues
       .filter((i) => i.status === 'Backlog' && i.milestone === activeTitle)
@@ -590,8 +609,20 @@ describe('gateVerdict', () => {
     const v = gateVerdict({ ...m, open_issues: 2 }, issues, items);
     expect(v.ready).toBe(false);
     expect(v.open).toEqual([
-      { number: 1, title: 't1', status: 'In Progress', labels: ['area:pm'] },
-      { number: 2, title: 't2', status: null, labels: ['area:pm'] },
+      {
+        number: 1,
+        title: 't1',
+        status: 'In Progress',
+        item_id: 'PVTI_1',
+        labels: ['area:pm'],
+      },
+      {
+        number: 2,
+        title: 't2',
+        status: null,
+        item_id: null,
+        labels: ['area:pm'],
+      },
     ]);
     expect(gateVerdict({ ...m, open_issues: 0 }, [], []).ready).toBe(true);
     // The two clauses of `ready` must each hold independently: REST's
