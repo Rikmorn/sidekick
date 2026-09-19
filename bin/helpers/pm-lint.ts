@@ -12,20 +12,8 @@ import {
   STALE_DAYS,
 } from './pm-data.js';
 
-export type LintId =
-  | 'area_label_count'
-  | 'no_status'
-  | 'open_in_done'
-  | 'completed_not_done'
-  | 'backlog_without_condition'
-  | 'backlog_in_milestone'
-  | 'position_code_title'
-  | 'unboarded'
-  | 'stale_in_progress'
-  | 'multiple_linked_boards';
-
 /** The single source of predicate ids; `lintAll` builds both maps from it. */
-export const LINT_IDS: readonly LintId[] = [
+export const LINT_IDS = [
   'area_label_count',
   'no_status',
   'open_in_done',
@@ -36,7 +24,8 @@ export const LINT_IDS: readonly LintId[] = [
   'unboarded',
   'stale_in_progress',
   'multiple_linked_boards',
-];
+] as const;
+export type LintId = (typeof LINT_IDS)[number];
 
 export interface Finding {
   number: number | null;
