@@ -5,6 +5,7 @@
  * skills do the judgement and the writes.
  */
 import {
+  ageDays,
   execRunner,
   fetchDiscovery,
   fetchGhVersion,
@@ -12,7 +13,9 @@ import {
   fetchScopeHeaders,
   fetchStatusField,
   hasProjectScope,
+  type Item,
   type LinkedBoard,
+  type Milestone,
   PmError,
   parseOrigin,
   type Runner,
@@ -171,4 +174,79 @@ export function runPmCli(
     err(e instanceof Error ? e.message : String(e));
     return 1;
   }
+}
+
+const byTitle = (a: string, b: string): number =>
+  a.localeCompare(b, 'en', { numeric: true });
+
+/** Earliest `due_on` first with nulls last, then title (numeric-aware), then number. */
+export function activeMilestone(list: Milestone[]): Milestone | null {
+  const open = list.filter((m) => m.state === 'open');
+  if (open.length === 0) return null;
+  const sorted = [...open].sort((a, b) => {
+    if (a.due_on !== b.due_on) {
+      if (a.due_on === null) return 1;
+      if (b.due_on === null) return -1;
+      return a.due_on < b.due_on ? -1 : 1;
+    }
+    const t = byTitle(a.title, b.title);
+    return t !== 0 ? t : a.number - b.number;
+  });
+  return sorted[0];
+}
+
+export interface InProgress {
+  number: number;
+  title: string;
+  age_days: number;
+  assignees: string[];
+  milestone: string | null;
+}
+export interface Candidate {
+  tier: 1 | 2;
+  number: number;
+  title: string;
+  labels: string[];
+}
+
+export function tiers(
+  items: Item[],
+  active: Milestone | null,
+  now: Date,
+): { in_progress: InProgress[]; candidates: Candidate[] } {
+  const open = items.filter((i) => i.state === 'OPEN');
+  const byNumber = (a: { number: number }, b: { number: number }): number =>
+    a.number - b.number;
+  const in_progress = open
+    .filter((i) => i.status === 'In Progress')
+    .map((i) => ({
+      number: i.number,
+      title: i.title,
+      age_days: ageDays(i.updatedAt, now),
+      assignees: i.assignees,
+      milestone: i.milestone,
+    }))
+    .sort(byNumber);
+  const backlog = open.filter((i) => i.status === 'Backlog');
+  const tier1 = active
+    ? backlog.filter((i) => i.milestone === active.title)
+    : [];
+  const tier2 = backlog.filter(
+    (i) => i.milestone === null && !i.labels.includes('backlog'),
+  );
+  const cand =
+    (tier: 1 | 2) =>
+    (i: Item): Candidate => ({
+      tier,
+      number: i.number,
+      title: i.title,
+      labels: i.labels,
+    });
+  return {
+    in_progress,
+    candidates: [
+      ...tier1.sort(byNumber).map(cand(1)),
+      ...tier2.sort(byNumber).map(cand(2)),
+    ],
+  };
 }

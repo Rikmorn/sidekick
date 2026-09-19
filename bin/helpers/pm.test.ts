@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
-import { chooseBoard, discover, GH_MIN, PM_USAGE, runPmCli } from './pm.js';
+import {
+  activeMilestone,
+  chooseBoard,
+  discover,
+  GH_MIN,
+  PM_USAGE,
+  runPmCli,
+  tiers,
+} from './pm.js';
 import type { Item, LinkedBoard, Milestone } from './pm-data.js';
 
 const board = (
@@ -236,5 +244,55 @@ describe('runPmCli board', () => {
     );
     expect(code).toBe(1);
     expect(c.err.join(' ').length).toBeGreaterThan(0);
+  });
+});
+
+describe('activeMilestone', () => {
+  test('earliest due_on first, nulls last', () => {
+    expect(
+      activeMilestone([ms(1, 'R7'), ms(2, 'R6', '2026-10-01T00:00:00Z')])
+        ?.title,
+    ).toBe('R6');
+  });
+  test('then a numeric-aware title order, then number', () => {
+    expect(activeMilestone([ms(1, 'R10'), ms(2, 'R9')])?.title).toBe('R9');
+    expect(activeMilestone([ms(5, 'same'), ms(3, 'same')])?.number).toBe(3);
+  });
+  test('none open is null', () => {
+    expect(activeMilestone([])).toBeNull();
+  });
+});
+
+describe('tiers', () => {
+  const now = new Date('2026-09-19T00:00:00Z');
+  test('in progress, then the active milestone, then unmilestoned and not deferred', () => {
+    const items = [
+      item({
+        number: 1,
+        status: 'In Progress',
+        updatedAt: '2026-09-10T00:00:00Z',
+        assignees: ['Rikmorn'],
+      }),
+      item({ number: 2, milestone: 'R6' }),
+      item({ number: 3 }),
+      item({ number: 4, labels: ['backlog'] }),
+      item({ number: 5, milestone: 'R7' }),
+      item({ number: 6, status: 'Done', state: 'CLOSED' }),
+    ];
+    const t = tiers(items, ms(6, 'R6'), now);
+    expect(t.in_progress.map((i) => i.number)).toEqual([1]);
+    expect(t.in_progress[0].age_days).toBe(9);
+    expect(t.candidates.map((c) => [c.tier, c.number])).toEqual([
+      [1, 2],
+      [2, 3],
+    ]);
+  });
+  test('with no active milestone, tier 1 is empty and tier 2 still runs', () => {
+    const t = tiers(
+      [item({ number: 3 }), item({ number: 2, milestone: 'R6' })],
+      null,
+      now,
+    );
+    expect(t.candidates.map((c) => [c.tier, c.number])).toEqual([[2, 3]]);
   });
 });
