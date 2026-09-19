@@ -1,6 +1,6 @@
 # sidekick
 
-The loop I use every day in every repo, packaged as a Claude Code plugin bundle. Superpowers and the official code-review plugin do the work and install as dependencies. sidekick adds the house guidance, a project-management layer on GitHub for the repos where I own the tracking, and design-side extensions the ecosystem lacks. ADR-0009 under `docs/adr/` records the pivot from the harness this repo used to be.
+The loop I use every day in every repo, packaged as a Claude Code plugin bundle. Superpowers and the official code-review plugin do the work and install as dependencies. sidekick adds the house guidance, a project-management layer on GitHub for the repos where I own the tracking, and design-side extensions the ecosystem lacks. ADR-0009 under `docs/adr/` records the pivot from the harness this repo used to be. How the loop runs day to day, and how it lands on GitHub, is `docs/USAGE.md`.
 
 ## Install
 
