@@ -32,6 +32,19 @@ sidekick rules check --project     # drift and overlap report; changes nothing
 
 The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a file you hand-write under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. It never edits another file. When a repo keeps its own rule that overlaps an sk rule by heading or opening sentence, the check reports the pair and leaves the decision to you; repetition is accepted where colleagues who do not use sidekick rely on the repo's copy.
 
+## The board
+
+The project-management seat reads the repo's board and prints JSON; the skills that arrive with R6 do the judgement and the writes. A repo is tracked when one open Projects v2 board is linked to it, titled after the repo, and owned by you — no config file.
+
+```bash
+sidekick pm board              # discovery and preflight: which board, which Status ids, is gh ready
+sidekick pm pickup             # active milestone, In Progress, candidates by tier, drift
+sidekick pm lint               # the board's invariants; every count should be 0
+sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
+```
+
+`--quiet` on `board` and `pickup` prints nothing in an untracked repo, for hooks. Exit codes: `0` ran (the verdict is in the JSON), `1` usage or error, `2` `gh` missing or its token lacks the `project` scope.
+
 ## What is in the bundle
 
 | Path | What |

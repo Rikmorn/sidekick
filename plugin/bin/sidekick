@@ -9,6 +9,324 @@ import * as os from "node:os";
 import * as path2 from "node:path";
 import { fileURLToPath } from "node:url";
 
+// bin/helpers/pm-data.ts
+import { spawnSync } from "node:child_process";
+var execRunner = (cmd, args, cwd) => {
+  const r = spawnSync(cmd, args, {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (r.error)
+    return { code: 127, stdout: "", stderr: r.error.message };
+  return {
+    code: r.status ?? 1,
+    stdout: r.stdout ?? "",
+    stderr: r.stderr ?? ""
+  };
+};
+
+class PmError extends Error {
+  exit;
+  constructor(exit, message) {
+    super(message);
+    this.exit = exit;
+  }
+}
+var ORIGIN = /^(?:git@github\.com:|https:\/\/github\.com\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/;
+function parseOrigin(url) {
+  const m = url.trim().match(ORIGIN);
+  return m ? { owner: m[1], repo: m[2] } : null;
+}
+function parseGhVersion(firstLine) {
+  const m = firstLine.match(/^gh version (\d+\.\d+\.\d+)/);
+  return m ? m[1] : null;
+}
+function versionAtLeast(v, min) {
+  const a = v.split(".").map(Number);
+  const b = min.split(".").map(Number);
+  for (let i = 0;i < 3; i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y)
+      return x > y;
+  }
+  return true;
+}
+function hasProjectScope(headers) {
+  const line = headers.split(/\r?\n/).find((l) => /^x-oauth-scopes:/i.test(l));
+  if (!line)
+    return false;
+  return line.slice(line.indexOf(":") + 1).split(",").map((s) => s.trim()).includes("project");
+}
+function ageDays(iso, now) {
+  return Math.floor((now.getTime() - new Date(iso).getTime()) / 86400000);
+}
+var STALE_DAYS = 7;
+var DISCOVERY_QUERY = "query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }";
+var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
+var ITEMS_PAGE = 100;
+var ITEMS_QUERY = `query Items($login: String!, $number: Int!, $after: String) { user(login: $login) { projectV2(number: $number) { items(first: ${ITEMS_PAGE}, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id updatedAt fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } content { __typename ... on Issue { number title state stateReason updatedAt url milestone { title number } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } repository { nameWithOwner } } ... on PullRequest { number repository { nameWithOwner } } ... on DraftIssue { title } } } } } } }`;
+var ISSUE_LIMIT = 500;
+function gql(run, cwd, doc, vars) {
+  const args = ["api", "graphql", "-f", `query=${doc}`];
+  for (const [flag, kv] of vars)
+    args.push(flag, kv);
+  const r = run("gh", args, cwd);
+  if (r.code !== 0) {
+    throw new PmError(1, r.stderr.trim() || "gh api graphql failed");
+  }
+  const parsed = JSON.parse(r.stdout);
+  if (parsed.errors?.length)
+    throw new PmError(1, parsed.errors[0].message);
+  return parsed.data;
+}
+function rest(run, cwd, args) {
+  const r = run("gh", args, cwd);
+  if (r.code !== 0) {
+    throw new PmError(1, r.stderr.trim() || `gh ${args[0]} failed`);
+  }
+  return r.stdout;
+}
+function fetchGhVersion(run, cwd) {
+  const r = run("gh", ["--version"], cwd);
+  if (r.code !== 0)
+    return { found: false, version: null };
+  return {
+    found: true,
+    version: parseGhVersion(r.stdout.split(`
+`)[0] ?? "")
+  };
+}
+function fetchLocalLogin(run, cwd) {
+  const r = run("gh", ["config", "get", "-h", "github.com", "user"], cwd);
+  const v = r.stdout.trim();
+  return r.code === 0 && v ? v : null;
+}
+function fetchScopeHeaders(run, cwd) {
+  return rest(run, cwd, ["api", "-i", "user"]);
+}
+function parseDiscovery(data) {
+  const d = data;
+  const nodes = d.repository?.projectsV2.nodes ?? [];
+  return {
+    viewer: d.viewer.login,
+    boards: nodes.map((n) => ({
+      number: n.number,
+      title: n.title,
+      closed: n.closed,
+      url: n.url,
+      id: n.id,
+      ownerLogin: n.owner.login ?? ""
+    }))
+  };
+}
+function fetchDiscovery(run, cwd, owner, repo) {
+  return parseDiscovery(gql(run, cwd, DISCOVERY_QUERY, [
+    ["-f", `owner=${owner}`],
+    ["-f", `name=${repo}`]
+  ]));
+}
+function parseStatusField(data) {
+  const p = data.user.projectV2;
+  const statusField = p.field ? {
+    id: p.field.id,
+    options: Object.fromEntries(p.field.options.map((o) => [o.name, o.id]))
+  } : null;
+  return { id: p.id, title: p.title, url: p.url, statusField };
+}
+function fetchStatusField(run, cwd, login, number) {
+  return parseStatusField(gql(run, cwd, FIELD_QUERY, [
+    ["-f", `login=${login}`],
+    ["-F", `number=${number}`]
+  ]));
+}
+function parseItemsPage(data, fullName) {
+  const page = data.user.projectV2.items;
+  const kinds = {};
+  const items = [];
+  for (const n of page.nodes) {
+    const c = n.content;
+    const kind = c?.__typename ?? "Unknown";
+    kinds[kind] = (kinds[kind] ?? 0) + 1;
+    if (!c || kind !== "Issue" || c.repository?.nameWithOwner !== fullName) {
+      continue;
+    }
+    items.push({
+      itemId: n.id,
+      status: n.fieldValueByName?.name ?? null,
+      number: c.number ?? 0,
+      title: c.title ?? "",
+      state: c.state ?? "OPEN",
+      stateReason: c.stateReason ?? null,
+      updatedAt: c.updatedAt ?? n.updatedAt,
+      url: c.url ?? "",
+      milestone: c.milestone?.title ?? null,
+      labels: (c.labels?.nodes ?? []).map((l) => l.name),
+      assignees: (c.assignees?.nodes ?? []).map((a) => a.login),
+      repo: c.repository?.nameWithOwner ?? ""
+    });
+  }
+  return {
+    items,
+    kinds,
+    totalCount: page.totalCount,
+    hasNextPage: page.pageInfo.hasNextPage,
+    endCursor: page.pageInfo.endCursor
+  };
+}
+function fetchItems(run, cwd, login, number, fullName) {
+  const items = [];
+  const kinds = {};
+  let totalCount = 0;
+  let after = null;
+  for (;; ) {
+    const vars = [
+      ["-f", `login=${login}`],
+      ["-F", `number=${number}`]
+    ];
+    if (after)
+      vars.push(["-f", `after=${after}`]);
+    const page = parseItemsPage(gql(run, cwd, ITEMS_QUERY, vars), fullName);
+    items.push(...page.items);
+    for (const [k, v] of Object.entries(page.kinds)) {
+      kinds[k] = (kinds[k] ?? 0) + v;
+    }
+    totalCount = page.totalCount;
+    if (!page.hasNextPage || !page.endCursor)
+      break;
+    after = page.endCursor;
+  }
+  return { items, kinds, totalCount };
+}
+function parseMilestones(json) {
+  return JSON.parse(json).map((m) => ({
+    number: m.number,
+    title: m.title,
+    description: m.description ?? "",
+    due_on: m.due_on,
+    open_issues: m.open_issues,
+    closed_issues: m.closed_issues,
+    state: m.state
+  }));
+}
+function fetchMilestones(run, cwd, owner, repo, state) {
+  return parseMilestones(rest(run, cwd, [
+    "api",
+    `repos/${owner}/${repo}/milestones?state=${state}&per_page=100`
+  ]));
+}
+function parseIssues(json) {
+  const list = JSON.parse(json);
+  if (list.length >= ISSUE_LIMIT) {
+    throw new PmError(1, `gh issue list returned ${list.length} issues, the limit; refusing to reason over a truncated list`);
+  }
+  return list.map((i) => ({
+    number: i.number,
+    title: i.title,
+    labels: i.labels.map((l) => l.name),
+    body: i.body,
+    milestone: i.milestone?.title ?? null,
+    updatedAt: i.updatedAt
+  }));
+}
+function fetchOpenIssues(run, cwd, owner, repo) {
+  return parseIssues(rest(run, cwd, [
+    "issue",
+    "list",
+    "-R",
+    `${owner}/${repo}`,
+    "--state",
+    "open",
+    "--limit",
+    String(ISSUE_LIMIT),
+    "--json",
+    "number,title,labels,body,milestone,updatedAt"
+  ]));
+}
+
+// bin/helpers/pm-lint.ts
+var LINT_IDS = [
+  "area_label_count",
+  "no_status",
+  "open_in_done",
+  "completed_not_done",
+  "backlog_without_condition",
+  "backlog_in_milestone",
+  "position_code_title",
+  "unboarded",
+  "stale_in_progress",
+  "multiple_linked_boards"
+];
+var REVISIT_MARKER = /^\s*revisit when:/im;
+var POSITION_CODE = [
+  /^\s*\d+(\.\d+)+\s*[—–-]/,
+  /^\s*(bench|wave|step|phase)[- ]?\d+\b/i
+];
+var f = (number, title, detail) => ({
+  number,
+  title,
+  detail
+});
+var open = (items) => items.filter((i) => i.state === "OPEN");
+function areaLabelCount(issues) {
+  return issues.map((i) => ({
+    i,
+    n: i.labels.filter((l) => l.startsWith("area:")).length
+  })).filter(({ n }) => n !== 1).map(({ i, n }) => f(i.number, i.title, `${n} area:* labels`));
+}
+function noStatus(items) {
+  return open(items).filter((i) => i.status === null).map((i) => f(i.number, i.title, "card has no Status"));
+}
+function openInDone(items) {
+  return open(items).filter((i) => i.status === "Done").map((i) => f(i.number, i.title, "open issue carded Done"));
+}
+function completedNotDone(items) {
+  return items.filter((i) => i.state === "CLOSED" && i.stateReason === "COMPLETED" && i.status !== "Done").map((i) => f(i.number, i.title, `closed as completed, card is ${i.status ?? "unset"}`));
+}
+function backlogWithoutCondition(issues) {
+  return issues.filter((i) => i.labels.includes("backlog") && !REVISIT_MARKER.test(i.body)).map((i) => f(i.number, i.title, 'backlog label without a "Revisit when:" line'));
+}
+function backlogInMilestone(issues) {
+  return issues.filter((i) => i.labels.includes("backlog") && i.milestone !== null).map((i) => f(i.number, i.title, `deferred but in milestone ${i.milestone}`));
+}
+function positionCodeTitle(issues) {
+  return issues.filter((i) => POSITION_CODE.some((re) => re.test(i.title))).map((i) => f(i.number, i.title, "title starts with a position code"));
+}
+function unboarded(issues, items) {
+  const carded = new Set(items.map((i) => i.number));
+  return issues.filter((i) => !carded.has(i.number)).map((i) => f(i.number, i.title, "no card on the board"));
+}
+function staleInProgress(items, now) {
+  return open(items).filter((i) => i.status === "In Progress" && ageDays(i.updatedAt, now) > STALE_DAYS).map((i) => f(i.number, i.title, `In Progress, untouched ${ageDays(i.updatedAt, now)} days`));
+}
+function multipleLinkedBoards(candidates) {
+  if (candidates.length <= 1)
+    return [];
+  const names = candidates.map((b) => `#${b.number}`).join(", ");
+  return [
+    f(null, "linked boards", `${candidates.length} open boards match: ${names}`)
+  ];
+}
+var PREDICATES = {
+  area_label_count: ({ issues }) => areaLabelCount(issues),
+  no_status: ({ items }) => noStatus(items),
+  open_in_done: ({ items }) => openInDone(items),
+  completed_not_done: ({ items }) => completedNotDone(items),
+  backlog_without_condition: ({ issues }) => backlogWithoutCondition(issues),
+  backlog_in_milestone: ({ issues }) => backlogInMilestone(issues),
+  position_code_title: ({ issues }) => positionCodeTitle(issues),
+  unboarded: ({ issues, items }) => unboarded(issues, items),
+  stale_in_progress: ({ items, now }) => staleInProgress(items, now),
+  multiple_linked_boards: ({ candidates }) => multipleLinkedBoards(candidates)
+};
+function lintAll(input) {
+  const entries = LINT_IDS.map((id) => [id, PREDICATES[id](input)]);
+  const findings = Object.fromEntries(entries);
+  const counts = Object.fromEntries(entries.map(([id, list]) => [id, list.length]));
+  return { findings, counts };
+}
+
 // bin/helpers/rules.ts
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -204,6 +522,261 @@ function runRulesCli(args, env, out) {
   return drift.length === 0 && skipped.length === 0 ? 0 : 2;
 }
 
+// bin/helpers/pm.ts
+var GH_MIN = "2.98.0";
+function chooseBoard(boards, viewer, repo) {
+  return boards.filter((b) => !b.closed && b.ownerLogin === viewer && b.title === repo).sort((a, b) => a.number - b.number);
+}
+function preflightOf(version) {
+  const ok = version !== null && versionAtLeast(version, GH_MIN);
+  const warnings = ok ? [] : [
+    `gh ${version ?? "unknown"} < ${GH_MIN}: by-name item-edit unavailable; write by field and option id`
+  ];
+  return {
+    gh_version: version,
+    gh_min: GH_MIN,
+    gh_ok: ok,
+    project_scope: null,
+    warnings
+  };
+}
+function discover(run, cwd) {
+  const gh = fetchGhVersion(run, cwd);
+  if (!gh.found)
+    throw new PmError(2, "gh not found on PATH");
+  const root = repoRootOf(cwd);
+  const preflight = preflightOf(gh.version);
+  const untracked = (reason, fields = {}) => ({
+    tracked: false,
+    reason,
+    owner: fields.owner ?? null,
+    repo: fields.repo ?? null,
+    project: null,
+    status_field: null,
+    linked: fields.linked ?? [],
+    preflight,
+    root
+  });
+  const origin = run("git", ["remote", "get-url", "origin"], root);
+  if (origin.code !== 0)
+    return untracked("no-origin");
+  const parsed = parseOrigin(origin.stdout);
+  if (!parsed)
+    return untracked("not-github");
+  const login = fetchLocalLogin(run, root);
+  if (login !== parsed.owner) {
+    return untracked("remote-owner-mismatch", {
+      owner: parsed.owner,
+      repo: parsed.repo
+    });
+  }
+  preflight.project_scope = hasProjectScope(fetchScopeHeaders(run, root));
+  if (!preflight.project_scope) {
+    throw new PmError(2, "gh token lacks the 'project' scope; run: gh auth refresh -s project");
+  }
+  const d = fetchDiscovery(run, root, parsed.owner, parsed.repo);
+  const chosen = chooseBoard(d.boards, d.viewer, parsed.repo);
+  if (chosen.length === 0) {
+    return untracked("no-board", {
+      owner: parsed.owner,
+      repo: parsed.repo,
+      linked: d.boards
+    });
+  }
+  const first = chosen[0];
+  const f2 = fetchStatusField(run, root, d.viewer, first.number);
+  return {
+    tracked: true,
+    reason: null,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    project: { number: first.number, id: f2.id, url: f2.url, title: f2.title },
+    status_field: f2.statusField,
+    linked: d.boards,
+    preflight,
+    root
+  };
+}
+var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--milestone <title>]";
+var PM_USAGE = `usage: ${PM_USAGE_LINE}`;
+var VERBS = new Set(["board", "pickup", "lint", "gate"]);
+function runPmCli(args, env, out, err) {
+  const [verb, ...rest2] = args;
+  if (!verb || !VERBS.has(verb)) {
+    err(PM_USAGE);
+    return 1;
+  }
+  const run = env.run ?? execRunner;
+  const quiet = rest2.includes("--quiet");
+  const msIdx = rest2.indexOf("--milestone");
+  const msTitle = msIdx >= 0 ? rest2[msIdx + 1] : undefined;
+  if (verb === "gate" && !msTitle) {
+    err(PM_USAGE);
+    return 1;
+  }
+  const emit = (o) => out(JSON.stringify(o, null, 2));
+  try {
+    const info = discover(run, env.cwd);
+    const { root: _root, ...shown } = info;
+    if (!info.tracked) {
+      if (!quiet)
+        emit(shown);
+      return 0;
+    }
+    if (verb === "board") {
+      emit(shown);
+      return 0;
+    }
+    const now = env.now ?? new Date;
+    const owner = info.owner;
+    const repo = info.repo;
+    const project = info.project;
+    const fullName = `${owner}/${repo}`;
+    const viewer = fetchLocalLogin(run, info.root) ?? owner;
+    if (verb === "pickup") {
+      const active = activeMilestone(fetchMilestones(run, info.root, owner, repo, "open"));
+      const { items, kinds } = fetchItems(run, info.root, viewer, project.number, fullName);
+      const t = tiers(items, active, now);
+      emit({
+        board: { ...shown, item_kinds: kinds },
+        milestone: active,
+        in_progress: t.in_progress,
+        candidates: t.candidates,
+        order_basis: "number",
+        drift: drift(run, info.root, t.in_progress)
+      });
+      return 0;
+    }
+    if (verb === "lint") {
+      const issues = fetchOpenIssues(run, info.root, owner, repo);
+      const { items, kinds } = fetchItems(run, info.root, viewer, project.number, fullName);
+      const candidates = chooseBoard(info.linked, viewer, repo);
+      const r = lintAll({ issues, items, candidates, now });
+      emit({
+        board: { ...shown, item_kinds: kinds },
+        findings: r.findings,
+        counts: r.counts
+      });
+      return 0;
+    }
+    if (verb === "gate") {
+      const openMs = fetchMilestones(run, info.root, owner, repo, "open");
+      const found = openMs.find((m) => m.title === msTitle) ?? fetchMilestones(run, info.root, owner, repo, "closed").find((m) => m.title === msTitle);
+      if (!found) {
+        throw new PmError(1, `no milestone titled "${msTitle}"; open: ${openMs.map((m) => m.title).join(", ") || "(none)"}`);
+      }
+      const issues = fetchOpenIssues(run, info.root, owner, repo);
+      const { items } = fetchItems(run, info.root, viewer, project.number, fullName);
+      const v = gateVerdict(found, issues, items);
+      emit({ board: shown, milestone: found, ready: v.ready, open: v.open });
+      return 0;
+    }
+    err(PM_USAGE);
+    return 1;
+  } catch (e) {
+    if (e instanceof PmError) {
+      err(e.message);
+      return e.exit;
+    }
+    err(e instanceof Error ? e.message : String(e));
+    return 1;
+  }
+}
+var byTitle = (a, b) => a.localeCompare(b, "en", { numeric: true });
+function activeMilestone(list) {
+  const open2 = list.filter((m) => m.state === "open");
+  if (open2.length === 0)
+    return null;
+  const sorted = [...open2].sort((a, b) => {
+    if (a.due_on !== b.due_on) {
+      if (a.due_on === null)
+        return 1;
+      if (b.due_on === null)
+        return -1;
+      return a.due_on < b.due_on ? -1 : 1;
+    }
+    const t = byTitle(a.title, b.title);
+    return t !== 0 ? t : a.number - b.number;
+  });
+  return sorted[0];
+}
+function tiers(items, active, now) {
+  const open2 = items.filter((i) => i.state === "OPEN");
+  const byNumber = (a, b) => a.number - b.number;
+  const in_progress = open2.filter((i) => i.status === "In Progress").map((i) => ({
+    number: i.number,
+    title: i.title,
+    age_days: ageDays(i.updatedAt, now),
+    assignees: i.assignees,
+    milestone: i.milestone
+  })).sort(byNumber);
+  const backlog = open2.filter((i) => i.status === "Backlog");
+  const tier1 = active ? backlog.filter((i) => i.milestone === active.title) : [];
+  const tier2 = backlog.filter((i) => i.milestone === null && !i.labels.includes("backlog"));
+  const cand = (tier) => (i) => ({
+    tier,
+    number: i.number,
+    title: i.title,
+    labels: i.labels
+  });
+  return {
+    in_progress,
+    candidates: [
+      ...tier1.sort(byNumber).map(cand(1)),
+      ...tier2.sort(byNumber).map(cand(2))
+    ]
+  };
+}
+function drift(run, root, inProgress) {
+  const branch = run("git", ["branch", "--show-current"], root).stdout.trim();
+  let basis = "none";
+  let base = null;
+  if (run("git", ["rev-parse", "--abbrev-ref", "@{u}"], root).code === 0) {
+    basis = "upstream";
+    base = "@{u}";
+  } else if (branch && run("git", ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`], root).code === 0) {
+    basis = "origin-branch";
+    base = `origin/${branch}`;
+  }
+  let count = null;
+  if (base) {
+    const r = run("git", ["rev-list", "--count", `${base}..HEAD`], root);
+    count = r.code === 0 ? Number(r.stdout.trim()) : null;
+  }
+  let open_pr = null;
+  if (branch) {
+    const r = run("gh", [
+      "pr",
+      "list",
+      "--head",
+      branch,
+      "--state",
+      "open",
+      "--json",
+      "number,title"
+    ], root);
+    if (r.code === 0) {
+      const list = JSON.parse(r.stdout);
+      open_pr = list[0] ?? null;
+    }
+  }
+  return {
+    unpushed: { count, basis },
+    stale_in_progress: inProgress.filter((i) => i.age_days > STALE_DAYS),
+    open_pr
+  };
+}
+function gateVerdict(ms, issues, items) {
+  const status = new Map(items.map((i) => [i.number, i.status]));
+  const open2 = issues.filter((i) => i.milestone === ms.title).sort((a, b) => a.number - b.number).map((i) => ({
+    number: i.number,
+    title: i.title,
+    status: status.get(i.number) ?? null,
+    labels: i.labels
+  }));
+  return { ready: ms.open_issues === 0 && open2.length === 0, open: open2 };
+}
+
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
   const here = path2.dirname(fileURLToPath(entryFileUrl));
@@ -236,21 +809,24 @@ function isMainEntrypoint(importMetaUrl, argv1) {
   }
 }
 var USAGE2 = `usage: sidekick rules <install|check> --project|--user
+       ${PM_USAGE_LINE}
        sidekick --version`;
 function main(argv, ctx, out, err) {
-  const [sub, ...rest] = argv;
+  const [sub, ...rest2] = argv;
   const pluginDir = resolvePluginDir(ctx.entryFileUrl);
   if (sub === "--version") {
     out(readVersion(pluginDir));
     return 0;
   }
+  if (sub === "pm")
+    return runPmCli(rest2, { cwd: ctx.cwd }, out, err);
   if (sub !== "rules") {
     err(USAGE2);
     return 1;
   }
   const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path2.join(os.homedir(), ".claude");
   const src = ctx.env.SIDEKICK_RULES_DIR || path2.join(pluginDir, "rules");
-  return runRulesCli(rest, { src, cwd: ctx.cwd, claudeHome }, out);
+  return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;
 var _isEntry = _importMetaMain ?? isMainEntrypoint(import.meta.url, process.argv[1]);
