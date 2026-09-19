@@ -403,6 +403,7 @@ describe('runPmCli lint', () => {
     );
     expect(code).toBe(0);
     const j = JSON.parse(c.out[0]) as {
+      board: { item_kinds: Record<string, number> };
       counts: Record<string, number>;
       findings: Record<string, unknown[]>;
     };
@@ -410,5 +411,16 @@ describe('runPmCli lint', () => {
       Object.keys(j.findings).sort(),
     );
     expect(Object.keys(j.counts).sort()).toEqual([...LINT_IDS].sort());
+    // `item_kinds` tallies every node the Items page saw; its values must
+    // sum to the same totalCount fetchItems reports (Task 6's `pickup`
+    // asserts the same fixture-derived fact for its own `board` block).
+    const p1 = JSON.parse(fixture('items-p1.json')) as {
+      data: { user: { projectV2: { items: { totalCount: number } } } };
+    };
+    const kindsSum = Object.values(j.board.item_kinds).reduce(
+      (a, b) => a + b,
+      0,
+    );
+    expect(kindsSum).toBe(p1.data.user.projectV2.items.totalCount);
   });
 });

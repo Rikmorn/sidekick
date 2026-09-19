@@ -64,6 +64,7 @@ describe('predicates on synthetic input', () => {
         noStatus([
           item({ number: 1, status: null }),
           item({ number: 2, status: null, state: 'CLOSED' }),
+          item({ number: 3 }),
         ]),
       ),
     ).toEqual([1]);
@@ -71,7 +72,11 @@ describe('predicates on synthetic input', () => {
   test('openInDone and completedNotDone', () => {
     expect(
       numbers(
-        openInDone([item({ number: 1, status: 'Done' }), item({ number: 2 })]),
+        openInDone([
+          item({ number: 1, status: 'Done' }),
+          item({ number: 2 }),
+          item({ number: 3, status: 'Done', state: 'CLOSED' }),
+        ]),
       ),
     ).toEqual([1]);
     expect(
@@ -95,6 +100,7 @@ describe('predicates on synthetic input', () => {
             stateReason: 'NOT_PLANNED',
             status: 'Backlog',
           }),
+          item({ number: 4, stateReason: 'COMPLETED' }),
         ]),
       ),
     ).toEqual([1]);
@@ -128,6 +134,7 @@ describe('predicates on synthetic input', () => {
         backlogInMilestone([
           issue({ number: 1, labels: ['backlog', 'area:pm'], milestone: 'R6' }),
           issue({ number: 2, labels: ['backlog', 'area:pm'] }),
+          issue({ number: 3, milestone: 'R6' }),
         ]),
       ),
     ).toEqual([1]);
@@ -167,6 +174,11 @@ describe('predicates on synthetic input', () => {
               number: 2,
               status: 'In Progress',
               updatedAt: '2026-09-12T00:00:00Z',
+            }),
+            item({
+              number: 3,
+              status: 'Backlog',
+              updatedAt: '2026-09-01T00:00:00Z',
             }),
           ],
           now,
