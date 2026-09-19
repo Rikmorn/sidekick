@@ -1,4 +1,3 @@
-// bin/helpers/fixtures/pm/runner.ts
 /**
  * Test-only. Serves captured `gh` and `git` output by `runnerKey`, and
  * throws on any call it has no fixture for, so a missing fixture is a
@@ -64,7 +63,10 @@ export function fixtureRunner(map: FixtureMap): Runner {
 const ISSUES_ARGS =
   'gh issue list -R Rikmorn/sidekick --state open --limit 500 --json number,title,labels,body,milestone,updatedAt';
 
-/** The tracked-repo scenario: sidekick on board #2, on `master`, no upstream. */
+/**
+ * The tracked-repo scenario: sidekick on board #2, on `master`, no
+ * upstream.
+ */
 export function sidekickMap(): FixtureMap {
   const p1 = fixture('items-p1.json');
   const cursor = (

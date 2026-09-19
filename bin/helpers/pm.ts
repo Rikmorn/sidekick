@@ -314,7 +314,7 @@ const byTitle = (a: string, b: string): number =>
 export function activeMilestone(list: Milestone[]): Milestone | null {
   const open = list.filter((m) => m.state === 'open');
   if (open.length === 0) return null;
-  const sorted = [...open].sort((a, b) => {
+  const sorted = open.sort((a, b) => {
     if (a.due_on !== b.due_on) {
       if (a.due_on === null) return 1;
       if (b.due_on === null) return -1;

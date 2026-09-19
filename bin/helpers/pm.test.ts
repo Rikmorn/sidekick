@@ -379,6 +379,10 @@ describe('tiers', () => {
     expect(t.in_progress.map((i) => i.number)).toEqual([1, 7]);
     expect(t.in_progress[0].age_days).toBe(9);
     expect(t.in_progress[1].age_days).toBe(14);
+    expect(t.in_progress.map((i) => i.assignees)).toEqual([
+      ['Rikmorn'],
+      ['Someone'],
+    ]);
     expect(t.candidates.map((c) => [c.tier, c.number])).toEqual([
       [1, 9],
       [2, 3],
@@ -492,7 +496,6 @@ describe('runPmCli pickup', () => {
     expect(j.in_progress.map((i) => i.number)).toEqual(
       expectedInProgress.map((i) => i.number),
     );
-    expect(j.in_progress[0].assignees).toEqual(expectedInProgress[0].assignees);
     expect(j.in_progress[0].milestone).toBe(expectedInProgress[0].milestone);
     // `item_id` is the board item's node id (Task item 1, #109 follow-up):
     // every id `fetchItems` parses is a `PVTI_…` project-item id, never the

@@ -1,4 +1,3 @@
-// bin/helpers/pm-lint.ts
 /**
  * The board's invariants as predicates. Each returns the items that
  * contradict it; `lintAll` runs them all. A non-zero count means the board

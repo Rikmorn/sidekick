@@ -694,7 +694,7 @@ function activeMilestone(list) {
   const open2 = list.filter((m) => m.state === "open");
   if (open2.length === 0)
     return null;
-  const sorted = [...open2].sort((a, b) => {
+  const sorted = open2.sort((a, b) => {
     if (a.due_on !== b.due_on) {
       if (a.due_on === null)
         return 1;
