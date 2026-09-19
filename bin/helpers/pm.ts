@@ -124,8 +124,9 @@ export function discover(run: Runner, cwd: string): BoardInfo {
   return info;
 }
 
-export const PM_USAGE =
-  'usage: sidekick pm <board|pickup|lint|gate> [--quiet] [--milestone <title>]';
+export const PM_USAGE_LINE =
+  'sidekick pm <board|pickup|lint|gate> [--quiet] [--milestone <title>]';
+export const PM_USAGE = `usage: ${PM_USAGE_LINE}`;
 
 export interface PmEnv {
   cwd: string;

@@ -169,6 +169,7 @@ describe('runPmCli board', () => {
     };
     expect(j.tracked).toBe(true);
     expect(j.project.number).toBe(2);
+    expect('root' in j).toBe(false);
   });
   test('--quiet prints nothing and exits 0 when not tracked', () => {
     const c = capture();
