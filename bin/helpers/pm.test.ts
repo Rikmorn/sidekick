@@ -429,7 +429,7 @@ describe('runPmCli lint', () => {
 describe('gateVerdict', () => {
   test('ready only when the milestone has no open issues; lists the open ones with Status', () => {
     const m = ms(6, 'R6');
-    const issues = [issue6(1, 'R6'), issue6(2, 'R6'), issue6(3, 'R7')];
+    const issues = [issue6(2, 'R6'), issue6(1, 'R6'), issue6(3, 'R7')];
     const items = [item({ number: 1, status: 'In Progress' })];
     const v = gateVerdict({ ...m, open_issues: 2 }, issues, items);
     expect(v.ready).toBe(false);
@@ -472,6 +472,32 @@ describe('runPmCli gate', () => {
     expect(j.milestone.title).toBe(title);
     expect(j.open.length).toBe(openCount);
     expect(j.ready).toBe(open[0].open_issues === 0 && openCount === 0);
+  });
+  test('falls back to the closed set when the title is not open', () => {
+    const c = capture();
+    const closed = JSON.parse(fixture('milestones-closed.json')) as Array<{
+      title: string;
+      open_issues: number;
+    }>;
+    const title = closed[0].title;
+    const issues = JSON.parse(fixture('issues-open.json')) as Array<{
+      milestone: { title: string } | null;
+    }>;
+    const openCount = issues.filter((i) => i.milestone?.title === title).length;
+    const code = runPmCli(
+      ['gate', '--milestone', title],
+      { cwd: '/', run: fixtureRunner(sidekickMap()) },
+      c.o,
+      c.e,
+    );
+    expect(code).toBe(0);
+    const j = JSON.parse(c.out[0]) as {
+      milestone: { title: string };
+      ready: boolean;
+      open: unknown[];
+    };
+    expect(j.milestone.title).toBe(title);
+    expect(j.ready).toBe(closed[0].open_issues === 0 && openCount === 0);
   });
   test('an unknown title is exit 1 and names the open milestones', () => {
     const c = capture();
