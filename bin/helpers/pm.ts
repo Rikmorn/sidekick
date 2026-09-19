@@ -16,6 +16,7 @@ import {
   fetchScopeHeaders,
   fetchStatusField,
   hasProjectScope,
+  type Issue,
   type Item,
   type LinkedBoard,
   type Milestone,
@@ -191,6 +192,12 @@ export function runPmCli(
   }
   const run = env.run ?? execRunner;
   const quiet = rest.includes('--quiet');
+  const msIdx = rest.indexOf('--milestone');
+  const msTitle = msIdx >= 0 ? rest[msIdx + 1] : undefined;
+  if (verb === 'gate' && !msTitle) {
+    err(PM_USAGE);
+    return 1;
+  }
   const emit = (o: unknown): void => out(JSON.stringify(o, null, 2));
   try {
     const info = discover(run, env.cwd);
@@ -249,7 +256,32 @@ export function runPmCli(
       });
       return 0;
     }
-    err(`${verb}: not implemented yet`);
+    if (verb === 'gate') {
+      const openMs = fetchMilestones(run, info.root, owner, repo, 'open');
+      const found =
+        openMs.find((m) => m.title === msTitle) ??
+        fetchMilestones(run, info.root, owner, repo, 'closed').find(
+          (m) => m.title === msTitle,
+        );
+      if (!found) {
+        throw new PmError(
+          1,
+          `no milestone titled "${msTitle}"; open: ${openMs.map((m) => m.title).join(', ') || '(none)'}`,
+        );
+      }
+      const issues = fetchOpenIssues(run, info.root, owner, repo);
+      const { items } = fetchItems(
+        run,
+        info.root,
+        viewer,
+        project.number,
+        fullName,
+      );
+      const v = gateVerdict(found, issues, items);
+      emit({ board: shown, milestone: found, ready: v.ready, open: v.open });
+      return 0;
+    }
+    err(PM_USAGE);
     return 1;
   } catch (e) {
     if (e instanceof PmError) {
@@ -404,4 +436,30 @@ export function drift(
     stale_in_progress: inProgress.filter((i) => i.age_days > STALE_DAYS),
     open_pr,
   };
+}
+
+export function gateVerdict(
+  ms: Milestone,
+  issues: Issue[],
+  items: Item[],
+): {
+  ready: boolean;
+  open: Array<{
+    number: number;
+    title: string;
+    status: string | null;
+    labels: string[];
+  }>;
+} {
+  const status = new Map(items.map((i) => [i.number, i.status]));
+  const open = issues
+    .filter((i) => i.milestone === ms.title)
+    .sort((a, b) => a.number - b.number)
+    .map((i) => ({
+      number: i.number,
+      title: i.title,
+      status: status.get(i.number) ?? null,
+      labels: i.labels,
+    }));
+  return { ready: ms.open_issues === 0 && open.length === 0, open };
 }
