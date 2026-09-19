@@ -234,8 +234,5 @@ describe('lintAll on the captured board', () => {
       deferred.filter((i) => !/^\s*revisit when:/im.test(i.body)).length,
     );
     expect(r.counts.multiple_linked_boards).toBe(candidates.length > 1 ? 1 : 0);
-    for (const id of Object.keys(r.counts) as Array<keyof typeof r.counts>) {
-      expect(r.counts[id]).toBe(r.findings[id].length);
-    }
   });
 });

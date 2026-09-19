@@ -31,7 +31,10 @@ export const execRunner: Runner = (cmd, args, cwd) => {
   };
 };
 
-/** Exit code carried out of the data layer; `runPmCli` turns it into a return. */
+/**
+ * Exit code carried out of the data layer; `runPmCli` turns it into a
+ * return.
+ */
 export class PmError extends Error {
   readonly exit: 1 | 2;
   constructor(exit: 1 | 2, message: string) {
@@ -94,7 +97,10 @@ export function ageDays(iso: string, now: Date): number {
   return Math.floor((now.getTime() - new Date(iso).getTime()) / 86_400_000);
 }
 
-/** Seven days is prescriptive: an In Progress card older than that is a question. */
+/**
+ * Seven days is prescriptive: an In Progress card older than that is a
+ * question.
+ */
 export const STALE_DAYS = 7;
 
 export interface LinkedBoard {

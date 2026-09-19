@@ -72,6 +72,61 @@ const capture = () => {
     e: (l: string) => err.push(l),
   };
 };
+
+interface RawItemNode {
+  fieldValueByName: { name?: string } | null;
+  content: {
+    __typename: string;
+    number?: number;
+    state?: 'OPEN' | 'CLOSED';
+    milestone?: { title: string } | null;
+    labels?: { nodes: Array<{ name: string }> };
+    assignees?: { nodes: Array<{ login: string }> };
+    repository?: { nameWithOwner: string };
+  } | null;
+}
+interface FixtureIssue {
+  number: number;
+  status: string | null;
+  milestone: string | null;
+  labels: string[];
+  assignees: string[];
+}
+/**
+ * Open `Issue` cards of `Rikmorn/sidekick`, independently parsed from the
+ * committed `items-p1`/`items-p2` fixtures — the same source `fetchItems`
+ * reads, but computed without calling production code, so a `tiers` or
+ * `runPmCli` assertion built from this cannot be vacuous by construction.
+ */
+const openIssues = (): FixtureIssue[] => {
+  const nodes = ['items-p1.json', 'items-p2.json'].flatMap(
+    (name) =>
+      (
+        JSON.parse(fixture(name)) as {
+          data: { user: { projectV2: { items: { nodes: RawItemNode[] } } } };
+        }
+      ).data.user.projectV2.items.nodes,
+  );
+  return nodes
+    .filter(
+      (
+        n,
+      ): n is RawItemNode & {
+        content: NonNullable<RawItemNode['content']> & { number: number };
+      } =>
+        n.content?.__typename === 'Issue' &&
+        n.content.repository?.nameWithOwner === 'Rikmorn/sidekick' &&
+        n.content.state === 'OPEN' &&
+        n.content.number !== undefined,
+    )
+    .map((n) => ({
+      number: n.content.number,
+      status: n.fieldValueByName?.name ?? null,
+      milestone: n.content.milestone?.title ?? null,
+      labels: (n.content.labels?.nodes ?? []).map((l) => l.name),
+      assignees: (n.content.assignees?.nodes ?? []).map((a) => a.login),
+    }));
+};
 const untracked = () =>
   fixtureRunner({
     'gh --version': 'gh version 2.96.0 (2026-07-02)\n',
@@ -104,6 +159,10 @@ describe('discover', () => {
     expect(info.reason).toBeNull();
     expect(info.owner).toBe('Rikmorn');
     expect(info.repo).toBe('sidekick');
+    if (!info.tracked) throw new Error('expected tracked');
+    // `viewer` is the GraphQL identity threaded into the later `user(login:)`
+    // queries; it must come from `d.viewer`, not a second local-login read.
+    expect(info.viewer).toBe('Rikmorn');
     expect(info.project?.number).toBe(2);
     expect(Object.keys(info.status_field?.options ?? {}).sort()).toEqual([
       'Backlog',
@@ -118,6 +177,22 @@ describe('discover', () => {
     const info = discover(untracked(), '/');
     expect(info.tracked).toBe(false);
     expect(info.reason).toBe('remote-owner-mismatch');
+  });
+  test('a missing local login is its own reason, not a false remote-owner-mismatch', () => {
+    const info = discover(
+      fixtureRunner({
+        'gh --version': 'gh version 2.96.0 (2026-07-02)\n',
+        'git remote get-url origin': 'git@github.com:Rikmorn/sidekick.git\n',
+        'gh config get -h github.com user': {
+          code: 1,
+          stdout: '',
+          stderr: 'no such key\n',
+        },
+      }),
+      '/',
+    );
+    expect(info.tracked).toBe(false);
+    expect(info.reason).toBe('no-local-login');
   });
   test('no origin, not github, and no board each name their reason', () => {
     const base = {
@@ -280,6 +355,14 @@ describe('tiers', () => {
   const now = new Date('2026-09-19T00:00:00Z');
   test('in progress, then the active milestone, then unmilestoned and not deferred', () => {
     const items = [
+      // Out of number order on purpose: `in_progress` must sort, not just
+      // preserve the order items arrived in.
+      item({
+        number: 7,
+        status: 'In Progress',
+        updatedAt: '2026-09-05T00:00:00Z',
+        assignees: ['Someone'],
+      }),
       item({
         number: 1,
         status: 'In Progress',
@@ -293,8 +376,9 @@ describe('tiers', () => {
       item({ number: 6, status: 'Done', state: 'CLOSED' }),
     ];
     const t = tiers(items, ms(6, 'R6'), now);
-    expect(t.in_progress.map((i) => i.number)).toEqual([1]);
+    expect(t.in_progress.map((i) => i.number)).toEqual([1, 7]);
     expect(t.in_progress[0].age_days).toBe(9);
+    expect(t.in_progress[1].age_days).toBe(14);
     expect(t.candidates.map((c) => [c.tier, c.number])).toEqual([
       [1, 9],
       [2, 3],
@@ -367,7 +451,11 @@ describe('runPmCli pickup', () => {
     const j = JSON.parse(c.out[0]) as {
       board: { tracked: boolean; item_kinds: Record<string, number> };
       milestone: { title: string } | null;
-      in_progress: unknown[];
+      in_progress: Array<{
+        number: number;
+        assignees: string[];
+        milestone: string | null;
+      }>;
       candidates: Array<{ tier: number; number: number }>;
       order_basis: string;
       drift: { unpushed: { basis: string } };
@@ -379,7 +467,36 @@ describe('runPmCli pickup', () => {
       title: string;
     }>;
     expect(open.map((m) => m.title)).toContain(j.milestone?.title ?? '');
-    for (const cand of j.candidates) expect([1, 2]).toContain(cand.tier);
+    const activeTitle = j.milestone?.title ?? null;
+
+    const issues = openIssues();
+    const expectedInProgress = issues
+      .filter((i) => i.status === 'In Progress')
+      .sort((a, b) => a.number - b.number);
+    expect(expectedInProgress.length).toBeGreaterThan(0);
+    expect(j.in_progress.map((i) => i.number)).toEqual(
+      expectedInProgress.map((i) => i.number),
+    );
+    expect(j.in_progress[0].assignees).toEqual(expectedInProgress[0].assignees);
+    expect(j.in_progress[0].milestone).toBe(expectedInProgress[0].milestone);
+
+    const tier1 = issues
+      .filter((i) => i.status === 'Backlog' && i.milestone === activeTitle)
+      .map((i) => i.number)
+      .sort((a, b) => a - b);
+    const tier2 = issues
+      .filter(
+        (i) =>
+          i.status === 'Backlog' &&
+          i.milestone === null &&
+          !i.labels.includes('backlog'),
+      )
+      .map((i) => i.number)
+      .sort((a, b) => a - b);
+    expect(j.candidates.map((c) => [c.tier, c.number])).toEqual([
+      ...tier1.map((n) => [1, n]),
+      ...tier2.map((n) => [2, n]),
+    ]);
     // `item_kinds` tallies every node the Items page saw; its values must
     // sum to the same totalCount fetchItems reports.
     const p1 = JSON.parse(fixture('items-p1.json')) as {
@@ -395,10 +512,44 @@ describe('runPmCli pickup', () => {
 
 describe('runPmCli lint', () => {
   test('prints findings and counts and exits 0 whatever the counts are', () => {
+    // A second open board titled `sidekick` and owned by the viewer, so
+    // `chooseBoard` has two matching candidates. This pins the wiring at
+    // `runPmCli`'s `lint` verb, not just the `multipleLinkedBoards`
+    // predicate: on the unmodified fixture there is exactly one matching
+    // candidate, so `candidates: []` and the real call both read 0.
+    const map = sidekickMap();
+    const discoveryKey =
+      'gh api graphql -f query=query Discovery -f owner=Rikmorn -f name=sidekick';
+    const discovery = JSON.parse(fixture('discovery-sidekick.json')) as {
+      data: {
+        repository: {
+          projectsV2: {
+            nodes: Array<{
+              number: number;
+              title: string;
+              closed: boolean;
+              url: string;
+              id: string;
+              owner: { __typename: string; login: string };
+            }>;
+          };
+        };
+      };
+    };
+    discovery.data.repository.projectsV2.nodes.push({
+      number: 99,
+      title: 'sidekick',
+      closed: false,
+      url: 'https://github.com/users/Rikmorn/projects/99',
+      id: 'PVT_99',
+      owner: { __typename: 'User', login: 'Rikmorn' },
+    });
+    map[discoveryKey] = JSON.stringify(discovery);
+
     const c = capture();
     const code = runPmCli(
       ['lint'],
-      { cwd: '/', run: fixtureRunner(sidekickMap()) },
+      { cwd: '/', run: fixtureRunner(map) },
       c.o,
       c.e,
     );
@@ -411,7 +562,12 @@ describe('runPmCli lint', () => {
     expect(Object.keys(j.counts).sort()).toEqual(
       Object.keys(j.findings).sort(),
     );
+    // Looks redundant with the equality above, since `counts` is built
+    // from `LINT_IDS` — but `Object.keys` dedupes and `LINT_IDS` does not,
+    // so this is the only check that would catch a duplicated id in
+    // `LINT_IDS`, which typechecks clean.
     expect(Object.keys(j.counts).sort()).toEqual([...LINT_IDS].sort());
+    expect(j.counts.multiple_linked_boards).toBe(1);
     // `item_kinds` tallies every node the Items page saw; its values must
     // sum to the same totalCount fetchItems reports (Task 6's `pickup`
     // asserts the same fixture-derived fact for its own `board` block).
@@ -438,6 +594,13 @@ describe('gateVerdict', () => {
       { number: 2, title: 't2', status: null, labels: ['area:pm'] },
     ]);
     expect(gateVerdict({ ...m, open_issues: 0 }, [], []).ready).toBe(true);
+    // The two clauses of `ready` must each hold independently: REST's
+    // `open_issues` and the issues-joined `open` list can disagree, and a
+    // disagreement in either direction is not ready.
+    expect(
+      gateVerdict({ ...m, open_issues: 0 }, [issue6(1, 'R6')], []).ready,
+    ).toBe(false);
+    expect(gateVerdict({ ...m, open_issues: 3 }, [], []).ready).toBe(false);
   });
 });
 

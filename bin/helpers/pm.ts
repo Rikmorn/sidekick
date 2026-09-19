@@ -43,6 +43,7 @@ export interface Preflight {
 export type NotTrackedReason =
   | 'no-origin'
   | 'not-github'
+  | 'no-local-login'
   | 'remote-owner-mismatch'
   | 'no-board';
 export interface TrackedBoard {
@@ -50,6 +51,7 @@ export interface TrackedBoard {
   reason: null;
   owner: string;
   repo: string;
+  viewer: string;
   project: { number: number; id: string; url: string; title: string };
   status_field: StatusField | null;
   linked: LinkedBoard[];
@@ -129,6 +131,12 @@ export function discover(run: Runner, cwd: string): BoardInfo {
   const parsed = parseOrigin(origin.stdout);
   if (!parsed) return untracked('not-github');
   const login = fetchLocalLogin(run, root);
+  if (login === null) {
+    return untracked('no-local-login', {
+      owner: parsed.owner,
+      repo: parsed.repo,
+    });
+  }
   if (login !== parsed.owner) {
     return untracked('remote-owner-mismatch', {
       owner: parsed.owner,
@@ -159,6 +167,7 @@ export function discover(run: Runner, cwd: string): BoardInfo {
     reason: null,
     owner: parsed.owner,
     repo: parsed.repo,
+    viewer: d.viewer,
     project: { number: first.number, id: f.id, url: f.url, title: f.title },
     status_field: f.statusField,
     linked: d.boards,
@@ -215,7 +224,7 @@ export function runPmCli(
     const repo = info.repo;
     const project = info.project;
     const fullName = `${owner}/${repo}`;
-    const viewer = fetchLocalLogin(run, info.root) ?? owner;
+    const viewer = info.viewer;
     if (verb === 'pickup') {
       const active = activeMilestone(
         fetchMilestones(run, info.root, owner, repo, 'open'),
@@ -281,6 +290,8 @@ export function runPmCli(
       emit({ board: shown, milestone: found, ready: v.ready, open: v.open });
       return 0;
     }
+    // Unreachable: VERBS is checked above and every member handles and
+    // returns. Kept because TypeScript cannot prove the verb set exhaustive.
     err(PM_USAGE);
     return 1;
   } catch (e) {
@@ -424,11 +435,15 @@ export function drift(
       root,
     );
     if (r.code === 0) {
-      const list = JSON.parse(r.stdout) as Array<{
-        number: number;
-        title: string;
-      }>;
-      open_pr = list[0] ?? null;
+      try {
+        const list = JSON.parse(r.stdout) as Array<{
+          number: number;
+          title: string;
+        }>;
+        open_pr = list[0] ?? null;
+      } catch {
+        open_pr = null;
+      }
     }
   }
   return {

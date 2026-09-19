@@ -4,6 +4,41 @@
  * throws on any call it has no fixture for, so a missing fixture is a
  * failing test rather than a silent pass.
  */
+//
+// Captured 2026-09-19 against Rikmorn/sidekick with gh 2.96.0. Recapture
+// from the repo root with the commands below; run from a shell that can
+// `cd` into this directory first. Q_DISC, Q_FIELD and Q_ITEMS are
+// DISCOVERY_QUERY, FIELD_QUERY and ITEMS_QUERY in `../../pm-data.ts`,
+// quoted as `-f query="$Q_DISC"` etc. Q_ITEMS must have its `first: 100`
+// overridden to `first: 50`: board #2 held 99 items at capture, so 50
+// forces a real two-page fixture. Production reads at 100, where today's
+// 99 items are a single page — recapturing at 100 would silently collapse
+// the suite's only pagination coverage to one page.
+//
+//   gh api graphql -f query="$Q_DISC" -f owner=Rikmorn -f name=sidekick \
+//     > discovery-sidekick.json
+//   gh api graphql -f query="$Q_DISC" -f owner=Rikmorn -f name=furnace \
+//     > discovery-furnace.json
+//   gh api graphql -f query="$Q_FIELD" -f login=Rikmorn -F number=2 \
+//     > field-sidekick.json
+//   gh api graphql -f query="$Q_ITEMS" -f login=Rikmorn -F number=2 \
+//     > items-p1.json
+//   CUR=$(python3 -c "import json; d=json.load(open('items-p1.json')); \
+// print(d['data']['user']['projectV2']['items']['pageInfo']['endCursor'])")
+//   gh api graphql -f query="$Q_ITEMS" -f login=Rikmorn -F number=2 \
+//     -f after="$CUR" > items-p2.json
+//   gh api "repos/Rikmorn/sidekick/milestones?state=open&per_page=100" \
+//     > milestones-open.json
+//   gh api "repos/Rikmorn/sidekick/milestones?state=closed&per_page=100" \
+//     > milestones-closed.json
+//   gh issue list -R Rikmorn/sidekick --state open --limit 500 \
+//     --json number,title,labels,body,milestone,updatedAt \
+//     > issues-open.json
+//   gh pr list -R Rikmorn/sidekick --head master --state open \
+//     --json number,title > prs-master.json
+//   gh --version | head -1 > gh-version.txt
+//   gh api -i user 2>/dev/null | grep -iE '^(HTTP/|x-oauth-scopes)' \
+//     > user-headers.txt
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
