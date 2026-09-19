@@ -1,0 +1,21 @@
+{
+  "data": {
+    "user": {
+      "projectV2": {
+        "id": "PVT_kwHOABcx2M4BiJeE",
+        "title": "sidekick",
+        "url": "https://github.com/users/Rikmorn/projects/2",
+        "field": {
+          "id": "PVTSSF_lAHOABcx2M4BiJeEzhhCisU",
+          "name": "Status",
+          "options": [
+            { "id": "f75ad846", "name": "Backlog" },
+            { "id": "47fc9ee4", "name": "In Progress" },
+            { "id": "1fa15991", "name": "Verify" },
+            { "id": "98236657", "name": "Done" }
+          ]
+        }
+      }
+    }
+  }
+}

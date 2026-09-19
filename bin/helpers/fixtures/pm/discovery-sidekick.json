@@ -1,0 +1,27 @@
+{
+  "data": {
+    "viewer": { "login": "Rikmorn" },
+    "repository": {
+      "projectsV2": {
+        "nodes": [
+          {
+            "number": 2,
+            "title": "sidekick",
+            "closed": false,
+            "url": "https://github.com/users/Rikmorn/projects/2",
+            "id": "PVT_kwHOABcx2M4BiJeE",
+            "owner": { "__typename": "User", "login": "Rikmorn" }
+          },
+          {
+            "number": 1,
+            "title": "@Rikmorn's untitled project",
+            "closed": true,
+            "url": "https://github.com/users/Rikmorn/projects/1",
+            "id": "PVT_kwHOABcx2M4BiJYK",
+            "owner": { "__typename": "User", "login": "Rikmorn" }
+          }
+        ]
+      }
+    }
+  }
+}

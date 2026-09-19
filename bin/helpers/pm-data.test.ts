@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
 import {
   ageDays,
   execRunner,
@@ -97,5 +98,39 @@ describe('execRunner', () => {
       '/',
     );
     expect(r.code).not.toBe(0);
+  });
+});
+
+describe('fixtureRunner', () => {
+  test('serves the mapped body and throws on an unknown call', () => {
+    const run = fixtureRunner({ 'gh --version': 'gh version 9.9.9 (x)\n' });
+    expect(run('gh', ['--version'], '/').stdout).toBe('gh version 9.9.9 (x)\n');
+    expect(() => run('git', ['status'], '/')).toThrow(
+      'no fixture for: git status',
+    );
+  });
+  test('sidekickMap serves both item pages under their real keys', () => {
+    const map = sidekickMap();
+    const run = fixtureRunner(map);
+    const base = [
+      'api',
+      'graphql',
+      '-f',
+      'query=query Items(x)',
+      '-f',
+      'login=Rikmorn',
+      '-F',
+      'number=2',
+    ];
+    const p1 = run('gh', base, '/');
+    const cursor = (
+      JSON.parse(p1.stdout) as {
+        data: {
+          user: { projectV2: { items: { pageInfo: { endCursor: string } } } };
+        };
+      }
+    ).data.user.projectV2.items.pageInfo.endCursor;
+    const p2 = run('gh', [...base, '-f', `after=${cursor}`], '/');
+    expect(p2.stdout.length).toBeGreaterThan(100);
   });
 });

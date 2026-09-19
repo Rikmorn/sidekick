@@ -1,0 +1,249 @@
+[
+  {
+    "body": "Filed under the sk-* test-mode instruction (2026-09-19): rule friction goes on the board for triage.\n\n## Problem\n\n`plugin/rules/sk-pm-conventions.md:19` names the board columns — Backlog · In Progress · Verify · Done — and defines none of them. `Verify` in particular has no stated meaning, and the one ruling about it (\"verification moves to use, not a review queue\"; the column was emptied on that ruling, 2026-09-17) lives only in session memory. A consumer repo reading the rule sees a column whose name suggests a review queue that the house has decided it is not.\n\n`sidekick pm lint` (#109) treats `Verify` as a valid Status and nothing more; `sk-track` close (#112) sets Done directly. If Verify has a role — a card parked on \"in use, not yet trusted\" — the rule should say so; if it has none, the reference board (#110's copy source) should drop the column.\n\n## What would resolve it\n\nOne sentence per column in `sk-pm-conventions.md` §Board discipline, or the column removed from board #2 before #110 copies it into furnace.\n\nRevisit when: #113's close ritual is designed (it decides what a card does between \"merged\" and \"released\"), or #110 is about to copy the board.\n",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzRIL3A",
+        "name": "backlog",
+        "description": "Deliberately deferred; the body states what would unblock it",
+        "color": "C5DEF5"
+      },
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzST4jA",
+        "name": "area:guidance",
+        "description": "Portable rules and guidance content",
+        "color": "C2E0C6"
+      }
+    ],
+    "milestone": null,
+    "number": 114,
+    "title": "The Verify column is named but never defined; the verification-moves-to-use ruling lives only in memory",
+    "updatedAt": "2026-09-19T14:43:46Z"
+  },
+  {
+    "body": "Milestone: R6 — PM layer · ships `sk-milestone` · last; R6's own close is its first run.\n\n## Problem\n\nMilestones here have no stated outcome to audit against, no gate on what enters them, and no close ritual beyond \"tag and release\". Scope creeps because nothing asks whether an issue serves the outcome, and the backlog balloons because nothing sweeps it. `sk-pm-conventions.md` names `change-request` triage, but nothing runs it.\n\n## What this ships\n\nOne operator-invoked skill with three moments.\n\n**Open.** A milestone is created with an outcome sentence in its description (what will be true when it closes); a seed scan over `label:backlog` issues whose stated condition now holds; sizing to one or two sessions per ADR-0009.\n\n**Groom.** Stale sweep with a policy (stale and close windows, exempt labels, `not planned` with a comment — never silent); `change-request` triage before any absorption; Won't-Do with the reason noted; every finding is a proposal, nothing auto-written. Extension test from Shape Up: a milestone extends only for must-haves that survived scope-hammering and are all downhill.\n\n**Close.** Audit against the outcome — each gap gets an issue or it did not matter; disposition every open issue (carry, not planned with comment, or back to backlog with a condition); bump the version in both manifests, rebuild, commit; annotated tag; `gh release create --verify-tag --generate-notes`; PATCH the milestone closed; \"resolved in <version>\" comment on each closed issue; a learning record for the milestone if the bar holds.\n\n## Mechanism facts (verified)\n\n- No `gh milestone`: create with `gh api -X POST repos/{o}/{r}/milestones -f title= -f description=`; assign with `gh issue edit N --milestone`; close with `gh api -X PATCH repos/{o}/{r}/milestones/{n} -f state=closed`. Release from a tag: `gh release create <tag> --verify-tag`. GitHub links a milestone to a release nowhere; the link is prose.\n- Milestone progress in one GraphQL call: `issues(states: OPEN)` and `CLOSED` counts (gh-milestone's shape).\n- Cloud routines can run `gh` on a schedule or on GitHub events (research-round lane 3; not re-verified) — a possible home for the sweep outside sessions. Not in scope; noted only.\n\n## Borrow\n\n- Close ceremony order ← gringolito/github-backlog-management-skill `skills/close-release/SKILL.md` §2–6\n- Audit gates completion; `passed | gaps_found` ← GSD `audit-milestone.md`\n- \"Each gets an issue or it did not matter\"; \"every claim carries its query\" ← agentdecksdk/agentdeck `.claude/skills/milestone-retro/SKILL.md:44-52`\n- Stale policy shape (windows, `not_planned`, exempt labels, unstale on activity) ← actions/stale `action.yml:21-55,119-122`\n- \"Code-presence alone is Verify, not Close\"; never silent-close ← forcedotcom/salesforcedx-vscode `.claude/skills/backlog-grooming/checks.md:64-66`\n- Extension gate; \"Interesting. Maybe some day.\" ← basecamp.com/shapeup ch.14 §When to extend a project, ch.3\n- 20-day no-response close with comment ← kubernetes/community `contributors/guide/issue-triage.md`\n- \"Resolved in version X\" comment ← semantic-release/github `lib/success.js:193-239`\n- Bump-and-commit before tag ← richkuo/rk-skills `skills/create-release` step 4\n- Seed scan at milestone start ← GSD `new-milestone.md` §2.5\n\n## Decisions taken at filing\n\n- Groom is in R6, not deferred: \"backlog balloons\" is the absence of this moment. If R6 runs over two sessions, groom splits into its own issue rather than the milestone stretching — the extension test applies to R6 itself.\n- Product-level thinking for this repo is exactly two lines: the outcome at open, the audit at close. Heavier artefacts belong to aesir's own layer, not here.\n\n## Tasks\n\n- [ ] Brainstorm the three moments; settle the stale-policy numbers as prescriptive limits\n- [ ] Amend `sk-pm-conventions.md`: outcome in the milestone description; the extension test; sweep cadence\n- [ ] Write `sk-milestone`\n- [ ] Close R6 through it: 0.3.0, release, learning record\n",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzST4Xw",
+        "name": "area:pm",
+        "description": "PM system: board, issues, conventions, graph",
+        "color": "FBCA04"
+      }
+    ],
+    "milestone": {
+      "number": 6,
+      "title": "R6 — PM layer",
+      "description": "Outcome: sessions start from the board and end on it; milestones open with an outcome and close with an audit and a release; every backlog item carries its unblock condition or gets closed. Scope: the PM layer on gh alone, for sidekick and furnace — sidekick pm, sk-orient, sk-track, sk-milestone, bootstrap. Order: seat → bootstrap → orient ‖ track → milestone. Sized to two sessions; if it runs over, groom splits out of sk-milestone rather than the milestone stretching. Closes with 0.3.0. Design: docs/reviews/2026-09-18-pm-layer-survey.md and docs/reviews/2026-09-19-pm-layer-research-round.md.",
+      "dueOn": null
+    },
+    "number": 113,
+    "title": "Milestones have no stated outcome, no entry gate, and no close audit — scope creeps and the backlog balloons",
+    "updatedAt": "2026-09-19T14:30:05Z"
+  },
+  {
+    "body": "Milestone: R6 — PM layer · ships `sk-track` and opens `docs/learnings/` · after #109; parallel with #111.\n\n## Problem\n\nIssues arrive in bursts at session end (#83–#92 in one sitting) because filing mid-session has no cheap path, so problems are carried instead. Close comments do not always cite evidence, Status is left to the eventually-consistent auto-move, and there is no learning record — `docs/README.md` promises `docs/learnings/` \"opens with R6\".\n\n## What this ships\n\nOne model-invocable skill with two moments.\n\n**File.** Duplicate check with `--state all`; exactly one `area:*`; body as a self-contained brief (names files and interfaces, states what is out of scope, ends with a verification step); the entry gate below; board card at Backlog. Refuses without a milestone decision.\n\n**Close.** Pre-write state re-check; `gh issue close --reason {completed|not planned|duplicate}` with a comment that cites evidence (`Resolved by #PR`, a commit, a measurement); explicit Status=Done, because the auto-move is eventually consistent; then the learning-record question.\n\n**Learning record.** Written only when the counterfactual holds: if this record disappeared, would the next engineer repeat the mistake or redo the investigation? One record per close. Nygard shape — Context · Lesson · Consequences — plus `Status: promoted to <rule or doc>` when it graduates, and the issue number near the top. Linked from the close comment.\n\n## Decision taken at filing — flag it if you disagree\n\nAt filing the choices are the **active** milestone (it serves the stated outcome — the scope-creep check happens here) or **`backlog` with a named condition** (\"revisit when …\", naming the unknown that would settle it) — never a future milestone. Milestoning for a release nobody has planned makes a promise (iracedeck's argument); leaving the condition off makes the backlog balloon (ours).\n\n## Mechanism facts (verified 2026-09-19)\n\n- `gh issue close --reason` accepts `completed|not planned|duplicate` on 2.96.0.\n- `closingIssuesReferences` is GraphQL-only; `git log --grep` on the default branch is the second proof.\n- `Closes #N` in the PR body, never `gh pr create --project` (adds a duplicate PR card).\n\n## Borrow\n\n- Durable bar and one-per-run ← EveryInc/compound-engineering-plugin `skills/ce-compound/SKILL.md` (`ce-durable-bar` block)\n- Knowledge-track headings if the Nygard shape proves too thin ← same, `assets/resolution-template.md` §Knowledge Track Template\n- Close-reason mapping and pre-write re-check ← gitkraken/vscode-gitlens `.claude/skills/update-issues/SKILL.md:38-70`\n- Verdict vocabulary for not-planned closes ← udecode/plate `.agents/skills/task/SKILL.md:173-186`\n- Completion comment before moving the card; parked comment written for a cold reader ← JetbroIn/jetbro-skills `ship.md` §6, `park.md`\n- \"Later must name the unknown … without that it is a yes or a no in disguise\" ← umputun/cc-thingz `plugins/workflow/skills/backlog/SKILL.md:40-51`\n- Seed shape `Revisit when:` ← jcklpe/configs `skills/pin-issue/SKILL.md:47-55`\n- \"Don't duplicate a native field in the title or body\" ← TiagoJVO/beekeepingit `.claude/skills/backlog-management/SKILL.md:51`\n- Self-contained brief ← `code.claude.com/docs/en/best-practices`\n- Evidence-citing close ← trailofbits/skills `github-triage/SKILL.md`\n\n## Tasks\n\n- [ ] Brainstorm the two moments' prose and the frontmatter — model-invocable is the point (#76's finding)\n- [ ] Amend `sk-pm-conventions.md`: the entry gate, `not planned` as a first-class close, the record link\n- [ ] Create `docs/learnings/` with a README stating the bar and the shape; first record from an R6 close\n- [ ] File one real finding through the skill as its first run\n",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzST4Xw",
+        "name": "area:pm",
+        "description": "PM system: board, issues, conventions, graph",
+        "color": "FBCA04"
+      }
+    ],
+    "milestone": {
+      "number": 6,
+      "title": "R6 — PM layer",
+      "description": "Outcome: sessions start from the board and end on it; milestones open with an outcome and close with an audit and a release; every backlog item carries its unblock condition or gets closed. Scope: the PM layer on gh alone, for sidekick and furnace — sidekick pm, sk-orient, sk-track, sk-milestone, bootstrap. Order: seat → bootstrap → orient ‖ track → milestone. Sized to two sessions; if it runs over, groom splits out of sk-milestone rather than the milestone stretching. Closes with 0.3.0. Design: docs/reviews/2026-09-18-pm-layer-survey.md and docs/reviews/2026-09-19-pm-layer-research-round.md.",
+      "dueOn": null
+    },
+    "number": 112,
+    "title": "Filing and closing are ad hoc: issues arrive in bursts, close comments lack evidence, no learning record exists",
+    "updatedAt": "2026-09-19T14:30:07Z"
+  },
+  {
+    "body": "Milestone: R6 — PM layer · ships `sk-orient` · after #109; parallel with #112.\n\n## Problem\n\n\"What do I pick up\" is meant to be derived at session start from the board (`sk-pm-conventions.md` §Board discipline). In practice it is stored: the pointer to open R6 lived in a memory file, 41 commits sat unpushed for days, and In Progress items go stale without anyone noticing. Nothing runs at the moment a session begins.\n\n## What this ships\n\nA session-start pickup that prints, from #109's discovery and join: the active milestone and its outcome; what is In Progress, with age; the tier-1 candidates; and drift — unpushed commits (a branch with no upstream counts as unpushed), In Progress older than seven days, an open PR on the current branch. It ends with a one-line suggestion and the WIP position: new work is pulled when In Progress drops, not pushed on top.\n\nSilent and cheap where no board matches: a local guard (remote owner = authenticated user) before any network call, zero output on no-match. Work repos never see it.\n\n## Mechanism facts (verified 2026-09-19)\n\n- A plugin registers hooks in `hooks/hooks.json`; a `SessionStart` hook's plain stdout becomes context Claude sees; matchers `startup|resume|clear|compact|fork`; default timeout 600 s, settable per handler; runs in cwd with Claude's environment; \"when a plugin is enabled, its hooks merge with your user and project hooks\" — so it fires in every repo the plugin is enabled in (`code.claude.com/docs/en/hooks.md`).\n- Skill frontmatter: `disable-model-invocation: true` removes the description from context (operator-only); `user-invocable: false` keeps it for the model only; the default is both (research-round lane 3, from `docs/en/skills.md`).\n\n## Open at filing — decide in the brainstorm\n\nHook or invoked skill. A hook makes the north star's \"runs at the start of each session\" literal, at the cost of a `gh` round-trip in every home-repo session and the guard above everywhere else. An invoked skill costs nothing until remembered — and the memory-file pointer is evidence it will not be.\n\n## Borrow\n\n- Pickup tiers; \"no open milestone is an ordinary state\" ← gringolito/github-backlog-management-skill `bin/select-item` §1–2\n- Token-scope preflight in a SessionStart hook ← same, `scripts/session-start-check.sh`\n- Scoring (In Progress first, one-open-issue milestone next, other assignee last); flag an open PR on the branch ← SatcherInstitute/health-equity-tracker `.claude/skills/next/SKILL.md` §3–5\n- Never present issue-number order as meaning ← yannikzz/next-issues `SKILL.md` §1\n- WIP as a pull signal ← Kanban Guide 2025.5 §Actively Managing Items in a Workflow\n- No-upstream branch = unpushed ← gittower `sync-repo-status` §1\n\n## Tasks\n\n- [ ] Brainstorm hook vs skill; if hook, measure the guard's cost in a work repo\n- [ ] Write `sk-orient`; frontmatter per the decision\n- [ ] Run it on sidekick and furnace for a week before #113 closes R6 — the north star's evidence line\n",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzST4Xw",
+        "name": "area:pm",
+        "description": "PM system: board, issues, conventions, graph",
+        "color": "FBCA04"
+      }
+    ],
+    "milestone": {
+      "number": 6,
+      "title": "R6 — PM layer",
+      "description": "Outcome: sessions start from the board and end on it; milestones open with an outcome and close with an audit and a release; every backlog item carries its unblock condition or gets closed. Scope: the PM layer on gh alone, for sidekick and furnace — sidekick pm, sk-orient, sk-track, sk-milestone, bootstrap. Order: seat → bootstrap → orient ‖ track → milestone. Sized to two sessions; if it runs over, groom splits out of sk-milestone rather than the milestone stretching. Closes with 0.3.0. Design: docs/reviews/2026-09-18-pm-layer-survey.md and docs/reviews/2026-09-19-pm-layer-research-round.md.",
+      "dueOn": null
+    },
+    "number": 111,
+    "title": "Nothing derives what to pick up at session start; pointers end up in memory files",
+    "updatedAt": "2026-09-19T14:30:06Z"
+  },
+  {
+    "body": "Milestone: R6 — PM layer · ships bootstrap guidance and mechanics · after #109; furnace is the first run.\n\n## Problem\n\nOpting a repo in is \"a board exists, titled after the repo, linked, owned by me\" (#109) — but nothing makes one. Building a board by hand means four Status options, three views, six workflow toggles, and the label set, and the `Focus` view's filter cannot be set through the API at all.\n\n## What this ships\n\nGuidance in the existing `sidekick` skill, next to `rules install` (the same \"set this repo up\" job), plus the mechanical sequence:\n\n1. `gh project copy 2 --source-owner Rikmorn --target-owner @me --title <repo>` — the sidekick board is the reference shape. Then `gh project edit` the description.\n2. `gh project link <n> -R <owner>/<repo>` so discovery finds it.\n3. Labels: `backlog` and `change-request` are fixed (`gh label create --force`); the `area:*` set is per-repo and comes from a short dialogue.\n4. Workflows: disable \"Pull request linked to issue\" (it resets Status retroactively); optionally enable auto-add. No create or update API — see facts.\n5. Verify with #109's discovery and lint.\n\n## Mechanism facts (verified 2026-09-19)\n\n- Probe: copied board #2 to a throwaway, inspected, deleted. The copy carried Status with all four options, all three views including `Focus` with `status:\"In Progress\",Verify`, and all six workflows, with zero items.\n- `CreateProjectV2ViewInput.configuration` exposes only `visibleFieldIds` — filters and groupings cannot be set through the API. Copy is the only route to the `Focus` view.\n- `gh project mark-template` is org-only; copy does not need it.\n- Workflow mutations: `deleteProjectV2Workflow` only. Whether it accepts a built-in workflow id is UNVERIFIED — a write, not executed. Board #2 has all six on; aesir's #3 has five off, set by hand.\n- The Claude in Chrome extension can drive the project settings page; it needs site permission for `github.com` and the operator to start Chrome.\n\n## Decisions taken at filing\n\n- Reference-board model: the sidekick board is infrastructure. Editing its views changes every future bootstrap. Say so in the skill.\n- Browser steps ask before opening a tab. Try `deleteProjectV2Workflow` on a throwaway copy first — if it works on built-ins, that step needs no browser.\n- Stop if the copy's Status options differ from the four expected; never repair a customised board.\n\n## Borrow\n\n- `gh label create --force`; stop on customised Status ← gringolito/github-backlog-management-skill `skills/initialize/SKILL.md` §2–3\n- Whether a workflow disabled on the source copies as disabled ← unverified; one probe\n\n## Tasks\n\n- [ ] Probe `deleteProjectV2Workflow` against a built-in on a throwaway copy\n- [ ] Write the bootstrap section of the `sidekick` skill\n- [ ] Bootstrap furnace; run discovery and lint there\n- [ ] Decide what to do about the stray `@Rikmorn's untitled project` linked to this repo\n",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzST4Xw",
+        "name": "area:pm",
+        "description": "PM system: board, issues, conventions, graph",
+        "color": "FBCA04"
+      }
+    ],
+    "milestone": {
+      "number": 6,
+      "title": "R6 — PM layer",
+      "description": "Outcome: sessions start from the board and end on it; milestones open with an outcome and close with an audit and a release; every backlog item carries its unblock condition or gets closed. Scope: the PM layer on gh alone, for sidekick and furnace — sidekick pm, sk-orient, sk-track, sk-milestone, bootstrap. Order: seat → bootstrap → orient ‖ track → milestone. Sized to two sessions; if it runs over, groom splits out of sk-milestone rather than the milestone stretching. Closes with 0.3.0. Design: docs/reviews/2026-09-18-pm-layer-survey.md and docs/reviews/2026-09-19-pm-layer-research-round.md.",
+      "dueOn": null
+    },
+    "number": 110,
+    "title": "A repo can't be brought under tracking without hand-building the board, statuses, views, and labels",
+    "updatedAt": "2026-09-19T14:30:08Z"
+  },
+  {
+    "body": "Milestone: R6 — PM layer · ships `sidekick pm` · first in the R6 order; the other four R6 issues build on it.\nDesign sources: `docs/reviews/2026-09-18-pm-layer-survey.md`, `docs/reviews/2026-09-19-pm-layer-research-round.md`.\n\n## Problem\n\nThe plugin has nowhere to put the deterministic half of project management. Board discovery, the pickup join, the hygiene predicates, and the release gate are logic with testable outputs, and today each session re-derives them from prose — or from memory. The binary carries `rules install|check` and `--version` only (`bin/cli.ts`).\n\n## What this ships\n\n`sidekick pm` subcommands for the parts with logic; skills call raw `gh` for one-shot writes.\n\n- **Discovery**: the repo is tracked when a board is linked to it (`repository.projectsV2`), titled after the repo, and owned by the authenticated user. Extra linked boards are a lint finding, not a tie-break. No config file.\n- **Pickup**: three tiers from `gh project item-list --query` — In Progress assigned to me; Backlog in the active milestone; Backlog with no milestone. Active milestone = open, sorted `due_on` null-last → semver → number; none open is an ordinary state.\n- **Lint**: predicates that must print `0` — exactly one `area:*` (count, don't test presence); every card has a Status; open issue carded Done; closed-not-shipped still carded; `backlog` label without a stated condition; position-code titles; unboarded (open issues minus board items); more than one linked board.\n- **Release gate**: milestone `open_issues == 0` via REST; returns the disposition list otherwise.\n- **Preflight**: `gh` ≥ 2.98 and the `project` token scope.\n\n## Mechanism facts (verified 2026-09-19)\n\n- `gh project item-edit --owner --url <issue> --field Status --value \"In Progress\"` exists from v2.98.0 (`pkg/cmd/project/item-edit/item_edit.go:205-208` at that tag); v2.96.0 has only the id flags. brew stable is 2.100.0. Pinning ≥ 2.98 removes field/option-id resolution from this issue.\n- `repository.projectsV2` returns linked boards: sidekick → #2 `sidekick` and #1 `@Rikmorn's untitled project`; furnace → none.\n- `gh project item-list --format json --query` accepts `status:`, `milestone:`, `no:milestone`, `assignee:@me`; `--limit` must exceed the item count or the list truncates silently.\n- Projects v2 has no REST API; `gh project` wraps GraphQL. There is no `gh milestone`; use `gh api repos/{o}/{r}/milestones`.\n- `claude plugin eval` sandboxes Bash with network limited to granted domains (research-round lane 3; not re-verified). Check whether `api.github.com` can be granted before relying on it for tests.\n\n## Decisions taken at filing\n\n- Thin middle: a subcommand exists only where there is a join, a predicate, or a gate. A subcommand that wraps one `gh` call is worse than the call.\n- The `gh` boundary is one injectable runner; the join, predicates, and gate are pure and unit-tested. Live `gh` is exercised by the skills and, if the sandbox allows, by `claude plugin eval`.\n\n## Borrow\n\n- 3-tier pickup and milestone resolution ← gringolito/github-backlog-management-skill `bin/select-item`, `bin/resolve-milestone`\n- Print-0 audit; \"count the labels\"; do not backfill Done cards ← modelcontextprotocol/inspector `.claude/skills/issue-triage/SKILL.md` §The board audit\n- Discovery from board content rather than folder name ← JetbroIn/jetbro-skills `work-board/references/board.md`\n- Milestone progress in one GraphQL call ← valeriobelli/gh-milestone `internal/pkg/domain/github/root.go:16-23`\n\n## Tasks\n\n- [ ] Brainstorm the subcommand surface against the three skills' needs before writing code\n- [ ] Discovery + preflight, TDD\n- [ ] Pickup join, TDD\n- [ ] Lint predicates, TDD; run against board #2 and file what it finds\n- [ ] Release gate, TDD\n- [ ] README subcommand list\n",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAAC2oVl_A",
+        "name": "area:plugin",
+        "description": "Plugin manifest, marketplace, install, release",
+        "color": "0E8A16"
+      }
+    ],
+    "milestone": {
+      "number": 6,
+      "title": "R6 — PM layer",
+      "description": "Outcome: sessions start from the board and end on it; milestones open with an outcome and close with an audit and a release; every backlog item carries its unblock condition or gets closed. Scope: the PM layer on gh alone, for sidekick and furnace — sidekick pm, sk-orient, sk-track, sk-milestone, bootstrap. Order: seat → bootstrap → orient ‖ track → milestone. Sized to two sessions; if it runs over, groom splits out of sk-milestone rather than the milestone stretching. Closes with 0.3.0. Design: docs/reviews/2026-09-18-pm-layer-survey.md and docs/reviews/2026-09-19-pm-layer-research-round.md.",
+      "dueOn": null
+    },
+    "number": 109,
+    "title": "The plugin has no PM seat: no board discovery, no tested mechanics, no gh minimum",
+    "updatedAt": "2026-09-19T14:29:57Z"
+  },
+  {
+    "body": "`sidekick rules check` exits 0 when every shipped rule matches, 2 when drift or a skipped write was found, and 1 when the command could not run (bad arguments, empty source, destination is a file). Nothing documents this: not the reference skill, not README, not the usage string. Surfaced in aesir on 2026-09-18 by the first consumer session, which read exit 2 as \"the check failed\" until it read the executable's source.\n\nTwo things to settle when this is picked up:\n- Document the codes where the command is described (reference skill, README, usage line).\n- Decide whether drift should be exit 0 by default with a `--strict` flag for hooks and CI, or keep 2 and document it as \"drift found, command succeeded\". A distinct code for skipped writes (a non-regular file or a case collision) may also be worth separating from drift, since one is \"run install\" and the other is \"look at the tree\".\n\nRe-raise condition: the moment the check is wired into a hook or CI in any consumer repo.",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzRIL3A",
+        "name": "backlog",
+        "description": "Deliberately deferred; the body states what would unblock it",
+        "color": "C5DEF5"
+      },
+      {
+        "id": "LA_kwDOSuP6Cs8AAAAC2oVl_A",
+        "name": "area:plugin",
+        "description": "Plugin manifest, marketplace, install, release",
+        "color": "0E8A16"
+      }
+    ],
+    "milestone": null,
+    "number": 108,
+    "title": "rules check exit codes are undocumented and conflate drift with failure for hooks and CI",
+    "updatedAt": "2026-09-18T22:08:50Z"
+  },
+  {
+    "body": "Two generated things are committed, and CI checks neither for staleness.\n\n`plugin/bin/sidekick` is built from `bin/cli.ts` and shipped to marketplace consumers. `.github/workflows/ci.yml` runs `bun run build`, which overwrites it, then runs `node plugin/bin/sidekick --version`. Because the build happens first, a commit that edits `bin/cli.ts` without rebuilding passes CI and ships a stale executable.\n\n`.claude/rules/sk-*.md` must stay byte-identical to `plugin/rules/`. Nothing checks it. That drift is exactly #91, which the pivot was meant to end.\n\nTwo lines close both:\n\n```yaml\n- run: git diff --exit-code plugin/bin/sidekick\n- run: node plugin/bin/sidekick rules check --project\n```\n\nCaveat on the first: byte-reproducibility of the bundle is verified on one machine with bun 1.3.14, and `setup-bun@v2` is unpinned in CI, so the bun version likely needs pinning before that check is stable.\n\n- [ ] Add the rebuild-drift check, pinning the bun version if needed\n- [ ] Add the rules parity check",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzRIL3A",
+        "name": "backlog",
+        "description": "Deliberately deferred; the body states what would unblock it",
+        "color": "C5DEF5"
+      },
+      {
+        "id": "LA_kwDOSuP6Cs8AAAAC2oVl_A",
+        "name": "area:plugin",
+        "description": "Plugin manifest, marketplace, install, release",
+        "color": "0E8A16"
+      }
+    ],
+    "milestone": null,
+    "number": 106,
+    "title": "Nothing gates the freshness of the two committed generated artefacts",
+    "updatedAt": "2026-09-18T21:46:31Z"
+  },
+  {
+    "body": "Measured 2026-09-18 by resolving every relative markdown link in both trees: **0 broken at tag `pre-pivot-2026-09`, 30 broken at `c28aae4`.**\n\nCauses:\n- `docs/EPIC.md` and `docs/EPIC-STATE.md` moved under `docs/work/`, breaking inbound `../EPIC.md` links from several ADRs, `docs/research/README.md`, `docs/research/platform-landscape.md` and `docs/reviews/2026-06-18-architecture-review.md`, plus the outbound `./research/…`, `./backlog/…` and `./STATE.md` links inside the two moved files.\n- `smokes/` retiring broke `docs/adr/0006` → `../../smokes/README.md`.\n\n`sk-pm-conventions.md` already sanctions the repair: a frozen record is never rewritten, and \"a broken link is the only edit it takes\".\n\nThis is also the failure `sk-working-standards.md` describes under \"When you change a premise\" — the commit immediately before this milestone, `285bd30`, was the rule line about hunting paraphrases and adjacent lines rather than only the retired identifier.\n\n- [ ] Repair the inbound links to the two moved files\n- [ ] Repair the outbound links inside them\n- [ ] Point the retired `smokes/README.md` reference at the tag\n- [ ] Consider a link check in CI so the count cannot silently rise again",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzRIL3A",
+        "name": "backlog",
+        "description": "Deliberately deferred; the body states what would unblock it",
+        "color": "C5DEF5"
+      },
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzST4jA",
+        "name": "area:guidance",
+        "description": "Portable rules and guidance content",
+        "color": "C2E0C6"
+      }
+    ],
+    "milestone": null,
+    "number": 105,
+    "title": "The EPIC move and the retirement left 30 broken relative links in docs/",
+    "updatedAt": "2026-09-18T21:46:30Z"
+  },
+  {
+    "body": "`findOverlap` keys on two exact-match signals: an `## ` heading string, and the opening sentence. A repo that keeps its own copy of a rule but rewrites the prose, or drops the H2 headings entirely, matches neither and is reported as no overlap at all.\n\nFound while reviewing #94 on 2026-09-18, running the shipped `findOverlap` against real trees rather than fixtures.\n\nConfirmed misses: `typescript.md` in both furnace and odin. Both instruct the same substantive rules as `sk-typescript.md` (no `as`/`!`/`@ts-ignore`, no `{}`/`Object`/`Function`, no `?.` papering over nullability), and neither is flagged, because that file uses no `##` headings and a differently worded opening sentence.\n\nConfirmed hits, so the core idea works: `clean-code.md` and `working-standards.md` in furnace, plus `language.md` in odin, all matched their `sk-` counterparts on a heading or an opening sentence.\n\nWhy it matters: the check prints nothing when it finds nothing, so a false negative reads as an all-clear. Noise gets ignored; silence gets trusted. R5 added a line naming what the check keys on so silence is at least legible, but the heuristic itself is unchanged.\n\nThe spec sizes widening this at about an hour and names heading match as the accepted fallback, so this is the deliberate R5 scope boundary rather than an oversight.\n\n- [ ] Decide the signal: normalised body similarity, a shared-phrase index, or front-matter/filename correspondence\n- [ ] Keep the reported pair legible; the value is telling the operator which two files to look at",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzRIL3A",
+        "name": "backlog",
+        "description": "Deliberately deferred; the body states what would unblock it",
+        "color": "C5DEF5"
+      },
+      {
+        "id": "LA_kwDOSuP6Cs8AAAAC2oVl_A",
+        "name": "area:plugin",
+        "description": "Plugin manifest, marketplace, install, release",
+        "color": "0E8A16"
+      }
+    ],
+    "milestone": null,
+    "number": 102,
+    "title": "Overlap check misses rewritten rule copies with no H2 headings",
+    "updatedAt": "2026-09-18T22:04:23Z"
+  },
+  {
+    "body": "Superpowers executes inline or with subagents. A third mode is wanted: the main session, on the most capable model, instructs a child Claude Code process on a cheaper model to execute the plan, inline or with its own subagents. It is a context-management and cost technique, and it keeps the operator's involvement to what the orchestrator cannot or should not answer itself: the child escalates to the orchestrator, the orchestrator rules or researches, and only the rest reaches the operator.\n\nPrior art to evaluate before building anything: obra's claude-session-driver 4.0.0 (drives other Claude Code sessions as workers over tmux), Claude Code's own session-to-session messaging and headless mode with a model flag, and the locked-plan-plus-run-report handoff practised on the R3 and aesir waves. The escalation threshold is the one the loop audit kept: a deviation touching two decisions or a goal stops; anything smaller is a ruling.\n\nSupersedes #76. Not scheduled; plan through the PM layer after R6.",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzRIL3A",
+        "name": "backlog",
+        "description": "Deliberately deferred; the body states what would unblock it",
+        "color": "C5DEF5"
+      },
+      {
+        "id": "LA_kwDOSuP6Cs8AAAAC2oVmeQ",
+        "name": "area:skills",
+        "description": "The gap skills sidekick adds around superpowers",
+        "color": "5319E7"
+      }
+    ],
+    "milestone": null,
+    "number": 101,
+    "title": "Child-session execution: the orchestrator hands a plan to a cheaper child process",
+    "updatedAt": "2026-09-18T21:46:37Z"
+  },
+  {
+    "body": "After the pivot, `docs/` still carries the shape of the research programme: eleven research topics, thirteen backlog notes, frozen work records, and steering docs pruned only where the pivot forced it. One session to compact and reorganise, keeping records as records. Not scheduled; pick up once R5 and R6 have settled.",
+    "labels": [
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzRIL3A",
+        "name": "backlog",
+        "description": "Deliberately deferred; the body states what would unblock it",
+        "color": "C5DEF5"
+      },
+      {
+        "id": "LA_kwDOSuP6Cs8AAAACzST4jA",
+        "name": "area:guidance",
+        "description": "Portable rules and guidance content",
+        "color": "C2E0C6"
+      }
+    ],
+    "milestone": null,
+    "number": 100,
+    "title": "Compact and reorganise docs/",
+    "updatedAt": "2026-09-18T21:46:36Z"
+  }
+]

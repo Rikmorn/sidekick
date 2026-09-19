@@ -1,0 +1,992 @@
+{
+  "data": {
+    "user": {
+      "projectV2": {
+        "items": {
+          "totalCount": 99,
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "Y3Vyc29yOnYyOpK5MDAwMDAwMDAuMDEwMTAxMDEwMTAxMDEwMc4O7yxS"
+          },
+          "nodes": [
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg6v26I",
+              "updatedAt": "2026-09-17T15:30:28Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 55,
+                "title": "Record the bench-coverage delta from the checker-to-CLI conversion",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T15:30:27Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/55",
+                "milestone": null,
+                "labels": { "nodes": [{ "name": "change-request" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg6v27Y",
+              "updatedAt": "2026-09-17T20:29:49Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 56,
+                "title": "Derive the remaining live-inventory floors in graph-integration.test.ts from the tree",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:29:47Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/56",
+                "milestone": null,
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg6whY4",
+              "updatedAt": "2026-09-18T19:54:19Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 61,
+                "title": "Harden the per-user harvest inbox against concurrent writers",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-18T19:54:17Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/61",
+                "milestone": { "title": "R3 — Launch in furnace", "number": 3 },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg6w374",
+              "updatedAt": "2026-09-17T20:29:52Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 62,
+                "title": "Rename the graph parsers to what they parse and retire the orphans #30 left",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:29:51Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/62",
+                "milestone": { "title": "R3 — Launch in furnace", "number": 3 },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg6w38c",
+              "updatedAt": "2026-09-17T23:12:47Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 63,
+                "title": "Premise sweeps must hunt the claim in prose, not only the retired identifier",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T23:12:45Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/63",
+                "milestone": { "title": "R3 — Launch in furnace", "number": 3 },
+                "labels": { "nodes": [{ "name": "area:guidance" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buKU",
+              "updatedAt": "2026-09-18T19:54:21Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 64,
+                "title": "Project guidance does not reach dispatched agents correctly or freshly",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-18T19:54:20Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/64",
+                "milestone": { "title": "R3 — Launch in furnace", "number": 3 },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buLk",
+              "updatedAt": "2026-09-17T20:29:55Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 65,
+                "title": "Installed copy drifts from source with no warning — add an install --check",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:29:53Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/65",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buNA",
+              "updatedAt": "2026-09-17T15:26:20Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 66,
+                "title": "sk-design has no answer for work that is not a build (labels, milestones, boards, issue batches)",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-17T15:26:18Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/66",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buOI",
+              "updatedAt": "2026-09-17T20:29:57Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 67,
+                "title": "init writes the current feature branch as defaultBranch when origin/HEAD is unset",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:29:55Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/67",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buPk",
+              "updatedAt": "2026-09-17T20:30:00Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 68,
+                "title": "Gate detection picks the script literally named test; say when a suggested gate may need external services",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:29:58Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/68",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buQ0",
+              "updatedAt": "2026-09-17T20:30:02Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 69,
+                "title": "uninstall leaves empty skill directories under ~/.claude/skills",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:30:01Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/69",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buSQ",
+              "updatedAt": "2026-09-17T20:30:04Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 70,
+                "title": "Conventions the aesir onboarding showed are missing: a second label axis, and a home for an arriving history",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:30:03Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/70",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [{ "name": "area:pm" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buT8",
+              "updatedAt": "2026-09-17T15:27:04Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 71,
+                "title": "Docs taxonomy: name the migration case for repos that arrive with a history the graph does not model",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-17T15:27:03Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/71",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [{ "name": "area:pm" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buVI",
+              "updatedAt": "2026-09-18T19:54:24Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 72,
+                "title": "Tier-0 config guard matches Edit|Write|MultiEdit only; shell edits bypass it",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-18T19:54:22Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/72",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buWg",
+              "updatedAt": "2026-09-17T15:59:03Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 73,
+                "title": "Install sidekick into the consumer project instead of flat files under ~/.claude",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-17T15:59:02Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/73",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [{ "name": "change-request" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buYA",
+              "updatedAt": "2026-09-17T20:30:07Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 74,
+                "title": "Unquoted YAML description containing ' #' truncates two agent descriptions",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:30:05Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/74",
+                "milestone": { "title": "R3 — Launch in furnace", "number": 3 },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7buZg",
+              "updatedAt": "2026-09-17T20:30:08Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 75,
+                "title": "sk-coherence-checker prompt still names the retired structural and crossref checkers",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:30:07Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/75",
+                "milestone": { "title": "R3 — Launch in furnace", "number": 3 },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7bubU",
+              "updatedAt": "2026-09-18T19:53:36Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 76,
+                "title": "The loop has no seat for how work actually gets run — ops-shaped work, and a coordinating session",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-18T19:53:34Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/76",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7b5NM",
+              "updatedAt": "2026-09-17T15:25:54Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 77,
+                "title": "A dispatched subagent reads the parent session's guidance snapshot, so /sk-build hands executors stale conventions",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-17T15:25:53Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/77",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7b5O4",
+              "updatedAt": "2026-09-17T20:30:10Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 78,
+                "title": "detectDefaultBranch is implemented twice, in init and branch-precheck",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:30:09Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/78",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7b_BY",
+              "updatedAt": "2026-09-17T20:30:13Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 79,
+                "title": "The Biome-on-edit hook runs pnpm in a bun repo and silently upgrades the pinned Biome",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:30:11Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/79",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7cJjQ",
+              "updatedAt": "2026-09-17T20:30:16Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 80,
+                "title": "Two declared lint codes have no emitter: unknown-relation and ambiguous-ref",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:30:14Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/80",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7dBQs",
+              "updatedAt": "2026-09-17T20:30:17Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 81,
+                "title": "A consumer repo teaches the wrong model of where the sk-* roster comes from",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-17T20:30:16Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/81",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7dBTE",
+              "updatedAt": "2026-09-18T21:26:29Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 82,
+                "title": "Package sidekick as a plugin with its dependencies declared",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T21:26:28Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/82",
+                "milestone": {
+                  "title": "R5 — Pivot to a plugin bundle",
+                  "number": 5
+                },
+                "labels": { "nodes": [{ "name": "area:plugin" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7dl6g",
+              "updatedAt": "2026-09-18T19:54:26Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 83,
+                "title": "Literal NUL bytes in two source files make grep report them as not matching",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-18T19:54:24Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/83",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7fz6o",
+              "updatedAt": "2026-09-18T19:54:30Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 85,
+                "title": "typecheck never sees test files, so the gate covers less than it appears to",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-18T19:54:28Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/85",
+                "milestone": {
+                  "title": "R4 — Sidekick in a consumer repo",
+                  "number": 4
+                },
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7f4LU",
+              "updatedAt": "2026-09-18T19:54:32Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 86,
+                "title": "Retarget the eval corpus and smokes onto the folded artifact contract",
+                "state": "CLOSED",
+                "stateReason": "NOT_PLANNED",
+                "updatedAt": "2026-09-18T19:54:30Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/86",
+                "milestone": null,
+                "labels": { "nodes": [] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qLy8",
+              "updatedAt": "2026-09-18T21:26:19Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 93,
+                "title": "Record the pivot to a plugin bundle and recalibrate the north star",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T21:26:43Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/93",
+                "milestone": {
+                  "title": "R5 — Pivot to a plugin bundle",
+                  "number": 5
+                },
+                "labels": { "nodes": [{ "name": "area:guidance" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qL9I",
+              "updatedAt": "2026-09-18T21:26:21Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 94,
+                "title": "Non-destructive rules delivery with a post-install check",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T21:26:19Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/94",
+                "milestone": {
+                  "title": "R5 — Pivot to a plugin bundle",
+                  "number": 5
+                },
+                "labels": { "nodes": [{ "name": "area:plugin" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qL-k",
+              "updatedAt": "2026-09-18T21:26:24Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 95,
+                "title": "Retire the trunk, the agents, the eval kernel, the graph, the dashboards, and the .sidekick contract",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T21:26:22Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/95",
+                "milestone": {
+                  "title": "R5 — Pivot to a plugin bundle",
+                  "number": 5
+                },
+                "labels": { "nodes": [{ "name": "area:plugin" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qMAo",
+              "updatedAt": "2026-09-18T21:26:25Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 96,
+                "title": "Trim the agent-prompts rule and promote it to the portable set",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T21:26:24Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/96",
+                "milestone": {
+                  "title": "R5 — Pivot to a plugin bundle",
+                  "number": 5
+                },
+                "labels": { "nodes": [{ "name": "area:guidance" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qMKc",
+              "updatedAt": "2026-09-18T21:26:27Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 97,
+                "title": "Rewrite README, AGENTS, and the docs the pivot forces",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T21:26:26Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/97",
+                "milestone": {
+                  "title": "R5 — Pivot to a plugin bundle",
+                  "number": 5
+                },
+                "labels": { "nodes": [{ "name": "area:guidance" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qML8",
+              "updatedAt": "2026-09-18T21:24:20Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 98,
+                "title": "Install the bundle into sidekick, aesir, furnace, and odin",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T21:24:18Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/98",
+                "milestone": {
+                  "title": "R5 — Pivot to a plugin bundle",
+                  "number": 5
+                },
+                "labels": { "nodes": [{ "name": "area:plugin" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qMNc",
+              "updatedAt": "2026-09-18T21:26:31Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 99,
+                "title": "Release sidekick 0.2.0",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T21:26:30Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/99",
+                "milestone": {
+                  "title": "R5 — Pivot to a plugin bundle",
+                  "number": 5
+                },
+                "labels": { "nodes": [{ "name": "area:plugin" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qMS4",
+              "updatedAt": "2026-09-18T21:46:37Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 100,
+                "title": "Compact and reorganise docs/",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-18T21:46:36Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/100",
+                "milestone": null,
+                "labels": {
+                  "nodes": [{ "name": "backlog" }, { "name": "area:guidance" }]
+                },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qMUc",
+              "updatedAt": "2026-09-18T21:46:39Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 101,
+                "title": "Child-session execution: the orchestrator hands a plan to a cheaper child process",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-18T21:46:37Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/101",
+                "milestone": null,
+                "labels": {
+                  "nodes": [{ "name": "backlog" }, { "name": "area:skills" }]
+                },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7qbOw",
+              "updatedAt": "2026-09-18T21:46:40Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 102,
+                "title": "Overlap check misses rewritten rule copies with no H2 headings",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-18T22:04:23Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/102",
+                "milestone": null,
+                "labels": {
+                  "nodes": [{ "name": "backlog" }, { "name": "area:plugin" }]
+                },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7rAXA",
+              "updatedAt": "2026-09-18T21:56:49Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 103,
+                "title": "rules --project resolves against the process cwd, not the repo root",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T21:56:48Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/103",
+                "milestone": null,
+                "labels": { "nodes": [{ "name": "area:plugin" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7rAX0",
+              "updatedAt": "2026-09-18T22:29:15Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 104,
+                "title": "Rules pruning uses the sk- prefix where the design specified a manifest",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T22:29:14Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/104",
+                "milestone": null,
+                "labels": {
+                  "nodes": [{ "name": "backlog" }, { "name": "area:plugin" }]
+                },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7rAYc",
+              "updatedAt": "2026-09-18T21:46:31Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 105,
+                "title": "The EPIC move and the retirement left 30 broken relative links in docs/",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-18T21:46:30Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/105",
+                "milestone": null,
+                "labels": {
+                  "nodes": [{ "name": "backlog" }, { "name": "area:guidance" }]
+                },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7rAZQ",
+              "updatedAt": "2026-09-18T21:46:34Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 106,
+                "title": "Nothing gates the freshness of the two committed generated artefacts",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-18T21:46:31Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/106",
+                "milestone": null,
+                "labels": {
+                  "nodes": [{ "name": "backlog" }, { "name": "area:plugin" }]
+                },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7rAaM",
+              "updatedAt": "2026-09-18T22:32:09Z",
+              "fieldValueByName": { "name": "Done" },
+              "content": {
+                "__typename": "Issue",
+                "number": 107,
+                "title": "The paths: spike was never run, and two documents state its unverified answer as fact",
+                "state": "CLOSED",
+                "stateReason": "COMPLETED",
+                "updatedAt": "2026-09-18T22:32:08Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/107",
+                "milestone": null,
+                "labels": {
+                  "nodes": [{ "name": "backlog" }, { "name": "area:plugin" }]
+                },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7rIxw",
+              "updatedAt": "2026-09-18T22:08:51Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 108,
+                "title": "rules check exit codes are undocumented and conflate drift with failure for hooks and CI",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-18T22:08:50Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/108",
+                "milestone": null,
+                "labels": {
+                  "nodes": [{ "name": "backlog" }, { "name": "area:plugin" }]
+                },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7vHDk",
+              "updatedAt": "2026-09-19T15:09:50Z",
+              "fieldValueByName": { "name": "In Progress" },
+              "content": {
+                "__typename": "Issue",
+                "number": 109,
+                "title": "The plugin has no PM seat: no board discovery, no tested mechanics, no gh minimum",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-19T14:29:57Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/109",
+                "milestone": { "title": "R6 — PM layer", "number": 6 },
+                "labels": { "nodes": [{ "name": "area:plugin" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7vHEQ",
+              "updatedAt": "2026-09-19T14:30:43Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 110,
+                "title": "A repo can't be brought under tracking without hand-building the board, statuses, views, and labels",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-19T14:30:08Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/110",
+                "milestone": { "title": "R6 — PM layer", "number": 6 },
+                "labels": { "nodes": [{ "name": "area:pm" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7vHE0",
+              "updatedAt": "2026-09-19T14:30:44Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 111,
+                "title": "Nothing derives what to pick up at session start; pointers end up in memory files",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-19T14:30:06Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/111",
+                "milestone": { "title": "R6 — PM layer", "number": 6 },
+                "labels": { "nodes": [{ "name": "area:pm" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7vHFY",
+              "updatedAt": "2026-09-19T14:30:47Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 112,
+                "title": "Filing and closing are ad hoc: issues arrive in bursts, close comments lack evidence, no learning record exists",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-19T14:30:07Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/112",
+                "milestone": { "title": "R6 — PM layer", "number": 6 },
+                "labels": { "nodes": [{ "name": "area:pm" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7vHGE",
+              "updatedAt": "2026-09-19T14:30:47Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 113,
+                "title": "Milestones have no stated outcome, no entry gate, and no close audit — scope creeps and the backlog balloons",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-19T14:30:05Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/113",
+                "milestone": { "title": "R6 — PM layer", "number": 6 },
+                "labels": { "nodes": [{ "name": "area:pm" }] },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            },
+            {
+              "id": "PVTI_lAHOABcx2M4BiJeEzg7vLFI",
+              "updatedAt": "2026-09-19T14:44:01Z",
+              "fieldValueByName": { "name": "Backlog" },
+              "content": {
+                "__typename": "Issue",
+                "number": 114,
+                "title": "The Verify column is named but never defined; the verification-moves-to-use ruling lives only in memory",
+                "state": "OPEN",
+                "stateReason": null,
+                "updatedAt": "2026-09-19T14:43:46Z",
+                "url": "https://github.com/Rikmorn/sidekick/issues/114",
+                "milestone": null,
+                "labels": {
+                  "nodes": [{ "name": "backlog" }, { "name": "area:guidance" }]
+                },
+                "assignees": { "nodes": [] },
+                "repository": { "nameWithOwner": "Rikmorn/sidekick" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
