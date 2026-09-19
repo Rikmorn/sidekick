@@ -12,6 +12,7 @@ import {
   fetchItems,
   fetchLocalLogin,
   fetchMilestones,
+  fetchOpenIssues,
   fetchScopeHeaders,
   fetchStatusField,
   hasProjectScope,
@@ -25,6 +26,7 @@ import {
   type StatusField,
   versionAtLeast,
 } from './pm-data.js';
+import { lintAll } from './pm-lint.js';
 import { repoRootOf } from './rules.js';
 
 /** By-name `item-edit --field --value` lands here; older `gh` writes by id. */
@@ -42,17 +44,29 @@ export type NotTrackedReason =
   | 'not-github'
   | 'remote-owner-mismatch'
   | 'no-board';
-export interface BoardInfo {
-  tracked: boolean;
-  reason: NotTrackedReason | null;
-  owner: string | null;
-  repo: string | null;
-  project: { number: number; id: string; url: string; title: string } | null;
+export interface TrackedBoard {
+  tracked: true;
+  reason: null;
+  owner: string;
+  repo: string;
+  project: { number: number; id: string; url: string; title: string };
   status_field: StatusField | null;
   linked: LinkedBoard[];
   preflight: Preflight;
   root: string;
 }
+export interface UntrackedBoard {
+  tracked: false;
+  reason: NotTrackedReason;
+  owner: string | null;
+  repo: string | null;
+  project: null;
+  status_field: null;
+  linked: LinkedBoard[];
+  preflight: Preflight;
+  root: string;
+}
+export type BoardInfo = TrackedBoard | UntrackedBoard;
 
 export function chooseBoard(
   boards: LinkedBoard[],
@@ -89,45 +103,67 @@ export function discover(run: Runner, cwd: string): BoardInfo {
   const gh = fetchGhVersion(run, cwd);
   if (!gh.found) throw new PmError(2, 'gh not found on PATH');
   const root = repoRootOf(cwd);
-  const info: BoardInfo = {
+  const preflight = preflightOf(gh.version);
+  const untracked = (
+    reason: NotTrackedReason,
+    fields: {
+      owner?: string | null;
+      repo?: string | null;
+      linked?: LinkedBoard[];
+    } = {},
+  ): UntrackedBoard => ({
     tracked: false,
-    reason: null,
-    owner: null,
-    repo: null,
+    reason,
+    owner: fields.owner ?? null,
+    repo: fields.repo ?? null,
     project: null,
     status_field: null,
-    linked: [],
-    preflight: preflightOf(gh.version),
+    linked: fields.linked ?? [],
+    preflight,
     root,
-  };
+  });
+
   const origin = run('git', ['remote', 'get-url', 'origin'], root);
-  if (origin.code !== 0) return { ...info, reason: 'no-origin' };
+  if (origin.code !== 0) return untracked('no-origin');
   const parsed = parseOrigin(origin.stdout);
-  if (!parsed) return { ...info, reason: 'not-github' };
-  info.owner = parsed.owner;
-  info.repo = parsed.repo;
+  if (!parsed) return untracked('not-github');
   const login = fetchLocalLogin(run, root);
   if (login !== parsed.owner) {
-    return { ...info, reason: 'remote-owner-mismatch' };
+    return untracked('remote-owner-mismatch', {
+      owner: parsed.owner,
+      repo: parsed.repo,
+    });
   }
 
-  info.preflight.project_scope = hasProjectScope(fetchScopeHeaders(run, root));
-  if (!info.preflight.project_scope) {
+  preflight.project_scope = hasProjectScope(fetchScopeHeaders(run, root));
+  if (!preflight.project_scope) {
     throw new PmError(
       2,
       "gh token lacks the 'project' scope; run: gh auth refresh -s project",
     );
   }
   const d = fetchDiscovery(run, root, parsed.owner, parsed.repo);
-  info.linked = d.boards;
   const chosen = chooseBoard(d.boards, d.viewer, parsed.repo);
-  if (chosen.length === 0) return { ...info, reason: 'no-board' };
+  if (chosen.length === 0) {
+    return untracked('no-board', {
+      owner: parsed.owner,
+      repo: parsed.repo,
+      linked: d.boards,
+    });
+  }
   const first = chosen[0];
   const f = fetchStatusField(run, root, d.viewer, first.number);
-  info.tracked = true;
-  info.project = { number: first.number, id: f.id, url: f.url, title: f.title };
-  info.status_field = f.statusField;
-  return info;
+  return {
+    tracked: true,
+    reason: null,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    project: { number: first.number, id: f.id, url: f.url, title: f.title },
+    status_field: f.statusField,
+    linked: d.boards,
+    preflight,
+    root,
+  };
 }
 
 export const PM_USAGE_LINE =
@@ -168,9 +204,9 @@ export function runPmCli(
       return 0;
     }
     const now = env.now ?? new Date();
-    const owner = info.owner as string;
-    const repo = info.repo as string;
-    const project = info.project as NonNullable<BoardInfo['project']>;
+    const owner = info.owner;
+    const repo = info.repo;
+    const project = info.project;
     const fullName = `${owner}/${repo}`;
     const viewer = fetchLocalLogin(run, info.root) ?? owner;
     if (verb === 'pickup') {
@@ -192,6 +228,24 @@ export function runPmCli(
         candidates: t.candidates,
         order_basis: 'number',
         drift: drift(run, info.root, t.in_progress),
+      });
+      return 0;
+    }
+    if (verb === 'lint') {
+      const issues = fetchOpenIssues(run, info.root, owner, repo);
+      const { items, kinds } = fetchItems(
+        run,
+        info.root,
+        viewer,
+        project.number,
+        fullName,
+      );
+      const candidates = chooseBoard(info.linked, viewer, repo);
+      const r = lintAll({ issues, items, candidates, now });
+      emit({
+        board: { ...shown, item_kinds: kinds },
+        findings: r.findings,
+        counts: r.counts,
       });
       return 0;
     }

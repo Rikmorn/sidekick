@@ -11,6 +11,7 @@ import {
   tiers,
 } from './pm.js';
 import type { Item, LinkedBoard, Milestone } from './pm-data.js';
+import { LINT_IDS } from './pm-lint.js';
 
 const board = (
   n: number,
@@ -158,6 +159,16 @@ describe('discover', () => {
     expect(info.preflight.gh_version).toBe('2.96.0');
     expect(info.preflight.gh_ok).toBe(false);
     expect(info.preflight.warnings.join(' ')).toContain('2.98.0');
+  });
+  test('a board missing its Status field is tracked with status_field null', () => {
+    const map = sidekickMap();
+    map[
+      'gh api graphql -f query=query StatusField -f login=Rikmorn -F number=2'
+    ] =
+      '{"data":{"user":{"projectV2":{"id":"x","title":"sidekick","url":"u","field":null}}}}';
+    const info = discover(fixtureRunner(map), '/');
+    expect(info.tracked).toBe(true);
+    expect(info.status_field).toBeNull();
   });
 });
 
@@ -378,5 +389,26 @@ describe('runPmCli pickup', () => {
       0,
     );
     expect(kindsSum).toBe(p1.data.user.projectV2.items.totalCount);
+  });
+});
+
+describe('runPmCli lint', () => {
+  test('prints findings and counts and exits 0 whatever the counts are', () => {
+    const c = capture();
+    const code = runPmCli(
+      ['lint'],
+      { cwd: '/', run: fixtureRunner(sidekickMap()) },
+      c.o,
+      c.e,
+    );
+    expect(code).toBe(0);
+    const j = JSON.parse(c.out[0]) as {
+      counts: Record<string, number>;
+      findings: Record<string, unknown[]>;
+    };
+    expect(Object.keys(j.counts).sort()).toEqual(
+      Object.keys(j.findings).sort(),
+    );
+    expect(Object.keys(j.counts).sort()).toEqual([...LINT_IDS].sort());
   });
 });
