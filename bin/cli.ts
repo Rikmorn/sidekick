@@ -10,6 +10,7 @@ import { realpathSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runPmCli } from './helpers/pm.js';
 import { runRulesCli } from './helpers/rules.js';
 
 /**
@@ -53,7 +54,7 @@ export function isMainEntrypoint(
 }
 
 export const USAGE =
-  'usage: sidekick rules <install|check> --project|--user\n       sidekick --version';
+  'usage: sidekick rules <install|check> --project|--user\n       sidekick pm <board|pickup|lint|gate> [--quiet] [--milestone <title>]\n       sidekick --version';
 
 export interface MainContext {
   env: NodeJS.ProcessEnv;
@@ -73,6 +74,7 @@ export function main(
     out(readVersion(pluginDir));
     return 0;
   }
+  if (sub === 'pm') return runPmCli(rest, { cwd: ctx.cwd }, out, err);
   if (sub !== 'rules') {
     err(USAGE);
     return 1;

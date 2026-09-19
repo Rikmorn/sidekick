@@ -99,6 +99,21 @@ describe('main', () => {
     expect(code).toBe(1);
     expect(err).toEqual([USAGE]);
   });
+  test('pm with an unknown verb prints the pm usage on stderr and exits 1', () => {
+    const err: string[] = [];
+    const code = main(
+      ['pm', 'nope'],
+      {
+        env: {},
+        cwd: tmp(),
+        entryFileUrl: pathToFileURL(path.join(tmp(), 'bin', 'cli.ts')).href,
+      },
+      () => {},
+      (l) => err.push(l),
+    );
+    expect(code).toBe(1);
+    expect(err[0]).toContain('usage: sidekick pm');
+  });
   test('rules install --project uses SIDEKICK_RULES_DIR and the cwd; --user honours CLAUDE_CONFIG_DIR', () => {
     const src = tmp();
     write(path.join(src, 'sk-a.md'), '# a\n');
