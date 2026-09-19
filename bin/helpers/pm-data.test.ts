@@ -1,10 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
+import { fixture, fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
 import {
   ageDays,
   execRunner,
+  fetchDiscovery,
+  fetchItems,
+  fetchMilestones,
+  fetchOpenIssues,
+  fetchStatusField,
   hasProjectScope,
+  ISSUE_LIMIT,
+  PmError,
   parseGhVersion,
+  parseIssues,
   parseOrigin,
   runnerKey,
   versionAtLeast,
@@ -23,6 +31,14 @@ describe('runnerKey', () => {
         'login=x',
       ]),
     ).toBe('gh api graphql -f query=query Items -f login=x');
+    expect(
+      runnerKey('gh', [
+        'api',
+        'graphql',
+        '-f',
+        'query=query Viewer { viewer { login } }',
+      ]),
+    ).toBe('gh api graphql -f query=query Viewer { viewer { login } }');
   });
   test('leaves other arguments verbatim', () => {
     expect(runnerKey('git', ['rev-parse', '--abbrev-ref', '@{u}'])).toBe(
@@ -132,5 +148,113 @@ describe('fixtureRunner', () => {
     ).data.user.projectV2.items.pageInfo.endCursor;
     const p2 = run('gh', [...base, '-f', `after=${cursor}`], '/');
     expect(p2.stdout.length).toBeGreaterThan(100);
+  });
+});
+
+describe('fetchDiscovery', () => {
+  test('lists linked boards with owner login and the viewer', () => {
+    const run = fixtureRunner(sidekickMap());
+    const d = fetchDiscovery(run, '/', 'Rikmorn', 'sidekick');
+    expect(d.viewer).toBe('Rikmorn');
+    const titles = d.boards.map((b) => b.title);
+    expect(titles).toContain('sidekick');
+    for (const b of d.boards) {
+      expect(b.ownerLogin).toBe('Rikmorn');
+      expect(typeof b.closed).toBe('boolean');
+      expect(b.url).toMatch(/^https:\/\/github\.com\//);
+    }
+  });
+  test('a repo with no boards yields an empty list', () => {
+    const run = fixtureRunner({
+      'gh api graphql -f query=query Discovery -f owner=Rikmorn -f name=furnace':
+        fixture('discovery-furnace.json'),
+    });
+    expect(fetchDiscovery(run, '/', 'Rikmorn', 'furnace').boards).toEqual([]);
+  });
+  test('a non-zero gh exit is a PmError with exit 1', () => {
+    const run = fixtureRunner({
+      'gh api graphql -f query=query Discovery -f owner=x -f name=y': {
+        code: 1,
+        stdout: '',
+        stderr: 'gh: Could not resolve to a Repository',
+      },
+    });
+    expect(() => fetchDiscovery(run, '/', 'x', 'y')).toThrow(PmError);
+  });
+});
+
+describe('fetchStatusField', () => {
+  test('returns the four options keyed by name', () => {
+    const run = fixtureRunner(sidekickMap());
+    const f = fetchStatusField(run, '/', 'Rikmorn', 2);
+    expect(f.statusField).not.toBeNull();
+    expect(Object.keys(f.statusField?.options ?? {}).sort()).toEqual([
+      'Backlog',
+      'Done',
+      'In Progress',
+      'Verify',
+    ]);
+    expect(f.title).toBe('sidekick');
+  });
+});
+
+describe('fetchItems', () => {
+  test('walks every page and keeps only this repo’s issues', () => {
+    const run = fixtureRunner(sidekickMap());
+    const r = fetchItems(run, '/', 'Rikmorn', 2, 'Rikmorn/sidekick');
+    const p1 = JSON.parse(fixture('items-p1.json')) as {
+      data: { user: { projectV2: { items: { totalCount: number } } } };
+    };
+    expect(r.totalCount).toBe(p1.data.user.projectV2.items.totalCount);
+    const seen = Object.values(r.kinds).reduce((a, b) => a + b, 0);
+    expect(seen).toBe(r.totalCount);
+    expect(r.items.length).toBeLessThanOrEqual(r.totalCount);
+    const numbers = r.items.map((i) => i.number);
+    expect(new Set(numbers).size).toBe(numbers.length);
+    for (const i of r.items) {
+      expect(['OPEN', 'CLOSED']).toContain(i.state);
+      expect(i.repo).toBe('Rikmorn/sidekick');
+    }
+  });
+});
+
+describe('fetchMilestones', () => {
+  test('open milestones carry counts and a nullable due_on', () => {
+    const run = fixtureRunner(sidekickMap());
+    const ms = fetchMilestones(run, '/', 'Rikmorn', 'sidekick', 'open');
+    expect(ms.length).toBeGreaterThan(0);
+    for (const m of ms) {
+      expect(m.state).toBe('open');
+      expect(typeof m.open_issues).toBe('number');
+      expect(m.due_on === null || typeof m.due_on === 'string').toBe(true);
+    }
+  });
+});
+
+describe('fetchOpenIssues', () => {
+  test('parses labels to names and milestone to its title', () => {
+    const run = fixtureRunner(sidekickMap());
+    const issues = fetchOpenIssues(run, '/', 'Rikmorn', 'sidekick');
+    expect(issues.length).toBeGreaterThan(0);
+    for (const i of issues) {
+      for (const l of i.labels) expect(typeof l).toBe('string');
+      expect(i.milestone === null || typeof i.milestone === 'string').toBe(
+        true,
+      );
+      expect(typeof i.body).toBe('string');
+    }
+  });
+  test('a result that hits the limit is an error, never a silent truncation', () => {
+    const many = JSON.stringify(
+      Array.from({ length: ISSUE_LIMIT }, (_, n) => ({
+        number: n + 1,
+        title: 't',
+        labels: [],
+        body: '',
+        milestone: null,
+        updatedAt: '2026-01-01T00:00:00Z',
+      })),
+    );
+    expect(() => parseIssues(many)).toThrow(PmError);
   });
 });
