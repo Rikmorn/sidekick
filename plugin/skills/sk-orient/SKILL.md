@@ -13,7 +13,7 @@ description: Where things stand on this repo's board and what to pick up. Use at
 - **In progress.** Work already picked up. Continue it unless you are pausing it on purpose, and say so on the issue when you pause. New work is pulled when In Progress drops, not on top of it.
 - **Candidates.** Tier 1 is the active milestone's Backlog; tier 2 is unmilestoned work that is not deferred. The order is issue number, which says nothing about priority. Pick by what serves the outcome, and prefer the item that unblocks others.
 - **Drift.** Unpushed commits are pushed or their reason stated. A card stale past seven days is continued or paused explicitly. An open PR on the current branch is finished before anything new starts.
-- **Next.** A fixed rule, not a judgment: continue the lowest-numbered card, else pull from tier 1, else tier 2, else open the next milestone. Override it when you have a reason, and state the reason.
+- **Next.** A fixed rule, not a judgment: continue the lowest-numbered card, else pull from tier 1, else tier 2. With nothing to pick up, verify and close the open milestone, or open the next when none is open. Override it when you have a reason, and state the reason.
 
 ## Picking up
 
