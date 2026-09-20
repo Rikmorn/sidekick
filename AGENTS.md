@@ -25,4 +25,4 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 
 ## Releasing
 
-Bump `version` in both manifests, rebuild the executable, commit, then `claude plugin tag plugin --push -m "sidekick %s"` and `gh release create sidekick--v<version> --verify-tag`. Close the milestone last.
+Bump the three `version` fields (plugin.json, and both in marketplace.json), rebuild the executable, and commit. Then `claude plugin tag plugin --push -m "sidekick %s"` and `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`. Close the milestone last.
