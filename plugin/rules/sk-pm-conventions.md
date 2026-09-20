@@ -4,7 +4,7 @@ How work is tracked across the home projects (sidekick, furnace, aesir).
 
 ## Where things live
 - **GitHub is the status surface.** Work items are issues; epics are milestones; each repo has its own project board, which is that repo's single view of what is happening. Issue number is the work item's identity.
-- **A milestone is a release.** It opens with an outcome sentence in its description: what will be true when it closes. It closes with an audit against that sentence, a version tag, and a GitHub Release. It extends only for must-haves that survived scope-hammering and are all downhill; everything else belongs to the next milestone.
+- **A milestone is a release.** It opens with an outcome sentence in its description: what will be true when it closes. It closes with an audit against that sentence, a version tag, and a GitHub Release. It extends only for must-haves that survived scope-cutting and carry no remaining unknowns; everything else belongs to the next milestone.
 - **Files keep content.** Designs, research, ADRs (`docs/adr/`), learnings, reference docs live in the repo. Every working doc names its issue (`#NN`) near the top. Join by issue number, never by file path.
 - **No mirroring.** A fact lives in exactly one place; the other side points at it.
 
@@ -19,7 +19,7 @@ Issue titles are **content names** — say what the work is, never a position co
 ## Board discipline
 - One project board per repo; that board is the repo's status surface. Columns: Backlog · In Progress · Verify · Done.
 - "What do I pick up" is **derived at session start** (orient + a board query), not stored in a column: mid-milestone you continue what's In Progress or pause it on purpose; between loose issues it is a judgment call. A deliberate sequencing decision worth keeping is recorded as a comment on the issue it concerns.
-- An issue labelled `backlog` is deliberately deferred. Its body carries a line beginning `Revisit when:` that names the condition or unknown that would re-raise it; `sidekick pm lint` reports the label without the line. (The Backlog *column* just means not started; the *label* marks the deliberate-deferral subset with a stated condition.)
+- An issue labelled `backlog` is deliberately deferred. Its body carries a line beginning `Revisit when:` that names the condition or unknown that would re-raise it. `sidekick pm lint` reports the label without the line. (The Backlog *column* just means not started; the *label* marks the deliberate-deferral subset with a stated condition.)
 - At filing an issue enters the **active milestone**, when it serves that milestone's stated outcome, or takes `backlog` with its condition. Never a future milestone: that is a promise about a release nobody has planned.
 - Closure is GH-native: `completed`, or `not planned` with a one-line verdict — a first-class outcome, not a failure. The close comment cites its evidence: the commits, the measurement, the PR. Status is set to Done explicitly, because the board's own move is eventually consistent. When there is something worth keeping, write a learning record in the repo and link it from the close comment.
 
