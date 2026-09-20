@@ -32,7 +32,7 @@ gh auth refresh -s project             # the board needs the project scope
 sidekick pm board                      # preflight: gh version, scope, which board
 ```
 
-`gh` 2.98 or later lets the skills write board Status by name (`gh project item-edit --field Status --value …`); below that they write by id, which `sidekick pm` also emits. The preflight in `sidekick pm board` says which you have. Once the plugin is enabled, its session-start hook prints the board's pickup into context in every tracked repo and stays silent everywhere else.
+`gh` 2.98 or later lets the skills write board Status by name (`gh project item-edit <board number> --field Status --value …`); below that they write by id, which `sidekick pm` also emits. The preflight in `sidekick pm board` says which you have. Once the plugin is enabled, its session-start hook prints the board's pickup into context in every tracked repo and stays silent everywhere else.
 
 For a repo you own and want tracked, ask for the `sidekick` skill by name, or say "bring this repo under tracking". Its bootstrap section copies the reference board, links it, creates `backlog` and `change-request`, agrees the `area:*` set with you, and verifies with `sidekick pm board` and `sidekick pm lint`. The reference board is the sidekick board: it carries the four Status options, the three views including `Focus`, and the workflow set with "Pull request linked to issue" already removed. There is no settings-page step and no auto-add workflow, because filing adds the card. The skill text doubles as the checklist if you would rather run it by hand.
 

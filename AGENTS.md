@@ -9,7 +9,8 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 | `.claude-plugin/marketplace.json` | The marketplace `rikmorn`, listing the one plugin at `./plugin` |
 | `plugin/.claude-plugin/plugin.json` | The plugin manifest: name `sidekick`, version, dependencies on superpowers and code-review |
 | `plugin/rules/*.md` | The portable `sk-*` rules; the single source, delivered by `sidekick rules install` |
-| `plugin/skills/` | Skills the plugin ships; `sidekick` today, the PM layer and the extensions later |
+| `plugin/skills/` | Skills the plugin ships: the reference skill `sidekick`, and the PM skills `sk-orient`, `sk-track`, `sk-milestone` |
+| `plugin/hooks/` | The session-start hook that prints the board's pickup in a tracked repo |
 | `plugin/bin/sidekick` | The built executable, committed; rebuild with `bun run build` before a release |
 | `bin/cli.ts`, `bin/helpers/rules.ts` | The executable's TypeScript source and its tests (`*.test.ts` beside them) |
 | `docs/` | Records and steering docs; `docs/README.md` is the taxonomy |
