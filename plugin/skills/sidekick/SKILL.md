@@ -35,6 +35,6 @@ Bringing a repo in is four writes and a check:
 
 Nothing else is configured. There is no auto-add workflow, because filing adds the card and lint's `unboarded` reports a miss. There is no milestone; the first one opens with the first piece of work. A repo that is already `tracked: true` needs at most the label step, which `--force` makes safe to repeat. A second copy produces two boards with the repo's title: discovery takes the lower number, and lint reports `multiple_linked_boards`.
 
-## What is coming
+## What is here, what is coming
 
 The PM layer is here, over `sidekick pm`. `sk-orient` reads the pickup at session start, and a hook prints it; `sk-track` files and closes; `sk-milestone` opens and closes a milestone. The design-side extensions (a design pass before brainstorming, a sealed review after a spec, a goal-backward verdict after a build, decision capture) arrive in later releases. Each one runs beside a superpowers skill; none replaces one.
