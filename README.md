@@ -34,7 +34,7 @@ The command writes and removes only files named `sk-*.md`. That prefix is sideki
 
 ## The board
 
-The project-management seat reads the repo's board and prints JSON; the skills do the judgement and the writes: `sk-orient` at session start (a hook prints the pickup into context), `sk-track` for filing and closing, `sk-milestone` for opening and closing a milestone. A repo is tracked when one open Projects v2 board is linked to it, titled after the repo, and owned by you — no config file.
+The project-management seat reads the repo's board and prints JSON; the skills do the judgement and the writes. `sk-orient` reads the pickup at session start, and a hook prints it into context. `sk-track` files and closes issues. `sk-milestone` opens and closes a milestone. A repo is tracked when one open Projects v2 board is linked to it, titled after the repo, and owned by you — no config file.
 
 ```bash
 sidekick pm board              # discovery and preflight: which board, which Status ids, is gh ready
