@@ -1,11 +1,11 @@
 ---
 name: sk-orient
-description: Where things stand on this repo's board and what to pick up. Use at the start of a session in a tracked repo, when asked what to work on or where things stand, and after finishing a piece of work before choosing the next.
+description: Where things stand on this repo's board and what to pick up. Use at the start of a session in a tracked repo, when asked what to work on, and before choosing the next piece of work.
 ---
 
 # sk-orient
 
-`sidekick pm pickup --brief` prints six lines from the repo's board: the board, the active milestone with its outcome, what is In Progress with its age in days, the candidates in two tiers, drift, and a suggested move. In an untracked repo it prints nothing, and there is nothing to orient: the PM layer is silent where you do not own the tracking. A session-start hook prints the same six lines when a session opens; run the command yourself for a fresh picture mid-session.
+`sidekick pm pickup --brief` prints six lines from the repo's board. They name the board, milestone and outcome, In Progress with its age, candidates by tier, drift, and a suggested move. In an untracked repo it prints nothing, and there is nothing to orient: the PM layer is silent where you do not own the tracking. A session-start hook prints the same six lines when a session opens; run the command yourself for a fresh picture mid-session.
 
 ## Reading it
 
@@ -17,4 +17,4 @@ description: Where things stand on this repo's board and what to pick up. Use at
 
 ## Picking up
 
-Move the card before starting: `gh project item-edit --owner @me --url <issue url> --field Status --value "In Progress"` on gh 2.98 or later. Below that, `sidekick pm pickup` carries each candidate's `item_id` and `sidekick pm board` carries the Status field and option ids for a write by id. The issue body is the brief. Then state the pickup to the operator in one line: the issue, why that one, and what would change the choice.
+Move the card before starting: `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value "In Progress"` on gh 2.98 or later. The board number is the brief's first line, or `project.number` from `sidekick pm board`. Below that version, `sidekick pm pickup` carries each candidate's `item_id` and `sidekick pm board` carries the Status field and option ids for a write by id. The issue body is the brief. Then state the pickup to the operator in one line: the issue, why that one, and what would change the choice.
