@@ -11,6 +11,7 @@ import {
   runPmCli,
   tiers,
 } from './pm.js';
+import { type BriefInput, renderBrief } from './pm-brief.js';
 import type { Item, LinkedBoard, Milestone } from './pm-data.js';
 import { LINT_IDS } from './pm-lint.js';
 
@@ -721,5 +722,33 @@ describe('runPmCli gate', () => {
       ),
     ).toBe(1);
     expect(c.err).toEqual([PM_USAGE]);
+  });
+});
+
+describe('pickup --brief', () => {
+  test('renders the same join the JSON carries, as text', () => {
+    const env = {
+      cwd: '/',
+      run: fixtureRunner(sidekickMap()),
+      now: new Date('2026-09-19T12:00:00Z'),
+    };
+    const j = capture();
+    expect(runPmCli(['pickup'], env, j.o, j.e)).toBe(0);
+    const b = capture();
+    expect(runPmCli(['pickup', '--brief'], env, b.o, b.e)).toBe(0);
+    expect(b.out).toHaveLength(1);
+    expect(b.out[0]).toBe(renderBrief(JSON.parse(j.out[0]) as BriefInput));
+    expect(b.out[0]?.split('\n')[0]).toBe(
+      'sidekick · Rikmorn/sidekick · board #2',
+    );
+    expect(b.out[0]?.split('\n')).toHaveLength(6);
+  });
+  test('--brief is silent in an untracked repo, like --quiet', () => {
+    const c = capture();
+    expect(
+      runPmCli(['pickup', '--brief'], { cwd: '/', run: untracked() }, c.o, c.e),
+    ).toBe(0);
+    expect(c.out).toEqual([]);
+    expect(c.err).toEqual([]);
   });
 });

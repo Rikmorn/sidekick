@@ -9,6 +9,68 @@ import * as os from "node:os";
 import * as path2 from "node:path";
 import { fileURLToPath } from "node:url";
 
+// bin/helpers/pm-brief.ts
+var TITLE_MAX = 60;
+var PER_TIER_MAX = 5;
+function cut(title) {
+  return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title;
+}
+function firstSentence(text) {
+  const t = text.trim();
+  const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
+  return m ? m[1] : t;
+}
+function ref(i) {
+  return `#${i.number} ${cut(i.title)}`;
+}
+function tierLine(tier, candidates) {
+  const mine = candidates.filter((c) => c.tier === tier);
+  if (mine.length === 0)
+    return null;
+  const shown = mine.slice(0, PER_TIER_MAX).map(ref).join("; ");
+  const more = mine.length > PER_TIER_MAX ? ` +${mine.length - PER_TIER_MAX} more` : "";
+  return `tier ${tier} ${shown}${more}`;
+}
+function nextMove(p) {
+  if (p.in_progress.length > 0) {
+    const lowest = Math.min(...p.in_progress.map((i) => i.number));
+    return `continue #${lowest}`;
+  }
+  if (p.candidates.some((c) => c.tier === 1))
+    return "pull one tier-1 candidate";
+  if (p.candidates.some((c) => c.tier === 2))
+    return "pull one tier-2 candidate";
+  return "nothing open: open the next milestone";
+}
+function renderBrief(p) {
+  const lines = [];
+  lines.push(`sidekick · ${p.board.owner}/${p.board.repo} · board #${p.board.project.number}`);
+  if (p.milestone) {
+    const m = p.milestone;
+    const outcome = firstSentence(m.description);
+    lines.push(`milestone: ${m.title} (${m.open_issues} open, ${m.closed_issues} closed)${outcome ? ` · ${outcome}` : ""}`);
+  } else {
+    lines.push("milestone: none");
+  }
+  lines.push(p.in_progress.length > 0 ? `in progress: ${p.in_progress.map((i) => `${ref(i)} (${i.age_days} d)`).join(", ")}` : "in progress: none");
+  const tiers = [tierLine(1, p.candidates), tierLine(2, p.candidates)].filter((t) => t !== null);
+  const order = p.candidates.length > 1 ? " (order: number, not priority)" : "";
+  lines.push(tiers.length > 0 ? `candidates: ${tiers.join(" · ")}${order}` : "candidates: none");
+  const drift = [];
+  const unpushed = p.drift.unpushed.count;
+  if (unpushed !== null && unpushed > 0)
+    drift.push(`${unpushed} unpushed`);
+  if (p.drift.stale_in_progress.length > 0) {
+    drift.push(`stale: ${p.drift.stale_in_progress.map((i) => `#${i.number} (${i.age_days} d)`).join(", ")}`);
+  }
+  if (p.drift.open_pr)
+    drift.push(`open PR #${p.drift.open_pr.number}`);
+  lines.push(drift.length > 0 ? `drift: ${drift.join(" · ")}` : "drift: none");
+  lines.push(`next: ${nextMove(p)}`);
+  return lines.join(`
+`);
+}
+
 // bin/helpers/pm-data.ts
 import { spawnSync } from "node:child_process";
 var execRunner = (cmd, args, cwd) => {
@@ -604,7 +666,7 @@ function discover(run, cwd) {
     root
   };
 }
-var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--milestone <title>]";
+var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--brief] [--milestone <title>]";
 var PM_USAGE = `usage: ${PM_USAGE_LINE}`;
 var VERBS = new Set(["board", "pickup", "lint", "gate"]);
 function runPmCli(args, env, out, err) {
@@ -614,7 +676,8 @@ function runPmCli(args, env, out, err) {
     return 1;
   }
   const run = env.run ?? execRunner;
-  const quiet = rest2.includes("--quiet");
+  const brief = rest2.includes("--brief");
+  const quiet = rest2.includes("--quiet") || brief;
   const msIdx = rest2.indexOf("--milestone");
   const msTitle = msIdx >= 0 ? rest2[msIdx + 1] : undefined;
   if (verb === "gate" && !msTitle) {
@@ -644,14 +707,18 @@ function runPmCli(args, env, out, err) {
       const active = activeMilestone(fetchMilestones(run, info.root, owner, repo, "open"));
       const { items, kinds } = fetchItems(run, info.root, viewer, project.number, fullName);
       const t = tiers(items, active, now);
-      emit({
+      const pickup = {
         board: { ...shown, item_kinds: kinds },
         milestone: active,
         in_progress: t.in_progress,
         candidates: t.candidates,
         order_basis: "number",
         drift: drift(run, info.root, t.in_progress)
-      });
+      };
+      if (brief)
+        out(renderBrief({ ...pickup, board: { owner, repo, project } }));
+      else
+        emit(pickup);
       return 0;
     }
     if (verb === "lint") {

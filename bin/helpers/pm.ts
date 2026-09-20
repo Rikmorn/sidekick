@@ -4,6 +4,8 @@
  * board contradicts, whether a milestone can close. JSON on stdout; the
  * skills do the judgement and the writes.
  */
+
+import { renderBrief } from './pm-brief.js';
 import {
   ageDays,
   execRunner,
@@ -177,7 +179,7 @@ export function discover(run: Runner, cwd: string): BoardInfo {
 }
 
 export const PM_USAGE_LINE =
-  'sidekick pm <board|pickup|lint|gate> [--quiet] [--milestone <title>]';
+  'sidekick pm <board|pickup|lint|gate> [--quiet] [--brief] [--milestone <title>]';
 export const PM_USAGE = `usage: ${PM_USAGE_LINE}`;
 
 export interface PmEnv {
@@ -200,7 +202,8 @@ export function runPmCli(
     return 1;
   }
   const run = env.run ?? execRunner;
-  const quiet = rest.includes('--quiet');
+  const brief = rest.includes('--brief');
+  const quiet = rest.includes('--quiet') || brief;
   const msIdx = rest.indexOf('--milestone');
   const msTitle = msIdx >= 0 ? rest[msIdx + 1] : undefined;
   if (verb === 'gate' && !msTitle) {
@@ -237,14 +240,17 @@ export function runPmCli(
         fullName,
       );
       const t = tiers(items, active, now);
-      emit({
+      const pickup = {
         board: { ...shown, item_kinds: kinds },
         milestone: active,
         in_progress: t.in_progress,
         candidates: t.candidates,
-        order_basis: 'number',
+        order_basis: 'number' as const,
         drift: drift(run, info.root, t.in_progress),
-      });
+      };
+      if (brief)
+        out(renderBrief({ ...pickup, board: { owner, repo, project } }));
+      else emit(pickup);
       return 0;
     }
     if (verb === 'lint') {
