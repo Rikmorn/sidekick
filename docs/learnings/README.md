@@ -14,4 +14,4 @@ A record is written only when the counterfactual holds. Without this record, wou
 - **Lesson.** What turned out to be true, stated so it transfers beyond this case.
 - **Consequences.** What changed because of it: a rule amended, a check added, a convention ruled, or nothing yet and why.
 
-When a lesson graduates into a rule or a reference doc, add `Status: promoted to <path or rule>` under the heading line and leave the record as it was written. A record is history; the rule is where the lesson lives now.
+When a lesson graduates into a rule or a reference doc, add `Status: promoted to <rule or doc>` directly under the `#NN` line. Leave the record as it was written. A record is history; the rule is where the lesson lives now.
