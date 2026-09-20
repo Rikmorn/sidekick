@@ -150,6 +150,27 @@ describe('renderBrief', () => {
     );
   });
 
+  test('a multi-line description still renders one milestone line', () => {
+    const r = renderBrief(
+      base({
+        milestone: {
+          number: 6,
+          title: 'R6 — PM layer',
+          description:
+            'Outcome: sessions start from the board\nScope: the PM layer.\nSize: two.',
+          due_on: null,
+          open_issues: 3,
+          closed_issues: 2,
+          state: 'open',
+        },
+      }),
+    );
+    expect(r.split('\n')).toHaveLength(6);
+    expect(r.split('\n')[1]).toBe(
+      'milestone: R6 — PM layer (3 open, 2 closed) · Outcome: sessions start from the board Scope: the PM layer.',
+    );
+  });
+
   test('nextMove is the fixed rule in order: in progress, tier 1, tier 2, nothing', () => {
     expect(
       nextMove(

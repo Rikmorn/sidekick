@@ -16,7 +16,7 @@ function cut(title) {
   return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title;
 }
 function firstSentence(text) {
-  const t = text.trim();
+  const t = text.replace(/\s+/g, " ").trim();
   const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
   return m ? m[1] : t;
 }

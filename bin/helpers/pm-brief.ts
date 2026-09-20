@@ -26,7 +26,7 @@ function cut(title: string): string {
 }
 
 function firstSentence(text: string): string {
-  const t = text.trim();
+  const t = text.replace(/\s+/g, ' ').trim();
   const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
   return m ? m[1] : t;
 }
