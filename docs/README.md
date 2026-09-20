@@ -16,7 +16,7 @@ What each folder means and how files live and die here. Decided 2026-07-22 with 
 | `adr/` | Architecture decisions. Top-level on purpose: their scope is the system and they bind after the work that spawned them closes. A status line names what an ADR supersedes | Record |
 | `research/` | Grounding reports, one topic per folder, plus the programme map. Proactive research lands here directly; research done inside a piece of work starts under `superpowers/` and is promoted here only when it outlives its issue, naming that issue | Record |
 | `reviews/` | Assessments and audits, frozen at birth. A review that should change something files an issue | Record |
-| `learnings/` | One record per closed item or milestone worth keeping, linked from the close comment. Opens with R6 | Record |
+| `learnings/` | One record per closed item or milestone worth keeping, linked from the close comment; the README there states the bar | Record |
 | `backlog/` | Notes from before work moved to GitHub; each live one names its issue | Record, frozen |
 | `work/` | Per-item records from before the move to GitHub, and the `EPIC.md` and `EPIC-STATE.md` frame they hung from | Record, frozen |
 | `references/` | Provenance notes for shipped changes from before the work records existed | Record, frozen |

@@ -34,11 +34,11 @@ The command writes and removes only files named `sk-*.md`. That prefix is sideki
 
 ## The board
 
-The project-management seat reads the repo's board and prints JSON; the skills that arrive with R6 do the judgement and the writes. A repo is tracked when one open Projects v2 board is linked to it, titled after the repo, and owned by you — no config file.
+The project-management seat reads the repo's board and prints JSON; the skills do the judgement and the writes: `sk-orient` at session start (a hook prints the pickup into context), `sk-track` for filing and closing, `sk-milestone` for opening and closing a milestone. A repo is tracked when one open Projects v2 board is linked to it, titled after the repo, and owned by you — no config file.
 
 ```bash
 sidekick pm board              # discovery and preflight: which board, which Status ids, is gh ready
-sidekick pm pickup             # active milestone, In Progress, candidates by tier, drift
+sidekick pm pickup             # active milestone, In Progress, candidates by tier, drift (--brief: six lines of text)
 sidekick pm lint               # the board's invariants; every count should be 0
 sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 ```
@@ -51,11 +51,12 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 |---|---|
 | `plugin/.claude-plugin/plugin.json` | The manifest: name, version, dependencies |
 | `plugin/rules/` | The portable rules: clean code, TypeScript, language, working standards, guidance authoring, PM conventions, agent-prompt authoring |
-| `plugin/skills/sidekick/` | The reference skill that explains the bundle |
+| `plugin/skills/` | The reference skill `sidekick`, and the PM skills `sk-orient`, `sk-track`, `sk-milestone` |
+| `plugin/hooks/` | The session-start hook that prints the board's pickup in a tracked repo |
 | `plugin/bin/sidekick` | The executable, built from `bin/cli.ts` |
 | `.claude-plugin/marketplace.json` | The one-plugin marketplace this repo is |
 
-The PM layer and the design-side extensions arrive in later releases, each beside a superpowers skill rather than in place of one. The roadmap is the milestone list on GitHub.
+The design-side extensions arrive in later releases, each beside a superpowers skill rather than in place of one. The roadmap is the milestone list on GitHub.
 
 ## Developing
 

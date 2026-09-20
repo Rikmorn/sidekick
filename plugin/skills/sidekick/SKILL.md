@@ -37,4 +37,4 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 
 ## What is coming
 
-The PM layer (session-start pickup, filing, closing with a learning record, milestone to release) and the design-side extensions (a design pass before brainstorming, a sealed review after a spec, a goal-backward verdict after a build, decision capture) arrive in later releases. Each one runs beside a superpowers skill; none replaces one.
+The PM layer is here: `sk-orient` at session start, also printed by a hook; `sk-track` for filing and closing; `sk-milestone` for opening and closing a milestone; all over `sidekick pm`. The design-side extensions (a design pass before brainstorming, a sealed review after a spec, a goal-backward verdict after a build, decision capture) arrive in later releases. Each one runs beside a superpowers skill; none replaces one.
