@@ -61,7 +61,7 @@ describe('renderBrief', () => {
         'in progress: none',
         'candidates: none',
         'drift: none',
-        'next: nothing open: open the next milestone',
+        'next: nothing to pick up: verify, then close the milestone',
       ].join('\n'),
     );
   });
@@ -162,6 +162,11 @@ describe('renderBrief', () => {
     expect(nextMove(base({ candidates: [cand(9, 2)] }))).toBe(
       'pull one tier-2 candidate',
     );
-    expect(nextMove(base())).toBe('nothing open: open the next milestone');
+    expect(nextMove(base())).toBe(
+      'nothing to pick up: verify, then close the milestone',
+    );
+    expect(nextMove(base({ milestone: null }))).toBe(
+      'nothing open: open the next milestone',
+    );
   });
 });

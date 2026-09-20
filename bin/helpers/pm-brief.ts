@@ -53,6 +53,8 @@ export function nextMove(p: BriefInput): string {
     return 'pull one tier-1 candidate';
   if (p.candidates.some((c) => c.tier === 2))
     return 'pull one tier-2 candidate';
+  if (p.milestone)
+    return 'nothing to pick up: verify, then close the milestone';
   return 'nothing open: open the next milestone';
 }
 
