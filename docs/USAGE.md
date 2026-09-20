@@ -34,14 +34,7 @@ sidekick pm board                      # preflight: gh version, scope, which boa
 
 `gh` 2.98 or later lets the skills write board Status by name (`gh project item-edit --field Status --value …`); below that they write by id, which `sidekick pm` also emits. The preflight in `sidekick pm board` says which you have.
 
-For a repo you own and want tracked:
-
-1. Copy the reference board — it carries the four Status options, the three views (including `Focus`, whose filter no API can set), and the built-in workflows: `gh project copy 2 --source-owner Rikmorn --target-owner @me --title <repo>`. Then `gh project link <n> -R <owner>/<repo>` so discovery finds it.
-2. Labels: `backlog` and `change-request` are fixed; the `area:*` set is yours per repo (`gh label create area:<name> --force`). Every open issue carries exactly one `area:*`.
-3. In the board's settings, turn off "Pull request linked to issue" — it moves cards to In Progress retroactively — and optionally turn on auto-add. Workflows have no API beyond delete.
-4. `sidekick pm board` should now say `tracked: true`; `sidekick pm lint` should print zeros.
-
-Issue #110 turns those four steps into a skill. Until then they are by hand, and this page is the checklist.
+For a repo you own and want tracked, ask for the `sidekick` skill by name, or say "bring this repo under tracking". Its bootstrap section copies the reference board, links it, creates `backlog` and `change-request`, agrees the `area:*` set with you, and verifies with `sidekick pm board` and `sidekick pm lint`. The reference board is the sidekick board: it carries the four Status options, the three views including `Focus`, and the workflow set with "Pull request linked to issue" already removed. There is no settings-page step and no auto-add workflow, because filing adds the card. The skill text doubles as the checklist if you would rather run it by hand.
 
 For a repo where someone else owns the tracking, do nothing: `sidekick pm board --quiet` finds no board of yours and stays silent, which is the design.
 
@@ -112,4 +105,4 @@ Session memory is not a record. The pointer to the next piece of work lives on t
 
 ## Shipped and arriving
 
-Shipped: the rules delivery, and `sidekick pm` (#109). Arriving with R6: bootstrap (#110), `sk-orient` (#111), `sk-track` and `docs/learnings/` (#112), `sk-milestone` (#113). After R6: the design-pass extension. The milestone list on `Rikmorn/sidekick` is authoritative; `sidekick pm pickup` in this repo shows where it stands.
+Shipped: the rules delivery, `sidekick pm` (#109), and bootstrap in the `sidekick` skill (#110). Arriving with R6: `sk-orient` (#111), `sk-track` and `docs/learnings/` (#112), `sk-milestone` (#113). After R6: the design-pass extension. The milestone list on `Rikmorn/sidekick` is authoritative; `sidekick pm pickup` in this repo shows where it stands.
