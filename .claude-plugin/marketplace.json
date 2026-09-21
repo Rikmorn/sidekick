@@ -3,14 +3,14 @@
   "owner": { "name": "Roberto Sousa" },
   "metadata": {
     "description": "Roberto's personal Claude Code plugins",
-    "version": "0.2.1"
+    "version": "0.3.0"
   },
   "allowCrossMarketplaceDependenciesOn": ["superpowers", "code-review"],
   "plugins": [
     {
       "name": "sidekick",
       "source": "./plugin",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "description": "Personal everyday loop for Claude Code: superpowers plus house guidance, GitHub project management, and design-side extensions"
     }
   ]
