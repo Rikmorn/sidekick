@@ -27,3 +27,6 @@ credentials.json
 
 # Superpowers' working directory for specs and plans: transient by convention
 docs/superpowers
+
+# superpowers subagent-driven-development state
+.superpowers/
