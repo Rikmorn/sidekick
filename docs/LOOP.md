@@ -69,7 +69,7 @@ Pauses at the confirmation.
 
 ### `sidekick`
 
-The reference skill. It says what the bundle is. It delivers the rules with `sidekick rules install --project|--user` and audits them with `rules check`. It brings a repo under tracking: copy the reference board with `gh project copy`, link it, create the labels, and verify with `sidekick pm board` and `lint`. Pauses on the `area:*` set, which is yours to name.
+The reference skill. It says what the bundle is. It delivers the rules with `sidekick rules install --project|--user` and audits them with `rules check`. It brings a repo under tracking: copy the reference board with `gh project copy`, link it, and create the labels. Then verify with `sidekick pm board` and `lint`. Pauses on the `area:*` set, which is yours to name.
 
 ## Superpowers, as the loop uses it
 
