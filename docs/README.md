@@ -12,7 +12,7 @@ What each folder means and how files live and die here. Decided 2026-07-22 with 
 
 | Folder | Meaning | Lifecycle |
 |---|---|---|
-| `docs/` root | Steering docs: `NORTH-STAR.md`, `DESIGN-PRINCIPLES.md`, `LIMITS.md`; and `USAGE.md`, how the loop runs day to day | Living |
+| `docs/` root | Steering docs: `NORTH-STAR.md`, `DESIGN-PRINCIPLES.md`, `LIMITS.md`; `USAGE.md`, how the loop runs day to day; `LOOP.md`, what each skill in it does | Living |
 | `adr/` | Architecture decisions. Top-level on purpose: their scope is the system and they bind after the work that spawned them closes. A status line names what an ADR supersedes | Record |
 | `research/` | Grounding reports, one topic per folder, plus the programme map. Proactive research lands here directly; research done inside a piece of work starts under `superpowers/` and is promoted here only when it outlives its issue, naming that issue | Record |
 | `reviews/` | Assessments and audits, frozen at birth. A review that should change something files an issue | Record |
