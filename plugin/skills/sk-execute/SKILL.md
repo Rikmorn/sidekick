@@ -24,7 +24,7 @@ Lay out three modes and recommend one. The operator decides; there is no default
 These hold in every mode.
 
 - **Expectations are measurements.** An `Expected:` value that depends on the tree states the command and what it measures, or a formula from the tree. A number measured somewhere else is true there and false at the worker's step.
-- **Prose tasks run the prose check.** When the repo declares a `prose` script, every task that writes or edits prose ends by running it on the files the task changed. Errors are fixed before the commit; warnings go in the task's report. The step sits inside the task because an implementer's brief holds only its own task, and Global Constraints never reach it.
+- **Prose tasks run the prose check.** The repo may declare a `prose` script, such as `scripts.prose` in `package.json`. When it does, every task that writes or edits prose ends by running it on the files the task changed. Errors are fixed before the commit; warnings go in the task's report. Check that its summary counts every file named: some prose checkers read a mistyped path as text and pass it. The step sits inside the task because an implementer's brief holds only its own task, and Global Constraints never reach it.
 - **Reviewers reproduce claims.** Superpowers passes Global Constraints to each task reviewer verbatim, so they carry this line:
 
   > Re-run each check the brief names that the implementer reports as passing, and credit only what you reproduce.
@@ -52,7 +52,7 @@ When the operator chooses the worker mode, they open a session in the repo and s
    - the branch to work on, or "in place" when the operator agreed to that;
    - the superpowers skill to run.
 3. Answer its scan report in one reply where you can. Keep a table of any expected value a ruling moves, so later tasks' numbers stay right.
-4. When the run report arrives, review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Then fast-forward the base branch and close the issues through `sk-track`.
+4. When the run report arrives, review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Add your review's defects under "Defects by stage" in the run report. Then fast-forward the base branch and close the issues through `sk-track`.
 
 A change of scope goes in a fresh handoff, never in a message to a running worker.
 

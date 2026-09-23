@@ -23,7 +23,7 @@ The message names:
 - the branch to work on, or "in place" when the operator agreed to that;
 - the superpowers skill to run: `subagent-driven-development`, or `executing-plans` for a trivial plan.
 
-Check that the plan and the spec exist at that commit. If either is missing, or the message leaves a field out, reply `BLOCKED` with what is missing and wait.
+Check that the plan and the spec exist on disk, and that HEAD is the baseline commit. If either file is missing, or the message leaves a field out, reply `BLOCKED` with what is missing and wait.
 
 ## The scan, before Task 1
 
@@ -41,10 +41,11 @@ Send one report: the baseline confirmation, then every question, each naming its
 Invoke the superpowers skill the handoff names, and follow it. Its task list and progress stay in this session, where the operator can see them. These rules hold on top of it:
 
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
+- **The handoff answers superpowers' questions.** Where superpowers would ask the person, the handoff has already answered: work on the branch it names, or in place. At `finishing-a-development-branch`, keep the branch as it is; the orchestrator reviews and merges.
 - **Run the prose step** wherever a task has one.
 - **Commit once per task,** on the branch the handoff names or in place, and never push.
 - **Read GitHub, never write it.** Issues, comments, and the board belong to the orchestrator.
 
 ## At the end
 
-Write the run report beside the plan as `<plan>-run-report.md`, in the shape of `references/run-report.md`. Then message the orchestrator with the report's path and the last commit.
+Write the run report when superpowers collects its "Rulings I made", before it deletes its workspace. The ledger the report draws on goes with that workspace. Save the report beside the plan as `<plan>-run-report.md`, in the shape of `references/run-report.md`. After the branch is kept, message the orchestrator with the report's path and the last commit.
