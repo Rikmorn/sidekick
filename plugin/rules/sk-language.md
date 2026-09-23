@@ -42,7 +42,7 @@ Replace a pronoun with its noun when the antecedent isn't adjacent. "Sized below
 
 *Simply*, *easily*, *just*, *quickly*, *seamlessly*, *obviously*, *of course* — they mischaracterise difficulty. If the thing isn't easy the word won't help; if it is, the word is a tell.
 
-*Please note*, *note that*, and other placeholder padding. Exclamation points. Idioms, clichés, and pop-culture references. Ableist terms ("sanity check", "crazy") and gendered defaults.
+*Please note*, *note that*, and other placeholder padding. Exclamation points. Idioms, clichés, and pop-culture references.
 
 Prefer positive constructions. "You can continue without a path" beats "A missing path won't prevent you from continuing." Avoid double negatives.
 
