@@ -24,7 +24,7 @@ Front-load. The conclusion or the distinguishing fact goes in the first sentence
 
 Conditions before instructions: "If the build fails, clear the cache", not the reverse.
 
-Keep sentences under 26 words. Break up walls of text.
+Keep sentences under 26 words. Code spans don't count: code stays exact, and a long command goes on its own line instead of inside the sentence. Break up walls of text.
 
 ## Structure
 
