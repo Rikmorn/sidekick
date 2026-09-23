@@ -9,17 +9,18 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 | `.claude-plugin/marketplace.json` | The marketplace `rikmorn`, listing the one plugin at `./plugin` |
 | `plugin/.claude-plugin/plugin.json` | The plugin manifest: name `sidekick`, version, dependencies on superpowers and code-review |
 | `plugin/rules/*.md` | The portable `sk-*` rules; the single source, delivered by `sidekick rules install` |
-| `plugin/skills/` | Skills the plugin ships: the reference skill `sidekick`, and the PM skills `sk-orient`, `sk-track`, `sk-milestone` |
+| `plugin/skills/` | Skills the plugin ships: the reference skill `sidekick`, the PM skills `sk-orient`, `sk-track`, and `sk-milestone`, and the execution skills `sk-execute` and `sk-worker` |
 | `plugin/hooks/` | The session-start hook that prints the board's pickup in a tracked repo |
 | `plugin/bin/sidekick` | The built executable, committed; rebuild with `bun run build` before a release |
 | `bin/cli.ts`, `bin/helpers/rules.ts` | The executable's TypeScript source and its tests (`*.test.ts` beside them) |
+| `.vale.ini`, `.vale/styles/Sidekick/` | The house prose style that `bun run prose` checks Markdown against |
 | `docs/` | Records and steering docs; `docs/README.md` is the taxonomy |
 
 ## Working here
 
-- One package, `package.json`. `bun run test`, `bun run typecheck`, `bun run check`, `bun run build`. Bun builds and tests; Node runs the executable.
+- One package, `package.json`. `bun run test`, `bun run typecheck`, `bun run check`, `bun run build`, and `bun run prose <files>` for Markdown. Bun builds and tests; Node runs the executable.
 - `claude plugin validate --strict .` and `claude plugin validate --strict plugin` gate the manifests. `tsc --noEmit` does not see `*.test.ts`; only `bun test` does.
-- Rules are edited in `plugin/rules/`. This repo carries no copies: like the other home repos it runs on user-level delivery, so after editing run `sidekick rules install --user` and let `sidekick rules check --user` catch drift.
+- Rules are edited in `plugin/rules/`. This repo carries no copies: like the other home repos it runs on user-level delivery. After editing, run `node plugin/bin/sidekick rules install --user`, then `node plugin/bin/sidekick rules check --user`. The `sidekick` on your PATH is the released plugin, and it installs the released rules, not your edit.
 - Prose follows `plugin/rules/sk-language.md`; guidance changes follow `plugin/rules/sk-guidance-authoring.md`; agent and skill prompts follow `plugin/rules/sk-agent-prompts.md`.
 - Specs and plans live under `docs/superpowers/`, gitignored and transient. The durable record of a piece of work is its issue, its close comment, and any ADR or review it produced.
 

@@ -15,6 +15,7 @@ What each skill in the loop does when it runs. For each: what it reads, the comm
 | 1 Orient | The session-start hook, then `sk-orient` | The hook fires itself; the skill on demand |
 | 2 Pick up | `sk-orient` §Picking up | The model, after orienting |
 | 3 Shape the work | `superpowers:brainstorming`, then `superpowers:writing-plans` | The model, before any creative work |
+| 4 Execute, choosing how | `sk-execute`; in a worker session, `sk-worker` | The model for `sk-execute`; you start `sk-worker` |
 | 4 Execute | `superpowers:using-git-worktrees`, then `superpowers:subagent-driven-development` or `superpowers:executing-plans` | The model, in the current session or a worker session |
 | 4 Execute, at the end | `superpowers:requesting-code-review`, `superpowers:finishing-a-development-branch` | The executing skill calls them |
 | 5 File what you notice | `sk-track` §Filing | The model, mid-session |
@@ -67,6 +68,14 @@ It pauses only at the record question, a judgment the skill states rather than a
 
 Pauses at the confirmation.
 
+### `sk-execute`
+
+Fires when a plan is ready, or when `writing-plans` asks how to run it. It lays out three modes with a recommendation: inline, subagent-driven in the session, and a worker session. It checks the plan carries measured expectations, a prose step in each prose task, and the reviewer line in Global Constraints. Then it runs the repo's `prose` script on the plan. For a worker run it finds the worker with `ListAgents` and sends the handoff. Pauses for your choice of mode.
+
+### `sk-worker`
+
+Only you start it, in a second session. It reports its name, checks the tree, and waits for the handoff. Before Task 1 it scans the plan and sends every question in one report. It then runs the superpowers skill the handoff names, ruling as superpowers does except on plan decisions and goals. It commits per task, never pushes, reads GitHub without writing, and ends with a run report.
+
 ### `sidekick`
 
 The reference skill. It says what the bundle is. It delivers the rules with `sidekick rules install --project|--user` and audits them with `rules check`. It brings a repo under tracking: copy the reference board with `gh project copy`, link it, and create the labels. Then verify with `sidekick pm board` and `lint`. Pauses on the `area:*` set, which is yours to name.
@@ -114,4 +123,4 @@ The official plugin's command for a pull request. It reads the PR with `gh`, rev
 
 ## How the house uses them together
 
-An orchestrating session brainstorms, writes the plan, and hands it to a worker session with `SendMessage`. The worker runs `subagent-driven-development` inside a worktree, raises questions before adapting the plan, commits per task without pushing, and writes a run report. The orchestrator rules on questions, reviews the whole branch, fast-forwards `master`, and closes through `sk-track` and `sk-milestone`. `USAGE.md` §Working with a worker session has the handoff; #121 measures what the review layer costs and catches.
+An orchestrating session brainstorms, writes the plan, and runs `sk-execute`, which recommends a mode for you to choose. For a worker run you start `sk-worker` in a second session, and the orchestrator sends it the plan. The worker scans the plan, runs `subagent-driven-development`, commits per task without pushing, and writes a run report. The orchestrator rules on its questions, reviews the whole branch, fast-forwards `master`, and closes through `sk-track` and `sk-milestone`. #121 measures what the review layer costs and catches.

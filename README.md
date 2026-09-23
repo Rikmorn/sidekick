@@ -51,7 +51,7 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 |---|---|
 | `plugin/.claude-plugin/plugin.json` | The manifest: name, version, dependencies |
 | `plugin/rules/` | The portable rules: clean code, TypeScript, language, working standards, guidance authoring, PM conventions, agent-prompt authoring |
-| `plugin/skills/` | The reference skill `sidekick`, and the PM skills `sk-orient`, `sk-track`, `sk-milestone` |
+| `plugin/skills/` | The reference skill `sidekick`, the PM skills `sk-orient`, `sk-track`, and `sk-milestone`, and the execution skills `sk-execute` and `sk-worker` |
 | `plugin/hooks/` | The session-start hook that prints the board's pickup in a tracked repo |
 | `plugin/bin/sidekick` | The executable, built from `bin/cli.ts` |
 | `.claude-plugin/marketplace.json` | The one-plugin marketplace this repo is |

@@ -11,7 +11,7 @@
       "name": "sidekick",
       "source": "./plugin",
       "version": "0.3.0",
-      "description": "Personal everyday loop for Claude Code: superpowers plus house guidance, GitHub project management, and design-side extensions"
+      "description": "Personal everyday loop for Claude Code: superpowers plus house guidance, GitHub project management, plan execution, and design-side extensions"
     }
   ]
 }

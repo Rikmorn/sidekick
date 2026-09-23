@@ -6,7 +6,7 @@ user-invocable: true
 
 # sidekick
 
-sidekick is a plugin bundle, not a harness. Superpowers and the official code-review plugin do the design, plan, execute, and review work; they install as this plugin's dependencies. sidekick adds three things around them: the house guidance (the `sk-*` rules), a project-management layer on GitHub for the repos where the operator owns the tracking, and design-side extensions the ecosystem lacks. ADR-0009 in the sidekick repo records why.
+sidekick is a plugin bundle, not a harness. Superpowers and the official code-review plugin do the design, plan, execute, and review work; they install as this plugin's dependencies. sidekick adds four things around them. They are the house guidance (the `sk-*` rules), a project-management layer on GitHub, an execution process for written plans, and design-side extensions the ecosystem lacks. The project-management layer runs only in the repos where the operator owns the tracking. ADR-0009 in the sidekick repo records why.
 
 ## The rules
 
@@ -37,4 +37,4 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 
 ## What is here, what is coming
 
-The PM layer is here, over `sidekick pm`. `sk-orient` reads the pickup at session start, and a hook prints it; `sk-track` files and closes; `sk-milestone` opens and closes a milestone. The design-side extensions (a design pass before brainstorming, a sealed review after a spec, a goal-backward verdict after a build, decision capture) arrive in later releases. Each one runs beside a superpowers skill; none replaces one.
+The PM layer is here, over `sidekick pm`. `sk-orient` reads the pickup at session start, and a hook prints it; `sk-track` files and closes; `sk-milestone` opens and closes a milestone. `sk-execute` chooses how a written plan runs and hands it to a worker session, where `sk-worker` runs it. The design-side extensions (a design pass before brainstorming, a sealed review after a spec, a goal-backward verdict after a build, decision capture) arrive in later releases. Each one runs beside a superpowers skill; none replaces one.
