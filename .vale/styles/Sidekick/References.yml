@@ -1,0 +1,7 @@
+extends: existence
+message: "Name the file, function, or heading instead of '%s' (sk-language.md, References)."
+level: error
+ignorecase: true
+tokens:
+  - (?:see|as) (?:above|below)
+  - the previous section

@@ -1,0 +1,7 @@
+extends: existence
+message: "'%s' may point at another place in the text; name it instead, unless it is a comparison (sk-language.md, References)."
+level: warning
+ignorecase: true
+tokens:
+  - above
+  - below

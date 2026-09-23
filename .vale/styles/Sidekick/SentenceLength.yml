@@ -1,0 +1,6 @@
+extends: occurrence
+message: "Sentence runs past 25 words; split it or move a command to its own line."
+level: warning
+scope: sentence
+max: 25
+token: '\b[\w''-]+\b'

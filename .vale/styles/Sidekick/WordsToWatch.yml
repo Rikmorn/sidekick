@@ -1,0 +1,7 @@
+extends: existence
+message: "'%s' often pads a sentence; keep it only in a literal sense (sk-language.md, Words to cut)."
+level: warning
+ignorecase: true
+tokens:
+  - just
+  - quickly

@@ -1,0 +1,12 @@
+extends: existence
+message: "Cut '%s' (sk-language.md, Words to cut)."
+level: error
+ignorecase: true
+tokens:
+  - simply
+  - easily
+  - seamlessly
+  - obviously
+  - of course
+  - please note
+  - note that
