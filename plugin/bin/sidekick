@@ -3,11 +3,94 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs2 from "node:fs";
+import * as fs3 from "node:fs";
 import { realpathSync } from "node:fs";
 import * as os from "node:os";
-import * as path2 from "node:path";
+import * as path3 from "node:path";
 import { fileURLToPath } from "node:url";
+
+// bin/helpers/hook.ts
+import * as fs from "node:fs";
+import * as path from "node:path";
+var HOOK_USAGE_LINE = "sidekick hook post-skill   (reads the hook event on stdin)";
+var DESIGN_SKILL = path.join("skills", "sk-design", "SKILL.md");
+var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
+var isRecord = (v) => typeof v === "object" && v !== null;
+function isSkillHookInput(v) {
+  if (!isRecord(v))
+    return false;
+  const input = v.tool_input;
+  return isRecord(input) && typeof input.skill === "string";
+}
+function parseJson(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return;
+  }
+}
+function readText(file) {
+  try {
+    return fs.readFileSync(file, "utf-8");
+  } catch {
+    return;
+  }
+}
+function readSkillDescription(skillFile) {
+  const text = readText(skillFile);
+  if (text === undefined)
+    return;
+  const lines = text.split(`
+`);
+  if (lines[0].trim() !== "---")
+    return;
+  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
+  if (close < 0)
+    return;
+  const match = lines.slice(1, close).map((line) => DESCRIPTION_LINE.exec(line)).find((m) => m !== null);
+  if (!match)
+    return;
+  const value = parseJson(match[1]);
+  return typeof value === "string" ? value : undefined;
+}
+function brainstormNudge(pluginDir) {
+  const description = readSkillDescription(path.join(pluginDir, DESIGN_SKILL));
+  if (description === undefined)
+    return;
+  return [
+    "sidekick: before this brainstorm proposes approaches, check whether the change needs a design pass.",
+    `sidekick:sk-design: ${description}`,
+    "If it applies, run it now, or at the approaches step, which it then does itself.",
+    "If a design note for this change already exists, start from it."
+  ].join(" ");
+}
+var NUDGES = new Map([
+  ["superpowers:brainstorming", brainstormNudge]
+]);
+function postSkillContext(stdin, pluginDir) {
+  const event = parseJson(stdin);
+  if (!isSkillHookInput(event))
+    return;
+  const nudge = NUDGES.get(event.tool_input.skill);
+  return nudge === undefined ? undefined : nudge(pluginDir);
+}
+function runHookCli(args, env, out, err) {
+  const [verb] = args;
+  if (verb !== "post-skill") {
+    err(`usage: ${HOOK_USAGE_LINE}`);
+    return 1;
+  }
+  const context = postSkillContext(env.stdin, env.pluginDir);
+  if (context === undefined)
+    return 0;
+  out(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PostToolUse",
+      additionalContext: context
+    }
+  }));
+  return 0;
+}
 
 // bin/helpers/pm-brief.ts
 var TITLE_MAX = 60;
@@ -393,26 +476,26 @@ function lintAll(input) {
 
 // bin/helpers/rules.ts
 import { execFileSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import * as fs2 from "node:fs";
+import * as path2 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
 function statusOf(dir, name) {
-  const st = fs.lstatSync(path.join(dir, name), { throwIfNoEntry: false });
+  const st = fs2.lstatSync(path2.join(dir, name), { throwIfNoEntry: false });
   if (!st)
     return "absent";
   return st.isFile() ? "file" : "other";
 }
 var isRegularFile = (dir, name) => statusOf(dir, name) === "file";
 function ownedRulesIn(dir) {
-  const dirStat = fs.statSync(dir, { throwIfNoEntry: false });
+  const dirStat = fs2.statSync(dir, { throwIfNoEntry: false });
   if (!dirStat)
     return [];
   if (!dirStat.isDirectory())
     return [];
-  return fs.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
+  return fs2.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
 }
 function resolveDest(scope, cwd, claudeHome) {
-  return scope === "project" ? path.join(cwd, ".claude", "rules") : path.join(claudeHome, "rules");
+  return scope === "project" ? path2.join(cwd, ".claude", "rules") : path2.join(claudeHome, "rules");
 }
 function repoRootOf(cwd) {
   try {
@@ -429,9 +512,9 @@ function installRules(src, dest) {
   const shipped = ownedRulesIn(src);
   if (shipped.length === 0)
     return { installed: [], removed: [], skipped: [] };
-  fs.mkdirSync(dest, { recursive: true });
+  fs2.mkdirSync(dest, { recursive: true });
   const byLowerCase = new Map;
-  for (const existing of fs.readdirSync(dest)) {
+  for (const existing of fs2.readdirSync(dest)) {
     byLowerCase.set(existing.toLowerCase(), existing);
   }
   const installed = [];
@@ -446,13 +529,13 @@ function installRules(src, dest) {
       skipped.push({ name, why: "not-a-regular-file" });
       continue;
     }
-    fs.copyFileSync(path.join(src, name), path.join(dest, name));
+    fs2.copyFileSync(path2.join(src, name), path2.join(dest, name));
     installed.push(name);
   }
   const keep = new Set(shipped);
   const removed = ownedRulesIn(dest).filter((n) => !keep.has(n));
   for (const name of removed)
-    fs.rmSync(path.join(dest, name));
+    fs2.rmSync(path2.join(dest, name));
   return { installed, removed, skipped };
 }
 function checkRules(src, dest) {
@@ -460,12 +543,12 @@ function checkRules(src, dest) {
   const installed = ownedRulesIn(dest);
   const drift = [];
   for (const name of shipped) {
-    const there = path.join(dest, name);
-    if (!fs.existsSync(there)) {
+    const there = path2.join(dest, name);
+    if (!fs2.existsSync(there)) {
       drift.push({ kind: "missing", name });
       continue;
     }
-    const same = fs.readFileSync(path.join(src, name)).equals(fs.readFileSync(there));
+    const same = fs2.readFileSync(path2.join(src, name)).equals(fs2.readFileSync(there));
     if (!same)
       drift.push({ kind: "stale", name });
   }
@@ -496,23 +579,23 @@ function openingOf(body) {
   return value === "" ? undefined : value;
 }
 function findOverlap(src, dest) {
-  const destStat = fs.statSync(dest, { throwIfNoEntry: false });
+  const destStat = fs2.statSync(dest, { throwIfNoEntry: false });
   if (!destStat)
     return [];
   if (!destStat.isDirectory())
     return [];
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs.readFileSync(path.join(src, name), "utf-8");
+    const body = fs2.readFileSync(path2.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
       opening: openingOf(body)
     };
   });
-  const others = fs.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
+  const others = fs2.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   const found = [];
   for (const file of others) {
-    const body = fs.readFileSync(path.join(dest, file), "utf-8");
+    const body = fs2.readFileSync(path2.join(dest, file), "utf-8");
     const headings = headingsOf(body);
     const opening = openingOf(body);
     for (const rule of rules) {
@@ -552,7 +635,7 @@ function runRulesCli(args, env, out) {
     out(`no sk-*.md rules found at ${env.src}; refusing to touch ${dest}`);
     return 1;
   }
-  const destStat = fs.statSync(dest, { throwIfNoEntry: false });
+  const destStat = fs2.statSync(dest, { throwIfNoEntry: false });
   if (destStat && !destStat.isDirectory()) {
     out(`${dest} exists and is not a directory; refusing to write rules there`);
     return 1;
@@ -862,21 +945,21 @@ function gateVerdict(ms, issues, items) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path2.dirname(fileURLToPath(entryFileUrl));
+  const here = path3.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path2.resolve(here, ".."),
-    path2.resolve(here, "..", "plugin")
+    path3.resolve(here, ".."),
+    path3.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs2.existsSync(path2.join(c, "rules")))
+    if (fs3.existsSync(path3.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 function readVersion(pluginDir) {
-  const manifest = path2.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path3.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = JSON.parse(fs2.readFileSync(manifest, "utf-8"));
+    const parsed = JSON.parse(fs3.readFileSync(manifest, "utf-8"));
     return typeof parsed.version === "string" ? parsed.version : "unknown";
   } catch {
     return "unknown";
@@ -893,7 +976,15 @@ function isMainEntrypoint(importMetaUrl, argv1) {
 }
 var USAGE2 = `usage: sidekick rules <install|check> --project|--user
        ${PM_USAGE_LINE}
+       ${HOOK_USAGE_LINE}
        sidekick --version`;
+function readProcessStdin() {
+  try {
+    return fs3.readFileSync(0, "utf-8");
+  } catch {
+    return "";
+  }
+}
 function main(argv, ctx, out, err) {
   const [sub, ...rest2] = argv;
   const pluginDir = resolvePluginDir(ctx.entryFileUrl);
@@ -903,12 +994,16 @@ function main(argv, ctx, out, err) {
   }
   if (sub === "pm")
     return runPmCli(rest2, { cwd: ctx.cwd }, out, err);
+  if (sub === "hook") {
+    const readStdin = ctx.readStdin ?? readProcessStdin;
+    return runHookCli(rest2, { stdin: readStdin(), pluginDir }, out, err);
+  }
   if (sub !== "rules") {
     err(USAGE2);
     return 1;
   }
-  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path2.join(os.homedir(), ".claude");
-  const src = ctx.env.SIDEKICK_RULES_DIR || path2.join(pluginDir, "rules");
+  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path3.join(os.homedir(), ".claude");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path3.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

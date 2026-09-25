@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# PostToolUse hook on the Skill tool: when a skill sidekick extends has loaded,
+# add sidekick's context for it (ADR-0010). Silent, with exit 0, for everything
+# else: no node on PATH, any other skill, a malformed event. A hook never fails
+# the call it watches.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+command -v node >/dev/null 2>&1 || exit 0
+node "$ROOT/bin/sidekick" hook post-skill 2>/dev/null
+exit 0

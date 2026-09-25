@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * sidekick — the plugin's executable. Two command families: `rules` and
- * `pm`.
+ * sidekick — the plugin's executable. Three command families: `rules`, `pm`,
+ * and `hook`.
  * Shipped as plugin/bin/sidekick (a Node bundle built from this file) and run
  * from source as `bun bin/cli.ts`; both resolve the shipped rules relative to
  * this file.
@@ -11,6 +11,7 @@ import { realpathSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { HOOK_USAGE_LINE, runHookCli } from './helpers/hook.js';
 import { PM_USAGE_LINE, runPmCli } from './helpers/pm.js';
 import { runRulesCli } from './helpers/rules.js';
 
@@ -54,12 +55,22 @@ export function isMainEntrypoint(
   }
 }
 
-export const USAGE = `usage: sidekick rules <install|check> --project|--user\n       ${PM_USAGE_LINE}\n       sidekick --version`;
+export const USAGE = `usage: sidekick rules <install|check> --project|--user\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       sidekick --version`;
 
 export interface MainContext {
   env: NodeJS.ProcessEnv;
   cwd: string;
   entryFileUrl: string;
+  /** Reads the hook event; only the `hook` family calls it. */
+  readStdin?: () => string;
+}
+
+function readProcessStdin(): string {
+  try {
+    return fs.readFileSync(0, 'utf-8');
+  } catch {
+    return '';
+  }
 }
 
 export function main(
@@ -75,6 +86,10 @@ export function main(
     return 0;
   }
   if (sub === 'pm') return runPmCli(rest, { cwd: ctx.cwd }, out, err);
+  if (sub === 'hook') {
+    const readStdin = ctx.readStdin ?? readProcessStdin;
+    return runHookCli(rest, { stdin: readStdin(), pluginDir }, out, err);
+  }
   if (sub !== 'rules') {
     err(USAGE);
     return 1;
