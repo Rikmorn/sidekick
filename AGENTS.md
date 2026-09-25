@@ -20,10 +20,10 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 
 - One package, `package.json`. `bun run test`, `bun run typecheck`, `bun run check`, `bun run build`, and `bun run prose <files>` for Markdown. Bun builds and tests; Node runs the executable.
 - `claude plugin validate --strict .` and `claude plugin validate --strict plugin` gate the manifests. `tsc --noEmit` does not see `*.test.ts`; only `bun test` does.
-- Rules are edited in `plugin/rules/`. This repo carries no copies: like the other home repos it runs on user-level delivery. After editing, run `node plugin/bin/sidekick rules install --user`, then `node plugin/bin/sidekick rules check --user`. The `sidekick` on your PATH is the released plugin, and it installs the released rules, not your edit.
+- Rules are edited in `plugin/rules/`. This repo carries no copies: like the other home repos, it reads the user-level rules, which are always the released ones. A rule edit reaches `~/.claude/rules/` only through a release, so unreleased work stays out of every other repo; do not install rules from the repo bundle. For in-progress skills, hooks, and the CLI, start the session with `claude --plugin-dir ./plugin`. Rules are not plugin content, so an edited rule takes effect after its release.
 - Prose follows `plugin/rules/sk-language.md`; guidance changes follow `plugin/rules/sk-guidance-authoring.md`; agent and skill prompts follow `plugin/rules/sk-agent-prompts.md`.
 - Specs and plans live under `docs/superpowers/`, gitignored and transient. The durable record of a piece of work is its issue, its close comment, and any ADR or review it produced.
 
 ## Releasing
 
-Bump the three `version` fields (plugin.json, and both in marketplace.json), rebuild the executable, and commit. Then `claude plugin tag plugin --push -m "sidekick %s"` and `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`. Close the milestone last.
+Bump the three `version` fields (plugin.json, and both in marketplace.json), rebuild the executable, and commit. Then `claude plugin tag plugin --push -m "sidekick %s"` and `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`. Then run `claude plugin update sidekick@rikmorn`, restart Claude Code, and run `sidekick rules install --user` and `sidekick rules check --user`. An install from the released plugin is the only one that writes user-level rules. Close the milestone last.
