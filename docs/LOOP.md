@@ -14,6 +14,7 @@ What each skill in the loop does when it runs. For each: what it reads, the comm
 | Set up once | `sidekick` (rules, bootstrap) | You, or the model when asked to set a repo up |
 | 1 Orient | The session-start hook, then `sk-orient` | The hook fires itself; the skill on demand |
 | 2 Pick up | `sk-orient` §Picking up | The model, after orienting |
+| 3 Shape the work | `sk-design`, before or during brainstorming | The model, when a change is costly to undo, with the Skill-tool hook as a prompt; you, to explore or evaluate |
 | 3 Shape the work | `superpowers:brainstorming`, then `superpowers:writing-plans` | The model, before any creative work |
 | 4 Execute, choosing how | `sk-execute`; in a worker session, `sk-worker` | The model for `sk-execute`; you start `sk-worker` |
 | 4 Execute | `superpowers:using-git-worktrees`, then `superpowers:subagent-driven-development` or `superpowers:executing-plans` | The model, in the current session or a worker session |
@@ -30,6 +31,10 @@ What each skill in the loop does when it runs. For each: what it reads, the comm
 ### The session-start hook
 
 Fires on `startup` and `clear`, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick pm pickup --brief` from the current directory. In a tracked repo it prints a one-line header, the six-line brief, and the body of `sk-orient`, so the model opens the session already oriented. Anywhere else it prints nothing and exits 0; the same when `node` or `gh` is missing or fails. Cost measured on 2026-09-20: a few seconds in a tracked repo, under a third of a second elsewhere.
+
+### The Skill-tool hook
+
+Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick hook post-skill` with the hook's event on stdin. When the skill that loaded is `superpowers:brainstorming`, it adds one paragraph to context: check whether the change needs a design pass, followed by `sk-design`'s description. Any other skill, and any failure, gets nothing and exit 0, so it never blocks a call. A slash command you type yourself loads without the Skill tool, and the hook does not fire then. ADR-0010 records the mechanism.
 
 ### `sk-orient`
 
@@ -67,6 +72,16 @@ It pauses only at the record question, a judgment the skill states rather than a
 - The milestone closed by `gh api -X PATCH`, a "Resolved in" comment on each `COMPLETED` issue, and a learning record if the bar holds.
 
 Pauses at the confirmation.
+
+### `sk-design`
+
+Fires when a change would be costly to undo, before or during brainstorming, or when you ask to explore, evaluate, or plan a design. It reads the repo's architecture sources, then writes its note, from the problem through prior art and options to the decision. A fresh subagent reviews every note with options, and the note answers each finding.
+
+- **Inside a brainstorm**, the note lives under `docs/superpowers/designs/` and takes brainstorming's approaches step.
+- **With no build in hand**, it lives under `docs/backlog/<topic>/` across sessions, and ends in a breakdown that `sk-milestone` files.
+- **Small debt** goes to an issue through `sk-track`, or to `docs/tech-debt/` in an untracked repo.
+
+Pauses for your decision. With no operator to ask, it registers the design as debt.
 
 ### `sk-execute`
 
@@ -123,4 +138,4 @@ The official plugin's command for a pull request. It reads the PR with `gh`, rev
 
 ## How the house uses them together
 
-An orchestrating session brainstorms, writes the plan, and runs `sk-execute`, which recommends a mode for you to choose. For a worker run you start `sk-worker` in a second session, and the orchestrator sends it the plan. The worker scans the plan, runs `subagent-driven-development`, commits per task without pushing, and writes a run report. The orchestrator rules on its questions, reviews the whole branch, fast-forwards `master`, and closes through `sk-track` and `sk-milestone`. #121 measures what the review layer costs and catches.
+An orchestrating session runs `sk-design` when a change is costly to undo, brainstorms from its note, writes the plan, and runs `sk-execute`. That skill recommends a mode for you to choose. For a worker run you start `sk-worker` in a second session, and the orchestrator sends it the plan. The worker scans the plan, runs `subagent-driven-development`, commits per task without pushing, and writes a run report. The orchestrator rules on its questions, reviews the whole branch, fast-forwards `master`, and closes through `sk-track` and `sk-milestone`. #121 measures what the review layer costs and catches.

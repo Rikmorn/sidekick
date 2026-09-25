@@ -16,7 +16,7 @@ Superpowers is the trunk: brainstorm, plan, execute, review. The official code-r
 | House guidance | The `sk-*` rules Claude Code reads in every repo: working standards, language, clean code, TypeScript, guidance authoring, PM conventions, agent prompts | `plugin/rules/`, delivered by `sidekick rules install` |
 | PM layer | Tracking on GitHub for the repos you own: session-start pickup, filing, closing with a record, milestone to release, a hygiene lint | `sidekick pm`, its session-start hook, and the `sk-orient`, `sk-track`, and `sk-milestone` skills |
 | Execution | How a written plan runs: a mode chosen per plan, what the plan carries, and the worker handoff | The `sk-execute` and `sk-worker` skills |
-| Extensions | Design-side steps the ecosystem lacks: a design pass before brainstorming, a sealed review after a spec, a goal-backward verdict after a build | Later milestones |
+| Extensions | Design-side steps the ecosystem lacks. Shipped: a design pass before or during brainstorming. To come: a sealed review after a spec, a goal-backward verdict after a build | The `sk-design` skill and its Skill-tool hook; later milestones for the rest |
 
 The PM layer is on where you own the tracking and silent everywhere else. A repo is tracked when one open Projects v2 board is linked to it, titled after the repo, and owned by you. No config file; the board is the switch.
 
@@ -58,7 +58,7 @@ At filing, an issue goes into the active milestone (it serves the stated outcome
 
 **2. Pick up.** Move the card: `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value "In Progress"`. The number is the brief's first line, and the issue body is the brief.
 
-**3. Shape the work.** Brainstorm with superpowers — the issue is the problem statement, the brainstorm settles the forks — and write the spec under `docs/superpowers/specs/`. Plan with `writing-plans`, stating each expected value as a command and what it measures. `sk-execute` lists what else a plan carries before it goes out.
+**3. Shape the work.** When a wrong choice would be costly to undo, `sk-design` designs the change before or during the brainstorm, and a fresh subagent reviews its note. Brainstorm with superpowers — the issue is the problem statement, the brainstorm settles the forks — and write the spec under `docs/superpowers/specs/`. Plan with `writing-plans`, stating each expected value as a command and what it measures. `sk-execute` lists what else a plan carries before it goes out.
 
 **4. Execute.** `sk-execute` lays out three modes with a recommendation, and you choose. The modes are inline, subagent-driven in the session, and a worker session started with `sk-worker`. The orchestrating session reviews the whole branch and fast-forwards `master`. Each run records its mode, escalations, review rounds, and defects per stage; token totals are summed by hand while #121 is open. The gates are `bun run test`, `bun run typecheck`, `bun run check`, and `bun run prose` on changed Markdown. For anything touching `bin/`, add `bun run build`, with the control that a second build changes nothing.
 
@@ -98,10 +98,11 @@ You open a session in the repo and start `sk-worker` there; that is your only st
 | Decisions that bind the system | `docs/adr/` | Record |
 | What an audit or survey found | `docs/reviews/` | Record, frozen at birth |
 | What a closed item taught | `docs/learnings/`; its README states the bar and the shape | Record |
-| Specs, plans, run reports | `docs/superpowers/` | Transient, gitignored; the issue is the tombstone |
+| Designs being explored | `docs/backlog/<topic>/`, written by `sk-design` | Until the issues it became close |
+| Specs, plans, run reports, shape-scale design notes | `docs/superpowers/` | Transient, gitignored; the issue is the tombstone |
 
 Session memory is not a record. The pointer to the next piece of work lives on the board, and `sidekick pm pickup` reads it.
 
 ## Shipped and arriving
 
-Landed in 0.3.0: the rules delivery, `sidekick pm` with its session-start hook, bootstrap in the `sidekick` skill, `sk-orient`, `sk-track` with `docs/learnings/`, and `sk-milestone`. Landing in R7: `sk-execute` and `sk-worker` (#127), then the design pass (#119). The milestone list on `Rikmorn/sidekick` is authoritative; `sidekick pm pickup` in this repo shows where it stands.
+Landed in 0.3.0: the rules delivery, `sidekick pm` with its session-start hook, bootstrap in the `sidekick` skill, `sk-orient`, `sk-track` with `docs/learnings/`, and `sk-milestone`. Landing in R7: `sk-execute` and `sk-worker` (#127), then `sk-design`, the design pass, with its Skill-tool hook (#119). The milestone list on `Rikmorn/sidekick` is authoritative; `sidekick pm pickup` in this repo shows where it stands.
