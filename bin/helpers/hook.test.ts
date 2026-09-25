@@ -32,7 +32,7 @@ function run(stdin: string, pluginDir = PLUGIN_DIR) {
   const err: string[] = [];
   const code = runHookCli(
     ['post-skill'],
-    { stdin, pluginDir },
+    { readStdin: () => stdin, pluginDir },
     (l) => out.push(l),
     (l) => err.push(l),
   );
@@ -123,11 +123,16 @@ describe('runHookCli post-skill', () => {
     });
   });
 
-  test('an unknown verb prints usage and returns 1', () => {
+  test('an unknown verb prints usage and returns 1 without reading stdin', () => {
     const err: string[] = [];
     const code = runHookCli(
       ['pre-skill'],
-      { stdin: '', pluginDir: PLUGIN_DIR },
+      {
+        readStdin: () => {
+          throw new Error('stdin read before the verb check');
+        },
+        pluginDir: PLUGIN_DIR,
+      },
       () => {},
       (l) => err.push(l),
     );

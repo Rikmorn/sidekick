@@ -28,7 +28,7 @@ Claude Code's hooks guide also documents that a `PreToolUse` hook can deny a cal
 **Negative, accepted:**
 
 - A slash command the operator types bypasses the hook, so a nudge covers model-invoked skills only.
-- Every Skill call starts a `node` process; the cost is unmeasured.
+- Every Skill call starts a `node` process: 40 to 50 ms per call, measured on 2026-09-25 with `/usr/bin/time` over `bash plugin/hooks/post-skill` on Node 22.
 - A superpowers rename disables a nudge silently. Daily use, or a headless check, is what notices.
 - A nudge is advice the model may not follow. #136 measures that if it misfires.
 

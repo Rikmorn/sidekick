@@ -4,7 +4,7 @@ An explore note designs something with no build in hand: a large change, a subsy
 
 ## Where it lives
 
-The note is `docs/backlog/<topic>/design.md`, with a short kebab-case topic. Supporting files sit beside it: research notes, spike results, a sub-problem's own note, and later any rendered documentation. The folder stays fluid until PM plans it, and is deleted once the work it planned is done.
+The note is `docs/designs/<topic>/design.md`, with a short kebab-case topic. Pick a topic no other design uses, so the folder belongs to this design alone. Supporting files sit beside it: research notes, spike results, a sub-problem's own note, and later any rendered documentation. The folder stays fluid until PM plans it, and is deleted once the work it planned is done.
 
 The status line carries the lifecycle:
 
@@ -16,7 +16,7 @@ After those issues close, the folder is deleted: by `sk-milestone`'s close in a 
 
 ## Resuming
 
-The note is the memory between sessions, so write each decision into it when it is made, not only into the conversation. Invoked without a topic, list the `design.md` notes under `docs/backlog/` whose status reads `exploring`, and ask which to continue. Read the whole note before adding to it.
+The note is the memory between sessions, so write each decision into it when it is made, not only into the conversation. Invoked without a topic, list the `design.md` notes under `docs/designs/` whose status reads `exploring`, and ask which to continue. Read the whole note before adding to it.
 
 ## Gates
 
@@ -59,4 +59,4 @@ In an untracked repo, the operator takes the breakdown to wherever the work is t
 
 ## Escalating from a shape note
 
-When a shape-scale design outgrows one spec, move its note to `docs/backlog/<topic>/design.md`. Set its scale to `explore` and its status to `exploring`. Stop the brainstorm and tell the operator the design has outgrown one spec; they decide whether to replan.
+When a shape-scale design outgrows one spec, move its note to `docs/designs/<topic>/design.md`. Set its scale to `explore` and its status to `exploring`. Stop the brainstorm and tell the operator the design has outgrown one spec; they decide whether to replan.

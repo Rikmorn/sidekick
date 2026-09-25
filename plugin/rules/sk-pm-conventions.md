@@ -5,11 +5,11 @@ How work is tracked across the home projects (sidekick, furnace, aesir).
 ## Where things live
 - **GitHub is the status surface.** Work items are issues; epics are milestones; each repo has its own project board, which is that repo's single view of what is happening. Issue number is the work item's identity.
 - **A milestone is a release.** It opens with an outcome sentence in its description: what will be true when it closes. It closes with an audit against that sentence, a version tag, and a GitHub Release. It extends only for must-haves that survived scope-cutting and carry no remaining unknowns; everything else belongs to the next milestone.
-- **Files keep content.** Designs, research, ADRs (`docs/adr/`), learnings, reference docs live in the repo. Every working doc names its issue (`#NN`) near the top. A design under `docs/backlog/<topic>/` is the exception until PM plans it. From then it names the issues it became, and each of those issues stands alone. Join by issue number, never by file path.
+- **Files keep content.** Designs, research, ADRs (`docs/adr/`), learnings, reference docs live in the repo. Every working doc names its issue (`#NN`) near the top. A design under `docs/designs/<topic>/` is the exception until PM plans it. From then it names the issues it became, and each of those issues stands alone. Join by issue number, never by file path.
 - **No mirroring.** A fact lives in exactly one place; the other side points at it.
 
 ## Placement test (tense)
-True now → reference doc · happened → ADR / learning record · being designed → `docs/backlog/<topic>/` · to do or doing → GitHub issue.
+True now → reference doc · happened → ADR / learning record · being designed → `docs/designs/<topic>/` · to do or doing → GitHub issue.
 
 Some history is frozen: sidekick's `docs/work/` holds per-item records from before work moved to GitHub. A frozen directory is never rewritten, and a broken link is the only edit it takes. If something inside it is still true now, promote that content out into a reference doc rather than editing the record. A record keeps the identifiers it was written with, even once the thing it names is renamed.
 

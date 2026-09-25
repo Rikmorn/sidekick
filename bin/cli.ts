@@ -88,7 +88,7 @@ export function main(
   if (sub === 'pm') return runPmCli(rest, { cwd: ctx.cwd }, out, err);
   if (sub === 'hook') {
     const readStdin = ctx.readStdin ?? readProcessStdin;
-    return runHookCli(rest, { stdin: readStdin(), pluginDir }, out, err);
+    return runHookCli(rest, { readStdin, pluginDir }, out, err);
   }
   if (sub !== 'rules') {
     err(USAGE);

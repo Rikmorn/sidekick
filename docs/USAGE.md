@@ -66,7 +66,7 @@ At filing, an issue goes into the active milestone (it serves the stated outcome
 
 **6. Close.** `sk-track`'s close moment, in order: the record question, the evidence comment, `gh issue close --reason …`, and Status set to Done explicitly. `docs/learnings/README.md` states the bar, a counterfactual, and the shape.
 
-**7. Close the milestone.** `sidekick pm gate --milestone "<title>"` says whether anything is still open and lists it with Status; `sidekick pm lint` should be all zeros. Then: bump the three `version` fields (plugin.json, and both in marketplace.json), `bun run build`, and commit. Release: `claude plugin tag plugin --push -m "sidekick %s"`, then `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`. Close: `gh api -X PATCH repos/<owner>/<repo>/milestones/<n> -f state=closed`. `sk-milestone` runs this. It audits against the outcome sentence, dispositions every open issue, asks for confirmation, runs the ceremony, and comments "resolved in" on each closed issue. Its open moment creates the next milestone with its outcome and scans the backlog for seeds whose condition holds.
+**7. Close the milestone.** `sidekick pm gate --milestone "<title>"` says whether anything is still open and lists it with Status; `sidekick pm lint` should be all zeros. Then: bump the three `version` fields (plugin.json, and both in marketplace.json), `bun run build`, and commit. Release: `claude plugin tag plugin --push -m "sidekick %s"`, then `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`. Close: `gh api -X PATCH repos/<owner>/<repo>/milestones/<n> -f state=closed`. `sk-milestone` runs this. It audits against the outcome sentence, dispositions every open issue, asks for confirmation, and runs the ceremony. It deletes the design folders whose issues have all closed, and comments "resolved in" on each closed issue. Its open moment creates the next milestone with its outcome. It scans the backlog, and the designs marked `ready for PM`, for seeds whose condition holds.
 
 ## The commands
 
@@ -98,7 +98,7 @@ You open a session in the repo and start `sk-worker` there; that is your only st
 | Decisions that bind the system | `docs/adr/` | Record |
 | What an audit or survey found | `docs/reviews/` | Record, frozen at birth |
 | What a closed item taught | `docs/learnings/`; its README states the bar and the shape | Record |
-| Designs being explored | `docs/backlog/<topic>/`, written by `sk-design` | Until the issues it became close |
+| Designs being explored | `docs/designs/<topic>/`, written by `sk-design` | Until the issues it became close |
 | Specs, plans, run reports, shape-scale design notes | `docs/superpowers/` | Transient, gitignored; the issue is the tombstone |
 
 Session memory is not a record. The pointer to the next piece of work lives on the board, and `sidekick pm pickup` reads it.

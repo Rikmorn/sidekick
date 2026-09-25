@@ -61,24 +61,24 @@ It pauses only at the record question, a judgment the skill states rather than a
 
 ### `sk-milestone`
 
-**Opening**: agrees the outcome sentence with you, then creates the milestone with `gh api -X POST …/milestones`. It scans `backlog` issues for conditions that now hold, proposes them, then orients. Pauses on the outcome and on every seed.
+**Opening**: agrees the outcome sentence with you, then creates the milestone with `gh api -X POST …/milestones`. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, proposes them, then orients. Pauses on the outcome and on every seed.
 
 **Closing**:
 
 - `sidekick pm gate` and `sidekick pm lint` first, and every open issue dispositioned.
 - The audit against the outcome sentence; each gap becomes an issue or a judgment.
 - A confirmation. Nothing outward runs without a yes.
-- On yes: version bump (three fields in sidekick), build, commit, tag, and `gh release create <tag> --verify-tag --title … --notes-file …`.
+- On yes: version bump (three fields in sidekick), deletion of the design folders whose issues have all closed, build, commit, tag, and `gh release create <tag> --verify-tag --title … --notes-file …`.
 - The milestone closed by `gh api -X PATCH`, a "Resolved in" comment on each `COMPLETED` issue, and a learning record if the bar holds.
 
 Pauses at the confirmation.
 
 ### `sk-design`
 
-Fires when a change would be costly to undo, before or during brainstorming, or when you ask to explore, evaluate, or plan a design. It reads the repo's architecture sources, then writes its note, from the problem through prior art and options to the decision. A fresh subagent reviews every note with options, and the note answers each finding.
+Fires when a change would be costly to undo, before or during brainstorming, or when you ask to explore, evaluate, or plan a design. It reads the repo's architecture sources, then writes its note, from the problem through prior art and options to the decision. A fresh subagent reviews every note with options, unless the note is trivial and says why, and the note answers each finding.
 
 - **Inside a brainstorm**, the note lives under `docs/superpowers/designs/` and takes brainstorming's approaches step.
-- **With no build in hand**, it lives under `docs/backlog/<topic>/` across sessions, and ends in a breakdown that `sk-milestone` files.
+- **With no build in hand**, it lives under `docs/designs/<topic>/` across sessions, and ends in a breakdown that `sk-milestone` proposes and `sk-track` files.
 - **Small debt** goes to an issue through `sk-track`, or to `docs/tech-debt/` in an untracked repo.
 
 Pauses for your decision. With no operator to ask, it registers the design as debt.

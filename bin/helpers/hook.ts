@@ -11,7 +11,8 @@ export const HOOK_USAGE_LINE =
   'sidekick hook post-skill   (reads the hook event on stdin)';
 
 export interface HookEnv {
-  stdin: string;
+  /** Reads the hook event; called only once the verb is known. */
+  readStdin: () => string;
   pluginDir: string;
 }
 
@@ -105,7 +106,7 @@ export function runHookCli(
     err(`usage: ${HOOK_USAGE_LINE}`);
     return 1;
   }
-  const context = postSkillContext(env.stdin, env.pluginDir);
+  const context = postSkillContext(env.readStdin(), env.pluginDir);
   if (context === undefined) return 0;
   out(
     JSON.stringify({

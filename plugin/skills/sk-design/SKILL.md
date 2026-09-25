@@ -26,18 +26,18 @@ Run the pass when a wrong choice would be expensive to undo later. The usual sig
 
 Skip it when the diff fits in one sentence, or when only one answer is sensible. The usual cases are a copy change, a rename, a fix within the existing shape, config, tests, and docs. When unsure, write the five-line version.
 
-The pass does not run inside debugging. A root cause whose fix would be a special case is a design problem. Register it as §Decide and route says, rather than patching around it. The pass runs when that issue is brainstormed.
+The pass does not run inside debugging. A root cause whose fix would be a special case is a design problem. Register it as §Decide and route says, rather than patching around it. The pass runs when that registered item is picked up.
 
 ## Two scales
 
 | | Shape | Explore |
 |---|---|---|
 | When | Inside a brainstorm, on the change at hand | No build in hand: a large change, a subsystem to evaluate, a direction to plan |
-| Note | `docs/superpowers/designs/<YYYY-MM-DD>-<topic>.md`, transient | `docs/backlog/<topic>/design.md`, fluid across sessions |
+| Note | `docs/superpowers/designs/<YYYY-MM-DD>-<topic>.md`, transient | `docs/designs/<topic>/design.md`, fluid across sessions |
 | Gates | Brainstorming's own | Three of its own |
 | Ends in | The spec brainstorming writes | A reviewed breakdown that PM files |
 
-Explore scale is in `references/explore.md`. Read it when the operator asks to explore, evaluate, or plan, or when a shape note outgrows one spec.
+Explore scale is in `references/explore.md`. Read it when the operator asks to explore, evaluate, or plan, or when a shape note outgrows one spec. Read it too when the pass starts without a topic: it says how to resume a design in progress.
 
 ## Before the note
 
@@ -72,7 +72,7 @@ Status: exploring | ready for PM | planned (#NN, #NN) · Scale: shape | explore 
 - **Decision.** One of: do it now; do the seam now and register the rest; register it as debt. Write it as a Y-statement: in the context of …, facing …, we decided for …, to achieve …, accepting …. The "accepting" clause names the debt and what it costs to carry.
 - **Review.** Each finding from §Review and its answer.
 
-A shape note's status line names the spec it fed, once brainstorming writes one.
+A shape note's status line names its issue, when it has one, and later the spec it fed.
 
 ### Pattern card
 
@@ -113,11 +113,14 @@ Answer every finding in the Review section. Accept it and change the note, or re
 
 ## Shape scale in a brainstorm
 
-The pass takes brainstorming's "Propose 2-3 approaches" step.
+Brainstorming sorts work into a spike, a bounded change, or an architectural change, and the pass fits each differently.
 
-1. Write the note and run the review.
-2. Present the recommendation, the options, and the review, with the note's path. Brainstorming's approval at that step is the decision.
-3. Brainstorming continues to its design sections and the spec. The spec cites the note and carries its constraints, decision, and blast radius as settled. Brainstorming asks only what the note leaves open; re-asking a settled question is a defect in the hand-off.
+- **Architectural.** The pass takes brainstorming's "Propose 2-3 approaches" step.
+  1. Write the note and run the review.
+  2. Present the recommendation, the options, and the review, with the note's path. Brainstorming's approval at that step is the decision.
+  3. Brainstorming continues to its design sections and the spec. The spec cites the note and carries its constraints, decision, and blast radius as settled. Brainstorming asks only what the note leaves open; re-asking a settled question is a defect in the hand-off.
+- **Bounded.** Run the pass before brainstorming presents its short design. That design cites the note and carries its decision as settled. If the pass shows the change is larger than a bounded one, say so; brainstorming's own ratchet then moves it to the architectural path.
+- **Spike.** A spike answers a question and keeps no code, so the pass does not run.
 
 When the pass ran before brainstorming, brainstorming starts from the note the same way. When the design outgrows one spec, move the note to explore scale as `references/explore.md` says. Then stop the brainstorm and tell the operator, who decides whether to replan.
 
@@ -129,7 +132,7 @@ The decision is the operator's. Do not act on a recommendation until it is chose
 |---|---|---|
 | Do it now | Into the spec | Into the spec |
 | Small debt, whole in an issue body | An issue through `sk-track` | `docs/tech-debt/<area>/<item>.md`, one file per item, deleted when paid |
-| Debt or a design needing more work | `docs/backlog/<topic>/design.md` | `docs/backlog/<topic>/design.md` |
+| Debt or a design needing more work | `docs/designs/<topic>/design.md` | `docs/designs/<topic>/design.md` |
 | A decision that binds future work | An ADR in the repo's ADR folder | An ADR in the repo's ADR folder |
 
 "Seam now, register the rest" sends the seam into the spec and routes the rest by those rows. `sk-track` knows whether the repo is tracked; where it reports untracked, write the tech-debt file. When the operator accepts a conscious hack, the brainstorm continues on the narrow fix, and the note says it is narrow.

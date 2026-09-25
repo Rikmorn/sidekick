@@ -80,7 +80,7 @@ function runHookCli(args, env, out, err) {
     err(`usage: ${HOOK_USAGE_LINE}`);
     return 1;
   }
-  const context = postSkillContext(env.stdin, env.pluginDir);
+  const context = postSkillContext(env.readStdin(), env.pluginDir);
   if (context === undefined)
     return 0;
   out(JSON.stringify({
@@ -996,7 +996,7 @@ function main(argv, ctx, out, err) {
     return runPmCli(rest2, { cwd: ctx.cwd }, out, err);
   if (sub === "hook") {
     const readStdin = ctx.readStdin ?? readProcessStdin;
-    return runHookCli(rest2, { stdin: readStdin(), pluginDir }, out, err);
+    return runHookCli(rest2, { readStdin, pluginDir }, out, err);
   }
   if (sub !== "rules") {
     err(USAGE2);
