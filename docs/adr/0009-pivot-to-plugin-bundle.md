@@ -1,5 +1,7 @@
 # ADR-0009 — Pivot to a plugin bundle: superpowers does the work, sidekick adds what it lacks
 
+> **Amended 2026-09-25 (#119):** the Consequences sentence "plugins cannot hook into each other's skills at runtime" no longer holds. A hook on the Skill tool adds context when another plugin's skill loads. ADR-0010 records the mechanism and how sidekick uses it.
+
 **Status:** Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002; parks the eval, knowledge-layer, and measurement programmes of ADR-0006, ADR-0007, and ADR-0008. Issue #93, milestone R5.
 
 ## Context
