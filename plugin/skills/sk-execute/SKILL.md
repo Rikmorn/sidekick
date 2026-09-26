@@ -50,7 +50,7 @@ When the operator chooses the worker mode, they open a session in the repo and s
 2. Message it the handoff:
    - the plan and the spec;
    - the baseline commit and the gate results at that commit;
-   - the branch to work on, or "in place" when the operator agreed to that;
+   - where to work: a branch in the main checkout, a branch in a worktree, or "in place" when the operator agreed to that;
    - the superpowers skill to run.
 3. Answer its scan report in one reply where you can. Keep a table of any expected value a ruling moves, so later tasks' numbers stay right.
 4. When the run report arrives, review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Add your review's defects under "Defects by stage" in the run report. Then fast-forward the base branch and close the issues through `sk-track`.
