@@ -44,13 +44,13 @@ For a repo where someone else owns the tracking, do nothing: `sidekick pm board 
 The conventions are in `plugin/rules/sk-pm-conventions.md`; the parts the loop touches every day:
 
 - **Issues are work items.** Titles are content names, never position codes. The body is the brief: the problem, what resolves it, what is out of scope, how it is verified. Exactly one `area:*` label.
-- **Milestones are releases.** A milestone opens with an outcome sentence in its description — what will be true when it closes — and closes with a plugin version tag and a GitHub Release. Sized to one or two sessions.
+- **Milestones are releases.** A milestone opens with an outcome sentence in its description: what will be true when it closes. It closes with a plugin version tag and a GitHub Release. It is sized by its outcome, and its issues group into plans of one session each, named in its description. Its scope locks when Opening ends, and `sk-pm-conventions.md` §Change control says what may join later.
 - **One board per repo,** columns Backlog · In Progress · Verify · Done. "What do I pick up" is derived from the board at session start, never stored anywhere else.
 - **`backlog` is a deliberate deferral,** and its body carries a line starting `Revisit when:` naming the condition that would re-raise it. `sidekick pm lint` flags the label without the line. A deferred issue sits in no milestone.
-- **`change-request`** marks a scope or objective change; it is triaged before any milestone absorbs it.
+- **`change-request`** marks an objective change, a reshaped outcome sentence; it is decided before any work absorbs it. Additions to a milestone do not carry it.
 - **Closure is GitHub-native:** `gh issue close --reason completed`, or `--reason "not planned"` with a one-line reason. The close comment cites its evidence — the commits, the measurement, the PR — and links the record in `docs/` if there is one. Status is set to Done explicitly, because the board's auto-move is eventually consistent.
 
-At filing, an issue goes into the active milestone (it serves the stated outcome) or gets `backlog` with a `Revisit when:` line. Never a future milestone: that is a promise about a release nobody has planned.
+At filing, an issue gets `backlog` with a `Revisit when:` line, unless it is a small addition closely tied to the active milestone's work. That one joins with a comment saying why, and you hear about it in one line. A bigger discovery is filed and brought to you, not pursued inline. Never a future milestone: that is a promise about a release nobody has planned.
 
 ## A session, start to finish
 
@@ -88,6 +88,8 @@ Every issue entry carries `item_id`, the board item's node id, so a write by id 
 `sk-execute` holds the handoff and `sk-worker` holds the worker's rules. Both ship in the plugin, so every repo running sidekick has them.
 
 You open a session in the repo and start `sk-worker` there; that is your only step. The orchestrating session finds the worker, sends it the plan, and rules on the questions from its scan. At the end it reviews the whole branch, because a per-task review cannot see a defect at the seam between tasks.
+
+The handoff names where the worker works. A plain branch in the main checkout suits a run where the orchestrating session stays off the tree until the branch is done. A worktree suits a run where that session needs the checkout meanwhile. `docs/superpowers/` is gitignored, so a worktree does not contain the spec or the plan; the worker reads them by the main checkout's path.
 
 ## Where things are recorded
 

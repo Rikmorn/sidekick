@@ -46,7 +46,7 @@ Reads the brief: board, milestone with its outcome, In Progress with ages, candi
 
 - `gh issue list --state all --limit 200 --search` for a duplicate.
 - One `area:*` from `gh label list`, and a self-contained brief.
-- The entry gate: the active milestone, or `backlog` with a `Revisit when:` line. It refuses to file without one.
+- The entry gate: the active milestone for a small addition tied to its work, with a comment and a line to you. Otherwise `backlog` with a `Revisit when:` line. It refuses to file without one.
 - `gh issue create`, then `gh project item-add`. It tells you the number.
 
 **Closing**, when work is done:
@@ -61,15 +61,15 @@ It pauses only at the record question, a judgment the skill states rather than a
 
 ### `sk-milestone`
 
-**Opening**: agrees the outcome sentence with you, then creates the milestone with `gh api -X POST …/milestones`. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, proposes them, then orients. Pauses on the outcome and on every seed.
+**Opening**: agrees the outcome sentence with you, then creates the milestone with `gh api -X POST …/milestones`. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, and proposes them. It groups the issues into plans of one session each, records them in the description, then orients. Pauses on the outcome, on every seed, and on the plans.
 
 **Closing**:
 
 - `sidekick pm gate` and `sidekick pm lint` first, and every open issue dispositioned.
-- The audit against the outcome sentence; each gap becomes an issue or a judgment.
-- A confirmation. Nothing outward runs without a yes.
-- On yes: version bump (three fields in sidekick), deletion of the design folders whose issues have all closed, build, commit, tag, and `gh release create <tag> --verify-tag --title … --notes-file …`.
-- The milestone closed by `gh api -X PATCH`, a "Resolved in" comment on each `COMPLETED` issue, and a learning record if the bar holds.
+- The audit against the outcome sentence; each gap becomes an issue or a judgment. It also lists the issues added after Opening.
+- A confirmation, carrying the learning-record judgment. Nothing outward runs without a yes.
+- On yes: the learning record if the bar holds, and the version bump (three fields in sidekick). Then deletion of the design folders whose issues have all closed, build, and one commit. Then tag, and `gh release create <tag> --verify-tag --title … --notes-file …`.
+- The milestone closed by `gh api -X PATCH`, and a "Resolved in" comment on each `COMPLETED` issue.
 
 Pauses at the confirmation.
 
@@ -85,7 +85,7 @@ Pauses for your decision. With no operator to ask, it registers the design as de
 
 ### `sk-execute`
 
-Fires when a plan is ready, or when `writing-plans` asks how to run it. It lays out three modes with a recommendation: inline, subagent-driven in the session, and a worker session. It checks the plan carries measured expectations, a prose step in each prose task, and the reviewer line in Global Constraints. Then it runs the repo's `prose` script on the plan. For a worker run it finds the worker with `ListAgents` and sends the handoff. Pauses for your choice of mode.
+Fires when a plan is ready, or when `writing-plans` asks how to run it. It lays out three modes with a recommendation: inline, subagent-driven in the session, and a worker session. It checks the plan names which of the active milestone's plans it is. It also checks the plan carries measured expectations, a prose step in each prose task, and the reviewer line in Global Constraints. Then it runs the repo's `prose` script on the plan. For a worker run it finds the worker with `ListAgents` and sends the handoff. Pauses for your choice of mode.
 
 ### `sk-worker`
 

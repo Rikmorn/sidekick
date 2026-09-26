@@ -2,6 +2,8 @@
 
 > **Amended 2026-09-25 (#119):** the Consequences sentence "plugins cannot hook into each other's skills at runtime" no longer holds. A hook on the Skill tool adds context when another plugin's skill loads. ADR-0010 records the mechanism and how sidekick uses it.
 
+> **Amended 2026-09-26 (#132):** §6's "sized to one or two sessions" no longer holds. A milestone is sized by its outcome, its issues group into plans of one session each, and `sk-pm-conventions.md` carries the convention.
+
 **Status:** Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002; parks the eval, knowledge-layer, and measurement programmes of ADR-0006, ADR-0007, and ADR-0008. Issue #93, milestone R5.
 
 ## Context
