@@ -71,6 +71,6 @@ bun run build       # bin/cli.ts → plugin/bin/sidekick (committed)
 claude plugin validate --strict . && claude plugin validate --strict plugin
 ```
 
-A release is a milestone closed: `claude plugin tag plugin --push` creates `sidekick--v<version>` from the manifest, and `gh release create` publishes it. This repo consumes its own plugin like any other repo; its `.claude/rules/` copies are what `sidekick rules install --project` writes.
+A release is a milestone closed: `claude plugin tag plugin --push` creates `sidekick--v<version>` from the manifest, and `gh release create` publishes it. This repo consumes its own plugin like any other repo, and reads the user-level rules, which only a release updates.
 
 `docs/` holds the records: ADRs, research, reviews, and the frozen work history. `docs/README.md` says what each folder means.

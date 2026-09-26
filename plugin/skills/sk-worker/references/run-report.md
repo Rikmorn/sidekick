@@ -16,7 +16,7 @@ For each task, the review rounds and the fix waves.
 
 ## Defects by stage
 
-Each defect, under the stage that found it: the plan scan, the implementer, the task review, or the whole-branch review. The orchestrator adds its own review's defects.
+Each defect, under the stage that found it: the plan scan, the implementer, the task review, or the whole-branch review. The orchestrator adds its own review's defects. Mark each one fixed, with its commit, or open, so the orchestrator can route what is still open.
 
 ## Deviations from the plan
 

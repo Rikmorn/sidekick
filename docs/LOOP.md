@@ -85,7 +85,7 @@ Pauses for your decision. With no operator to ask, it registers the design as de
 
 ### `sk-execute`
 
-Fires when a plan is ready, or when `writing-plans` asks how to run it. It lays out three modes with a recommendation: inline, subagent-driven in the session, and a worker session. In a tracked repo whose active milestone has a `Plans:` clause, it checks the plan names which of those plans it is. It also checks the plan carries measured expectations, a prose step in each prose task, and the reviewer line in Global Constraints. Then it runs the repo's `prose` script on the plan. For a worker run it finds the worker with `ListAgents` and sends the handoff. After the run it routes every review finding: part of the work is fixed in the branch, and anything else goes through §Change control. Pauses for your choice of mode.
+Fires when a plan is ready, or when `writing-plans` asks how to run it. It lays out three modes with a recommendation: inline, subagent-driven in the session, and a worker session. In a tracked repo whose active milestone has a `Plans:` clause, it checks the plan names which of those plans it is. It also checks the plan carries measured expectations, a prose step in each prose task, and the reviewer line in Global Constraints. Then it runs the repo's `prose` script on the plan. For a worker run it finds the worker with `ListAgents` and sends the handoff. After the run it routes every review finding. Part of the work is fixed in the branch; anything else goes through `sk-pm-conventions.md` §Change control or is dropped with its reason told to you. Pauses for your choice of mode.
 
 ### `sk-worker`
 
