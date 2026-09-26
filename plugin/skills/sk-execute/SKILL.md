@@ -42,6 +42,10 @@ In the two subagent modes:
 - Tasks that copy prose verbatim from the plan are same-shape work. Mark them in the plan so the controller batches them into one dispatch and one review.
 - The whole-branch review always runs.
 
+## Route every finding
+
+A review's findings are graded by their effect, not by the reviewer's label, and each gets a route before the workspace is deleted. Ask of each: if it were left, would the repo, the work, or the milestone stop being correct or consistent? Then it is part of the work, fixed in the branch. That covers text the branch wrote, and any place still stating a premise the branch retired. Anything else is an addition under `sk-pm-conventions.md` §Change control, or a drop whose reason the operator hears. This overrides superpowers' rule that minors never enter the fix pass. A finding left only in a closing message is lost with the workspace.
+
 ## Hand off to a worker
 
 When the operator chooses the worker mode, they open a session in the repo and start `sk-worker` there. Then:
