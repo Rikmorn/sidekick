@@ -107,4 +107,4 @@ Session memory is not a record. The pointer to the next piece of work lives on t
 
 ## Shipped and arriving
 
-Landed in 0.3.0: the rules delivery, `sidekick pm` with its session-start hook, bootstrap in the `sidekick` skill, `sk-orient`, `sk-track` with `docs/learnings/`, and `sk-milestone`. Landing in R7: `sk-execute` and `sk-worker` (#127), then `sk-design`, the design pass, with its Skill-tool hook (#119). The milestone list on `Rikmorn/sidekick` is authoritative; `sidekick pm pickup` in this repo shows where it stands.
+Landed in 0.3.0: the rules delivery, `sidekick pm` with its session-start hook, bootstrap in the `sidekick` skill, `sk-orient`, `sk-track` with `docs/learnings/`, and `sk-milestone`. Landed in 0.4.0: `sk-execute` and `sk-worker` (#127), `sk-design`, the design pass, with its Skill-tool hook (#119), and milestones sized by outcome (#132). The other design-side extensions arrive in later releases. The milestone list on `Rikmorn/sidekick` is authoritative; `sidekick pm pickup` in this repo shows where it stands.
