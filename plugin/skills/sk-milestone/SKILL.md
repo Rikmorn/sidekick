@@ -9,10 +9,11 @@ Milestones are releases: one opens with an outcome sentence and closes with an a
 
 ## Opening
 
-1. The outcome sentence comes first: what will be true when the milestone closes. Agree it with the operator, then the scope in a line or two and the size, one or two sessions. A milestone that needs more is two milestones.
-2. Create it: `gh api -X POST repos/<owner>/<repo>/milestones -f title="<title>" -f description="Outcome: <sentence> Scope: <lines> Size: <sessions>."`. There is no `gh milestone` command.
+1. The outcome sentence comes first: what will be true when the milestone closes. Agree it with the operator, then the scope in a line or two. Size the milestone by that outcome: the smallest release that makes the sentence true.
+2. Create it: `gh api -X POST repos/<owner>/<repo>/milestones -f title="<title>" -f description="Outcome: <sentence> Scope: <lines>."`. There is no `gh milestone` command.
 3. Seed scan: list the open `backlog` issues with `gh issue list --label backlog --state open --limit 200`. For each, read its `Revisit when:` line and ask whether the condition now holds. Propose the ones that do; nothing moves without agreement. An accepted seed loses the label and gains the milestone: `gh issue edit <n> --milestone "<title>" --remove-label backlog`. Then list the designs whose `docs/designs/<topic>/design.md` status line reads `ready for PM`, and propose them the same way. An accepted design is filed through `sk-track`, one issue per piece of its breakdown, into the milestone. Its status line becomes `planned (#NN, …)`.
-4. Tell the operator the milestone, its outcome, and what it opened with, then orient: the first pickup comes from the board.
+4. Group the milestone's issues into plans. Each is a logical group sized to what one session holds, so a session starts and ends cleanly. Name each plan by its content, never by a letter or a number. Agree the grouping with the operator, then add it to the description: `gh api -X PATCH repos/<owner>/<repo>/milestones/<n> -f description="<the whole description> Plans: <name> (#N, #N); <name> (#N)."`. A `PATCH` replaces the whole field, so the command carries the description in full. The grouping comes last because a design's breakdown gets its issue numbers in step 3. After Opening, a regroup edits the clause the same way, with a comment on each moved issue saying why.
+5. Tell the operator the milestone, its outcome, its plans, and what it opened with. The scope is now what the description names, and later additions follow `sk-pm-conventions.md` §Change control. Then orient: the first pickup comes from the board.
 
 ## Closing
 
