@@ -23,6 +23,7 @@ Lay out three modes and recommend one. The operator decides; there is no default
 
 These hold in every mode.
 
+- **The plan names its milestone plan.** It applies in a tracked repo, to a plan that carries issues of an active milestone with a `Plans:` clause. The plan's header names which of those plans it is. A plan matching none means the milestone has grown. `sk-pm-conventions.md` §Change control then decides: a small addition, or a question for the operator before the plan goes out.
 - **Expectations are measurements.** An `Expected:` value that depends on the tree states the command and what it measures, or a formula from the tree. A number measured somewhere else is true there and false at the worker's step.
 - **Prose tasks run the prose check.** The repo may declare a `prose` script, such as `scripts.prose` in `package.json`. When it does, every task that writes or edits prose ends by running it on the files the task changed. Errors are fixed before the commit; warnings go in the task's report. Check that its summary counts every file named: some prose checkers read a mistyped path as text and pass it. The step sits inside the task because an implementer's brief holds only its own task, and Global Constraints never reach it.
 - **Reviewers reproduce claims.** Superpowers passes Global Constraints to each task reviewer verbatim, so they carry this line:
