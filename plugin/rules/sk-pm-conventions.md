@@ -4,7 +4,7 @@ How work is tracked across the home projects (sidekick, furnace, aesir).
 
 ## Where things live
 - **GitHub is the status surface.** Work items are issues; epics are milestones; each repo has its own project board, which is that repo's single view of what is happening. Issue number is the work item's identity.
-- **A milestone is a release.** It opens with an outcome sentence in its description: what will be true when it closes. It closes with an audit against that sentence, a version tag, and a GitHub Release. It extends only for must-haves that survived scope-cutting and carry no remaining unknowns; everything else belongs to the next milestone.
+- **A milestone is a release.** It opens with an outcome sentence in its description: what will be true when it closes. It is sized by that outcome, as the smallest release that makes the sentence true. Its issues group into plans, each sized to what one session holds, named in the description's `Plans:` clause. It closes with an audit against that sentence, a version tag, and a GitHub Release. It extends only for must-haves that survived scope-cutting and carry no remaining unknowns; everything else belongs to the next milestone.
 - **Files keep content.** Designs, research, ADRs (`docs/adr/`), learnings, reference docs live in the repo. Every working doc names its issue (`#NN`) near the top. A design under `docs/designs/<topic>/` is the exception until PM plans it. From then it names the issues it became, and each of those issues stands alone. Join by issue number, never by file path.
 - **No mirroring.** A fact lives in exactly one place; the other side points at it.
 
@@ -20,7 +20,7 @@ Issue titles are **content names** — say what the work is, never a position co
 - One project board per repo; that board is the repo's status surface. Columns: Backlog · In Progress · Verify · Done.
 - "What do I pick up" is **derived at session start** (orient + a board query), not stored in a column: mid-milestone you continue what's In Progress or pause it on purpose; between loose issues it is a judgment call. A deliberate sequencing decision worth keeping is recorded as a comment on the issue it concerns.
 - An issue labelled `backlog` is deliberately deferred. Its body carries a line beginning `Revisit when:` that names the condition or unknown that would re-raise it. `sidekick pm lint` reports the label without the line. (The Backlog *column* just means not started; the *label* marks the deliberate-deferral subset with a stated condition.)
-- At filing an issue enters the **active milestone**, when it serves that milestone's stated outcome, or takes `backlog` with its condition. Never a future milestone: that is a promise about a release nobody has planned.
+- At filing an issue takes `backlog` with its condition, unless it is a small addition closely tied to work already in the **active milestone** (§Change control). Never a future milestone: that is a promise about a release nobody has planned.
 - Closure is GH-native: `completed`, or `not planned` with a one-line verdict — a first-class outcome, not a failure. The close comment cites its evidence: the commits, the measurement, the PR. Status is set to Done explicitly, because the board's own move is eventually consistent. When there is something worth keeping, write a learning record in the repo and link it from the close comment. The bar is a counterfactual: without the record, would the next engineer repeat the mistake or redo the investigation?
 
 ## Breakdown and labels
@@ -29,7 +29,11 @@ Issue titles are **content names** — say what the work is, never a position co
 - A repo may declare one further content axis and name it for what it distinguishes; aesir uses `pkg:*` for the package an issue touches. An issue carries any number of labels on that axis, or none. Keep it to one axis per repo, because a second turns label choice into guesswork.
 
 ## Change control
-Objective or scope changes enter as issues labelled `change-request` and are prioritised explicitly before any work absorbs them. This applies to the releases' own gates.
+A milestone's scope is what its description names when Opening ends; the seeds and breakdowns Opening files enter it directly. The scope is locked because feature creep has led work into rabbit holes, away from what the milestone set out to do. Weigh each later addition by its size; the ceremony scales with it.
+
+- A small issue closely tied to work already in the milestone may join on the PM's judgment or the operator's. Small means it fits an existing plan and leaves the outcome as it was. Whoever adds it comments on the issue why, and adds it to the `Plans:` clause when the milestone has one. The model tells the operator in one line, and the operator can veto.
+- A bigger discovery is captured, not pursued inline: a `backlog`-labelled issue, or a set of them, and a word to the operator. Its size decides what follows, and the operator makes the call. The choices run from extending this milestone, to leaving it in `backlog` for a later milestone, to its own research or design. A discovery the milestone cannot close without is raised at once, since the milestone may have to wait for it.
+- An objective change, a reshaped outcome sentence, enters as an issue labelled `change-request` and is decided before any work absorbs it.
 
 ## Working docs
 Specs/plans/scaffolding under `docs/superpowers/` are disposable (gitignored where the repo so chooses): delete on closure; the learning record is the tombstone.
