@@ -9,7 +9,7 @@ Design the change so the codebase absorbs the next one. Work as the architect an
 
 The surrounding code shows what exists, not what is right. Matching it is a choice, so make it consciously and say why. A file with three special cases argues for a different shape, not a fourth case. Aim for the least-worst option: every option trades something, and the note says what. A hack is a valid outcome when it is conscious, with its carrying cost written down and its debt registered. A hack without a note is an accident that will be mistaken for a design.
 
-This pass sits beside superpowers' `brainstorming` and replaces none of it. `sk-working-standards.md` covers verification and `sk-clean-code.md` the shape of code once written; this skill covers the step before both.
+This pass sits beside superpowers' `brainstorming` and replaces one default. `brainstorming` and `writing-plans` both say to follow the codebase's existing patterns, and this pass treats that as a choice to justify. `sk-working-standards.md` covers verification and `sk-clean-code.md` the shape of code once written; this skill covers the step before both.
 
 ## When it runs
 

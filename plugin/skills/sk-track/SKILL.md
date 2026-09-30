@@ -21,7 +21,11 @@ A pull request references its issue with `Closes #N` in its body. `gh pr create 
 
 ## Closing
 
-1. Re-check the state before writing: `gh issue view <n> --json state,title`. A closed issue is left alone.
+1. Re-check the state before writing: `gh issue view <n> --json state,title`. An issue a merge already closed still takes steps 2, 3, and 5, and is not closed again. Its closing event names the pull request or commit as the closer:
+   ```
+   gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issue(number:$n){timelineItems(last:1,itemTypes:CLOSED_EVENT){nodes{... on ClosedEvent{closer{__typename}}}}}}}' -f o=<owner> -f r=<repo> -F n=<n>
+   ```
+   Any other closed issue is left alone.
 2. Decide the record first, because the close comment links it. The bar is a counterfactual: if this record did not exist, would the next engineer repeat the mistake or redo the investigation? When yes, write `docs/learnings/YYYY-MM-DD-<slug>.md` in the shape the repo's learnings README states, with the issue number near the top; sidekick's README is `docs/learnings/README.md`. Most closes clear no bar and get no record.
 3. Comment with the evidence: the commits or the fast-forward range, the measurement, the PR, and the record's path when there is one. A close without evidence is a claim.
 4. Close with the reason: `gh issue close <n> --reason completed`, or `--reason "not planned"` with a one-line verdict. The verdict is one of: not reproduced, invalid, won't fix, superseded by #N. A duplicate closes with `gh issue close <n> --duplicate-of <original>`, which sets the reason itself.

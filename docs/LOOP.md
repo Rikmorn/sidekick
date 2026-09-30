@@ -93,7 +93,7 @@ Fires when a plan is ready, or when `writing-plans` asks how to run it. It lays 
 
 ### `sk-worker`
 
-Only you start it, in a second session. It reports its name, checks the tree, and waits for the handoff. Before Task 1 it scans the plan and sends every question in one report. It then runs the superpowers skill the handoff names, ruling as superpowers does except on plan decisions and goals. It commits per task, never pushes, reads GitHub without writing, and ends with a run report.
+Only you start it, in a second session. It reports its name, checks the tree, and waits for the handoff. Before Task 1 it scans the plan and sends every question in one report. It then runs the superpowers skill the handoff names, ruling as superpowers does except on plan decisions and goals. Each task lands as its own commits, and a fix adds a commit rather than amending one. It never pushes, reads GitHub without writing, and ends with a run report.
 
 ### `sidekick`
 
