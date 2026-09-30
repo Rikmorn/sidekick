@@ -25,6 +25,31 @@ const READ_LEAD =
 const PACKAGE =
   '/repo/.superpowers/sdd/2026-09-30-plan/review-0d8f9e3..a1b2c3d.diff';
 
+/** A review package's text, listing the given changed files as stat lines. */
+function pkgContent(...files: string[]): string {
+  return [
+    '# Review package: 0d8f9e3..a1b2c3d',
+    '',
+    '## Commits',
+    '',
+    'a1b2c3d feat: x',
+    '',
+    '## Files changed',
+    '',
+    ...files.map((f) => ` ${f} | 4 ++--`),
+    ` ${files.length} files changed, 4 insertions(+), 4 deletions(-)`,
+    '',
+    '## Diff',
+    '',
+  ].join('\n');
+}
+
+function pkgEvent(content: string): string {
+  return readEvent(PACKAGE, {
+    tool_response: { type: 'text', file: { content } },
+  });
+}
+
 function readEvent(
   filePath: unknown,
   extra: Record<string, unknown> = {},
@@ -264,6 +289,16 @@ describe('readSection', () => {
     ).toBe(undefined);
   });
 
+  test('a ## line inside a fenced code block does not end the section', () => {
+    const file = tmpFile(
+      'rule.md',
+      '## Comments\n\nBefore.\n\n```md\n## not a heading\n```\n\nAfter.\n\n## Next\n\nOther.\n',
+    );
+    expect(readSection(file, '## Comments')).toBe(
+      '## Comments\n\nBefore.\n\n```md\n## not a heading\n```\n\nAfter.',
+    );
+  });
+
   test('the live sk-clean-code Comments section is one H2 section of the rule', () => {
     const section = readSection(CLEAN_CODE, '## Comments');
     if (section === undefined) throw new Error('## Comments missing');
@@ -276,7 +311,10 @@ describe('readSection', () => {
 
 describe('runHookCli post-read', () => {
   test('a review package read adds the reviewer lines and the live Comments section', () => {
-    const { code, out, err } = runVerb('post-read', readEvent(PACKAGE));
+    const { code, out, err } = runVerb(
+      'post-read',
+      pkgEvent(pkgContent('bin/helpers/hook.ts')),
+    );
     expect(code).toBe(0);
     expect(err).toEqual([]);
     expect(out.length).toBe(1);
@@ -352,11 +390,75 @@ describe('runHookCli post-read', () => {
       tmpPlugin(undefined),
       tmpPlugin('## Functions\n\nx\n'),
     ]) {
-      expect(runVerb('post-read', readEvent(PACKAGE), pluginDir)).toEqual({
+      expect(
+        runVerb('post-read', pkgEvent(pkgContent('a.ts')), pluginDir),
+      ).toEqual({
         code: 0,
         out: [],
         err: [],
       });
+    }
+  });
+});
+
+describe('post-read scopes the Comments paragraph to the rule paths', () => {
+  const RULE_BODY = '## Comments\n\nDefault to none.\n';
+  const scoped = (paths: string) =>
+    tmpPlugin(`---\npaths:\n${paths}---\n\n# Rule\n\n${RULE_BODY}`);
+  const TS_RULE = scoped('  - "**/*.ts"\n  - "**/*.tsx"\n');
+  const contextOf = (stdin: string, pluginDir = TS_RULE): string => {
+    const { out } = runVerb('post-read', stdin, pluginDir);
+    expect(out.length).toBe(1);
+    return JSON.parse(out[0]).hookSpecificOutput.additionalContext;
+  };
+  const HOLD = 'Hold the comments this diff adds';
+
+  test('a package listing only .py files keeps the lead and the reproduce paragraph, without Comments', () => {
+    const context = contextOf(pkgEvent(pkgContent('tools/a.py', 'docs/b.md')));
+    expect(context.startsWith(READ_LEAD)).toBe(true);
+    expect(context).toContain('Credit only the results you reproduce.');
+    expect(context).not.toContain(HOLD);
+    expect(context).not.toContain('Default to none.');
+  });
+
+  test('a .ts file in a stat line includes the Comments paragraph and section', () => {
+    const context = contextOf(pkgEvent(pkgContent('tools/a.py', 'src/b.ts')));
+    expect(context).toContain(HOLD);
+    expect(context.endsWith('## Comments\n\nDefault to none.')).toBe(true);
+  });
+
+  test('a .ts file in a diff header alone includes it', () => {
+    const content =
+      '# Review package: a..b\n\n## Diff\n\ndiff --git a/src/x.ts b/src/x.ts\n';
+    expect(contextOf(pkgEvent(content))).toContain(HOLD);
+  });
+
+  test('an abbreviated stat path ending in .tsx matches', () => {
+    expect(
+      contextOf(pkgEvent(pkgContent('.../components/deep/Button.tsx'))),
+    ).toContain(HOLD);
+  });
+
+  test('a rule without paths always includes it', () => {
+    const plugin = tmpPlugin(`# Rule\n\n${RULE_BODY}`);
+    expect(contextOf(pkgEvent(pkgContent('a.py')), plugin)).toContain(HOLD);
+    expect(contextOf(pkgEvent(''), plugin)).toContain(HOLD);
+  });
+
+  test('a rule with an unsupported pattern shape includes it', () => {
+    const plugin = scoped('  - "src/**/{a,b}.ts"\n');
+    expect(contextOf(pkgEvent(pkgContent('a.py')), plugin)).toContain(HOLD);
+  });
+
+  test('a package read with no visible file list gets no Comments paragraph', () => {
+    for (const stdin of [
+      readEvent(PACKAGE),
+      pkgEvent(''),
+      pkgEvent('diff text with no headers'),
+    ]) {
+      const context = contextOf(stdin);
+      expect(context.startsWith(READ_LEAD)).toBe(true);
+      expect(context).not.toContain(HOLD);
     }
   });
 });
@@ -417,15 +519,37 @@ describe('plugin/hooks/post-read', () => {
   });
 
   test('exits 0 silently for a package when node is not on PATH', () => {
-    expect(fs.existsSync('/usr/bin/node') || fs.existsSync('/bin/node')).toBe(
-      false,
-    );
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-min-bin-'));
+    for (const tool of ['cat', 'dirname']) {
+      const found = spawnSync('/bin/sh', ['-c', `command -v ${tool}`], {
+        encoding: 'utf-8',
+      }).stdout.trim();
+      fs.symlinkSync(fs.realpathSync(found), path.join(binDir, tool));
+    }
     const r = spawnSync('/bin/bash', [READ_WRAPPER], {
       input: readEvent(PACKAGE),
       encoding: 'utf-8',
-      env: { PATH: '/usr/bin:/bin' },
+      env: { PATH: binDir },
     });
     expect(r.status).toBe(0);
     expect(r.stdout).toBe('');
+  });
+
+  test('an input repeating the prefilter tokens without .diff exits fast and silent', () => {
+    const input = readEvent('/repo/x.txt', {
+      tool_response: {
+        file: { content: 'superpowers sdd review- '.repeat(2000) },
+      },
+    });
+    const start = performance.now();
+    const r = spawnSync('bash', [READ_WRAPPER], {
+      input,
+      encoding: 'utf-8',
+      timeout: 10_000,
+    });
+    const elapsed = performance.now() - start;
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(elapsed).toBeLessThan(2000);
   });
 });

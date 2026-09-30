@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # PostToolUse hook on Read: when a superpowers review package is read, add
-# sidekick's reviewer lines (ADR-0011). Every other read ends here in bash,
-# before node starts. Silent, with exit 0, on anything unexpected.
+# sidekick's reviewer lines (ADR-0011). A read whose content lacks one of the
+# tokens below ends here in bash; for any other read, the CLI decides from the
+# path. Silent, with exit 0, on anything unexpected.
 set -uo pipefail
 
 input=$(cat)
-case "$input" in
-  *superpowers*sdd*review-*.diff*) ;;
-  *) exit 0 ;;
-esac
+# One glob per token: a single glob chaining them backtracks polynomially on
+# a large read that repeats the tokens.
+for token in superpowers sdd review- .diff; do
+  case "$input" in
+    *"$token"*) ;;
+    *) exit 0 ;;
+  esac
+done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
