@@ -85,6 +85,32 @@ describe('main', () => {
       'PostToolUse',
     );
   });
+  test('hook post-read reads the event through ctx.readStdin', () => {
+    const out: string[] = [];
+    const code = main(
+      ['hook', 'post-read'],
+      {
+        env: {},
+        cwd: process.cwd(),
+        entryFileUrl: pathToFileURL(path.join(__dirname, 'cli.ts')).href,
+        readStdin: () =>
+          JSON.stringify({
+            tool_name: 'Read',
+            tool_input: {
+              file_path:
+                '/repo/.superpowers/sdd/plan/review-abc1234..def5678.diff',
+            },
+          }),
+      },
+      (l) => out.push(l),
+      () => {},
+    );
+    expect(code).toBe(0);
+    expect(out.length).toBe(1);
+    expect(JSON.parse(out[0]).hookSpecificOutput.hookEventName).toBe(
+      'PostToolUse',
+    );
+  });
   test('--version prints the manifest version', () => {
     const root = tmp();
     write(path.join(root, 'plugin', 'rules', 'sk-a.md'), '# a\n');

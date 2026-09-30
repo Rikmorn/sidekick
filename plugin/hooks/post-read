@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# PostToolUse hook on Read: when a superpowers review package is read, add
+# sidekick's reviewer lines (ADR-0011). Every other read ends here in bash,
+# before node starts. Silent, with exit 0, on anything unexpected.
+set -uo pipefail
+
+input=$(cat)
+case "$input" in
+  *superpowers*sdd*review-*.diff*) ;;
+  *) exit 0 ;;
+esac
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+command -v node >/dev/null 2>&1 || exit 0
+printf '%s' "$input" | node "$ROOT/bin/sidekick" hook post-read 2>/dev/null
+exit 0

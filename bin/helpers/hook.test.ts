@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readSkillDescription, runHookCli } from './hook.js';
+import { readSection, readSkillDescription, runHookCli } from './hook.js';
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -17,6 +17,66 @@ const WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-skill');
 
 const LEAD =
   'sidekick: before this brainstorm proposes approaches, check whether the change needs a design pass.';
+
+const CLEAN_CODE = path.join(PLUGIN_DIR, 'rules', 'sk-clean-code.md');
+const READ_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-read');
+const READ_LEAD =
+  "sidekick: this file is a superpowers review package, so two sidekick rules hold for this review alongside superpowers' reviewer instructions.";
+const PACKAGE =
+  '/repo/.superpowers/sdd/2026-09-30-plan/review-0d8f9e3..a1b2c3d.diff';
+
+function readEvent(
+  filePath: unknown,
+  extra: Record<string, unknown> = {},
+): string {
+  return JSON.stringify({
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Read',
+    tool_input: { file_path: filePath },
+    ...extra,
+  });
+}
+
+function runVerb(verb: string, stdin: string, pluginDir = PLUGIN_DIR) {
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = runHookCli(
+    [verb],
+    { readStdin: () => stdin, pluginDir },
+    (l) => out.push(l),
+    (l) => err.push(l),
+  );
+  return { code, out, err };
+}
+
+function tmpFile(name: string, text: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-hook-'));
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, text);
+  return file;
+}
+
+function tmpPlugin(rule: string | undefined): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-hook-plugin-'));
+  if (rule !== undefined) {
+    fs.mkdirSync(path.join(dir, 'rules'));
+    fs.writeFileSync(path.join(dir, 'rules', 'sk-clean-code.md'), rule);
+  }
+  return dir;
+}
+
+function fakeNode(): { binDir: string; marker: string } {
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-fake-node-'));
+  const marker = path.join(binDir, 'node-started');
+  fs.writeFileSync(
+    path.join(binDir, 'node'),
+    `#!/bin/sh\ntouch "${marker}"\n`,
+    {
+      mode: 0o755,
+    },
+  );
+  return { binDir, marker };
+}
 
 function event(skill: string, extra: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -159,6 +219,211 @@ describe('plugin/hooks/post-skill', () => {
       input: event('superpowers:brainstorming'),
       encoding: 'utf-8',
       env: { PATH: '/nonexistent' },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+  });
+});
+
+describe('readSection', () => {
+  test('returns the heading and its body up to the next H2, keeping deeper headings', () => {
+    const file = tmpFile(
+      'rule.md',
+      '# Title\n\n## Comments\n\nOne line.\n\n### Detail\n\nMore.\n\n## Next\n\nOther.\n',
+    );
+    expect(readSection(file, '## Comments')).toBe(
+      '## Comments\n\nOne line.\n\n### Detail\n\nMore.',
+    );
+  });
+
+  test('a last section runs to the end of the file', () => {
+    const file = tmpFile('rule.md', '## First\n\na\n\n## Comments\n\nTail.\n');
+    expect(readSection(file, '## Comments')).toBe('## Comments\n\nTail.');
+  });
+
+  test('CRLF line endings still find the heading and the next H2', () => {
+    const file = tmpFile(
+      'rule.md',
+      '## Comments\r\n\r\nOne line.\r\n\r\n## Next\r\n',
+    );
+    expect(readSection(file, '## Comments')).toBe('## Comments\n\nOne line.');
+  });
+
+  test('undefined for a missing file, an absent heading, or a longer heading', () => {
+    expect(readSection(path.join(os.tmpdir(), 'nope.md'), '## Comments')).toBe(
+      undefined,
+    );
+    expect(
+      readSection(tmpFile('rule.md', '## Other\n\nx\n'), '## Comments'),
+    ).toBe(undefined);
+    expect(
+      readSection(
+        tmpFile('rule.md', '## Comments and more\n\nx\n'),
+        '## Comments',
+      ),
+    ).toBe(undefined);
+  });
+
+  test('the live sk-clean-code Comments section is one H2 section of the rule', () => {
+    const section = readSection(CLEAN_CODE, '## Comments');
+    if (section === undefined) throw new Error('## Comments missing');
+    expect(section.startsWith('## Comments\n')).toBe(true);
+    expect(section).toContain('Default to none.');
+    expect(section).not.toContain('\n## ');
+    expect(fs.readFileSync(CLEAN_CODE, 'utf-8')).toContain(section);
+  });
+});
+
+describe('runHookCli post-read', () => {
+  test('a review package read adds the reviewer lines and the live Comments section', () => {
+    const { code, out, err } = runVerb('post-read', readEvent(PACKAGE));
+    expect(code).toBe(0);
+    expect(err).toEqual([]);
+    expect(out.length).toBe(1);
+    const parsed = JSON.parse(out[0]);
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('PostToolUse');
+    const context: string = parsed.hookSpecificOutput.additionalContext;
+    expect(context.startsWith(READ_LEAD)).toBe(true);
+    expect(context).toContain('Credit only the results you reproduce.');
+    expect(context).toContain(
+      "superpowers' rule that a reviewer runs checks only on a specific doubt",
+    );
+    expect(
+      context.endsWith(String(readSection(CLEAN_CODE, '## Comments'))),
+    ).toBe(true);
+  });
+
+  test('packages match at any depth, as relative paths, and in worktrees', () => {
+    for (const filePath of [
+      '/a/b/.superpowers/sdd/plan/review-abc1234..def5678.diff',
+      '.superpowers/sdd/plan/review-abc1234..def5678.diff',
+      '/r/.worktrees/x/.superpowers/sdd/docs-plan-2/review-0123456789ab..fedcba987654.diff',
+    ]) {
+      expect(runVerb('post-read', readEvent(filePath)).out.length).toBe(1);
+    }
+  });
+
+  test('every other path prints nothing and returns 0', () => {
+    for (const filePath of [
+      '/repo/notes.txt',
+      '/repo/review-abc1234..def5678.diff',
+      '/repo/.superpowers/sdd/plan/task-1-brief.md',
+      '/repo/.superpowers/sdd/plan/review-abc1234..def5678.diff.bak',
+      '/repo/.superpowers/sdd/plan/sub/review-abc1234..def5678.diff',
+      '/repo/.superpowers/sdd/review-abc1234..def5678.diff',
+      '/repo/.superpowers/sdd/plan/review-XYZ..def5678.diff',
+      '/repo/x.superpowers/sdd/plan/review-abc1234..def5678.diff',
+    ]) {
+      expect(runVerb('post-read', readEvent(filePath))).toEqual({
+        code: 0,
+        out: [],
+        err: [],
+      });
+    }
+  });
+
+  test('a package path that appears only in the file content prints nothing', () => {
+    const stdin = readEvent('/repo/notes.txt', {
+      tool_response: { file: { content: PACKAGE } },
+    });
+    expect(runVerb('post-read', stdin)).toEqual({ code: 0, out: [], err: [] });
+  });
+
+  test('other tools and malformed stdin print nothing and return 0', () => {
+    for (const stdin of [
+      '',
+      'not json',
+      'null',
+      '{"tool_name":"Read"}',
+      '{"tool_name":"Read","tool_input":{"file_path":42}}',
+      JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: PACKAGE } }),
+      event('superpowers:brainstorming'),
+    ]) {
+      expect(runVerb('post-read', stdin)).toEqual({
+        code: 0,
+        out: [],
+        err: [],
+      });
+    }
+  });
+
+  test('a plugin dir without the rule, or a rule without Comments, prints nothing', () => {
+    for (const pluginDir of [
+      tmpPlugin(undefined),
+      tmpPlugin('## Functions\n\nx\n'),
+    ]) {
+      expect(runVerb('post-read', readEvent(PACKAGE), pluginDir)).toEqual({
+        code: 0,
+        out: [],
+        err: [],
+      });
+    }
+  });
+});
+
+describe('plugin/hooks/post-read', () => {
+  test('passes a package read to the bundled CLI and prints the reviewer lines', () => {
+    const r = spawnSync('bash', [READ_WRAPPER], {
+      input: readEvent(PACKAGE),
+      encoding: 'utf-8',
+    });
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout.trim());
+    expect(
+      parsed.hookSpecificOutput.additionalContext.startsWith(READ_LEAD),
+    ).toBe(true);
+  });
+
+  test('ends in bash for any other read, and starts node for a package', () => {
+    const other = fakeNode();
+    const r = spawnSync('/bin/bash', [READ_WRAPPER], {
+      input: readEvent('/repo/notes.txt'),
+      encoding: 'utf-8',
+      env: { PATH: `${other.binDir}:/usr/bin:/bin` },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(fs.existsSync(other.marker)).toBe(false);
+    const pkg = fakeNode();
+    spawnSync('/bin/bash', [READ_WRAPPER], {
+      input: readEvent(PACKAGE),
+      encoding: 'utf-8',
+      env: { PATH: `${pkg.binDir}:/usr/bin:/bin` },
+    });
+    expect(fs.existsSync(pkg.marker)).toBe(true);
+  });
+
+  test('a package path with JSON-escaped slashes still reaches the CLI', () => {
+    const r = spawnSync('bash', [READ_WRAPPER], {
+      input: readEvent(PACKAGE).replaceAll('/', '\\/'),
+      encoding: 'utf-8',
+    });
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout.trim());
+    expect(
+      parsed.hookSpecificOutput.additionalContext.startsWith(READ_LEAD),
+    ).toBe(true);
+  });
+
+  test('a large read of another file exits 0 with no output', () => {
+    const r = spawnSync('bash', [READ_WRAPPER], {
+      input: readEvent('/repo/big.txt', {
+        tool_response: { file: { content: 'x'.repeat(2_000_000) } },
+      }),
+      encoding: 'utf-8',
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+  });
+
+  test('exits 0 silently for a package when node is not on PATH', () => {
+    expect(fs.existsSync('/usr/bin/node') || fs.existsSync('/bin/node')).toBe(
+      false,
+    );
+    const r = spawnSync('/bin/bash', [READ_WRAPPER], {
+      input: readEvent(PACKAGE),
+      encoding: 'utf-8',
+      env: { PATH: '/usr/bin:/bin' },
     });
     expect(r.status).toBe(0);
     expect(r.stdout).toBe('');
