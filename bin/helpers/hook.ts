@@ -186,7 +186,7 @@ function reviewerLines(
   const comments = readSection(rule, COMMENTS_HEADING);
   if (comments === undefined) return undefined;
   const lines = [
-    "sidekick: this file is a superpowers review package, so two sidekick rules hold for this review alongside superpowers' reviewer instructions.",
+    "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.",
     "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.",
   ];
   if (ruleCoversPackage(readRulePaths(rule), packageText)) {

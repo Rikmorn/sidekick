@@ -21,7 +21,7 @@ const LEAD =
 const CLEAN_CODE = path.join(PLUGIN_DIR, 'rules', 'sk-clean-code.md');
 const READ_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-read');
 const READ_LEAD =
-  "sidekick: this file is a superpowers review package, so two sidekick rules hold for this review alongside superpowers' reviewer instructions.";
+  "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
 const PACKAGE =
   '/repo/.superpowers/sdd/2026-09-30-plan/review-0d8f9e3..a1b2c3d.diff';
 
@@ -416,6 +416,7 @@ describe('post-read scopes the Comments paragraph to the rule paths', () => {
   test('a package listing only .py files keeps the lead and the reproduce paragraph, without Comments', () => {
     const context = contextOf(pkgEvent(pkgContent('tools/a.py', 'docs/b.md')));
     expect(context.startsWith(READ_LEAD)).toBe(true);
+    expect(context.split('\n')[0]).not.toMatch(/\btwo\b/);
     expect(context).toContain('Credit only the results you reproduce.');
     expect(context).not.toContain(HOLD);
     expect(context).not.toContain('Default to none.');
