@@ -21,7 +21,7 @@ A pull request references its issue with `Closes #N` in its body. `gh pr create 
 
 ## Closing
 
-1. Re-check the state before writing: `gh issue view <n> --json state,title`. An issue a merge already closed still takes steps 2, 3, and 5, and is not closed again. Its closing event names the pull request or commit as the closer:
+1. Re-check the state before writing: `gh issue view <n> --json state,title`. An issue a merge already closed takes steps 2, 3, and 5 and is not closed again. It skips them when it already carries the evidence comment, so a re-run posts no second one. Its closing event names the pull request or commit as the closer:
    ```
    gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issue(number:$n){timelineItems(last:1,itemTypes:CLOSED_EVENT){nodes{... on ClosedEvent{closer{__typename}}}}}}}' -f o=<owner> -f r=<repo> -F n=<n>
    ```

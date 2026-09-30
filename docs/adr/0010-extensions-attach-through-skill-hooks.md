@@ -1,5 +1,7 @@
 # ADR-0010 — Extensions attach to superpowers through hooks on the Skill tool
 
+> **Amended 2026-09-30 (#161):** the Skill tool is not the only attachment point. A hook on `Read` reaches the subagents that superpowers dispatches. ADR-0011 records it.
+
 **Status:** Accepted (2026-09-25). Amends ADR-0009's Consequences on how far sidekick reaches into superpowers' skills. Issue #119, milestone R7.
 
 ## Context

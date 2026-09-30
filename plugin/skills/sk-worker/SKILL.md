@@ -43,7 +43,7 @@ Invoke the superpowers skill the handoff names, and follow it. Its task list and
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
 - **The handoff answers superpowers' questions.** Where superpowers would ask the person, the handoff has already answered. Work where it names: on its branch in the main checkout or in a worktree, or in place. At `finishing-a-development-branch`, keep the branch as it is; the orchestrator reviews and merges.
 - **Run the prose step** wherever a task has one.
-- **Each task lands as its own commits,** on the branch the handoff names or in place. A fix adds a commit and never amends one, since superpowers reviews each task by its commit range. Never push.
+- **Each task lands as its own commits,** on the branch the handoff names or in place. A fix adds a commit and never amends one. The task's base and head stay valid after an amend. The re-review diffs from the last reviewed commit, which an amend removes. Never push.
 - **Read GitHub, never write it.** Issues, comments, and the board belong to the orchestrator.
 
 ## At the end

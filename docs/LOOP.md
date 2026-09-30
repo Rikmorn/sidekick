@@ -38,7 +38,7 @@ Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It ru
 
 ### The Read hook
 
-Fires on `PostToolUse` for the Read tool, from `plugin/hooks/hooks.json`. The wrapper checks the input in bash, so a read of any other file ends there. When the file is a superpowers review package, `review-<base>..<head>.diff` in a plan's workspace under `.superpowers/sdd/`, it runs `node <plugin>/bin/sidekick hook post-read`. That adds sidekick's reviewer lines to the reviewer's context. The reviewer reproduces the checks the implementer claims, and holds the comments the diff adds to `sk-clean-code.md` §Comments, which the hook quotes from the plugin. Every reviewer superpowers dispatches reads a package, whether for a task, a batch, a fix round, or the whole branch. The hook fires inside subagents, and wherever the plugin is enabled. ADR-0011 records the mechanism.
+Fires on `PostToolUse` for the Read tool, from `plugin/hooks/hooks.json`. The wrapper checks the input in bash, and a read whose content lacks the review-package tokens ends there. A file that mentions them, such as a plan or a test, starts `node`, and the CLI decides from the path. When the file is a superpowers review package, `review-<base>..<head>.diff` in a plan's workspace under `.superpowers/sdd/`, it runs `node <plugin>/bin/sidekick hook post-read`. That adds sidekick's reviewer lines to the reviewer's context. The reviewer reproduces the checks the implementer claims. It also holds the comments the diff adds to `sk-clean-code.md` §Comments, which the hook quotes from the plugin when the package shows files that rule covers. The reviewers that `subagent-driven-development` and `executing-plans` dispatch read a package, whether for a task, a batch, a fix round, or the whole branch. A standalone `requesting-code-review` run, and a reviewer whose diff file is missing, never open one. The hook fires inside subagents, and wherever the plugin is enabled. ADR-0011 records the mechanism.
 
 ### `sk-orient`
 
@@ -60,6 +60,7 @@ Reads the brief: board, milestone with its outcome, In Progress with ages, candi
 - The evidence comment.
 - `gh issue close --reason completed`, or `not planned` with a verdict, or `--duplicate-of`.
 - Status to Done by `item-edit`.
+- An issue a merge already closed still gets the record decision, the evidence comment, and the Status, and is not closed again. The closer comes from the issue's closing event.
 
 It pauses only at the record question, a judgment the skill states rather than asks.
 
@@ -89,7 +90,7 @@ Pauses for your decision. With no operator to ask, it registers the design as de
 
 ### `sk-execute`
 
-Fires when a plan is ready, or when `writing-plans` asks how to run it. It lays out three modes with a recommendation: inline, subagent-driven in the session, and a worker session. In a tracked repo whose active milestone has a `Plans:` clause, it checks the plan names which of those plans it is. It also checks the plan carries measured expectations and a prose step in each prose task, and that any steps after the tasks sit in an after-file. Then it runs the repo's `prose` script on the plan. For a worker run it finds the worker with `ListAgents` and sends the handoff. After the run it routes every review finding. Part of the work is fixed in the branch; anything else goes through `sk-pm-conventions.md` §Change control or is dropped with its reason told to you. Pauses for your choice of mode.
+Fires when a plan is ready, or when `writing-plans` asks how to run it. It lays out three modes with a recommendation: inline, subagent-driven in the session, and a worker session. In a tracked repo whose active milestone has a `Plans:` clause, it checks the plan names which of those plans it is. It also checks the plan carries measured expectations and a prose step in each prose task. It checks that any steps after the tasks sit in an after-file. Then it runs the repo's `prose` script on the plan. For a worker run it finds the worker with `ListAgents` and sends the handoff. After the run it routes every review finding. Part of the work is fixed in the branch; anything else goes through `sk-pm-conventions.md` §Change control or is dropped with its reason told to you. Pauses for your choice of mode.
 
 ### `sk-worker`
 
