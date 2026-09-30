@@ -36,6 +36,10 @@ Fires on `startup` and `clear`, from `plugin/hooks/hooks.json`. It runs `node <p
 
 Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick hook post-skill` with the hook's event on stdin. When the skill that loaded is `superpowers:brainstorming`, it adds one paragraph to context: check whether the change needs a design pass, followed by `sk-design`'s description. Any other skill, and any failure, gets nothing and exit 0, so it never blocks a call. A slash command you type yourself loads without the Skill tool, and the hook does not fire then. ADR-0010 records the mechanism.
 
+### The Read hook
+
+Fires on `PostToolUse` for the Read tool, from `plugin/hooks/hooks.json`. The wrapper checks the input in bash, so a read of any other file ends there. When the file is a superpowers review package, `review-<base>..<head>.diff` in a plan's workspace under `.superpowers/sdd/`, it runs `node <plugin>/bin/sidekick hook post-read`. That adds sidekick's reviewer lines to the reviewer's context. The reviewer reproduces the checks the implementer claims, and holds the comments the diff adds to `sk-clean-code.md` §Comments, which the hook quotes from the plugin. Every reviewer superpowers dispatches reads a package, whether for a task, a batch, a fix round, or the whole branch. The hook fires inside subagents, and wherever the plugin is enabled. ADR-0011 records the mechanism.
+
 ### `sk-orient`
 
 Reads the brief: board, milestone with its outcome, In Progress with ages, candidates by tier, drift, and a suggested move. Decides by rule: continue what is In Progress unless pausing it on purpose; pull new work when In Progress drops; number order is not priority. Picks up with `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value "In Progress"`. Then states the pickup to you in one line. Runs on demand mid-session for a fresh picture. Pauses for nothing; it reports.
