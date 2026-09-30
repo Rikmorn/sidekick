@@ -20,6 +20,7 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 
 - One package, `package.json`. `bun run test`, `bun run typecheck`, `bun run check`, `bun run build`, and `bun run prose <files>` for Markdown. Bun builds and tests; Node runs the executable.
 - `claude plugin validate --strict .` and `claude plugin validate --strict plugin` gate the manifests. `tsc --noEmit` does not see `*.test.ts`; only `bun test` does.
+- Work integrates by fast-forward onto `master`; this repo takes no pull requests.
 - Rules are edited in `plugin/rules/`. This repo carries no copies: like the other home repos, it reads the user-level rules, which are always the released ones. A rule edit reaches `~/.claude/rules/` only through a release, so unreleased work stays out of every other repo; do not install rules from the repo bundle. For in-progress skills, hooks, and the CLI, start the session with `claude --plugin-dir ./plugin`. Rules are not plugin content, so an edited rule takes effect after its release.
 - Prose follows `plugin/rules/sk-language.md`; guidance changes follow `plugin/rules/sk-guidance-authoring.md`; agent and skill prompts follow `plugin/rules/sk-agent-prompts.md`.
 - Specs and plans live under `docs/superpowers/`, gitignored and transient. The durable record of a piece of work is its issue, its close comment, and any ADR or review it produced.

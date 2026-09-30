@@ -5,7 +5,7 @@ description: How a written plan runs. Lays out the execution modes with a recomm
 
 # sk-execute
 
-A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except the one rule §Route every finding overrides. The worker side is `sk-worker`, which only the operator starts.
+A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except two rules, each overridden where it applies. Superpowers' reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. The worker side is `sk-worker`, which only the operator starts.
 
 ## Choose the mode
 
@@ -25,13 +25,9 @@ These hold in every mode.
 
 - **The plan names its milestone plan.** It applies in a tracked repo, to a plan that carries issues of an active milestone with a `Plans:` clause. The plan's header names which of those plans it is. A plan matching none means the milestone has grown. `sk-pm-conventions.md` §Change control then decides: a small addition, or a question for the operator before the plan goes out.
 - **Expectations are measurements.** An `Expected:` value that depends on the tree states the command and what it measures, or a formula from the tree. A number measured somewhere else is true there and false at the worker's step.
-- **Prose tasks run the prose check.** The repo may declare a `prose` script, such as `scripts.prose` in `package.json`. When it does, every task that writes or edits prose ends by running it on the files the task changed. Errors are fixed before the commit; warnings go in the task's report. Check that its summary counts every file named: some prose checkers read a mistyped path as text and pass it. The step sits inside the task because an implementer's brief holds only its own task, and Global Constraints never reach it.
-- **Reviewers reproduce claims.** Superpowers passes Global Constraints to each task reviewer verbatim, so they carry this line:
-
-  > Re-run each check the brief names that the implementer reports as passing, and credit only what you reproduce.
-
-  The test suite stays exempt, as superpowers rules.
-- **Nothing follows the last task.** Superpowers appends any section after the last task to that task's brief, so orchestrator-only steps go before the tasks.
+- **Prose tasks run the prose check.** The repo may declare a `prose` script, such as `scripts.prose` in `package.json`. When it does, every task that writes or edits prose ends by running it on the files the task changed. Errors are fixed before the commit; warnings go in the task's report. Check that its summary counts every file named: some prose checkers read a mistyped path as text and pass it. The step sits inside the task because the task's own text is the one part of the plan every implementer is sure to read.
+- **Reviewers reproduce claims, by a hook.** Every superpowers reviewer opens a review package: `review-<base>..<head>.diff`, in the plan's workspace. Sidekick's hook on `Read` then adds two lines to the reviewer's context. The reviewer re-runs each non-test check the implementer reports as passing, and credits only what it reproduces. It also holds the comments the diff adds to `sk-clean-code.md` §Comments, which reading a diff does not load. The first line departs from superpowers' rule that a reviewer runs checks only on a specific doubt, and the test suite stays exempt. The plan carries nothing for this; ADR-0011 records the mechanism.
+- **Steps after the tasks go in an after-file.** Superpowers puts everything after the last task into that task's brief, so the plan ends with its last task. Steps that run once the tasks are done, and that `finishing-a-development-branch` does not cover, go in `<plan>-after.md` beside the plan. The orchestrator runs them.
 - **The plan passes the prose check itself.** Run the repo's `prose` script on the plan file before the handoff. An error blocks the handoff.
 
 ## Review by kind
@@ -57,11 +53,13 @@ When the operator chooses the worker mode, they open a session in the repo and s
    - where to work: a branch in the main checkout, a branch in a worktree, or "in place" when the operator agreed to that;
    - the superpowers skill to run.
 3. Answer its scan report in one reply where you can. Keep a table of any expected value a ruling moves, so later tasks' numbers stay right.
-4. When the run report arrives, review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Add your review's defects under "Defects by stage" in the run report, and route every defect still open there as §Route every finding says. Then fast-forward the base branch and close the issues through `sk-track`.
+4. When the run report arrives, review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Add your review's defects under "Defects by stage" in the run report, and route every defect still open there as §Route every finding says. Then integrate the branch as the repo's guidance says: a fast-forward, or a pull request whose body carries `Closes #N`. Where the guidance is silent, infer the route from the repo's history, confirm it with the operator, and record it where the repo keeps its guidance. Run the plan's after-file, if it has one, and close the issues through `sk-track`.
 
 A change of scope goes in a fresh handoff, never in a message to a running worker.
 
 ## After an in-session run
+
+At `finishing-a-development-branch`, take the option that matches the repo's route, as §Hand off to a worker step 4 describes. Then run the plan's after-file, if it has one.
 
 The closing summary records these fields beside superpowers' "Rulings I made":
 
