@@ -17,7 +17,7 @@ description: Where things stand on this repo's board and what to pick up. Use at
 
 ## Picking up
 
-Move the card before starting: `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value "In Progress"` on gh 2.98 or later. The board number is the brief's first line, or `project.number` from `sidekick pm board`. Below that version, write by id: `sidekick pm pickup` carries each candidate's `item_id`, and `sidekick pm board` carries the Status field and option ids. A plan is picked up whole: move each of its open issues' cards, then post a status update as §Status updates says. The issue body is the brief. Then state the pickup to the operator in one line: the issue, why that one, and what would change the choice.
+Move the card before starting: `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value "In Progress"` on gh 2.98 or later. The board number is the brief's first line, or `project.number` from `sidekick pm board`. Below that version, write by id: `sidekick pm pickup` carries each candidate's `item_id`, and `sidekick pm board` carries the Status field and option ids. A plan is picked up whole: move its Backlog cards to In Progress, and leave its cards in Verify where they are. A plan issue with no card yet first gets one with `gh project item-add <board number> --owner @me --url <issue url>`. Then post a status update as §Status updates says. The issue body is the brief. Then state the pickup to the operator in one line: the issue, why that one, and what would change the choice.
 
 ## Status updates
 
@@ -27,4 +27,4 @@ The PM reports a milestone's plans to the operator as project status updates on 
 body="$(sidekick pm pickup --report)" && gh api graphql -f query='mutation($p:ID!,$b:String!,$s:ProjectV2StatusUpdateStatus!,$d:Date){createProjectV2StatusUpdate(input:{projectId:$p,body:$b,status:$s,startDate:$d}){statusUpdate{id}}}' -f p=<project id> -f b="$body" -f s=ON_TRACK -f d=<YYYY-MM-DD>
 ```
 
-The project id is `project.id` from `sidekick pm board`, and the date is the day of `milestone.created_at` from `sidekick pm pickup`. The status is `ON_TRACK`, or `COMPLETE` at the close. A discovery the milestone cannot close without makes it `AT_RISK`, with one line naming it at the top of the body, before the report. Only the operator sets `OFF_TRACK`.
+The project id is `project.id` from `sidekick pm board`, and the date is the day of `milestone.created_at` from `sidekick pm pickup`. The status is `ON_TRACK`, or `COMPLETE` at the close. Post a discovery the milestone cannot close without at once, as `AT_RISK`. One line at the top of the body names it, before the report. The next plan-level post returns to `ON_TRACK` once the operator has settled it. Only the operator sets `OFF_TRACK`.
