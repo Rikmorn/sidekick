@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { fixture } from './fixtures/pm/runner.js';
 import type { Candidate, InProgress } from './pm.js';
 import {
   type BriefInput,
@@ -7,6 +8,8 @@ import {
   renderBrief,
   TITLE_MAX,
 } from './pm-brief.js';
+import type { Item, Milestone } from './pm-data.js';
+import { planView } from './pm-plans.js';
 
 const inProgress = (
   number: number,
@@ -45,6 +48,7 @@ const base = (over: Partial<BriefInput> = {}): BriefInput => ({
   },
   in_progress: [],
   candidates: [],
+  plans: null,
   drift: {
     unpushed: { count: 0, basis: 'upstream' },
     stale_in_progress: [],
@@ -92,10 +96,12 @@ describe('renderBrief', () => {
     expect(r[5]).toBe('next: pull one tier-1 candidate');
   });
 
-  test('one candidate carries no order caveat; tier 2 alone is the pull', () => {
+  test('one candidate carries no order caveat; tier 2 alone is never the pull', () => {
     const r = renderBrief(base({ candidates: [cand(200, 2)] })).split('\n');
     expect(r[3]).toBe('candidates: tier 2 #200 t200');
-    expect(r[5]).toBe('next: pull one tier-2 candidate');
+    expect(r[5]).toBe(
+      'next: nothing to pick up: verify, then close the milestone',
+    );
   });
 
   test('drift names unpushed, stale cards, and an open PR; null unpushed is silent', () => {
@@ -174,7 +180,7 @@ describe('renderBrief', () => {
     );
   });
 
-  test('nextMove is the fixed rule in order: in progress, tier 1, tier 2, nothing', () => {
+  test('nextMove without plans: in progress, tier 1, then close or open; never tier 2', () => {
     expect(
       nextMove(
         base({ in_progress: [inProgress(5, 0)], candidates: [cand(1, 1)] }),
@@ -184,13 +190,174 @@ describe('renderBrief', () => {
       'pull one tier-1 candidate',
     );
     expect(nextMove(base({ candidates: [cand(9, 2)] }))).toBe(
-      'pull one tier-2 candidate',
+      'nothing to pick up: verify, then close the milestone',
     );
     expect(nextMove(base())).toBe(
       'nothing to pick up: verify, then close the milestone',
     );
-    expect(nextMove(base({ milestone: null }))).toBe(
+    expect(nextMove(base({ milestone: null, candidates: [cand(9, 2)] }))).toBe(
       'nothing open: open the next milestone',
     );
+  });
+});
+
+describe('plans in the brief', () => {
+  const r9 = (description: string): Milestone => ({
+    number: 9,
+    title: 'R9',
+    description,
+    due_on: null,
+    open_issues: 4,
+    closed_issues: 1,
+    state: 'open',
+    created_at: '2026-10-01T09:00:00Z',
+  });
+  const card = (
+    number: number,
+    status: string,
+    state: 'OPEN' | 'CLOSED' = 'OPEN',
+  ): Item => ({
+    itemId: `PVTI_${number}`,
+    number,
+    status,
+    title: `t${number}`,
+    state,
+    stateReason: null,
+    updatedAt: '2026-10-01T00:00:00Z',
+    url: '',
+    milestone: 'R9',
+    labels: [],
+    assignees: [],
+    repo: 'Rikmorn/sidekick',
+  });
+  const withPlans = (
+    description: string,
+    items: Item[],
+    over: Partial<BriefInput> = {},
+  ): BriefInput =>
+    base({
+      milestone: r9(description),
+      plans: planView(r9(description), items),
+      ...over,
+    });
+
+  test("R8's state renders plans in the in-progress and candidates lines, and next continues the plan", () => {
+    const description = fixture('description-r8.txt');
+    const closed = [161, 152, 164, 158, 134];
+    const running = [141, 106, 168, 170];
+    const items = [
+      ...closed.map((n) => card(n, 'Done', 'CLOSED')),
+      ...running.map((n) => card(n, 'In Progress')),
+      ...[
+        131, 153, 166, 118, 155, 157, 160, 154, 167, 162, 163, 156, 144, 115,
+        133, 114, 151, 145, 149, 108, 102, 126, 142, 147, 159, 100, 105, 137,
+        143, 165,
+      ].map((n) => card(n, 'Backlog')),
+    ];
+    const r = renderBrief(
+      withPlans(description, items, {
+        in_progress: [
+          inProgress(106, 1),
+          inProgress(141, 1),
+          inProgress(168, 1),
+          inProgress(170, 0),
+        ],
+      }),
+    ).split('\n');
+    expect(r).toHaveLength(6);
+    expect(r[2]).toBe(
+      'in progress: plan Plans in the brief: #141 (1 d), #106 (1 d), #168 (1 d), #170 (0 d)',
+    );
+    expect(r[3]).toBe(
+      'candidates: next plan Lint reads the issue side (#131, #153, #166, #118) · then Claims checked before they land (5), Rules say one thing (5), PM guidance matches GitHub (3), Rules delivery fits every repo (5), sk-design from use (3), Docs tidy (3), One release order (2) · 1 plan done · unplanned: none · tier 2: none',
+    );
+    expect(r[5]).toBe(
+      'next: continue plan Plans in the brief (#141, #106, #168, #170)',
+    );
+  });
+
+  test('a card in no plan keeps its title; verify plans, done plans, unplanned issues, and tier 2 show', () => {
+    const description = 'Plans: A (#1, #2); B (#3); C (#4); D (#5).';
+    const items = [
+      card(1, 'In Progress'),
+      card(2, 'Backlog'),
+      card(3, 'Verify'),
+      card(4, 'Done', 'CLOSED'),
+      card(5, 'Done', 'CLOSED'),
+      card(7, 'Backlog'),
+    ];
+    const r = renderBrief(
+      withPlans(description, items, {
+        in_progress: [inProgress(1, 2), inProgress(9, 4)],
+        candidates: [cand(2, 1), cand(7, 1), cand(200, 2)],
+      }),
+    ).split('\n');
+    expect(r[2]).toBe('in progress: plan A: #1 (2 d) · #9 t9 (4 d)');
+    expect(r[3]).toBe(
+      'candidates: in verify: B · 2 plans done · unplanned: #7 · tier 2: #200 t200',
+    );
+  });
+
+  test('a malformed clause renders lines 3 and 4 as if there were no plans', () => {
+    const items = [card(1, 'Backlog')];
+    const r = renderBrief(
+      withPlans('Plans: A (#1); A (#2).', items, {
+        candidates: [cand(1, 1), cand(200, 2)],
+      }),
+    ).split('\n');
+    expect(r[3]).toBe(
+      'candidates: tier 1 #1 t1 · tier 2 #200 t200 (order: number, not priority)',
+    );
+    expect(r[5]).toBe('next: pull one tier-1 candidate');
+  });
+
+  test('nextMove with plans: continue a plan, pull the next plan, then an unplanned issue, then close', () => {
+    const description = 'Plans: A (#1, #2); B (#3).';
+    expect(
+      nextMove(
+        withPlans(description, [card(1, 'In Progress'), card(2, 'Backlog')], {
+          in_progress: [inProgress(1, 0), inProgress(9, 0)],
+        }),
+      ),
+    ).toBe('continue plan A (#1, #2)');
+    expect(
+      nextMove(
+        withPlans(description, [card(1, 'Backlog')], {
+          in_progress: [inProgress(9, 0)],
+        }),
+      ),
+    ).toBe('continue #9');
+    expect(
+      nextMove(
+        withPlans(description, [
+          card(1, 'Done', 'CLOSED'),
+          card(2, 'Done', 'CLOSED'),
+          card(3, 'Backlog'),
+        ]),
+      ),
+    ).toBe('pull plan B (#3)');
+    expect(
+      nextMove(
+        withPlans(
+          description,
+          [
+            card(1, 'Verify'),
+            card(2, 'Done', 'CLOSED'),
+            card(3, 'Verify'),
+            card(7, 'Backlog'),
+          ],
+          { candidates: [cand(7, 1), cand(200, 2)] },
+        ),
+      ),
+    ).toBe('pull one unplanned candidate');
+    expect(
+      nextMove(
+        withPlans(
+          description,
+          [card(1, 'Verify'), card(2, 'Done', 'CLOSED'), card(3, 'Verify')],
+          { candidates: [cand(200, 2)] },
+        ),
+      ),
+    ).toBe('nothing to pick up: verify, then close the milestone');
   });
 });
