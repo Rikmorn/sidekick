@@ -290,7 +290,8 @@ function planCandidatesLine(p, plans) {
   const later = inState("later");
   const verify = inState("verify");
   const openCount = (pl) => pl.issues.filter((i) => i.open).length;
-  const unplanned = plans.unplanned.map((i) => `#${i.number}`).join(", ");
+  const running = new Set(p.in_progress.map((i) => i.number));
+  const unplanned = plans.unplanned.filter((i) => !running.has(i.number)).map((i) => `#${i.number}`).join(", ");
   const segments = [
     next === undefined ? null : `next plan ${cut(next.name)} (${openRefs(next)})`,
     later.length === 0 ? null : `then ${later.map((pl) => `${cut(pl.name)} (${openCount(pl)})`).join(", ")}`,
@@ -656,9 +657,19 @@ function lintAll(input) {
 }
 
 // bin/helpers/pm-plans.ts
-var HAS_CLAUSE = /(?:^|\s)Plans:/;
+var CLAUSE_START = /(?:^|\s)Plans:/g;
 var CLAUSE = /(?:^|\s)Plans:\s*(.*?\))\.(?:\s|$)/s;
 var GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
+var SENTENCE_BREAK = /[.!?]\s/;
+function leaked(plans) {
+  const plan = plans.find((p) => SENTENCE_BREAK.test(p.name));
+  return plan === undefined ? null : `plan "${plan.name}" holds a sentence break`;
+}
+var oneLine = (text) => text.replace(/\s+/g, " ").trim();
+var malformed = (reason) => ({
+  parse: "malformed",
+  reason: oneLine(reason)
+});
 function duplicate(plans) {
   const names = plans.map((p) => p.name);
   const name = names.find((n, i) => names.indexOf(n) !== i);
@@ -669,27 +680,26 @@ function duplicate(plans) {
   return issue === undefined ? null : `#${issue} appears in two plans`;
 }
 function parsePlansClause(description) {
-  if (!HAS_CLAUSE.test(description))
+  const starts = (description.match(CLAUSE_START) ?? []).length;
+  if (starts === 0)
     return { parse: "none" };
+  if (starts > 1)
+    return malformed("Plans: appears twice");
   const clause = CLAUSE.exec(description);
-  if (!clause) {
-    return { parse: "malformed", reason: 'the Plans: clause has no ")." end' };
-  }
+  if (!clause)
+    return malformed('the Plans: clause has no ")." end');
   const parts = clause[1].split(";");
   const groups = parts.map((part) => GROUP.exec(part));
   const bad = groups.indexOf(null);
   if (bad >= 0) {
-    return {
-      parse: "malformed",
-      reason: `"${parts[bad].trim()}" is not <name> (#N, …)`
-    };
+    return malformed(`"${parts[bad].trim()}" is not <name> (#N, …)`);
   }
   const plans = groups.filter((g) => g !== null).map((g) => ({
-    name: g[1],
+    name: oneLine(g[1]),
     issues: g[2].split(",").map((r) => Number(r.trim().slice(1)))
   }));
-  const reason = duplicate(plans);
-  return reason === null ? { parse: "ok", plans } : { parse: "malformed", reason };
+  const reason = leaked(plans) ?? duplicate(plans);
+  return reason === null ? { parse: "ok", plans } : malformed(reason);
 }
 var openOf = (issues) => issues.filter((i) => i.open);
 var inProgress = (i) => i.status === "In Progress";

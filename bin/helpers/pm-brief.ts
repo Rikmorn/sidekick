@@ -56,8 +56,6 @@ function tierLine(tier: 1 | 2, candidates: Candidate[]): string | null {
   return body === null ? null : `tier ${tier} ${body}`;
 }
 
-// Only a clause that parsed shapes the brief; anything else renders as if
-// the milestone had no plans.
 function parsedPlans(p: BriefInput): ParsedPlans | null {
   if (p.plans === null || p.plans.parse !== 'ok') return null;
   return { list: p.plans.list, unplanned: p.plans.unplanned };
@@ -147,7 +145,12 @@ function planCandidatesLine(p: BriefInput, plans: ParsedPlans): string {
   const later = inState('later');
   const verify = inState('verify');
   const openCount = (pl: PlanView) => pl.issues.filter((i) => i.open).length;
-  const unplanned = plans.unplanned.map((i) => `#${i.number}`).join(', ');
+  // An In Progress issue already shows in the in-progress line.
+  const running = new Set(p.in_progress.map((i) => i.number));
+  const unplanned = plans.unplanned
+    .filter((i) => !running.has(i.number))
+    .map((i) => `#${i.number}`)
+    .join(', ');
   const segments = [
     next === undefined
       ? null

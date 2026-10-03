@@ -16,10 +16,28 @@ export type ClauseParse =
   | { parse: 'malformed'; reason: string }
   | { parse: 'ok'; plans: ClausePlan[] };
 
-const HAS_CLAUSE = /(?:^|\s)Plans:/;
+const CLAUSE_START = /(?:^|\s)Plans:/g;
 // The clause runs to the first ")." that ends a sentence.
 const CLAUSE = /(?:^|\s)Plans:\s*(.*?\))\.(?:\s|$)/s;
 const GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
+// A name never spans a sentence end, so one that does holds text from outside
+// the clause.
+const SENTENCE_BREAK = /[.!?]\s/;
+
+function leaked(plans: ClausePlan[]): string | null {
+  const plan = plans.find((p) => SENTENCE_BREAK.test(p.name));
+  return plan === undefined
+    ? null
+    : `plan "${plan.name}" holds a sentence break`;
+}
+
+// Names and reasons print inside one line of the brief and the report.
+const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+const malformed = (reason: string): ClauseParse => ({
+  parse: 'malformed',
+  reason: oneLine(reason),
+});
 
 function duplicate(plans: ClausePlan[]): string | null {
   const names = plans.map((p) => p.name);
@@ -36,30 +54,25 @@ function duplicate(plans: ClausePlan[]): string | null {
  * list, so a caller cannot act on half a clause.
  */
 export function parsePlansClause(description: string): ClauseParse {
-  if (!HAS_CLAUSE.test(description)) return { parse: 'none' };
+  const starts = (description.match(CLAUSE_START) ?? []).length;
+  if (starts === 0) return { parse: 'none' };
+  if (starts > 1) return malformed('Plans: appears twice');
   const clause = CLAUSE.exec(description);
-  if (!clause) {
-    return { parse: 'malformed', reason: 'the Plans: clause has no ")." end' };
-  }
+  if (!clause) return malformed('the Plans: clause has no ")." end');
   const parts = clause[1].split(';');
   const groups = parts.map((part) => GROUP.exec(part));
   const bad = groups.indexOf(null);
   if (bad >= 0) {
-    return {
-      parse: 'malformed',
-      reason: `"${parts[bad].trim()}" is not <name> (#N, …)`,
-    };
+    return malformed(`"${parts[bad].trim()}" is not <name> (#N, …)`);
   }
   const plans = groups
     .filter((g): g is RegExpExecArray => g !== null)
     .map((g) => ({
-      name: g[1],
+      name: oneLine(g[1]),
       issues: g[2].split(',').map((r) => Number(r.trim().slice(1))),
     }));
-  const reason = duplicate(plans);
-  return reason === null
-    ? { parse: 'ok', plans }
-    : { parse: 'malformed', reason };
+  const reason = leaked(plans) ?? duplicate(plans);
+  return reason === null ? { parse: 'ok', plans } : malformed(reason);
 }
 
 export type PlanState = 'done' | 'running' | 'next' | 'verify' | 'later';

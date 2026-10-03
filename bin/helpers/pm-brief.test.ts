@@ -298,6 +298,31 @@ describe('plans in the brief', () => {
     );
   });
 
+  test('an unplanned issue In Progress shows in the in-progress line, not in unplanned', () => {
+    const r = renderBrief(
+      withPlans(
+        'Plans: A (#1).',
+        [card(1, 'Backlog'), card(7, 'In Progress'), card(8, 'Backlog')],
+        { in_progress: [inProgress(7, 2)] },
+      ),
+    ).split('\n');
+    expect(r[2]).toBe('in progress: #7 t7 (2 d)');
+    expect(r[3]).toBe(
+      'candidates: next plan A (#1) · unplanned: #8 · tier 2: none',
+    );
+  });
+
+  test('the lowest In Progress card is continued alone when it is in no plan, beside a planned one', () => {
+    const r = renderBrief(
+      withPlans(
+        'Plans: A (#5, #6).',
+        [card(3, 'In Progress'), card(5, 'In Progress'), card(6, 'Backlog')],
+        { in_progress: [inProgress(5, 1), inProgress(3, 1)] },
+      ),
+    ).split('\n');
+    expect(r[5]).toBe('next: continue #3');
+  });
+
   test('a malformed clause renders lines 3 and 4 as if there were no plans', () => {
     const items = [card(1, 'Backlog')];
     const r = renderBrief(

@@ -83,6 +83,22 @@ describe('parsePlansClause', () => {
     });
   });
 
+  test('whitespace runs in a name or a reason collapse to one space, so neither spans lines', () => {
+    expect(
+      parsePlansClause('Plans: Lint reads\nthe issue side (#1); B (#2).'),
+    ).toEqual({
+      parse: 'ok',
+      plans: [
+        { name: 'Lint reads the issue side', issues: [1] },
+        { name: 'B', issues: [2] },
+      ],
+    });
+    expect(parsePlansClause('Plans: A\n  B (1).')).toEqual({
+      parse: 'malformed',
+      reason: '"A B (1)" is not <name> (#N, …)',
+    });
+  });
+
   test('a clause outside the grammar is malformed with a reason, never a partial list', () => {
     const cases: Array<[string, string]> = [
       ['Plans: (#1).', '"(#1)" is not <name> (#N, …)'],
@@ -92,6 +108,16 @@ describe('parsePlansClause', () => {
       ['Plans: A (#1)', 'the Plans: clause has no ")." end'],
       ['Plans: A (#1, #2); B (#2).', '#2 appears in two plans'],
       ['Plans: A (#1); A (#2).', 'plan "A" appears twice'],
+      ['Plans: A (#1);; B (#2).', '"" is not <name> (#N, …)'],
+      [
+        'Outcome: x. Plans: A (#1); B (#2);. Order: A, then B. Closes with 0.5.0 (#99).',
+        'plan ". Order: A, then B. Closes with 0.5.0" holds a sentence break',
+      ],
+      [
+        'Outcome: the brief reads the Plans: clause. Plans: Parser (#1); Brief (#2).',
+        'Plans: appears twice',
+      ],
+      ['Plans: A (#1). Plans: B (#2).', 'Plans: appears twice'],
     ];
     for (const [description, reason] of cases) {
       expect(parsePlansClause(description)).toEqual({
