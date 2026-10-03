@@ -144,6 +144,7 @@ export interface Milestone {
   open_issues: number;
   closed_issues: number;
   state: 'open' | 'closed';
+  created_at: string;
 }
 export interface Issue {
   number: number;
@@ -406,6 +407,7 @@ interface RestMilestone {
   open_issues: number;
   closed_issues: number;
   state: 'open' | 'closed';
+  created_at: string;
 }
 
 export function parseMilestones(json: string): Milestone[] {
@@ -417,6 +419,7 @@ export function parseMilestones(json: string): Milestone[] {
     open_issues: m.open_issues,
     closed_issues: m.closed_issues,
     state: m.state,
+    created_at: m.created_at,
   }));
 }
 

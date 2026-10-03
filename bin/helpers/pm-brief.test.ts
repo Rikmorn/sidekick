@@ -41,6 +41,7 @@ const base = (over: Partial<BriefInput> = {}): BriefInput => ({
     open_issues: 3,
     closed_issues: 2,
     state: 'open',
+    created_at: '2026-09-19T14:29:56Z',
   },
   in_progress: [],
   candidates: [],
@@ -142,6 +143,7 @@ describe('renderBrief', () => {
           open_issues: 3,
           closed_issues: 2,
           state: 'open',
+          created_at: '2026-09-19T14:29:56Z',
         },
       }),
     ).split('\n')[1];
@@ -162,6 +164,7 @@ describe('renderBrief', () => {
           open_issues: 3,
           closed_issues: 2,
           state: 'open',
+          created_at: '2026-09-19T14:29:56Z',
         },
       }),
     );

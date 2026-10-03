@@ -464,7 +464,8 @@ function parseMilestones(json) {
     due_on: m.due_on,
     open_issues: m.open_issues,
     closed_issues: m.closed_issues,
-    state: m.state
+    state: m.state,
+    created_at: m.created_at
   }));
 }
 function fetchMilestones(run, cwd, owner, repo, state) {

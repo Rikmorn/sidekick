@@ -40,6 +40,7 @@ const ms = (
   open_issues: 1,
   closed_issues: 0,
   state: 'open',
+  created_at: '2026-09-01T00:00:00Z',
 });
 const item = (p: Partial<Item> & { number: number }): Item => ({
   itemId: `PVTI_${p.number}`,
