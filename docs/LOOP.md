@@ -42,7 +42,7 @@ Fires on `PostToolUse` for the Read tool, from `plugin/hooks/hooks.json`. The wr
 
 ### `sk-orient`
 
-Reads the brief: board, milestone with its outcome, In Progress with ages, candidates by tier, drift, and a suggested move. Decides by rule: continue what is In Progress unless pausing it on purpose; pull new work when In Progress drops; number order is not priority. Picks up with `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value "In Progress"`. Then states the pickup to you in one line. Runs on demand mid-session for a fresh picture. Pauses for nothing; it reports.
+Reads the brief: board, milestone with its outcome, In Progress with ages, candidates by plan or by tier, drift, and a suggested move. Decides by rule: continue what is In Progress unless pausing it on purpose; pull the next plan when In Progress drops. Posts a status update when it picks up a plan. Picks up with `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value "In Progress"`. Then states the pickup to you in one line. Runs on demand mid-session for a fresh picture. Pauses for nothing; it reports.
 
 ### `sk-track`
 
@@ -60,13 +60,14 @@ Reads the brief: board, milestone with its outcome, In Progress with ages, candi
 - The evidence comment.
 - `gh issue close --reason completed`, or `not planned` with a verdict, or `--duplicate-of`.
 - Status to Done by `item-edit`.
+- A status update when the close finishes a plan.
 - An issue a merge already closed still gets the record decision, the evidence comment, and the Status, and is not closed again. The closer comes from the issue's closing event.
 
 It pauses only at the record question, a judgment the skill states rather than asks.
 
 ### `sk-milestone`
 
-**Opening**: agrees the outcome sentence with you, then creates the milestone with `gh api -X POST …/milestones`. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, and proposes them. It groups the issues into plans of one session each, records them in the description, then orients. Pauses on the outcome, on every seed, and on the plans.
+**Opening**: agrees the outcome sentence with you, then creates the milestone with `gh api -X POST …/milestones`. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, and proposes them. It groups the issues into plans of one session each, records them in the description in run order, and posts the first status update. Then it orients. Pauses on the outcome, on every seed, and on the plans.
 
 **Closing**:
 
@@ -74,6 +75,7 @@ It pauses only at the record question, a judgment the skill states rather than a
 - The audit against the outcome sentence; each gap becomes an issue or a judgment. It also lists the issues added after Opening.
 - A confirmation, carrying the learning-record judgment. Nothing outward runs without a yes.
 - On yes: the learning record if the bar holds, and the version bump (three fields in sidekick). Then deletion of the design folders whose issues have all closed, build, and one commit. Then tag, and `gh release create <tag> --verify-tag --title … --notes-file …`.
+- A `COMPLETE` status update, while the milestone is still open.
 - The milestone closed by `gh api -X PATCH`, and a "Resolved in" comment on each `COMPLETED` issue.
 
 Pauses at the confirmation.

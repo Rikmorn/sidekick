@@ -21,7 +21,7 @@ A pull request references its issue with `Closes #N` in its body. `gh pr create 
 
 ## Closing
 
-1. Re-check the state before writing: `gh issue view <n> --json state,title`. An issue a merge already closed takes steps 2, 3, and 5 and is not closed again. It skips them when it already carries the evidence comment, so a re-run posts no second one. Its closing event names the pull request or commit as the closer:
+1. Re-check the state before writing: `gh issue view <n> --json state,title`. An issue a merge already closed takes steps 2, 3, 5, and 6 and is not closed again. It skips them when it already carries the evidence comment, so a re-run posts no second one. Its closing event names the pull request or commit as the closer:
    ```
    gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issue(number:$n){timelineItems(last:1,itemTypes:CLOSED_EVENT){nodes{... on ClosedEvent{closer{__typename}}}}}}}' -f o=<owner> -f r=<repo> -F n=<n>
    ```
@@ -30,3 +30,4 @@ A pull request references its issue with `Closes #N` in its body. `gh pr create 
 3. Comment with the evidence: the commits or the fast-forward range, the measurement, the PR, and the record's path when there is one. A close without evidence is a claim.
 4. Close with the reason: `gh issue close <n> --reason completed`, or `--reason "not planned"` with a one-line verdict. The verdict is one of: not reproduced, invalid, won't fix, superseded by #N. A duplicate closes with `gh issue close <n> --duplicate-of <original>`, which sets the reason itself.
 5. Set Status to Done explicitly: `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value Done` on gh 2.98 or later. The number comes from `sidekick pm board`. Below that version, write by id with the `item_id` that `sidekick pm gate` and `pickup` carry. The board's own move on close is eventually consistent, and a card left in Verify misleads the next pickup.
+6. If the close finishes a plan, so that `sidekick pm pickup` shows it `done`, post a status update as `sk-orient` §Status updates says.
