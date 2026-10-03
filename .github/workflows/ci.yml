@@ -18,8 +18,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Read the bun that built the committed bundle
+        id: bun
+        run: |
+          v=$(tail -n 1 plugin/bin/sidekick | sed -n 's#^// bun ##p')
+          if [ -z "$v" ]; then
+            echo "::error file=plugin/bin/sidekick::no '// bun <version>' footer; run bun run build and commit plugin/bin/sidekick"
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -48,6 +60,9 @@ jobs:
 
       - name: Build the plugin executable (bun build)
         run: bun run build
+
+      - name: The committed bundle matches its source
+        run: git diff --exit-code plugin/bin/sidekick
 
       - name: Run the built executable
         run: node plugin/bin/sidekick --version

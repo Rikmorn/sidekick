@@ -8,7 +8,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "bun build bin/cli.ts --target node --outfile plugin/bin/sidekick && chmod +x plugin/bin/sidekick",
+    "build": "bun build bin/cli.ts --target node --outfile plugin/bin/sidekick --footer \"// bun $(bun --version)\" && chmod +x plugin/bin/sidekick",
     "sidekick": "bun bin/cli.ts",
     "test": "bun test bin/",
     "test:watch": "bun test --watch bin/",

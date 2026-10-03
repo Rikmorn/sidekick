@@ -11,7 +11,7 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 | `plugin/rules/*.md` | The portable `sk-*` rules; the single source, delivered by `sidekick rules install` |
 | `plugin/skills/` | Skills the plugin ships: the reference skill `sidekick`, the PM skills `sk-orient`, `sk-track`, and `sk-milestone`, the execution skills `sk-execute` and `sk-worker`, and the design skill `sk-design` |
 | `plugin/hooks/` | The session-start hook that prints the board's pickup in a tracked repo, the Skill-tool hook that points the model at `sk-design` when brainstorming loads, and the Read hook that gives superpowers' reviewers sidekick's reviewer lines |
-| `plugin/bin/sidekick` | The built executable, committed; rebuild with `bun run build` before a release |
+| `plugin/bin/sidekick` | The built executable, committed. Rebuild it with `bun run build` in every commit that changes `bin/`; CI rebuilds with the bun its last line records and fails on any difference |
 | `bin/cli.ts`, `bin/helpers/` | The executable's TypeScript source and its tests (`*.test.ts` beside them) |
 | `.vale.ini`, `.vale/styles/Sidekick/` | The house prose style that `bun run prose` checks Markdown against |
 | `docs/` | Records and steering docs; `docs/README.md` is the taxonomy |
