@@ -30,6 +30,7 @@ import {
   versionAtLeast,
 } from './pm-data.js';
 import { lintAll } from './pm-lint.js';
+import { planView } from './pm-plans.js';
 import { repoRootOf } from './rules.js';
 
 /** By-name `item-edit --field --value` lands here; older `gh` writes by id. */
@@ -246,6 +247,7 @@ export function runPmCli(
         in_progress: t.in_progress,
         candidates: t.candidates,
         order_basis: 'number' as const,
+        plans: active ? planView(active, items) : null,
         drift: drift(run, info.root, t.in_progress),
       };
       if (brief)

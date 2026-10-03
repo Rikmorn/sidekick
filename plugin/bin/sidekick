@@ -585,6 +585,90 @@ function lintAll(input) {
   return { findings, counts };
 }
 
+// bin/helpers/pm-plans.ts
+var HAS_CLAUSE = /(?:^|\s)Plans:/;
+var CLAUSE = /(?:^|\s)Plans:\s*(.*?\))\.(?:\s|$)/s;
+var GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
+function duplicate(plans) {
+  const names = plans.map((p) => p.name);
+  const name = names.find((n, i) => names.indexOf(n) !== i);
+  if (name !== undefined)
+    return `plan "${name}" appears twice`;
+  const issues = plans.flatMap((p) => p.issues);
+  const issue = issues.find((n, i) => issues.indexOf(n) !== i);
+  return issue === undefined ? null : `#${issue} appears in two plans`;
+}
+function parsePlansClause(description) {
+  if (!HAS_CLAUSE.test(description))
+    return { parse: "none" };
+  const clause = CLAUSE.exec(description);
+  if (!clause) {
+    return { parse: "malformed", reason: 'the Plans: clause has no ")." end' };
+  }
+  const parts = clause[1].split(";");
+  const groups = parts.map((part) => GROUP.exec(part));
+  const bad = groups.indexOf(null);
+  if (bad >= 0) {
+    return {
+      parse: "malformed",
+      reason: `"${parts[bad].trim()}" is not <name> (#N, …)`
+    };
+  }
+  const plans = groups.filter((g) => g !== null).map((g) => ({
+    name: g[1],
+    issues: g[2].split(",").map((r) => Number(r.trim().slice(1)))
+  }));
+  const reason = duplicate(plans);
+  return reason === null ? { parse: "ok", plans } : { parse: "malformed", reason };
+}
+var openOf = (issues) => issues.filter((i) => i.open);
+var inProgress = (i) => i.status === "In Progress";
+var notStarted = (i) => i.status === "Backlog" || i.status === null;
+function startable(issues) {
+  const open2 = openOf(issues);
+  return open2.length > 0 && !open2.some(inProgress) && open2.some(notStarted);
+}
+function stateOf(issues, isNext) {
+  const open2 = openOf(issues);
+  if (open2.length === 0)
+    return "done";
+  if (open2.some(inProgress))
+    return "running";
+  if (isNext)
+    return "next";
+  if (open2.every((i) => i.status === "Verify"))
+    return "verify";
+  return "later";
+}
+function planView(ms, items) {
+  const c = parsePlansClause(ms.description);
+  if (c.parse === "none")
+    return { parse: "none", list: [], unplanned: [] };
+  if (c.parse === "malformed") {
+    return { parse: "malformed", reason: c.reason, list: [], unplanned: [] };
+  }
+  const byNumber = new Map(items.map((i) => [i.number, i]));
+  const issueOf = (n) => {
+    const i = byNumber.get(n);
+    return i ? {
+      number: n,
+      title: i.title,
+      open: i.state === "OPEN",
+      status: i.status
+    } : { number: n, title: null, open: true, status: null };
+  };
+  const issues = c.plans.map((p) => p.issues.map(issueOf));
+  const nextAt = issues.findIndex(startable);
+  const list = c.plans.map((p, k) => ({
+    name: p.name,
+    state: stateOf(issues[k], k === nextAt),
+    issues: issues[k]
+  }));
+  const planned = new Set(c.plans.flatMap((p) => p.issues));
+  const unplanned = items.filter((i) => i.state === "OPEN" && i.milestone === ms.title && !planned.has(i.number)).sort((a, b) => a.number - b.number).map((i) => ({ number: i.number, title: i.title }));
+  return { parse: "ok", list, unplanned };
+}
+
 // bin/helpers/rules.ts
 import { execFileSync } from "node:child_process";
 import * as fs2 from "node:fs";
@@ -909,6 +993,7 @@ function runPmCli(args, env, out, err) {
         in_progress: t.in_progress,
         candidates: t.candidates,
         order_basis: "number",
+        plans: active ? planView(active, items) : null,
         drift: drift(run, info.root, t.in_progress)
       };
       if (brief)
@@ -999,7 +1084,7 @@ function tiers(items, active, now) {
     ]
   };
 }
-function drift(run, root, inProgress) {
+function drift(run, root, inProgress2) {
   const branch = run("git", ["branch", "--show-current"], root).stdout.trim();
   let basis = "none";
   let base = null;
@@ -1038,7 +1123,7 @@ function drift(run, root, inProgress) {
   }
   return {
     unpushed: { count, basis },
-    stale_in_progress: inProgress.filter((i) => i.age_days > STALE_DAYS),
+    stale_in_progress: inProgress2.filter((i) => i.age_days > STALE_DAYS),
     open_pr
   };
 }

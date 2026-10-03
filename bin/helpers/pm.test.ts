@@ -14,6 +14,7 @@ import {
 import { type BriefInput, renderBrief } from './pm-brief.js';
 import type { Item, LinkedBoard, Milestone } from './pm-data.js';
 import { LINT_IDS } from './pm-lint.js';
+import type { Plans } from './pm-plans.js';
 
 const board = (
   n: number,
@@ -531,6 +532,77 @@ describe('runPmCli pickup', () => {
       0,
     );
     expect(kindsSum).toBe(p1.data.user.projectV2.items.totalCount);
+  });
+});
+
+describe('runPmCli pickup plans', () => {
+  const pickupWith = (description: string | null) => {
+    const map = sidekickMap();
+    if (description !== null) {
+      const open = JSON.parse(fixture('milestones-open.json')) as Array<
+        Record<string, unknown>
+      >;
+      open[0].description = description;
+      map['gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100'] =
+        JSON.stringify(open);
+    }
+    const c = capture();
+    const code = runPmCli(
+      ['pickup'],
+      {
+        cwd: '/',
+        run: fixtureRunner(map),
+        now: new Date('2026-09-19T12:00:00Z'),
+      },
+      c.o,
+      c.e,
+    );
+    expect(code).toBe(0);
+    return JSON.parse(c.out[0]) as {
+      milestone: { created_at: string };
+      plans: Plans;
+    };
+  };
+
+  test("carries the active milestone's plans from its clause, with each card's state", () => {
+    const j = pickupWith(
+      'Outcome: x. Plans: Seat (#109, #110); Orient (#111, #112).',
+    );
+    expect(j.milestone.created_at).toBe('2026-09-19T14:29:56Z');
+    expect(j.plans.parse).toBe('ok');
+    expect(
+      j.plans.list.map((p) => [
+        p.name,
+        p.state,
+        p.issues.map((i) => [i.number, i.status]),
+      ]),
+    ).toEqual([
+      [
+        'Seat',
+        'running',
+        [
+          [109, 'In Progress'],
+          [110, 'Backlog'],
+        ],
+      ],
+      [
+        'Orient',
+        'next',
+        [
+          [111, 'Backlog'],
+          [112, 'Backlog'],
+        ],
+      ],
+    ]);
+    expect(j.plans.unplanned.map((i) => i.number)).toEqual([113]);
+  });
+
+  test("R6's captured description has no clause, so plans parse as none", () => {
+    expect(pickupWith(null).plans).toEqual({
+      parse: 'none',
+      list: [],
+      unplanned: [],
+    });
   });
 });
 
