@@ -739,6 +739,37 @@ function planView(ms, items) {
   return { parse: "ok", list, unplanned };
 }
 
+// bin/helpers/pm-report.ts
+var STATE_CELL = {
+  done: "done",
+  running: "running",
+  next: "next",
+  verify: "verify",
+  later: ""
+};
+var cell = (text) => text.replaceAll("|", "\\|");
+function row(plan, ref2) {
+  const closed = plan.issues.filter((i) => !i.open).length;
+  const issues = plan.issues.map((i) => ref2(i.number)).join(" ");
+  return `| ${STATE_CELL[plan.state]} | ${cell(plan.name)} | ${closed} of ${plan.issues.length} | ${issues} |`;
+}
+function renderReport(r) {
+  const ref2 = (n) => `${r.board.owner}/${r.board.repo}#${n}`;
+  const running = r.plans.list.filter((p) => p.state === "running").map((p) => `**${p.name}**`);
+  const unplanned = r.plans.unplanned.map((i) => ref2(i.number));
+  return [
+    `**${r.milestone.title}** · ${r.milestone.open_issues} open, ${r.milestone.closed_issues} closed`,
+    `Running: ${running.length > 0 ? running.join(", ") : "none"}`,
+    "",
+    "| | Plan | Closed | Issues |",
+    "|---|---|---|---|",
+    ...r.plans.list.map((p) => row(p, ref2)),
+    "",
+    `Unplanned: ${unplanned.length > 0 ? unplanned.join(", ") : "none"}.`
+  ].join(`
+`);
+}
+
 // bin/helpers/rules.ts
 import { execFileSync } from "node:child_process";
 import * as fs2 from "node:fs";
@@ -1016,7 +1047,7 @@ function discover(run, cwd) {
     root
   };
 }
-var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--brief] [--milestone <title>]";
+var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report] [--milestone <title>]";
 var PM_USAGE = `usage: ${PM_USAGE_LINE}`;
 var VERBS2 = new Set(["board", "pickup", "lint", "gate"]);
 function runPmCli(args, env, out, err) {
@@ -1027,10 +1058,11 @@ function runPmCli(args, env, out, err) {
   }
   const run = env.run ?? execRunner;
   const brief = rest2.includes("--brief");
+  const report = rest2.includes("--report");
   const quiet = rest2.includes("--quiet") || brief;
   const msIdx = rest2.indexOf("--milestone");
   const msTitle = msIdx >= 0 ? rest2[msIdx + 1] : undefined;
-  if (verb === "gate" && !msTitle) {
+  if (verb === "gate" && !msTitle || brief && report) {
     err(PM_USAGE);
     return 1;
   }
@@ -1039,6 +1071,10 @@ function runPmCli(args, env, out, err) {
     const info = discover(run, env.cwd);
     const { root: _root, ...shown } = info;
     if (!info.tracked) {
+      if (report) {
+        err(`not tracked: ${info.reason}`);
+        return 1;
+      }
       if (!quiet)
         emit(shown);
       return 0;
@@ -1056,6 +1092,9 @@ function runPmCli(args, env, out, err) {
     if (verb === "pickup") {
       const active = activeMilestone(fetchMilestones(run, info.root, owner, repo, "open"));
       const { items, kinds } = fetchItems(run, info.root, viewer, project.number, fullName);
+      const plans = active ? planView(active, items) : null;
+      if (report)
+        return emitReport({ owner, repo }, active, plans, out, err);
       const t = tiers(items, active, now);
       const pickup = {
         board: { ...shown, item_kinds: kinds },
@@ -1063,7 +1102,7 @@ function runPmCli(args, env, out, err) {
         in_progress: t.in_progress,
         candidates: t.candidates,
         order_basis: "number",
-        plans: active ? planView(active, items) : null,
+        plans,
         drift: drift(run, info.root, t.in_progress)
       };
       if (brief)
@@ -1106,6 +1145,18 @@ function runPmCli(args, env, out, err) {
     err(e instanceof Error ? e.message : String(e));
     return 1;
   }
+}
+function emitReport(board, milestone, plans, out, err) {
+  if (milestone === null || plans === null) {
+    err("no open milestone to report on");
+    return 1;
+  }
+  if (plans.parse !== "ok") {
+    err(plans.parse === "none" ? `milestone "${milestone.title}" has no Plans: clause` : `milestone "${milestone.title}": ${plans.reason ?? "malformed Plans: clause"}`);
+    return 1;
+  }
+  out(renderReport({ board, milestone, plans }));
+  return 0;
 }
 var byTitle = (a, b) => a.localeCompare(b, "en", { numeric: true });
 function activeMilestone(list) {

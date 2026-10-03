@@ -24,7 +24,7 @@ What each skill in the loop does when it runs. For each: what it reads, the comm
 | 7 Close the milestone | `sk-milestone` | The model or you, at the end of a milestone |
 | A pull request exists | `code-review:code-review` | You, on a PR |
 
-`sidekick pm` is not a skill. It is the read side every sidekick skill calls. Its verbs are `board`, `pickup`, `lint`, and `gate`, each printing one JSON object; `pickup --brief` prints six lines of text instead.
+`sidekick pm` is not a skill. It is the read side every sidekick skill calls. Its verbs are `board`, `pickup`, `lint`, and `gate`, each printing one JSON object. `pickup --brief` prints six lines of text instead, and `pickup --report` the body of a project status update.
 
 ## sidekick's skills
 

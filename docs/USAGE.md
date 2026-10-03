@@ -70,12 +70,12 @@ At filing, an issue gets `backlog` with a `Revisit when:` line, unless it is a s
 
 ## The commands
 
-`sidekick pm` reads; the skills write. Every verb prints one JSON object and exits `0` when it ran (the verdict is in the JSON, including `tracked: false`), `1` on usage or an unexpected error, `2` when `gh` is missing or its token lacks `project`.
+`sidekick pm` reads; the skills write. Every verb prints one JSON object and exits `0` when it ran (the verdict is in the JSON, including `tracked: false`), `1` on usage or an unexpected error, `2` when `gh` is missing or its token lacks `project`. `pickup --report` is the exception: it prints Markdown, and exits `1` with its reason when there is nothing sound to post.
 
 | Verb | Prints | Used by |
 |---|---|---|
 | `board [--quiet]` | `tracked`, the reason if not, owner and repo, the project number and id, the Status field with its option ids, preflight (`gh` version, scope, warnings) | Every write, since it carries the ids; the bootstrap verify |
-| `pickup [--quiet] [--brief]` | The board block with `item_kinds`, the active milestone, `in_progress` with ages, `candidates` by tier, `drift`; `--brief` renders six lines of text instead, for the hook | Session start |
+| `pickup [--quiet] [--brief\|--report]` | The board block with `item_kinds`, the active milestone, `in_progress` with ages, `candidates` by tier, the milestone's `plans`, `drift`. `--brief` renders six lines of text instead, for the hook. `--report` prints the body of a project status update | Session start; status updates |
 | `lint` | `findings` and `counts` per predicate: label counts, missing Status, open-in-Done, closed-not-Done, `backlog` without `Revisit when:`, `backlog` in a milestone, position-code titles, unboarded issues, stale In Progress, more than one linked board | Grooming; the milestone gate |
 | `gate --milestone <title>` | The milestone with its counts, `ready`, and every open issue in it with Status and `item_id` | Milestone close |
 

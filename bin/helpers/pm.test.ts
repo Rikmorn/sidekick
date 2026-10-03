@@ -606,6 +606,85 @@ describe('runPmCli pickup plans', () => {
   });
 });
 
+describe('pickup --report', () => {
+  const run = (description: string | null, args: string[]) => {
+    const map = sidekickMap();
+    const open = JSON.parse(fixture('milestones-open.json')) as Array<
+      Record<string, unknown>
+    >;
+    if (description !== null) open[0].description = description;
+    map['gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100'] =
+      JSON.stringify(description === 'no milestone' ? [] : open);
+    const c = capture();
+    const code = runPmCli(
+      ['pickup', ...args],
+      {
+        cwd: '/',
+        run: fixtureRunner(map),
+        now: new Date('2026-09-19T12:00:00Z'),
+      },
+      c.o,
+      c.e,
+    );
+    return { code, out: c.out, err: c.err };
+  };
+
+  test('prints the status-update body for a parsed clause and exits 0', () => {
+    const r = run(
+      'Outcome: x. Plans: Seat (#109, #110); Orient (#111, #112).',
+      ['--report'],
+    );
+    expect(r.code).toBe(0);
+    expect(r.err).toEqual([]);
+    expect(r.out).toHaveLength(1);
+    expect(r.out[0].split('\n')).toEqual([
+      '**R6 — PM layer** · 5 open, 0 closed',
+      'Running: **Seat**',
+      '',
+      '| | Plan | Closed | Issues |',
+      '|---|---|---|---|',
+      '| running | Seat | 0 of 2 | Rikmorn/sidekick#109 Rikmorn/sidekick#110 |',
+      '| next | Orient | 0 of 2 | Rikmorn/sidekick#111 Rikmorn/sidekick#112 |',
+      '',
+      'Unplanned: Rikmorn/sidekick#113.',
+    ]);
+  });
+
+  test('exits 1 with its reason, printing nothing, when there is nothing sound to post', () => {
+    const cases: Array<[string | null, string]> = [
+      [null, 'milestone "R6 — PM layer" has no Plans: clause'],
+      [
+        'Plans: A (#109); A (#110).',
+        'milestone "R6 — PM layer": plan "A" appears twice',
+      ],
+      ['no milestone', 'no open milestone to report on'],
+    ];
+    for (const [description, reason] of cases) {
+      const r = run(description, ['--report']);
+      expect(r.code).toBe(1);
+      expect(r.out).toEqual([]);
+      expect(r.err).toEqual([reason]);
+    }
+  });
+
+  test('--report in an untracked repo exits 1, and with --brief it is a usage error', () => {
+    const c = capture();
+    expect(
+      runPmCli(
+        ['pickup', '--report'],
+        { cwd: '/', run: untracked() },
+        c.o,
+        c.e,
+      ),
+    ).toBe(1);
+    expect(c.out).toEqual([]);
+    expect(c.err).toEqual(['not tracked: remote-owner-mismatch']);
+    const r = run(null, ['--brief', '--report']);
+    expect(r.code).toBe(1);
+    expect(r.err).toEqual([PM_USAGE]);
+  });
+});
+
 describe('runPmCli lint', () => {
   test('prints findings and counts and exits 0 whatever the counts are', () => {
     // A second open board titled `sidekick` and owned by the viewer, so

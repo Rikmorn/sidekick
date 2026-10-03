@@ -1,8 +1,9 @@
 /**
  * `sidekick pm board|pickup|lint|gate` — the read-only seat of project
  * management. Which board a repo is tracked on, what to pick up, what the
- * board contradicts, whether a milestone can close. JSON on stdout; the
- * skills do the judgement and the writes.
+ * board contradicts, whether a milestone can close. JSON on stdout, or
+ * `pickup` as text with `--brief` and as a status-update body with
+ * `--report`; the skills do the judgement and the writes.
  */
 
 import { renderBrief } from './pm-brief.js';
@@ -30,7 +31,8 @@ import {
   versionAtLeast,
 } from './pm-data.js';
 import { lintAll } from './pm-lint.js';
-import { planView } from './pm-plans.js';
+import { type Plans, planView } from './pm-plans.js';
+import { renderReport } from './pm-report.js';
 import { repoRootOf } from './rules.js';
 
 /** By-name `item-edit --field --value` lands here; older `gh` writes by id. */
@@ -180,7 +182,7 @@ export function discover(run: Runner, cwd: string): BoardInfo {
 }
 
 export const PM_USAGE_LINE =
-  'sidekick pm <board|pickup|lint|gate> [--quiet] [--brief] [--milestone <title>]';
+  'sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report] [--milestone <title>]';
 export const PM_USAGE = `usage: ${PM_USAGE_LINE}`;
 
 export interface PmEnv {
@@ -204,10 +206,11 @@ export function runPmCli(
   }
   const run = env.run ?? execRunner;
   const brief = rest.includes('--brief');
+  const report = rest.includes('--report');
   const quiet = rest.includes('--quiet') || brief;
   const msIdx = rest.indexOf('--milestone');
   const msTitle = msIdx >= 0 ? rest[msIdx + 1] : undefined;
-  if (verb === 'gate' && !msTitle) {
+  if ((verb === 'gate' && !msTitle) || (brief && report)) {
     err(PM_USAGE);
     return 1;
   }
@@ -216,6 +219,10 @@ export function runPmCli(
     const info = discover(run, env.cwd);
     const { root: _root, ...shown } = info;
     if (!info.tracked) {
+      if (report) {
+        err(`not tracked: ${info.reason}`);
+        return 1;
+      }
       if (!quiet) emit(shown);
       return 0;
     }
@@ -240,6 +247,8 @@ export function runPmCli(
         project.number,
         fullName,
       );
+      const plans = active ? planView(active, items) : null;
+      if (report) return emitReport({ owner, repo }, active, plans, out, err);
       const t = tiers(items, active, now);
       const pickup = {
         board: { ...shown, item_kinds: kinds },
@@ -247,7 +256,7 @@ export function runPmCli(
         in_progress: t.in_progress,
         candidates: t.candidates,
         order_basis: 'number' as const,
-        plans: active ? planView(active, items) : null,
+        plans,
         drift: drift(run, info.root, t.in_progress),
       };
       if (brief)
@@ -310,6 +319,31 @@ export function runPmCli(
     err(e instanceof Error ? e.message : String(e));
     return 1;
   }
+}
+
+// --report prints only a sound status update; anything else is exit 1 with
+// its reason, so a skill posts nothing half-formed.
+function emitReport(
+  board: { owner: string; repo: string },
+  milestone: Milestone | null,
+  plans: Plans | null,
+  out: (line: string) => void,
+  err: (line: string) => void,
+): number {
+  if (milestone === null || plans === null) {
+    err('no open milestone to report on');
+    return 1;
+  }
+  if (plans.parse !== 'ok') {
+    err(
+      plans.parse === 'none'
+        ? `milestone "${milestone.title}" has no Plans: clause`
+        : `milestone "${milestone.title}": ${plans.reason ?? 'malformed Plans: clause'}`,
+    );
+    return 1;
+  }
+  out(renderReport({ board, milestone, plans }));
+  return 0;
 }
 
 const byTitle = (a: string, b: string): number =>
