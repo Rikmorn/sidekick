@@ -20,7 +20,7 @@ export type HeaderParse =
 export const HEADER_OPEN = '<!-- plans -->';
 export const HEADER_CLOSE = '<!-- /plans -->';
 
-const LINE = /^\s*\d+\.\s*(.*)$/;
+const LINE = /^\s*\d+\.(?!\d)\s*(.*)$/;
 const GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
 
 // A web-UI edit stores CRLF; the parser sees LF only.

@@ -94,6 +94,39 @@ describe('parsePlansHeader', () => {
     });
   });
 
+  test('markers with surrounding whitespace still delimit the header', () => {
+    const description =
+      '   <!-- plans -->\n1. A (#1)\n<!-- /plans -->  \n\nOutcome: x.';
+    expect(parsePlansHeader(description)).toEqual({
+      parse: 'ok',
+      plans: [{ name: 'A', issues: [1] }],
+    });
+  });
+
+  test('the template in sk-milestone, indented three spaces as in the skill, parses', () => {
+    const template = [
+      '<!-- plans -->',
+      '1. <name> (#N, #N)',
+      '2. <name> (#N)',
+      '<!-- /plans -->',
+      '',
+      'Outcome: <sentence> Scope: <lines>.',
+    ]
+      .join('\n')
+      .replace(/^(?=.)/gm, '   ')
+      .replace('<name>', 'First')
+      .replace('<name>', 'Second')
+      .replace(/#N, #N/, '#1, #2')
+      .replace(/#N/, '#3');
+    expect(parsePlansHeader(template)).toEqual({
+      parse: 'ok',
+      plans: [
+        { name: 'First', issues: [1, 2] },
+        { name: 'Second', issues: [3] },
+      ],
+    });
+  });
+
   test('CRLF and CR line endings parse as LF does', () => {
     const lf = header('1. A (#1)', '2. B (#2)');
     expect(parsePlansHeader(lf.replaceAll('\n', '\r\n'))).toEqual(
@@ -121,6 +154,10 @@ describe('parsePlansHeader', () => {
       [
         header('1. A (#1); B (#2)'),
         '"1. A (#1); B (#2)" is not <n>. <name> (#N, …)',
+      ],
+      [
+        header('2.0 release (#5)'),
+        '"2.0 release (#5)" is not <n>. <name> (#N, …)',
       ],
       [header(), 'the plans header lists no plans'],
       [header(''), 'the plans header lists no plans'],

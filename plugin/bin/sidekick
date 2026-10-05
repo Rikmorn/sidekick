@@ -205,7 +205,7 @@ function runHookCli(args, env, out, err) {
 // bin/helpers/pm-plans.ts
 var HEADER_OPEN = "<!-- plans -->";
 var HEADER_CLOSE = "<!-- /plans -->";
-var LINE = /^\s*\d+\.\s*(.*)$/;
+var LINE = /^\s*\d+\.(?!\d)\s*(.*)$/;
 var GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
 var normalise = (text) => text.replace(/\r\n?/g, `
 `);
@@ -465,6 +465,9 @@ function renderBrief(p) {
     drift.push(`open PR #${p.drift.open_pr.number}`);
   if (p.drift.in_progress_split.length > 0) {
     drift.push(`In Progress split: ${p.drift.in_progress_split.map(cut).join(", ")}`);
+  }
+  if (p.plans !== null && p.plans.parse === "malformed") {
+    drift.push(`plans header: ${p.plans.reason}`);
   }
   lines.push(drift.length > 0 ? `drift: ${drift.join(" · ")}` : "drift: none");
   lines.push(`next: ${nextMove(p)}`);
@@ -1109,6 +1112,14 @@ function discover(run, cwd) {
 var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report] [--milestone <title>]";
 var PM_USAGE = `usage: ${PM_USAGE_LINE}`;
 var VERBS2 = new Set(["board", "pickup", "lint", "gate"]);
+function milestoneFlag(args) {
+  const at = args.findIndex((a) => a === "--milestone" || a.startsWith("--milestone="));
+  if (at < 0)
+    return { title: undefined, invalid: false };
+  const title = args[at].startsWith("--milestone=") ? args[at].slice("--milestone=".length) : args[at + 1];
+  const usable = title !== undefined && title !== "" && !title.startsWith("--");
+  return usable ? { title, invalid: false } : { title: undefined, invalid: true };
+}
 function runPmCli(args, env, out, err) {
   const [verb, ...rest2] = args;
   if (!verb || !VERBS2.has(verb)) {
@@ -1119,10 +1130,9 @@ function runPmCli(args, env, out, err) {
   const brief = rest2.includes("--brief");
   const report = rest2.includes("--report");
   const quiet = rest2.includes("--quiet") || brief;
-  const msIdx = rest2.indexOf("--milestone");
-  const msTitle = msIdx >= 0 ? rest2[msIdx + 1] : undefined;
-  const missingTitle = msIdx >= 0 && msTitle === undefined;
-  if (verb === "gate" && !msTitle || missingTitle || brief && report) {
+  const ms = milestoneFlag(rest2);
+  const msTitle = ms.title;
+  if (verb === "gate" && msTitle === undefined || ms.invalid || brief && report) {
     err(PM_USAGE);
     return 1;
   }

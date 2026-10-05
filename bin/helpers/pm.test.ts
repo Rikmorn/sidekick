@@ -827,6 +827,32 @@ describe('pickup with several open milestones', () => {
     );
   });
 
+  test('--milestone=<title> selects like the two-argument form', () => {
+    const open = [r6(), other(7, 'R7 — Earlier', null)];
+    expect(
+      json(run(open, ['--milestone=R7 — Earlier']).out).milestone?.title,
+    ).toBe('R7 — Earlier');
+    const report = run(open, ['--report', '--milestone=R7 — Earlier']);
+    expect(report.code).toBe(0);
+    expect(report.out[0].split('\n')[0]).toBe(
+      '**R7 — Earlier** · 5 open, 0 closed',
+    );
+  });
+
+  test('--milestone followed by another flag, or by nothing after =, is a usage error', () => {
+    const open = [r6(), other(7, 'R7 — Earlier', null)];
+    for (const args of [
+      ['--milestone', '--report'],
+      ['--report', '--milestone'],
+      ['--milestone='],
+    ]) {
+      const r = run(open, args);
+      expect(r.code).toBe(1);
+      expect(r.out).toEqual([]);
+      expect(r.err).toEqual([PM_USAGE]);
+    }
+  });
+
   test('an unknown --milestone exits 1 naming the open titles, and a missing value is a usage error', () => {
     const open = [r6(), other(7, 'R7 — Earlier', null)];
     const unknown = run(open, ['--milestone', 'R5 — Gone']);

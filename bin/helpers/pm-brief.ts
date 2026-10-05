@@ -229,6 +229,9 @@ export function renderBrief(p: BriefInput): string {
       `In Progress split: ${p.drift.in_progress_split.map(cut).join(', ')}`,
     );
   }
+  if (p.plans !== null && p.plans.parse === 'malformed') {
+    drift.push(`plans header: ${p.plans.reason}`);
+  }
   lines.push(drift.length > 0 ? `drift: ${drift.join(' · ')}` : 'drift: none');
 
   lines.push(`next: ${nextMove(p)}`);

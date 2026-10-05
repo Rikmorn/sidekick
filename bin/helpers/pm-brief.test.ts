@@ -401,7 +401,21 @@ describe('plans in the brief', () => {
     expect(r[3]).toBe(
       'candidates: tier 1 #1 t1 · tier 2 #200 t200 (order: number, not priority)',
     );
+    expect(r[4]).toBe('drift: plans header: plan "A" appears twice');
     expect(r[5]).toBe('next: pull one tier-1 candidate');
+  });
+
+  test('a header after the outcome is named in the drift line', () => {
+    const r = renderBrief(
+      withPlans(
+        'Outcome: x.\n\n<!-- plans -->\n1. A (#1)\n<!-- /plans -->',
+        [card(1, 'Backlog')],
+        { candidates: [cand(1, 1)] },
+      ),
+    ).split('\n');
+    expect(r[4]).toBe(
+      'drift: plans header: the plans header is not at the top',
+    );
   });
 
   test('nextMove with plans: continue a plan, pull the next plan, then an unplanned issue, then close', () => {

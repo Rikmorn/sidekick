@@ -134,7 +134,7 @@ export interface Item {
   state: 'OPEN' | 'CLOSED';
   stateReason: string | null;
   updatedAt: string;
-  /** When the card's Status last changed; `null` without a Status value. */
+  /** When the card's Status last changed; `null` without a Status value or when the response lacks the field. */
   statusUpdatedAt: string | null;
   url: string;
   milestone: string | null;

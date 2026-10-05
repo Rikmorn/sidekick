@@ -194,6 +194,27 @@ export interface PmEnv {
 
 const VERBS = new Set(['board', 'pickup', 'lint', 'gate']);
 
+/**
+ * Reads `--milestone <title>` and `--milestone=<title>`. A flag with no
+ * value, or whose next argument is another flag, is `invalid`.
+ */
+function milestoneFlag(args: string[]): {
+  title: string | undefined;
+  invalid: boolean;
+} {
+  const at = args.findIndex(
+    (a) => a === '--milestone' || a.startsWith('--milestone='),
+  );
+  if (at < 0) return { title: undefined, invalid: false };
+  const title = args[at].startsWith('--milestone=')
+    ? args[at].slice('--milestone='.length)
+    : args[at + 1];
+  const usable = title !== undefined && title !== '' && !title.startsWith('--');
+  return usable
+    ? { title, invalid: false }
+    : { title: undefined, invalid: true };
+}
+
 export function runPmCli(
   args: string[],
   env: PmEnv,
@@ -209,10 +230,13 @@ export function runPmCli(
   const brief = rest.includes('--brief');
   const report = rest.includes('--report');
   const quiet = rest.includes('--quiet') || brief;
-  const msIdx = rest.indexOf('--milestone');
-  const msTitle = msIdx >= 0 ? rest[msIdx + 1] : undefined;
-  const missingTitle = msIdx >= 0 && msTitle === undefined;
-  if ((verb === 'gate' && !msTitle) || missingTitle || (brief && report)) {
+  const ms = milestoneFlag(rest);
+  const msTitle = ms.title;
+  if (
+    (verb === 'gate' && msTitle === undefined) ||
+    ms.invalid ||
+    (brief && report)
+  ) {
     err(PM_USAGE);
     return 1;
   }
@@ -392,7 +416,7 @@ export function inProgressMilestones(
 /**
  * The milestone the work is in: the one open milestone holding In
  * Progress cards, else the only open one. `null` when the board cannot
- * say, so the operator chooses rather than the tool guessing.
+ * say; the operator chooses.
  */
 export function activeMilestone(
   open: Milestone[],
