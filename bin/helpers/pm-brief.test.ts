@@ -46,6 +46,7 @@ const base = (over: Partial<BriefInput> = {}): BriefInput => ({
     state: 'open',
     created_at: '2026-09-19T14:29:56Z',
   },
+  open_milestones: [{ number: 6, title: 'R6 — PM layer' }],
   in_progress: [],
   candidates: [],
   plans: null,
@@ -53,6 +54,7 @@ const base = (over: Partial<BriefInput> = {}): BriefInput => ({
     unpushed: { count: 0, basis: 'upstream' },
     stale_in_progress: [],
     open_pr: null,
+    in_progress_split: [],
   },
   ...over,
 });
@@ -72,9 +74,49 @@ describe('renderBrief', () => {
   });
 
   test('no open milestone is an ordinary state', () => {
-    expect(renderBrief(base({ milestone: null })).split('\n')[1]).toBe(
-      'milestone: none',
+    const r = renderBrief(base({ milestone: null, open_milestones: [] }));
+    expect(r.split('\n')[1]).toBe('milestone: none');
+    expect(r.split('\n')[5]).toBe(
+      'next: nothing open: open the next milestone',
     );
+  });
+
+  test('other open milestones show as also open beside the active one', () => {
+    const r = renderBrief(
+      base({
+        open_milestones: [
+          { number: 6, title: 'R6 — PM layer' },
+          { number: 7, title: 'R7 — Design pass' },
+          { number: 9, title: `R9 — ${'x'.repeat(70)}` },
+        ],
+      }),
+    );
+    expect(r.split('\n')[1]).toBe(
+      `milestone: R6 — PM layer (3 open, 2 closed) · Outcome: sessions start from the board. · also open: R7 — Design pass, R9 — ${'x'.repeat(54)}…`,
+    );
+  });
+
+  test('with none active among open milestones, the brief lists them and next asks to choose', () => {
+    const r = renderBrief(
+      base({
+        milestone: null,
+        open_milestones: [
+          { number: 7, title: 'R7 — A' },
+          { number: 9, title: 'R9 — B' },
+        ],
+        in_progress: [inProgress(3, 1)],
+        candidates: [cand(200, 2)],
+        drift: {
+          unpushed: { count: 0, basis: 'upstream' },
+          stale_in_progress: [],
+          open_pr: null,
+          in_progress_split: ['R7 — A', 'R9 — B'],
+        },
+      }),
+    ).split('\n');
+    expect(r[1]).toBe('milestone: none active · open: R7 — A, R9 — B');
+    expect(r[4]).toBe('drift: In Progress split: R7 — A, R9 — B');
+    expect(r[5]).toBe('next: choose a milestone: R7 — A, R9 — B');
   });
 
   test('in progress lists every card with its age and next continues the lowest number', () => {
@@ -113,6 +155,7 @@ describe('renderBrief', () => {
           unpushed: { count: 4, basis: 'origin-branch' },
           stale_in_progress: [stale],
           open_pr: { number: 42, title: 'pr' },
+          in_progress_split: [],
         },
       }),
     ).split('\n');
@@ -124,6 +167,7 @@ describe('renderBrief', () => {
             unpushed: { count: null, basis: 'none' },
             stale_in_progress: [],
             open_pr: null,
+            in_progress_split: [],
           },
         }),
       ).split('\n')[4],
@@ -193,6 +237,9 @@ describe('renderBrief', () => {
           state: 'open',
           created_at: '2026-09-30T20:31:45Z',
         },
+        open_milestones: [
+          { number: 8, title: 'R8 — Fixes filed by 30 September' },
+        ],
       }),
     );
     expect(r.split('\n')[1]).toBe(

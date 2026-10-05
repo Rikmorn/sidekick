@@ -805,6 +805,9 @@ describe('pickup with several open milestones', () => {
       { number: 7, title: 'R7 — Earlier' },
     ]);
     expect(j.drift.in_progress_split).toEqual([]);
+    const brief = run(open, ['--brief']).out[0].split('\n');
+    expect(brief[1]).toMatch(/^milestone: R6 — PM layer \(5 open, 0 closed\)/);
+    expect(brief[1]).toMatch(/ · also open: R7 — Earlier$/);
     const report = run(open, ['--report']);
     expect(report.code).toBe(0);
     expect(report.out[0].split('\n')[0]).toBe(
@@ -844,6 +847,9 @@ describe('pickup with several open milestones', () => {
     expect(j.milestone).toBeNull();
     expect(j.open_milestones.map((m) => m.number)).toEqual([7, 9]);
     expect(j.candidates.every((c) => c.tier === 2)).toBe(true);
+    const brief = run(open, ['--brief']).out[0].split('\n');
+    expect(brief[1]).toBe('milestone: none active · open: R7 — A, R9 — B');
+    expect(brief[5]).toBe('next: choose a milestone: R7 — A, R9 — B');
     const report = run(open, ['--report']);
     expect(report.code).toBe(1);
     expect(report.out).toEqual([]);

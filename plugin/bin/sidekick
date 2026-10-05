@@ -334,6 +334,7 @@ function firstSentence(text) {
   const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
   return m ? m[1] : t;
 }
+var titles = (list) => list.map((m) => cut(m.title)).join(", ");
 function ref(i) {
   return `#${i.number} ${cut(i.title)}`;
 }
@@ -373,6 +374,9 @@ function pullMove(p, plans) {
   return unplanned ? "pull one unplanned candidate" : null;
 }
 function nextMove(p) {
+  if (p.milestone === null && p.open_milestones.length > 1) {
+    return `choose a milestone: ${titles(p.open_milestones)}`;
+  }
   const plans = parsedPlans(p);
   if (p.in_progress.length > 0)
     return continueMove(p.in_progress, plans);
@@ -430,16 +434,23 @@ function candidatesLine(p, plans) {
   const order = p.candidates.length > 1 ? " (order: number, not priority)" : "";
   return tiers.length > 0 ? `candidates: ${tiers.join(" · ")}${order}` : "candidates: none";
 }
+function milestoneLine(p) {
+  const m = p.milestone;
+  if (m === null) {
+    return p.open_milestones.length === 0 ? "milestone: none" : `milestone: none active · open: ${titles(p.open_milestones)}`;
+  }
+  const outcome = firstSentence(descriptionProse(m.description));
+  const others = p.open_milestones.filter((o) => o.number !== m.number);
+  return [
+    `milestone: ${m.title} (${m.open_issues} open, ${m.closed_issues} closed)`,
+    ...outcome ? [outcome] : [],
+    ...others.length > 0 ? [`also open: ${titles(others)}`] : []
+  ].join(" · ");
+}
 function renderBrief(p) {
   const lines = [];
   lines.push(`sidekick · ${p.board.owner}/${p.board.repo} · board #${p.board.project.number}`);
-  if (p.milestone) {
-    const m = p.milestone;
-    const outcome = firstSentence(descriptionProse(m.description));
-    lines.push(`milestone: ${m.title} (${m.open_issues} open, ${m.closed_issues} closed)${outcome ? ` · ${outcome}` : ""}`);
-  } else {
-    lines.push("milestone: none");
-  }
+  lines.push(milestoneLine(p));
   const plans = parsedPlans(p);
   lines.push(inProgressLine(p, plans));
   lines.push(candidatesLine(p, plans));
@@ -452,6 +463,9 @@ function renderBrief(p) {
   }
   if (p.drift.open_pr)
     drift.push(`open PR #${p.drift.open_pr.number}`);
+  if (p.drift.in_progress_split.length > 0) {
+    drift.push(`In Progress split: ${p.drift.in_progress_split.map(cut).join(", ")}`);
+  }
   lines.push(drift.length > 0 ? `drift: ${drift.join(" · ")}` : "drift: none");
   lines.push(`next: ${nextMove(p)}`);
   return lines.join(`
@@ -1218,8 +1232,8 @@ function emitReport(r, out, err) {
   return 0;
 }
 function inProgressMilestones(open2, items) {
-  const titles = new Set(items.filter((i) => i.state === "OPEN" && i.status === "In Progress").map((i) => i.milestone));
-  return open2.filter((m) => m.state === "open" && titles.has(m.title)).sort((a, b) => a.number - b.number);
+  const titles2 = new Set(items.filter((i) => i.state === "OPEN" && i.status === "In Progress").map((i) => i.milestone));
+  return open2.filter((m) => m.state === "open" && titles2.has(m.title)).sort((a, b) => a.number - b.number);
 }
 function activeMilestone(open2, items) {
   const working = inProgressMilestones(open2, items);

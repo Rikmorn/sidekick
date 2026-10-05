@@ -12,6 +12,7 @@ import { descriptionProse, type Plans, type PlanView } from './pm-plans.js';
 export interface BriefInput {
   board: { owner: string; repo: string; project: { number: number } };
   milestone: Milestone | null;
+  open_milestones: Array<{ number: number; title: string }>;
   in_progress: InProgress[];
   candidates: Candidate[];
   plans: Plans | null;
@@ -37,6 +38,9 @@ function firstSentence(text: string): string {
   const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
   return m ? m[1] : t;
 }
+
+const titles = (list: Array<{ title: string }>): string =>
+  list.map((m) => cut(m.title)).join(', ');
 
 function ref(i: { number: number; title: string }): string {
   return `#${i.number} ${cut(i.title)}`;
@@ -97,11 +101,15 @@ function pullMove(p: BriefInput, plans: ParsedPlans | null): string | null {
 }
 
 /**
- * The fixed rule: continue what is In Progress, else pull the next plan, an
+ * The fixed rule: with several milestones open and none active, choose one.
+ * Otherwise continue what is In Progress, else pull the next plan, an
  * unplanned issue, or a tier-1 candidate, else close or open a milestone.
  * Tier 2 is never the pick; taking it is a judgment.
  */
 export function nextMove(p: BriefInput): string {
+  if (p.milestone === null && p.open_milestones.length > 1) {
+    return `choose a milestone: ${titles(p.open_milestones)}`;
+  }
   const plans = parsedPlans(p);
   if (p.in_progress.length > 0) return continueMove(p.in_progress, plans);
   const pull = pullMove(p, plans);
@@ -179,21 +187,29 @@ function candidatesLine(p: BriefInput, plans: ParsedPlans | null): string {
     : 'candidates: none';
 }
 
+function milestoneLine(p: BriefInput): string {
+  const m = p.milestone;
+  if (m === null) {
+    return p.open_milestones.length === 0
+      ? 'milestone: none'
+      : `milestone: none active · open: ${titles(p.open_milestones)}`;
+  }
+  const outcome = firstSentence(descriptionProse(m.description));
+  const others = p.open_milestones.filter((o) => o.number !== m.number);
+  return [
+    `milestone: ${m.title} (${m.open_issues} open, ${m.closed_issues} closed)`,
+    ...(outcome ? [outcome] : []),
+    ...(others.length > 0 ? [`also open: ${titles(others)}`] : []),
+  ].join(' · ');
+}
+
 export function renderBrief(p: BriefInput): string {
   const lines: string[] = [];
   lines.push(
     `sidekick · ${p.board.owner}/${p.board.repo} · board #${p.board.project.number}`,
   );
 
-  if (p.milestone) {
-    const m = p.milestone;
-    const outcome = firstSentence(descriptionProse(m.description));
-    lines.push(
-      `milestone: ${m.title} (${m.open_issues} open, ${m.closed_issues} closed)${outcome ? ` · ${outcome}` : ''}`,
-    );
-  } else {
-    lines.push('milestone: none');
-  }
+  lines.push(milestoneLine(p));
 
   const plans = parsedPlans(p);
   lines.push(inProgressLine(p, plans));
@@ -208,6 +224,11 @@ export function renderBrief(p: BriefInput): string {
     );
   }
   if (p.drift.open_pr) drift.push(`open PR #${p.drift.open_pr.number}`);
+  if (p.drift.in_progress_split.length > 0) {
+    drift.push(
+      `In Progress split: ${p.drift.in_progress_split.map(cut).join(', ')}`,
+    );
+  }
   lines.push(drift.length > 0 ? `drift: ${drift.join(' · ')}` : 'drift: none');
 
   lines.push(`next: ${nextMove(p)}`);
