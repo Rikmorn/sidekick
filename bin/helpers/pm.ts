@@ -194,10 +194,8 @@ export interface PmEnv {
 
 const VERBS = new Set(['board', 'pickup', 'lint', 'gate']);
 
-/**
- * Reads `--milestone <title>` and `--milestone=<title>`. A flag with no
- * value, or whose next argument is another flag, is `invalid`.
- */
+// Reads `--milestone <title>` and `--milestone=<title>`. A flag with no
+// value, or whose next argument is another flag, is `invalid`.
 function milestoneFlag(args: string[]): {
   title: string | undefined;
   invalid: boolean;
