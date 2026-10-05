@@ -23,8 +23,14 @@ Milestones are releases: one opens with an outcome sentence and closes with an a
    Outcome: <sentence> Scope: <lines>.
    ```
 
-   `sidekick pm` reads plans from this header alone, and never from the prose after it. PATCH the whole description from the file: `gh api -X PATCH repos/<owner>/<repo>/milestones/<n> -F description=@<file>`. A `PATCH` replaces the whole field, so the file carries the description in full. The grouping comes last because a design's breakdown gets its issue numbers in step 3. After Opening, a regroup edits the header the same way, with a comment on each moved issue saying why.
-5. Tell the operator the milestone, its outcome, its plans, and what it opened with. The scope is now what the description names, and later additions follow `sk-pm-conventions.md` §Change control. Post the first status update, `ON_TRACK`, as `sk-orient` §Status updates says, naming this milestone. Then orient: the first pickup comes from the board. While another milestone stays open, this one becomes active once a card moves into it, or once the operator chooses it.
+   `sidekick pm` reads plans from this header alone, and never from the prose after it. PATCH the whole description from the file: `gh api -X PATCH repos/<owner>/<repo>/milestones/<n> -F description=@<file>`. A `PATCH` replaces the whole field, so the file carries the description in full. The grouping comes last because a design's breakdown gets its issue numbers in step 3. After Opening, a regroup or an addition first writes the live description to the file:
+
+   ```
+   gh api repos/<owner>/<repo>/milestones/<n> --jq .description > <file>
+   ```
+
+   Then edit its header and PATCH it with the step's `PATCH` command, with a comment on each moved issue saying why.
+5. Tell the operator the milestone, its outcome, its plans, and what it opened with. The scope is now what the description names, and later additions follow `sk-pm-conventions.md` §Change control. Post the first status update, `ON_TRACK`, as `sk-orient` §Status updates says, naming this milestone. Then orient: the first pickup comes from the board. While another milestone stays open, `pickup` names this one once it alone holds In Progress cards. Until then the brief lists both, and the operator chooses.
 
 ## Closing
 
