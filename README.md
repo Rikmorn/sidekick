@@ -38,7 +38,7 @@ The project-management seat reads the repo's board and prints JSON; the skills d
 
 ```bash
 sidekick pm board              # discovery and preflight: which board, which Status ids, is gh ready
-sidekick pm pickup             # active milestone, In Progress, candidates, plans, drift (--brief: six lines; --report: a status update)
+sidekick pm pickup             # active milestone, In Progress, candidates, plans, drift (--brief: six lines; --report: a status update; --milestone: name one)
 sidekick pm lint               # the board's invariants; every count should be 0
 sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 ```
