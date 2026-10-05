@@ -390,11 +390,17 @@ function hasProjectScope(headers) {
 function ageDays(iso, now) {
   return Math.floor((now.getTime() - new Date(iso).getTime()) / 86400000);
 }
+function touchedAt(item) {
+  const { updatedAt, statusUpdatedAt } = item;
+  if (statusUpdatedAt === null)
+    return updatedAt;
+  return Date.parse(statusUpdatedAt) > Date.parse(updatedAt) ? statusUpdatedAt : updatedAt;
+}
 var STALE_DAYS = 7;
 var DISCOVERY_QUERY = "query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }";
 var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
 var ITEMS_PAGE = 100;
-var ITEMS_QUERY = `query Items($login: String!, $number: Int!, $after: String) { user(login: $login) { projectV2(number: $number) { items(first: ${ITEMS_PAGE}, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id updatedAt fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } content { __typename ... on Issue { number title state stateReason updatedAt url milestone { title number } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } repository { nameWithOwner } } ... on PullRequest { number repository { nameWithOwner } } ... on DraftIssue { title } } } } } } }`;
+var ITEMS_QUERY = `query Items($login: String!, $number: Int!, $after: String) { user(login: $login) { projectV2(number: $number) { items(first: ${ITEMS_PAGE}, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id updatedAt fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } content { __typename ... on Issue { number title state stateReason updatedAt url milestone { title number } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } repository { nameWithOwner } } ... on PullRequest { number repository { nameWithOwner } } ... on DraftIssue { title } } } } } } }`;
 var ISSUE_LIMIT = 500;
 function gql(run, cwd, doc, vars) {
   const args = ["api", "graphql", "-f", `query=${doc}`];
@@ -488,6 +494,7 @@ function parseItemsPage(data, fullName) {
       state: c.state ?? "OPEN",
       stateReason: c.stateReason ?? null,
       updatedAt: c.updatedAt ?? n.updatedAt,
+      statusUpdatedAt: n.fieldValueByName?.updatedAt ?? null,
       url: c.url ?? "",
       milestone: c.milestone?.title ?? null,
       labels: (c.labels?.nodes ?? []).map((l) => l.name),
@@ -627,7 +634,7 @@ function unboarded(issues, items) {
   return issues.filter((i) => !carded.has(i.number)).map((i) => f(i.number, i.title, "no card on the board"));
 }
 function staleInProgress(items, now) {
-  return open(items).filter((i) => i.status === "In Progress" && ageDays(i.updatedAt, now) > STALE_DAYS).map((i) => f(i.number, i.title, `In Progress, untouched ${ageDays(i.updatedAt, now)} days`));
+  return open(items).filter((i) => i.status === "In Progress" && ageDays(touchedAt(i), now) > STALE_DAYS).map((i) => f(i.number, i.title, `In Progress, untouched ${ageDays(touchedAt(i), now)} days`));
 }
 function multipleLinkedBoards(candidates) {
   if (candidates.length <= 1)
@@ -1193,7 +1200,7 @@ function tiers(items, active, now) {
     number: i.number,
     title: i.title,
     item_id: i.itemId,
-    age_days: ageDays(i.updatedAt, now),
+    age_days: ageDays(touchedAt(i), now),
     assignees: i.assignees,
     milestone: i.milestone
   })).sort(byNumber);

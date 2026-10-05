@@ -28,6 +28,7 @@ import {
   type Runner,
   STALE_DAYS,
   type StatusField,
+  touchedAt,
   versionAtLeast,
 } from './pm-data.js';
 import { lintAll } from './pm-lint.js';
@@ -398,7 +399,7 @@ export function tiers(
       number: i.number,
       title: i.title,
       item_id: i.itemId,
-      age_days: ageDays(i.updatedAt, now),
+      age_days: ageDays(touchedAt(i), now),
       assignees: i.assignees,
       milestone: i.milestone,
     }))

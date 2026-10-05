@@ -97,6 +97,17 @@ export function ageDays(iso: string, now: Date): number {
   return Math.floor((now.getTime() - new Date(iso).getTime()) / 86_400_000);
 }
 
+/** A card move does not update its issue, so it counts as a touch here. */
+export function touchedAt(
+  item: Pick<Item, 'updatedAt' | 'statusUpdatedAt'>,
+): string {
+  const { updatedAt, statusUpdatedAt } = item;
+  if (statusUpdatedAt === null) return updatedAt;
+  return Date.parse(statusUpdatedAt) > Date.parse(updatedAt)
+    ? statusUpdatedAt
+    : updatedAt;
+}
+
 /**
  * Seven days is prescriptive: an In Progress card older than that is a
  * question.
@@ -123,6 +134,8 @@ export interface Item {
   state: 'OPEN' | 'CLOSED';
   stateReason: string | null;
   updatedAt: string;
+  /** When the card's Status last changed; `null` without a Status value. */
+  statusUpdatedAt: string | null;
   url: string;
   milestone: string | null;
   labels: string[];
@@ -160,7 +173,7 @@ export const DISCOVERY_QUERY =
 export const FIELD_QUERY =
   'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
 export const ITEMS_PAGE = 100;
-export const ITEMS_QUERY = `query Items($login: String!, $number: Int!, $after: String) { user(login: $login) { projectV2(number: $number) { items(first: ${ITEMS_PAGE}, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id updatedAt fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } content { __typename ... on Issue { number title state stateReason updatedAt url milestone { title number } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } repository { nameWithOwner } } ... on PullRequest { number repository { nameWithOwner } } ... on DraftIssue { title } } } } } } }`;
+export const ITEMS_QUERY = `query Items($login: String!, $number: Int!, $after: String) { user(login: $login) { projectV2(number: $number) { items(first: ${ITEMS_PAGE}, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id updatedAt fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } content { __typename ... on Issue { number title state stateReason updatedAt url milestone { title number } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } repository { nameWithOwner } } ... on PullRequest { number repository { nameWithOwner } } ... on DraftIssue { title } } } } } } }`;
 /** `gh issue list` truncates silently at `--limit`; hitting it is an error. */
 export const ISSUE_LIMIT = 500;
 
@@ -314,7 +327,7 @@ interface ItemsData {
         nodes: Array<{
           id: string;
           updatedAt: string;
-          fieldValueByName: { name?: string } | null;
+          fieldValueByName: { name?: string; updatedAt?: string } | null;
           content: {
             __typename: string;
             number?: number;
@@ -354,6 +367,7 @@ export function parseItemsPage(data: unknown, fullName: string): ItemsPage {
       state: c.state ?? 'OPEN',
       stateReason: c.stateReason ?? null,
       updatedAt: c.updatedAt ?? n.updatedAt,
+      statusUpdatedAt: n.fieldValueByName?.updatedAt ?? null,
       url: c.url ?? '',
       milestone: c.milestone?.title ?? null,
       labels: (c.labels?.nodes ?? []).map((l) => l.name),

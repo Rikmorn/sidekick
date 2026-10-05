@@ -38,6 +38,7 @@ const item = (p: Partial<Item> & { number: number }): Item => ({
   state: 'OPEN',
   stateReason: null,
   updatedAt: '2026-09-01T00:00:00Z',
+  statusUpdatedAt: null,
   url: '',
   milestone: null,
   labels: [],
@@ -185,6 +186,28 @@ describe('predicates on synthetic input', () => {
         ),
       ),
     ).toEqual([1]);
+  });
+  test('staleInProgress counts from the card move when it is later', () => {
+    const findings = staleInProgress(
+      [
+        item({
+          number: 1,
+          status: 'In Progress',
+          updatedAt: '2026-09-01T00:00:00Z',
+          statusUpdatedAt: '2026-09-18T00:00:00Z',
+        }),
+        item({
+          number: 2,
+          status: 'In Progress',
+          updatedAt: '2026-09-01T00:00:00Z',
+          statusUpdatedAt: '2026-09-10T00:00:00Z',
+        }),
+      ],
+      now,
+    );
+    expect(findings.map((f) => [f.number, f.detail])).toEqual([
+      [2, 'In Progress, untouched 9 days'],
+    ]);
   });
   test('multipleLinkedBoards is one finding naming all of them', () => {
     const boards = chooseBoard(

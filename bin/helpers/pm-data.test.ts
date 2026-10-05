@@ -16,6 +16,7 @@ import {
   parseItemsPage,
   parseOrigin,
   runnerKey,
+  touchedAt,
   versionAtLeast,
 } from './pm-data.js';
 
@@ -99,6 +100,22 @@ describe('ageDays', () => {
     const now = new Date('2026-09-19T00:00:00Z');
     expect(ageDays('2026-09-17T23:00:00Z', now)).toBe(1);
     expect(ageDays('2026-09-10T00:00:00Z', now)).toBe(9);
+  });
+});
+
+describe('touchedAt', () => {
+  const at = (updatedAt: string, statusUpdatedAt: string | null) =>
+    touchedAt({ updatedAt, statusUpdatedAt });
+  test('the later of the issue update and the Status move', () => {
+    expect(at('2026-09-01T00:00:00Z', '2026-09-10T00:00:00Z')).toBe(
+      '2026-09-10T00:00:00Z',
+    );
+    expect(at('2026-09-10T00:00:00Z', '2026-09-01T00:00:00Z')).toBe(
+      '2026-09-10T00:00:00Z',
+    );
+  });
+  test('the issue update alone when the card has no Status time', () => {
+    expect(at('2026-09-01T00:00:00Z', null)).toBe('2026-09-01T00:00:00Z');
   });
 });
 
@@ -297,12 +314,62 @@ describe('parseItemsPage', () => {
     };
     const result = parseItemsPage(page, fullName);
     expect(result.items.map((i) => i.number)).toEqual([101]);
+    expect(result.items[0].statusUpdatedAt).toBeNull();
     expect(result.kinds).toEqual({
       Issue: 2,
       DraftIssue: 1,
       PullRequest: 1,
       Unknown: 1,
     });
+  });
+});
+
+describe('parseItemsPage Status time', () => {
+  test("carries the Status value's own updatedAt, the time the card moved", () => {
+    const node = (number: number, status: Record<string, string> | null) => ({
+      id: `PVTI_${number}`,
+      updatedAt: '2026-10-05T12:00:00Z',
+      fieldValueByName: status,
+      content: {
+        __typename: 'Issue',
+        number,
+        title: `t${number}`,
+        state: 'OPEN',
+        stateReason: null,
+        updatedAt: '2026-10-03T12:07:12Z',
+        url: '',
+        milestone: null,
+        labels: { nodes: [] },
+        assignees: { nodes: [] },
+        repository: { nameWithOwner: 'Rikmorn/sidekick' },
+      },
+    });
+    const page = {
+      user: {
+        projectV2: {
+          items: {
+            totalCount: 3,
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [
+              node(171, {
+                name: 'In Progress',
+                updatedAt: '2026-10-05T11:48:11Z',
+              }),
+              node(172, { name: 'Backlog' }),
+              node(173, null),
+            ],
+          },
+        },
+      },
+    };
+    const items = parseItemsPage(page, 'Rikmorn/sidekick').items;
+    expect(
+      items.map((i) => [i.number, i.updatedAt, i.statusUpdatedAt]),
+    ).toEqual([
+      [171, '2026-10-03T12:07:12Z', '2026-10-05T11:48:11Z'],
+      [172, '2026-10-03T12:07:12Z', null],
+      [173, '2026-10-03T12:07:12Z', null],
+    ]);
   });
 });
 

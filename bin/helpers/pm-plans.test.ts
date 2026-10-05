@@ -10,6 +10,7 @@ const item = (p: Partial<Item> & { number: number }): Item => ({
   state: 'OPEN',
   stateReason: null,
   updatedAt: '2026-09-01T00:00:00Z',
+  statusUpdatedAt: null,
   url: '',
   milestone: 'R9',
   labels: [],

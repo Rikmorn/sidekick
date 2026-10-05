@@ -9,6 +9,7 @@ import {
   type Item,
   type LinkedBoard,
   STALE_DAYS,
+  touchedAt,
 } from './pm-data.js';
 
 /** The single source of predicate ids; `lintAll` builds both maps from it. */
@@ -119,13 +120,13 @@ export function staleInProgress(items: Item[], now: Date): Finding[] {
   return open(items)
     .filter(
       (i) =>
-        i.status === 'In Progress' && ageDays(i.updatedAt, now) > STALE_DAYS,
+        i.status === 'In Progress' && ageDays(touchedAt(i), now) > STALE_DAYS,
     )
     .map((i) =>
       f(
         i.number,
         i.title,
-        `In Progress, untouched ${ageDays(i.updatedAt, now)} days`,
+        `In Progress, untouched ${ageDays(touchedAt(i), now)} days`,
       ),
     );
 }

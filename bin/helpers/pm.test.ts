@@ -50,6 +50,7 @@ const item = (p: Partial<Item> & { number: number }): Item => ({
   state: 'OPEN',
   stateReason: null,
   updatedAt: '2026-09-01T00:00:00Z',
+  statusUpdatedAt: null,
   url: '',
   milestone: null,
   labels: [],
@@ -389,6 +390,36 @@ describe('tiers', () => {
     expect(t.candidates.map((c) => [c.tier, c.number])).toEqual([
       [1, 9],
       [2, 3],
+    ]);
+  });
+  test("an In Progress card's age counts from the later of its issue update and its move", () => {
+    const t = tiers(
+      [
+        item({
+          number: 1,
+          status: 'In Progress',
+          updatedAt: '2026-09-09T00:00:00Z',
+          statusUpdatedAt: '2026-09-19T00:00:00Z',
+        }),
+        item({
+          number: 2,
+          status: 'In Progress',
+          updatedAt: '2026-09-19T00:00:00Z',
+          statusUpdatedAt: '2026-09-09T00:00:00Z',
+        }),
+        item({
+          number: 3,
+          status: 'In Progress',
+          updatedAt: '2026-09-09T00:00:00Z',
+        }),
+      ],
+      null,
+      now,
+    );
+    expect(t.in_progress.map((i) => [i.number, i.age_days])).toEqual([
+      [1, 0],
+      [2, 0],
+      [3, 10],
     ]);
   });
   test('with no active milestone, tier 1 is empty and tier 2 still runs', () => {
