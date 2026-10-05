@@ -12,6 +12,7 @@ import {
   drift,
   GH_MIN,
   gateVerdict,
+  inProgressMilestones,
   PM_USAGE,
   runPmCli,
   tiers,
@@ -345,18 +346,50 @@ describe('runPmCli board', () => {
 });
 
 describe('activeMilestone', () => {
-  test('earliest due_on first, nulls last', () => {
-    expect(
-      activeMilestone([ms(1, 'R7'), ms(2, 'R6', '2026-10-01T00:00:00Z')])
-        ?.title,
-    ).toBe('R6');
+  const ip = (number: number, milestone: string | null): Item =>
+    item({ number, status: 'In Progress', milestone });
+  test('the one open milestone holding In Progress cards, whatever the due dates', () => {
+    const open = [ms(8, 'R8'), ms(9, 'R9', '2026-10-01T00:00:00Z')];
+    expect(activeMilestone(open, [ip(1, 'R8')])?.title).toBe('R8');
+    expect(activeMilestone(open, [ip(1, 'R9'), ip(2, null)])?.title).toBe('R9');
   });
-  test('then a numeric-aware title order, then number', () => {
-    expect(activeMilestone([ms(1, 'R10'), ms(2, 'R9')])?.title).toBe('R9');
-    expect(activeMilestone([ms(5, 'same'), ms(3, 'same')])?.number).toBe(3);
+  test('the only open milestone, with or without In Progress cards', () => {
+    expect(activeMilestone([ms(8, 'R8')], [])?.title).toBe('R8');
+    expect(activeMilestone([ms(8, 'R8')], [ip(1, null)])?.title).toBe('R8');
   });
-  test('none open is null', () => {
-    expect(activeMilestone([])).toBeNull();
+  test('none when the board cannot say: two open and nothing In Progress, or a split', () => {
+    const open = [ms(8, 'R8'), ms(9, 'R9')];
+    expect(activeMilestone(open, [])).toBeNull();
+    expect(activeMilestone(open, [ip(1, null)])).toBeNull();
+    expect(activeMilestone(open, [ip(1, 'R8'), ip(2, 'R9')])).toBeNull();
+    expect(activeMilestone([], [])).toBeNull();
+  });
+  test('a closed In Progress card, or one in a milestone not open, is no signal', () => {
+    const open = [ms(8, 'R8'), ms(9, 'R9')];
+    const closed = item({
+      number: 1,
+      status: 'In Progress',
+      state: 'CLOSED',
+      milestone: 'R8',
+    });
+    expect(activeMilestone(open, [closed, ip(2, 'R9')])?.title).toBe('R9');
+    expect(activeMilestone(open, [ip(1, 'R5'), ip(2, 'R9')])?.title).toBe('R9');
+  });
+});
+
+describe('inProgressMilestones', () => {
+  test('the open milestones holding open In Progress cards, by number', () => {
+    const open = [ms(9, 'R9'), ms(8, 'R8'), ms(10, 'R10')];
+    const items = [
+      item({ number: 1, status: 'In Progress', milestone: 'R9' }),
+      item({ number: 2, status: 'In Progress', milestone: 'R8' }),
+      item({ number: 3, status: 'In Progress', milestone: 'R9' }),
+      item({ number: 4, status: 'Backlog', milestone: 'R10' }),
+    ];
+    expect(inProgressMilestones(open, items).map((m) => m.title)).toEqual([
+      'R8',
+      'R9',
+    ]);
   });
 });
 
@@ -717,6 +750,156 @@ describe('pickup --report', () => {
     const r = run(null, ['--brief', '--report']);
     expect(r.code).toBe(1);
     expect(r.err).toEqual([PM_USAGE]);
+  });
+});
+
+describe('pickup with several open milestones', () => {
+  // The captured board's one In Progress card, #109, sits in R6.
+  const r6 = (): Record<string, unknown> =>
+    (
+      JSON.parse(fixture('milestones-open.json')) as Array<
+        Record<string, unknown>
+      >
+    )[0];
+  const other = (number: number, title: string, due_on: string | null) => ({
+    ...r6(),
+    number,
+    title,
+    due_on,
+    description: plansHeader('Other (#1)'),
+  });
+  const run = (open: unknown[], args: string[]) => {
+    const map = sidekickMap();
+    map['gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100'] =
+      JSON.stringify(open);
+    const c = capture();
+    const code = runPmCli(
+      ['pickup', ...args],
+      {
+        cwd: '/',
+        run: fixtureRunner(map),
+        now: new Date('2026-09-19T12:00:00Z'),
+      },
+      c.o,
+      c.e,
+    );
+    return { code, out: c.out, err: c.err };
+  };
+  const json = (out: string[]) =>
+    JSON.parse(out[0]) as {
+      milestone: { title: string } | null;
+      open_milestones: Array<{ number: number; title: string }>;
+      drift: { in_progress_split: string[] };
+      candidates: Array<{ tier: number }>;
+    };
+
+  test('In Progress decides over an earlier due date, and the report follows it', () => {
+    const open = [
+      { ...r6(), description: plansHeader('Seat (#109, #110)') },
+      other(7, 'R7 — Earlier', '2026-09-01T00:00:00Z'),
+    ];
+    const j = json(run(open, []).out);
+    expect(j.milestone?.title).toBe('R6 — PM layer');
+    expect(j.open_milestones).toEqual([
+      { number: 6, title: 'R6 — PM layer' },
+      { number: 7, title: 'R7 — Earlier' },
+    ]);
+    expect(j.drift.in_progress_split).toEqual([]);
+    const report = run(open, ['--report']);
+    expect(report.code).toBe(0);
+    expect(report.out[0].split('\n')[0]).toBe(
+      '**R6 — PM layer** · 5 open, 0 closed',
+    );
+  });
+
+  test('--milestone names an open milestone over the In Progress one', () => {
+    const open = [r6(), other(7, 'R7 — Earlier', null)];
+    expect(
+      json(run(open, ['--milestone', 'R7 — Earlier']).out).milestone?.title,
+    ).toBe('R7 — Earlier');
+    const report = run(open, ['--report', '--milestone', 'R7 — Earlier']);
+    expect(report.code).toBe(0);
+    expect(report.out[0].split('\n')[0]).toBe(
+      '**R7 — Earlier** · 5 open, 0 closed',
+    );
+  });
+
+  test('an unknown --milestone exits 1 naming the open titles, and a missing value is a usage error', () => {
+    const open = [r6(), other(7, 'R7 — Earlier', null)];
+    const unknown = run(open, ['--milestone', 'R5 — Gone']);
+    expect(unknown.code).toBe(1);
+    expect(unknown.out).toEqual([]);
+    expect(unknown.err).toEqual([
+      'no open milestone titled "R5 — Gone"; open: R6 — PM layer, R7 — Earlier',
+    ]);
+    const missing = run(open, ['--milestone']);
+    expect(missing.code).toBe(1);
+    expect(missing.err).toEqual([PM_USAGE]);
+  });
+
+  test('with no In Progress card in an open milestone, two open name none, and --report says why', () => {
+    // GitHub sorts milestones by due date; pickup lists them by number.
+    const open = [other(9, 'R9 — B', null), other(7, 'R7 — A', null)];
+    const j = json(run(open, []).out);
+    expect(j.milestone).toBeNull();
+    expect(j.open_milestones.map((m) => m.number)).toEqual([7, 9]);
+    expect(j.candidates.every((c) => c.tier === 2)).toBe(true);
+    const report = run(open, ['--report']);
+    expect(report.code).toBe(1);
+    expect(report.out).toEqual([]);
+    expect(report.err).toEqual([
+      'no active milestone among 2 open (R7 — A, R9 — B); pass --milestone',
+    ]);
+  });
+
+  test('In Progress split across two open milestones names none, and drift reports the split', () => {
+    const map = sidekickMap();
+    const p2 = JSON.parse(fixture('items-p2.json')) as {
+      data: {
+        user: {
+          projectV2: {
+            items: {
+              nodes: Array<{
+                fieldValueByName: { name?: string } | null;
+                content: {
+                  number?: number;
+                  state?: string;
+                  milestone?: { title: string } | null;
+                } | null;
+              }>;
+            };
+          };
+        };
+      };
+    };
+    const node = p2.data.user.projectV2.items.nodes.find(
+      (n) => n.content?.number === 114,
+    );
+    if (!node?.content) throw new Error('fixture lacks #114');
+    node.fieldValueByName = { name: 'In Progress' };
+    node.content.milestone = { title: 'R7 — Earlier' };
+    for (const [key, body] of Object.entries(map)) {
+      if (body === fixture('items-p2.json')) map[key] = JSON.stringify(p2);
+    }
+    map['gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100'] =
+      JSON.stringify([r6(), other(7, 'R7 — Earlier', null)]);
+    const c = capture();
+    runPmCli(
+      ['pickup'],
+      {
+        cwd: '/',
+        run: fixtureRunner(map),
+        now: new Date('2026-09-19T12:00:00Z'),
+      },
+      c.o,
+      c.e,
+    );
+    const j = json(c.out);
+    expect(j.milestone).toBeNull();
+    expect(j.drift.in_progress_split).toEqual([
+      'R6 — PM layer',
+      'R7 — Earlier',
+    ]);
   });
 });
 

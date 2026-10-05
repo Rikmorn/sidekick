@@ -211,7 +211,8 @@ export function runPmCli(
   const quiet = rest.includes('--quiet') || brief;
   const msIdx = rest.indexOf('--milestone');
   const msTitle = msIdx >= 0 ? rest[msIdx + 1] : undefined;
-  if ((verb === 'gate' && !msTitle) || (brief && report)) {
+  const missingTitle = msIdx >= 0 && msTitle === undefined;
+  if ((verb === 'gate' && !msTitle) || missingTitle || (brief && report)) {
     err(PM_USAGE);
     return 1;
   }
@@ -238,8 +239,8 @@ export function runPmCli(
     const fullName = `${owner}/${repo}`;
     const viewer = info.viewer;
     if (verb === 'pickup') {
-      const active = activeMilestone(
-        fetchMilestones(run, info.root, owner, repo, 'open'),
+      const open = fetchMilestones(run, info.root, owner, repo, 'open').sort(
+        (a, b) => a.number - b.number,
       );
       const { items, kinds } = fetchItems(
         run,
@@ -248,17 +249,33 @@ export function runPmCli(
         project.number,
         fullName,
       );
+      const active =
+        msTitle === undefined
+          ? activeMilestone(open, items)
+          : namedMilestone(open, msTitle);
       const plans = active ? planView(active, items) : null;
-      if (report) return emitReport({ owner, repo }, active, plans, out, err);
+      if (report) {
+        return emitReport(
+          { board: { owner, repo }, open, milestone: active, plans },
+          out,
+          err,
+        );
+      }
       const t = tiers(items, active, now);
+      const working = inProgressMilestones(open, items);
+      const split = working.length > 1 ? working.map((m) => m.title) : [];
       const pickup = {
         board: { ...shown, item_kinds: kinds },
         milestone: active,
+        open_milestones: open.map((m) => ({
+          number: m.number,
+          title: m.title,
+        })),
         in_progress: t.in_progress,
         candidates: t.candidates,
         order_basis: 'number' as const,
         plans,
-        drift: drift(run, info.root, t.in_progress),
+        drift: drift(run, info.root, t.in_progress, split),
       };
       if (brief)
         out(renderBrief({ ...pickup, board: { owner, repo, project } }));
@@ -325,14 +342,24 @@ export function runPmCli(
 // --report prints only a sound status update; anything else is exit 1 with
 // its reason, so a skill posts nothing half-formed.
 function emitReport(
-  board: { owner: string; repo: string },
-  milestone: Milestone | null,
-  plans: Plans | null,
+  r: {
+    board: { owner: string; repo: string };
+    open: Milestone[];
+    milestone: Milestone | null;
+    plans: Plans | null;
+  },
   out: (line: string) => void,
   err: (line: string) => void,
 ): number {
-  if (milestone === null || plans === null) {
+  const { board, open, milestone, plans } = r;
+  if (open.length === 0) {
     err('no open milestone to report on');
+    return 1;
+  }
+  if (milestone === null || plans === null) {
+    err(
+      `no active milestone among ${open.length} open (${open.map((m) => m.title).join(', ')}); pass --milestone`,
+    );
     return 1;
   }
   if (plans.parse !== 'ok') {
@@ -347,26 +374,43 @@ function emitReport(
   return 0;
 }
 
-const byTitle = (a: string, b: string): number =>
-  a.localeCompare(b, 'en', { numeric: true });
+/** Open milestones holding open In Progress cards, by number. */
+export function inProgressMilestones(
+  open: Milestone[],
+  items: Item[],
+): Milestone[] {
+  const titles = new Set(
+    items
+      .filter((i) => i.state === 'OPEN' && i.status === 'In Progress')
+      .map((i) => i.milestone),
+  );
+  return open
+    .filter((m) => m.state === 'open' && titles.has(m.title))
+    .sort((a, b) => a.number - b.number);
+}
 
 /**
- * Earliest `due_on` first with nulls last, then title (numeric-aware),
- * then number.
+ * The milestone the work is in: the one open milestone holding In
+ * Progress cards, else the only open one. `null` when the board cannot
+ * say, so the operator chooses rather than the tool guessing.
  */
-export function activeMilestone(list: Milestone[]): Milestone | null {
-  const open = list.filter((m) => m.state === 'open');
-  if (open.length === 0) return null;
-  const sorted = open.sort((a, b) => {
-    if (a.due_on !== b.due_on) {
-      if (a.due_on === null) return 1;
-      if (b.due_on === null) return -1;
-      return a.due_on < b.due_on ? -1 : 1;
-    }
-    const t = byTitle(a.title, b.title);
-    return t !== 0 ? t : a.number - b.number;
-  });
-  return sorted[0];
+export function activeMilestone(
+  open: Milestone[],
+  items: Item[],
+): Milestone | null {
+  const working = inProgressMilestones(open, items);
+  if (working.length === 1) return working[0];
+  const live = open.filter((m) => m.state === 'open');
+  return working.length === 0 && live.length === 1 ? live[0] : null;
+}
+
+function namedMilestone(open: Milestone[], title: string): Milestone {
+  const found = open.find((m) => m.title === title);
+  if (found) return found;
+  throw new PmError(
+    1,
+    `no open milestone titled "${title}"; open: ${open.map((m) => m.title).join(', ') || '(none)'}`,
+  );
 }
 
 export interface InProgress {
@@ -436,12 +480,15 @@ export interface Drift {
   };
   stale_in_progress: InProgress[];
   open_pr: { number: number; title: string } | null;
+  /** Open milestones holding In Progress cards, when two or more do. */
+  in_progress_split: string[];
 }
 
 export function drift(
   run: Runner,
   root: string,
   inProgress: InProgress[],
+  inProgressSplit: string[] = [],
 ): Drift {
   const branch = run('git', ['branch', '--show-current'], root).stdout.trim();
   let basis: Drift['unpushed']['basis'] = 'none';
@@ -497,6 +544,7 @@ export function drift(
     unpushed: { count, basis },
     stale_in_progress: inProgress.filter((i) => i.age_days > STALE_DAYS),
     open_pr,
+    in_progress_split: inProgressSplit,
   };
 }
 

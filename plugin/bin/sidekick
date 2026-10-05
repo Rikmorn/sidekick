@@ -1107,7 +1107,8 @@ function runPmCli(args, env, out, err) {
   const quiet = rest2.includes("--quiet") || brief;
   const msIdx = rest2.indexOf("--milestone");
   const msTitle = msIdx >= 0 ? rest2[msIdx + 1] : undefined;
-  if (verb === "gate" && !msTitle || brief && report) {
+  const missingTitle = msIdx >= 0 && msTitle === undefined;
+  if (verb === "gate" && !msTitle || missingTitle || brief && report) {
     err(PM_USAGE);
     return 1;
   }
@@ -1135,20 +1136,28 @@ function runPmCli(args, env, out, err) {
     const fullName = `${owner}/${repo}`;
     const viewer = info.viewer;
     if (verb === "pickup") {
-      const active = activeMilestone(fetchMilestones(run, info.root, owner, repo, "open"));
+      const open2 = fetchMilestones(run, info.root, owner, repo, "open").sort((a, b) => a.number - b.number);
       const { items, kinds } = fetchItems(run, info.root, viewer, project.number, fullName);
+      const active = msTitle === undefined ? activeMilestone(open2, items) : namedMilestone(open2, msTitle);
       const plans = active ? planView(active, items) : null;
-      if (report)
-        return emitReport({ owner, repo }, active, plans, out, err);
+      if (report) {
+        return emitReport({ board: { owner, repo }, open: open2, milestone: active, plans }, out, err);
+      }
       const t = tiers(items, active, now);
+      const working = inProgressMilestones(open2, items);
+      const split = working.length > 1 ? working.map((m) => m.title) : [];
       const pickup = {
         board: { ...shown, item_kinds: kinds },
         milestone: active,
+        open_milestones: open2.map((m) => ({
+          number: m.number,
+          title: m.title
+        })),
         in_progress: t.in_progress,
         candidates: t.candidates,
         order_basis: "number",
         plans,
-        drift: drift(run, info.root, t.in_progress)
+        drift: drift(run, info.root, t.in_progress, split)
       };
       if (brief)
         out(renderBrief({ ...pickup, board: { owner, repo, project } }));
@@ -1191,9 +1200,14 @@ function runPmCli(args, env, out, err) {
     return 1;
   }
 }
-function emitReport(board, milestone, plans, out, err) {
-  if (milestone === null || plans === null) {
+function emitReport(r, out, err) {
+  const { board, open: open2, milestone, plans } = r;
+  if (open2.length === 0) {
     err("no open milestone to report on");
+    return 1;
+  }
+  if (milestone === null || plans === null) {
+    err(`no active milestone among ${open2.length} open (${open2.map((m) => m.title).join(", ")}); pass --milestone`);
     return 1;
   }
   if (plans.parse !== "ok") {
@@ -1203,23 +1217,22 @@ function emitReport(board, milestone, plans, out, err) {
   out(renderReport({ board, milestone, plans }));
   return 0;
 }
-var byTitle = (a, b) => a.localeCompare(b, "en", { numeric: true });
-function activeMilestone(list) {
-  const open2 = list.filter((m) => m.state === "open");
-  if (open2.length === 0)
-    return null;
-  const sorted = open2.sort((a, b) => {
-    if (a.due_on !== b.due_on) {
-      if (a.due_on === null)
-        return 1;
-      if (b.due_on === null)
-        return -1;
-      return a.due_on < b.due_on ? -1 : 1;
-    }
-    const t = byTitle(a.title, b.title);
-    return t !== 0 ? t : a.number - b.number;
-  });
-  return sorted[0];
+function inProgressMilestones(open2, items) {
+  const titles = new Set(items.filter((i) => i.state === "OPEN" && i.status === "In Progress").map((i) => i.milestone));
+  return open2.filter((m) => m.state === "open" && titles.has(m.title)).sort((a, b) => a.number - b.number);
+}
+function activeMilestone(open2, items) {
+  const working = inProgressMilestones(open2, items);
+  if (working.length === 1)
+    return working[0];
+  const live = open2.filter((m) => m.state === "open");
+  return working.length === 0 && live.length === 1 ? live[0] : null;
+}
+function namedMilestone(open2, title) {
+  const found = open2.find((m) => m.title === title);
+  if (found)
+    return found;
+  throw new PmError(1, `no open milestone titled "${title}"; open: ${open2.map((m) => m.title).join(", ") || "(none)"}`);
 }
 function tiers(items, active, now) {
   const open2 = items.filter((i) => i.state === "OPEN");
@@ -1250,7 +1263,7 @@ function tiers(items, active, now) {
     ]
   };
 }
-function drift(run, root, inProgress2) {
+function drift(run, root, inProgress2, inProgressSplit = []) {
   const branch = run("git", ["branch", "--show-current"], root).stdout.trim();
   let basis = "none";
   let base = null;
@@ -1290,7 +1303,8 @@ function drift(run, root, inProgress2) {
   return {
     unpushed: { count, basis },
     stale_in_progress: inProgress2.filter((i) => i.age_days > STALE_DAYS),
-    open_pr
+    open_pr,
+    in_progress_split: inProgressSplit
   };
 }
 function gateVerdict(ms, issues, items) {
