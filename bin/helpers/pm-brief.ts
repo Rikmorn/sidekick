@@ -7,7 +7,7 @@
 
 import type { Candidate, Drift, InProgress } from './pm.js';
 import type { Milestone } from './pm-data.js';
-import type { Plans, PlanView } from './pm-plans.js';
+import { descriptionProse, type Plans, type PlanView } from './pm-plans.js';
 
 export interface BriefInput {
   board: { owner: string; repo: string; project: { number: number } };
@@ -187,7 +187,7 @@ export function renderBrief(p: BriefInput): string {
 
   if (p.milestone) {
     const m = p.milestone;
-    const outcome = firstSentence(m.description);
+    const outcome = firstSentence(descriptionProse(m.description));
     lines.push(
       `milestone: ${m.title} (${m.open_issues} open, ${m.closed_issues} closed)${outcome ? ` · ${outcome}` : ''}`,
     );

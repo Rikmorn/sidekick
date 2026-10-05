@@ -1,1 +1,14 @@
-Outcome: the issues listed in Plans, filed by 2026-09-30 against sidekick's skills, rules, and CLI, are resolved or closed with a verdict. Sealed: only issues found by R8's own work may join; anything else is filed on the board for triage. Plans: Subagent runs keep sidekick's rules (#161, #152, #164, #158, #134); Plans in the brief (#141, #106, #168, #170); Lint reads the issue side (#131, #153, #166, #118); Claims checked before they land (#155, #157, #160, #154, #167); Rules say one thing (#162, #163, #156, #144, #115); PM guidance matches GitHub (#133, #114, #151); Rules delivery fits every repo (#145, #149, #108, #102, #126); sk-design from use (#142, #147, #159); Docs tidy (#100, #105, #137); One release order (#143, #165). Order: Subagent runs keep sidekick's rules, then Plans in the brief; One release order last. Closes with 0.5.0.
+<!-- plans -->
+1. Subagent runs keep sidekick's rules (#161, #152, #164, #158, #134)
+2. Plans in the brief (#141, #106, #168, #170, #171, #172, #173)
+3. Lint reads the issue side (#131, #153, #166, #118)
+4. Claims checked before they land (#155, #157, #160, #154, #167)
+5. Rules say one thing (#162, #163, #156, #144, #115)
+6. PM guidance matches GitHub (#133, #114, #151)
+7. Rules delivery fits every repo (#145, #149, #108, #102, #126)
+8. sk-design from use (#142, #147, #159)
+9. Docs tidy (#100, #105, #137)
+10. One release order (#143, #165)
+<!-- /plans -->
+
+Outcome: the issues listed in Plans, filed by 2026-09-30 against sidekick's skills, rules, and CLI, are resolved or closed with a verdict. Sealed: only issues found by R8's own work may join; anything else is filed on the board for triage. Closes with 0.5.0.

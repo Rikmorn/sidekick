@@ -1,45 +1,66 @@
 /**
- * A milestone's plans: parsed from the `Plans:` clause of its description,
- * which is their only source, and given a state from the board's cards.
- * Pure: it reads what `pickup` already fetched and writes nothing.
+ * A milestone's plans: parsed from the plans header at the top of its
+ * description, which is their only source, and given a state from the
+ * board's cards. Pure: it reads what `pickup` already fetched and writes
+ * nothing.
  */
 
 import type { Item, Milestone } from './pm-data.js';
 
-export interface ClausePlan {
+export interface HeaderPlan {
   name: string;
   issues: number[];
 }
 
-export type ClauseParse =
+export type HeaderParse =
   | { parse: 'none' }
   | { parse: 'malformed'; reason: string }
-  | { parse: 'ok'; plans: ClausePlan[] };
+  | { parse: 'ok'; plans: HeaderPlan[] };
 
-const CLAUSE_START = /(?:^|\s)Plans:/g;
-// The clause runs to the first ")." that ends a sentence.
-const CLAUSE = /(?:^|\s)Plans:\s*(.*?\))\.(?:\s|$)/s;
+export const HEADER_OPEN = '<!-- plans -->';
+export const HEADER_CLOSE = '<!-- /plans -->';
+
+const LINE = /^\s*\d+\.\s*(.*)$/;
 const GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
-// A name never spans a sentence end, so one that does holds text from outside
-// the clause.
-const SENTENCE_BREAK = /[.!?]\s/;
 
-function leaked(plans: ClausePlan[]): string | null {
-  const plan = plans.find((p) => SENTENCE_BREAK.test(p.name));
-  return plan === undefined
-    ? null
-    : `plan "${plan.name}" holds a sentence break`;
-}
+// A web-UI edit stores CRLF; the parser sees LF only.
+const normalise = (text: string): string => text.replace(/\r\n?/g, '\n');
 
 // Names and reasons print inside one line of the brief and the report.
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
-const malformed = (reason: string): ClauseParse => ({
+const isMarker = (line: string): boolean =>
+  line.trim() === HEADER_OPEN || line.trim() === HEADER_CLOSE;
+
+type Located =
+  | { at: 'none' }
+  | { at: 'elsewhere' }
+  | { at: 'unclosed' }
+  | { at: 'top'; lines: string[]; prose: string[] };
+
+function locate(description: string): Located {
+  const lines = normalise(description).split('\n');
+  const first = lines.findIndex((l) => l.trim() !== '');
+  if (first < 0 || lines[first].trim() !== HEADER_OPEN) {
+    return lines.some(isMarker) ? { at: 'elsewhere' } : { at: 'none' };
+  }
+  const close = lines.findIndex(
+    (l, k) => k > first && l.trim() === HEADER_CLOSE,
+  );
+  if (close < 0) return { at: 'unclosed' };
+  return {
+    at: 'top',
+    lines: lines.slice(first + 1, close),
+    prose: lines.slice(close + 1),
+  };
+}
+
+const malformed = (reason: string): HeaderParse => ({
   parse: 'malformed',
   reason: oneLine(reason),
 });
 
-function duplicate(plans: ClausePlan[]): string | null {
+function duplicate(plans: HeaderPlan[]): string | null {
   const names = plans.map((p) => p.name);
   const name = names.find((n, i) => names.indexOf(n) !== i);
   if (name !== undefined) return `plan "${name}" appears twice`;
@@ -49,30 +70,44 @@ function duplicate(plans: ClausePlan[]): string | null {
 }
 
 /**
- * Reads the clause `sk-milestone` writes: `Plans: <name> (#N, #N); <name>
- * (#N).` Anything outside that grammar is `malformed`, never a partial
- * list, so a caller cannot act on half a clause.
+ * Reads the header `sk-milestone` writes: `<!-- plans -->`, one
+ * `<n>. <name> (#N, #N)` per line, then `<!-- /plans -->`, opening the
+ * description. Anything outside that grammar is `malformed`, never a
+ * partial list, so a caller cannot act on half a header.
  */
-export function parsePlansClause(description: string): ClauseParse {
-  const starts = (description.match(CLAUSE_START) ?? []).length;
-  if (starts === 0) return { parse: 'none' };
-  if (starts > 1) return malformed('Plans: appears twice');
-  const clause = CLAUSE.exec(description);
-  if (!clause) return malformed('the Plans: clause has no ")." end');
-  const parts = clause[1].split(';');
-  const groups = parts.map((part) => GROUP.exec(part));
-  const bad = groups.indexOf(null);
-  if (bad >= 0) {
-    return malformed(`"${parts[bad].trim()}" is not <name> (#N, …)`);
+export function parsePlansHeader(description: string): HeaderParse {
+  const found = locate(description);
+  if (found.at === 'none') return { parse: 'none' };
+  if (found.at === 'elsewhere') {
+    return malformed('the plans header is not at the top');
   }
-  const plans = groups
-    .filter((g): g is RegExpExecArray => g !== null)
-    .map((g) => ({
-      name: oneLine(g[1]),
-      issues: g[2].split(',').map((r) => Number(r.trim().slice(1))),
-    }));
-  const reason = leaked(plans) ?? duplicate(plans);
+  if (found.at === 'unclosed') {
+    return malformed(`the plans header has no ${HEADER_CLOSE} line`);
+  }
+  if (found.prose.some(isMarker)) {
+    return malformed('a second plans header follows the first');
+  }
+  const plans: HeaderPlan[] = [];
+  for (const line of found.lines.filter((l) => l.trim() !== '')) {
+    const numbered = LINE.exec(line);
+    const group = numbered === null ? null : GROUP.exec(numbered[1]);
+    if (group === null) {
+      return malformed(`"${line.trim()}" is not <n>. <name> (#N, …)`);
+    }
+    plans.push({
+      name: oneLine(group[1]),
+      issues: group[2].split(',').map((r) => Number(r.trim().slice(1))),
+    });
+  }
+  if (plans.length === 0) return malformed('the plans header lists no plans');
+  const reason = duplicate(plans);
   return reason === null ? { parse: 'ok', plans } : malformed(reason);
+}
+
+/** The description after a header that opens it; otherwise all of it. */
+export function descriptionProse(description: string): string {
+  const found = locate(description);
+  return found.at === 'top' ? found.prose.join('\n') : normalise(description);
 }
 
 export type PlanState = 'done' | 'running' | 'next' | 'verify' | 'later';
@@ -120,12 +155,12 @@ function stateOf(issues: PlanIssue[], isNext: boolean): PlanState {
 }
 
 /**
- * The milestone's plans in clause order, each with a state from the board.
- * A clause issue with no card counts as open and not started: a new card
+ * The milestone's plans in header order, each with a state from the board.
+ * A header issue with no card counts as open and not started: a new card
  * can be missing from the board's item list for hours (#131).
  */
 export function planView(ms: Milestone, items: Item[]): Plans {
-  const c = parsePlansClause(ms.description);
+  const c = parsePlansHeader(ms.description);
   if (c.parse === 'none') return { parse: 'none', list: [], unplanned: [] };
   if (c.parse === 'malformed') {
     return { parse: 'malformed', reason: c.reason, list: [], unplanned: [] };

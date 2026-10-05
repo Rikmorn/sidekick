@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fixture } from './fixtures/pm/runner.js';
+import { fixture, plansHeader } from './fixtures/pm/runner.js';
 import type { Candidate, InProgress } from './pm.js';
 import {
   type BriefInput,
@@ -180,6 +180,26 @@ describe('renderBrief', () => {
     );
   });
 
+  test('a plans header never shows as the outcome: the milestone line reads the prose after it', () => {
+    const r = renderBrief(
+      base({
+        milestone: {
+          number: 8,
+          title: 'R8 — Fixes filed by 30 September',
+          description: fixture('description-r8.txt'),
+          due_on: null,
+          open_issues: 33,
+          closed_issues: 8,
+          state: 'open',
+          created_at: '2026-09-30T20:31:45Z',
+        },
+      }),
+    );
+    expect(r.split('\n')[1]).toBe(
+      "milestone: R8 — Fixes filed by 30 September (33 open, 8 closed) · Outcome: the issues listed in Plans, filed by 2026-09-30 against sidekick's skills, rules, and CLI, are resolved or closed with a verdict.",
+    );
+  });
+
   test('nextMove without plans: in progress, tier 1, then close or open; never tier 2', () => {
     expect(
       nextMove(
@@ -224,6 +244,7 @@ describe('plans in the brief', () => {
     state,
     stateReason: null,
     updatedAt: '2026-10-01T00:00:00Z',
+    statusUpdatedAt: null,
     url: '',
     milestone: 'R9',
     labels: [],
@@ -272,12 +293,12 @@ describe('plans in the brief', () => {
       'candidates: next plan Lint reads the issue side (#131, #153, #166, #118) · then Claims checked before they land (5), Rules say one thing (5), PM guidance matches GitHub (3), Rules delivery fits every repo (5), sk-design from use (3), Docs tidy (3), One release order (2) · 1 plan done · unplanned: none · tier 2: none',
     );
     expect(r[5]).toBe(
-      'next: continue plan Plans in the brief (#141, #106, #168, #170)',
+      'next: continue plan Plans in the brief (#141, #106, #168, #170, #171, #172, #173)',
     );
   });
 
   test('a card in no plan keeps its title; verify plans, done plans, unplanned issues, and tier 2 show', () => {
-    const description = 'Plans: A (#1, #2); B (#3); C (#4); D (#5).';
+    const description = plansHeader('A (#1, #2)', 'B (#3)', 'C (#4)', 'D (#5)');
     const items = [
       card(1, 'In Progress'),
       card(2, 'Backlog'),
@@ -301,7 +322,7 @@ describe('plans in the brief', () => {
   test('an unplanned issue In Progress shows in the in-progress line, not in unplanned', () => {
     const r = renderBrief(
       withPlans(
-        'Plans: A (#1).',
+        plansHeader('A (#1)'),
         [card(1, 'Backlog'), card(7, 'In Progress'), card(8, 'Backlog')],
         { in_progress: [inProgress(7, 2)] },
       ),
@@ -315,7 +336,7 @@ describe('plans in the brief', () => {
   test('the lowest In Progress card is continued alone when it is in no plan, beside a planned one', () => {
     const r = renderBrief(
       withPlans(
-        'Plans: A (#5, #6).',
+        plansHeader('A (#5, #6)'),
         [card(3, 'In Progress'), card(5, 'In Progress'), card(6, 'Backlog')],
         { in_progress: [inProgress(5, 1), inProgress(3, 1)] },
       ),
@@ -323,10 +344,10 @@ describe('plans in the brief', () => {
     expect(r[5]).toBe('next: continue #3');
   });
 
-  test('a malformed clause renders lines 3 and 4 as if there were no plans', () => {
+  test('a malformed header renders lines 3 and 4 as if there were no plans', () => {
     const items = [card(1, 'Backlog')];
     const r = renderBrief(
-      withPlans('Plans: A (#1); A (#2).', items, {
+      withPlans(plansHeader('A (#1)', 'A (#2)'), items, {
         candidates: [cand(1, 1), cand(200, 2)],
       }),
     ).split('\n');
@@ -337,7 +358,7 @@ describe('plans in the brief', () => {
   });
 
   test('nextMove with plans: continue a plan, pull the next plan, then an unplanned issue, then close', () => {
-    const description = 'Plans: A (#1, #2); B (#3).';
+    const description = plansHeader('A (#1, #2)', 'B (#3)');
     expect(
       nextMove(
         withPlans(description, [card(1, 'In Progress'), card(2, 'Backlog')], {

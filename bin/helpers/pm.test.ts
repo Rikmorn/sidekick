@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { fixture, fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
+import {
+  fixture,
+  fixtureRunner,
+  plansHeader,
+  sidekickMap,
+} from './fixtures/pm/runner.js';
 import {
   activeMilestone,
   chooseBoard,
@@ -595,9 +600,9 @@ describe('runPmCli pickup plans', () => {
     };
   };
 
-  test("carries the active milestone's plans from its clause, with each card's state", () => {
+  test("carries the active milestone's plans from its header, with each card's state", () => {
     const j = pickupWith(
-      'Outcome: x. Plans: Seat (#109, #110); Orient (#111, #112).',
+      plansHeader('Seat (#109, #110)', 'Orient (#111, #112)'),
     );
     expect(j.milestone.created_at).toBe('2026-09-19T14:29:56Z');
     expect(j.plans.parse).toBe('ok');
@@ -628,7 +633,7 @@ describe('runPmCli pickup plans', () => {
     expect(j.plans.unplanned.map((i) => i.number)).toEqual([113]);
   });
 
-  test("R6's captured description has no clause, so plans parse as none", () => {
+  test("R6's captured description has no header, so plans parse as none", () => {
     expect(pickupWith(null).plans).toEqual({
       parse: 'none',
       list: [],
@@ -660,11 +665,10 @@ describe('pickup --report', () => {
     return { code, out: c.out, err: c.err };
   };
 
-  test('prints the status-update body for a parsed clause and exits 0', () => {
-    const r = run(
-      'Outcome: x. Plans: Seat (#109, #110); Orient (#111, #112).',
-      ['--report'],
-    );
+  test('prints the status-update body for a parsed header and exits 0', () => {
+    const r = run(plansHeader('Seat (#109, #110)', 'Orient (#111, #112)'), [
+      '--report',
+    ]);
     expect(r.code).toBe(0);
     expect(r.err).toEqual([]);
     expect(r.out).toHaveLength(1);
@@ -683,9 +687,9 @@ describe('pickup --report', () => {
 
   test('exits 1 with its reason, printing nothing, when there is nothing sound to post', () => {
     const cases: Array<[string | null, string]> = [
-      [null, 'milestone "R6 — PM layer" has no Plans: clause'],
+      [null, 'milestone "R6 — PM layer" has no plans header'],
       [
-        'Plans: A (#109); A (#110).',
+        plansHeader('A (#109)', 'A (#110)'),
         'milestone "R6 — PM layer": plan "A" appears twice',
       ],
       ['no milestone', 'no open milestone to report on'],

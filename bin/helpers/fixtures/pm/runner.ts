@@ -107,3 +107,13 @@ export function sidekickMap(): FixtureMap {
       fixture('prs-master.json'),
   };
 }
+
+/** A milestone description opened by a plans header listing `plans`. */
+export const plansHeader = (...plans: string[]): string =>
+  [
+    '<!-- plans -->',
+    ...plans.map((p, k) => `${k + 1}. ${p}`),
+    '<!-- /plans -->',
+    '',
+    'Outcome: x.',
+  ].join('\n');

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { fixture } from './fixtures/pm/runner.js';
 import type { Item, Milestone } from './pm-data.js';
-import { parsePlansClause, planView } from './pm-plans.js';
+import { descriptionProse, parsePlansHeader, planView } from './pm-plans.js';
 
 const item = (p: Partial<Item> & { number: number }): Item => ({
   itemId: `PVTI_${p.number}`,
@@ -29,103 +29,135 @@ const ms = (description: string): Milestone => ({
   created_at: '2026-10-01T09:00:00Z',
 });
 
-describe('parsePlansClause', () => {
-  test("R8's real description parses as its ten plans, in clause order", () => {
-    const c = parsePlansClause(fixture('description-r8.txt'));
-    expect(c).toEqual({
+const R8_PLANS = [
+  {
+    name: "Subagent runs keep sidekick's rules",
+    issues: [161, 152, 164, 158, 134],
+  },
+  { name: 'Plans in the brief', issues: [141, 106, 168, 170, 171, 172, 173] },
+  { name: 'Lint reads the issue side', issues: [131, 153, 166, 118] },
+  {
+    name: 'Claims checked before they land',
+    issues: [155, 157, 160, 154, 167],
+  },
+  { name: 'Rules say one thing', issues: [162, 163, 156, 144, 115] },
+  { name: 'PM guidance matches GitHub', issues: [133, 114, 151] },
+  {
+    name: 'Rules delivery fits every repo',
+    issues: [145, 149, 108, 102, 126],
+  },
+  { name: 'sk-design from use', issues: [142, 147, 159] },
+  { name: 'Docs tidy', issues: [100, 105, 137] },
+  { name: 'One release order', issues: [143, 165] },
+];
+
+const header = (...lines: string[]): string =>
+  ['<!-- plans -->', ...lines, '<!-- /plans -->', '', 'Outcome: x.'].join('\n');
+
+describe('parsePlansHeader', () => {
+  test("R8's migrated description parses as its ten plans, in line order", () => {
+    expect(parsePlansHeader(fixture('description-r8.txt'))).toEqual({
+      parse: 'ok',
+      plans: R8_PLANS,
+    });
+  });
+
+  test('a Plans: clause in prose is never read, however well formed', () => {
+    for (const description of [
+      fixture('description-r8-clause.txt'),
+      fixture('description-r7.txt'),
+      'Outcome: the brief reads the Plans: clause (#3). Scope: y.',
+      'Plans: A (#1); B (#2).',
+    ]) {
+      expect(parsePlansHeader(description)).toEqual({ parse: 'none' });
+    }
+  });
+
+  test('numbers are ignored and line order is run order', () => {
+    expect(parsePlansHeader(header('1. B (#2)', '1. A (#1, #3)'))).toEqual({
       parse: 'ok',
       plans: [
-        {
-          name: "Subagent runs keep sidekick's rules",
-          issues: [161, 152, 164, 158, 134],
-        },
-        { name: 'Plans in the brief', issues: [141, 106, 168, 170] },
-        { name: 'Lint reads the issue side', issues: [131, 153, 166, 118] },
-        {
-          name: 'Claims checked before they land',
-          issues: [155, 157, 160, 154, 167],
-        },
-        { name: 'Rules say one thing', issues: [162, 163, 156, 144, 115] },
-        { name: 'PM guidance matches GitHub', issues: [133, 114, 151] },
-        {
-          name: 'Rules delivery fits every repo',
-          issues: [145, 149, 108, 102, 126],
-        },
-        { name: 'sk-design from use', issues: [142, 147, 159] },
-        { name: 'Docs tidy', issues: [100, 105, 137] },
-        { name: 'One release order', issues: [143, 165] },
+        { name: 'B', issues: [2] },
+        { name: 'A', issues: [1, 3] },
       ],
     });
   });
 
-  test("R7's clause predates the grammar, so it is malformed, not partly read", () => {
-    const c = parsePlansClause(fixture('description-r7.txt'));
-    expect(c.parse).toBe('malformed');
-  });
-
-  test('a description without the clause has no plans', () => {
-    expect(parsePlansClause('Outcome: x. Scope: y.')).toEqual({
-      parse: 'none',
-    });
-    expect(parsePlansClause('SubPlans: A (#1).')).toEqual({ parse: 'none' });
-  });
-
-  test('spacing inside the grammar is tolerated, and a name may hold a period', () => {
-    expect(parsePlansClause('Plans:A(#1,#2);B ( #3 ).')).toEqual({
+  test('spacing, blank lines inside, and blank lines before the header are tolerated', () => {
+    const description = `\n  \n${header('  1.A(#1,#2)', '', '2.  Docs v2.0 tidy ( #4 ) ')}`;
+    expect(parsePlansHeader(description)).toEqual({
       parse: 'ok',
       plans: [
         { name: 'A', issues: [1, 2] },
-        { name: 'B', issues: [3] },
+        { name: 'Docs v2.0 tidy', issues: [4] },
       ],
-    });
-    expect(parsePlansClause('Plans: Docs v2.0 tidy (#4). Order: x.')).toEqual({
-      parse: 'ok',
-      plans: [{ name: 'Docs v2.0 tidy', issues: [4] }],
     });
   });
 
-  test('whitespace runs in a name or a reason collapse to one space, so neither spans lines', () => {
-    expect(
-      parsePlansClause('Plans: Lint reads\nthe issue side (#1); B (#2).'),
-    ).toEqual({
-      parse: 'ok',
-      plans: [
-        { name: 'Lint reads the issue side', issues: [1] },
-        { name: 'B', issues: [2] },
-      ],
-    });
-    expect(parsePlansClause('Plans: A\n  B (1).')).toEqual({
-      parse: 'malformed',
-      reason: '"A B (1)" is not <name> (#N, …)',
-    });
+  test('CRLF and CR line endings parse as LF does', () => {
+    const lf = header('1. A (#1)', '2. B (#2)');
+    expect(parsePlansHeader(lf.replaceAll('\n', '\r\n'))).toEqual(
+      parsePlansHeader(lf),
+    );
+    expect(parsePlansHeader(lf.replaceAll('\n', '\r'))).toEqual(
+      parsePlansHeader(lf),
+    );
+    expect(parsePlansHeader(lf).parse).toBe('ok');
   });
 
-  test('a clause outside the grammar is malformed with a reason, never a partial list', () => {
+  test('a header outside the grammar is malformed with a reason, never a partial list', () => {
     const cases: Array<[string, string]> = [
-      ['Plans: (#1).', '"(#1)" is not <name> (#N, …)'],
-      ['Plans: A (#1); (#2).', '"(#2)" is not <name> (#N, …)'],
-      ['Plans: A (#1) B (#2).', '"A (#1) B (#2)" is not <name> (#N, …)'],
-      ['Plans: A (1).', '"A (1)" is not <name> (#N, …)'],
-      ['Plans: A (#1)', 'the Plans: clause has no ")." end'],
-      ['Plans: A (#1, #2); B (#2).', '#2 appears in two plans'],
-      ['Plans: A (#1); A (#2).', 'plan "A" appears twice'],
-      ['Plans: A (#1);; B (#2).', '"" is not <name> (#N, …)'],
       [
-        'Outcome: x. Plans: A (#1); B (#2);. Order: A, then B. Closes with 0.5.0 (#99).',
-        'plan ". Order: A, then B. Closes with 0.5.0" holds a sentence break',
+        '<!-- plans -->\n1. A (#1)\n\nOutcome: x.',
+        'the plans header has no <!-- /plans --> line',
+      ],
+      [header('1. A (#1)', 'B (#2)'), '"B (#2)" is not <n>. <name> (#N, …)'],
+      [header('1. (#1)'), '"1. (#1)" is not <n>. <name> (#N, …)'],
+      [header('1. A (1)'), '"1. A (1)" is not <n>. <name> (#N, …)'],
+      [
+        header('1. A (#1) B (#2)'),
+        '"1. A (#1) B (#2)" is not <n>. <name> (#N, …)',
       ],
       [
-        'Outcome: the brief reads the Plans: clause. Plans: Parser (#1); Brief (#2).',
-        'Plans: appears twice',
+        header('1. A (#1); B (#2)'),
+        '"1. A (#1); B (#2)" is not <n>. <name> (#N, …)',
       ],
-      ['Plans: A (#1). Plans: B (#2).', 'Plans: appears twice'],
+      [header(), 'the plans header lists no plans'],
+      [header(''), 'the plans header lists no plans'],
+      [header('1. A (#1, #2)', '2. B (#2)'), '#2 appears in two plans'],
+      [header('1. A (#1)', '2. A (#2)'), 'plan "A" appears twice'],
+      [
+        'Outcome: x.\n\n<!-- plans -->\n1. A (#1)\n<!-- /plans -->',
+        'the plans header is not at the top',
+      ],
+      ['Outcome: x.\n<!-- /plans -->', 'the plans header is not at the top'],
+      [
+        `${header('1. A (#1)')}\n\n<!-- plans -->\n1. B (#2)\n<!-- /plans -->`,
+        'a second plans header follows the first',
+      ],
     ];
     for (const [description, reason] of cases) {
-      expect(parsePlansClause(description)).toEqual({
+      expect(parsePlansHeader(description)).toEqual({
         parse: 'malformed',
         reason,
       });
     }
+  });
+});
+
+describe('descriptionProse', () => {
+  test('is the text after a header at the top', () => {
+    expect(descriptionProse(fixture('description-r8.txt')).trim()).toMatch(
+      /^Outcome: the issues listed in Plans, filed by 2026-09-30/,
+    );
+  });
+  test('is the whole description, line endings normalised, when no header opens it', () => {
+    expect(descriptionProse('Outcome: a.\r\nScope: b.')).toBe(
+      'Outcome: a.\nScope: b.',
+    );
+    expect(descriptionProse('<!-- plans -->\n1. A (#1)')).toBe(
+      '<!-- plans -->\n1. A (#1)',
+    );
   });
 });
 
@@ -136,7 +168,13 @@ describe('planView', () => {
   test('state precedence: done, running, the first plan with Backlog is next, verify, later', () => {
     expect(
       states(
-        'Plans: Done (#1); Run (#2, #3); Ver (#4); Nxt (#5, #6); Lat (#7).',
+        header(
+          '1. Done (#1)',
+          '2. Run (#2, #3)',
+          '3. Ver (#4)',
+          '4. Nxt (#5, #6)',
+          '5. Lat (#7)',
+        ),
         [
           item({ number: 1, state: 'CLOSED', status: 'Done' }),
           item({ number: 2, status: 'In Progress' }),
@@ -157,7 +195,7 @@ describe('planView', () => {
   });
 
   test('an issue with no card is open and not started, so its plan can be next', () => {
-    const v = planView(ms('Plans: New (#8).'), []);
+    const v = planView(ms(header('1. New (#8)')), []);
     expect(v.list).toEqual([
       {
         name: 'New',
@@ -167,8 +205,8 @@ describe('planView', () => {
     ]);
   });
 
-  test('issues keep clause order and carry the card they have', () => {
-    const v = planView(ms('Plans: P (#3, #1).'), [
+  test('issues keep header order and carry the card they have', () => {
+    const v = planView(ms(header('1. P (#3, #1)')), [
       item({ number: 1, status: 'Verify' }),
       item({ number: 3, state: 'CLOSED', status: 'Done' }),
     ]);
@@ -179,7 +217,7 @@ describe('planView', () => {
   });
 
   test("unplanned is the milestone's open issues that no plan lists", () => {
-    const v = planView(ms('Plans: P (#1).'), [
+    const v = planView(ms(header('1. P (#1)')), [
       item({ number: 1 }),
       item({ number: 9 }),
       item({ number: 5, status: 'In Progress' }),
@@ -193,14 +231,14 @@ describe('planView', () => {
     ]);
   });
 
-  test('no clause and a malformed clause give no plans and no unplanned list', () => {
+  test('no header and a malformed header give no plans and no unplanned list', () => {
     const items = [item({ number: 1 })];
     expect(planView(ms('Outcome: x.'), items)).toEqual({
       parse: 'none',
       list: [],
       unplanned: [],
     });
-    expect(planView(ms('Plans: A (#1); A (#2).'), items)).toEqual({
+    expect(planView(ms(header('1. A (#1)', '2. A (#2)')), items)).toEqual({
       parse: 'malformed',
       reason: 'plan "A" appears twice',
       list: [],

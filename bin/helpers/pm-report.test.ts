@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { plansHeader } from './fixtures/pm/runner.js';
 import type { Item, Milestone } from './pm-data.js';
 import { planView } from './pm-plans.js';
 import { renderReport } from './pm-report.js';
@@ -25,6 +26,7 @@ const card = (
   state,
   stateReason: null,
   updatedAt: '2026-10-01T00:00:00Z',
+  statusUpdatedAt: null,
   url: '',
   milestone: 'R9 — Next',
   labels: [],
@@ -39,17 +41,26 @@ const report = (description: string, items: Item[]): string =>
   });
 
 describe('renderReport', () => {
-  test('one row per plan in clause order, every issue qualified, the state column empty for later', () => {
+  test('one row per plan in header order, every issue qualified, the state column empty for later', () => {
     expect(
-      report('Plans: Done (#1); Run (#2, #3); Ver (#4); Nxt (#5); Lat (#6).', [
-        card(1, 'Done', 'CLOSED'),
-        card(2, 'In Progress'),
-        card(3, 'Done', 'CLOSED'),
-        card(4, 'Verify'),
-        card(5, 'Backlog'),
-        card(6, 'Backlog'),
-        card(7, 'Backlog'),
-      ]),
+      report(
+        plansHeader(
+          'Done (#1)',
+          'Run (#2, #3)',
+          'Ver (#4)',
+          'Nxt (#5)',
+          'Lat (#6)',
+        ),
+        [
+          card(1, 'Done', 'CLOSED'),
+          card(2, 'In Progress'),
+          card(3, 'Done', 'CLOSED'),
+          card(4, 'Verify'),
+          card(5, 'Backlog'),
+          card(6, 'Backlog'),
+          card(7, 'Backlog'),
+        ],
+      ),
     ).toBe(
       [
         '**R9 — Next** · 6 open, 1 closed',
@@ -69,7 +80,7 @@ describe('renderReport', () => {
   });
 
   test('no running plan and no unplanned issue say none; a pipe in a name is escaped', () => {
-    const lines = report('Plans: A | B (#1).', [card(1, 'Backlog')]).split(
+    const lines = report(plansHeader('A | B (#1)'), [card(1, 'Backlog')]).split(
       '\n',
     );
     expect(lines[1]).toBe('Running: none');

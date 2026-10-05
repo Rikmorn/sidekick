@@ -338,8 +338,8 @@ function emitReport(
   if (plans.parse !== 'ok') {
     err(
       plans.parse === 'none'
-        ? `milestone "${milestone.title}" has no Plans: clause`
-        : `milestone "${milestone.title}": ${plans.reason ?? 'malformed Plans: clause'}`,
+        ? `milestone "${milestone.title}" has no plans header`
+        : `milestone "${milestone.title}": ${plans.reason ?? 'malformed plans header'}`,
     );
     return 1;
   }

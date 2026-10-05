@@ -202,6 +202,127 @@ function runHookCli(args, env, out, err) {
   return 0;
 }
 
+// bin/helpers/pm-plans.ts
+var HEADER_OPEN = "<!-- plans -->";
+var HEADER_CLOSE = "<!-- /plans -->";
+var LINE = /^\s*\d+\.\s*(.*)$/;
+var GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
+var normalise = (text) => text.replace(/\r\n?/g, `
+`);
+var oneLine = (text) => text.replace(/\s+/g, " ").trim();
+var isMarker = (line) => line.trim() === HEADER_OPEN || line.trim() === HEADER_CLOSE;
+function locate(description) {
+  const lines = normalise(description).split(`
+`);
+  const first = lines.findIndex((l) => l.trim() !== "");
+  if (first < 0 || lines[first].trim() !== HEADER_OPEN) {
+    return lines.some(isMarker) ? { at: "elsewhere" } : { at: "none" };
+  }
+  const close = lines.findIndex((l, k) => k > first && l.trim() === HEADER_CLOSE);
+  if (close < 0)
+    return { at: "unclosed" };
+  return {
+    at: "top",
+    lines: lines.slice(first + 1, close),
+    prose: lines.slice(close + 1)
+  };
+}
+var malformed = (reason) => ({
+  parse: "malformed",
+  reason: oneLine(reason)
+});
+function duplicate(plans) {
+  const names = plans.map((p) => p.name);
+  const name = names.find((n, i) => names.indexOf(n) !== i);
+  if (name !== undefined)
+    return `plan "${name}" appears twice`;
+  const issues = plans.flatMap((p) => p.issues);
+  const issue = issues.find((n, i) => issues.indexOf(n) !== i);
+  return issue === undefined ? null : `#${issue} appears in two plans`;
+}
+function parsePlansHeader(description) {
+  const found = locate(description);
+  if (found.at === "none")
+    return { parse: "none" };
+  if (found.at === "elsewhere") {
+    return malformed("the plans header is not at the top");
+  }
+  if (found.at === "unclosed") {
+    return malformed(`the plans header has no ${HEADER_CLOSE} line`);
+  }
+  if (found.prose.some(isMarker)) {
+    return malformed("a second plans header follows the first");
+  }
+  const plans = [];
+  for (const line of found.lines.filter((l) => l.trim() !== "")) {
+    const numbered = LINE.exec(line);
+    const group = numbered === null ? null : GROUP.exec(numbered[1]);
+    if (group === null) {
+      return malformed(`"${line.trim()}" is not <n>. <name> (#N, …)`);
+    }
+    plans.push({
+      name: oneLine(group[1]),
+      issues: group[2].split(",").map((r) => Number(r.trim().slice(1)))
+    });
+  }
+  if (plans.length === 0)
+    return malformed("the plans header lists no plans");
+  const reason = duplicate(plans);
+  return reason === null ? { parse: "ok", plans } : malformed(reason);
+}
+function descriptionProse(description) {
+  const found = locate(description);
+  return found.at === "top" ? found.prose.join(`
+`) : normalise(description);
+}
+var openOf = (issues) => issues.filter((i) => i.open);
+var inProgress = (i) => i.status === "In Progress";
+var notStarted = (i) => i.status === "Backlog" || i.status === null;
+function startable(issues) {
+  const open = openOf(issues);
+  return open.length > 0 && !open.some(inProgress) && open.some(notStarted);
+}
+function stateOf(issues, isNext) {
+  const open = openOf(issues);
+  if (open.length === 0)
+    return "done";
+  if (open.some(inProgress))
+    return "running";
+  if (isNext)
+    return "next";
+  if (open.every((i) => i.status === "Verify"))
+    return "verify";
+  return "later";
+}
+function planView(ms, items) {
+  const c = parsePlansHeader(ms.description);
+  if (c.parse === "none")
+    return { parse: "none", list: [], unplanned: [] };
+  if (c.parse === "malformed") {
+    return { parse: "malformed", reason: c.reason, list: [], unplanned: [] };
+  }
+  const byNumber = new Map(items.map((i) => [i.number, i]));
+  const issueOf = (n) => {
+    const i = byNumber.get(n);
+    return i ? {
+      number: n,
+      title: i.title,
+      open: i.state === "OPEN",
+      status: i.status
+    } : { number: n, title: null, open: true, status: null };
+  };
+  const issues = c.plans.map((p) => p.issues.map(issueOf));
+  const nextAt = issues.findIndex(startable);
+  const list = c.plans.map((p, k) => ({
+    name: p.name,
+    state: stateOf(issues[k], k === nextAt),
+    issues: issues[k]
+  }));
+  const planned = new Set(c.plans.flatMap((p) => p.issues));
+  const unplanned = items.filter((i) => i.state === "OPEN" && i.milestone === ms.title && !planned.has(i.number)).sort((a, b) => a.number - b.number).map((i) => ({ number: i.number, title: i.title }));
+  return { parse: "ok", list, unplanned };
+}
+
 // bin/helpers/pm-brief.ts
 var TITLE_MAX = 60;
 var PER_TIER_MAX = 5;
@@ -314,7 +435,7 @@ function renderBrief(p) {
   lines.push(`sidekick · ${p.board.owner}/${p.board.repo} · board #${p.board.project.number}`);
   if (p.milestone) {
     const m = p.milestone;
-    const outcome = firstSentence(m.description);
+    const outcome = firstSentence(descriptionProse(m.description));
     lines.push(`milestone: ${m.title} (${m.open_issues} open, ${m.closed_issues} closed)${outcome ? ` · ${outcome}` : ""}`);
   } else {
     lines.push("milestone: none");
@@ -663,99 +784,6 @@ function lintAll(input) {
   return { findings, counts };
 }
 
-// bin/helpers/pm-plans.ts
-var CLAUSE_START = /(?:^|\s)Plans:/g;
-var CLAUSE = /(?:^|\s)Plans:\s*(.*?\))\.(?:\s|$)/s;
-var GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
-var SENTENCE_BREAK = /[.!?]\s/;
-function leaked(plans) {
-  const plan = plans.find((p) => SENTENCE_BREAK.test(p.name));
-  return plan === undefined ? null : `plan "${plan.name}" holds a sentence break`;
-}
-var oneLine = (text) => text.replace(/\s+/g, " ").trim();
-var malformed = (reason) => ({
-  parse: "malformed",
-  reason: oneLine(reason)
-});
-function duplicate(plans) {
-  const names = plans.map((p) => p.name);
-  const name = names.find((n, i) => names.indexOf(n) !== i);
-  if (name !== undefined)
-    return `plan "${name}" appears twice`;
-  const issues = plans.flatMap((p) => p.issues);
-  const issue = issues.find((n, i) => issues.indexOf(n) !== i);
-  return issue === undefined ? null : `#${issue} appears in two plans`;
-}
-function parsePlansClause(description) {
-  const starts = (description.match(CLAUSE_START) ?? []).length;
-  if (starts === 0)
-    return { parse: "none" };
-  if (starts > 1)
-    return malformed("Plans: appears twice");
-  const clause = CLAUSE.exec(description);
-  if (!clause)
-    return malformed('the Plans: clause has no ")." end');
-  const parts = clause[1].split(";");
-  const groups = parts.map((part) => GROUP.exec(part));
-  const bad = groups.indexOf(null);
-  if (bad >= 0) {
-    return malformed(`"${parts[bad].trim()}" is not <name> (#N, …)`);
-  }
-  const plans = groups.filter((g) => g !== null).map((g) => ({
-    name: oneLine(g[1]),
-    issues: g[2].split(",").map((r) => Number(r.trim().slice(1)))
-  }));
-  const reason = leaked(plans) ?? duplicate(plans);
-  return reason === null ? { parse: "ok", plans } : malformed(reason);
-}
-var openOf = (issues) => issues.filter((i) => i.open);
-var inProgress = (i) => i.status === "In Progress";
-var notStarted = (i) => i.status === "Backlog" || i.status === null;
-function startable(issues) {
-  const open2 = openOf(issues);
-  return open2.length > 0 && !open2.some(inProgress) && open2.some(notStarted);
-}
-function stateOf(issues, isNext) {
-  const open2 = openOf(issues);
-  if (open2.length === 0)
-    return "done";
-  if (open2.some(inProgress))
-    return "running";
-  if (isNext)
-    return "next";
-  if (open2.every((i) => i.status === "Verify"))
-    return "verify";
-  return "later";
-}
-function planView(ms, items) {
-  const c = parsePlansClause(ms.description);
-  if (c.parse === "none")
-    return { parse: "none", list: [], unplanned: [] };
-  if (c.parse === "malformed") {
-    return { parse: "malformed", reason: c.reason, list: [], unplanned: [] };
-  }
-  const byNumber = new Map(items.map((i) => [i.number, i]));
-  const issueOf = (n) => {
-    const i = byNumber.get(n);
-    return i ? {
-      number: n,
-      title: i.title,
-      open: i.state === "OPEN",
-      status: i.status
-    } : { number: n, title: null, open: true, status: null };
-  };
-  const issues = c.plans.map((p) => p.issues.map(issueOf));
-  const nextAt = issues.findIndex(startable);
-  const list = c.plans.map((p, k) => ({
-    name: p.name,
-    state: stateOf(issues[k], k === nextAt),
-    issues: issues[k]
-  }));
-  const planned = new Set(c.plans.flatMap((p) => p.issues));
-  const unplanned = items.filter((i) => i.state === "OPEN" && i.milestone === ms.title && !planned.has(i.number)).sort((a, b) => a.number - b.number).map((i) => ({ number: i.number, title: i.title }));
-  return { parse: "ok", list, unplanned };
-}
-
 // bin/helpers/pm-report.ts
 var STATE_CELL = {
   done: "done",
@@ -872,10 +900,10 @@ function checkRules(src, dest) {
   }
   return drift;
 }
-var normalise = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
+var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
 function headingsOf(body) {
   return body.split(`
-`).filter((l) => l.startsWith("## ")).map((l) => normalise(l.slice(3)));
+`).filter((l) => l.startsWith("## ")).map((l) => normalise2(l.slice(3)));
 }
 function openingOf(body) {
   let lines = body.split(`
@@ -888,7 +916,7 @@ function openingOf(body) {
   if (!first)
     return;
   const sentence = first.split(/\.\s|\.$/)[0];
-  const value = normalise(sentence);
+  const value = normalise2(sentence);
   return value === "" ? undefined : value;
 }
 function findOverlap(src, dest) {
@@ -1169,7 +1197,7 @@ function emitReport(board, milestone, plans, out, err) {
     return 1;
   }
   if (plans.parse !== "ok") {
-    err(plans.parse === "none" ? `milestone "${milestone.title}" has no Plans: clause` : `milestone "${milestone.title}": ${plans.reason ?? "malformed Plans: clause"}`);
+    err(plans.parse === "none" ? `milestone "${milestone.title}" has no plans header` : `milestone "${milestone.title}": ${plans.reason ?? "malformed plans header"}`);
     return 1;
   }
   out(renderReport({ board, milestone, plans }));
