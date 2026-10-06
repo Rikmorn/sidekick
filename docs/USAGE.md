@@ -76,7 +76,7 @@ At filing, an issue gets `backlog` with a `Revisit when:` line, unless it is a s
 |---|---|---|
 | `board [--quiet]` | `tracked`, the reason if not, owner and repo, the project number and id, the Status field with its option ids, preflight (`gh` version, scope, warnings) | Every write, since it carries the ids; the bootstrap verify |
 | `pickup [--quiet] [--brief\|--report] [--milestone <title>]` | The board block, the active milestone and every open one, `in_progress` with ages, `candidates` by tier, the milestone's `plans`, `drift`. `--milestone` names the milestone instead of deriving it. `--brief` renders six lines of text instead, for the hook. `--report` prints the body of a project status update | Session start; status updates |
-| `lint` | `findings` and `counts` per predicate: label counts, missing Status, open-in-Done, closed-not-Done, `backlog` without `Revisit when:`, `backlog` in a milestone, position-code titles, `unboarded` (open or completed issues with no card), stale In Progress, more than one linked board | Grooming; the milestone gate |
+| `lint` | `findings` and `counts` per predicate: label counts, missing Status, open-in-Done, closed-not-Done, `backlog` without `Revisit when:`, `backlog` in a milestone, position-code titles, `unboarded` (open issues and issues closed as completed, with no card), stale In Progress, more than one linked board | Grooming; the milestone gate |
 | `gate --milestone <title>` | The milestone with its counts, `ready`, and every open issue in it with Status and `item_id` | Milestone close |
 
 Every issue entry carries `item_id`, the board item's node id, so a write by id needs no lookup. `--quiet` on `board` and `pickup` prints nothing in an untracked repo — the shape a session-start hook needs.
