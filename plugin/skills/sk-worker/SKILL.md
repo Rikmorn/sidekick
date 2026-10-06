@@ -33,7 +33,7 @@ Test the plan against the tree without changing anything. A plan carries intent,
 - Run the gates at the baseline and compare them with the handoff's results.
 - Run each command whose result the plan states, when it can run before its task.
 
-A small misfit between a sketch and the tree is the executor's to settle and report as a deviation. Ask only about a contradiction: a decision the tree defeats, acceptance criteria that cannot both hold, or a fact the plan states wrongly.
+A small misfit between a sketch and the tree is the executor's to settle and report as a deviation. Ask only about a contradiction. Three qualify: a decision the tree defeats, acceptance criteria that cannot both hold, or a mechanism fact or interface the plan states wrongly.
 
 Send one report: the baseline confirmation, then every question, each naming its step and what the tree shows. Wait for the rulings. A question asked now costs one reply; the same question asked mid-run costs a round trip.
 
@@ -41,6 +41,7 @@ Send one report: the baseline confirmation, then every question, each naming its
 
 Invoke the superpowers skill the handoff names, and follow it. Its task list and progress stay in this session, where the operator can see them. These rules hold on top of it:
 
+- **Settle a small misfit; raise one that recurs.** Shape the sketch to the tree and list each deviation in the run report. A misfit that keeps recurring goes to the orchestrator, because the plan's premise is wrong.
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
 - **The handoff answers superpowers' questions.** Where superpowers would ask the person, the handoff has already answered. Work where it names: on its branch in the main checkout or in a worktree, or in place. At `finishing-a-development-branch`, keep the branch as it is; the orchestrator reviews and merges.
 - **Run the prose step** wherever a task has one.

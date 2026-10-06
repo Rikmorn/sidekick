@@ -5,7 +5,7 @@ description: How a written plan runs. Lays out the execution modes with a recomm
 
 # sk-execute
 
-A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except four rules, each overridden where it applies. `writing-plans` asks for complete code with no placeholders, and the implementer's prompt says to implement exactly what the task specifies; §A plan carries intent overrides both. Superpowers' reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. The worker side is `sk-worker`, which only the operator starts.
+A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except four rules, each overridden where it applies. `writing-plans` asks for complete code with no placeholders. Superpowers also tells its executors to carry out the plan exactly, in the implementer's prompt and in `executing-plans`. §A plan carries intent overrides both. Superpowers' reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. The worker side is `sk-worker`, which only the operator starts.
 
 ## Choose the mode
 
@@ -24,8 +24,9 @@ Lay out three modes and recommend one. The operator decides; there is no default
 A plan carries intent and acceptance criteria, and code in it is a sketch in the right language. A plan scripted to the character fails twice. The planner spends its effort predicting the tree. The executor, told to implement exactly, stops on every misfit that a competent engineer would settle in a line.
 
 - **The executor reasons past a small misfit.** It shapes the sketch to the tree and lists each deviation in its report, so the reviewer can check it. It raises a genuine contradiction, or a misfit that keeps recurring, because a recurring one means the plan's premise is wrong.
-- **Precision stays where reasoning cannot reach.** Decisions and mechanism facts go in the design note or spec, since the executor cannot derive them. Contracts between tasks are stated, because each task is built without sight of the others. Outward and irreversible steps stay exact, operator-gated, and run by the orchestrator, since a deviation there cannot be reviewed away.
-- **Executors run on a model that can reason.** A plan that leaves the small decisions to the executor assumes it can make them, and the cheapest tier cannot.
+- **Precision stays where reasoning cannot reach.** Decisions and mechanism facts go in the design note or spec, since the executor cannot derive them. Contracts between tasks are stated, because in the subagent modes each task is built without sight of the others. Outward and irreversible steps stay exact, operator-gated, and run by the orchestrator, since a deviation there cannot be reviewed away.
+- **Prefer an executor that can reason past a misfit.** A plan that leaves small decisions to the executor assumes it can make them. An executor that only applies patches turns each misfit into a question.
+- **State the stance in the plan's Global Constraints.** Superpowers hands those to every implementer and to inline execution alike. A section of its own reaches no implementer, because each receives only its task, the interfaces it touches, and the global constraints.
 
 ## Before the plan goes out
 
