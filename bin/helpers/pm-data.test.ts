@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { fixture, fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
+import { tiers } from './pm.js';
 import {
   ageDays,
   cardedItems,
@@ -214,6 +215,12 @@ describe('fetchStatusField', () => {
     ]);
     expect(f.title).toBe('sidekick');
   });
+  test('carries the board’s creation time', () => {
+    const run = fixtureRunner(sidekickMap());
+    expect(fetchStatusField(run, '/', 'Rikmorn', 2).createdAt).toBe(
+      '2026-09-01T18:12:09Z',
+    );
+  });
 });
 
 const PROJECT_ID = 'PVT_kwHOABcx2M4BiJeE';
@@ -221,15 +228,18 @@ const PROJECT_ID = 'PVT_kwHOABcx2M4BiJeE';
 interface RawCard {
   id: string;
   project: { id: string };
+  isArchived: boolean;
   fieldValueByName: { name?: string; updatedAt?: string } | null;
 }
 const rawCard = (
   id: string,
   projectId: string,
   status: { name: string; updatedAt?: string } | null,
+  isArchived = false,
 ): RawCard => ({
   id,
   project: { id: projectId },
+  isArchived,
   fieldValueByName: status,
 });
 const rawIssue = (
@@ -242,6 +252,7 @@ const rawIssue = (
   title: `t${number}`,
   state: 'OPEN',
   stateReason: null,
+  closedAt: null,
   updatedAt: '2026-10-03T12:07:12Z',
   url: `https://github.com/Rikmorn/sidekick/issues/${number}`,
   milestone: null,
@@ -369,6 +380,63 @@ describe('parseRepoIssuesPage', () => {
     ).toEqual([
       [171, '2026-10-03T12:07:12Z', '2026-10-05T11:48:11Z'],
       [172, '2026-10-03T12:07:12Z', null],
+    ]);
+  });
+  test('an archived card on an open issue is no card, and the issue says so', () => {
+    const { issues } = parseRepoIssuesPage(
+      rawPage([
+        rawIssue(8, [rawCard('PVTI_8', PROJECT_ID, { name: 'Backlog' }, true)]),
+        rawIssue(9, [rawCard('PVTI_9', PROJECT_ID, { name: 'Backlog' })]),
+      ]),
+      PROJECT_ID,
+    );
+    expect(issues[0].card).toBeNull();
+    expect(issues[0].cardArchived).toBe(true);
+    expect(issues[1].card?.itemId).toBe('PVTI_9');
+    expect(issues[1].cardArchived).toBe(false);
+  });
+  test('an open issue with an archived card is never a pickup candidate', () => {
+    const { issues } = parseRepoIssuesPage(
+      rawPage([
+        rawIssue(8, [rawCard('PVTI_8', PROJECT_ID, { name: 'Backlog' }, true)]),
+        rawIssue(9, [rawCard('PVTI_9', PROJECT_ID, { name: 'Backlog' })]),
+      ]),
+      PROJECT_ID,
+    );
+    const items = cardedItems(issues, 'Rikmorn/sidekick');
+    expect(items.map((i) => i.number)).toEqual([9]);
+    expect(
+      tiers(items, null, new Date('2026-10-06T00:00:00Z')).candidates.map(
+        (c) => c.number,
+      ),
+    ).toEqual([9]);
+  });
+  test('an archived card on a closed issue stays a card', () => {
+    const { issues } = parseRepoIssuesPage(
+      rawPage([
+        rawIssue(
+          10,
+          [rawCard('PVTI_10', PROJECT_ID, { name: 'Done' }, true)],
+          false,
+          { state: 'CLOSED', stateReason: 'COMPLETED' },
+        ),
+      ]),
+      PROJECT_ID,
+    );
+    expect(issues[0].card?.itemId).toBe('PVTI_10');
+    expect(issues[0].cardArchived).toBe(false);
+  });
+  test('carries closedAt, null while the issue is open', () => {
+    const { issues } = parseRepoIssuesPage(
+      rawPage([
+        rawIssue(11, [], false, { closedAt: '2026-09-02T10:00:00Z' }),
+        rawIssue(12, []),
+      ]),
+      PROJECT_ID,
+    );
+    expect(issues.map((i) => i.closedAt)).toEqual([
+      '2026-09-02T10:00:00Z',
+      null,
     ]);
   });
   test('a page with no nodes is an empty page', () => {

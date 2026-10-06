@@ -117,19 +117,33 @@ export function positionCodeTitle(issues: Issue[]): Finding[] {
 
 /**
  * `uncarded` is every issue of the repository with no card on the board.
- * An open issue is reported, and so is one closed as completed, whose shipped
- * work is missing from Done. One closed as not planned shipped nothing.
+ * An open issue is reported, and so is one closed as completed after the
+ * board was created, whose shipped work is missing from Done. One closed as
+ * not planned shipped nothing, and one closed before the board existed
+ * predates it.
  */
-export function unboarded(uncarded: RepoIssue[]): Finding[] {
+export function unboarded(
+  uncarded: RepoIssue[],
+  boardCreatedAt: string,
+): Finding[] {
+  const since = Date.parse(boardCreatedAt);
   return uncarded
-    .filter((i) => i.state === 'OPEN' || i.stateReason === 'COMPLETED')
+    .filter(
+      (i) =>
+        i.state === 'OPEN' ||
+        (i.stateReason === 'COMPLETED' &&
+          i.closedAt !== null &&
+          Date.parse(i.closedAt) > since),
+    )
     .map((i) =>
       f(
         i.number,
         i.title,
-        i.state === 'OPEN'
-          ? 'no card on the board'
-          : 'closed as completed, no card on the board',
+        i.state === 'CLOSED'
+          ? 'closed as completed, no card on the board'
+          : i.cardArchived
+            ? 'card archived'
+            : 'no card on the board',
       ),
     );
 }
@@ -167,6 +181,7 @@ const PREDICATES: {
     issues: Issue[];
     items: Item[];
     uncarded: RepoIssue[];
+    boardCreatedAt: string;
     candidates: LinkedBoard[];
     now: Date;
   }) => Finding[];
@@ -178,7 +193,8 @@ const PREDICATES: {
   backlog_without_condition: ({ issues }) => backlogWithoutCondition(issues),
   backlog_in_milestone: ({ issues }) => backlogInMilestone(issues),
   position_code_title: ({ issues }) => positionCodeTitle(issues),
-  unboarded: ({ uncarded }) => unboarded(uncarded),
+  unboarded: ({ uncarded, boardCreatedAt }) =>
+    unboarded(uncarded, boardCreatedAt),
   stale_in_progress: ({ items, now }) => staleInProgress(items, now),
   multiple_linked_boards: ({ candidates }) => multipleLinkedBoards(candidates),
 };
@@ -187,6 +203,7 @@ export function lintAll(input: {
   issues: Issue[];
   items: Item[];
   uncarded: RepoIssue[];
+  boardCreatedAt: string;
   candidates: LinkedBoard[];
   now: Date;
 }): { findings: Record<LintId, Finding[]>; counts: Record<LintId, number> } {

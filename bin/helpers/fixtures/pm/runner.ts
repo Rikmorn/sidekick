@@ -4,15 +4,20 @@
  * failing test rather than a silent pass.
  */
 //
-// Captured against Rikmorn/sidekick with gh 2.96.0; the repo-issues pair on
-// 2026-10-06. Recapture from the repo root with the commands below; run
-// from a shell that can `cd` into this directory first. Q_DISC, Q_FIELD
-// and Q_ISSUES are DISCOVERY_QUERY, FIELD_QUERY and ISSUES_QUERY in
-// `../../pm-data.ts`, quoted as `-f query="$Q_DISC"` etc. Q_ISSUES keeps
-// its production `first: 100`: the repo held 175 issues at capture, so it
-// gives a real two-page fixture. If the repo ever drops to 100 issues or
-// fewer, override `first` to a smaller number so the suite keeps its only
-// pagination coverage.
+// Captured against Rikmorn/sidekick. The milestone and open-issue fixtures
+// (milestones-*, issues-open, discovery-*, prs-master, user-headers,
+// gh-version) date from 2026-09-19 with gh 2.96.0; field-sidekick and the
+// repo-issues pair date from 2026-10-06 with gh 2.101.0. Recapture both
+// groups together, so the board reads as one moment. Recapture from the repo
+// root with the commands below; run from a shell that can `cd` into this
+// directory first. Q_DISC, Q_FIELD and Q_ISSUES are DISCOVERY_QUERY,
+// FIELD_QUERY and ISSUES_QUERY in `../../pm-data.ts`, quoted as
+// `-f query="$Q_DISC"` etc. Q_ISSUES keeps its production `first: 100`: the
+// repo held 175 issues at capture, so it gives a real two-page fixture.
+// Issue counts only grow: past 200 the capture becomes three pages, and
+// `sidekickMap` keys two, so a recapture then needs a third key there. If
+// the repo ever holds 100 issues or fewer, lower `first` in the capture, so
+// the suite keeps its only pagination coverage.
 //
 //   gh api graphql -f query="$Q_DISC" -f owner=Rikmorn -f name=sidekick \
 //     > discovery-sidekick.json

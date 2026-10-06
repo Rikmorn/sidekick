@@ -12,6 +12,7 @@
             "title": "Child-session execution: the orchestrator hands a plan to a cheaper child process",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-23T19:58:25Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/101",
             "milestone": null,
@@ -35,6 +36,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qMUc",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -51,6 +53,7 @@
             "title": "Overlap check misses rewritten rule copies with no H2 headings",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:42Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/102",
             "milestone": {
@@ -73,6 +76,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qbOw",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -89,6 +93,7 @@
             "title": "rules --project resolves against the process cwd, not the repo root",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T21:56:48Z",
             "updatedAt": "2026-09-18T21:56:48Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/103",
             "milestone": null,
@@ -109,6 +114,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7rAXA",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -125,6 +131,7 @@
             "title": "Rules pruning uses the sk- prefix where the design specified a manifest",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T22:29:14Z",
             "updatedAt": "2026-09-18T22:29:14Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/104",
             "milestone": null,
@@ -148,6 +155,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7rAX0",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -164,6 +172,7 @@
             "title": "The EPIC move and the retirement left 30 broken relative links in docs/",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:54Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/105",
             "milestone": {
@@ -186,6 +195,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7rAYc",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -202,6 +212,7 @@
             "title": "Nothing gates the freshness of the committed plugin/bin/sidekick bundle",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-10-03T19:24:29Z",
             "updatedAt": "2026-10-03T19:24:29Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/106",
             "milestone": {
@@ -224,6 +235,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7rAZQ",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -240,6 +252,7 @@
             "title": "The paths: spike was never run, and two documents state its unverified answer as fact",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T22:32:08Z",
             "updatedAt": "2026-09-18T22:32:08Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/107",
             "milestone": null,
@@ -263,6 +276,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7rAaM",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -279,6 +293,7 @@
             "title": "rules check exit codes are undocumented and conflate drift with failure for hooks and CI",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:40Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/108",
             "milestone": {
@@ -301,6 +316,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7rIxw",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -317,6 +333,7 @@
             "title": "The plugin has no PM seat: no board discovery, no tested mechanics, no gh minimum",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-19T18:10:56Z",
             "updatedAt": "2026-09-21T00:07:24Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/109",
             "milestone": {
@@ -339,6 +356,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7vHDk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -355,6 +373,7 @@
             "title": "A repo can't be brought under tracking without hand-building the board, statuses, views, and labels",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-20T21:17:20Z",
             "updatedAt": "2026-09-21T00:07:23Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/110",
             "milestone": {
@@ -377,6 +396,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7vHEQ",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -393,6 +413,7 @@
             "title": "Nothing derives what to pick up at session start; pointers end up in memory files",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-21T00:01:21Z",
             "updatedAt": "2026-09-21T00:07:22Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/111",
             "milestone": {
@@ -415,6 +436,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7vHE0",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -431,6 +453,7 @@
             "title": "Filing and closing are ad hoc: issues arrive in bursts, close comments lack evidence, no learning record exists",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-21T00:01:27Z",
             "updatedAt": "2026-09-21T00:07:21Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/112",
             "milestone": {
@@ -453,6 +476,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7vHFY",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -469,6 +493,7 @@
             "title": "Milestones have no stated outcome, no entry gate, and no close audit — scope creeps and the backlog balloons",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-21T00:01:33Z",
             "updatedAt": "2026-09-21T00:07:20Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/113",
             "milestone": {
@@ -491,6 +516,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7vHGE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -507,6 +533,7 @@
             "title": "The Verify column is named but never defined; the verification-moves-to-use ruling lives only in memory",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:55:09Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/114",
             "milestone": {
@@ -529,6 +556,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7vLFI",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -545,6 +573,7 @@
             "title": "sk-typescript's no-bypass and runtime-schema rules have no answer for guard-narrowed values or a CLI parsing its own tool's output",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:28Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/115",
             "milestone": {
@@ -567,6 +596,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7vtIQ",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -583,6 +613,7 @@
             "title": "Assertions written against whatever the fixture contains pass under wrong code; nothing asks what a test would catch",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-23T19:58:18Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/116",
             "milestone": null,
@@ -606,6 +637,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7wJDU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -622,6 +654,7 @@
             "title": "Whether claude plugin eval can reach api.github.com is unverified, so no skill that calls gh can be eval-tested",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-23T20:04:28Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/117",
             "milestone": null,
@@ -645,6 +678,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7waRI",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -661,6 +695,7 @@
             "title": "sidekick pm discovers user-owned boards only; an organisation board reports no-board with no hint why",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:17Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/118",
             "milestone": {
@@ -683,6 +718,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7waas",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -699,6 +735,7 @@
             "title": "A design pass before brainstorming: the first extension to bring back after the pivot",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-25T21:26:33Z",
             "updatedAt": "2026-09-26T21:18:06Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/119",
             "milestone": {
@@ -721,6 +758,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg72yrk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -737,6 +775,7 @@
             "title": "Nothing sweeps the backlog or triages change requests, so stale issues and scope changes accumulate",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:40:45Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/120",
             "milestone": null,
@@ -760,6 +799,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg72yxU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -776,6 +816,7 @@
             "title": "Three execution modes exist and nothing says when each fits or what the review cycles cost",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-25T21:40:23Z",
             "updatedAt": "2026-09-25T21:40:23Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/121",
             "milestone": null,
@@ -799,6 +840,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg722vU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -815,6 +857,7 @@
             "title": "USAGE has no per-skill walkthrough, so the loop cannot be visualised end to end",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-21T00:02:38Z",
             "updatedAt": "2026-09-21T00:07:19Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/122",
             "milestone": {
@@ -837,6 +880,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg72_Rs",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -853,6 +897,7 @@
             "title": "The worker handoff requires a git worktree; a plain branch in the main checkout should be an option",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-26T20:48:38Z",
             "updatedAt": "2026-09-26T21:18:04Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/123",
             "milestone": {
@@ -875,6 +920,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg72_TA",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -891,6 +937,7 @@
             "title": "sk-language's sentence limit does not say how a code span counts, so two reviewers count the same sentence differently",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-23T21:03:54Z",
             "updatedAt": "2026-09-26T21:18:03Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/124",
             "milestone": {
@@ -913,6 +960,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg73MT0",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -929,6 +977,7 @@
             "title": "sk-milestone writes the learning record after the tag, so the release cannot carry it",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-26T20:48:33Z",
             "updatedAt": "2026-09-26T21:18:01Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/125",
             "milestone": {
@@ -951,6 +1000,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg73c4U",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -967,6 +1017,7 @@
             "title": "The plugin install leaves the flat install's hooks in a consumer's settings.local.json, so every Stop runs a missing binary",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:44Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/126",
             "milestone": {
@@ -989,6 +1040,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8Byc4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1005,6 +1057,7 @@
             "title": "The execution process for a milestone: what R6 measured and what changes before the next plan is dispatched",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-23T22:37:17Z",
             "updatedAt": "2026-09-26T21:18:00Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/127",
             "milestone": {
@@ -1027,6 +1080,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8Z0Ps",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1043,6 +1097,7 @@
             "title": "Issues, milestones, and docs have no standard format; the stated shapes live in skill prose and practice drifts from them",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:37Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/128",
             "milestone": null,
@@ -1066,6 +1121,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8aKx0",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1082,6 +1138,7 @@
             "title": "Nothing marks an issue as untriaged, so one filed without a disposition is never triaged",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:31Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/129",
             "milestone": null,
@@ -1105,6 +1162,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8aK7M",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1121,6 +1179,7 @@
             "title": "GitHub's native labels go unused: no issue is tagged bug or enhancement, and the conventions leave no room for them",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-23T20:04:41Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/130",
             "milestone": null,
@@ -1144,6 +1203,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8aRMQ",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1160,6 +1220,7 @@
             "title": "sidekick pm reads the board's item list, which left out new cards for over 45 minutes, so pickup and lint missed four issues",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:55:10Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/131",
             "milestone": {
@@ -1182,6 +1243,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8aXVg",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1198,6 +1260,7 @@
             "title": "sk-milestone caps a milestone at two sessions; the session-sized unit is the execution plan, not the release",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-26T20:48:26Z",
             "updatedAt": "2026-09-26T21:17:58Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/132",
             "milestone": {
@@ -1220,6 +1283,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8aXXU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1236,6 +1300,7 @@
             "title": "The rules name GitHub's eventual consistency for one case only, so a lagging list gets read as the truth",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:55:11Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/133",
             "milestone": {
@@ -1258,6 +1323,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8ajgI",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1274,6 +1340,7 @@
             "title": "Code comments run long despite sk-clean-code's one-line default, and nothing checks them",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-30T22:43:48Z",
             "updatedAt": "2026-09-30T22:43:48Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/134",
             "milestone": {
@@ -1296,6 +1363,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8ax70",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1312,6 +1380,7 @@
             "title": "AGENTS.md's rules install step runs the released plugin binary, so a rule edit in this repo is never installed",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-23T22:37:23Z",
             "updatedAt": "2026-09-26T21:17:57Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/135",
             "milestone": {
@@ -1334,6 +1403,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8a0r0",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1350,6 +1420,7 @@
             "title": "sk-design's triggering is checked only by use; a claude plugin eval suite would measure when it fires and when it stays quiet",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-26T21:19:42Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/136",
             "milestone": null,
@@ -1373,6 +1444,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg807TQ",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1389,6 +1461,7 @@
             "title": "The ADR index stops at ADR-0005 and still describes the harness",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:56Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/137",
             "milestone": {
@@ -1411,6 +1484,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg81C1w",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1427,6 +1501,7 @@
             "title": "Review-cycle measurements are summed by hand from transcripts, and the method has no home",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-25T21:45:48Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/138",
             "milestone": null,
@@ -1450,6 +1525,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg81rjY",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1466,6 +1542,7 @@
             "title": "Installing rules from the repo bundle puts unreleased sidekick rules into every repo on the machine",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-25T21:39:31Z",
             "updatedAt": "2026-09-26T21:17:56Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/139",
             "milestone": {
@@ -1491,6 +1568,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg81vNg",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1507,6 +1585,7 @@
             "title": "Every milestone waits on the operator at each pause in the loop; nothing says which pauses an agent could hold",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-26T19:51:58Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/140",
             "milestone": null,
@@ -1530,6 +1609,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg8805w",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1546,6 +1626,7 @@
             "title": "The pickup brief knows nothing of a milestone's plans: next says pull one, and the Plans clause never shows",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-10-05T18:22:21Z",
             "updatedAt": "2026-10-05T18:22:21Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/141",
             "milestone": {
@@ -1568,6 +1649,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg886Xk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1584,6 +1666,7 @@
             "title": "sk-design proposes options before asking what the operator values, so a note can design against a goal nobody holds",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:46Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/142",
             "milestone": {
@@ -1606,6 +1689,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg89Yhc",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1622,6 +1706,7 @@
             "title": "An unscoped claude plugin update targets a stale project-scope record, so the release step leaves the user install behind",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:50Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/143",
             "milestone": {
@@ -1644,6 +1729,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg89Yio",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1660,6 +1746,7 @@
             "title": "The sk-* rules say nothing about precedence against a repo's own rules, so a conflict in an external project has no fix",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:26Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/144",
             "milestone": {
@@ -1682,6 +1769,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9FSSE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1698,6 +1786,7 @@
             "title": "A --project rules install ships sk-pm-conventions into repos sidekick doesn't track, with no way to leave it out",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:36Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/145",
             "milestone": {
@@ -1720,6 +1809,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9c06k",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1736,6 +1826,7 @@
             "title": "A context monitor hook: warn the model before the context window fills, as GSD's does",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:43Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/146",
             "milestone": null,
@@ -1759,6 +1850,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9eLnE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1775,6 +1867,7 @@
             "title": "sk-design's explore scale has no path to adopt an exploration written elsewhere",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:55:13Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/147",
             "milestone": {
@@ -1797,6 +1890,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9if2E",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1813,6 +1907,7 @@
             "title": "A hand-built board passes `sidekick pm board`; nothing checks its workflows and views against the reference",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-29T22:05:19Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/148",
             "milestone": null,
@@ -1836,6 +1931,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9if4g",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1852,6 +1948,7 @@
             "title": "`sidekick rules check --project` reports `[missing]` and exits 2 when the rules are delivered at user level",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:38Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/149",
             "milestone": {
@@ -1874,6 +1971,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9if60",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1890,6 +1988,7 @@
             "title": "`sk-track` forbids filing loose, not-deferred work, the state `sk-orient` reads as tier 2",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:33Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/150",
             "milestone": null,
@@ -1913,6 +2012,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9if9g",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1929,6 +2029,7 @@
             "title": "The `sidekick` skill says only a copied board gets the Focus filter; the API sets it",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:55:14Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/151",
             "milestone": {
@@ -1951,6 +2052,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9igAA",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1967,6 +2069,7 @@
             "title": "Plans must put operator steps before Task 1, because superpowers appends trailing sections to the last task",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-30T22:43:27Z",
             "updatedAt": "2026-09-30T22:43:27Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/152",
             "milestone": {
@@ -1989,6 +2092,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9igCE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2005,6 +2109,7 @@
             "title": "`sidekick pm lint`'s `unboarded` check only sees open issues",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:12Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/153",
             "milestone": {
@@ -2027,6 +2132,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9igEE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2043,6 +2149,7 @@
             "title": "`sk-track` issue bodies state measured claims without the command that produced them",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:05Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/154",
             "milestone": {
@@ -2065,6 +2172,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9igF4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2081,6 +2189,7 @@
             "title": "`sk-worker`'s scan cannot dry-run a plan that edits one file several times with its writes stubbed",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:31:59Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/155",
             "milestone": {
@@ -2103,6 +2212,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9igHo",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2119,6 +2229,7 @@
             "title": "`sk-agent-prompts.md`'s `agents/**` path loads it on every file under any `agents/` folder",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:24Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/156",
             "milestone": {
@@ -2141,6 +2252,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9igJw",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2157,6 +2269,7 @@
             "title": "Plan preparation leaves output-producing commands without an Expected, so the scan skips them",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:01Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/157",
             "milestone": {
@@ -2179,6 +2292,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9igMM",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2195,6 +2309,7 @@
             "title": "`sk-execute` says to fast-forward the base branch; `sk-track` and PR-based repos close through `Closes #N`",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-30T22:43:42Z",
             "updatedAt": "2026-09-30T22:43:42Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/158",
             "milestone": {
@@ -2217,6 +2332,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9igN0",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2233,6 +2349,7 @@
             "title": "Sidekick's docs taxonomy omits where research done inside a design lives; sk-design's explore scale puts it beside design.md",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:50Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/159",
             "milestone": {
@@ -2255,6 +2372,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9jWxw",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2271,6 +2389,7 @@
             "title": "The plan scan tests the plan against itself; add a check of each new claim against its source and of every copy of a fixed fact",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:03Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/160",
             "milestone": {
@@ -2293,6 +2412,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9jWzM",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2309,6 +2429,7 @@
             "title": "sk-execute's reviewer rule never reaches a subagent-driven reviewer; superpowers filters process rules out of the constraints slot",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-30T22:43:21Z",
             "updatedAt": "2026-09-30T22:43:21Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/161",
             "milestone": {
@@ -2331,6 +2452,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9s5no",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2347,6 +2469,7 @@
             "title": "sk-agent-prompts.md prescribes older-model scaffolds: reasoning in prose, a scripted framing pass, and a Rule 3 heading that contradicts its intent",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:19Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/162",
             "milestone": {
@@ -2369,6 +2492,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9s5qk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2385,6 +2509,7 @@
             "title": "Two pairs of sk-* rules give different instructions for the same moment: labelling uncertainty, and a problem outside the task",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:22Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/163",
             "milestone": {
@@ -2407,6 +2532,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9s5wI",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2423,6 +2549,7 @@
             "title": "sk-worker's 'commit once per task' and sk-design's patterns stance contradict superpowers without naming the override",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-30T22:43:34Z",
             "updatedAt": "2026-09-30T22:43:34Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/164",
             "milestone": {
@@ -2445,6 +2572,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9s52s",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2461,6 +2589,7 @@
             "title": "sk-milestone and sk-track carry the sidekick repo's own release facts into every consumer repo",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:11Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/165",
             "milestone": {
@@ -2483,6 +2612,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9s9Cs",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2499,6 +2629,7 @@
             "title": "pm lint's Revisit when: marker rejects the bold label form that issue bodies use",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:52:15Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/166",
             "milestone": {
@@ -2521,6 +2652,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9vDiE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2537,6 +2669,7 @@
             "title": "sk-execute has no mode for plans whose writes are public GitHub operations",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:32:07Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/167",
             "milestone": {
@@ -2559,6 +2692,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9vDlw",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2575,6 +2709,7 @@
             "title": "Managed boards have no Plan field, so a milestone's plans show only in its description",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-10-03T19:24:34Z",
             "updatedAt": "2026-10-03T19:24:34Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/168",
             "milestone": {
@@ -2597,6 +2732,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9ws-4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2613,6 +2749,7 @@
             "title": "Long code comments are caught only by a reviewer's judgment; no check flags them",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T22:43:09Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/169",
             "milestone": null,
@@ -2636,6 +2773,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg9xsmc",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2652,6 +2790,7 @@
             "title": "Board #2's short description still names milestones R1-R3 and the pre-plugin rules path",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-10-03T19:24:40Z",
             "updatedAt": "2026-10-03T19:24:40Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/170",
             "milestone": {
@@ -2674,6 +2813,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg-I51Q",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2690,6 +2830,7 @@
             "title": "Plans are parsed out of the milestone description's prose; they need a delimited header",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-10-05T18:22:13Z",
             "updatedAt": "2026-10-05T18:22:13Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/171",
             "milestone": {
@@ -2712,6 +2853,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg-TXbE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2728,6 +2870,7 @@
             "title": "pickup's active milestone is the earliest due, not the one being worked in",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-10-05T18:22:06Z",
             "updatedAt": "2026-10-05T18:22:06Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/172",
             "milestone": {
@@ -2750,6 +2893,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg-TXcU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2766,6 +2910,7 @@
             "title": "An In Progress card's age counts from its issue's last update, so a card move does not reset it",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-10-05T18:21:59Z",
             "updatedAt": "2026-10-05T18:21:59Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/173",
             "milestone": {
@@ -2788,6 +2933,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg-ooug",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2804,6 +2950,7 @@
             "title": "sidekick pm ignores flags it does not recognise, so a mistyped flag runs as if it were absent",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-10-05T18:23:11Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/174",
             "milestone": null,
@@ -2827,6 +2974,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg-swpE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2843,6 +2991,7 @@
             "title": "Plans script the executor instead of trusting it; plan code should be intent, and the executor should reason past small misfits",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-10-06T18:33:05Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/175",
             "milestone": {
@@ -2865,6 +3014,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg-9RjA",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },

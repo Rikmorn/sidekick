@@ -57,9 +57,12 @@ const repoIssue = (p: Partial<RepoIssue> & { number: number }): RepoIssue => ({
   milestone: null,
   labels: [],
   assignees: [],
+  closedAt: null,
+  cardArchived: false,
   card: null,
   ...p,
 });
+const BOARD_CREATED = '2026-09-01T18:12:09Z';
 const now = new Date('2026-09-19T00:00:00Z');
 const numbers = (f: Array<{ number: number | null }>): Array<number | null> =>
   f.map((x) => x.number);
@@ -189,18 +192,60 @@ describe('predicates on synthetic input', () => {
     expect(numbers(f)).toEqual([1, 2, 3, 4]);
   });
   test('unboarded is open issues and issues closed as completed, without a card', () => {
-    const f = unboarded([
-      repoIssue({ number: 1 }),
-      repoIssue({ number: 2, state: 'CLOSED', stateReason: 'COMPLETED' }),
-      repoIssue({ number: 3, state: 'CLOSED', stateReason: 'NOT_PLANNED' }),
-      repoIssue({ number: 4, state: 'CLOSED', stateReason: null }),
-    ]);
+    const closedAt = '2026-09-10T00:00:00Z';
+    const f = unboarded(
+      [
+        repoIssue({ number: 1 }),
+        repoIssue({
+          number: 2,
+          state: 'CLOSED',
+          stateReason: 'COMPLETED',
+          closedAt,
+        }),
+        repoIssue({
+          number: 3,
+          state: 'CLOSED',
+          stateReason: 'NOT_PLANNED',
+          closedAt,
+        }),
+        repoIssue({ number: 4, state: 'CLOSED', stateReason: null, closedAt }),
+      ],
+      BOARD_CREATED,
+    );
     expect(numbers(f)).toEqual([1, 2]);
     expect(f[0].detail).toBe('no card on the board');
     expect(f[1].detail).toContain('closed as completed');
   });
+  test('unboarded counts a completed issue only when it closed after the board was created', () => {
+    const closed = (number: number, closedAt: string): RepoIssue =>
+      repoIssue({
+        number,
+        state: 'CLOSED',
+        stateReason: 'COMPLETED',
+        closedAt,
+      });
+    const f = unboarded(
+      [
+        closed(1, '2026-08-31T23:59:59Z'),
+        closed(2, '2026-09-01T18:12:10Z'),
+        repoIssue({ number: 3, updatedAt: '2026-01-01T00:00:00Z' }),
+      ],
+      BOARD_CREATED,
+    );
+    expect(numbers(f)).toEqual([2, 3]);
+  });
+  test('unboarded says an open issue whose card is archived has one, archived', () => {
+    const f = unboarded(
+      [repoIssue({ number: 1, cardArchived: true }), repoIssue({ number: 2 })],
+      BOARD_CREATED,
+    );
+    expect(f.map((x) => [x.number, x.detail])).toEqual([
+      [1, 'card archived'],
+      [2, 'no card on the board'],
+    ]);
+  });
   test('unboarded of nothing is nothing', () => {
-    expect(unboarded([])).toEqual([]);
+    expect(unboarded([], BOARD_CREATED)).toEqual([]);
   });
   test('staleInProgress is strictly over the threshold', () => {
     expect(
@@ -296,42 +341,47 @@ describe('lintAll on the captured board', () => {
     const uncarded = repoIssues.filter((i) => i.card === null);
     const d = fetchDiscovery(run, '/', 'Rikmorn', 'sidekick');
     const candidates = chooseBoard(d.boards, d.viewer, 'sidekick');
-    const r = lintAll({ issues, items, uncarded, candidates, now });
+    const r = lintAll({
+      issues,
+      items,
+      uncarded,
+      boardCreatedAt: BOARD_CREATED,
+      candidates,
+      now,
+    });
     expect(r.counts.unboarded).toBe(
       uncarded.filter(
-        (i) => i.state === 'OPEN' || i.stateReason === 'COMPLETED',
+        (i) =>
+          i.state === 'OPEN' ||
+          (i.stateReason === 'COMPLETED' &&
+            Date.parse(i.closedAt ?? '') > Date.parse(BOARD_CREATED)),
       ).length,
     );
     const deferred = issues.filter((i) => i.labels.includes('backlog'));
     expect(r.counts.backlog_without_condition).toBe(
-      deferred.filter((i) => !/^\s*revisit when:/im.test(i.body)).length,
+      deferred.filter((i) => !REVISIT_MARKER.test(i.body)).length,
     );
     expect(r.counts.multiple_linked_boards).toBe(candidates.length > 1 ? 1 : 0);
   });
-  test('an archived card on a closed, completed issue is a card, and a card with no Status is no_status, not unboarded', () => {
-    const closedDone = item({
-      number: 5,
-      state: 'CLOSED',
-      stateReason: 'COMPLETED',
-      status: 'Done',
-    });
+  test('a card with no Status is no_status, not unboarded', () => {
     const noStatusCard = item({ number: 6, status: null });
     const r = lintAll({
       issues: [],
-      items: [closedDone, noStatusCard],
+      items: [noStatusCard],
       uncarded: [],
+      boardCreatedAt: BOARD_CREATED,
       candidates: [],
       now,
     });
     expect(r.counts.unboarded).toBe(0);
     expect(numbers(r.findings.no_status)).toEqual([6]);
-    expect(r.counts.completed_not_done).toBe(0);
   });
   test('an empty repository yields no findings', () => {
     const r = lintAll({
       issues: [],
       items: [],
       uncarded: [],
+      boardCreatedAt: BOARD_CREATED,
       candidates: [],
       now,
     });

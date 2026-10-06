@@ -88,11 +88,13 @@ interface RawIssueNode {
   number: number;
   state: 'OPEN' | 'CLOSED';
   stateReason: string | null;
+  closedAt: string | null;
   milestone: { title: string } | null;
   labels: { nodes: Array<{ name: string }> };
   assignees: { nodes: Array<{ login: string }> };
   projectItems: {
     nodes: Array<{
+      isArchived: boolean;
       project: { id: string };
       fieldValueByName: { name?: string } | null;
     }>;
@@ -101,7 +103,7 @@ interface RawIssueNode {
 type RawIssuesFile = {
   data: { repository: { issues: { nodes: RawIssueNode[] } } };
 };
-/** Rewrites the captured issue pages in `map` through `edit`, keeping their keys. */
+// Rewrites the captured issue pages in `map` through `edit`, keeping their keys.
 const patchIssues = (
   map: FixtureMap,
   edit: (nodes: RawIssueNode[]) => void,
@@ -113,10 +115,8 @@ const patchIssues = (
     map[key] = JSON.stringify(page);
   }
 };
-/**
- * The 2026-09-19 board the milestone fixtures were captured with: R6 holds
- * #109 to #113, open, with #109 In Progress and the rest in Backlog.
- */
+// The 2026-09-19 board the milestone fixtures were captured with: R6 holds
+// #109 to #113, open, with #109 In Progress and the rest in Backlog.
 const r6Board = (map: FixtureMap): void =>
   patchIssues(map, (nodes) => {
     for (const n of nodes) {
@@ -136,13 +136,11 @@ interface FixtureIssue {
   labels: string[];
   assignees: string[];
 }
-/**
- * Open issues of `Rikmorn/sidekick` that hold a card, independently parsed
- * from the committed `repo-issues-p1`/`repo-issues-p2` fixtures: the same
- * source `fetchRepoIssues` reads, but computed without calling production
- * code, so a `tiers` or `runPmCli` assertion built from this cannot be
- * vacuous by construction.
- */
+// Open issues of `Rikmorn/sidekick` that hold a card, independently parsed
+// from the committed `repo-issues-p1`/`repo-issues-p2` fixtures: the same
+// source `fetchRepoIssues` reads, but computed without calling production
+// code, so a `tiers` or `runPmCli` assertion built from this cannot be
+// vacuous by construction.
 const openIssues = (): FixtureIssue[] =>
   ['repo-issues-p1.json', 'repo-issues-p2.json']
     .flatMap(
@@ -1022,6 +1020,27 @@ describe('runPmCli lint on the issue side', () => {
     });
     const j = lint(map);
     expect(j.findings.unboarded.map((f) => f.number)).toEqual([47, 114]);
+  });
+
+  test('a completed issue closed before the board was created is not unboarded', () => {
+    const map = sidekickMap();
+    patchIssues(map, (nodes) => {
+      const node = nodes.find((n) => n.number === 47);
+      if (node) node.closedAt = '2026-08-31T00:00:00Z';
+    });
+    expect(lint(map).findings.unboarded).toEqual([]);
+  });
+
+  test('an open issue whose card is archived is unboarded, with that detail', () => {
+    const map = sidekickMap();
+    patchIssues(map, (nodes) => {
+      const node = nodes.find((n) => n.number === 114);
+      if (node) node.projectItems.nodes[0].isArchived = true;
+    });
+    const j = lint(map);
+    expect(
+      j.findings.unboarded.map((f) => [f.number, f.detail]),
+    ).toContainEqual([114, 'card archived']);
   });
 });
 

@@ -59,7 +59,13 @@ export interface TrackedBoard {
   owner: string;
   repo: string;
   viewer: string;
-  project: { number: number; id: string; url: string; title: string };
+  project: {
+    number: number;
+    id: string;
+    url: string;
+    title: string;
+    createdAt: string;
+  };
   status_field: StatusField | null;
   linked: LinkedBoard[];
   preflight: Preflight;
@@ -175,7 +181,13 @@ export function discover(run: Runner, cwd: string): BoardInfo {
     owner: parsed.owner,
     repo: parsed.repo,
     viewer: d.viewer,
-    project: { number: first.number, id: f.id, url: f.url, title: f.title },
+    project: {
+      number: first.number,
+      id: f.id,
+      url: f.url,
+      title: f.title,
+      createdAt: f.createdAt,
+    },
     status_field: f.statusField,
     linked: d.boards,
     preflight,
@@ -314,7 +326,14 @@ export function runPmCli(
       const items = cardedItems(repoIssues, fullName);
       const uncarded = repoIssues.filter((i) => i.card === null);
       const candidates = chooseBoard(info.linked, viewer, repo);
-      const r = lintAll({ issues, items, uncarded, candidates, now });
+      const r = lintAll({
+        issues,
+        items,
+        uncarded,
+        boardCreatedAt: project.createdAt,
+        candidates,
+        now,
+      });
       emit({
         board: shown,
         findings: r.findings,

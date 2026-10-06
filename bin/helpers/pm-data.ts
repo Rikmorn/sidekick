@@ -46,7 +46,7 @@ export class PmError extends Error {
 /**
  * What a fixture runner matches on: the command and its arguments, with a
  * GraphQL document reduced to its operation name so a test can name a call
- * as `gh api graphql -f query=query Items -f login=… -F number=2`.
+ * as `gh api graphql -f query=query StatusField -f login=… -F number=2`.
  */
 export function runnerKey(cmd: 'gh' | 'git', args: string[]): string {
   const shown = args.map((a) => {
@@ -156,12 +156,16 @@ export interface RepoIssue {
   title: string;
   state: 'OPEN' | 'CLOSED';
   stateReason: string | null;
+  /** When the issue closed; `null` while it is open. */
+  closedAt: string | null;
   updatedAt: string;
   url: string;
   milestone: string | null;
   labels: string[];
   assignees: string[];
   card: Card | null;
+  /** An open issue whose card on this board is archived has `card: null` and this `true`. */
+  cardArchived: boolean;
 }
 export interface Milestone {
   number: number;
@@ -185,9 +189,9 @@ export interface Issue {
 export const DISCOVERY_QUERY =
   'query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }';
 export const FIELD_QUERY =
-  'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
+  'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url createdAt field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
 export const ISSUES_PAGE = 100;
-export const ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
+export const ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason closedAt updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id isArchived project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
 /** `gh issue list` truncates silently at `--limit`; hitting it is an error. */
 export const ISSUE_LIMIT = 500;
 
@@ -294,6 +298,7 @@ interface FieldData {
       id: string;
       title: string;
       url: string;
+      createdAt: string;
       field: {
         id: string;
         options: Array<{ id: string; name: string }>;
@@ -306,6 +311,7 @@ export function parseStatusField(data: unknown): {
   id: string;
   title: string;
   url: string;
+  createdAt: string;
   statusField: StatusField | null;
 } {
   const p = (data as FieldData).user.projectV2;
@@ -315,7 +321,13 @@ export function parseStatusField(data: unknown): {
         options: Object.fromEntries(p.field.options.map((o) => [o.name, o.id])),
       }
     : null;
-  return { id: p.id, title: p.title, url: p.url, statusField };
+  return {
+    id: p.id,
+    title: p.title,
+    url: p.url,
+    createdAt: p.createdAt,
+    statusField,
+  };
 }
 
 export function fetchStatusField(
@@ -341,6 +353,7 @@ interface IssuesData {
         title: string;
         state: 'OPEN' | 'CLOSED';
         stateReason: string | null;
+        closedAt: string | null;
         updatedAt: string;
         url: string;
         milestone: { title: string } | null;
@@ -350,6 +363,7 @@ interface IssuesData {
           pageInfo: { hasNextPage: boolean };
           nodes: Array<{
             id: string;
+            isArchived: boolean;
             project: { id: string };
             fieldValueByName: { name?: string; updatedAt?: string } | null;
           }>;
@@ -367,9 +381,10 @@ export interface RepoIssuesPage {
 
 /**
  * A card is the one whose `project.id` is the tracked board's: a project
- * number is unique per owner, not globally, so the number cannot match it.
- * An issue on more boards than one page holds, with this board's card off
- * that page, is an error rather than an issue with no card.
+ * number is unique per owner, not globally. An issue on more boards than one
+ * page holds, with this board's card off that page, is an error, not an issue
+ * with no card. An archived card on an open issue counts as no card; on a
+ * closed issue it stays one.
  */
 export function parseRepoIssuesPage(
   data: unknown,
@@ -384,23 +399,27 @@ export function parseRepoIssuesPage(
         `#${n.number} sits on more boards than one page lists, so its card on this board cannot be ruled out`,
       );
     }
+    const cardArchived = hit?.isArchived === true && n.state === 'OPEN';
     return {
       number: n.number,
       title: n.title,
       state: n.state,
       stateReason: n.stateReason ?? null,
+      closedAt: n.closedAt ?? null,
       updatedAt: n.updatedAt,
       url: n.url,
       milestone: n.milestone?.title ?? null,
       labels: n.labels.nodes.map((l) => l.name),
       assignees: n.assignees.nodes.map((a) => a.login),
-      card: hit
-        ? {
-            itemId: hit.id,
-            status: hit.fieldValueByName?.name ?? null,
-            statusUpdatedAt: hit.fieldValueByName?.updatedAt ?? null,
-          }
-        : null,
+      card:
+        hit && !cardArchived
+          ? {
+              itemId: hit.id,
+              status: hit.fieldValueByName?.name ?? null,
+              statusUpdatedAt: hit.fieldValueByName?.updatedAt ?? null,
+            }
+          : null,
+      cardArchived,
     };
   });
   return {
@@ -439,7 +458,7 @@ export function fetchRepoIssues(
 
 /** The issues that hold a card, in the shape every board reader takes. */
 export function cardedItems(issues: RepoIssue[], fullName: string): Item[] {
-  return issues.flatMap(({ card, ...i }) =>
+  return issues.flatMap(({ card, closedAt, cardArchived, ...i }) =>
     card ? [{ ...i, ...card, repo: fullName }] : [],
   );
 }

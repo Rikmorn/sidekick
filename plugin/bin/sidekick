@@ -536,9 +536,9 @@ function touchedAt(item) {
 }
 var STALE_DAYS = 7;
 var DISCOVERY_QUERY = "query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }";
-var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
+var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url createdAt field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
 var ISSUES_PAGE = 100;
-var ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
+var ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason closedAt updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id isArchived project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
 var ISSUE_LIMIT = 500;
 function gql(run, cwd, doc, vars) {
   const args = ["api", "graphql", "-f", `query=${doc}`];
@@ -605,7 +605,13 @@ function parseStatusField(data) {
     id: p.field.id,
     options: Object.fromEntries(p.field.options.map((o) => [o.name, o.id]))
   } : null;
-  return { id: p.id, title: p.title, url: p.url, statusField };
+  return {
+    id: p.id,
+    title: p.title,
+    url: p.url,
+    createdAt: p.createdAt,
+    statusField
+  };
 }
 function fetchStatusField(run, cwd, login, number) {
   return parseStatusField(gql(run, cwd, FIELD_QUERY, [
@@ -620,21 +626,24 @@ function parseRepoIssuesPage(data, projectId) {
     if (!hit && n.projectItems.pageInfo.hasNextPage) {
       throw new PmError(1, `#${n.number} sits on more boards than one page lists, so its card on this board cannot be ruled out`);
     }
+    const cardArchived = hit?.isArchived === true && n.state === "OPEN";
     return {
       number: n.number,
       title: n.title,
       state: n.state,
       stateReason: n.stateReason ?? null,
+      closedAt: n.closedAt ?? null,
       updatedAt: n.updatedAt,
       url: n.url,
       milestone: n.milestone?.title ?? null,
       labels: n.labels.nodes.map((l) => l.name),
       assignees: n.assignees.nodes.map((a) => a.login),
-      card: hit ? {
+      card: hit && !cardArchived ? {
         itemId: hit.id,
         status: hit.fieldValueByName?.name ?? null,
         statusUpdatedAt: hit.fieldValueByName?.updatedAt ?? null
-      } : null
+      } : null,
+      cardArchived
     };
   });
   return {
@@ -662,7 +671,7 @@ function fetchRepoIssues(run, cwd, owner, repo, projectId) {
   return issues;
 }
 function cardedItems(issues, fullName) {
-  return issues.flatMap(({ card: card2, ...i }) => card2 ? [{ ...i, ...card2, repo: fullName }] : []);
+  return issues.flatMap(({ card: card2, closedAt, cardArchived, ...i }) => card2 ? [{ ...i, ...card2, repo: fullName }] : []);
 }
 function parseMilestones(json) {
   return JSON.parse(json).map((m) => ({
@@ -759,8 +768,9 @@ function backlogInMilestone(issues) {
 function positionCodeTitle(issues) {
   return issues.filter((i) => POSITION_CODE.some((re) => re.test(i.title))).map((i) => f(i.number, i.title, "title starts with a position code"));
 }
-function unboarded(uncarded) {
-  return uncarded.filter((i) => i.state === "OPEN" || i.stateReason === "COMPLETED").map((i) => f(i.number, i.title, i.state === "OPEN" ? "no card on the board" : "closed as completed, no card on the board"));
+function unboarded(uncarded, boardCreatedAt) {
+  const since = Date.parse(boardCreatedAt);
+  return uncarded.filter((i) => i.state === "OPEN" || i.stateReason === "COMPLETED" && i.closedAt !== null && Date.parse(i.closedAt) > since).map((i) => f(i.number, i.title, i.state === "CLOSED" ? "closed as completed, no card on the board" : i.cardArchived ? "card archived" : "no card on the board"));
 }
 function staleInProgress(items, now) {
   return open(items).filter((i) => i.status === "In Progress" && ageDays(touchedAt(i), now) > STALE_DAYS).map((i) => f(i.number, i.title, `In Progress, untouched ${ageDays(touchedAt(i), now)} days`));
@@ -781,7 +791,7 @@ var PREDICATES = {
   backlog_without_condition: ({ issues }) => backlogWithoutCondition(issues),
   backlog_in_milestone: ({ issues }) => backlogInMilestone(issues),
   position_code_title: ({ issues }) => positionCodeTitle(issues),
-  unboarded: ({ uncarded }) => unboarded(uncarded),
+  unboarded: ({ uncarded, boardCreatedAt }) => unboarded(uncarded, boardCreatedAt),
   stale_in_progress: ({ items, now }) => staleInProgress(items, now),
   multiple_linked_boards: ({ candidates }) => multipleLinkedBoards(candidates)
 };
@@ -1093,7 +1103,13 @@ function discover(run, cwd) {
     owner: parsed.owner,
     repo: parsed.repo,
     viewer: d.viewer,
-    project: { number: first.number, id: f2.id, url: f2.url, title: f2.title },
+    project: {
+      number: first.number,
+      id: f2.id,
+      url: f2.url,
+      title: f2.title,
+      createdAt: f2.createdAt
+    },
     status_field: f2.statusField,
     linked: d.boards,
     preflight,
@@ -1186,7 +1202,14 @@ function runPmCli(args, env, out, err) {
       const items = cardedItems(repoIssues, fullName);
       const uncarded = repoIssues.filter((i) => i.card === null);
       const candidates = chooseBoard(info.linked, viewer, repo);
-      const r = lintAll({ issues, items, uncarded, candidates, now });
+      const r = lintAll({
+        issues,
+        items,
+        uncarded,
+        boardCreatedAt: project.createdAt,
+        candidates,
+        now
+      });
       emit({
         board: shown,
         findings: r.findings,

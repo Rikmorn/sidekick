@@ -12,6 +12,7 @@
             "title": "CR: re-scope the sk-* confidence gate to shadow-usage evidence",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T18:32:35Z",
             "updatedAt": "2026-09-01T20:23:06Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/1",
             "milestone": {
@@ -34,6 +35,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg48-Fg",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -50,6 +52,7 @@
             "title": "Externalise the sizing/routing signal",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-17T15:29:54Z",
             "updatedAt": "2026-09-17T15:29:54Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/2",
             "milestone": null,
@@ -70,6 +73,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg48-EY",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -86,6 +90,7 @@
             "title": "Forcing-function for context handoff and escalation",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:41Z",
             "updatedAt": "2026-09-18T19:53:41Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/3",
             "milestone": null,
@@ -106,6 +111,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg48-DQ",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -122,6 +128,7 @@
             "title": "Operator dial and the signal it bounds — effort, autonomy, risk, budget",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:43Z",
             "updatedAt": "2026-09-18T19:53:43Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/4",
             "milestone": null,
@@ -142,6 +149,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg48-CE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -158,6 +166,7 @@
             "title": "Cross-family quorum for high-stakes verification",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:45Z",
             "updatedAt": "2026-09-18T19:53:45Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/5",
             "milestone": null,
@@ -178,6 +187,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg48-Ao",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -194,6 +204,7 @@
             "title": "Cost and gate-absorption observability",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:48Z",
             "updatedAt": "2026-09-18T19:53:48Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/6",
             "milestone": null,
@@ -214,6 +225,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489_4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -230,6 +242,7 @@
             "title": "Validate-before-persist memory write-gate",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:50Z",
             "updatedAt": "2026-09-18T19:53:50Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/7",
             "milestone": null,
@@ -250,6 +263,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489-4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -266,6 +280,7 @@
             "title": "Episodic session memory",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:53Z",
             "updatedAt": "2026-09-18T19:53:53Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/8",
             "milestone": null,
@@ -286,6 +301,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg48994",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -302,6 +318,7 @@
             "title": "Memory substrate decision",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-17T15:29:59Z",
             "updatedAt": "2026-09-17T15:29:59Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/9",
             "milestone": null,
@@ -322,6 +339,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg48988",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -338,6 +356,7 @@
             "title": "Precomputed codebase-map artifact",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:55Z",
             "updatedAt": "2026-09-18T19:53:55Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/10",
             "milestone": null,
@@ -358,6 +377,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg48978",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -374,6 +394,7 @@
             "title": "Generated per-project enforcement gates",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:57Z",
             "updatedAt": "2026-09-18T19:53:57Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/11",
             "milestone": null,
@@ -394,6 +415,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg4896c",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -410,6 +432,7 @@
             "title": "Design-emits-workflow (candidate)",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:59Z",
             "updatedAt": "2026-09-18T19:53:59Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/12",
             "milestone": null,
@@ -430,6 +453,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg4895o",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -446,6 +470,7 @@
             "title": "MAS dispatch thresholds",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:00Z",
             "updatedAt": "2026-09-18T19:54:00Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/13",
             "milestone": null,
@@ -466,6 +491,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg4894E",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -482,6 +508,7 @@
             "title": "Chain corpora wave 2 — producers, executors, orchestrators",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:02Z",
             "updatedAt": "2026-09-18T19:54:02Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/14",
             "milestone": null,
@@ -502,6 +529,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg4892M",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -518,6 +546,7 @@
             "title": "Bench gate report and reassessment ritual",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:04Z",
             "updatedAt": "2026-09-18T19:54:04Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/15",
             "milestone": null,
@@ -538,6 +567,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg48908",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -554,6 +584,7 @@
             "title": "Widen the --fix scope gate to cross-file mechanical fixes",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:06Z",
             "updatedAt": "2026-09-18T19:54:06Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/16",
             "milestone": null,
@@ -574,6 +605,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489zM",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -590,6 +622,7 @@
             "title": "install ignores CLAUDE_CONFIG_DIR",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:35Z",
             "updatedAt": "2026-09-17T20:29:35Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/17",
             "milestone": {
@@ -608,6 +641,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489x8",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -624,6 +658,7 @@
             "title": "Stale contract: sk-spec-reviewer describes a /sk-build flow that no longer exists",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T21:16:33Z",
             "updatedAt": "2026-09-01T21:16:33Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/18",
             "milestone": {
@@ -642,6 +677,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489wk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -658,6 +694,7 @@
             "title": "Stale contract: dead '## Locked decisions' scan in sk-decide",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T21:16:36Z",
             "updatedAt": "2026-09-01T21:16:36Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/19",
             "milestone": {
@@ -676,6 +713,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489vI",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -692,6 +730,7 @@
             "title": "Researchers 3 -> 1 (parameterised)",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T22:08:21Z",
             "updatedAt": "2026-09-01T22:08:21Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/20",
             "milestone": {
@@ -710,6 +749,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489uQ",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -726,6 +766,7 @@
             "title": "Fold sk-research-synthesiser into the orchestrator",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T22:08:19Z",
             "updatedAt": "2026-09-01T22:08:19Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/21",
             "milestone": {
@@ -744,6 +785,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489ts",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -760,6 +802,7 @@
             "title": "Merge sk-pattern-mapper into sk-explorer",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T22:08:23Z",
             "updatedAt": "2026-09-01T22:08:23Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/22",
             "milestone": {
@@ -778,6 +821,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489s4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -794,6 +838,7 @@
             "title": "sk-structural-checker -> CLI",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T23:05:59Z",
             "updatedAt": "2026-09-01T23:06:00Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/23",
             "milestone": {
@@ -812,6 +857,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489sU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -828,6 +874,7 @@
             "title": "sk-crossref-checker -> CLI",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T23:06:03Z",
             "updatedAt": "2026-09-01T23:06:03Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/24",
             "milestone": {
@@ -846,6 +893,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489rg",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -862,6 +910,7 @@
             "title": "Fold sk-goal-verify into sk-review",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T23:34:54Z",
             "updatedAt": "2026-09-01T23:34:54Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/25",
             "milestone": {
@@ -880,6 +929,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489qA",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -896,6 +946,7 @@
             "title": "Retire sk-regen-plan and sk-plan-reconciler",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T23:34:58Z",
             "updatedAt": "2026-09-01T23:34:58Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/26",
             "milestone": {
@@ -914,6 +965,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489o0",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -930,6 +982,7 @@
             "title": "Rework sk-design / sk-build onto issue identity",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T23:12:40Z",
             "updatedAt": "2026-09-17T23:12:40Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/27",
             "milestone": {
@@ -948,6 +1001,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489ng",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -964,6 +1018,7 @@
             "title": "Redesign the .sidekick artifact contract",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T23:12:43Z",
             "updatedAt": "2026-09-17T23:12:43Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/28",
             "milestone": {
@@ -982,6 +1037,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489lA",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -998,6 +1054,7 @@
             "title": "Retire the plan machinery",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T21:24:52Z",
             "updatedAt": "2026-09-17T21:24:52Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/29",
             "milestone": {
@@ -1016,6 +1073,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489jE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1032,6 +1090,7 @@
             "title": "Retire the graph's PM half",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:38Z",
             "updatedAt": "2026-09-17T20:29:38Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/30",
             "milestone": {
@@ -1054,6 +1113,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489hU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1070,6 +1130,7 @@
             "title": "Implement the bench re-scope from CR #1",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:40Z",
             "updatedAt": "2026-09-17T20:29:40Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/31",
             "milestone": {
@@ -1088,6 +1149,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489fU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1104,6 +1166,7 @@
             "title": "3.9 — eval-gated zoo reduction",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-01T18:11:21Z",
             "updatedAt": "2026-09-01T18:11:21Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/32",
             "milestone": null,
@@ -1125,6 +1188,7 @@
             "title": "4.1 — navigability layer over token-level memory",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-01T18:11:24Z",
             "updatedAt": "2026-09-01T18:11:24Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/33",
             "milestone": null,
@@ -1146,6 +1210,7 @@
             "title": "Work-item doc format",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-01T18:11:27Z",
             "updatedAt": "2026-09-01T18:11:27Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/34",
             "milestone": null,
@@ -1167,6 +1232,7 @@
             "title": "Own dashboard renderer",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-01T18:11:30Z",
             "updatedAt": "2026-09-01T18:11:30Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/35",
             "milestone": null,
@@ -1188,6 +1254,7 @@
             "title": "Archival pass — EPIC / EPIC-STATE / work headers + ADR-0008 note",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T18:31:43Z",
             "updatedAt": "2026-09-01T20:23:33Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/36",
             "milestone": {
@@ -1206,6 +1273,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489dA",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1222,6 +1290,7 @@
             "title": "PM conventions rule",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T18:31:46Z",
             "updatedAt": "2026-09-01T20:23:34Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/37",
             "milestone": {
@@ -1240,6 +1309,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489bE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1256,6 +1326,7 @@
             "title": "Guidance layer v1 — absorb the odin/thor portable rule set",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T18:31:48Z",
             "updatedAt": "2026-09-01T20:23:36Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/38",
             "milestone": {
@@ -1274,6 +1345,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489Y8",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1290,6 +1362,7 @@
             "title": "init installs portable rules into the consumer .claude/rules/",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T18:31:51Z",
             "updatedAt": "2026-09-01T20:23:38Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/39",
             "milestone": {
@@ -1308,6 +1381,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489W4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1324,6 +1398,7 @@
             "title": "Onboard furnace — the R3 launch test",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:28Z",
             "updatedAt": "2026-09-18T19:53:28Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/40",
             "milestone": {
@@ -1346,6 +1421,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489Vo",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1362,6 +1438,7 @@
             "title": "Onboard aesir — init + first shadow runs",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:30Z",
             "updatedAt": "2026-09-18T19:53:30Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/41",
             "milestone": null,
@@ -1385,6 +1462,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489Us",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1401,6 +1479,7 @@
             "title": "Use log — first loop cycles in furnace",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:32Z",
             "updatedAt": "2026-09-18T19:53:32Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/42",
             "milestone": {
@@ -1419,6 +1498,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg489Tk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1435,6 +1515,7 @@
             "title": "Harden installRules tests: no negative case for the sk- ownership filter",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-17T15:26:38Z",
             "updatedAt": "2026-09-17T15:26:38Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/43",
             "milestone": null,
@@ -1451,6 +1532,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg49A7A",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1467,6 +1549,7 @@
             "title": "Dashboard runs.json verdict rule duplicates the kernel's",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-01T18:18:03Z",
             "updatedAt": "2026-09-01T20:23:46Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/44",
             "milestone": null,
@@ -1488,6 +1571,7 @@
             "title": "install/init have no retirement path — deleted rules persist in consumer repos",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:43Z",
             "updatedAt": "2026-09-17T20:29:43Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/45",
             "milestone": {
@@ -1506,6 +1590,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg49D5U",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1522,6 +1607,7 @@
             "title": "AGENTS.md references the deleted rules/sk-workflow.md",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T18:30:16Z",
             "updatedAt": "2026-09-01T18:30:16Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/46",
             "milestone": null,
@@ -1538,6 +1624,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg49D6Y",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1554,6 +1641,7 @@
             "title": "CR: per-repo project boards instead of one cross-repo board",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T18:29:40Z",
             "updatedAt": "2026-09-01T20:23:47Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/47",
             "milestone": {
@@ -1581,6 +1669,7 @@
             "title": "Onboarding will collide with the home repos' existing unprefixed rules",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:19Z",
             "updatedAt": "2026-09-18T19:53:19Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/48",
             "milestone": {
@@ -1603,6 +1692,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg49Itk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1619,6 +1709,7 @@
             "title": "Pre-existing test failure: eval fixture cannot resolve ./slug.js",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:13Z",
             "updatedAt": "2026-09-18T19:54:13Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/49",
             "milestone": null,
@@ -1635,6 +1726,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg49Iu4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1651,6 +1743,7 @@
             "title": "sidekick has no CLAUDE.md, so rules pointing at it dangle in this repo",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:26Z",
             "updatedAt": "2026-09-18T19:53:26Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/50",
             "milestone": {
@@ -1673,6 +1766,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg49Iw0",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1689,6 +1783,7 @@
             "title": "Leverage more GitHub surfaces on the board and repo",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T20:39:08Z",
             "updatedAt": "2026-09-01T20:39:08Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/51",
             "milestone": null,
@@ -1709,6 +1804,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg495Os",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1725,6 +1821,7 @@
             "title": "Reconcile orient and AGENTS.md retrieval ordering to board-authoritative work state",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:45Z",
             "updatedAt": "2026-09-17T20:29:45Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/52",
             "milestone": {
@@ -1747,6 +1844,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg4-Nkg",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1763,6 +1861,7 @@
             "title": "Meta guidance as extensions over the portable rule set",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-01T23:47:58Z",
             "updatedAt": "2026-09-01T23:47:58Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/53",
             "milestone": {
@@ -1785,6 +1884,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg4-Nlk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1801,6 +1901,7 @@
             "title": "Stale smokes: fixtures still describe the pre-ADR-0004 sk-explorer contract",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-13T18:13:08Z",
             "updatedAt": "2026-09-13T18:13:08Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/54",
             "milestone": null,
@@ -1822,6 +1923,7 @@
             "title": "Record the bench-coverage delta from the checker-to-CLI conversion",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T15:30:27Z",
             "updatedAt": "2026-09-17T15:30:27Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/55",
             "milestone": null,
@@ -1842,6 +1944,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg6v26I",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1858,6 +1961,7 @@
             "title": "Derive the remaining live-inventory floors in graph-integration.test.ts from the tree",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:47Z",
             "updatedAt": "2026-09-17T20:29:47Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/56",
             "milestone": null,
@@ -1874,6 +1978,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg6v27Y",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1890,6 +1995,7 @@
             "title": "README documents .sidekick/backlog/ but nothing writes it",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-13T18:13:06Z",
             "updatedAt": "2026-09-13T18:13:06Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/57",
             "milestone": null,
@@ -1911,6 +2017,7 @@
             "title": "Architecture lenses in the design phase",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:49Z",
             "updatedAt": "2026-09-17T20:29:49Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/58",
             "milestone": {
@@ -1929,6 +2036,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg6v1-I",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1945,6 +2053,7 @@
             "title": "Design front door: triggers, the note, and the register exit",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:15Z",
             "updatedAt": "2026-09-18T19:54:15Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/59",
             "milestone": {
@@ -1963,6 +2072,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg6v1-8",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -1979,6 +2089,7 @@
             "title": "CR: retarget R3 to launch in furnace and waive the shadow-evidence gate",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T15:30:29Z",
             "updatedAt": "2026-09-17T15:30:29Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/60",
             "milestone": {
@@ -2004,6 +2115,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg6v1_g",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2020,6 +2132,7 @@
             "title": "Harden the per-user harvest inbox against concurrent writers",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:17Z",
             "updatedAt": "2026-09-18T19:54:17Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/61",
             "milestone": {
@@ -2038,6 +2151,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg6whY4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2054,6 +2168,7 @@
             "title": "Rename the graph parsers to what they parse and retire the orphans #30 left",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:51Z",
             "updatedAt": "2026-09-17T20:29:51Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/62",
             "milestone": {
@@ -2072,6 +2187,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg6w374",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2088,6 +2204,7 @@
             "title": "Premise sweeps must hunt the claim in prose, not only the retired identifier",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T23:12:45Z",
             "updatedAt": "2026-09-17T23:12:45Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/63",
             "milestone": {
@@ -2110,6 +2227,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg6w38c",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2126,6 +2244,7 @@
             "title": "Project guidance does not reach dispatched agents correctly or freshly",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:20Z",
             "updatedAt": "2026-09-18T19:54:20Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/64",
             "milestone": {
@@ -2144,6 +2263,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buKU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2160,6 +2280,7 @@
             "title": "Installed copy drifts from source with no warning — add an install --check",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:53Z",
             "updatedAt": "2026-09-17T20:29:53Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/65",
             "milestone": {
@@ -2178,6 +2299,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buLk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2194,6 +2316,7 @@
             "title": "sk-design has no answer for work that is not a build (labels, milestones, boards, issue batches)",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-17T15:26:18Z",
             "updatedAt": "2026-09-17T15:26:18Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/66",
             "milestone": {
@@ -2212,6 +2335,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buNA",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2228,6 +2352,7 @@
             "title": "init writes the current feature branch as defaultBranch when origin/HEAD is unset",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:55Z",
             "updatedAt": "2026-09-17T20:29:55Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/67",
             "milestone": {
@@ -2246,6 +2371,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buOI",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2262,6 +2388,7 @@
             "title": "Gate detection picks the script literally named test; say when a suggested gate may need external services",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:29:58Z",
             "updatedAt": "2026-09-17T20:29:58Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/68",
             "milestone": {
@@ -2280,6 +2407,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buPk",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2296,6 +2424,7 @@
             "title": "uninstall leaves empty skill directories under ~/.claude/skills",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:30:01Z",
             "updatedAt": "2026-09-17T20:30:01Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/69",
             "milestone": {
@@ -2314,6 +2443,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buQ0",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2330,6 +2460,7 @@
             "title": "Conventions the aesir onboarding showed are missing: a second label axis, and a home for an arriving history",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:30:03Z",
             "updatedAt": "2026-09-17T20:30:03Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/70",
             "milestone": {
@@ -2352,6 +2483,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buSQ",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2368,6 +2500,7 @@
             "title": "Docs taxonomy: name the migration case for repos that arrive with a history the graph does not model",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-17T15:27:03Z",
             "updatedAt": "2026-09-17T15:27:03Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/71",
             "milestone": {
@@ -2390,6 +2523,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buT8",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2406,6 +2540,7 @@
             "title": "Tier-0 config guard matches Edit|Write|MultiEdit only; shell edits bypass it",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:22Z",
             "updatedAt": "2026-09-18T19:54:22Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/72",
             "milestone": {
@@ -2424,6 +2559,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buVI",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2440,6 +2576,7 @@
             "title": "Install sidekick into the consumer project instead of flat files under ~/.claude",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-17T15:59:02Z",
             "updatedAt": "2026-09-17T15:59:02Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/73",
             "milestone": {
@@ -2462,6 +2599,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buWg",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2478,6 +2616,7 @@
             "title": "Unquoted YAML description containing ' #' truncates two agent descriptions",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:30:05Z",
             "updatedAt": "2026-09-17T20:30:05Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/74",
             "milestone": {
@@ -2496,6 +2635,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buYA",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2512,6 +2652,7 @@
             "title": "sk-coherence-checker prompt still names the retired structural and crossref checkers",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:30:07Z",
             "updatedAt": "2026-09-17T20:30:07Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/75",
             "milestone": {
@@ -2530,6 +2671,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7buZg",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2546,6 +2688,7 @@
             "title": "The loop has no seat for how work actually gets run — ops-shaped work, and a coordinating session",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:34Z",
             "updatedAt": "2026-09-18T19:53:34Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/76",
             "milestone": {
@@ -2564,6 +2707,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7bubU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2580,6 +2724,7 @@
             "title": "A dispatched subagent reads the parent session's guidance snapshot, so /sk-build hands executors stale conventions",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-17T15:25:53Z",
             "updatedAt": "2026-09-17T15:25:53Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/77",
             "milestone": {
@@ -2598,6 +2743,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7b5NM",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2614,6 +2760,7 @@
             "title": "detectDefaultBranch is implemented twice, in init and branch-precheck",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:30:09Z",
             "updatedAt": "2026-09-17T20:30:09Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/78",
             "milestone": {
@@ -2632,6 +2779,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7b5O4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2648,6 +2796,7 @@
             "title": "The Biome-on-edit hook runs pnpm in a bun repo and silently upgrades the pinned Biome",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:30:11Z",
             "updatedAt": "2026-09-17T20:30:11Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/79",
             "milestone": {
@@ -2666,6 +2815,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7b_BY",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2682,6 +2832,7 @@
             "title": "Two declared lint codes have no emitter: unknown-relation and ambiguous-ref",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:30:14Z",
             "updatedAt": "2026-09-17T20:30:14Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/80",
             "milestone": {
@@ -2700,6 +2851,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7cJjQ",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2716,6 +2868,7 @@
             "title": "A consumer repo teaches the wrong model of where the sk-* roster comes from",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-17T20:30:16Z",
             "updatedAt": "2026-09-17T20:30:16Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/81",
             "milestone": {
@@ -2734,6 +2887,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7dBQs",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2750,6 +2904,7 @@
             "title": "Package sidekick as a plugin with its dependencies declared",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T21:26:28Z",
             "updatedAt": "2026-09-18T21:26:28Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/82",
             "milestone": {
@@ -2772,6 +2927,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7dBTE",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2788,6 +2944,7 @@
             "title": "Literal NUL bytes in two source files make grep report them as not matching",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:24Z",
             "updatedAt": "2026-09-18T19:54:24Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/83",
             "milestone": {
@@ -2806,6 +2963,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7dl6g",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2822,6 +2980,7 @@
             "title": "Two eval fixtures are invalid against the contract they illustrate, and nothing gates them",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:26Z",
             "updatedAt": "2026-09-18T19:54:26Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/84",
             "milestone": null,
@@ -2843,6 +3002,7 @@
             "title": "typecheck never sees test files, so the gate covers less than it appears to",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:28Z",
             "updatedAt": "2026-09-18T19:54:28Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/85",
             "milestone": {
@@ -2861,6 +3021,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7fz6o",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2877,6 +3038,7 @@
             "title": "Retarget the eval corpus and smokes onto the folded artifact contract",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:30Z",
             "updatedAt": "2026-09-18T19:54:30Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/86",
             "milestone": null,
@@ -2893,6 +3055,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7f4LU",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -2909,6 +3072,7 @@
             "title": "Retired `plan` verifier surface still resolves, so a verifier mounted on it silently never fires",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:32Z",
             "updatedAt": "2026-09-18T19:54:32Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/87",
             "milestone": null,
@@ -2930,6 +3094,7 @@
             "title": "README's CLI subcommand list is missing 7 of the 16 registered subcommands",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:23Z",
             "updatedAt": "2026-09-18T19:53:23Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/88",
             "milestone": null,
@@ -2955,6 +3120,7 @@
             "title": "Retired two-file artifact model survives in standing guidance and a live error string",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:34Z",
             "updatedAt": "2026-09-18T19:54:34Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/89",
             "milestone": null,
@@ -2980,6 +3146,7 @@
             "title": "Build a plan pre-flight that executes a plan's own commands before dispatch",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:36Z",
             "updatedAt": "2026-09-18T19:54:36Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/90",
             "milestone": null,
@@ -3005,6 +3172,7 @@
             "title": "Portable sk-pm-conventions has drifted from its consumer copy, so consumer repos miss two conventions",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:53:21Z",
             "updatedAt": "2026-09-18T19:53:21Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/91",
             "milestone": null,
@@ -3030,6 +3198,7 @@
             "title": "Retired /sk-regen-plan survives in branch-precheck, including a hard-stop naming the dead command",
             "state": "CLOSED",
             "stateReason": "NOT_PLANNED",
+            "closedAt": "2026-09-18T19:54:38Z",
             "updatedAt": "2026-09-18T19:54:38Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/92",
             "milestone": null,
@@ -3051,6 +3220,7 @@
             "title": "Record the pivot to a plugin bundle and recalibrate the north star",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T21:26:17Z",
             "updatedAt": "2026-09-18T21:26:43Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/93",
             "milestone": {
@@ -3073,6 +3243,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qLy8",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -3089,6 +3260,7 @@
             "title": "Non-destructive rules delivery with a post-install check",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T21:26:19Z",
             "updatedAt": "2026-09-18T21:26:19Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/94",
             "milestone": {
@@ -3111,6 +3283,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qL9I",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -3127,6 +3300,7 @@
             "title": "Retire the trunk, the agents, the eval kernel, the graph, the dashboards, and the .sidekick contract",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T21:26:22Z",
             "updatedAt": "2026-09-18T21:26:22Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/95",
             "milestone": {
@@ -3149,6 +3323,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qL-k",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -3165,6 +3340,7 @@
             "title": "Trim the agent-prompts rule and promote it to the portable set",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T21:26:24Z",
             "updatedAt": "2026-09-18T21:26:24Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/96",
             "milestone": {
@@ -3187,6 +3363,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qMAo",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -3203,6 +3380,7 @@
             "title": "Rewrite README, AGENTS, and the docs the pivot forces",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T21:26:26Z",
             "updatedAt": "2026-09-18T21:26:26Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/97",
             "milestone": {
@@ -3225,6 +3403,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qMKc",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -3241,6 +3420,7 @@
             "title": "Install the bundle into sidekick, aesir, furnace, and odin",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T21:24:18Z",
             "updatedAt": "2026-09-18T21:24:18Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/98",
             "milestone": {
@@ -3263,6 +3443,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qML8",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -3279,6 +3460,7 @@
             "title": "Release sidekick 0.2.0",
             "state": "CLOSED",
             "stateReason": "COMPLETED",
+            "closedAt": "2026-09-18T21:26:30Z",
             "updatedAt": "2026-09-18T21:26:30Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/99",
             "milestone": {
@@ -3301,6 +3483,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qMNc",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
@@ -3317,6 +3500,7 @@
             "title": "Compact and reorganise docs/",
             "state": "OPEN",
             "stateReason": null,
+            "closedAt": null,
             "updatedAt": "2026-09-30T20:55:08Z",
             "url": "https://github.com/Rikmorn/sidekick/issues/100",
             "milestone": {
@@ -3339,6 +3523,7 @@
               "nodes": [
                 {
                   "id": "PVTI_lAHOABcx2M4BiJeEzg7qMS4",
+                  "isArchived": false,
                   "project": {
                     "id": "PVT_kwHOABcx2M4BiJeE"
                   },
