@@ -120,6 +120,29 @@ describe('predicates on synthetic input', () => {
       ),
     ).toEqual([1]);
   });
+  test.each([
+    'Revisit when: x',
+    '**Revisit when:** x',
+    '**Revisit when**: x',
+    '__Revisit when:__ x',
+    '*Revisit when:* x',
+    '_Revisit when:_ x',
+    '- Revisit when: x',
+    '* Revisit when: x',
+    '+ Revisit when: x',
+    '- **Revisit when:** x',
+    '   **Revisit when:** x',
+    '  - revisit WHEN: x',
+  ])('REVISIT_MARKER accepts %s', (line) => {
+    expect(REVISIT_MARKER.test(`Body\n\n${line}\n`)).toBe(true);
+  });
+  test.each([
+    'The fix should revisit when: x',
+    'Revisit: x',
+    '**Re-raise when:** x',
+  ])('REVISIT_MARKER rejects %s', (line) => {
+    expect(REVISIT_MARKER.test(`Body\n\n${line}\n`)).toBe(false);
+  });
   test('backlogWithoutCondition reads a Revisit when: line, any case, any indent', () => {
     expect(
       REVISIT_MARKER.test('Body\n\n  revisit WHEN: #113 is designed\n'),

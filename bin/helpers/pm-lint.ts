@@ -34,8 +34,13 @@ export interface Finding {
   detail: string;
 }
 
-/** The marker a deferred issue states its condition with (ruled 2026-09-19). */
-export const REVISIT_MARKER = /^\s*revisit when:/im;
+/**
+ * The marker a deferred issue states its condition with (ruled 2026-09-19).
+ * It starts a line, optionally as a list item (`-`, `*`, `+`) and optionally
+ * in bold or italics (`**`, `__`, `*`, `_`) with the colon inside or outside.
+ */
+export const REVISIT_MARKER =
+  /^\s*(?:[-*+][ \t]+)?(?:(\*\*|__|\*|_)revisit when(?::\1|\1:)|revisit when:)/im;
 /** Position codes are ruled out of titles; extend by ruling, not by guess. */
 export const POSITION_CODE = [
   /^\s*\d+(\.\d+)+\s*[—–-]/,

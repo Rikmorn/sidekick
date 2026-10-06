@@ -724,7 +724,7 @@ var LINT_IDS = [
   "stale_in_progress",
   "multiple_linked_boards"
 ];
-var REVISIT_MARKER = /^\s*revisit when:/im;
+var REVISIT_MARKER = /^\s*(?:[-*+][ \t]+)?(?:(\*\*|__|\*|_)revisit when(?::\1|\1:)|revisit when:)/im;
 var POSITION_CODE = [
   /^\s*\d+(\.\d+)+\s*[—–-]/,
   /^\s*(bench|wave|step|phase)[- ]?\d+\b/i
