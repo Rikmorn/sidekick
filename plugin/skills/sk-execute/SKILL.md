@@ -21,11 +21,11 @@ Lay out three modes and recommend one. The operator decides; there is no default
 
 ## A plan carries intent
 
-A plan carries intent and acceptance criteria, and code in it is a sketch in the right language. A plan scripted to the character fails twice. The planner spends its effort predicting the tree. The executor, told to implement exactly, stops on every misfit that a competent engineer would settle in a line.
+A plan carries intent and acceptance criteria, and code in it is a sketch in the right language. The executor is whoever implements a task: superpowers' implementer subagents, or the session itself in native mode. A plan scripted to the character fails twice. The planner spends its effort predicting the tree. The executor, told to implement exactly, stops on every misfit that a competent engineer would settle in a line.
 
 - **The executor reasons past a small misfit.** It shapes the sketch to the tree and lists each deviation in its report, so the reviewer can check it. It raises a genuine contradiction, or a misfit that keeps recurring, because a recurring one means the plan's premise is wrong.
 - **Precision stays where reasoning cannot reach.** Decisions and mechanism facts go in the design note or spec, since the executor cannot derive them. Contracts between tasks are stated, because in the subagent modes each task is built without sight of the others. Outward and irreversible steps stay exact, operator-gated, and run by the orchestrator, since a deviation there cannot be reviewed away.
-- **Prefer an executor that can reason past a misfit.** A plan that leaves small decisions to the executor assumes it can make them. An executor that only applies patches turns each misfit into a question.
+- **Run the plan on a model that can reason.** The session that runs the plan, this one or a worker, settles what the plan leaves open. A plan that leaves small decisions assumes that session can make them. Superpowers decides how it dispatches implementers, and on which models.
 - **State the stance in the plan's Global Constraints.** Superpowers hands those to every implementer and to inline execution alike. A section of its own reaches no implementer, because each receives only its task, the interfaces it touches, and the global constraints.
 
 ## Before the plan goes out
