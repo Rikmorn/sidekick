@@ -2,19 +2,21 @@ import { describe, expect, test } from 'bun:test';
 import { fixture, fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
 import {
   ageDays,
+  cardedItems,
   execRunner,
   fetchDiscovery,
-  fetchItems,
   fetchMilestones,
   fetchOpenIssues,
+  fetchRepoIssues,
   fetchStatusField,
   hasProjectScope,
   ISSUE_LIMIT,
   PmError,
   parseGhVersion,
   parseIssues,
-  parseItemsPage,
   parseOrigin,
+  parseRepoIssuesPage,
+  type Runner,
   runnerKey,
   touchedAt,
   versionAtLeast,
@@ -143,27 +145,25 @@ describe('fixtureRunner', () => {
       'no fixture for: git status',
     );
   });
-  test('sidekickMap serves both item pages under their real keys', () => {
+  test('sidekickMap serves both issue pages under their real keys', () => {
     const map = sidekickMap();
     const run = fixtureRunner(map);
     const base = [
       'api',
       'graphql',
       '-f',
-      'query=query Items(x)',
+      'query=query RepoIssues(x)',
       '-f',
-      'login=Rikmorn',
-      '-F',
-      'number=2',
+      'owner=Rikmorn',
+      '-f',
+      'name=sidekick',
     ];
     const p1 = run('gh', base, '/');
     const cursor = (
       JSON.parse(p1.stdout) as {
-        data: {
-          user: { projectV2: { items: { pageInfo: { endCursor: string } } } };
-        };
+        data: { repository: { issues: { pageInfo: { endCursor: string } } } };
       }
-    ).data.user.projectV2.items.pageInfo.endCursor;
+    ).data.repository.issues.pageInfo.endCursor;
     const p2 = run('gh', [...base, '-f', `after=${cursor}`], '/');
     expect(p2.stdout.length).toBeGreaterThan(100);
   });
@@ -216,159 +216,199 @@ describe('fetchStatusField', () => {
   });
 });
 
-describe('fetchItems', () => {
-  test('walks every page and keeps only this repo’s issues', () => {
+const PROJECT_ID = 'PVT_kwHOABcx2M4BiJeE';
+
+interface RawCard {
+  id: string;
+  project: { id: string };
+  fieldValueByName: { name?: string; updatedAt?: string } | null;
+}
+const rawCard = (
+  id: string,
+  projectId: string,
+  status: { name: string; updatedAt?: string } | null,
+): RawCard => ({
+  id,
+  project: { id: projectId },
+  fieldValueByName: status,
+});
+const rawIssue = (
+  number: number,
+  cards: RawCard[],
+  more = false,
+  over: Record<string, unknown> = {},
+) => ({
+  number,
+  title: `t${number}`,
+  state: 'OPEN',
+  stateReason: null,
+  updatedAt: '2026-10-03T12:07:12Z',
+  url: `https://github.com/Rikmorn/sidekick/issues/${number}`,
+  milestone: null,
+  labels: { nodes: [] },
+  assignees: { nodes: [] },
+  projectItems: { pageInfo: { hasNextPage: more }, nodes: cards },
+  ...over,
+});
+const rawPage = (
+  nodes: unknown[],
+  hasNextPage = false,
+  endCursor: string | null = null,
+) => ({
+  repository: { issues: { pageInfo: { hasNextPage, endCursor }, nodes } },
+});
+
+describe('fetchRepoIssues', () => {
+  test('walks every page of the capture, each issue once', () => {
     const run = fixtureRunner(sidekickMap());
-    const r = fetchItems(run, '/', 'Rikmorn', 2, 'Rikmorn/sidekick');
-    const p1 = JSON.parse(fixture('items-p1.json')) as {
-      data: { user: { projectV2: { items: { totalCount: number } } } };
-    };
-    expect(r.totalCount).toBe(p1.data.user.projectV2.items.totalCount);
-    const seen = Object.values(r.kinds).reduce((a, b) => a + b, 0);
-    expect(seen).toBe(r.totalCount);
-    expect(r.items.length).toBeLessThanOrEqual(r.totalCount);
-    const numbers = r.items.map((i) => i.number);
+    const issues = fetchRepoIssues(run, '/', 'Rikmorn', 'sidekick', PROJECT_ID);
+    const pages = ['repo-issues-p1.json', 'repo-issues-p2.json'].map(
+      (name) =>
+        (
+          JSON.parse(fixture(name)) as {
+            data: { repository: { issues: { nodes: unknown[] } } };
+          }
+        ).data.repository.issues.nodes.length,
+    );
+    expect(pages.every((n) => n > 0)).toBe(true);
+    expect(issues.length).toBe(pages[0] + pages[1]);
+    const numbers = issues.map((i) => i.number);
     expect(new Set(numbers).size).toBe(numbers.length);
-    for (const i of r.items) {
+    for (const i of issues) {
       expect(['OPEN', 'CLOSED']).toContain(i.state);
-      expect(i.repo).toBe('Rikmorn/sidekick');
+      expect(i.card === null || i.card.itemId.startsWith('PVTI_')).toBe(true);
     }
   });
-});
-
-describe('parseItemsPage', () => {
-  test('keeps only Issue nodes from the tracked repo; tallies every kind seen', () => {
-    const fullName = 'Rikmorn/sidekick';
-    const page = {
-      user: {
-        projectV2: {
-          items: {
-            totalCount: 5,
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [
-              {
-                id: 'PVTI_1',
-                updatedAt: '2026-09-01T00:00:00Z',
-                fieldValueByName: { name: 'Backlog' },
-                content: {
-                  __typename: 'Issue',
-                  number: 101,
-                  title: 'kept: an issue in the tracked repo',
-                  state: 'OPEN',
-                  stateReason: null,
-                  updatedAt: '2026-09-01T00:00:00Z',
-                  url: 'https://github.com/Rikmorn/sidekick/issues/101',
-                  milestone: null,
-                  labels: { nodes: [] },
-                  assignees: { nodes: [] },
-                  repository: { nameWithOwner: fullName },
-                },
-              },
-              {
-                id: 'PVTI_2',
-                updatedAt: '2026-09-01T00:00:00Z',
-                fieldValueByName: null,
-                content: {
-                  __typename: 'Issue',
-                  number: 202,
-                  title: 'skipped: an issue in a different repository',
-                  state: 'OPEN',
-                  stateReason: null,
-                  updatedAt: '2026-09-01T00:00:00Z',
-                  url: 'https://github.com/Rikmorn/furnace/issues/202',
-                  milestone: null,
-                  labels: { nodes: [] },
-                  assignees: { nodes: [] },
-                  repository: { nameWithOwner: 'Rikmorn/furnace' },
-                },
-              },
-              {
-                id: 'PVTI_3',
-                updatedAt: '2026-09-01T00:00:00Z',
-                fieldValueByName: null,
-                content: {
-                  __typename: 'DraftIssue',
-                  title: 'skipped: a draft',
-                },
-              },
-              {
-                id: 'PVTI_4',
-                updatedAt: '2026-09-01T00:00:00Z',
-                fieldValueByName: null,
-                content: {
-                  __typename: 'PullRequest',
-                  number: 303,
-                  repository: { nameWithOwner: fullName },
-                },
-              },
-              {
-                id: 'PVTI_5',
-                updatedAt: '2026-09-01T00:00:00Z',
-                fieldValueByName: null,
-                content: null,
-              },
-            ],
-          },
-        },
-      },
+  test('stops at the page that says there is no next one', () => {
+    const calls: string[][] = [];
+    const run: Runner = (_cmd, args) => {
+      calls.push(args);
+      const first = !args.some((a) => a.startsWith('after='));
+      const body = first
+        ? rawPage([rawIssue(1, [])], true, 'CUR1')
+        : rawPage([rawIssue(2, [])]);
+      return {
+        code: 0,
+        stdout: JSON.stringify({ data: body }),
+        stderr: '',
+      };
     };
-    const result = parseItemsPage(page, fullName);
-    expect(result.items.map((i) => i.number)).toEqual([101]);
-    expect(result.items[0].statusUpdatedAt).toBeNull();
-    expect(result.kinds).toEqual({
-      Issue: 2,
-      DraftIssue: 1,
-      PullRequest: 1,
-      Unknown: 1,
+    const issues = fetchRepoIssues(run, '/', 'o', 'r', PROJECT_ID);
+    expect(issues.map((i) => i.number)).toEqual([1, 2]);
+    expect(calls.length).toBe(2);
+    expect(calls[1]).toContain('after=CUR1');
+  });
+  test('a repository with no issues is an empty list', () => {
+    const run: Runner = () => ({
+      code: 0,
+      stdout: JSON.stringify({ data: rawPage([]) }),
+      stderr: '',
     });
+    expect(fetchRepoIssues(run, '/', 'o', 'r', PROJECT_ID)).toEqual([]);
   });
 });
 
-describe('parseItemsPage Status time', () => {
-  test("carries the Status value's own updatedAt, the time the card moved", () => {
-    const node = (number: number, status: Record<string, string> | null) => ({
-      id: `PVTI_${number}`,
-      updatedAt: '2026-10-05T12:00:00Z',
-      fieldValueByName: status,
-      content: {
-        __typename: 'Issue',
-        number,
-        title: `t${number}`,
-        state: 'OPEN',
-        stateReason: null,
-        updatedAt: '2026-10-03T12:07:12Z',
-        url: '',
-        milestone: null,
-        labels: { nodes: [] },
-        assignees: { nodes: [] },
-        repository: { nameWithOwner: 'Rikmorn/sidekick' },
-      },
+describe('parseRepoIssuesPage', () => {
+  test('a card counts only on this board, matched by project id', () => {
+    const page = rawPage([
+      rawIssue(1, [
+        rawCard('PVTI_other', 'PVT_someone_elses_2', { name: 'Done' }),
+      ]),
+      rawIssue(2, [
+        rawCard('PVTI_other2', 'PVT_someone_elses_2', { name: 'Done' }),
+        rawCard('PVTI_mine', PROJECT_ID, { name: 'Backlog' }),
+      ]),
+    ]);
+    const { issues } = parseRepoIssuesPage(page, PROJECT_ID);
+    expect(issues[0].card).toBeNull();
+    expect(issues[1].card?.itemId).toBe('PVTI_mine');
+    expect(issues[1].card?.status).toBe('Backlog');
+  });
+  test('an issue with more boards than one page lists fails closed unless this board is on the page', () => {
+    const other = rawCard('PVTI_x', 'PVT_other', { name: 'Done' });
+    const mine = rawCard('PVTI_mine', PROJECT_ID, { name: 'Done' });
+    expect(() =>
+      parseRepoIssuesPage(rawPage([rawIssue(7, [other], true)]), PROJECT_ID),
+    ).toThrow(/#7 /);
+    expect(() =>
+      parseRepoIssuesPage(rawPage([rawIssue(7, [other], true)]), PROJECT_ID),
+    ).toThrow(PmError);
+    const { issues } = parseRepoIssuesPage(
+      rawPage([rawIssue(7, [other, mine], true)]),
+      PROJECT_ID,
+    );
+    expect(issues[0].card?.itemId).toBe('PVTI_mine');
+  });
+  test('a card with no Status value is a card with a null status', () => {
+    const { issues } = parseRepoIssuesPage(
+      rawPage([rawIssue(3, [rawCard('PVTI_3', PROJECT_ID, null)])]),
+      PROJECT_ID,
+    );
+    expect(issues[0].card).toEqual({
+      itemId: 'PVTI_3',
+      status: null,
+      statusUpdatedAt: null,
     });
-    const page = {
-      user: {
-        projectV2: {
-          items: {
-            totalCount: 3,
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [
-              node(171, {
-                name: 'In Progress',
-                updatedAt: '2026-10-05T11:48:11Z',
-              }),
-              node(172, { name: 'Backlog' }),
-              node(173, null),
-            ],
-          },
-        },
-      },
-    };
-    const items = parseItemsPage(page, 'Rikmorn/sidekick').items;
+  });
+  test("carries the Status value's own updatedAt, the time the card moved", () => {
+    const page = rawPage([
+      rawIssue(171, [
+        rawCard('PVTI_171', PROJECT_ID, {
+          name: 'In Progress',
+          updatedAt: '2026-10-05T11:48:11Z',
+        }),
+      ]),
+      rawIssue(172, [rawCard('PVTI_172', PROJECT_ID, { name: 'Backlog' })]),
+    ]);
+    const items = cardedItems(
+      parseRepoIssuesPage(page, PROJECT_ID).issues,
+      'Rikmorn/sidekick',
+    );
     expect(
       items.map((i) => [i.number, i.updatedAt, i.statusUpdatedAt]),
     ).toEqual([
       [171, '2026-10-03T12:07:12Z', '2026-10-05T11:48:11Z'],
       [172, '2026-10-03T12:07:12Z', null],
-      [173, '2026-10-03T12:07:12Z', null],
+    ]);
+  });
+  test('a page with no nodes is an empty page', () => {
+    expect(parseRepoIssuesPage(rawPage([]), PROJECT_ID)).toEqual({
+      issues: [],
+      hasNextPage: false,
+      endCursor: null,
+    });
+  });
+});
+
+describe('cardedItems', () => {
+  test('keeps carded issues only, with the card’s fields and the repo name', () => {
+    const page = rawPage([
+      rawIssue(1, []),
+      rawIssue(2, [rawCard('PVTI_2', PROJECT_ID, { name: 'Done' })], false, {
+        state: 'CLOSED',
+        stateReason: 'COMPLETED',
+      }),
+    ]);
+    const items = cardedItems(
+      parseRepoIssuesPage(page, PROJECT_ID).issues,
+      'Rikmorn/sidekick',
+    );
+    expect(items).toEqual([
+      {
+        itemId: 'PVTI_2',
+        status: 'Done',
+        number: 2,
+        title: 't2',
+        state: 'CLOSED',
+        stateReason: 'COMPLETED',
+        updatedAt: '2026-10-03T12:07:12Z',
+        statusUpdatedAt: null,
+        url: 'https://github.com/Rikmorn/sidekick/issues/2',
+        milestone: null,
+        labels: [],
+        assignees: [],
+        repo: 'Rikmorn/sidekick',
+      },
     ]);
   });
 });

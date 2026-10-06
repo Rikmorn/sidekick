@@ -4,15 +4,15 @@
  * failing test rather than a silent pass.
  */
 //
-// Captured 2026-09-19 against Rikmorn/sidekick with gh 2.96.0. Recapture
-// from the repo root with the commands below; run from a shell that can
-// `cd` into this directory first. Q_DISC, Q_FIELD and Q_ITEMS are
-// DISCOVERY_QUERY, FIELD_QUERY and ITEMS_QUERY in `../../pm-data.ts`,
-// quoted as `-f query="$Q_DISC"` etc. Q_ITEMS must have its `first: 100`
-// overridden to `first: 50`: board #2 held 99 items at capture, so 50
-// forces a real two-page fixture. Production reads at 100, where today's
-// 99 items are a single page — recapturing at 100 would silently collapse
-// the suite's only pagination coverage to one page.
+// Captured against Rikmorn/sidekick with gh 2.96.0; the repo-issues pair on
+// 2026-10-06. Recapture from the repo root with the commands below; run
+// from a shell that can `cd` into this directory first. Q_DISC, Q_FIELD
+// and Q_ISSUES are DISCOVERY_QUERY, FIELD_QUERY and ISSUES_QUERY in
+// `../../pm-data.ts`, quoted as `-f query="$Q_DISC"` etc. Q_ISSUES keeps
+// its production `first: 100`: the repo held 175 issues at capture, so it
+// gives a real two-page fixture. If the repo ever drops to 100 issues or
+// fewer, override `first` to a smaller number so the suite keeps its only
+// pagination coverage.
 //
 //   gh api graphql -f query="$Q_DISC" -f owner=Rikmorn -f name=sidekick \
 //     > discovery-sidekick.json
@@ -20,12 +20,12 @@
 //     > discovery-furnace.json
 //   gh api graphql -f query="$Q_FIELD" -f login=Rikmorn -F number=2 \
 //     > field-sidekick.json
-//   gh api graphql -f query="$Q_ITEMS" -f login=Rikmorn -F number=2 \
-//     > items-p1.json
-//   CUR=$(python3 -c "import json; d=json.load(open('items-p1.json')); \
-// print(d['data']['user']['projectV2']['items']['pageInfo']['endCursor'])")
-//   gh api graphql -f query="$Q_ITEMS" -f login=Rikmorn -F number=2 \
-//     -f after="$CUR" > items-p2.json
+//   gh api graphql -f query="$Q_ISSUES" -f owner=Rikmorn -f name=sidekick \
+//     > repo-issues-p1.json
+//   CUR=$(python3 -c "import json; d=json.load(open('repo-issues-p1.json')); \
+// print(d['data']['repository']['issues']['pageInfo']['endCursor'])")
+//   gh api graphql -f query="$Q_ISSUES" -f owner=Rikmorn -f name=sidekick \
+//     -f after="$CUR" > repo-issues-p2.json
 //   gh api "repos/Rikmorn/sidekick/milestones?state=open&per_page=100" \
 //     > milestones-open.json
 //   gh api "repos/Rikmorn/sidekick/milestones?state=closed&per_page=100" \
@@ -68,16 +68,14 @@ const ISSUES_ARGS =
  * upstream.
  */
 export function sidekickMap(): FixtureMap {
-  const p1 = fixture('items-p1.json');
+  const p1 = fixture('repo-issues-p1.json');
   const cursor = (
     JSON.parse(p1) as {
-      data: {
-        user: { projectV2: { items: { pageInfo: { endCursor: string } } } };
-      };
+      data: { repository: { issues: { pageInfo: { endCursor: string } } } };
     }
-  ).data.user.projectV2.items.pageInfo.endCursor;
-  const items =
-    'gh api graphql -f query=query Items -f login=Rikmorn -F number=2';
+  ).data.repository.issues.pageInfo.endCursor;
+  const issues =
+    'gh api graphql -f query=query RepoIssues -f owner=Rikmorn -f name=sidekick';
   return {
     'gh --version': fixture('gh-version.txt'),
     'git remote get-url origin': 'git@github.com:Rikmorn/sidekick.git\n',
@@ -87,8 +85,8 @@ export function sidekickMap(): FixtureMap {
       fixture('discovery-sidekick.json'),
     'gh api graphql -f query=query StatusField -f login=Rikmorn -F number=2':
       fixture('field-sidekick.json'),
-    [items]: p1,
-    [`${items} -f after=${cursor}`]: fixture('items-p2.json'),
+    [issues]: p1,
+    [`${issues} -f after=${cursor}`]: fixture('repo-issues-p2.json'),
     'gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100': fixture(
       'milestones-open.json',
     ),

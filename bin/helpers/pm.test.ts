@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type FixtureMap,
   fixture,
   fixtureRunner,
   plansHeader,
@@ -83,18 +84,51 @@ const capture = () => {
   };
 };
 
-interface RawItemNode {
-  fieldValueByName: { name?: string } | null;
-  content: {
-    __typename: string;
-    number?: number;
-    state?: 'OPEN' | 'CLOSED';
-    milestone?: { title: string } | null;
-    labels?: { nodes: Array<{ name: string }> };
-    assignees?: { nodes: Array<{ login: string }> };
-    repository?: { nameWithOwner: string };
-  } | null;
+interface RawIssueNode {
+  number: number;
+  state: 'OPEN' | 'CLOSED';
+  stateReason: string | null;
+  milestone: { title: string } | null;
+  labels: { nodes: Array<{ name: string }> };
+  assignees: { nodes: Array<{ login: string }> };
+  projectItems: {
+    nodes: Array<{
+      project: { id: string };
+      fieldValueByName: { name?: string } | null;
+    }>;
+  };
 }
+type RawIssuesFile = {
+  data: { repository: { issues: { nodes: RawIssueNode[] } } };
+};
+/** Rewrites the captured issue pages in `map` through `edit`, keeping their keys. */
+const patchIssues = (
+  map: FixtureMap,
+  edit: (nodes: RawIssueNode[]) => void,
+): void => {
+  for (const key of Object.keys(map)) {
+    if (!key.includes('query=query RepoIssues')) continue;
+    const page = JSON.parse(String(map[key])) as RawIssuesFile;
+    edit(page.data.repository.issues.nodes);
+    map[key] = JSON.stringify(page);
+  }
+};
+/**
+ * The 2026-09-19 board the milestone fixtures were captured with: R6 holds
+ * #109 to #113, open, with #109 In Progress and the rest in Backlog.
+ */
+const r6Board = (map: FixtureMap): void =>
+  patchIssues(map, (nodes) => {
+    for (const n of nodes) {
+      if (n.number < 109 || n.number > 113) continue;
+      n.state = 'OPEN';
+      n.stateReason = null;
+      n.milestone = { title: 'R6 — PM layer' };
+      n.projectItems.nodes[0].fieldValueByName = {
+        name: n.number === 109 ? 'In Progress' : 'Backlog',
+      };
+    }
+  });
 interface FixtureIssue {
   number: number;
   status: string | null;
@@ -103,40 +137,27 @@ interface FixtureIssue {
   assignees: string[];
 }
 /**
- * Open `Issue` cards of `Rikmorn/sidekick`, independently parsed from the
- * committed `items-p1`/`items-p2` fixtures — the same source `fetchItems`
- * reads, but computed without calling production code, so a `tiers` or
- * `runPmCli` assertion built from this cannot be vacuous by construction.
+ * Open issues of `Rikmorn/sidekick` that hold a card, independently parsed
+ * from the committed `repo-issues-p1`/`repo-issues-p2` fixtures: the same
+ * source `fetchRepoIssues` reads, but computed without calling production
+ * code, so a `tiers` or `runPmCli` assertion built from this cannot be
+ * vacuous by construction.
  */
-const openIssues = (): FixtureIssue[] => {
-  const nodes = ['items-p1.json', 'items-p2.json'].flatMap(
-    (name) =>
-      (
-        JSON.parse(fixture(name)) as {
-          data: { user: { projectV2: { items: { nodes: RawItemNode[] } } } };
-        }
-      ).data.user.projectV2.items.nodes,
-  );
-  return nodes
-    .filter(
-      (
-        n,
-      ): n is RawItemNode & {
-        content: NonNullable<RawItemNode['content']> & { number: number };
-      } =>
-        n.content?.__typename === 'Issue' &&
-        n.content.repository?.nameWithOwner === 'Rikmorn/sidekick' &&
-        n.content.state === 'OPEN' &&
-        n.content.number !== undefined,
+const openIssues = (): FixtureIssue[] =>
+  ['repo-issues-p1.json', 'repo-issues-p2.json']
+    .flatMap(
+      (name) =>
+        (JSON.parse(fixture(name)) as RawIssuesFile).data.repository.issues
+          .nodes,
     )
+    .filter((n) => n.state === 'OPEN' && n.projectItems.nodes.length > 0)
     .map((n) => ({
-      number: n.content.number,
-      status: n.fieldValueByName?.name ?? null,
-      milestone: n.content.milestone?.title ?? null,
-      labels: (n.content.labels?.nodes ?? []).map((l) => l.name),
-      assignees: (n.content.assignees?.nodes ?? []).map((a) => a.login),
+      number: n.number,
+      status: n.projectItems.nodes[0].fieldValueByName?.name ?? null,
+      milestone: n.milestone?.title ?? null,
+      labels: n.labels.nodes.map((l) => l.name),
+      assignees: n.assignees.nodes.map((a) => a.login),
     }));
-};
 const untracked = () =>
   fixtureRunner({
     'gh --version': 'gh version 2.96.0 (2026-07-02)\n',
@@ -539,7 +560,7 @@ describe('runPmCli pickup', () => {
     );
     expect(code).toBe(0);
     const j = JSON.parse(c.out[0]) as {
-      board: { tracked: boolean; item_kinds: Record<string, number> };
+      board: { tracked: boolean };
       milestone: { title: string } | null;
       in_progress: Array<{
         number: number;
@@ -570,7 +591,7 @@ describe('runPmCli pickup', () => {
     );
     expect(j.in_progress[0].milestone).toBe(expectedInProgress[0].milestone);
     // `item_id` is the board item's node id (Task item 1, #109 follow-up):
-    // every id `fetchItems` parses is a `PVTI_…` project-item id, never the
+    // every id `fetchRepoIssues` parses is a `PVTI_…` project-item id, never the
     // issue's own node id.
     expect(j.in_progress[0].item_id).toMatch(/^PVTI_/);
 
@@ -591,22 +612,14 @@ describe('runPmCli pickup', () => {
       ...tier1.map((n) => [1, n]),
       ...tier2.map((n) => [2, n]),
     ]);
-    // `item_kinds` tallies every node the Items page saw; its values must
-    // sum to the same totalCount fetchItems reports.
-    const p1 = JSON.parse(fixture('items-p1.json')) as {
-      data: { user: { projectV2: { items: { totalCount: number } } } };
-    };
-    const kindsSum = Object.values(j.board.item_kinds).reduce(
-      (a, b) => a + b,
-      0,
-    );
-    expect(kindsSum).toBe(p1.data.user.projectV2.items.totalCount);
+    expect(j.board).not.toHaveProperty('item_kinds');
   });
 });
 
 describe('runPmCli pickup plans', () => {
   const pickupWith = (description: string | null) => {
     const map = sidekickMap();
+    r6Board(map);
     if (description !== null) {
       const open = JSON.parse(fixture('milestones-open.json')) as Array<
         Record<string, unknown>
@@ -678,6 +691,7 @@ describe('runPmCli pickup plans', () => {
 describe('pickup --report', () => {
   const run = (description: string | null, args: string[]) => {
     const map = sidekickMap();
+    r6Board(map);
     const open = JSON.parse(fixture('milestones-open.json')) as Array<
       Record<string, unknown>
     >;
@@ -770,6 +784,7 @@ describe('pickup with several open milestones', () => {
   });
   const run = (open: unknown[], args: string[]) => {
     const map = sidekickMap();
+    r6Board(map);
     map['gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100'] =
       JSON.stringify(open);
     const c = capture();
@@ -886,33 +901,13 @@ describe('pickup with several open milestones', () => {
 
   test('In Progress split across two open milestones names none, and drift reports the split', () => {
     const map = sidekickMap();
-    const p2 = JSON.parse(fixture('items-p2.json')) as {
-      data: {
-        user: {
-          projectV2: {
-            items: {
-              nodes: Array<{
-                fieldValueByName: { name?: string } | null;
-                content: {
-                  number?: number;
-                  state?: string;
-                  milestone?: { title: string } | null;
-                } | null;
-              }>;
-            };
-          };
-        };
-      };
-    };
-    const node = p2.data.user.projectV2.items.nodes.find(
-      (n) => n.content?.number === 114,
-    );
-    if (!node?.content) throw new Error('fixture lacks #114');
-    node.fieldValueByName = { name: 'In Progress' };
-    node.content.milestone = { title: 'R7 — Earlier' };
-    for (const [key, body] of Object.entries(map)) {
-      if (body === fixture('items-p2.json')) map[key] = JSON.stringify(p2);
-    }
+    r6Board(map);
+    patchIssues(map, (nodes) => {
+      const node = nodes.find((n) => n.number === 114);
+      if (!node) return;
+      node.projectItems.nodes[0].fieldValueByName = { name: 'In Progress' };
+      node.milestone = { title: 'R7 — Earlier' };
+    });
     map['gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100'] =
       JSON.stringify([r6(), other(7, 'R7 — Earlier', null)]);
     const c = capture();
@@ -980,7 +975,7 @@ describe('runPmCli lint', () => {
     );
     expect(code).toBe(0);
     const j = JSON.parse(c.out[0]) as {
-      board: { item_kinds: Record<string, number> };
+      board: Record<string, unknown>;
       counts: Record<string, number>;
       findings: Record<string, unknown[]>;
     };
@@ -993,17 +988,40 @@ describe('runPmCli lint', () => {
     // `LINT_IDS`, which typechecks clean.
     expect(Object.keys(j.counts).sort()).toEqual([...LINT_IDS].sort());
     expect(j.counts.multiple_linked_boards).toBe(1);
-    // `item_kinds` tallies every node the Items page saw; its values must
-    // sum to the same totalCount fetchItems reports (Task 6's `pickup`
-    // asserts the same fixture-derived fact for its own `board` block).
-    const p1 = JSON.parse(fixture('items-p1.json')) as {
-      data: { user: { projectV2: { items: { totalCount: number } } } };
-    };
-    const kindsSum = Object.values(j.board.item_kinds).reduce(
-      (a, b) => a + b,
-      0,
+    expect(j.board).not.toHaveProperty('item_kinds');
+  });
+});
+
+describe('runPmCli lint on the issue side', () => {
+  const lint = (map: FixtureMap) => {
+    const c = capture();
+    const code = runPmCli(
+      ['lint'],
+      { cwd: '/', run: fixtureRunner(map) },
+      c.o,
+      c.e,
     );
-    expect(kindsSum).toBe(p1.data.user.projectV2.items.totalCount);
+    expect(code).toBe(0);
+    return JSON.parse(c.out[0]) as {
+      findings: Record<string, Array<{ number: number; detail: string }>>;
+    };
+  };
+
+  test('unboarded reports the one closed-as-completed issue with no card, and no not-planned one', () => {
+    const j = lint(sidekickMap());
+    expect(j.findings.unboarded.map((f) => f.number)).toEqual([47]);
+    expect(j.findings.unboarded[0].detail).toContain('closed as completed');
+  });
+
+  test('a card on another board, even with the same project number, is no card here', () => {
+    const map = sidekickMap();
+    patchIssues(map, (nodes) => {
+      const node = nodes.find((n) => n.number === 114);
+      if (!node) return;
+      node.projectItems.nodes[0].project = { id: 'PVT_an_orgs_project_2' };
+    });
+    const j = lint(map);
+    expect(j.findings.unboarded.map((f) => f.number)).toEqual([47, 114]);
   });
 });
 

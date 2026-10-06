@@ -537,8 +537,8 @@ function touchedAt(item) {
 var STALE_DAYS = 7;
 var DISCOVERY_QUERY = "query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }";
 var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
-var ITEMS_PAGE = 100;
-var ITEMS_QUERY = `query Items($login: String!, $number: Int!, $after: String) { user(login: $login) { projectV2(number: $number) { items(first: ${ITEMS_PAGE}, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id updatedAt fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } content { __typename ... on Issue { number title state stateReason updatedAt url milestone { title number } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } repository { nameWithOwner } } ... on PullRequest { number repository { nameWithOwner } } ... on DraftIssue { title } } } } } } }`;
+var ISSUES_PAGE = 100;
+var ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
 var ISSUE_LIMIT = 500;
 function gql(run, cwd, doc, vars) {
   const args = ["api", "graphql", "-f", `query=${doc}`];
@@ -613,64 +613,56 @@ function fetchStatusField(run, cwd, login, number) {
     ["-F", `number=${number}`]
   ]));
 }
-function parseItemsPage(data, fullName) {
-  const page = data.user.projectV2.items;
-  const kinds = {};
-  const items = [];
-  for (const n of page.nodes) {
-    const c = n.content;
-    const kind = c?.__typename ?? "Unknown";
-    kinds[kind] = (kinds[kind] ?? 0) + 1;
-    if (!c || kind !== "Issue" || c.repository?.nameWithOwner !== fullName) {
-      continue;
+function parseRepoIssuesPage(data, projectId) {
+  const page = data.repository.issues;
+  const issues = page.nodes.map((n) => {
+    const hit = n.projectItems.nodes.find((c) => c.project.id === projectId);
+    if (!hit && n.projectItems.pageInfo.hasNextPage) {
+      throw new PmError(1, `#${n.number} sits on more boards than one page lists, so its card on this board cannot be ruled out`);
     }
-    items.push({
-      itemId: n.id,
-      status: n.fieldValueByName?.name ?? null,
-      number: c.number ?? 0,
-      title: c.title ?? "",
-      state: c.state ?? "OPEN",
-      stateReason: c.stateReason ?? null,
-      updatedAt: c.updatedAt ?? n.updatedAt,
-      statusUpdatedAt: n.fieldValueByName?.updatedAt ?? null,
-      url: c.url ?? "",
-      milestone: c.milestone?.title ?? null,
-      labels: (c.labels?.nodes ?? []).map((l) => l.name),
-      assignees: (c.assignees?.nodes ?? []).map((a) => a.login),
-      repo: c.repository?.nameWithOwner ?? ""
-    });
-  }
+    return {
+      number: n.number,
+      title: n.title,
+      state: n.state,
+      stateReason: n.stateReason ?? null,
+      updatedAt: n.updatedAt,
+      url: n.url,
+      milestone: n.milestone?.title ?? null,
+      labels: n.labels.nodes.map((l) => l.name),
+      assignees: n.assignees.nodes.map((a) => a.login),
+      card: hit ? {
+        itemId: hit.id,
+        status: hit.fieldValueByName?.name ?? null,
+        statusUpdatedAt: hit.fieldValueByName?.updatedAt ?? null
+      } : null
+    };
+  });
   return {
-    items,
-    kinds,
-    totalCount: page.totalCount,
+    issues,
     hasNextPage: page.pageInfo.hasNextPage,
     endCursor: page.pageInfo.endCursor
   };
 }
-function fetchItems(run, cwd, login, number, fullName) {
-  const items = [];
-  const kinds = {};
-  let totalCount = 0;
+function fetchRepoIssues(run, cwd, owner, repo, projectId) {
+  const issues = [];
   let after = null;
   for (;; ) {
     const vars = [
-      ["-f", `login=${login}`],
-      ["-F", `number=${number}`]
+      ["-f", `owner=${owner}`],
+      ["-f", `name=${repo}`]
     ];
     if (after)
       vars.push(["-f", `after=${after}`]);
-    const page = parseItemsPage(gql(run, cwd, ITEMS_QUERY, vars), fullName);
-    items.push(...page.items);
-    for (const [k, v] of Object.entries(page.kinds)) {
-      kinds[k] = (kinds[k] ?? 0) + v;
-    }
-    totalCount = page.totalCount;
+    const page = parseRepoIssuesPage(gql(run, cwd, ISSUES_QUERY, vars), projectId);
+    issues.push(...page.issues);
     if (!page.hasNextPage || !page.endCursor)
       break;
     after = page.endCursor;
   }
-  return { items, kinds, totalCount };
+  return issues;
+}
+function cardedItems(issues, fullName) {
+  return issues.flatMap(({ card: card2, ...i }) => card2 ? [{ ...i, ...card2, repo: fullName }] : []);
 }
 function parseMilestones(json) {
   return JSON.parse(json).map((m) => ({
@@ -767,9 +759,8 @@ function backlogInMilestone(issues) {
 function positionCodeTitle(issues) {
   return issues.filter((i) => POSITION_CODE.some((re) => re.test(i.title))).map((i) => f(i.number, i.title, "title starts with a position code"));
 }
-function unboarded(issues, items) {
-  const carded = new Set(items.map((i) => i.number));
-  return issues.filter((i) => !carded.has(i.number)).map((i) => f(i.number, i.title, "no card on the board"));
+function unboarded(uncarded) {
+  return uncarded.filter((i) => i.state === "OPEN" || i.stateReason === "COMPLETED").map((i) => f(i.number, i.title, i.state === "OPEN" ? "no card on the board" : "closed as completed, no card on the board"));
 }
 function staleInProgress(items, now) {
   return open(items).filter((i) => i.status === "In Progress" && ageDays(touchedAt(i), now) > STALE_DAYS).map((i) => f(i.number, i.title, `In Progress, untouched ${ageDays(touchedAt(i), now)} days`));
@@ -790,7 +781,7 @@ var PREDICATES = {
   backlog_without_condition: ({ issues }) => backlogWithoutCondition(issues),
   backlog_in_milestone: ({ issues }) => backlogInMilestone(issues),
   position_code_title: ({ issues }) => positionCodeTitle(issues),
-  unboarded: ({ issues, items }) => unboarded(issues, items),
+  unboarded: ({ uncarded }) => unboarded(uncarded),
   stale_in_progress: ({ items, now }) => staleInProgress(items, now),
   multiple_linked_boards: ({ candidates }) => multipleLinkedBoards(candidates)
 };
@@ -1161,7 +1152,7 @@ function runPmCli(args, env, out, err) {
     const viewer = info.viewer;
     if (verb === "pickup") {
       const open2 = fetchMilestones(run, info.root, owner, repo, "open").sort((a, b) => a.number - b.number);
-      const { items, kinds } = fetchItems(run, info.root, viewer, project.number, fullName);
+      const items = cardedItems(fetchRepoIssues(run, info.root, owner, repo, project.id), fullName);
       const active = msTitle === undefined ? activeMilestone(open2, items) : namedMilestone(open2, msTitle);
       const plans = active ? planView(active, items) : null;
       if (report) {
@@ -1171,7 +1162,7 @@ function runPmCli(args, env, out, err) {
       const working = inProgressMilestones(open2, items);
       const split = working.length > 1 ? working.map((m) => m.title) : [];
       const pickup = {
-        board: { ...shown, item_kinds: kinds },
+        board: shown,
         milestone: active,
         open_milestones: open2.map((m) => ({
           number: m.number,
@@ -1191,11 +1182,13 @@ function runPmCli(args, env, out, err) {
     }
     if (verb === "lint") {
       const issues = fetchOpenIssues(run, info.root, owner, repo);
-      const { items, kinds } = fetchItems(run, info.root, viewer, project.number, fullName);
+      const repoIssues = fetchRepoIssues(run, info.root, owner, repo, project.id);
+      const items = cardedItems(repoIssues, fullName);
+      const uncarded = repoIssues.filter((i) => i.card === null);
       const candidates = chooseBoard(info.linked, viewer, repo);
-      const r = lintAll({ issues, items, candidates, now });
+      const r = lintAll({ issues, items, uncarded, candidates, now });
       emit({
-        board: { ...shown, item_kinds: kinds },
+        board: shown,
         findings: r.findings,
         counts: r.counts
       });
@@ -1208,7 +1201,7 @@ function runPmCli(args, env, out, err) {
         throw new PmError(1, `no milestone titled "${msTitle}"; open: ${openMs.map((m) => m.title).join(", ") || "(none)"}`);
       }
       const issues = fetchOpenIssues(run, info.root, owner, repo);
-      const { items } = fetchItems(run, info.root, viewer, project.number, fullName);
+      const items = cardedItems(fetchRepoIssues(run, info.root, owner, repo, project.id), fullName);
       const v = gateVerdict(found, issues, items);
       emit({ board: shown, milestone: found, ready: v.ready, open: v.open });
       return 0;

@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
 import { chooseBoard } from './pm.js';
 import {
+  cardedItems,
   fetchDiscovery,
-  fetchItems,
   fetchOpenIssues,
+  fetchRepoIssues,
   type Issue,
   type Item,
+  type RepoIssue,
 } from './pm-data.js';
 import {
   areaLabelCount,
@@ -44,6 +46,18 @@ const item = (p: Partial<Item> & { number: number }): Item => ({
   labels: [],
   assignees: [],
   repo: 'Rikmorn/sidekick',
+  ...p,
+});
+const repoIssue = (p: Partial<RepoIssue> & { number: number }): RepoIssue => ({
+  title: `t${p.number}`,
+  state: 'OPEN',
+  stateReason: null,
+  updatedAt: '2026-09-01T00:00:00Z',
+  url: '',
+  milestone: null,
+  labels: [],
+  assignees: [],
+  card: null,
   ...p,
 });
 const now = new Date('2026-09-19T00:00:00Z');
@@ -151,15 +165,19 @@ describe('predicates on synthetic input', () => {
     ]);
     expect(numbers(f)).toEqual([1, 2, 3, 4]);
   });
-  test('unboarded is open issues without a card', () => {
-    expect(
-      numbers(
-        unboarded(
-          [issue({ number: 1 }), issue({ number: 2 })],
-          [item({ number: 2 })],
-        ),
-      ),
-    ).toEqual([1]);
+  test('unboarded is open issues and issues closed as completed, without a card', () => {
+    const f = unboarded([
+      repoIssue({ number: 1 }),
+      repoIssue({ number: 2, state: 'CLOSED', stateReason: 'COMPLETED' }),
+      repoIssue({ number: 3, state: 'CLOSED', stateReason: 'NOT_PLANNED' }),
+      repoIssue({ number: 4, state: 'CLOSED', stateReason: null }),
+    ]);
+    expect(numbers(f)).toEqual([1, 2]);
+    expect(f[0].detail).toBe('no card on the board');
+    expect(f[1].detail).toContain('closed as completed');
+  });
+  test('unboarded of nothing is nothing', () => {
+    expect(unboarded([])).toEqual([]);
   });
   test('staleInProgress is strictly over the threshold', () => {
     expect(
@@ -244,18 +262,56 @@ describe('lintAll on the captured board', () => {
   test('counts derive from the fixtures, not from literals', () => {
     const run = fixtureRunner(sidekickMap());
     const issues = fetchOpenIssues(run, '/', 'Rikmorn', 'sidekick');
-    const { items } = fetchItems(run, '/', 'Rikmorn', 2, 'Rikmorn/sidekick');
+    const repoIssues = fetchRepoIssues(
+      run,
+      '/',
+      'Rikmorn',
+      'sidekick',
+      'PVT_kwHOABcx2M4BiJeE',
+    );
+    const items = cardedItems(repoIssues, 'Rikmorn/sidekick');
+    const uncarded = repoIssues.filter((i) => i.card === null);
     const d = fetchDiscovery(run, '/', 'Rikmorn', 'sidekick');
     const candidates = chooseBoard(d.boards, d.viewer, 'sidekick');
-    const r = lintAll({ issues, items, candidates, now });
-    const carded = new Set(items.map((i) => i.number));
+    const r = lintAll({ issues, items, uncarded, candidates, now });
     expect(r.counts.unboarded).toBe(
-      issues.filter((i) => !carded.has(i.number)).length,
+      uncarded.filter(
+        (i) => i.state === 'OPEN' || i.stateReason === 'COMPLETED',
+      ).length,
     );
     const deferred = issues.filter((i) => i.labels.includes('backlog'));
     expect(r.counts.backlog_without_condition).toBe(
       deferred.filter((i) => !/^\s*revisit when:/im.test(i.body)).length,
     );
     expect(r.counts.multiple_linked_boards).toBe(candidates.length > 1 ? 1 : 0);
+  });
+  test('an archived card on a closed, completed issue is a card, and a card with no Status is no_status, not unboarded', () => {
+    const closedDone = item({
+      number: 5,
+      state: 'CLOSED',
+      stateReason: 'COMPLETED',
+      status: 'Done',
+    });
+    const noStatusCard = item({ number: 6, status: null });
+    const r = lintAll({
+      issues: [],
+      items: [closedDone, noStatusCard],
+      uncarded: [],
+      candidates: [],
+      now,
+    });
+    expect(r.counts.unboarded).toBe(0);
+    expect(numbers(r.findings.no_status)).toEqual([6]);
+    expect(r.counts.completed_not_done).toBe(0);
+  });
+  test('an empty repository yields no findings', () => {
+    const r = lintAll({
+      issues: [],
+      items: [],
+      uncarded: [],
+      candidates: [],
+      now,
+    });
+    expect(Object.values(r.counts).every((n) => n === 0)).toBe(true);
   });
 });

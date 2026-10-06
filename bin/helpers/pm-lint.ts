@@ -8,6 +8,7 @@ import {
   type Issue,
   type Item,
   type LinkedBoard,
+  type RepoIssue,
   STALE_DAYS,
   touchedAt,
 } from './pm-data.js';
@@ -109,11 +110,23 @@ export function positionCodeTitle(issues: Issue[]): Finding[] {
     .map((i) => f(i.number, i.title, 'title starts with a position code'));
 }
 
-export function unboarded(issues: Issue[], items: Item[]): Finding[] {
-  const carded = new Set(items.map((i) => i.number));
-  return issues
-    .filter((i) => !carded.has(i.number))
-    .map((i) => f(i.number, i.title, 'no card on the board'));
+/**
+ * `uncarded` is every issue of the repository with no card on the board.
+ * An open issue is reported, and so is one closed as completed, whose shipped
+ * work is missing from Done. One closed as not planned shipped nothing.
+ */
+export function unboarded(uncarded: RepoIssue[]): Finding[] {
+  return uncarded
+    .filter((i) => i.state === 'OPEN' || i.stateReason === 'COMPLETED')
+    .map((i) =>
+      f(
+        i.number,
+        i.title,
+        i.state === 'OPEN'
+          ? 'no card on the board'
+          : 'closed as completed, no card on the board',
+      ),
+    );
 }
 
 export function staleInProgress(items: Item[], now: Date): Finding[] {
@@ -148,6 +161,7 @@ const PREDICATES: {
   [K in LintId]: (input: {
     issues: Issue[];
     items: Item[];
+    uncarded: RepoIssue[];
     candidates: LinkedBoard[];
     now: Date;
   }) => Finding[];
@@ -159,7 +173,7 @@ const PREDICATES: {
   backlog_without_condition: ({ issues }) => backlogWithoutCondition(issues),
   backlog_in_milestone: ({ issues }) => backlogInMilestone(issues),
   position_code_title: ({ issues }) => positionCodeTitle(issues),
-  unboarded: ({ issues, items }) => unboarded(issues, items),
+  unboarded: ({ uncarded }) => unboarded(uncarded),
   stale_in_progress: ({ items, now }) => staleInProgress(items, now),
   multiple_linked_boards: ({ candidates }) => multipleLinkedBoards(candidates),
 };
@@ -167,6 +181,7 @@ const PREDICATES: {
 export function lintAll(input: {
   issues: Issue[];
   items: Item[];
+  uncarded: RepoIssue[];
   candidates: LinkedBoard[];
   now: Date;
 }): { findings: Record<LintId, Finding[]>; counts: Record<LintId, number> } {

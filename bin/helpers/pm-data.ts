@@ -142,12 +142,26 @@ export interface Item {
   assignees: string[];
   repo: string;
 }
-export interface ItemsPage {
-  items: Item[];
-  kinds: Record<string, number>;
-  totalCount: number;
-  hasNextPage: boolean;
-  endCursor: string | null;
+/** An issue's card on the tracked board. */
+export interface Card {
+  itemId: string;
+  /** `null` when the card has no Status value. */
+  status: string | null;
+  /** When the card's Status last changed; `null` without a Status value or when the response lacks the field. */
+  statusUpdatedAt: string | null;
+}
+/** One issue of the repository, with its card on the tracked board, or none. */
+export interface RepoIssue {
+  number: number;
+  title: string;
+  state: 'OPEN' | 'CLOSED';
+  stateReason: string | null;
+  updatedAt: string;
+  url: string;
+  milestone: string | null;
+  labels: string[];
+  assignees: string[];
+  card: Card | null;
 }
 export interface Milestone {
   number: number;
@@ -172,8 +186,8 @@ export const DISCOVERY_QUERY =
   'query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }';
 export const FIELD_QUERY =
   'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
-export const ITEMS_PAGE = 100;
-export const ITEMS_QUERY = `query Items($login: String!, $number: Int!, $after: String) { user(login: $login) { projectV2(number: $number) { items(first: ${ITEMS_PAGE}, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { id updatedAt fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } content { __typename ... on Issue { number title state stateReason updatedAt url milestone { title number } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } repository { nameWithOwner } } ... on PullRequest { number repository { nameWithOwner } } ... on DraftIssue { title } } } } } } }`;
+export const ISSUES_PAGE = 100;
+export const ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
 /** `gh issue list` truncates silently at `--limit`; hitting it is an error. */
 export const ISSUE_LIMIT = 500;
 
@@ -318,99 +332,116 @@ export function fetchStatusField(
   );
 }
 
-interface ItemsData {
-  user: {
-    projectV2: {
-      items: {
-        totalCount: number;
-        pageInfo: { hasNextPage: boolean; endCursor: string | null };
-        nodes: Array<{
-          id: string;
-          updatedAt: string;
-          fieldValueByName: { name?: string; updatedAt?: string } | null;
-          content: {
-            __typename: string;
-            number?: number;
-            title?: string;
-            state?: 'OPEN' | 'CLOSED';
-            stateReason?: string | null;
-            updatedAt?: string;
-            url?: string;
-            milestone?: { title: string } | null;
-            labels?: { nodes: Array<{ name: string }> };
-            assignees?: { nodes: Array<{ login: string }> };
-            repository?: { nameWithOwner: string };
-          } | null;
-        }>;
-      };
+interface IssuesData {
+  repository: {
+    issues: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: Array<{
+        number: number;
+        title: string;
+        state: 'OPEN' | 'CLOSED';
+        stateReason: string | null;
+        updatedAt: string;
+        url: string;
+        milestone: { title: string } | null;
+        labels: { nodes: Array<{ name: string }> };
+        assignees: { nodes: Array<{ login: string }> };
+        projectItems: {
+          pageInfo: { hasNextPage: boolean };
+          nodes: Array<{
+            id: string;
+            project: { id: string };
+            fieldValueByName: { name?: string; updatedAt?: string } | null;
+          }>;
+        };
+      }>;
     };
   };
 }
 
-/** Keeps issues of `fullName` only; counts every kind it saw in `kinds`. */
-export function parseItemsPage(data: unknown, fullName: string): ItemsPage {
-  const page = (data as ItemsData).user.projectV2.items;
-  const kinds: Record<string, number> = {};
-  const items: Item[] = [];
-  for (const n of page.nodes) {
-    const c = n.content;
-    const kind = c?.__typename ?? 'Unknown';
-    kinds[kind] = (kinds[kind] ?? 0) + 1;
-    if (!c || kind !== 'Issue' || c.repository?.nameWithOwner !== fullName) {
-      continue;
+export interface RepoIssuesPage {
+  issues: RepoIssue[];
+  hasNextPage: boolean;
+  endCursor: string | null;
+}
+
+/**
+ * A card is the one whose `project.id` is the tracked board's: a project
+ * number is unique per owner, not globally, so the number cannot match it.
+ * An issue on more boards than one page holds, with this board's card off
+ * that page, is an error rather than an issue with no card.
+ */
+export function parseRepoIssuesPage(
+  data: unknown,
+  projectId: string,
+): RepoIssuesPage {
+  const page = (data as IssuesData).repository.issues;
+  const issues = page.nodes.map((n): RepoIssue => {
+    const hit = n.projectItems.nodes.find((c) => c.project.id === projectId);
+    if (!hit && n.projectItems.pageInfo.hasNextPage) {
+      throw new PmError(
+        1,
+        `#${n.number} sits on more boards than one page lists, so its card on this board cannot be ruled out`,
+      );
     }
-    items.push({
-      itemId: n.id,
-      status: n.fieldValueByName?.name ?? null,
-      number: c.number ?? 0,
-      title: c.title ?? '',
-      state: c.state ?? 'OPEN',
-      stateReason: c.stateReason ?? null,
-      updatedAt: c.updatedAt ?? n.updatedAt,
-      statusUpdatedAt: n.fieldValueByName?.updatedAt ?? null,
-      url: c.url ?? '',
-      milestone: c.milestone?.title ?? null,
-      labels: (c.labels?.nodes ?? []).map((l) => l.name),
-      assignees: (c.assignees?.nodes ?? []).map((a) => a.login),
-      repo: c.repository?.nameWithOwner ?? '',
-    });
-  }
+    return {
+      number: n.number,
+      title: n.title,
+      state: n.state,
+      stateReason: n.stateReason ?? null,
+      updatedAt: n.updatedAt,
+      url: n.url,
+      milestone: n.milestone?.title ?? null,
+      labels: n.labels.nodes.map((l) => l.name),
+      assignees: n.assignees.nodes.map((a) => a.login),
+      card: hit
+        ? {
+            itemId: hit.id,
+            status: hit.fieldValueByName?.name ?? null,
+            statusUpdatedAt: hit.fieldValueByName?.updatedAt ?? null,
+          }
+        : null,
+    };
+  });
   return {
-    items,
-    kinds,
-    totalCount: page.totalCount,
+    issues,
     hasNextPage: page.pageInfo.hasNextPage,
     endCursor: page.pageInfo.endCursor,
   };
 }
 
-export function fetchItems(
+/** Every issue of the repository, open and closed, with its card on `projectId`'s board. */
+export function fetchRepoIssues(
   run: Runner,
   cwd: string,
-  login: string,
-  number: number,
-  fullName: string,
-): { items: Item[]; kinds: Record<string, number>; totalCount: number } {
-  const items: Item[] = [];
-  const kinds: Record<string, number> = {};
-  let totalCount = 0;
+  owner: string,
+  repo: string,
+  projectId: string,
+): RepoIssue[] {
+  const issues: RepoIssue[] = [];
   let after: string | null = null;
   for (;;) {
     const vars: Var[] = [
-      ['-f', `login=${login}`],
-      ['-F', `number=${number}`],
+      ['-f', `owner=${owner}`],
+      ['-f', `name=${repo}`],
     ];
     if (after) vars.push(['-f', `after=${after}`]);
-    const page = parseItemsPage(gql(run, cwd, ITEMS_QUERY, vars), fullName);
-    items.push(...page.items);
-    for (const [k, v] of Object.entries(page.kinds)) {
-      kinds[k] = (kinds[k] ?? 0) + v;
-    }
-    totalCount = page.totalCount;
+    const page = parseRepoIssuesPage(
+      gql(run, cwd, ISSUES_QUERY, vars),
+      projectId,
+    );
+    issues.push(...page.issues);
     if (!page.hasNextPage || !page.endCursor) break;
     after = page.endCursor;
   }
-  return { items, kinds, totalCount };
+  return issues;
+}
+
+/** The issues that hold a card, in the shape every board reader takes. */
+export function cardedItems(issues: RepoIssue[], fullName: string): Item[] {
+  return issues.flatMap(({ card, ...i }) =>
+    card ? [{ ...i, ...card, repo: fullName }] : [],
+  );
 }
 
 interface RestMilestone {

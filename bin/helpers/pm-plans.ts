@@ -156,8 +156,8 @@ function stateOf(issues: PlanIssue[], isNext: boolean): PlanState {
 
 /**
  * The milestone's plans in header order, each with a state from the board.
- * A header issue with no card counts as open and not started: a new card
- * can be missing from the board's item list for hours (#131).
+ * A header issue with no card counts as open and not started: a card has
+ * to be added to the board, and the issue may not have been.
  */
 export function planView(ms: Milestone, items: Item[]): Plans {
   const c = parsePlansHeader(ms.description);

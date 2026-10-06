@@ -9,13 +9,14 @@
 import { renderBrief } from './pm-brief.js';
 import {
   ageDays,
+  cardedItems,
   execRunner,
   fetchDiscovery,
   fetchGhVersion,
-  fetchItems,
   fetchLocalLogin,
   fetchMilestones,
   fetchOpenIssues,
+  fetchRepoIssues,
   fetchScopeHeaders,
   fetchStatusField,
   hasProjectScope,
@@ -264,11 +265,8 @@ export function runPmCli(
       const open = fetchMilestones(run, info.root, owner, repo, 'open').sort(
         (a, b) => a.number - b.number,
       );
-      const { items, kinds } = fetchItems(
-        run,
-        info.root,
-        viewer,
-        project.number,
+      const items = cardedItems(
+        fetchRepoIssues(run, info.root, owner, repo, project.id),
         fullName,
       );
       const active =
@@ -287,7 +285,7 @@ export function runPmCli(
       const working = inProgressMilestones(open, items);
       const split = working.length > 1 ? working.map((m) => m.title) : [];
       const pickup = {
-        board: { ...shown, item_kinds: kinds },
+        board: shown,
         milestone: active,
         open_milestones: open.map((m) => ({
           number: m.number,
@@ -306,17 +304,19 @@ export function runPmCli(
     }
     if (verb === 'lint') {
       const issues = fetchOpenIssues(run, info.root, owner, repo);
-      const { items, kinds } = fetchItems(
+      const repoIssues = fetchRepoIssues(
         run,
         info.root,
-        viewer,
-        project.number,
-        fullName,
+        owner,
+        repo,
+        project.id,
       );
+      const items = cardedItems(repoIssues, fullName);
+      const uncarded = repoIssues.filter((i) => i.card === null);
       const candidates = chooseBoard(info.linked, viewer, repo);
-      const r = lintAll({ issues, items, candidates, now });
+      const r = lintAll({ issues, items, uncarded, candidates, now });
       emit({
-        board: { ...shown, item_kinds: kinds },
+        board: shown,
         findings: r.findings,
         counts: r.counts,
       });
@@ -336,11 +336,8 @@ export function runPmCli(
         );
       }
       const issues = fetchOpenIssues(run, info.root, owner, repo);
-      const { items } = fetchItems(
-        run,
-        info.root,
-        viewer,
-        project.number,
+      const items = cardedItems(
+        fetchRepoIssues(run, info.root, owner, repo, project.id),
         fullName,
       );
       const v = gateVerdict(found, issues, items);
