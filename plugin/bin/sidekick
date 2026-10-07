@@ -20,6 +20,11 @@ function readContent(event) {
   return typeof response.file.content === "string" ? response.file.content : "";
 }
 var DESIGN_SKILL = path.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path.join("skills", "sk-execute", "SKILL.md");
+var PLAN_SECTIONS = [
+  "## A plan carries intent",
+  "## Before the plan goes out"
+];
 var CLEAN_CODE_RULE = path.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
@@ -145,8 +150,20 @@ function brainstormNudge(pluginDir) {
     "If a design note for this change already exists, start from it."
   ].join(" ");
 }
+var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written, and it overrides two rules of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. Write the plan to these two sections of `sk-execute`:";
+function writingPlansNudge(pluginDir) {
+  const file = path.join(pluginDir, EXECUTE_SKILL);
+  const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
+  const found = sections.flatMap((s) => s === undefined ? [] : [s]);
+  if (found.length < PLAN_SECTIONS.length)
+    return;
+  return [PLAN_LEAD, ...found].join(`
+
+`);
+}
 var NUDGES = new Map([
-  ["superpowers:brainstorming", brainstormNudge]
+  ["superpowers:brainstorming", brainstormNudge],
+  ["superpowers:writing-plans", writingPlansNudge]
 ]);
 var READ_LEAD_LINE = "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
 var REPRODUCE_PARAGRAPH = "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";

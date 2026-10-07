@@ -38,6 +38,11 @@ type Nudge = (pluginDir: string) => string | undefined;
 type ContextFor = (stdin: string, pluginDir: string) => string | undefined;
 
 const DESIGN_SKILL = path.join('skills', 'sk-design', 'SKILL.md');
+const EXECUTE_SKILL = path.join('skills', 'sk-execute', 'SKILL.md');
+const PLAN_SECTIONS = [
+  '## A plan carries intent',
+  '## Before the plan goes out',
+];
 const CLEAN_CODE_RULE = path.join('rules', 'sk-clean-code.md');
 const COMMENTS_HEADING = '## Comments';
 
@@ -174,8 +179,20 @@ function brainstormNudge(pluginDir: string): string | undefined {
   ].join(' ');
 }
 
+const PLAN_LEAD =
+  'sidekick: `sk-execute` governs how this plan is written, and it overrides two rules of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. Write the plan to these two sections of `sk-execute`:';
+
+function writingPlansNudge(pluginDir: string): string | undefined {
+  const file = path.join(pluginDir, EXECUTE_SKILL);
+  const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
+  const found = sections.flatMap((s) => (s === undefined ? [] : [s]));
+  if (found.length < PLAN_SECTIONS.length) return undefined;
+  return [PLAN_LEAD, ...found].join('\n\n');
+}
+
 const NUDGES = new Map<string, Nudge>([
   ['superpowers:brainstorming', brainstormNudge],
+  ['superpowers:writing-plans', writingPlansNudge],
 ]);
 
 const READ_LEAD_LINE =
