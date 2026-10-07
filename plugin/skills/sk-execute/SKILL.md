@@ -1,11 +1,11 @@
 ---
 name: sk-execute
-description: How a written plan runs. Lays out the execution modes with a recommendation, prepares the plan so the run is checked, and hands it to a worker session when that mode is chosen. Use when a plan is ready, when writing-plans asks which approach to take, or when asked how to run a plan.
+description: How a written plan runs. Lays out the execution modes with a recommendation, prepares the plan so the run is checked, and hands it to a worker session when that mode is chosen. Use when a plan is being written or is ready, when writing-plans asks which approach to take, or when asked how to run a plan.
 ---
 
 # sk-execute
 
-A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except four rules, each overridden where it applies. `writing-plans` asks for complete code with no placeholders. Superpowers also tells its executors to carry out the plan exactly, in the implementer's prompt and in `executing-plans`. §A plan carries intent overrides both. Superpowers' reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. The worker side is `sk-worker`, which only the operator starts.
+A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode; only §Outward writes runs outside superpowers. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except four rules, each overridden where it applies. `writing-plans` asks for complete code with no placeholders. Superpowers also tells its executors to carry out the plan exactly, in the implementer's prompt and in `executing-plans`. §A plan carries intent overrides both. Superpowers' reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. The worker side is `sk-worker`, which only the operator starts.
 
 ## Choose the mode
 
@@ -19,6 +19,19 @@ Lay out three modes and recommend one. The operator decides; there is no default
 
 `writing-plans` offers the first two with a recommendation of its own. Add the third, then recommend one mode in a sentence: the reason from the plan, and what would change it.
 
+## Outward writes
+
+For a plan whose writes go mostly outside the branch, such as a triage, a relabel, or a milestone opening, recommend draft, verify, apply. Offer it beside the three modes in §Choose the mode, not as a fourth, since its writes run under no superpowers skill. A branch plan with a few outward steps keeps them in its after-file.
+
+Draft, verify, apply runs in this session, as the orchestrator, because `sk-worker` reads GitHub and never writes it. A branch part of the plan, such as a docs commit, runs in one of the three modes.
+
+1. Read-only subagents draft each write and return it as data. The orchestrator writes each draft to a scratch file, as `sk-agent-prompts.md` Rule 9 asks.
+2. Fresh verifiers, sealed from the drafters as Rule 5 asks, get each draft and its sources, but not the drafters' commands or reasoning. Each verifier measures every claim with commands of its own, so a wrong command is caught rather than repeated. It fails any claim it cannot reproduce. A failed draft is redrafted once, and a second failure goes to the operator.
+3. The operator sees the verified drafts as one batch and approves it, vetoing any item they choose.
+4. The orchestrator applies the approved drafts.
+
+Review here comes before the write, per draft, where a branch run reviews after the commit. A public write cannot be reviewed away.
+
 ## A plan carries intent
 
 A plan carries intent and acceptance criteria, and code in it is a sketch in the right language. The executor is whoever implements a task: superpowers' implementer subagents, or the session itself in native mode. A plan scripted to the character fails twice. The planner spends its effort predicting the tree. The executor, told to implement exactly, stops on every misfit that a competent engineer would settle in a line.
@@ -26,7 +39,7 @@ A plan carries intent and acceptance criteria, and code in it is a sketch in the
 - **The executor reasons past a small misfit.** It shapes the sketch to the tree and lists each deviation in its report, so the reviewer can check it. It raises a genuine contradiction, or a misfit that keeps recurring, because a recurring one means the plan's premise is wrong.
 - **Precision stays where reasoning cannot reach.** Decisions and mechanism facts go in the design note or spec, since the executor cannot derive them. Contracts between tasks are stated, because in the subagent modes each task is built without sight of the others. Outward and irreversible steps stay exact, operator-gated, and run by the orchestrator, since a deviation there cannot be reviewed away.
 - **Run the plan on a model that can reason.** The session that runs the plan, this one or a worker, settles what the plan leaves open. A plan that leaves small decisions assumes that session can make them. Superpowers decides how it dispatches implementers, and on which models.
-- **State the stance in the plan's Global Constraints.** Superpowers hands those to every implementer and to inline execution alike. A section of its own reaches no implementer, because each receives only its task, the interfaces it touches, and the global constraints.
+- **State the stance in the plan's Global Constraints.** Superpowers hands those to every implementer and to inline execution alike. A section of its own reaches no implementer, because each receives only its task, the interfaces it touches, and the global constraints. The stance includes the executor's claims check. The executor checks each claim it writes against its source, and finds the other copies of each fact it changes. It lists a copy outside its task as a concern rather than editing it, since only the plan sets a task's scope.
 
 ## Before the plan goes out
 
@@ -34,8 +47,9 @@ These hold in every mode.
 
 - **The plan names its milestone plan.** It applies in a tracked repo, to a plan that carries issues of an active milestone with a plans header. The plan's header names which of those plans it is. A plan matching none means the milestone has grown. `sk-pm-conventions.md` §Change control then decides: a small addition, or a question for the operator before the plan goes out.
 - **Gate expectations are measurements.** A gate value that depends on the tree, such as a test count, states the command that measures it, or a formula from the tree. A number measured somewhere else is true there and false at the worker's step. Everything else in the plan is intent, and the executor checks it against the tree.
+- **The planner checks the plan's claims.** Name the source of each fact the plan states: the file, or the command that measures it, so the executor can check it there. Re-measure a fact taken from an issue body or a report before the plan states it; it held only where it was measured. Find every other copy of each fact the plan changes with `git grep`, read the block each copy sits in, and put it in a task's scope. Each implementer sees only its own task, so a copy that no task names costs a fix round when review finds it. An output the plan hands someone to decide on states what complete means, such as one line per removed line, so a gap shows.
 - **Prose tasks run the prose check.** The repo may declare a `prose` script, such as `scripts.prose` in `package.json`. When it does, every task that writes or edits prose ends by running it on the files the task changed. Errors are fixed before the commit; warnings go in the task's report. Check that its summary counts every file named: some prose checkers read a mistyped path as text and pass it. The step sits inside the task because the task's own text is the one part of the plan every implementer is sure to read.
-- **Reviewers reproduce claims, by a hook.** The reviewers that `subagent-driven-development` and `executing-plans` dispatch open a review package: `review-<base>..<head>.diff`, in the plan's workspace. Sidekick's hook on `Read` then adds two rules to the reviewer's context. The reviewer re-runs each non-test check the implementer reports as passing, and credits only what it reproduces. It also holds the comments the diff adds to `sk-clean-code.md` §Comments, which reading a diff does not load. The hook adds that section only when the package shows files the rule covers. The first rule departs from superpowers' rule that a reviewer runs checks only on a specific doubt, and the test suite stays exempt. The plan carries nothing for this; ADR-0011 records the mechanism.
+- **Reviewers check claims, by a hook.** The reviewers that `subagent-driven-development` and `executing-plans` dispatch open a review package: `review-<base>..<head>.diff`, in the plan's workspace. Sidekick's hook on `Read` then adds its reviewer lines to the reviewer's context. Under the reproduce rule, the reviewer re-runs each non-test check the implementer reports as passing, and credits only what it reproduces. That rule departs from superpowers' rule that a reviewer runs checks only on a specific doubt, and the test suite stays exempt. Under the claims check, the reviewer confirms each stated fact at its source, and reports a claim it cannot trace. It uses `git grep` to find stale copies of each fact the diff changes. The claims check works inside superpowers' rule that a task reviewer looks outside the diff only for a risk it can name. A stated fact is such a risk, and a changed fact's copies are its call sites. The reviewer also holds the comments the diff adds to `sk-clean-code.md` §Comments, which reading a diff does not load. The hook adds that section only when the package shows files the rule covers. The plan carries nothing for these lines; ADR-0011 records the mechanism.
 - **Steps after the tasks go in an after-file.** Superpowers puts everything after the last task into that task's brief, so the plan ends with its last task. Steps that run once the tasks are done, and that `finishing-a-development-branch` does not cover, go in `<plan>-after.md` beside the plan. The orchestrator runs them.
 - **The plan passes the prose check itself.** Run the repo's `prose` script on the plan file before the handoff. An error blocks the handoff.
 
