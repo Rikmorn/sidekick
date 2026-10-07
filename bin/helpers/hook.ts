@@ -201,9 +201,9 @@ const READ_LEAD_LINE =
 const REPRODUCE_PARAGRAPH =
   "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
 
-// Phrased as named risks, so it works inside superpowers' rule against crawling the codebase.
+// Phrased as named risks, so it works inside the task reviewer's rule against crawling the codebase.
 const CLAIMS_PARAGRAPH =
-  "Check what the diff says about the rest of the system. Superpowers' reviewers look outside the diff for a risk they can name, and two kinds count here. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with `git grep`, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
+  "Check what the diff says about the rest of the system. Where superpowers limits you to risks you can name outside the diff, two kinds count here. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with `git grep`, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 
 function reviewerLines(pluginDir: string, packageText: string): string {
   const lines = [READ_LEAD_LINE, REPRODUCE_PARAGRAPH, CLAIMS_PARAGRAPH];
