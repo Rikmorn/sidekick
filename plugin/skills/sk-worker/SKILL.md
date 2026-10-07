@@ -29,7 +29,7 @@ Check that the plan and the spec exist on disk, and that HEAD is the baseline co
 
 Test the plan against the tree without changing anything. A plan carries intent, so check what it asserts rather than rehearsing its edits:
 
-- Check each stated fact, interface, and acceptance criterion against the tree. The files, symbols, and signatures the plan relies on exist and behave as it says.
+- Check each stated fact, interface, and acceptance criterion against the tree. The files, symbols, and signatures the plan relies on exist and behave as it says. Find the other copies of each fact the plan changes with `git grep`, and check that some task's scope reaches each one. A copy outside every task is a question for the orchestrator, since only the plan sets a task's scope.
 - Run the gates at the baseline and compare them with the handoff's results.
 - Run each command whose result the plan states, when it can run before its task.
 
