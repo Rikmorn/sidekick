@@ -2,6 +2,8 @@
 
 > **Amended 2026-09-30 (#161):** the Skill tool is not the only attachment point. A hook on `Read` reaches the subagents that superpowers dispatches. ADR-0011 records it.
 
+> **Amended 2026-10-07 (#177):** the table's second entry is `superpowers:writing-plans`. It quotes `sk-execute`'s plan stance, so a plan is shaped by it while it is written.
+
 **Status:** Accepted (2026-09-25). Amends ADR-0009's Consequences on how far sidekick reaches into superpowers' skills. Issue #119, milestone R7.
 
 ## Context

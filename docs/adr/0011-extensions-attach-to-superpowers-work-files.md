@@ -1,5 +1,7 @@
 # ADR-0011 — Extensions attach to superpowers' work files through hooks on Read
 
+> **Amended 2026-10-07 (#160):** the reviewer lines gain a claims check, which asks the reviewer to confirm each fact the diff states at its source and to find the stale copies of each fact it changes. Only the Comments part of the lines depends on the rule's heading.
+
 **Status:** Accepted (2026-09-30). Amends ADR-0010's Decision 1, which names the Skill tool as the one attachment point. Issues #161 and #134, milestone R8.
 
 ## Context
