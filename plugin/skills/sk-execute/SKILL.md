@@ -5,7 +5,7 @@ description: How a written plan runs. Lays out the execution modes with a recomm
 
 # sk-execute
 
-A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode; only §Outward writes runs outside superpowers. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except four rules, each overridden where it applies. `writing-plans` asks for complete code with no placeholders. Superpowers also tells its executors to carry out the plan exactly, in the implementer's prompt and in `executing-plans`. §A plan carries intent overrides both. Superpowers' reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. The worker side is `sk-worker`, which only the operator starts.
+A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. §Outward writes and a plan's after-file run outside superpowers. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except four rules, each overridden where it applies. `writing-plans` asks for complete code with no placeholders. Superpowers also tells its executors to carry out the plan exactly, in the implementer's prompt and in `executing-plans`. §A plan carries intent overrides both. Superpowers' reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. The worker side is `sk-worker`, which only the operator starts.
 
 ## Choose the mode
 
@@ -31,6 +31,8 @@ Draft, verify, apply runs in this session, as the orchestrator, because `sk-work
 4. The orchestrator applies the approved drafts.
 
 Review here comes before the write, per draft, where a branch run reviews after the commit. A public write cannot be reviewed away.
+
+The closing summary of this run records the drafts, the verifier failures by claim, the redrafts, the operator's vetoes, and the writes applied. §After an in-session run lists fields for a branch run and does not apply here.
 
 ## A plan carries intent
 

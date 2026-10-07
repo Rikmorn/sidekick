@@ -34,7 +34,7 @@ Fires on `startup` and `clear`, from `plugin/hooks/hooks.json`. It runs `node <p
 
 ### The Skill-tool hook
 
-Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick hook post-skill` with the hook's event on stdin. When the skill that loaded is `superpowers:brainstorming`, it adds one paragraph to context: check whether the change needs a design pass, followed by `sk-design`'s description. When it is `superpowers:writing-plans`, it adds a lead line and two sections of `sk-execute`: §A plan carries intent and §Before the plan goes out. The plan is then written to them. Any other skill, and any failure, gets nothing and exit 0, so it never blocks a call. A slash command you type yourself loads without the Skill tool, and the hook does not fire then. ADR-0010 records the mechanism.
+Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick hook post-skill` with the hook's event on stdin. When the skill that loaded is `superpowers:brainstorming`, it adds one paragraph to context: check whether the change needs a design pass, followed by `sk-design`'s description. When it is `superpowers:writing-plans`, it adds a lead line and two sections of `sk-execute`: §A plan carries intent and §Before the plan goes out. The nudge's purpose is that the plan is written to them. Any other skill, and any failure, gets nothing and exit 0, so it never blocks a call. A slash command you type yourself loads without the Skill tool, and the hook does not fire then. ADR-0010 records the mechanism.
 
 ### The Read hook
 
@@ -110,7 +110,7 @@ Classifies the request as a spike, bounded, or architectural, and says so. Reads
 
 ### `writing-plans`
 
-Turns the spec into `docs/superpowers/plans/<date>-<name>.md`. The header carries the goal, the architecture, and the spec path. Each task lists its files and interfaces, then bite-sized steps: write a failing test, run it, implement, run it, commit. Self-reviews for spec coverage, placeholders, and type consistency. Pauses once, to ask which execution mode to use. When it loads, sidekick's hook adds `sk-execute`'s plan stance, which governs how the plan is written.
+Turns the spec into `docs/superpowers/plans/<date>-<name>.md`. The header carries the goal, the architecture, and the spec path. Each task lists its files and interfaces, then bite-sized steps: write a failing test, run it, implement, run it, commit. Self-reviews for spec coverage, placeholders, and type consistency. Pauses once, to ask which execution mode to use. When it loads through the Skill tool, sidekick's hook adds `sk-execute`'s plan stance, which governs how the plan is written.
 
 ### `using-git-worktrees`
 

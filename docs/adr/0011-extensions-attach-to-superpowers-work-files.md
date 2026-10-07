@@ -1,6 +1,6 @@
 # ADR-0011 — Extensions attach to superpowers' work files through hooks on Read
 
-> **Amended 2026-10-07 (#160):** the reviewer lines gain a claims check, which asks the reviewer to confirm each fact the diff states at its source and to find the stale copies of each fact it changes. Only the Comments part of the lines depends on the rule's heading.
+> **Amended 2026-10-07 (#160):** the reviewer lines gain a claims check. It asks the reviewer to confirm each fact the diff states at its source. It also asks for the stale copies of each fact the diff changes. Only the Comments part of the lines depends on the rule's heading.
 
 **Status:** Accepted (2026-09-30). Amends ADR-0010's Decision 1, which names the Skill tool as the one attachment point. Issues #161 and #134, milestone R8.
 
@@ -30,7 +30,7 @@ Three reviewers never open a package and get no lines. A standalone `requesting-
 **Negative, accepted:**
 
 - Every `Read` in every session starts the bash wrapper. It stops a read whose content lacks any of the four tokens `superpowers`, `sdd`, `review-`, and `.diff`. A file that mentions all four, such as a plan, a design note, or a test, starts `node`. The CLI then decides from the path. The cost was measured on 2026-09-30 with `bash plugin/hooks/post-read`, as the best of five runs on this machine. A small file takes about 5 ms, 100 KB of content 9 ms, and 2 MB 90 ms, with no `node` start. A read that starts `node` costs about 40 ms for a small file and about 290 ms for 2 MB.
-- The Comments paragraph appears only when the package shows files the rule covers. The hook reads the `paths:` frontmatter of `sk-clean-code.md`, collects the changed paths visible in the read's content, and matches `**/*.<ext>` patterns by suffix. A rule without `paths:`, or with a pattern of another shape, always gets it. A paged read that shows no file list gets the lead line and the reproduce paragraph only.
+- The Comments paragraph appears only when the package shows files the rule covers. The hook reads the `paths:` frontmatter of `sk-clean-code.md`, collects the changed paths visible in the read's content, and matches `**/*.<ext>` patterns by suffix. A rule without `paths:`, or with a pattern of another shape, always gets it. A paged read that shows no file list gets the lead line, the reproduce paragraph, and the claims paragraph only.
 - The hook fires wherever the plugin is enabled, including repos sidekick does not manage, such as odin.
 - Superpowers renaming or moving its review package silences the hook without an error. A test pins the name in this repo; a consumer repo sees nothing.
 - Context is advice, and a reviewer may not act on it. Superpowers asks each reviewer to list the checks it ran, so its report shows whether it did.
