@@ -33,7 +33,7 @@ Test the plan against the tree without changing anything. A plan carries intent,
 - Run the gates at the baseline and compare them with the handoff's results.
 - Run each command whose result the plan states, when it can run before its task.
 
-A small misfit between a sketch and the tree is the executor's to settle and report as a deviation. Ask only about a contradiction. Three qualify: a decision the tree defeats, acceptance criteria that cannot both hold, or a mechanism fact or interface the plan states wrongly.
+A small misfit between a sketch and the tree is the executor's to settle and report as a deviation. Ask only about a contradiction. Four qualify: a decision the tree defeats, acceptance criteria that cannot both hold, a mechanism fact or interface the plan states wrongly, or a copy of a changed fact that no task reaches.
 
 Send one report: the baseline confirmation, then every question, each naming its step and what the tree shows. Wait for the rulings. A question asked now costs one reply; the same question asked mid-run costs a round trip.
 
