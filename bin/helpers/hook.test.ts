@@ -20,6 +20,8 @@ const LEAD =
 
 const CLEAN_CODE = path.join(PLUGIN_DIR, 'rules', 'sk-clean-code.md');
 const READ_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-read');
+// A phrase the claims paragraph keeps.
+const CLAIMS_MARK = 'its other copies are its call sites';
 const READ_LEAD =
   "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
 const PACKAGE =
@@ -326,6 +328,14 @@ describe('runHookCli post-read', () => {
     expect(context).toContain(
       "superpowers' rule that a reviewer runs checks only on a specific doubt",
     );
+    expect(context).toContain(CLAIMS_MARK);
+    const order = [
+      'Credit only the results you reproduce.',
+      CLAIMS_MARK,
+      'Hold the comments this diff adds',
+    ].map((mark) => context.indexOf(mark));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(
       context.endsWith(String(readSection(CLEAN_CODE, '## Comments'))),
     ).toBe(true);
@@ -385,18 +395,24 @@ describe('runHookCli post-read', () => {
     }
   });
 
-  test('a plugin dir without the rule, or a rule without Comments, prints nothing', () => {
+  test('a rule-less plugin, or a rule without Comments, keeps the claims paragraph', () => {
     for (const pluginDir of [
       tmpPlugin(undefined),
       tmpPlugin('## Functions\n\nx\n'),
     ]) {
-      expect(
-        runVerb('post-read', pkgEvent(pkgContent('a.ts')), pluginDir),
-      ).toEqual({
-        code: 0,
-        out: [],
-        err: [],
-      });
+      const { code, out } = runVerb(
+        'post-read',
+        pkgEvent(pkgContent('a.ts')),
+        pluginDir,
+      );
+      expect(code).toBe(0);
+      expect(out.length).toBe(1);
+      const context: string = JSON.parse(out[0]).hookSpecificOutput
+        .additionalContext;
+      expect(context.startsWith(READ_LEAD)).toBe(true);
+      expect(context).toContain('Credit only the results you reproduce.');
+      expect(context).toContain(CLAIMS_MARK);
+      expect(context).not.toContain('Hold the comments');
     }
   });
 });
@@ -413,11 +429,12 @@ describe('post-read scopes the Comments paragraph to the rule paths', () => {
   };
   const HOLD = 'Hold the comments this diff adds';
 
-  test('a package listing only .py files keeps the lead and the reproduce paragraph, without Comments', () => {
+  test('a package listing only .py files keeps the lead, the reproduce and claims paragraphs, without Comments', () => {
     const context = contextOf(pkgEvent(pkgContent('tools/a.py', 'docs/b.md')));
     expect(context.startsWith(READ_LEAD)).toBe(true);
     expect(context.split('\n')[0]).not.toMatch(/\btwo\b/);
     expect(context).toContain('Credit only the results you reproduce.');
+    expect(context).toContain(CLAIMS_MARK);
     expect(context).not.toContain(HOLD);
     expect(context).not.toContain('Default to none.');
   });

@@ -148,16 +148,14 @@ function brainstormNudge(pluginDir) {
 var NUDGES = new Map([
   ["superpowers:brainstorming", brainstormNudge]
 ]);
+var READ_LEAD_LINE = "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
+var REPRODUCE_PARAGRAPH = "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
+var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Superpowers' reviewers look outside the diff for a risk they can name, and two kinds count here. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with `git grep`, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function reviewerLines(pluginDir, packageText) {
+  const lines = [READ_LEAD_LINE, REPRODUCE_PARAGRAPH, CLAIMS_PARAGRAPH];
   const rule = path.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
-  if (comments === undefined)
-    return;
-  const lines = [
-    "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.",
-    "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules."
-  ];
-  if (ruleCoversPackage(readRulePaths(rule), packageText)) {
+  if (comments !== undefined && ruleCoversPackage(readRulePaths(rule), packageText)) {
     lines.push("Hold the comments this diff adds to the house rule. Reading a diff does not load `sk-clean-code.md`, so its Comments section follows. Report each added comment that breaks it as a finding.", comments);
   }
   return lines.join(`
