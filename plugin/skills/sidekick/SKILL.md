@@ -16,7 +16,7 @@ The portable rules ship inside the plugin under `rules/`. Claude Code reads rule
 sidekick rules install --project   # writes sk-*.md into this repo's .claude/rules/
 sidekick rules install --user      # writes them into the user-level rules directory
 sidekick rules check --project     # reports drift and overlap; changes nothing
-sidekick rules check --user --strict   # also exits 1 on drift or a skipped write
+sidekick rules check --user --strict   # also exits 1 on drift
 ```
 
 `sidekick` is on the Bash tool's PATH whenever the plugin is enabled. The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a hand-written file under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. Other rule files are never edited.

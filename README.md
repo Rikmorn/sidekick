@@ -28,7 +28,7 @@ The `sk-*` rules ship inside the plugin. Claude Code reads rules from a repo's `
 sidekick rules install --project   # this repo's .claude/rules/
 sidekick rules install --user      # the user-level rules directory
 sidekick rules check --project     # drift and overlap report; changes nothing
-sidekick rules check --user --strict   # exit 1 on drift or a skipped write
+sidekick rules check --user --strict   # exit 1 on drift
 ```
 
 The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a file you hand-write under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. It never edits another file.

@@ -784,3 +784,94 @@ describe('runRulesCli --project check with no sk-* copies in the repo', () => {
     expect(r.text).not.toContain('checking the user-level copies');
   });
 });
+
+describe('runRulesCli arguments', () => {
+  const run = (args: string[]) => {
+    const src = tmp();
+    const cwd = tmp();
+    const home = tmp();
+    gitInit(cwd);
+    write(src, 'sk-a.md', RULE_A);
+    write(path.join(cwd, '.claude', 'rules'), 'sk-a.md', 'drifted');
+    const lines: string[] = [];
+    const code = runRulesCli(args, { src, cwd, claudeHome: home }, (l) =>
+      lines.push(l),
+    );
+    return { code, text: lines.join('\n') };
+  };
+
+  test('a misspelt flag prints the usage and exits 1, so it cannot disable --strict', () => {
+    const r = run(['check', '--project', '--strikt']);
+    expect(r.code).toBe(1);
+    expect(r.text).toContain('usage: sidekick rules');
+    expect(run(['check', '--project', '--strict']).code).toBe(1);
+  });
+
+  test('both scopes together print the usage and exit 1', () => {
+    const r = run(['check', '--project', '--user']);
+    expect(r.code).toBe(1);
+    expect(r.text).toContain('usage: sidekick rules');
+  });
+});
+
+describe('runRulesCli delivery mode and duplicates', () => {
+  const setup = () => {
+    const src = tmp();
+    const cwd = tmp();
+    const home = tmp();
+    gitInit(cwd);
+    write(src, 'sk-a.md', RULE_A);
+    return {
+      src,
+      cwd,
+      home,
+      user: path.join(home, 'rules'),
+      project: path.join(cwd, '.claude', 'rules'),
+    };
+  };
+  const run = (verb: string, e: { src: string; cwd: string; home: string }) => {
+    const lines: string[] = [];
+    const code = runRulesCli(
+      [verb, '--project'],
+      { src: e.src, cwd: e.cwd, claudeHome: e.home },
+      (l) => lines.push(l),
+    );
+    return { code, text: lines.join('\n') };
+  };
+
+  test('an install whose shipped names are all symlinks checks the project directory, not the user level', () => {
+    const e = setup();
+    const target = path.join(tmp(), 'elsewhere.md');
+    fs.writeFileSync(target, RULE_A);
+    fs.mkdirSync(e.project, { recursive: true });
+    fs.symlinkSync(target, path.join(e.project, 'sk-a.md'));
+    write(e.user, 'sk-a.md', RULE_A);
+    const r = run('install', e);
+    expect(r.text).toContain('[skipped:not-a-regular-file] sk-a.md');
+    expect(r.text).not.toContain('checking the user-level copies');
+    expect(r.text).toMatch(
+      /1 rule\(s\) match the shipped copies at .*\.claude\/rules/,
+    );
+  });
+
+  test('the duplicate line counts only rules the project expects', () => {
+    const e = setup();
+    write(e.src, PM, RULE_B);
+    write(e.project, 'sk-a.md', RULE_A);
+    write(e.project, PM, RULE_B);
+    write(e.user, 'sk-a.md', RULE_A);
+    write(e.user, PM, RULE_B);
+    const r = run('check', e);
+    expect(r.text).toContain('[orphaned] sk-pm-conventions.md');
+    expect(r.text).toContain('also deliver 1 of these');
+  });
+
+  test('a plain file at the user rules path refuses a user-mode check', () => {
+    const e = setup();
+    write(e.home, 'rules', 'not a directory');
+    const r = run('check', e);
+    expect(r.code).toBe(1);
+    expect(r.text).toContain(`${e.user} exists and is not a directory`);
+    expect(r.text).not.toContain('[missing]');
+  });
+});

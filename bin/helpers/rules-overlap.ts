@@ -23,7 +23,7 @@ interface ShippedRule {
   opening: string | undefined;
 }
 
-// A single shared heading ("Structure", "Naming") was the measured false positive.
+// One shared generic heading ("Structure", "Naming") is not evidence of overlap.
 const MIN_SHARED_HEADINGS = 2;
 
 const normalise = (s: string): string =>

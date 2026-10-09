@@ -239,10 +239,23 @@ const USAGE =
   '  --strict   exit 1 when drift or a skipped write is found\n' +
   'exit: 0 ran, whatever it found; 1 could not run, or --strict found drift';
 
-function scopeOf(args: string[]): Scope | undefined {
-  if (args.includes('--project')) return 'project';
-  if (args.includes('--user')) return 'user';
-  return undefined;
+const FLAGS: readonly string[] = ['--project', '--user', '--strict'];
+
+// A misspelt `--strict` would otherwise disable the gate and exit 0.
+function parseArgs(
+  args: string[],
+): { verb: 'install' | 'check'; scope: Scope; strict: boolean } | undefined {
+  const [verb, ...flags] = args;
+  if (verb !== 'install' && verb !== 'check') return undefined;
+  if (flags.some((f) => !FLAGS.includes(f))) return undefined;
+  const project = flags.includes('--project');
+  const user = flags.includes('--user');
+  if (project === user) return undefined;
+  return {
+    verb,
+    scope: project ? 'project' : 'user',
+    strict: flags.includes('--strict'),
+  };
 }
 
 function scopeSet(
@@ -282,13 +295,19 @@ const realOrSelf = (p: string): string => {
 const sameDir = (a: string, b: string): boolean =>
   realOrSelf(a) === realOrSelf(b);
 
+// Only a check reads the user level; an install is judged against what it just wrote.
 function pickChecked(
   scope: Scope,
+  verb: 'install' | 'check',
   t: { dest: string; userDest: string; set: ScopeSet },
   src: string,
   out: (line: string) => void,
 ): { dest: string; set: ScopeSet } {
-  if (scope === 'user' || deliveryMode(t.dest) === 'project') {
+  if (
+    scope === 'user' ||
+    verb === 'install' ||
+    deliveryMode(t.dest) === 'project'
+  ) {
     return { dest: t.dest, set: t.set };
   }
   out(
@@ -297,9 +316,36 @@ function pickChecked(
   return { dest: t.userDest, set: EVERY_RULE };
 }
 
-function sharedNames(projectDest: string, userDest: string): number {
+function sharedNames(
+  expected: string[],
+  projectDest: string,
+  userDest: string,
+): number {
+  const project = new Set(ownedRulesIn(projectDest));
   const user = new Set(ownedRulesIn(userDest));
-  return ownedRulesIn(projectDest).filter((n) => user.has(n)).length;
+  return expected.filter((n) => project.has(n) && user.has(n)).length;
+}
+
+function reportDuplicates(
+  expected: string[],
+  dest: string,
+  userDest: string,
+  out: (line: string) => void,
+): void {
+  if (sameDir(dest, userDest)) return;
+  const shared = sharedNames(expected, dest, userDest);
+  if (shared === 0) return;
+  out(
+    `your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`,
+  );
+}
+
+// A non-directory would make `mkdirSync` throw EEXIST and `readdirSync` ENOTDIR; refuse so it is an exit code, not a stack trace.
+function refuseNonDirectory(dir: string, out: (line: string) => void): boolean {
+  const st = fs.statSync(dir, { throwIfNoEntry: false });
+  if (!st || st.isDirectory()) return false;
+  out(`${dir} exists and is not a directory; refusing to write rules there`);
+  return true;
 }
 
 function reportInstall(
@@ -324,13 +370,12 @@ export function runRulesCli(
   env: { src: string; cwd: string; claudeHome: string },
   out: (line: string) => void,
 ): number {
-  const [verb] = args;
-  const strict = args.includes('--strict');
-  const scope = scopeOf(args.slice(1));
-  if ((verb !== 'install' && verb !== 'check') || scope === undefined) {
+  const parsed = parseArgs(args);
+  if (parsed === undefined) {
     out(USAGE);
     return 1;
   }
+  const { verb, scope, strict } = parsed;
   const root = scope === 'project' ? repoRootOf(env.cwd) : env.cwd;
   if (scope === 'project') out(`project root: ${root}`);
   const dest = resolveDest(scope, root, env.claudeHome);
@@ -338,15 +383,7 @@ export function runRulesCli(
     out(`no sk-*.md rules found at ${env.src}; refusing to touch ${dest}`);
     return 1;
   }
-  // A plain file (or anything else non-directory) at `dest` would make
-  // `installRules`'s `mkdirSync` throw EEXIST, and `checkRules` /
-  // `findOverlap`'s `readdirSync` throw ENOTDIR. Refuse before either
-  // runs, so a bad `dest` is a reported exit code, not a stack trace.
-  const destStat = fs.statSync(dest, { throwIfNoEntry: false });
-  if (destStat && !destStat.isDirectory()) {
-    out(`${dest} exists and is not a directory; refusing to write rules there`);
-    return 1;
-  }
+  if (refuseNonDirectory(dest, out)) return 1;
 
   const { set, notes } = scopeSet(scope, root);
   let skipped: Skipped[] = [];
@@ -358,25 +395,24 @@ export function runRulesCli(
   for (const note of notes) out(note);
 
   const userDest = resolveDest('user', root, env.claudeHome);
-  const checked = pickChecked(scope, { dest, userDest, set }, env.src, out);
+  const checked = pickChecked(
+    scope,
+    verb,
+    { dest, userDest, set },
+    env.src,
+    out,
+  );
+  if (checked.dest !== dest && refuseNonDirectory(checked.dest, out)) return 1;
+  const expected = expectedRules(ownedRulesIn(env.src), checked.set);
   const drift = checkRules(env.src, checked.dest, checked.set);
   if (drift.length === 0) {
     out(
-      `${expectedRules(ownedRulesIn(env.src), checked.set).length} rule(s) match the shipped copies at ${checked.dest}`,
+      `${expected.length} rule(s) match the shipped copies at ${checked.dest}`,
     );
   }
   for (const d of drift) out(`[${d.kind}] ${d.name}`);
-  if (
-    scope === 'project' &&
-    checked.dest === dest &&
-    !sameDir(dest, userDest)
-  ) {
-    const shared = sharedNames(dest, userDest);
-    if (shared > 0) {
-      out(
-        `your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`,
-      );
-    }
+  if (scope === 'project' && checked.dest === dest) {
+    reportDuplicates(expected, dest, userDest, out);
   }
   for (const l of formatOverlap(findOverlap(env.src, dest))) out(l);
   const found = drift.length > 0 || skipped.length > 0;

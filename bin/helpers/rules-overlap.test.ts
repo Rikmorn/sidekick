@@ -46,6 +46,16 @@ describe('findOverlap', () => {
     expect(findOverlap(src, dest)).toEqual({ pairs: [], extensions: [] });
   });
 
+  test('a heading repeated in one file counts once', () => {
+    const { src, dest } = setup();
+    write(
+      dest,
+      'testing.md',
+      '# Testing\n\nRun them.\n\n## Structure\n\nz\n\n## Structure\n\nzz\n',
+    );
+    expect(findOverlap(src, dest)).toEqual({ pairs: [], extensions: [] });
+  });
+
   test('two shared headings pair, with their count', () => {
     const { src, dest } = setup();
     write(
