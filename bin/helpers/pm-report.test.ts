@@ -83,7 +83,7 @@ describe('renderReport', () => {
         '|---|---|---|---|',
         '| done | Done | 1 of 1 | Rikmorn/sidekick#1 |',
         '| running | Run | 1 of 2 | Rikmorn/sidekick#2 Rikmorn/sidekick#3 |',
-        '| verify | Ver | 0 of 1 | Rikmorn/sidekick#4 |',
+        '|  | Ver | 0 of 1 | Rikmorn/sidekick#4 |',
         '| next | Nxt | 0 of 1 | Rikmorn/sidekick#5 |',
         '|  | Lat | 0 of 1 | Rikmorn/sidekick#6 |',
         '',

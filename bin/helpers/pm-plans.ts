@@ -110,7 +110,7 @@ export function descriptionProse(description: string): string {
   return found.at === 'top' ? found.prose.join('\n') : normalise(description);
 }
 
-export type PlanState = 'done' | 'running' | 'next' | 'verify' | 'later';
+export type PlanState = 'done' | 'running' | 'next' | 'later';
 
 export interface PlanIssue {
   number: number;
@@ -150,7 +150,6 @@ function stateOf(issues: PlanIssue[], isNext: boolean): PlanState {
   if (open.length === 0) return 'done';
   if (open.some(inProgress)) return 'running';
   if (isNext) return 'next';
-  if (open.every((i) => i.status === 'Verify')) return 'verify';
   return 'later';
 }
 

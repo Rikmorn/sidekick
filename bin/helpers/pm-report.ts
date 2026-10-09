@@ -18,7 +18,6 @@ const STATE_CELL: Record<PlanState, string> = {
   done: 'done',
   running: 'running',
   next: 'next',
-  verify: 'verify',
   later: '',
 };
 

@@ -305,8 +305,6 @@ function stateOf(issues, isNext) {
     return "running";
   if (isNext)
     return "next";
-  if (open.every((i) => i.status === "Verify"))
-    return "verify";
   return "later";
 }
 function planView(ms, items) {
@@ -428,14 +426,12 @@ function planCandidatesLine(p, plans) {
   const inState = (state) => plans.list.filter((pl) => pl.state === state);
   const next = plans.list.find((pl) => pl.state === "next");
   const later = inState("later");
-  const verify = inState("verify");
   const openCount = (pl) => pl.issues.filter((i) => i.open).length;
   const running = new Set(p.in_progress.map((i) => i.number));
   const unplanned = plans.unplanned.filter((i) => !running.has(i.number)).map((i) => `#${i.number}`).join(", ");
   const segments = [
     next === undefined ? null : `next plan ${cut(next.name)} (${openRefs(next)})`,
     later.length === 0 ? null : `then ${later.map((pl) => `${cut(pl.name)} (${openCount(pl)})`).join(", ")}`,
-    verify.length === 0 ? null : `in verify: ${verify.map((pl) => cut(pl.name)).join(", ")}`,
     doneSegment(inState("done").length),
     `unplanned: ${unplanned === "" ? "none" : unplanned}`,
     `tier 2: ${tierBody(2, p.candidates) ?? "none"}`
@@ -829,7 +825,6 @@ var STATE_CELL = {
   done: "done",
   running: "running",
   next: "next",
-  verify: "verify",
   later: ""
 };
 var cell = (text) => text.replaceAll("|", "\\|");

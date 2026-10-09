@@ -153,7 +153,6 @@ function planCandidatesLine(p: BriefInput, plans: ParsedPlans): string {
     plans.list.filter((pl) => pl.state === state);
   const next = plans.list.find((pl) => pl.state === 'next');
   const later = inState('later');
-  const verify = inState('verify');
   const openCount = (pl: PlanView) => pl.issues.filter((i) => i.open).length;
   // An In Progress issue already shows in the in-progress line.
   const running = new Set(p.in_progress.map((i) => i.number));
@@ -168,9 +167,6 @@ function planCandidatesLine(p: BriefInput, plans: ParsedPlans): string {
     later.length === 0
       ? null
       : `then ${later.map((pl) => `${cut(pl.name)} (${openCount(pl)})`).join(', ')}`,
-    verify.length === 0
-      ? null
-      : `in verify: ${verify.map((pl) => cut(pl.name)).join(', ')}`,
     doneSegment(inState('done').length),
     `unplanned: ${unplanned === '' ? 'none' : unplanned}`,
     `tier 2: ${tierBody(2, p.candidates) ?? 'none'}`,

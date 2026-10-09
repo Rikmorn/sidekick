@@ -202,7 +202,7 @@ describe('chooseBoard', () => {
 });
 
 describe('discover', () => {
-  test('sidekick is tracked on board #2 with the four Status options', () => {
+  test('sidekick is tracked on board #2 with the three Status options', () => {
     const info = discover(fixtureRunner(sidekickMap()), '/');
     expect(info.tracked).toBe(true);
     expect(info.reason).toBeNull();
@@ -217,7 +217,6 @@ describe('discover', () => {
       'Backlog',
       'Done',
       'In Progress',
-      'Verify',
     ]);
     expect(info.preflight.gh_min).toBe(GH_MIN);
     expect(info.preflight.project_scope).toBe(true);

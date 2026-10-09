@@ -204,7 +204,7 @@ describe('fetchDiscovery', () => {
 });
 
 describe('fetchStatusField', () => {
-  test('returns the four options keyed by name', () => {
+  test('returns the three options keyed by name', () => {
     const run = fixtureRunner(sidekickMap());
     const f = fetchStatusField(run, '/', 'Rikmorn', 2);
     expect(f.statusField).not.toBeNull();
@@ -212,7 +212,6 @@ describe('fetchStatusField', () => {
       'Backlog',
       'Done',
       'In Progress',
-      'Verify',
     ]);
     expect(f.title).toBe('sidekick');
   });

@@ -17,7 +17,7 @@ Some history is frozen: sidekick's `docs/work/` holds per-item records from befo
 Issue titles are **content names** — say what the work is, never a position code (`3.4 — …`, `bench-6 — …`, `wave 2 of…` as identity are all out). Ordering lives on the board and in milestones; legacy or external IDs live in the issue body as source pointers.
 
 ## Board discipline
-- One project board per repo; that board is the repo's status surface. Columns: Backlog · In Progress · Verify · Done.
+- One project board per repo; that board is the repo's status surface. Columns: Backlog · In Progress · Done.
 - "What do I pick up" is **derived at session start** (orient + a board query), not stored in a column: mid-milestone you continue what's In Progress or pause it on purpose; between loose issues it is a judgment call. A deliberate sequencing decision worth keeping is recorded as a comment on the issue it concerns.
 - An issue labelled `backlog` is deliberately deferred. Its body carries a line beginning `Revisit when:` (plain, bold, italic, or as a list item) that names the condition or unknown that would re-raise it. `sidekick pm lint` reports the label without the line. (The Backlog *column* just means not started; the *label* marks the deliberate-deferral subset with a stated condition.)
 - At filing an issue takes `backlog` with its condition, unless it is a small addition closely tied to work already in the **active milestone** (§Change control). Never a future milestone: that is a promise about a release nobody has planned.

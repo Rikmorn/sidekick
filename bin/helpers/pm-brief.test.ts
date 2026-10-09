@@ -354,7 +354,7 @@ describe('plans in the brief', () => {
     );
   });
 
-  test('a card in no plan keeps its title; verify plans, done plans, unplanned issues, and tier 2 show', () => {
+  test('a card in no plan keeps its title; a plan in an unknown status, done plans, unplanned issues, and tier 2 show', () => {
     const description = plansHeader('A (#1, #2)', 'B (#3)', 'C (#4)', 'D (#5)');
     const items = [
       card(1, 'In Progress'),
@@ -372,7 +372,7 @@ describe('plans in the brief', () => {
     ).split('\n');
     expect(r[2]).toBe('in progress: plan A: #1 (2 d) · #9 t9 (4 d)');
     expect(r[3]).toBe(
-      'candidates: in verify: B · 2 plans done · unplanned: #7 · tier 2: #200 t200',
+      'candidates: then B (1) · 2 plans done · unplanned: #7 · tier 2: #200 t200',
     );
   });
 

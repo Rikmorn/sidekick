@@ -202,7 +202,9 @@ describe('planView', () => {
   const states = (description: string, items: Item[]) =>
     planView(ms(description), items).list.map((p) => [p.name, p.state]);
 
-  test('state precedence: done, running, the first plan with Backlog is next, verify, later', () => {
+  // A board copied before Verify was removed may still carry it;
+  // like any status sidekick does not know, it leaves a plan later.
+  test('state precedence: done, running, the first plan with Backlog is next, later', () => {
     expect(
       states(
         header(
@@ -225,7 +227,7 @@ describe('planView', () => {
     ).toEqual([
       ['Done', 'done'],
       ['Run', 'running'],
-      ['Ver', 'verify'],
+      ['Ver', 'later'],
       ['Nxt', 'next'],
       ['Lat', 'later'],
     ]);
@@ -244,12 +246,12 @@ describe('planView', () => {
 
   test('issues keep header order and carry the card they have', () => {
     const v = planView(ms(header('1. P (#3, #1)')), [
-      item({ number: 1, status: 'Verify' }),
+      item({ number: 1, status: 'Backlog' }),
       item({ number: 3, state: 'CLOSED', status: 'Done' }),
     ]);
     expect(v.list[0].issues).toEqual([
       { number: 3, title: 't3', open: false, status: 'Done' },
-      { number: 1, title: 't1', open: true, status: 'Verify' },
+      { number: 1, title: 't1', open: true, status: 'Backlog' },
     ]);
   });
 
