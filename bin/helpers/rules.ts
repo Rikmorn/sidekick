@@ -266,6 +266,15 @@ function scopeSet(
   return { set, notes };
 }
 
+// The user level counts only when the repo holds no copies of its own; a partial project install is still a project install.
+const deliveryMode = (projectDest: string): Scope =>
+  ownedRulesIn(projectDest).length > 0 ? 'project' : 'user';
+
+function sharedNames(projectDest: string, userDest: string): number {
+  const user = new Set(ownedRulesIn(userDest));
+  return ownedRulesIn(projectDest).filter((n) => user.has(n)).length;
+}
+
 function reportInstall(
   result: ReturnType<typeof installRules>,
   dest: string,
@@ -321,15 +330,32 @@ export function runRulesCli(
   }
   for (const note of notes) out(note);
 
-  const drift = checkRules(env.src, dest, set);
-  const overlap = findOverlap(env.src, dest);
+  const userDest = resolveDest('user', root, env.claudeHome);
+  const checked =
+    scope === 'project' && deliveryMode(dest) === 'user'
+      ? { dest: userDest, set: EVERY_RULE }
+      : { dest, set };
+  if (checked.dest !== dest) {
+    out(
+      `no sk-* rules in ${dest}; checking the user-level copies at ${userDest} against ${env.src}`,
+    );
+  }
+  const drift = checkRules(env.src, checked.dest, checked.set);
   if (drift.length === 0) {
     out(
-      `${expectedRules(ownedRulesIn(env.src), set).length} rule(s) match the shipped copies at ${dest}`,
+      `${expectedRules(ownedRulesIn(env.src), checked.set).length} rule(s) match the shipped copies at ${checked.dest}`,
     );
   }
   for (const d of drift) out(`[${d.kind}] ${d.name}`);
-  for (const l of formatOverlap(overlap)) out(l);
+  if (scope === 'project' && checked.dest === dest) {
+    const shared = sharedNames(dest, userDest);
+    if (shared > 0) {
+      out(
+        `your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`,
+      );
+    }
+  }
+  for (const l of formatOverlap(findOverlap(env.src, dest))) out(l);
   const found = drift.length > 0 || skipped.length > 0;
   return strict && found ? 1 : 0;
 }

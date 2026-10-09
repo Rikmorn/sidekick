@@ -657,3 +657,95 @@ describe('runRulesCli --project and the plugin-only rules', () => {
     expect(lines.join('\n')).not.toContain('not delivered');
   });
 });
+
+describe('runRulesCli --project check with no sk-* copies in the repo', () => {
+  const setup = () => {
+    const src = tmp();
+    const cwd = tmp();
+    const home = tmp();
+    gitInit(cwd);
+    write(src, 'sk-a.md', RULE_A);
+    return {
+      src,
+      cwd,
+      home,
+      user: path.join(home, 'rules'),
+      project: path.join(cwd, '.claude', 'rules'),
+    };
+  };
+  const check = (
+    e: { src: string; cwd: string; home: string },
+    extra: string[] = [],
+  ) => {
+    const lines: string[] = [];
+    const code = runRulesCli(
+      ['check', '--project', ...extra],
+      { src: e.src, cwd: e.cwd, claudeHome: e.home },
+      (l) => lines.push(l),
+    );
+    return { code, text: lines.join('\n') };
+  };
+
+  test('matching user copies check clean and the line names the source', () => {
+    const e = setup();
+    write(e.user, 'sk-a.md', RULE_A);
+    const r = check(e, ['--strict']);
+    expect(r.code).toBe(0);
+    expect(r.text).toContain(
+      `no sk-* rules in ${path.join(fs.realpathSync(e.cwd), '.claude', 'rules')}; checking the user-level copies at ${e.user} against ${e.src}`,
+    );
+    expect(r.text).toContain(`1 rule(s) match the shipped copies at ${e.user}`);
+    expect(r.text).not.toContain('[missing]');
+  });
+
+  test('a stale user copy is drift: exit 0, or 1 under --strict', () => {
+    const e = setup();
+    write(e.user, 'sk-a.md', 'old');
+    const r = check(e);
+    expect(r.code).toBe(0);
+    expect(r.text).toContain('[stale] sk-a.md');
+    expect(check(e, ['--strict']).code).toBe(1);
+  });
+
+  test('a repo rule overlapping by name still reports overlap in user mode', () => {
+    const e = setup();
+    write(e.user, 'sk-a.md', RULE_A);
+    write(e.project, 'a.md', '# Something else\n');
+    const r = check(e);
+    expect(r.text).toContain('checking the user-level copies');
+    expect(r.text).toContain('a.md overlaps sk-a.md on name');
+  });
+
+  test('with no user directory every shipped rule is missing and exit is 0', () => {
+    const e = setup();
+    const r = check(e);
+    expect(r.code).toBe(0);
+    expect(r.text).toContain('[missing] sk-a.md');
+    expect(r.text).toContain(e.user);
+  });
+
+  test('project copies also at user level print the duplicate line with the count', () => {
+    const e = setup();
+    write(e.src, 'sk-b.md', RULE_B);
+    write(e.project, 'sk-a.md', RULE_A);
+    write(e.project, 'sk-b.md', RULE_B);
+    write(e.user, 'sk-a.md', RULE_A);
+    const r = check(e, ['--strict']);
+    expect(r.code).toBe(0);
+    expect(r.text).toContain(
+      `your user-level rules at ${e.user} also deliver 1 of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`,
+    );
+    expect(r.text).not.toContain('checking the user-level copies');
+  });
+
+  test('user copies never mask a partial project install', () => {
+    const e = setup();
+    write(e.src, 'sk-b.md', RULE_B);
+    write(e.project, 'sk-a.md', RULE_A);
+    write(e.user, 'sk-a.md', RULE_A);
+    write(e.user, 'sk-b.md', RULE_B);
+    const r = check(e);
+    expect(r.text).toContain('[missing] sk-b.md');
+    expect(r.text).not.toContain('checking the user-level copies');
+  });
+});
