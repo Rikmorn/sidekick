@@ -6,7 +6,7 @@ paths:
 
 # sk-* Clean Code Rules
 
-Applies to **new code** and **substantial edits**. Drive-by changes to legacy files don't trigger restructuring — if you notice a violation in surrounding code you weren't asked to change, mention it but don't silently expand scope. Refactor work happens in dedicated sessions where the task is explicitly "clean up X".
+Applies to **new code** and **substantial edits**. Drive-by changes to legacy files don't trigger restructuring. For a violation in surrounding code you weren't asked to change, follow `sk-working-standards.md` §Don't fix what you weren't asked to fix: file it, don't fix it. Refactor work happens in dedicated sessions where the task is explicitly "clean up X".
 
 This rule covers structure and readability. For type-system hygiene see `sk-typescript.md`. For how comments and other prose are worded see `sk-language.md`. For naming conventions (camelCase, PascalCase, ALL_CAPS) see the project's CLAUDE.md.
 
