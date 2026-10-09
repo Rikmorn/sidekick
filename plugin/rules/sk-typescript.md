@@ -6,7 +6,7 @@ paths:
 
 # sk-* TypeScript
 
-Assumes `tsconfig.json` has `strict: true` and `noFallthroughCasesInSwitch: true`. If either is off, write code that would pass with it on. Turning it on is a config change of its own, so file it rather than make it unasked (`sk-working-standards.md` §Don't fix what you weren't asked to fix).
+Assumes `tsconfig.json` has `strict: true` and `noFallthroughCasesInSwitch: true`. If either is off, write code that would pass with it on. Turning it on is a config change of its own. File it rather than make it unasked (`sk-working-standards.md` §Don't fix what you weren't asked to fix).
 
 Where a repo's own written rules disagree with this file, the repo's rules win (`sk-working-standards.md` §When a repo's rules disagree).
 
