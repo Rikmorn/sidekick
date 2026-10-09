@@ -1,16 +1,13 @@
 ---
 paths:
-  - ".claude/agents/**"
-  - ".claude/skills/**"
-  - "agents/**"
-  - "skills/**"
-  - "plugin/agents/**"
-  - "plugin/skills/**"
+  - "**/agents/**/*.md"
+  - "**/skills/**/*.md"
+  - "**/*prompt*.{ts,tsx,js,py}"
 ---
 
 # sk-* Agent Prompt Authoring
 
-Rules for writing and reviewing subagent definitions (`.claude/agents/*.md`, a plugin's `agents/`) and the skills that orchestrate them. Adapted from the broader Anthropic agent-prompts discipline; these rules codify lessons from in-spec prompt engineering across multiple projects.
+Rules for writing and reviewing subagent definitions (`.claude/agents/*.md`, a plugin's `agents/`), the skills that orchestrate them, and prompts kept in source files. Adapted from the broader Anthropic agent-prompts discipline; these rules codify lessons from in-spec prompt engineering across multiple projects.
 
 This rule extends the portable sk-* set rather than replacing any of it: `sk-guidance-authoring.md` decides what earns a place in standing guidance of any kind, and `sk-working-standards.md` and `sk-language.md` govern this file's prose as they do any doc. What this file adds is the surface the portable set doesn't cover — the agent-prompt control surface — and on that surface it takes precedence over any third-party skill's authoring advice.
 
