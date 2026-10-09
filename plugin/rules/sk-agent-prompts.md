@@ -74,6 +74,9 @@ Replace if/then branching with the judgement you want the agent to make: what to
 **Do:**
 
 ```
+Count one finding for each place a fix must be made, however many
+violations sit there.
+
 <examples>
 
 Code: <button style={{ color: "#FF0000" }}>Save</button>
@@ -145,7 +148,7 @@ A reviewer checks one quality dimension — structural validity, cross-reference
 
 An orchestrator is a skill or main-session flow that dispatches subagents and synthesises their returns. It states each significant decision and its reason, in a line, where it makes it. A worker agent, which does one focused task, does not: it executes.
 
-Ask for the decision, not the reasoning behind it. A capable model reasons before it answers. A prompt that asks it to write that reasoning into its output can be declined as reasoning extraction. Such prompts include a reasoning section to fill in, a `reasoning` or `trace` field, and a running log of its thinking. A short explanation, the evidence behind a result, or a summary of the actions taken stays fine.
+Ask for the decision and a one-line reason, not the reasoning that led to it. A capable model reasons before it answers. A prompt that asks it to write that reasoning into its output can be declined as reasoning extraction. Such prompts include a reasoning section to fill in, a `reasoning` or `trace` field, and a running log of its thinking. A short explanation, the evidence behind a result, or a summary of the actions taken stays fine.
 
 **For orchestrators, include in identity:**
 

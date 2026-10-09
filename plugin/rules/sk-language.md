@@ -56,4 +56,4 @@ British spelling in prose. American where the word echoes an API identifier or c
 
 Flag uncertainty inline, at the claim it qualifies. Don't gather it into a closing methodology paragraph auditing your own confidence: that reads as defensive, and `sk-working-standards.md` §Reasoning and §Verify, don't assume already cover it.
 
-In durable text, such as a doc, a comment, or a commit message, anchor the flag: say what was checked, how, and when. "This session" means nothing to a later reader.
+In durable text, such as a doc, a comment, or a commit message, anchor the label, since "this session" means nothing to a later reader. A verified claim names its source. An uncertain one says what was checked, how, and when.

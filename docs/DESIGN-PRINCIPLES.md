@@ -20,6 +20,6 @@
 
 7. **Guardrails as positive boundaries; reasoning is not a constraint-guarantee.** Frame guardrails as affordances; reserve prohibitions for a safety tier; audit guardrail adherence externally at high stakes (reasoning can drop constraints). *(prompting.)*
 
-8. **Research first, depth as a soft prior — but guard both ends of the dial.** The model plans without a scripted framing pass, and the depth it settles on stays overridable within operator bounds. Over-application of process is net-negative, not merely wasteful. *(reasoning F4/F5.)*
+8. **Research first, depth as a soft prior — but guard both ends of the dial.** The model plans without a scripted framing pass, and the depth it settles on stays overridable within operator bounds. Over-application of process is net-negative, not merely wasteful. *(reasoning F4/F5. The research's scripted framing pass was retired in #162, after Anthropic's prompting guide.)*
 
 9. **Autonomy is derived per task** from the non-functional requirements the operator expresses (scope / urgency / blast-radius), within operator-set bounds the model adapts inside — not a global on/off. *(SYNTHESIS; reasoning F6.)*

@@ -44,12 +44,14 @@ The default is **leave existing code alone**.
 
 ## When a repo's rules disagree
 
-Claude Code ranks neither user-level nor project rules, so this section does. Settle a conflict between a repo's own rules and these in this order:
+Claude Code ranks neither user-level nor project rules, so this section does. When a repo's own rules and these disagree:
 
-1. The operator's instruction in the session outranks every file.
+1. The user's instruction in the session outranks every file.
 2. A repo rule that names the sk-* rule it departs from wins. It is a deliberate ruling.
-3. Otherwise, the repo's written rules win on what lands in the repo: code, tests, comments, docs, commit messages, and how it takes contributions.
-4. Your user-level instructions win on how you work with the operator: reasoning, verification, scope, and how you report. They include these rules and a user `CLAUDE.md`.
+3. Otherwise, split by what the instruction governs:
+   - The repo's written rules win on what lands in the repo: code, tests, comments, docs, commit messages, and how it takes contributions.
+   - Your user-level instructions win on how you work with the user: reasoning, verification, scope, and how you report. They include these rules and a user `CLAUDE.md`.
+   - Whether to fix a problem outside the task or file it is scope, so these rules decide it. Where and how to file it follows the repo.
 
 Two things are not the repo's own rules. Its existing code is a pattern, not a rule. An `sk-*` file committed in the repo is a copy of these rules.
 
