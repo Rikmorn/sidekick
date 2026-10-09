@@ -14,11 +14,11 @@ Rules for writing and reviewing subagent definitions (`.claude/agents/*.md`, a p
 
 This rule extends the portable sk-* set rather than replacing any of it: `sk-guidance-authoring.md` decides what earns a place in standing guidance of any kind, and `sk-working-standards.md` and `sk-language.md` govern this file's prose as they do any doc. What this file adds is the surface the portable set doesn't cover — the agent-prompt control surface — and on that surface it takes precedence over any third-party skill's authoring advice.
 
-**Scope assumption — capable frontier models.** This discipline is calibrated for the capable frontier models the sk-* toolchain runs on. Several rules lean on that: trusting the model's intent-detection (Rule 8), preferring zero-shot reasoning over worked examples (Rule 3), and treating directive-density as a smell rather than a hard cap (Rule 4). On a weaker model you would lean harder on explicit examples and structure. Where a rule is frontier-specific, it says so inline.
+**Scope assumption — capable frontier models.** This discipline is calibrated for the capable frontier models the sk-* toolchain runs on. Several rules lean on that. Rule 8 trusts the model's intent-detection. Rule 3 leads with the reasoning you want, and adds worked examples only where a pattern must be shown. Rule 4 treats directive-density as a smell rather than a hard cap. On a weaker model you would lean harder on explicit examples and structure. Where a rule is frontier-specific, it says so inline.
 
 ## Why this exists
 
-Agent prompts are the primary control surface for agent behaviour. Three rounds of in-spec discipline tightening on `sk-ui-auditor` (T-17 → T-18 → SK-SMOKE-04) failed to converge: the auditor kept rationalising around progressively-stricter rules. The pattern is universal — LLMs treat verbose rules + worked examples as "considerations" that they can find surface features to distinguish themselves from. Adding more rules makes it worse, not better.
+Agent prompts are the primary control surface for agent behaviour. Three rounds of tightening one auditor agent's prompt failed to converge: the auditor kept rationalising around progressively-stricter rules. The pattern is universal — LLMs treat verbose rules + worked examples as "considerations" that they can find surface features to distinguish themselves from. Adding more rules makes it worse, not better.
 
 The rules below describe how to author prompts that hold up under model rationalisation.
 
@@ -70,9 +70,9 @@ When to use a constraint vs leave it to judgment:
 - **Constraint:** the violation would cause real harm (modifying state, fabricating findings, returning malformed structured output the orchestrator can't parse).
 - **Judgment:** reasonable people might disagree on the right action (which lines count as one violation vs two; how much context to capture in evidence).
 
-## Rule 3: Few-shot examples with reasoning
+## Rule 3: Teach the reasoning; show examples where the pattern needs showing
 
-Replace if/then branching with examples that teach the reasoning pattern. Always include the reasoning — without it, examples become a lookup table the model pattern-matches against.
+Replace if/then branching with the judgement you want the agent to make: what to weigh, and why. A capable model reasons before it answers, so a well-stated judgement carries most cases. Add examples when the agent needs the pattern *shown*: an output format, or a judgement that is hard to put in words. Give each example the problem, the method to apply, and the expected answer. Without the method, examples become a lookup table the model pattern-matches against.
 
 **Do:**
 
@@ -80,13 +80,13 @@ Replace if/then branching with examples that teach the reasoning pattern. Always
 <examples>
 
 Code: <button style={{ color: "#FF0000" }}>Save</button>
-Reasoning: One line, one place to fix. The hex value and the inline style
+Method: One line, one place to fix. The hex value and the inline style
 are co-located — replacing the `style` prop with `text-red-500` resolves
 both. Count as ONE finding; the violation count drives the score tier.
 Action: Emit one finding row.
 
 Code: const RED = "#FF0000"; ... <Button color={RED}>Save</Button>
-Reasoning: Two distinct places — the constant declaration and the usage.
+Method: Two distinct places — the constant declaration and the usage.
 Fixing requires editing two lines. Even though it's the same colour,
 they're separate findings.
 Action: Emit two finding rows.
@@ -102,9 +102,9 @@ RULE: Hardcoded hex shared via constant + usage is TWO findings.
 RULE: Read the matrix top-to-bottom, do not skip past tier 3 to tier 1.
 ```
 
-Examples teach pattern recognition. Rules teach rule-following. The agent that learned from examples handles the variation that doesn't match either example. The agent following rules pattern-matches surface features and rationalises around them.
+A stated judgement, and examples that carry their method, teach the reasoning. The agent that learned it handles the variation that matches no example. Rules teach rule-following: the agent pattern-matches surface features and rationalises around them.
 
-**Model-dependent.** Worked examples matter most for weaker models and for pinning down an output format. On frontier reasoning models the lift shrinks — zero-shot CoT can beat few-shot — so don't reach for examples reflexively when the format is simple. The reasoning-pattern principle holds either way: lead with the reasoning you want the agent to do, and add examples when it needs the pattern *shown*, not by default.
+**Model-dependent.** Worked examples matter most for weaker models and for pinning down an output format. With thinking on, an example shapes how the model approaches similar problems in its own reasoning. On a capable model with a simple format, don't reach for examples by default.
 
 ## Rule 4: Minimise directive density
 
@@ -144,27 +144,29 @@ A reviewer checks one quality dimension — structural validity, cross-reference
 
 **Naming.** Reviewers SHOULD be named after the dimension they check (`sk-coherence-checker`, not `sk-rfc-checker`). Producers MAY be named after the artifact they produce (`sk-rfc-drafter`).
 
-## Rule 6: Chain of thought for orchestrators
+## Rule 6: Orchestrators state their decisions
 
-Orchestrator contexts (skills or main-session orchestration that dispatches subagents and synthesises their returns) externalise their reasoning before significant decisions. Worker agents (those that do one focused task) do not — they just execute.
+An orchestrator is a skill or main-session flow that dispatches subagents and synthesises their returns. It states each significant decision and its reason, in a line, where it makes it. A worker agent, which does one focused task, does not: it executes.
+
+Ask for the decision, not the reasoning behind it. A capable model reasons before it answers. A prompt that asks it to write that reasoning into its output can be declined as reasoning extraction. Such prompts include a reasoning section to fill in, a `reasoning` or `trace` field, and a running log of its thinking. A short explanation, the evidence behind a result, or a summary of the actions taken stays fine.
 
 **For orchestrators, include in identity:**
 
-> Before significant decisions (dispatching specialists, deciding what counts as a fixture mismatch, choosing how to compose the report), reason through your choice in prose. Specialists may also reason in prose around their structured output.
+> State each significant decision and its reason in one line. Significant decisions include dispatching specialists, judging a fixture mismatch, and composing the report.
 
 **What counts as significant:**
 - Choosing whether to dispatch a specialist, retry one, or escalate
 - Deciding whether the diff is in scope for this audit
 - Choosing how to handle a specialist that returns malformed output
 
-**What doesn't need explicit reasoning:**
+**What doesn't need a stated decision:**
 - Routine tool calls (reading a file, running a grep)
 - Following through on a decision already made
 - Simple acknowledgments
 
-The purpose is debuggability, not ceremony. If the reasoning would just be "I'm reading this file because I need to understand the code," skip it.
+The purpose is debuggability, not ceremony. If the reason would be "I'm reading this file because I need to understand the code," skip it.
 
-**Reasoning is not a constraint-guarantee.** Externalised reasoning improves *decisions*; it does not guarantee the agent honours its own *constraints*. Chain-of-thought can actually make a model neglect constraints it would otherwise have respected. The corollary cuts against over-trusting the trace: the more a decision rides on the agent reasoning its way to the right action, the more you must audit guardrail adherence *externally* at high stakes — with a separate verifier (Rule 5), not by trusting the reasoning to have enforced them.
+**Reasoning is not a constraint-guarantee.** Reasoning improves *decisions*, but it does not guarantee the agent honours its own *constraints*. It can even make a model neglect constraints it would otherwise have respected. So don't over-trust a stated decision. The more a decision rides on the agent reasoning its way to the right action, the more you audit guardrail adherence *externally* at high stakes. Use a separate verifier (Rule 5), rather than trusting the reasoning to have enforced them.
 
 ## Rule 7: Structured output at boundaries only
 
@@ -176,13 +178,13 @@ Use structured output (JSON blocks, fenced code blocks, specific markdown templa
 - Hard-stop error blocks the orchestrator emits
 
 **Agent communication (natural language):**
-- Specialist reasoning prose around its JSON deliverable
-- Orchestrator's reasoning before dispatching
+- A specialist's short explanation around its JSON deliverable
+- The orchestrator's stated decision before dispatching
 - Error descriptions and status updates
 
 Don't invent new structured formats unless something parses them. Unused structure is noise that constrains the agent for no benefit.
 
-**Specialist contract pattern.** Specialists may reason in prose freely. Their *deliverable* is one JSON object inside a final ```json ``` fence. The orchestrator extracts that block and ignores everything else. This is the same shape as Anthropic's structured tool use — model can think out loud, runtime parses just the call.
+**Specialist contract pattern.** Specialists may explain their result in prose. Their *deliverable* is one JSON object inside a final ```json ``` fence. The orchestrator extracts that block and ignores everything else. This is the same shape as Anthropic's structured tool use, where the runtime parses just the call.
 
 ## Rule 8: Trust the model
 
@@ -207,11 +209,11 @@ IMPORTANT: Do NOT emit pillars out of order.
 
 If you find yourself listing surface forms the model might produce ("Confirmed:", "Verified:", "Now I have the picture"), or writing rules about basic output flow, you're doing work the model already does. Constrain only when the model has demonstrably failed in testing — not preemptively.
 
-**The exception:** when the model's natural behaviour conflicts with a product requirement. If the model tends to be verbose but the orchestrator needs terse JSON, a constraint is warranted. But "the model might add a preamble" is not sufficient reason — test first, constrain only if needed. And when you do constrain, prefer structural enforcement (no surface for the unwanted behaviour) over rules (which the model rationalises around). Keep the two senses of "trust" separate, too: trusting the model's *intent-detection* (this rule) is not trusting it to *honour its constraints* — chain-of-thought can make it neglect them (Rule 6). At high stakes, verify adherence with a separate check rather than assuming the reasoning enforced it.
+**The exception:** when the model's natural behaviour conflicts with a product requirement. If the model tends to be verbose but the orchestrator needs terse JSON, a constraint is warranted. But "the model might add a preamble" is not sufficient reason — test first, constrain only if needed. And when you do constrain, prefer structural enforcement (no surface for the unwanted behaviour) over rules (which the model rationalises around). Keep the two senses of "trust" separate, too. Trusting the model's *intent-detection* (this rule) is not trusting it to *honour its constraints*: reasoning can make it neglect them (Rule 6). At high stakes, verify adherence with a separate check rather than assuming the reasoning enforced it.
 
 ## Rule 9: Orchestrator owns deliverable writes; subagents return data
 
-The orchestrator writes the deliverable files — specs, plans, decision docs, reports. Specialists return their contribution as data (prose reasoning + the ONE-JSON deliverable of Rule 7), and the orchestrator writes it through.
+The orchestrator writes the deliverable files — specs, plans, decision docs, reports. Specialists return their contribution as data (a short explanation + the ONE-JSON deliverable of Rule 7), and the orchestrator writes it through.
 
 Why this holds: a specialist that writes its own deliverable bypasses the orchestrator's parse-and-validate step — the file lands whether or not the deliverable is well-formed — and in practice subagent file-writes also fail flakily, leaving half-written artifacts nothing detects. Centralising the writes gives one place that validates, one place that writes, one place that commits. It also lets the specialist's tool grant stay read-only, which is the structural half of sealing the quorum (Rule 5): a reviewer that cannot write cannot "fix" the artifact it is judging.
 
@@ -225,13 +227,13 @@ One agent holding the full context is the baseline, not the fallback. Anything p
 - **Independent verification** — reviewers sealed from the producer (Rule 5). Here parallelism isn't a speed-up; the independence is the point.
 - **Context relief** — the work exceeds one *reliable* context window (well below the advertised one), or the input is noisy enough that a single trajectory can't separate signal from distractors.
 
-Before fanning out, the orchestrator reasons in prose (Rule 6) about which of these the task offers. "It feels decomposable" buys nothing — decomposition without one of the three is pure handoff loss.
+Before fanning out, the orchestrator states which of these the task offers (Rule 6). "It feels decomposable" buys nothing — decomposition without one of the three is pure handoff loss.
 
 **Writes stay single-threaded.** Parallel writers make conflicting implicit decisions — naming, edge-case handling, patterns — and merge into incoherent output; this is the core multi-agent failure mode. Parallelism lives on the read-only/analysis side; writes flow through one thread (the orchestrator per Rule 9, or sequential per-task dispatch). Relaxing that takes structural isolation — disjoint file scopes, worktree isolation — not confidence, and the orchestrator still owns merge and commit.
 
-## Rule 11: Frame first, guard both directions, cap every loop
+## Rule 11: Depth is a soft prior; guard both directions; cap every loop
 
-**Open with a cheap framing pass.** Models default toward answering immediately — a trained-in prior, not laziness, so "think harder" instructions don't fix it; the prompt has to afford the opening move. Non-trivial work starts by restating what the task is, decomposing it, and surfacing the unknowns before producing anything. Keep the pass cheap, and treat what it yields as direction plus a *soft* depth prior — never a self-certified gate. Self-assessed difficulty is unreliable in both directions, so depth stays overridable within operator-set bounds; until an externalised sizing signal exists, the framing output is advisory.
+**Leave the planning to the model, and keep its depth overridable.** A general instruction such as "think thoroughly" tends to produce better reasoning than a hand-written plan, so a prompt need not script a framing pass. The depth the model settles on is a *soft* prior, never a self-certified gate. Self-assessed difficulty is unreliable in both directions, so depth stays overridable within operator-set bounds. Until an externalised sizing signal exists, any sizing the model does is advisory.
 
 **Guard over-engineering as hard as under-research.** Depth needs justifying both ways. Skipping research on a real unknown is the familiar failure; the symmetric one is just as real: past a threshold, more reasoning, more decomposition, more rounds flip correct results to wrong — over-processing is net-negative, not merely wasteful. When more compute genuinely is worth spending, prefer parallel samples with a verifier selecting over an ever-longer sequential chain: fresh attempts explore; a longer chain mostly digs the first rut deeper.
 
@@ -281,9 +283,9 @@ Contradictory or overlapping directives force the agent to guess which wins. The
 
 ```
 # Anti-pattern: each round of testing adds another worked example
-T-17 worked example: <preamble form A>. Banned because...
-T-18 worked example: <preamble form B>. Also banned because...
-T-19 worked example: <preamble form C>. Also banned because...
+Round 1 worked example: <preamble form A>. Banned because...
+Round 2 worked example: <preamble form B>. Also banned because...
+Round 3 worked example: <preamble form C>. Also banned because...
 ```
 
 Each new example teaches the model another surface form to avoid. The model learns to distinguish its own draft from each example individually, not to internalise the underlying rule. Two rounds of "more examples" is the signal that the lever is wrong (`sk-guidance-authoring.md` §Form states the same signal for rules files); redesign before adding a third.
@@ -311,10 +313,10 @@ Two rounds of "more examples" without convergence is the signal. Don't pull the 
 
 ## Runtime facts that shape placement
 
-Two facts decide where an orchestrator can live, and both moved recently, so check the version.
+Two facts decide where an orchestrator can live. Both depend on the Claude Code version, so check yours.
 
 - **Subagents can spawn subagents, three layers deep by default** (Claude Code 2.1.219 and later; `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` changes the limit). At the depth limit a subagent loses the `Agent` tool and does its delegated work itself. An orchestrator may therefore be a subagent, but every layer below the main session pays the handoff fidelity cost again, so prefer the main session for anything that needs the user or has to hold the whole picture.
-- **Plugin subagents lose `hooks`, `mcpServers`, and `permissionMode` frontmatter.** Those fields are honoured for project and user subagents only.
+- **Plugin subagents lose `hooks`, `mcpServers`, and `permissionMode` frontmatter** (documented as of Claude Code 2.1.295). Those fields are honoured for project and user subagents only.
 
 Subagent `tools:` is enforced by the runtime; a skill's `allowed-tools:` is permission pre-approval, not restriction. Prompt-level guidance is enough for most single-user workflows. Reach for a tool-restricted subagent instead when a step must not modify state under adversarial conditions, a long autonomous run, or a compliance property.
 
