@@ -25,7 +25,7 @@ Writing a lesson down does not transfer it to generation — checks fire in the 
 
 1. **Enforcement** — a check that must actually fire becomes a hook, or a line in the prompt that reviews the work. A hook denying edits to generated output is the pattern.
 2. **Memory or session context** — process notes for a specific working mode.
-3. **The issue tracker** — known gaps and accepted tradeoffs, filed where work items live (`sk-pm-conventions.md`).
+3. **The issue tracker** — known gaps and accepted tradeoffs, filed where the repo tracks its work items (`sk-pm-conventions.md` says where, when it is loaded).
 4. **A rules file** — only the three admissible categories, in the most specific file covering the topic. CLAUDE.md carries only what every session needs; path-scoped rules load only when their files are touched.
 
 Guidance accumulates by default: every incident proposes a rule, and nothing proposes deletions. When editing a file, apply these tests to neighbouring entries too, and delete what no longer earns its place.
