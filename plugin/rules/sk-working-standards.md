@@ -22,7 +22,7 @@ Treat "I know how this works" as a hypothesis, not a fact. Documentation drifts 
 The default is **leave existing code alone**.
 
 - Make the change that was asked for, and nothing else. No drive-by refactors, no opportunistic cleanups, no renaming things you think are badly named.
-- When you notice a problem outside the task, **file it, don't fix it**: open an issue on the project's tracker and mention it in your summary. Where and how to file follows the repo, as §When a repo's rules disagree says; in the repos `sk-pm-conventions.md` covers, it says where work items live.
+- When you notice a problem outside the task, **file it, don't fix it**: open an issue on the project's tracker and mention it in your summary. Where and how to file follows the repo, as §When a repo's rules disagree says. In the repos `sk-pm-conventions.md` covers, it says where work items live.
 - This is not a claim the problem is fine. It is that an unrequested change has a real chance of silently breaking a path no test covers, inside a diff nobody is reviewing for it.
 - If you think the scope genuinely should be larger, say so and let the user decide. Don't expand it yourself.
 
