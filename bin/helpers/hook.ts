@@ -214,7 +214,7 @@ function reviewerLines(pluginDir: string, packageText: string): string {
     ruleCoversPackage(readRulePaths(rule), packageText)
   ) {
     lines.push(
-      'Hold the comments this diff adds to the house rule. Reading a diff does not load `sk-clean-code.md`, so its Comments section follows. Report each added comment that breaks it as a finding.',
+      "Hold the comments this diff adds to the house rule. Reading a diff does not load `sk-clean-code.md`, so its Comments section follows. Report each added comment that breaks it as a finding. Where this repo's own rules set a different comment convention, theirs win.",
       comments,
     );
   }

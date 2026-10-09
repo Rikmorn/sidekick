@@ -8,6 +8,8 @@ paths:
 
 Assumes `tsconfig.json` has `strict: true` and `noFallthroughCasesInSwitch: true`. If either is off, re-enable it rather than working around.
 
+Where a repo's own written rules disagree with this file, the repo's rules win (`sk-working-standards.md` §When a repo's rules disagree).
+
 ## Don't bypass the compiler
 
 Never bypass the compiler (`as Type`, `!`, `// @ts-ignore`, `// @ts-expect-error`, or the linter's suppression comment). If the types don't work, fix the types so the compiler does the narrowing. The usual case is a value that a guard has already narrowed out of the compiler's sight. Model its states as a discriminated union (§Model with discriminated unions), or narrow it with a type guard (§Parse at boundaries). The only exception is test files deliberately passing invalid inputs.

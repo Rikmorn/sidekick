@@ -42,6 +42,19 @@ The default is **leave existing code alone**.
 - Correct yourself immediately when you realise you gave wrong information, even if nobody has noticed.
 - Compounding errors are the biggest risk. Prioritise factual accuracy over agreeableness.
 
+## When a repo's rules disagree
+
+Claude Code ranks neither user-level nor project rules, so this section does. Settle a conflict between a repo's own rules and these in this order:
+
+1. The operator's instruction in the session outranks every file.
+2. A repo rule that names the sk-* rule it departs from wins. It is a deliberate ruling.
+3. Otherwise, the repo's written rules win on what lands in the repo: code, tests, comments, docs, commit messages, and how it takes contributions.
+4. Your user-level instructions win on how you work with the operator: reasoning, verification, scope, and how you report. They include these rules and a user `CLAUDE.md`.
+
+Two things are not the repo's own rules. Its existing code is a pattern, not a rule. An `sk-*` file committed in the repo is a copy of these rules.
+
+When you follow one side of a conflict, say which side and why. If a conflict recurs in a repo, suggest `claudeMdExcludes` in its `.claude/settings.local.json`. It switches the losing file off there without a commit.
+
 ## Numbers that go stale
 
 Don't write a number that describes the current state; write one that prescribes a limit. The test: would this number be wrong tomorrow without anyone editing the sentence?
