@@ -33,14 +33,27 @@ const card = (
   assignees: [],
   repo: 'Rikmorn/sidekick',
 });
-const report = (description: string, items: Item[]): string =>
+// r9's GitHub counters are 6 open and 1 closed; the default counts agree.
+const report = (
+  description: string,
+  items: Item[],
+  issue_counts = { open: 6, closed: 1 },
+): string =>
   renderReport({
     board: { owner: 'Rikmorn', repo: 'sidekick' },
     milestone: r9(description),
+    issue_counts,
     plans: planView(r9(description), items),
   });
 
 describe('renderReport', () => {
+  test('the header prints the issue read’s counts, not GitHub’s counters', () => {
+    const r = report(plansHeader('A (#1)'), [card(1, 'Backlog')], {
+      open: 2,
+      closed: 4,
+    });
+    expect(r.split('\n')[0]).toBe('**R9 — Next** · 2 open, 4 closed');
+  });
   test('one row per plan in header order, every issue qualified, the state column empty for later', () => {
     expect(
       report(

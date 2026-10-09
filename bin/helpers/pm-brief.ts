@@ -6,12 +6,14 @@
  */
 
 import type { Candidate, Drift, InProgress } from './pm.js';
-import type { Milestone } from './pm-data.js';
+import type { IssueCounts, Milestone } from './pm-data.js';
 import { descriptionProse, type Plans, type PlanView } from './pm-plans.js';
 
 export interface BriefInput {
   board: { owner: string; repo: string; project: { number: number } };
   milestone: Milestone | null;
+  /** `null` exactly when `milestone` is. */
+  issue_counts: IssueCounts | null;
   open_milestones: Array<{ number: number; title: string }>;
   in_progress: InProgress[];
   candidates: Candidate[];
@@ -196,8 +198,10 @@ function milestoneLine(p: BriefInput): string {
   }
   const outcome = firstSentence(descriptionProse(m.description));
   const others = p.open_milestones.filter((o) => o.number !== m.number);
+  const c = p.issue_counts;
+  const counts = c === null ? '' : ` (${c.open} open, ${c.closed} closed)`;
   return [
-    `milestone: ${m.title} (${m.open_issues} open, ${m.closed_issues} closed)`,
+    `milestone: ${m.title}${counts}`,
     ...(outcome ? [outcome] : []),
     ...(others.length > 0 ? [`also open: ${titles(others)}`] : []),
   ].join(' · ');

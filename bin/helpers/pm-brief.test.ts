@@ -47,6 +47,7 @@ const base = (over: Partial<BriefInput> = {}): BriefInput => ({
     created_at: '2026-09-19T14:29:56Z',
   },
   open_milestones: [{ number: 6, title: 'R6 — PM layer' }],
+  issue_counts: { open: 3, closed: 2 },
   in_progress: [],
   candidates: [],
   plans: null,
@@ -70,6 +71,14 @@ describe('renderBrief', () => {
         'drift: none',
         'next: nothing to pick up: verify, then close the milestone',
       ].join('\n'),
+    );
+  });
+
+  test('the milestone line prints the issue read’s counts, not GitHub’s counters', () => {
+    // base() gives the milestone counters of 3 open and 2 closed.
+    const r = renderBrief(base({ issue_counts: { open: 2, closed: 1 } }));
+    expect(r.split('\n')[1]).toBe(
+      'milestone: R6 — PM layer (2 open, 1 closed) · Outcome: sessions start from the board.',
     );
   });
 
@@ -237,6 +246,7 @@ describe('renderBrief', () => {
           state: 'open',
           created_at: '2026-09-30T20:31:45Z',
         },
+        issue_counts: { open: 33, closed: 8 },
         open_milestones: [
           { number: 8, title: 'R8 — Fixes filed by 30 September' },
         ],

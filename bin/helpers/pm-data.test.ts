@@ -12,6 +12,7 @@ import {
   fetchStatusField,
   hasProjectScope,
   ISSUE_LIMIT,
+  milestoneCounts,
   PmError,
   parseGhVersion,
   parseIssues,
@@ -478,6 +479,29 @@ describe('cardedItems', () => {
         repo: 'Rikmorn/sidekick',
       },
     ]);
+  });
+});
+
+describe('milestoneCounts', () => {
+  test('counts every issue in the milestone, carded or not, open or closed', () => {
+    const inR9 = { milestone: { title: 'R9' } };
+    const page = rawPage([
+      rawIssue(1, [], false, inR9),
+      rawIssue(2, [rawCard('PVTI_2', PROJECT_ID, { name: 'Done' })], false, {
+        ...inR9,
+        state: 'CLOSED',
+        stateReason: 'COMPLETED',
+      }),
+      rawIssue(3, [], false, {
+        ...inR9,
+        state: 'CLOSED',
+        stateReason: 'NOT_PLANNED',
+      }),
+      rawIssue(4, [], false, { milestone: { title: 'R10' } }),
+      rawIssue(5, []),
+    ]);
+    const issues = parseRepoIssuesPage(page, PROJECT_ID).issues;
+    expect(milestoneCounts(issues, 'R9')).toEqual({ open: 1, closed: 2 });
   });
 });
 

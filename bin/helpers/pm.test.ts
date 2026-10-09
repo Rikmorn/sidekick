@@ -129,6 +129,26 @@ const r6Board = (map: FixtureMap): void =>
       };
     }
   });
+// A milestone's open and closed issues in the captured pages, after any
+// patch, counted without calling production code.
+const countsIn = (map: FixtureMap, title: string) => {
+  const nodes = Object.keys(map)
+    .filter((key) => key.includes('query=query RepoIssues'))
+    .flatMap(
+      (key) =>
+        (JSON.parse(String(map[key])) as RawIssuesFile).data.repository.issues
+          .nodes,
+    )
+    .filter((n) => n.milestone?.title === title);
+  const open = nodes.filter((n) => n.state === 'OPEN').length;
+  return { open, closed: nodes.length - open };
+};
+// countsIn over the board the milestone fixtures were captured with.
+const r6Counts = (title: string) => {
+  const map = sidekickMap();
+  r6Board(map);
+  return countsIn(map, title);
+};
 interface FixtureIssue {
   number: number;
   status: string | null;
@@ -717,8 +737,9 @@ describe('pickup --report', () => {
     expect(r.code).toBe(0);
     expect(r.err).toEqual([]);
     expect(r.out).toHaveLength(1);
+    const c = r6Counts('R6 — PM layer');
     expect(r.out[0].split('\n')).toEqual([
-      '**R6 — PM layer** · 5 open, 0 closed',
+      `**R6 — PM layer** · ${c.open} open, ${c.closed} closed`,
       'Running: **Seat**',
       '',
       '| | Plan | Closed | Issues |',
@@ -818,13 +839,21 @@ describe('pickup with several open milestones', () => {
       { number: 7, title: 'R7 — Earlier' },
     ]);
     expect(j.drift.in_progress_split).toEqual([]);
+    const c = r6Counts('R6 — PM layer');
+    // The counts come from the issues: the captured counters disagree.
+    expect([c.open, c.closed]).not.toEqual([
+      r6().open_issues,
+      r6().closed_issues,
+    ]);
     const brief = run(open, ['--brief']).out[0].split('\n');
-    expect(brief[1]).toMatch(/^milestone: R6 — PM layer \(5 open, 0 closed\)/);
+    expect(brief[1]).toStartWith(
+      `milestone: R6 — PM layer (${c.open} open, ${c.closed} closed)`,
+    );
     expect(brief[1]).toMatch(/ · also open: R7 — Earlier$/);
     const report = run(open, ['--report']);
     expect(report.code).toBe(0);
     expect(report.out[0].split('\n')[0]).toBe(
-      '**R6 — PM layer** · 5 open, 0 closed',
+      `**R6 — PM layer** · ${c.open} open, ${c.closed} closed`,
     );
   });
 
@@ -835,8 +864,9 @@ describe('pickup with several open milestones', () => {
     ).toBe('R7 — Earlier');
     const report = run(open, ['--report', '--milestone', 'R7 — Earlier']);
     expect(report.code).toBe(0);
+    const c = r6Counts('R7 — Earlier');
     expect(report.out[0].split('\n')[0]).toBe(
-      '**R7 — Earlier** · 5 open, 0 closed',
+      `**R7 — Earlier** · ${c.open} open, ${c.closed} closed`,
     );
   });
 
@@ -847,8 +877,9 @@ describe('pickup with several open milestones', () => {
     ).toBe('R7 — Earlier');
     const report = run(open, ['--report', '--milestone=R7 — Earlier']);
     expect(report.code).toBe(0);
+    const c = r6Counts('R7 — Earlier');
     expect(report.out[0].split('\n')[0]).toBe(
-      '**R7 — Earlier** · 5 open, 0 closed',
+      `**R7 — Earlier** · ${c.open} open, ${c.closed} closed`,
     );
   });
 

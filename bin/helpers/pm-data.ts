@@ -463,6 +463,21 @@ export function cardedItems(issues: RepoIssue[], fullName: string): Item[] {
   );
 }
 
+export interface IssueCounts {
+  open: number;
+  closed: number;
+}
+
+/** A milestone's issues by state, counted from the issue read: GitHub's milestone counters trail a write. */
+export function milestoneCounts(
+  issues: RepoIssue[],
+  title: string,
+): IssueCounts {
+  const mine = issues.filter((i) => i.milestone === title);
+  const open = mine.filter((i) => i.state === 'OPEN').length;
+  return { open, closed: mine.length - open };
+}
+
 interface RestMilestone {
   number: number;
   title: string;

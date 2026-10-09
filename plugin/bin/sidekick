@@ -456,8 +456,10 @@ function milestoneLine(p) {
   }
   const outcome = firstSentence(descriptionProse(m.description));
   const others = p.open_milestones.filter((o) => o.number !== m.number);
+  const c = p.issue_counts;
+  const counts = c === null ? "" : ` (${c.open} open, ${c.closed} closed)`;
   return [
-    `milestone: ${m.title} (${m.open_issues} open, ${m.closed_issues} closed)`,
+    `milestone: ${m.title}${counts}`,
     ...outcome ? [outcome] : [],
     ...others.length > 0 ? [`also open: ${titles(others)}`] : []
   ].join(" · ");
@@ -688,6 +690,11 @@ function fetchRepoIssues(run, cwd, owner, repo, projectId) {
 function cardedItems(issues, fullName) {
   return issues.flatMap(({ card: card2, closedAt, cardArchived, ...i }) => card2 ? [{ ...i, ...card2, repo: fullName }] : []);
 }
+function milestoneCounts(issues, title) {
+  const mine = issues.filter((i) => i.milestone === title);
+  const open = mine.filter((i) => i.state === "OPEN").length;
+  return { open, closed: mine.length - open };
+}
 function parseMilestones(json) {
   return JSON.parse(json).map((m) => ({
     number: m.number,
@@ -836,7 +843,7 @@ function renderReport(r) {
   const running = r.plans.list.filter((p) => p.state === "running").map((p) => `**${p.name}**`);
   const unplanned = r.plans.unplanned.map((i) => ref2(i.number));
   return [
-    `**${r.milestone.title}** · ${r.milestone.open_issues} open, ${r.milestone.closed_issues} closed`,
+    `**${r.milestone.title}** · ${r.issue_counts.open} open, ${r.issue_counts.closed} closed`,
     `Running: ${running.length > 0 ? running.join(", ") : "none"}`,
     "",
     "| | Plan | Closed | Issues |",
@@ -1183,11 +1190,19 @@ function runPmCli(args, env, out, err) {
     const viewer = info.viewer;
     if (verb === "pickup") {
       const open2 = fetchMilestones(run, info.root, owner, repo, "open").sort((a, b) => a.number - b.number);
-      const items = cardedItems(fetchRepoIssues(run, info.root, owner, repo, project.id), fullName);
+      const repoIssues = fetchRepoIssues(run, info.root, owner, repo, project.id);
+      const items = cardedItems(repoIssues, fullName);
       const active = msTitle === undefined ? activeMilestone(open2, items) : namedMilestone(open2, msTitle);
       const plans = active ? planView(active, items) : null;
+      const issueCounts = active ? milestoneCounts(repoIssues, active.title) : null;
       if (report) {
-        return emitReport({ board: { owner, repo }, open: open2, milestone: active, plans }, out, err);
+        return emitReport({
+          board: { owner, repo },
+          open: open2,
+          milestone: active,
+          issue_counts: issueCounts,
+          plans
+        }, out, err);
       }
       const t = tiers(items, active, now);
       const working = inProgressMilestones(open2, items);
@@ -1195,6 +1210,7 @@ function runPmCli(args, env, out, err) {
       const pickup = {
         board: shown,
         milestone: active,
+        issue_counts: issueCounts,
         open_milestones: open2.map((m) => ({
           number: m.number,
           title: m.title
@@ -1256,12 +1272,12 @@ function runPmCli(args, env, out, err) {
   }
 }
 function emitReport(r, out, err) {
-  const { board, open: open2, milestone, plans } = r;
+  const { board, open: open2, milestone, issue_counts, plans } = r;
   if (open2.length === 0) {
     err("no open milestone to report on");
     return 1;
   }
-  if (milestone === null || plans === null) {
+  if (milestone === null || issue_counts === null || plans === null) {
     err(`no active milestone among ${open2.length} open (${open2.map((m) => m.title).join(", ")}); pass --milestone`);
     return 1;
   }
@@ -1269,7 +1285,7 @@ function emitReport(r, out, err) {
     err(plans.parse === "none" ? `milestone "${milestone.title}" has no plans header` : `milestone "${milestone.title}": ${plans.reason ?? "malformed plans header"}`);
     return 1;
   }
-  out(renderReport({ board, milestone, plans }));
+  out(renderReport({ board, milestone, issue_counts, plans }));
   return 0;
 }
 function inProgressMilestones(open2, items) {

@@ -4,12 +4,13 @@
  * renders what `pickup` already joined.
  */
 
-import type { Milestone } from './pm-data.js';
+import type { IssueCounts, Milestone } from './pm-data.js';
 import type { PlanState, Plans, PlanView } from './pm-plans.js';
 
 export interface ReportInput {
   board: { owner: string; repo: string };
   milestone: Milestone;
+  issue_counts: IssueCounts;
   plans: Plans;
 }
 
@@ -38,7 +39,7 @@ export function renderReport(r: ReportInput): string {
     .map((p) => `**${p.name}**`);
   const unplanned = r.plans.unplanned.map((i) => ref(i.number));
   return [
-    `**${r.milestone.title}** · ${r.milestone.open_issues} open, ${r.milestone.closed_issues} closed`,
+    `**${r.milestone.title}** · ${r.issue_counts.open} open, ${r.issue_counts.closed} closed`,
     `Running: ${running.length > 0 ? running.join(', ') : 'none'}`,
     '',
     '| | Plan | Closed | Issues |',

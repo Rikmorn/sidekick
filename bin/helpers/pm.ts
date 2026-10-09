@@ -21,9 +21,11 @@ import {
   fetchStatusField,
   hasProjectScope,
   type Issue,
+  type IssueCounts,
   type Item,
   type LinkedBoard,
   type Milestone,
+  milestoneCounts,
   PmError,
   parseOrigin,
   type Runner,
@@ -277,18 +279,31 @@ export function runPmCli(
       const open = fetchMilestones(run, info.root, owner, repo, 'open').sort(
         (a, b) => a.number - b.number,
       );
-      const items = cardedItems(
-        fetchRepoIssues(run, info.root, owner, repo, project.id),
-        fullName,
+      const repoIssues = fetchRepoIssues(
+        run,
+        info.root,
+        owner,
+        repo,
+        project.id,
       );
+      const items = cardedItems(repoIssues, fullName);
       const active =
         msTitle === undefined
           ? activeMilestone(open, items)
           : namedMilestone(open, msTitle);
       const plans = active ? planView(active, items) : null;
+      const issueCounts = active
+        ? milestoneCounts(repoIssues, active.title)
+        : null;
       if (report) {
         return emitReport(
-          { board: { owner, repo }, open, milestone: active, plans },
+          {
+            board: { owner, repo },
+            open,
+            milestone: active,
+            issue_counts: issueCounts,
+            plans,
+          },
           out,
           err,
         );
@@ -299,6 +314,7 @@ export function runPmCli(
       const pickup = {
         board: shown,
         milestone: active,
+        issue_counts: issueCounts,
         open_milestones: open.map((m) => ({
           number: m.number,
           title: m.title,
@@ -384,17 +400,18 @@ function emitReport(
     board: { owner: string; repo: string };
     open: Milestone[];
     milestone: Milestone | null;
+    issue_counts: IssueCounts | null;
     plans: Plans | null;
   },
   out: (line: string) => void,
   err: (line: string) => void,
 ): number {
-  const { board, open, milestone, plans } = r;
+  const { board, open, milestone, issue_counts, plans } = r;
   if (open.length === 0) {
     err('no open milestone to report on');
     return 1;
   }
-  if (milestone === null || plans === null) {
+  if (milestone === null || issue_counts === null || plans === null) {
     err(
       `no active milestone among ${open.length} open (${open.map((m) => m.title).join(', ')}); pass --milestone`,
     );
@@ -408,7 +425,7 @@ function emitReport(
     );
     return 1;
   }
-  out(renderReport({ board, milestone, plans }));
+  out(renderReport({ board, milestone, issue_counts, plans }));
   return 0;
 }
 
