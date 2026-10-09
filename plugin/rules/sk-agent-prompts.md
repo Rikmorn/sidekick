@@ -75,7 +75,7 @@ Replace if/then branching with the judgement you want the agent to make: what to
 
 ```
 Count one finding for each place a fix must be made, however many
-violations sit there.
+problems sit there.
 
 <examples>
 
