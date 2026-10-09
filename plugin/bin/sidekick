@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs3 from "node:fs";
+import * as fs5 from "node:fs";
 import { realpathSync } from "node:fs";
 import * as os from "node:os";
-import * as path3 from "node:path";
+import * as path5 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // bin/helpers/hook.ts
@@ -852,6 +852,10 @@ function renderReport(r) {
 
 // bin/helpers/rules.ts
 import { execFileSync } from "node:child_process";
+import * as fs4 from "node:fs";
+import * as path4 from "node:path";
+
+// bin/helpers/rules-fs.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
@@ -870,71 +874,11 @@ function ownedRulesIn(dir) {
     return [];
   return fs2.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
 }
-function resolveDest(scope, cwd, claudeHome) {
-  return scope === "project" ? path2.join(cwd, ".claude", "rules") : path2.join(claudeHome, "rules");
-}
-function repoRootOf(cwd) {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-  } catch {
-    return cwd;
-  }
-}
-function installRules(src, dest) {
-  const shipped = ownedRulesIn(src);
-  if (shipped.length === 0)
-    return { installed: [], removed: [], skipped: [] };
-  fs2.mkdirSync(dest, { recursive: true });
-  const byLowerCase = new Map;
-  for (const existing of fs2.readdirSync(dest)) {
-    byLowerCase.set(existing.toLowerCase(), existing);
-  }
-  const installed = [];
-  const skipped = [];
-  for (const name of shipped) {
-    const onDisk = byLowerCase.get(name.toLowerCase());
-    if (onDisk !== undefined && onDisk !== name) {
-      skipped.push({ name, why: "case-collision" });
-      continue;
-    }
-    if (statusOf(dest, name) === "other") {
-      skipped.push({ name, why: "not-a-regular-file" });
-      continue;
-    }
-    fs2.copyFileSync(path2.join(src, name), path2.join(dest, name));
-    installed.push(name);
-  }
-  const keep = new Set(shipped);
-  const removed = ownedRulesIn(dest).filter((n) => !keep.has(n));
-  for (const name of removed)
-    fs2.rmSync(path2.join(dest, name));
-  return { installed, removed, skipped };
-}
-function checkRules(src, dest) {
-  const shipped = ownedRulesIn(src);
-  const installed = ownedRulesIn(dest);
-  const drift = [];
-  for (const name of shipped) {
-    const there = path2.join(dest, name);
-    if (!fs2.existsSync(there)) {
-      drift.push({ kind: "missing", name });
-      continue;
-    }
-    const same = fs2.readFileSync(path2.join(src, name)).equals(fs2.readFileSync(there));
-    if (!same)
-      drift.push({ kind: "stale", name });
-  }
-  const known = new Set(shipped);
-  for (const name of installed) {
-    if (!known.has(name))
-      drift.push({ kind: "orphaned", name });
-  }
-  return drift;
-}
+
+// bin/helpers/rules-overlap.ts
+import * as fs3 from "node:fs";
+import * as path3 from "node:path";
+var MIN_SHARED_HEADINGS = 2;
 var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
 function headingsOf(body) {
   return body.split(`
@@ -954,37 +898,136 @@ function openingOf(body) {
   const value = normalise2(sentence);
   return value === "" ? undefined : value;
 }
+function signalsFor(file, body, rule) {
+  const signals = [];
+  if (file === rule.name.slice("sk-".length))
+    signals.push("name");
+  const shared = new Set(headingsOf(body).filter((h) => rule.headings.has(h))).size;
+  if (shared >= MIN_SHARED_HEADINGS)
+    signals.push({ headings: shared });
+  const opening = openingOf(body);
+  if (opening !== undefined && opening === rule.opening) {
+    signals.push({ opening });
+  }
+  return signals;
+}
 function findOverlap(src, dest) {
-  const destStat = fs2.statSync(dest, { throwIfNoEntry: false });
-  if (!destStat)
-    return [];
-  if (!destStat.isDirectory())
-    return [];
+  const report = { pairs: [], extensions: [] };
+  const destStat = fs3.statSync(dest, { throwIfNoEntry: false });
+  if (!destStat?.isDirectory())
+    return report;
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs2.readFileSync(path2.join(src, name), "utf-8");
+    const body = fs3.readFileSync(path3.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
       opening: openingOf(body)
     };
   });
-  const others = fs2.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
-  const found = [];
+  const others = fs3.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   for (const file of others) {
-    const body = fs2.readFileSync(path2.join(dest, file), "utf-8");
-    const headings = headingsOf(body);
-    const opening = openingOf(body);
+    const body = fs3.readFileSync(path3.join(dest, file), "utf-8");
     for (const rule of rules) {
-      const heading = headings.find((h) => rule.headings.has(h));
-      if (heading !== undefined) {
-        found.push({ file, rule: rule.name, on: "heading", value: heading });
-      }
-      if (opening !== undefined && rule.opening !== undefined && opening === rule.opening) {
-        found.push({ file, rule: rule.name, on: "opening", value: opening });
+      const signals = signalsFor(file, body, rule);
+      if (signals.length === 0)
+        continue;
+      if (body.includes(rule.name)) {
+        report.extensions.push({ file, rule: rule.name });
+      } else {
+        report.pairs.push({ file, rule: rule.name, signals });
       }
     }
   }
-  return found;
+  return report;
+}
+function describeSignal(signal) {
+  if (signal === "name")
+    return "name";
+  if ("headings" in signal)
+    return `${signal.headings} headings`;
+  return "opening";
+}
+function formatOverlap(report) {
+  const lines = [];
+  if (report.pairs.length === 0) {
+    lines.push("no overlap found (checked file names, two or more shared H2 headings, and the opening sentence against non-sk-*.md files)");
+  } else {
+    for (const p of report.pairs) {
+      lines.push(`${p.file} overlaps ${p.rule} on ${p.signals.map(describeSignal).join(", ")}`);
+    }
+    lines.push("overlap is reported only; sidekick never edits files it does not own. If a repo file extends or departs from its pair on purpose, name the sk rule in it and the pair moves to the stated extensions");
+  }
+  if (report.extensions.length > 0) {
+    lines.push(`stated extensions, not reported: ${report.extensions.map((e) => `${e.file} → ${e.rule}`).join(", ")}`);
+  }
+  return lines;
+}
+
+// bin/helpers/rules.ts
+function resolveDest(scope, cwd, claudeHome) {
+  return scope === "project" ? path4.join(cwd, ".claude", "rules") : path4.join(claudeHome, "rules");
+}
+function repoRootOf(cwd) {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return cwd;
+  }
+}
+function installRules(src, dest) {
+  const shipped = ownedRulesIn(src);
+  if (shipped.length === 0)
+    return { installed: [], removed: [], skipped: [] };
+  fs4.mkdirSync(dest, { recursive: true });
+  const byLowerCase = new Map;
+  for (const existing of fs4.readdirSync(dest)) {
+    byLowerCase.set(existing.toLowerCase(), existing);
+  }
+  const installed = [];
+  const skipped = [];
+  for (const name of shipped) {
+    const onDisk = byLowerCase.get(name.toLowerCase());
+    if (onDisk !== undefined && onDisk !== name) {
+      skipped.push({ name, why: "case-collision" });
+      continue;
+    }
+    if (statusOf(dest, name) === "other") {
+      skipped.push({ name, why: "not-a-regular-file" });
+      continue;
+    }
+    fs4.copyFileSync(path4.join(src, name), path4.join(dest, name));
+    installed.push(name);
+  }
+  const keep = new Set(shipped);
+  const removed = ownedRulesIn(dest).filter((n) => !keep.has(n));
+  for (const name of removed)
+    fs4.rmSync(path4.join(dest, name));
+  return { installed, removed, skipped };
+}
+function checkRules(src, dest) {
+  const shipped = ownedRulesIn(src);
+  const installed = ownedRulesIn(dest);
+  const drift = [];
+  for (const name of shipped) {
+    const there = path4.join(dest, name);
+    if (!fs4.existsSync(there)) {
+      drift.push({ kind: "missing", name });
+      continue;
+    }
+    const same = fs4.readFileSync(path4.join(src, name)).equals(fs4.readFileSync(there));
+    if (!same)
+      drift.push({ kind: "stale", name });
+  }
+  const known = new Set(shipped);
+  for (const name of installed) {
+    if (!known.has(name))
+      drift.push({ kind: "orphaned", name });
+  }
+  return drift;
 }
 var USAGE = `usage: sidekick rules <install|check> --project|--user
 ` + `  --project  the current repo's .claude/rules/
@@ -1011,7 +1054,7 @@ function runRulesCli(args, env, out) {
     out(`no sk-*.md rules found at ${env.src}; refusing to touch ${dest}`);
     return 1;
   }
-  const destStat = fs2.statSync(dest, { throwIfNoEntry: false });
+  const destStat = fs4.statSync(dest, { throwIfNoEntry: false });
   if (destStat && !destStat.isDirectory()) {
     out(`${dest} exists and is not a directory; refusing to write rules there`);
     return 1;
@@ -1034,14 +1077,8 @@ function runRulesCli(args, env, out) {
   }
   for (const d of drift)
     out(`[${d.kind}] ${d.name}`);
-  if (overlap.length === 0) {
-    out("no overlap found (checked H2 headings and the opening sentence against non-sk-*.md files)");
-  } else {
-    for (const o of overlap) {
-      out(`${o.file} overlaps ${o.rule} on ${o.on}: ${o.value}`);
-    }
-    out("overlap is reported only; sidekick never edits files it does not own");
-  }
+  for (const l of formatOverlap(overlap))
+    out(l);
   return drift.length === 0 && skipped.length === 0 ? 0 : 2;
 }
 
@@ -1387,21 +1424,21 @@ function gateVerdict(ms, issues, items) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path3.dirname(fileURLToPath(entryFileUrl));
+  const here = path5.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path3.resolve(here, ".."),
-    path3.resolve(here, "..", "plugin")
+    path5.resolve(here, ".."),
+    path5.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs3.existsSync(path3.join(c, "rules")))
+    if (fs5.existsSync(path5.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 function readVersion(pluginDir) {
-  const manifest = path3.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path5.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = JSON.parse(fs3.readFileSync(manifest, "utf-8"));
+    const parsed = JSON.parse(fs5.readFileSync(manifest, "utf-8"));
     return typeof parsed.version === "string" ? parsed.version : "unknown";
   } catch {
     return "unknown";
@@ -1422,7 +1459,7 @@ var USAGE2 = `usage: sidekick rules <install|check> --project|--user
        sidekick --version`;
 function readProcessStdin() {
   try {
-    return fs3.readFileSync(0, "utf-8");
+    return fs5.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -1444,8 +1481,8 @@ function main(argv, ctx, out, err) {
     err(USAGE2);
     return 1;
   }
-  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path3.join(os.homedir(), ".claude");
-  const src = ctx.env.SIDEKICK_RULES_DIR || path3.join(pluginDir, "rules");
+  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path5.join(os.homedir(), ".claude");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path5.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

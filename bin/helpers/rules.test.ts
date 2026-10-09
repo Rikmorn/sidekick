@@ -3,13 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import {
-  checkRules,
-  findOverlap,
-  installRules,
-  resolveDest,
-  runRulesCli,
-} from './rules.js';
+import { checkRules, installRules, resolveDest, runRulesCli } from './rules.js';
 
 function gitInit(dir: string): void {
   execFileSync('git', ['init', '-q'], { cwd: dir });
@@ -102,62 +96,6 @@ describe('checkRules', () => {
   });
 });
 
-describe('findOverlap', () => {
-  test('reports a non-sk file that shares a heading or an opening sentence with a shipped rule', () => {
-    const src = tmp();
-    const dest = tmp();
-    write(src, 'sk-a.md', RULE_A);
-    write(src, 'sk-b.md', RULE_B);
-    write(
-      dest,
-      'clean-code.md',
-      '# Our clean code\n\nSomething else.\n\n## Comments\n\nDifferent body.\n',
-    );
-    write(dest, 'style.md', '# Style\n\nWrite in British English.\n');
-    write(
-      dest,
-      'unrelated.md',
-      '# Deploy\n\nRun the pipeline.\n\n## Rollback\n\nRevert.\n',
-    );
-    write(dest, 'sk-a.md', RULE_A);
-    expect(
-      findOverlap(src, dest).sort((x, y) => x.file.localeCompare(y.file)),
-    ).toEqual([
-      {
-        file: 'clean-code.md',
-        rule: 'sk-a.md',
-        on: 'heading',
-        value: 'comments',
-      },
-      {
-        file: 'style.md',
-        rule: 'sk-b.md',
-        on: 'opening',
-        value: 'write in british english',
-      },
-    ]);
-  });
-
-  test('ignores frontmatter when finding the opening sentence', () => {
-    const src = tmp();
-    const dest = tmp();
-    write(src, 'sk-b.md', RULE_B);
-    write(
-      dest,
-      'scoped.md',
-      '---\npaths:\n  - "src/**"\n---\n\n# Scoped\n\nWrite in British English. Always.\n',
-    );
-    expect(findOverlap(src, dest)).toEqual([
-      {
-        file: 'scoped.md',
-        rule: 'sk-b.md',
-        on: 'opening',
-        value: 'write in british english',
-      },
-    ]);
-  });
-});
-
 describe('runRulesCli', () => {
   test('install --project writes into cwd/.claude/rules and reports', () => {
     const src = tmp();
@@ -241,9 +179,7 @@ describe('runRulesCli', () => {
     expect(code).toBe(2);
     const text = lines.join('\n');
     expect(text).toContain('[stale] sk-a.md');
-    expect(text).toContain(
-      'mine.md overlaps sk-a.md on opening: keep functions small',
-    );
+    expect(text).toContain('mine.md overlaps sk-a.md on opening');
     installRules(src, path.join(home, 'rules'));
     const clean: string[] = [];
     expect(
