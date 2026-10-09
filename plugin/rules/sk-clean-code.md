@@ -39,7 +39,7 @@ A `for...of` loop is the right tool when:
 - **Extract complex conditions into named variables.** A multi-clause boolean inside an `if` forces the reader to parse precedence and reconstruct intent. `if (order.amount > 0 && order.status === 'COMPLETED' && !order.refunded)` becomes `const isEligibleForRefund = ...; if (isEligibleForRefund)`. The variable name carries the meaning the condition is supposed to express.
 - **No nested ternaries.** A ternary inside a ternary forces the reader to parse precedence. Pull the inner expression into a named variable, or use an early return.
 - **Lookup tables beat long `if/else if` chains.** When dispatching on a discriminator (string, enum), prefer `Record<Discriminator, Handler>` or a `switch` over an `if (x === 'a') … else if (x === 'b') …` chain.
-- **Don't paper over nullability with `?.`.** If a value can be null, handle it explicitly with an early return, guard, or default — chaining past it and hoping for the best obscures control flow. See `sk-typescript.md` for the type-system angle.
+- **Don't chain past a null you should have handled.** A `?.` that skips one obscures control flow. `sk-typescript.md` §Don't bypass the compiler says when `?.` handles a value rather than skipping it.
 
 ## Constants and Literals
 

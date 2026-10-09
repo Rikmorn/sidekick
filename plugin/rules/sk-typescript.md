@@ -10,19 +10,19 @@ Assumes `tsconfig.json` has `strict: true` and `noFallthroughCasesInSwitch: true
 
 ## Don't bypass the compiler
 
-Never bypass the compiler (`as Type`, `!`, `// @ts-ignore`, `// @ts-expect-error`, or the linter's suppression comment). If the types don't work, fix the types — don't silence them. The only exception is test files deliberately passing invalid inputs.
+Never bypass the compiler (`as Type`, `!`, `// @ts-ignore`, `// @ts-expect-error`, or the linter's suppression comment). If the types don't work, fix the types so the compiler does the narrowing. The usual case is a value that a guard has already narrowed out of the compiler's sight. Model its states as a discriminated union (§Model with discriminated unions), or narrow it with a type guard (§Parse at boundaries). The only exception is test files deliberately passing invalid inputs.
 
 Never use `{}`, `Object`, or `Function` as types — they erase type information and are effectively `any`. Use `Record<string, unknown>` for genuinely unknown objects, specific function signatures instead of `Function`, and proper interfaces for known shapes.
 
 Narrow `unknown` in catch blocks — never assume the shape of an error. Use `instanceof Error` before accessing `.message` or `.stack`. For domain errors, chain checks: `instanceof DomainError` before `instanceof Error`.
 
-Don't use optional chaining (`?.`) to paper over nullability. If a value can be null, handle it explicitly with an early return, a guard, or a default — don't chain past it and hope for the best.
+Don't use optional chaining (`?.`) to skip past a null the code should have handled. If a value can be null, handle it explicitly with an early return, a guard, or a default. `?.` on a field the type declares optional is handling it, when the code then deals with the `undefined` it yields.
 
 ## Parse at boundaries
 
-External data is `unknown` until parsed. API responses, `searchParams`, `localStorage`, `postMessage` payloads, URL params, form submissions, and webhook bodies all enter the program as `unknown`. Narrow them through a runtime schema (Zod / Valibot) before use — don't trust shapes you didn't check.
+External data is `unknown` until parsed. API responses, `searchParams`, `localStorage`, `postMessage` payloads, URL params, form submissions, and webhook bodies all enter the program as `unknown`. So does another process's output, such as a CLI's JSON: the command you wrote fixes which fields come back, not their shape. Narrow it before use, through a runtime schema (Zod / Valibot), or a named type guard where a dependency isn't worth it. Don't trust shapes you didn't check.
 
-Types are inferred from schemas, not duplicated. `type Order = z.infer<typeof OrderSchema>` over a parallel `interface Order` declaration. The schema is the source of truth; when it changes, the type follows automatically.
+Where you use a schema, infer the type from it rather than duplicating it. `type Order = z.infer<typeof OrderSchema>` over a parallel `interface Order` declaration. The schema is the source of truth; when it changes, the type follows automatically.
 
 Name type guards when they're reused. `function isOrder(v: unknown): v is Order { ... }` documents the shape check once and keeps narrowing logic in one place. Inline guards are fine for single-use.
 
