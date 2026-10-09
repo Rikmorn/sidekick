@@ -3,7 +3,16 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkRules, installRules, resolveDest, runRulesCli } from './rules.js';
+import {
+  checkRules,
+  EVERY_RULE,
+  installRules,
+  PLUGIN_ONLY_RULES,
+  pluginEnablement,
+  projectSet,
+  resolveDest,
+  runRulesCli,
+} from './rules.js';
 
 function gitInit(dir: string): void {
   execFileSync('git', ['init', '-q'], { cwd: dir });
@@ -69,6 +78,7 @@ describe('installRules', () => {
     expect(installRules(src, dest)).toEqual({
       installed: [],
       removed: [],
+      leftOut: [],
       skipped: [],
     });
     expect(fs.existsSync(path.join(dest, 'sk-old.md'))).toBe(true);
@@ -361,5 +371,248 @@ describe('runRulesCli hazards', () => {
     );
     expect(checkCode).toBe(1);
     expect(checkLines.join('\n')).toContain('is not a directory');
+  });
+});
+
+const PM = 'sk-pm-conventions.md';
+
+function settings(repo: string, body: string): string {
+  write(path.join(repo, '.claude'), 'settings.json', body);
+  return path.join(repo, '.claude', 'settings.json');
+}
+
+describe('PLUGIN_ONLY_RULES', () => {
+  test('every name exists in the real plugin/rules', () => {
+    const real = path.join(import.meta.dir, '..', '..', 'plugin', 'rules');
+    for (const name of PLUGIN_ONLY_RULES) {
+      expect(fs.existsSync(path.join(real, name))).toBe(true);
+    }
+  });
+});
+
+describe('pluginEnablement', () => {
+  const read = (body: string | undefined) => {
+    const repo = tmp();
+    if (body !== undefined) settings(repo, body);
+    return { repo, result: pluginEnablement(repo) };
+  };
+
+  test('absent, {}, and an empty or blank file are not-enabled', () => {
+    expect(read(undefined).result).toEqual({ state: 'not-enabled' });
+    expect(read('{}').result).toEqual({ state: 'not-enabled' });
+    expect(read('').result).toEqual({ state: 'not-enabled' });
+    expect(read('  \n').result).toEqual({ state: 'not-enabled' });
+  });
+
+  test('a true sidekick@ key is enabled', () => {
+    expect(read('{"enabledPlugins":{"sidekick@rikmorn":true}}').result).toEqual(
+      { state: 'enabled' },
+    );
+  });
+
+  test('a false sidekick key, another plugin, or a non-object enabledPlugins is not-enabled', () => {
+    expect(
+      read('{"enabledPlugins":{"sidekick@rikmorn":false}}').result,
+    ).toEqual({ state: 'not-enabled' });
+    expect(read('{"enabledPlugins":{"other@x":true}}').result).toEqual({
+      state: 'not-enabled',
+    });
+    expect(read('{"enabledPlugins":[]}').result).toEqual({
+      state: 'not-enabled',
+    });
+  });
+
+  test('invalid JSON and a non-object root are unreadable, with path and reason', () => {
+    for (const body of ['{nope', '[]', 'null']) {
+      const { repo, result } = read(body);
+      expect(result.state).toBe('unreadable');
+      if (result.state !== 'unreadable') throw new Error('unreachable');
+      expect(result.path).toBe(path.join(repo, '.claude', 'settings.json'));
+      expect(result.reason.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('a settings.json that is a directory is unreadable', () => {
+    const repo = tmp();
+    fs.mkdirSync(path.join(repo, '.claude', 'settings.json'), {
+      recursive: true,
+    });
+    expect(pluginEnablement(repo).state).toBe('unreadable');
+  });
+});
+
+describe('projectSet', () => {
+  test('maps each state to what the scope delivers', () => {
+    expect(projectSet({ state: 'enabled' })).toEqual(EVERY_RULE);
+    expect(projectSet({ state: 'not-enabled' })).toEqual({
+      leaveOut: PLUGIN_ONLY_RULES,
+      leaveAsIs: [],
+    });
+    expect(projectSet({ state: 'unreadable', path: 'p', reason: 'r' })).toEqual(
+      { leaveOut: [], leaveAsIs: PLUGIN_ONLY_RULES },
+    );
+  });
+});
+
+describe('installRules and checkRules with a scope set', () => {
+  const leaveOut = { leaveOut: [PM], leaveAsIs: [] };
+  const leaveAsIs = { leaveOut: [], leaveAsIs: [PM] };
+  const fixture = () => {
+    const src = tmp();
+    const dest = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    write(src, PM, RULE_B);
+    return { src, dest };
+  };
+
+  test('leaveOut removes an existing copy into leftOut, not removed, and writes the rest', () => {
+    const { src, dest } = fixture();
+    write(dest, PM, 'old');
+    const r = installRules(src, dest, leaveOut);
+    expect(r.installed).toEqual(['sk-a.md']);
+    expect(r.leftOut).toEqual([PM]);
+    expect(r.removed).toEqual([]);
+    expect(fs.existsSync(path.join(dest, PM))).toBe(false);
+  });
+
+  test('leaveOut with no copy writes the rest and reports nothing left out', () => {
+    const { src, dest } = fixture();
+    const r = installRules(src, dest, leaveOut);
+    expect(r.installed).toEqual(['sk-a.md']);
+    expect(r.leftOut).toEqual([]);
+  });
+
+  test('a retired rule is still removed, not left out', () => {
+    const { src, dest } = fixture();
+    write(dest, 'sk-gone.md', 'x');
+    const r = installRules(src, dest, leaveOut);
+    expect(r.removed).toEqual(['sk-gone.md']);
+    expect(r.leftOut).toEqual([]);
+  });
+
+  test('leaveAsIs never deletes or writes: a copy stays byte-identical', () => {
+    const { src, dest } = fixture();
+    write(dest, PM, 'old');
+    const r = installRules(src, dest, leaveAsIs);
+    expect(r.installed).toEqual(['sk-a.md']);
+    expect(r.leftOut).toEqual([]);
+    expect(r.removed).toEqual([]);
+    expect(fs.readFileSync(path.join(dest, PM), 'utf-8')).toBe('old');
+  });
+
+  test('leaveAsIs leaves an absent copy absent', () => {
+    const { src, dest } = fixture();
+    installRules(src, dest, leaveAsIs);
+    expect(fs.existsSync(path.join(dest, PM))).toBe(false);
+  });
+
+  test('the default set is every rule', () => {
+    const { src, dest } = fixture();
+    expect(installRules(src, dest).installed).toEqual(['sk-a.md', PM]);
+  });
+
+  test('checkRules with leaveOut: an absent copy is not missing, a present one is orphaned', () => {
+    const { src, dest } = fixture();
+    write(dest, 'sk-a.md', RULE_A);
+    expect(checkRules(src, dest, leaveOut)).toEqual([]);
+    write(dest, PM, RULE_B);
+    expect(checkRules(src, dest, leaveOut)).toEqual([
+      { kind: 'orphaned', name: PM },
+    ]);
+  });
+
+  test('checkRules with leaveAsIs: neither missing nor orphaned', () => {
+    const { src, dest } = fixture();
+    write(dest, 'sk-a.md', RULE_A);
+    expect(checkRules(src, dest, leaveAsIs)).toEqual([]);
+    write(dest, PM, 'different');
+    expect(checkRules(src, dest, leaveAsIs)).toEqual([]);
+  });
+});
+
+describe('runRulesCli --project and the plugin-only rules', () => {
+  const run = (args: string[], env: { src: string; cwd: string }) => {
+    const lines: string[] = [];
+    const code = runRulesCli(args, { ...env, claudeHome: tmp() }, (l) =>
+      lines.push(l),
+    );
+    return { code, text: lines.join('\n') };
+  };
+  const setup = () => {
+    const src = tmp();
+    const cwd = tmp();
+    gitInit(cwd);
+    write(src, 'sk-a.md', RULE_A);
+    write(src, PM, RULE_B);
+    return { src, cwd, copy: path.join(cwd, '.claude', 'rules', PM) };
+  };
+
+  test('with no settings the PM rule is not delivered, and a later check is clean', () => {
+    const { src, cwd, copy } = setup();
+    const r = run(['install', '--project'], { src, cwd });
+    expect(r.code).toBe(0);
+    expect(fs.existsSync(copy)).toBe(false);
+    expect(r.text).toContain(
+      `not delivered to this repo: ${PM}; its .claude/settings.json does not enable sidekick, so it comes from user level only`,
+    );
+    const c = run(['check', '--project', '--strict'], { src, cwd });
+    expect(c.code).toBe(0);
+    expect(c.text).toContain('1 rule(s) match');
+    expect(c.text).not.toContain('[missing]');
+  });
+
+  test('enabling delivers it, disabling removes it with its own line', () => {
+    const { src, cwd, copy } = setup();
+    const file = settings(cwd, '{"enabledPlugins":{"sidekick@rikmorn":true}}');
+    run(['install', '--project'], { src, cwd });
+    expect(fs.existsSync(copy)).toBe(true);
+    fs.writeFileSync(file, '{}');
+    const r = run(['install', '--project'], { src, cwd });
+    expect(fs.existsSync(copy)).toBe(false);
+    expect(r.text).toContain(`removed: ${PM} (not delivered to this repo)`);
+    expect(r.text).not.toContain('removed retired');
+  });
+
+  test('check reports a not-enabled repo copy as orphaned', () => {
+    const { src, cwd, copy } = setup();
+    run(['install', '--project'], { src, cwd });
+    write(path.dirname(copy), PM, RULE_B);
+    const c = run(['check', '--project', '--strict'], { src, cwd });
+    expect(c.code).toBe(1);
+    expect(c.text).toContain(`[orphaned] ${PM}`);
+    expect(c.text).toContain('not delivered to this repo');
+  });
+
+  test('unreadable settings never delete or write: the copy stays and a line says why', () => {
+    const { src, cwd, copy } = setup();
+    write(path.dirname(copy), PM, 'precious');
+    settings(cwd, '{nope');
+    const file = path.join(fs.realpathSync(cwd), '.claude', 'settings.json');
+    const r = run(['install', '--project'], { src, cwd });
+    expect(r.code).toBe(0);
+    expect(fs.readFileSync(copy, 'utf-8')).toBe('precious');
+    expect(r.text).toContain(`left ${PM} as it is: could not read ${file} (`);
+    expect(r.text).not.toContain('removed');
+    const c = run(['check', '--project', '--strict'], { src, cwd });
+    expect(c.code).toBe(0);
+    expect(c.text).not.toContain('[orphaned]');
+  });
+
+  test('unreadable settings with no copy leaves it absent', () => {
+    const { src, cwd, copy } = setup();
+    settings(cwd, '[]');
+    run(['install', '--project'], { src, cwd });
+    expect(fs.existsSync(copy)).toBe(false);
+  });
+
+  test('--user always delivers every rule', () => {
+    const { src, cwd } = setup();
+    const home = tmp();
+    const lines: string[] = [];
+    runRulesCli(['install', '--user'], { src, cwd, claudeHome: home }, (l) =>
+      lines.push(l),
+    );
+    expect(fs.existsSync(path.join(home, 'rules', PM))).toBe(true);
+    expect(lines.join('\n')).not.toContain('not delivered');
   });
 });

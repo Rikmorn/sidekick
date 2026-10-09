@@ -978,10 +978,56 @@ function repoRootOf(cwd) {
     return cwd;
   }
 }
-function installRules(src, dest) {
+var PLUGIN_ONLY_RULES = ["sk-pm-conventions.md"];
+var isRecord2 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var errorText = (e) => e instanceof Error ? e.message : String(e);
+function pluginEnablement(root) {
+  const file = path4.join(root, ".claude", "settings.json");
+  let text;
+  try {
+    text = fs4.readFileSync(file, "utf-8");
+  } catch (e) {
+    if (e instanceof Error && "code" in e && e.code === "ENOENT") {
+      return { state: "not-enabled" };
+    }
+    return { state: "unreadable", path: file, reason: errorText(e) };
+  }
+  if (text.trim() === "")
+    return { state: "not-enabled" };
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    return { state: "unreadable", path: file, reason: errorText(e) };
+  }
+  if (!isRecord2(parsed)) {
+    return { state: "unreadable", path: file, reason: "not a JSON object" };
+  }
+  const plugins = parsed.enabledPlugins;
+  const enabled = isRecord2(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
+  return { state: enabled ? "enabled" : "not-enabled" };
+}
+var EVERY_RULE = { leaveOut: [], leaveAsIs: [] };
+function projectSet(e) {
+  switch (e.state) {
+    case "enabled":
+      return EVERY_RULE;
+    case "not-enabled":
+      return { leaveOut: PLUGIN_ONLY_RULES, leaveAsIs: [] };
+    case "unreadable":
+      return { leaveOut: [], leaveAsIs: PLUGIN_ONLY_RULES };
+    default: {
+      const _exhaustive = e;
+      throw new Error(`unhandled enablement: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+var expectedRules = (shipped, set) => shipped.filter((n) => !set.leaveOut.includes(n) && !set.leaveAsIs.includes(n));
+function installRules(src, dest, set = EVERY_RULE) {
   const shipped = ownedRulesIn(src);
-  if (shipped.length === 0)
-    return { installed: [], removed: [], skipped: [] };
+  if (shipped.length === 0) {
+    return { installed: [], removed: [], leftOut: [], skipped: [] };
+  }
   fs4.mkdirSync(dest, { recursive: true });
   const byLowerCase = new Map;
   for (const existing of fs4.readdirSync(dest)) {
@@ -989,7 +1035,7 @@ function installRules(src, dest) {
   }
   const installed = [];
   const skipped = [];
-  for (const name of shipped) {
+  for (const name of expectedRules(shipped, set)) {
     const onDisk = byLowerCase.get(name.toLowerCase());
     if (onDisk !== undefined && onDisk !== name) {
       skipped.push({ name, why: "case-collision" });
@@ -1003,16 +1049,19 @@ function installRules(src, dest) {
     installed.push(name);
   }
   const keep = new Set(shipped);
-  const removed = ownedRulesIn(dest).filter((n) => !keep.has(n));
-  for (const name of removed)
+  const owned = ownedRulesIn(dest);
+  const removed = owned.filter((n) => !keep.has(n));
+  const leftOut = owned.filter((n) => set.leaveOut.includes(n));
+  for (const name of [...removed, ...leftOut]) {
     fs4.rmSync(path4.join(dest, name));
-  return { installed, removed, skipped };
+  }
+  return { installed, removed, leftOut, skipped };
 }
-function checkRules(src, dest) {
-  const shipped = ownedRulesIn(src);
+function checkRules(src, dest, set = EVERY_RULE) {
+  const expected = expectedRules(ownedRulesIn(src), set);
   const installed = ownedRulesIn(dest);
   const drift = [];
-  for (const name of shipped) {
+  for (const name of expected) {
     const there = path4.join(dest, name);
     if (!fs4.existsSync(there)) {
       drift.push({ kind: "missing", name });
@@ -1022,10 +1071,11 @@ function checkRules(src, dest) {
     if (!same)
       drift.push({ kind: "stale", name });
   }
-  const known = new Set(shipped);
+  const known = new Set(expected);
   for (const name of installed) {
-    if (!known.has(name))
+    if (!known.has(name) && !set.leaveAsIs.includes(name)) {
       drift.push({ kind: "orphaned", name });
+    }
   }
   return drift;
 }
@@ -1040,6 +1090,31 @@ function scopeOf(args) {
   if (args.includes("--user"))
     return "user";
   return;
+}
+function scopeSet(scope, root) {
+  if (scope === "user")
+    return { set: EVERY_RULE, notes: [] };
+  const enablement = pluginEnablement(root);
+  const set = projectSet(enablement);
+  const notes = [];
+  if (set.leaveOut.length > 0) {
+    notes.push(`not delivered to this repo: ${set.leaveOut.join(", ")}; its .claude/settings.json does not enable sidekick, so it comes from user level only`);
+  }
+  if (set.leaveAsIs.length > 0 && enablement.state === "unreadable") {
+    notes.push(`left ${set.leaveAsIs.join(", ")} as it is: could not read ${enablement.path} (${enablement.reason})`);
+  }
+  return { set, notes };
+}
+function reportInstall(result, dest, out) {
+  out(`installed ${result.installed.length} rule(s) into ${dest}: ${result.installed.join(", ")}`);
+  if (result.removed.length > 0) {
+    out(`removed retired: ${result.removed.join(", ")}`);
+  }
+  if (result.leftOut.length > 0) {
+    out(`removed: ${result.leftOut.join(", ")} (not delivered to this repo)`);
+  }
+  for (const s of result.skipped)
+    out(`[skipped:${s.why}] ${s.name}`);
 }
 function runRulesCli(args, env, out) {
   const [verb] = args;
@@ -1062,21 +1137,19 @@ function runRulesCli(args, env, out) {
     out(`${dest} exists and is not a directory; refusing to write rules there`);
     return 1;
   }
+  const { set, notes } = scopeSet(scope, root);
   let skipped = [];
   if (verb === "install") {
-    const result = installRules(env.src, dest);
+    const result = installRules(env.src, dest, set);
     skipped = result.skipped;
-    out(`installed ${result.installed.length} rule(s) into ${dest}: ${result.installed.join(", ")}`);
-    if (result.removed.length > 0) {
-      out(`removed retired: ${result.removed.join(", ")}`);
-    }
-    for (const s of skipped)
-      out(`[skipped:${s.why}] ${s.name}`);
+    reportInstall(result, dest, out);
   }
-  const drift = checkRules(env.src, dest);
+  for (const note of notes)
+    out(note);
+  const drift = checkRules(env.src, dest, set);
   const overlap = findOverlap(env.src, dest);
   if (drift.length === 0) {
-    out(`${ownedRulesIn(env.src).length} rule(s) match the shipped copies at ${dest}`);
+    out(`${expectedRules(ownedRulesIn(env.src), set).length} rule(s) match the shipped copies at ${dest}`);
   }
   for (const d of drift)
     out(`[${d.kind}] ${d.name}`);
