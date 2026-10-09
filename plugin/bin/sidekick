@@ -1022,12 +1022,17 @@ function projectSet(e) {
     }
   }
 }
+var shippedOnly = (set, shipped) => ({
+  leaveOut: set.leaveOut.filter((n) => shipped.includes(n)),
+  leaveAsIs: set.leaveAsIs.filter((n) => shipped.includes(n))
+});
 var expectedRules = (shipped, set) => shipped.filter((n) => !set.leaveOut.includes(n) && !set.leaveAsIs.includes(n));
-function installRules(src, dest, set = EVERY_RULE) {
+function installRules(src, dest, scope = EVERY_RULE) {
   const shipped = ownedRulesIn(src);
   if (shipped.length === 0) {
     return { installed: [], removed: [], leftOut: [], skipped: [] };
   }
+  const set = shippedOnly(scope, shipped);
   fs4.mkdirSync(dest, { recursive: true });
   const byLowerCase = new Map;
   for (const existing of fs4.readdirSync(dest)) {
@@ -1057,8 +1062,10 @@ function installRules(src, dest, set = EVERY_RULE) {
   }
   return { installed, removed, leftOut, skipped };
 }
-function checkRules(src, dest, set = EVERY_RULE) {
-  const expected = expectedRules(ownedRulesIn(src), set);
+function checkRules(src, dest, scope = EVERY_RULE) {
+  const shipped = ownedRulesIn(src);
+  const set = shippedOnly(scope, shipped);
+  const expected = expectedRules(shipped, set);
   const installed = ownedRulesIn(dest);
   const drift = [];
   for (const name of expected) {

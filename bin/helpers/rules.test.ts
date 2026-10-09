@@ -506,6 +506,47 @@ describe('installRules and checkRules with a scope set', () => {
     expect(fs.existsSync(path.join(dest, PM))).toBe(false);
   });
 
+  test('leaveOut for a name the source does not ship retires the copy once, without throwing', () => {
+    const src = tmp();
+    const dest = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    write(dest, PM, 'old');
+    const r = installRules(src, dest, leaveOut);
+    expect(r.removed).toEqual([PM]);
+    expect(r.leftOut).toEqual([]);
+    expect(fs.existsSync(path.join(dest, PM))).toBe(false);
+  });
+
+  test('leaveAsIs for an unshipped name: install and check agree it is retired', () => {
+    const src = tmp();
+    const dest = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    write(dest, 'sk-a.md', RULE_A);
+    write(dest, PM, 'old');
+    expect(checkRules(src, dest, leaveAsIs)).toEqual([
+      { kind: 'orphaned', name: PM },
+    ]);
+    const r = installRules(src, dest, leaveAsIs);
+    expect(r.removed).toEqual([PM]);
+    expect(checkRules(src, dest, leaveAsIs)).toEqual([]);
+  });
+
+  test('the CLI does not throw when the source omits the plugin-only rule', () => {
+    const src = tmp();
+    const cwd = tmp();
+    gitInit(cwd);
+    write(src, 'sk-a.md', RULE_A);
+    write(path.join(cwd, '.claude', 'rules'), PM, 'old');
+    const lines: string[] = [];
+    const code = runRulesCli(
+      ['install', '--project'],
+      { src, cwd, claudeHome: tmp() },
+      (l) => lines.push(l),
+    );
+    expect(code).toBe(0);
+    expect(lines.join('\n')).toContain(`removed retired: ${PM}`);
+  });
+
   test('the default set is every rule', () => {
     const { src, dest } = fixture();
     expect(installRules(src, dest).installed).toEqual(['sk-a.md', PM]);

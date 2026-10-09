@@ -65,9 +65,10 @@ const errorText = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
 
 /**
- * Whether `<root>/.claude/settings.json` enables sidekick. Only an
- * absent, blank, or key-less file reads `not-enabled`: that state deletes
- * a delivered copy, so any other failure to read stays `unreadable`.
+ * Whether `<root>/.claude/settings.json` enables sidekick. An absent or
+ * blank file, or one with no `sidekick@` key set to `true`, reads
+ * `not-enabled`. That state deletes a delivered copy, so any other
+ * failure to read stays `unreadable`.
  */
 export function pluginEnablement(root: string): Enablement {
   const file = path.join(root, '.claude', 'settings.json');
@@ -101,8 +102,8 @@ export function pluginEnablement(root: string): Enablement {
 
 /** What a scope leaves out (and removes) and what it leaves exactly as it is. */
 export interface ScopeSet {
-  leaveOut: readonly string[];
-  leaveAsIs: readonly string[];
+  readonly leaveOut: readonly string[];
+  readonly leaveAsIs: readonly string[];
 }
 
 export const EVERY_RULE: ScopeSet = { leaveOut: [], leaveAsIs: [] };
@@ -122,6 +123,12 @@ export function projectSet(e: Enablement): ScopeSet {
   }
 }
 
+// A name the source does not ship is a retired file, whatever the set says.
+const shippedOnly = (set: ScopeSet, shipped: string[]): ScopeSet => ({
+  leaveOut: set.leaveOut.filter((n) => shipped.includes(n)),
+  leaveAsIs: set.leaveAsIs.filter((n) => shipped.includes(n)),
+});
+
 const expectedRules = (shipped: string[], set: ScopeSet): string[] =>
   shipped.filter(
     (n) => !set.leaveOut.includes(n) && !set.leaveAsIs.includes(n),
@@ -130,12 +137,13 @@ const expectedRules = (shipped: string[], set: ScopeSet): string[] =>
 /**
  * `dest` must be a directory or absent — a plain file there throws
  * EEXIST here; that case is guarded in `runRulesCli`, not this function.
- * `removed` is retired rules; `leftOut` is shipped rules `set` withholds.
+ * `removed` is retired rules; `leftOut` is shipped copies on disk
+ * that this scope removed because it does not deliver them.
  */
 export function installRules(
   src: string,
   dest: string,
-  set: ScopeSet = EVERY_RULE,
+  scope: ScopeSet = EVERY_RULE,
 ): {
   installed: string[];
   removed: string[];
@@ -148,6 +156,7 @@ export function installRules(
   if (shipped.length === 0) {
     return { installed: [], removed: [], leftOut: [], skipped: [] };
   }
+  const set = shippedOnly(scope, shipped);
   fs.mkdirSync(dest, { recursive: true });
 
   // Snapshot the destination once. A shipped name is checked against this
@@ -196,9 +205,11 @@ export function installRules(
 export function checkRules(
   src: string,
   dest: string,
-  set: ScopeSet = EVERY_RULE,
+  scope: ScopeSet = EVERY_RULE,
 ): Drift[] {
-  const expected = expectedRules(ownedRulesIn(src), set);
+  const shipped = ownedRulesIn(src);
+  const set = shippedOnly(scope, shipped);
+  const expected = expectedRules(shipped, set);
   const installed = ownedRulesIn(dest);
   const drift: Drift[] = [];
   for (const name of expected) {
@@ -234,7 +245,6 @@ function scopeOf(args: string[]): Scope | undefined {
   return undefined;
 }
 
-// The set a scope delivers, plus the lines that say what it withheld and why.
 function scopeSet(
   scope: Scope,
   root: string,
