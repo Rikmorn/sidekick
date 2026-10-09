@@ -28,9 +28,21 @@ The `sk-*` rules ship inside the plugin. Claude Code reads rules from a repo's `
 sidekick rules install --project   # this repo's .claude/rules/
 sidekick rules install --user      # the user-level rules directory
 sidekick rules check --project     # drift and overlap report; changes nothing
+sidekick rules check --user --strict   # exit 1 on drift or a skipped write
 ```
 
-The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a file you hand-write under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. It never edits another file. When a repo keeps its own rule that overlaps an sk rule by heading or opening sentence, the check reports the pair and leaves the decision to you; repetition is accepted where colleagues who do not use sidekick rely on the repo's copy.
+The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a file you hand-write under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. It never edits another file.
+
+Each scope delivers a different set:
+
+- `--user` delivers every rule.
+- `--project` delivers every rule except `sk-pm-conventions.md`, unless the repo's committed `.claude/settings.json` enables a `sidekick@` plugin. Project copies serve colleagues who may not have the plugin, and they have no use for conventions that only the plugin acts on. Without that key the install prints `not delivered to this repo`. It also removes an existing copy: a rule a scope does not deliver is removed from that scope. If the settings file exists but cannot be read, the install leaves an existing copy as it is and says so.
+
+`check --project` checks the repo's `sk-*` copies. When the repo holds none, it checks the user-level copies instead and names that directory. Where both exist, Claude Code loads both, and the check says so; that is expected where the repo keeps copies for colleagues without sidekick.
+
+The check also looks for overlap between the shipped rules and the repo's other `.md` files. A file overlaps a rule on any of three signals: the corresponding file name (`clean-code.md` for `sk-clean-code.md`), two or more shared H2 headings, or the same opening sentence. The check reports the pair and leaves the decision to you. A repo file that names its pair, such as by citing `sk-clean-code.md`, is a stated extension. The check lists it without reporting it. Repetition is accepted where colleagues who do not use sidekick rely on the repo's copy.
+
+Exit `0` means the command ran, whatever it found. Exit `1` means it could not run: bad usage, no shipped rules, or a destination that is not a directory. With `--strict`, `1` also means drift or a skipped write. A hook should run the check without `--strict`, because Claude Code shows a non-zero exit as a hook error.
 
 ## The board
 

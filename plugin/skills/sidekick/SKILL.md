@@ -16,9 +16,15 @@ The portable rules ship inside the plugin under `rules/`. Claude Code reads rule
 sidekick rules install --project   # writes sk-*.md into this repo's .claude/rules/
 sidekick rules install --user      # writes them into the user-level rules directory
 sidekick rules check --project     # reports drift and overlap; changes nothing
+sidekick rules check --user --strict   # also exits 1 on drift or a skipped write
 ```
 
-`sidekick` is on the Bash tool's PATH whenever the plugin is enabled. The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a hand-written file under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. Other rule files are never edited; when one overlaps an sk rule by heading or opening sentence, the check reports it and leaves the decision to you.
+`sidekick` is on the Bash tool's PATH whenever the plugin is enabled. The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a hand-written file under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. Other rule files are never edited.
+
+- `--user` delivers every rule. `--project` leaves out `sk-pm-conventions.md` unless the repo's committed `.claude/settings.json` enables a `sidekick@` plugin, and removes an existing copy; an unreadable settings file leaves it as it is.
+- `check --project` checks the user-level copies when the repo holds no `sk-*` copies. Where both exist, Claude Code loads both, which is expected.
+- The check reports overlap on a corresponding file name, two or more shared H2 headings, or the opening sentence. A repo file that names its pair is a stated extension. The decision stays with you.
+- Exit `0` means the command ran, and `1` means it could not run. `--strict` also exits `1` on drift or a skipped write. A hook runs the check without it, because Claude Code shows a non-zero exit as a hook error.
 
 ## Bringing a repo under tracking
 
