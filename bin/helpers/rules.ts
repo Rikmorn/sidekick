@@ -126,9 +126,11 @@ export function checkRules(src: string, dest: string): Drift[] {
 }
 
 const USAGE =
-  'usage: sidekick rules <install|check> --project|--user\n' +
+  'usage: sidekick rules <install|check> --project|--user [--strict]\n' +
   '  --project  the current repo\x27s .claude/rules/\n' +
-  '  --user     the user-level rules directory under the Claude config dir';
+  '  --user     the user-level rules directory under the Claude config dir\n' +
+  '  --strict   exit 1 when drift or a skipped write is found\n' +
+  'exit: 0 ran, whatever it found; 1 could not run, or --strict found drift';
 
 function scopeOf(args: string[]): Scope | undefined {
   if (args.includes('--project')) return 'project';
@@ -142,6 +144,7 @@ export function runRulesCli(
   out: (line: string) => void,
 ): number {
   const [verb] = args;
+  const strict = args.includes('--strict');
   const scope = scopeOf(args.slice(1));
   if ((verb !== 'install' && verb !== 'check') || scope === undefined) {
     out(USAGE);
@@ -186,5 +189,6 @@ export function runRulesCli(
   }
   for (const d of drift) out(`[${d.kind}] ${d.name}`);
   for (const l of formatOverlap(overlap)) out(l);
-  return drift.length === 0 && skipped.length === 0 ? 0 : 2;
+  const found = drift.length > 0 || skipped.length > 0;
+  return strict && found ? 1 : 0;
 }

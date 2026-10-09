@@ -55,7 +55,7 @@ export function isMainEntrypoint(
   }
 }
 
-export const USAGE = `usage: sidekick rules <install|check> --project|--user\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       sidekick --version`;
+export const USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       sidekick --version`;
 
 export interface MainContext {
   env: NodeJS.ProcessEnv;

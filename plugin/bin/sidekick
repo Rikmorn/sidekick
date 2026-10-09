@@ -1029,9 +1029,11 @@ function checkRules(src, dest) {
   }
   return drift;
 }
-var USAGE = `usage: sidekick rules <install|check> --project|--user
+var USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]
 ` + `  --project  the current repo's .claude/rules/
-` + "  --user     the user-level rules directory under the Claude config dir";
+` + `  --user     the user-level rules directory under the Claude config dir
+` + `  --strict   exit 1 when drift or a skipped write is found
+` + "exit: 0 ran, whatever it found; 1 could not run, or --strict found drift";
 function scopeOf(args) {
   if (args.includes("--project"))
     return "project";
@@ -1041,6 +1043,7 @@ function scopeOf(args) {
 }
 function runRulesCli(args, env, out) {
   const [verb] = args;
+  const strict = args.includes("--strict");
   const scope = scopeOf(args.slice(1));
   if (verb !== "install" && verb !== "check" || scope === undefined) {
     out(USAGE);
@@ -1079,7 +1082,8 @@ function runRulesCli(args, env, out) {
     out(`[${d.kind}] ${d.name}`);
   for (const l of formatOverlap(overlap))
     out(l);
-  return drift.length === 0 && skipped.length === 0 ? 0 : 2;
+  const found = drift.length > 0 || skipped.length > 0;
+  return strict && found ? 1 : 0;
 }
 
 // bin/helpers/pm.ts
@@ -1453,7 +1457,7 @@ function isMainEntrypoint(importMetaUrl, argv1) {
     return false;
   }
 }
-var USAGE2 = `usage: sidekick rules <install|check> --project|--user
+var USAGE2 = `usage: sidekick rules <install|check> --project|--user [--strict]
        ${PM_USAGE_LINE}
        ${HOOK_USAGE_LINE}
        sidekick --version`;

@@ -159,7 +159,7 @@ describe('runRulesCli', () => {
     expect(lines.join('\n')).toContain(`project root: ${cwd}`);
   });
 
-  test('check --user reports drift and overlap, exit 0 when clean, 2 when drifted', () => {
+  test('check --user reports drift and overlap and exits 0; --strict exits 1 on drift only', () => {
     const src = tmp();
     const cwd = tmp();
     const home = tmp();
@@ -170,24 +170,63 @@ describe('runRulesCli', () => {
       'mine.md',
       '# Mine\n\nKeep functions small.\n',
     );
+    const env = { src, cwd, claudeHome: home };
     const lines: string[] = [];
-    const code = runRulesCli(
-      ['check', '--user'],
-      { src, cwd, claudeHome: home },
-      (l) => lines.push(l),
-    );
-    expect(code).toBe(2);
+    expect(runRulesCli(['check', '--user'], env, (l) => lines.push(l))).toBe(0);
     const text = lines.join('\n');
     expect(text).toContain('[stale] sk-a.md');
     expect(text).toContain('mine.md overlaps sk-a.md on opening');
+    expect(runRulesCli(['check', '--user', '--strict'], env, () => {})).toBe(1);
+    expect(runRulesCli(['check', '--strict', '--user'], env, () => {})).toBe(1);
     installRules(src, path.join(home, 'rules'));
     const clean: string[] = [];
     expect(
-      runRulesCli(['check', '--user'], { src, cwd, claudeHome: home }, (l) =>
-        clean.push(l),
-      ),
+      runRulesCli(['check', '--user', '--strict'], env, (l) => clean.push(l)),
     ).toBe(0);
     expect(clean.join('\n')).toContain('1 rule(s) match');
+  });
+
+  test('install --project exits 0 on a skipped write, and 1 with --strict', () => {
+    const src = tmp();
+    const cwd = tmp();
+    const home = tmp();
+    const outside = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    write(outside, 'real.md', 'do not touch me');
+    const rules = path.join(cwd, '.claude', 'rules');
+    fs.mkdirSync(rules, { recursive: true });
+    fs.symlinkSync(path.join(outside, 'real.md'), path.join(rules, 'sk-a.md'));
+    const env = { src, cwd, claudeHome: home };
+    const lines: string[] = [];
+    expect(
+      runRulesCli(['install', '--project'], env, (l) => lines.push(l)),
+    ).toBe(0);
+    expect(lines.join('\n')).toContain('[skipped:not-a-regular-file] sk-a.md');
+    expect(
+      runRulesCli(['install', '--project', '--strict'], env, () => {}),
+    ).toBe(1);
+  });
+
+  test('an overlap finding alone exits 0 even with --strict', () => {
+    const src = tmp();
+    const cwd = tmp();
+    const home = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    installRules(src, path.join(home, 'rules'));
+    write(
+      path.join(home, 'rules'),
+      'mine.md',
+      '# Mine\n\nKeep functions small.\n',
+    );
+    const lines: string[] = [];
+    expect(
+      runRulesCli(
+        ['check', '--user', '--strict'],
+        { src, cwd, claudeHome: home },
+        (l) => lines.push(l),
+      ),
+    ).toBe(0);
+    expect(lines.join('\n')).toContain('mine.md overlaps sk-a.md');
   });
 
   test('refuses a missing scope, an unknown verb, and an empty source', () => {
