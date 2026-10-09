@@ -270,6 +270,33 @@ function scopeSet(
 const deliveryMode = (projectDest: string): Scope =>
   ownedRulesIn(projectDest).length > 0 ? 'project' : 'user';
 
+const realOrSelf = (p: string): string => {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+};
+
+// A repo rooted at the home directory has the user rules as its own.
+const sameDir = (a: string, b: string): boolean =>
+  realOrSelf(a) === realOrSelf(b);
+
+function pickChecked(
+  scope: Scope,
+  t: { dest: string; userDest: string; set: ScopeSet },
+  src: string,
+  out: (line: string) => void,
+): { dest: string; set: ScopeSet } {
+  if (scope === 'user' || deliveryMode(t.dest) === 'project') {
+    return { dest: t.dest, set: t.set };
+  }
+  out(
+    `no sk-* rules in ${t.dest}; checking the user-level copies at ${t.userDest} against ${src}`,
+  );
+  return { dest: t.userDest, set: EVERY_RULE };
+}
+
 function sharedNames(projectDest: string, userDest: string): number {
   const user = new Set(ownedRulesIn(userDest));
   return ownedRulesIn(projectDest).filter((n) => user.has(n)).length;
@@ -331,15 +358,7 @@ export function runRulesCli(
   for (const note of notes) out(note);
 
   const userDest = resolveDest('user', root, env.claudeHome);
-  const checked =
-    scope === 'project' && deliveryMode(dest) === 'user'
-      ? { dest: userDest, set: EVERY_RULE }
-      : { dest, set };
-  if (checked.dest !== dest) {
-    out(
-      `no sk-* rules in ${dest}; checking the user-level copies at ${userDest} against ${env.src}`,
-    );
-  }
+  const checked = pickChecked(scope, { dest, userDest, set }, env.src, out);
   const drift = checkRules(env.src, checked.dest, checked.set);
   if (drift.length === 0) {
     out(
@@ -347,7 +366,11 @@ export function runRulesCli(
     );
   }
   for (const d of drift) out(`[${d.kind}] ${d.name}`);
-  if (scope === 'project' && checked.dest === dest) {
+  if (
+    scope === 'project' &&
+    checked.dest === dest &&
+    !sameDir(dest, userDest)
+  ) {
     const shared = sharedNames(dest, userDest);
     if (shared > 0) {
       out(

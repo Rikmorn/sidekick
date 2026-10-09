@@ -4,7 +4,7 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
 import * as fs5 from "node:fs";
-import { realpathSync } from "node:fs";
+import { realpathSync as realpathSync2 } from "node:fs";
 import * as os from "node:os";
 import * as path5 from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1113,6 +1113,21 @@ function scopeSet(scope, root) {
   return { set, notes };
 }
 var deliveryMode = (projectDest) => ownedRulesIn(projectDest).length > 0 ? "project" : "user";
+var realOrSelf = (p) => {
+  try {
+    return fs4.realpathSync(p);
+  } catch {
+    return path4.resolve(p);
+  }
+};
+var sameDir = (a, b) => realOrSelf(a) === realOrSelf(b);
+function pickChecked(scope, t, src, out) {
+  if (scope === "user" || deliveryMode(t.dest) === "project") {
+    return { dest: t.dest, set: t.set };
+  }
+  out(`no sk-* rules in ${t.dest}; checking the user-level copies at ${t.userDest} against ${src}`);
+  return { dest: t.userDest, set: EVERY_RULE };
+}
 function sharedNames(projectDest, userDest) {
   const user = new Set(ownedRulesIn(userDest));
   return ownedRulesIn(projectDest).filter((n) => user.has(n)).length;
@@ -1159,17 +1174,14 @@ function runRulesCli(args, env, out) {
   for (const note of notes)
     out(note);
   const userDest = resolveDest("user", root, env.claudeHome);
-  const checked = scope === "project" && deliveryMode(dest) === "user" ? { dest: userDest, set: EVERY_RULE } : { dest, set };
-  if (checked.dest !== dest) {
-    out(`no sk-* rules in ${dest}; checking the user-level copies at ${userDest} against ${env.src}`);
-  }
+  const checked = pickChecked(scope, { dest, userDest, set }, env.src, out);
   const drift = checkRules(env.src, checked.dest, checked.set);
   if (drift.length === 0) {
     out(`${expectedRules(ownedRulesIn(env.src), checked.set).length} rule(s) match the shipped copies at ${checked.dest}`);
   }
   for (const d of drift)
     out(`[${d.kind}] ${d.name}`);
-  if (scope === "project" && checked.dest === dest) {
+  if (scope === "project" && checked.dest === dest && !sameDir(dest, userDest)) {
     const shared = sharedNames(dest, userDest);
     if (shared > 0) {
       out(`your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`);
@@ -1547,7 +1559,7 @@ function isMainEntrypoint(importMetaUrl, argv1) {
   if (!argv1)
     return false;
   try {
-    return realpathSync(fileURLToPath(importMetaUrl)) === realpathSync(argv1);
+    return realpathSync2(fileURLToPath(importMetaUrl)) === realpathSync2(argv1);
   } catch {
     return false;
   }

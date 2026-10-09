@@ -716,12 +716,47 @@ describe('runRulesCli --project check with no sk-* copies in the repo', () => {
     expect(r.text).toContain('a.md overlaps sk-a.md on name');
   });
 
-  test('with no user directory every shipped rule is missing and exit is 0', () => {
+  test('with no user directory every shipped rule is missing against the user directory', () => {
     const e = setup();
+    write(e.src, 'sk-b.md', RULE_B);
     const r = check(e);
     expect(r.code).toBe(0);
-    expect(r.text).toContain('[missing] sk-a.md');
-    expect(r.text).toContain(e.user);
+    const lines = r.text.split('\n');
+    expect(lines).toContain(
+      `no sk-* rules in ${path.join(fs.realpathSync(e.cwd), '.claude', 'rules')}; checking the user-level copies at ${e.user} against ${e.src}`,
+    );
+    expect(lines).toContain('[missing] sk-a.md');
+    expect(lines).toContain('[missing] sk-b.md');
+    expect(r.text).not.toContain('match the shipped copies');
+  });
+
+  test('user mode checks every shipped rule, including the plugin-only one', () => {
+    const e = setup();
+    write(e.src, PM, RULE_B);
+    write(e.user, 'sk-a.md', RULE_A);
+    const r = check(e);
+    expect(r.text).toContain(`[missing] ${PM}`);
+    write(e.user, PM, RULE_B);
+    const ok = check(e, ['--strict']);
+    expect(ok.code).toBe(0);
+    expect(ok.text).toContain(
+      `2 rule(s) match the shipped copies at ${e.user}`,
+    );
+  });
+
+  test('a repo whose rules are the user rules prints no duplicate line', () => {
+    const e = setup();
+    const home = tmp();
+    gitInit(home);
+    write(path.join(home, '.claude', 'rules'), 'sk-a.md', RULE_A);
+    const r = check({
+      src: e.src,
+      cwd: home,
+      home: path.join(home, '.claude'),
+    });
+    expect(r.code).toBe(0);
+    expect(r.text).not.toContain('also deliver');
+    expect(r.text).not.toContain('checking the user-level copies');
   });
 
   test('project copies also at user level print the duplicate line with the count', () => {
