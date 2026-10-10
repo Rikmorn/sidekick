@@ -18,6 +18,10 @@ For each task, the review rounds and the fix waves.
 
 Each defect, under the stage that found it: the plan scan, the implementer, the task review, or the whole-branch review. The orchestrator adds its own review's defects. Mark each one fixed, with its commit, or open, so the orchestrator can route what is still open.
 
+## Declined to judge
+
+Each line the whole-branch reviewer set aside, with the worker's ruling: it stands, or it is now a finding, and its route.
+
 ## Deviations from the plan
 
 Each ruling, and each step done differently from the plan, with the reason.

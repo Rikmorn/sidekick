@@ -110,7 +110,7 @@ Classifies the request as a spike, bounded, or architectural, and says so. Reads
 
 ### `writing-plans`
 
-Turns the spec into `docs/superpowers/plans/<date>-<name>.md`. The header carries the goal, the architecture, and the spec path. Each task lists its files and interfaces, then bite-sized steps: write a failing test, run it, implement, run it, commit. A Review Focus section names up to five inputs or failure modes the spec implies but no test exercises. Each gets a test in the task that owns the code. Self-reviews for spec coverage, placeholders, type consistency, and that focus. Pauses once: you review the saved plan, and choose subagent-driven or native execution on its recommendation. `sk-execute` adds the worker session to that choice. When it loads through the Skill tool, sidekick's hook adds `sk-execute`'s plan stance, which governs how the plan is written.
+Turns the spec into `docs/superpowers/plans/<date>-<name>.md`. The header carries the goal, the architecture, and the spec path. Each task lists its files and interfaces, then bite-sized steps: write a failing test, run it, implement, run it, commit. A Review Focus section names up to five inputs or failure modes the spec implies but no test exercises. Each gets a test in the task that owns the code. Self-reviews for spec coverage, placeholders, type consistency, and that focus. Pauses once: you review the saved plan and, unless you already named a method, choose one. `sk-execute` puts its three modes in that question, with one recommendation in place of the skill's own. When `writing-plans` loads through the Skill tool, sidekick's hook adds `sk-execute`'s plan stance, which governs how the plan is written.
 
 ### `using-git-worktrees`
 
@@ -125,15 +125,20 @@ Per task:
 - Findings go to fix rounds, up to five, each followed by a scoped re-review.
 - Rulings and completions go to a ledger.
 
-After the last task, one final reviewer reads the whole branch, one fix dispatch answers it, and `finishing-a-development-branch` takes over. It runs task to task without stopping. It stops on a blocker, missing context, or a load-bearing conflict with the plan.
+After the last task, one final reviewer reads the whole branch. One fix dispatch answers it, one scoped re-review checks the fix, and `finishing-a-development-branch` takes over. It runs task to task without stopping, and rules on conflicts and ambiguities in the ledger. Four things stop it:
+
+- an irreversible or destructive operation;
+- a security-sensitive action;
+- a side effect that norms say to ask about first, such as a push to a shared branch;
+- a plan so broken that every path forward is a guess.
 
 ### `executing-plans`
 
-Native execution: the session implements every task itself, under the workspace, ledger, and stopping rules of `subagent-driven-development`. Each task runs between the skill's `task-start` and `task-done` scripts, with TDD as its gate and a ledgered ruling for each conflict or deviation. It runs task to task without pausing. It stops only for an irreversible or security-sensitive action, an outside side effect such as a push, or a plan too broken to follow. After the last task it dispatches one fresh reviewer on the most capable model over the whole branch. It rules on the findings, and `finishing-a-development-branch` takes over.
+Native execution: the session implements every task itself, under the workspace, ledger, and stopping rules of `subagent-driven-development`. Each task runs between the skill's `task-start` and `task-done` scripts, with TDD as its gate and a ledgered ruling for each conflict or deviation. It runs task to task without pausing, and stops for the same four things. After the last task it dispatches one fresh reviewer on the most capable model over the whole branch. Without a subagent tool it reviews the branch itself and says so. It fixes the Critical and Important findings in one pass, each verified by a test that failed first, with no re-review. Then `finishing-a-development-branch` takes over.
 
 ### `requesting-code-review`
 
-Dispatches a code reviewer with the diff range and the spec; mandatory after a task and before a merge. Returns findings by severity, judging behaviour the spec is silent on by what a reasonable user would expect. Under "Declined to judge" it lists each behaviour it set aside, and the session running the plan rules on every line. The requester verifies the findings before acting rather than applying them blind.
+Dispatches a code reviewer with the diff range and the spec; mandatory after a task and before a merge. Returns findings by severity. Both execution skills use its reviewer template for the whole-branch review. The template judges behaviour the spec is silent on by what a reasonable user would expect. Under "Declined to judge" the template lists each behaviour it set aside, for the executor to rule on. The requester fixes Critical and Important findings, notes Minor ones, and pushes back with reasoning where the reviewer is wrong.
 
 ### `finishing-a-development-branch`
 

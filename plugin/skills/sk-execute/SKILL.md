@@ -5,7 +5,7 @@ description: How a written plan runs. Lays out the execution modes with a recomm
 
 # sk-execute
 
-A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. §Outward writes and a plan's after-file run outside superpowers. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except four rules, each overridden where it applies. `writing-plans` asks for complete code with no placeholders. Superpowers also tells its executors to carry out the plan exactly, in the implementer's prompt and in `executing-plans`. §A plan carries intent overrides both. Superpowers' reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. The worker side is `sk-worker`, which only the operator starts.
+A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. §Outward writes and a plan's after-file run outside superpowers. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except five rules, each overridden where it applies. `writing-plans` asks for complete code with no placeholders. Superpowers also tells its executors to carry out the plan exactly, in the implementer's prompt and in `executing-plans`. §A plan carries intent overrides both. Superpowers' task reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. `writing-plans`' handoff offers two modes with a recommendation. It says, as `executing-plans` does, that native execution runs well on a mid-tier model because the plan carries the design. §Choose the mode replaces that question, and §A plan carries intent replaces that premise. The worker side is `sk-worker`, which only the operator starts.
 
 ## Choose the mode
 
@@ -17,7 +17,7 @@ Lay out three modes and recommend one. The operator decides; there is no default
 | Subagent-driven in this session | Code with tests at moderate size, where rulings come from the session that holds the context | A fresh context per task and per review |
 | A worker session, running `subagent-driven-development`, or `executing-plans` for a trivial plan | Many tasks and code with tests, where keeping dispatches out of this session's context matters | A second context load, the worker's scan, and each question reloading this session |
 
-`writing-plans` offers the first two with a recommendation of its own, in the question that asks the operator to review the saved plan. Add the third to that question, so the operator reviews the plan and chooses once. Recommend one mode in a sentence: the reason from the plan, and what would change it.
+`writing-plans` offers the first two with a recommendation of its own, in the question that asks the operator to review the saved plan. Add the third to that question, so the operator reviews the plan and chooses once. Give one recommendation across the three, in place of its own: the reason from the plan, and what would change it. When the operator has already named a method, `writing-plans` asks only for the review, and the method stands.
 
 ## Outward writes
 
@@ -65,7 +65,9 @@ In the two subagent modes:
 
 ## Route every finding
 
-A review's findings are graded by their effect, not by the reviewer's label, and each gets a route before the workspace is deleted. Ask of each: if it were left, would the repo, the work, or the milestone stop being correct or consistent? Then it is part of the work, fixed in the branch. That covers text the branch wrote, and any place still stating a premise the branch retired. Anything else is an addition under `sk-pm-conventions.md` §Change control, or a drop whose reason the operator hears. Each line a reviewer lists under "Declined to judge" gets the same question once the session has ruled on it. This overrides superpowers' rule that minors never enter the fix pass. A finding left only in a closing message has no home once the session ends.
+A review's findings are graded by their effect, not by the reviewer's label, and each gets a route before the workspace is deleted. Ask of each: if it were left, would the repo, the work, or the milestone stop being correct or consistent? Then it is part of the work, fixed in the branch. That covers text the branch wrote, and any place still stating a premise the branch retired. Anything else is an addition under `sk-pm-conventions.md` §Change control, or a drop whose reason the operator hears. This overrides superpowers' rule that minors never enter the fix pass. A finding left only in a closing message has no home once the session ends.
+
+The whole-branch reviewer also lists what it declined to judge. In every mode, the session running the plan rules on each line, and a line it rules a finding is routed like any other. A worker records those rulings in its run report.
 
 ## Hand off to a worker
 
@@ -78,7 +80,7 @@ When the operator chooses the worker mode, they open a session in the repo and s
    - where to work: a branch in the main checkout, a branch in a worktree, or "in place" when the operator agreed to that;
    - the superpowers skill to run.
 3. Answer its scan report in one reply where you can. Keep a table of any expected value a ruling moves, so later tasks' numbers stay right.
-4. When the run report arrives, review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Add your review's defects under "Defects by stage" in the run report, and route every defect still open there as §Route every finding says. Then integrate the branch as the repo's guidance says: a fast-forward, or a pull request whose body carries `Closes #N`. Where the guidance is silent, infer the route from the repo's history. Confirm it with the operator, and record it where the repo keeps its guidance. Run the plan's after-file, if it has one, and close the issues through `sk-track`.
+4. When the run report arrives, review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Add your review's defects under "Defects by stage" in the run report. Route every defect still open there, and every declined line the worker ruled a finding, as §Route every finding says. Then integrate the branch as the repo's guidance says: a fast-forward, or a pull request whose body carries `Closes #N`. Where the guidance is silent, infer the route from the repo's history. Confirm it with the operator, and record it where the repo keeps its guidance. Run the plan's after-file, if it has one, and close the issues through `sk-track`.
 
 A change of scope goes in a fresh handoff, never in a message to a running worker.
 
