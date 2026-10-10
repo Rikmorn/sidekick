@@ -1,6 +1,6 @@
 ---
 name: sidekick
-description: What the sidekick bundle is, what it depends on, how to deliver its rules into a repo, and how to bring a repo under tracking on GitHub. Use when asked what sidekick is, how to install or update it, where the sk-* rules come from, or how to set up the board and labels for a repo.
+description: What the sidekick bundle is, what it depends on, how to deliver its rules into a repo, how to bring a repo under tracking on GitHub, and how the docs folders its skills write work. Use when asked what sidekick is, how to install or update it, where the sk-* rules come from, how to set up the board and labels for a repo, or where a design, research report, ADR, or learning record goes.
 user-invocable: true
 ---
 
@@ -40,6 +40,10 @@ Bringing a repo in is four writes and a check:
 4. Verify. `sidekick pm board` reports `tracked: true` with the three Status options, and `sidekick pm lint` prints zeros. Any other Status options mean the copy or the reference has changed: stop and say so, and repair the reference board, never the copy. A repair to its options uses `updateProjectV2Field`, which replaces the whole list: pass each kept option's `id`, or the cards holding it lose their value. A board made by hand, or copied before the reference lost that workflow, may still list "Pull request linked to issue". One `deleteProjectV2Workflow` mutation with the id from `projectV2.workflows` removes it. The API offers delete only; there is no create or update.
 
 Nothing else is configured. There is no auto-add workflow, because filing adds the card and lint's `unboarded` reports a miss. There is no milestone; the first one opens with the first piece of work. A repo that is already `tracked: true` needs at most the label step, which `--force` makes safe to repeat. A second copy produces two boards with the repo's title: discovery takes the lower number, and lint reports `multiple_linked_boards`.
+
+## The docs layout
+
+`references/docs-layout.md` says how each `docs/` folder that sidekick's skills write works: designs, research, ADRs, learnings, tech debt, and the superpowers working directory. For each it gives the index file, what the folder holds, and its lifecycle. A repo's own `README.md` in one of those folders extends or overrides its section, and a repo may add folders of its own.
 
 ## What is here, what is coming
 

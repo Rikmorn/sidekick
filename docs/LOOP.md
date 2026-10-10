@@ -82,13 +82,13 @@ Pauses at the confirmation.
 
 ### `sk-design`
 
-Fires when a change would be costly to undo, before or during brainstorming, or when you ask to explore, evaluate, or plan a design. It reads the repo's architecture sources, then writes its note, from the problem through prior art and options to the decision. A fresh subagent reviews every note with options, unless the note is trivial and says why, and the note answers each finding.
+Fires when a change would be costly to undo, before or during brainstorming, or when you ask to explore, evaluate, or plan a design. It reads the repo's architecture sources and settles the goals with you, then writes its note, from the problem through prior art and options to the decision. A fresh subagent reviews every note with options, unless the note is trivial and says why, and the note answers each finding.
 
 - **Inside a brainstorm**, the note lives under `docs/superpowers/designs/` and takes brainstorming's approaches step.
-- **With no build in hand**, it lives under `docs/designs/<topic>/` across sessions, and ends in a breakdown that `sk-milestone` proposes and `sk-track` files.
+- **With no build in hand**, it lives under `docs/designs/<topic>/` across sessions, and ends in a breakdown that `sk-milestone` proposes and `sk-track` files. Its research goes to `docs/research/<topic>/`. An exploration written elsewhere is adopted into the same folders.
 - **Small debt** goes to an issue through `sk-track`, or to `docs/tech-debt/` in an untracked repo.
 
-Pauses for your decision. With no operator to ask, it registers the design as debt.
+Pauses for your goals before the options, unless a brainstorm has already settled them, and for your decision. With no operator to ask, it registers the design as debt.
 
 ### `sk-execute`
 
@@ -100,13 +100,13 @@ Only you start it, in a second session. It reports its name, checks the tree, an
 
 ### `sidekick`
 
-The reference skill. It says what the bundle is. It delivers the rules with `sidekick rules install --project|--user` and audits them with `rules check`. It brings a repo under tracking: copy the reference board with `gh project copy`, link it, and create the labels. Then verify with `sidekick pm board` and `lint`. Pauses on the `area:*` set, which is yours to name.
+The reference skill. It says what the bundle is, and how each `docs/` folder its skills write works. It delivers the rules with `sidekick rules install --project|--user` and audits them with `rules check`. It brings a repo under tracking: copy the reference board with `gh project copy`, link it, and create the labels. Then verify with `sidekick pm board` and `lint`. Pauses on the `area:*` set, which is yours to name.
 
 ## Superpowers, as the loop uses it
 
 ### `brainstorming`
 
-Classifies the request as a spike, bounded, or architectural, and says so. Reads the repo and recent commits. Asks one question at a time, proposes approaches, and presents the design in sections. For architectural work it writes the spec to `docs/superpowers/specs/` and self-reviews it. Pauses at every section and at the spec. It never starts implementation without a yes; that gate is the skill's whole point.
+Classifies the request as a spike, bounded, or architectural, and says so. Reads the repo and recent commits. Writes back its understanding of the goal, separating what you said from what it assumed, and takes your correction. Asks one question at a time, proposes approaches, and presents the design in sections. For architectural work it writes the spec to `docs/superpowers/specs/` and self-reviews it. Pauses at every section and at the spec. It never starts implementation without a yes; that gate is the skill's whole point.
 
 ### `writing-plans`
 

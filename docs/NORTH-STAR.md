@@ -15,7 +15,7 @@ Recalibrated 2026-09-18 with ADR-0009. The objective tree this replaces describe
 - **Guidance travels with the plugin.** The portable rules reach every repo the operator works in, delivered without touching files sidekick does not own.
 - **Work is tracked on GitHub.** Issues are work items, milestones are releases, one board per repo. The PM layer exists where the operator owns the tracking and stays out of the way where someone else does.
 - **Extensions sit around the trunk.** A design pass before or during brainstorming, a sealed review after a spec, a verdict after a build, a record on close. None of them recreates an artifact contract of its own.
-- **Research feeds work.** Proactive research on harnesses and loops lands under `docs/research/`; research inside a piece of work starts in the working scratch and is promoted only when it outlives its issue.
+- **Research feeds work.** Research lands under `docs/research/` when it is written, whether proactive work on harnesses and loops or research inside a piece of work. Scratch that nothing committed cites stays in the working directory.
 
 ## Evidence of progress
 

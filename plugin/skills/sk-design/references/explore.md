@@ -4,7 +4,7 @@ An explore note designs something with no build in hand: a large change, a subsy
 
 ## Where it lives
 
-The note is `docs/designs/<topic>/design.md`, with a short kebab-case topic. Pick a topic no other design uses, so the folder belongs to this design alone. Supporting files sit beside it: research notes, spike results, a sub-problem's own note, and later any rendered documentation. The folder stays fluid until PM plans it, and is deleted once the work it planned is done.
+The note is `docs/designs/<topic>/design.md`, with a short kebab-case topic. Pick a topic no other design uses, so the folder belongs to this design alone. The files only this design uses sit beside it: a sub-problem's own note, spike results, and the source of any rendered pages. Research reports go to `docs/research/<topic>/` when they are written, and the notes cite them there, so deleting the folder loses none of them. The docs layout that `SKILL.md` §Two scales names says how both folders work. The folder stays fluid until PM plans it, and is deleted once the work it planned is done.
 
 The status line carries the lifecycle:
 
@@ -12,11 +12,22 @@ The status line carries the lifecycle:
 - `ready for PM` once the breakdown is written and reviewed;
 - `planned (#NN, #NN)` once PM has filed its pieces, listing the issues they became.
 
-After those issues close, the folder is deleted: by `sk-milestone`'s close in a tracked repo, by the operator elsewhere.
+After those issues close, the folder is deleted: by `sk-milestone`'s close in a tracked repo, by the operator elsewhere. A design the operator drops before PM has no issues to close, so it is deleted when they drop it, and git history keeps it. If it may return, file a `backlog` issue naming the topic and the last commit that held the folder.
 
 ## Resuming
 
 The note is the memory between sessions, so write each decision into it when it is made, not only into the conversation. Invoked without a topic, list the `design.md` notes under `docs/designs/` whose status reads `exploring`, and ask which to continue. Read the whole note before adding to it.
+
+## Adopting an exploration written elsewhere
+
+An exploration begun outside this skill, under another tool or in another folder, comes in without starting over:
+
+1. Move its notes under `docs/designs/<topic>/`, each in its own shape, and its research reports under `docs/research/<topic>/`.
+2. Write `design.md` as their index, with status `exploring`. It says what is here, where a reader starts, and which of this skill's sections the notes do not yet fill. Add it beside any index the notes already have, since renaming that index breaks the links to it.
+3. Repoint only the links the move broke, then check that every relative link resolves.
+4. Credit a gate only where the operator's approval of it is on record: in a note, an issue comment, or a commit message. List each credited gate in `design.md`, with where its approval is recorded. Resume at the first gate not credited, or at gate 1 with the existing notes as its input.
+
+The lens table and the review are owed as for any explore note, before the third gate.
 
 ## Gates
 

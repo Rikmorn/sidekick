@@ -4,6 +4,8 @@
 
 > **Amended 2026-09-26 (#132):** §6's "sized to one or two sessions" no longer holds. A milestone is sized by its outcome, its issues group into plans of one session each, and `sk-pm-conventions.md` carries the convention.
 
+> **Amended 2026-10-10 (#142):** §1's superpowers range is now `^6.4.1`. That release added brainstorming's shared-understanding step, which `sk-design` builds on rather than repeats.
+
 **Status:** Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002; parks the eval, knowledge-layer, and measurement programmes of ADR-0006, ADR-0007, and ADR-0008. Issue #93, milestone R5.
 
 ## Context

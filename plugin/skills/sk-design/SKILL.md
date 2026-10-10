@@ -37,11 +37,15 @@ The pass does not run inside debugging. A root cause whose fix would be a specia
 | Gates | Brainstorming's own | Three of its own |
 | Ends in | The spec brainstorming writes | A reviewed breakdown that PM files |
 
-Explore scale is in `references/explore.md`. Read it when the operator asks to explore, evaluate, or plan, or when a shape note outgrows one spec. Read it too when the pass starts without a topic: it says how to resume a design in progress.
+Explore scale is in `references/explore.md`. Read it when the operator asks to explore, evaluate, or plan, or when a shape note outgrows one spec. Read it too when the pass starts without a topic, or from an exploration written elsewhere. It says how to resume a design in progress, and how to adopt one.
+
+The docs layout says how each folder this pass writes works: `../sidekick/references/docs-layout.md`, relative to this skill's base directory.
 
 ## Before the note
 
 Restate the problem, split it into its parts, and name the unknowns before proposing anything. Read the repo's architecture sources: `AGENTS.md`, `CLAUDE.md`, the ADRs, any design-vision doc, and any design lenses the repo's rules add. Cite the one that binds rather than restating it. A README's claim is an assumption until the code confirms it.
+
+Settle the goals with the operator before any options, because a note serves only the goals it is given. Inside a brainstorm, its shared understanding has already done this: carry over the goals the operator stated or corrected there, and do not ask again. When the pass runs before brainstorming, or at explore scale, write that understanding back yourself. Give the intended outcome, the constraints, and what success looks like, keeping what the operator said apart from what you inferred. Ask when nothing in the request or its context answers it. Wait for the operator's correction; the options then serve only goals the operator stated or confirmed. With no operator to ask, mark every goal inferred and go on. §Decide and route then registers the design as debt, so nothing is built on an unconfirmed goal.
 
 ## The note
 
@@ -62,10 +66,10 @@ Status: exploring | ready for PM | planned (#NN, #NN) · Scale: shape | explore 
 ## Review
 ```
 
-- **Problem.** What is wrong, for whom, with evidence: a `file:line`, a log line. The goals and the non-goals.
+- **Problem.** What is wrong, for whom, with evidence: a `file:line`, a log line. The goals and the non-goals, each marked stated, when the operator said or confirmed it, or inferred.
 - **Constraints.** Label each constraint as verified, because you read the code or ran it, or as assumed. List what you read and what you skipped. A reviewer cannot trust an omission the note does not declare. An assumption the design rests on is named again in the recommendation.
 - **System map.** The nouns and how they relate: one-to-many, owns, references, derives from. Where each lives, and where the extension point is today: a registry, a config file, a switch, or nothing. When more than two concepts interact, draw a fenced Mermaid flowchart.
-- **Prior art.** Search in this order: what the repo already has, then the platform's own features, then libraries, then documented practice. Each find is used or rejected, with the reason. A new dependency is a cost as well as a gain, since the team lives with it long after adding it. The search may run in a subagent; its findings become evidence once you re-read the lines the recommendation rests on.
+- **Prior art.** Search in this order: what the repo already has, then the platform's own features, then libraries, then documented practice. Each find is used or rejected, with the reason. A new dependency is a cost as well as a gain, since the team lives with it long after adding it. The search may run in a subagent; its findings become evidence once you re-read the lines the recommendation rests on. A report worth keeping beyond the note goes under `docs/research/<topic>/`, as the docs layout says.
 - **Options.** Two or three, each with a pattern card. `references/patterns.md` indexes recurring problem shapes and the question that decides between their patterns; "no pattern" is one of its rows. State tradeoffs as "X over Y". "Refactor to be cleaner" is not an option.
 - **Recommendation.** First line. Then the assumptions it rests on, and what changes if each is wrong.
 - **Blast radius.** Files, modules, contracts, data, and who else is affected. What cannot be undone, what order the steps go in, what ships alone. Additive contract changes ship first and alone.
@@ -122,7 +126,7 @@ Brainstorming sorts work into a spike, a bounded change, or an architectural cha
 - **Bounded.** Run the pass before brainstorming presents its short design. That design cites the note and carries its decision as settled. If the pass shows the change is larger than a bounded one, say so; brainstorming's own ratchet then moves it to the architectural path.
 - **Spike.** A spike answers a question and keeps no code, so the pass does not run.
 
-When the pass ran before brainstorming, brainstorming starts from the note the same way. When the design outgrows one spec, move the note to explore scale as `references/explore.md` says. Then stop the brainstorm and tell the operator, who decides whether to replan.
+When the pass ran before brainstorming, brainstorming starts from the note the same way. Its shared understanding then reflects the note's stated goals rather than asking again. When the design outgrows one spec, move the note to explore scale as `references/explore.md` says. Then stop the brainstorm and tell the operator, who decides whether to replan.
 
 ## Decide and route
 

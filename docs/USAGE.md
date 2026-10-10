@@ -65,7 +65,7 @@ At filing, an issue gets `backlog` with a `Revisit when:` line, unless it is a s
 
 **5. File what you notice.** A problem outside the task is filed, not fixed: `gh issue create` with one `area:*`, the milestone or `backlog` decision, and `gh project item-add` for the card. The `sk-*` rules are in test mode — when a rule bites or falls short, that is an `area:guidance` issue too. `sk-track` is that one step: duplicate check, one `area:*`, a self-contained brief, the entry gate, the card.
 
-**6. Close.** `sk-track`'s close moment, in order: the record question, the evidence comment, `gh issue close --reason …`, and Status set to Done explicitly. When the close finishes a plan, a status update follows, as `sk-orient` §Status updates says. `docs/learnings/README.md` states the bar, a counterfactual, and the shape.
+**6. Close.** `sk-track`'s close moment, in order: the record question, the evidence comment, `gh issue close --reason …`, and Status set to Done explicitly. When the close finishes a plan, a status update follows, as `sk-orient` §Status updates says. The docs layout in the `sidekick` skill states the bar, a counterfactual, and the shape.
 
 **7. Close the milestone.** `sidekick pm gate --milestone "<title>"` says whether anything is still open and lists it with Status; `sidekick pm lint` should be all zeros. Then: write the milestone's learning record if the bar holds, and bump the three `version` fields (plugin.json, and both in marketplace.json). Run `bun run build`, and commit it all together so the tag carries the record. Release: `claude plugin tag plugin --push -m "sidekick %s"`, then `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`. Close: `gh api -X PATCH repos/<owner>/<repo>/milestones/<n> -f state=closed`. `sk-milestone` runs this. It audits against the outcome sentence, dispositions every open issue, asks for confirmation, and runs the ceremony. It deletes the design folders whose issues have all closed, and comments "resolved in" on each issue it completed. Its open moment creates the next milestone with its outcome. It groups the milestone's issues into plans of one session each, named in the description in run order. Opening and the close each post a status update. The close posts its `COMPLETE` update before the milestone's closing `PATCH`, since `pickup --report` reads only an open milestone. It scans the backlog, and the designs marked `ready for PM`, for seeds whose condition holds.
 
@@ -100,8 +100,9 @@ The handoff names where the worker works. A plain branch in the main checkout su
 | Why something was done | The issue and its close comment | Durable; join by issue number |
 | Decisions that bind the system | `docs/adr/` | Record |
 | What an audit or survey found | `docs/reviews/` | Record, frozen at birth |
-| What a closed item taught | `docs/learnings/`; its README states the bar and the shape | Record |
-| Designs being explored | `docs/designs/<topic>/`, written by `sk-design` | Until the issues it became close |
+| What a closed item taught | `docs/learnings/`; the docs layout in the `sidekick` skill states the bar and the shape | Record |
+| What research found, for a design or anything else | `docs/research/<topic>/`, from the day it is written | Record |
+| Designs being explored | `docs/designs/<topic>/`, written by `sk-design` | Until the issues it became close, or until it is dropped |
 | Specs, plans, run reports, shape-scale design notes | `docs/superpowers/` | Transient, gitignored; the issue is the tombstone |
 
 Session memory is not a record. The pointer to the next piece of work lives on the board, and `sidekick pm pickup` reads it.

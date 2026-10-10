@@ -9,7 +9,7 @@
   "dependencies": [
     {
       "name": "superpowers",
-      "version": "^6.3.0",
+      "version": "^6.4.1",
       "marketplace": "claude-plugins-official"
     },
     { "name": "code-review", "marketplace": "claude-plugins-official" }

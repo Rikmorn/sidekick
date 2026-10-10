@@ -10,7 +10,7 @@ How work is tracked across the home projects (sidekick, furnace, aesir).
 - **GitHub's lists trail its writes.** GitHub updates some views in the background after a write. A board's item list, a milestone's issue counts, and search results each lag. The lag has run from minutes to hours. The object itself is current: `gh issue view`, a node query, or an issue's own `projectItems`. After a write, confirm it through the object, and read an entry missing from a list as not yet known rather than absent. The board's own move on close is a later write, not a lagging view. A built-in workflow makes it after the close, and until then the card itself holds the old Status.
 
 ## Placement test (tense)
-True now → reference doc · happened → ADR / learning record · being designed → `docs/designs/<topic>/` · to do or doing → GitHub issue.
+True now → reference doc · happened → ADR / learning record / research report (`docs/research/<topic>/`, even when a design asked for it) · being designed → `docs/designs/<topic>/` · to do or doing → GitHub issue.
 
 Some history is frozen: sidekick's `docs/work/` holds per-item records from before work moved to GitHub. A frozen directory is never rewritten, and a broken link is the only edit it takes. If something inside it is still true now, promote that content out into a reference doc rather than editing the record. A record keeps the identifiers it was written with, even once the thing it names is renamed.
 
