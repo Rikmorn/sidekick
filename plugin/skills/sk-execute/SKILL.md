@@ -17,7 +17,7 @@ Lay out three modes and recommend one. The operator decides; there is no default
 | Subagent-driven in this session | Code with tests at moderate size, where rulings come from the session that holds the context | A fresh context per task and per review |
 | A worker session, running `subagent-driven-development`, or `executing-plans` for a trivial plan | Many tasks and code with tests, where keeping dispatches out of this session's context matters | A second context load, the worker's scan, and each question reloading this session |
 
-`writing-plans` offers the first two with a recommendation of its own. Add the third, then recommend one mode in a sentence: the reason from the plan, and what would change it.
+`writing-plans` offers the first two with a recommendation of its own, in the question that asks the operator to review the saved plan. Add the third to that question, so the operator reviews the plan and chooses once. Recommend one mode in a sentence: the reason from the plan, and what would change it.
 
 ## Outward writes
 
@@ -65,7 +65,7 @@ In the two subagent modes:
 
 ## Route every finding
 
-A review's findings are graded by their effect, not by the reviewer's label, and each gets a route before the workspace is deleted. Ask of each: if it were left, would the repo, the work, or the milestone stop being correct or consistent? Then it is part of the work, fixed in the branch. That covers text the branch wrote, and any place still stating a premise the branch retired. Anything else is an addition under `sk-pm-conventions.md` §Change control, or a drop whose reason the operator hears. This overrides superpowers' rule that minors never enter the fix pass. A finding left only in a closing message has no home once the session ends.
+A review's findings are graded by their effect, not by the reviewer's label, and each gets a route before the workspace is deleted. Ask of each: if it were left, would the repo, the work, or the milestone stop being correct or consistent? Then it is part of the work, fixed in the branch. That covers text the branch wrote, and any place still stating a premise the branch retired. Anything else is an addition under `sk-pm-conventions.md` §Change control, or a drop whose reason the operator hears. Each line a reviewer lists under "Declined to judge" gets the same question once the session has ruled on it. This overrides superpowers' rule that minors never enter the fix pass. A finding left only in a closing message has no home once the session ends.
 
 ## Hand off to a worker
 
