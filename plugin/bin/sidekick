@@ -151,7 +151,7 @@ function brainstormNudge(pluginDir) {
     "If a design note for this change already exists, start from it."
   ].join(" ");
 }
-var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides three rules of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its three modes and one recommendation replace this skill's two-option question. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
+var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
   const file = path.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
@@ -167,7 +167,7 @@ var NUDGES = new Map([
   ["superpowers:writing-plans", writingPlansNudge]
 ]);
 var READ_LEAD_LINE = "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
-var REPRODUCE_PARAGRAPH = "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
+var REPRODUCE_PARAGRAPH = "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a task reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
 var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Where superpowers limits you to risks you can name outside the diff, two kinds count here. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with `git grep`, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function reviewerLines(pluginDir, packageText) {
   const lines = [READ_LEAD_LINE, REPRODUCE_PARAGRAPH, CLAIMS_PARAGRAPH];

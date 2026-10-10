@@ -181,7 +181,7 @@ function brainstormNudge(pluginDir: string): string | undefined {
 }
 
 const PLAN_LEAD =
-  "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides three rules of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its three modes and one recommendation replace this skill's two-option question. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
+  "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 
 function writingPlansNudge(pluginDir: string): string | undefined {
   const file = path.join(pluginDir, EXECUTE_SKILL);
@@ -200,7 +200,7 @@ const READ_LEAD_LINE =
   "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
 
 const REPRODUCE_PARAGRAPH =
-  "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
+  "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a task reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
 
 // Phrased as named risks, so it works inside the task reviewer's rule against crawling the codebase.
 const CLAIMS_PARAGRAPH =

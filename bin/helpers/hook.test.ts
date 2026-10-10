@@ -379,7 +379,7 @@ describe('runHookCli post-read', () => {
     expect(context.startsWith(READ_LEAD)).toBe(true);
     expect(context).toContain('Credit only the results you reproduce.');
     expect(context).toContain(
-      "superpowers' rule that a reviewer runs checks only on a specific doubt",
+      "superpowers' rule that a task reviewer runs checks only on a specific doubt",
     );
     expect(context).toContain(CLAIMS_MARK);
     const order = [
