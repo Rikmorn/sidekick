@@ -233,6 +233,7 @@ describe('runHookCli post-skill', () => {
 describe('runHookCli post-skill, writing-plans', () => {
   const INTENT = '## A plan carries intent';
   const BEFORE = '## Before the plan goes out';
+  const CHOOSE = '## Choose the mode';
 
   /** A plugin dir whose sk-execute skill holds the given text, or no skill when undefined. */
   function pluginWithExecute(text: string | undefined): string {
@@ -243,12 +244,13 @@ describe('runHookCli post-skill, writing-plans', () => {
     return dir;
   }
 
-  test('the live skill has both headings', () => {
+  test('the live skill has all three headings', () => {
     expect(readSection(EXECUTE_SKILL, INTENT)).toBeDefined();
     expect(readSection(EXECUTE_SKILL, BEFORE)).toBeDefined();
+    expect(readSection(EXECUTE_SKILL, CHOOSE)).toBeDefined();
   });
 
-  test('adds the lead, then both live sk-execute sections in order', () => {
+  test('adds the lead, then the three live sk-execute sections in order', () => {
     const { code, out, err } = run(event('superpowers:writing-plans'));
     expect(code).toBe(0);
     expect(err).toEqual([]);
@@ -258,17 +260,22 @@ describe('runHookCli post-skill, writing-plans', () => {
     const context: string = parsed.hookSpecificOutput.additionalContext;
     const intent = String(readSection(EXECUTE_SKILL, INTENT));
     const before = String(readSection(EXECUTE_SKILL, BEFORE));
+    const choose = String(readSection(EXECUTE_SKILL, CHOOSE));
     expect(context.startsWith('sidekick: `sk-execute`')).toBe(true);
     expect(context.indexOf(intent)).toBeGreaterThan(0);
     expect(context.indexOf(before)).toBeGreaterThan(context.indexOf(intent));
+    expect(context.indexOf(choose)).toBeGreaterThan(context.indexOf(before));
   });
 
-  test('prints nothing without the skill or with only one heading', () => {
+  test('prints nothing without the skill or with any heading missing', () => {
     const silent = { code: 0, out: [], err: [] };
     const missing = pluginWithExecute(undefined);
     expect(run(event('superpowers:writing-plans'), missing)).toEqual(silent);
-    for (const heading of [INTENT, BEFORE]) {
-      const dir = pluginWithExecute(`# sk-execute\n\n${heading}\n\nBody.\n`);
+    const headings = [INTENT, BEFORE, CHOOSE];
+    for (const absent of headings) {
+      const present = headings.filter((h) => h !== absent);
+      const body = present.map((h) => `${h}\n\nBody.\n`).join('\n');
+      const dir = pluginWithExecute(`# sk-execute\n\n${body}`);
       expect(run(event('superpowers:writing-plans'), dir)).toEqual(silent);
     }
   });

@@ -34,7 +34,7 @@ Fires on `startup` and `clear`, from `plugin/hooks/hooks.json`. It runs `node <p
 
 ### The Skill-tool hook
 
-Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick hook post-skill` with the hook's event on stdin. When the skill that loaded is `superpowers:brainstorming`, it adds one paragraph to context: check whether the change needs a design pass, followed by `sk-design`'s description. When it is `superpowers:writing-plans`, it adds a lead line and two sections of `sk-execute`: §A plan carries intent and §Before the plan goes out. The nudge's purpose is that the plan is written to them. Any other skill, and any failure, gets nothing and exit 0, so it never blocks a call. A slash command you type yourself loads without the Skill tool, and the hook does not fire then. ADR-0010 records the mechanism.
+Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick hook post-skill` with the hook's event on stdin. When the skill that loaded is `superpowers:brainstorming`, it adds one paragraph to context: check whether the change needs a design pass, followed by `sk-design`'s description. When it is `superpowers:writing-plans`, it adds a lead line and three sections of `sk-execute`: §A plan carries intent, §Before the plan goes out, and §Choose the mode. The plan is written to the first two and handed off by the third. You then review the plan and choose its mode in one question. Any other skill, and any failure, gets nothing and exit 0, so it never blocks a call. A slash command you type yourself loads without the Skill tool, and the hook does not fire then. ADR-0010 records the mechanism.
 
 ### The Read hook
 

@@ -23,7 +23,8 @@ var DESIGN_SKILL = path.join("skills", "sk-design", "SKILL.md");
 var EXECUTE_SKILL = path.join("skills", "sk-execute", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
-  "## Before the plan goes out"
+  "## Before the plan goes out",
+  "## Choose the mode"
 ];
 var CLEAN_CODE_RULE = path.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
@@ -150,7 +151,7 @@ function brainstormNudge(pluginDir) {
     "If a design note for this change already exists, start from it."
   ].join(" ");
 }
-var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written, and it overrides two rules of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. Write the plan to these two sections of `sk-execute`:";
+var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides three rules of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its three modes and one recommendation replace this skill's two-option question. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
   const file = path.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
