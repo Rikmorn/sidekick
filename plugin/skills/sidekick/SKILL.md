@@ -43,7 +43,7 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 
 ## The docs layout
 
-`references/docs-layout.md` says how each `docs/` folder that sidekick's skills write works: designs, research, ADRs, learnings, tech debt, and the superpowers working directory. For each it gives the index file, what the folder holds, and its lifecycle. A repo's own `README.md` in one of those folders extends or overrides its section, and a repo may add folders of its own.
+`references/docs-layout.md` says how each `docs/` folder that sidekick's skills write works: designs, research, ADRs, learnings, tech debt, and the superpowers working directory. For each it gives the layout and the lifecycle, and for designs, research, and ADRs the index file and what a topic folder holds. A repo's own `README.md` in one of those folders extends or overrides its section, and a repo may add folders of its own.
 
 ## What is here, what is coming
 

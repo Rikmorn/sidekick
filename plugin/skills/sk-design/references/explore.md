@@ -12,7 +12,7 @@ The status line carries the lifecycle:
 - `ready for PM` once the breakdown is written and reviewed;
 - `planned (#NN, #NN)` once PM has filed its pieces, listing the issues they became.
 
-After those issues close, the folder is deleted: by `sk-milestone`'s close in a tracked repo, by the operator elsewhere. A design the operator drops before PM has no issues to close, so it is deleted when they drop it, and git history keeps it. If it may return, file a `backlog` issue naming the topic and the last commit that held the folder.
+After those issues close, the folder is deleted: by `sk-milestone`'s close in a tracked repo, by the operator elsewhere. A design the operator drops before PM has no issues to close, so it is deleted when they drop it, and git history keeps it. If it may return, record the topic and the last commit that held the folder. In a tracked repo that record is a `backlog` issue; elsewhere it goes wherever the operator tracks work.
 
 ## Resuming
 
@@ -22,10 +22,10 @@ The note is the memory between sessions, so write each decision into it when it 
 
 An exploration begun outside this skill, under another tool or in another folder, comes in without starting over:
 
-1. Move its notes under `docs/designs/<topic>/`, each in its own shape, and its research reports under `docs/research/<topic>/`.
+1. Move its notes under `docs/designs/<topic>/`, each in its own shape. Move its research reports under `docs/research/<topic>/`, with the index the docs layout asks for.
 2. Write `design.md` as their index, with status `exploring`. It says what is here, where a reader starts, and which of this skill's sections the notes do not yet fill. Add it beside any index the notes already have, since renaming that index breaks the links to it.
 3. Repoint only the links the move broke, then check that every relative link resolves.
-4. Credit a gate only where the operator's approval of it is on record: in a note, an issue comment, or a commit message. List each credited gate in `design.md`, with where its approval is recorded. Resume at the first gate not credited, or at gate 1 with the existing notes as its input.
+4. Credit a gate only where the operator's approval of it is on record: in a note, an issue comment, or a commit message. List each credited gate in `design.md`, with where its approval is recorded. Resume at the first gate not credited, or at gate 1 with the existing notes as its input. A credited first gate still marks each goal stated, where the record shows the operator's approval, or inferred.
 
 The lens table and the review are owed as for any explore note, before the third gate.
 
@@ -33,7 +33,7 @@ The lens table and the review are owed as for any explore note, before the third
 
 Approve in three gates, not one and not seven.
 
-1. **Problem and constraints first, on their own**, with what was read. For an evaluation, the system map as it stands goes in this gate. Everything rests on them, and they are cheap to correct early.
+1. **Problem and constraints first, on their own**, with what was read, and each goal marked stated or inferred for the operator to confirm. For an evaluation, the system map as it stands goes in this gate. Everything rests on them, and they are cheap to correct early.
 2. **Sub-problems one at a time**, when the operator pulls a thread. Each gets its own options and stance, as a section of the note or a sibling file.
 3. **The integrated note once, after review**: options, recommendation, breakdown, and sequence together, because they are one choice. Check that the sub-decisions compose.
 

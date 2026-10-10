@@ -7,7 +7,7 @@ The plugin ships how the folders its skills write work, in `plugin/skills/sideki
 ## Lifecycle classes
 
 - **Living**: edited in place for the life of the project.
-- **Record**: immutable once landed; superseded by a later record, never rewritten. A broken link is the only edit a record takes; if something inside one is still true now, promote it into a living doc.
+- **Record**: immutable once landed; superseded by a later record, never rewritten. It takes three edits only: a repaired link, a dated amendment line at the top, and a status line naming where its lesson was promoted. A frozen record takes the first alone. If something inside one is still true now, promote it into a living doc.
 - **Ephemeral**: present only while open; removal on resolution is the mechanism, git history is the archive.
 
 ## Folders
@@ -16,10 +16,10 @@ The plugin ships how the folders its skills write work, in `plugin/skills/sideki
 |---|---|---|
 | `docs/` root | Steering docs: `NORTH-STAR.md`, `DESIGN-PRINCIPLES.md`, `LIMITS.md`; `USAGE.md`, how the loop runs day to day; `LOOP.md`, what each skill in it does | Living |
 | `adr/` | Architecture decisions. Top-level on purpose: their scope is the system and they bind after the work that spawned them closes. A status line names what an ADR supersedes | Record |
-| `research/` | Grounding reports, one topic per folder, plus the programme map. Research lands here when it is written, whether proactive or done inside an issue or a design; scratch that no committed file cites stays under `superpowers/`. Topics written before 2026-10-10 hold a single `REPORT.md` rather than an index and dated reports | Record |
+| `research/` | Grounding reports, one topic per folder, laid out as the docs layout says, plus the programme map. Topics written before 2026-10-10 centre on a `REPORT.md`, often with `FRAMING.md` and `sources.md`, rather than an index and dated reports | Record |
 | `reviews/` | Assessments and audits, frozen at birth. A review that should change something files an issue | Record |
 | `learnings/` | One record per closed item or milestone worth keeping, linked from the close comment; the docs layout states the bar and the shape | Record |
-| `designs/` | Designs in progress, one folder per topic holding its `design.md` and the files only that design uses, written by `sk-design`; the research a design cites lives in `research/`. A planned design names the issues it became | Ephemeral: a topic folder is deleted when its issues close, or when the design is dropped |
+| `designs/` | Designs in progress, one folder per topic, written by `sk-design` and laid out as the docs layout says | Ephemeral: a topic folder is deleted when its issues close, or when the design is dropped |
 | `backlog/` | Notes from before work moved to GitHub; each live one names its issue | Record, frozen |
 | `work/` | Per-item records from before the move to GitHub, and the `EPIC.md` and `EPIC-STATE.md` frame they hung from | Record, frozen |
 | `references/` | Provenance notes for shipped changes from before the work records existed | Record, frozen |
