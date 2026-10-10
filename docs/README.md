@@ -7,7 +7,7 @@ The plugin ships how the folders its skills write work, in `plugin/skills/sideki
 ## Lifecycle classes
 
 - **Living**: edited in place for the life of the project.
-- **Record**: immutable once landed; superseded by a later record, never rewritten. It takes three edits only: a repaired link, a dated amendment line at the top, and a status line naming where its lesson was promoted. A frozen record takes the first alone. If something inside one is still true now, promote it into a living doc.
+- **Record**: immutable once landed; superseded by a later record, never rewritten. It takes three edits only: a repaired link, a dated amendment line at the top, and a status line naming where its lesson was promoted. A record in a folder marked frozen takes the first alone, and a folder's `README.md` is living in every class. If something inside one is still true now, promote it into a living doc.
 - **Ephemeral**: present only while open; removal on resolution is the mechanism, git history is the archive.
 
 ## Folders

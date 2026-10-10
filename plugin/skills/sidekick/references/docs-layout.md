@@ -2,7 +2,7 @@
 
 How each `docs/` folder that sidekick's skills write works. A repo's own `README.md` in one of these folders extends or overrides its section here, so read that first when it exists. A repo may add folders of its own, and sidekick's skills leave those alone. A repo's `docs/README.md`, when it has one, is its taxonomy, and it can cite this file rather than restate it.
 
-Each folder's files share one lifecycle, apart from an index that lists them. Nothing that must outlive a design sits in its folder, so closing work never moves a file before a deletion.
+Each folder's files share one lifecycle, apart from its `README.md`, which is living. Nothing that must outlive a design sits in its folder, so closing work never moves a file before a deletion.
 
 ## designs/
 
