@@ -201,6 +201,28 @@ function nullable(wrapped, default_) {
     }
   });
 }
+function nullish(wrapped, default_) {
+  return _standardSchema({
+    kind: "schema",
+    type: "nullish",
+    reference: nullish,
+    expects: `(${wrapped.expects} | null | undefined)`,
+    async: false,
+    wrapped,
+    default: default_,
+    "~run"(dataset, config$1) {
+      if (dataset.value === null || dataset.value === undefined) {
+        if (this.default !== undefined)
+          dataset.value = /* @__PURE__ */ getDefault(this, dataset, config$1);
+        if (dataset.value === null || dataset.value === undefined) {
+          dataset.typed = true;
+          return dataset;
+        }
+      }
+      return this.wrapped["~run"](dataset, config$1);
+    }
+  });
+}
 function number(message$1) {
   return _standardSchema({
     kind: "schema",
@@ -953,7 +975,7 @@ var ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: St
 var ISSUE_LIMIT = 500;
 var GqlEnvelope = object({
   data: optional(unknown()),
-  errors: optional(array(object({ message: string() })))
+  errors: nullish(array(object({ message: string() })))
 });
 function checked(schema, value, what) {
   const result = safeParse(schema, value);
@@ -994,8 +1016,8 @@ function fetchGhVersion(run, cwd) {
 }
 function fetchLocalLogin(run, cwd) {
   const r = run("gh", ["config", "get", "-h", "github.com", "user"], cwd);
-  const v = r.stdout.trim();
-  return r.code === 0 && v ? v : null;
+  const login = r.stdout.trim();
+  return r.code === 0 && login ? login : null;
 }
 function fetchScopeHeaders(run, cwd) {
   return rest(run, cwd, ["api", "-i", "user"]);

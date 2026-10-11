@@ -201,7 +201,7 @@ type Var = ['-f' | '-F', string];
 
 const GqlEnvelope = v.object({
   data: v.optional(v.unknown()),
-  errors: v.optional(v.array(v.object({ message: v.string() }))),
+  errors: v.nullish(v.array(v.object({ message: v.string() }))),
 });
 
 function checked<S extends v.GenericSchema>(
@@ -254,8 +254,8 @@ export function fetchGhVersion(
 /** Reads `~/.config/gh/hosts.yml`; no request is made. */
 export function fetchLocalLogin(run: Runner, cwd: string): string | null {
   const r = run('gh', ['config', 'get', '-h', 'github.com', 'user'], cwd);
-  const v = r.stdout.trim();
-  return r.code === 0 && v ? v : null;
+  const login = r.stdout.trim();
+  return r.code === 0 && login ? login : null;
 }
 
 export function fetchScopeHeaders(run: Runner, cwd: string): string {

@@ -577,6 +577,17 @@ describe('gh output that does not match its schema', () => {
     expect(() => parseIssues('{"message":"Not Found"}')).toThrow(PmError);
     expect(() => parseIssues('[{"number":1}]')).toThrow(PmError);
   });
+  test('a GraphQL envelope with errors null and valid data parses', () => {
+    const withNull = JSON.stringify({
+      ...JSON.parse(fixture('discovery-furnace.json')),
+      errors: null,
+    });
+    const run = fixtureRunner({
+      'gh api graphql -f query=query Discovery -f owner=Rikmorn -f name=furnace':
+        withNull,
+    });
+    expect(fetchDiscovery(run, '/', 'Rikmorn', 'furnace').boards).toEqual([]);
+  });
   test('a GraphQL envelope whose errors is not a list is a PmError', () => {
     const run = fixtureRunner({
       'gh api graphql -f query=query Discovery -f owner=x -f name=y': {
