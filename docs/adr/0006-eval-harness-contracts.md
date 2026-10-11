@@ -63,6 +63,6 @@
 - EPIC [`3.3` row](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/work/EPIC.md) · [`EPIC-STATE.md`](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/work/EPIC-STATE.md)
 - Research: [`eval-harness/REPORT.md`](../research/eval-harness/REPORT.md) · [`verification-autonomy`](../research/verification-autonomy/REPORT.md) · [`agentic-loops`](../research/agentic-loops/REPORT.md) · [`prior-art`](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/research/prior-art.md)
 - [ADR-0005](./0005-operator-authored-verifiers.md) (the seam this consumes) · [ADR-0001](./0001-harness-shape.md) (execution gated on the eval layer)
-- Owed smokes inventory: [`smokes/README.md`](../../smokes/README.md) (Smokes 13–15 + not-covered list)
+- Owed smokes inventory: [`smokes/README.md`](https://github.com/Rikmorn/sidekick/blob/285bd304c4522b6020f70f61331daeeace851430/smokes/README.md) (Smokes 13–15 + not-covered list)
 - Headless verification: Claude Code docs — [headless mode](https://code.claude.com/docs/en/headless.md), [subagents](https://code.claude.com/docs/en/sub-agents.md), [CLI reference](https://code.claude.com/docs/en/cli-reference.md) (fact-checked 2026-07-06)
 - Design provenance: 2026-07-06 brainstorm session; local design spec under `docs/superpowers/specs/` (gitignored by convention)
