@@ -20,6 +20,14 @@ claude plugin marketplace add Rikmorn/sidekick --scope project
 claude plugin enable sidekick@rikmorn --scope project
 ```
 
+To update, name the scope:
+
+```bash
+claude plugin update -s user sidekick@rikmorn
+```
+
+Run from a repo that holds a project-scope record for the plugin, the bare command updates that record, not the user install. Restart Claude Code, then run `sidekick rules install` again for each scope you deliver to. Auto-update is the alternative. It is off by default for a third-party marketplace, and `/plugin` → **Marketplaces** → **Enable auto-update** turns it on for `rikmorn`.
+
 ## The rules
 
 The `sk-*` rules ship inside the plugin. Claude Code reads rules from a repo's `.claude/rules/` or the user-level `~/.claude/rules/`, and a plugin cannot write there on its own, so delivery is one explicit command, available on the Bash tool's PATH whenever the plugin is enabled:
