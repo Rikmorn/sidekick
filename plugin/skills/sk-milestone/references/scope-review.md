@@ -4,7 +4,9 @@ The scope review asks whether a milestone's scope makes sense as a whole, before
 
 ## The file
 
-Write one file, on a path git ignores or outside the repo, holding:
+Write one file, `scope.md`, to `.superpowers/sdd/scope-review-<n>/` inside the repo, and nowhere else, so the reviewer reads it from its working directory. `<n>` is the milestone's number. When `.superpowers/sdd/.gitignore` is absent, write it holding `*`, as superpowers' own workspace script does. Then confirm git ignores the directory: `git check-ignore -q <dir>` exits 0 when it does.
+
+The file holds:
 
 - the outcome sentence and the scope lines;
 - every milestone issue, with its number, title, and body, from `gh issue list --milestone "<title>" --state all --limit 200 --json number,title,body`;
