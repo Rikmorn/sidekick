@@ -55,7 +55,7 @@ Claude Code ranks neither user-level nor project rules, so this section does. Wh
 
 Two things are not the repo's own rules. Its existing code is a pattern, not a rule. An `sk-*` file committed in the repo is a copy of these rules.
 
-When you follow one side of a conflict, say which side and why. If a conflict recurs in a repo, suggest `claudeMdExcludes` in its `.claude/settings.local.json`. It switches the losing file off there without a commit.
+Name each conflict you resolve in your reply to the user: both instructions, the side you followed, and why. Wording that meets both instructions' letter while one's intent goes unmet is still a conflict, so name it as well. If a conflict recurs in a repo, suggest `claudeMdExcludes` in its `.claude/settings.local.json`. It switches the losing file off there without a commit.
 
 ## Numbers that go stale
 
