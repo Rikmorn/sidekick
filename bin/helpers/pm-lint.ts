@@ -22,6 +22,7 @@ export const LINT_IDS = [
   'backlog_without_condition',
   'backlog_in_milestone',
   'position_code_title',
+  'cites_working_file',
   'unboarded',
   'stale_in_progress',
   'multiple_linked_boards',
@@ -98,6 +99,17 @@ export function backlogWithoutCondition(issues: Issue[]): Finding[] {
     .filter((i) => i.labels.includes('backlog') && !REVISIT_MARKER.test(i.body))
     .map((i) =>
       f(i.number, i.title, 'backlog label without a "Revisit when:" line'),
+    );
+}
+
+/** A working file is local scratch; nothing durable may cite one (sk-pm-conventions.md §No mirroring). */
+export const WORKING_FILE_PATH = /\bdocs\/superpowers\b/;
+
+export function citesWorkingFile(issues: Issue[]): Finding[] {
+  return issues
+    .filter((i) => WORKING_FILE_PATH.test(i.body))
+    .map((i) =>
+      f(i.number, i.title, 'body cites a working file under docs/superpowers/'),
     );
 }
 
@@ -193,6 +205,7 @@ const PREDICATES: {
   backlog_without_condition: ({ issues }) => backlogWithoutCondition(issues),
   backlog_in_milestone: ({ issues }) => backlogInMilestone(issues),
   position_code_title: ({ issues }) => positionCodeTitle(issues),
+  cites_working_file: ({ issues }) => citesWorkingFile(issues),
   unboarded: ({ uncarded, boardCreatedAt }) =>
     unboarded(uncarded, boardCreatedAt),
   stale_in_progress: ({ items, now }) => staleInProgress(items, now),

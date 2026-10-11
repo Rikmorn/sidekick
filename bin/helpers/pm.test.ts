@@ -1072,6 +1072,21 @@ describe('runPmCli lint on the issue side', () => {
       j.findings.unboarded.map((f) => [f.number, f.detail]),
     ).toContainEqual([114, 'card archived']);
   });
+  test('cites_working_file reports the one open issue patched to name a working file', () => {
+    expect(lint(sidekickMap()).findings.cites_working_file).toEqual([]);
+    const map = sidekickMap();
+    const key = Object.keys(map).find((k) => k.startsWith('gh issue list'));
+    if (!key) throw new Error('no open-issue fixture key');
+    const open = JSON.parse(String(map[key])) as Array<{
+      number: number;
+      body: string;
+    }>;
+    open[0].body += '\nFull record: docs/superpowers/plans/x-run-report.md';
+    map[key] = JSON.stringify(open);
+    const found = lint(map).findings.cites_working_file;
+    expect(found.map((f) => f.number)).toEqual([open[0].number]);
+    expect(found[0].detail).toContain('docs/superpowers/');
+  });
 });
 
 describe('gateVerdict', () => {

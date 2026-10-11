@@ -14,6 +14,7 @@ import {
   areaLabelCount,
   backlogInMilestone,
   backlogWithoutCondition,
+  citesWorkingFile,
   completedNotDone,
   lintAll,
   multipleLinkedBoards,
@@ -23,6 +24,7 @@ import {
   REVISIT_MARKER,
   staleInProgress,
   unboarded,
+  WORKING_FILE_PATH,
 } from './pm-lint.js';
 
 const issue = (p: Partial<Issue> & { number: number }): Issue => ({
@@ -168,6 +170,31 @@ describe('predicates on synthetic input', () => {
         ]),
       ),
     ).toEqual([1]);
+  });
+  test('citesWorkingFile reads a docs/superpowers path, with or without a slash', () => {
+    expect(
+      numbers(
+        citesWorkingFile([
+          issue({
+            number: 1,
+            body: 'Full record: `docs/superpowers/plans/x-run-report.md`',
+          }),
+          issue({ number: 2, body: 'transient, under `docs/superpowers`' }),
+          issue({ number: 3, body: 'no working file here' }),
+          issue({
+            number: 4,
+            body: 'see mydocs/superpowers/notes and .superpowers/sdd/',
+          }),
+          issue({
+            number: 5,
+            labels: ['backlog'],
+            body: 'see docs/superpowers/',
+          }),
+        ]),
+      ),
+    ).toEqual([1, 2, 5]);
+    expect(WORKING_FILE_PATH.test('docs/superpowers/')).toBe(true);
+    expect(WORKING_FILE_PATH.test('.superpowers/sdd/')).toBe(false);
   });
   test('backlogInMilestone flags deferred-and-scheduled', () => {
     expect(
@@ -360,6 +387,9 @@ describe('lintAll on the captured board', () => {
     const deferred = issues.filter((i) => i.labels.includes('backlog'));
     expect(r.counts.backlog_without_condition).toBe(
       deferred.filter((i) => !REVISIT_MARKER.test(i.body)).length,
+    );
+    expect(r.counts.cites_working_file).toBe(
+      issues.filter((i) => WORKING_FILE_PATH.test(i.body)).length,
     );
     expect(r.counts.multiple_linked_boards).toBe(candidates.length > 1 ? 1 : 0);
   });
