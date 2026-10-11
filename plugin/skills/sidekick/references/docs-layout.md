@@ -8,7 +8,7 @@ Each folder's files share one lifecycle, apart from its `README.md`, which is li
 
 ## reference/
 
-Present-tense docs of how the project is today: what it is, how to use it, and how it works. This is where `sk-pm-conventions.md` §Placement test (tense) sends true-now content. The default home is `docs/reference/`. A repo whose `docs/README.md` names another home, such as beside the code, keeps its own.
+Present-tense docs of how the project is today: what it is, how to use it, and how it works. This is where `sk-pm-conventions.md` §Placement test (tense) sends true-now content. A project install can leave that rule out of `.claude/rules/`; the plugin ships it at `../../rules/sk-pm-conventions.md`, relative to the `sidekick` skill's base directory. The default home is `docs/reference/`. A repo whose `docs/README.md` names another home, such as beside the code, keeps its own.
 
 - **Owner:** whoever changes what a doc describes. The change that moves it corrects the doc, as `sk-pm-conventions.md` §Change control says, and the change that retires it deletes the doc.
 - **Lifecycle:** living, and in the present tense. How the project got here stays in records (§adr/, §learnings/). A learning whose lesson is promoted here says so in its status line.
@@ -43,7 +43,7 @@ Decisions that bind work after the work that made them has closed: `docs/adr/NNN
 
 ## learnings/
 
-One record per closed issue or milestone that clears the bar: `docs/learnings/YYYY-MM-DD-<slug>.md`, linked from the close comment that produced it.
+One record per closed issue or milestone that clears the bar: `docs/learnings/YYYY-MM-DD-<slug>.md`, linked from the issue's close comment or the milestone's release notes.
 
 - **The bar:** a counterfactual. Without this record, would the next engineer repeat the mistake or redo the investigation? Most closes clear no bar. The issue and its close comment already say what was done and why; a record says what was learned.
 - **The shape:** the slug is a content name. The issue or milestone it came from (`#NN`) goes near the top, then three headings:
@@ -62,7 +62,7 @@ Small debt that `sk-design` registers in a repo sidekick does not track: `docs/t
 
 ## superpowers/
 
-The working directory that superpowers and sidekick's skills share: specs, plans, run reports, scratch research, and `sk-design`'s shape-scale notes under `designs/`. It is gitignored where the repo chooses.
+The working directory that superpowers and sidekick's skills share: specs, plans and their after-files, run reports, scratch research, and `sk-design`'s shape-scale notes under `designs/`. It is gitignored where the repo chooses.
 
-- **Owner:** superpowers writes specs and plans, `sk-design` its shape-scale notes, `sk-execute` a plan's after-file, and `sk-worker` its run reports. The operator clears the folder when they choose; no skill deletes from it.
-- **Lifecycle:** scratch, whether or not the repo commits it. Nothing outside the folder cites a working file, by path or in prose (`sk-pm-conventions.md` §No mirroring). Clearing the folder then strands nothing outside it, and files inside may cite each other. A finding born here reaches an issue or a record before its file can go.
+- **Owner:** superpowers writes specs and plans, `sk-execute` a plan's after-file, `sk-worker` its run reports, and `sk-design` its shape-scale notes. The session doing scratch research writes it here. The operator clears the folder when they choose, and no skill clears it. `sk-design` moves files out when it escalates a shape note or adopts an exploration written here.
+- **Lifecycle:** scratch, whether or not the repo commits it. No issue, comment, milestone description, release note, or committed file outside the folder cites a working file, by path or in prose (`sk-pm-conventions.md` §No mirroring). Scratch may cite scratch: files inside the folder, and uncommitted working state such as a superpowers workspace. Clearing the folder then strands nothing durable. A finding born here reaches an issue or a record before its file can go.

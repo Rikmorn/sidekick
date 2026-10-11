@@ -1,6 +1,6 @@
 ---
 name: sidekick
-description: What the sidekick bundle is, what it depends on, how to deliver its rules into a repo, how to bring a repo under tracking on GitHub, and how the docs folders its skills write work. Use when asked what sidekick is, how to install or update it, where the sk-* rules come from, how to set up the board and labels for a repo, or where a design, research report, ADR, or learning record goes.
+description: What the sidekick bundle is, what it depends on, how to deliver its rules into a repo, how to bring a repo under tracking on GitHub, and how the docs folders its rules and skills use work. Use when asked what sidekick is, how to install or update it, where the sk-* rules come from, how to set up the board and labels for a repo, or where a reference doc, design, research report, ADR, or learning record goes.
 user-invocable: true
 ---
 

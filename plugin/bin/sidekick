@@ -784,7 +784,7 @@ function backlogWithoutCondition(issues) {
 }
 var WORKING_FILE_PATH = /\bdocs\/superpowers\b/;
 function citesWorkingFile(issues) {
-  return issues.filter((i) => WORKING_FILE_PATH.test(i.body)).map((i) => f(i.number, i.title, "body cites a working file under docs/superpowers/"));
+  return issues.filter((i) => WORKING_FILE_PATH.test(i.body)).map((i) => f(i.number, i.title, "body names docs/superpowers/, where working files live"));
 }
 function backlogInMilestone(issues) {
   return issues.filter((i) => i.labels.includes("backlog") && i.milestone !== null).map((i) => f(i.number, i.title, `deferred but in milestone ${i.milestone}`));

@@ -221,7 +221,7 @@ The boundary is *deliverable* writes, not all writes. A specialist whose work pr
 
 ## Rule 10: Default single-agent; fan-out must buy something
 
-One agent holding the full context is the baseline, not the fallback. Anything passed between agents is a lossy slice of that context, so a fan-out has to buy something the single context structurally cannot supply. On text-only reasoning benchmarks at matched token budget, a single agent matches or beats a multi-agent arrangement. Whether that holds for tool-heavy work is open. Most celebrated multi-agent wins were bought with extra compute, not architecture. Three things are worth buying:
+One agent holding the full context is the baseline, not the fallback. Anything passed between agents is a lossy slice of that context, so a fan-out has to buy something the single context structurally cannot supply. On text-only reasoning benchmarks at matched thinking-token budget, a single agent matches or beats a multi-agent arrangement. Whether that holds for tool-heavy work is open. Most celebrated multi-agent wins were bought with extra compute, not architecture. Three things are worth buying:
 
 - **Breadth** — genuinely independent read-only directions (research angles, review dimensions) where no worker needs another's findings.
 - **Independent verification** — reviewers sealed from the producer (Rule 5). Here parallelism isn't a speed-up; the independence is the point.

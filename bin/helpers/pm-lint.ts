@@ -102,14 +102,18 @@ export function backlogWithoutCondition(issues: Issue[]): Finding[] {
     );
 }
 
-/** A working file is local scratch; nothing durable may cite one (sk-pm-conventions.md §No mirroring). */
+/** A working file is scratch; nothing durable may cite one (sk-pm-conventions.md §No mirroring). */
 export const WORKING_FILE_PATH = /\bdocs\/superpowers\b/;
 
 export function citesWorkingFile(issues: Issue[]): Finding[] {
   return issues
     .filter((i) => WORKING_FILE_PATH.test(i.body))
     .map((i) =>
-      f(i.number, i.title, 'body cites a working file under docs/superpowers/'),
+      f(
+        i.number,
+        i.title,
+        'body names docs/superpowers/, where working files live',
+      ),
     );
 }
 
