@@ -11,6 +11,7 @@ import { realpathSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as v from 'valibot';
 import { HOOK_USAGE_LINE, runHookCli } from './helpers/hook.js';
 import { PM_USAGE_LINE, runPmCli } from './helpers/pm.js';
 import { runRulesCli } from './helpers/rules.js';
@@ -31,13 +32,16 @@ export function resolvePluginDir(entryFileUrl: string): string {
   return candidates[0];
 }
 
+const ManifestVersion = v.object({ version: v.string() });
+
 export function readVersion(pluginDir: string): string {
   const manifest = path.join(pluginDir, '.claude-plugin', 'plugin.json');
   try {
-    const parsed = JSON.parse(fs.readFileSync(manifest, 'utf-8')) as {
-      version?: unknown;
-    };
-    return typeof parsed.version === 'string' ? parsed.version : 'unknown';
+    const parsed = v.safeParse(
+      ManifestVersion,
+      JSON.parse(fs.readFileSync(manifest, 'utf-8')),
+    );
+    return parsed.success ? parsed.output.version : 'unknown';
   } catch {
     return 'unknown';
   }

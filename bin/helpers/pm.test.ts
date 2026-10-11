@@ -560,6 +560,12 @@ describe('drift', () => {
     expect(d.stale_in_progress.map((i) => i.number)).toEqual([1]);
     expect(d.open_pr).toEqual({ number: 9, title: 'wip' });
   });
+  test('an open-PR list of the wrong shape reports none', () => {
+    const map = sidekickMap();
+    map['gh pr list --head master --state open --json number,title'] =
+      '[{"number":"9"}]';
+    expect(drift(fixtureRunner(map), '/', []).open_pr).toBeNull();
+  });
 });
 
 describe('runPmCli pickup', () => {

@@ -46,6 +46,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as v from 'valibot';
 import { type Runner, type RunResult, runnerKey } from '../../pm-data.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,14 @@ export function fixtureRunner(map: FixtureMap): Runner {
   };
 }
 
+const FirstPage = v.object({
+  data: v.object({
+    repository: v.object({
+      issues: v.object({ pageInfo: v.object({ endCursor: v.string() }) }),
+    }),
+  }),
+});
+
 const ISSUES_ARGS =
   'gh issue list -R Rikmorn/sidekick --state open --limit 500 --json number,title,labels,body,milestone,updatedAt';
 
@@ -74,11 +83,9 @@ const ISSUES_ARGS =
  */
 export function sidekickMap(): FixtureMap {
   const p1 = fixture('repo-issues-p1.json');
-  const cursor = (
-    JSON.parse(p1) as {
-      data: { repository: { issues: { pageInfo: { endCursor: string } } } };
-    }
-  ).data.repository.issues.pageInfo.endCursor;
+  const page = v.safeParse(FirstPage, JSON.parse(p1));
+  if (!page.success) throw new Error('repo-issues-p1.json has no endCursor');
+  const cursor = page.output.data.repository.issues.pageInfo.endCursor;
   const issues =
     'gh api graphql -f query=query RepoIssues -f owner=Rikmorn -f name=sidekick';
   return {

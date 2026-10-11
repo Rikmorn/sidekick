@@ -6,6 +6,7 @@
  * `--report`; the skills do the judgement and the writes.
  */
 
+import * as v from 'valibot';
 import { renderBrief } from './pm-brief.js';
 import {
   ageDays,
@@ -539,6 +540,8 @@ export interface Drift {
   in_progress_split: string[];
 }
 
+const OpenPrList = v.array(v.object({ number: v.number(), title: v.string() }));
+
 export function drift(
   run: Runner,
   root: string,
@@ -585,11 +588,8 @@ export function drift(
     );
     if (r.code === 0) {
       try {
-        const list = JSON.parse(r.stdout) as Array<{
-          number: number;
-          title: string;
-        }>;
-        open_pr = list[0] ?? null;
+        const list = v.safeParse(OpenPrList, JSON.parse(r.stdout));
+        open_pr = list.success ? (list.output[0] ?? null) : null;
       } catch {
         open_pr = null;
       }

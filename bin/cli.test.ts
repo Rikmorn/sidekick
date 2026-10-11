@@ -48,6 +48,8 @@ describe('readVersion', () => {
     expect(readVersion(dir)).toBe('9.9.9');
     write(path.join(dir, '.claude-plugin', 'plugin.json'), '{"name":"x"}');
     expect(readVersion(dir)).toBe('unknown');
+    write(path.join(dir, '.claude-plugin', 'plugin.json'), '{"version":9}');
+    expect(readVersion(dir)).toBe('unknown');
   });
 });
 
