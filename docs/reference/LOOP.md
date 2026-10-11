@@ -1,11 +1,6 @@
----
-kind: reference
-status: living
----
-
 # The loop, skill by skill
 
-What each skill in the loop does when it runs. For each: what it reads, the commands it issues or is likely to, what it produces, and where it stops for you. `USAGE.md` says what a session does step by step; this page is the same loop seen from the skills, so the two read together. Issue #122 asked for it.
+What each skill in the loop does when it runs. For each: what it reads, what it produces, and where it stops for you. The skill's own text holds its procedure and the commands it issues. `USAGE.md` says what a session does step by step; this page is the same loop seen from the skills, so the two read together. Issue #122 asked for it.
 
 ## Where each skill sits
 
@@ -24,7 +19,7 @@ What each skill in the loop does when it runs. For each: what it reads, the comm
 | 7 Close the milestone | `sk-milestone` | The model or you, at the end of a milestone |
 | A pull request exists | `code-review:code-review` | You, on a PR |
 
-`sidekick pm` is not a skill. It is the read side every sidekick skill calls. Its verbs are `board`, `pickup`, `lint`, and `gate`, each printing one JSON object. `pickup --brief` prints six lines of text instead, and `pickup --report` the body of a project status update.
+`sidekick pm` is not a skill. It is the read side every sidekick skill calls, and `USAGE.md` §The commands says what each of its verbs prints.
 
 ## sidekick's skills
 
@@ -42,24 +37,24 @@ Fires on `PostToolUse` for the Read tool, from `plugin/hooks/hooks.json`. The wr
 
 ### `sk-orient`
 
-Reads the brief: board, milestone with its outcome, In Progress with ages, candidates by plan or by tier, drift, and a suggested move. Decides by rule: continue what is In Progress unless pausing it on purpose; pull the next plan when In Progress drops. Posts a status update when it picks up a plan. Picks up with `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value "In Progress"`. Then states the pickup to you in one line. Runs on demand mid-session for a fresh picture. Pauses for nothing; it reports.
+Reads the brief: board, milestone with its outcome, In Progress with ages, candidates by plan or by tier, drift, and a suggested move. Decides by rule: continue what is In Progress unless pausing it on purpose; pull the next plan when In Progress drops. Picks up by moving the card, or a whole plan's cards, to In Progress, as its §Picking up says. Posts a status update when it picks up a plan. Then states the pickup to you in one line. Runs on demand mid-session for a fresh picture. Pauses for nothing; it reports.
 
 ### `sk-track`
 
-**Filing**, when a problem outside the task appears:
+**Filing** (§Filing), when a problem outside the task appears:
 
-- `gh issue list --state all --limit 200 --search` for a duplicate.
-- One `area:*` from `gh label list`, and a self-contained brief.
+- A duplicate check across open and closed issues.
+- One `area:*` from the repo's labels, and a self-contained brief.
 - The entry gate: the active milestone for a small addition tied to its work, with a comment and a line to you. Otherwise `backlog` with a `Revisit when:` line. It refuses to file without one.
-- `gh issue create`, then `gh project item-add`. It tells you the number.
+- The issue and its card. It tells you the number.
 
-**Closing**, when work is done:
+**Closing** (§Closing), when work is done:
 
-- `gh issue view` to re-check the state.
+- A re-check of the issue's state.
 - The learning-record question first; the record goes to the repo's learnings folder when the counterfactual holds.
 - The evidence comment.
-- `gh issue close --reason completed`, or `not planned` with a verdict, or `--duplicate-of`.
-- Status to Done by `item-edit`.
+- The close, as completed, as not planned with a verdict, or as a duplicate.
+- Status set to Done explicitly.
 - A status update when the close finishes a plan.
 - An issue a merge already closed still gets the record decision, the evidence comment, and the Status, and is not closed again. The closer comes from the issue's closing event.
 
@@ -67,16 +62,16 @@ It pauses only at the record question, a judgment the skill states rather than a
 
 ### `sk-milestone`
 
-**Opening**: agrees the outcome sentence with you, then creates the milestone with `gh api -X POST …/milestones`. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, and proposes them. It groups the issues into plans of one session each, records them in the description in run order, and posts the first status update. Then it orients. Pauses on the outcome, on every seed, and on the plans.
+**Opening**: agrees the outcome sentence with you, then creates the milestone. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, and proposes them. It groups the issues into plans of one session each, records them in the description in run order, and posts the first status update. Then it orients. Pauses on the outcome, on every seed, and on the plans.
 
 **Closing**:
 
 - `sidekick pm gate` and `sidekick pm lint` first, and every open issue dispositioned.
 - The audit against the outcome sentence; each gap becomes an issue or a judgment. It also lists the issues added after Opening.
 - A confirmation, carrying the learning-record judgment. Nothing outward runs without a yes.
-- On yes: the learning record if the bar holds, and the version bump (three fields in sidekick). Then deletion of the design folders whose issues have all closed, build, and one commit. Then tag, and `gh release create <tag> --verify-tag --title … --notes-file …`.
+- On yes, one commit: the learning record if the bar holds, the version bump, and deletion of the design folders whose issues have all closed. Then the tag and the GitHub Release. For sidekick itself, `AGENTS.md` §Releasing holds the release steps.
 - A `COMPLETE` status update, while the milestone is still open.
-- The milestone closed by `gh api -X PATCH`, and a "Resolved in" comment on each `COMPLETED` issue.
+- The milestone closed, and a "Resolved in" comment on each `COMPLETED` issue.
 
 Pauses at the confirmation.
 
@@ -100,7 +95,7 @@ Only you start it, in a second session. It reports its name, checks the tree, an
 
 ### `sidekick`
 
-The reference skill. It says what the bundle is, and how each `docs/` folder its skills write works. It delivers the rules with `sidekick rules install --project|--user` and audits them with `rules check`. It brings a repo under tracking: copy the reference board with `gh project copy`, link it, and create the labels. Then verify with `sidekick pm board` and `lint`. Pauses on the `area:*` set, which is yours to name.
+The reference skill. It says what the bundle is, and how each `docs/` folder its rules and skills use works. Its §The rules says how to deliver and audit the rules. Its §Bringing a repo under tracking copies the reference board, links it, creates the labels, and verifies. Pauses on the `area:*` set, which is yours to name.
 
 ## Superpowers, as the loop uses it
 

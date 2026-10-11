@@ -1,13 +1,8 @@
----
-kind: north-star
-status: living
----
-
 # North star
 
 > sidekick is the loop I use every day in every repo. Superpowers and the official plugins do the work. sidekick adds the house guidance, the project-management layer on GitHub where I own the tracking, and the design-side extensions the ecosystem lacks. Research is standing work, not a gate: proactive on harnesses and loops, reactive inside a piece of work, and recorded where the work can find it.
 
-Recalibrated 2026-09-18 with ADR-0009. The objective tree this replaces described a research programme; it stays in git history as its record, and the audits under `docs/reviews/2026-09-18-*.md` say what the programme found.
+Recalibrated 2026-09-18 with ADR-0009. The objective tree this replaces described a research programme, and it stays in git history as its record. ADR-0009's Context summarises the audits that say what the programme found.
 
 ## What that means in practice
 

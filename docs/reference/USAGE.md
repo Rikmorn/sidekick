@@ -1,11 +1,6 @@
----
-kind: usage
-status: living
----
-
 # Using sidekick day to day
 
-How the loop runs, session by session, and how each step lands on GitHub. The `README.md` says what sidekick is and how it installs; this page says how to work with it; `LOOP.md` says what each skill does when it runs. Where a piece has not shipped yet, it says so — the milestone list on `Rikmorn/sidekick` is the roadmap, and each issue there is the brief for its piece.
+How the loop runs, session by session, and how each step lands on GitHub. The repo's `README.md` says what sidekick is and how it installs, and `LOOP.md` says what each skill does when it runs. This page says how to work with it. Each step names the skill that holds its procedure, and the skill's text is the source. Where a piece has not shipped yet, this page says so. The milestone list on `Rikmorn/sidekick` is the roadmap, and each issue there is the brief for its piece.
 
 ## The shape
 
@@ -22,52 +17,38 @@ The PM layer is on where you own the tracking and silent everywhere else. A repo
 
 ## Set up once
 
-On the machine:
+On the machine, install and enable the plugin at user scope, as the repo's `README.md` §Install says. Deliver the rules with `--user`, as its §The rules says. Then give `gh` the scope the board needs, and run the preflight:
 
 ```bash
-claude plugin marketplace add Rikmorn/sidekick
-claude plugin install sidekick@rikmorn
-claude plugin enable sidekick@rikmorn --scope user
-sidekick rules install --user          # the sk-* rules, read in every repo
-gh auth refresh -s project             # the board needs the project scope
-sidekick pm board                      # preflight: gh version, scope, which board
+gh auth refresh -s project   # the board needs the project scope
+sidekick pm board            # preflight: gh version, scope, which board
 ```
 
-`gh` 2.98 or later lets the skills write board Status by name (`gh project item-edit <board number> --field Status --value …`); below that they write by id, which `sidekick pm` also emits. The preflight in `sidekick pm board` says which you have. Once the plugin is enabled, its session-start hook prints the board's pickup into context in every tracked repo and stays silent everywhere else.
+The `gh` version decides whether the skills write a card's Status by name or by id, as `sk-orient` §Picking up says. Once the plugin is enabled, its session-start hook prints the board's pickup into context in every tracked repo and stays silent everywhere else.
 
-For a repo you own and want tracked, ask for the `sidekick` skill by name, or say "bring this repo under tracking". Its bootstrap section copies the reference board, links it, creates `backlog` and `change-request`, agrees the `area:*` set with you, and verifies with `sidekick pm board` and `sidekick pm lint`. The reference board is the sidekick board. It carries the three Status options, the Board view, and the workflow set with "Pull request linked to issue" already removed. A copy also brings the sidekick board's other views, which each repo keeps or deletes. There is no settings-page step and no auto-add workflow, because filing adds the card. The skill text doubles as the checklist if you would rather run it by hand.
+For a repo you own and want tracked, ask for the `sidekick` skill by name, or say "bring this repo under tracking". The skill's §Bringing a repo under tracking copies the reference board and links it. It creates the labels once you agree the `area:*` set, then verifies. The skill text doubles as the checklist if you would rather run it by hand.
 
 For a repo where someone else owns the tracking, do nothing: `sidekick pm board --quiet` finds no board of yours and stays silent, which is the design.
 
 ## The GitHub model
 
-The conventions are in `plugin/rules/sk-pm-conventions.md`; the parts the loop touches every day:
-
-- **Issues are work items.** Titles are content names, never position codes. The body is the brief: the problem, what resolves it, what is out of scope, how it is verified. Exactly one `area:*` label.
-- **Milestones are releases.** A milestone opens with an outcome sentence in its description: what will be true when it closes. It closes with a plugin version tag and a GitHub Release. It is sized by its outcome. Its issues group into plans of one session each, named in its description in the order to take them. The PM reports their progress as status updates on the board. Its scope locks when Opening ends, and `sk-pm-conventions.md` §Change control says what may join later.
-- **One board per repo,** columns Backlog · In Progress · Done. "What do I pick up" is derived from the board at session start, never stored anywhere else.
-- **`backlog` is a deliberate deferral,** and its body carries a line starting `Revisit when:` (plain, bold, italic, or as a list item). The line names the condition that would re-raise it. `sidekick pm lint` flags the label without the line. A deferred issue sits in no milestone.
-- **GitHub's lists trail its writes.** A board's item list, a milestone's counts, and search can lag a write by minutes or hours. After a write, the session confirms it through the issue itself, and reads a missing entry as not yet known.
-- **`change-request`** marks an objective change, a reshaped outcome sentence; it is decided before any work absorbs it. Additions to a milestone do not carry it.
-- **Closure is GitHub-native:** `gh issue close --reason completed`, or `--reason "not planned"` with a one-line reason. The close comment cites its evidence — the commits, the measurement, the PR — and links the record in `docs/` if there is one. Status is set to Done explicitly, because the board's own move trails the close.
-
-At filing, an issue gets `backlog` with a `Revisit when:` line, unless it is a small addition closely tied to the active milestone's work. That one joins with a comment saying why, and you hear about it in one line. A bigger discovery is filed and brought to you, not pursued inline. Never a future milestone: that is a promise about a release nobody has planned.
+`plugin/rules/sk-pm-conventions.md` holds the conventions the loop follows on GitHub. Issues are work items, milestones are releases, and one board per repo is the status surface. The `backlog` label marks a deliberate deferral, and `change-request` an objective change. `sk-track` and `sk-milestone` are the procedures that follow those conventions.
 
 ## A session, start to finish
 
-**1. Orient.** The session-start hook prints `sidekick pm pickup --brief` into context. It names the active milestone with its outcome, what is In Progress with its age, and the candidates. The active milestone is the one holding In Progress cards, or the only one open. With several open and nothing to tell them apart, the brief lists them and asks you to choose. With a plans header at the top of the milestone's description, the candidates follow its plans in run order. Without one, they come in two tiers: tier 1 is the active milestone's Backlog, and tier 2 is unmilestoned work that is not deferred. Drift follows: unpushed commits, In Progress cards untouched for more than seven days, an open PR on the current branch. Drift also names In Progress cards split across milestones and a malformed plans header. It ends with a suggested move. `sk-orient` says how to read it. Continue what is In Progress unless you pause it on purpose; pull new work when In Progress drops, not on top of it. Run the command yourself for a fresh picture mid-session.
+**1. Orient.** The session-start hook prints `sidekick pm pickup --brief` into context. It names the active milestone with its outcome, what is In Progress with its age, the candidates, drift, and a suggested move. Drift covers unpushed commits, cards stale past seven days, and an open PR on the current branch. It also names In Progress cards split across milestones and a malformed plans header. `sk-orient` §Reading it says how to read each line and what to pick up. Continue what is In Progress unless you pause it on purpose; pull new work when In Progress drops, not on top of it. Run the command yourself for a fresh picture mid-session.
 
-**2. Pick up.** Move the card: `gh project item-edit <board number> --owner @me --url <issue url> --field Status --value "In Progress"`. The number is the brief's first line, and the issue body is the brief. A plan is picked up whole: move its Backlog cards to In Progress. A plan issue with no card yet first gets one with `gh project item-add <board number> --owner @me --url <issue url>`. Then post a status update as `sk-orient` §Status updates says.
+**2. Pick up.** `sk-orient` §Picking up moves the card, or a whole plan's cards, to In Progress, and posts a status update. The issue body is the brief.
 
 **3. Shape the work.** When a wrong choice would be costly to undo, `sk-design` designs the change before or during the brainstorm, and a fresh subagent reviews its note. Brainstorm with superpowers — the issue is the problem statement, the brainstorm settles the forks — and write the spec under `docs/superpowers/specs/`. Plan with `writing-plans`, stating each gate value as a command that measures it and the rest as intent. `sk-execute` lists what else a plan carries before it goes out.
 
 **4. Execute.** `sk-execute` lays out three modes with a recommendation, and you choose. The modes are inline, subagent-driven in the session, and a worker session started with `sk-worker`. The orchestrating session reviews the whole branch and fast-forwards `master`. Each run records its mode, escalations, review rounds, and defects per stage. Token totals are not collected; #138 keeps the method, parked. The gates are `bun run test`, `bun run typecheck`, `bun run check`, and `bun run prose` on changed Markdown. For anything touching `bin/`, add `bun run build`, with the control that a second build changes nothing.
 
-**5. File what you notice.** A problem outside the task is filed, not fixed: `gh issue create` with one `area:*`, the milestone or `backlog` decision, and `gh project item-add` for the card. The `sk-*` rules are in test mode — when a rule bites or falls short, that is an `area:guidance` issue too. `sk-track` is that one step: duplicate check, one `area:*`, a self-contained brief, the entry gate, the card.
+**5. File what you notice.** A problem outside the task is filed, not fixed. `sk-track` §Filing is that one step: duplicate check, one `area:*`, a self-contained brief, the entry gate, the card. The `sk-*` rules are in test mode — when a rule bites or falls short, that is an `area:guidance` issue too.
 
-**6. Close.** `sk-track`'s close moment, in order: the record question, the evidence comment, `gh issue close --reason …`, and Status set to Done explicitly. When the close finishes a plan, a status update follows, as `sk-orient` §Status updates says. The docs layout in the `sidekick` skill states the bar, a counterfactual, and the shape.
+**6. Close.** `sk-track` §Closing, in order: the record question, the evidence comment, the close with its reason, and Status set to Done explicitly. When the close finishes a plan, a status update follows, as `sk-orient` §Status updates says. The docs layout in the `sidekick` skill states the bar, a counterfactual, and the shape.
 
-**7. Close the milestone.** `sidekick pm gate --milestone "<title>"` says whether anything is still open and lists it with Status; `sidekick pm lint` should be all zeros. Then: write the milestone's learning record if the bar holds, and bump the three `version` fields (plugin.json, and both in marketplace.json). Run `bun run build`, and commit it all together so the tag carries the record. Release: `claude plugin tag plugin --push -m "sidekick %s"`, then `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`. Close: `gh api -X PATCH repos/<owner>/<repo>/milestones/<n> -f state=closed`. `sk-milestone` runs this. It audits against the outcome sentence, dispositions every open issue, asks for confirmation, and runs the ceremony. It deletes the design folders whose issues have all closed, and comments "resolved in" on each issue it completed. Its open moment creates the next milestone with its outcome. It groups the milestone's issues into plans of one session each, named in the description in run order. Opening and the close each post a status update. The close posts its `COMPLETE` update before the milestone's closing `PATCH`, since `pickup --report` reads only an open milestone. It scans the backlog, and the designs marked `ready for PM`, for seeds whose condition holds.
+**7. Close the milestone.** `sk-milestone` §Closing runs it. It runs `sidekick pm gate` and `sidekick pm lint`, dispositions every open issue, then audits against the outcome sentence. On your yes it writes the learning record if the bar holds, runs the release, posts the closing status update, and closes the milestone. It deletes the design folders whose issues have all closed, and comments `Resolved in <version>.` on each issue the milestone completed. For sidekick itself, `AGENTS.md` §Releasing holds the release steps. `sk-milestone` §Opening then opens the next milestone with its outcome and its plans. It scans the backlog, and the designs marked `ready for PM`, for seeds whose condition holds.
 
 ## The commands
 
@@ -82,7 +63,7 @@ At filing, an issue gets `backlog` with a `Revisit when:` line, unless it is a s
 
 Every issue entry carries `item_id`, the board item's node id, so a write by id needs no lookup. `--quiet` on `board` and `pickup` prints nothing in an untracked repo — the shape a session-start hook needs.
 
-`sidekick rules install --project|--user` and `sidekick rules check --project|--user` deliver and audit the rules; the README covers them.
+`sidekick rules install` and `sidekick rules check` deliver and audit the rules; the repo's `README.md` §The rules covers both.
 
 ## Working with a worker session
 
@@ -94,19 +75,10 @@ The handoff names where the worker works. A plain branch in the main checkout su
 
 ## Where things are recorded
 
-| What | Where | Lifetime |
-|---|---|---|
-| Work state | Issues, milestones, the board | Live; GitHub is the only status surface |
-| Why something was done | The issue and its close comment | Durable; join by issue number |
-| Decisions that bind the system | `docs/adr/` | Record |
-| What an audit or survey found | `docs/reviews/` | Record, frozen at birth |
-| What a closed item taught | `docs/learnings/`; the docs layout in the `sidekick` skill states the bar and the shape | Record |
-| What research found, for a design or anything else | `docs/research/<topic>/`, from the day it is written | Record |
-| Designs being explored | `docs/designs/<topic>/`, written by `sk-design` | Until the issues it became close, or until it is dropped |
-| Specs, plans, run reports, shape-scale design notes | `docs/superpowers/` | Transient, gitignored; the issue is the tombstone |
+Work state lives in the issues, milestones, and board on GitHub, the only status surface. The issue and its close comment say why something was done. The docs layout, `plugin/skills/sidekick/references/docs-layout.md`, says which `docs/` folder takes each record, design, and working file, and how long each lasts. `docs/README.md` lists what sidekick adds to it.
 
 Session memory is not a record. The pointer to the next piece of work lives on the board, and `sidekick pm pickup` reads it.
 
 ## Shipped and arriving
 
-Landed in 0.3.0: the rules delivery, `sidekick pm` with its session-start hook, bootstrap in the `sidekick` skill, `sk-orient`, `sk-track` with `docs/learnings/`, and `sk-milestone`. Landed in 0.4.0: `sk-execute` and `sk-worker` (#127), `sk-design`, the design pass, with its Skill-tool hook (#119), and milestones sized by outcome (#132). The other design-side extensions arrive in later releases. The milestone list on `Rikmorn/sidekick` is authoritative; `sidekick pm pickup` in this repo shows where it stands.
+The releases on `Rikmorn/sidekick` say what each version shipped, and its milestone list says what is arriving. `sidekick pm pickup` in this repo shows where the open milestone stands.
