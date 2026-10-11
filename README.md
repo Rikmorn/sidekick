@@ -26,7 +26,7 @@ To update, name the scope:
 claude plugin update -s user sidekick@rikmorn
 ```
 
-Run from a repo that holds a project-scope record for the plugin, the bare command updates that record, not the user install. Restart Claude Code, then run `sidekick rules install` again for each scope you deliver to. Auto-update is the alternative. It is off by default for a third-party marketplace, and `/plugin` → **Marketplaces** → **Enable auto-update** turns it on for `rikmorn`.
+`-s project` updates a project-scope record. Run from a repo that holds a project-scope record for the plugin, the bare command updates that record, not the user install. Restart Claude Code, then run `sidekick rules install` again for each scope you deliver to. Auto-update is the alternative. It is off by default for a third-party marketplace, and `/plugin` → **Marketplaces** → **Enable auto-update** turns it on for `rikmorn`.
 
 ## The rules
 

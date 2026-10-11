@@ -2,14 +2,15 @@
 # Updates the user-scope sidekick install, then installs and checks the user-level rules
 # from the released binary, never from PATH.
 set -eu
-cd "$(git rev-parse --show-toplevel)"
-
 fail() { echo "release:install: $*" >&2; exit 1; }
+
+top=$(git rev-parse --show-toplevel) || fail "run it from inside the sidekick repo"
+cd "$top"
 
 command -v jq >/dev/null 2>&1 || fail "needs jq on PATH"
 want=$(jq -er .version plugin/.claude-plugin/plugin.json) || fail "plugin/.claude-plugin/plugin.json has no version"
 
-claude plugin update -s user sidekick@rikmorn
+claude plugin update -s user sidekick@rikmorn || echo "release:install: plugin update exited $?; checking the installed version" >&2
 
 list=$(claude plugin list --json) || fail "claude plugin list failed"
 root=$(printf '%s' "$list" | jq -r '[.[] | select(.id == "sidekick@rikmorn" and .scope == "user")][0].installPath // empty') || fail "could not read the plugin list"
@@ -18,7 +19,7 @@ root=$(printf '%s' "$list" | jq -r '[.[] | select(.id == "sidekick@rikmorn" and 
 bin="$root/bin/sidekick"
 [ -x "$bin" ] || fail "$bin is not an executable"
 got=$("$bin" --version) || fail "$bin --version failed"
-[ "$got" = "$want" ] || fail "the user install is $got, but plugin.json says $want; push master, then run this again"
+[ "$got" = "$want" ] || fail "the user install is $got, but plugin.json says $want, so the update did not land; check its output above, push master if needed, then run this again"
 
 "$bin" rules install --user
 exec "$bin" rules check --user --strict

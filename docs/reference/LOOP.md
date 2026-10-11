@@ -68,9 +68,9 @@ It pauses only at the record question, a judgment the skill states rather than a
 
 - `sidekick pm gate` and `sidekick pm lint` first, and every open issue dispositioned.
 - The audit against the outcome sentence; each gap becomes an issue or a judgment. It also lists the issues added after Opening.
-- The preparation of the repo's release, run locally and left uncommitted. It covers the learning record if the bar holds, the design-folder deletions, the version bump, the gates, and draft notes.
+- Local preparation, left uncommitted: the learning record if the bar holds, and the deletions of the design folders whose issues have all closed. Then the repo's own preparation, such as the version bump, with the gates and draft notes.
 - A confirmation, carrying the learning-record judgment and the diff. Nothing outward runs without a yes.
-- On yes, the release's publication: one commit of everything prepared, then the tag and the GitHub Release. For sidekick itself, `AGENTS.md` §Releasing holds the preparation and publication steps.
+- On yes, the release's publication: one commit of everything prepared and its push, then the tag and the GitHub Release. For sidekick itself, `AGENTS.md` §Releasing holds the preparation and publication steps.
 - A `COMPLETE` status update, while the milestone is still open.
 - The milestone closed, and a "Resolved in" comment on each `COMPLETED` issue.
 

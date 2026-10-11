@@ -21,12 +21,12 @@ sidekick rules check --user --strict   # also exits 1 on drift
 
 `sidekick` is on the Bash tool's PATH whenever the plugin is enabled. The command writes and removes only files named `sk-*.md`. That prefix is sidekick's namespace: a hand-written file under it is removed on the next install if the plugin does not ship it, so keep your own rules out of the `sk-` prefix. Other rule files are never edited.
 
-To update the plugin, run `claude plugin update -s user sidekick@rikmorn`. Without `-s user`, a repo that holds a project-scope record updates that record instead. Restart Claude Code, then run `sidekick rules install` again for each scope you deliver to.
-
 - `--user` delivers every rule. `--project` leaves out `sk-pm-conventions.md` unless the repo's committed `.claude/settings.json` enables a `sidekick@` plugin, and removes an existing copy; an unreadable settings file leaves it as it is.
 - `check --project` checks the user-level copies when the repo holds no `sk-*` copies. Where the two directories share a rule, Claude Code loads both copies, which is expected.
 - The check reports overlap between a shipped rule and a non-`sk-*` file directly inside the repo's `.claude/rules/` (the user-level directory for `--user`). The signals are a corresponding file name, two or more shared H2 headings, or the opening sentence. A repo file that names its pair is a stated extension. The decision stays with you.
 - Exit `0` means the command ran, and `1` means it could not run. `--strict` also exits `1` on drift or a skipped write. Run the check in a hook without it, because Claude Code shows a non-zero exit as a hook error.
+
+To update the plugin, run `claude plugin update -s user sidekick@rikmorn`. Without `-s user`, the command updates the project-scope record instead when the repo holds one. Restart Claude Code, then run `sidekick rules install` again for each scope you deliver to.
 
 ## Bringing a repo under tracking
 
