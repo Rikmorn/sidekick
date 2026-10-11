@@ -16,7 +16,8 @@
     "check": "biome check .",
     "format": "biome format --write .",
     "prose": "bun bin/prose.ts",
-    "check:docs": "bun bin/check-docs.ts"
+    "check:docs": "bun bin/check-docs.ts",
+    "release:install": "sh bin/release-install.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",

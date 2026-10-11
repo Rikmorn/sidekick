@@ -14,6 +14,7 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 | `plugin/bin/sidekick` | The built executable, committed. Rebuild it with `bun run build` in every commit that changes `bin/`; CI rebuilds with the bun its last line records and fails on any difference. Its co-located `package.json` declares `"type": "module"` to match the build format. Without it, Node takes the type from the nearest `package.json` up the tree, and `~/.claude/package.json` declares commonjs, so the installed CLI exits 0 silently |
 | `bin/cli.ts`, `bin/helpers/` | The executable's TypeScript source and its tests (`*.test.ts` beside them) |
 | `bin/prose.ts`, `bin/check-docs.ts` | Repo-only checks that the shipped CLI never imports: `bun run prose` runs Vale on Markdown, and `bun run check:docs` checks links, permalinks, and the docs layout. `bin/prose-style.test.ts` tests the Vale style, and `bin/check-docs.test.ts` tests the docs check |
+| `bin/release-install.sh` | A repo-only script that the shipped CLI never runs. `bun run release:install` runs it as the last step of §Releasing |
 | `.vale.ini`, `.vale/styles/Sidekick/` | The house prose style that `bun run prose` checks Markdown against |
 | `docs/` | Records and steering docs; `docs/README.md` lists what sidekick adds to the docs layout |
 
@@ -28,4 +29,20 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 
 ## Releasing
 
-Write the milestone's learning record if it clears the bar in the docs layout (`plugin/skills/sidekick/references/docs-layout.md` §learnings/). Bump the three `version` fields (plugin.json, and both in marketplace.json). Delete the design folders whose issues have all closed, rebuild the executable, and commit it all together so the tag carries the record. Then `claude plugin tag plugin --push -m "sidekick %s"` and `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`. Then run `claude plugin update sidekick@rikmorn`, restart Claude Code, and run `sidekick rules install --user` and `sidekick rules check --user`. An install from the released plugin is the only one that writes user-level rules. Close the milestone last.
+`sk-milestone` §Closing runs the close, and this section is sidekick's release inside it. The skill writes the learning record and deletes the design folders before the ask. After the release, it posts the closing status update and closes the milestone. Start the closing session with `claude --plugin-dir ./plugin`, so the close runs the skills it ships.
+
+Preparation runs before the ask and changes nothing but the working tree:
+
+1. Bump the three `version` fields: `plugin/.claude-plugin/plugin.json`, and `metadata.version` and `plugins[0].version` in `.claude-plugin/marketplace.json`.
+2. Run `bun run build`, then the gates §Working here names, and `claude plugin validate --strict` on `.` and on `plugin`.
+3. Write the release notes under `docs/superpowers/`, which git ignores. Their Upgrading line gives the update commands in `README.md` §Install.
+
+Publication runs after the yes:
+
+1. Commit everything the preparation changed, with the record and the deletions.
+2. Run `git push origin master`. The marketplace serves `origin/master`, so the update finds the release only after this push. Land nothing else on `master` until step 5 passes.
+3. Run `claude plugin tag plugin --push -m "sidekick %s"`. It creates `sidekick--v<version>` and pushes it. It refuses a dirty tree, which is why the notes sit on an ignored path.
+4. Run `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`.
+5. Run `bun run release:install`. It updates the user install with `-s user` and stops unless that install's version matches `plugin.json`. Then it installs and checks the user-level rules from the released binary, never from `PATH`. Only an install from the released plugin writes user-level rules.
+
+The milestone closes once step 5 passes. The session keeps the plugin it started with, and the next session loads the release. If step 5 stops, fix what it names and run it again, since each of its steps is safe to repeat. A defect in the shipped binary or rules takes a patch release before the milestone closes.
