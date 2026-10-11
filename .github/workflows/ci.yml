@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Read the bun that built the committed bundle
         id: bun
@@ -57,6 +59,9 @@ jobs:
 
       - name: Run tests (bun test)
         run: bun run test
+
+      - name: Check Markdown links, permalinks, and the docs layout
+        run: bun run check:docs
 
       - name: Build the plugin executable (bun build)
         run: bun run build

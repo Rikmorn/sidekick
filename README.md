@@ -79,6 +79,7 @@ bun install
 bun run test        # bun test bin/
 bun run typecheck   # tsc --noEmit
 bun run check       # biome
+bun run check:docs  # Markdown links, permalinks, docs layout
 bun run build       # bin/cli.ts → plugin/bin/sidekick (committed)
 claude plugin validate --strict . && claude plugin validate --strict plugin
 ```

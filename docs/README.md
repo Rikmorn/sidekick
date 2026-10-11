@@ -2,6 +2,10 @@
 
 Each folder here works as `plugin/skills/sidekick/references/docs-layout.md` says, and `plugin/rules/sk-pm-conventions.md` §Placement test (tense) sends content to its folder. This file lists only what sidekick adds or overrides. Work state is the issues, milestones, and board on `Rikmorn/sidekick`.
 
+## The docs check
+
+`bun run check:docs` checks the layout's ADR index, research topic indexes, and design status lines. It also checks relative links, permalinks, and links into `docs/superpowers/`. CI runs it on every push and pull request.
+
 ## Legacy research topics
 
 Topics from the research programme that ADR-0009 parked centre on a `REPORT.md`, often with a `FRAMING.md` and a sources file, rather than dated reports. Each topic's `README.md` indexes its files.

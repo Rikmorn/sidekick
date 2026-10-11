@@ -5,7 +5,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  checkAdrIndex,
+  checkDesignStatus,
   checkPermalinks,
+  checkResearchIndexes,
   checkWorkingFileLinks,
   linksOf,
   targetOf,
@@ -169,6 +172,133 @@ describe('checkWorkingFileLinks', () => {
   });
 });
 
+describe('checkAdrIndex', () => {
+  const adrs = ['docs/adr/0001-one.md', 'docs/adr/0002-two.md'];
+
+  it('passes when the README links every ADR', () => {
+    const root = tempDir();
+    write(root, {
+      'docs/adr/README.md': '[one](./0001-one.md)\n\n[two](0002-two.md#top)\n',
+    });
+    expect(checkAdrIndex(root, ['docs/adr/README.md', ...adrs])).toEqual([]);
+  });
+
+  it('reports an unlisted ADR by its file name', () => {
+    const root = tempDir();
+    write(root, { 'docs/adr/README.md': '[one](./0001-one.md)\n' });
+    const findings = checkAdrIndex(root, ['docs/adr/README.md', ...adrs]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.file).toBe('docs/adr/README.md');
+    expect(findings[0]?.message).toContain('0002-two.md');
+  });
+
+  it('reports the missing README when ADRs exist', () => {
+    const findings = checkAdrIndex(tempDir(), adrs);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('README.md');
+  });
+
+  it('passes a repo with no docs/adr/', () => {
+    expect(checkAdrIndex(tempDir(), ['README.md'])).toEqual([]);
+  });
+});
+
+describe('checkResearchIndexes', () => {
+  const topic = 'docs/research/topic';
+
+  it('passes a README that links each file, anchors and subfolders included', () => {
+    const root = tempDir();
+    write(root, {
+      [`${topic}/README.md`]: '[r](./REPORT.md#findings)\n\n[s](sub/deep.md)\n',
+    });
+    const files = [
+      `${topic}/README.md`,
+      `${topic}/REPORT.md`,
+      `${topic}/sub/deep.md`,
+    ];
+    expect(checkResearchIndexes(root, files)).toEqual([]);
+  });
+
+  it('reports an unlinked FRAMING.md', () => {
+    const root = tempDir();
+    write(root, { [`${topic}/README.md`]: '[r](./REPORT.md)\n' });
+    const findings = checkResearchIndexes(root, [
+      `${topic}/README.md`,
+      `${topic}/REPORT.md`,
+      `${topic}/FRAMING.md`,
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('FRAMING.md');
+  });
+
+  it('reports a file in a subfolder that the README omits', () => {
+    const root = tempDir();
+    write(root, { [`${topic}/README.md`]: '# topic\n' });
+    const findings = checkResearchIndexes(root, [
+      `${topic}/README.md`,
+      `${topic}/sub/deep.md`,
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('sub/deep.md');
+  });
+
+  it('reports a topic without a README', () => {
+    const findings = checkResearchIndexes(tempDir(), [`${topic}/REPORT.md`]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('README.md');
+  });
+
+  it("passes the programme's own README alone", () => {
+    expect(
+      checkResearchIndexes(tempDir(), ['docs/research/README.md']),
+    ).toEqual([]);
+  });
+});
+
+describe('checkDesignStatus', () => {
+  const designWith = (status: string): [string, string[]] => {
+    const root = tempDir();
+    write(root, {
+      'docs/designs/t/design.md': `# T\n\n${status}\n\n## Problem\n`,
+    });
+    return [root, ['docs/designs/t/design.md']];
+  };
+
+  it.each([
+    'Status: exploring',
+    'Status: ready for PM · Scale: shape · 2026-10-10',
+    'Status: planned (#193, #105) · Scale: explore · 2026-10-10',
+    'Status: planned (#7)',
+  ])('passes %s', (status) => {
+    const [root, files] = designWith(status);
+    expect(checkDesignStatus(root, files)).toEqual([]);
+  });
+
+  it('reports an invalid value and names it', () => {
+    const [root, files] = designWith('Status: draft');
+    const findings = checkDesignStatus(root, files);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('Status: draft');
+  });
+
+  it('reports a design.md without a status line', () => {
+    const [root, files] = designWith('No status here.');
+    const findings = checkDesignStatus(root, files);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('Status:');
+  });
+
+  it('reports a design folder holding only notes.md', () => {
+    const findings = checkDesignStatus(tempDir(), ['docs/designs/t/notes.md']);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.message).toContain('design.md');
+  });
+
+  it('passes a repo with no docs/designs/', () => {
+    expect(checkDesignStatus(tempDir(), ['README.md'])).toEqual([]);
+  });
+});
+
 describe('bun run check:docs', () => {
   it('passes a permalink and a valid relative link with a heading', () => {
     const root = repo({ 'docs/x.md': '# Top\n\n## Deep dive\n' });
@@ -230,6 +360,17 @@ describe('bun run check:docs', () => {
     const root = repo({ 'a.md': '# a\n', 'b.md': '[gone](./gone.md)\n' });
     fs.rmSync(path.join(root, 'b.md'));
     expect(run(root).status).toBe(0);
+  });
+
+  it('fails a fixture repo with one unlisted ADR', () => {
+    const root = repo({
+      'docs/adr/README.md': '[one](./0001-one.md)\n',
+      'docs/adr/0001-one.md': '# One\n',
+      'docs/adr/0002-two.md': '# Two\n',
+    });
+    const result = run(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('0002-two.md');
   });
 
   it('passes a repo with no Markdown file', () => {

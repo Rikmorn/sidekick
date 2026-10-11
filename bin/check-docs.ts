@@ -23,6 +23,13 @@ const PERMALINK =
   /^https:\/\/github\.com\/Rikmorn\/sidekick\/(?:blob|tree)\/([^/]+)\/([^?#]*)/;
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const WORKING = 'docs/superpowers';
+const ADR_DIR = 'docs/adr';
+const ADR_FILE = /^docs\/adr\/\d{4}-[^/]+\.md$/;
+const RESEARCH_DIR = 'docs/research';
+const DESIGNS_DIR = 'docs/designs';
+const STATUS_LINE = /^Status:.*$/m;
+const VALID_STATUS =
+  /^Status: (?:exploring|ready for PM|planned \(#\d+(?:, #\d+)*\))(?: · |$)/;
 
 const decode = (text: string): string => {
   try {
@@ -135,7 +142,86 @@ export const checkWorkingFileLinks: Check = (root, files) =>
     }),
   );
 
-export const CHECKS: Check[] = [checkPermalinks, checkWorkingFileLinks];
+const linkedTargets = (root: string, file: string): Set<string> =>
+  new Set(linksIn(root, file).flatMap(({ url }) => targetOf(file, url) ?? []));
+
+// Maps each folder directly under base to the Markdown files below it, at any depth.
+const topicsUnder = (
+  files: readonly string[],
+  base: string,
+): Map<string, string[]> =>
+  files.reduce((topics, file) => {
+    const [topic, ...rest] = file.slice(`${base}/`.length).split('/');
+    if (file.startsWith(`${base}/`) && topic !== undefined && rest.length > 0) {
+      topics.set(topic, [...(topics.get(topic) ?? []), file]);
+    }
+    return topics;
+  }, new Map<string, string[]>());
+
+export const checkAdrIndex: Check = (root, files) => {
+  const adrs = files.filter((file) => ADR_FILE.test(file));
+  const index = `${ADR_DIR}/README.md`;
+  if (adrs.length === 0) {
+    return [];
+  }
+  if (!files.includes(index)) {
+    return [{ file: ADR_DIR, message: `has ADRs but no ${index}` }];
+  }
+  const listed = linkedTargets(root, index);
+  return adrs
+    .filter((adr) => !listed.has(adr))
+    .map((adr) => ({
+      file: index,
+      message: `does not link ${path.posix.basename(adr)}`,
+    }));
+};
+
+export const checkResearchIndexes: Check = (root, files) =>
+  [...topicsUnder(files, RESEARCH_DIR)].flatMap(([topic, members]) => {
+    const dir = `${RESEARCH_DIR}/${topic}`;
+    const index = `${dir}/README.md`;
+    if (!members.includes(index)) {
+      return [{ file: dir, message: `has no ${index}` }];
+    }
+    const listed = linkedTargets(root, index);
+    return members
+      .filter((member) => member !== index && !listed.has(member))
+      .map((member) => ({
+        file: index,
+        message: `does not link ${member.slice(`${dir}/`.length)}`,
+      }));
+  });
+
+export const checkDesignStatus: Check = (root, files) =>
+  [...topicsUnder(files, DESIGNS_DIR)].flatMap(([topic, members]) => {
+    const dir = `${DESIGNS_DIR}/${topic}`;
+    const design = `${dir}/design.md`;
+    if (!members.includes(design)) {
+      return [{ file: dir, message: `has no ${design}` }];
+    }
+    const status = STATUS_LINE.exec(
+      fs.readFileSync(path.join(root, design), 'utf8'),
+    );
+    if (status === null) {
+      return [{ file: design, message: 'has no line beginning "Status:"' }];
+    }
+    return VALID_STATUS.test(status[0])
+      ? []
+      : [
+          {
+            file: design,
+            message: `status line "${status[0]}" is not exploring, ready for PM, or planned (#NN, …)`,
+          },
+        ];
+  });
+
+export const CHECKS: Check[] = [
+  checkPermalinks,
+  checkWorkingFileLinks,
+  checkAdrIndex,
+  checkResearchIndexes,
+  checkDesignStatus,
+];
 
 // repository:false stops the plugin from reading a GitHub permalink as a local path.
 const runRemark = (root: string, files: readonly string[]) =>
