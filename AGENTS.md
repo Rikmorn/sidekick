@@ -47,4 +47,4 @@ Publication runs after the yes:
 4. Run `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`.
 5. Run `bun run release:install`. It updates the user install with `-s user` and stops unless that install's version matches `plugin.json`. Then it installs and checks the user-level rules from the released binary, never from `PATH`. Only an install from the released plugin writes user-level rules.
 
-The milestone closes once step 5 passes. The session keeps the plugin it started with, and the next session loads the release. If step 5 stops, fix what it names and run it again, since each of its steps is safe to repeat. A defect in the shipped binary or rules takes a patch release before the milestone closes.
+The milestone closes once step 5 passes. The session keeps the plugin it started with, and the next session loads the release. If step 5 stops, fix what it names and run it again, since each of its steps is safe to repeat. A defect in the shipped binary or rules takes a patch release before the milestone closes, and the operator decides then what the outcome line's version says.
