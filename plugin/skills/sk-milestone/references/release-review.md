@@ -49,7 +49,7 @@ When the base is the empty tree, list the commits with `git log --oneline <head>
 
 - the range, where its base came from, and what the diff left out;
 - the outcome sentence and the plans header;
-- every milestone issue, open or closed, with its number, title, state, and body, from `gh issue list --milestone "<title>" --state all --limit 200 --json number,title,state,body`;
+- every milestone issue, open or closed, with its number, title, state, close reason, and body, from `gh issue list --milestone "<title>" --state all --limit 200 --json number,title,state,stateReason,body`;
 - the plans header of every other open milestone;
 - each gate's command and result, with the output of any that failed;
 - the path of the repo's objective source, the doc that says what the repo is for;
@@ -68,6 +68,8 @@ Say so when there is no earlier record.
 ## Dispatch
 
 Dispatch `sidekick:sk-holistic-reviewer` three times in parallel, once for each lens in §The lenses, with the package's paths filled in. Each lens draws on its own sources, so each reviewer holds one question. Send each its prompt and nothing else. Leave out any summary of the conversation, any word on who wrote the work, and any cue such as "this looks solid". A reviewer judges work more kindly when told it is liked or owned. The agent's definition sets what it returns, so add nothing on format.
+
+A reviewer that stops at its turn cap returns a partial result. Resume it, and treat one not resumed as a lens that did not run.
 
 ## The lenses
 
@@ -90,7 +92,7 @@ You are checking that a release is complete before it ships. Two other reviewers
 
 Read <MILESTONE_PATH> first. It holds the milestone's outcome, its plans and issues, the gate results, and what the diff leaves out, and it names any further files to read. Then read <DIFF_PATH>, the diff of everything the release ships. Your working directory holds the repository as it will ship.
 
-The question: did each issue's resolution land, is everything added wired in where it is used, and is everything removed gone from where it was cited? Read each issue's body against the diff: what it asks for, and what landed. A file, section, command, step, or name the release adds needs a place that loads, links, lists, or calls it. One the release removes or renames leaves no citation behind. Landed work from another open milestone ships too, while that milestone is still in progress. Judge what of it landed, not whether that milestone is done.
+The question: did each issue's resolution land, is everything added wired in where it is used, and is everything removed gone from where it was cited? Read each issue's body against the diff: what it asks for, and what landed. An issue closed `NOT_PLANNED` asks for nothing. A file, section, command, step, or name the release adds needs a place that loads, links, lists, or calls it. One the release removes or renames leaves no citation behind. Landed work from another open milestone ships too, while that milestone is still in progress. Judge what of it landed, not whether that milestone is done.
 ```
 
 ### Fit

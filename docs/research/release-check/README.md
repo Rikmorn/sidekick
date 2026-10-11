@@ -8,4 +8,4 @@ How should a milestone's release be checked as a whole, and when?
 
 ## Served
 
-#186 and #197.
+#186.
