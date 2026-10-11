@@ -15,4 +15,5 @@ One line per topic. Each topic's `README.md` lists its reports and the issues it
 - [pm-layer](./pm-layer/README.md): Which existing GitHub-tracking plugins, skills, and practices should sidekick's project-management layer adopt, borrow from, or write itself?
 - [prompting](./prompting/README.md): For capable agentic models, where does declarative guardrail prompting beat imperative prompting, and does the repo's agent-prompt discipline hold up against the literature?
 - [reasoning-capability](./reasoning-capability/README.md): Why does an AI discuss a problem shallowly by default yet sharply once guided to research, and is the cause calibration, over-confidence, or budgeting?
+- [release-check](./release-check/README.md): How should a milestone's release be checked as a whole, and when?
 - [verification-autonomy](./verification-autonomy/README.md): How do you manufacture verifiers where none exist, and how do you stop a verify-learn-memory loop from reinforcing its own errors?
