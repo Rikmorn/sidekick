@@ -17,8 +17,8 @@ import { fileURLToPath } from 'node:url';
  * file list is derived from the directories (#56) so a new agent or skill is
  * covered the day it lands, and no count or filename is pinned here.
  *
- * Repointed at `plugin/` with ADR-0009. The bundle ships skills now and agents
- * later, so `plugin/agents/` may be absent — but never present and empty.
+ * Repointed at `plugin/` with ADR-0009. A bundle need not ship agents, so
+ * `plugin/agents/` may be absent — but never present and empty.
  */
 
 const REPO_ROOT = path.resolve(
@@ -93,7 +93,7 @@ describe('frontmatter hazards (#74)', () => {
   it('finds skill frontmatter, and agent frontmatter when that directory exists', () => {
     // A broken glob must fail loudly, not pass vacuously over an empty list.
     expect(skillFiles().length).toBeGreaterThan(0);
-    // Absent is the deliberate state today; present and empty is a broken glob.
+    // Absent is allowed; present and empty is a broken glob.
     if (agentsDirExists()) {
       expect(agentFiles().length).toBeGreaterThan(0);
     }
