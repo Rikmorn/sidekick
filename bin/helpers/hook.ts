@@ -1,7 +1,8 @@
 /**
  * `sidekick hook post-skill` and `sidekick hook post-read`: the context
  * sidekick's PostToolUse hooks add when a skill it extends loads, or when a
- * superpowers review package is read. Every other input prints nothing and
+ * review package is read: superpowers' own, or the one sk-milestone's release
+ * check builds, which gets lines of its own. Every other input prints nothing and
  * returns 0, because a hook never blocks or fails the call it watches
  * (ADR-0010, ADR-0011).
  */
@@ -54,6 +55,9 @@ const DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 // superpowers' review-package script names this file; a rename silences the hook.
 const REVIEW_PACKAGE =
   /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
+// sk-milestone's release check names its package to match REVIEW_PACKAGE; this narrower match is tested first.
+const RELEASE_CHECK_PACKAGE =
+  /(^|\/)\.superpowers\/sdd\/release-check-[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null;
@@ -206,20 +210,43 @@ const REPRODUCE_PARAGRAPH =
 const CLAIMS_PARAGRAPH =
   "Check what the diff says about the rest of the system. Where superpowers limits you to risks you can name outside the diff, two kinds count here. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with `git grep`, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 
-function reviewerLines(pluginDir: string, packageText: string): string {
-  const lines = [READ_LEAD_LINE, REPRODUCE_PARAGRAPH, CLAIMS_PARAGRAPH];
+const RELEASE_LEAD_LINE =
+  "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
+
+const RELEASE_CLAIMS_PARAGRAPH =
+  "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
+
+/** The Comments paragraph and section, when the rule covers the package's files. */
+function commentsLines(pluginDir: string, packageText: string): string[] {
   const rule = path.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
   if (
-    comments !== undefined &&
-    ruleCoversPackage(readRulePaths(rule), packageText)
+    comments === undefined ||
+    !ruleCoversPackage(readRulePaths(rule), packageText)
   ) {
-    lines.push(
-      "Hold the comments this diff adds to the house rule. Reading a diff does not load `sk-clean-code.md`, so its Comments section follows. Report each added comment that breaks it as a finding. Where this repo's own rules set a different comment convention, theirs win.",
-      comments,
-    );
+    return [];
   }
-  return lines.join('\n\n');
+  return [
+    "Hold the comments this diff adds to the house rule. Reading a diff does not load `sk-clean-code.md`, so its Comments section follows. Report each added comment that breaks it as a finding. Where this repo's own rules set a different comment convention, theirs win.",
+    comments,
+  ];
+}
+
+function reviewerLines(pluginDir: string, packageText: string): string {
+  return [
+    READ_LEAD_LINE,
+    REPRODUCE_PARAGRAPH,
+    CLAIMS_PARAGRAPH,
+    ...commentsLines(pluginDir, packageText),
+  ].join('\n\n');
+}
+
+function releaseReviewerLines(pluginDir: string, packageText: string): string {
+  return [
+    RELEASE_LEAD_LINE,
+    RELEASE_CLAIMS_PARAGRAPH,
+    ...commentsLines(pluginDir, packageText),
+  ].join('\n\n');
 }
 
 function postSkillContext(
@@ -235,7 +262,11 @@ function postSkillContext(
 function postReadContext(stdin: string, pluginDir: string): string | undefined {
   const event = parseJson(stdin);
   if (!isReadHookInput(event)) return undefined;
-  if (!REVIEW_PACKAGE.test(event.tool_input.file_path)) return undefined;
+  const filePath = event.tool_input.file_path;
+  if (RELEASE_CHECK_PACKAGE.test(filePath)) {
+    return releaseReviewerLines(pluginDir, readContent(event));
+  }
+  if (!REVIEW_PACKAGE.test(filePath)) return undefined;
   return reviewerLines(pluginDir, readContent(event));
 }
 

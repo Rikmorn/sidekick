@@ -470,6 +470,88 @@ describe('runHookCli post-read', () => {
   });
 });
 
+describe('post-read gives the release check its own lines', () => {
+  const RELEASE_REVIEW = path.join(
+    PLUGIN_DIR,
+    'skills',
+    'sk-milestone',
+    'references',
+    'release-review.md',
+  );
+  const RELEASE_MARK = 'with your search tool';
+  const releaseContext = (
+    filePath: string,
+    content = pkgContent('bin/x.ts'),
+  ) => {
+    const { out } = runVerb(
+      'post-read',
+      readEvent(filePath, {
+        tool_response: { type: 'text', file: { content } },
+      }),
+    );
+    expect(out.length).toBe(1);
+    const context: string = JSON.parse(out[0]).hookSpecificOutput
+      .additionalContext;
+    return context;
+  };
+
+  test("the release check's example package gets the release-check lines", () => {
+    const example = fs
+      .readFileSync(RELEASE_REVIEW, 'utf-8')
+      .match(/\.superpowers\/sdd\/release-check-[^`\s]+\.diff/)?.[0];
+    expect(example).toBeDefined();
+    const context = releaseContext(`/repo/${example}`);
+    expect(
+      context.startsWith(
+        "sidekick: this file is the package of sk-milestone's release check",
+      ),
+    ).toBe(true);
+    expect(context).not.toContain('superpowers review package');
+    expect(context).not.toContain('Credit only the results you reproduce.');
+    expect(context).not.toContain('git grep');
+    expect(context).not.toContain('superpowers');
+    expect(context).toContain(RELEASE_MARK);
+    expect(context).toContain('Hold the comments this diff adds');
+    expect(
+      context.endsWith(String(readSection(CLEAN_CODE, '## Comments'))),
+    ).toBe(true);
+  });
+
+  test('release-check packages match at any depth, as relative paths, and in worktrees', () => {
+    for (const filePath of [
+      '/a/b/.superpowers/sdd/release-check-0.5.0/review-abc1234..def5678.diff',
+      '.superpowers/sdd/release-check-0.5.0/review-abc1234..def5678.diff',
+      '/r/.worktrees/x/.superpowers/sdd/release-check-1.0.0-rc.1/review-0123456789ab..fedcba987654.diff',
+    ]) {
+      const context = releaseContext(filePath);
+      expect(context).toContain(RELEASE_MARK);
+      expect(context).not.toContain('Credit only the results you reproduce.');
+    }
+  });
+
+  test('a release-check package of a rule-less plugin keeps the claims paragraph without Comments', () => {
+    const { out } = runVerb(
+      'post-read',
+      readEvent(
+        '/r/.superpowers/sdd/release-check-0.5.0/review-abc1234..def5678.diff',
+      ),
+      tmpPlugin(undefined),
+    );
+    const context: string = JSON.parse(out[0]).hookSpecificOutput
+      .additionalContext;
+    expect(context).toContain(RELEASE_MARK);
+    expect(context).not.toContain('Hold the comments');
+  });
+
+  test('a superpowers package keeps its own lines beside the release check', () => {
+    const context = releaseContext(
+      '/r/.superpowers/sdd/2026-10-11-plan/review-abc1234..def5678.diff',
+    );
+    expect(context.startsWith(READ_LEAD)).toBe(true);
+    expect(context).toContain('Credit only the results you reproduce.');
+  });
+});
+
 describe('post-read scopes the Comments paragraph to the rule paths', () => {
   const RULE_BODY = '## Comments\n\nDefault to none.\n';
   const scoped = (paths: string) =>

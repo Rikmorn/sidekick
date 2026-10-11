@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# PostToolUse hook on Read: when a superpowers review package is read, add
-# sidekick's reviewer lines (ADR-0011). A read whose content lacks one of the
+# PostToolUse hook on Read: when a superpowers review package or the package of
+# sk-milestone's release check is read, add sidekick's reviewer lines
+# (ADR-0011). A read whose content lacks one of the
 # tokens below ends here in bash; for any other read, the CLI decides from the
 # path. Silent, with exit 0, on anything unexpected.
 set -uo pipefail

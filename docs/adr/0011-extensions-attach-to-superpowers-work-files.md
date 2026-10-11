@@ -2,6 +2,8 @@
 
 > **Amended 2026-10-07 (#160):** the reviewer lines gain a claims check. It asks the reviewer to confirm each fact the diff states at its source. It also asks for the stale copies of each fact the diff changes. Only the Comments part of the lines depends on the rule's heading.
 
+> **Amended 2026-10-11 (#186):** the release check's package takes the same file name, and its sealed reviewers get lines of their own. They get the claims check, worded for a reviewer with a search tool, and no reproduce paragraph. They get the Comments paragraph under the same condition.
+
 **Status:** Accepted (2026-09-30). Amends ADR-0010's Decision 1, which names the Skill tool as the one attachment point. Issues #161 and #134, milestone R8.
 
 ## Context
