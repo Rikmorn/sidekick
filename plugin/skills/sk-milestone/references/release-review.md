@@ -7,11 +7,11 @@ The release check reads what a milestone ships as one piece, before the release 
 The range is what ships: from the latest published release's tag to `HEAD`. Find the tag, then resolve it to its commit, since an annotated tag's own name resolves to the tag object:
 
 ```
-gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName'
+gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // "none"'
 git rev-parse --short '<tag>^{commit}'
 ```
 
-With no published release, start from the last commit before the previous milestone closed. The previous milestone is the closed one with the latest `closed_at`:
+When the first command prints `none`, the repo has no published release. Start then from the last commit before the previous milestone closed. The previous milestone is the closed one with the latest `closed_at`:
 
 ```
 gh api 'repos/<owner>/<repo>/milestones?state=closed&per_page=100' --jq 'max_by(.closed_at) | .closed_at'

@@ -34,4 +34,14 @@ The question has four parts:
 
 Answer each finding beside it: what it changes in the grouping or the scope, or why it does not hold. Hold each answer to the finding's evidence standard. Show the operator the review and your answers beside the draft grouping, and ask them to rule on both in one ask. Then write the plans header as Opening step 4 says.
 
-An issue that fits the repo but not this milestone returns to `backlog`, with a `Revisit when:` line in its body: `gh issue edit <n> --remove-milestone --add-label backlog`. One that does not fit the repo closes `not planned`, with a one-line verdict: `gh issue close <n> --reason "not planned" --comment "<verdict>"`. Both are written on the operator's yes, like every other change the review leads to.
+An issue that fits the repo but not this milestone returns to `backlog`:
+
+```
+gh issue edit <n> --remove-milestone --add-label backlog
+gh issue view <n> --json body --jq .body > <file>
+gh issue edit <n> --body-file <file>
+```
+
+The label needs a `Revisit when:` line in the body, naming what would raise the issue again; `sidekick pm lint` reports a `backlog` issue without one. Between the last two commands, write the line into the file when the body has none. A seed keeps its old line, but the seed scan found that condition holding, so rewrite it.
+
+An issue that does not fit the repo closes `not planned`, with a one-line verdict: `gh issue close <n> --reason "not planned" --comment "<verdict>"`. Both routes are written on the operator's yes, like every other change the review leads to.
