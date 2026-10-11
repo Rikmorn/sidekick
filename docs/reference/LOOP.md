@@ -62,7 +62,7 @@ It pauses only at the record question, a judgment the skill states rather than a
 
 ### `sk-milestone`
 
-**Opening**: agrees the outcome sentence with you, then creates the milestone. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, and proposes them. It groups the issues into plans of one session each, records them in the description in run order, and posts the first status update. Once the grouping is drafted, a sealed reviewer reads the scope, and you rule on its review and the grouping together. Then it orients. Pauses on the outcome, on every seed, and on the plans with that review.
+**Opening**: agrees the outcome sentence with you, then creates the milestone. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, and proposes them. It groups the issues into plans of one session each, and a sealed reviewer reads that scope. You rule on its review and the grouping together. It then records the plans in the description in run order, posts the first status update, and orients. Pauses on the outcome, on every seed, and on the plans with that review.
 
 **Closing**:
 
@@ -71,7 +71,7 @@ It pauses only at the record question, a judgment the skill states rather than a
 - A check of the release as a whole: three sealed reviewers read everything the release ships. Each confirmed finding is fixed before the release. A finding too large for the session is posted `AT_RISK`, and you choose an added plan or a back-out.
 - Local preparation, left uncommitted: the learning record if the bar holds, and the deletions of the design folders whose issues have all closed. Then the repo's own preparation, such as the version bump, with the gates and draft notes.
 - A confirmation, carrying the learning-record judgment, the diff, and the check's findings. Nothing outward runs without a yes.
-- On yes, the release's publication: one commit of everything prepared and its push, then the tag and the GitHub Release. For sidekick itself, `AGENTS.md` §Releasing holds the preparation and publication steps.
+- On yes, the release's publication: one commit of everything prepared, landed by the repo's route, then the tag and the GitHub Release. For sidekick itself, `AGENTS.md` §Releasing holds the preparation and publication steps.
 - A `COMPLETE` status update, while the milestone is still open.
 - The milestone closed, and a "Resolved in" comment on each `COMPLETED` issue.
 
