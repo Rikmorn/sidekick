@@ -325,7 +325,7 @@ Subagent `tools:` is enforced by the runtime; a skill's `allowed-tools:` is perm
 Several rules above have a frontmatter field that enforces them structurally. Prefer the field to the sentence.
 
 - `maxTurns` is the loop cap Rule 11 asks for: the subagent stops at the limit, its output is marked partial, and the orchestrator can resume it.
-- `omitClaudeMd` (Claude Code 2.1.271 and later) and `skills` decide what a sealed verifier actually receives. By default every custom subagent loads the whole CLAUDE.md hierarchy, the project rules, and a git snapshot. A verifier that should see only the artifact and the spec sets `omitClaudeMd: true` and takes its inputs from the delegation prompt.
+- `omitClaudeMd` (Claude Code 2.1.271 and later) and `skills` decide what a sealed verifier actually receives. By default every custom subagent loads the whole CLAUDE.md hierarchy, the project rules, and a git snapshot. A verifier that should see only the artifact and the spec sets `omitClaudeMd: true` and takes its inputs from the delegation prompt. It still receives a path-scoped rule when it reads a file the rule covers (Claude Code 2.1.296).
 - `model` and `effort` pin the scope assumption at the top of this file. A prompt calibrated for a frontier model says so in its frontmatter rather than relying on the session default.
 - `tools` is the read-only guarantee Rule 5 and Rule 9 rely on.
 

@@ -25,4 +25,4 @@ Each line gives the standing from the ADR's own status and amendment lines, plus
 
 - [0009](./0009-pivot-to-plugin-bundle.md): Pivot to a plugin bundle, where superpowers does the work and sidekick adds what it lacks. Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002, and parks the programmes of ADR-0006, ADR-0007, and ADR-0008. Amended by #119, #132, and #142.
 - [0010](./0010-extensions-attach-through-skill-hooks.md): Extensions attach to superpowers through hooks on the Skill tool. Accepted (2026-09-25). Amends ADR-0009's Consequences. Amended by #161, #177, and #188.
-- [0011](./0011-extensions-attach-to-superpowers-work-files.md): Extensions attach to superpowers' work files through hooks on Read. Accepted (2026-09-30). Amends ADR-0010's Decision 1. Amended by #160.
+- [0011](./0011-extensions-attach-to-superpowers-work-files.md): Extensions attach to superpowers' work files through hooks on Read. Accepted (2026-09-30). Amends ADR-0010's Decision 1. Amended by #160 and #186.
