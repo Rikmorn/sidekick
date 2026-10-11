@@ -14,10 +14,13 @@ import {
   ISSUE_LIMIT,
   milestoneCounts,
   PmError,
+  parseDiscovery,
   parseGhVersion,
   parseIssues,
+  parseMilestones,
   parseOrigin,
   parseRepoIssuesPage,
+  parseStatusField,
   type Runner,
   runnerKey,
   touchedAt,
@@ -542,5 +545,80 @@ describe('fetchOpenIssues', () => {
       })),
     );
     expect(() => parseIssues(many)).toThrow(PmError);
+  });
+});
+
+describe('gh output that does not match its schema', () => {
+  test('a malformed discovery is a PmError with exit 1', () => {
+    const bad = { viewer: { login: 7 }, repository: null };
+    expect(() => parseDiscovery(bad)).toThrow(PmError);
+    expect(() => parseDiscovery(bad)).toThrow(/discovery/);
+    try {
+      parseDiscovery(bad);
+    } catch (e) {
+      expect(e instanceof PmError && e.exit).toBe(1);
+    }
+  });
+  test('a malformed status field is a PmError', () => {
+    expect(() => parseStatusField({ user: { projectV2: null } })).toThrow(
+      PmError,
+    );
+  });
+  test('a malformed issues page is a PmError, not a crash later', () => {
+    const bad = rawPage([{ number: 'seven' }]);
+    expect(() => parseRepoIssuesPage(bad, PROJECT_ID)).toThrow(PmError);
+    expect(() => parseRepoIssuesPage(bad, PROJECT_ID)).toThrow(/issues page/);
+  });
+  test('malformed milestones are a PmError', () => {
+    expect(() => parseMilestones('{"message":"Not Found"}')).toThrow(PmError);
+    expect(() => parseMilestones('[{"number":"one"}]')).toThrow(PmError);
+  });
+  test('malformed issues are a PmError', () => {
+    expect(() => parseIssues('{"message":"Not Found"}')).toThrow(PmError);
+    expect(() => parseIssues('[{"number":1}]')).toThrow(PmError);
+  });
+  test('a GraphQL envelope whose errors is not a list is a PmError', () => {
+    const run = fixtureRunner({
+      'gh api graphql -f query=query Discovery -f owner=x -f name=y': {
+        code: 0,
+        stdout: '{"errors":"not a list"}',
+        stderr: '',
+      },
+    });
+    expect(() => fetchDiscovery(run, '/', 'x', 'y')).toThrow(
+      /unexpected GraphQL response/,
+    );
+  });
+});
+
+describe('what the schemas accept', () => {
+  test('an extra key on an issue node still parses', () => {
+    const page = rawPage([rawIssue(1, [], false, { somethingNew: true })]);
+    expect(parseRepoIssuesPage(page, PROJECT_ID).issues).toHaveLength(1);
+  });
+  test('a Status value of {} or null is a card with a null status', () => {
+    for (const value of [{}, null]) {
+      const card = { ...rawCard('PVTI_1', PROJECT_ID, null) };
+      card.fieldValueByName = value;
+      const { issues } = parseRepoIssuesPage(
+        rawPage([rawIssue(1, [card])]),
+        PROJECT_ID,
+      );
+      expect(issues[0].card?.status).toBeNull();
+    }
+  });
+  test('a close reason beyond COMPLETED and NOT_PLANNED parses', () => {
+    const { issues } = parseRepoIssuesPage(
+      rawPage([
+        rawIssue(1, [], false, { state: 'CLOSED', stateReason: 'DUPLICATE' }),
+      ]),
+      PROJECT_ID,
+    );
+    expect(issues[0].stateReason).toBe('DUPLICATE');
+  });
+  test('a repository that is null has no boards', () => {
+    expect(
+      parseDiscovery({ viewer: { login: 'me' }, repository: null }).boards,
+    ).toEqual([]);
   });
 });

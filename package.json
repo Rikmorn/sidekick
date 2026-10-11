@@ -31,5 +31,8 @@
   "trustedDependencies": [
     "@biomejs/biome",
     "@vvago/vale"
-  ]
+  ],
+  "dependencies": {
+    "valibot": "1.5.0"
+  }
 }

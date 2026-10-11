@@ -3,7 +3,9 @@
  * the GraphQL documents, and pure parsers from their output to the shapes
  * the seat reasons about. Nothing here writes to GitHub.
  */
+
 import { spawnSync } from 'node:child_process';
+import * as v from 'valibot';
 
 export interface RunResult {
   code: number;
@@ -197,6 +199,26 @@ export const ISSUE_LIMIT = 500;
 
 type Var = ['-f' | '-F', string];
 
+const GqlEnvelope = v.object({
+  data: v.optional(v.unknown()),
+  errors: v.optional(v.array(v.object({ message: v.string() }))),
+});
+
+function checked<S extends v.GenericSchema>(
+  schema: S,
+  value: unknown,
+  what: string,
+): v.InferOutput<S> {
+  const result = v.safeParse(schema, value);
+  if (!result.success) {
+    throw new PmError(
+      1,
+      `gh returned an unexpected ${what}: ${v.summarize(result.issues)}`,
+    );
+  }
+  return result.output;
+}
+
 function gql(run: Runner, cwd: string, doc: string, vars: Var[]): unknown {
   const args = ['api', 'graphql', '-f', `query=${doc}`];
   for (const [flag, kv] of vars) args.push(flag, kv);
@@ -204,10 +226,7 @@ function gql(run: Runner, cwd: string, doc: string, vars: Var[]): unknown {
   if (r.code !== 0) {
     throw new PmError(1, r.stderr.trim() || 'gh api graphql failed');
   }
-  const parsed = JSON.parse(r.stdout) as {
-    data?: unknown;
-    errors?: Array<{ message: string }>;
-  };
+  const parsed = checked(GqlEnvelope, JSON.parse(r.stdout), 'GraphQL response');
   if (parsed.errors?.length) throw new PmError(1, parsed.errors[0].message);
   return parsed.data;
 }
@@ -243,27 +262,31 @@ export function fetchScopeHeaders(run: Runner, cwd: string): string {
   return rest(run, cwd, ['api', '-i', 'user']);
 }
 
-interface DiscoveryData {
-  viewer: { login: string };
-  repository: {
-    projectsV2: {
-      nodes: Array<{
-        number: number;
-        title: string;
-        closed: boolean;
-        url: string;
-        id: string;
-        owner: { login?: string };
-      }>;
-    };
-  } | null;
-}
+const DiscoveryData = v.object({
+  viewer: v.object({ login: v.string() }),
+  repository: v.nullable(
+    v.object({
+      projectsV2: v.object({
+        nodes: v.array(
+          v.object({
+            number: v.number(),
+            title: v.string(),
+            closed: v.boolean(),
+            url: v.string(),
+            id: v.string(),
+            owner: v.object({ login: v.optional(v.string()) }),
+          }),
+        ),
+      }),
+    }),
+  ),
+});
 
 export function parseDiscovery(data: unknown): {
   viewer: string;
   boards: LinkedBoard[];
 } {
-  const d = data as DiscoveryData;
+  const d = checked(DiscoveryData, data, 'discovery');
   const nodes = d.repository?.projectsV2.nodes ?? [];
   return {
     viewer: d.viewer.login,
@@ -292,20 +315,22 @@ export function fetchDiscovery(
   );
 }
 
-interface FieldData {
-  user: {
-    projectV2: {
-      id: string;
-      title: string;
-      url: string;
-      createdAt: string;
-      field: {
-        id: string;
-        options: Array<{ id: string; name: string }>;
-      } | null;
-    };
-  };
-}
+const FieldData = v.object({
+  user: v.object({
+    projectV2: v.object({
+      id: v.string(),
+      title: v.string(),
+      url: v.string(),
+      createdAt: v.string(),
+      field: v.nullable(
+        v.object({
+          id: v.string(),
+          options: v.array(v.object({ id: v.string(), name: v.string() })),
+        }),
+      ),
+    }),
+  }),
+});
 
 export function parseStatusField(data: unknown): {
   id: string;
@@ -314,7 +339,7 @@ export function parseStatusField(data: unknown): {
   createdAt: string;
   statusField: StatusField | null;
 } {
-  const p = (data as FieldData).user.projectV2;
+  const p = checked(FieldData, data, 'status field').user.projectV2;
   const statusField = p.field
     ? {
         id: p.field.id,
@@ -344,34 +369,48 @@ export function fetchStatusField(
   );
 }
 
-interface IssuesData {
-  repository: {
-    issues: {
-      pageInfo: { hasNextPage: boolean; endCursor: string | null };
-      nodes: Array<{
-        number: number;
-        title: string;
-        state: 'OPEN' | 'CLOSED';
-        stateReason: string | null;
-        closedAt: string | null;
-        updatedAt: string;
-        url: string;
-        milestone: { title: string } | null;
-        labels: { nodes: Array<{ name: string }> };
-        assignees: { nodes: Array<{ login: string }> };
-        projectItems: {
-          pageInfo: { hasNextPage: boolean };
-          nodes: Array<{
-            id: string;
-            isArchived: boolean;
-            project: { id: string };
-            fieldValueByName: { name?: string; updatedAt?: string } | null;
-          }>;
-        };
-      }>;
-    };
-  };
-}
+const IssuesData = v.object({
+  repository: v.object({
+    issues: v.object({
+      pageInfo: v.object({
+        hasNextPage: v.boolean(),
+        endCursor: v.nullable(v.string()),
+      }),
+      nodes: v.array(
+        v.object({
+          number: v.number(),
+          title: v.string(),
+          state: v.picklist(['OPEN', 'CLOSED']),
+          stateReason: v.nullable(v.string()),
+          closedAt: v.nullable(v.string()),
+          updatedAt: v.string(),
+          url: v.string(),
+          milestone: v.nullable(v.object({ title: v.string() })),
+          labels: v.object({ nodes: v.array(v.object({ name: v.string() })) }),
+          assignees: v.object({
+            nodes: v.array(v.object({ login: v.string() })),
+          }),
+          projectItems: v.object({
+            pageInfo: v.object({ hasNextPage: v.boolean() }),
+            nodes: v.array(
+              v.object({
+                id: v.string(),
+                isArchived: v.boolean(),
+                project: v.object({ id: v.string() }),
+                fieldValueByName: v.nullable(
+                  v.object({
+                    name: v.optional(v.string()),
+                    updatedAt: v.optional(v.string()),
+                  }),
+                ),
+              }),
+            ),
+          }),
+        }),
+      ),
+    }),
+  }),
+});
 
 export interface RepoIssuesPage {
   issues: RepoIssue[];
@@ -390,7 +429,7 @@ export function parseRepoIssuesPage(
   data: unknown,
   projectId: string,
 ): RepoIssuesPage {
-  const page = (data as IssuesData).repository.issues;
+  const page = checked(IssuesData, data, 'issues page').repository.issues;
   const issues = page.nodes.map((n): RepoIssue => {
     const hit = n.projectItems.nodes.find((c) => c.project.id === projectId);
     if (!hit && n.projectItems.pageInfo.hasNextPage) {
@@ -478,28 +517,32 @@ export function milestoneCounts(
   return { open, closed: mine.length - open };
 }
 
-interface RestMilestone {
-  number: number;
-  title: string;
-  description: string | null;
-  due_on: string | null;
-  open_issues: number;
-  closed_issues: number;
-  state: 'open' | 'closed';
-  created_at: string;
-}
+const RestMilestones = v.array(
+  v.object({
+    number: v.number(),
+    title: v.string(),
+    description: v.nullable(v.string()),
+    due_on: v.nullable(v.string()),
+    open_issues: v.number(),
+    closed_issues: v.number(),
+    state: v.picklist(['open', 'closed']),
+    created_at: v.string(),
+  }),
+);
 
 export function parseMilestones(json: string): Milestone[] {
-  return (JSON.parse(json) as RestMilestone[]).map((m) => ({
-    number: m.number,
-    title: m.title,
-    description: m.description ?? '',
-    due_on: m.due_on,
-    open_issues: m.open_issues,
-    closed_issues: m.closed_issues,
-    state: m.state,
-    created_at: m.created_at,
-  }));
+  return checked(RestMilestones, JSON.parse(json), 'milestone list').map(
+    (m) => ({
+      number: m.number,
+      title: m.title,
+      description: m.description ?? '',
+      due_on: m.due_on,
+      open_issues: m.open_issues,
+      closed_issues: m.closed_issues,
+      state: m.state,
+      created_at: m.created_at,
+    }),
+  );
 }
 
 export function fetchMilestones(
@@ -517,17 +560,19 @@ export function fetchMilestones(
   );
 }
 
-interface CliIssue {
-  number: number;
-  title: string;
-  labels: Array<{ name: string }>;
-  body: string;
-  milestone: { title: string } | null;
-  updatedAt: string;
-}
+const CliIssues = v.array(
+  v.object({
+    number: v.number(),
+    title: v.string(),
+    labels: v.array(v.object({ name: v.string() })),
+    body: v.string(),
+    milestone: v.nullable(v.object({ title: v.string() })),
+    updatedAt: v.string(),
+  }),
+);
 
 export function parseIssues(json: string): Issue[] {
-  const list = JSON.parse(json) as CliIssue[];
+  const list = checked(CliIssues, JSON.parse(json), 'issue list');
   if (list.length >= ISSUE_LIMIT) {
     throw new PmError(
       1,

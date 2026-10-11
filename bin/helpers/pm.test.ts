@@ -289,7 +289,7 @@ describe('discover', () => {
     map[
       'gh api graphql -f query=query StatusField -f login=Rikmorn -F number=2'
     ] =
-      '{"data":{"user":{"projectV2":{"id":"x","title":"sidekick","url":"u","field":null}}}}';
+      '{"data":{"user":{"projectV2":{"id":"x","title":"sidekick","url":"u","createdAt":"2026-09-01T18:12:09Z","field":null}}}}';
     const info = discover(fixtureRunner(map), '/');
     expect(info.tracked).toBe(true);
     expect(info.status_field).toBeNull();
