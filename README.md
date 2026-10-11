@@ -73,7 +73,7 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 | `plugin/rules/` | The portable rules: clean code, TypeScript, language, working standards, guidance authoring, PM conventions, agent-prompt authoring |
 | `plugin/skills/` | The reference skill `sidekick`, the PM skills `sk-orient`, `sk-track`, and `sk-milestone`, the execution skills `sk-execute` and `sk-worker`, and the design skill `sk-design` |
 | `plugin/agents/` | The sealed reviewer `sk-holistic-reviewer`, which `sk-milestone` dispatches to review a milestone's scope at Opening and its release at the close |
-| `plugin/hooks/` | The session-start hook that prints the board's pickup in a tracked repo, the Skill-tool hook that points the model at `sk-design` when brainstorming loads and gives `writing-plans` the plan stance and the handoff of `sk-execute`, and the Read hook that gives superpowers' reviewers sidekick's reviewer lines |
+| `plugin/hooks/` | The session-start hook prints the board's pickup in a tracked repo. The Skill-tool hook points the model at `sk-design` when brainstorming loads. It gives `writing-plans` the plan stance and the handoff of `sk-execute`. The Read hook gives superpowers' reviewers, and the release check's, sidekick's reviewer lines |
 | `plugin/bin/sidekick` | The executable, built from `bin/cli.ts` |
 | `.claude-plugin/marketplace.json` | The one-plugin marketplace this repo is |
 
