@@ -10,7 +10,7 @@ The E19 pilot ran `/sk-design --research` twice on a real ticket (`epic-2-procge
 - ADR-0002 positioned sk-design as the replacement for superpowers **brainstorming**. Brainstorming is dialogic; sk-design kept the *artifact* and lost the *dialogue*. The operator: *"research is there so we can have an informed discussion"* — and that discussion currently doesn't happen.
 - Compounding it: sk-explorer's `complexity` is a **silent gate** (low skips research, medium/high run it) and is **non-deterministic** (high/medium/high on the same ticket across three runs). The operator wants complexity to be a **signal to them** ("a lot here / little here") that informs whether to dig in or move fast — not a hidden routing decision.
 
-Evidence: [`../backlog/platform-primitives-scoping.md`](../backlog/platform-primitives-scoping.md) Pilot findings **F3, F4, F5, F9**.
+Evidence: [`../backlog/platform-primitives-scoping.md`](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/backlog/platform-primitives-scoping.md) Pilot findings **F3, F4, F5, F9**.
 
 ## Decision (accepted)
 
@@ -56,4 +56,4 @@ The two load-bearing calls are made (default = dialogue; mid-conversation budget
 
 ## Links
 
-[`0002-platform-primitives-scoping.md`](./0002-platform-primitives-scoping.md) (this is its pilot's downstream decision) · [`../backlog/platform-primitives-scoping.md`](../backlog/platform-primitives-scoping.md) (Pilot findings F3/F4/F5/F9) · [`../EPIC.md`](../EPIC.md) (E23; gates E3; relates E8/E11/E18)
+[`0002-platform-primitives-scoping.md`](./0002-platform-primitives-scoping.md) (this is its pilot's downstream decision) · [`../backlog/platform-primitives-scoping.md`](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/backlog/platform-primitives-scoping.md) (Pilot findings F3/F4/F5/F9) · [`../EPIC.md`](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/work/EPIC.md) (E23; gates E3; relates E8/E11/E18)

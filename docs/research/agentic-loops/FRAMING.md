@@ -3,7 +3,7 @@
 **Status:** Pre-research framing (2026-06-07). Captures what we already concluded in discussion + the open questions + the disconfirming angles to plant, *before* the deep-research sweep. Relationship: complements [`../orchestration/`](../orchestration/REPORT.md) (that track was multi-vs-single-agent + the format tax); **this track is the LOOP as the unit of work** — when an outer loop earns its keep, its gates, its convergence, and design-as-workflow.
 
 ## Why this research
-Triggered by Boris Cherny's "I just write loops that prompt Claude" + the realization that Claude Code now ships the loop primitives ([`../platform-landscape.md`](../platform-landscape.md)). We've reasoned a lot already this session; this run grounds, expands, and *challenges* that reasoning against the literature — even where it repeats what we already believe (explicitly requested).
+Triggered by Boris Cherny's "I just write loops that prompt Claude" + the realization that Claude Code now ships the loop primitives ([`../platform-landscape.md`](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/research/platform-landscape.md)). We've reasoned a lot already this session; this run grounds, expands, and *challenges* that reasoning against the literature — even where it repeats what we already believe (explicitly requested).
 
 ## What we currently believe (to confirm / challenge / enrich)
 1. The **inner** agent loop (act→observe→act within one invocation) already exists for free. The **outer** written loop is a different thing.

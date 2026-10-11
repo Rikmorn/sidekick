@@ -1,6 +1,6 @@
 # Platform Coupling — Research Framing
 
-**Status:** Pre-research framing (2026-06-10). Captures the E2 discussion state + open questions + disconfirming angles, *before* the deep-research sweep. Relationship: operationalizes the open question left by [`../platform-landscape.md`](../platform-landscape.md) ("whose loop?") that [`../agentic-loops/REPORT.md`](../agentic-loops/REPORT.md) explicitly does not answer — that track settled *when a loop pays*; this one settles *whether to rent the loop substrate*.
+**Status:** Pre-research framing (2026-06-10). Captures the E2 discussion state + open questions + disconfirming angles, *before* the deep-research sweep. Relationship: operationalizes the open question left by [`../platform-landscape.md`](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/research/platform-landscape.md) ("whose loop?") that [`../agentic-loops/REPORT.md`](../agentic-loops/REPORT.md) explicitly does not answer — that track settled *when a loop pays*; this one settles *whether to rent the loop substrate*.
 
 ## Why this research
 

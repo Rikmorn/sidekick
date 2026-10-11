@@ -14,7 +14,7 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 | `plugin/bin/sidekick` | The built executable, committed. Rebuild it with `bun run build` in every commit that changes `bin/`; CI rebuilds with the bun its last line records and fails on any difference. Its co-located `package.json` declares `"type": "module"` to match the build format. Without it, Node takes the type from the nearest `package.json` up the tree, and `~/.claude/package.json` declares commonjs, so the installed CLI exits 0 silently |
 | `bin/cli.ts`, `bin/helpers/` | The executable's TypeScript source and its tests (`*.test.ts` beside them) |
 | `.vale.ini`, `.vale/styles/Sidekick/` | The house prose style that `bun run prose` checks Markdown against |
-| `docs/` | Records and steering docs; `docs/README.md` is the taxonomy |
+| `docs/` | Records and steering docs; `docs/README.md` lists what sidekick adds to the docs layout |
 
 ## Working here
 
