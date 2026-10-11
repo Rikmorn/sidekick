@@ -1,10 +1,10 @@
-> Research record for #186, conducted 2026-10-11 by a research subagent and spot-checked by the orchestrator. Frozen at birth, per `docs/README.md` §research.
+> Research record for #186, conducted 2026-10-11 by a research subagent and spot-checked by the orchestrator. A record, taking only the edits `sk-pm-conventions.md` §Placement test (tense) lists, per `plugin/skills/sidekick/references/docs-layout.md` §research/.
 
 # Prior art for a milestone-level holistic release check
 
-Provenance: a research subagent gathered the sources on 2026-10-11 for #186. Each source carries the subagent's own label: [fetched] read in the source; [secondary] read in a page quoting the source; [snippet] search summary only; [recalled] model knowledge, unconfirmed.
+Provenance: a research subagent gathered the sources on 2026-10-11 for #186. Each source carries the subagent's own label. [fetched] means read in the source. [secondary] means read in a page quoting the source. [snippet] means a search summary only. [recalled] means model knowledge, unconfirmed.
 
-On the same day the orchestrator re-read five quotes at their source and found each as quoted: NoLiMa (arXiv 2502.05167), DocPrism (arXiv 2511.00215), SRE book ch. 32, Huang et al. (arXiv 2310.01798), and ChatEval (arXiv 2308.07201). For ChatEval it read the abstract and §4.1, which give 60.0% accuracy against a single-agent baseline of 53.8% on one benchmark. Every other label stands as the subagent reported it.
+On the same day the orchestrator re-read five quotes at their source and found each as quoted. They are NoLiMa (arXiv 2502.05167), DocPrism (arXiv 2511.00215), SRE book ch. 32, Huang et al. (arXiv 2310.01798), and ChatEval (arXiv 2308.07201). For ChatEval it read the abstract and §4.1. Table 3 there reports 60.0% accuracy, against a single-agent baseline of 53.8%. The benchmark is FairEval, with ChatGPT. Every other label stands as the subagent reported it.
 
 **Bottom line.** Established practice nearly always checks at two points: once early against the plan, and once late against a frozen candidate. A late check is advisory, but the release owner can block on it. Strong evidence argues against heavyweight external approval gates. Thinner evidence supports the specific techniques: premortems, perspective-based reading, and LLM consistency review. Most of the evidence comes from large organisations with separate teams, and the LLM evidence comes from benchmarks rather than prose-guidance review.
 
@@ -64,7 +64,7 @@ Implication: splitting by dimension is justified mainly by smaller focused conte
 - DocPrism: "Plain use of LLMs for this task yields unacceptably high inconsistency flag rates… over 90% of functions are flagged"; filtering "from 98% to 14%". https://arxiv.org/abs/2511.00215 [fetched]
 - Fukuda et al.: LLMs "can be utilized to identify inconsistencies" in design docs; no precision figure. https://arxiv.org/abs/2509.09975 [fetched]
 - FindBugs dashboard "saw little use because a bug dashboard was outside the developers' usual workflow" (Sadowski) [fetched].
-- The FSR is not a pass/fail exercise, and its objective is not "to find every remaining security vulnerability"; "If the FSR finds a pattern of remaining vulnerabilities, the proper response is not just to fix the vulnerabilities found, but to revisit the earlier phase." (Lipner) [fetched]
+- Lipner says the FSR is more than a pass/fail exercise, and that its objective is not "to find every remaining security vulnerability"; "If the FSR finds a pattern of remaining vulnerabilities, the proper response is not just to fix the vulnerabilities found, but to revisit the earlier phase." (Lipner) [fetched]
 - Fagan 1976: categorising inspection data "for process analysis" is "an important factor in attaining the improvements". https://www.ifsq.org/work-fagan-1976.html [fetched]
 
 ## Counterarguments
