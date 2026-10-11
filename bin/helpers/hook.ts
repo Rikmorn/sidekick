@@ -55,7 +55,7 @@ const DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 // superpowers' review-package script names this file; a rename silences the hook.
 const REVIEW_PACKAGE =
   /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
-// sk-milestone's release check names its package to match REVIEW_PACKAGE; this narrower match is tested first.
+// sk-milestone's release check names its package to match REVIEW_PACKAGE.
 const RELEASE_CHECK_PACKAGE =
   /(^|\/)\.superpowers\/sdd\/release-check-[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
 

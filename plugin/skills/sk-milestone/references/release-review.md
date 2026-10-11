@@ -35,7 +35,7 @@ Run the repo's gates first, at `HEAD`: the ones its guidance names, in `AGENTS.m
 
 Then write two files to `.superpowers/sdd/release-check-<version>/` inside the repo, and nowhere else, so the reviewers read them from their working directory. When `.superpowers/sdd/.gitignore` is absent, write it holding `*`, as superpowers' own workspace script does. Then confirm git ignores the directory: `git check-ignore -q <dir>` exits 0 when it does.
 
-**`review-<base>..<head>.diff`** names both ends of the range by their short hashes, as in `.superpowers/sdd/release-check-1.2.0/review-4e1f0a2..9c7b3d5.diff`. sidekick's Read hook knows that name, so a reviewer reading the file gets sidekick's claims check from the hook's one source. Another name loses it without an error. The file holds the range's commits, its file stat, and its diff with ten lines of context, so a reviewer sees what each change replaced. Leave out generated output, lockfiles, and test fixtures, one `':(exclude)<path>'` pathspec each:
+**`review-<base>..<head>.diff`** names both ends of the range by their short hashes, as in `.superpowers/sdd/release-check-1.2.0/review-4e1f0a2..9c7b3d5.diff`. sidekick's Read hook knows that name, so a reviewer reading the file gets sidekick's claims check from the hook's one source. It also gets the Comments paragraph when the diff touches files `sk-clean-code.md` covers. Another name loses it without an error. The file holds the range's commits, its file stat, and its diff with ten lines of context, so a reviewer sees what each change replaced. Leave out generated output, lockfiles, and test fixtures, one `':(exclude)<path>'` pathspec each:
 
 ```
 git log --oneline <base>..<head>
