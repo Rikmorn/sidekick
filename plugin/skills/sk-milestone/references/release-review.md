@@ -18,7 +18,14 @@ gh api 'repos/<owner>/<repo>/milestones?state=closed&per_page=100' --jq 'max_by(
 git rev-list -1 --before='<closed_at>' HEAD
 ```
 
-When no milestone has closed, this milestone is the first, and the range is the whole history. Its base is git's empty tree, `git hash-object -t tree /dev/null`, whose hash stands in for a commit's.
+When no milestone has closed, this milestone is the first. Start from the last commit before this milestone was created:
+
+```
+gh api repos/<owner>/<repo>/milestones/<n> --jq .created_at
+git rev-list -1 --before='<created_at>' HEAD
+```
+
+When `git rev-list` prints nothing, no commit precedes the milestone, because the repo was born with it. The base is then git's empty tree, `git hash-object -t tree /dev/null`, whose hash stands in for a commit's.
 
 Every open milestone's landed work is in the range, because it ships with this release. The package lists those milestones' plans, so the reviewers read that work as in progress.
 
@@ -26,9 +33,9 @@ Every open milestone's landed work is in the range, because it ships with this r
 
 Run the repo's gates first, at `HEAD`: the ones its guidance names, in `AGENTS.md`, `CLAUDE.md`, or a doc they name. The reviewers have no shell, so the package carries what the gates said.
 
-Then write two files to `.superpowers/sdd/release-check-<version>/`, on a path git ignores or outside the repo. Outside the repo, keep that `.superpowers/sdd/<dir>/` tail, since sidekick's Read hook matches on it. `git check-ignore -q <path>` exits 0 when git ignores a path. Where git does not, write a `.gitignore` holding `*` into `.superpowers/sdd/`, which ignores the directory and itself.
+Then write two files to `.superpowers/sdd/release-check-<version>/` inside the repo, and nowhere else, so the reviewers read them from their working directory. When `.superpowers/sdd/.gitignore` is absent, write it holding `*`, as superpowers' own workspace script does. Then confirm git ignores the directory: `git check-ignore -q <dir>` exits 0 when it does.
 
-**`review-<base>..<head>.diff`** names both ends of the range by their short hashes, as in `.superpowers/sdd/release-check-1.2.0/review-4e1f0a2..9c7b3d5.diff`. The hook knows that name, so a reviewer reading the file gets sidekick's claims check from the hook's one source. Another name loses it without an error. The file holds the range's commits, its file stat, and its diff with ten lines of context, so a reviewer sees what each change replaced. Leave out generated output, lockfiles, and test fixtures, one `':(exclude)<path>'` pathspec each:
+**`review-<base>..<head>.diff`** names both ends of the range by their short hashes, as in `.superpowers/sdd/release-check-1.2.0/review-4e1f0a2..9c7b3d5.diff`. sidekick's Read hook knows that name, so a reviewer reading the file gets sidekick's claims check from the hook's one source. Another name loses it without an error. The file holds the range's commits, its file stat, and its diff with ten lines of context, so a reviewer sees what each change replaced. Leave out generated output, lockfiles, and test fixtures, one `':(exclude)<path>'` pathspec each:
 
 ```
 git log --oneline <base>..<head>
@@ -36,7 +43,7 @@ git diff --stat <base>..<head> -- . ':(exclude)<path>'
 git diff -U10 <base>..<head> -- . ':(exclude)<path>'
 ```
 
-For a first milestone, list the commits with `git log --oneline <head>`, since the empty tree is no commit.
+When the base is the empty tree, list the commits with `git log --oneline <head>`, since the empty tree is no commit.
 
 **`milestone.md`** holds what the reviewers need and the working tree does not show:
 
