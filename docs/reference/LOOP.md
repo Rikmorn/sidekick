@@ -33,7 +33,7 @@ Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It ru
 
 ### The Read hook
 
-Fires on `PostToolUse` for the Read tool, from `plugin/hooks/hooks.json`. The wrapper checks the input in bash, and a read whose content lacks the review-package tokens ends there. A file that mentions them, such as a plan or a test, starts `node`, and the CLI decides from the path. When the file is a superpowers review package, `review-<base>..<head>.diff` in a plan's workspace under `.superpowers/sdd/`, it runs `node <plugin>/bin/sidekick hook post-read`. That adds sidekick's reviewer lines to the reviewer's context. The reviewer reproduces the checks the implementer claims. It also confirms each fact the diff states at its source, and searches for the stale copies of each fact the diff changes. It also holds the comments the diff adds to `sk-clean-code.md` §Comments, which the hook quotes from the plugin when the package shows files that rule covers. The reviewers that `subagent-driven-development` and `executing-plans` dispatch read a package, whether for a task, a batch, a fix round, or the whole branch. A standalone `requesting-code-review` run, and a reviewer whose diff file is missing, never open one. The hook fires inside subagents, and wherever the plugin is enabled. ADR-0011 records the mechanism.
+Fires on `PostToolUse` for the Read tool, from `plugin/hooks/hooks.json`. The wrapper checks the input in bash, and a read whose content lacks the review-package tokens ends there. A file that mentions them, such as a plan or a test, starts `node`, and the CLI decides from the path. When the file is a superpowers review package, `review-<base>..<head>.diff` in a plan's workspace under `.superpowers/sdd/`, it runs `node <plugin>/bin/sidekick hook post-read`. That adds sidekick's reviewer lines to the reviewer's context. The reviewer reproduces the checks the implementer claims. It also confirms each fact the diff states at its source, and searches for the stale copies of each fact the diff changes. It also holds the comments the diff adds to `sk-clean-code.md` §Comments, which the hook quotes from the plugin when the package shows files that rule covers. The reviewers that `subagent-driven-development` and `executing-plans` dispatch read a package, whether for a task, a batch, a fix round, or the whole branch. So do the reviewers of `sk-milestone`'s release check, which read the package it builds. A standalone `requesting-code-review` run, and a reviewer whose diff file is missing, never open one. The hook fires inside subagents, and wherever the plugin is enabled. ADR-0011 records the mechanism.
 
 ### `sk-orient`
 
@@ -62,19 +62,22 @@ It pauses only at the record question, a judgment the skill states rather than a
 
 ### `sk-milestone`
 
-**Opening**: agrees the outcome sentence with you, then creates the milestone. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, and proposes them. It groups the issues into plans of one session each, records them in the description in run order, and posts the first status update. Then it orients. Pauses on the outcome, on every seed, and on the plans.
+**Opening**: agrees the outcome sentence with you, then creates the milestone. It scans `backlog` issues for conditions that now hold, and designs marked `ready for PM`, and proposes them. It groups the issues into plans of one session each, records them in the description in run order, and posts the first status update. Once the grouping is drafted, a sealed reviewer reads the scope, and you rule on its review and the grouping together. Then it orients. Pauses on the outcome, on every seed, and on the plans with that review.
 
 **Closing**:
 
 - `sidekick pm gate` and `sidekick pm lint` first, and every open issue dispositioned.
 - The audit against the outcome sentence; each gap becomes an issue or a judgment. It also lists the issues added after Opening.
+- A check of the release as a whole: three sealed reviewers read everything the release ships. Each confirmed finding is fixed before the release. A finding too large for the session is posted `AT_RISK`, and you choose an added plan or a back-out.
 - Local preparation, left uncommitted: the learning record if the bar holds, and the deletions of the design folders whose issues have all closed. Then the repo's own preparation, such as the version bump, with the gates and draft notes.
-- A confirmation, carrying the learning-record judgment and the diff. Nothing outward runs without a yes.
+- A confirmation, carrying the learning-record judgment, the diff, and the check's findings. Nothing outward runs without a yes.
 - On yes, the release's publication: one commit of everything prepared and its push, then the tag and the GitHub Release. For sidekick itself, `AGENTS.md` §Releasing holds the preparation and publication steps.
 - A `COMPLETE` status update, while the milestone is still open.
 - The milestone closed, and a "Resolved in" comment on each `COMPLETED` issue.
 
-Pauses at the confirmation.
+Pauses at the confirmation, at an `AT_RISK` finding, and at a decision that leaves work out of the release.
+
+The reviewer is `sk-holistic-reviewer`, a sealed agent in `plugin/agents/` that `sk-milestone` dispatches as `sidekick:sk-holistic-reviewer`. It reviews the scope at Opening and the release at the close, through `references/release-review.md` and `references/scope-review.md` in the skill.
 
 ### `sk-design`
 

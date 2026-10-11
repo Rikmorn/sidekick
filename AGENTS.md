@@ -30,7 +30,7 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 
 ## Releasing
 
-`sk-milestone` §Closing runs the close, and this section is sidekick's release inside it. The skill writes the learning record and deletes the design folders before the ask. After the release, it posts the closing status update and closes the milestone. Start the closing session with `claude --plugin-dir ./plugin`, so the close runs the skills it ships.
+`sk-milestone` §Closing runs the close, and this section is sidekick's release inside it. The skill checks the release as a whole before the ask, then writes the learning record and deletes the design folders. After the release, it posts the closing status update and closes the milestone. Start the closing session with `claude --plugin-dir ./plugin`, so the close runs the skills and the agent it ships.
 
 Preparation runs before the ask and changes nothing but the working tree:
 
