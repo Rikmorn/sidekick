@@ -1,6 +1,6 @@
 # Using sidekick day to day
 
-How the loop runs, session by session, and how each step lands on GitHub. The repo's `README.md` says what sidekick is and how it installs, and `LOOP.md` says what each skill does when it runs. This page says how to work with it. Each step names the skill that holds its procedure, and the skill's text is the source. Where a piece has not shipped yet, this page says so. The milestone list on `Rikmorn/sidekick` is the roadmap, and each issue there is the brief for its piece.
+How the loop runs, session by session, and how each step lands on GitHub. The repo's `README.md` says what sidekick is and how it installs, and `LOOP.md` says what each skill does when it runs. This page says how to work with sidekick. Each step names the skill that holds its procedure, and the skill's text is the source. Where a piece has not shipped yet, this page says so. The milestone list on `Rikmorn/sidekick` is the roadmap, and each issue there is the brief for its piece.
 
 ## The shape
 

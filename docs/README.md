@@ -4,7 +4,7 @@ Each folder here works as `plugin/skills/sidekick/references/docs-layout.md` say
 
 ## Legacy research topics
 
-Topics written before 2026-10-10 centre on a `REPORT.md`, often with a `FRAMING.md` and a sources file, rather than dated reports. Each topic's `README.md` indexes its files.
+Topics from the research programme that ADR-0009 parked centre on a `REPORT.md`, often with a `FRAMING.md` and a sources file, rather than dated reports. Each topic's `README.md` indexes its files.
 
 ## Retired folders
 

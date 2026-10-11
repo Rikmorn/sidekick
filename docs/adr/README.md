@@ -4,7 +4,7 @@ These records hold the decisions that bind sidekick, the plugin bundle, after th
 
 ## Reading the work-item IDs
 
-ADRs 0001 to 0003 cite work items by their historical `E#` IDs, such as `E13`. ADRs 0004 and 0005 cite v2 `{phase}.{item}` IDs. Both resolve through the [EPIC crosswalk](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/work/EPIC.md#crosswalk--legacy-e--phaseitem), kept at that commit. In ADR-0004 and ADR-0005, v2 IDs differ from the current ones. Each ADR's editorial pointer gives the renumbering.
+ADRs 0001 to 0003 cite work items by their historical `E#` IDs, such as `E13`. ADRs 0004 and 0005 cite v2 `{phase}.{item}` IDs. Both resolve through the [EPIC crosswalk](https://github.com/Rikmorn/sidekick/blob/dce44d75b669cdd824e30c928df1bbcac983a700/docs/work/EPIC.md#crosswalk--legacy-e--phaseitem), kept at that commit. EPIC re-baseline 3 (2026-07-03) renumbered Phase 3 after both were accepted, and the editorial pointer at the top of each ADR gives the renumbering.
 
 ## Index
 
