@@ -9,6 +9,7 @@ import {
   checkDesignStatus,
   checkPermalinks,
   checkResearchIndexes,
+  checkRootAbsoluteLinks,
   checkWorkingFileLinks,
   linksOf,
   targetOf,
@@ -108,6 +109,12 @@ describe('targetOf', () => {
     );
   });
 
+  it('resolves a root-absolute URL against the repo root', () => {
+    expect(targetOf('docs/a.md', '/docs/superpowers/p.md#x')).toBe(
+      'docs/superpowers/p.md',
+    );
+  });
+
   it('is null for a scheme, a same-file anchor, and an empty URL', () => {
     expect(targetOf('a.md', 'https://example.com/x')).toBeNull();
     expect(targetOf('a.md', 'mailto:me@example.com')).toBeNull();
@@ -133,6 +140,15 @@ describe('checkPermalinks', () => {
     const findings = checkPermalinks(root, ['a.md']);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ file: 'a.md', line: 3 });
+  });
+
+  it('reports a permalink whose owner and repo differ only in case', () => {
+    const root = repo({ 'docs/x.md': '# x\n' });
+    const sha = head(root);
+    write(root, {
+      'a.md': `[y](https://github.com/rikmorn/Sidekick/blob/${sha}/docs/y.md)\n`,
+    });
+    expect(checkPermalinks(root, ['a.md'])).toHaveLength(1);
   });
 
   it('ignores another repository and a GitHub issue URL', () => {
@@ -169,6 +185,24 @@ describe('checkWorkingFileLinks', () => {
         'The `docs/superpowers` folder.\n\n[n](./superpowers-notes.md)\n',
     });
     expect(checkWorkingFileLinks(root, ['docs/a.md'])).toEqual([]);
+  });
+});
+
+describe('checkRootAbsoluteLinks', () => {
+  it('reports a link starting with a single slash, and passes the rest', () => {
+    const root = tempDir();
+    write(root, {
+      'a.md': [
+        '[a](/docs/nope.md)',
+        '',
+        '[b]: /x.md',
+        '',
+        '[c](//example.com/x) [d](./ok.md) [e](https://example.com/y)',
+      ].join('\n'),
+    });
+    expect(checkRootAbsoluteLinks(root, ['a.md']).map((f) => f.line)).toEqual([
+      1, 3,
+    ]);
   });
 });
 
@@ -281,6 +315,22 @@ describe('checkDesignStatus', () => {
     expect(findings[0]?.message).toContain('Status: draft');
   });
 
+  it('ignores Status: text in a fenced block before the real line', () => {
+    const root = tempDir();
+    write(root, {
+      'docs/designs/t/design.md': [
+        '# T',
+        '',
+        '```markdown',
+        'Status: draft',
+        '```',
+        '',
+        'Status: exploring · Scale: shape',
+      ].join('\n'),
+    });
+    expect(checkDesignStatus(root, ['docs/designs/t/design.md'])).toEqual([]);
+  });
+
   it('reports a design.md without a status line', () => {
     const [root, files] = designWith('No status here.');
     const findings = checkDesignStatus(root, files);
@@ -371,6 +421,46 @@ describe('bun run check:docs', () => {
     const result = run(root);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('0002-two.md');
+  });
+
+  it('fails a permalink to a missing path', () => {
+    const root = repo({ 'docs/x.md': '# x\n' });
+    const sha = head(root);
+    write(root, { 'a.md': `[y](${PERMALINK}/${sha}/docs/y.md)\n` });
+    const result = run(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('docs/y.md');
+  });
+
+  it('fails a link into the working folder', () => {
+    const root = repo({ 'docs/a.md': '[p](./superpowers/plans/p.md)\n' });
+    const result = run(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('docs/superpowers');
+  });
+
+  it('fails a root-absolute link', () => {
+    const root = repo({ 'a.md': '[x](/docs/nope.md)\n' });
+    const result = run(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('relative');
+  });
+
+  it('fails a research file its README does not link', () => {
+    const root = repo({
+      'docs/research/t/README.md': '# t\n',
+      'docs/research/t/FRAMING.md': '# f\n',
+    });
+    const result = run(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('FRAMING.md');
+  });
+
+  it('fails a design with an invalid status', () => {
+    const root = repo({ 'docs/designs/t/design.md': '# T\n\nStatus: draft\n' });
+    const result = run(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Status: draft');
   });
 
   it('passes a repo with no Markdown file', () => {

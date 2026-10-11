@@ -20,14 +20,13 @@ const MODULES = path.resolve(
 const REMARK = path.join(MODULES, '.bin', 'remark');
 const VALIDATE_LINKS = path.join(MODULES, 'remark-validate-links', 'index.js');
 const PERMALINK =
-  /^https:\/\/github\.com\/Rikmorn\/sidekick\/(?:blob|tree)\/([^/]+)\/([^?#]*)/;
+  /^https:\/\/github\.com\/Rikmorn\/sidekick\/(?:blob|tree)\/([^/]+)\/([^?#]*)/i;
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const WORKING = 'docs/superpowers';
 const ADR_DIR = 'docs/adr';
 const ADR_FILE = /^docs\/adr\/\d{4}-[^/]+\.md$/;
 const RESEARCH_DIR = 'docs/research';
 const DESIGNS_DIR = 'docs/designs';
-const STATUS_LINE = /^Status:.*$/m;
 const VALID_STATUS =
   /^Status: (?:exploring|ready for PM|planned \(#\d+(?:, #\d+)*\))(?: · |$)/;
 
@@ -158,6 +157,21 @@ const topicsUnder = (
     return topics;
   }, new Map<string, string[]>());
 
+// The first paragraph beginning "Status:", so a fenced block or code span never counts.
+const statusLineOf = (markdown: string): string | null => {
+  const paragraph = fromMarkdown(markdown).children.find(
+    (node) =>
+      node.type === 'paragraph' &&
+      markdown
+        .slice(node.position?.start.offset ?? 0, node.position?.end.offset ?? 0)
+        .startsWith('Status:'),
+  );
+  const start = paragraph?.position?.start.offset;
+  return start === undefined
+    ? null
+    : (markdown.slice(start).split('\n')[0] ?? null);
+};
+
 export const checkAdrIndex: Check = (root, files) => {
   const adrs = files.filter((file) => ADR_FILE.test(file));
   const index = `${ADR_DIR}/README.md`;
@@ -199,25 +213,42 @@ export const checkDesignStatus: Check = (root, files) =>
     if (!members.includes(design)) {
       return [{ file: dir, message: `has no ${design}` }];
     }
-    const status = STATUS_LINE.exec(
+    const status = statusLineOf(
       fs.readFileSync(path.join(root, design), 'utf8'),
     );
     if (status === null) {
       return [{ file: design, message: 'has no line beginning "Status:"' }];
     }
-    return VALID_STATUS.test(status[0])
+    return VALID_STATUS.test(status)
       ? []
       : [
           {
             file: design,
-            message: `status line "${status[0]}" is not exploring, ready for PM, or planned (#NN, …)`,
+            message: `status line "${status}" is not exploring, ready for PM, or planned (#NN, …)`,
           },
         ];
   });
 
+// remark-validate-links reports nothing for these once repository:false is set.
+export const checkRootAbsoluteLinks: Check = (root, files) =>
+  files.flatMap((file) =>
+    linksIn(root, file).flatMap(({ url, line }): Finding[] =>
+      url.startsWith('/') && !url.startsWith('//')
+        ? [
+            {
+              file,
+              line,
+              message: `root-absolute link ${url}; write it relative, because the link check cannot see it`,
+            },
+          ]
+        : [],
+    ),
+  );
+
 export const CHECKS: Check[] = [
   checkPermalinks,
   checkWorkingFileLinks,
+  checkRootAbsoluteLinks,
   checkAdrIndex,
   checkResearchIndexes,
   checkDesignStatus,
@@ -267,6 +298,7 @@ const main = (): never => {
   }
   // remark-cli reads stdin when given no files, so it runs only on a non-empty list.
   const remark = runRemark(root, files);
+  // remark exits 1 for a warning under --frail and for a plugin it cannot load, so status 1 passes through with remark's own output.
   if (remark.error || remark.status === null || remark.status > 1) {
     return fail(
       `cannot run remark at ${REMARK}: ${remark.error?.message ?? remark.stderr}`,
