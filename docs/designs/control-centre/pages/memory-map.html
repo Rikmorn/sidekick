@@ -1,0 +1,375 @@
+<title>Where Memory Lives</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600&family=STIX+Two+Text:ital,wght@0,500;0,600;1,500&display=swap">
+<style>
+/* Layout: one reading column with wide figures; companion to "Many Sessions, One Desk". Dark-first, after 3Blue1Brown's palette. */
+:root {
+  --bg: #111318; --surface: #191c23; --surface-2: #222631; --line: #313744;
+  --fg: #e9e7e1; --muted: #a3a8b3;
+  --blue: #58c4dd; --green: #83c167; --gold: #f0ac5f; --red: #fc6255; --purple: #b18fcf; --teal: #5cd0b3;
+  --font-display: "STIX Two Text", "Cambria", "Georgia", serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f3f5f8; --surface: #ffffff; --surface-2: #e9edf2; --line: #d3d9e1; --fg: #161a21; --muted: #555d6b;
+    --blue: #13789a; --green: #3c7a27; --gold: #a35d0c; --red: #bf3428; --purple: #6a4790; --teal: #16806a;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f3f5f8; --surface: #ffffff; --surface-2: #e9edf2; --line: #d3d9e1; --fg: #161a21; --muted: #555d6b;
+  --blue: #13789a; --green: #3c7a27; --gold: #a35d0c; --red: #bf3428; --purple: #6a4790; --teal: #16806a;
+  color-scheme: light;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 17px; line-height: 1.6; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 80px; display: grid; gap: 56px; }
+.col { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.6rem, 3.2vw, 2.1rem); }
+h3 { font-size: 1.15rem; }
+p { margin: 0; }
+a { color: var(--blue); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 4px; }
+.eyebrow { font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.lede { font-size: 1.18rem; }
+.muted { color: var(--muted); }
+section { display: grid; gap: 20px; }
+.hero { display: grid; gap: 18px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.thesis { font-family: var(--font-display); font-style: italic; font-size: 1.35rem; color: var(--blue); }
+.legend { display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 0.9rem; color: var(--muted); }
+.chip { display: inline-block; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; padding: 0.12em 0.5em; border-radius: 999px; border: 1px solid currentColor; vertical-align: 0.12em; white-space: nowrap; }
+.c-measured { color: var(--green); } .c-docs { color: var(--blue); } .c-estimate { color: var(--gold); } .c-unverified { color: var(--red); } .c-source { color: var(--purple); }
+.toc { display: flex; flex-wrap: wrap; gap: 8px; }
+.toc a { text-decoration: none; color: var(--fg); background: var(--surface); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; font-size: 0.92rem; }
+.toc a:hover { border-color: var(--blue); }
+figure { margin: 0; display: grid; gap: 10px; }
+.figbox { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.figbox svg { display: block; width: 100%; min-width: 680px; height: auto; }
+figcaption { font-size: 0.92rem; color: var(--muted); max-width: 75ch; }
+svg text { font-family: var(--font-body); fill: var(--fg); }
+svg .small { font-size: 12.5px; fill: var(--muted); }
+svg .label { font-size: 15px; font-weight: 700; }
+svg .box { fill: var(--surface-2); stroke: var(--line); stroke-width: 1.5; }
+svg .b-blue { fill: var(--surface-2); stroke: var(--blue); stroke-width: 2; }
+svg .b-green { fill: var(--surface-2); stroke: var(--green); stroke-width: 2; }
+svg .b-gold { fill: var(--surface-2); stroke: var(--gold); stroke-width: 2; }
+svg .b-purple { fill: var(--surface-2); stroke: var(--purple); stroke-width: 2; }
+svg .b-red { fill: var(--surface-2); stroke: var(--red); stroke-width: 2; }
+svg .arrow { stroke: var(--muted); stroke-width: 1.8; fill: none; }
+svg .arrow-blue { stroke: var(--blue); stroke-width: 2; fill: none; }
+svg .dash { stroke-dasharray: 6 5; }
+svg .hm { fill: var(--muted); } svg .hb { fill: var(--blue); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 0.94rem; }
+th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-top: 1px solid var(--line); }
+thead th { border-top: 0; font-size: 0.76rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); }
+tbody th { font-weight: 700; }
+.bars { display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.barrow { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 12px; align-items: center; }
+.barrow .name { font-family: var(--font-mono); font-size: 0.85rem; }
+.track { display: grid; gap: 4px; min-width: 0; }
+.bar { height: 14px; border-radius: 3px; background: var(--blue); min-width: 2px; }
+.bar.index { background: var(--gold); height: 8px; }
+.barnote { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.key { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.86rem; color: var(--muted); }
+.key span::before { content: ""; display: inline-block; width: 12px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--c, var(--line)); border-radius: 10px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; }
+.card h3 { font-size: 1.08rem; }
+.card .ev { font-size: 0.9rem; color: var(--muted); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 18px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; align-content: start; }
+.callout { border-left: 3px solid var(--gold); padding: 4px 0 4px 16px; display: grid; gap: 8px; }
+.callout.blue { border-color: var(--blue); }
+ul.tight, ol.tight { margin: 0; padding-left: 1.3em; display: grid; gap: 7px; }
+blockquote { margin: 0; padding: 8px 14px; border-left: 3px solid var(--purple); background: var(--surface); border-radius: 0 8px 8px 0; font-family: var(--font-display); font-style: italic; }
+.sources { font-size: 0.86rem; color: var(--muted); display: grid; gap: 4px; }
+.sources a { color: var(--muted); }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">sidekick · exploration · 12 October 2026 · companion to “Many Sessions, One Desk”</div>
+    <h1>Where Memory Lives</h1>
+    <p class="thesis">Fresh context per unit of work works when every fact has a home with a scope and an end. Your memory problems are mostly facts in the wrong home, at the wrong scope, with no end.</p>
+    <p class="lede col">This page answers three questions: what “files as memory” looks like in practice, what is going wrong with your memory today, and whether memory should be scoped per profile. It maps the problem and stops short of a design.</p>
+    <div class="legend">
+      <span><span class="chip c-measured">measured</span> on your machine</span>
+      <span><span class="chip c-docs">docs</span> official docs</span>
+      <span><span class="chip c-source">source</span> a cited article, paper, or repo</span>
+      <span><span class="chip c-estimate">inference</span> my reading of the evidence</span>
+      <span><span class="chip c-unverified">unverified</span> not checked</span>
+    </div>
+    <nav class="toc" aria-label="Sections">
+      <a href="#practice">In practice</a>
+      <a href="#today">Your memory today</a>
+      <a href="#causes">Why it rots</a>
+      <a href="#scopes">Scopes and lifetimes</a>
+      <a href="#tools">Tools</a>
+      <a href="#hunch">Per-profile memory</a>
+      <a href="#questions">Questions</a>
+    </nav>
+  </header>
+
+  <!-- 1 -->
+  <section id="practice">
+    <div class="eyebrow">You asked: what does “files as memory” look like?</div>
+    <h2>One unit, one fresh session, five kinds of file</h2>
+    <p class="col">Ralph and Anthropic's long-running harness converge on the same loop. A session starts empty, reads a few files, does one unit of work, writes back, and ends. Its context is disposable because everything that matters has left it as a file <span class="chip c-source">source</span>.</p>
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 900 330" role="img" aria-labelledby="l-t l-d">
+          <title id="l-t">The unit-of-work loop</title>
+          <desc id="l-d">A fresh session reads the brief, state, how-to and git history, does one unit, then writes state, commits, and promotes lessons before ending. The next session starts fresh.</desc>
+          <defs>
+            <marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="hm"/></marker>
+            <marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="hb"/></marker>
+          </defs>
+          <rect x="20" y="40" width="170" height="70" rx="8" class="b-blue"/>
+          <text x="36" y="70" class="label">fresh session</text>
+          <text x="36" y="92" class="small">empty context</text>
+          <line x1="190" y1="75" x2="238" y2="75" class="arrow" marker-end="url(#m1)"/>
+          <rect x="240" y="40" width="200" height="70" rx="8" class="box"/>
+          <text x="256" y="70" class="label">read</text>
+          <text x="256" y="92" class="small">brief · state · how-to · git log</text>
+          <line x1="440" y1="75" x2="488" y2="75" class="arrow" marker-end="url(#m1)"/>
+          <rect x="490" y="40" width="170" height="70" rx="8" class="box"/>
+          <text x="506" y="70" class="label">one unit</text>
+          <text x="506" y="92" class="small">one task, one item</text>
+          <line x1="660" y1="75" x2="708" y2="75" class="arrow" marker-end="url(#m1)"/>
+          <rect x="710" y="40" width="170" height="70" rx="8" class="b-green"/>
+          <text x="726" y="70" class="label">write back</text>
+          <text x="726" y="92" class="small">state · commit · lessons</text>
+          <path d="M795,110 C795,160 105,160 105,112" class="arrow-blue dash" marker-end="url(#m2)"/>
+          <text x="370" y="152" class="small">session ends; the next one starts fresh</text>
+          <!-- files -->
+          <rect x="20" y="190" width="160" height="110" rx="8" class="b-purple"/>
+          <text x="34" y="216" class="label">brief</text>
+          <text x="34" y="238" class="small">what to do</text>
+          <text x="34" y="258" class="small">lives: until done</text>
+          <text x="34" y="278" class="small">yours: the issue</text>
+          <rect x="195" y="190" width="160" height="110" rx="8" class="b-gold"/>
+          <text x="209" y="216" class="label">state</text>
+          <text x="209" y="238" class="small">where it stands</text>
+          <text x="209" y="258" class="small">lives: disposable</text>
+          <text x="209" y="278" class="small">yours: plan, run report</text>
+          <rect x="370" y="190" width="160" height="110" rx="8" class="b-blue"/>
+          <text x="384" y="216" class="label">how-to</text>
+          <text x="384" y="238" class="small">build, test, run</text>
+          <text x="384" y="258" class="small">lives: small, stable</text>
+          <text x="384" y="278" class="small">yours: AGENTS.md</text>
+          <rect x="545" y="190" width="160" height="110" rx="8" class="box"/>
+          <text x="559" y="216" class="label">history</text>
+          <text x="559" y="238" class="small">what happened</text>
+          <text x="559" y="258" class="small">lives: forever</text>
+          <text x="559" y="278" class="small">yours: git, comments</text>
+          <rect x="720" y="190" width="160" height="110" rx="8" class="b-green"/>
+          <text x="734" y="216" class="label">lessons</text>
+          <text x="734" y="238" class="small">outlive the unit</text>
+          <text x="734" y="258" class="small">lives: until superseded</text>
+          <text x="734" y="278" class="small">yours: learnings, ADRs</text>
+        </svg>
+      </div>
+      <figcaption>The five roles, and where sidekick already keeps each one. The worker handoff (locked plan in, run report out) is this loop.</figcaption>
+    </figure>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Role</th><th>Ralph (Huntley)</th><th>Anthropic harness</th><th>sidekick today</th></tr></thead>
+        <tbody>
+          <tr><th>Brief</th><td><code>specs/</code>, one per file</td><td>feature list, every feature failing</td><td>issue body</td></tr>
+          <tr><th>State</th><td><code>fix_plan.md</code>; “I throw it out often”</td><td>feature list in JSON, <code>claude-progress.txt</code></td><td>plan checkboxes, run report</td></tr>
+          <tr><th>How-to</th><td><code>AGENT.md</code>; status updates banned from it</td><td><code>init.sh</code></td><td><code>AGENTS.md</code>, <code>CLAUDE.md</code>, rules</td></tr>
+          <tr><th>History</th><td>git</td><td>git log, read at every start</td><td>git, issue comments</td></tr>
+          <tr><th>Lessons</th><td>findings into <code>fix_plan.md</code>; build and run learnings into <code>AGENT.md</code>, kept brief</td><td>progress notes</td><td>learning records, ADRs, auto memory</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="two">
+      <div class="callout blue">
+        <h3>The rule both sources repeat</h3>
+        <p>Keep status out of the always-loaded layer. Huntley's prompt says “DO NOT PLACE STATUS REPORT UPDATES INTO @AGENT.md”. Farr's playbook: “A bloated AGENTS.md pollutes every future loop's context.” <span class="chip c-source">source</span></p>
+      </div>
+      <div class="callout blue">
+        <h3>Structured state survives better</h3>
+        <p>Anthropic chose JSON for its feature list because the model “is less likely to inappropriately change or overwrite JSON files compared to Markdown files.” Its prompting guide says to consider a fresh context over compacting. <span class="chip c-source">source</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="today">
+    <div class="eyebrow">You said: hygiene is already a problem</div>
+    <h2>Your memory today</h2>
+    <p class="col">Claude Code keeps one memory folder per git repo. Only the index file, <code>MEMORY.md</code>, loads at the start of a session; topic files load when read <span class="chip c-docs">docs</span>. Measured across your repos today <span class="chip c-measured">measured</span>:</p>
+    <div class="bars" role="img" aria-label="Memory size per repo: total characters and index characters">
+      <div class="key"><span style="--c: var(--blue)">all memory files</span><span style="--c: var(--gold)">index loaded every session</span></div>
+      <div class="barrow"><span class="name">furnace</span><div class="track"><div class="bar" style="width: 100%"></div><div class="bar index" style="width: 2.1%"></div><span class="barnote">59 files · 468k chars · index 9.9k · 36 feedback notes</span></div></div>
+      <div class="barrow"><span class="name">odin</span><div class="track"><div class="bar" style="width: 87.2%"></div><div class="bar index" style="width: 3.1%"></div><span class="barnote">54 files · 408k chars · index 14.4k · 17 feedback notes</span></div></div>
+      <div class="barrow"><span class="name">sidekick</span><div class="track"><div class="bar" style="width: 62.3%"></div><div class="bar index" style="width: 2.6%"></div><span class="barnote">29 files · 292k chars · index 12.1k · 10 index lines flagged historical, superseded, or stale</span></div></div>
+      <div class="barrow"><span class="name">thor-v2</span><div class="track"><div class="bar" style="width: 41.6%"></div><div class="bar index" style="width: 1%"></div><span class="barnote">27 files · 195k chars · index 4.7k · 16 feedback notes</span></div></div>
+      <div class="barrow"><span class="name">aesir</span><div class="track"><div class="bar" style="width: 21.4%"></div><div class="bar index" style="width: 1.3%"></div><span class="barnote">17 files · 100k chars · index 6.2k</span></div></div>
+      <div class="barrow"><span class="name">al-business</span><div class="track"><div class="bar" style="width: 12%"></div><div class="bar index" style="width: 0.8%"></div><span class="barnote">23 files · 56k chars · index 3.8k · 12 feedback notes</span></div></div>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <h3>What this rules out</h3>
+        <p>Startup cost is not the problem. Every index is under the 200-line and 25KB load limit, so nothing is silently cut, and each costs about 1–3.5k tokens a session <span class="chip c-estimate">inference</span> (characters ÷ 4).</p>
+      </div>
+      <div class="panel">
+        <h3>What it points at</h3>
+        <p>Facts about you are split across repos. There are 5 notes typed <em>user</em>, in 5 different repos, and 108 typed <em>feedback</em> spread across 8 <span class="chip c-measured">measured</span>. Each loads only in its own repo. How many are general rather than repo-specific is unverified.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="causes">
+    <div class="eyebrow">Why it rots</div>
+    <h2>Five causes, each with evidence</h2>
+    <div class="cards">
+      <div class="card" style="--c: var(--gold)">
+        <h3>Wrong home</h3>
+        <p>Memory holds project state and history that your conventions put in issues, ADRs, and learnings. sidekick's own memory says “derive state from <code>sidekick pm pickup</code>, not from here”.</p>
+        <p class="ev">Evidence: 10 index lines in sidekick flagged historical, superseded, or stale; one index line runs to 2,905 characters <span class="chip c-measured">measured</span>.</p>
+      </div>
+      <div class="card" style="--c: var(--blue)">
+        <h3>Wrong scope</h3>
+        <p>There is one store per repo, shared by every kind of session in it. Facts about you are trapped per repo, and an incident session would write next to feature work.</p>
+        <p class="ev">Evidence: “per repository, shared across worktrees” <span class="chip c-docs">docs</span>; user and feedback notes split across repos <span class="chip c-measured">measured</span>.</p>
+      </div>
+      <div class="card" style="--c: var(--red)">
+        <h3>No forgetting</h3>
+        <p>Nothing expires. A superseded fact stays, marked in prose. Claude Code's reminder fires only near the size limit. Selective forgetting is unsolved in research.</p>
+        <p class="ev">Evidence: MemoryAgentBench finds current methods “fall short” on forgetting; mem0 dropped automatic updates in April 2026 <span class="chip c-source">source</span>.</p>
+      </div>
+      <div class="card" style="--c: var(--purple)">
+        <h3>Parallel writes</h3>
+        <p>Plain-markdown memory has no locking. Parallel sessions in one repo share one folder, so a later write can overwrite an earlier one.</p>
+        <p class="ev">Evidence: both surveys found concurrency handled only by daemons, locks, or hash checks, and not by plain markdown <span class="chip c-source">source</span>. Overwrites on your machine are <span class="chip c-unverified">unverified</span>.</p>
+      </div>
+      <div class="card" style="--c: var(--teal)">
+        <h3>Untrusted writes</h3>
+        <p>A session that reads untrusted text can write it into memory, and every later session trusts it. That is the prod-issues case: alert payloads.</p>
+        <p class="ev">Evidence: a 2026 paper reports 81.7% cross-session attack success against Claude Code once memory is poisoned (arXiv 2609.13889) <span class="chip c-source">source</span>.</p>
+      </div>
+    </div>
+    <p class="col muted">Research names the reading-side harm too. Chroma measured performance falling as input grows, even with one distractor. Breunig calls the failure modes poisoning, distraction, confusion, and clash <span class="chip c-source">source</span>.</p>
+  </section>
+
+  <!-- 4 -->
+  <section id="scopes">
+    <div class="eyebrow">A map, not a design</div>
+    <h2>Scope is several axes at once</h2>
+    <p class="col">“Per profile” is one of the axes. The table lists each scope a fact can have, where such facts live today, and how they should end.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Scope</th><th>Belongs here</th><th>Lives today</th><th>Loads</th><th>Ends</th></tr></thead>
+        <tbody>
+          <tr><th>You</th><td>role, preferences, how you like answers</td><td><code>~/.claude/CLAUDE.md</code>, plus user notes split across 5 repos</td><td>should be every session; is per repo</td><td>rarely; replaced when you change</td></tr>
+          <tr><th>Profile</th><td>prod-issues: service quirks, runbook gaps; backend: stack habits</td><td>nowhere</td><td>when that profile runs</td><td>when superseded</td></tr>
+          <tr><th>Project</th><td>repo conventions that code doesn't show</td><td>auto memory, <code>AGENTS.md</code></td><td>every session in the repo</td><td>promoted to a doc, or superseded</td></tr>
+          <tr><th>Unit of work</th><td>progress, timeline, the plan</td><td>plans, run reports, and sometimes memory, which is the wrong home</td><td>while the unit runs</td><td>with the unit; lessons promoted first</td></tr>
+          <tr><th>Agent type</th><td>what a reviewer has learned to check</td><td>the subagent <code>memory</code> field, unused <span class="chip c-docs">docs</span></td><td>when that agent runs</td><td>when superseded</td></tr>
+          <tr><th>Record</th><td>decisions, learnings, what happened</td><td>ADRs, learning records, issues</td><td>on demand</td><td>never rewritten</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="tools">
+    <div class="eyebrow">You said: there must be tooling</div>
+    <h2>Plenty of tools; each takes on one or two causes</h2>
+    <p class="col">Two survey passes covered the general landscape and your watchlist sources. The fields are as each project describes itself <span class="chip c-source">source</span>. Nothing here has been installed or reviewed.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Family</th><th>Examples</th><th>Scope by</th><th>Forgetting</th><th>Parallel writes</th></tr></thead>
+        <tbody>
+          <tr><th>Built-in auto memory</th><td>Claude Code</td><td>repo; <code>autoMemoryDirectory</code> overrides</td><td>size reminder, <code>modified</code> timestamps; “Auto Dream” undocumented <span class="chip c-unverified">unverified</span></td><td>none documented</td></tr>
+          <tr><th>Session capture</th><td>claude-mem, agentmemory, mcp-memory-service</td><td>git root, tags</td><td>off by default (claude-mem); hourly expiry (agentmemory); 90-day archive (mcp-memory-service)</td><td>one daemon or server</td></tr>
+          <tr><th>Curated markdown</th><td>basic-memory, Serena, Cline Memory Bank, VoltAgent memory-curator</td><td>project, global</td><td>archive, never delete; the curator closes a fact with “superseded by”</td><td>checksum (basic-memory); mostly none</td></tr>
+          <tr><th>Issues as memory</th><td>beads</td><td>repo</td><td>compacts issues closed 30+ days</td><td>single writer, or server mode</td></tr>
+          <tr><th>Facts with time ranges</th><td>graphiti</td><td>group</td><td>contradicted facts marked invalid, kept</td><td>per-group queue</td></tr>
+          <tr><th>Typed and scoped</th><td>segmem (young)</td><td>kind × global or project</td><td>supersedes; staleness nag; global only after 3 projects</td><td>not stated</td></tr>
+          <tr><th>Handoff</th><td>session-handoff, claude-auto-handoff, handoff-compact</td><td>session</td><td>the handoff replaces the transcript</td><td>per-session files (session-handoff)</td></tr>
+          <tr><th>Managed stores (API)</th><td>Claude Managed Agents, Dreams</td><td>focused stores, up to 8 per session, read-only or read-write</td><td>Dreams write a cleaned copy for review</td><td>versions plus a hash check</td></tr>
+          <tr><th>Context filtering</th><td>harness-scope (mod)</td><td>per repo profile</td><td>n/a</td><td>n/a</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout">
+      <h3>The counterargument to buying a tool</h3>
+      <p class="col">Letta benchmarked an agent with only files: 74.0% on LoCoMo, against Mem0's reported 68.5%. It concluded that how well the agent uses the store matters more than the store. Manus keeps context append-only and errors visible. Cognition argues that isolating context loses implicit decisions <span class="chip c-source">source</span>.</p>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="hunch">
+    <div class="eyebrow">Your hunch: memory scoped per profile</div>
+    <h2>The evidence agrees, with a twist</h2>
+    <div class="two">
+      <div class="panel">
+        <h3>What supports it</h3>
+        <ul class="tight">
+          <li><code>autoMemoryDirectory</code> can be set from <code>--settings</code>, so a profile can point memory at its own folder <span class="chip c-docs">docs</span>.</li>
+          <li>Anthropic's Managed Agents guidance: “Use focused stores … one per user, one for shared domain knowledge, and one for project-specific context.” <span class="chip c-source">source</span></li>
+          <li>The Claude app keeps a separate memory per project, and Willison objects to unscoped recall <span class="chip c-source">source</span>.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>The twist</h3>
+        <ul class="tight">
+          <li>Claude Code gives a session <em>one</em> auto-memory folder. Point it at a profile folder and every repo's notes for that profile merge, so project scope is lost <span class="chip c-estimate">inference</span>.</li>
+          <li>The docs show no per-repo placeholder in the path. A launcher could compute one, for example profile plus repo <span class="chip c-unverified">unverified</span>.</li>
+          <li>Several scopes at once (you, profile, project, unit) need either composition or a store that attaches several, as the API does.</li>
+          <li>Context and memory are different levers. A profile already scopes what <em>loads</em>; memory scoping decides what <em>persists</em> and who may write.</li>
+        </ul>
+      </div>
+    </div>
+    <blockquote>“update an existing note rather than creating a duplicate; delete notes that turn out to be wrong.” Anthropic's prompting guidance for Claude Fable 5.</blockquote>
+  </section>
+
+  <!-- 7 -->
+  <section id="questions">
+    <div class="eyebrow">What would let you formalise it</div>
+    <h2>Questions, then experiments that answer them</h2>
+    <div class="two">
+      <div class="panel">
+        <h3>Questions only you can answer</h3>
+        <ol class="tight">
+          <li>What should each profile remember that the others should not?</li>
+          <li>Who may write memory: any session as it goes, or only a promotion step you review?</li>
+          <li>When does a fact end: when its unit closes, when it's superseded, or at a periodic review?</li>
+          <li>Should a session that reads untrusted input, such as prod-issues, write memory at all?</li>
+          <li>Where do facts about you live, so that every session sees them?</li>
+        </ol>
+      </div>
+      <div class="panel">
+        <h3>Experiments that produce evidence</h3>
+        <ol class="tight">
+          <li><strong>Audit one memory folder.</strong> Classify each entry by scope and right home, and count how much is misplaced, stale, or general.</li>
+          <li><strong>Test <code>autoMemoryDirectory</code> in a profile.</strong> Check whether the index loads from there and whether writes land there.</li>
+          <li><strong>Test a read-only shared file.</strong> Check whether a profile can load notes, for example through an import, without the session writing to them <span class="chip c-unverified">unverified</span>.</li>
+          <li><strong>Watch two parallel writers.</strong> Run two background sessions in one repo, each asked to save a memory, and see what survives.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="sources" aria-label="Sources">
+    <div class="eyebrow">Sources, read 11–12 October 2026</div>
+    <span><a href="https://ghuntley.com/ralph/">Huntley, Ralph</a> · <a href="https://github.com/ghuntley/how-to-ralph-wiggum">Farr, how-to-ralph-wiggum</a> · <a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents">Anthropic, long-running harnesses</a> · <a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">Anthropic, context engineering</a></span>
+    <span><a href="https://code.claude.com/docs/en/memory">Claude Code memory docs</a> · <a href="https://platform.claude.com/docs/en/managed-agents/memory">Managed Agents memory</a> · <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool">API memory tool</a> · <a href="https://platform.claude.com/docs/en/managed-agents/dreams">Dreams</a></span>
+    <span><a href="https://www.trychroma.com/research/context-rot">Chroma, context rot</a> · <a href="https://www.dbreunig.com/2025/06/22/how-contexts-fail-and-how-to-fix-them.html">Breunig, how contexts fail</a> · <a href="https://arxiv.org/abs/2507.05257">MemoryAgentBench</a> · <a href="https://arxiv.org/abs/2510.04618">ACE</a> · <a href="https://arxiv.org/abs/2609.13889">memory poisoning</a></span>
+    <span><a href="https://www.letta.com/blog/benchmarking-ai-agent-memory">Letta, benchmarking memory</a> · <a href="https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus">Manus</a> · <a href="https://cognition.com/blog/dont-build-multi-agents">Cognition</a> · <a href="https://simonwillison.net/2025/May/21/chatgpt-new-memory/">Willison</a></span>
+    <span><a href="https://github.com/thedotmack/claude-mem">claude-mem</a> · <a href="https://github.com/gastownhall/beads">beads</a> · <a href="https://github.com/getzep/graphiti">graphiti</a> · <a href="https://github.com/basicmachines-co/basic-memory">basic-memory</a> · <a href="https://github.com/mahuebel/segmem">segmem</a> · <a href="https://github.com/shimo4228/harness-scope">harness-scope</a> · <a href="https://github.com/VoltAgent/awesome-claude-code-subagents">VoltAgent memory-curator</a></span>
+  </section>
+
+</div>

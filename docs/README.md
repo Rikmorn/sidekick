@@ -6,6 +6,10 @@ Each folder here works as `plugin/skills/sidekick/references/docs-layout.md` say
 
 `bun run check:docs` checks the layout's ADR index, research topic indexes, and design status lines. It also checks relative links, permalinks, and links into `docs/superpowers/`. CI runs it on every push to `master`.
 
+## The watchlist
+
+`WATCHLIST.md` names the sources to check for Claude Code skills, agents, hooks, plugins, and mods, and the leads not yet reviewed. It sits at the top of `docs/` because it describes nothing in sidekick, so no layout folder fits it.
+
 ## Legacy research topics
 
 Topics from the research programme that ADR-0009 parked centre on a `REPORT.md`, often with a `FRAMING.md` and a sources file, rather than dated reports. Each topic's `README.md` indexes its files.
