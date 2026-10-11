@@ -65,4 +65,4 @@ Small debt that `sk-design` registers in a repo sidekick does not track: `docs/t
 The working directory that superpowers and sidekick's skills share: specs, plans, run reports, scratch research, and `sk-design`'s shape-scale notes under `designs/`. It is gitignored where the repo chooses.
 
 - **Owner:** superpowers writes specs and plans, `sk-design` its shape-scale notes, `sk-execute` a plan's after-file, and `sk-worker` its run reports. The operator clears the folder when they choose; no skill deletes from it.
-- **Lifecycle:** local scratch. Nothing durable cites a working file, by path or in prose, as `sk-pm-conventions.md` §No mirroring says, so clearing the folder strands nothing. A finding born here reaches an issue or a record before its file can go.
+- **Lifecycle:** scratch, whether or not the repo commits it. Nothing outside the folder cites a working file, by path or in prose (`sk-pm-conventions.md` §No mirroring). Clearing the folder then strands nothing outside it, and files inside may cite each other. A finding born here reaches an issue or a record before its file can go.
