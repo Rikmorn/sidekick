@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import * as v from 'valibot';
 import {
   isMainEntrypoint,
   main,
@@ -228,5 +229,33 @@ describe('the built bundle under an up-tree commonjs package.json', () => {
     const r = runCopy(false);
     expect(r.status).toBe(0);
     expect(r.stdout + r.stderr).toBe('');
+  });
+});
+
+describe('the notices file covers every bundled dependency', () => {
+  const repo = path.join(__dirname, '..');
+  const Manifest = v.object({ dependencies: v.record(v.string(), v.string()) });
+  // The bundle copies each runtime dependency, and its licence travels with the copy.
+  test('each dependency has its name, version, and licence text', () => {
+    const { dependencies } = v.parse(
+      Manifest,
+      JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf-8')),
+    );
+    const notices = fs.readFileSync(
+      path.join(repo, 'plugin', 'THIRD-PARTY-NOTICES.txt'),
+      'utf-8',
+    );
+    expect(Object.keys(dependencies).length).toBeGreaterThan(0);
+    for (const [name, version] of Object.entries(dependencies)) {
+      const dir = path.join(repo, 'node_modules', name);
+      const licence = fs
+        .readdirSync(dir)
+        .find((f) => /^licen[cs]e(\.md|\.txt)?$/i.test(f));
+      expect(licence).toBeDefined();
+      expect(notices).toContain(`${name} ${version}\n`);
+      expect(notices).toContain(
+        fs.readFileSync(path.join(dir, String(licence)), 'utf-8').trim(),
+      );
+    }
   });
 });
