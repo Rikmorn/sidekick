@@ -201,3 +201,30 @@ describe('entry point', () => {
     expect(r.stderr).toContain('usage: sidekick rules');
   });
 });
+
+describe('the built bundle under an up-tree commonjs package.json', () => {
+  const bundleDir = path.join(__dirname, '..', 'plugin', 'bin');
+  // Node reads "type" from the nearest package.json, as under ~/.claude/.
+  function runCopy(keepPackageJson: boolean) {
+    const root = tmp();
+    write(path.join(root, 'package.json'), '{"type":"commonjs"}\n');
+    const bin = path.join(root, 'bin');
+    fs.cpSync(bundleDir, bin, { recursive: true });
+    if (!keepPackageJson) {
+      fs.rmSync(path.join(bin, 'package.json'), { force: true });
+    }
+    return spawnSync('node', [path.join(bin, 'sidekick')], {
+      encoding: 'utf-8',
+    });
+  }
+  test('runs, with its co-located package.json', () => {
+    const r = runCopy(true);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('usage: sidekick rules');
+  });
+  test('prints nothing without it, so the first case guards the file', () => {
+    const r = runCopy(false);
+    expect(r.status).toBe(0);
+    expect(r.stdout + r.stderr).toBe('');
+  });
+});
