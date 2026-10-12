@@ -1,8 +1,8 @@
 # Control centre
 
-Status: exploring · Scale: explore · 2026-10-12
+Status: ready for PM · Scale: explore · 2026-10-12
 
-How the operator runs Claude Code as a control centre. Many sessions run at once, each loading only what its profile declares, all visible and controllable from inside Claude Code. Memory and the loop itself are a second initiative, as §Two initiatives says. Opened from an exploration on 2026-10-11 and 2026-10-12 that the operator expects to seed R9. Gates 1 and 2 are credited; the adversarial review and gate 3 are next.
+How the operator runs Claude Code as a control centre. Many sessions run at once, each loading only what its profile declares, all visible and controllable from inside Claude Code. Memory and the loop itself are a second initiative, as §Two initiatives says. Opened from an exploration on 2026-10-11 and 2026-10-12 that the operator expects to seed R9. Gates 1, 2, and 3 are credited; R9's Opening is next.
 
 Research: [`docs/research/control-centre/`](../../research/control-centre/README.md). Rendered companions, whose sources sit in `pages/`: [Many Sessions, One Desk](pages/many-sessions.html) and [Where Memory Lives](pages/memory-map.html).
 
@@ -112,19 +112,19 @@ Extension points today: the profile file is a registration; a new module is a ne
 
 ## Lenses
 
-Draft; to be confirmed before gate 3.
+Revised after gate 2 and the review, 2026-10-12; confirmed at gate 3.
 
 | Lens | Load-bearing | Where it bites |
 |---|---|---|
-| Data model | yes | profile files and who writes them; the memory scopes and capture queue moved to the loop design |
+| Data model | yes | The profile manifest and its two stores, written by the operator or a session they ask. The worker's brief. The usage file the gauge writes for the monitor hook |
 | Boundaries | yes | one plugin in R9, so one module holds every mod; the split moved to the loop design |
-| Extension points | yes | a new profile or module should be a file, not a code change |
-| Contracts | yes | the mod API is early access; `claude agents --json` is the supported session interface |
-| Concurrency and failure | yes | parallel memory writes; two drivers on an attached session |
-| Operability | yes | the whole goal: seeing sessions, profiles, and context |
-| Testability | yes | `claude plugin test` for mods; probes for profile behaviour |
-| Security | yes | unsandboxed mods; prod credentials; untrusted alert content and memory poisoning |
-| Performance | yes | the startup token budget per session; the monitor hook's `node` start and transcript read per tool call |
+| Extension points | yes | a new profile is a folder; a new mod is an adapter and a logic file; the manifest's scope filters switch mod parts as data |
+| Contracts | yes | the mod API is early access; agent view, with `claude --bg` and `claude agents --json`, is a research preview; the brief's fields; skill and CLI names |
+| Concurrency and failure | yes | A worker's worktree against the main checkout: its base, its dependencies, the excluded folder. Mods failing open and silently. A raw dispatch without the push block. Two drivers on an attached session |
+| Operability | yes | the whole goal: seeing sessions, profiles, and context. A check after each Claude Code upgrade, since mod errors reach only the debug log |
+| Testability | yes | `bun test` for logic files; `claude plugin test` for mod adapters; probes for profile and worker behaviour |
+| Security | yes | Unsandboxed mods. A repo profile's settings and its folder's trust. The push block's limits (W12 in [workers.md](workers.md)). Production content moved to the loop design with the ops mod |
+| Performance | yes | the startup token budget per session; the monitor hook's `node` start and transcript read per tool call; the desk's polling |
 | Reversibility | partly | profiles and mods are files, cheap to undo; the deferred split changes install records when it comes |
 
 ## Prior art
@@ -211,15 +211,65 @@ Gate 2's four decisions each hold their options in a sibling note: [mods.md](mod
 
 ## Recommendation
 
-Not yet.
+Adopt gate 2's four decisions as the review revised them, and build R9 to the breakdown in §Blast radius.
+
+The assumptions it rests on are in each sibling note's §Recommendation. Three cross the whole design:
+
+- The operator stays sidekick's only user, on a current Claude Code. If others use it, a version check and a migration guide become owed.
+- The mod API and agent view move without breaking R9 between releases faster than a check after each upgrade can catch. If they move every release, the mods shrink to the gauge and the desk.
+- No R9 profile must separate pm from dev, or drop superpowers. If one must, the split or the dependency lever comes forward from the loop design.
+
+Checked for composition on 2026-10-12. The decisions agree, with one seam: a worker's launch merges the push block and `worktree.baseRef` into its profile's `settings` block. That is a merge of two objects, not the allowlist compile step decision 2 left out. A worker launched under `--setting-sources` would also drop the user layer's permissions; piece 5 checks that case.
 
 ## Blast radius
 
-Not yet a breakdown. Claude proposed an outcome for R9 on 2026-10-11, not yet confirmed: "GSD can be uninstalled with nothing lost, and parallel work runs from one desk." On 2026-10-12 the operator named the control centre as R9, one milestone, ordered as §Two initiatives says.
+The breakdown, drafted 2026-10-12 for gate 3. The whole is one release, R9, as the operator ruled. Pieces follow the ruled order: profile management and GSD's removal, then background workers, then the visibility and control mods. Each piece is a brief for an issue; PM files them at Opening.
+
+Proposed outcome, to settle at Opening: GSD is gone with nothing lost, and sessions launch with declared profiles. A session dispatches workers, and every session shows which others need the operator.
+
+### Plan A: foundations
+
+1. **The mods ADR, and ADR-0010's amendment.** Problem: [mods.md](mods.md)'s decision lives in a folder R9's close deletes, and ADR-0010 Decision 2 still says a hook never rewrites a skill. Resolves: ADR-0012 from [mods.md](mods.md)'s Y-statement, and an amendment line on ADR-0010 for the ladder's rewrite rung and the declined revisit. Out of scope: any mod code. Verified by: `bun run check:docs`, and the ADR index listing 0012.
+2. **The context monitor as a settings hook (#146).** Problem: G4 needs the model warned before its window fills, without GSD. Resolves: a `PostToolUse` hook that warns at thresholds, reading usage from the gauge's file when present and from the transcript against a configured window otherwise. Out of scope: the gauge's display. Verified by: `bun test` on the threshold logic, and a probe whose session gets the warning near the threshold. Depends on nothing; the gauge's file is optional.
+3. **Leave GSD.** Problem: G4 says GSD goes with nothing lost. Resolves: the operator's chosen status line in place, #146 running, and a ruling on the read-injection scanner (thread 10). GSD's settings, hooks, skills, and agents are removed. Out of scope: replacing GSD's other workflows, which sidekick already covers. Verified by: no GSD entry left in `~/.claude/settings.json` or `~/.claude/hooks/`, and a start cost measured before and after. Depends on 2.
+
+### Plan B: profiles
+
+4. **Profile management.** Problem: G2 and G3; no profile feature exists ([profiles.md](profiles.md)). Resolves: the manifest, holding a description, a stance file, scope filters, and a `settings` block passed through. User and repo stores, the repo's first. The CLI's list, show, new, and launch, aliases for interactive starts, and launch with `--bg` from a session. Also a trust check before a repo profile applies, profile switching, the test profile as the bench, and the docs. No compile step: "only what it names" is tried through `--setting-sources`. Out of scope: domain profiles, which are content made later. Verified by: `bun test` on parsing and store resolution. Probes show the test profile's sessions load what it declares, interactive and in the background. Depends on nothing.
+
+### Plan C: workers
+
+5. **Dispatched workers.** Problem: G11; `sk-worker` assumes the operator starts it ([workers.md](workers.md)); it realises #101's aim. Resolves: `sk-worker`'s premise and `sk-execute`'s handoff rewritten for a brief file. The launcher adds the push block, `worktree.baseRef` set to `"head"`, and the `.git/info/exclude` entry. The worker enters its worktree before its scan, with its dependencies. It writes its run report there and sends the path. The orchestrator integrates before any delete. Also the model per worker, and the permission mode the two sessions share. The launcher merges the worker's settings into its profile's `settings` block. Out of scope: dispatch without the operator's choice of mode (#140). Verified by: a dispatched run of a small plan in a scratch repo that starts at the baseline, fails a push, reports, and integrates. Depends on 4.
+
+### Plan D: mods
+
+6. **The mod foundation.** Problem: decision 1's carried costs. Resolves: sidekick's one hooks module beside its settings hooks, and the adapter-and-logic pattern. `claude plugin test` joins the gates and CI, and `README.md` states a Claude Code floor. A check after each upgrade confirms the mods load and fire. Out of scope: any one mod's behaviour. Verified by: the check failing on a deliberately broken module, and CI running the mod tests. Depends on 1.
+7. **The gauge.** Problem: G1 and G3's visible half. Resolves: the session's profile and context shown in the session; the usage file #146's hook reads; an unprofiled session flagged. It starts with a survey of community status lines and mods, from `docs/WATCHLIST.md` on. The operator ruled on 2026-10-12 that a good community one is welcome. Borrow one that fits, after its code is reviewed, and build only what it lacks. It decides between a status line, with its `⚠` prefix, and a band. Out of scope: the warning to the model, which is 2. Verified by: `claude plugin test`, and a session showing its profile. Depends on 2, 4, and 6.
+8. **The scope mod.** Problem: native settings cannot hide loose agents, single plugin skills, or mod parts per session. Resolves: those filters, read from the profile's manifest, and a `/profile` command listing what loaded and its start cost. Filters fail open, so nothing that must stay out relies on them alone. Out of scope: anything native settings already switch. Verified by: `claude plugin test`, and a probe in which the test profile's hidden agent is not offered. Depends on 4 and 6.
+9. **The desk.** Problem: G1 and G11. Resolves: a band naming the sessions that need the operator, and a workers pane. A dispatch tool goes through the launcher, and attaching shows a summary. It weighs the `Notification` hook against polling `claude agents --json`. Out of scope: holding a dispatch. Verified by: `claude plugin test`, and a session that shows a worker needing the operator. Depends on 5 and 6.
+10. **The board band.** Problem: the pickup is text at session start, and the start carries `sk-orient`'s whole body. Resolves: the pickup as a band, silent in an untracked repo, with the start keeping only the brief. #176's hook timeout is weighed here. Out of scope: capture and triage, which went to the loop design. Verified by: `claude plugin test`, and the start's measured size before and after. Depends on 6.
+
+### Order and what ships alone
+
+- Plan A first. Piece 1 is docs and ships alone; piece 2 ships alone and serves sessions before any mod exists.
+- Plans B and C follow; C needs B's launcher.
+- Plan D last, as ruled. Piece 6 comes before every other mod.
+- Before Opening, the loop material moves out of this folder, as §Next session says.
+
+Open for the breakdown at gate 3: whether each plan fits one session. Plans A and D are the likeliest to split.
 
 ## Decision
 
-Gate 2's four decisions are recorded in their sibling notes, named in §Options. The integrated decision comes at gate 3.
+Gate 2's four decisions are recorded in their sibling notes, named in §Options. The integrated decision is taken at gate 3. Drafted for it:
+
+In the context of running many Claude Code sessions as one control centre, the platform has no profile feature. Its mod API is in early access, and agent view in research preview. We decided for:
+
+- Declared profiles as a thin manifest over native settings, with no compile step yet.
+- Workers a session dispatches after the operator chooses the mode, behind a git push block, each in its own worktree.
+- Mods only where a mod alone can act, on a stated rung that never approves a call.
+- One plugin until the loop design sets what each plugin bundles.
+
+This achieves G1, G2, G3, G4, and G11 in one release, R9. It accepts a check after each Claude Code upgrade, and mods that fail open and silently. It accepts a raw dispatch outside the guard, and superpowers loaded with sidekick until the split. Profiles subtract from the user layer until use settles what a declaration means.
 
 ## Review
 
@@ -280,6 +330,7 @@ The operator agreed to all four rulings on 2026-10-12. Still open after round 2:
 
 - **Gate 1, credited 2026-10-12.** The operator confirmed the goals, the constraints, the two initiatives, and the rulings in §Two initiatives, answer by answer in a session with Claude. This note records each answer; the commit that lands it names the gate.
 - **Gate 2, credited 2026-10-12.** The operator decided the four questions §Next session lists, answer by answer in a later session with Claude. Each sibling note's §Decision records the answers. After the review, the operator revised decision 4: R9 keeps one plugin. What a profile's declaration means was left to use, by the operator's choice.
+- **Gate 3, credited 2026-10-12.** The operator approved the integrated note: the recommendation, the breakdown, and the outcome sentence. Opening's scope review decides whether each plan fits one session. The operator checked a rendered summary of the design the same day, and added one ruling: the gauge borrows a good community one where it fits.
 
 ## Next session
 
