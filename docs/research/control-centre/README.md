@@ -11,4 +11,4 @@ What can Claude Code's extension and session surface do for running many session
 
 ## Served
 
-The `control-centre` design, not yet planned by PM.
+The `control-centre` design, ready for PM, and the `loop` design, not started.

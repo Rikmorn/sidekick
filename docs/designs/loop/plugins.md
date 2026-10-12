@@ -1,6 +1,6 @@
 # Plugins: splitting sidekick along pm, dev, and ops
 
-Status: revised after the review; one plugin in R9 · Gate 2, decision 4 of the [control-centre design](design.md) · 2026-10-12
+Status: one plugin in R9; the split waits for this design · Decided at the control-centre design's gate 2, then moved to the [loop design](design.md) · 2026-10-12
 
 ## Problem
 
@@ -10,12 +10,16 @@ Decided here: whether to split, and into which plugins. Routed to the split's is
 
 ## Constraints
 
-Grades as in [mods.md](mods.md).
+Grades:
+
+- **Measured:** probed on the operator's machine on 2026-10-12, on Claude Code 2.1.296.
+- **Read:** read in the repo or the docs that day.
+- **Stated:** the operator said it.
 
 | # | Constraint | Grade |
 |---|---|---|
-| S1 | A plugin holds one hooks module, so a mod's boundary is its plugin's | read; K8 in [mods.md](mods.md) |
-| S2 | Disabling superpowers or `code-review` turned sidekick off too. sidekick's manifest lists both as dependencies | measured; P3 in [profiles.md](profiles.md) |
+| S1 | A plugin holds one hooks module, so a mod's boundary is its plugin's | read in the mods reference and the `plugin-authoring` files bundled with Claude Code 2.1.296; `claude plugin validate` ran on a probe holding both kinds of hook |
+| S2 | Disabling superpowers or `code-review` turned sidekick off too. sidekick's manifest lists both as dependencies | measured: `claude -p` with `--settings` turning each one off removed sidekick's skills |
 | S3 | `sk-orient`, `sk-track`, `sk-milestone`, and `sk-holistic-reviewer` touch superpowers only through the `.superpowers/sdd/` path, which the release check writes itself. `sk-design`, `sk-execute`, and `sk-worker` build on superpowers' skills | read by a grep of `plugin/skills/` and `plugin/agents/` |
 | S4 | `skillOverrides` does not apply to plugin skills. Hiding one plugin skill in a session needs the scope mod | read, in the surface report |
 | S5 | sidekick's hooks run the CLI from their own plugin's folder (`plugin/hooks/session-start:8-11`, `plugin/hooks/post-read:22`) | read |
