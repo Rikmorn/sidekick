@@ -30,6 +30,10 @@ Grades as in [mods.md](mods.md). The push probes on 2026-10-12 ran `claude -p --
 | W6 | Messages reach background sessions between tool calls, or start a turn when they are idle. A message cannot approve a permission prompt. A session bypassing permissions holds messages from a sender that does not | read, in the surface report |
 | W7 | A mid-task message to a running subagent was refused as likely injection. The same content was accepted from a file the subagent could check | measured on 2026-09-20, in the R6 run; recorded in session memory |
 | W8 | Every worker runs from a session; none is started by hand. The operator chooses the execution mode at `sk-execute`'s handoff | stated by the operator, gate 1; `sk-execute` §Choose the mode, read |
+| W9 | A worktree Claude Code makes branches from the remote's default branch unless `worktree.baseRef` is `"head"`, and checks out tracked files only. That background sessions follow `baseRef` is inferred | read in the worktrees docs on 2026-10-12, after the review |
+| W10 | In an isolated session, Claude Code blocks `Edit`, `Write`, and `NotebookEdit` into the main checkout, a Bash command run there, and git redirected there. `Read` is not among the checks. It applies to background sessions and their subagents | read, same source |
+| W11 | Claude Code does not ignore `.claude/worktrees/` for the repo. In a clone of this repo with a live worktree there, `git status` listed it, and `biome check .` failed on a nested root configuration | the docs' advice, read; the clone measured by the reviewer |
+| W12 | `$.env.set` changes the environment every later Bash child inherits, so any installed mod can lift the push block | read in `claude-code.d.ts:3588-3614` |
 
 ## Options
 
@@ -45,8 +49,8 @@ Grades as in [mods.md](mods.md). The push probes on 2026-10-12 ran `claude -p --
 
 **B. A session dispatches it, after the operator chooses the worker mode.** The orchestrating session runs `claude --bg` with the worker's profile and `/sidekick:sk-worker <brief>` as the first prompt (W1). The brief is a file on disk naming the plan, the spec, the baseline, and the skill to run. The worker checks each one, as it does today, and replies `BLOCKED` when one fails.
 
-1. Capability handed over through a verifiable artefact rather than an asserted message (W7).
-2. The operator's authority comes from their choice of the mode, which `sk-execute` already asks for. The brief carries the specifics, and the worker can check every one.
+1. Specifics handed over through a verifiable artefact rather than an asserted message (W7).
+2. The operator's authority comes from their choice of the mode, which `sk-execute` already asks for. The worker cannot verify that choice; it rests on the orchestrating session following `sk-execute`, and on the desk showing every dispatch. The brief carries the specifics, and the worker can check each of them.
 3. `sk-worker`'s scan and `BLOCKED` reply already work this way for the plan and the spec.
 4. Cost: `sk-worker`'s premise and description change, and so does `sk-execute`'s handoff. `disable-model-invocation` stays, so no session loads `sk-worker` into itself.
 5. Next change: a dispatch is one command, or one tool call once the desk mod serves it.
@@ -67,7 +71,7 @@ Rejected for R9. The mode choice is a handoff pause, and #140, which the loop de
 
 ### Part 3: where a dispatched worker works
 
-A dispatched worker works in the worktree its background session makes (W2). The brief names the base commit, and the orchestrator integrates from the worker's branch. The handoff's other places, a branch in the main checkout or in place, would need isolation off (W3). They stay for a worker the operator starts in their own session.
+A dispatched worker works in the worktree its background session makes (W2). Its settings set `worktree.baseRef` to `"head"`, so the worktree starts at the orchestrator's commit, which the brief names (W9). The worker reads the plan and the spec in the main checkout, which `Read` may do (W10). It writes its run report in its own worktree and sends the path, since it cannot write beside the plan. Before the first dispatch in a repo, the launcher lists `.claude/worktrees/` in `.git/info/exclude`, which commits nothing (W11). The orchestrator integrates from the worker's branch. The handoff's other places, a branch in the main checkout or in place, would need isolation off (W3). They stay for a worker the operator starts in their own session.
 
 ## Recommendation
 
@@ -77,7 +81,8 @@ Assumptions, and what changes if each is wrong:
 
 - The rewrite holds in a background session as it did headless (W5). If not, the deny rule is the fallback, with its gap (W4) written down.
 - A dispatched worker is a session the operator can attach to, so steering by message plus attach replaces the tab. If attach proves too costly, operator-started workers stay as a second path.
-- Deleting a background session in agent view deletes its worktree. Whether the branch survives has not been checked. If it does not, the orchestrator integrates before the session is deleted, and the desk says so.
+- Deleting a session with unpushed commits keeps its worktree, and deleting it again discards the worktree and its branch. That is the agent-view docs as the reviewer read them, not re-read. With pushes blocked, the worker's branch is the only copy until it is integrated, so the orchestrator integrates before any delete, and the desk warns.
+- Tools in the main checkout honour `.git/info/exclude` as they do `.gitignore`. If one does not, as `biome` might not, the repo ignores `.claude/worktrees/` itself.
 - Rulings still travel by message (W6). If the worker refuses them as injection, as W7's subagent did, they go into a reply file the worker reads.
 
 ## Routed elsewhere
@@ -94,4 +99,4 @@ The operator agreed to all three parts on 2026-10-12, in a session with Claude:
 - **Part 2:** the instruction plus the environment rewrite, with the deny rule as the fallback.
 - **Part 3:** a dispatched worker works in its own worktree. The other places stay for a worker the operator starts.
 
-The operator added two points. Workers run in other processes have never pushed unasked, so the instruction has held in use. The rewrite is the backstop for when guidance is ignored. And a run that needs something different is varied by prompting. A prompt cannot lift the rewrite, though, since git enforces it. A worker that must push needs the launcher to leave the rewrite out, on the operator's word for that dispatch. The workers issue designs that switch.
+The operator added two points. Workers run in other processes have never pushed unasked, so the instruction has held in use. The review noted that those were interactive sessions, which ask before committing (W3), so they did not test a background session's default. The rewrite is the backstop for when guidance is ignored. And a run that needs something different is varied by prompting. A prompt cannot lift the rewrite, though, since git enforces it. A worker that must push needs the launcher to leave the rewrite out, on the operator's word for that dispatch. The workers issue designs that switch.

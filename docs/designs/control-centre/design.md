@@ -55,6 +55,7 @@ Stated goals the loop design takes up, with what is known so far:
 - **Capture without stopping** (was G8), with its queue and triage, moved here on 2026-10-12. It changes `sk-track`'s "file it now" rule, and its open questions are memory's: where the queue lives, its scope across repos, and parallel writers. `$.store` is one JSON file per plugin under the user's configuration folder, shared by every repo (bundled types, read 2026-10-12). The loop design extends the board mod for it.
 - **The memory mod** from §Candidate mods: a guard on memory writes and a review pane. What is remembered, where, and when it ends is this design's question, moved here on 2026-10-12.
 - **The ops mod and a `sidekick-ops` plugin,** with thread 9, moved here at gate 2 on 2026-10-12. The operator expects the loop milestone to set concrete targets for what each plugin bundles.
+- **The plugin split,** moved here after gate 2's review on 2026-10-12. R9 keeps one plugin. When the split comes, the core is the base the others depend on, and [plugins.md](plugins.md) holds the findings it must answer.
 
 ## Constraints
 
@@ -116,7 +117,7 @@ Draft; to be confirmed before gate 3.
 | Lens | Load-bearing | Where it bites |
 |---|---|---|
 | Data model | yes | profile files and who writes them; the memory scopes and capture queue moved to the loop design |
-| Boundaries | yes | plugin split along pm, dev, and ops; one mod per plugin |
+| Boundaries | yes | one plugin in R9, so one module holds every mod; the split moved to the loop design |
 | Extension points | yes | a new profile or module should be a file, not a code change |
 | Contracts | yes | the mod API is early access; `claude agents --json` is the supported session interface |
 | Concurrency and failure | yes | parallel memory writes; two drivers on an attached session |
@@ -124,13 +125,14 @@ Draft; to be confirmed before gate 3.
 | Testability | yes | `claude plugin test` for mods; probes for profile behaviour |
 | Security | yes | unsandboxed mods; prod credentials; untrusted alert content and memory poisoning |
 | Performance | yes | the startup token budget per session |
-| Reversibility | partly | profiles and mods are files, cheap to undo; a plugin split changes install records |
+| Reversibility | partly | profiles and mods are files, cheap to undo; the deferred split changes install records when it comes |
 
 ## Prior art
 
 Each find is a candidate until the options are written; rejections carry the reason.
 
 - **Use now:** native `--settings` profiles (no profile manager exists to integrate); agent view and `claude --bg`; `autoMemoryDirectory`; the user rules layer.
+- **Weigh for G1, found by the review:** the footer's count of waiting background agents, and the `Notification` hook's `agent_needs_input` and `agent_completed` types. The reviewer read both in the docs; Claude has not re-read them. Agent teams are left out, since teammates share the lead's setting sources, so no worker gets its own profile.
 - **Borrow ideas, review before any install:**
   - harness-scope: mod-level filtering, per repo.
   - ostrakon: capture while busy.
@@ -147,7 +149,7 @@ Each find is a candidate until the options are written; rejections carry the rea
 
 Each is a thread the operator can pull at gate 2. What is known, what is ruled, and what is open. Since the split on 2026-10-12, threads 5, 6, 7, and 8 belong to the loop design, and so does the in-session half of thread 4. Thread 9 followed the ops mod there at gate 2. They stay here, with what was learned, until that design starts.
 
-1. **Profiles and modularity.** Ruled: declared profiles through aliases; split sidekick into plugins exactly where a profile must separate things, pm, dev, and ops. Ruled 2026-10-12: profiles are built and documented properly, not kept as local drafts. Trial `core` and `prod-issues` drafts were tested on 2026-10-11 and then deleted; the surface report keeps the results. Open: the catalogue, composition, and the gaps for loose agents and settings hooks. The format and the store were decided at gate 2, in [profiles.md](profiles.md).
+1. **Profiles and modularity.** Ruled: declared profiles through aliases; split sidekick into plugins exactly where a profile must separate things, pm, dev, and ops. After gate 2's review, the split moved to the loop design, since no R9 profile must separate them yet. Ruled 2026-10-12: profiles are built and documented properly, not kept as local drafts. Trial `core` and `prod-issues` drafts were tested on 2026-10-11 and then deleted; the surface report keeps the results. Open: the catalogue, composition, and the gaps for loose agents and settings hooks. The format and the store were decided at gate 2, in [profiles.md](profiles.md).
 2. **Sessions and agents.** Background sessions make the orchestrator pattern real (#101). Known 2026-10-12: a `--bg` session takes a slash command as its first prompt, and one that edits in its own worktree commits and pushes by default. `sk-worker`'s "never push" is then an instruction the model follows, not a guard. Open: `sk-worker` through `claude --bg` and its authority premise, a guard on push or isolation off, and a model per worker.
 3. **Visibility.** Agent view covers which session needs the operator. Open: what a mod adds, such as profile, context, unit of work, and re-entry.
 4. **Context budget.** Open: the levers, ranked: profiles, GSD's listings, a brief instead of the whole `sk-orient` text at session start, and lean worker launches.
@@ -161,11 +163,11 @@ Each is a thread the operator can pull at gate 2. What is known, what is ruled, 
 
 ## Candidate mods
 
-A sketch the operator asked for on 2026-10-12, high level, to be designed properly later. Each mod is one plugin's hooks module, so each rides the module a profile switches.
+A sketch the operator asked for on 2026-10-12, high level, to be designed properly later. Each mod is one plugin's hooks module, so each rides the module a profile switches. In R9 every mod shares sidekick's one module; the module column names where each would go after the split.
 
 | Mod | Module | Does | Built on |
 |---|---|---|---|
-| gauge | core | context and profile in the status line; warns the model before the window fills; flags an unprofiled session | `$.session.usage()`, `session.measure`, `$.ui.status`, `$.session.append` |
+| gauge | core | context and profile in the status line; flags an unprofiled session. Since the review, the warning to the model runs as a settings hook | `$.session.usage()`, `session.measure`, `$.ui.status` |
 | scope | core | per-session filtering native settings cannot do: loose agents, single plugin skills, tools; `/profile` lists what loaded and its start cost | `agent.offer`, `prompt.attachment`, `tool.describe`, `$.command.register` |
 | desk | orchestration | a band naming sessions that need the operator, in any session; a workers pane; a `dispatch_worker` tool; a "since you left" summary on attach | `claude agents --json` through `$.process.run`, `$.clock.every`, `$.tool.register`, `session.attach`, `$.model.fork` |
 | board | pm | the board pickup as a band; capture, its queue, and triage moved to the loop design on 2026-10-12 | `$.command.register`, `$.tool.register`, `$.store`, `ui.render` on `AbovePrompt` |
@@ -221,23 +223,46 @@ Gate 2's four decisions are recorded in their sibling notes, named in §Options.
 
 ## Review
 
-Not run. The adversarial review in `sk-design`'s `references/review.md` runs before gate 3.
+One round on 2026-10-12, by a fresh subagent given `sk-design`'s review prompt, this note, and its four sibling notes. Claude re-read or re-ran the evidence each answer rests on.
+
+1. **A dispatched worker's worktree starts at the remote's default branch, without the plan, and cannot write beside it.** Accepted, verified in the worktrees docs. [workers.md](workers.md) gains W9 and W10. Part 3 now sets `worktree.baseRef` to `"head"`, reads the plan in the main checkout, and writes the run report in the worktree.
+2. **A live worktree under `.claude/worktrees/` dirties the main checkout and breaks its gates.** Accepted. [workers.md](workers.md) gains W11. The launcher excludes the folder through `.git/info/exclude` before a repo's first dispatch, and an assumption names tools that may not honour that file.
+3. **The CLI reads skill and rule files from its own plugin folder, so moving them breaks the nudges and the PM rule silently.** Accepted, verified at `bin/cli.ts:87`, `bin/helpers/hook.ts:40-41,181`, and `bin/helpers/rules.ts:53-54,98`. [plugins.md](plugins.md) records it for whenever the split runs.
+4. **pm and dev reference each other, and R9 builds no profile that must separate them.** Accepted, verified at `sk-execute/SKILL.md:83`, `sk-design/SKILL.md:138`, `sk-milestone/SKILL.md:43`, and `release-review.md:58`. It changed Claude's recommendation for decision 4. The operator agreed on 2026-10-12: one plugin in R9, and the split moved to the loop design.
+5. **`--setting-sources` gives a native plugin allowlist.** Partly accepted, re-run on 2026-10-12. [profiles.md](profiles.md) gains P10 and routes the choice of compile target to the profile issue. Option C stands, since rules, scope filters, and a description still need the manifest.
+6. **The context monitor's warning to the model should not ride a mod.** Accepted. By decision 1's own rule, a settings hook already does that job: #146 records reading usage from the transcript, checked on 2026-09-29. It also fires per tool call, where `session.measure` fires per main-thread turn. The monitor becomes a settings hook, at the cost of an approximate figure and a window size looked up from the model. The gauge mod keeps the display, and [mods.md](mods.md)'s assumption is amended. The operator accepted the approximation, noting that GSD's monitor is a hook too. Claude checked: it is a `PostToolUse` hook, but it reads an exact figure that GSD's own status line writes to a bridge file (`~/.claude/hooks/gsd-statusline.js:321-334`). sidekick cannot rely on the operator's chosen status line, so its figure approximates.
+7. **The worker cannot verify that the operator chose the mode.** Accepted. [workers.md](workers.md)'s card now rests the authority on the orchestrating session following `sk-execute`, and on the desk showing every dispatch. If a session dispatches unasked, the desk's dispatch tool holds each dispatch for the operator's yes.
+
+Minor, as reported:
+
+- §Next session said no constraint was left assumed, though the sibling notes carry unchecked items. Reworded.
+- `$.env.get` exists, and `$.env.set` lets any mod lift the push block. [profiles.md](profiles.md) and [workers.md](workers.md) (W12) updated.
+- The agent-view docs say what deleting a worker's session does to its branch. [workers.md](workers.md)'s assumption updated.
+- "Never pushed unasked" came from interactive sessions. Noted in [workers.md](workers.md)'s decision.
+- Missed prior art for G1: the footer's count of waiting background agents, the `Notification` hook's `agent_needs_input` and `agent_completed` types, and agent teams. Added to §Prior art.
+- The order put GSD's removal first, though its monitor was a mod. Resolved by finding 6.
+- A hold's `.catch` gets one second, and an unloaded module holds nothing. [mods.md](mods.md) Part 2 updated.
+- [plugins.md](plugins.md) said the skills' commands keep their names while skill names change. It meant the CLI's commands; reworded.
+- Install records naming only `sidekick@rikmorn` would load the core alone after a split. Recorded in [plugins.md](plugins.md).
+- Agent view keeps a session's `--settings` across restarts, so the compiled file's place matters. Routed in [profiles.md](profiles.md).
+- K12 counted two typed loads; one was the grep's own output. Corrected in [mods.md](mods.md).
+- The desk's polling cost is not estimated. Routed to the desk's issue, with the `Notification` hook as a way to avoid polling.
 
 ## Gates
 
 - **Gate 1, credited 2026-10-12.** The operator confirmed the goals, the constraints, the two initiatives, and the rulings in §Two initiatives, answer by answer in a session with Claude. This note records each answer; the commit that lands it names the gate.
-- **Gate 2, credited 2026-10-12.** The operator decided the four questions §Next session lists, answer by answer in a later session with Claude. Each sibling note's §Decision records the answers. What a profile's declaration means was left to use, by the operator's choice.
+- **Gate 2, credited 2026-10-12.** The operator decided the four questions §Next session lists, answer by answer in a later session with Claude. Each sibling note's §Decision records the answers. After the review, the operator revised decision 4: R9 keeps one plugin. What a profile's declaration means was left to use, by the operator's choice.
 
 ## Next session
 
-The owed research and the three experiments were done on 2026-10-12, in the probes and extension-fit reports. No constraint is left assumed.
+The owed research and the three experiments were done on 2026-10-12, in the probes and extension-fit reports. Gate 2's notes still carry a few unchecked items, each marked where it sits and routed to an issue.
 
 Gate 2 is light, agreed with the operator on 2026-10-12. Each thread's open questions are sorted into two kinds. Those that cross pieces and are costly to undo are decided at this gate. The rest go into the breakdown as questions for each issue's own design, when it is picked up. Four questions are decided here, in this order, since the other three lean on the first:
 
 1. **Whether sidekick ships mods**, as an ADR. The context monitor (#146) and every R9 mod depend on it, and it settles ADR-0010's revisit; the extension-fit report holds the four options. Its options and a recommendation are in [mods.md](mods.md), written 2026-10-12. The operator decided all three parts that day, as the recommendation gave them. The ADR lands in `docs/adr/` once the decision settles.
 2. **Where profiles live and how one is declared.** Launching workers, the gauge, and scope filtering all read this data model. Decided in [profiles.md](profiles.md) on 2026-10-12. A thin manifest is compiled to native settings and stored at user and repo level. What a declaration means is left to use.
 3. **`sk-worker` dispatched from a session.** Its premise that only the operator starts it, and a guard against a background session's default push. Decided in [workers.md](workers.md) on 2026-10-12. A session dispatches a worker after the operator chooses the mode, git blocks its pushes, and it works in its own worktree.
-4. **The plugin split** along pm, dev, and ops, which changes install records in every repo that uses sidekick. Decided in [plugins.md](plugins.md) on 2026-10-12: three plugins, `sidekick` as the core, `sidekick-pm`, and `sidekick-dev`. The ops mod moved to the loop milestone.
+4. **The plugin split** along pm, dev, and ops, which changes install records in every repo that uses sidekick. Decided in [plugins.md](plugins.md) on 2026-10-12, then revised after the review: R9 keeps one plugin, and the split moved to the loop design with the ops mod.
 
 All four were decided on 2026-10-12. Next: the adversarial review and the lens table, then gate 3 with the breakdown, then R9's Opening through `sk-milestone`. The review reads this note with its four sibling notes, and checks that the decisions compose.
 

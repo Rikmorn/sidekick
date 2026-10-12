@@ -4,7 +4,7 @@ Status: decided; the ADR lands once the decision settles · Gate 2, decision 1 o
 
 ## Problem
 
-Every visibility and control piece of R9 needs a mod, and so does the context monitor (#146). ADR-0010's first revisit condition has also fired, since `skill.prompt` wraps another plugin's skill. Three questions follow. Each crosses pieces and is costly to undo:
+Every visibility and control piece of R9 needs a mod. The context monitor (#146) was thought to need one too; the review showed a settings hook does its job, as the design's §Review says. ADR-0010's first revisit condition has also fired, since `skill.prompt` wraps another plugin's skill. Three questions follow. Each crosses pieces and is costly to undo:
 
 1. Does sidekick ship mods, and for what?
 2. What may a sidekick mod do? ADR-0010 Decision 2 limits a hook to adding context, but the ops mod holds commands and the scope mod filters what the model is offered.
@@ -29,7 +29,7 @@ Grades: **ran** means a probe ran on 2026-10-12. **Read** means read on 2026-10-
 | K9 | Installed mods share one worker thread, and three untraced crashes unload every mod that is not built in. `--safe-mode`, `--bare`, `allowManagedModsOnly`, and a remote rollout switch turn mods off while the plugin's other parts load | read on the troubleshooting and admin pages; not re-read |
 | K10 | Mods are not sandboxed. A mod can approve a tool call that an `ask` rule or a `PreToolUse` hook would stop | read, in the surface report |
 | K11 | `skill.prompt` fires for a skill typed as `/name`, loaded through the Skill tool, or preloaded into a subagent. A subagent's tool calls raise their own `tool.call` | read ✓ (`claude-code.d.ts:11894`, `:12764`) |
-| K12 | Since the Skill hook shipped on 2026-09-25, transcripts hold about 20 model-invoked loads of `superpowers:brainstorming`. A typed `/superpowers:brainstorming` appears in two sessions, both on 2026-10-12 | measured by a grep over `~/.claude/projects` for transcripts changed since 2026-09-25. That the two are the probes is inferred |
+| K12 | Since the Skill hook shipped on 2026-09-25, transcripts hold about 20 model-invoked loads of `superpowers:brainstorming`. A typed `/superpowers:brainstorming` appears in one session, a probe on 2026-10-12 | measured by a grep over `~/.claude/projects` for transcripts changed since 2026-09-25. Corrected after the review: the second hit was the grep's own output, recorded in this design's session |
 | K13 | sidekick's three settings hooks have run since 2026-09-25 and 2026-09-30. Each prints nothing and exits 0 on any failure | read: `plugin/hooks/hooks.json`, ADR-0010, ADR-0011 |
 
 Not read: the web reference's full event list, and any superpowers plan for extension points. A Claude Code older than 2.1.287 was not tried, since none is on disk.
@@ -69,7 +69,7 @@ ADR-0010 Decision 2 limits a hook to adding context. The candidate mods need mor
 - **Context only.** It rules out the ops hold, scope filtering, and the memory guard the loop design wants.
 - **A ladder, stated per mod.** The rungs are to observe and draw, and to add context. The higher rungs are rewriting what the model is offered or reads, and holding a call for the operator's yes. Each mod's issue names its highest rung. Two lines hold on every rung:
   - A sidekick mod never approves a call or answers a permission. Approval stays with the operator and their settings (K10).
-  - A hook that holds fails closed through its `.catch`. Every other hook fails open (K3, K4).
+  - A hook that holds fails closed through its `.catch`. Every other hook fails open (K3, K4). A `.catch` gets one second (`catchMs`), and an unloaded module holds nothing (K9), so a hold is a guard only while its module runs.
 
 A hold guards the model's tools; it is not a boundary, as the probes found for deny rules. Thread 9 of the design keeps the question of a harder boundary for production.
 
@@ -93,7 +93,7 @@ B, with the ladder, and keep the hooks.
 Assumptions, and what changes if each is wrong:
 
 - The operator is sidekick's only user, on a current Claude Code. If others run it on older builds, a runtime check on `$.session.version()` becomes owed (K5).
-- A broken mod costs the operator a view, not a wrong result. Holds fail closed, and nothing else depends on a mod. If a later mod must not fail silently, it needs a check that it ran, not only a test.
+- A broken mod costs the operator a view, not a wrong result. That holds only because the model's context warning runs as a settings hook. Nothing that must stay out of a session relies on the scope mod alone either. Both follow from the review. If a later mod must not fail silently, it needs a check that it ran, not only a test.
 - One adapter per mod and a check after each upgrade absorb the API's moves. If it moves every release, the carrying cost argues for fewer mods, with the gauge and the desk first.
 - Typed superpowers commands stay rare (K12). If they become common, Part 3 switches to appending.
 
@@ -106,7 +106,7 @@ Assumptions, and what changes if each is wrong:
 
 ## Routed elsewhere
 
-- Which plugin holds which mod is decision 4, since a plugin holds one module (K8).
+- Which plugin holds which mod is decision 4, since a plugin holds one module (K8). After the review, R9 keeps one plugin, so its one module holds every mod.
 - Each mod's rung and its tests belong to that mod's issue.
 
 ## Decision

@@ -1,6 +1,6 @@
 # Plugins: splitting sidekick along pm, dev, and ops
 
-Status: decided: three plugins now, ops with the loop · Gate 2, decision 4 of the [control-centre design](design.md) · 2026-10-12
+Status: revised after the review; one plugin in R9 · Gate 2, decision 4 of the [control-centre design](design.md) · 2026-10-12
 
 ## Problem
 
@@ -74,6 +74,8 @@ Assumptions, and what changes if each is wrong:
 - The Read hook serves both pm's release check and dev's reviewers. Where it lives: the split's issue.
 - The migration order, the release notes, and the sweep of skill names.
 - ADR-0009 Decision 2's amendment: written with the split.
+- The review found that the CLI reads skill and rule files from its own plugin folder (`bin/cli.ts:87`, `bin/helpers/hook.ts:40-41,181`). It also delivers `sk-pm-conventions.md` only where a `sidekick@` key is enabled (`bin/helpers/rules.ts:53-54,98`). A split that moves those files breaks both without an error, as ADR-0010 Decision 2 makes every hook failure silent.
+- After a split, install records naming only `sidekick@rikmorn` load the core alone, so the PM layer drops until the records change.
 
 ## Decision
 
@@ -84,4 +86,10 @@ The operator asked whether this follows Anthropic's model of one plugin per doma
 - `anthropics/knowledge-work-plugins` holds 22 plugins of its own, one per domain, such as sales, finance, and engineering. None of their manifests declares a dependency, and each carries its own skills and connectors. Their only shared base is Claude Code.
 - `anthropics/claude-code` lists 13 plugins split by capability, such as `code-review` and `commit-commands`. Their manifests were not read.
 
-So the domain split follows that model; the core departs from it. sidekick's pm and dev share what Claude Code lacks: the CLI, and the control centre's profile tools and mod. A session can draw one gauge, so the mod cannot be copied into each domain plugin as connectors are. The operator then ruled that pm and dev depend on the core for the CLI. The core is the base for every other sidekick plugin. One `sidekick` command stays on the path, and the skills' commands keep their names.
+So the domain split follows that model; the core departs from it. sidekick's pm and dev share what Claude Code lacks: the CLI, and the control centre's profile tools and mod. A session can draw one gauge, so the mod cannot be copied into each domain plugin as connectors are. The operator then ruled that pm and dev depend on the core for the CLI. The core is the base for every other sidekick plugin. One `sidekick` command stays on the path, and the CLI's commands keep their names.
+
+### Revised after the review
+
+The design's review found that pm and dev reference each other in both directions (finding 4). It also found that the CLI reads skill and rule files from its own plugin folder (finding 3). R9 builds no profile that must separate pm from dev, since domain profiles are content made between the initiatives. Claude changed its recommendation to one plugin in R9, and the operator agreed on 2026-10-12: "likely better choice actually".
+
+The split moves to the loop design, which the operator expects to set concrete targets for what each plugin bundles. The rulings in this note carry over. The core is the base for every other sidekick plugin, and ops is its own plugin. So do the findings under §Routed elsewhere.

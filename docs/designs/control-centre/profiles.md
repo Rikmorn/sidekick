@@ -30,8 +30,9 @@ Grades as in [mods.md](mods.md). Probes on 2026-10-12 ran `claude -p --model hai
 | P7 | `plugin/bin/sidekick` joins the Bash tool's path inside a session only. The installed plugin's folder carries its version, as in `~/.claude/plugins/cache/rikmorn/sidekick/0.5.1/` | read in ADR-0009; the folder seen on 2026-10-12 |
 | P8 | A profile's settings beat the repo's own. In the sidekick repo, whose `.claude/settings.json` enables `code-review`, a profile setting it to `false` removed it | measured |
 | P9 | Profiles are content, made ad hoc; the management system is the goal. One test profile is the bench. Profiles are built and documented properly. Sessions launch through aliases, and every worker runs from a session | stated by the operator, gate 1 |
+| P10 | `--setting-sources project` with `--settings` naming one plugin loaded that plugin alone. Dropping the user source also drops the user layer's permissions, hooks, environment, and status line | measured by the reviewer and again by Claude on 2026-10-12; the dropped keys are the reviewer's reading |
 
-From P2 and P4: a native settings file can only subtract from the user layer. "Only what it declares" means every other installed plugin written as `false`, and every other rule file excluded. Each new install then leaks into every profile until someone edits it.
+From P2 and P4: a native settings file can only subtract from the user layer, unless the session drops that layer with `--setting-sources` (P10). "Only what it declares" means every other installed plugin written as `false`, and every other rule file excluded. Each new install then leaks into every profile until someone edits it.
 
 ## Options
 
@@ -83,12 +84,14 @@ Assumptions, and what changes if each is wrong:
 
 - C holds both meanings, so trying both costs nothing. A profile with an allowlist loads only what it names; one with only a `settings` block changes the user layer, as A would. If use settles on changes alone, the compile step goes.
 - Compiling at launch finds the installed CLI from outside a session (P7). If no stable path exists, the compile runs when a profile is saved and at plugin update. The gauge then flags a profile built before the latest install.
-- A mod reads the session's environment. If not, the compiled settings carry the name some other way the gauge can read.
+- A mod reads the variable. `$.env.get` reads Claude Code's own environment (`claude-code.d.ts:3588-3614`). Whether `--settings`' `env` key reaches that process, and not only its Bash children, is unchecked. If not, the compiled settings carry the name some other way.
 - A repo profile is launched only by name, by the operator or a session they run. If a cloned repo's profile could be launched unread, the launcher needs a trust check first.
 
 ## Routed elsewhere
 
 - The CLI's verbs, the launcher's path, the start-cost report, and how agent view gets the stance: the profile-management issue.
+- Whether an allowlist compiles to `false` entries or to `--setting-sources` with the user layer restored (P10): that issue. The manifest stays, since rules (P4), scope filters (P5), and a description still need it.
+- Where the compiled settings file lives. Agent view keeps a session's `--settings` across supervisor restarts, so recompiling it changes a resumed worker. That is the reviewer's reading, not re-read.
 - A profile that disables a plugin another one it enables depends on (P3): that issue's check reports it.
 - Whether a repo profile is held to the folder's trust, and what the launcher shows before it applies one: that issue, before repo profiles ship.
 - What a declaration means by default: decided after the test bench holds one profile of each kind.
