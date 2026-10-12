@@ -29,8 +29,10 @@ Grades as in [mods.md](mods.md). Probes on 2026-10-12 ran `claude -p --model hai
 | P6 | `claude --bg` takes `--settings` and `--append-system-prompt`, and `claude agents --settings` sets the settings for sessions agent view dispatches | measured and read, in the design's constraints |
 | P7 | `plugin/bin/sidekick` joins the Bash tool's path inside a session only. The installed plugin's folder carries its version, as in `~/.claude/plugins/cache/rikmorn/sidekick/0.5.1/` | read in ADR-0009; the folder seen on 2026-10-12 |
 | P8 | A profile's settings beat the repo's own. In the sidekick repo, whose `.claude/settings.json` enables `code-review`, a profile setting it to `false` removed it | measured |
-| P9 | Profiles are content, made ad hoc; the management system is the goal. One test profile is the bench. Profiles are built and documented properly. Sessions launch through aliases, and every worker runs from a session | stated by the operator, gate 1 |
+| P9 | Profiles are content, made ad hoc; the management system is the goal. One test profile is the bench. Profiles are built and documented properly. Interactive sessions launch through aliases, and every worker runs from a session, none started by hand | stated by the operator, gate 1 |
 | P10 | `--setting-sources project` with `--settings` naming one plugin loaded that plugin alone. Dropping the user source also drops the user layer's permissions, hooks, environment, and status line | measured by the reviewer and again by Claude on 2026-10-12; the dropped keys are the reviewer's reading |
+| P11 | `--agent`, or the `agent` key, runs the main thread as a named agent with its own prompt, tools, model, MCP servers, and hooks. `claude --bg` accepts it. A non-empty agent prompt replaces Claude Code's system prompt | `--bg` with `--agent`: read in the agent-view docs on 2026-10-12. The rest is the second reviewer's reading of the sub-agents docs, not re-read |
+| P12 | A separate `CLAUDE_CONFIG_DIR` switches the whole user layer, but needs its own login, and its supervisor "runs as a separate instance with its own sessions" | login: session memory of 2026-10-11; supervisor: read in the agent-view docs on 2026-10-12 |
 
 From P2 and P4: a native settings file can only subtract from the user layer, unless the session drops that layer with `--setting-sources` (P10). "Only what it declares" means every other installed plugin written as `false`, and every other rule file excluded. Each new install then leaks into every profile until someone edits it.
 
@@ -84,7 +86,7 @@ Assumptions, and what changes if each is wrong:
 
 - C holds both meanings, so trying both costs nothing. A profile with an allowlist loads only what it names; one with only a `settings` block changes the user layer, as A would. If use settles on changes alone, the compile step goes.
 - Compiling at launch finds the installed CLI from outside a session (P7). If no stable path exists, the compile runs when a profile is saved and at plugin update. The gauge then flags a profile built before the latest install.
-- A mod reads the variable. `$.env.get` reads Claude Code's own environment (`claude-code.d.ts:3588-3614`). Whether `--settings`' `env` key reaches that process, and not only its Bash children, is unchecked. If not, the compiled settings carry the name some other way.
+- A mod can read the profile. `$.settings.read({ source: "flag" })` returns what `--settings` carries, and `{}` for an unprofiled session (`claude-code.d.ts:3566-3586`, `:11824`). The environment variable may then be unnecessary.
 - A repo profile is launched only by name, by the operator or a session they run. If a cloned repo's profile could be launched unread, the launcher needs a trust check first.
 
 ## Routed elsewhere
@@ -107,3 +109,10 @@ The operator's answers on 2026-10-12, in a session with Claude:
 - **Store: user level, and repo level too.** The operator will make profiles while working in other repos, or outside any repo, and a release per profile would not scale. User level is acceptable; since profiles are files, a repo can hold them as well, and colleagues without sidekick ignore them.
 
 On how user-level profiles meet a repo's own plugins, Claude reported P8 and P3. A profile's settings beat the repo's, so a profile that turns a plugin off turns it off there too. A profile with an allowlist therefore turns off a plugin the repo enables but the profile does not name. Turning off one of sidekick's dependencies turns sidekick off with it.
+
+The second review round, recorded in the design's §Review, adds:
+
+- **No compile step in R9.** Trying both meanings is not free. The allowlist half needs the compile step, a launcher that finds what is installed, the dependency check, and the rule excludes. Claude recommends building the manifest without a compile step, and trying "only what it names" through `--setting-sources` (P10). The operator agreed on 2026-10-12.
+- **`--agent` (P11)** may carry a profile's stance, tools, and model. The profile issue weighs it against `--append-system-prompt-file`, given that it replaces Claude Code's system prompt.
+- **One config folder per profile (P12)** is rejected for R9: one login each, and agent view split by profile, against G1. It is the fallback if scope filtering proves too weak.
+- **Switching a session's profile** has no mechanism yet. The profile issue starts from the unchecked premise that a switch relaunches or resumes the session under the new profile's settings.

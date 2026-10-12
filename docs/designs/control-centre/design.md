@@ -65,7 +65,7 @@ Verified, with the source in the research reports:
 
 - Mods run in-process and unsandboxed, on an early-access API that moves between releases. Each plugin has one hooks module, and mods draw only in the terminal and the Desktop app.
 - Background sessions are separate processes under a supervisor. They run where dispatched, isolate edits in worktrees, run the same hooks, accept `--settings` and `--append-system-prompt`, and refuse untrusted folders.
-- A session in sidekick starts at 74,229 tokens; about 42k of that is Claude Code's own.
+- A session in sidekick starts at 74,229 tokens. An estimated 42k of that is Claude Code's own: the remainder after estimating the other parts.
 - `--settings` switches whole plugins, rule files, connectors, bypass mode, and the auto-memory folder per session. Nothing found switches loose agents or user-settings hooks per session.
 - Auto memory is one folder per repo, shared across worktrees, never expired; a session gets one folder.
 - The user instruction layer (`~/.claude/CLAUDE.md`, `~/.claude/rules/`) loads in every session.
@@ -124,7 +124,7 @@ Draft; to be confirmed before gate 3.
 | Operability | yes | the whole goal: seeing sessions, profiles, and context |
 | Testability | yes | `claude plugin test` for mods; probes for profile behaviour |
 | Security | yes | unsandboxed mods; prod credentials; untrusted alert content and memory poisoning |
-| Performance | yes | the startup token budget per session |
+| Performance | yes | the startup token budget per session; the monitor hook's `node` start and transcript read per tool call |
 | Reversibility | partly | profiles and mods are files, cheap to undo; the deferred split changes install records when it comes |
 
 ## Prior art
@@ -227,11 +227,11 @@ One round on 2026-10-12, by a fresh subagent given `sk-design`'s review prompt, 
 
 1. **A dispatched worker's worktree starts at the remote's default branch, without the plan, and cannot write beside it.** Accepted, verified in the worktrees docs. [workers.md](workers.md) gains W9 and W10. Part 3 now sets `worktree.baseRef` to `"head"`, reads the plan in the main checkout, and writes the run report in the worktree.
 2. **A live worktree under `.claude/worktrees/` dirties the main checkout and breaks its gates.** Accepted. [workers.md](workers.md) gains W11. The launcher excludes the folder through `.git/info/exclude` before a repo's first dispatch, and an assumption names tools that may not honour that file.
-3. **The CLI reads skill and rule files from its own plugin folder, so moving them breaks the nudges and the PM rule silently.** Accepted, verified at `bin/cli.ts:87`, `bin/helpers/hook.ts:40-41,181`, and `bin/helpers/rules.ts:53-54,98`. [plugins.md](plugins.md) records it for whenever the split runs.
+3. **The CLI reads skill and rule files from its own plugin folder, so moving them breaks the nudges and the PM rule silently.** Accepted, verified at `bin/cli.ts:87`, `bin/helpers/hook.ts:41-42,177,181`, and `bin/helpers/rules.ts:53-54,98`. [plugins.md](plugins.md) records it for whenever the split runs.
 4. **pm and dev reference each other, and R9 builds no profile that must separate them.** Accepted, verified at `sk-execute/SKILL.md:83`, `sk-design/SKILL.md:138`, `sk-milestone/SKILL.md:43`, and `release-review.md:58`. It changed Claude's recommendation for decision 4. The operator agreed on 2026-10-12: one plugin in R9, and the split moved to the loop design.
 5. **`--setting-sources` gives a native plugin allowlist.** Partly accepted, re-run on 2026-10-12. [profiles.md](profiles.md) gains P10 and routes the choice of compile target to the profile issue. Option C stands, since rules, scope filters, and a description still need the manifest.
 6. **The context monitor's warning to the model should not ride a mod.** Accepted. By decision 1's own rule, a settings hook already does that job: #146 records reading usage from the transcript, checked on 2026-09-29. It also fires per tool call, where `session.measure` fires per main-thread turn. The monitor becomes a settings hook, at the cost of an approximate figure and a window size looked up from the model. The gauge mod keeps the display, and [mods.md](mods.md)'s assumption is amended. The operator accepted the approximation, noting that GSD's monitor is a hook too. Claude checked: it is a `PostToolUse` hook, but it reads an exact figure that GSD's own status line writes to a bridge file (`~/.claude/hooks/gsd-statusline.js:321-334`). sidekick cannot rely on the operator's chosen status line, so its figure approximates.
-7. **The worker cannot verify that the operator chose the mode.** Accepted. [workers.md](workers.md)'s card now rests the authority on the orchestrating session following `sk-execute`, and on the desk showing every dispatch. If a session dispatches unasked, the desk's dispatch tool holds each dispatch for the operator's yes.
+7. **The worker cannot verify that the operator chose the mode.** Accepted. [workers.md](workers.md)'s card now rests the authority on the orchestrating session following `sk-execute`, and on the desk showing every dispatch.
 
 Minor, as reported:
 
@@ -247,6 +247,34 @@ Minor, as reported:
 - Agent view keeps a session's `--settings` across restarts, so the compiled file's place matters. Routed in [profiles.md](profiles.md).
 - K12 counted two typed loads; one was the grep's own output. Corrected in [mods.md](mods.md).
 - The desk's polling cost is not estimated. Routed to the desk's issue, with the `Notification` hook as a way to avoid polling.
+
+### Round 2
+
+A second round ran on 2026-10-12, since round 1's answers changed the recommendation. It is the last, so what it leaves open is named, not reviewed again. Claude re-read the evidence each answer rests on.
+
+1. **A background session moves into its worktree only before its first edit, so `sk-worker`'s start checks and baseline gates run in the main checkout.** Accepted, verified in the agent-view docs. [workers.md](workers.md) gains W13: the worker enters its worktree before its scan, and the worktree gets its dependencies and the gitignored files it needs. The workers issue picks the mechanism.
+2. **The dispatch hold in round 1's answer 7 contradicts [mods.md](mods.md), and a raw `claude --bg` bypasses any hold.** Accepted. The hold is withdrawn. R9 carries the debt that a session can start a worker through `claude --bg` without the operator's choice of the mode, and without the launcher's push block. Agent view shows every such session. The operator agreed on 2026-10-12.
+3. **One plugin carries superpowers and `code-review` into every profile that uses sidekick, until the split.** Accepted as a stated cost, verified in `plugin/.claude-plugin/plugin.json`. Claude recommends carrying it until the split; dropping the manifest's dependencies is the lever if a profile needs sidekick without them sooner. The operator agreed on 2026-10-12.
+4. **`--agent` runs the main thread with its own prompt, tools, model, MCP servers, and hooks, and the notes never weigh it.** Accepted as prior art. [profiles.md](profiles.md) gains P11 and routes it to the profile issue. The manifest still holds plugins, rules, and scope filters, which `--agent` does not reach.
+5. **One `CLAUDE_CONFIG_DIR` per profile switches the whole user layer, and nobody weighed it.** Rejected for R9. Each folder needs its own login (session memory, 2026-10-11), and runs its own supervisor with its own sessions (agent-view docs). Agent view would then split by profile, against G1. [profiles.md](profiles.md) records it as the fallback if scope filtering proves too weak.
+6. **G2 and G11 ask to switch a session's profile, and no note says how.** Accepted. [profiles.md](profiles.md) routes it to the profile issue, on the unchecked premise that a switch relaunches or resumes the session under the new profile's settings.
+7. **"C holds both meanings, so trying both costs nothing" is false: the allowlist half alone needs the compile step.** Accepted. Claude now recommends building the manifest without a compile step in R9, with "only what it names" tried through `--setting-sources` (P10). The operator agreed on 2026-10-12.
+8. **Agent view is a research preview, and its instability is not costed.** Accepted, verified in the agent-view docs. [workers.md](workers.md) gains W14, and the desk and the workers carry it as they carry the mod API's.
+9. **Durable content sits in a folder that R9's close deletes.** Accepted, verified: `sk-milestone` §Closing deletes the design folders its audit lists. Before R9's Opening, §Handed to the loop design, threads 5 to 9, and the split's findings move to `docs/designs/loop/`. The mods ADR, with ADR-0010's amendment for the rewrite rung, becomes a piece of R9's breakdown. The operator agreed on 2026-10-12.
+
+Minor, as reported:
+
+- "About 42k of that is Claude Code's own" is an estimate from a remainder. Reworded in §Constraints.
+- Round 1's answer 3 cited `hook.ts:40-41`; the constants sit at `:41-42`, and the folder read at `:177`. Corrected.
+- `$.settings.read({ source: "flag" })` returns what `--settings` carries, so a mod can read the profile without an environment variable. [profiles.md](profiles.md) updated.
+- A model id carries no window size, so the monitor hook cannot look it up. The gauge mod could write `$.session.usage()` to a file the hook reads, falling back to the transcript, as GSD's status line feeds its monitor. Routed to #146's design.
+- The monitor hook costs a `node` start and a transcript read per tool call, about what GSD's monitor costs now. Added to the Performance lens.
+- A mod's status line always carries a `⚠` prefix, and the operator's status line already shows context. The gauge's issue decides what the gauge shows, and where.
+- With one plugin, every worker loads the desk and the board. The manifest's scope filters can switch mod parts as data, so no code branches on the profile. Routed to the scope mod's issue.
+- "Sessions launch through aliases" sits beside "no process started by hand". The second covers workers. Clarified in [profiles.md](profiles.md).
+- `using-git-worktrees` may run `npm install` in a bun repo and leave a stray lockfile. Unverified; routed to the workers issue.
+
+The operator agreed to all four rulings on 2026-10-12. Still open after round 2: each item the sibling notes mark unchecked.
 
 ## Gates
 
@@ -264,7 +292,13 @@ Gate 2 is light, agreed with the operator on 2026-10-12. Each thread's open ques
 3. **`sk-worker` dispatched from a session.** Its premise that only the operator starts it, and a guard against a background session's default push. Decided in [workers.md](workers.md) on 2026-10-12. A session dispatches a worker after the operator chooses the mode, git blocks its pushes, and it works in its own worktree.
 4. **The plugin split** along pm, dev, and ops, which changes install records in every repo that uses sidekick. Decided in [plugins.md](plugins.md) on 2026-10-12, then revised after the review: R9 keeps one plugin, and the split moved to the loop design with the ops mod.
 
-All four were decided on 2026-10-12. Next: the adversarial review and the lens table, then gate 3 with the breakdown, then R9's Opening through `sk-milestone`. The review reads this note with its four sibling notes, and checks that the decisions compose.
+All four were decided on 2026-10-12, and the adversarial review ran two rounds the same day, answered in §Review. Next:
+
+1. Confirm the lens table.
+2. Write the breakdown in §Blast radius. It includes the mods ADR with ADR-0010's amendment, which must land before R9 closes.
+3. Gate 3: the integrated note, once.
+4. Move §Handed to the loop design, threads 5 to 9, and the split's findings to `docs/designs/loop/`, so R9's close deletes none of them.
+5. R9's Opening through `sk-milestone`.
 
 Questions already routed to an issue's design:
 

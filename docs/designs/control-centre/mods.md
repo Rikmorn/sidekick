@@ -116,7 +116,7 @@ The operator's answers on 2026-10-12, in a session with Claude:
 - **Part 1: B,** mods only where a mod alone can do the job. Agreed.
 - **Part 2: the ladder,** with "never approve" and "a hold fails closed". Agreed for now.
 - **Part 3: keep the hooks.** Decided after Claude set out the difference: both options deliver the same notes, and only a superpowers command the operator types goes uncovered. Switching later is one mod handler, plus the nudge text moved into a plain file the mod can import. ADR-0010's first revisit condition is recorded as fired and declined. Three things reopen it: typed superpowers commands in real work, a nudge shown ignored (#136), or a break in the Skill hook path.
-- **The ADR** lands in `docs/adr/` once the decision has settled, with no rush. Until then this note holds it.
+- **The ADR** lands in `docs/adr/` once the decision has settled, with no rush. Until then this note holds it. After the second review round, the operator agreed that the ADR, with ADR-0010's amendment for the rewrite rung, is a piece of R9. It lands before R9 closes, since R9's close deletes this folder.
 
 At decision 4 the operator moved the ops mod to the loop milestone, so no R9 mod holds a call. The hold rung stays on the ladder for the memory guard and the ops mod, both in the loop design.
 

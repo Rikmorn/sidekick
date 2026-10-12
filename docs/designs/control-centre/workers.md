@@ -34,6 +34,8 @@ Grades as in [mods.md](mods.md). The push probes on 2026-10-12 ran `claude -p --
 | W10 | In an isolated session, Claude Code blocks `Edit`, `Write`, and `NotebookEdit` into the main checkout, a Bash command run there, and git redirected there. `Read` is not among the checks. It applies to background sessions and their subagents | read, same source |
 | W11 | Claude Code does not ignore `.claude/worktrees/` for the repo. In a clone of this repo with a live worktree there, `git status` listed it, and `biome check .` failed on a nested root configuration | the docs' advice, read; the clone measured by the reviewer |
 | W12 | `$.env.set` changes the environment every later Bash child inherits, so any installed mod can lift the push block | read in `claude-code.d.ts:3588-3614` |
+| W13 | A background session "starts in your working directory", and "Before editing files, Claude moves the session into an isolated git worktree". So checks run before the first edit run in the main checkout | read in the agent-view docs on 2026-10-12, after the second review round |
+| W14 | "Agent view is in research preview. The interface and keyboard shortcuts may change." `claude --bg`, attach, and `claude agents --json` sit inside it | read, same source |
 
 ## Options
 
@@ -71,7 +73,7 @@ Rejected for R9. The mode choice is a handoff pause, and #140, which the loop de
 
 ### Part 3: where a dispatched worker works
 
-A dispatched worker works in the worktree its background session makes (W2). Its settings set `worktree.baseRef` to `"head"`, so the worktree starts at the orchestrator's commit, which the brief names (W9). The worker reads the plan and the spec in the main checkout, which `Read` may do (W10). It writes its run report in its own worktree and sends the path, since it cannot write beside the plan. Before the first dispatch in a repo, the launcher lists `.claude/worktrees/` in `.git/info/exclude`, which commits nothing (W11). The orchestrator integrates from the worker's branch. The handoff's other places, a branch in the main checkout or in place, would need isolation off (W3). They stay for a worker the operator starts in their own session.
+A dispatched worker works in the worktree its background session makes (W2). Its settings set `worktree.baseRef` to `"head"`, so the worktree starts at the orchestrator's commit, which the brief names (W9). The worker enters its worktree before its scan, so its checks, baseline, and gates run where it will edit (W13). The worktree gets the dependencies and gitignored files the gates need, through `.worktreeinclude` or an install; the workers issue picks the mechanism. The worker reads the plan and the spec in the main checkout, which `Read` may do (W10). It writes its run report in its own worktree and sends the path, since it cannot write beside the plan. Before the first dispatch in a repo, the launcher lists `.claude/worktrees/` in `.git/info/exclude`, which commits nothing (W11). The orchestrator integrates from the worker's branch. The handoff's other places, a branch in the main checkout or in place, would need isolation off (W3). They stay for a worker the operator starts in their own session.
 
 ## Recommendation
 
@@ -100,3 +102,9 @@ The operator agreed to all three parts on 2026-10-12, in a session with Claude:
 - **Part 3:** a dispatched worker works in its own worktree. The other places stay for a worker the operator starts.
 
 The operator added two points. Workers run in other processes have never pushed unasked, so the instruction has held in use. The review noted that those were interactive sessions, which ask before committing (W3), so they did not test a background session's default. The rewrite is the backstop for when guidance is ignored. And a run that needs something different is varied by prompting. A prompt cannot lift the rewrite, though, since git enforces it. A worker that must push needs the launcher to leave the rewrite out, on the operator's word for that dispatch. The workers issue designs that switch.
+
+The second review round found three more points, recorded in the design's §Review:
+
+- The worker's checks ran in the main checkout until its first edit (W13). Part 3 now enters the worktree first.
+- Nothing stops a session starting a worker through a raw `claude --bg`, which also skips the launcher's push block. Agent view shows every such session. Carried as debt; the operator agreed on 2026-10-12.
+- The desk and the workers rest on agent view, a research preview (W14). If it moves, the fallback is a worker the operator starts in their own session.
