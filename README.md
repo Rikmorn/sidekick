@@ -40,6 +40,8 @@ For one session, pass the same key to `--settings`:
 claude --settings '{"pluginConfigs":{"sidekick@rikmorn":{"options":{"context_window":1000000}}}}'
 ```
 
+A session started with `--plugin-dir ./plugin` loads the plugin as `sidekick@inline`, and reads that key's options instead. Set the window under both keys to cover both kinds of session.
+
 ## The rules
 
 The `sk-*` rules ship inside the plugin. Claude Code reads rules from a repo's `.claude/rules/` or the user-level `~/.claude/rules/`, and a plugin cannot write there on its own, so delivery is one explicit command, available on the Bash tool's PATH whenever the plugin is enabled:
