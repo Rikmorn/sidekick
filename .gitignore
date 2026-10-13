@@ -24,6 +24,7 @@ credentials.json
 
 # Git worktrees (isolated dev workspaces)
 .worktrees/
+.claude/worktrees/
 
 # Superpowers' working directory for specs and plans: transient by convention
 docs/superpowers
