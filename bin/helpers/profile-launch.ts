@@ -3,6 +3,8 @@
  * pure merge behind them, and the arguments `claude` receives.
  */
 
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Profile } from './profile-store.js';
 
@@ -96,3 +98,193 @@ export function launchArgs(profile: Profile, settings: Settings): string[] {
     ...(sources === undefined ? [] : ['--setting-sources', sources.join(',')]),
   ];
 }
+
+/** What a `claude` run returned. Code 127 means it could not start. */
+export interface ClaudeResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+}
+
+/** Runs `claude` with these arguments, in `cwd`, giving up after `timeoutMs`. */
+export type ClaudeRunner = (
+  args: string[],
+  opts: { cwd: string; timeoutMs: number },
+) => ClaudeResult;
+
+interface SpawnOutcome {
+  status: number | null;
+  stdout: string | null;
+  stderr: string | null;
+  error?: Error;
+}
+
+type SpawnFn = (
+  command: string,
+  args: string[],
+  opts: { cwd: string; timeout: number; shell: false },
+) => SpawnOutcome;
+
+const spawnClaude: SpawnFn = (command, args, opts) =>
+  spawnSync(command, args, {
+    ...opts,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+const isTimeout = (error: Error): boolean =>
+  'code' in error && error.code === 'ETIMEDOUT';
+
+/**
+ * Builds a runner over `spawn`, which defaults to `spawnSync`. The command runs
+ * with no shell, so arguments reach `claude` unchanged. Stdin is closed, since
+ * `doctor` can wait on a terminal otherwise.
+ */
+export const makeClaudeRunner =
+  (spawn: SpawnFn = spawnClaude): ClaudeRunner =>
+  (args, { cwd, timeoutMs }) => {
+    const out = spawn('claude', args, {
+      cwd,
+      timeout: timeoutMs,
+      shell: false,
+    });
+    const stdout = out.stdout ?? '';
+    const stderr = out.stderr ?? '';
+    if (out.error === undefined) {
+      return { code: out.status ?? 1, stdout, stderr, timedOut: false };
+    }
+    if (isTimeout(out.error)) {
+      return { code: out.status ?? 1, stdout, stderr, timedOut: true };
+    }
+    return {
+      code: 127,
+      stdout,
+      stderr: stderr || out.error.message,
+      timedOut: false,
+    };
+  };
+
+/** The real runner: `claude` through `spawnSync`. */
+export const execClaude: ClaudeRunner = makeClaudeRunner();
+
+/** Keys `doctor` reports when wrongly typed; the first one the settings leave unset carries the canary. */
+export const CANARY_KEYS = ['feedbackSurveyRate', 'cleanupPeriodDays'] as const;
+
+const CANARY_VALUE = 'sidekick-canary';
+const SKIP_VARIABLE = 'SIDEKICK_PROFILE_SKIP_CHECK';
+
+const SKIP_WARNING = `${SKIP_VARIABLE}=1 is set, so the settings were not checked with claude doctor.`;
+
+/** The check's verdict: `ok` with any warnings, or refused with the lines to print. */
+export type CheckResult =
+  | { ok: true; warnings: string[] }
+  | { ok: false; issues: string[] };
+
+const refuse = (...issues: string[]): CheckResult => ({ ok: false, issues });
+
+/**
+ * The entries under `Invalid settings` that name one of `paths`. The section
+ * ends at a blank line; indented `Suggested fix:` lines are not entries.
+ */
+export function invalidSettingsLines(
+  doctorOutput: string,
+  paths: string[],
+): string[] {
+  const lines = doctorOutput.split('\n');
+  const start = lines.findIndex((line) => line.trim() === 'Invalid settings');
+  if (start === -1) return [];
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => line.trim() === '');
+  const section = end === -1 ? rest : rest.slice(0, end);
+  return section.filter(
+    (line) =>
+      line.startsWith('- ') && paths.some((p) => line.startsWith(`- ${p} `)),
+  );
+}
+
+const printed = (result: ClaudeResult): string =>
+  [result.stdout, result.stderr]
+    .filter((text) => text.trim() !== '')
+    .join('\n');
+
+function judge(
+  result: ClaudeResult,
+  lines: string[],
+  canary: string,
+): CheckResult {
+  if (result.timedOut) {
+    return refuse('claude doctor timed out.', printed(result));
+  }
+  if (result.code !== 0) {
+    return refuse(
+      `claude doctor failed with exit code ${result.code}.`,
+      printed(result),
+    );
+  }
+  const isCanaryLine = (line: string) => line.includes(` \u203a ${canary}:`);
+  if (!lines.some(isCanaryLine)) {
+    return refuse(
+      "claude doctor's output no longer parses: its report for the canary key is missing, so a launch could drop settings silently.",
+      `Set ${SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`,
+    );
+  }
+  const real = lines.filter((line) => !isCanaryLine(line));
+  return real.length === 0 ? { ok: true, warnings: [] } : refuse(...real);
+}
+
+/**
+ * Checks the settings with `claude --settings <file> doctor`. A copy of them
+ * carries a wrongly typed canary key; `doctor` must report it, which proves its
+ * output still parses, and must report nothing else. The copy lives in a fresh
+ * folder under `tmpdir` that is removed on every path.
+ */
+export function checkSettings(
+  settings: Settings,
+  deps: { run: ClaudeRunner; cwd: string; tmpdir: string; skip: boolean },
+  timeoutMs = 30_000,
+): CheckResult {
+  if (deps.skip) return { ok: true, warnings: [SKIP_WARNING] };
+  const canary = CANARY_KEYS.find((key) => !Object.hasOwn(settings, key));
+  if (canary === undefined) {
+    return refuse(
+      `The settings set both ${CANARY_KEYS.join(' and ')}, so the check has no canary key left.`,
+    );
+  }
+  const dir = fs.mkdtempSync(path.join(deps.tmpdir, 'sidekick-profile-'));
+  try {
+    const file = path.join(dir, 'settings.json');
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ ...settings, [canary]: CANARY_VALUE }),
+      {
+        mode: 0o600,
+      },
+    );
+    const result = deps.run(['--settings', file, 'doctor'], {
+      cwd: deps.cwd,
+      timeoutMs,
+    });
+    const lines = invalidSettingsLines(result.stdout, [
+      file,
+      fs.realpathSync(file),
+    ]);
+    return judge(result, lines, canary);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The arguments for a background launch: `--bg`, `-n <name>` when given, then
+ * the prompt after `--` so a leading dash cannot read as a flag.
+ */
+export const bgArgs = (
+  base: string[],
+  opts: { sessionName?: string; prompt?: string },
+): string[] => [
+  ...base,
+  '--bg',
+  ...(opts.sessionName === undefined ? [] : ['-n', opts.sessionName]),
+  ...(opts.prompt === undefined ? [] : ['--', opts.prompt]),
+];
