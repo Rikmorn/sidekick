@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PostToolBatch hook: tell the model, once at each level, how full its
-# main-thread context is (#146). A subagent's event carries the top-level key
+# main-thread context is. A subagent's event carries the top-level key
 # "agent_id" and ends here in bash. A string inside tool_calls cannot hold that
-# key unescaped, but a tool input with an "agent_id" key can; that main-thread
-# batch goes unchecked and the next batch checks. Silent, with exit 0, on
+# key unescaped, but a tool input or response with an "agent_id" key can; that
+# main-thread batch goes unchecked and the next batch checks. Silent, with exit 0, on
 # anything unexpected.
 set -uo pipefail
 

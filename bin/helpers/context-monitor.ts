@@ -8,7 +8,7 @@ import * as path from 'node:path';
 
 export type Level = 'warning' | 'critical';
 
-// GSD's levels: it warns at 35% remaining and escalates at 25% (#146). Highest first.
+// GSD's levels: it warns at 35% remaining and escalates at 25%. Highest first.
 const LEVELS: ReadonlyArray<{ level: Level; at: number }> = [
   { level: 'critical', at: 0.75 },
   { level: 'warning', at: 0.65 },
@@ -164,7 +164,7 @@ export function postToolBatchContext(
 ): string | undefined {
   try {
     const event: unknown = JSON.parse(stdin);
-    // A subagent's window is its own, and its latch would collide with the parent's.
+    // A subagent's event carries the parent's session_id, so skip it: its window is its own.
     if (!isRecord(event) || 'agent_id' in event) return undefined;
     const { session_id: sessionId, transcript_path: transcript } = event;
     if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) {
