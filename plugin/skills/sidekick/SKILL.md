@@ -6,7 +6,7 @@ user-invocable: true
 
 # sidekick
 
-sidekick is a plugin bundle, not a harness. Superpowers and the official code-review plugin do the design, plan, execute, and review work; they install as this plugin's dependencies. sidekick adds four things around them. They are the house guidance (the `sk-*` rules), a project-management layer on GitHub, an execution process for written plans, and design-side extensions the ecosystem lacks. The project-management layer runs only in the repos where the operator owns the tracking. ADR-0009 in the sidekick repo records why.
+sidekick is a plugin bundle, not a harness. Superpowers and the official code-review plugin do the design, plan, execute, and review work; they install as this plugin's dependencies. sidekick adds five things around them. They are the house guidance (the `sk-*` rules), a project-management layer on GitHub, an execution process for written plans, and a context monitor. The fifth is design-side extensions the ecosystem lacks. The project-management layer runs only in the repos where the operator owns the tracking. ADR-0009 in the sidekick repo records why.
 
 ## The rules
 
