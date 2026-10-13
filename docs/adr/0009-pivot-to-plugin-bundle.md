@@ -6,6 +6,8 @@
 
 > **Amended 2026-10-10 (#142):** §1's superpowers range is now `^6.4.1`. That release added brainstorming's shared-understanding step, which `sk-design` builds on rather than repeats.
 
+> **Amended 2026-10-13 (#203):** the second revisit condition is met in mechanism. The mod event `skill.prompt` overrides another plugin's skill, on an early-access API. The operator declined it for R9: sidekick keeps its hooks and its delivery design, as ADR-0012 records.
+
 **Status:** Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002; parks the eval, knowledge-layer, and measurement programmes of ADR-0006, ADR-0007, and ADR-0008. Issue #93, milestone R5.
 
 ## Context

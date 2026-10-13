@@ -6,6 +6,8 @@
 
 > **Amended 2026-10-10 (#188):** that entry also quotes `sk-execute`'s §Choose the mode, so the handoff asks for the mode once, across three modes.
 
+> **Amended 2026-10-13 (#203):** the first revisit condition has fired, and the operator declined it. The mod event `skill.prompt` rewrites another plugin's skill, on an early-access API. ADR-0012 keeps this Skill hook, and Decision 2 still binds it. A mod may rewrite what the model reads on ADR-0012's third rung, and hold a call on its fourth. Three things reopen the choice: typed superpowers commands in real work, a nudge shown ignored (#136), or a break in the Skill hook path.
+
 **Status:** Accepted (2026-09-25). Amends ADR-0009's Consequences on how far sidekick reaches into superpowers' skills. Issue #119, milestone R7.
 
 ## Context
