@@ -79,6 +79,20 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 
 `--quiet` on `board` and `pickup` prints nothing in an untracked repo, for hooks. Exit codes: `0` ran (the verdict is in the JSON), `1` usage or error, `2` `gh` missing or its token lacks the `project` scope.
 
+## Profiles
+
+A profile is a folder of rules, agents, and skills plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads only the layers the profile names. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning.
+
+```bash
+sidekick profile list                          # every profile in the store
+sidekick profile show <name>                   # the folder, manifest, composed settings, and arguments
+sidekick profile new <name> --description "…"  # create a profile folder
+sidekick profile launch --bg <name> -- <prompt>   # start a background session
+sidekick profile alias --shell zsh <name>      # print the skp shell function, to paste into your shell startup file
+```
+
+`skp <name>` then starts an interactive session. The store is `~/.claude/profiles/`, or `SIDEKICK_PROFILES_DIR` when set. The skill reference `plugin/skills/sidekick/references/profiles.md` covers the rest.
+
 ## What is in the bundle
 
 | Path | What |
