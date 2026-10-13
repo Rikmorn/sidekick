@@ -13,33 +13,85 @@ const NO_INSTALL = 'skp: no user-scope sidekick@rikmorn install';
 
 const ZSH_FUNCTION = `skp() {
   emulate -L zsh
-  if (( $# < 1 )); then print -u2 'usage: skp <profile> [claude arguments...]'; return 2; fi
+  if (( $# < 1 )); then builtin print -u2 'usage: skp <profile> [claude arguments...]'; return 2; fi
   local name=$1; shift
   local list cli out
-  list=$(claude plugin list --json) || { print -u2 'skp: claude plugin list failed'; return 1; }
-  cli=$(print -r -- "$list" | node -e '${FIND_INSTALL}') || { print -u2 '${NO_INSTALL}'; return 1; }
-  out=$(node "$cli/bin/sidekick" profile argv "$name") || return
+  list=$(command claude plugin list --json) || { builtin print -u2 'skp: claude plugin list failed'; return 1; }
+  cli=$(builtin print -r -- "$list" | command node -e '${FIND_INSTALL}') || { builtin print -u2 '${NO_INSTALL}'; return 1; }
+  out=$(command node "$cli/bin/sidekick" profile argv "$name") || return
   local -a args=("\${(@0)out}")
   (( \${#args} )) && [[ -z \${args[-1]} ]] && args[-1]=()
-  claude "\${args[@]}" "$@"
+  command claude "\${args[@]}" "$@"
 }
 `;
 
 const BASH_FUNCTION = `skp() {
-  if [ $# -lt 1 ]; then echo 'usage: skp <profile> [claude arguments...]' >&2; return 2; fi
+  if [ $# -lt 1 ]; then builtin echo 'usage: skp <profile> [claude arguments...]' >&2; return 2; fi
   local name="$1"; shift
   local list cli tmp rc a
-  list=$(claude plugin list --json) || { echo 'skp: claude plugin list failed' >&2; return 1; }
-  cli=$(printf '%s' "$list" | node -e '${FIND_INSTALL}') || { echo '${NO_INSTALL}' >&2; return 1; }
-  tmp=$(mktemp) || return 1
-  node "$cli/bin/sidekick" profile argv "$name" >| "$tmp"; rc=$?
-  if [ "$rc" -ne 0 ]; then rm -f "$tmp"; return "$rc"; fi
+  list=$(command claude plugin list --json) || { builtin echo 'skp: claude plugin list failed' >&2; return 1; }
+  cli=$(builtin printf '%s' "$list" | command node -e '${FIND_INSTALL}') || { builtin echo '${NO_INSTALL}' >&2; return 1; }
+  tmp=$(command mktemp) || return 1
+  command node "$cli/bin/sidekick" profile argv "$name" >| "$tmp"; rc=$?
+  if [ "$rc" -ne 0 ]; then command rm -f "$tmp"; return "$rc"; fi
   local args=()
-  while IFS= read -r -d '' a; do args+=("$a"); done < "$tmp"
-  rm -f "$tmp"
-  claude "\${args[@]}" "$@"
+  while IFS= builtin read -r -d '' a; do args+=("$a"); done < "$tmp"
+  command rm -f "$tmp"
+  command claude "\${args[@]}" "$@"
 }
 `;
+
+// The reserved words of zsh and bash that a profile name can spell. An
+// alias expands even where the shell expects one of them.
+const RESERVED_WORDS: ReadonlySet<string> = new Set([
+  'case',
+  'coproc',
+  'declare',
+  'do',
+  'done',
+  'elif',
+  'else',
+  'end',
+  'esac',
+  'export',
+  'fi',
+  'float',
+  'for',
+  'foreach',
+  'function',
+  'if',
+  'in',
+  'integer',
+  'local',
+  'nocorrect',
+  'readonly',
+  'repeat',
+  'select',
+  'then',
+  'time',
+  'typeset',
+  'until',
+  'while',
+]);
+
+const SKP_RUNS_THROUGH: ReadonlySet<string> = new Set(['command', 'builtin']);
+
+/**
+ * Why `name` cannot be an alias, since `alias <name>='skp <name>'` would break
+ * the shell's own words; undefined when it can.
+ */
+export function aliasNameRefusal(name: string): string | undefined {
+  if (name === 'skp') {
+    return '"skp" cannot be an alias: the alias would replace the skp function itself.';
+  }
+  if (SKP_RUNS_THROUGH.has(name)) {
+    return `"${name}" cannot be an alias: skp runs its commands through command and builtin, and the alias would take them over.`;
+  }
+  if (RESERVED_WORDS.has(name)) {
+    return `"${name}" cannot be an alias: it is a reserved word in zsh or bash, and the alias would break shell code that uses it.`;
+  }
+  return undefined;
+}
 
 /**
  * Print the `skp` function for `shell`, then one `alias <name>='skp <name>'`

@@ -73,8 +73,11 @@ Use `--shell bash` for bash. The bash form targets bash 3.2, which macOS ships a
 
 Starting costs about 1.7 seconds before `claude` runs. That sums two figures from the probes report. The plugin list took 0.7 seconds ("Plugin options and the installed CLI"), and the `doctor` check about 1 second ("`doctor`"). The function reads the installed plugin, so `skp` works only once the installed release has the `profile` family.
 
-Avoid two kinds of alias name, because the name rule allows both. Neither is in the probes report. Both were measured in child shells during #205's review on 2026-10-13.
+Pick a profile name that names no command, since each name you give becomes an alias. An alias shadows any command of the same name. That holds when you type the name, and in every file the shell sources after the alias. Before you choose a name, check that `command -v <name>` prints nothing.
 
+`alias` refuses the names that would break the shell's own words: `skp`, `command`, `builtin`, and the reserved words of zsh and bash, such as `do` and `local`. These hazards are not in the probes report. They were measured in child shells during #205's reviews on 2026-10-13:
+
+- With `alias test='skp test'`, a file sourced later that runs `test -n x` runs `skp test -n x` instead.
 - With `alias skp='skp skp'`, every `skp <name>` call runs profile `skp` and passes `<name>` on to `claude`. Sourcing the zsh startup file again then fails with `parse error near '()'`.
 - With an alias named after a reserved word, such as `alias do=…`, later `for … do … done` loops break. zsh reports `parse error near 'done'`, and bash 3.2 reports `syntax error near unexpected token`.
 

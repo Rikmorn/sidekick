@@ -270,6 +270,55 @@ describe('profile alias', () => {
     expect(h.run('alias', 'ghost')).toBe(1);
     expect(h.err[0]).toContain('no profile named "ghost"');
   });
+  test.each([
+    ['skp', 'the skp function itself'],
+    ['command', 'runs its commands through command and builtin'],
+    ['builtin', 'runs its commands through command and builtin'],
+    ...[
+      'case',
+      'coproc',
+      'declare',
+      'do',
+      'done',
+      'elif',
+      'else',
+      'end',
+      'esac',
+      'export',
+      'fi',
+      'float',
+      'for',
+      'foreach',
+      'function',
+      'if',
+      'in',
+      'integer',
+      'local',
+      'nocorrect',
+      'readonly',
+      'repeat',
+      'select',
+      'then',
+      'time',
+      'typeset',
+      'until',
+      'while',
+    ].map((word) => [word, 'a reserved word in zsh or bash']),
+  ])('refuses %s as an alias name and says why', (name, why) => {
+    const h = harness();
+    mkProfile(h.store, name, { description: 'X' });
+    expect(h.run('alias', name)).toBe(1);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toContain(`"${name}"`);
+    expect(h.err[0]).toContain(why);
+    expect(h.out).toEqual([]);
+  });
+  test('takes a name that only contains a refused word', () => {
+    const h = harness();
+    mkProfile(h.store, 'do-it', { description: 'X' });
+    expect(h.run('alias', 'do-it')).toBe(0);
+    expect(h.out.join('\n')).toContain("alias do-it='skp do-it'");
+  });
 });
 
 describe('profile dispatch', () => {

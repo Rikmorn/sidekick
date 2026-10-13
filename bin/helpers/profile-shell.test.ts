@@ -102,6 +102,28 @@ const run = (
 const recorded = (): string[] =>
   fs.readFileSync(record, 'utf8').split('\0').slice(0, -1);
 
+// The commands the function runs besides `claude`. Each gets a function and an
+// alias defined before the function is sourced; `claude` gets the alias a
+// startup file sourced twice leaves, `alias claude='skp claude'`.
+const SHADOWED: Record<Shell, string[]> = {
+  zsh: ['node', 'print'],
+  bash: ['node', 'mktemp', 'rm', 'echo', 'printf', 'read'],
+};
+// Caps the recursion an alias reaching the function causes at 20 calls; bash
+// 3.2 has no FUNCNEST. Bash expands aliases in a script only when asked.
+const DEPTH_LIMIT: Record<Shell, string> = {
+  zsh: 'FUNCNEST=20; ',
+  bash: `set -T; trap '[ \${#FUNCNAME[@]} -gt 20 ] && exit 125' DEBUG; shopt -s expand_aliases; `,
+};
+const shadowing = (shell: Shell): string => {
+  const names = SHADOWED[shell];
+  const functions = ['shadowed', 'claude', ...names]
+    .map((name) => `${name}() { return 99; }; `)
+    .join('');
+  const aliases = names.map((name) => `${name}=shadowed`).join(' ');
+  return `${DEPTH_LIMIT[shell]}${functions}alias claude='skp claude' ${aliases}; `;
+};
+
 describe.each(['zsh', 'bash'] as const)('skp under %s', (shell) => {
   test('passes every argument through unchanged, with the empty one kept', () => {
     const r = run(shell, ['bench', '--extra', 'a b']);
@@ -118,6 +140,21 @@ describe.each(['zsh', 'bash'] as const)('skp under %s', (shell) => {
     const r = run(shell, ['bench'], {}, [], 'set -C; ');
     expect(r.status).toBe(0);
     expect(recorded()).toEqual(FIXED_ARGS);
+  });
+
+  test('no alias or function named after its commands reaches it', () => {
+    const tmpdir = path.join(tmp, 'tmpdir');
+    fs.mkdirSync(tmpdir);
+    const r = run(
+      shell,
+      ['bench', 'a b'],
+      { TMPDIR: tmpdir },
+      [],
+      shadowing(shell),
+    );
+    expect(r.status).toBe(0);
+    expect(recorded()).toEqual([...FIXED_ARGS, 'a b']);
+    expect(fs.readdirSync(tmpdir)).toEqual([]);
   });
 
   test('returns argv status and never starts claude', () => {

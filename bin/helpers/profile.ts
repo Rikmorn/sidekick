@@ -12,7 +12,11 @@ import {
   composeSettings,
   launchArgs,
 } from './profile-launch.js';
-import { type Shell, shellFunction } from './profile-shell.js';
+import {
+  aliasNameRefusal,
+  type Shell,
+  shellFunction,
+} from './profile-shell.js';
 import {
   listProfiles,
   loadProfile,
@@ -220,6 +224,8 @@ const alias: Verb = (rest, penv, out, err) => {
     ]);
   }
   const issues = parsed.positionals.flatMap((name) => {
+    const refusal = aliasNameRefusal(name);
+    if (refusal !== undefined) return [refusal];
     const loaded = load(name, penv);
     return 'issues' in loaded ? loaded.issues : [];
   });
