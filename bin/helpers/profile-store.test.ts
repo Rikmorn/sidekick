@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { composeSettings } from './profile-launch.js';
 import { PROFILE_NAME_RULE } from './profile-manifest.js';
 import {
   checkLayout,
@@ -264,5 +266,34 @@ describe('newProfile', () => {
     const r = newProfile('p', '', [tmp]);
     expect(r.ok).toBe(false);
     expect(fs.readdirSync(tmp)).toEqual([]);
+  });
+});
+
+describe('the bench fixtures', () => {
+  const fixtures = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    'fixtures',
+    'profiles',
+  );
+
+  test('bench loads, keeps the user layer, and has a rule', () => {
+    const r = loadProfile('bench', [fixtures]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.profile.hasRules).toBe(true);
+    expect(r.profile.manifest.settingSources).toBeUndefined();
+  });
+
+  test('bench-clean loads and composes the user-file excludes', () => {
+    const r = loadProfile('bench-clean', [fixtures]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.profile.hasRules).toBe(true);
+    expect(r.profile.manifest.settingSources).toEqual(['project', 'local']);
+    const settings = composeSettings(r.profile, { home: '/home/u' });
+    expect(settings.claudeMdExcludes).toEqual([
+      '/home/u/.claude/CLAUDE.md',
+      '/home/u/.claude/rules/**',
+    ]);
   });
 });

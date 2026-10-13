@@ -1,0 +1,7 @@
+{
+  "description": "Bench: changes over the user layer",
+  "settings": {
+    "claudeMdExcludes": ["**/.claude/rules/about-me.md"],
+    "enabledPlugins": { "claude-code-setup@claude-plugins-official": false }
+  }
+}
