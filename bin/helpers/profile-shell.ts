@@ -12,13 +12,13 @@ const FIND_INSTALL =
 const NO_INSTALL = 'skp: no user-scope sidekick@rikmorn install';
 
 const ZSH_FUNCTION = `skp() {
-  emulate -L zsh
-  if (( $# < 1 )); then builtin print -u2 'usage: skp <profile> [claude arguments...]'; return 2; fi
-  local name=$1; shift
+  builtin emulate -L zsh
+  if (( $# < 1 )); then builtin print -u2 'usage: skp <profile> [claude arguments...]'; builtin return 2; fi
+  local name=$1; builtin shift
   local list cli out
-  list=$(command claude plugin list --json) || { builtin print -u2 'skp: claude plugin list failed'; return 1; }
-  cli=$(builtin print -r -- "$list" | command node -e '${FIND_INSTALL}') || { builtin print -u2 '${NO_INSTALL}'; return 1; }
-  out=$(command node "$cli/bin/sidekick" profile argv "$name") || return
+  list=$(command claude plugin list --json) || { builtin print -u2 'skp: claude plugin list failed'; builtin return 1; }
+  cli=$(builtin print -r -- "$list" | command node -e '${FIND_INSTALL}') || { builtin print -u2 '${NO_INSTALL}'; builtin return 1; }
+  out=$(command node "$cli/bin/sidekick" profile argv "$name") || builtin return
   local -a args=("\${(@0)out}")
   (( \${#args} )) && [[ -z \${args[-1]} ]] && args[-1]=()
   command claude "\${args[@]}" "$@"
@@ -26,14 +26,14 @@ const ZSH_FUNCTION = `skp() {
 `;
 
 const BASH_FUNCTION = `skp() {
-  if [ $# -lt 1 ]; then builtin echo 'usage: skp <profile> [claude arguments...]' >&2; return 2; fi
-  local name="$1"; shift
+  if [ $# -lt 1 ]; then builtin echo 'usage: skp <profile> [claude arguments...]' >&2; builtin return 2; fi
+  local name="$1"; builtin shift
   local list cli tmp rc a
-  list=$(command claude plugin list --json) || { builtin echo 'skp: claude plugin list failed' >&2; return 1; }
-  cli=$(builtin printf '%s' "$list" | command node -e '${FIND_INSTALL}') || { builtin echo '${NO_INSTALL}' >&2; return 1; }
-  tmp=$(command mktemp) || return 1
+  list=$(command claude plugin list --json) || { builtin echo 'skp: claude plugin list failed' >&2; builtin return 1; }
+  cli=$(builtin printf '%s' "$list" | command node -e '${FIND_INSTALL}') || { builtin echo '${NO_INSTALL}' >&2; builtin return 1; }
+  tmp=$(command mktemp "\${TMPDIR:-/tmp}/skp.XXXXXX") || builtin return 1
   command node "$cli/bin/sidekick" profile argv "$name" >| "$tmp"; rc=$?
-  if [ "$rc" -ne 0 ]; then command rm -f "$tmp"; return "$rc"; fi
+  if [ "$rc" -ne 0 ]; then command rm -f "$tmp"; builtin return "$rc"; fi
   local args=()
   while IFS= builtin read -r -d '' a; do args+=("$a"); done < "$tmp"
   command rm -f "$tmp"

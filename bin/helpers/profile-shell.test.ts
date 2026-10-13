@@ -17,12 +17,14 @@ const FIXED_ARGS = [
 let tmp: string;
 let stub: string;
 let record: string;
+let shadowLog: string;
 let sourceFile: string;
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-profile-shell-'));
   stub = path.join(tmp, 'stub');
   record = path.join(tmp, 'record');
+  shadowLog = path.join(tmp, 'shadow-log');
   fs.mkdirSync(path.join(tmp, 'install', 'bin'), { recursive: true });
   fs.mkdirSync(stub);
   fs.writeFileSync(
@@ -74,7 +76,7 @@ const run = (
           'zsh',
           '-f',
           '-c',
-          `${prelude}source "$1"; shift; skp "$@"`,
+          `${prelude}source "$1"; builtin shift; skp "$@"`,
           '_',
           sourceFile,
         ]
@@ -83,7 +85,7 @@ const run = (
           '--noprofile',
           '--norc',
           '-c',
-          `${prelude}source "$1"; shift; skp "$@"`,
+          `${prelude}source "$1"; builtin shift; skp "$@"`,
           '_',
           sourceFile,
         ];
@@ -94,6 +96,7 @@ const run = (
       PATH: `${stub}:${process.env.PATH ?? ''}`,
       HOME: tmp,
       RECORD: record,
+      SHADOW_LOG: shadowLog,
       ...env,
     },
   });
@@ -102,12 +105,17 @@ const run = (
 const recorded = (): string[] =>
   fs.readFileSync(record, 'utf8').split('\0').slice(0, -1);
 
-// The commands the function runs besides `claude`. Each gets a function and an
-// alias defined before the function is sourced; `claude` gets the alias a
-// startup file sourced twice leaves, `alias claude='skp claude'`.
+// Each command the function runs through `command` or `builtin`, besides
+// `claude`. Each gets an alias and a function that logs its call, defined
+// before the function is sourced. `claude` gets a function too, and the alias
+// a startup file sourced twice leaves, `alias claude='skp claude'`.
 const SHADOWED: Record<Shell, string[]> = {
-  zsh: ['node', 'print'],
-  bash: ['node', 'mktemp', 'rm', 'echo', 'printf', 'read'],
+  zsh: ['node', 'print', 'emulate', 'shift', 'return'],
+  bash: ['node', 'mktemp', 'rm', 'echo', 'printf', 'read', 'shift', 'return'],
+};
+const LOG_CALL: Record<Shell, string> = {
+  zsh: 'builtin print -r --',
+  bash: 'builtin echo',
 };
 // Caps the recursion an alias reaching the function causes at 20 calls; bash
 // 3.2 has no FUNCNEST. Bash expands aliases in a script only when asked.
@@ -118,7 +126,10 @@ const DEPTH_LIMIT: Record<Shell, string> = {
 const shadowing = (shell: Shell): string => {
   const names = SHADOWED[shell];
   const functions = ['shadowed', 'claude', ...names]
-    .map((name) => `${name}() { return 99; }; `)
+    .map(
+      (name) =>
+        `${name}() { ${LOG_CALL[shell]} ${name} >> "$SHADOW_LOG"; builtin return 99; }; `,
+    )
     .join('');
   const aliases = names.map((name) => `${name}=shadowed`).join(' ');
   return `${DEPTH_LIMIT[shell]}${functions}alias claude='skp claude' ${aliases}; `;
@@ -132,7 +143,9 @@ describe.each(['zsh', 'bash'] as const)('skp under %s', (shell) => {
   });
 
   test('runs nothing the arguments contain', () => {
-    run(shell, ['bench']);
+    const r = run(shell, ['bench']);
+    expect(r.status).toBe(0);
+    expect(recorded()).toEqual(FIXED_ARGS);
     expect(fs.existsSync(path.join(tmp, 'pwned'))).toBe(false);
   });
 
@@ -155,6 +168,27 @@ describe.each(['zsh', 'bash'] as const)('skp under %s', (shell) => {
     expect(r.status).toBe(0);
     expect(recorded()).toEqual([...FIXED_ARGS, 'a b']);
     expect(fs.readdirSync(tmpdir)).toEqual([]);
+    expect(fs.existsSync(shadowLog)).toBe(false);
+  });
+
+  test('its failures return, with its commands shadowed', () => {
+    const usage = run(shell, [], {}, [], shadowing(shell));
+    expect(usage.status).toBe(2);
+    const failed = run(
+      shell,
+      ['bench'],
+      { FAKE_STATUS: '7' },
+      [],
+      shadowing(shell),
+    );
+    expect(failed.status).toBe(7);
+    writeClaude([
+      { id: 'sidekick@rikmorn', scope: 'project', installPath: '/wrong' },
+    ]);
+    const missing = run(shell, ['bench'], {}, [], shadowing(shell));
+    expect(missing.status).toBe(1);
+    expect(fs.existsSync(record)).toBe(false);
+    expect(fs.existsSync(shadowLog)).toBe(false);
   });
 
   test('returns argv status and never starts claude', () => {
