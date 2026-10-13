@@ -57,6 +57,9 @@ jobs:
       - name: Typecheck (tsc --noEmit)
         run: bun run typecheck
 
+      - name: Install zsh for the shell function's tests
+        run: command -v zsh || (sudo apt-get update && sudo apt-get install -y zsh)
+
       - name: Run tests (bun test)
         run: bun run test
 
