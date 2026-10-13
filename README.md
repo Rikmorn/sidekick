@@ -28,7 +28,7 @@ claude plugin update -s user sidekick@rikmorn
 
 `-s project` updates a project-scope record. Run from a repo that holds a project-scope record for the plugin, the bare command updates that record, not the user install. Restart Claude Code, then run `sidekick rules install` again for each scope you deliver to. Auto-update is the alternative. It is off by default for a third-party marketplace, and `/plugin` → **Marketplaces** → **Enable auto-update** turns it on for `rikmorn`.
 
-The context monitor hook needs your session's window size, and stays silent while the `context_window` setting is unset. Set it for every session under `pluginConfigs` in `~/.claude/settings.json`:
+The context monitor hook takes your session's window size from `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, else the `context_window` setting, and stays silent when neither is set. Set the setting for every session under `pluginConfigs` in `~/.claude/settings.json`:
 
 ```json
 { "pluginConfigs": { "sidekick@rikmorn": { "options": { "context_window": 1000000 } } } }
@@ -39,8 +39,6 @@ For one session, pass the same key to `--settings`:
 ```bash
 claude --settings '{"pluginConfigs":{"sidekick@rikmorn":{"options":{"context_window":1000000}}}}'
 ```
-
-When set, `CLAUDE_CODE_AUTO_COMPACT_WINDOW` takes precedence over the setting.
 
 ## The rules
 
