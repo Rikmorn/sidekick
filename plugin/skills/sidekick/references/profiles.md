@@ -1,6 +1,6 @@
 # Profiles
 
-A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from three native flags: `--add-dir`, `--settings`, and `--setting-sources`. Issue #205 decided the shape. The measurements behind each claim here are in `docs/research/control-centre/2026-10-13-profile-launch-probes.md`, called the probes report below, and each one names the Claude Code version and date it ran on.
+A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from three native flags: `--add-dir`, `--settings`, and `--setting-sources`. Issue #205 decided the shape. The measurements behind each claim here are in `docs/research/control-centre/2026-10-13-profile-launch-probes.md`, called the probes report in this file, and each one names the Claude Code version and date it ran on.
 
 ## The folder
 
