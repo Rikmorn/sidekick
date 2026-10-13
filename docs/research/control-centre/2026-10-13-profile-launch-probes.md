@@ -111,6 +111,13 @@ The probe folder held a `CLAUDE.md`, a rule under `.claude/rules/`, an agent und
 - Case d held outside `$HOME` only. Under `$HOME`, the user files return, as the clean-room section on `$HOME` says.
 - The store path itself works: `--add-dir ~/.claude/profiles/<name>` loaded only that folder's files. Claude Code reads no `profiles/` folder on its own (docs, the `.claude` directory page, 2026-10-13).
 
+**A folder's agents and skills load only under the `project` setting source, measured on 2026-10-13.**
+
+- The runs used `-p --model haiku --tools ""` from an empty folder outside `$HOME`, on Claude Code 2.1.296. Each had `--add-dir <folder>` and the variable through `--settings`.
+- The folder held a rule, an agent, and a skill. With `--setting-sources local`, the rule loaded and the agent and skill did not. With `project`, all three loaded.
+- The docs agree, and add commands: skills, commands, and subagents from an `--add-dir` folder load through the `project` source. Docs: permissions page, §Additional directories grant file access, not configuration. No probe ran a command.
+- Consequence for a profile: one whose `settingSources` leaves out `project` loses the folder's agents and skills without a word. So a profile folder holds only rules.
+
 **`--add-dir` is variadic, so it swallows a prompt placed after it, measured on 2026-10-13.**
 
 - `claude --bg … --model haiku --add-dir <folder> "<prompt>"` backgrounded a session that reported `idle — send a prompt to start`. Its stored flags held the prompt as a second `--add-dir` value.
@@ -217,6 +224,14 @@ The bench ran the feature's own `profile argv` output for two fixture profiles, 
 - This is a first reading of whether a folder rule steers as well as an appended prompt: no gap seen at n = 5. It is not proof of equal strength. Both paths followed a trivial instruction, and a harder or longer one was not tried.
 - One side effect, from a single sample: the append reply to the capital question added a remark from the user's `CLAUDE.md` labelling its sources. The profile reply did not.
 - Inferred from the docs read on 2026-10-13: a rule from `--add-dir` loads as memory, not into the system prompt. It therefore sits in a different place in the context than an appended prompt.
+
+**`sidekick profile launch --bg` started a profiled background session, measured on 2026-10-13.**
+
+- It ran in the sidekick repo from the built bundle, with a copy of `bench-clean` that added `"model": "haiku"` to its settings.
+- With the agent-view daemon running, it exited 0 in 1.68 s. With no daemon running, it printed `Starting background service…`, started one, and exited 0 in 2.07 s.
+- Both jobs replied `ok`. Each loaded the profile's rule, `AGENTS.md`, and `MEMORY.md`, and no user file.
+- The job's `respawnFlags` held `--add-dir <store>/bench-clean`, the settings JSON, and `--setting-sources project,local`.
+- Read with `lsof`: both daemons had stdin and stdout on `/dev/null` and stderr on a log file. So a daemon does not hold the launching process's pipes.
 
 ## Not tested
 

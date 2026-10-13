@@ -45,7 +45,7 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 
 ## Profiles
 
-`sidekick profile` makes and launches profiles: a folder of rules, agents, and skills plus a manifest, handed to `claude` through `--add-dir`, `--settings`, and `--setting-sources`. Its verbs are `list`, `show`, `new`, `argv`, `launch --bg`, and `alias`, which prints the `skp <name>` shell function for interactive starts. `references/profiles.md` covers the folder layout, what each mode drops, the settings check and its skip variable, and what a profile must never hold.
+`sidekick profile` makes and launches profiles: a folder of rules plus a manifest, handed to `claude` through `--add-dir`, `--settings`, and `--setting-sources`. Its verbs are `list`, `show`, `new`, `argv`, `launch --bg`, and `alias`, which prints the `skp <name>` shell function for interactive starts. `references/profiles.md` covers the folder layout, what each mode drops, the settings check and its skip variable, and what a profile must never hold.
 
 ## The docs layout
 

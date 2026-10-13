@@ -81,7 +81,7 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 
 ## Profiles
 
-A profile is a folder of rules, agents, and skills plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads the layers the profile names. Auto memory and the claude.ai connectors still load in a clean room. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning.
+A profile is a folder of rules plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads the layers the profile names. Auto memory and the claude.ai connectors still load in a clean room. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning.
 
 ```bash
 sidekick profile list                          # every profile in the store

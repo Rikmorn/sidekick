@@ -10,9 +10,6 @@ A profile lives in the store, one folder per profile:
 <store>/<name>/
   profile.json          the manifest
   .claude/rules/*.md    the stance, and any other rules
-  .claude/agents/       agents the profile adds
-  .claude/skills/       skills the profile adds
-  .claude/commands/     commands the profile adds
 ```
 
 The store is `SIDEKICK_PROFILES_DIR` when that is set and non-empty. Otherwise it is `profiles/` under `CLAUDE_CONFIG_DIR`, or under `~/.claude` when that is unset or empty. A relative path resolves against the current folder, so `--add-dir` always receives an absolute path.
@@ -33,14 +30,15 @@ Launch composes the settings from the profile's `settings` object, then adds its
 - `env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1"` when `.claude/rules/` holds a `.md` file at any depth. Claude Code loads rules from an `--add-dir` folder only with that variable set, and a settings `env` block sets it (probes report, "The profile folder as `--add-dir`").
 - `claudeMdExcludes` for the user's `~/.claude/CLAUDE.md` and `~/.claude/rules/**`, when `settingSources` is present and leaves out `user`. The clean-room table in "What each mode drops" explains why.
 
-The folder's agents and skills load whether or not that variable is set. Its command files load too, by the docs read on 2026-10-13 (permissions page, §Additional directories); no probe ran one.
+The folder holds only rules. The layout check refuses everything else under `.claude/`, so agents, skills, and commands go in a plugin the profile enables. From an `--add-dir` folder, Claude Code loads them only under the `project` setting source. With `--setting-sources local`, a folder's rule loaded but its agent and skill did not. That was measured on 2026-10-13 on Claude Code 2.1.296, and the docs say the same of commands (probes report, "The profile folder as `--add-dir`"). So a profile whose `settingSources` left out `project` would lose them without a word.
 
 ### What the CLI refuses in a folder
 
-The layout check refuses a folder that holds any of these, and `list`, `show`, `argv`, `launch`, and `alias` run it. `new` does not, since its folder does not exist yet:
+Under `.claude/`, the layout check allows only `rules/`. It refuses a folder that holds any of these, naming each path and why. `list`, `show`, `argv`, `launch`, and `alias` run it. `new` does not, since its folder does not exist yet:
 
-- `CLAUDE.md`, `.claude/CLAUDE.md`, or `CLAUDE.local.md`. By default, a `CLAUDE.md` in a parent folder or an `--add-dir` folder stops Claude Code loading the repo's `AGENTS.md`. A profile folder would hide it in every session that uses the profile. A rule in `.claude/rules/` does not (probes report, "`AGENTS.md` and what hides it"). Put the stance in a rule.
+- `CLAUDE.md` or `CLAUDE.local.md` at the root, or `.claude/CLAUDE.md`. By default, a `CLAUDE.md` in a parent folder or an `--add-dir` folder stops Claude Code loading the repo's `AGENTS.md`. A profile folder would hide it in every session that uses the profile. A rule in `.claude/rules/` does not (probes report, "`AGENTS.md` and what hides it"). Put the stance in a rule.
 - `.claude/settings.json` or `.claude/settings.local.json`. An `--add-dir` folder's settings file can enable plugins, and the settings check never sees it. Put settings in `profile.json`, where the check covers them.
+- Any other entry under `.claude/`, such as `agents/`, `skills/`, `commands/`, or `output-styles/`. A profile holds only rules, as "The folder" explains, so put these in a plugin the profile enables.
 
 ## The verbs
 
@@ -56,6 +54,7 @@ sidekick profile alias [--shell zsh|bash] [<name>...]
 - `list` skips dot-folders such as `.git`, since no profile name starts with a dot. It exits 1 when any other folder in the store is invalid, and prints that folder's first issue.
 - `argv` is for the shell function. It prints each argument followed by a NUL, so an argument holding spaces or quotes survives intact.
 - `launch` starts a background session through `claude --bg`. Everything after `--` joins with single spaces into one prompt, placed after a bare `--` so a leading dash cannot read as a flag. Without `--bg` it refuses and points at the shell function, because an interactive session needs the caller's terminal.
+- `launch` fails in a workspace that was never trusted. `claude --bg` refuses it, and the message names the folder to open once (probes report, "The settings flag and a dropped object").
 - The arguments run in a fixed order: `--add-dir <folder>`, `--settings <JSON>`, then `--setting-sources <list>` when the manifest sets it. `--add-dir` is variadic, so a prompt placed straight after it becomes a second folder (probes report, "`--add-dir` is variadic"). It is never last.
 
 ## The shell function
@@ -95,7 +94,7 @@ A `settingSources` that leaves out `user` makes a clean room. The grade of each 
 | User `pluginConfigs` | dropped, so a plugin option goes in the profile's `settings` block | docs: Claude Code reads that key from user settings, managed settings, and `--settings`; how a flag-level entry merges with a user entry was not measured |
 | User `CLAUDE.md` and rules | dropped by the excludes launch adds. The flag alone leaves them under `$HOME` | measured. The cause, that Claude Code reads `~/.claude/` as a parent folder's `.claude/`, is inferred |
 | claude.ai connectors | kept | measured |
-| Auto memory (`MEMORY.md`) | kept. No setting that turns it off was looked for | measured |
+| Auto memory (`MEMORY.md`) | kept. The docs name `autoMemoryEnabled: false` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` to turn it off (memory page, §Enable or disable auto memory, read 2026-10-13) | kept: measured. Neither setting was tried through a profile |
 | The repo's `AGENTS.md` and rules | kept | measured |
 | The repo's own plugins | kept in the sidekick repo. In odin, three of seven loaded. The other four never loaded with the user layer kept (`bench`) either, so keeping it does not bring them back | measured. The cause, a `-p` session not installing a marketplace the repo declares, is inferred and not tested |
 
@@ -104,10 +103,6 @@ A profile turns a plugin off by writing it `false` under `settings.enabledPlugin
 A kept user rule is copied into the profile's `.claude/rules/`, not linked. An exclude pattern also excludes a symlink whose target it matches, so a link to `~/.claude/rules/x.md` would vanish with the original. A copy then drifts from its source, and nothing flags the drift.
 
 A folder rule steered a reply as well as an appended system prompt in five of five paired runs. The probes report has them under "The bench and the steering test". That is a first reading with a trivial instruction. It is not proof of equal strength.
-
-## Agents and trust
-
-An `--add-dir` folder's agents load, but their frontmatter hooks and inline MCP servers are skipped unless the folder is itself trusted. A `-p` session never counts as trusted (probes report, "What a folder's own `.claude/settings.json` does"; grade: docs, not run). A profile agent that relies on either runs without it. A `--bg` start also refuses a workspace that was never trusted, and the message names the folder to open once.
 
 ## Deleting or renaming a profile
 
