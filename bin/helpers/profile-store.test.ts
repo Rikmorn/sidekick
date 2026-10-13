@@ -219,6 +219,13 @@ describe('listProfiles', () => {
     });
   });
 
+  test('skips dot-folders, which no profile name can match', () => {
+    profile(tmp, 'b', 'Second');
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.cache'));
+    expect(listProfiles([tmp]).map((p) => p.name)).toEqual(['b']);
+  });
+
   test('a layout refusal lists the profile with its issue', () => {
     const dir = profile(tmp, 'p');
     write(path.join(dir, 'CLAUDE.md'));

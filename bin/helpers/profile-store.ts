@@ -143,6 +143,9 @@ export function loadProfile(name: string, roots: string[]): LoadResult {
   return readFolder(name, path.resolve(root));
 }
 
+// A dot-folder, such as `.git`, is never a profile: no name starts with a dot.
+const isHidden = (name: string): boolean => name.startsWith('.');
+
 const listRoot = (root: string): ListedProfile[] => {
   let names: string[];
   try {
@@ -151,7 +154,7 @@ const listRoot = (root: string): ListedProfile[] => {
     return [];
   }
   return names
-    .filter((name) => isDirectory(path.join(root, name)))
+    .filter((name) => !isHidden(name) && isDirectory(path.join(root, name)))
     .map((name): ListedProfile => {
       if (!isProfileName(name)) {
         return {

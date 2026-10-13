@@ -38,15 +38,14 @@ export interface ProfileEnv {
   runClaude: ClaudeRunner;
   /** Raw stdout, for `argv`'s NUL-terminated arguments. */
   write: (chunk: string) => void;
+  /** The bound on a `launch --bg` start; defaults to a minute. */
+  launchTimeoutMs?: number;
 }
 
 type Out = (line: string) => void;
 type Verb = (rest: string[], penv: ProfileEnv, out: Out, err: Out) => number;
 
 const SHELLS: readonly Shell[] = ['zsh', 'bash'];
-
-// The bound on a `--bg` start, chosen as a generous minute.
-const DEFAULT_LAUNCH_TIMEOUT_MS = 60_000;
 
 const withoutTrailingNewline = (text: string): string =>
   text.replace(/\n$/, '');
@@ -196,13 +195,15 @@ const launch: Verb = (rest, penv, out, err) => {
   const checked = runCheck(settings, penv);
   if (!checked.ok) return refuse(err, checked.issues);
   for (const warning of checked.warnings) err(warning);
+  // The bound on a `--bg` start, chosen as a generous minute.
+  const { launchTimeoutMs = 60_000 } = penv;
   const sessionName = parsed.values.n;
   const result = penv.runClaude(
     bgArgs(args, {
       sessionName: typeof sessionName === 'string' ? sessionName : undefined,
       prompt: words.length > 0 ? words.join(' ') : undefined,
     }),
-    { cwd: penv.cwd, timeoutMs: DEFAULT_LAUNCH_TIMEOUT_MS },
+    { cwd: penv.cwd, timeoutMs: launchTimeoutMs },
   );
   if (result.stdout !== '') out(withoutTrailingNewline(result.stdout));
   if (result.stderr !== '') err(withoutTrailingNewline(result.stderr));

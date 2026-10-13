@@ -272,6 +272,31 @@ describe('main: profile', () => {
     expect(code).toBe(1);
     expect(err[0]).toContain(PROFILE_USAGE_LINE);
   });
+  test.each([
+    ['show with no name', ['show']],
+    ['argv with an extra argument', ['argv', 'a', 'b']],
+    ['alias with an unknown flag', ['alias', '--zsh']],
+    ['new with no name', ['new', '--description', 'x']],
+    ['launch with no name', ['launch', '--bg']],
+    ['list with an argument', ['list', 'a']],
+  ])('profile %s prints the profile usage and returns 1', (_label, args) => {
+    const err: string[] = [];
+    const code = main(
+      ['profile', ...args],
+      {
+        env: { SIDEKICK_PROFILES_DIR: tmp() },
+        cwd: tmp(),
+        entryFileUrl,
+        runClaude: () => {
+          throw new Error('no claude in tests');
+        },
+      },
+      () => {},
+      (l) => err.push(l),
+    );
+    expect(code).toBe(1);
+    expect(err).toEqual([`usage: ${PROFILE_USAGE_LINE}`]);
+  });
   test('USAGE names the profile family', () => {
     expect(USAGE).toContain(PROFILE_USAGE_LINE);
   });

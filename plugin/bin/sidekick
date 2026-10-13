@@ -2503,6 +2503,7 @@ function launchArgs(profile, settings) {
     ...sources === undefined ? [] : ["--setting-sources", sources.join(",")]
   ];
 }
+var COULD_NOT_START = 127;
 var spawnClaude = (command, args, opts) => spawnSync2(command, args, {
   ...opts,
   encoding: "utf8",
@@ -2524,7 +2525,7 @@ var makeClaudeRunner = (spawn = spawnClaude) => (args, { cwd, timeoutMs }) => {
     return { code: out.status ?? 1, stdout, stderr, timedOut: true };
   }
   return {
-    code: 127,
+    code: COULD_NOT_START,
     stdout,
     stderr: stderr || out.error.message,
     timedOut: false
@@ -2552,6 +2553,9 @@ var printed = (result) => [result.stdout, result.stderr].filter((text) => text.t
 function judge(result, lines, canary) {
   if (result.timedOut) {
     return refuse("claude doctor timed out.", printed(result));
+  }
+  if (result.code === COULD_NOT_START) {
+    return refuse("The settings check could not start claude.", printed(result));
   }
   if (result.code !== 0) {
     return refuse(`claude doctor failed with exit code ${result.code}.`, printed(result));
@@ -2812,6 +2816,7 @@ function loadProfile(name, roots) {
   }
   return readFolder(name, path7.resolve(root));
 }
+var isHidden = (name) => name.startsWith(".");
 var listRoot = (root) => {
   let names;
   try {
@@ -2819,7 +2824,7 @@ var listRoot = (root) => {
   } catch {
     return [];
   }
-  return names.filter((name) => isDirectory(path7.join(root, name))).map((name) => {
+  return names.filter((name) => !isHidden(name) && isDirectory(path7.join(root, name))).map((name) => {
     if (!isProfileName(name)) {
       return {
         name,
@@ -2868,7 +2873,6 @@ function newProfile(name, description, roots) {
 // bin/helpers/profile.ts
 var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text>|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]";
 var SHELLS = ["zsh", "bash"];
-var DEFAULT_LAUNCH_TIMEOUT_MS = 60000;
 var withoutTrailingNewline = (text) => text.replace(/\n$/, "");
 function parseFlags(rest2, options) {
   try {
@@ -2988,11 +2992,12 @@ var launch = (rest2, penv, out, err) => {
     return refuse2(err, checked2.issues);
   for (const warning of checked2.warnings)
     err(warning);
+  const { launchTimeoutMs = 60000 } = penv;
   const sessionName = parsed.values.n;
   const result = penv.runClaude(bgArgs(args, {
     sessionName: typeof sessionName === "string" ? sessionName : undefined,
     prompt: words.length > 0 ? words.join(" ") : undefined
-  }), { cwd: penv.cwd, timeoutMs: DEFAULT_LAUNCH_TIMEOUT_MS });
+  }), { cwd: penv.cwd, timeoutMs: launchTimeoutMs });
   if (result.stdout !== "")
     out(withoutTrailingNewline(result.stdout));
   if (result.stderr !== "")

@@ -294,18 +294,33 @@ describe('checkSettings', () => {
   });
 
   test('a timeout, a non-zero exit and a missing claude are each refused', () => {
-    const cases: ClaudeResult[] = [
-      { code: 0, stdout: 'partial', stderr: '', timedOut: true },
-      { code: 2, stdout: '', stderr: 'boom', timedOut: false },
-      { code: 127, stdout: '', stderr: 'spawn claude ENOENT', timedOut: false },
+    const cases: [ClaudeResult, string][] = [
+      [
+        { code: 0, stdout: 'partial', stderr: '', timedOut: true },
+        'claude doctor timed out.',
+      ],
+      [
+        { code: 2, stdout: '', stderr: 'boom', timedOut: false },
+        'claude doctor failed with exit code 2.',
+      ],
+      [
+        {
+          code: 127,
+          stdout: '',
+          stderr: 'spawn claude ENOENT',
+          timedOut: false,
+        },
+        'The settings check could not start claude.',
+      ],
     ];
-    cases.forEach((c) => {
+    cases.forEach(([c, first]) => {
       const r = checkSettings(
         {},
         deps(() => c),
       );
       expect(r.ok).toBe(false);
       if (r.ok) return;
+      expect(r.issues[0]).toBe(first);
       expect(r.issues.join('\n')).toContain(c.stderr || c.stdout);
     });
     expect(leftovers()).toEqual([]);

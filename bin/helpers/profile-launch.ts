@@ -101,6 +101,9 @@ export function launchArgs(profile: Profile, settings: Settings): string[] {
   ];
 }
 
+// The shells' code for a command not found; the runner returns it for any spawn error.
+const COULD_NOT_START = 127;
+
 /** What a `claude` run returned. Code 127 means it could not start. */
 export interface ClaudeResult {
   code: number;
@@ -160,7 +163,7 @@ export const makeClaudeRunner =
       return { code: out.status ?? 1, stdout, stderr, timedOut: true };
     }
     return {
-      code: 127,
+      code: COULD_NOT_START,
       stdout,
       stderr: stderr || out.error.message,
       timedOut: false,
@@ -218,6 +221,12 @@ function judge(
 ): CheckResult {
   if (result.timedOut) {
     return refuse('claude doctor timed out.', printed(result));
+  }
+  if (result.code === COULD_NOT_START) {
+    return refuse(
+      'The settings check could not start claude.',
+      printed(result),
+    );
   }
   if (result.code !== 0) {
     return refuse(

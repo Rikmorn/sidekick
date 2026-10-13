@@ -52,7 +52,7 @@ sidekick profile launch --bg <name> [-n <session>] [-- <prompt>]
 sidekick profile alias [--shell zsh|bash] [<name>...]
 ```
 
-- `list` exits 1 when any folder in the store is invalid, and prints that folder's first issue.
+- `list` skips dot-folders such as `.git`, since no profile name starts with a dot. It exits 1 when any other folder in the store is invalid, and prints that folder's first issue.
 - `argv` is for the shell function. It prints each argument followed by a NUL, so an argument holding spaces or quotes survives intact.
 - `launch` starts a background session through `claude --bg`. Everything after `--` joins with single spaces into one prompt, placed after a bare `--` so a leading dash cannot read as a flag. Without `--bg` it refuses and points at the shell function, because an interactive session needs the caller's terminal.
 - The arguments run in a fixed order: `--add-dir <folder>`, `--settings <JSON>`, then `--setting-sources <list>` when the manifest sets it. `--add-dir` is variadic, so a prompt placed straight after it becomes a second folder (probes report, "`--add-dir` is variadic"). It is never last.

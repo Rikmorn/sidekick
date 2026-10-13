@@ -209,7 +209,15 @@ describe('profile launch', () => {
       '--',
       '--fix the tests',
     ]);
-    expect(launched?.opts.timeoutMs).not.toBe(30_000);
+    expect(launched?.opts.timeoutMs).toBe(60_000);
+  });
+  test('launchTimeoutMs bounds the launch, and only the launch', () => {
+    const h = harness({ launchTimeoutMs: 5_000 });
+    mkProfile(h.store, 'a', { description: 'A' });
+    expect(h.run('launch', '--bg', 'a')).toBe(0);
+    expect(h.runner.calls.map((c) => c.opts.timeoutMs)).toEqual([
+      30_000, 5_000,
+    ]);
   });
   test('a single quoted prompt passes through unchanged', () => {
     const h = harness();

@@ -158,8 +158,8 @@ describe.each(['zsh', 'bash'] as const)('skp under %s', (shell) => {
   });
 
   test('returns argv status and never starts claude', () => {
-    const r = run(shell, ['bench'], { FAKE_STATUS: '1' });
-    expect(r.status).toBe(1);
+    const r = run(shell, ['bench'], { FAKE_STATUS: '7' });
+    expect(r.status).toBe(7);
     expect(fs.existsSync(record)).toBe(false);
   });
 
