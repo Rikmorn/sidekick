@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -240,8 +240,19 @@ describe('main', () => {
 
 describe('main: profile', () => {
   const entryFileUrl = pathToFileURL(path.join(__dirname, 'cli.ts')).href;
+  const made: string[] = [];
+  const madeDir = (): string => {
+    const dir = tmp();
+    made.push(dir);
+    return dir;
+  };
+  afterEach(() => {
+    for (const dir of made.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
   test('dispatches profile and honours the raw writer', () => {
-    const store = tmp();
+    const store = madeDir();
     write(path.join(store, 'a', 'profile.json'), '{"description":"A"}');
     const chunks: string[] = [];
     const code = main(
@@ -284,8 +295,8 @@ describe('main: profile', () => {
     const code = main(
       ['profile', ...args],
       {
-        env: { SIDEKICK_PROFILES_DIR: tmp() },
-        cwd: tmp(),
+        env: { SIDEKICK_PROFILES_DIR: madeDir() },
+        cwd: madeDir(),
         entryFileUrl,
         runClaude: () => {
           throw new Error('no claude in tests');
@@ -301,7 +312,7 @@ describe('main: profile', () => {
     expect(USAGE).toContain(PROFILE_USAGE_LINE);
   });
   test('profile argv through a pipe delivers every byte before exit', () => {
-    const store = tmp();
+    const store = madeDir();
     const dir = path.join(store, 'a');
     // Over 64 KiB, the size at which a cut-off pipe write loses bytes.
     const settings = { companyAnnouncements: ['x'.repeat(200_000)] };

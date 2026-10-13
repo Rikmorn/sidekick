@@ -1,12 +1,21 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { type ProfileEnv, runProfileCli } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 
-const tmp = (): string =>
-  fs.mkdtempSync(path.join(os.tmpdir(), 'sk-profile-cli-'));
+const made: string[] = [];
+const tmp = (): string => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-profile-cli-'));
+  made.push(dir);
+  return dir;
+};
+afterEach(() => {
+  for (const dir of made.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 const mkProfile = (store: string, name: string, manifest: object): string => {
   const dir = path.join(store, name);
@@ -235,6 +244,13 @@ describe('profile launch', () => {
     expect(h.run('launch', '--bg', 'a')).toBe(3);
     expect(h.out).toEqual(['job 1']);
     expect(h.err).toEqual(['warn']);
+  });
+  test('a launch that times out says so and returns the runner code', () => {
+    const rr = fakeRunner(ok({ code: 143, timedOut: true }));
+    const h = harness({ runClaude: rr.run });
+    mkProfile(h.store, 'a', { description: 'A' });
+    expect(h.run('launch', '--bg', 'a')).toBe(143);
+    expect(h.err).toContain('claude did not return in time.');
   });
   test('a refused check never launches', () => {
     const h = harness({ runClaude: () => ok({ stdout: 'nothing\n' }) });

@@ -255,15 +255,18 @@ describe('checkSettings', () => {
     checkSettings({}, deps(run));
     expect(args[0]).toBe('--settings');
     expect(args[2]).toBe('doctor');
+    expect(seen).toEqual({ files: [args[1] ?? ''], calls: 1 });
+    expect(fs.existsSync(args[1] ?? '')).toBe(false);
   });
 
   test('a missing canary line is refused and names the skip variable', () => {
     const run: ClaudeRunner = () => ok('Claude Code doctor\n\nAll fine\n');
     const r = checkSettings({}, deps(run));
     expect(r.ok).toBe(false);
-    const text = JSON.stringify(r);
-    expect(text).toContain('no longer parses');
-    expect(text).toContain('SIDEKICK_PROFILE_SKIP_CHECK');
+    if (r.ok) return;
+    expect(r.issues).toHaveLength(2);
+    expect(r.issues[0]).toContain('no longer parses');
+    expect(r.issues[1]).toContain('SIDEKICK_PROFILE_SKIP_CHECK=1');
     expect(leftovers()).toEqual([]);
   });
 
