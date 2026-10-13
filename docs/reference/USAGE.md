@@ -4,13 +4,14 @@ How the loop runs, session by session, and how each step lands on GitHub. The re
 
 ## The shape
 
-Superpowers is the trunk: brainstorm, plan, execute, review. The official code-review plugin reviews. sidekick adds four things around them, none of which replaces a superpowers skill.
+Superpowers is the trunk: brainstorm, plan, execute, review. The official code-review plugin reviews. sidekick adds five things around them, none of which replaces a superpowers skill.
 
 | Layer | What it does | Where it lives |
 |---|---|---|
 | House guidance | The `sk-*` rules Claude Code reads in every repo: working standards, language, clean code, TypeScript, guidance authoring, PM conventions, agent prompts | `plugin/rules/`, delivered by `sidekick rules install` |
 | PM layer | Tracking on GitHub for your repos: session-start pickup, filing, closing with a record, a milestone's scope review and release check, a lint | `sidekick pm`, its session-start hook, and the `sk-orient`, `sk-track`, and `sk-milestone` skills, and the `sk-holistic-reviewer` agent |
 | Execution | How a written plan runs: a mode chosen per plan, what the plan carries, and the worker handoff | The `sk-execute` and `sk-worker` skills, the Skill-tool hook that gives `writing-plans` the plan stance and the handoff, and the Read hook that gives reviewers sidekick's reviewer lines |
+| Context | Tells the model when its main-thread context fills, at 65% and 75% of its window | The context monitor hook (`PostToolBatch`) and the `context_window` setting |
 | Extensions | Design-side steps the ecosystem lacks. Shipped: a design pass before or during brainstorming. To come: a sealed review after a spec, a goal-backward verdict after a build | The `sk-design` skill and the Skill-tool hook's brainstorming nudge; later milestones for the rest |
 
 The PM layer is on where you own the tracking and silent everywhere else. A repo is tracked when one open Projects v2 board is linked to it, titled after the repo, and owned by you. No config file; the board is the switch.

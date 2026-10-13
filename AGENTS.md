@@ -7,11 +7,11 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 | Path | Purpose |
 |---|---|
 | `.claude-plugin/marketplace.json` | The marketplace `rikmorn`, listing the one plugin at `./plugin` |
-| `plugin/.claude-plugin/plugin.json` | The plugin manifest: name `sidekick`, version, dependencies on superpowers and code-review |
+| `plugin/.claude-plugin/plugin.json` | The plugin manifest: name `sidekick`, version, the `context_window` setting, dependencies on superpowers and code-review |
 | `plugin/rules/*.md` | The portable `sk-*` rules; the single source, delivered by `sidekick rules install` |
 | `plugin/skills/` | Skills the plugin ships: the reference skill `sidekick`, the PM skills `sk-orient`, `sk-track`, and `sk-milestone`, the execution skills `sk-execute` and `sk-worker`, and the design skill `sk-design` |
 | `plugin/agents/` | Agents the plugin ships: the sealed reviewer `sk-holistic-reviewer`, which `sk-milestone` dispatches to review a milestone's scope at Opening and its release at the close |
-| `plugin/hooks/` | The session-start hook prints the board's pickup in a tracked repo. The Skill-tool hook points the model at `sk-design` when brainstorming loads. It gives `writing-plans` the plan stance and the handoff of `sk-execute`. The Read hook gives sidekick's reviewer lines to superpowers' reviewers and to the release check's |
+| `plugin/hooks/` | The session-start hook prints the board's pickup in a tracked repo. The Skill-tool hook points the model at `sk-design` when brainstorming loads. It gives `writing-plans` the plan stance and the handoff of `sk-execute`. The Read hook gives sidekick's reviewer lines to superpowers' reviewers and to the release check's. The context monitor hook tells the model once at 65% and once at 75% of its context window. It stays silent while no window is set |
 | `plugin/bin/sidekick` | The built executable, committed. Rebuild it with `bun run build` in every commit that changes `bin/`; CI rebuilds with the bun its last line records and fails on any difference. Its co-located `package.json` declares `"type": "module"` to match the build format. Without it, Node takes the type from the nearest `package.json` up the tree, and `~/.claude/package.json` declares commonjs, so the installed CLI exits 0 silently |
 | `plugin/THIRD-PARTY-NOTICES.txt` | The licence of each dependency the bundle carries. `bin/cli.test.ts` fails when it falls out of step with `package.json`'s `dependencies` |
 | `bin/cli.ts`, `bin/helpers/` | The executable's TypeScript source and its tests (`*.test.ts` beside them) |

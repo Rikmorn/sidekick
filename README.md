@@ -28,6 +28,20 @@ claude plugin update -s user sidekick@rikmorn
 
 `-s project` updates a project-scope record. Run from a repo that holds a project-scope record for the plugin, the bare command updates that record, not the user install. Restart Claude Code, then run `sidekick rules install` again for each scope you deliver to. Auto-update is the alternative. It is off by default for a third-party marketplace, and `/plugin` → **Marketplaces** → **Enable auto-update** turns it on for `rikmorn`.
 
+The context monitor hook needs your session's window size, and stays silent while the `context_window` setting is unset. Set it for every session under `pluginConfigs` in `~/.claude/settings.json`:
+
+```json
+{ "pluginConfigs": { "sidekick@rikmorn": { "options": { "context_window": 1000000 } } } }
+```
+
+For one session, pass the same key to `--settings`:
+
+```bash
+claude --settings '{"pluginConfigs":{"sidekick@rikmorn":{"options":{"context_window":1000000}}}}'
+```
+
+When set, `CLAUDE_CODE_AUTO_COMPACT_WINDOW` takes precedence over the setting.
+
 ## The rules
 
 The `sk-*` rules ship inside the plugin. Claude Code reads rules from a repo's `.claude/rules/` or the user-level `~/.claude/rules/`, and a plugin cannot write there on its own, so delivery is one explicit command, available on the Bash tool's PATH whenever the plugin is enabled:
@@ -69,11 +83,11 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 
 | Path | What |
 |---|---|
-| `plugin/.claude-plugin/plugin.json` | The manifest: name, version, dependencies |
+| `plugin/.claude-plugin/plugin.json` | The manifest: name, version, the `context_window` setting, dependencies |
 | `plugin/rules/` | The portable rules: clean code, TypeScript, language, working standards, guidance authoring, PM conventions, agent-prompt authoring |
 | `plugin/skills/` | The reference skill `sidekick`, the PM skills `sk-orient`, `sk-track`, and `sk-milestone`, the execution skills `sk-execute` and `sk-worker`, and the design skill `sk-design` |
 | `plugin/agents/` | The sealed reviewer `sk-holistic-reviewer`, which `sk-milestone` dispatches to review a milestone's scope at Opening and its release at the close |
-| `plugin/hooks/` | The session-start hook prints the board's pickup in a tracked repo. The Skill-tool hook points the model at `sk-design` when brainstorming loads. It gives `writing-plans` the plan stance and the handoff of `sk-execute`. The Read hook gives sidekick's reviewer lines to superpowers' reviewers and to the release check's |
+| `plugin/hooks/` | The session-start hook prints the board's pickup in a tracked repo. The Skill-tool hook points the model at `sk-design` when brainstorming loads. It gives `writing-plans` the plan stance and the handoff of `sk-execute`. The Read hook gives sidekick's reviewer lines to superpowers' reviewers and to the release check's. The context monitor hook tells the model once at 65% and once at 75% of its context window. It stays silent while no window is set |
 | `plugin/bin/sidekick` | The executable, built from `bin/cli.ts` |
 | `.claude-plugin/marketplace.json` | The one-plugin marketplace this repo is |
 
