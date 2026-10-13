@@ -308,12 +308,47 @@ describe('newProfile', () => {
     expect(newProfile('p', 'x', [root]).ok).toBe(true);
     expect(fs.existsSync(path.join(root, 'p', 'profile.json'))).toBe(true);
   });
-  test('refuses an existing folder', () => {
-    fs.mkdirSync(path.join(tmp, 'p'));
+  test('refuses an existing folder and leaves it as it was', () => {
+    write(path.join(tmp, 'p', 'notes.txt'), 'kept');
     const r = newProfile('p', 'x', [tmp]);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.issues.join('\n')).toContain(path.join(tmp, 'p'));
+    expect(r).toEqual({
+      ok: false,
+      issues: [`${path.join(tmp, 'p')}: already exists`],
+    });
+    expect(fs.readdirSync(path.join(tmp, 'p'))).toEqual(['notes.txt']);
   });
+  test('names a root that is a file, saying it is not a folder', () => {
+    const root = path.join(tmp, 'store');
+    write(root);
+    const r = newProfile('p', 'x', [root]);
+    expect(r).toEqual({
+      ok: false,
+      issues: [`${root}: exists and is not a folder`],
+    });
+  });
+  // A umask of 0o777 makes the new folder mode 000, so the manifest write
+  // fails after the folder exists; root ignores the mode.
+  test.skipIf(process.getuid?.() === 0)(
+    'removes the folder it made when the manifest write fails',
+    () => {
+      const previous = process.umask(0o777);
+      const r = (() => {
+        try {
+          return newProfile('p', 'x', [tmp]);
+        } finally {
+          process.umask(previous);
+        }
+      })();
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.issues).toHaveLength(1);
+        expect(r.issues[0]).toStartWith(
+          `${path.join(tmp, 'p', 'profile.json')}: `,
+        );
+      }
+      expect(fs.readdirSync(tmp)).toEqual([]);
+    },
+  );
   test('refuses an invalid name and writes nothing', () => {
     const r = newProfile('Bad/Name', 'x', [tmp]);
     expect(r.ok).toBe(false);

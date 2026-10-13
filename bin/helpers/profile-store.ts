@@ -212,6 +212,37 @@ export function listProfiles(roots: string[]): ListedProfile[] {
   return roots.flatMap((r) => listRoot(path.resolve(r)));
 }
 
+const isExists = (err: unknown): boolean =>
+  err instanceof Error && 'code' in err && err.code === 'EEXIST';
+
+const messageOf = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
+// `mkdirSync` with `recursive` throws EEXIST only when the root is not a folder.
+const makeRoot = (root: string): string[] => {
+  try {
+    fs.mkdirSync(root, { recursive: true });
+    return [];
+  } catch (err) {
+    return [
+      `${root}: ${isExists(err) ? 'exists and is not a folder' : messageOf(err)}`,
+    ];
+  }
+};
+
+// Removes the folder `newProfile` made and any partial manifest in it; rmdir
+// refuses a folder that holds anything else.
+const unmake = (dir: string): string[] => {
+  try {
+    const manifest = path.join(dir, MANIFEST_FILE);
+    if (isPresent(manifest)) fs.rmSync(manifest);
+    fs.rmdirSync(dir);
+    return [];
+  } catch (err) {
+    return [`${dir}: could not remove it: ${messageOf(err)}`];
+  }
+};
+
 /** Create `<first root>/<name>/profile.json` holding only the description. */
 export function newProfile(
   name: string,
@@ -226,23 +257,23 @@ export function newProfile(
   if (first === undefined)
     return { ok: false, issues: ['no store root is set'] };
   const root = path.resolve(first);
+  const rootIssues = makeRoot(root);
+  if (rootIssues.length > 0) return { ok: false, issues: rootIssues };
   const dir = path.join(root, name);
   try {
-    fs.mkdirSync(root, { recursive: true });
     fs.mkdirSync(dir);
-    fs.writeFileSync(
-      path.join(dir, MANIFEST_FILE),
-      `${JSON.stringify(manifest, null, 2)}\n`,
-    );
   } catch (err) {
-    const exists =
-      err instanceof Error && 'code' in err && err.code === 'EEXIST';
-    const why = exists
-      ? 'already exists'
-      : err instanceof Error
-        ? err.message
-        : String(err);
+    const why = isExists(err) ? 'already exists' : messageOf(err);
     return { ok: false, issues: [`${dir}: ${why}`] };
+  }
+  const file = path.join(dir, MANIFEST_FILE);
+  try {
+    fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+  } catch (err) {
+    return {
+      ok: false,
+      issues: [`${file}: ${messageOf(err)}`, ...unmake(dir)],
+    };
   }
   return { ok: true, dir };
 }

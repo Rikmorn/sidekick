@@ -2859,6 +2859,29 @@ var listRoot = (root) => {
 function listProfiles(roots) {
   return roots.flatMap((r) => listRoot(path7.resolve(r)));
 }
+var isExists = (err) => err instanceof Error && ("code" in err) && err.code === "EEXIST";
+var messageOf = (err) => err instanceof Error ? err.message : String(err);
+var makeRoot = (root) => {
+  try {
+    fs8.mkdirSync(root, { recursive: true });
+    return [];
+  } catch (err) {
+    return [
+      `${root}: ${isExists(err) ? "exists and is not a folder" : messageOf(err)}`
+    ];
+  }
+};
+var unmake = (dir) => {
+  try {
+    const manifest = path7.join(dir, MANIFEST_FILE);
+    if (isPresent(manifest))
+      fs8.rmSync(manifest);
+    fs8.rmdirSync(dir);
+    return [];
+  } catch (err) {
+    return [`${dir}: could not remove it: ${messageOf(err)}`];
+  }
+};
 function newProfile(name, description, roots) {
   if (!isProfileName(name))
     return { ok: false, issues: [notAName(name)] };
@@ -2870,16 +2893,25 @@ function newProfile(name, description, roots) {
   if (first === undefined)
     return { ok: false, issues: ["no store root is set"] };
   const root = path7.resolve(first);
+  const rootIssues = makeRoot(root);
+  if (rootIssues.length > 0)
+    return { ok: false, issues: rootIssues };
   const dir = path7.join(root, name);
   try {
-    fs8.mkdirSync(root, { recursive: true });
     fs8.mkdirSync(dir);
-    fs8.writeFileSync(path7.join(dir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}
+  } catch (err) {
+    const why = isExists(err) ? "already exists" : messageOf(err);
+    return { ok: false, issues: [`${dir}: ${why}`] };
+  }
+  const file = path7.join(dir, MANIFEST_FILE);
+  try {
+    fs8.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
 `);
   } catch (err) {
-    const exists = err instanceof Error && "code" in err && err.code === "EEXIST";
-    const why = exists ? "already exists" : err instanceof Error ? err.message : String(err);
-    return { ok: false, issues: [`${dir}: ${why}`] };
+    return {
+      ok: false,
+      issues: [`${file}: ${messageOf(err)}`, ...unmake(dir)]
+    };
   }
   return { ok: true, dir };
 }
