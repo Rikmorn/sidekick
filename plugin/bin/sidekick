@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs5 from "node:fs";
+import * as fs6 from "node:fs";
 import { realpathSync as realpathSync2 } from "node:fs";
 import * as os from "node:os";
-import * as path5 from "node:path";
+import * as path6 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -403,39 +403,189 @@ function summarize(issues) {
 }
 
 // bin/helpers/hook.ts
+import * as fs2 from "node:fs";
+import * as path2 from "node:path";
+
+// bin/helpers/context-monitor.ts
 import * as fs from "node:fs";
 import * as path from "node:path";
-var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read   (reads the hook event on stdin)";
+var LEVELS = [
+  { level: "critical", at: 0.75 },
+  { level: "warning", at: 0.65 }
+];
+var RANK = { warning: 0, critical: 1 };
+var WINDOW_VARS = [
+  "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+  "CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW"
+];
+var USAGE_FIELDS = [
+  "input_tokens",
+  "cache_read_input_tokens",
+  "cache_creation_input_tokens"
+];
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function mainThreadSum(line) {
+  let entry;
+  try {
+    entry = JSON.parse(line);
+  } catch {
+    return;
+  }
+  if (!isRecord(entry))
+    return;
+  if (entry.type !== "assistant" || entry.isSidechain !== false) {
+    return;
+  }
+  if (!isRecord(entry.message) || !isRecord(entry.message.usage)) {
+    return;
+  }
+  const { usage } = entry.message;
+  const counts = USAGE_FIELDS.flatMap((field) => {
+    const n = usage[field];
+    return typeof n === "number" && Number.isFinite(n) ? [n] : [];
+  });
+  if (counts.length !== USAGE_FIELDS.length)
+    return;
+  const sum = counts.reduce((total, n) => total + n, 0);
+  return sum > 0 ? sum : undefined;
+}
+function parseTail(text) {
+  const lines = text.split(`
+`);
+  for (let i = lines.length - 1;i >= 0; i--) {
+    const sum = mainThreadSum(lines[i] ?? "");
+    if (sum !== undefined)
+      return sum;
+  }
+  return;
+}
+function resolveWindow(env) {
+  for (const name of WINDOW_VARS) {
+    const raw = env[name];
+    if (raw !== undefined && /^[1-9][0-9]*$/.test(raw))
+      return Number(raw);
+  }
+  return;
+}
+function nextLatch(latched, tokens, window) {
+  if (tokens > window)
+    return { latch: latched };
+  const reached = LEVELS.find((l) => tokens / window >= l.at)?.level;
+  if (reached === undefined)
+    return { latch: undefined };
+  if (latched !== undefined && RANK[latched] >= RANK[reached]) {
+    return { latch: latched };
+  }
+  return { speak: reached, latch: reached };
+}
+function warningText(level, tokens, window) {
+  const percent = Math.floor(tokens * 100 / window);
+  const format = (n) => n.toLocaleString("en-US");
+  const lead = `sidekick: context is ${percent}% full (${format(tokens)} of ${format(window)} tokens). There is no need to stop. Where it fits, finish the current step before starting a new one.`;
+  return level === "critical" ? `${lead} At the next natural pause, tell the user that context is running low.` : lead;
+}
+var SESSION_ID = /^[A-Za-z0-9-]{1,128}$/;
+var TAIL_BYTES = [256 * 1024, 512 * 1024, 1024 * 1024, 2 * 1024 * 1024];
+function readTail(fd, size, bytes) {
+  const length = Math.min(size, bytes);
+  const buffer = Buffer.alloc(length);
+  fs.readSync(fd, buffer, 0, length, size - length);
+  return buffer.toString("utf-8");
+}
+function readFigure(transcript) {
+  const fd = fs.openSync(transcript, "r");
+  try {
+    const { size } = fs.fstatSync(fd);
+    for (const bytes of TAIL_BYTES) {
+      const figure = parseTail(readTail(fd, size, bytes));
+      if (figure !== undefined || bytes >= size)
+        return figure;
+    }
+    return;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+function readLatch(file) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
+    if (!isRecord(parsed))
+      return;
+    const { level } = parsed;
+    return level === "warning" || level === "critical" ? level : undefined;
+  } catch {
+    return;
+  }
+}
+function writeLatch(file, latch) {
+  if (latch === undefined) {
+    fs.rmSync(file, { force: true });
+    return;
+  }
+  fs.writeFileSync(file, JSON.stringify({ level: latch }));
+}
+function postToolBatchContext(stdin, monitor) {
+  try {
+    const event = JSON.parse(stdin);
+    if (!isRecord(event) || "agent_id" in event)
+      return;
+    const { session_id: sessionId, transcript_path: transcript } = event;
+    if (typeof sessionId !== "string" || !SESSION_ID.test(sessionId)) {
+      return;
+    }
+    if (typeof transcript !== "string")
+      return;
+    const window = resolveWindow(monitor.env);
+    if (window === undefined)
+      return;
+    const tokens = readFigure(transcript);
+    if (tokens === undefined)
+      return;
+    const latchFile = path.join(monitor.tmpdir, `sidekick-ctx-${sessionId}.json`);
+    const latched = readLatch(latchFile);
+    const next = nextLatch(latched, tokens, window);
+    if (next.latch !== latched)
+      writeLatch(latchFile, next.latch);
+    return next.speak === undefined ? undefined : warningText(next.speak, tokens, window);
+  } catch {
+    return;
+  }
+}
+
+// bin/helpers/hook.ts
+var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)";
 function readContent(event) {
   const response = event.tool_response;
-  if (!isRecord(response) || !isRecord(response.file))
+  if (!isRecord2(response) || !isRecord2(response.file))
     return "";
   return typeof response.file.content === "string" ? response.file.content : "";
 }
-var DESIGN_SKILL = path.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path.join("skills", "sk-execute", "SKILL.md");
+var DESIGN_SKILL = path2.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path2.join("skills", "sk-execute", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
   "## Before the plan goes out",
   "## Choose the mode"
 ];
-var CLEAN_CODE_RULE = path.join("rules", "sk-clean-code.md");
+var CLEAN_CODE_RULE = path2.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
 var RELEASE_CHECK_PACKAGE = /(^|\/)\.superpowers\/sdd\/release-check-[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
-var isRecord = (v) => typeof v === "object" && v !== null;
+var isRecord2 = (v) => typeof v === "object" && v !== null;
 function isSkillHookInput(v) {
-  if (!isRecord(v))
+  if (!isRecord2(v))
     return false;
   const input = v.tool_input;
-  return isRecord(input) && typeof input.skill === "string";
+  return isRecord2(input) && typeof input.skill === "string";
 }
 function isReadHookInput(v) {
-  if (!isRecord(v) || v.tool_name !== "Read")
+  if (!isRecord2(v) || v.tool_name !== "Read")
     return false;
   const input = v.tool_input;
-  return isRecord(input) && typeof input.file_path === "string";
+  return isRecord2(input) && typeof input.file_path === "string";
 }
 function parseJson(raw) {
   try {
@@ -446,7 +596,7 @@ function parseJson(raw) {
 }
 function readText(file) {
   try {
-    return fs.readFileSync(file, "utf-8");
+    return fs2.readFileSync(file, "utf-8");
   } catch {
     return;
   }
@@ -535,7 +685,7 @@ function ruleCoversPackage(rulePaths, content) {
   return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
 }
 function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path.join(pluginDir, DESIGN_SKILL));
+  const description = readSkillDescription(path2.join(pluginDir, DESIGN_SKILL));
   if (description === undefined)
     return;
   return [
@@ -547,7 +697,7 @@ function brainstormNudge(pluginDir) {
 }
 var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
-  const file = path.join(pluginDir, EXECUTE_SKILL);
+  const file = path2.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
   const found = sections.flatMap((s) => s === undefined ? [] : [s]);
   if (found.length < PLAN_SECTIONS.length)
@@ -566,7 +716,7 @@ var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. W
 var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
 var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function commentsLines(pluginDir, packageText) {
-  const rule = path.join(pluginDir, CLEAN_CODE_RULE);
+  const rule = path2.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
   if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
     return [];
@@ -595,14 +745,15 @@ function releaseReviewerLines(pluginDir, packageText) {
 
 `);
 }
-function postSkillContext(stdin, pluginDir) {
+function postSkillContext(stdin, env) {
   const event = parseJson(stdin);
   if (!isSkillHookInput(event))
     return;
   const nudge = NUDGES.get(event.tool_input.skill);
-  return nudge === undefined ? undefined : nudge(pluginDir);
+  return nudge === undefined ? undefined : nudge(env.pluginDir);
 }
-function postReadContext(stdin, pluginDir) {
+function postReadContext(stdin, env) {
+  const { pluginDir } = env;
   const event = parseJson(stdin);
   if (!isReadHookInput(event))
     return;
@@ -615,22 +766,29 @@ function postReadContext(stdin, pluginDir) {
   return reviewerLines(pluginDir, readContent(event));
 }
 var VERBS = new Map([
-  ["post-skill", postSkillContext],
-  ["post-read", postReadContext]
+  ["post-skill", { eventName: "PostToolUse", contextFor: postSkillContext }],
+  ["post-read", { eventName: "PostToolUse", contextFor: postReadContext }],
+  [
+    "post-tool-batch",
+    {
+      eventName: "PostToolBatch",
+      contextFor: (stdin, env) => postToolBatchContext(stdin, { env: env.env, tmpdir: env.tmpdir })
+    }
+  ]
 ]);
 function runHookCli(args, env, out, err) {
   const [verb] = args;
-  const contextFor = verb === undefined ? undefined : VERBS.get(verb);
-  if (contextFor === undefined) {
+  const entry = verb === undefined ? undefined : VERBS.get(verb);
+  if (entry === undefined) {
     err(`usage: ${HOOK_USAGE_LINE}`);
     return 1;
   }
-  const context = contextFor(env.readStdin(), env.pluginDir);
+  const context = entry.contextFor(env.readStdin(), env);
   if (context === undefined)
     return 0;
   out(JSON.stringify({
     hookSpecificOutput: {
-      hookEventName: "PostToolUse",
+      hookEventName: entry.eventName,
       additionalContext: context
     }
   }));
@@ -1372,32 +1530,32 @@ function renderReport(r) {
 
 // bin/helpers/rules.ts
 import { execFileSync } from "node:child_process";
-import * as fs4 from "node:fs";
-import * as path4 from "node:path";
+import * as fs5 from "node:fs";
+import * as path5 from "node:path";
 
 // bin/helpers/rules-fs.ts
-import * as fs2 from "node:fs";
-import * as path2 from "node:path";
+import * as fs3 from "node:fs";
+import * as path3 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
 function statusOf(dir, name) {
-  const st = fs2.lstatSync(path2.join(dir, name), { throwIfNoEntry: false });
+  const st = fs3.lstatSync(path3.join(dir, name), { throwIfNoEntry: false });
   if (!st)
     return "absent";
   return st.isFile() ? "file" : "other";
 }
 var isRegularFile = (dir, name) => statusOf(dir, name) === "file";
 function ownedRulesIn(dir) {
-  const dirStat = fs2.statSync(dir, { throwIfNoEntry: false });
+  const dirStat = fs3.statSync(dir, { throwIfNoEntry: false });
   if (!dirStat)
     return [];
   if (!dirStat.isDirectory())
     return [];
-  return fs2.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
+  return fs3.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
 }
 
 // bin/helpers/rules-overlap.ts
-import * as fs3 from "node:fs";
-import * as path3 from "node:path";
+import * as fs4 from "node:fs";
+import * as path4 from "node:path";
 var MIN_SHARED_HEADINGS = 2;
 var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
 function headingsOf(body) {
@@ -1433,20 +1591,20 @@ function signalsFor(file, body, rule) {
 }
 function findOverlap(src, dest) {
   const report = { pairs: [], extensions: [] };
-  const destStat = fs3.statSync(dest, { throwIfNoEntry: false });
+  const destStat = fs4.statSync(dest, { throwIfNoEntry: false });
   if (!destStat?.isDirectory())
     return report;
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs3.readFileSync(path3.join(src, name), "utf-8");
+    const body = fs4.readFileSync(path4.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
       opening: openingOf(body)
     };
   });
-  const others = fs3.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
+  const others = fs4.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   for (const file of others) {
-    const body = fs3.readFileSync(path3.join(dest, file), "utf-8");
+    const body = fs4.readFileSync(path4.join(dest, file), "utf-8");
     for (const rule of rules) {
       const signals = signalsFor(file, body, rule);
       if (signals.length === 0)
@@ -1485,7 +1643,7 @@ function formatOverlap(report) {
 
 // bin/helpers/rules.ts
 function resolveDest(scope, cwd, claudeHome) {
-  return scope === "project" ? path4.join(cwd, ".claude", "rules") : path4.join(claudeHome, "rules");
+  return scope === "project" ? path5.join(cwd, ".claude", "rules") : path5.join(claudeHome, "rules");
 }
 function repoRootOf(cwd) {
   try {
@@ -1499,13 +1657,13 @@ function repoRootOf(cwd) {
   }
 }
 var PLUGIN_ONLY_RULES = ["sk-pm-conventions.md"];
-var isRecord2 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var isRecord3 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
-  const file = path4.join(root, ".claude", "settings.json");
+  const file = path5.join(root, ".claude", "settings.json");
   let text;
   try {
-    text = fs4.readFileSync(file, "utf-8");
+    text = fs5.readFileSync(file, "utf-8");
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { state: "not-enabled" };
@@ -1520,11 +1678,11 @@ function pluginEnablement(root) {
   } catch (e) {
     return { state: "unreadable", path: file, reason: errorText(e) };
   }
-  if (!isRecord2(parsed)) {
+  if (!isRecord3(parsed)) {
     return { state: "unreadable", path: file, reason: "not a JSON object" };
   }
   const plugins = parsed.enabledPlugins;
-  const enabled = isRecord2(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
+  const enabled = isRecord3(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
   return { state: enabled ? "enabled" : "not-enabled" };
 }
 var EVERY_RULE = { leaveOut: [], leaveAsIs: [] };
@@ -1553,9 +1711,9 @@ function installRules(src, dest, scope = EVERY_RULE) {
     return { installed: [], removed: [], leftOut: [], skipped: [] };
   }
   const set = shippedOnly(scope, shipped);
-  fs4.mkdirSync(dest, { recursive: true });
+  fs5.mkdirSync(dest, { recursive: true });
   const byLowerCase = new Map;
-  for (const existing of fs4.readdirSync(dest)) {
+  for (const existing of fs5.readdirSync(dest)) {
     byLowerCase.set(existing.toLowerCase(), existing);
   }
   const installed = [];
@@ -1570,7 +1728,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
       skipped.push({ name, why: "not-a-regular-file" });
       continue;
     }
-    fs4.copyFileSync(path4.join(src, name), path4.join(dest, name));
+    fs5.copyFileSync(path5.join(src, name), path5.join(dest, name));
     installed.push(name);
   }
   const keep = new Set(shipped);
@@ -1578,7 +1736,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
   const removed = owned.filter((n) => !keep.has(n));
   const leftOut = owned.filter((n) => set.leaveOut.includes(n));
   for (const name of [...removed, ...leftOut]) {
-    fs4.rmSync(path4.join(dest, name));
+    fs5.rmSync(path5.join(dest, name));
   }
   return { installed, removed, leftOut, skipped };
 }
@@ -1589,12 +1747,12 @@ function checkRules(src, dest, scope = EVERY_RULE) {
   const installed = ownedRulesIn(dest);
   const drift = [];
   for (const name of expected) {
-    const there = path4.join(dest, name);
-    if (!fs4.existsSync(there)) {
+    const there = path5.join(dest, name);
+    if (!fs5.existsSync(there)) {
       drift.push({ kind: "missing", name });
       continue;
     }
-    const same = fs4.readFileSync(path4.join(src, name)).equals(fs4.readFileSync(there));
+    const same = fs5.readFileSync(path5.join(src, name)).equals(fs5.readFileSync(there));
     if (!same)
       drift.push({ kind: "stale", name });
   }
@@ -1645,9 +1803,9 @@ function scopeSet(scope, root) {
 var deliveryMode = (projectDest) => ownedRulesIn(projectDest).length > 0 ? "project" : "user";
 var realOrSelf = (p) => {
   try {
-    return fs4.realpathSync(p);
+    return fs5.realpathSync(p);
   } catch {
-    return path4.resolve(p);
+    return path5.resolve(p);
   }
 };
 var sameDir = (a, b) => realOrSelf(a) === realOrSelf(b);
@@ -1672,7 +1830,7 @@ function reportDuplicates(expected, dest, userDest, out) {
   out(`your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`);
 }
 function refuseNonDirectory(dir, out) {
-  const st = fs4.statSync(dir, { throwIfNoEntry: false });
+  const st = fs5.statSync(dir, { throwIfNoEntry: false });
   if (!st || st.isDirectory())
     return false;
   out(`${dir} exists and is not a directory; refusing to write rules there`);
@@ -2078,22 +2236,22 @@ function gateVerdict(ms, issues, items) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path5.dirname(fileURLToPath(entryFileUrl));
+  const here = path6.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path5.resolve(here, ".."),
-    path5.resolve(here, "..", "plugin")
+    path6.resolve(here, ".."),
+    path6.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs5.existsSync(path5.join(c, "rules")))
+    if (fs6.existsSync(path6.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path5.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path6.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs5.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs6.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -2114,7 +2272,7 @@ var USAGE2 = `usage: sidekick rules <install|check> --project|--user [--strict]
        sidekick --version`;
 function readProcessStdin() {
   try {
-    return fs5.readFileSync(0, "utf-8");
+    return fs6.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -2130,14 +2288,14 @@ function main(argv, ctx, out, err) {
     return runPmCli(rest2, { cwd: ctx.cwd }, out, err);
   if (sub === "hook") {
     const readStdin = ctx.readStdin ?? readProcessStdin;
-    return runHookCli(rest2, { readStdin, pluginDir }, out, err);
+    return runHookCli(rest2, { readStdin, pluginDir, env: ctx.env, tmpdir: ctx.tmpdir ?? os.tmpdir() }, out, err);
   }
   if (sub !== "rules") {
     err(USAGE2);
     return 1;
   }
-  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path5.join(os.homedir(), ".claude");
-  const src = ctx.env.SIDEKICK_RULES_DIR || path5.join(pluginDir, "rules");
+  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path6.join(os.homedir(), ".claude");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path6.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

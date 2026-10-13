@@ -67,6 +67,8 @@ export interface MainContext {
   entryFileUrl: string;
   /** Reads the hook event; only the `hook` family calls it. */
   readStdin?: () => string;
+  /** Where the context monitor keeps its latch files; defaults to the OS temp folder. */
+  tmpdir?: string;
 }
 
 function readProcessStdin(): string {
@@ -92,7 +94,12 @@ export function main(
   if (sub === 'pm') return runPmCli(rest, { cwd: ctx.cwd }, out, err);
   if (sub === 'hook') {
     const readStdin = ctx.readStdin ?? readProcessStdin;
-    return runHookCli(rest, { readStdin, pluginDir }, out, err);
+    return runHookCli(
+      rest,
+      { readStdin, pluginDir, env: ctx.env, tmpdir: ctx.tmpdir ?? os.tmpdir() },
+      out,
+      err,
+    );
   }
   if (sub !== 'rules') {
     err(USAGE);

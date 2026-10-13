@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   nextLatch,
   parseTail,
+  postToolBatchContext,
   resolveWindow,
   warningText,
 } from './context-monitor.js';
@@ -209,5 +213,110 @@ describe('warningText', () => {
   test('floors the percentage without float artefacts', () => {
     expect(warningText('warning', 57, 100)).toContain('57% full');
     expect(warningText('warning', 699999, 1000000)).toContain('69% full');
+  });
+});
+
+describe('postToolBatchContext', () => {
+  const WINDOW_ENV = { CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000' };
+
+  function fixture(sessionId = 'aaa') {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ctx-'));
+    const transcript = path.join(dir, `${sessionId}.jsonl`);
+    const monitor = { env: WINDOW_ENV, tmpdir: dir };
+    const event = (extra: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        session_id: sessionId,
+        transcript_path: transcript,
+        tool_calls: [],
+        ...extra,
+      });
+    const append = (...lines: string[]) =>
+      fs.appendFileSync(transcript, `${lines.join('\n')}\n`);
+    const latchFile = path.join(dir, `sidekick-ctx-${sessionId}.json`);
+    return { dir, transcript, monitor, event, append, latchFile };
+  }
+
+  test('speaks once per level', () => {
+    const f = fixture();
+    f.append(entry({ r: 638 }));
+    expect(postToolBatchContext(f.event(), f.monitor)).toBe(
+      warningText('warning', 650, 1000),
+    );
+    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+    f.append(entry({ r: 748 }));
+    expect(postToolBatchContext(f.event(), f.monitor)).toBe(
+      warningText('critical', 760, 1000),
+    );
+    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+  });
+
+  test('stays silent for a subagent, a bad session id, no window, no transcript, or bad JSON', () => {
+    const f = fixture();
+    f.append(entry({ r: 638 }));
+    const speaks = (stdin: string, monitor = f.monitor) =>
+      postToolBatchContext(stdin, monitor);
+    expect(speaks(f.event({ agent_id: 'sub1' }))).toBeUndefined();
+    expect(speaks(f.event({ session_id: '../x' }))).toBeUndefined();
+    expect(speaks(f.event({ session_id: 'a'.repeat(129) }))).toBeUndefined();
+    expect(speaks(f.event({ session_id: 'a b' }))).toBeUndefined();
+    expect(speaks(f.event(), { env: {}, tmpdir: f.dir })).toBeUndefined();
+    expect(
+      speaks(f.event({ transcript_path: path.join(f.dir, 'nope.jsonl') })),
+    ).toBeUndefined();
+    expect(speaks('not json')).toBeUndefined();
+    expect(fs.existsSync(f.latchFile)).toBe(false);
+  });
+
+  test('re-arms after compaction', () => {
+    const f = fixture();
+    f.append(entry({ r: 738 }));
+    expect(postToolBatchContext(f.event(), f.monitor)).toBeDefined();
+    expect(fs.existsSync(f.latchFile)).toBe(true);
+    f.append(entry({ r: 88 }));
+    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+    expect(fs.existsSync(f.latchFile)).toBe(false);
+    f.append(entry({ r: 638 }));
+    expect(postToolBatchContext(f.event(), f.monitor)).toBe(
+      warningText('warning', 650, 1000),
+    );
+  });
+
+  test('keeps a latch file per session', () => {
+    const a = fixture('aaa');
+    const dir = a.dir;
+    const b = fixture('bbb');
+    // Both sessions share one tmpdir.
+    const shared = { env: WINDOW_ENV, tmpdir: dir };
+    a.append(entry({ r: 638 }));
+    b.append(entry({ r: 638 }));
+    expect(postToolBatchContext(a.event(), shared)).toBeDefined();
+    expect(postToolBatchContext(b.event(), shared)).toBeDefined();
+    expect(postToolBatchContext(a.event(), shared)).toBeUndefined();
+    expect(postToolBatchContext(b.event(), shared)).toBeUndefined();
+  });
+
+  test('gives silence when the newest main-thread entry is past 2 MB from the end', () => {
+    const f = fixture();
+    const filler = JSON.stringify({ type: 'user', text: 'x'.repeat(990) });
+    f.append(entry({ r: 638 }));
+    f.append(...Array.from({ length: 2150 }, () => filler));
+    expect(fs.statSync(f.transcript).size).toBeGreaterThan(2 * 1024 * 1024);
+    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+  });
+
+  test('records the level in the latch file', () => {
+    const f = fixture();
+    f.append(entry({ r: 638 }));
+    postToolBatchContext(f.event(), f.monitor);
+    expect(JSON.parse(fs.readFileSync(f.latchFile, 'utf-8'))).toEqual({
+      level: 'warning',
+    });
+  });
+
+  test('treats a malformed latch file as no latch', () => {
+    const f = fixture();
+    f.append(entry({ r: 638 }));
+    fs.writeFileSync(f.latchFile, 'garbage');
+    expect(postToolBatchContext(f.event(), f.monitor)).toBeDefined();
   });
 });

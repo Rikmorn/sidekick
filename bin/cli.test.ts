@@ -114,6 +114,48 @@ describe('main', () => {
       'PostToolUse',
     );
   });
+  test('hook post-tool-batch reads the window from ctx.env and the latch from ctx.tmpdir', () => {
+    const dir = tmp();
+    const transcript = path.join(dir, 't.jsonl');
+    write(
+      transcript,
+      `${JSON.stringify({
+        type: 'assistant',
+        isSidechain: false,
+        message: {
+          usage: {
+            input_tokens: 2,
+            cache_read_input_tokens: 648,
+            cache_creation_input_tokens: 0,
+          },
+        },
+      })}\n`,
+    );
+    const out: string[] = [];
+    const code = main(
+      ['hook', 'post-tool-batch'],
+      {
+        env: { CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000' },
+        tmpdir: dir,
+        cwd: process.cwd(),
+        entryFileUrl: pathToFileURL(path.join(__dirname, 'cli.ts')).href,
+        readStdin: () =>
+          JSON.stringify({
+            session_id: 'abc',
+            transcript_path: transcript,
+            tool_calls: [],
+          }),
+      },
+      (l) => out.push(l),
+      () => {},
+    );
+    expect(code).toBe(0);
+    expect(out.length).toBe(1);
+    expect(JSON.parse(out[0]).hookSpecificOutput.hookEventName).toBe(
+      'PostToolBatch',
+    );
+    expect(fs.existsSync(path.join(dir, 'sidekick-ctx-abc.json'))).toBe(true);
+  });
   test('--version prints the manifest version', () => {
     const root = tmp();
     write(path.join(root, 'plugin', 'rules', 'sk-a.md'), '# a\n');

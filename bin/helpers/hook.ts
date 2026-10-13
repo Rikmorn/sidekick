@@ -1,21 +1,27 @@
 /**
- * `sidekick hook post-skill` and `sidekick hook post-read`: the context
- * sidekick's PostToolUse hooks add when a skill it extends loads, or when a
- * review package is read: superpowers' own, or the one sk-milestone's release
- * check builds, which gets lines of its own. Every other input prints nothing and
- * returns 0, because a hook never blocks or fails the call it watches
- * (ADR-0010, ADR-0011).
+ * `sidekick hook post-skill`, `post-read`, and `post-tool-batch`: the context
+ * sidekick's hooks add. The two PostToolUse verbs fire when a skill it extends
+ * loads, or when a review package is read: superpowers' own, or the one
+ * sk-milestone's release check builds, which gets lines of its own. The
+ * PostToolBatch verb warns the model as its context fills. Every other input
+ * prints nothing and returns 0, because a hook never blocks or fails the call
+ * it watches (ADR-0010, ADR-0011).
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { type MonitorEnv, postToolBatchContext } from './context-monitor.js';
 
 export const HOOK_USAGE_LINE =
-  'sidekick hook post-skill|post-read   (reads the hook event on stdin)';
+  'sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)';
 
 export interface HookEnv {
   /** Reads the hook event; called only once the verb is known. */
   readStdin: () => string;
   pluginDir: string;
+  /** The process environment; the context monitor reads its window from it. */
+  env: MonitorEnv['env'];
+  /** Where the context monitor keeps its latch files. */
+  tmpdir: string;
 }
 
 interface SkillHookInput {
@@ -36,7 +42,7 @@ function readContent(event: ReadHookInput): string {
 }
 
 type Nudge = (pluginDir: string) => string | undefined;
-type ContextFor = (stdin: string, pluginDir: string) => string | undefined;
+type ContextFor = (stdin: string, env: HookEnv) => string | undefined;
 
 const DESIGN_SKILL = path.join('skills', 'sk-design', 'SKILL.md');
 const EXECUTE_SKILL = path.join('skills', 'sk-execute', 'SKILL.md');
@@ -249,17 +255,15 @@ function releaseReviewerLines(pluginDir: string, packageText: string): string {
   ].join('\n\n');
 }
 
-function postSkillContext(
-  stdin: string,
-  pluginDir: string,
-): string | undefined {
+function postSkillContext(stdin: string, env: HookEnv): string | undefined {
   const event = parseJson(stdin);
   if (!isSkillHookInput(event)) return undefined;
   const nudge = NUDGES.get(event.tool_input.skill);
-  return nudge === undefined ? undefined : nudge(pluginDir);
+  return nudge === undefined ? undefined : nudge(env.pluginDir);
 }
 
-function postReadContext(stdin: string, pluginDir: string): string | undefined {
+function postReadContext(stdin: string, env: HookEnv): string | undefined {
+  const { pluginDir } = env;
   const event = parseJson(stdin);
   if (!isReadHookInput(event)) return undefined;
   const filePath = event.tool_input.file_path;
@@ -270,9 +274,22 @@ function postReadContext(stdin: string, pluginDir: string): string | undefined {
   return reviewerLines(pluginDir, readContent(event));
 }
 
-const VERBS = new Map<string, ContextFor>([
-  ['post-skill', postSkillContext],
-  ['post-read', postReadContext],
+interface Verb {
+  eventName: string;
+  contextFor: ContextFor;
+}
+
+const VERBS = new Map<string, Verb>([
+  ['post-skill', { eventName: 'PostToolUse', contextFor: postSkillContext }],
+  ['post-read', { eventName: 'PostToolUse', contextFor: postReadContext }],
+  [
+    'post-tool-batch',
+    {
+      eventName: 'PostToolBatch',
+      contextFor: (stdin, env) =>
+        postToolBatchContext(stdin, { env: env.env, tmpdir: env.tmpdir }),
+    },
+  ],
 ]);
 
 export function runHookCli(
@@ -282,17 +299,17 @@ export function runHookCli(
   err: (line: string) => void,
 ): number {
   const [verb] = args;
-  const contextFor = verb === undefined ? undefined : VERBS.get(verb);
-  if (contextFor === undefined) {
+  const entry = verb === undefined ? undefined : VERBS.get(verb);
+  if (entry === undefined) {
     err(`usage: ${HOOK_USAGE_LINE}`);
     return 1;
   }
-  const context = contextFor(env.readStdin(), env.pluginDir);
+  const context = entry.contextFor(env.readStdin(), env);
   if (context === undefined) return 0;
   out(
     JSON.stringify({
       hookSpecificOutput: {
-        hookEventName: 'PostToolUse',
+        hookEventName: entry.eventName,
         additionalContext: context,
       },
     }),

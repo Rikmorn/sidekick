@@ -70,7 +70,7 @@ function runVerb(verb: string, stdin: string, pluginDir = PLUGIN_DIR) {
   const err: string[] = [];
   const code = runHookCli(
     [verb],
-    { readStdin: () => stdin, pluginDir },
+    { readStdin: () => stdin, pluginDir, env: {}, tmpdir: os.tmpdir() },
     (l) => out.push(l),
     (l) => err.push(l),
   );
@@ -120,7 +120,7 @@ function run(stdin: string, pluginDir = PLUGIN_DIR) {
   const err: string[] = [];
   const code = runHookCli(
     ['post-skill'],
-    { readStdin: () => stdin, pluginDir },
+    { readStdin: () => stdin, pluginDir, env: {}, tmpdir: os.tmpdir() },
     (l) => out.push(l),
     (l) => err.push(l),
   );
@@ -221,6 +221,8 @@ describe('runHookCli post-skill', () => {
           throw new Error('stdin read before the verb check');
         },
         pluginDir: PLUGIN_DIR,
+        env: {},
+        tmpdir: os.tmpdir(),
       },
       () => {},
       (l) => err.push(l),
@@ -704,5 +706,48 @@ describe('plugin/hooks/post-read', () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toBe('');
     expect(elapsed).toBeLessThan(2000);
+  });
+});
+
+describe('runHookCli post-tool-batch', () => {
+  test('prints one line whose event name is PostToolBatch', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ctx-'));
+    const transcript = path.join(dir, 't.jsonl');
+    fs.writeFileSync(
+      transcript,
+      `${JSON.stringify({
+        type: 'assistant',
+        isSidechain: false,
+        message: {
+          usage: {
+            input_tokens: 2,
+            cache_read_input_tokens: 648,
+            cache_creation_input_tokens: 0,
+          },
+        },
+      })}\n`,
+    );
+    const out: string[] = [];
+    const code = runHookCli(
+      ['post-tool-batch'],
+      {
+        readStdin: () =>
+          JSON.stringify({
+            session_id: 'abc',
+            transcript_path: transcript,
+            tool_calls: [],
+          }),
+        pluginDir: PLUGIN_DIR,
+        env: { CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000' },
+        tmpdir: dir,
+      },
+      (l) => out.push(l),
+      () => {},
+    );
+    expect(code).toBe(0);
+    expect(out.length).toBe(1);
+    expect(JSON.parse(out[0]).hookSpecificOutput.hookEventName).toBe(
+      'PostToolBatch',
+    );
   });
 });

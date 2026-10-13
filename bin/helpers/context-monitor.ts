@@ -1,8 +1,10 @@
 /**
- * The context monitor's logic: the figure from a transcript's tail, the window
- * from the environment, the latch, and the words (#146). Pure; the handler
- * that reads files is added beside these.
+ * The context monitor: the figure from a transcript's tail, the window from
+ * the environment, the latch, and the words, as pure functions, and the
+ * `post-tool-batch` handler that reads the transcript and keeps the latch file.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 export type Level = 'warning' | 'critical';
 
@@ -103,4 +105,87 @@ export function warningText(
   return level === 'critical'
     ? `${lead} At the next natural pause, tell the user that context is running low.`
     : lead;
+}
+
+export interface MonitorEnv {
+  env: Readonly<Record<string, string | undefined>>;
+  tmpdir: string;
+}
+
+// The session id becomes part of a file name in tmpdir.
+const SESSION_ID = /^[A-Za-z0-9-]{1,128}$/;
+// Tail sizes tried in turn; a transcript line can hold a large tool result.
+const TAIL_BYTES = [256 * 1024, 512 * 1024, 1024 * 1024, 2 * 1024 * 1024];
+
+function readTail(fd: number, size: number, bytes: number): string {
+  const length = Math.min(size, bytes);
+  const buffer = Buffer.alloc(length);
+  fs.readSync(fd, buffer, 0, length, size - length);
+  return buffer.toString('utf-8');
+}
+
+function readFigure(transcript: string): number | undefined {
+  const fd = fs.openSync(transcript, 'r');
+  try {
+    const { size } = fs.fstatSync(fd);
+    for (const bytes of TAIL_BYTES) {
+      const figure = parseTail(readTail(fd, size, bytes));
+      if (figure !== undefined || bytes >= size) return figure;
+    }
+    return undefined;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function readLatch(file: string): Level | undefined {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    if (!isRecord(parsed)) return undefined;
+    const { level } = parsed;
+    return level === 'warning' || level === 'critical' ? level : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeLatch(file: string, latch: Level | undefined): void {
+  if (latch === undefined) {
+    fs.rmSync(file, { force: true });
+    return;
+  }
+  fs.writeFileSync(file, JSON.stringify({ level: latch }));
+}
+
+/** The advisory to add after a tool batch; undefined when the monitor stays silent. */
+export function postToolBatchContext(
+  stdin: string,
+  monitor: MonitorEnv,
+): string | undefined {
+  try {
+    const event: unknown = JSON.parse(stdin);
+    // A subagent's window is its own, and its latch would collide with the parent's.
+    if (!isRecord(event) || 'agent_id' in event) return undefined;
+    const { session_id: sessionId, transcript_path: transcript } = event;
+    if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) {
+      return undefined;
+    }
+    if (typeof transcript !== 'string') return undefined;
+    const window = resolveWindow(monitor.env);
+    if (window === undefined) return undefined;
+    const tokens = readFigure(transcript);
+    if (tokens === undefined) return undefined;
+    const latchFile = path.join(
+      monitor.tmpdir,
+      `sidekick-ctx-${sessionId}.json`,
+    );
+    const latched = readLatch(latchFile);
+    const next = nextLatch(latched, tokens, window);
+    if (next.latch !== latched) writeLatch(latchFile, next.latch);
+    return next.speak === undefined
+      ? undefined
+      : warningText(next.speak, tokens, window);
+  } catch {
+    return undefined;
+  }
 }
