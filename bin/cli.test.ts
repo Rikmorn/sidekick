@@ -12,6 +12,7 @@ import {
   resolvePluginDir,
   USAGE,
 } from './cli.js';
+import { PROFILE_USAGE_LINE } from './helpers/profile.js';
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sk-cli-'));
@@ -234,6 +235,64 @@ describe('main', () => {
       ),
     ).toBe(0);
     expect(fs.existsSync(path.join(home, 'rules', 'sk-a.md'))).toBe(true);
+  });
+});
+
+describe('main: profile', () => {
+  const entryFileUrl = pathToFileURL(path.join(__dirname, 'cli.ts')).href;
+  test('dispatches profile and honours the raw writer', () => {
+    const store = tmp();
+    write(path.join(store, 'a', 'profile.json'), '{"description":"A"}');
+    const chunks: string[] = [];
+    const code = main(
+      ['profile', 'argv', 'a'],
+      {
+        env: { SIDEKICK_PROFILES_DIR: store, SIDEKICK_PROFILE_SKIP_CHECK: '1' },
+        cwd: store,
+        entryFileUrl,
+        write: (c) => chunks.push(c),
+      },
+      () => {},
+      () => {},
+    );
+    expect(code).toBe(0);
+    expect(chunks.join('').split('\0')[0]).toBe('--add-dir');
+  });
+  test('an unknown profile verb prints the profile usage', () => {
+    const err: string[] = [];
+    const code = main(
+      ['profile', 'nope'],
+      { env: {}, cwd: process.cwd(), entryFileUrl },
+      () => {},
+      (l) => err.push(l),
+    );
+    expect(code).toBe(1);
+    expect(err[0]).toContain(PROFILE_USAGE_LINE);
+  });
+  test('USAGE names the profile family', () => {
+    expect(USAGE).toContain(PROFILE_USAGE_LINE);
+  });
+  test('profile argv through a pipe delivers every byte before exit', () => {
+    const store = tmp();
+    const dir = path.join(store, 'a');
+    write(path.join(dir, 'profile.json'), '{"description":"A"}');
+    const r = spawnSync(
+      'bun',
+      [path.join(__dirname, 'cli.ts'), 'profile', 'argv', 'a'],
+      {
+        encoding: 'buffer',
+        env: {
+          ...process.env,
+          SIDEKICK_PROFILES_DIR: store,
+          SIDEKICK_PROFILE_SKIP_CHECK: '1',
+        },
+      },
+    );
+    expect(r.status).toBe(0);
+    const settings = JSON.stringify({ sidekick: { profile: 'a' } });
+    expect(r.stdout.toString()).toBe(
+      `--add-dir\0${path.resolve(store)}/a\0--settings\0${settings}\0`,
+    );
   });
 });
 

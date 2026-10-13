@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs6 from "node:fs";
-import { realpathSync as realpathSync2 } from "node:fs";
+import * as fs9 from "node:fs";
+import { realpathSync as realpathSync3 } from "node:fs";
 import * as os from "node:os";
-import * as path6 from "node:path";
+import * as path8 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -78,6 +78,9 @@ function _addIssue(context, label, dataset, config$1, other) {
   else
     dataset.issues = [issue];
 }
+function _isValidObjectKey(object$1, key) {
+  return Object.prototype.hasOwnProperty.call(object$1, key) && key !== "__proto__" && key !== "prototype" && key !== "constructor";
+}
 function _joinExpects(values$1, separator) {
   const list = [...new Set(values$1)];
   if (list.length > 1)
@@ -106,6 +109,38 @@ function getDotPath(issue) {
     return key;
   }
   return null;
+}
+function check(requirement, message$1) {
+  return {
+    kind: "validation",
+    type: "check",
+    reference: check,
+    async: false,
+    expects: null,
+    requirement,
+    message: message$1,
+    "~run"(dataset, config$1) {
+      if (dataset.typed && !this.requirement(dataset.value))
+        _addIssue(this, "input", dataset, config$1);
+      return dataset;
+    }
+  };
+}
+function minLength(requirement, message$1) {
+  return {
+    kind: "validation",
+    type: "min_length",
+    reference: minLength,
+    async: false,
+    expects: `>=${requirement}`,
+    requirement,
+    message: message$1,
+    "~run"(dataset, config$1) {
+      if (dataset.typed && dataset.value.length < this.requirement)
+        _addIssue(this, "length", dataset, config$1, { received: `${dataset.value.length}` });
+      return dataset;
+    }
+  };
 }
 function getFallback(schema, dataset, config$1) {
   return typeof schema.fallback === "function" ? schema.fallback(dataset, config$1) : schema.fallback;
@@ -348,6 +383,163 @@ function picklist(options, message$1) {
     }
   });
 }
+function record(key, value$1, message$1) {
+  return _standardSchema({
+    kind: "schema",
+    type: "record",
+    reference: record,
+    expects: "Object",
+    async: false,
+    key,
+    value: value$1,
+    message: message$1,
+    "~run"(dataset, config$1) {
+      const input = dataset.value;
+      if (input && typeof input === "object") {
+        dataset.typed = true;
+        dataset.value = {};
+        for (const entryKey in input)
+          if (/* @__PURE__ */ _isValidObjectKey(input, entryKey)) {
+            const entryValue = input[entryKey];
+            const keyDataset = this.key["~run"]({ value: entryKey }, config$1);
+            if (keyDataset.issues) {
+              const pathItem = {
+                type: "object",
+                origin: "key",
+                input,
+                key: entryKey,
+                value: entryValue
+              };
+              for (const issue of keyDataset.issues) {
+                issue.path = [pathItem];
+                dataset.issues?.push(issue);
+              }
+              if (!dataset.issues)
+                dataset.issues = keyDataset.issues;
+              if (config$1.abortEarly) {
+                dataset.typed = false;
+                break;
+              }
+            }
+            const valueDataset = this.value["~run"]({ value: entryValue }, config$1);
+            if (valueDataset.issues) {
+              const pathItem = {
+                type: "object",
+                origin: "value",
+                input,
+                key: entryKey,
+                value: entryValue
+              };
+              for (const issue of valueDataset.issues) {
+                if (issue.path)
+                  issue.path.unshift(pathItem);
+                else
+                  issue.path = [pathItem];
+                dataset.issues?.push(issue);
+              }
+              if (!dataset.issues)
+                dataset.issues = valueDataset.issues;
+              if (config$1.abortEarly) {
+                dataset.typed = false;
+                break;
+              }
+            }
+            if (!keyDataset.typed || !valueDataset.typed)
+              dataset.typed = false;
+            if (keyDataset.typed)
+              dataset.value[keyDataset.value] = valueDataset.value;
+          }
+      } else
+        _addIssue(this, "type", dataset, config$1);
+      return dataset;
+    }
+  });
+}
+function strictObject(entries$1, message$1) {
+  return _standardSchema({
+    kind: "schema",
+    type: "strict_object",
+    reference: strictObject,
+    expects: "Object",
+    async: false,
+    entries: entries$1,
+    message: message$1,
+    "~run"(dataset, config$1) {
+      const input = dataset.value;
+      if (input && typeof input === "object") {
+        dataset.typed = true;
+        dataset.value = {};
+        for (const key in this.entries) {
+          const valueSchema = this.entries[key];
+          if (key in input || (valueSchema.type === "exact_optional" || valueSchema.type === "optional" || valueSchema.type === "nullish") && valueSchema.default !== undefined) {
+            const value$1 = key in input ? input[key] : /* @__PURE__ */ getDefault(valueSchema);
+            const valueDataset = valueSchema["~run"]({ value: value$1 }, config$1);
+            if (valueDataset.issues) {
+              const pathItem = {
+                type: "object",
+                origin: "value",
+                input,
+                key,
+                value: value$1
+              };
+              for (const issue of valueDataset.issues) {
+                if (issue.path)
+                  issue.path.unshift(pathItem);
+                else
+                  issue.path = [pathItem];
+                dataset.issues?.push(issue);
+              }
+              if (!dataset.issues)
+                dataset.issues = valueDataset.issues;
+              if (config$1.abortEarly) {
+                dataset.typed = false;
+                break;
+              }
+            }
+            if (!valueDataset.typed)
+              dataset.typed = false;
+            dataset.value[key] = valueDataset.value;
+          } else if (valueSchema.fallback !== undefined)
+            dataset.value[key] = /* @__PURE__ */ getFallback(valueSchema);
+          else if (valueSchema.type !== "exact_optional" && valueSchema.type !== "optional" && valueSchema.type !== "nullish") {
+            _addIssue(this, "key", dataset, config$1, {
+              input: undefined,
+              expected: `"${key}"`,
+              path: [{
+                type: "object",
+                origin: "key",
+                input,
+                key,
+                value: input[key]
+              }]
+            });
+            if (config$1.abortEarly)
+              break;
+          }
+        }
+        if (!dataset.issues || !config$1.abortEarly) {
+          for (const key in input)
+            if (!Object.prototype.hasOwnProperty.call(this.entries, key)) {
+              _addIssue(this, "key", dataset, config$1, {
+                input: key,
+                expected: "never",
+                path: [{
+                  type: "object",
+                  origin: "key",
+                  input,
+                  key,
+                  value: input[key]
+                }]
+              });
+              break;
+            }
+        }
+      } else
+        _addIssue(this, "type", dataset, config$1);
+      return dataset;
+    }
+  });
+}
 function string(message$1) {
   return _standardSchema({
     kind: "schema",
@@ -374,6 +566,24 @@ function unknown() {
     async: false,
     "~run"(dataset) {
       dataset.typed = true;
+      return dataset;
+    }
+  });
+}
+function pipe(...pipe$1) {
+  return _standardSchema({
+    ...pipe$1[0],
+    pipe: pipe$1,
+    "~run"(dataset, config$1) {
+      for (const item of pipe$1)
+        if (item.kind !== "metadata") {
+          if (dataset.issues && (item.kind === "schema" || item.kind === "transformation")) {
+            dataset.typed = false;
+            break;
+          }
+          if (!dataset.issues || !config$1.abortEarly && !config$1.abortPipeEarly)
+            dataset = item["~run"](dataset, config$1);
+        }
       return dataset;
     }
   });
@@ -2240,24 +2450,575 @@ function gateVerdict(ms, issues, items) {
   return { ready: ms.open_issues === 0 && open2.length === 0, open: open2 };
 }
 
+// bin/helpers/profile.ts
+import { parseArgs as parseArgs2 } from "node:util";
+
+// bin/helpers/profile-launch.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+import * as fs6 from "node:fs";
+import * as path6 from "node:path";
+var isPlainObject = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var uniqueByValue = (items) => items.filter((item, i) => items.findIndex((o) => JSON.stringify(o) === JSON.stringify(item)) === i);
+function mergeValue(prev, next) {
+  if (isPlainObject(prev) && isPlainObject(next))
+    return mergeTwo(prev, next);
+  if (Array.isArray(prev) && Array.isArray(next)) {
+    return uniqueByValue([...prev, ...next]);
+  }
+  return next;
+}
+function mergeTwo(base, next) {
+  const carried = Object.entries(base).map(([key, prev]) => [
+    key,
+    Object.hasOwn(next, key) ? mergeValue(prev, next[key]) : prev
+  ]);
+  const added = Object.entries(next).filter(([key]) => !Object.hasOwn(base, key));
+  return Object.fromEntries([...carried, ...added]);
+}
+var mergeSettings = (...layers) => layers.reduce(mergeTwo, {});
+var memoryVariable = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
+function launchKeys(profile, home) {
+  const isCleanRoom = profile.manifest.settingSources !== undefined && !profile.manifest.settingSources.includes("user");
+  return {
+    sidekick: { profile: profile.name },
+    ...profile.hasRules ? { env: { [memoryVariable]: "1" } } : {},
+    ...isCleanRoom ? {
+      claudeMdExcludes: [
+        path6.join(home, ".claude", "CLAUDE.md"),
+        path6.join(home, ".claude", "rules", "**")
+      ]
+    } : {}
+  };
+}
+function composeSettings(profile, opts) {
+  return mergeSettings(profile.manifest.settings ?? {}, opts.overlay ?? {}, launchKeys(profile, opts.home));
+}
+function launchArgs(profile, settings) {
+  const sources = profile.manifest.settingSources;
+  return [
+    "--add-dir",
+    profile.dir,
+    "--settings",
+    JSON.stringify(settings),
+    ...sources === undefined ? [] : ["--setting-sources", sources.join(",")]
+  ];
+}
+var spawnClaude = (command, args, opts) => spawnSync2(command, args, {
+  ...opts,
+  encoding: "utf8",
+  stdio: ["ignore", "pipe", "pipe"]
+});
+var isTimeout = (error) => ("code" in error) && error.code === "ETIMEDOUT";
+var makeClaudeRunner = (spawn = spawnClaude) => (args, { cwd, timeoutMs }) => {
+  const out = spawn("claude", args, {
+    cwd,
+    timeout: timeoutMs,
+    shell: false
+  });
+  const stdout = out.stdout ?? "";
+  const stderr = out.stderr ?? "";
+  if (out.error === undefined) {
+    return { code: out.status ?? 1, stdout, stderr, timedOut: false };
+  }
+  if (isTimeout(out.error)) {
+    return { code: out.status ?? 1, stdout, stderr, timedOut: true };
+  }
+  return {
+    code: 127,
+    stdout,
+    stderr: stderr || out.error.message,
+    timedOut: false
+  };
+};
+var execClaude = makeClaudeRunner();
+var CANARY_KEYS = ["feedbackSurveyRate", "cleanupPeriodDays"];
+var CANARY_VALUE = "sidekick-canary";
+var SKIP_VARIABLE = "SIDEKICK_PROFILE_SKIP_CHECK";
+var SKIP_WARNING = `${SKIP_VARIABLE}=1 is set, so the settings were not checked with claude doctor.`;
+var refuse = (...issues) => ({ ok: false, issues });
+function invalidSettingsLines(doctorOutput, paths) {
+  const lines = doctorOutput.split(`
+`);
+  const start = lines.findIndex((line) => line.trim() === "Invalid settings");
+  if (start === -1)
+    return [];
+  const rest2 = lines.slice(start + 1);
+  const end = rest2.findIndex((line) => line.trim() === "");
+  const section = end === -1 ? rest2 : rest2.slice(0, end);
+  return section.filter((line) => line.startsWith("- ") && paths.some((p) => line.startsWith(`- ${p} `)));
+}
+var printed = (result) => [result.stdout, result.stderr].filter((text) => text.trim() !== "").join(`
+`);
+function judge(result, lines, canary) {
+  if (result.timedOut) {
+    return refuse("claude doctor timed out.", printed(result));
+  }
+  if (result.code !== 0) {
+    return refuse(`claude doctor failed with exit code ${result.code}.`, printed(result));
+  }
+  const isCanaryLine = (line) => line.includes(` › ${canary}:`);
+  if (!lines.some(isCanaryLine)) {
+    return refuse("claude doctor's output no longer parses: its report for the canary key is missing, so a launch could drop settings silently.", `Set ${SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`);
+  }
+  const real = lines.filter((line) => !isCanaryLine(line));
+  return real.length === 0 ? { ok: true, warnings: [] } : refuse(...real);
+}
+function checkSettings(settings, deps, timeoutMs = 30000) {
+  if (deps.skip)
+    return { ok: true, warnings: [SKIP_WARNING] };
+  const canary = CANARY_KEYS.find((key) => !Object.hasOwn(settings, key));
+  if (canary === undefined) {
+    return refuse(`The settings set both ${CANARY_KEYS.join(" and ")}, so the check has no canary key left.`);
+  }
+  const dir = fs6.mkdtempSync(path6.join(deps.tmpdir, "sidekick-profile-"));
+  try {
+    const file = path6.join(dir, "settings.json");
+    fs6.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
+      mode: 384
+    });
+    const result = deps.run(["--settings", file, "doctor"], {
+      cwd: deps.cwd,
+      timeoutMs
+    });
+    const lines = invalidSettingsLines(result.stdout, [
+      file,
+      fs6.realpathSync(file)
+    ]);
+    return judge(result, lines, canary);
+  } finally {
+    fs6.rmSync(dir, { recursive: true, force: true });
+  }
+}
+var bgArgs = (base, opts) => [
+  ...base,
+  "--bg",
+  ...opts.sessionName === undefined ? [] : ["-n", opts.sessionName],
+  ...opts.prompt === undefined ? [] : ["--", opts.prompt]
+];
+
+// bin/helpers/profile-manifest.ts
+import * as fs7 from "node:fs";
+var SETTING_SOURCES = ["user", "project", "local"];
+var PROFILE_NAME_RULE = "1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit";
+var PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
+var isProfileName = (name) => PROFILE_NAME.test(name);
+var RESERVED_SETTINGS_KEY = "sidekick";
+var ManifestSchema = strictObject({
+  description: pipe(string(), minLength(1, "must not be empty")),
+  settingSources: optional(pipe(array(picklist(SETTING_SOURCES)), check((a) => new Set(a).size === a.length, "must not repeat a source"))),
+  settings: optional(pipe(unknown(), check((s) => !Array.isArray(s), "must be an object"), record(string(), unknown()), check((s) => !Object.hasOwn(s, RESERVED_SETTINGS_KEY), `must not set "${RESERVED_SETTINGS_KEY}", which launch owns`)))
+});
+function parseManifest(raw) {
+  const result = safeParse(ManifestSchema, raw);
+  if (result.success)
+    return { ok: true, manifest: result.output };
+  return {
+    ok: false,
+    issues: result.issues.map((i) => `${getDotPath(i) ?? "(root)"}: ${i.message}`)
+  };
+}
+var isMissing = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
+function readManifest(file) {
+  let text;
+  try {
+    text = fs7.readFileSync(file, "utf8");
+  } catch (err) {
+    const why = isMissing(err) ? "missing" : err instanceof Error ? err.message : String(err);
+    return { ok: false, issues: [`${file}: ${why}`] };
+  }
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    return { ok: false, issues: [`${file}: invalid JSON: ${why}`] };
+  }
+  const parsed = parseManifest(raw);
+  if (parsed.ok)
+    return parsed;
+  return { ok: false, issues: parsed.issues.map((i) => `${file}: ${i}`) };
+}
+
+// bin/helpers/profile-shell.ts
+var FIND_INSTALL = 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{try{const e=JSON.parse(s).find(x=>x.id==="sidekick@rikmorn"&&x.scope==="user");if(e&&typeof e.installPath==="string"){process.stdout.write(e.installPath);return}}catch{}process.exit(1)})';
+var NO_INSTALL = "skp: no user-scope sidekick@rikmorn install";
+var ZSH_FUNCTION = `skp() {
+  emulate -L zsh
+  if (( $# < 1 )); then print -u2 'usage: skp <profile> [claude arguments...]'; return 2; fi
+  local name=$1; shift
+  local list cli out
+  list=$(claude plugin list --json) || { print -u2 'skp: claude plugin list failed'; return 1; }
+  cli=$(print -r -- "$list" | node -e '${FIND_INSTALL}') || { print -u2 '${NO_INSTALL}'; return 1; }
+  out=$(node "$cli/bin/sidekick" profile argv "$name") || return
+  local -a args=("\${(@0)out}")
+  (( \${#args} )) && [[ -z \${args[-1]} ]] && args[-1]=()
+  claude "\${args[@]}" "$@"
+}
+`;
+var BASH_FUNCTION = `skp() {
+  if [ $# -lt 1 ]; then echo 'usage: skp <profile> [claude arguments...]' >&2; return 2; fi
+  local name="$1"; shift
+  local list cli tmp rc a
+  list=$(claude plugin list --json) || { echo 'skp: claude plugin list failed' >&2; return 1; }
+  cli=$(printf '%s' "$list" | node -e '${FIND_INSTALL}') || { echo '${NO_INSTALL}' >&2; return 1; }
+  tmp=$(mktemp) || return 1
+  node "$cli/bin/sidekick" profile argv "$name" >| "$tmp"; rc=$?
+  if [ "$rc" -ne 0 ]; then rm -f "$tmp"; return "$rc"; fi
+  local args=()
+  while IFS= read -r -d '' a; do args+=("$a"); done < "$tmp"
+  rm -f "$tmp"
+  claude "\${args[@]}" "$@"
+}
+`;
+var shellFunction = (shell, aliasNames) => {
+  for (const name of aliasNames) {
+    if (!isProfileName(name)) {
+      throw new Error(`invalid alias name: ${JSON.stringify(name)}`);
+    }
+  }
+  const aliases = aliasNames.map((name) => `alias ${name}='skp ${name}'
+`);
+  return [shell === "zsh" ? ZSH_FUNCTION : BASH_FUNCTION, ...aliases].join("");
+};
+
+// bin/helpers/profile-store.ts
+import * as fs8 from "node:fs";
+import * as path7 from "node:path";
+var MANIFEST_FILE = "profile.json";
+var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
+var ENABLES_PLUGINS = "can enable plugins outside the checked settings block; put settings in profile.json";
+var REFUSED = [
+  { path: "CLAUDE.md", why: HIDES_AGENTS },
+  { path: ".claude/CLAUDE.md", why: HIDES_AGENTS },
+  { path: "CLAUDE.local.md", why: HIDES_AGENTS },
+  { path: ".claude/settings.json", why: ENABLES_PLUGINS },
+  { path: ".claude/settings.local.json", why: ENABLES_PLUGINS }
+];
+function storeRoots(env, cwd, home) {
+  const override = env.SIDEKICK_PROFILES_DIR;
+  if (override)
+    return [path7.resolve(cwd, override)];
+  const configDir = env.CLAUDE_CONFIG_DIR || path7.join(home, ".claude");
+  return [path7.resolve(cwd, configDir, "profiles")];
+}
+var isPresent = (file) => {
+  try {
+    fs8.lstatSync(file);
+    return true;
+  } catch {
+    return false;
+  }
+};
+var isDirectory = (dir) => {
+  try {
+    return fs8.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+};
+function checkLayout(dir) {
+  return REFUSED.filter((r) => isPresent(path7.join(dir, r.path))).map((r) => `${path7.join(dir, r.path)}: ${r.why}`);
+}
+var holdsMarkdown = (dir) => {
+  let entries;
+  try {
+    entries = fs8.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  return entries.some((e) => {
+    const full = path7.join(dir, e.name);
+    if (e.isDirectory())
+      return holdsMarkdown(full);
+    if (e.isSymbolicLink() && isDirectory(full))
+      return holdsMarkdown(full);
+    return e.name.endsWith(".md");
+  });
+};
+var readFolder = (name, root) => {
+  const dir = path7.resolve(root, name);
+  const layout = checkLayout(dir);
+  if (layout.length > 0)
+    return { ok: false, issues: layout };
+  const read = readManifest(path7.join(dir, MANIFEST_FILE));
+  if (!read.ok)
+    return read;
+  return {
+    ok: true,
+    profile: {
+      name,
+      dir,
+      root,
+      manifest: read.manifest,
+      hasRules: holdsMarkdown(path7.join(dir, ".claude", "rules"))
+    }
+  };
+};
+function loadProfile(name, roots) {
+  if (!isProfileName(name)) {
+    return {
+      ok: false,
+      issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`]
+    };
+  }
+  const root = roots.find((r) => isDirectory(path7.resolve(r, name)));
+  if (root === undefined) {
+    return {
+      ok: false,
+      issues: [
+        `no profile named "${name}"; searched: ${roots.map((r) => path7.resolve(r)).join(", ")}`
+      ]
+    };
+  }
+  return readFolder(name, path7.resolve(root));
+}
+var listRoot = (root) => {
+  let names;
+  try {
+    names = fs8.readdirSync(root).sort();
+  } catch {
+    return [];
+  }
+  return names.filter((name) => isDirectory(path7.join(root, name))).map((name) => {
+    if (!isProfileName(name)) {
+      return {
+        name,
+        root,
+        description: undefined,
+        issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`]
+      };
+    }
+    const loaded = readFolder(name, root);
+    return loaded.ok ? {
+      name,
+      root,
+      description: loaded.profile.manifest.description,
+      issues: []
+    } : { name, root, description: undefined, issues: loaded.issues };
+  });
+};
+function listProfiles(roots) {
+  return roots.flatMap((r) => listRoot(path7.resolve(r)));
+}
+function newProfile(name, description, roots) {
+  if (!isProfileName(name)) {
+    return {
+      ok: false,
+      issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`]
+    };
+  }
+  const manifest = { description };
+  const parsed = parseManifest(manifest);
+  if (!parsed.ok)
+    return parsed;
+  const [first] = roots;
+  if (first === undefined)
+    return { ok: false, issues: ["no store root is set"] };
+  const root = path7.resolve(first);
+  const dir = path7.join(root, name);
+  try {
+    fs8.mkdirSync(root, { recursive: true });
+    fs8.mkdirSync(dir);
+    fs8.writeFileSync(path7.join(dir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}
+`);
+  } catch (err) {
+    const exists = err instanceof Error && "code" in err && err.code === "EEXIST";
+    const why = exists ? "already exists" : err instanceof Error ? err.message : String(err);
+    return { ok: false, issues: [`${dir}: ${why}`] };
+  }
+  return { ok: true, dir };
+}
+
+// bin/helpers/profile.ts
+var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text>|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]";
+var SKIP_VARIABLE2 = "SIDEKICK_PROFILE_SKIP_CHECK";
+var SHELLS = ["zsh", "bash"];
+var DEFAULT_LAUNCH_TIMEOUT_MS = 60000;
+var withoutTrailingNewline = (text) => text.replace(/\n$/, "");
+function parseFlags(rest2, options) {
+  try {
+    const { values, positionals } = parseArgs2({
+      args: rest2,
+      options,
+      allowPositionals: true,
+      strict: true
+    });
+    return { values, positionals };
+  } catch {
+    return;
+  }
+}
+var usage = (err) => {
+  err(`usage: ${PROFILE_USAGE_LINE}`);
+  return 1;
+};
+var refuse2 = (err, issues) => {
+  for (const issue of issues)
+    err(issue);
+  return 1;
+};
+function load(name, penv) {
+  const loaded = loadProfile(name, storeRoots(penv.env, penv.cwd, penv.home));
+  return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
+}
+var composed = (profile, penv) => {
+  const settings = composeSettings(profile, { home: penv.home });
+  return { settings, args: launchArgs(profile, settings) };
+};
+var runCheck = (settings, penv) => checkSettings(settings, {
+  run: penv.runClaude,
+  cwd: penv.cwd,
+  tmpdir: penv.tmpdir,
+  skip: penv.env[SKIP_VARIABLE2] === "1"
+});
+var list = (rest2, penv, out, err) => {
+  if (rest2.length > 0)
+    return usage(err);
+  const profiles = listProfiles(storeRoots(penv.env, penv.cwd, penv.home));
+  for (const p of profiles) {
+    out(p.issues.length > 0 ? `${p.name}  invalid: ${p.issues[0]}  (${p.root})` : `${p.name}  ${p.description}  (${p.root})`);
+  }
+  return profiles.some((p) => p.issues.length > 0) ? 1 : 0;
+};
+var show = (rest2, penv, out, err) => {
+  const parsed = parseFlags(rest2, {});
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage(err);
+  }
+  const loaded = load(parsed.positionals[0], penv);
+  if ("issues" in loaded)
+    return refuse2(err, loaded.issues);
+  const { profile } = loaded;
+  const { settings, args } = composed(profile, penv);
+  out(`folder: ${profile.dir}`);
+  out(`manifest: ${JSON.stringify(profile.manifest, null, 2)}`);
+  out(`settings: ${JSON.stringify(settings, null, 2)}`);
+  out("arguments:");
+  for (const arg of args)
+    out(arg);
+  return 0;
+};
+var create = (rest2, penv, out, err) => {
+  const parsed = parseFlags(rest2, { description: { type: "string" } });
+  const description = parsed?.values.description;
+  if (parsed === undefined || parsed.positionals.length !== 1 || typeof description !== "string") {
+    return usage(err);
+  }
+  const created = newProfile(parsed.positionals[0], description, storeRoots(penv.env, penv.cwd, penv.home));
+  if (!created.ok)
+    return refuse2(err, created.issues);
+  out(created.dir);
+  return 0;
+};
+var argv = (rest2, penv, _out, err) => {
+  const parsed = parseFlags(rest2, {});
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage(err);
+  }
+  const loaded = load(parsed.positionals[0], penv);
+  if ("issues" in loaded)
+    return refuse2(err, loaded.issues);
+  const { settings, args } = composed(loaded.profile, penv);
+  const checked2 = runCheck(settings, penv);
+  if (!checked2.ok)
+    return refuse2(err, checked2.issues);
+  for (const warning of checked2.warnings)
+    err(warning);
+  penv.write(args.map((arg) => `${arg}\x00`).join(""));
+  return 0;
+};
+var launch = (rest2, penv, out, err) => {
+  const split = rest2.indexOf("--");
+  const before = split === -1 ? rest2 : rest2.slice(0, split);
+  const words = split === -1 ? [] : rest2.slice(split + 1);
+  const parsed = parseFlags(before, {
+    bg: { type: "boolean" },
+    n: { type: "string", short: "n" }
+  });
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage(err);
+  }
+  if (parsed.values.bg !== true) {
+    return refuse2(err, [
+      "launch only starts background sessions: pass --bg.",
+      "For an interactive start, use the shell function: skp <name> (sidekick profile alias prints it)."
+    ]);
+  }
+  const loaded = load(parsed.positionals[0], penv);
+  if ("issues" in loaded)
+    return refuse2(err, loaded.issues);
+  const { settings, args } = composed(loaded.profile, penv);
+  const checked2 = runCheck(settings, penv);
+  if (!checked2.ok)
+    return refuse2(err, checked2.issues);
+  for (const warning of checked2.warnings)
+    err(warning);
+  const sessionName = parsed.values.n;
+  const result = penv.runClaude(bgArgs(args, {
+    sessionName: typeof sessionName === "string" ? sessionName : undefined,
+    prompt: words.length > 0 ? words.join(" ") : undefined
+  }), { cwd: penv.cwd, timeoutMs: DEFAULT_LAUNCH_TIMEOUT_MS });
+  if (result.stdout !== "")
+    out(withoutTrailingNewline(result.stdout));
+  if (result.stderr !== "")
+    err(withoutTrailingNewline(result.stderr));
+  if (result.timedOut)
+    err("claude did not return in time.");
+  return result.code;
+};
+var isShell = (value) => SHELLS.some((shell) => shell === value);
+var alias = (rest2, penv, out, err) => {
+  const parsed = parseFlags(rest2, { shell: { type: "string" } });
+  if (parsed === undefined)
+    return usage(err);
+  const shell = parsed.values.shell ?? "zsh";
+  if (!isShell(shell)) {
+    return refuse2(err, [
+      `unknown shell "${String(shell)}": use ${SHELLS.join(" or ")}`
+    ]);
+  }
+  const issues = parsed.positionals.flatMap((name) => {
+    const loaded = load(name, penv);
+    return "issues" in loaded ? loaded.issues : [];
+  });
+  if (issues.length > 0)
+    return refuse2(err, issues);
+  out(withoutTrailingNewline(shellFunction(shell, parsed.positionals)));
+  return 0;
+};
+var VERBS3 = {
+  list,
+  show,
+  new: create,
+  argv,
+  launch,
+  alias
+};
+function runProfileCli(args, penv, out, err) {
+  const [name, ...rest2] = args;
+  if (name === undefined || !Object.hasOwn(VERBS3, name))
+    return usage(err);
+  return VERBS3[name](rest2, penv, out, err);
+}
+
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path6.dirname(fileURLToPath(entryFileUrl));
+  const here = path8.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path6.resolve(here, ".."),
-    path6.resolve(here, "..", "plugin")
+    path8.resolve(here, ".."),
+    path8.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs6.existsSync(path6.join(c, "rules")))
+    if (fs9.existsSync(path8.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path6.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path8.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs6.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs9.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -2267,7 +3028,7 @@ function isMainEntrypoint(importMetaUrl, argv1) {
   if (!argv1)
     return false;
   try {
-    return realpathSync2(fileURLToPath(importMetaUrl)) === realpathSync2(argv1);
+    return realpathSync3(fileURLToPath(importMetaUrl)) === realpathSync3(argv1);
   } catch {
     return false;
   }
@@ -2275,16 +3036,28 @@ function isMainEntrypoint(importMetaUrl, argv1) {
 var USAGE2 = `usage: sidekick rules <install|check> --project|--user [--strict]
        ${PM_USAGE_LINE}
        ${HOOK_USAGE_LINE}
+       ${PROFILE_USAGE_LINE}
        sidekick --version`;
+function writeStdout(chunk) {
+  const buffer = Buffer.from(chunk);
+  for (let offset = 0;offset < buffer.length; ) {
+    try {
+      offset += fs9.writeSync(1, buffer, offset);
+    } catch (e) {
+      if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
+        throw e;
+    }
+  }
+}
 function readProcessStdin() {
   try {
-    return fs6.readFileSync(0, "utf-8");
+    return fs9.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
 }
-function main(argv, ctx, out, err) {
-  const [sub, ...rest2] = argv;
+function main(argv2, ctx, out, err) {
+  const [sub, ...rest2] = argv2;
   const pluginDir = resolvePluginDir(ctx.entryFileUrl);
   if (sub === "--version") {
     out(readVersion(pluginDir));
@@ -2296,12 +3069,22 @@ function main(argv, ctx, out, err) {
     const readStdin = ctx.readStdin ?? readProcessStdin;
     return runHookCli(rest2, { readStdin, pluginDir, env: ctx.env, tmpdir: ctx.tmpdir ?? os.tmpdir() }, out, err);
   }
+  if (sub === "profile") {
+    return runProfileCli(rest2, {
+      env: ctx.env,
+      cwd: ctx.cwd,
+      home: ctx.env.HOME || os.homedir(),
+      tmpdir: ctx.tmpdir ?? os.tmpdir(),
+      runClaude: ctx.runClaude ?? execClaude,
+      write: ctx.write ?? writeStdout
+    }, out, err);
+  }
   if (sub !== "rules") {
     err(USAGE2);
     return 1;
   }
-  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path6.join(os.homedir(), ".claude");
-  const src = ctx.env.SIDEKICK_RULES_DIR || path6.join(pluginDir, "rules");
+  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path8.join(os.homedir(), ".claude");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path8.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;
