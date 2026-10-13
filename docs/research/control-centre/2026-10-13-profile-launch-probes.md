@@ -39,7 +39,7 @@ Provenance grades:
 
 - `--settings '{"sidekick":{"profile":"bench"},"env":{"SK_PROBE":"canary-b"}}'` exited 0 with empty stderr. The `env` canary arrived, and a 385-line debug log named no key.
 - A file with the same object behaved the same, in `-p` and in `--bg`.
-- The published settings schema on schemastore allows extra keys (docs-grade, fetched 2026-10-13). The Claude Code docs say nothing about unknown keys.
+- The published settings schema on schemastore allows extra keys (the published schema, not the Claude Code docs; fetched 2026-10-13). The Claude Code docs say nothing about unknown keys.
 
 **One wrongly typed known key drops the whole object, silently, in `-p` and `--bg`, measured on 2026-10-13.**
 
@@ -76,20 +76,20 @@ Provenance grades:
 - From the sidekick repo and from `~/Documents/Projects`, which is not a git repo, `--setting-sources project` still loaded `~/.claude/CLAUDE.md` and every user rule. The transcript's instruction listing typed them `Project`, not `User`.
 - That held in `-p` and in `--bg`. The empty folder outside `$HOME` was the exception.
 - Inferred: Claude Code reads each parent folder's `.claude/`, and at `$HOME` that is `~/.claude/`.
-- `claudeMdExcludes` in inline `--settings`, naming `/Users/<name>/.claude/CLAUDE.md` and `/Users/<name>/.claude/rules/**`, removed those copies under `--setting-sources project`. Seven further runs on 2026-10-13 confirmed it (see the AGENTS.md section).
+- `claudeMdExcludes` in inline `--settings`, naming `/Users/<name>/.claude/CLAUDE.md` and `/Users/<name>/.claude/rules/**`, removed those copies under `--setting-sources project`. Three runs on 2026-10-13 carried the excludes: runs 1, 4, and 7 in the AGENTS.md section. None of them loaded the user copies.
 - Docs: a `claudeMdExcludes` pattern also excludes a symlink whose target it matches (memory page, §Exclude specific CLAUDE.md files).
 
 **A repo keeps its own plugins in the clean room, but only some in odin. Measured on 2026-10-13 in the bench.**
 
 - In the sidekick repo, the repo's `enabledPlugins` named the same three plugins that the probe enabled, so the clean room and the control matched.
-- In odin, `.claude/settings.json` enables seven plugins. A `-p` session loaded hookify, javascript-typescript, and backend-development. The four trailofbits plugins never loaded, with or without a profile.
+- In odin, `.claude/settings.json` enables seven plugins. A `-p` session loaded hookify, javascript-typescript, and backend-development. The four trailofbits plugins never loaded, with the user layer kept (`bench`) or left out (`bench-clean`). No run omitted the profile.
 - `claude plugin list --json` in odin lists those four as `project` scope and enabled. `claude plugin marketplace list` does not list a `trailofbits` marketplace, though odin's settings declare it under `extraKnownMarketplaces`.
 - Inferred, not tested: a `-p` session does not install a marketplace that a repo declares.
-- So "a clean room keeps the repo's own plugins" holds in the sidekick repo. In odin it held for plugins whose marketplace Claude Code already knows.
+- So "a clean room keeps the repo's own plugins" holds in the sidekick repo. In odin it held for three of seven. Inferred, not checked: those three come from marketplaces that Claude Code knows.
 
 **Auto memory loads in the clean room, measured on 2026-10-13.**
 
-- The transcript's instruction listing held `MEMORY.md` from the repo's folder under `~/.claude/projects/`, typed `AutoMem`, in every `--setting-sources project` run: the probes and both bench-clean runs.
+- The transcript's instruction listing held `MEMORY.md` from the repo's folder under `~/.claude/projects/`, typed `AutoMem`, in the sidekick-repo runs with `--setting-sources project`. Those were a `--bg` session, its two `-p` controls, and runs 1, 4, 5, and 7. It also loaded in the run from `~/Documents/Projects` and in both bench-clean runs, which used `project,local`. The empty-folder probes outside `$HOME` had no memory index, so loading was not checked there.
 - No setting that turns it off was looked for. A clean room is therefore free of the user's settings, rules, and plugins, but not of the repo's auto memory.
 
 ## The profile folder as `--add-dir`
@@ -140,8 +140,8 @@ The sidekick repo has an `AGENTS.md` and no `CLAUDE.md`. Seven headless runs sta
 | 6 | the variable, `--add-dir` of a folder with only a rule, user layer on | loaded | user files, folder rule |
 | 7 | `--setting-sources project`, the variable, the excludes, the folder from run 6 | loaded | folder rule only |
 
-- Under `--setting-sources project` in the sidekick repo, `AGENTS.md` dropped in the three runs that kept the user copies: a run with the `enabledPlugins` object, one without `--settings`, and run 5. Docs, memory page, §When Claude Code reads `AGENTS.md`: by default, any `CLAUDE.md` in a parent folder stops it. The `~/.claude/CLAUDE.md` copy that `$HOME` brings in counts as one.
-- A folder's `CLAUDE.md` does the same (runs 3 and 5), with the user layer on or off. A rule in that folder does not (runs 6 and 7).
+- Under `--setting-sources project` in the sidekick repo, `AGENTS.md` dropped in four runs that kept the user copies and used no `AGENTS.md` option. They were the `--bg` clean-room session with `enabledPlugins`, its `-p` control, a `-p` control with no `--settings`, and run 5. Run 2 kept the copies too, and its option restored `AGENTS.md`. Docs, memory page, §When Claude Code reads `AGENTS.md`: by default, any `CLAUDE.md` in a parent folder stops it. The `~/.claude/CLAUDE.md` copy that `$HOME` brings in counts as one.
+- A folder's `CLAUDE.md` does the same with the user layer on (run 3). Run 5 left the layer out but loaded the six user copies, which hide `AGENTS.md` on their own, so it cannot isolate the folder file. The case with the user layer off, the excludes set, and no option was not run. A rule in that folder does not (runs 6 and 7).
 - The excludes restore `AGENTS.md` when the user copies are the cause (runs 1 and 7).
 - The option `pluginConfigs["cc-plugin-agents-md@builtin"].options.instructionFiles: "claude-md-and-agents-md"` in inline `--settings` loads `AGENTS.md` beside the `CLAUDE.md` files (runs 2 and 4). Docs, memory page, §Choose which instruction files load.
 - Consequence for a profile: put its stance in `.claude/rules/`, not in a `CLAUDE.md` at the folder's root.
@@ -151,10 +151,10 @@ The sidekick repo has an `AGENTS.md` and no `CLAUDE.md`. Seven headless runs sta
 **`claude --settings <json-or-file> doctor` lists wrongly typed keys under `Invalid settings`, measured on 2026-10-13.**
 
 - It makes no model call and works with no TTY when stdin is `/dev/null`. It took 0.71 s and 0.93 s in two timed runs.
-- It exits 0 whether or not it found anything, so only its text tells. The text ends `No installation issues found.` in both cases.
-- Given a file, it names that file's path. Given an inline object, it names a temp file called `claude-settings-<hex>.json` in the OS temp folder. The name changes per run, and the file is gone afterwards.
-- It lists every wrongly typed key, one line each, as `<path> › <key>: <message>`. A file with `permissions.allow` and `cleanupPeriodDays` both wrong produced two lines. The `permissions` line is followed by a `Suggested fix:` line.
-- A wrongly typed `feedbackSurveyRate` printed `<path> › feedbackSurveyRate: Expected number, but received string`. The unknown `sidekick` key beside it got no line.
+- It exits 0 whether or not it found anything, so only its text tells. The text includes `No installation issues found.` in both cases.
+- Given a file, it names that file's path. Given an inline object, it names a temp file called `claude-settings-<hex>.json` under `/tmp/claude-501/`, Claude Code's own folder. The name changes per run. A later search found no such file, and the named one no longer existed.
+- It lists every wrongly typed key, one line each, as `- <path> › <key>: <message>`. A file with `permissions.allow` and `cleanupPeriodDays` both wrong produced two lines. The `permissions` line is followed by a `Suggested fix:` line.
+- Measured on 2026-10-13 on Claude Code 2.1.296: `claude --settings <file> doctor < /dev/null` on a file holding `{"sidekick":{"profile":"x"},"feedbackSurveyRate":"sidekick-canary"}` exited 0 in about 1 s. It printed `- <path> › feedbackSurveyRate: Expected number, but received string` under `Invalid settings`, and nothing for the `sidekick` key.
 - It says nothing about a misspelled top-level key (`claudeMdExclude`) or a misspelled plugin id (`sidekik@rikmorn`). Both runs looked identical to a clean one.
 - This format is undocumented. Inferred: it can change between releases, so a check built on it should fail closed when the text it expects stops appearing.
 - What is not covered: an error that drops the whole object without a `doctor` line. Only wrongly typed values were tried.
@@ -167,7 +167,7 @@ The sidekick repo has an `AGENTS.md` and no `CLAUDE.md`. Seven headless runs sta
 - `claude respawn <id>` printed `respawned <id>`, and the `SessionStart` hook fired again with its `env` value intact. `respawnFlags` were byte-identical before and after.
 - Inferred: the respawned job ran in a pre-warmed spare process. Its pid started 25 seconds before the new `startedAt`.
 - Not settled: whether the respawn fires `SessionStart` as `startup` or `resume`. The probe cut the hook's stdin before the `source` field.
-- A job stored a `--settings` file as its path, so a respawn reads whatever the file holds then (Read: an earlier job, 2026-10-13). A launcher that passes inline JSON avoids that.
+- A job stored a `--settings` file as its path, (Read: an earlier job's `state.json`, 2026-10-13). Inferred: a respawn then reads whatever the file holds. A launcher that passes inline JSON avoids that.
 - Docs: `--settings`, `--setting-sources`, `--add-dir`, and `--plugin-dir` carry over when an interactive session is backgrounded. Neither append flag does (agent-view page, §What carries over).
 
 **A `--bg` job does not inherit the dispatching client's environment, measured on 2026-10-13.**
@@ -205,7 +205,7 @@ The bench ran the feature's own `profile argv` output for two fixture profiles, 
 | `bench-clean`, odin | hookify, javascript-typescript, backend-development, sidekick, superpowers, code-review | odin's files, the profile's rule, odin's `MEMORY.md`; no user entry |
 
 - The user's `cc-status` hooks ran in both `bench` runs and in neither `bench-clean` run. The Linear plugin's tools were absent from both `bench-clean` runs, and the claude.ai connectors were present in all four.
-- The odin runs also loaded odin's repo MCP servers (`awsdocs`, `graphos-tools`, `github`, `linear`), in `bench` and in `bench-clean` alike. The clean room does not drop those servers. Whether they come from a repo `.mcp.json` or from odin's settings was not checked.
+- The odin runs also loaded odin's repo MCP servers (`awsdocs`, `graphos-tools`, and `github` connected, and `linear` disabled), in `bench` and in `bench-clean` alike. The clean room does not drop the three connected servers. Whether they come from a repo `.mcp.json` or from odin's settings was not checked.
 - Every instruction path that came from the profile came from the temp store, not from the repo's committed fixture copies.
 - Two results contradicted what the design expected. They are odin's four missing plugins and auto memory in the clean room, both in the clean-room section on `$HOME`.
 - Not run: a refusal path in the bench, a control run without a profile in each repo, and an agent with frontmatter hooks. Unit tests cover the refusal with an injected runner.
