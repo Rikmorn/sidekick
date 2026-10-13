@@ -149,12 +149,25 @@ function readLatch(file: string): Level | undefined {
   }
 }
 
+// O_NOFOLLOW: on a shared temp folder, another user can plant a symlink at the
+// latch path, and a plain write would overwrite its target.
+const LATCH_FLAGS =
+  fs.constants.O_WRONLY |
+  fs.constants.O_CREAT |
+  fs.constants.O_TRUNC |
+  fs.constants.O_NOFOLLOW;
+
 function writeLatch(file: string, latch: Level | undefined): void {
   if (latch === undefined) {
     fs.rmSync(file, { force: true });
     return;
   }
-  fs.writeFileSync(file, JSON.stringify({ level: latch }));
+  const fd = fs.openSync(file, LATCH_FLAGS, 0o600);
+  try {
+    fs.writeFileSync(fd, JSON.stringify({ level: latch }));
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /** The advisory to add after a tool batch; undefined when the monitor stays silent. */

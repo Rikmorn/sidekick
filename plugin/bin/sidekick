@@ -519,12 +519,18 @@ function readLatch(file) {
     return;
   }
 }
+var LATCH_FLAGS = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW;
 function writeLatch(file, latch) {
   if (latch === undefined) {
     fs.rmSync(file, { force: true });
     return;
   }
-  fs.writeFileSync(file, JSON.stringify({ level: latch }));
+  const fd = fs.openSync(file, LATCH_FLAGS, 384);
+  try {
+    fs.writeFileSync(fd, JSON.stringify({ level: latch }));
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 function postToolBatchContext(stdin, monitor) {
   try {

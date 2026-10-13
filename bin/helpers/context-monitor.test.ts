@@ -319,4 +319,14 @@ describe('postToolBatchContext', () => {
     fs.writeFileSync(f.latchFile, 'garbage');
     expect(postToolBatchContext(f.event(), f.monitor)).toBeDefined();
   });
+
+  test('never writes through a symlink planted at the latch path', () => {
+    const f = fixture();
+    f.append(entry({ r: 638 }));
+    const target = path.join(f.dir, 'victim.txt');
+    fs.writeFileSync(target, 'keep me');
+    fs.symlinkSync(target, f.latchFile);
+    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+    expect(fs.readFileSync(target, 'utf-8')).toBe('keep me');
+  });
 });
