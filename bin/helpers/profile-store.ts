@@ -1,0 +1,221 @@
+/**
+ * Where profiles live: the ordered store roots, name resolution, the layout
+ * check that owns what a profile folder may hold, listing, and `new`.
+ */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import {
+  isProfileName,
+  PROFILE_NAME_RULE,
+  type ProfileManifest,
+  parseManifest,
+  readManifest,
+} from './profile-manifest.js';
+
+export interface Profile {
+  name: string;
+  /** Absolute path of the profile's folder. */
+  dir: string;
+  root: string;
+  manifest: ProfileManifest;
+  /** Whether `.claude/rules/` holds a `.md` file at any depth. */
+  hasRules: boolean;
+}
+
+export type LoadResult =
+  | { ok: true; profile: Profile }
+  | { ok: false; issues: string[] };
+
+export interface ListedProfile {
+  name: string;
+  root: string;
+  description: string | undefined;
+  issues: string[];
+}
+
+export type NewResult =
+  | { ok: true; dir: string }
+  | { ok: false; issues: string[] };
+
+const MANIFEST_FILE = 'profile.json';
+
+const HIDES_AGENTS =
+  "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
+const ENABLES_PLUGINS =
+  'can enable plugins outside the checked settings block; put settings in profile.json';
+
+/** Paths a profile folder may not hold, and why; the CLI owns the folder's layout. */
+const REFUSED: ReadonlyArray<{ path: string; why: string }> = [
+  { path: 'CLAUDE.md', why: HIDES_AGENTS },
+  { path: '.claude/CLAUDE.md', why: HIDES_AGENTS },
+  { path: 'CLAUDE.local.md', why: HIDES_AGENTS },
+  { path: '.claude/settings.json', why: ENABLES_PLUGINS },
+  { path: '.claude/settings.local.json', why: ENABLES_PLUGINS },
+];
+
+/** The store's roots in search order; the first root holding a name wins. */
+export function storeRoots(
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  home: string,
+): string[] {
+  const override = env.SIDEKICK_PROFILES_DIR;
+  if (override) return [path.resolve(cwd, override)];
+  const configDir = env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
+  return [path.resolve(cwd, configDir, 'profiles')];
+}
+
+// lstat, not exists: a dangling symlink still counts as present.
+const isPresent = (file: string): boolean => {
+  try {
+    fs.lstatSync(file);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const isDirectory = (dir: string): boolean => {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+/** One refusal message per refused path present in the profile folder. */
+export function checkLayout(dir: string): string[] {
+  return REFUSED.filter((r) => isPresent(path.join(dir, r.path))).map(
+    (r) => `${path.join(dir, r.path)}: ${r.why}`,
+  );
+}
+
+// Walks by hand: readdirSync's `recursive` option is missing from some Node 20s.
+const holdsMarkdown = (dir: string): boolean => {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  return entries.some((e) => {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) return holdsMarkdown(full);
+    if (e.isSymbolicLink() && isDirectory(full)) return holdsMarkdown(full);
+    return e.name.endsWith('.md');
+  });
+};
+
+const readFolder = (name: string, root: string): LoadResult => {
+  const dir = path.resolve(root, name);
+  const layout = checkLayout(dir);
+  if (layout.length > 0) return { ok: false, issues: layout };
+  const read = readManifest(path.join(dir, MANIFEST_FILE));
+  if (!read.ok) return read;
+  return {
+    ok: true,
+    profile: {
+      name,
+      dir,
+      root,
+      manifest: read.manifest,
+      hasRules: holdsMarkdown(path.join(dir, '.claude', 'rules')),
+    },
+  };
+};
+
+/** Resolve `name` against the roots, check the folder's layout, and parse its manifest. */
+export function loadProfile(name: string, roots: string[]): LoadResult {
+  if (!isProfileName(name)) {
+    return {
+      ok: false,
+      issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`],
+    };
+  }
+  const root = roots.find((r) => isDirectory(path.resolve(r, name)));
+  if (root === undefined) {
+    return {
+      ok: false,
+      issues: [
+        `no profile named "${name}"; searched: ${roots.map((r) => path.resolve(r)).join(', ')}`,
+      ],
+    };
+  }
+  return readFolder(name, path.resolve(root));
+}
+
+const listRoot = (root: string): ListedProfile[] => {
+  let names: string[];
+  try {
+    names = fs.readdirSync(root).sort();
+  } catch {
+    return [];
+  }
+  return names
+    .filter((name) => isDirectory(path.join(root, name)))
+    .map((name): ListedProfile => {
+      if (!isProfileName(name)) {
+        return {
+          name,
+          root,
+          description: undefined,
+          issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`],
+        };
+      }
+      const loaded = readFolder(name, root);
+      return loaded.ok
+        ? {
+            name,
+            root,
+            description: loaded.profile.manifest.description,
+            issues: [],
+          }
+        : { name, root, description: undefined, issues: loaded.issues };
+    });
+};
+
+/** Every profile in every root, each parsed; an invalid one carries its issues. */
+export function listProfiles(roots: string[]): ListedProfile[] {
+  return roots.flatMap((r) => listRoot(path.resolve(r)));
+}
+
+/** Create `<first root>/<name>/profile.json` holding only the description. */
+export function newProfile(
+  name: string,
+  description: string,
+  roots: string[],
+): NewResult {
+  if (!isProfileName(name)) {
+    return {
+      ok: false,
+      issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`],
+    };
+  }
+  const manifest = { description };
+  const parsed = parseManifest(manifest);
+  if (!parsed.ok) return parsed;
+  const [first] = roots;
+  if (first === undefined)
+    return { ok: false, issues: ['no store root is set'] };
+  const root = path.resolve(first);
+  const dir = path.join(root, name);
+  try {
+    fs.mkdirSync(root, { recursive: true });
+    fs.mkdirSync(dir);
+    fs.writeFileSync(
+      path.join(dir, MANIFEST_FILE),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+  } catch (err) {
+    const exists =
+      err instanceof Error && 'code' in err && err.code === 'EEXIST';
+    const why = exists
+      ? 'already exists'
+      : err instanceof Error
+        ? err.message
+        : String(err);
+    return { ok: false, issues: [`${dir}: ${why}`] };
+  }
+  return { ok: true, dir };
+}
