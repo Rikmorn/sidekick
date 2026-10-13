@@ -11,6 +11,7 @@ import {
   checkSettings,
   composeSettings,
   launchArgs,
+  SKIP_VARIABLE,
 } from './profile-launch.js';
 import {
   aliasNameRefusal,
@@ -42,10 +43,9 @@ export interface ProfileEnv {
 type Out = (line: string) => void;
 type Verb = (rest: string[], penv: ProfileEnv, out: Out, err: Out) => number;
 
-const SKIP_VARIABLE = 'SIDEKICK_PROFILE_SKIP_CHECK';
 const SHELLS: readonly Shell[] = ['zsh', 'bash'];
 
-/** The bound on a `--bg` start, chosen as a generous minute. */
+// The bound on a `--bg` start, chosen as a generous minute.
 const DEFAULT_LAUNCH_TIMEOUT_MS = 60_000;
 
 const withoutTrailingNewline = (text: string): string =>
@@ -56,7 +56,7 @@ interface Parsed {
   positionals: string[];
 }
 
-/** Parse flags strictly; an unknown flag or a missing value is a usage error. */
+// Strict: an unknown flag or a missing value is a usage error.
 function parseFlags(
   rest: string[],
   options: Record<string, { type: 'string' | 'boolean'; short?: string }>,
@@ -84,7 +84,6 @@ const refuse = (err: Out, issues: string[]): number => {
   return 1;
 };
 
-/** Everything a name-taking verb needs: the profile, or the refusal's lines. */
 function load(
   name: string,
   penv: ProfileEnv,

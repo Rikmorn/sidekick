@@ -2728,6 +2728,7 @@ var shellFunction = (shell, aliasNames) => {
 import * as fs8 from "node:fs";
 import * as path7 from "node:path";
 var MANIFEST_FILE = "profile.json";
+var notAName = (name) => `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
 var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
 var ENABLES_PLUGINS = "can enable plugins outside the checked settings block; put settings in profile.json";
 var REFUSED = [
@@ -2798,12 +2799,8 @@ var readFolder = (name, root) => {
   };
 };
 function loadProfile(name, roots) {
-  if (!isProfileName(name)) {
-    return {
-      ok: false,
-      issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`]
-    };
-  }
+  if (!isProfileName(name))
+    return { ok: false, issues: [notAName(name)] };
   const root = roots.find((r) => isDirectory(path7.resolve(r, name)));
   if (root === undefined) {
     return {
@@ -2828,7 +2825,7 @@ var listRoot = (root) => {
         name,
         root,
         description: undefined,
-        issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`]
+        issues: [notAName(name)]
       };
     }
     const loaded = readFolder(name, root);
@@ -2844,12 +2841,8 @@ function listProfiles(roots) {
   return roots.flatMap((r) => listRoot(path7.resolve(r)));
 }
 function newProfile(name, description, roots) {
-  if (!isProfileName(name)) {
-    return {
-      ok: false,
-      issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`]
-    };
-  }
+  if (!isProfileName(name))
+    return { ok: false, issues: [notAName(name)] };
   const manifest = { description };
   const parsed = parseManifest(manifest);
   if (!parsed.ok)
@@ -2874,7 +2867,6 @@ function newProfile(name, description, roots) {
 
 // bin/helpers/profile.ts
 var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text>|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]";
-var SKIP_VARIABLE2 = "SIDEKICK_PROFILE_SKIP_CHECK";
 var SHELLS = ["zsh", "bash"];
 var DEFAULT_LAUNCH_TIMEOUT_MS = 60000;
 var withoutTrailingNewline = (text) => text.replace(/\n$/, "");
@@ -2912,7 +2904,7 @@ var runCheck = (settings, penv) => checkSettings(settings, {
   run: penv.runClaude,
   cwd: penv.cwd,
   tmpdir: penv.tmpdir,
-  skip: penv.env[SKIP_VARIABLE2] === "1"
+  skip: penv.env[SKIP_VARIABLE] === "1"
 });
 var list = (rest2, penv, out, err) => {
   if (rest2.length > 0)

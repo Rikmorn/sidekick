@@ -40,12 +40,15 @@ export type NewResult =
 
 const MANIFEST_FILE = 'profile.json';
 
+const notAName = (name: string): string =>
+  `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
+
 const HIDES_AGENTS =
   "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
 const ENABLES_PLUGINS =
   'can enable plugins outside the checked settings block; put settings in profile.json';
 
-/** Paths a profile folder may not hold, and why; the CLI owns the folder's layout. */
+// Paths a profile folder may not hold, and why; the CLI owns the folder's layout.
 const REFUSED: ReadonlyArray<{ path: string; why: string }> = [
   { path: 'CLAUDE.md', why: HIDES_AGENTS },
   { path: '.claude/CLAUDE.md', why: HIDES_AGENTS },
@@ -66,7 +69,7 @@ export function storeRoots(
   return [path.resolve(cwd, configDir, 'profiles')];
 }
 
-// lstat, not exists: a dangling symlink still counts as present.
+// A dangling symlink counts as present.
 const isPresent = (file: string): boolean => {
   try {
     fs.lstatSync(file);
@@ -127,12 +130,7 @@ const readFolder = (name: string, root: string): LoadResult => {
 
 /** Resolve `name` against the roots, check the folder's layout, and parse its manifest. */
 export function loadProfile(name: string, roots: string[]): LoadResult {
-  if (!isProfileName(name)) {
-    return {
-      ok: false,
-      issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`],
-    };
-  }
+  if (!isProfileName(name)) return { ok: false, issues: [notAName(name)] };
   const root = roots.find((r) => isDirectory(path.resolve(r, name)));
   if (root === undefined) {
     return {
@@ -160,7 +158,7 @@ const listRoot = (root: string): ListedProfile[] => {
           name,
           root,
           description: undefined,
-          issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`],
+          issues: [notAName(name)],
         };
       }
       const loaded = readFolder(name, root);
@@ -186,12 +184,7 @@ export function newProfile(
   description: string,
   roots: string[],
 ): NewResult {
-  if (!isProfileName(name)) {
-    return {
-      ok: false,
-      issues: [`"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`],
-    };
-  }
+  if (!isProfileName(name)) return { ok: false, issues: [notAName(name)] };
   const manifest = { description };
   const parsed = parseManifest(manifest);
   if (!parsed.ok) return parsed;

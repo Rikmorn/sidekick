@@ -1,6 +1,8 @@
 /**
- * What a profile launches with: the settings composed from its manifest, the
- * pure merge behind them, and the arguments `claude` receives.
+ * What a profile launches with, and the launch: the settings composed from its
+ * manifest and the pure merge behind them, the arguments `claude` receives for
+ * an interactive or a background start, the settings check through
+ * `claude doctor`, and the runner that starts `claude`.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -48,7 +50,7 @@ export const mergeSettings = (...layers: Settings[]): Settings =>
 
 const memoryVariable = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD';
 
-/** The keys launch owns: the profile's name, and the two that depend on its folder. */
+// The keys launch owns: the profile's name, and the two that depend on its folder.
 function launchKeys(profile: Profile, home: string): Settings {
   const isCleanRoom =
     profile.manifest.settingSources !== undefined &&
@@ -172,7 +174,8 @@ export const execClaude: ClaudeRunner = makeClaudeRunner();
 export const CANARY_KEYS = ['feedbackSurveyRate', 'cleanupPeriodDays'] as const;
 
 const CANARY_VALUE = 'sidekick-canary';
-const SKIP_VARIABLE = 'SIDEKICK_PROFILE_SKIP_CHECK';
+/** Set to `1` to skip the settings check. */
+export const SKIP_VARIABLE = 'SIDEKICK_PROFILE_SKIP_CHECK';
 
 const SKIP_WARNING = `${SKIP_VARIABLE}=1 is set, so the settings were not checked with claude doctor.`;
 
