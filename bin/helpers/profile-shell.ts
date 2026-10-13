@@ -32,7 +32,7 @@ const BASH_FUNCTION = `skp() {
   list=$(claude plugin list --json) || { echo 'skp: claude plugin list failed' >&2; return 1; }
   cli=$(printf '%s' "$list" | node -e '${FIND_INSTALL}') || { echo '${NO_INSTALL}' >&2; return 1; }
   tmp=$(mktemp) || return 1
-  node "$cli/bin/sidekick" profile argv "$name" > "$tmp"; rc=$?
+  node "$cli/bin/sidekick" profile argv "$name" >| "$tmp"; rc=$?
   if [ "$rc" -ne 0 ]; then rm -f "$tmp"; return "$rc"; fi
   local args=()
   while IFS= read -r -d '' a; do args+=("$a"); done < "$tmp"

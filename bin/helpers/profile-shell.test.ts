@@ -64,18 +64,26 @@ const run = (
   args: string[],
   env: Record<string, string> = {},
   aliases: string[] = [],
+  prelude = '',
 ) => {
   sourceFile = path.join(tmp, `skp.${shell}`);
   fs.writeFileSync(sourceFile, shellFunction(shell, aliases));
   const cmd =
     shell === 'zsh'
-      ? ['zsh', '-f', '-c', 'source "$1"; shift; skp "$@"', '_', sourceFile]
+      ? [
+          'zsh',
+          '-f',
+          '-c',
+          `${prelude}source "$1"; shift; skp "$@"`,
+          '_',
+          sourceFile,
+        ]
       : [
           '/bin/bash',
           '--noprofile',
           '--norc',
           '-c',
-          'source "$1"; shift; skp "$@"',
+          `${prelude}source "$1"; shift; skp "$@"`,
           '_',
           sourceFile,
         ];
@@ -104,6 +112,12 @@ describe.each(['zsh', 'bash'] as const)('skp under %s', (shell) => {
   test('runs nothing the arguments contain', () => {
     run(shell, ['bench']);
     expect(fs.existsSync(path.join(tmp, 'pwned'))).toBe(false);
+  });
+
+  test('passes the arguments through when noclobber is on', () => {
+    const r = run(shell, ['bench'], {}, [], 'set -C; ');
+    expect(r.status).toBe(0);
+    expect(recorded()).toEqual(FIXED_ARGS);
   });
 
   test('returns argv status and never starts claude', () => {
