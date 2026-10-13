@@ -11,4 +11,4 @@ What can Claude Code's extension and session surface do for running many session
 
 ## Served
 
-The `control-centre` design, planned as R9's #203, #146, #204, #205, #206, #207, #208, #209, #210, #211. The `loop` design, not started.
+The `control-centre` design, planned as R9's #146, #203, #204, #205, #206, #207, #208, #209, #210, #211, #213, #214, #215. The `loop` design, not started.

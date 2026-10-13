@@ -1,6 +1,6 @@
 # Control centre
 
-Status: planned (#203, #146, #204, #205, #206, #207, #208, #209, #210, #211) · Scale: explore · 2026-10-12
+Status: planned (#146, #203, #204, #205, #206, #207, #208, #209, #210, #211, #213, #214, #215) · Scale: explore · 2026-10-12
 
 How the operator runs Claude Code as a control centre. Many sessions run at once, each loading only what its profile declares, all visible and controllable from inside Claude Code. Memory and the loop itself are a second initiative, as §Two initiatives says. Opened from an exploration on 2026-10-11 and 2026-10-12 that the operator expects to seed R9. Gates 1, 2, and 3 are credited, and R9 opened on 2026-10-13.
 
@@ -202,7 +202,7 @@ Checked for composition on 2026-10-12. The decisions agree, with one seam: a wor
 
 ## Blast radius
 
-The breakdown, drafted 2026-10-12 for gate 3. The whole is one release, R9, as the operator ruled. Pieces follow the ruled order: profile management and GSD's removal, then background workers, then the visibility and control mods. Each piece is a brief for an issue. R9's Opening filed them on 2026-10-13: pieces 1 to 10 are #203, #146, #204, #205, #206, #207, #208, #209, #210, and #211.
+The breakdown, drafted 2026-10-12 for gate 3. The whole is one release, R9, as the operator ruled. Pieces follow the ruled order: profile management and GSD's removal, then background workers, then the visibility and control mods. Each piece is a brief for an issue. R9's Opening filed them on 2026-10-13: pieces 1 to 10 are #203, #146, #204, #205, #206, #207, #208, #209, #210, and #211. After its scope review, Opening revised the breakdown. Piece 3 became #204 and #214, which disable GSD in two stages with its files kept. Piece 4 became #205 and #213. #215 updates the docs that say what sidekick is, and the desk lost its dispatch tool. The issues are the current briefs, not this section.
 
 Proposed outcome, to settle at Opening: GSD is gone with nothing lost, and sessions launch with declared profiles. A session dispatches workers, and every session shows which others need the operator.
 
