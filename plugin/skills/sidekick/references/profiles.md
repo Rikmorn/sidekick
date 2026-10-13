@@ -12,6 +12,7 @@ A profile lives in the store, one folder per profile:
   .claude/rules/*.md    the stance, and any other rules
   .claude/agents/       agents the profile adds
   .claude/skills/       skills the profile adds
+  .claude/commands/     commands the profile adds
 ```
 
 The store is `SIDEKICK_PROFILES_DIR` when that is set and non-empty. Otherwise it is `profiles/` under `CLAUDE_CONFIG_DIR`, or under `~/.claude` when that is unset or empty. A relative path resolves against the current folder, so `--add-dir` always receives an absolute path.
@@ -32,7 +33,7 @@ Launch composes the settings from the profile's `settings` object, then adds its
 - `env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1"` when `.claude/rules/` holds a `.md` file at any depth. Claude Code loads rules from an `--add-dir` folder only with that variable set, and a settings `env` block sets it (probes report, "The profile folder as `--add-dir`").
 - `claudeMdExcludes` for the user's `~/.claude/CLAUDE.md` and `~/.claude/rules/**`, when `settingSources` is present and leaves out `user`. The clean-room table in "What each mode drops" explains why.
 
-The folder's agents and skills load whether or not that variable is set.
+The folder's agents and skills load whether or not that variable is set. Its command files load too, by the docs read on 2026-10-13 (permissions page, §Additional directories); no probe ran one.
 
 ### What the CLI refuses in a folder
 

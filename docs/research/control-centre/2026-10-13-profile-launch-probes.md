@@ -152,7 +152,7 @@ The sidekick repo has an `AGENTS.md` and no `CLAUDE.md`. Seven headless runs sta
 
 - It makes no model call and works with no TTY when stdin is `/dev/null`. It took 0.71 s and 0.93 s in two timed runs.
 - It exits 0 whether or not it found anything, so only its text tells. The text includes `No installation issues found.` in both cases.
-- Given a file, it names that file's path. Given an inline object, it names a temp file called `claude-settings-<hex>.json` under `/tmp/claude-501/`, Claude Code's own folder. The name changes per run. A later search found no such file, and the named one no longer existed.
+- Given a file, it names that file's path. Given an inline object, it names a temp file called `claude-settings-<hex>.json` under `/tmp/claude-501/`. Inferred: that folder is Claude Code's own. The name changes per run. A later search found no such file, and the named one no longer existed.
 - It lists every wrongly typed key, one line each, as `- <path> › <key>: <message>`. A file with `permissions.allow` and `cleanupPeriodDays` both wrong produced two lines. The `permissions` line is followed by a `Suggested fix:` line.
 - Measured on 2026-10-13 on Claude Code 2.1.296: `claude --settings <file> doctor < /dev/null` on a file holding `{"sidekick":{"profile":"x"},"feedbackSurveyRate":"sidekick-canary"}` exited 0 in about 1 s. It printed `- <path> › feedbackSurveyRate: Expected number, but received string` under `Invalid settings`, and nothing for the `sidekick` key.
 - It says nothing about a misspelled top-level key (`claudeMdExclude`) or a misspelled plugin id (`sidekik@rikmorn`). Both runs looked identical to a clean one.
@@ -167,7 +167,7 @@ The sidekick repo has an `AGENTS.md` and no `CLAUDE.md`. Seven headless runs sta
 - `claude respawn <id>` printed `respawned <id>`, and the `SessionStart` hook fired again with its `env` value intact. `respawnFlags` were byte-identical before and after.
 - Inferred: the respawned job ran in a pre-warmed spare process. Its pid started 25 seconds before the new `startedAt`.
 - Not settled: whether the respawn fires `SessionStart` as `startup` or `resume`. The probe cut the hook's stdin before the `source` field.
-- A job stored a `--settings` file as its path, (Read: an earlier job's `state.json`, 2026-10-13). Inferred: a respawn then reads whatever the file holds. A launcher that passes inline JSON avoids that.
+- Read, in an earlier job's `state.json` on 2026-10-13: a job stored a `--settings` file as its path. Inferred: a respawn then reads whatever the file holds. A launcher that passes inline JSON avoids that.
 - Docs: `--settings`, `--setting-sources`, `--add-dir`, and `--plugin-dir` carry over when an interactive session is backgrounded. Neither append flag does (agent-view page, §What carries over).
 
 **A `--bg` job does not inherit the dispatching client's environment, measured on 2026-10-13.**
