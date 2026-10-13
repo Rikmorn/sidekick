@@ -21,7 +21,7 @@ Grades as in [mods.md](mods.md). Probes on 2026-10-12 ran `claude -p --model hai
 
 | # | Constraint | Grade |
 |---|---|---|
-| P1 | Claude Code has no profile feature. A profile is a settings file passed with `--settings`. #205 settled the stance as a rule file in the profile folder, loaded through `--add-dir`, not `--append-system-prompt-file` ([the probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)) | read, in the surface report; the stance file measured, in the probes report |
+| P1 | Claude Code has no profile feature. A profile is a settings file passed with `--settings`. #205 settled the stance as a rule file in the profile folder, loaded through `--add-dir`, not `--append-system-prompt-file` ([the 2026-10-13 probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)) | read, in the surface report; the stance file measured, in the 2026-10-12 probes report |
 | P2 | `--settings` merges into the user layer key by key. A plugin the profile does not name keeps its user-level state | measured: with only `code-review` named, superpowers' and sidekick's skills were still listed |
 | P3 | Disabling superpowers, or `code-review`, also removed sidekick's skills | measured, once each. sidekick's manifest lists both as dependencies (read), so the cascade is inferred to come from them |
 | P4 | `claudeMdExcludes` removes instruction and rule files. It is a deny list | measured, in the surface report |
@@ -80,13 +80,13 @@ The launched settings carry the name as `sidekick.profile`, not through `env` (#
 
 ## Recommendation
 
-C, stored at user and repo level, with the profile's name in the compiled settings' environment. What a declaration means is left to use, as the operator ruled.
+C, stored at user and repo level, with the profile's name in the launched settings as `sidekick.profile`, not in the environment (#205; [the 2026-10-13 probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)). What a declaration means is left to use, as the operator ruled.
 
 Assumptions, and what changes if each is wrong:
 
 - C holds both meanings, so trying both costs nothing. A profile with an allowlist loads only what it names; one with only a `settings` block changes the user layer, as A would. If use settles on changes alone, the compile step goes.
 - Compiling at launch finds the installed CLI from outside a session (P7). If no stable path exists, the compile runs when a profile is saved and at plugin update. The gauge then flags a profile built before the latest install.
-- A mod can read the profile. `$.settings.read({ source: "flag" })` returns what `--settings` carries, and `{}` for an unprofiled session (`claude-code.d.ts:3566-3586`, `:11824`). The environment variable may then be unnecessary.
+- A mod can read the profile. `$.settings.read({ source: "flag" })` returns what `--settings` carries, and `{}` for an unprofiled session (`claude-code.d.ts:3566-3586`, `:11824`). #205 settled it: the name travels as `sidekick.profile`, so no environment variable is needed ([the 2026-10-13 probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)).
 - A repo profile is launched only by name, by the operator or a session they run. If a cloned repo's profile could be launched unread, the launcher needs a trust check first.
 
 ## Routed elsewhere

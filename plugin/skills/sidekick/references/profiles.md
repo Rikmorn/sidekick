@@ -1,6 +1,6 @@
 # Profiles
 
-A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from three native flags: `--add-dir`, `--settings`, and `--setting-sources`. Issue #205 decided the shape. The measurements behind each claim here are in `docs/research/control-centre/2026-10-13-profile-launch-probes.md`, called the probes report in this file, and each one names the Claude Code version and date it ran on.
+A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from three native flags: `--add-dir`, `--settings`, and `--setting-sources`. Issue #205 in the `Rikmorn/sidekick` repo decided the shape. Most measurements behind these claims are in `docs/research/control-centre/2026-10-13-profile-launch-probes.md` in that repo, called "the probes report" here. Each names the Claude Code version and date it ran on. Two facts come from `docs/research/control-centre/2026-10-12-probes.md` instead, called "the 2026-10-12 probes"; the start cost and the alias hazards have their own sources, named where they appear.
 
 ## The folder
 
@@ -30,13 +30,13 @@ Launch composes the settings from the profile's `settings` object, then adds its
 
 - `sidekick: { profile: <name> }` always. A session or a mod reads the profile's name from there.
 - `env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1"` when `.claude/rules/` holds a `.md` file at any depth. Claude Code loads rules from an `--add-dir` folder only with that variable set, and a settings `env` block sets it (probes report, "The profile folder as `--add-dir`").
-- `claudeMdExcludes` for the user's `~/.claude/CLAUDE.md` and `~/.claude/rules/**`, when `settingSources` is present and leaves out `user`. The next section explains why.
+- `claudeMdExcludes` for the user's `~/.claude/CLAUDE.md` and `~/.claude/rules/**`, when `settingSources` is present and leaves out `user`. The clean-room table in "What each mode drops" explains why.
 
 The folder's agents and skills load whether or not that variable is set.
 
 ### What the CLI refuses in a folder
 
-The layout check refuses a folder that holds any of these, and every verb that takes a name runs it:
+The layout check refuses a folder that holds any of these, and `list`, `show`, `argv`, `launch`, and `alias` run it. `new` does not, since its folder does not exist yet:
 
 - `CLAUDE.md`, `.claude/CLAUDE.md`, or `CLAUDE.local.md`. By default, a `CLAUDE.md` in a parent folder or an `--add-dir` folder stops Claude Code loading the repo's `AGENTS.md`. A profile folder would hide it in every session that uses the profile. A rule in `.claude/rules/` does not (probes report, "`AGENTS.md` and what hides it"). Put the stance in a rule.
 - `.claude/settings.json` or `.claude/settings.local.json`. An `--add-dir` folder's settings file can enable plugins, and the settings check never sees it. Put settings in `profile.json`, where the check covers them.
@@ -67,36 +67,39 @@ sidekick profile alias --shell zsh frontend >> ~/.zshrc
 
 Use `--shell bash` for bash. The bash form targets bash 3.2, which macOS ships and which has no `mapfile`. The output is the function `skp <name> [claude arguments...]`, then one `alias <name>='skp <name>'` line for each name you gave. The function:
 
-1. Finds the user-scope `sidekick@rikmorn` install in `claude plugin list --json`, and runs that install's `bin/sidekick`. `sidekick` is not on `PATH` outside a session.
+1. Finds the user-scope `sidekick@rikmorn` install in `claude plugin list --json`, and runs that install's `bin/sidekick`. `sidekick` is on `PATH` only inside a session, so the function cannot call it by name.
 2. Runs `profile argv <name>`. A non-zero status returns at once and `claude` never starts.
 3. Splits the output on NUL and runs `claude <arguments> "$@"`.
 
-Starting costs about 1.7 seconds: up to 1.0 for the plugin list and 0.7 for the settings check. Because the function reads the installed plugin, `skp` works only once the installed release has the `profile` family.
+Starting costs about 1.7 seconds, the design's estimate. The plugin list took 0.7 seconds and the `doctor` check about 1 second in the probes report ("`doctor`" and "Plugin options and the installed CLI"). The function reads the installed plugin, so `skp` works only once the installed release has the `profile` family.
 
-Avoid two kinds of alias name. An alias named `skp` replaces the function with itself, and an alias named after a shell reserved word, such as `do`, breaks later loops in that shell. The name rule allows both. Both were measured in child shells during review of the alias verb, and the probes report does not cover them.
+Avoid two kinds of alias name, because the name rule allows both. Neither is in the probes report. Both were measured in child shells during #205's review on 2026-10-13.
+
+- With `alias skp='skp skp'`, every `skp <name>` call runs profile `skp` and passes `<name>` on to `claude`. Sourcing the zsh startup file again then fails with `parse error near '()'`.
+- With an alias named after a reserved word, such as `alias do=…`, later `for … do … done` loops break. zsh reports `parse error near 'done'`, and bash 3.2 reports `syntax error near unexpected token`.
 
 ## What each mode drops
 
 `settingSources` sets the mode. Absent, the profile keeps the user layer, and `--settings` merges into it key by key. A plugin the profile does not name keeps its user-level state, and `false` turns one off.
 
-A `settingSources` that leaves out `user` makes a clean room. Measured on Claude Code 2.1.296 on 2026-10-13 (probes report, "The user layer and the clean room under `$HOME`"):
+A `settingSources` that leaves out `user` makes a clean room. The grade of each row is in the table (probes report, "The user layer and the clean room under `$HOME`", Claude Code 2.1.296, 2026-10-13):
 
-| Item | Clean room |
-|---|---|
-| User settings, hooks, and plugins | dropped |
-| The user's `model`, `effortLevel`, and similar keys | dropped |
-| User `pluginConfigs` | dropped. Claude Code reads that key from user settings, managed settings, and `--settings`, so a plugin option goes in the profile's `settings` block. |
-| User `CLAUDE.md` and rules | dropped, by the excludes launch adds. The `--setting-sources` flag alone does not drop them under `$HOME`, where Claude Code reads `~/.claude/` as a parent folder's `.claude/`. |
-| claude.ai connectors | kept |
-| Auto memory (`MEMORY.md`) | kept. Its loading was seen in a clean room, and no setting that turns it off was looked for. |
-| The repo's `AGENTS.md` and rules | kept |
-| The repo's own plugins | kept in the sidekick repo. In odin, three of seven loaded; the cause is inferred, not tested, as a `-p` session not installing a marketplace the repo declares. |
+| Item | Clean room | Grade |
+|---|---|---|
+| User settings, hooks, and plugins | dropped | measured |
+| The user's `model`, `effortLevel`, and similar keys | dropped | read from `~/.claude/settings.json`, not run |
+| User `pluginConfigs` | dropped, so a plugin option goes in the profile's `settings` block | docs: Claude Code reads that key from user settings, managed settings, and `--settings`; how a flag-level entry merges with a user entry was not measured |
+| User `CLAUDE.md` and rules | dropped by the excludes launch adds. The flag alone leaves them under `$HOME` | measured. The cause, that Claude Code reads `~/.claude/` as a parent folder's `.claude/`, is inferred |
+| claude.ai connectors | kept | measured |
+| Auto memory (`MEMORY.md`) | kept. No setting that turns it off was looked for | measured |
+| The repo's `AGENTS.md` and rules | kept | measured |
+| The repo's own plugins | kept in the sidekick repo. In odin, three of seven loaded. The other four never loaded with the user layer kept (`bench`) either, so keeping it does not bring them back | measured. The cause, a `-p` session not installing a marketplace the repo declares, is inferred and not tested |
 
-A profile turns a repo plugin off by writing it `false` under `settings.enabledPlugins`.
+A profile turns a repo plugin off by writing it `false` under `settings.enabledPlugins` (the 2026-10-12 probes, P8: measured in the sidekick repo). A plugin the profile does not name keeps its user-level state when the user layer stays (the 2026-10-12 probes, P2).
 
 A kept user rule is copied into the profile's `.claude/rules/`, not linked. An exclude pattern also excludes a symlink whose target it matches, so a link to `~/.claude/rules/x.md` would vanish with the original. A copy then drifts from its source, and nothing flags the drift.
 
-A rule in the folder steered a reply as well as an appended system prompt in five of five paired runs (probes report, "The bench and the steering test"). That is a first reading with a trivial instruction, not proof of equal strength.
+A folder rule steered a reply as well as an appended system prompt in five of five paired runs. The probes report has them under "The bench and the steering test". That is a first reading with a trivial instruction. It is not proof of equal strength.
 
 ## Agents and trust
 
@@ -104,15 +107,19 @@ An `--add-dir` folder's agents load, but their frontmatter hooks and inline MCP 
 
 ## Deleting or renaming a profile
 
-`--add-dir` refuses a path that does not exist, and a background job keeps its flags and reapplies them on `claude respawn` (probes report, "Background sessions, respawn, and the daemon"). Deleting or renaming a profile folder can therefore stop its running sessions respawning. Nothing was deleted in the probes, so this is inferred from the docs. The settings are a snapshot taken at launch, while the folder is live: Claude Code re-reads its rules at each start and respawn.
+`--add-dir` refuses a path that does not exist. A background job keeps its flags and reapplies them on `claude respawn` (probes report, "Background sessions, respawn, and the daemon"). Deleting or renaming a profile folder can therefore stop its running sessions respawning. Nothing was deleted in the probes, so this is inferred from the docs.
+
+The settings are a snapshot taken at launch, while the folder is live. Claude Code is inferred to re-read its rules at each start and respawn, since the probes report lists rule reload on resume as untested.
 
 ## No secrets
 
-A profile never holds a secret. Every `env` key in `settings` reaches Bash children. The launch settings travel as one argument to `claude`, where `ps` shows them, and a background job stores them in its job record (`respawnFlags` in `state.json`, measured in the probes report). Pass a secret through the shell environment of the session that needs it, or through the tool that uses it.
+A profile never holds a secret. Every `env` key in `settings` reaches Bash children. The launch settings travel as one argument to `claude`, where `ps` shows them. A background job stores them in its job record (`respawnFlags` in `state.json`, measured in the probes report).
+
+For an interactive `skp` start, pass a secret through the shell environment of that session. A `--bg` job does not inherit the dispatching client's environment (probes report, "A `--bg` job does not inherit"). A background session therefore has no measured way to receive one, and that case is open.
 
 ## The settings check
 
-Claude Code drops a whole settings object, without a warning, when one known key has the wrong type (probes report, "The settings flag and a dropped object"). The session then runs unprofiled. So `argv` and `launch` first run `claude --settings <copy> doctor` on a copy of the composed settings in a temp folder, and delete the folder afterwards.
+Claude Code drops a whole settings object without a warning when one known key has the wrong type. The probes report has this under "The settings flag and a dropped object". The session then runs unprofiled. So `argv` and `launch` first run `claude --settings <copy> doctor`. The copy holds the composed settings in a temp folder, which the CLI deletes afterwards.
 
 The copy carries a wrongly typed canary key, `feedbackSurveyRate` or else `cleanupPeriodDays`, set to `"sidekick-canary"`. `doctor` must report the canary, which proves its undocumented output still parses, and must report nothing else. Otherwise the CLI refuses and prints the lines. The check catches wrongly typed values only. It does not catch a misspelled key or a misspelled plugin id.
 

@@ -81,7 +81,7 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 
 ## Profiles
 
-A profile is a folder of rules, agents, and skills plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads only the layers the profile names. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning.
+A profile is a folder of rules, agents, and skills plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads the layers the profile names. Auto memory and the claude.ai connectors still load in a clean room. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning.
 
 ```bash
 sidekick profile list                          # every profile in the store
@@ -91,7 +91,7 @@ sidekick profile launch --bg <name> -- <prompt>   # start a background session
 sidekick profile alias --shell zsh <name>      # print the skp shell function, to paste into your shell startup file
 ```
 
-`skp <name>` then starts an interactive session. The store is `~/.claude/profiles/`, or `SIDEKICK_PROFILES_DIR` when set. The skill reference `plugin/skills/sidekick/references/profiles.md` covers the rest.
+`sidekick` is on `PATH` only inside a session, so run these from one, or call the installed `bin/sidekick` directly. `skp <name>` then starts an interactive session. The store is `SIDEKICK_PROFILES_DIR` when set, else `profiles/` under `CLAUDE_CONFIG_DIR` or `~/.claude`. The skill reference `plugin/skills/sidekick/references/profiles.md` covers the rest.
 
 ## What is in the bundle
 
