@@ -1,8 +1,8 @@
 # Control centre
 
-Status: ready for PM · Scale: explore · 2026-10-12
+Status: planned (#203, #146, #204, #205, #206, #207, #208, #209, #210, #211) · Scale: explore · 2026-10-12
 
-How the operator runs Claude Code as a control centre. Many sessions run at once, each loading only what its profile declares, all visible and controllable from inside Claude Code. Memory and the loop itself are a second initiative, as §Two initiatives says. Opened from an exploration on 2026-10-11 and 2026-10-12 that the operator expects to seed R9. Gates 1, 2, and 3 are credited; R9's Opening is next.
+How the operator runs Claude Code as a control centre. Many sessions run at once, each loading only what its profile declares, all visible and controllable from inside Claude Code. Memory and the loop itself are a second initiative, as §Two initiatives says. Opened from an exploration on 2026-10-11 and 2026-10-12 that the operator expects to seed R9. Gates 1, 2, and 3 are credited, and R9 opened on 2026-10-13.
 
 Research: [`docs/research/control-centre/`](../../research/control-centre/README.md).
 
@@ -202,7 +202,7 @@ Checked for composition on 2026-10-12. The decisions agree, with one seam: a wor
 
 ## Blast radius
 
-The breakdown, drafted 2026-10-12 for gate 3. The whole is one release, R9, as the operator ruled. Pieces follow the ruled order: profile management and GSD's removal, then background workers, then the visibility and control mods. Each piece is a brief for an issue; PM files them at Opening.
+The breakdown, drafted 2026-10-12 for gate 3. The whole is one release, R9, as the operator ruled. Pieces follow the ruled order: profile management and GSD's removal, then background workers, then the visibility and control mods. Each piece is a brief for an issue. R9's Opening filed them on 2026-10-13: pieces 1 to 10 are #203, #146, #204, #205, #206, #207, #208, #209, #210, and #211.
 
 Proposed outcome, to settle at Opening: GSD is gone with nothing lost, and sessions launch with declared profiles. A session dispatches workers, and every session shows which others need the operator.
 
@@ -328,7 +328,7 @@ All four were decided on 2026-10-12, and the adversarial review ran two rounds t
 3. Gate 3 approved the integrated note.
 4. §Handed to the loop design, threads 5 to 9, and the split's findings moved to `docs/designs/loop/`, so R9's close deletes none of them.
 
-Next: R9's Opening through `sk-milestone`.
+R9 opened through `sk-milestone` on 2026-10-13, and the status line names its issues.
 
 Questions already routed to an issue's design:
 
