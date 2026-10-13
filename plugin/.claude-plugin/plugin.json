@@ -6,6 +6,13 @@
   "repository": "https://github.com/Rikmorn/sidekick",
   "license": "MIT",
   "keywords": ["workflow", "guidance", "project-management", "superpowers"],
+  "userConfig": {
+    "context_window": {
+      "type": "number",
+      "title": "Context window",
+      "description": "Tokens in your sessions' context window, such as 1000000. The context monitor warns at 65% and 75% of it, and stays silent while it is unset."
+    }
+  },
   "dependencies": [
     {
       "name": "superpowers",

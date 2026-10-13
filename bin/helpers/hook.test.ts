@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { warningText } from './context-monitor.js';
 import { readSection, readSkillDescription, runHookCli } from './hook.js';
 
 const REPO_ROOT = path.resolve(
@@ -21,6 +22,7 @@ const LEAD =
 
 const CLEAN_CODE = path.join(PLUGIN_DIR, 'rules', 'sk-clean-code.md');
 const READ_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-read');
+const BATCH_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-tool-batch');
 // A phrase the claims paragraph keeps.
 const CLAIMS_MARK = 'its other copies are its call sites';
 const READ_LEAD =
@@ -749,5 +751,105 @@ describe('runHookCli post-tool-batch', () => {
     expect(JSON.parse(out[0]).hookSpecificOutput.hookEventName).toBe(
       'PostToolBatch',
     );
+  });
+});
+
+describe('plugin/hooks/post-tool-batch', () => {
+  /** A fresh folder holding a transcript at 650 of a 1000-token window. */
+  function batchFixture() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-batch-'));
+    const transcript = path.join(dir, 't.jsonl');
+    fs.writeFileSync(
+      transcript,
+      `${JSON.stringify({
+        type: 'assistant',
+        isSidechain: false,
+        message: {
+          usage: {
+            input_tokens: 2,
+            cache_read_input_tokens: 638,
+            cache_creation_input_tokens: 10,
+          },
+        },
+      })}\n`,
+    );
+    const input = (extra: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        hook_event_name: 'PostToolBatch',
+        session_id: 'abc',
+        transcript_path: transcript,
+        tool_calls: [],
+        ...extra,
+      });
+    // Built from scratch, so a developer's own window variables cannot leak in.
+    const env = (pathValue: string) => ({
+      PATH: pathValue,
+      TMPDIR: dir,
+      CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000',
+    });
+    return { dir, input, env, latch: path.join(dir, 'sidekick-ctx-abc.json') };
+  }
+
+  const spawnBatch = (
+    input: string,
+    env: Record<string, string>,
+    shell = 'bash',
+  ) => spawnSync(shell, [BATCH_WRAPPER], { input, encoding: 'utf-8', env });
+
+  function expectWarning(stdout: string) {
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('PostToolBatch');
+    expect(parsed.hookSpecificOutput.additionalContext).toBe(
+      warningText('warning', 650, 1000),
+    );
+  }
+
+  test('prints the warning for a main-thread event, with the latch in TMPDIR', () => {
+    const f = batchFixture();
+    const r = spawnBatch(f.input(), f.env(process.env.PATH ?? ''));
+    expect(r.status).toBe(0);
+    expectWarning(r.stdout);
+    expect(fs.existsSync(f.latch)).toBe(true);
+  });
+
+  test('ends in bash for a subagent event, without starting node', () => {
+    const f = batchFixture();
+    const fake = fakeNode();
+    const r = spawnBatch(
+      f.input({ agent_id: 'a1' }),
+      f.env(`${fake.binDir}:/usr/bin:/bin`),
+      '/bin/bash',
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(fs.existsSync(fake.marker)).toBe(false);
+  });
+
+  test('a main-thread tool input quoting agent_id still speaks', () => {
+    const f = batchFixture();
+    const input = f.input({
+      tool_calls: [
+        { tool_name: 'Bash', tool_input: { command: `grep '"agent_id":"' x` } },
+      ],
+    });
+    // JSON escapes the inner quotes, so the unescaped key never appears.
+    expect(input).toContain('\\"agent_id\\":\\"');
+    const r = spawnBatch(input, f.env(process.env.PATH ?? ''));
+    expect(r.status).toBe(0);
+    expectWarning(r.stdout);
+  });
+
+  test('exits 0 silently when node is not on PATH', () => {
+    const f = batchFixture();
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-min-bin-'));
+    for (const tool of ['cat', 'dirname']) {
+      const found = spawnSync('/bin/sh', ['-c', `command -v ${tool}`], {
+        encoding: 'utf-8',
+      }).stdout.trim();
+      fs.symlinkSync(fs.realpathSync(found), path.join(binDir, tool));
+    }
+    const r = spawnBatch(f.input(), f.env(binDir), '/bin/bash');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
   });
 });
