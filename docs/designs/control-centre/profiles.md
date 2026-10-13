@@ -21,7 +21,7 @@ Grades as in [mods.md](mods.md). Probes on 2026-10-12 ran `claude -p --model hai
 
 | # | Constraint | Grade |
 |---|---|---|
-| P1 | Claude Code has no profile feature. A profile is a settings file passed with `--settings`. #205 settled the stance as a rule file in the profile folder, loaded through `--add-dir`, not `--append-system-prompt-file` ([the 2026-10-13 probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)) | read, in the surface report; the stance file measured, in the 2026-10-12 probes report |
+| P1 | Claude Code has no profile feature. A profile is a settings file passed with `--settings`. #205 settled the stance as a rule file in the profile folder, loaded through `--add-dir`, not `--append-system-prompt-file` ([the 2026-10-13 probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)) | read, in the surface report; the `--append-system-prompt-file` canary measured in the 2026-10-12 probes report |
 | P2 | `--settings` merges into the user layer key by key. A plugin the profile does not name keeps its user-level state | measured: with only `code-review` named, superpowers' and sidekick's skills were still listed |
 | P3 | Disabling superpowers, or `code-review`, also removed sidekick's skills | measured, once each. sidekick's manifest lists both as dependencies (read), so the cascade is inferred to come from them |
 | P4 | `claudeMdExcludes` removes instruction and rule files. It is a deny list | measured, in the surface report |

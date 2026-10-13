@@ -1,6 +1,6 @@
 # Profiles
 
-A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from three native flags: `--add-dir`, `--settings`, and `--setting-sources`. Issue #205 in the `Rikmorn/sidekick` repo decided the shape. Most measurements behind these claims are in `docs/research/control-centre/2026-10-13-profile-launch-probes.md` in that repo, called "the probes report" here. Each names the Claude Code version and date it ran on. Two facts come from `docs/research/control-centre/2026-10-12-probes.md` instead, called "the 2026-10-12 probes"; the start cost and the alias hazards have their own sources, named where they appear.
+A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from three native flags: `--add-dir`, `--settings`, and `--setting-sources`. Issue #205 in the `Rikmorn/sidekick` repo decided the shape. Most measurements behind these claims are in `docs/research/control-centre/2026-10-13-profile-launch-probes.md` in that repo, called "the probes report" here. Each names the Claude Code version and date it ran on. Two facts were measured on 2026-10-12 during #205's design, on Claude Code 2.1.296. No report holds them, so the text marks them "design-time". The alias hazards have their own source, named where they appear.
 
 ## The folder
 
@@ -71,7 +71,7 @@ Use `--shell bash` for bash. The bash form targets bash 3.2, which macOS ships a
 2. Runs `profile argv <name>`. A non-zero status returns at once and `claude` never starts.
 3. Splits the output on NUL and runs `claude <arguments> "$@"`.
 
-Starting costs about 1.7 seconds, the design's estimate. The plugin list took 0.7 seconds and the `doctor` check about 1 second in the probes report ("`doctor`" and "Plugin options and the installed CLI"). The function reads the installed plugin, so `skp` works only once the installed release has the `profile` family.
+Starting costs about 1.7 seconds before `claude` runs. That sums two figures from the probes report. The plugin list took 0.7 seconds ("Plugin options and the installed CLI"), and the `doctor` check about 1 second ("`doctor`"). The function reads the installed plugin, so `skp` works only once the installed release has the `profile` family.
 
 Avoid two kinds of alias name, because the name rule allows both. Neither is in the probes report. Both were measured in child shells during #205's review on 2026-10-13.
 
@@ -95,7 +95,7 @@ A `settingSources` that leaves out `user` makes a clean room. The grade of each 
 | The repo's `AGENTS.md` and rules | kept | measured |
 | The repo's own plugins | kept in the sidekick repo. In odin, three of seven loaded. The other four never loaded with the user layer kept (`bench`) either, so keeping it does not bring them back | measured. The cause, a `-p` session not installing a marketplace the repo declares, is inferred and not tested |
 
-A profile turns a repo plugin off by writing it `false` under `settings.enabledPlugins` (the 2026-10-12 probes, P8: measured in the sidekick repo). A plugin the profile does not name keeps its user-level state when the user layer stays (the 2026-10-12 probes, P2).
+A profile turns a plugin off by writing it `false` under `settings.enabledPlugins`. The `bench` profile's `false` left a user-enabled plugin out of both `bench` runs (probes report, "The bench and the steering test"). For a repo plugin, a design-time measurement in the sidekick repo showed a profile's `false` removing `code-review`, which the repo's own settings enabled. Also design-time: a plugin the profile does not name keeps its user-level state when the user layer stays.
 
 A kept user rule is copied into the profile's `.claude/rules/`, not linked. An exclude pattern also excludes a symlink whose target it matches, so a link to `~/.claude/rules/x.md` would vanish with the original. A copy then drifts from its source, and nothing flags the drift.
 
