@@ -21,7 +21,7 @@ Grades as in [mods.md](mods.md). Probes on 2026-10-12 ran `claude -p --model hai
 
 | # | Constraint | Grade |
 |---|---|---|
-| P1 | Claude Code has no profile feature. A profile is a settings file passed with `--settings`, with a stance through `--append-system-prompt-file` | read, in the surface report; the stance file measured, in the probes report |
+| P1 | Claude Code has no profile feature. A profile is a settings file passed with `--settings`. #205 settled the stance as a rule file in the profile folder, loaded through `--add-dir`, not `--append-system-prompt-file` ([the probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)) | read, in the surface report; the stance file measured, in the probes report |
 | P2 | `--settings` merges into the user layer key by key. A plugin the profile does not name keeps its user-level state | measured: with only `code-review` named, superpowers' and sidekick's skills were still listed |
 | P3 | Disabling superpowers, or `code-review`, also removed sidekick's skills | measured, once each. sidekick's manifest lists both as dependencies (read), so the cascade is inferred to come from them |
 | P4 | `claudeMdExcludes` removes instruction and rule files. It is a deny list | measured, in the surface report |
@@ -76,7 +76,7 @@ A profile is plain files, written in any session. Adding one needs no sidekick r
 
 ### How a session knows its profile
 
-The compiled settings set an environment variable naming the profile, such as `SIDEKICK_PROFILE`, through the `env` key. The gauge reads it, and a session without it is unprofiled. Assumed: that a mod reads the variable has not been checked, so the gauge's issue checks it first.
+The launched settings carry the name as `sidekick.profile`, not through `env` (#205; [the probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)). A mod reads the launched object, and a session without the key is unprofiled. A dropped settings object looks the same to a mod, so the launch checks the object first.
 
 ## Recommendation
 
@@ -113,6 +113,6 @@ On how user-level profiles meet a repo's own plugins, Claude reported P8 and P3.
 The second review round, recorded in the design's §Review, adds:
 
 - **No compile step in R9.** Trying both meanings is not free. The allowlist half needs the compile step, a launcher that finds what is installed, the dependency check, and the rule excludes. Claude recommends building the manifest without a compile step, and trying "only what it names" through `--setting-sources` (P10). The operator agreed on 2026-10-12.
-- **`--agent` (P11)** may carry a profile's stance, tools, and model. The profile issue weighs it against `--append-system-prompt-file`, given that it replaces Claude Code's system prompt.
+- **`--agent` (P11)** may carry a profile's stance, tools, and model. #205 settled the stance channel, so neither `--agent` nor `--append-system-prompt-file` carries it: the stance is a rule in the profile folder ([the probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)).
 - **One config folder per profile (P12)** is rejected for R9: one login each, and agent view split by profile, against G1. It is the fallback if scope filtering proves too weak.
 - **Switching a session's profile** has no mechanism yet. The profile issue starts from the unchecked premise that a switch relaunches or resumes the session under the new profile's settings.
