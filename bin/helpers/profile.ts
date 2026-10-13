@@ -41,7 +41,7 @@ type Verb = (rest: string[], penv: ProfileEnv, out: Out, err: Out) => number;
 const SKIP_VARIABLE = 'SIDEKICK_PROFILE_SKIP_CHECK';
 const SHELLS: readonly Shell[] = ['zsh', 'bash'];
 
-/** A `--bg` start returns once the job is dispatched, so a minute is generous. */
+/** The bound on a `--bg` start, chosen as a generous minute. */
 const DEFAULT_LAUNCH_TIMEOUT_MS = 60_000;
 
 const withoutTrailingNewline = (text: string): string =>

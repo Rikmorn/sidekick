@@ -77,7 +77,7 @@ export interface MainContext {
   write?: (chunk: string) => void;
 }
 
-/** Writes every byte before returning; Node's stdout pipe is asynchronous on macOS and `process.exit` could cut it short. */
+/** Writes every byte before returning; Node's stdout pipe is asynchronous on POSIX (Node's "A note on process I/O") and `process.exit` could cut it short. */
 function writeStdout(chunk: string): void {
   const buffer = Buffer.from(chunk);
   for (let offset = 0; offset < buffer.length; ) {

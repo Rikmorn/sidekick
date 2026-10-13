@@ -250,6 +250,9 @@ describe('main: profile', () => {
         env: { SIDEKICK_PROFILES_DIR: store, SIDEKICK_PROFILE_SKIP_CHECK: '1' },
         cwd: store,
         entryFileUrl,
+        runClaude: () => {
+          throw new Error('no claude in tests');
+        },
         write: (c) => chunks.push(c),
       },
       () => {},
@@ -275,12 +278,25 @@ describe('main: profile', () => {
   test('profile argv through a pipe delivers every byte before exit', () => {
     const store = tmp();
     const dir = path.join(store, 'a');
-    write(path.join(dir, 'profile.json'), '{"description":"A"}');
+    // Over 64 KiB, the size at which a cut-off pipe write loses bytes.
+    const settings = { companyAnnouncements: ['x'.repeat(200_000)] };
+    write(
+      path.join(dir, 'profile.json'),
+      JSON.stringify({ description: 'A', settings }),
+    );
+    // A shell pipe to a reader that starts late: the pipe buffer fills, and an
+    // asynchronous write is cut off at exit.
     const r = spawnSync(
-      'bun',
-      [path.join(__dirname, 'cli.ts'), 'profile', 'argv', 'a'],
+      'sh',
+      [
+        '-c',
+        '"$0" "$1" profile argv a | (sleep 0.3; cat)',
+        process.execPath,
+        path.join(__dirname, 'cli.ts'),
+      ],
       {
         encoding: 'buffer',
+        maxBuffer: 1 << 24,
         env: {
           ...process.env,
           SIDEKICK_PROFILES_DIR: store,
@@ -289,9 +305,12 @@ describe('main: profile', () => {
       },
     );
     expect(r.status).toBe(0);
-    const settings = JSON.stringify({ sidekick: { profile: 'a' } });
+    const composed = JSON.stringify({
+      ...settings,
+      sidekick: { profile: 'a' },
+    });
     expect(r.stdout.toString()).toBe(
-      `--add-dir\0${path.resolve(store)}/a\0--settings\0${settings}\0`,
+      `--add-dir\0${path.resolve(store)}/a\0--settings\0${composed}\0`,
     );
   });
 });
