@@ -131,6 +131,25 @@ describe('loadProfile', () => {
     const r = loadProfile('p', [path.join(tmp, 'absent')]);
     expect(r.ok).toBe(false);
   });
+
+  test('a folder holding only profile.json and .claude/rules/ loads', () => {
+    const dir = profile(tmp, 'p');
+    write(path.join(dir, '.claude', 'rules', 'stance.md'));
+    const r = loadProfile('p', [tmp]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.profile.hasRules).toBe(true);
+  });
+
+  test('an agent in the folder is refused with its path', () => {
+    const dir = profile(tmp, 'p');
+    write(path.join(dir, '.claude', 'agents', 'a.md'));
+    const r = loadProfile('p', [tmp]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.issues).toHaveLength(1);
+      expect(r.issues[0]).toContain(path.join(dir, '.claude', 'agents'));
+    }
+  });
 });
 
 describe('hasRules', () => {
@@ -165,26 +184,47 @@ describe('hasRules', () => {
 });
 
 describe('checkLayout', () => {
-  test('a clean folder has no refusals', () => {
+  const HIDES_AGENTS = /AGENTS\.md.*\.claude\/rules\//s;
+  const ENABLES_PLUGINS = /plugins.*profile\.json/s;
+  const RULES_ONLY = /only rules.*agents, skills, and commands.*plugin/s;
+
+  const refusedOnce = (dir: string, rel: string, why: RegExp): void => {
+    const issues = checkLayout(dir);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.startsWith(`${path.join(dir, rel)}: `)).toBe(true);
+    expect(issues[0]).toMatch(why);
+  };
+
+  test('a folder with rules and a root file beside the manifest has no refusals', () => {
     const dir = profile(tmp, 'p');
     write(path.join(dir, 'notes.txt'));
-    write(path.join(dir, '.claude', 'agents', 'a.md'));
+    write(path.join(dir, '.claude', 'rules', 'stance.md'));
     expect(checkLayout(dir)).toEqual([]);
   });
 
   test.each([
-    ['CLAUDE.md', /AGENTS\.md.*\.claude\/rules\//s],
-    ['.claude/CLAUDE.md', /AGENTS\.md.*\.claude\/rules\//s],
-    ['CLAUDE.local.md', /AGENTS\.md.*\.claude\/rules\//s],
-    ['.claude/settings.json', /plugins.*profile\.json/s],
-    ['.claude/settings.local.json', /plugins.*profile\.json/s],
-  ])('%s is refused with its reason', (rel, why) => {
+    ['CLAUDE.md', HIDES_AGENTS],
+    ['.claude/CLAUDE.md', HIDES_AGENTS],
+    ['CLAUDE.local.md', HIDES_AGENTS],
+    ['.claude/settings.json', ENABLES_PLUGINS],
+    ['.claude/settings.local.json', ENABLES_PLUGINS],
+    ['.claude/notes.txt', RULES_ONLY],
+  ])('the file %s is refused with its path and reason', (rel, why) => {
     const dir = profile(tmp, 'p');
     write(path.join(dir, rel));
-    const issues = checkLayout(dir);
-    expect(issues).toHaveLength(1);
-    expect(issues[0]).toContain(path.join(dir, rel));
-    expect(issues[0]).toMatch(why);
+    refusedOnce(dir, rel, why);
+  });
+
+  test.each([
+    'agents',
+    'skills',
+    'commands',
+    'output-styles',
+  ])('the folder .claude/%s is refused, since a profile holds only rules', (name) => {
+    const dir = profile(tmp, 'p');
+    write(path.join(dir, '.claude', name, 'x.md'));
+    write(path.join(dir, '.claude', 'rules', 'stance.md'));
+    refusedOnce(dir, path.join('.claude', name), RULES_ONLY);
   });
 
   test('a dangling symlink counts as present', () => {
@@ -193,11 +233,22 @@ describe('checkLayout', () => {
     expect(checkLayout(dir)).toHaveLength(1);
   });
 
+  test('a dangling symlink in .claude/ is refused', () => {
+    const dir = profile(tmp, 'p');
+    fs.mkdirSync(path.join(dir, '.claude'));
+    fs.symlinkSync(
+      path.join(tmp, 'nowhere'),
+      path.join(dir, '.claude', 'agents'),
+    );
+    refusedOnce(dir, '.claude/agents', RULES_ONLY);
+  });
+
   test('every refused path present gets its own message', () => {
     const dir = profile(tmp, 'p');
     write(path.join(dir, 'CLAUDE.md'));
     write(path.join(dir, '.claude', 'settings.json'));
-    expect(checkLayout(dir)).toHaveLength(2);
+    write(path.join(dir, '.claude', 'skills', 's', 'SKILL.md'));
+    expect(checkLayout(dir)).toHaveLength(3);
   });
 });
 

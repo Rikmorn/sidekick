@@ -2735,13 +2735,17 @@ var MANIFEST_FILE = "profile.json";
 var notAName = (name) => `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
 var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
 var ENABLES_PLUGINS = "can enable plugins outside the checked settings block; put settings in profile.json";
-var REFUSED = [
+var RULES_ONLY = "a profile holds only rules; agents, skills, and commands belong in a plugin the profile enables";
+var REFUSED_AT_ROOT = [
   { path: "CLAUDE.md", why: HIDES_AGENTS },
-  { path: ".claude/CLAUDE.md", why: HIDES_AGENTS },
-  { path: "CLAUDE.local.md", why: HIDES_AGENTS },
-  { path: ".claude/settings.json", why: ENABLES_PLUGINS },
-  { path: ".claude/settings.local.json", why: ENABLES_PLUGINS }
+  { path: "CLAUDE.local.md", why: HIDES_AGENTS }
 ];
+var CLAUDE_DIR_ALLOWS = "rules";
+var CLAUDE_DIR_REASONS = new Map([
+  ["CLAUDE.md", HIDES_AGENTS],
+  ["settings.json", ENABLES_PLUGINS],
+  ["settings.local.json", ENABLES_PLUGINS]
+]);
 function storeRoots(env, cwd, home) {
   const override = env.SIDEKICK_PROFILES_DIR;
   if (override)
@@ -2764,8 +2768,18 @@ var isDirectory = (dir) => {
     return false;
   }
 };
+var entriesOf = (dir) => {
+  try {
+    return fs8.readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
+};
 function checkLayout(dir) {
-  return REFUSED.filter((r) => isPresent(path7.join(dir, r.path))).map((r) => `${path7.join(dir, r.path)}: ${r.why}`);
+  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path7.join(dir, r.path))).map((r) => `${path7.join(dir, r.path)}: ${r.why}`);
+  const claudeDir = path7.join(dir, ".claude");
+  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path7.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
+  return [...atRoot, ...inClaudeDir];
 }
 var holdsMarkdown = (dir) => {
   let entries;

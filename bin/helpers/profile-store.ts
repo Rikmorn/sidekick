@@ -47,15 +47,26 @@ const HIDES_AGENTS =
   "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
 const ENABLES_PLUGINS =
   'can enable plugins outside the checked settings block; put settings in profile.json';
+// From an `--add-dir` folder, Claude Code loads agents, skills, and commands
+// only under the `project` setting source, so a profile could lose them silently.
+const RULES_ONLY =
+  'a profile holds only rules; agents, skills, and commands belong in a plugin the profile enables';
 
-// Paths a profile folder may not hold, and why; the CLI owns the folder's layout.
-const REFUSED: ReadonlyArray<{ path: string; why: string }> = [
+// Root files a profile folder may not hold, and why; the CLI owns the folder's layout.
+const REFUSED_AT_ROOT: ReadonlyArray<{ path: string; why: string }> = [
   { path: 'CLAUDE.md', why: HIDES_AGENTS },
-  { path: '.claude/CLAUDE.md', why: HIDES_AGENTS },
   { path: 'CLAUDE.local.md', why: HIDES_AGENTS },
-  { path: '.claude/settings.json', why: ENABLES_PLUGINS },
-  { path: '.claude/settings.local.json', why: ENABLES_PLUGINS },
 ];
+
+// The one entry `.claude/` may hold; every other entry is refused.
+const CLAUDE_DIR_ALLOWS = 'rules';
+
+// Entries of `.claude/` refused for a reason of their own, not RULES_ONLY.
+const CLAUDE_DIR_REASONS: ReadonlyMap<string, string> = new Map([
+  ['CLAUDE.md', HIDES_AGENTS],
+  ['settings.json', ENABLES_PLUGINS],
+  ['settings.local.json', ENABLES_PLUGINS],
+]);
 
 /** The store's roots in search order; the first root holding a name wins. */
 export function storeRoots(
@@ -87,11 +98,31 @@ const isDirectory = (dir: string): boolean => {
   }
 };
 
-/** One refusal message per refused path present in the profile folder. */
+// A missing or unreadable folder lists nothing.
+const entriesOf = (dir: string): string[] => {
+  try {
+    return fs.readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * One `<path>: <why>` message per refused path in the profile folder: a root
+ * `CLAUDE.md` or `CLAUDE.local.md`, and any entry of `.claude/` but `rules`.
+ */
 export function checkLayout(dir: string): string[] {
-  return REFUSED.filter((r) => isPresent(path.join(dir, r.path))).map(
-    (r) => `${path.join(dir, r.path)}: ${r.why}`,
-  );
+  const atRoot = REFUSED_AT_ROOT.filter((r) =>
+    isPresent(path.join(dir, r.path)),
+  ).map((r) => `${path.join(dir, r.path)}: ${r.why}`);
+  const claudeDir = path.join(dir, '.claude');
+  const inClaudeDir = entriesOf(claudeDir)
+    .filter((name) => name !== CLAUDE_DIR_ALLOWS)
+    .map(
+      (name) =>
+        `${path.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`,
+    );
+  return [...atRoot, ...inClaudeDir];
 }
 
 // Walks by hand: readdirSync's `recursive` option is missing from some Node 20s.
