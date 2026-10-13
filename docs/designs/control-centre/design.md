@@ -4,7 +4,7 @@ Status: ready for PM · Scale: explore · 2026-10-12
 
 How the operator runs Claude Code as a control centre. Many sessions run at once, each loading only what its profile declares, all visible and controllable from inside Claude Code. Memory and the loop itself are a second initiative, as §Two initiatives says. Opened from an exploration on 2026-10-11 and 2026-10-12 that the operator expects to seed R9. Gates 1, 2, and 3 are credited; R9's Opening is next.
 
-Research: [`docs/research/control-centre/`](../../research/control-centre/README.md). Rendered companions, whose sources sit in `pages/`: [Many Sessions, One Desk](pages/many-sessions.html) and [Where Memory Lives](pages/memory-map.html).
+Research: [`docs/research/control-centre/`](../../research/control-centre/README.md).
 
 ## Problem
 
@@ -18,7 +18,7 @@ The operator uses Claude Code for development, production incidents, and work be
 
 ### Two initiatives
 
-The operator split the goals into two initiatives on 2026-10-12. This design covers the first, the control centre, which the operator expects to be R9 and the largest. The second is the loop: memory, context, agents, skills, and tools from official and community work. It follows the control centre and gets its own design when it starts. Its goals are recorded under §Handed to the loop design so nothing is lost before then.
+The operator split the goals into two initiatives on 2026-10-12. This design covers the first, the control centre, which the operator expects to be R9 and the largest. The second is the loop: memory, context, agents, skills, and tools from official and community work. It follows the control centre, and its design, seeded in [`docs/designs/loop/`](../loop/design.md), opens when it starts. Its goals moved there, as §Handed to the loop design says.
 
 Goals of the control centre, each confirmed by the operator at gate 1 on 2026-10-12.
 
@@ -136,7 +136,7 @@ Each find is a candidate until the options are written; rejections carry the rea
 
 ## Sub-problems
 
-Each is a thread the operator can pull at gate 2. What is known, what is ruled, and what is open. Since the split on 2026-10-12, threads 5, 6, 7, and 8 belong to the loop design, and so does the in-session half of thread 4. Thread 9 followed the ops mod there at gate 2. Their content moved to [the loop design](../loop/design.md) on 2026-10-12.
+Each was a thread the operator could pull at gate 2. What is known, what is ruled, and what is open. Since the split on 2026-10-12, threads 5, 6, 7, and 8 belong to the loop design, and so does the in-session half of thread 4. Thread 9 followed the ops mod there at gate 2. Their content moved to [the loop design](../loop/design.md) on 2026-10-12.
 
 1. **Profiles and modularity.** Ruled: declared profiles through aliases; split sidekick into plugins exactly where a profile must separate things, pm, dev, and ops. After gate 2's review, the split moved to the loop design, since no R9 profile must separate them yet. Ruled 2026-10-12: profiles are built and documented properly, not kept as local drafts. Trial `core` and `prod-issues` drafts were tested on 2026-10-11 and then deleted; the surface report keeps the results. Open: the catalogue, composition, and the gaps for loose agents and settings hooks. The format and the store were decided at gate 2, in [profiles.md](profiles.md).
 2. **Sessions and agents.** Background sessions make the orchestrator pattern real (#101). Known 2026-10-12: a `--bg` session takes a slash command as its first prompt, and one that edits in its own worktree commits and pushes by default. `sk-worker`'s "never push" is then an instruction the model follows, not a guard. Open: `sk-worker` through `claude --bg` and its authority premise, a guard on push or isolation off, and a model per worker.
@@ -186,7 +186,7 @@ Carried costs: each mod is code with full access, written and tested here. Every
 
 ## Options
 
-Gate 2's four decisions each hold their options in a sibling note: [mods.md](mods.md), [profiles.md](profiles.md), [workers.md](workers.md), and [plugins.md](../loop/plugins.md). The integrated options come at gate 3.
+Gate 2's four decisions each hold their options in a sibling note: [mods.md](mods.md), [profiles.md](profiles.md), [workers.md](workers.md), and [plugins.md](../loop/plugins.md). §Recommendation integrates them, as gate 3 approved.
 
 ## Recommendation
 
@@ -233,13 +233,12 @@ Proposed outcome, to settle at Opening: GSD is gone with nothing lost, and sessi
 - Plan A first. Piece 1 is docs and ships alone; piece 2 ships alone and serves sessions before any mod exists.
 - Plans B and C follow; C needs B's launcher.
 - Plan D last, as ruled. Piece 6 comes before every other mod.
-- Before Opening, the loop material moves out of this folder, as §Next session says.
 
-Open for the breakdown at gate 3: whether each plan fits one session. Plans A and D are the likeliest to split.
+Opening's scope review decides whether each plan fits one session. Plans A and D are the likeliest to split.
 
 ## Decision
 
-Gate 2's four decisions are recorded in their sibling notes, named in §Options. The integrated decision is taken at gate 3. Drafted for it:
+Gate 2's four decisions are recorded in their sibling notes, named in §Options. Gate 3 took the integrated decision on 2026-10-12:
 
 In the context of running many Claude Code sessions as one control centre, the platform has no profile feature. Its mod API is in early access, and agent view in research preview. We decided for:
 
@@ -315,20 +314,21 @@ The operator agreed to all four rulings on 2026-10-12. Still open after round 2:
 
 The owed research and the three experiments were done on 2026-10-12, in the probes and extension-fit reports. Gate 2's notes still carry a few unchecked items, each marked where it sits and routed to an issue.
 
-Gate 2 is light, agreed with the operator on 2026-10-12. Each thread's open questions are sorted into two kinds. Those that cross pieces and are costly to undo are decided at this gate. The rest go into the breakdown as questions for each issue's own design, when it is picked up. Four questions are decided here, in this order, since the other three lean on the first:
+Gate 2 was light, agreed with the operator on 2026-10-12. Each thread's open questions were sorted into two kinds. Those that cross pieces and are costly to undo were decided at that gate. The rest went into the breakdown as questions for each issue's own design, when it is picked up. Four questions were decided there, in this order, since the other three lean on the first:
 
-1. **Whether sidekick ships mods**, as an ADR. The context monitor (#146) and every R9 mod depend on it, and it settles ADR-0010's revisit; the extension-fit report holds the four options. Its options and a recommendation are in [mods.md](mods.md), written 2026-10-12. The operator decided all three parts that day, as the recommendation gave them. The ADR lands in `docs/adr/` once the decision settles.
+1. **Whether sidekick ships mods**, as an ADR. The context monitor (#146) and every R9 mod depend on it, and it settles ADR-0010's revisit; the extension-fit report holds the four options. Its options and a recommendation are in [mods.md](mods.md), written 2026-10-12. The operator decided all three parts that day, as the recommendation gave them. The ADR is piece 1 of §Blast radius.
 2. **Where profiles live and how one is declared.** Launching workers, the gauge, and scope filtering all read this data model. Decided in [profiles.md](profiles.md) on 2026-10-12. A thin manifest is compiled to native settings and stored at user and repo level. What a declaration means is left to use.
 3. **`sk-worker` dispatched from a session.** Its premise that only the operator starts it, and a guard against a background session's default push. Decided in [workers.md](workers.md) on 2026-10-12. A session dispatches a worker after the operator chooses the mode, git blocks its pushes, and it works in its own worktree.
 4. **The plugin split** along pm, dev, and ops, which changes install records in every repo that uses sidekick. Decided in [plugins.md](../loop/plugins.md) on 2026-10-12, then revised after the review. R9 keeps one plugin, and the split moved to the loop design with the ops mod.
 
-All four were decided on 2026-10-12, and the adversarial review ran two rounds the same day, answered in §Review. Next:
+All four were decided on 2026-10-12, and the adversarial review ran two rounds the same day, answered in §Review. The rest was done the same day:
 
-1. Confirm the lens table.
-2. Write the breakdown in §Blast radius. It includes the mods ADR with ADR-0010's amendment, which must land before R9 closes.
-3. Gate 3: the integrated note, once.
-4. Done on 2026-10-12: §Handed to the loop design, threads 5 to 9, and the split's findings moved to `docs/designs/loop/`, so R9's close deletes none of them.
-5. R9's Opening through `sk-milestone`.
+1. The lens table was confirmed.
+2. The breakdown was written in §Blast radius. It includes the mods ADR with ADR-0010's amendment, which must land before R9 closes.
+3. Gate 3 approved the integrated note.
+4. §Handed to the loop design, threads 5 to 9, and the split's findings moved to `docs/designs/loop/`, so R9's close deletes none of them.
+
+Next: R9's Opening through `sk-milestone`.
 
 Questions already routed to an issue's design:
 

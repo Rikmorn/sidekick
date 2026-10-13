@@ -1,6 +1,6 @@
 # Mods: whether sidekick ships them
 
-Status: decided; the ADR lands once the decision settles · Gate 2, decision 1 of the [control-centre design](design.md) · 2026-10-12
+Status: decided; the ADR is piece 1 of R9's breakdown · Gate 2, decision 1 of the [control-centre design](design.md) · 2026-10-12
 
 ## Problem
 
