@@ -53,7 +53,7 @@ The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI par
 - Unless `--allow-push`, no remote sets an explicit `pushurl`, as "The push block" explains.
 - `--permission-mode` is given and names a known mode, and `--plugin-dir`, when given, is an existing folder.
 - The profile loads, composes with the overlay, and passes the checks `profile launch` runs, the settings check and the plugin dependency check among them. `references/profiles.md` describes them. A missing profile refuses with a hint to run `sidekick profile new <name> --description <text>`.
-- Unless `--allow-push`, the profile's own `settings.env.GIT_CONFIG_COUNT`, when set, is a non-negative integer.
+- Unless `--allow-push`, the profile's own `settings.env.GIT_CONFIG_COUNT`, when set, is a string of digits.
 - `bypassPermissions` refuses a profile whose `settingSources` leaves out `user`. Claude Code refuses bypass in a background session unless user or managed settings record its acceptance. Such a profile drops that record (the dispatch probes, "Steering by message", from the docs).
 
 ### What it does

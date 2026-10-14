@@ -3582,7 +3582,8 @@ function physical(p) {
 }
 var isInside = (top, p) => {
   const rel = path9.relative(top, p);
-  return rel !== "" && !rel.startsWith("..") && !path9.isAbsolute(rel);
+  const leaves = rel === ".." || rel.startsWith(`..${path9.sep}`);
+  return rel !== "" && !leaves && !path9.isAbsolute(rel);
 };
 function briefFileIssues(brief, top) {
   const issues = [];
@@ -3685,7 +3686,7 @@ function workerOverlay(profileSettings, opts) {
   if (typeof raw !== "string" || !/^\d+$/.test(raw)) {
     return {
       issues: [
-        `the profile's GIT_CONFIG_COUNT is ${JSON.stringify(raw)}, not a non-negative integer`
+        `the profile's GIT_CONFIG_COUNT is ${JSON.stringify(raw)}, not a string of digits`
       ]
     };
   }

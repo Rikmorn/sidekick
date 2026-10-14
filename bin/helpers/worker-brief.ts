@@ -135,9 +135,11 @@ function physical(p: string): string {
   }
 }
 
+// A top-level entry may be named `..docs`, so only a whole `..` segment leaves top.
 const isInside = (top: string, p: string): boolean => {
   const rel = path.relative(top, p);
-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  const leaves = rel === '..' || rel.startsWith(`..${path.sep}`);
+  return rel !== '' && !leaves && !path.isAbsolute(rel);
 };
 
 /** Checks the brief's paths against the tree. `top` is the main checkout's top. */

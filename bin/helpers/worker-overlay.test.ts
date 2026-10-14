@@ -47,9 +47,13 @@ describe('workerOverlay', () => {
     expect('issues' in built).toBe(true);
   });
 
-  test('a non-string count refuses', () => {
+  test('a non-string count refuses, saying it is not a string of digits', () => {
     const built = workerOverlay({ env: { GIT_CONFIG_COUNT: 2 } }, opts);
-    expect('issues' in built).toBe(true);
+    expect(built).toEqual({
+      issues: [
+        "the profile's GIT_CONFIG_COUNT is 2, not a string of digits",
+      ],
+    });
   });
 
   test('allowPush leaves out the git config keys and the deny rule', () => {

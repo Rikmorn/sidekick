@@ -24,8 +24,8 @@ function pushEnv(count: number): Record<string, string> {
 /**
  * Builds the overlay for a worker. The push block numbers its `GIT_CONFIG_*`
  * entry after the profile's own `env.GIT_CONFIG_COUNT`, or from 0 when it sets
- * none. A count that is not a non-negative integer string refuses, unless
- * `allowPush` leaves the push block out.
+ * none. A count that is not a string of digits refuses, unless `allowPush`
+ * leaves the push block out.
  */
 export function workerOverlay(
   profileSettings: Settings | undefined,
@@ -42,7 +42,7 @@ export function workerOverlay(
   if (typeof raw !== 'string' || !/^\d+$/.test(raw)) {
     return {
       issues: [
-        `the profile's GIT_CONFIG_COUNT is ${JSON.stringify(raw)}, not a non-negative integer`,
+        `the profile's GIT_CONFIG_COUNT is ${JSON.stringify(raw)}, not a string of digits`,
       ],
     };
   }

@@ -182,6 +182,13 @@ describe('briefFileIssues', () => {
     expect(issues.join('\n')).toContain('plan');
     expect(issues.join('\n')).toContain('rulings');
   });
+  test('a top-level entry whose name starts with ".." is inside top', () => {
+    const { top, b } = setup();
+    fs.mkdirSync(path.join(top, '..docs'));
+    const plan = path.join(top, '..docs', 'plan.md');
+    fs.writeFileSync(plan, '');
+    expect(briefFileIssues({ ...b, plan }, top)).toEqual([]);
+  });
   test('a ".." segment cannot escape top', () => {
     const { top, b } = setup();
     const issues = briefFileIssues(
