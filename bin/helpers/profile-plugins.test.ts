@@ -71,7 +71,9 @@ describe('judgePluginList', () => {
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('"sidekik@rikmorn"');
     expect(issues[0]).toContain("this profile's settings");
-    expect(issues[0]).toContain('settings source');
+    expect(issues[0]).toContain(
+      'a synced plugin is not listed when the profile leaves out the user source',
+    );
     expect(issues[0]).not.toContain('installed');
   });
 

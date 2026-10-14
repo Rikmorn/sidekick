@@ -92,7 +92,7 @@ export function judgePluginList(stdout: string, named: string[]): CheckResult {
   for (const id of named) {
     if (listed.has(id) || EXEMPT_SUFFIXES.some((s) => id.endsWith(s))) continue;
     issues.push(
-      `"${id}": no plugin listed under this profile's settings has that id; a plugin from a settings source the profile leaves out is not listed.`,
+      `"${id}": no plugin listed under this profile's settings has that id; a synced plugin is not listed when the profile leaves out the user source.`,
     );
   }
   return issues.length > 0 ? refuse(...issues) : { ok: true, warnings };
