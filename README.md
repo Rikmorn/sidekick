@@ -81,17 +81,18 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 
 ## Profiles
 
-A profile is a folder of rules plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads the layers the profile names. Auto memory and the claude.ai connectors still load in a clean room. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning.
+A profile is a folder of rules plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads the layers the profile names. Auto memory and the claude.ai connectors still load in a clean room. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning. When a profile sets `settings.enabledPlugins` or `settingSources`, the CLI also refuses one that leaves a plugin without a dependency, or names a plugin `claude plugin list` does not list.
 
 ```bash
-sidekick profile list                          # every profile in the store
-sidekick profile show <name>                   # the folder, manifest, composed settings, and arguments
-sidekick profile new <name> --description "…"  # create a profile folder
+sidekick profile list                          # every profile in the repo and user stores
+sidekick profile show <name>                   # the folder, store, manifest, composed settings, plugin check, and arguments
+sidekick profile new <name> --description "…" [--repo]  # create a profile folder, in the repo store with --repo
 sidekick profile launch --bg <name> -- <prompt>   # start a background session
 sidekick profile alias --shell zsh <name>      # print the skp shell function, to paste into your shell startup file
+sidekick profile switch <name>                 # print the lines that resume this session under <name>
 ```
 
-`sidekick` is on `PATH` only inside a session, so run these from one, or call the installed `bin/sidekick` directly. `skp <name>` then starts an interactive session. The store is `SIDEKICK_PROFILES_DIR` when set, else `profiles/` under `CLAUDE_CONFIG_DIR` or `~/.claude`. The skill reference `plugin/skills/sidekick/references/profiles.md` covers the rest.
+`sidekick` is on `PATH` only inside a session, so run these from one, or call the installed `bin/sidekick` directly. `skp <name>` then starts an interactive session. Profiles live in two stores, searched in order. The repo store is `.claude/profiles/` at the top of the git work tree, and wins on a shared name. The user store is `profiles/` under `CLAUDE_CONFIG_DIR` or `~/.claude`. `SIDEKICK_PROFILES_DIR`, when set and non-empty, is the only store. The skill reference `plugin/skills/sidekick/references/profiles.md` covers the rest.
 
 ## What is in the bundle
 

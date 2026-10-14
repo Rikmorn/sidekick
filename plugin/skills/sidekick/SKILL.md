@@ -45,7 +45,7 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 
 ## Profiles
 
-`sidekick profile` makes and launches profiles: a folder of rules plus a manifest, handed to `claude` through `--add-dir`, `--settings`, and `--setting-sources`. Its verbs are `list`, `show`, `new`, `argv`, `launch --bg`, and `alias`, which prints the `skp <name>` shell function for interactive starts. `references/profiles.md` covers the folder layout, what each mode drops, the settings check and its skip variable, and what a profile must never hold.
+`sidekick profile` makes and launches profiles: a folder of rules plus a manifest, handed to `claude` through `--add-dir`, `--settings`, and `--setting-sources`. A profile lives in the repo store, the repo's `.claude/profiles/`, or in the user store, and the repo's wins on a shared name. Its verbs are `list`, `show`, `new` (with `--repo` for the repo store), `argv`, `launch --bg`, `alias`, and `switch`. `alias` prints the `skp <name>` shell function for interactive starts. `switch` prints the lines that resume the current session under another profile. `references/profiles.md` covers the folder layout, the repo store, switching, and what each mode drops. It also covers the settings check, the plugin dependency check, their skip variables, and what a profile must never hold.
 
 ## The docs layout
 

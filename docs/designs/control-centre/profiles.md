@@ -71,7 +71,7 @@ A profile is plain files, written in any session. Adding one needs no sidekick r
 | Option | For | Against |
 |---|---|---|
 | User level, `~/.claude/profiles/<name>/` | One store, usable in any repo and outside one | Not versioned unless the operator makes the folder a repository |
-| User and repo level, the repo's first on a shared name | A profile can travel with a repo. Colleagues without sidekick ignore the files | Two stores and a precedence rule. A repo profile is settings from a repo, and its `settings` block can set hooks and permissions. Whether a `--settings` file is held to the folder's trust has not been checked |
+| User and repo level, the repo's first on a shared name | A profile can travel with a repo. Colleagues without sidekick ignore the files at session start | Two stores and a precedence rule. A repo profile is settings from a repo, and its `settings` block can set hooks and permissions. #213 shipped it with no trust gate, by the operator's choice: they write every profile they launch. Whether a `--settings` file is held to the folder's trust is still unchecked, and #223 tracks a gate. A session that reads a file in a repo profile's folder receives its rules ([the 2026-10-14 probes report](../../research/control-centre/2026-10-14-repo-profiles-and-switching-probes.md)) |
 | Shipped in the plugin | Versioned and released | Contradicts the ruling that profiles are content made ad hoc (P9). The test profile ships only as a test fixture |
 
 ### How a session knows its profile
@@ -87,7 +87,7 @@ Assumptions, and what changes if each is wrong:
 - C holds both meanings, so trying both costs nothing. A profile with an allowlist loads only what it names; one with only a `settings` block changes the user layer, as A would. If use settles on changes alone, the compile step goes.
 - Compiling at launch finds the installed CLI from outside a session (P7). If no stable path exists, the compile runs when a profile is saved and at plugin update. The gauge then flags a profile built before the latest install.
 - A mod can read the profile. `$.settings.read({ source: "flag" })` returns what `--settings` carries, and `{}` for an unprofiled session (`claude-code.d.ts:3566-3586`, `:11824`). #205 settled it: the name travels as `sidekick.profile`, so no environment variable is needed ([the 2026-10-13 probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)).
-- A repo profile is launched only by name, by the operator or a session they run. If a cloned repo's profile could be launched unread, the launcher needs a trust check first.
+- A repo profile is launched only by name, by the operator or a session they run. #213 settled it with no trust check, since the operator writes every profile they launch. The launch names a repo profile's store, and `show` prints what it sets. #223 tracks a gate, for a cloned repo's profile launched unread.
 
 ## Routed elsewhere
 
@@ -95,7 +95,7 @@ Assumptions, and what changes if each is wrong:
 - Whether an allowlist compiles to `false` entries or to `--setting-sources` with the user layer restored (P10): that issue. The manifest stays, since rules (P4), scope filters (P5), and a description still need it.
 - Where the compiled settings file lives. Agent view keeps a session's `--settings` across supervisor restarts, so recompiling it changes a resumed worker. That is the reviewer's reading, not re-read.
 - A profile that disables a plugin another one it enables depends on (P3): that issue's check reports it.
-- Whether a repo profile is held to the folder's trust, and what the launcher shows before it applies one: that issue, before repo profiles ship.
+- Whether a repo profile is held to the folder's trust, and what the launcher shows before it applies one: settled by #213 with no gate. The launch names the profile's store and any user profile it shadows, and #223 tracks a gate.
 - What a declaration means by default: decided after the test bench holds one profile of each kind.
 - A memory folder per profile: the loop design, through the `settings` block.
 - Which plugins a profile can choose between: decision 4.
@@ -115,4 +115,4 @@ The second review round, recorded in the design's §Review, adds:
 - **No compile step in R9.** Trying both meanings is not free. The allowlist half needs the compile step, a launcher that finds what is installed, the dependency check, and the rule excludes. Claude recommends building the manifest without a compile step, and trying "only what it names" through `--setting-sources` (P10). The operator agreed on 2026-10-12.
 - **`--agent` (P11)** may carry a profile's stance, tools, and model. #205 settled the stance channel, so neither `--agent` nor `--append-system-prompt-file` carries it: the stance is a rule in the profile folder ([the probes report](../../research/control-centre/2026-10-13-profile-launch-probes.md)).
 - **One config folder per profile (P12)** is rejected for R9: one login each, and agent view split by profile, against G1. It is the fallback if scope filtering proves too weak.
-- **Switching a session's profile** has no mechanism yet. The profile issue starts from the unchecked premise that a switch relaunches or resumes the session under the new profile's settings.
+- **Switching a session's profile** is settled by resume (#213; [the 2026-10-14 probes report](../../research/control-centre/2026-10-14-repo-profiles-and-switching-probes.md)). A session cannot relaunch itself, so `sidekick profile switch` prints the resume line to run after `/exit`. A resume swaps the rules and adds the new profile's plugins, but a dropped plugin's skills stay listed. #224 tracks a relaunch without the paste.
