@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs13 from "node:fs";
+import * as fs14 from "node:fs";
 import { realpathSync as realpathSync4 } from "node:fs";
 import * as os from "node:os";
-import * as path12 from "node:path";
+import * as path13 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -3991,6 +3991,316 @@ function dispatch(opts, wenv, out, err) {
   return launch2(checked2, wenv, out, err);
 }
 
+// bin/helpers/worker-finish.ts
+import * as fs13 from "node:fs";
+import * as path12 from "node:path";
+function parseFinishArgs(rest2, cwd) {
+  const parsed = parseFlags(rest2, { "no-report": { type: "boolean" } });
+  if (parsed === undefined || parsed.positionals.length !== 1)
+    return;
+  return {
+    brief: path12.resolve(cwd, parsed.positionals[0]),
+    noReport: parsed.values["no-report"] === true
+  };
+}
+var LISTING2 = "claude agents --json --all";
+var ENDED_STATES = ["stopped", "done"];
+var REMOVED = /^removed\b/;
+var DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
+var LOCK_PID = /\(pid (\d+)\b/;
+function findJob(wenv, top, name) {
+  const listed = listJobs(wenv.runClaude, top);
+  if ("issues" in listed)
+    return listed;
+  const matches = listed.jobs.filter((job) => job.name === name);
+  if (matches.length === 0) {
+    return {
+      issues: [
+        `no session in ${LISTING2} is named "${name}": check the name in the brief; finish clears only a worker that claude still lists`
+      ]
+    };
+  }
+  if (matches.length > 1) {
+    const which = matches.map((job) => job.id ?? "an interactive session");
+    return {
+      issues: [
+        `${matches.length} sessions in ${LISTING2} are named "${name}" (${which.join(", ")}), so finish cannot tell which is the worker: clear the worker by hand with claude rm <id>`
+      ]
+    };
+  }
+  const [{ id, state }] = matches;
+  if (id === undefined) {
+    return {
+      issues: [
+        `the session named "${name}" is an interactive session, not a worker job: finish clears only a worker that sidekick worker dispatch started`
+      ]
+    };
+  }
+  return { id, state };
+}
+function integratedHead(runGit, top, branch, id) {
+  const discard = `discarding it is your call, with claude rm ${id}`;
+  const head = commitOf(runGit, top, `refs/heads/${branch}`);
+  if (head === undefined) {
+    return {
+      issues: [
+        `the branch ${branch} does not exist, so finish cannot check that the work is integrated: ${discard}`
+      ]
+    };
+  }
+  const merge = ["merge-base", "--is-ancestor", head, "HEAD"];
+  if (runGit("git", merge, top).code === 0)
+    return { head };
+  return {
+    issues: [
+      `${branch} is not integrated: its head ${head} is not in the main checkout's HEAD. Integrate it and run finish again; ${discard}`
+    ]
+  };
+}
+var RENAMED = /^(?:[RC].|.[RC]) /;
+var STATUS_PREFIX = "XY ".length;
+function statusPaths(stdout) {
+  const fields = stdout.split("\x00").filter((field) => field !== "");
+  const paths = [];
+  let i = 0;
+  while (i < fields.length) {
+    const entry = fields[i];
+    const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
+    paths.push(entry.slice(STATUS_PREFIX));
+    if (source !== undefined)
+      paths.push(source);
+    i += source === undefined ? 1 : 2;
+  }
+  return paths;
+}
+function dirtyIssues(runGit, top, worktree, report) {
+  const status = runGit("git", ["-C", worktree, "status", "--porcelain", "-z", "--untracked-files=all"], top);
+  if (status.code !== 0) {
+    return [
+      `git status failed in the worktree ${worktree}: ${status.stderr.trim()}`
+    ];
+  }
+  const others = statusPaths(status.stdout).filter((file) => file !== report);
+  if (others.length === 0)
+    return [];
+  return [
+    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(", ")}. Commit and integrate it, or remove it, then run finish again`
+  ];
+}
+var readIfPresent = (file) => {
+  try {
+    return fs13.readFileSync(file);
+  } catch {
+    return;
+  }
+};
+function reportStep(from, to, noReport) {
+  const worker = readIfPresent(from);
+  if (worker === undefined) {
+    if (noReport)
+      return "none";
+    return {
+      issues: [
+        `the worktree has no run report at ${from}: ask the worker for it, or pass --no-report to finish without one`
+      ]
+    };
+  }
+  const saved = readIfPresent(to);
+  if (saved === undefined)
+    return "copy";
+  if (saved.equals(worker))
+    return "in place";
+  return {
+    issues: [
+      `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`
+    ]
+  };
+}
+function checkFinish(brief, opts, wenv) {
+  const checkout = mainCheckout(wenv.runGit, wenv.cwd);
+  if ("issues" in checkout)
+    return checkout;
+  const { top, commonDir } = checkout;
+  const job = findJob(wenv, top, brief.name);
+  if ("issues" in job)
+    return job;
+  const worktree = path12.join(top, WORKTREES_FOLDER, brief.name);
+  const branch = `worktree-${brief.name}`;
+  const report = path12.posix.normalize(brief.report);
+  const reportFrom = path12.join(worktree, report);
+  const reportTo = path12.join(top, report);
+  const integrated = integratedHead(wenv.runGit, top, branch, job.id);
+  const step = reportStep(reportFrom, reportTo, opts.noReport);
+  const issues = [
+    ..."issues" in integrated ? integrated.issues : [],
+    ...dirtyIssues(wenv.runGit, top, worktree, report),
+    ...typeof step === "string" ? [] : step.issues
+  ];
+  const refused = issues.length > 0 || "issues" in integrated;
+  if (refused || typeof step !== "string")
+    return { issues };
+  return {
+    ...job,
+    name: brief.name,
+    top,
+    commonDir,
+    worktree,
+    branch,
+    head: integrated.head,
+    reportFrom,
+    reportTo,
+    reportStep: step
+  };
+}
+function copyReport(ready, out) {
+  try {
+    fs13.mkdirSync(path12.dirname(ready.reportTo), { recursive: true });
+    fs13.copyFileSync(ready.reportFrom, ready.reportTo, fs13.constants.COPYFILE_EXCL);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return [`cannot save the report to ${ready.reportTo}: ${why}`];
+  }
+  out(`report saved to ${ready.reportTo}`);
+  return [];
+}
+var saveReport = (ready, _wenv, out) => {
+  switch (ready.reportStep) {
+    case "copy":
+      return copyReport(ready, out);
+    case "in place":
+      out(`report already at ${ready.reportTo}`);
+      return [];
+    case "none":
+      out("no report to save: the worktree holds none");
+      return [];
+    default: {
+      const unhandled = ready.reportStep;
+      throw new Error(`unhandled report step: ${unhandled}`);
+    }
+  }
+};
+var claudeAt = (ready, wenv, args, timeoutMs = 30000) => wenv.runClaude(args, { cwd: ready.top, timeoutMs });
+var printed4 = (result) => [result.stdout, result.stderr].map((text) => text.trim()).filter((text) => text !== "");
+function withText(lead, result) {
+  const text = printed4(result);
+  return text.length > 0 ? [`${lead}:`, ...text] : [lead];
+}
+var ranClean = (result) => result.code === 0 && !result.timedOut;
+var stopJob = (ready, wenv) => {
+  if (ready.state !== undefined && ENDED_STATES.includes(ready.state)) {
+    return [];
+  }
+  const args = ["stop", ready.id];
+  const result = claudeAt(ready, wenv, args);
+  if (ranClean(result))
+    return [];
+  const failure = result.timedOut ? "did not return in time" : `failed with exit code ${result.code}`;
+  return withText(`claude ${args.join(" ")} ${failure}, so finish stopped before claude rm`, result);
+};
+function lockPid(commonDir, name) {
+  const lock = readIfPresent(path12.join(commonDir, "worktrees", name, "locked"));
+  const match = lock === undefined ? null : LOCK_PID.exec(lock.toString());
+  const pid = Number(match?.[1]);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
+function waitForExit(pid, wenv, limitMs = 15000, pollMs = 250) {
+  for (let waited = 0;wenv.isAlive(pid); waited += pollMs) {
+    if (waited >= limitMs) {
+      return [
+        `the worktree's lock still names a running process, pid ${pid}, after ${limitMs / 1000} s: run finish again once it exits`
+      ];
+    }
+    wenv.sleep(pollMs);
+  }
+  return [];
+}
+var waitForLock = (ready, wenv) => {
+  const pid = lockPid(ready.commonDir, ready.name);
+  return pid === undefined ? [] : waitForExit(pid, wenv);
+};
+var saidRemoved = (result) => ranClean(result) && REMOVED.test(printed4(result).join(`
+`));
+var unknownAnswer = (args, result) => withText(`claude ${args.join(" ")} did not say removed, and finish does not know its answer, so it removed nothing more`, result);
+function discard(ready, wenv, kept) {
+  const text = printed4(kept).join(`
+`);
+  const offer = ranClean(kept) ? DISCARD_LINE.exec(text) : null;
+  if (offer === null)
+    return unknownAnswer(["rm", ready.id], kept);
+  const [, sha, worktreeId] = offer;
+  if (sha !== ready.head) {
+    return withText(`claude rm offers to discard ${sha}, which is not ${ready.branch}'s verified head (${ready.head}), so finish did not run it`, kept);
+  }
+  const args = ["rm", ready.id, "--discard-unpushed", `${sha}@${worktreeId}`];
+  const result = claudeAt(ready, wenv, args);
+  return saidRemoved(result) ? [] : unknownAnswer(args, result);
+}
+var removeSession = (ready, wenv, out) => {
+  const first = claudeAt(ready, wenv, ["rm", ready.id]);
+  const issues = saidRemoved(first) ? [] : discard(ready, wenv, first);
+  if (issues.length > 0)
+    return issues;
+  out(`session ${ready.id} removed`);
+  return [];
+};
+function worktreeGoneIssues(runGit, top, worktree) {
+  const list2 = runGit("git", ["worktree", "list", "--porcelain"], top);
+  if (list2.code !== 0) {
+    return [
+      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.stderr.trim()}`
+    ];
+  }
+  const listed = list2.stdout.split(`
+`).includes(`worktree ${worktree}`);
+  return listed ? [`claude rm said removed, but git still lists the worktree ${worktree}`] : [];
+}
+function branchGoneIssues(runGit, top, branch) {
+  if (!branchExists(runGit, top, branch))
+    return [];
+  const result = runGit("git", ["branch", "-d", branch], top);
+  if (result.code === 0)
+    return [];
+  return [`git branch -d ${branch} failed: ${result.stderr.trim()}`];
+}
+var removeLeftovers = (ready, wenv, out) => {
+  const worktree = worktreeGoneIssues(wenv.runGit, ready.top, ready.worktree);
+  if (worktree.length > 0)
+    return worktree;
+  out(`worktree ${ready.worktree} removed`);
+  const branch = branchGoneIssues(wenv.runGit, ready.top, ready.branch);
+  if (branch.length > 0)
+    return branch;
+  out(`branch ${ready.branch} removed`);
+  return [];
+};
+var STEPS = [
+  saveReport,
+  stopJob,
+  waitForLock,
+  removeSession,
+  removeLeftovers
+];
+function finishIssues(opts, wenv, out) {
+  const read = readBrief(opts.brief);
+  if ("issues" in read)
+    return read.issues;
+  const ready = checkFinish(read.brief, opts, wenv);
+  if ("issues" in ready)
+    return ready.issues;
+  for (const step of STEPS) {
+    const issues = step(ready, wenv, out);
+    if (issues.length > 0)
+      return issues;
+  }
+  return [];
+}
+function finish(opts, wenv, out, err) {
+  const issues = finishIssues(opts, wenv, out);
+  for (const issue of issues)
+    err(issue);
+  return issues.length === 0 ? 0 : 1;
+}
+
 // bin/helpers/worker.ts
 var WORKER_USAGE_LINE = "sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report]";
 var usage2 = (err) => {
@@ -4001,7 +4311,14 @@ var dispatchVerb = (rest2, wenv, out, err) => {
   const opts = parseDispatchArgs(rest2, wenv.cwd);
   return opts === undefined ? usage2(err) : dispatch(opts, wenv, out, err);
 };
-var VERBS4 = { dispatch: dispatchVerb };
+var finishVerb = (rest2, wenv, out, err) => {
+  const opts = parseFinishArgs(rest2, wenv.cwd);
+  return opts === undefined ? usage2(err) : finish(opts, wenv, out, err);
+};
+var VERBS4 = {
+  dispatch: dispatchVerb,
+  finish: finishVerb
+};
 function runWorkerCli(args, wenv, out, err) {
   const [name, ...rest2] = args;
   if (name === undefined || !Object.hasOwn(VERBS4, name))
@@ -4022,22 +4339,22 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path12.dirname(fileURLToPath(entryFileUrl));
+  const here = path13.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path12.resolve(here, ".."),
-    path12.resolve(here, "..", "plugin")
+    path13.resolve(here, ".."),
+    path13.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs13.existsSync(path12.join(c, "rules")))
+    if (fs14.existsSync(path13.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path12.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path13.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs13.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs14.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -4062,7 +4379,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs13.writeSync(1, buffer, offset);
+      offset += fs14.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -4080,7 +4397,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs13.readFileSync(0, "utf-8");
+    return fs14.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -4113,8 +4430,8 @@ function main(argv2, ctx, out, err) {
     err(USAGE2);
     return 1;
   }
-  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path12.join(os.homedir(), ".claude");
-  const src = ctx.env.SIDEKICK_RULES_DIR || path12.join(pluginDir, "rules");
+  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path13.join(os.homedir(), ".claude");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path13.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

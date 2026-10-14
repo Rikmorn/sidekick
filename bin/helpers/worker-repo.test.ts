@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import {
   branchExists,
@@ -14,36 +13,7 @@ import {
   remotesWithPushUrl,
 } from './worker-repo.js';
 
-const made: string[] = [];
-// Physical paths: git prints /private/var/... where os.tmpdir() gives /var/... on macOS.
-const tmp = (): string => {
-  const dir = fs.realpathSync(
-    fs.mkdtempSync(path.join(os.tmpdir(), 'sk-worker-repo-')),
-  );
-  made.push(dir);
-  return dir;
-};
-afterEach(() => {
-  for (const dir of made.splice(0)) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-const git = (cwd: string, ...args: string[]): string =>
-  execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
-
-// A repo with one commit, its identity and signing set locally.
-function repo(): string {
-  const top = tmp();
-  git(top, 'init', '-q');
-  git(top, 'config', 'user.name', 'test');
-  git(top, 'config', 'user.email', 'test@example.com');
-  git(top, 'config', 'commit.gpgsign', 'false');
-  fs.writeFileSync(path.join(top, 'a.txt'), 'a\n');
-  git(top, 'add', 'a.txt');
-  git(top, 'commit', '-q', '-m', 'init');
-  return top;
-}
+afterEach(removeTemps);
 
 describe('mainCheckout', () => {
   test('finds the top and the common git dir from a subfolder', () => {

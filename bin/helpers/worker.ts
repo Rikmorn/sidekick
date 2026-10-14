@@ -8,6 +8,7 @@
 import type { Runner } from './pm-data.js';
 import type { ProfileEnv } from './profile.js';
 import { dispatch, parseDispatchArgs } from './worker-dispatch.js';
+import { finish, parseFinishArgs } from './worker-finish.js';
 
 export const WORKER_USAGE_LINE =
   'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report]';
@@ -34,7 +35,15 @@ const dispatchVerb: Verb = (rest, wenv, out, err) => {
   return opts === undefined ? usage(err) : dispatch(opts, wenv, out, err);
 };
 
-const VERBS: Record<string, Verb> = { dispatch: dispatchVerb };
+const finishVerb: Verb = (rest, wenv, out, err) => {
+  const opts = parseFinishArgs(rest, wenv.cwd);
+  return opts === undefined ? usage(err) : finish(opts, wenv, out, err);
+};
+
+const VERBS: Record<string, Verb> = {
+  dispatch: dispatchVerb,
+  finish: finishVerb,
+};
 
 /** Dispatch one `worker` verb; returns the process exit code. */
 export function runWorkerCli(

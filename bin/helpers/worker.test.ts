@@ -53,6 +53,10 @@ describe('runWorkerCli', () => {
       'dispatch with an empty --plugin-dir',
       ['dispatch', 'a.md', '--plugin-dir', ''],
     ],
+    ['finish with no brief', ['finish', '--no-report']],
+    ['finish with two briefs', ['finish', 'a.md', 'b.md']],
+    ['finish with an unknown flag', ['finish', 'a.md', '--force']],
+    ['finish with a value on --no-report', ['finish', 'a.md', '--no-report=x']],
   ])('%s prints the worker usage and returns 1', (_label, args) => {
     const h = harness();
     expect(h.run(...args)).toBe(1);

@@ -1,43 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import { LAUNCH_TIMEOUT_MS } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { runWorkerCli, type WorkerEnv } from './worker.js';
 import { PUSH_DENY_RULE, PUSH_REWRITE_KEY } from './worker-overlay.js';
 
-const made: string[] = [];
-// Physical paths: git prints /private/var/... where os.tmpdir() gives /var/... on macOS.
-const tmp = (): string => {
-  const dir = fs.realpathSync(
-    fs.mkdtempSync(path.join(os.tmpdir(), 'sk-worker-dispatch-')),
-  );
-  made.push(dir);
-  return dir;
-};
-afterEach(() => {
-  for (const dir of made.splice(0)) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-const git = (cwd: string, ...args: string[]): string =>
-  execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
-
-function repo(): string {
-  const top = tmp();
-  git(top, 'init', '-q');
-  git(top, 'config', 'user.name', 'test');
-  git(top, 'config', 'user.email', 'test@example.com');
-  git(top, 'config', 'commit.gpgsign', 'false');
-  fs.writeFileSync(path.join(top, 'a.txt'), 'a\n');
-  git(top, 'add', 'a.txt');
-  git(top, 'commit', '-q', '-m', 'init');
-  return top;
-}
+afterEach(removeTemps);
 
 const briefText = (fields: Record<string, string>): string =>
   `---\n${Object.entries(fields)
