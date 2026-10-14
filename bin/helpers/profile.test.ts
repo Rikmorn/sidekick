@@ -37,11 +37,18 @@ interface Call {
   opts: { cwd: string; timeoutMs: number };
 }
 
-/** A runner that answers `doctor` with the canary's line and records every call. */
+/**
+ * A runner that answers `doctor` with the canary's line, answers
+ * `plugin list --json` with `state.pluginList`, and records every call.
+ */
 function fakeRunner(launchResult: ClaudeResult = ok()) {
   const calls: Call[] = [];
+  const state = { pluginList: '[]' };
   const run: ClaudeRunner = (args, opts) => {
     calls.push({ args, opts });
+    if (args.at(-3) === 'plugin' && args.at(-2) === 'list') {
+      return ok({ stdout: state.pluginList });
+    }
     if (args.at(-1) === 'doctor') {
       const file = args[args.indexOf('--settings') + 1];
       const key = Object.keys(JSON.parse(fs.readFileSync(file, 'utf-8'))).find(
@@ -53,7 +60,7 @@ function fakeRunner(launchResult: ClaudeResult = ok()) {
     }
     return launchResult;
   };
-  return { run, calls };
+  return { run, calls, state };
 }
 
 function harness(over: Partial<ProfileEnv> = {}) {
@@ -118,12 +125,137 @@ describe('profile show', () => {
     expect(h.out).toContain('--add-dir');
     expect(h.out).toContain(dir);
     expect(h.out).toContain('--setting-sources');
-    expect(h.runner.calls).toEqual([]);
+    expect(h.runner.calls.some((c) => c.args.at(-1) === 'doctor')).toBe(false);
   });
   test('refuses an unknown profile', () => {
     const h = harness();
     expect(h.run('show', 'ghost')).toBe(1);
     expect(h.err[0]).toContain('no profile named "ghost"');
+  });
+});
+
+const unmet = JSON.stringify([
+  {
+    id: 'a@m',
+    errorDetails: [
+      { type: 'dependency-unsatisfied', plugin: 'a@m', dependency: 'b@m' },
+    ],
+  },
+]);
+const withPlugins = { description: 'A', settings: { enabledPlugins: {} } };
+const callWords = (h: ReturnType<typeof harness>): string[] =>
+  h.runner.calls.map((c) => c.args.at(-1) ?? '');
+
+describe('the plugin dependency check', () => {
+  test('argv runs doctor, then plugin list, and writes the arguments', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('argv', 'a')).toBe(0);
+    expect(callWords(h)).toEqual(['doctor', '--json']);
+    expect(h.runner.calls[1].args.slice(-3)).toEqual([
+      'plugin',
+      'list',
+      '--json',
+    ]);
+    expect(h.written.length).toBe(1);
+  });
+  test('argv refuses, writing nothing, on an unmet dependency, naming the plugin and the fix', () => {
+    const h = harness();
+    h.runner.state.pluginList = unmet;
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('argv', 'a')).toBe(1);
+    expect(h.written).toEqual([]);
+    expect(h.out).toEqual([]);
+    expect(h.err.join('\n')).toContain('a@m needs b@m');
+    expect(h.err.join('\n')).toContain('settings.enabledPlugins');
+  });
+  test('a profile that sets neither key never runs plugin list', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A' });
+    expect(h.run('argv', 'a')).toBe(0);
+    expect(callWords(h)).toEqual(['doctor']);
+  });
+  test('a doctor refusal never runs plugin list', () => {
+    const h = harness({ runClaude: () => ok({ stdout: 'no report\n' }) });
+    const calls: string[][] = [];
+    const inner = h.penv.runClaude;
+    h.penv.runClaude = (args, opts) => {
+      calls.push(args);
+      return inner(args, opts);
+    };
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('argv', 'a')).toBe(1);
+    expect(calls.length).toBe(1);
+    expect(h.written).toEqual([]);
+  });
+  test('SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK=1 skips plugin list, warns on err, and still runs doctor', () => {
+    const h = harness();
+    h.penv.env = { ...h.penv.env, SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK: '1' };
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('argv', 'a')).toBe(0);
+    expect(callWords(h)).toEqual(['doctor']);
+    expect(h.err.join('\n')).toContain('SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK=1');
+  });
+  test('SIDEKICK_PROFILE_SKIP_CHECK=1 skips doctor only', () => {
+    const h = harness();
+    h.penv.env = { ...h.penv.env, SIDEKICK_PROFILE_SKIP_CHECK: '1' };
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('argv', 'a')).toBe(0);
+    expect(callWords(h)).toEqual(['--json']);
+  });
+  test('launch --bg refuses before starting the session when the check refuses', () => {
+    const h = harness();
+    h.runner.state.pluginList = unmet;
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('launch', '--bg', 'a')).toBe(1);
+    expect(h.runner.calls.some((c) => c.args.includes('--bg'))).toBe(false);
+    expect(h.err.join('\n')).toContain('a@m needs b@m');
+  });
+  test('a warning reaches err and never argv stdout', () => {
+    const h = harness();
+    h.runner.state.pluginList = JSON.stringify([
+      { id: 'a@m', errorDetails: [{ type: 'mystery' }] },
+    ]);
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('argv', 'a')).toBe(0);
+    expect(h.err.join('\n')).toContain(
+      'a@m: claude plugin list reports mystery',
+    );
+    expect(h.out).toEqual([]);
+    expect(h.written.join('')).not.toContain('mystery');
+  });
+  test('show reports the refusal on stdout and exits 0', () => {
+    const h = harness();
+    h.runner.state.pluginList = unmet;
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('show', 'a')).toBe(0);
+    expect(h.out.join('\n')).toContain('plugins: refused');
+    expect(h.out.join('\n')).toContain('a@m needs b@m');
+    expect(h.err).toEqual([]);
+    expect(callWords(h)).toEqual(['--json']);
+  });
+  test('show reports ok', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('show', 'a')).toBe(0);
+    expect(h.out).toContain('plugins: ok');
+  });
+  test('show says no check was needed when the profile sets neither key', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A' });
+    expect(h.run('show', 'a')).toBe(0);
+    expect(h.out.join('\n')).toContain(
+      'plugins: not checked; the profile sets neither settings.enabledPlugins nor settingSources',
+    );
+    expect(h.runner.calls).toEqual([]);
+  });
+  test('show reports the skip warning', () => {
+    const h = harness();
+    h.penv.env = { ...h.penv.env, SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK: '1' };
+    mkProfile(h.store, 'a', withPlugins);
+    expect(h.run('show', 'a')).toBe(0);
+    expect(h.out.join('\n')).toContain('SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK=1');
+    expect(h.runner.calls).toEqual([]);
   });
 });
 

@@ -14,6 +14,11 @@ import {
   SKIP_VARIABLE,
 } from './profile-launch.js';
 import {
+  checkPlugins,
+  needsPluginCheck,
+  PLUGIN_SKIP_VARIABLE,
+} from './profile-plugins.js';
+import {
   aliasNameRefusal,
   type Shell,
   shellFunction,
@@ -109,7 +114,7 @@ const composed = (profile: Profile, penv: ProfileEnv) => {
   return { settings, args: launchArgs(profile, settings) };
 };
 
-const runCheck = (
+const settingsCheck = (
   settings: ReturnType<typeof composed>['settings'],
   penv: ProfileEnv,
 ): CheckResult =>
@@ -119,6 +124,49 @@ const runCheck = (
     tmpdir: penv.tmpdir,
     skip: penv.env[SKIP_VARIABLE] === '1',
   });
+
+const pluginCheck = (
+  profile: Profile,
+  settings: ReturnType<typeof composed>['settings'],
+  penv: ProfileEnv,
+): CheckResult =>
+  checkPlugins(settings, profile.manifest, {
+    run: penv.runClaude,
+    cwd: penv.cwd,
+    tmpdir: penv.tmpdir,
+    skip: penv.env[PLUGIN_SKIP_VARIABLE] === '1',
+  });
+
+/** Runs the `doctor` check, then the plugin check when `doctor` passes and the manifest needs it. */
+export function checkProfile(
+  profile: Profile,
+  settings: ReturnType<typeof composed>['settings'],
+  penv: ProfileEnv,
+): CheckResult {
+  const checked = settingsCheck(settings, penv);
+  if (!checked.ok || !needsPluginCheck(profile.manifest)) return checked;
+  const plugins = pluginCheck(profile, settings, penv);
+  return plugins.ok
+    ? { ok: true, warnings: [...checked.warnings, ...plugins.warnings] }
+    : plugins;
+}
+
+/** The `plugins:` lines of `show`, which runs the plugin check without `doctor` and never refuses on it. */
+function pluginReport(
+  profile: Profile,
+  settings: ReturnType<typeof composed>['settings'],
+  penv: ProfileEnv,
+): string[] {
+  if (!needsPluginCheck(profile.manifest)) {
+    return [
+      'plugins: not checked; the profile sets neither settings.enabledPlugins nor settingSources',
+    ];
+  }
+  const plugins = pluginCheck(profile, settings, penv);
+  return plugins.ok
+    ? ['plugins: ok', ...plugins.warnings.map((w) => `  ${w}`)]
+    : ['plugins: refused', ...plugins.issues.map((i) => `  ${i}`)];
+}
 
 const list: Verb = (rest, penv, out, err) => {
   if (rest.length > 0) return usage(err);
@@ -151,6 +199,7 @@ const show: Verb = (rest, penv, out, err) => {
   out(`store: ${profile.store}`);
   out(`manifest: ${JSON.stringify(profile.manifest, null, 2)}`);
   out(`settings: ${JSON.stringify(settings, null, 2)}`);
+  for (const line of pluginReport(profile, settings, penv)) out(line);
   out('arguments:');
   for (const arg of args) out(arg);
   return 0;
@@ -202,7 +251,7 @@ const argv: Verb = (rest, penv, _out, err) => {
   const provenance = provenanceLine(loaded.profile);
   if (provenance !== undefined) err(provenance);
   const { settings, args } = composed(loaded.profile, penv);
-  const checked = runCheck(settings, penv);
+  const checked = checkProfile(loaded.profile, settings, penv);
   if (!checked.ok) return refuse(err, checked.issues);
   for (const warning of checked.warnings) err(warning);
   penv.write(args.map((arg) => `${arg}\0`).join(''));
@@ -231,7 +280,7 @@ const launch: Verb = (rest, penv, out, err) => {
   const provenance = provenanceLine(loaded.profile);
   if (provenance !== undefined) err(provenance);
   const { settings, args } = composed(loaded.profile, penv);
-  const checked = runCheck(settings, penv);
+  const checked = checkProfile(loaded.profile, settings, penv);
   if (!checked.ok) return refuse(err, checked.issues);
   for (const warning of checked.warnings) err(warning);
   // The bound on a `--bg` start, chosen as a generous minute.
