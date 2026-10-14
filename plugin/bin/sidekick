@@ -869,11 +869,16 @@ function nextLatch(latched, tokens, window) {
   }
   return { speak: reached, latch: reached };
 }
-function warningText(level, tokens, window) {
+function workerTail(brief) {
+  return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`.`;
+}
+function warningText(level, tokens, window, workerBrief) {
   const percent = Math.floor(tokens * 100 / window);
   const format = (n) => n.toLocaleString("en-US");
   const lead = `sidekick: context is ${percent}% full (${format(tokens)} of ${format(window)} tokens). There is no need to stop. Where it fits, finish the current step before starting a new one.`;
-  return level === "critical" ? `${lead} At the next natural pause, tell the user that context is running low.` : lead;
+  if (level !== "critical")
+    return lead;
+  return workerBrief === undefined ? `${lead} At the next natural pause, tell the user that context is running low.` : `${lead} ${workerTail(workerBrief)}`;
 }
 var SESSION_ID = /^[A-Za-z0-9-]{1,128}$/;
 var TAIL_BYTES = [256 * 1024, 512 * 1024, 1024 * 1024, 2 * 1024 * 1024];
@@ -939,11 +944,12 @@ function postToolBatchContext(stdin, monitor) {
     if (tokens === undefined)
       return;
     const latchFile = path.join(monitor.tmpdir, `sidekick-ctx-${sessionId}.json`);
+    const brief = monitor.env.SIDEKICK_WORKER;
     const latched = readLatch(latchFile);
     const next = nextLatch(latched, tokens, window);
     if (next.latch !== latched)
       writeLatch(latchFile, next.latch);
-    return next.speak === undefined ? undefined : warningText(next.speak, tokens, window);
+    return next.speak === undefined ? undefined : warningText(next.speak, tokens, window, brief === "" ? undefined : brief);
   } catch {
     return;
   }

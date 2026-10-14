@@ -197,6 +197,10 @@ describe('nextLatch', () => {
   });
 });
 
+const BRIEF = '/repo/docs/superpowers/plans/x-brief.md';
+const WORKER_CRITICAL =
+  "sidekick: context is 76% full (760,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one. This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at `/repo/docs/superpowers/plans/x-brief.md`.";
+
 describe('warningText', () => {
   test('pins the warning', () => {
     expect(warningText('warning', 670000, 1000000)).toBe(
@@ -207,6 +211,18 @@ describe('warningText', () => {
   test('pins critical', () => {
     expect(warningText('critical', 760000, 1000000)).toBe(
       'sidekick: context is 76% full (760,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one. At the next natural pause, tell the user that context is running low.',
+    );
+  });
+
+  test('a worker at critical gets the worker text', () => {
+    expect(warningText('critical', 760000, 1000000, BRIEF)).toBe(
+      WORKER_CRITICAL,
+    );
+  });
+
+  test('a worker at the warning level gets the unchanged text', () => {
+    expect(warningText('warning', 670000, 1000000, BRIEF)).toBe(
+      warningText('warning', 670000, 1000000),
     );
   });
 
@@ -248,6 +264,23 @@ describe('postToolBatchContext', () => {
       warningText('critical', 760, 1000),
     );
     expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+  });
+
+  test('passes SIDEKICK_WORKER through, and ignores an empty one', () => {
+    const f = fixture();
+    f.append(entry({ r: 748 }));
+    const worker = {
+      ...f.monitor,
+      env: { ...WINDOW_ENV, SIDEKICK_WORKER: BRIEF },
+    };
+    expect(postToolBatchContext(f.event(), worker)).toBe(
+      warningText('critical', 760, 1000, BRIEF),
+    );
+    fs.rmSync(f.latchFile);
+    const empty = { ...f.monitor, env: { ...WINDOW_ENV, SIDEKICK_WORKER: '' } };
+    expect(postToolBatchContext(f.event(), empty)).toBe(
+      warningText('critical', 760, 1000),
+    );
   });
 
   test('stays silent for a subagent, a bad session id, no window, no transcript, or bad JSON', () => {

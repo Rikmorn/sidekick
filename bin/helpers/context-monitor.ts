@@ -92,19 +92,29 @@ export function nextLatch(
   return { speak: reached, latch: reached };
 }
 
-/** The advisory the model receives at a level. */
+// A dispatched worker has no one to tell, and compaction can drop its brief.
+function workerTail(brief: string): string {
+  return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`.`;
+}
+
+/**
+ * The advisory the model receives at a level. A worker's brief path swaps the
+ * critical text's "tell the user" for the worker text.
+ */
 export function warningText(
   level: Level,
   tokens: number,
   window: number,
+  workerBrief?: string,
 ): string {
   // Integer arithmetic first: 0.57 * 100 is 56.99999999999999.
   const percent = Math.floor((tokens * 100) / window);
   const format = (n: number) => n.toLocaleString('en-US');
   const lead = `sidekick: context is ${percent}% full (${format(tokens)} of ${format(window)} tokens). There is no need to stop. Where it fits, finish the current step before starting a new one.`;
-  return level === 'critical'
+  if (level !== 'critical') return lead;
+  return workerBrief === undefined
     ? `${lead} At the next natural pause, tell the user that context is running low.`
-    : lead;
+    : `${lead} ${workerTail(workerBrief)}`;
 }
 
 export interface MonitorEnv {
@@ -192,12 +202,18 @@ export function postToolBatchContext(
       monitor.tmpdir,
       `sidekick-ctx-${sessionId}.json`,
     );
+    const brief = monitor.env.SIDEKICK_WORKER;
     const latched = readLatch(latchFile);
     const next = nextLatch(latched, tokens, window);
     if (next.latch !== latched) writeLatch(latchFile, next.latch);
     return next.speak === undefined
       ? undefined
-      : warningText(next.speak, tokens, window);
+      : warningText(
+          next.speak,
+          tokens,
+          window,
+          brief === '' ? undefined : brief,
+        );
   } catch {
     return undefined;
   }
