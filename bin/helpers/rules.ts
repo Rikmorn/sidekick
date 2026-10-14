@@ -32,13 +32,8 @@ export function resolveDest(
     : path.join(claudeHome, 'rules');
 }
 
-/**
- * `--project` means the repo, not wherever the shell happens to be — a
- * monorepo subdirectory has its own writable `.claude/rules`, so a plain
- * cwd join silently scopes the install to that subtree. Falls back to
- * `cwd` outside a git work tree, so callers never need a second branch.
- */
-export function repoRootOf(cwd: string): string {
+/** The top of the git work tree holding `cwd`, or undefined outside one. */
+export function workTreeRootOf(cwd: string): string | undefined {
   try {
     return execFileSync('git', ['rev-parse', '--show-toplevel'], {
       cwd,
@@ -46,9 +41,18 @@ export function repoRootOf(cwd: string): string {
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
   } catch {
-    return cwd;
+    return undefined;
   }
 }
+
+/**
+ * `--project` means the repo, not wherever the shell happens to be — a
+ * monorepo subdirectory has its own writable `.claude/rules`, so a plain
+ * cwd join silently scopes the install to that subtree. Falls back to
+ * `cwd` where `workTreeRootOf` finds no work tree, so callers never need a
+ * second branch.
+ */
+export const repoRootOf = (cwd: string): string => workTreeRootOf(cwd) ?? cwd;
 
 /** Rules a project install delivers only where the repo enables the plugin: they govern its PM layer. */
 export const PLUGIN_ONLY_RULES: readonly string[] = ['sk-pm-conventions.md'];

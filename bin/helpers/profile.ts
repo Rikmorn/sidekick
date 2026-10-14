@@ -87,7 +87,10 @@ function load(
   name: string,
   penv: ProfileEnv,
 ): { profile: Profile } | { issues: string[] } {
-  const loaded = loadProfile(name, storeRoots(penv.env, penv.cwd, penv.home));
+  const loaded = loadProfile(
+    name,
+    storeRoots(penv.env, penv.cwd, penv.home, undefined),
+  );
   return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
 }
 
@@ -109,7 +112,9 @@ const runCheck = (
 
 const list: Verb = (rest, penv, out, err) => {
   if (rest.length > 0) return usage(err);
-  const profiles = listProfiles(storeRoots(penv.env, penv.cwd, penv.home));
+  const profiles = listProfiles(
+    storeRoots(penv.env, penv.cwd, penv.home, undefined),
+  );
   for (const p of profiles) {
     out(
       p.issues.length > 0
@@ -147,11 +152,11 @@ const create: Verb = (rest, penv, out, err) => {
   ) {
     return usage(err);
   }
-  const created = newProfile(
-    parsed.positionals[0],
-    description,
-    storeRoots(penv.env, penv.cwd, penv.home),
+  const root = storeRoots(penv.env, penv.cwd, penv.home, undefined).find(
+    (r) => r.kind === 'user',
   );
+  if (root === undefined) return refuse(err, ['no store root is set']);
+  const created = newProfile(parsed.positionals[0], description, root.dir);
   if (!created.ok) return refuse(err, created.issues);
   out(created.dir);
   return 0;

@@ -1,6 +1,7 @@
 /**
- * Where profiles live: the ordered store roots, name resolution, the layout
- * check that owns what a profile folder may hold, listing, and `new`.
+ * Where profiles live: the ordered store roots (the repo's, then the user's),
+ * name resolution, the layout check that owns what a profile folder may hold,
+ * listing, and `new`.
  */
 
 import * as fs from 'node:fs';
@@ -13,11 +14,23 @@ import {
   readManifest,
 } from './profile-manifest.js';
 
+export type StoreKind = 'repo' | 'user';
+
+/** A folder holding profiles, labelled by which store it is. */
+export interface StoreRoot {
+  kind: StoreKind;
+  /** Absolute path. */
+  dir: string;
+}
+
 export interface Profile {
   name: string;
   /** Absolute path of the profile's folder. */
   dir: string;
   root: string;
+  store: StoreKind;
+  /** The folder of a same-named profile in a later root, which this one hides. */
+  shadows: string | undefined;
   manifest: ProfileManifest;
   /** Whether `.claude/rules/` holds a `.md` file at any depth. */
   hasRules: boolean;
@@ -30,6 +43,9 @@ export type LoadResult =
 export interface ListedProfile {
   name: string;
   root: string;
+  store: StoreKind;
+  /** The folder of the earlier root's profile of this name, which wins over this one. */
+  shadowedBy: string | undefined;
   description: string | undefined;
   issues: string[];
 }
@@ -68,16 +84,27 @@ const CLAUDE_DIR_REASONS: ReadonlyMap<string, string> = new Map([
   ['settings.local.json', ENABLES_PLUGINS],
 ]);
 
-/** The store's roots in search order; the first root holding a name wins. */
+/**
+ * The store's roots in search order: the work tree's `.claude/profiles/` when
+ * `workTree` is defined, then the user store. `SIDEKICK_PROFILES_DIR` replaces
+ * both.
+ */
 export function storeRoots(
   env: NodeJS.ProcessEnv,
   cwd: string,
   home: string,
-): string[] {
+  workTree: string | undefined,
+): StoreRoot[] {
   const override = env.SIDEKICK_PROFILES_DIR;
-  if (override) return [path.resolve(cwd, override)];
+  if (override) return [{ kind: 'user', dir: path.resolve(cwd, override) }];
   const configDir = env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
-  return [path.resolve(cwd, configDir, 'profiles')];
+  const user: StoreRoot = {
+    kind: 'user',
+    dir: path.resolve(cwd, configDir, 'profiles'),
+  };
+  return workTree === undefined
+    ? [user]
+    : [{ kind: 'repo', dir: path.join(workTree, '.claude', 'profiles') }, user];
 }
 
 // A dangling symlink counts as present.
@@ -141,8 +168,12 @@ const holdsMarkdown = (dir: string): boolean => {
   });
 };
 
-const readFolder = (name: string, root: string): LoadResult => {
-  const dir = path.resolve(root, name);
+const readFolder = (
+  name: string,
+  root: StoreRoot,
+  shadows: string | undefined,
+): LoadResult => {
+  const dir = path.join(root.dir, name);
   const layout = checkLayout(dir);
   if (layout.length > 0) return { ok: false, issues: layout };
   const read = readManifest(path.join(dir, MANIFEST_FILE));
@@ -152,64 +183,92 @@ const readFolder = (name: string, root: string): LoadResult => {
     profile: {
       name,
       dir,
-      root,
+      root: root.dir,
+      store: root.kind,
+      shadows,
       manifest: read.manifest,
       hasRules: holdsMarkdown(path.join(dir, '.claude', 'rules')),
     },
   };
 };
 
-/** Resolve `name` against the roots, check the folder's layout, and parse its manifest. */
-export function loadProfile(name: string, roots: string[]): LoadResult {
+/**
+ * Resolve `name` against the roots, check the folder's layout, and parse its
+ * manifest. Only the folder's presence picks the root: an invalid profile of
+ * another name does not hide a valid one.
+ */
+export function loadProfile(name: string, roots: StoreRoot[]): LoadResult {
   if (!isProfileName(name)) return { ok: false, issues: [notAName(name)] };
-  const root = roots.find((r) => isDirectory(path.resolve(r, name)));
-  if (root === undefined) {
+  const held = (root: StoreRoot): boolean =>
+    isDirectory(path.join(root.dir, name));
+  const index = roots.findIndex(held);
+  const winner = roots[index];
+  if (winner === undefined) {
     return {
       ok: false,
       issues: [
-        `no profile named "${name}"; searched: ${roots.map((r) => path.resolve(r)).join(', ')}`,
+        `no profile named "${name}"; searched: ${roots.map((r) => r.dir).join(', ')}`,
       ],
     };
   }
-  return readFolder(name, path.resolve(root));
+  const later = roots.slice(index + 1).find(held);
+  return readFolder(
+    name,
+    winner,
+    later === undefined ? undefined : path.join(later.dir, name),
+  );
 }
 
 // A dot-folder, such as `.git`, is never a profile: no name starts with a dot.
 const isHidden = (name: string): boolean => name.startsWith('.');
 
-const listRoot = (root: string): ListedProfile[] => {
+const listRoot = (root: StoreRoot): ListedProfile[] => {
   let names: string[];
   try {
-    names = fs.readdirSync(root).sort();
+    names = fs.readdirSync(root.dir).sort();
   } catch {
     return [];
   }
   return names
-    .filter((name) => !isHidden(name) && isDirectory(path.join(root, name)))
+    .filter((name) => !isHidden(name) && isDirectory(path.join(root.dir, name)))
     .map((name): ListedProfile => {
+      const base = {
+        name,
+        root: root.dir,
+        store: root.kind,
+        shadowedBy: undefined,
+      };
       if (!isProfileName(name)) {
-        return {
-          name,
-          root,
-          description: undefined,
-          issues: [notAName(name)],
-        };
+        return { ...base, description: undefined, issues: [notAName(name)] };
       }
-      const loaded = readFolder(name, root);
+      const loaded = readFolder(name, root, undefined);
       return loaded.ok
         ? {
-            name,
-            root,
+            ...base,
             description: loaded.profile.manifest.description,
             issues: [],
           }
-        : { name, root, description: undefined, issues: loaded.issues };
+        : { ...base, description: undefined, issues: loaded.issues };
     });
 };
 
-/** Every profile in every root, each parsed; an invalid one carries its issues. */
-export function listProfiles(roots: string[]): ListedProfile[] {
-  return roots.flatMap((r) => listRoot(path.resolve(r)));
+/**
+ * Every profile in every root, each parsed; an invalid one carries its issues.
+ * A profile an earlier root's same-named one hides carries that folder as
+ * `shadowedBy`.
+ */
+export function listProfiles(roots: StoreRoot[]): ListedProfile[] {
+  const winners = new Map<string, string>();
+  return roots.flatMap((root) =>
+    listRoot(root).map((listed) => {
+      const winner = winners.get(listed.name);
+      if (winner === undefined) {
+        winners.set(listed.name, path.join(root.dir, listed.name));
+        return listed;
+      }
+      return { ...listed, shadowedBy: winner };
+    }),
+  );
 }
 
 const isExists = (err: unknown): boolean =>
@@ -243,20 +302,16 @@ const unmake = (dir: string): string[] => {
   }
 };
 
-/** Create `<first root>/<name>/profile.json` holding only the description. */
+/** Create `<root>/<name>/profile.json` holding only the description. */
 export function newProfile(
   name: string,
   description: string,
-  roots: string[],
+  root: string,
 ): NewResult {
   if (!isProfileName(name)) return { ok: false, issues: [notAName(name)] };
   const manifest = { description };
   const parsed = parseManifest(manifest);
   if (!parsed.ok) return parsed;
-  const [first] = roots;
-  if (first === undefined)
-    return { ok: false, issues: ['no store root is set'] };
-  const root = path.resolve(first);
   const rootIssues = makeRoot(root);
   if (rootIssues.length > 0) return { ok: false, issues: rootIssues };
   const dir = path.join(root, name);

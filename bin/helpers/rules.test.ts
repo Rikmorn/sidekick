@@ -10,8 +10,10 @@ import {
   PLUGIN_ONLY_RULES,
   pluginEnablement,
   projectSet,
+  repoRootOf,
   resolveDest,
   runRulesCli,
+  workTreeRootOf,
 } from './rules.js';
 
 function gitInit(dir: string): void {
@@ -21,6 +23,66 @@ function gitInit(dir: string): void {
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sk-rules-'));
 }
+const removeAll = (...dirs: string[]): void => {
+  for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
+};
+
+describe('workTreeRootOf', () => {
+  test('finds the top from a subfolder, and undefined outside a work tree', () => {
+    const repo = tmp();
+    const plain = tmp();
+    try {
+      gitInit(repo);
+      const sub = path.join(repo, 'a', 'b');
+      fs.mkdirSync(sub, { recursive: true });
+      expect(workTreeRootOf(sub)).toBe(fs.realpathSync(repo));
+      expect(workTreeRootOf(plain)).toBeUndefined();
+    } finally {
+      removeAll(repo, plain);
+    }
+  });
+
+  test('finds a linked worktree, whose .git is a file', () => {
+    const repo = tmp();
+    const holder = tmp();
+    try {
+      gitInit(repo);
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=test',
+          '-c',
+          'user.email=test@example.com',
+          '-c',
+          'commit.gpgsign=false',
+          'commit',
+          '--allow-empty',
+          '-q',
+          '-m',
+          'init',
+        ],
+        { cwd: repo },
+      );
+      const linked = path.join(holder, 'wt');
+      execFileSync('git', ['worktree', 'add', '-q', linked], { cwd: repo });
+      expect(fs.statSync(path.join(linked, '.git')).isFile()).toBe(true);
+      expect(workTreeRootOf(linked)).toBe(fs.realpathSync(linked));
+    } finally {
+      removeAll(repo, holder);
+    }
+  });
+
+  test('repoRootOf still falls back to cwd outside a work tree', () => {
+    const dir = tmp();
+    try {
+      expect(repoRootOf(dir)).toBe(dir);
+    } finally {
+      removeAll(dir);
+    }
+  });
+});
+
 function write(dir: string, name: string, body: string): void {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, name), body);

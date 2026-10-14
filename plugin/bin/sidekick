@@ -1861,7 +1861,7 @@ function formatOverlap(report) {
 function resolveDest(scope, cwd, claudeHome) {
   return scope === "project" ? path5.join(cwd, ".claude", "rules") : path5.join(claudeHome, "rules");
 }
-function repoRootOf(cwd) {
+function workTreeRootOf(cwd) {
   try {
     return execFileSync("git", ["rev-parse", "--show-toplevel"], {
       cwd,
@@ -1869,9 +1869,10 @@ function repoRootOf(cwd) {
       stdio: ["ignore", "pipe", "ignore"]
     }).trim();
   } catch {
-    return cwd;
+    return;
   }
 }
+var repoRootOf = (cwd) => workTreeRootOf(cwd) ?? cwd;
 var PLUGIN_ONLY_RULES = ["sk-pm-conventions.md"];
 var isRecord3 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText = (e) => e instanceof Error ? e.message : String(e);
@@ -2746,12 +2747,16 @@ var CLAUDE_DIR_REASONS = new Map([
   ["settings.json", ENABLES_PLUGINS],
   ["settings.local.json", ENABLES_PLUGINS]
 ]);
-function storeRoots(env, cwd, home) {
+function storeRoots(env, cwd, home, workTree) {
   const override = env.SIDEKICK_PROFILES_DIR;
   if (override)
-    return [path7.resolve(cwd, override)];
+    return [{ kind: "user", dir: path7.resolve(cwd, override) }];
   const configDir = env.CLAUDE_CONFIG_DIR || path7.join(home, ".claude");
-  return [path7.resolve(cwd, configDir, "profiles")];
+  const user = {
+    kind: "user",
+    dir: path7.resolve(cwd, configDir, "profiles")
+  };
+  return workTree === undefined ? [user] : [{ kind: "repo", dir: path7.join(workTree, ".claude", "profiles") }, user];
 }
 var isPresent = (file) => {
   try {
@@ -2797,8 +2802,8 @@ var holdsMarkdown = (dir) => {
     return e.name.endsWith(".md");
   });
 };
-var readFolder = (name, root) => {
-  const dir = path7.resolve(root, name);
+var readFolder = (name, root, shadows) => {
+  const dir = path7.join(root.dir, name);
   const layout = checkLayout(dir);
   if (layout.length > 0)
     return { ok: false, issues: layout };
@@ -2810,7 +2815,9 @@ var readFolder = (name, root) => {
     profile: {
       name,
       dir,
-      root,
+      root: root.dir,
+      store: root.kind,
+      shadows,
       manifest: read.manifest,
       hasRules: holdsMarkdown(path7.join(dir, ".claude", "rules"))
     }
@@ -2819,45 +2826,56 @@ var readFolder = (name, root) => {
 function loadProfile(name, roots) {
   if (!isProfileName(name))
     return { ok: false, issues: [notAName(name)] };
-  const root = roots.find((r) => isDirectory(path7.resolve(r, name)));
-  if (root === undefined) {
+  const held = (root) => isDirectory(path7.join(root.dir, name));
+  const index = roots.findIndex(held);
+  const winner = roots[index];
+  if (winner === undefined) {
     return {
       ok: false,
       issues: [
-        `no profile named "${name}"; searched: ${roots.map((r) => path7.resolve(r)).join(", ")}`
+        `no profile named "${name}"; searched: ${roots.map((r) => r.dir).join(", ")}`
       ]
     };
   }
-  return readFolder(name, path7.resolve(root));
+  const later = roots.slice(index + 1).find(held);
+  return readFolder(name, winner, later === undefined ? undefined : path7.join(later.dir, name));
 }
 var isHidden = (name) => name.startsWith(".");
 var listRoot = (root) => {
   let names;
   try {
-    names = fs8.readdirSync(root).sort();
+    names = fs8.readdirSync(root.dir).sort();
   } catch {
     return [];
   }
-  return names.filter((name) => !isHidden(name) && isDirectory(path7.join(root, name))).map((name) => {
-    if (!isProfileName(name)) {
-      return {
-        name,
-        root,
-        description: undefined,
-        issues: [notAName(name)]
-      };
-    }
-    const loaded = readFolder(name, root);
-    return loaded.ok ? {
+  return names.filter((name) => !isHidden(name) && isDirectory(path7.join(root.dir, name))).map((name) => {
+    const base = {
       name,
-      root,
+      root: root.dir,
+      store: root.kind,
+      shadowedBy: undefined
+    };
+    if (!isProfileName(name)) {
+      return { ...base, description: undefined, issues: [notAName(name)] };
+    }
+    const loaded = readFolder(name, root, undefined);
+    return loaded.ok ? {
+      ...base,
       description: loaded.profile.manifest.description,
       issues: []
-    } : { name, root, description: undefined, issues: loaded.issues };
+    } : { ...base, description: undefined, issues: loaded.issues };
   });
 };
 function listProfiles(roots) {
-  return roots.flatMap((r) => listRoot(path7.resolve(r)));
+  const winners = new Map;
+  return roots.flatMap((root) => listRoot(root).map((listed) => {
+    const winner = winners.get(listed.name);
+    if (winner === undefined) {
+      winners.set(listed.name, path7.join(root.dir, listed.name));
+      return listed;
+    }
+    return { ...listed, shadowedBy: winner };
+  }));
 }
 var isExists = (err) => err instanceof Error && ("code" in err) && err.code === "EEXIST";
 var messageOf = (err) => err instanceof Error ? err.message : String(err);
@@ -2882,17 +2900,13 @@ var unmake = (dir) => {
     return [`${dir}: could not remove it: ${messageOf(err)}`];
   }
 };
-function newProfile(name, description, roots) {
+function newProfile(name, description, root) {
   if (!isProfileName(name))
     return { ok: false, issues: [notAName(name)] };
   const manifest = { description };
   const parsed = parseManifest(manifest);
   if (!parsed.ok)
     return parsed;
-  const [first] = roots;
-  if (first === undefined)
-    return { ok: false, issues: ["no store root is set"] };
-  const root = path7.resolve(first);
   const rootIssues = makeRoot(root);
   if (rootIssues.length > 0)
     return { ok: false, issues: rootIssues };
@@ -2943,7 +2957,7 @@ var refuse2 = (err, issues) => {
   return 1;
 };
 function load(name, penv) {
-  const loaded = loadProfile(name, storeRoots(penv.env, penv.cwd, penv.home));
+  const loaded = loadProfile(name, storeRoots(penv.env, penv.cwd, penv.home, undefined));
   return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
 }
 var composed = (profile, penv) => {
@@ -2959,7 +2973,7 @@ var runCheck = (settings, penv) => checkSettings(settings, {
 var list = (rest2, penv, out, err) => {
   if (rest2.length > 0)
     return usage(err);
-  const profiles = listProfiles(storeRoots(penv.env, penv.cwd, penv.home));
+  const profiles = listProfiles(storeRoots(penv.env, penv.cwd, penv.home, undefined));
   for (const p of profiles) {
     out(p.issues.length > 0 ? `${p.name}  invalid: ${p.issues[0]}  (${p.root})` : `${p.name}  ${p.description}  (${p.root})`);
   }
@@ -2989,7 +3003,10 @@ var create = (rest2, penv, out, err) => {
   if (parsed === undefined || parsed.positionals.length !== 1 || typeof description !== "string") {
     return usage(err);
   }
-  const created = newProfile(parsed.positionals[0], description, storeRoots(penv.env, penv.cwd, penv.home));
+  const root = storeRoots(penv.env, penv.cwd, penv.home, undefined).find((r) => r.kind === "user");
+  if (root === undefined)
+    return refuse2(err, ["no store root is set"]);
+  const created = newProfile(parsed.positionals[0], description, root.dir);
   if (!created.ok)
     return refuse2(err, created.issues);
   out(created.dir);
