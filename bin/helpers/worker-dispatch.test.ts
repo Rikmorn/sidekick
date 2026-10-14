@@ -344,6 +344,22 @@ describe('dispatch refuses', () => {
     expect(h.out).toEqual([]);
   });
 
+  test('a profile GIT_CONFIG_COUNT that is not digits, among the other reasons', () => {
+    const fx = fixture({
+      description: 'W',
+      settings: { env: { GIT_CONFIG_COUNT: 2 } },
+    });
+    fx.rewrite({ place: 'in-place' });
+    const h = harness(fx);
+    expect(h.dispatch(fx.brief)).toBe(1);
+    expect(h.err).toEqual([
+      'place: "in-place" is not "worktree"; dispatch starts a worker only in a worktree of its own',
+      "--permission-mode is required: pass the orchestrating session's own mode, one of default, acceptEdits, plan, auto, dontAsk, bypassPermissions, manual",
+      "the profile's GIT_CONFIG_COUNT is 2, not a string of digits",
+    ]);
+    expect(h.claude.launches()).toEqual([]);
+  });
+
   test('with every reason it finds at once', () => {
     const fx = fixture();
     fx.rewrite({ place: 'in-place' });
@@ -385,6 +401,33 @@ describe('dispatch launches', () => {
     expect(launch.opts).toEqual({
       cwd: fx.top,
       timeoutMs: LAUNCH_TIMEOUT_MS,
+    });
+  });
+
+  test('the profile --profile names, from the same store', () => {
+    const fx = fixture();
+    fs.mkdirSync(path.join(fx.store, 'other'));
+    fs.writeFileSync(
+      path.join(fx.store, 'other', 'profile.json'),
+      JSON.stringify({ description: 'Other', settings: { model: 'sonnet' } }),
+    );
+    const h = harness(fx);
+    const code = h.dispatch(
+      fx.brief,
+      '--permission-mode',
+      'auto',
+      '--profile',
+      'other',
+    );
+    expect(code).toBe(0);
+    const launch = onlyLaunch(h);
+    expect(launch.args.slice(0, 2)).toEqual([
+      '--add-dir',
+      path.join(fx.store, 'other'),
+    ]);
+    expect(settingsOf(launch)).toMatchObject({
+      model: 'sonnet',
+      sidekick: { profile: 'other' },
     });
   });
 

@@ -1,13 +1,15 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { removeTemps, tmp } from './fixtures/worker/repo.js';
 import {
   type Brief,
   briefFileIssues,
   parseFrontmatter,
   readBrief,
 } from './worker-brief.js';
+
+afterEach(removeTemps);
 
 const brief = (fields: string) =>
   `---\n${fields}\n---\n\n## Gates at the baseline\n`;
@@ -28,7 +30,6 @@ const lines = (o: Record<string, string>) =>
     .map(([k, val]) => `${k}: ${val}`)
     .join('\n');
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'brief-'));
 const write = (dir: string, name: string, text: string) => {
   const file = path.join(dir, name);
   fs.writeFileSync(file, text);
@@ -105,10 +106,13 @@ describe('readBrief', () => {
   });
   const bad: [string, Record<string, string>][] = [
     ['name', { name: 'Bad Name' }],
+    ['name', { name: 'a'.repeat(41) }],
     ['plan', { plan: 'docs/plan.md' }],
     ['baseline', { baseline: 'abcdef' }],
     ['skill', { skill: 'other' }],
     ['place', { place: 'branch' }],
+    ['place', { place: 'branch a b' }],
+    ['setup', { setup: '' }],
     ['report', { report: '/abs/report.md' }],
     ['report', { report: 'docs/../report.md' }],
     ['orchestrator', { orchestrator: '' }],
@@ -120,6 +124,9 @@ describe('readBrief', () => {
       expect(issues[0]).toContain(field);
     });
   }
+  test('accepts a name of 40 characters', () => {
+    expect(readIssues({ ...valid, name: 'a'.repeat(40) })).toEqual([]);
+  });
   test('accepts place "branch <name>" and "in-place"', () => {
     expect(readIssues({ ...valid, place: 'branch x/y' })).toEqual([]);
     expect(readIssues({ ...valid, place: 'in-place' })).toEqual([]);
@@ -144,9 +151,19 @@ describe('briefFileIssues', () => {
     const { top, b } = setup();
     expect(briefFileIssues(b, top)).toEqual([]);
   });
-  test('holds when top is the physical path of a symlinked temp folder', () => {
+  test("holds when the brief's paths reach top through a symlink", () => {
     const { top, b } = setup();
-    expect(briefFileIssues(b, fs.realpathSync(top))).toEqual([]);
+    const link = path.join(tmp(), 'link');
+    fs.symlinkSync(top, link);
+    const through = (file: string): string =>
+      path.join(link, path.relative(top, file));
+    const linked: Brief = {
+      ...b,
+      plan: through(b.plan),
+      spec: through(b.spec),
+      rulings: through(b.rulings),
+    };
+    expect(briefFileIssues(linked, top)).toEqual([]);
   });
   test('names a missing plan and a missing spec', () => {
     const { top, b } = setup();
