@@ -1,6 +1,6 @@
 # <Plan title>: run report
 
-Plan: `<path>`. Spec: `<path>`. Baseline: `<commit>`. Last commit: `<commit>`.
+Plan: `<path>`. Spec: `<path>`. Brief: `<path>`. Baseline: `<commit>`. Last commit: `<commit>`.
 
 ## Mode
 

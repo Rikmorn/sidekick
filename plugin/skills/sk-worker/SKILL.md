@@ -1,36 +1,51 @@
 ---
 name: sk-worker
-description: Turn this session into a worker that runs a plan an orchestrating session hands over, under superpowers, with a scan before the first task and a run report at the end. Only the operator starts it.
+description: Turn this session into a worker that runs a plan from a brief, under superpowers, with a scan before the first task and a run report at the end. Dispatched by a session after the operator chooses the worker mode, or started by the operator with the brief's path.
 disable-model-invocation: true
 ---
 
 # sk-worker
 
-This session executes a plan that an orchestrating session hands over. Superpowers does the executing; this skill adds the standing rules around it. The operator started this skill, so these rules carry the operator's authority. The orchestrator's messages carry only the specifics of one run.
+This session runs a plan from a brief. Superpowers does the executing; this skill adds the standing rules around it. A session dispatches the worker once the operator chooses the worker mode, or the operator runs this skill by hand. Either way the operator chose this mode, so these rules carry the operator's authority. The brief carries the specifics of one run, as a file you check. The orchestrator's messages only point at files.
 
 ## On start
 
-1. Report this session's name, so the operator and the orchestrator can confirm the pairing.
-2. Check that the working tree is clean, and note the current branch and commit.
-3. Wait for the orchestrator's handoff message.
+The brief's path is this skill's argument. With none, reply `BLOCKED` asking for it, and wait.
 
-## The handoff
+The brief opens with `key: value` lines between two `---` lines. Its body holds the gate commands and their results at the baseline.
 
-The message names:
+| Field | What it holds |
+|---|---|
+| `name` | One name for the session, the worktree folder, and the branch `worktree-<name>` |
+| `plan`, `spec` | Absolute paths in the main checkout |
+| `rulings` | An absolute path in the main checkout, for the orchestrator's rulings. The file may not exist yet; its folder does |
+| `baseline` | The commit the run starts from |
+| `skill` | `subagent-driven-development`, or `executing-plans` |
+| `place` | `worktree`, `in-place`, or `branch <name>` |
+| `setup` | Optional: the command that prepares where you work |
+| `report` | The run report's path, relative to the repo top |
+| `orchestrator` | The session to message |
 
-- the plan and the spec;
-- the baseline commit and the gate results at that commit;
-- where to work: a branch in the main checkout, a branch in a worktree, or "in place" when the operator agreed to that;
-- the superpowers skill to run: `subagent-driven-development`, or `executing-plans` for a trivial plan.
+The brief, the plan, the spec, and the rulings file stay in the main checkout, and you read them there. They usually sit in a git-ignored folder, which a worktree does not contain. A worktree session can read the main checkout but cannot edit it. Where the plan and the brief disagree on where the work lands, follow the brief: the plan was written before the mode was chosen.
 
-Check that the plan and the spec exist on disk, and that HEAD is the baseline commit. If either file is missing, or the message leaves a field out, reply `BLOCKED` with what is missing and wait.
+Check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Then check where you work:
+
+- `worktree`: a linked worktree at `.claude/worktrees/<name>`, on branch `worktree-<name>`. A dispatched worker starts there. A worker started by the operator calls `EnterWorktree` with the brief's `name` first.
+- `in-place`: the main checkout, on its current branch.
+- `branch <name>`: the branch it names, in the main checkout, made at the baseline if it does not exist yet.
+
+Where you work, check that `HEAD` is `baseline` and that no tracked file has uncommitted changes. If any check fails, reply `BLOCKED` with every failure, send the same to the orchestrator when the brief names one, and wait.
+
+## Setup
+
+Run the brief's `setup` command where you work, before the scan, since the scan runs the gates. It replaces Project Setup in superpowers' `using-git-worktrees`, which runs `npm install` whenever it finds a `package.json`. With no `setup`, skip Project Setup. A `setup` that fails is a failed check, as §On start describes.
 
 ## The scan, before Task 1
 
 Test the plan against the tree without changing anything. A plan carries intent, so check what it asserts rather than rehearsing its edits:
 
 - Check each stated fact, interface, and acceptance criterion against the tree. The files, symbols, and signatures the plan relies on exist and behave as it says. Find the other copies of each fact the plan changes with `git grep`, and check that some task's scope reaches each one. A copy outside every task is a question for the orchestrator, since only the plan sets a task's scope.
-- Run the gates at the baseline and compare them with the handoff's results.
+- Run the gates at the baseline and compare them with the results in the brief's body.
 - Run each command whose result the plan states, when it can run before its task.
 
 A small misfit between a sketch and the tree is the executor's to settle and report as a deviation. Ask only about a contradiction. Four qualify:
@@ -40,19 +55,35 @@ A small misfit between a sketch and the tree is the executor's to settle and rep
 - a mechanism fact or interface the plan states wrongly;
 - a copy of a changed fact that no task reaches.
 
-Send one report: the baseline confirmation, then every question, each naming its step and what the tree shows. Wait for the rulings. A question asked now costs one reply; the same question asked mid-run costs a round trip.
+Message the orchestrator one report: the baseline confirmation, then every question, each naming its step and what the tree shows. Wait for the message that points at the rulings. A question asked now costs one reply; the same question asked mid-run costs a round trip.
+
+## Rulings
+
+The orchestrator writes its rulings in the rulings file, and its message only points at the file. Read the file and act on what it says, not on the message's text. The file can be checked, it outlives a compaction, and it records each ruling for the run report. After a compaction, re-read the brief and the rulings file.
 
 ## The run
 
-Invoke the superpowers skill the handoff names, and follow it. Its task list and progress stay in this session, where the operator can see them. These rules hold on top of it:
+Invoke the superpowers skill the brief's `skill` names, and follow it. Its task list and progress stay in this session, where the operator can see them. These rules hold on top of it:
 
+- **The brief answers superpowers' questions.** Where superpowers would ask the person, the brief has already answered: `place` says where to work, and `setup` replaces Project Setup. At `finishing-a-development-branch`, keep the branch as it is; the orchestrator reviews and integrates.
 - **Settle a small misfit; raise one that recurs.** Shape the sketch to the tree and list each deviation in the run report. A misfit that keeps recurring goes to the orchestrator, because the plan's premise is wrong.
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
-- **The handoff answers superpowers' questions.** Where superpowers would ask the person, the handoff has already answered. Work where it names: on its branch in the main checkout or in a worktree, or in place. At `finishing-a-development-branch`, keep the branch as it is; the orchestrator reviews and merges.
 - **Run the prose step** wherever a task has one.
-- **Each task lands as its own commits,** on the branch the handoff names or in place. A fix adds a commit and never amends one. The task's base and head stay valid after an amend. The re-review diffs from the last reviewed commit, which an amend removes. Never push.
 - **Read GitHub, never write it.** Issues, comments, and the board belong to the orchestrator.
+
+## Git
+
+Run git plainly from where you work. Claude Code refuses `git -C` and `sh -c "git …"` in a worktree session, so where superpowers writes either form, run the plain one.
+
+- **Each task lands as its own commits,** on the branch where you work. A fix adds a commit and never amends one. The task's base and head stay valid after an amend. The re-review diffs from the last reviewed commit, which an amend removes.
+- **Never push, and open no pull request.** The orchestrator integrates. A background session's default is to push its branch and open a pull request; this rule overrides that default.
 
 ## At the end
 
-Write the run report when superpowers collects its "Rulings I made", before it deletes its workspace. The ledger the report draws on goes with that workspace. Save the report beside the plan as `<plan>-run-report.md`, in the shape of `references/run-report.md`. After the branch is kept, message the orchestrator with the report's path and the last commit.
+Write the run report when superpowers collects its "Rulings I made", before it deletes its workspace. The ledger the report draws on goes with that workspace. Write the report in the shape of `references/run-report.md`, at the brief's `report` path, relative to where you work. Create the folders it needs, since a git-ignored folder such as `docs/superpowers/` is absent from a fresh worktree.
+
+Removing a worktree keeps only two things: its commits, once integrated, and the run report. For a dispatched worker, `sidekick worker finish` copies the report from `<worktree>/<report>` to `<top>/<report>`. Then it removes the session, the worktree, and its branch. Everything else in the worktree goes with it, git-ignored files included. So anything worth keeping belongs in a commit or in the report.
+
+`finish` refuses unless the worktree has `worktree-<name>` checked out and that branch is integrated. It also refuses when `git status` there lists anything but the report, or when the report is missing and the orchestrator has not passed `--no-report`. It checks again before it removes anything. So leave the worktree on its branch, with everything but the report committed.
+
+After the branch is kept, message the orchestrator with the report's absolute path and the last commit.
