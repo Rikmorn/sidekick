@@ -115,9 +115,11 @@ A session cannot relaunch itself. Claude Code's mod API has no call that ends, r
 `sidekick profile switch <name>`, run through the session's Bash tool, prints the lines to run:
 
 ```
-To switch this session to "<name>", type /exit, then run one:
-  cd '<folder>' && skp <name> --resume '<id>'   # keep the conversation
-  cd '<folder>' && skp <name>                   # start fresh
+To switch this session to "<name>", type /exit, then run one of these.
+Keep the conversation:
+  cd '<folder>' && skp <name> --resume '<id>'
+Start fresh:
+  cd '<folder>' && skp <name>
 After a resume, skills of plugins "<name>" turns off stay listed but fail when called.
 ```
 

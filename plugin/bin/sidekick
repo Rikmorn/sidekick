@@ -3342,9 +3342,11 @@ var switchProfile = (rest2, penv, out, err) => {
   for (const warning of checked2.warnings)
     err(warning);
   const cd = `cd ${shellQuote(penv.cwd)}`;
-  out(`To switch this session to "${name}", type /exit, then run one:`);
-  out(`  ${cd} && skp ${name} --resume ${shellQuote(sessionId)}   # keep the conversation`);
-  out(`  ${cd} && skp ${name}                   # start fresh`);
+  out(`To switch this session to "${name}", type /exit, then run one of these.`);
+  out("Keep the conversation:");
+  out(`  ${cd} && skp ${name} --resume ${shellQuote(sessionId)}`);
+  out("Start fresh:");
+  out(`  ${cd} && skp ${name}`);
   out(`After a resume, skills of plugins "${name}" turns off stay listed but fail when called.`);
   return 0;
 };

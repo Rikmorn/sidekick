@@ -350,12 +350,15 @@ const switchProfile: Verb = (rest, penv, out, err) => {
   const checked = checkProfile(loaded.profile, settings, penv);
   if (!checked.ok) return refuse(err, checked.issues);
   for (const warning of checked.warnings) err(warning);
+  // No `#` comment on a command line: a default interactive zsh reads `#` as a word.
   const cd = `cd ${shellQuote(penv.cwd)}`;
-  out(`To switch this session to "${name}", type /exit, then run one:`);
   out(
-    `  ${cd} && skp ${name} --resume ${shellQuote(sessionId)}   # keep the conversation`,
+    `To switch this session to "${name}", type /exit, then run one of these.`,
   );
-  out(`  ${cd} && skp ${name}                   # start fresh`);
+  out('Keep the conversation:');
+  out(`  ${cd} && skp ${name} --resume ${shellQuote(sessionId)}`);
+  out('Start fresh:');
+  out(`  ${cd} && skp ${name}`);
   out(
     `After a resume, skills of plugins "${name}" turns off stay listed but fail when called.`,
   );

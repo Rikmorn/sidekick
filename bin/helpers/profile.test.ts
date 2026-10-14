@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -478,6 +479,37 @@ describe('profile alias', () => {
   });
 });
 
+// The shells a printed line is pasted into, reading it as typed. A default
+// interactive zsh leaves `interactivecomments` off, so a `#` there is a word.
+const AS_TYPED = { sh: ['-s'], zsh: ['-f', '-i'] } as const;
+
+/**
+ * Runs one pasted line after a `skp` stub that prints its folder, then each
+ * argument on a line. The shell starts in a session of its own: an interactive
+ * zsh holding the test's terminal stops the runner.
+ */
+function runAsTyped(
+  shell: keyof typeof AS_TYPED,
+  line: string,
+  cwd: string,
+): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(shell, [...AS_TYPED[shell]], {
+      cwd,
+      detached: true,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    let stdout = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', () => resolve(stdout.split('\n').slice(0, -1)));
+    child.stdin.end(`skp() { pwd -P; printf '%s\\n' "$@"; }\n${line}\n`);
+  });
+}
+
 describe('profile switch', () => {
   const withSession = (h: ReturnType<typeof harness>, id?: string) => {
     h.penv.env = { ...h.penv.env, CLAUDE_CODE_SESSION_ID: id };
@@ -489,9 +521,11 @@ describe('profile switch', () => {
     expect(h.run('switch', 'a')).toBe(0);
     const cd = `cd '${h.penv.cwd}'`;
     expect(h.out).toEqual([
-      'To switch this session to "a", type /exit, then run one:',
-      `  ${cd} && skp a --resume 'sess-1'   # keep the conversation`,
-      `  ${cd} && skp a                   # start fresh`,
+      'To switch this session to "a", type /exit, then run one of these.',
+      'Keep the conversation:',
+      `  ${cd} && skp a --resume 'sess-1'`,
+      'Start fresh:',
+      `  ${cd} && skp a`,
       'After a resume, skills of plugins "a" turns off stay listed but fail when called.',
     ]);
   });
@@ -519,18 +553,23 @@ describe('profile switch', () => {
     expect(h.out).toEqual([]);
     expect(h.err.join('\n')).toContain('no longer parses');
   });
-  test('a folder with a space and a single quote, and an id with a quote, each stay one word', () => {
+  test('each command line runs whole in sh and in an interactive zsh, landing in the folder with exactly its words', async () => {
     const folder = path.join(tmp(), "it's a folder");
     fs.mkdirSync(folder);
     const h = harness({ cwd: folder });
     mkProfile(h.store, 'a', { description: 'A' });
     expect(h.run('switch', 'a', '--session', "i'd")).toBe(0);
-    const resume = h.out[1].trim().split('   # ')[0];
-    const [cdPart, rest] = resume.split(' && ');
-    const sh = (script: string) =>
-      Bun.spawnSync(['sh', '-c', script]).stdout.toString();
-    expect(sh(`${cdPart} && pwd -P`).trim()).toBe(fs.realpathSync(folder));
-    expect(sh(`printf %s ${rest.replace('skp a --resume ', '')}`)).toBe("i'd");
+    const [resume, fresh] = h.out.filter((line) => line.startsWith('  '));
+    const here = fs.realpathSync(folder);
+    for (const shell of ['sh', 'zsh'] as const) {
+      expect(await runAsTyped(shell, resume, tmp())).toEqual([
+        here,
+        'a',
+        '--resume',
+        "i'd",
+      ]);
+      expect(await runAsTyped(shell, fresh, tmp())).toEqual([here, 'a']);
+    }
   });
   test('a repo profile prints the provenance line on err', () => {
     const h = repoHarness();
