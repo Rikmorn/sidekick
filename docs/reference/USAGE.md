@@ -10,7 +10,7 @@ Superpowers is the trunk: brainstorm, plan, execute, review. The official code-r
 |---|---|---|
 | House guidance | The `sk-*` rules Claude Code reads in every repo: working standards, language, clean code, TypeScript, guidance authoring, PM conventions, agent prompts | `plugin/rules/`, delivered by `sidekick rules install` |
 | PM layer | Tracking on GitHub for your repos: session-start pickup, filing, closing with a record, a milestone's scope review and release check, a lint | `sidekick pm`, its session-start hook, and the `sk-orient`, `sk-track`, and `sk-milestone` skills, and the `sk-holistic-reviewer` agent |
-| Execution | How a written plan runs: a mode chosen per plan, what the plan carries, and the worker handoff | The `sk-execute` and `sk-worker` skills, the Skill-tool hook that gives `writing-plans` the plan stance and the handoff, and the Read hook that gives reviewers sidekick's reviewer lines |
+| Execution | How a written plan runs: a mode chosen per plan, what the plan carries, and the worker handoff | The `sk-execute` and `sk-worker` skills, and the `sidekick worker` verbs, `dispatch` and `finish`. The Skill-tool hook that gives `writing-plans` the plan stance and the handoff, and the Read hook that gives reviewers sidekick's reviewer lines |
 | Context | Tells the model when its main-thread context fills, at 65% and 75% of its window | The context monitor hook (`PostToolBatch`) and the `context_window` setting |
 | Extensions | Design-side steps the ecosystem lacks. Shipped: a design pass before or during brainstorming. To come: a sealed review after a spec, a goal-backward verdict after a build | The `sk-design` skill and the Skill-tool hook's brainstorming nudge; later milestones for the rest |
 
@@ -43,7 +43,7 @@ For a repo where someone else owns the tracking, do nothing: `sidekick pm board 
 
 **3. Shape the work.** When a wrong choice would be costly to undo, `sk-design` designs the change before or during the brainstorm, and a fresh subagent reviews its note. Brainstorm with superpowers — the issue is the problem statement, the brainstorm settles the forks — and write the spec under `docs/superpowers/specs/`. Plan with `writing-plans`, stating each gate value as a command that measures it and the rest as intent. `sk-execute` lists what else a plan carries before it goes out.
 
-**4. Execute.** `sk-execute` lays out three modes with a recommendation, and you choose. The modes are inline, subagent-driven in the session, and a worker session started with `sk-worker`. The orchestrating session reviews the whole branch and fast-forwards `master`. Each run records its mode, escalations, review rounds, and defects per stage. Token totals are not collected; #138 keeps the method, parked. The gates are `bun run test`, `bun run typecheck`, `bun run check`, `bun run check:docs`, and `bun run prose` on changed Markdown. For anything touching `bin/`, add `bun run build`, with the control that a second build changes nothing.
+**4. Execute.** `sk-execute` lays out three modes with a recommendation, and you choose. The modes are inline, subagent-driven in the session, and a worker session. For a worker, the orchestrating session dispatches `sk-worker` with `sidekick worker dispatch` once you choose that mode. The orchestrating session reviews the whole branch and fast-forwards `master`. Each run records its mode, escalations, review rounds, and defects per stage. Token totals are not collected; #138 keeps the method, parked. The gates are `bun run test`, `bun run typecheck`, `bun run check`, `bun run check:docs`, and `bun run prose` on changed Markdown. For anything touching `bin/`, add `bun run build`, with the control that a second build changes nothing.
 
 **5. File what you notice.** A problem outside the task is filed, not fixed. `sk-track` §Filing is that one step: duplicate check, one `area:*`, a self-contained brief, the entry gate, the card. The `sk-*` rules are in test mode — when a rule bites or falls short, that is an `area:guidance` issue too.
 
@@ -68,11 +68,13 @@ Every issue entry carries `item_id`, the board item's node id, so a write by id 
 
 ## Working with a worker session
 
-`sk-execute` holds the handoff and `sk-worker` holds the worker's rules. Both ship in the plugin, so every repo running sidekick has them.
+`sk-execute` holds the handoff and `sk-worker` holds the worker's rules. Both ship in the plugin, so every repo running sidekick has them. The `sidekick` skill's `references/workers.md` says what `sidekick worker dispatch` and `sidekick worker finish` check, and what they leave unguarded.
 
-You open a session in the repo and start `sk-worker` there; that is your only step. The orchestrating session finds the worker, sends it the plan, and rules on the questions from its scan. At the end it reviews the whole branch, because a per-task review cannot see a defect at the seam between tasks.
+Choosing the worker mode is your only step. The orchestrating session writes a brief beside the plan and dispatches the worker with `sidekick worker dispatch`. The worker runs in the background, in a worktree made from the orchestrator's `HEAD`, with its pushes blocked. The orchestrating session rules on the questions from its scan through a rulings file. At the end it reviews the whole branch, because a per-task review cannot see a defect at the seam between tasks. It integrates the branch, then runs `sidekick worker finish`. That saves the run report beside the plan and removes the worker's session, worktree, and branch.
 
-The handoff names where the worker works. A plain branch in the main checkout suits a run where the orchestrating session stays off the tree until the branch is done. A worktree suits a run where that session needs the checkout meanwhile. `docs/superpowers/` is gitignored, so a worktree does not contain the spec or the plan; the worker reads them by the main checkout's path.
+`dispatch` prints the worker's id. Look in with `claude attach <id>`, and stop the worker with `claude stop <id>`. The orchestrating session keeps the main checkout while the worker runs. `docs/superpowers/` is gitignored, so a worktree does not contain the spec or the plan; the worker reads them by the main checkout's path.
+
+When agent view is unavailable, you start the worker yourself, typing `/sidekick:sk-worker <brief>` in a session of your own. The brief then names where it works. A branch in the main checkout, `in-place` or `branch <name>`, suits a run where the orchestrating session stays off the tree until the branch is done. A worktree needs `worktree.baseRef: "head"` in that session's settings. `finish` does not apply, so the orchestrating session saves the run report beside the plan by hand.
 
 ## Where things are recorded
 
