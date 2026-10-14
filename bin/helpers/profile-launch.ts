@@ -12,7 +12,8 @@ import type { Profile } from './profile-store.js';
 
 export type Settings = Record<string, unknown>;
 
-const isPlainObject = (x: unknown): x is Settings =>
+/** Whether `x` is a plain object: not null, not an array. */
+export const isPlainObject = (x: unknown): x is Settings =>
   typeof x === 'object' && x !== null && !Array.isArray(x);
 
 const uniqueByValue = (items: unknown[]): unknown[] =>
@@ -288,14 +289,27 @@ export function checkSettings(
 }
 
 /**
- * The arguments for a background launch: `--bg`, `-n <name>` when given, then
- * the prompt after `--` so a leading dash cannot read as a flag.
+ * The arguments for a background launch: the optional `--plugin-dir`,
+ * `--permission-mode`, and `--worktree` after the base, then `--bg`, `-n
+ * <name>` when given, then the prompt after `--` so a leading dash cannot read
+ * as a flag.
  */
 export const bgArgs = (
   base: string[],
-  opts: { sessionName?: string; prompt?: string },
+  opts: {
+    sessionName?: string;
+    prompt?: string;
+    pluginDir?: string;
+    permissionMode?: string;
+    worktree?: string;
+  },
 ): string[] => [
   ...base,
+  ...(opts.pluginDir === undefined ? [] : ['--plugin-dir', opts.pluginDir]),
+  ...(opts.permissionMode === undefined
+    ? []
+    : ['--permission-mode', opts.permissionMode]),
+  ...(opts.worktree === undefined ? [] : ['--worktree', opts.worktree]),
   '--bg',
   ...(opts.sessionName === undefined ? [] : ['-n', opts.sessionName]),
   ...(opts.prompt === undefined ? [] : ['--', opts.prompt]),

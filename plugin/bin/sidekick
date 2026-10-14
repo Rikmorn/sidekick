@@ -2669,6 +2669,9 @@ function checkSettings(settings, deps, timeoutMs = 30000) {
 }
 var bgArgs = (base, opts) => [
   ...base,
+  ...opts.pluginDir === undefined ? [] : ["--plugin-dir", opts.pluginDir],
+  ...opts.permissionMode === undefined ? [] : ["--permission-mode", opts.permissionMode],
+  ...opts.worktree === undefined ? [] : ["--worktree", opts.worktree],
   "--bg",
   ...opts.sessionName === undefined ? [] : ["-n", opts.sessionName],
   ...opts.prompt === undefined ? [] : ["--", opts.prompt]
@@ -3134,8 +3137,8 @@ function provenanceLine(profile) {
   const shadows = profile.shadows === undefined ? "" : ` (it shadows ${profile.shadows})`;
   return `profile "${profile.name}" comes from the ${profile.store} store: ${profile.dir}${shadows}`;
 }
-var composed = (profile, penv) => {
-  const settings = composeSettings(profile, { home: penv.home });
+var composed = (profile, penv, overlay) => {
+  const settings = composeSettings(profile, { home: penv.home, overlay });
   return { settings, args: launchArgs(profile, settings) };
 };
 var settingsCheck = (settings, penv) => checkSettings(settings, {
@@ -3158,7 +3161,7 @@ function checkProfile(profile, settings, penv) {
   const plugins = pluginCheck(profile, settings, penv);
   return plugins.ok ? { ok: true, warnings: [...checked2.warnings, ...plugins.warnings] } : plugins;
 }
-function checkedLaunch(name, penv, err) {
+function loadForLaunch(name, penv, err) {
   const loaded = load(name, penv);
   if ("issues" in loaded) {
     refuse3(err, loaded.issues);
@@ -3167,8 +3170,11 @@ function checkedLaunch(name, penv, err) {
   const provenance = provenanceLine(loaded.profile);
   if (provenance !== undefined)
     err(provenance);
-  const { settings, args } = composed(loaded.profile, penv);
-  const checked2 = checkProfile(loaded.profile, settings, penv);
+  return loaded.profile;
+}
+function checkComposed(profile, penv, err, overlay) {
+  const { settings, args } = composed(profile, penv, overlay);
+  const checked2 = checkProfile(profile, settings, penv);
   if (!checked2.ok) {
     refuse3(err, checked2.issues);
     return;
@@ -3176,6 +3182,10 @@ function checkedLaunch(name, penv, err) {
   for (const warning of checked2.warnings)
     err(warning);
   return args;
+}
+function checkedLaunch(name, penv, err) {
+  const profile = loadForLaunch(name, penv, err);
+  return profile === undefined ? undefined : checkComposed(profile, penv, err);
 }
 function pluginReport(profile, settings, penv) {
   if (!needsPluginCheck(profile.manifest)) {

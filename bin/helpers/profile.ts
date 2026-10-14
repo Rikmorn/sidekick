@@ -11,6 +11,7 @@ import {
   checkSettings,
   composeSettings,
   launchArgs,
+  type Settings,
   SKIP_VARIABLE,
 } from './profile-launch.js';
 import {
@@ -109,8 +110,8 @@ function provenanceLine(profile: Profile): string | undefined {
   return `profile "${profile.name}" comes from the ${profile.store} store: ${profile.dir}${shadows}`;
 }
 
-const composed = (profile: Profile, penv: ProfileEnv) => {
-  const settings = composeSettings(profile, { home: penv.home });
+const composed = (profile: Profile, penv: ProfileEnv, overlay?: Settings) => {
+  const settings = composeSettings(profile, { home: penv.home, overlay });
   return { settings, args: launchArgs(profile, settings) };
 };
 
@@ -154,13 +155,15 @@ function checkProfile(
     : plugins;
 }
 
-// Loads `name` and runs its checks, printing the provenance line and the
-// warnings, or the refusal, on `err`. Undefined means refused.
-function checkedLaunch(
+/**
+ * Loads `name`, printing the provenance line of a repo profile on `err`, or the
+ * issues when the load fails. Undefined means refused.
+ */
+export function loadForLaunch(
   name: string,
   penv: ProfileEnv,
   err: Out,
-): string[] | undefined {
+): Profile | undefined {
   const loaded = load(name, penv);
   if ('issues' in loaded) {
     refuse(err, loaded.issues);
@@ -168,14 +171,38 @@ function checkedLaunch(
   }
   const provenance = provenanceLine(loaded.profile);
   if (provenance !== undefined) err(provenance);
-  const { settings, args } = composed(loaded.profile, penv);
-  const checked = checkProfile(loaded.profile, settings, penv);
+  return loaded.profile;
+}
+
+/**
+ * Composes `profile`'s settings with the optional `overlay` and runs its
+ * checks, printing the warnings, or the refusal, on `err`. Returns the launch
+ * arguments, or undefined when refused.
+ */
+export function checkComposed(
+  profile: Profile,
+  penv: ProfileEnv,
+  err: Out,
+  overlay?: Settings,
+): string[] | undefined {
+  const { settings, args } = composed(profile, penv, overlay);
+  const checked = checkProfile(profile, settings, penv);
   if (!checked.ok) {
     refuse(err, checked.issues);
     return undefined;
   }
   for (const warning of checked.warnings) err(warning);
   return args;
+}
+
+// Loads `name` and runs its checks; the output is that of the two steps in turn.
+function checkedLaunch(
+  name: string,
+  penv: ProfileEnv,
+  err: Out,
+): string[] | undefined {
+  const profile = loadForLaunch(name, penv, err);
+  return profile === undefined ? undefined : checkComposed(profile, penv, err);
 }
 
 // The `plugins:` lines of `show`, which runs the plugin check without `doctor` and never refuses on it.

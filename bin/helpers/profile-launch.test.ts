@@ -427,6 +427,31 @@ describe('bgArgs', () => {
     ]);
   });
 
+  test('plugin dir, permission mode, and worktree come before --bg', () => {
+    expect(
+      bgArgs(['x'], {
+        pluginDir: '/pl',
+        permissionMode: 'acceptEdits',
+        worktree: 'w',
+        sessionName: 's',
+        prompt: 'go',
+      }),
+    ).toEqual([
+      'x',
+      '--plugin-dir',
+      '/pl',
+      '--permission-mode',
+      'acceptEdits',
+      '--worktree',
+      'w',
+      '--bg',
+      '-n',
+      's',
+      '--',
+      'go',
+    ]);
+  });
+
   test('a prompt goes after --, even one starting with a dash', () => {
     expect(bgArgs(['x'], { prompt: '-rf do things' })).toEqual([
       'x',
