@@ -138,7 +138,7 @@ A resume under another profile changes some parts and leaves others. Each row wa
 | Hooks the new profile declares | run at the resume, `SessionStart` with `source: "resume"` | measured |
 | `env`, permissions, and the model | unknown | not measured. The sessions docs say to pass the launch flags again on resume, and that the settings files are re-read at launch |
 
-No switch in an interactive session was measured. The fresh line avoids the lingering skills, at the cost of the conversation.
+The operator ran one switch interactively, from a session whose shell had moved into a subfolder. The conversation, the rule swap, the return to the work tree's top, and the `Unknown skill` failure all held (the switch bench report, "The operator's interactive switch"). The fresh line avoids the lingering skills, at the cost of the conversation.
 
 To go back to no profile, type `/exit` and run `claude --resume <id>` from the work tree's top. That resume was not run, and is inferred to change the same parts a switch does. #224 tracks a switch that relaunches the session after `/exit`, without the paste.
 

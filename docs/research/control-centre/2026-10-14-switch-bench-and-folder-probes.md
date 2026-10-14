@@ -1,4 +1,4 @@
-> Research for the `control-centre` design (R9, #213). It ran on 2026-10-14 on Claude Code 2.1.299, in two sessions. The worker session that built #213 ran the bench. The session that reviewed #213 re-read the bench's transcripts and ran the other probes. It records what the profile switch and the plugin dependency check rest on, beyond the earlier report of the same day. It is a record and takes only the edits that `sk-pm-conventions.md` §Placement test (tense) lists.
+> Research for the `control-centre` design (R9, #213). It ran on 2026-10-14 on Claude Code 2.1.299, in three sessions. The worker session that built #213 ran the bench. The session that reviewed #213 re-read the bench's transcripts and ran the other probes. The operator ran one switch by hand. It records what the profile switch and the plugin dependency check rest on, beyond the earlier report of the same day. It is a record and takes only the edits that `sk-pm-conventions.md` §Placement test (tense) lists.
 
 # Probes: the switch bench, `plugin list` under a profile, and a session's folder (2026-10-14)
 
@@ -8,6 +8,7 @@ Provenance grades:
 
 - **Measured:** run by the reviewing session on 2026-10-14, with the command and the observed output named.
 - **Bench:** run by the bench on 2026-10-14, in a scratch git repo with the CLI built at `03ef627`. Where a row says so, the reviewing session re-read the transcript lines it cites. Session ids name transcripts under `~/.claude/projects/`, and line numbers count from 1.
+- **Operator:** run by the operator in an interactive session of their own, with the transcript re-read by the reviewing session.
 - **Inferred:** a reading of measured output. Nothing tested it.
 
 ## Summary
@@ -22,6 +23,7 @@ Provenance grades:
 | Does a session started in a subfolder load the repo top's `.claude/settings.json`? | No | Measured |
 | What does leaving out the user source drop from `plugin list`? | Only the synced-scope entry. Every user-scope install stays listed | Measured |
 | Does a clean room keep a dependency error? | Only where a kept source enables the dependent plugin | Measured |
+| Does an interactive switch work as printed? | Yes: the conversation, the rule, the folder, and the caveat all held | Operator |
 
 ## Resume under another profile
 
@@ -81,8 +83,20 @@ Each run used `claude [flags] plugin list --json`, in the sidekick repo and in a
 
 A profile in a scratch store set `settingSources: ["project", "local"]` and named `cowork-plugin-management@synced` `false`. `sidekick profile show`, built from the #213 branch, printed `plugins: refused`, naming the id as unlisted.
 
+## The operator's interactive switch
+
+The operator ran one switch interactively, with the CLI built at `f4f717c`. A temporary `skp` function called that build, since the installed release had no `profile` family. Session `02d91ac0-6877-42e9-a33e-b47441649f23` started plain at the sidekick repo's top. Asked to remember a word, it ran `cd bin` and then `sidekick profile switch switch-try`. `switch-try` was a throwaway user profile. Its rule asked replies to end with a token, and it turned off `claude-code-setup@claude-plugins-official`.
+
+- The printed `cd` lines named the repo's top, though the shell stood in `bin/`.
+- After `/exit`, the operator pasted the resume line. The resumed session gave back the word.
+- Transcript line 60 is an `instructions` attachment adding the profile's rule, with `reason: "session_start"`. The last reply ended with the token.
+- Records before the switch carry `cwd` `…/sidekick/bin`, and the resumed records carry the repo's top.
+- Asked to invoke `claude-code-setup:claude-automation-recommender`, the Skill tool returned `Unknown skill` (line 63).
+
+The resume started from the folder the session started in, so an interactive resume from another folder stays unmeasured.
+
 ## Sources
 
 - The bench's transcripts, in the `~/.claude/projects/` folder for the scratch repo's path. Sessions `a499595e-8101-492f-91f7-7594ec22a231` and `4b854c5f-85a5-4fe5-be25-fbdacfb9259e`. The bench's own notes and hook file were scratch and were removed.
-- The reviewing session's transcript, for the drifted `cwd`.
+- The reviewing session's transcript, for the drifted `cwd`, and session `02d91ac0-6877-42e9-a33e-b47441649f23`'s, for the operator's switch.
 - `claude --version`: `2.1.299 (Claude Code)`.
