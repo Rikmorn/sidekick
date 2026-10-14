@@ -488,15 +488,15 @@ describe('profile alias', () => {
 // interactive zsh leaves `interactivecomments` off, so a `#` there is a word.
 const AS_TYPED = { sh: ['-s'], zsh: ['-f', '-i'] } as const;
 
-/**
- * Runs one pasted line after a `skp` stub that prints its folder, then each
- * argument on a line. The shell starts in a session of its own: an interactive
- * zsh holding the test's terminal stops the runner.
- */
+// Runs one pasted line after a `skp` stub that prints its folder, then each
+// argument on a line. The shell starts in a session of its own: an interactive
+// zsh holding the test's terminal stops the runner. A shell still running at
+// `timeoutMs` is killed with its process group.
 function runAsTyped(
   shell: keyof typeof AS_TYPED,
   line: string,
   cwd: string,
+  timeoutMs = 4_000,
 ): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const child = spawn(shell, [...AS_TYPED[shell]], {
@@ -504,13 +504,23 @@ function runAsTyped(
       detached: true,
       stdio: ['pipe', 'pipe', 'ignore'],
     });
+    const timer = setTimeout(() => {
+      if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
+      reject(new Error(`${shell} did not exit within ${timeoutMs} ms`));
+    }, timeoutMs);
     let stdout = '';
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
       stdout += chunk;
     });
-    child.on('error', reject);
-    child.on('close', () => resolve(stdout.split('\n').slice(0, -1)));
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', () => {
+      clearTimeout(timer);
+      resolve(stdout.split('\n').slice(0, -1));
+    });
     child.stdin.end(`skp() { pwd -P; printf '%s\\n' "$@"; }\n${line}\n`);
   });
 }
@@ -589,6 +599,19 @@ describe('profile switch', () => {
       expect(await runAsTyped(shell, fresh, tmp())).toEqual([here, 'a']);
     }
   });
+  test('inside a work tree, both lines cd to its top, not to the subfolder switch ran in', () => {
+    const h = repoHarness();
+    mkProfile(h.repoStore, 'review', { description: 'R' });
+    h.penv.cwd = path.join(h.workTree, 'bin', 'helpers');
+    fs.mkdirSync(h.penv.cwd, { recursive: true });
+    withSession(h, 's');
+    expect(h.run('switch', 'review')).toBe(0);
+    const lines = h.out.filter((line) => line.startsWith('  '));
+    expect(lines).toEqual([
+      `  cd '${h.workTree}' && skp review --resume 's'`,
+      `  cd '${h.workTree}' && skp review`,
+    ]);
+  });
   test('a repo profile prints the provenance line on err', () => {
     const h = repoHarness();
     const dir = mkProfile(h.repoStore, 'review', { description: 'R' });
@@ -623,7 +646,7 @@ describe('profile dispatch', () => {
   });
 });
 
-/** A repo store and a user store side by side; `SIDEKICK_PROFILES_DIR` stays unset. */
+// A repo store and a user store side by side; `SIDEKICK_PROFILES_DIR` stays unset.
 function repoHarness() {
   const workTree = tmp();
   const home = tmp();

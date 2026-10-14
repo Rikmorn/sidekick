@@ -1,6 +1,6 @@
 # Profiles
 
-A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from three native flags: `--add-dir`, `--settings`, and `--setting-sources`. Issue #205 in the `Rikmorn/sidekick` repo decided the shape. Issue #213 added the repo store, the plugin dependency check, and switching. Most measurements behind these claims are in two reports under `docs/research/control-centre/` in that repo. `2026-10-13-profile-launch-probes.md` is called "the probes report" here, and `2026-10-14-repo-profiles-and-switching-probes.md` is "the 2026-10-14 report". Each names the Claude Code version and date it ran on. Two facts were measured on 2026-10-12 during #205's design, on Claude Code 2.1.296. No report holds them, so the text marks them "design-time". The alias hazards, and the facts in "The plugin dependency check" measured while building #213, have their own sources, named where they appear.
+A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from three native flags: `--add-dir`, `--settings`, and `--setting-sources`. Issue #205 in the `Rikmorn/sidekick` repo decided the shape. Issue #213 added the repo store, the plugin dependency check, and switching. Most measurements behind these claims are in three reports under `docs/research/control-centre/` in that repo. `2026-10-13-profile-launch-probes.md` is called "the probes report" here. `2026-10-14-repo-profiles-and-switching-probes.md` is "the 2026-10-14 report", and `2026-10-14-switch-bench-and-folder-probes.md` is "the switch bench report". Each names the Claude Code version and date it ran on. Two facts were measured on 2026-10-12 during #205's design, on Claude Code 2.1.296. No report holds them, so the text marks them "design-time". The alias hazards have their own source, named where they appear.
 
 ## The folder
 
@@ -63,7 +63,7 @@ A repo profile's rules can reach a session in the repo that never launched that 
 
 A repo profile is also branch content. A background job reapplies its `--add-dir` path on respawn, and `--add-dir` refuses a missing path, as "Deleting or renaming a profile" explains. So checking out a branch without the profile can stop a job launched from it respawning. A branch holding another copy gives the job that copy's rules, and an interactive resume meets the same at its next launch. All of this is inferred; no checkout was run.
 
-No trust gate stands in front of a repo profile. Its `settings` block can set permissions, and hooks, which run commands. Its `settingSources` can drop the user layer, and the user's own settings go with it, deny rules included, as "What each mode drops" shows. The operator chose no gate on 2026-10-14, since they write every profile they launch (#213). `show` prints what a repo profile sets, but its plugin check runs `claude` with the profile's settings. Whether a settings key runs a command during that check is unmeasured. Reading the folder's `profile.json` and rules runs nothing, so read those before you launch a profile from a repo you did not write. #223 tracks a gate.
+No trust gate stands in front of a repo profile. Its `settings` block can set permissions, and hooks, which run commands. Its `settingSources` can drop the user layer, and the user's own settings go with it, deny rules included, as "What each mode drops" shows. The operator chose no gate on 2026-10-14, since they write every profile they launch (#213). `show` prints what a repo profile sets, but its plugin check runs `claude` with the profile's settings. A profile's `SessionStart` and `UserPromptSubmit` hooks did not fire during that check (the switch bench report, "Resume under another profile"). Whether another settings key runs a command there is unmeasured. Reading the folder's `profile.json` and rules runs nothing, so read those before you launch a profile from a repo you did not write. #223 tracks a gate.
 
 ## The verbs
 
@@ -124,21 +124,23 @@ After a resume, skills of plugins "<name>" turns off stay listed but fail when c
 ```
 
 - The id comes from `--session <id>`, else from `CLAUDE_CODE_SESSION_ID`, which a session's Bash sees. An empty `--session` refuses, saying it is empty. An empty variable counts as unset, and with no id from either, `switch` refuses. The variable follows `/clear`, so it names the current conversation (the 2026-10-14 report, "The session id after `/clear`", run by the operator).
-- `<folder>` is the folder `switch` ran in, quoted for a POSIX shell, so a folder holding a space or a quote stays one word.
+- `<folder>` is the top of the git work tree `switch` ran in, or the folder it ran in outside one. It is quoted for a POSIX shell, so a folder holding a space or a quote stays one word. A session's shell stays wherever a `cd` leaves it, and a session started in a subfolder does not load the top's `.claude/settings.json`. So the lines return to the top, where a session in the repo is assumed to have started. `--resume` finds the session from any folder (the switch bench report, "A session's folder" and "A resume from another folder").
 - Before it prints, `switch` loads the profile and runs the checks `argv` runs. A refusal therefore shows before you exit, and a repo profile prints its provenance line.
 
-A resume under another profile changes some parts and leaves others. Each row was measured with `claude -p` on Claude Code 2.1.299 unless it says otherwise (the 2026-10-14 report, "Switching by resume"):
+A resume under another profile changes some parts and leaves others. Each row was measured with `claude -p` on Claude Code 2.1.299 unless it says otherwise. The first three rows are from the 2026-10-14 report, "Switching by resume", and the next two from the switch bench report, "Resume under another profile":
 
 | Part | After the resume | Grade |
 |---|---|---|
 | Rules | swapped: the new profile's load, and the old profile's are listed as removed | measured |
 | Plugins the new profile adds | loaded: a fresh skill listing names their skills, and they run | measured |
 | Plugins the new profile turns off | their skills stay listed from the first start, and calling one fails with `Unknown skill` | measured |
-| MCP server instructions, hooks, `env`, permissions, and the model | unknown | not measured. The sessions docs say to pass the launch flags again on resume, and that the settings files are re-read at launch |
+| MCP servers of plugins the new profile turns off | their instructions are withdrawn by a removal delta, and their tools leave the deferred list | measured |
+| Hooks the new profile declares | run at the resume, `SessionStart` with `source: "resume"` | measured |
+| `env`, permissions, and the model | unknown | not measured. The sessions docs say to pass the launch flags again on resume, and that the settings files are re-read at launch |
 
 No switch in an interactive session was measured. The fresh line avoids the lingering skills, at the cost of the conversation.
 
-To go back to no profile, type `/exit` and run `claude --resume <id>`. That resume was not run, and is inferred to change the same parts a switch does. #224 tracks a switch that relaunches the session after `/exit`, without the paste.
+To go back to no profile, type `/exit` and run `claude --resume <id>` from the work tree's top. That resume was not run, and is inferred to change the same parts a switch does. #224 tracks a switch that relaunches the session after `/exit`, without the paste.
 
 ## What each mode drops
 
@@ -205,11 +207,11 @@ The check refuses on:
 
 Any other detail `type` prints as a warning and does not refuse. An id installed only for another repo is listed, so it passes the unknown-id test.
 
-These facts were measured on 2026-10-14 on Claude Code 2.1.299, while building #213. The runs used a scratch git repo and the sidekick repo, and neither report holds them:
+The switch bench report measured these on Claude Code 2.1.299, in a scratch git repo and the sidekick repo ("`plugin list` under a profile's flags"):
 
-- With superpowers set `false`, every install of sidekick carried the same `dependency-unsatisfied` detail, one entry per install.
-- Leaving out the user source dropped the synced-scope entry `cowork-plugin-management@synced` from the list. That held under `--setting-sources project` and `project,local`, and every user-scope install stayed listed. Naming the plugin did not bring it back: `plugin list` with `--setting-sources project,local` and `--settings '{"enabledPlugins":{"cowork-plugin-management@synced":true}}'` still listed no `@synced` entry. So the unknown-id test refuses that id.
-- With superpowers set `false` under `--setting-sources project,local`, the scratch repo showed no dependency error, and only its user layer enabled sidekick. The sidekick repo, whose project settings enable sidekick, still showed it. Two runs back the inference that a clean room keeps a dependency error only where a kept source enables the dependent plugin. If that holds, the check refuses a clean-room profile over a dependency only for a plugin that a kept source, or the profile itself, enables.
+- With superpowers set `false`, every install record of sidekick carried the same `dependency-unsatisfied` detail, one entry per record.
+- Leaving out the user source dropped the synced-scope entry `cowork-plugin-management@synced` from the list. That held under `--setting-sources project` and `project,local`, and every user-scope install stayed listed. Naming the plugin did not bring it back: `plugin list` with `--setting-sources project,local` and `--settings '{"enabledPlugins":{"cowork-plugin-management@synced":true}}'` still listed no `@synced` entry. A clean-room profile naming that id `false` was refused as unlisted.
+- With superpowers set `false` under `--setting-sources project,local`, the scratch repo showed no dependency error, and only its user layer enabled sidekick. The sidekick repo, whose project settings enable sidekick, still showed it. Two repos back the reading that a clean room keeps a dependency error only where a kept source enables the dependent plugin. If that holds, the check refuses a clean-room profile over a dependency only for a plugin that a kept source, or the profile itself, enables.
 
 The check costs about 0.7 seconds on the launches it runs for. Three timed runs of `plugin list` with `--settings` took 0.64 to 0.67 seconds on Claude Code 2.1.299 (the 2026-10-14 report, "Plugin dependencies through `plugin list`"). It runs after `doctor`, not beside it.
 

@@ -107,7 +107,7 @@ export function storeRoots(
     kind: 'repo',
     dir: path.resolve(workTree, '.claude', 'profiles'),
   };
-  // The same folder is the user store; listing it twice would shadow each profile by itself.
+  // A dotfiles repo at $HOME, say: one folder is one store.
   return repo.dir === user.dir ? [user] : [repo, user];
 }
 

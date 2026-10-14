@@ -10,6 +10,7 @@ What can Claude Code's extension and session surface do for running many session
 - [2026-10-12-extension-and-loop-fit.md](./2026-10-12-extension-and-loop-fit.md): `skill.prompt` against ADR-0009, ADR-0010, and ADR-0011, probed on superpowers' skills; what fits each kind of pause #140 names; and background sessions' git defaults.
 - [2026-10-13-profile-launch-probes.md](./2026-10-13-profile-launch-probes.md): what a profile launch rests on. It covers `--settings` and a dropped object, the clean room under `$HOME`, a folder as `--add-dir`, what hides `AGENTS.md`, `doctor`, and background respawn. It ends with a bench and a steering test.
 - [2026-10-14-repo-profiles-and-switching-probes.md](./2026-10-14-repo-profiles-and-switching-probes.md): what #213 rests on. It covers a profile folder stored in a repo, and switching a profile by resume. It also covers why a session cannot relaunch itself, plugin dependencies read through `plugin list`, and the session id after `/clear`.
+- [2026-10-14-switch-bench-and-folder-probes.md](./2026-10-14-switch-bench-and-folder-probes.md): what #213's bench measured across a resume, MCP server instructions and hooks among it. It also covers where a resume should start, and `plugin list` under a profile's flags.
 
 ## Served
 

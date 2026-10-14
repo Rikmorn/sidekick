@@ -3159,6 +3159,25 @@ function checkProfile(profile, settings, penv) {
   const plugins = pluginCheck(profile, settings, penv);
   return plugins.ok ? { ok: true, warnings: [...checked2.warnings, ...plugins.warnings] } : plugins;
 }
+function checkedLaunch(name, penv, err) {
+  const loaded = load(name, penv);
+  if ("issues" in loaded) {
+    refuse3(err, loaded.issues);
+    return;
+  }
+  const provenance = provenanceLine(loaded.profile);
+  if (provenance !== undefined)
+    err(provenance);
+  const { settings, args } = composed(loaded.profile, penv);
+  const checked2 = checkProfile(loaded.profile, settings, penv);
+  if (!checked2.ok) {
+    refuse3(err, checked2.issues);
+    return;
+  }
+  for (const warning of checked2.warnings)
+    err(warning);
+  return args;
+}
 function pluginReport(profile, settings, penv) {
   if (!needsPluginCheck(profile.manifest)) {
     return [
@@ -3236,18 +3255,9 @@ var argv = (rest2, penv, _out, err) => {
   if (parsed === undefined || parsed.positionals.length !== 1) {
     return usage(err);
   }
-  const loaded = load(parsed.positionals[0], penv);
-  if ("issues" in loaded)
-    return refuse3(err, loaded.issues);
-  const provenance = provenanceLine(loaded.profile);
-  if (provenance !== undefined)
-    err(provenance);
-  const { settings, args } = composed(loaded.profile, penv);
-  const checked2 = checkProfile(loaded.profile, settings, penv);
-  if (!checked2.ok)
-    return refuse3(err, checked2.issues);
-  for (const warning of checked2.warnings)
-    err(warning);
+  const args = checkedLaunch(parsed.positionals[0], penv, err);
+  if (args === undefined)
+    return 1;
   penv.write(args.map((arg) => `${arg}\x00`).join(""));
   return 0;
 };
@@ -3268,18 +3278,9 @@ var launch = (rest2, penv, out, err) => {
       "For an interactive start, use the shell function: skp <name> (sidekick profile alias prints it)."
     ]);
   }
-  const loaded = load(parsed.positionals[0], penv);
-  if ("issues" in loaded)
-    return refuse3(err, loaded.issues);
-  const provenance = provenanceLine(loaded.profile);
-  if (provenance !== undefined)
-    err(provenance);
-  const { settings, args } = composed(loaded.profile, penv);
-  const checked2 = checkProfile(loaded.profile, settings, penv);
-  if (!checked2.ok)
-    return refuse3(err, checked2.issues);
-  for (const warning of checked2.warnings)
-    err(warning);
+  const args = checkedLaunch(parsed.positionals[0], penv, err);
+  if (args === undefined)
+    return 1;
   const { launchTimeoutMs = 60000 } = penv;
   const sessionName = parsed.values.n;
   const result = penv.runClaude(bgArgs(args, {
@@ -3336,19 +3337,10 @@ var switchProfile = (rest2, penv, out, err) => {
       "no session id: run switch inside a session, or pass --session <id>"
     ]);
   }
-  const loaded = load(name, penv);
-  if ("issues" in loaded)
-    return refuse3(err, loaded.issues);
-  const provenance = provenanceLine(loaded.profile);
-  if (provenance !== undefined)
-    err(provenance);
-  const { settings } = composed(loaded.profile, penv);
-  const checked2 = checkProfile(loaded.profile, settings, penv);
-  if (!checked2.ok)
-    return refuse3(err, checked2.issues);
-  for (const warning of checked2.warnings)
-    err(warning);
-  const cd = `cd ${shellQuote(penv.cwd)}`;
+  if (checkedLaunch(name, penv, err) === undefined)
+    return 1;
+  const folder = penv.workTree ?? penv.cwd;
+  const cd = `cd ${shellQuote(folder)}`;
   out(`To switch this session to "${name}", type /exit, then run one of these.`);
   out("Keep the conversation:");
   out(`  ${cd} && skp ${name} --resume ${shellQuote(sessionId)}`);

@@ -1,3 +1,5 @@
+Amended 2026-10-14: [2026-10-14-switch-bench-and-folder-probes.md](./2026-10-14-switch-bench-and-folder-probes.md) measures the MCP server instructions and hooks that "Switching by resume" leaves unmeasured.
+
 > Research for the `control-centre` design (R9, #213). Claude ran it on 2026-10-14 in a session with the operator, on Claude Code 2.1.299. Subagents did the docs and types reading. It records what repo profiles, switching, and the dependency check rest on, for #213 and #206. It is a record and takes only the edits that `sk-pm-conventions.md` §Placement test (tense) lists.
 
 # Probes: repo profiles, switching by resume, and plugin dependencies (2026-10-14)

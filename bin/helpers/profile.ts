@@ -101,8 +101,8 @@ function load(
   return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
 }
 
-/** One line saying where a repo profile came from, or undefined for a user-store one. */
-export function provenanceLine(profile: Profile): string | undefined {
+// One line saying where a repo profile came from, or undefined for a user-store one.
+function provenanceLine(profile: Profile): string | undefined {
   if (profile.store === 'user') return undefined;
   const shadows =
     profile.shadows === undefined ? '' : ` (it shadows ${profile.shadows})`;
@@ -140,8 +140,8 @@ const pluginCheck = (
     skip: skipsPluginCheck(penv),
   });
 
-/** Runs the `doctor` check, then the plugin check when `doctor` passes and the manifest needs it. */
-export function checkProfile(
+// The `doctor` check, then the plugin check when `doctor` passes and the manifest needs it.
+function checkProfile(
   profile: Profile,
   settings: ReturnType<typeof composed>['settings'],
   penv: ProfileEnv,
@@ -154,7 +154,31 @@ export function checkProfile(
     : plugins;
 }
 
-/** The `plugins:` lines of `show`, which runs the plugin check without `doctor` and never refuses on it. */
+// Loads `name` and runs its checks, printing the provenance line and the
+// warnings, or the refusal, on `err`. Undefined means refused.
+function checkedLaunch(
+  name: string,
+  penv: ProfileEnv,
+  err: Out,
+): string[] | undefined {
+  const loaded = load(name, penv);
+  if ('issues' in loaded) {
+    refuse(err, loaded.issues);
+    return undefined;
+  }
+  const provenance = provenanceLine(loaded.profile);
+  if (provenance !== undefined) err(provenance);
+  const { settings, args } = composed(loaded.profile, penv);
+  const checked = checkProfile(loaded.profile, settings, penv);
+  if (!checked.ok) {
+    refuse(err, checked.issues);
+    return undefined;
+  }
+  for (const warning of checked.warnings) err(warning);
+  return args;
+}
+
+// The `plugins:` lines of `show`, which runs the plugin check without `doctor` and never refuses on it.
 function pluginReport(
   profile: Profile,
   settings: ReturnType<typeof composed>['settings'],
@@ -252,14 +276,8 @@ const argv: Verb = (rest, penv, _out, err) => {
   if (parsed === undefined || parsed.positionals.length !== 1) {
     return usage(err);
   }
-  const loaded = load(parsed.positionals[0], penv);
-  if ('issues' in loaded) return refuse(err, loaded.issues);
-  const provenance = provenanceLine(loaded.profile);
-  if (provenance !== undefined) err(provenance);
-  const { settings, args } = composed(loaded.profile, penv);
-  const checked = checkProfile(loaded.profile, settings, penv);
-  if (!checked.ok) return refuse(err, checked.issues);
-  for (const warning of checked.warnings) err(warning);
+  const args = checkedLaunch(parsed.positionals[0], penv, err);
+  if (args === undefined) return 1;
   penv.write(args.map((arg) => `${arg}\0`).join(''));
   return 0;
 };
@@ -281,14 +299,8 @@ const launch: Verb = (rest, penv, out, err) => {
       'For an interactive start, use the shell function: skp <name> (sidekick profile alias prints it).',
     ]);
   }
-  const loaded = load(parsed.positionals[0], penv);
-  if ('issues' in loaded) return refuse(err, loaded.issues);
-  const provenance = provenanceLine(loaded.profile);
-  if (provenance !== undefined) err(provenance);
-  const { settings, args } = composed(loaded.profile, penv);
-  const checked = checkProfile(loaded.profile, settings, penv);
-  if (!checked.ok) return refuse(err, checked.issues);
-  for (const warning of checked.warnings) err(warning);
+  const args = checkedLaunch(parsed.positionals[0], penv, err);
+  if (args === undefined) return 1;
   // The bound on a `--bg` start, chosen as a generous minute.
   const { launchTimeoutMs = 60_000 } = penv;
   const sessionName = parsed.values.n;
@@ -351,16 +363,12 @@ const switchProfile: Verb = (rest, penv, out, err) => {
       'no session id: run switch inside a session, or pass --session <id>',
     ]);
   }
-  const loaded = load(name, penv);
-  if ('issues' in loaded) return refuse(err, loaded.issues);
-  const provenance = provenanceLine(loaded.profile);
-  if (provenance !== undefined) err(provenance);
-  const { settings } = composed(loaded.profile, penv);
-  const checked = checkProfile(loaded.profile, settings, penv);
-  if (!checked.ok) return refuse(err, checked.issues);
-  for (const warning of checked.warnings) err(warning);
+  if (checkedLaunch(name, penv, err) === undefined) return 1;
+  // The work tree's top: the shell may have moved below it, and a session
+  // started in a subfolder does not load the top's project settings.
+  const folder = penv.workTree ?? penv.cwd;
   // No `#` comment on a command line: a default interactive zsh reads `#` as a word.
-  const cd = `cd ${shellQuote(penv.cwd)}`;
+  const cd = `cd ${shellQuote(folder)}`;
   out(
     `To switch this session to "${name}", type /exit, then run one of these.`,
   );
