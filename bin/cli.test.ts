@@ -272,6 +272,35 @@ describe('main: profile', () => {
     expect(code).toBe(0);
     expect(chunks.join('').split('\0')[0]).toBe('--add-dir');
   });
+  test('profile list finds the repo store from a subfolder of the work tree', () => {
+    const top = fs.realpathSync(madeDir());
+    const home = madeDir();
+    expect(spawnSync('git', ['init', '-q', top]).status).toBe(0);
+    write(
+      path.join(top, '.claude', 'profiles', 'review', 'profile.json'),
+      '{"description":"R"}',
+    );
+    const sub = path.join(top, 'a', 'b');
+    fs.mkdirSync(sub, { recursive: true });
+    const out: string[] = [];
+    const code = main(
+      ['profile', 'list'],
+      {
+        env: { HOME: home },
+        cwd: sub,
+        entryFileUrl,
+        runClaude: () => {
+          throw new Error('no claude in tests');
+        },
+      },
+      (l) => out.push(l),
+      () => {},
+    );
+    expect(code).toBe(0);
+    expect(out).toEqual([
+      `review  R  (repo: ${path.join(top, '.claude', 'profiles')})`,
+    ]);
+  });
   test('an unknown profile verb prints the profile usage', () => {
     const err: string[] = [];
     const code = main(

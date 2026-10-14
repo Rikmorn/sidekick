@@ -16,7 +16,7 @@ import { HOOK_USAGE_LINE, runHookCli } from './helpers/hook.js';
 import { PM_USAGE_LINE, runPmCli } from './helpers/pm.js';
 import { PROFILE_USAGE_LINE, runProfileCli } from './helpers/profile.js';
 import { type ClaudeRunner, execClaude } from './helpers/profile-launch.js';
-import { runRulesCli } from './helpers/rules.js';
+import { runRulesCli, workTreeRootOf } from './helpers/rules.js';
 
 /**
  * The plugin directory holds `rules/` and `.claude-plugin/plugin.json`.
@@ -128,6 +128,7 @@ export function main(
         env: ctx.env,
         cwd: ctx.cwd,
         home: ctx.env.HOME || os.homedir(),
+        workTree: workTreeRootOf(ctx.cwd),
         tmpdir: ctx.tmpdir ?? os.tmpdir(),
         runClaude: ctx.runClaude ?? execClaude,
         write: ctx.write ?? writeStdout,

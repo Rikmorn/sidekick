@@ -69,6 +69,7 @@ function harness(over: Partial<ProfileEnv> = {}) {
     tmpdir: tmp(),
     runClaude: runner.run,
     write: (c) => written.push(c),
+    workTree: undefined,
     ...over,
   };
   const run = (...args: string[]) =>
@@ -92,7 +93,7 @@ describe('profile list', () => {
     const h = harness();
     mkProfile(h.store, 'a', { description: 'Alpha' });
     expect(h.run('list')).toBe(0);
-    expect(h.out).toEqual([`a  Alpha  (${path.resolve(h.store)})`]);
+    expect(h.out).toEqual([`a  Alpha  (user: ${path.resolve(h.store)})`]);
   });
   test('shows invalid: for a broken profile and returns 1', () => {
     const h = harness();
@@ -358,5 +359,111 @@ describe('profile dispatch', () => {
   test('an inherited property name is not a verb', () => {
     const h = harness();
     expect(h.run('constructor')).toBe(1);
+  });
+});
+
+/** A repo store and a user store side by side; `SIDEKICK_PROFILES_DIR` stays unset. */
+function repoHarness() {
+  const workTree = tmp();
+  const home = tmp();
+  const repoStore = path.join(workTree, '.claude', 'profiles');
+  const userStore = path.join(home, '.claude', 'profiles');
+  const h = harness({ env: {}, home, workTree, cwd: workTree });
+  return { ...h, workTree, repoStore, userStore };
+}
+
+describe('the repo store', () => {
+  test('argv prints the provenance line on err and keeps stdout to the NUL-terminated arguments', () => {
+    const h = repoHarness();
+    const dir = mkProfile(h.repoStore, 'review', { description: 'R' });
+    expect(h.run('argv', 'review')).toBe(0);
+    expect(h.err).toEqual([
+      `profile "review" comes from the repo store: ${dir}`,
+    ]);
+    expect(h.out).toEqual([]);
+    const words = h.written.join('').split('\0');
+    expect(words.pop()).toBe('');
+    expect(words).toContain(dir);
+    expect(h.written.join('')).not.toContain('comes from');
+  });
+  test('a user-store profile prints no provenance line', () => {
+    const h = repoHarness();
+    mkProfile(h.userStore, 'review', { description: 'U' });
+    expect(h.run('argv', 'review')).toBe(0);
+    expect(h.err).toEqual([]);
+  });
+  test('the line names the user profile a repo profile shadows', () => {
+    const h = repoHarness();
+    const repoDir = mkProfile(h.repoStore, 'review', { description: 'R' });
+    const userDir = mkProfile(h.userStore, 'review', { description: 'U' });
+    expect(h.run('argv', 'review')).toBe(0);
+    expect(h.err).toEqual([
+      `profile "review" comes from the repo store: ${repoDir} (it shadows ${userDir})`,
+    ]);
+  });
+  test('launch prints the provenance line too', () => {
+    const h = repoHarness();
+    const dir = mkProfile(h.repoStore, 'review', { description: 'R' });
+    expect(h.run('launch', '--bg', 'review')).toBe(0);
+    expect(h.err).toEqual([
+      `profile "review" comes from the repo store: ${dir}`,
+    ]);
+  });
+  test('argv prints the provenance line even when the check refuses', () => {
+    const h = repoHarness();
+    const dir = mkProfile(h.repoStore, 'review', {
+      description: 'R',
+      settings: { feedbackSurveyRate: 'x' },
+    });
+    h.penv.runClaude = () => ok({ stdout: 'no canary here' });
+    expect(h.run('argv', 'review')).toBe(1);
+    expect(h.err[0]).toBe(`profile "review" comes from the repo store: ${dir}`);
+    expect(h.err.length).toBeGreaterThan(1);
+  });
+  test('list marks each store and the shadowed user profile', () => {
+    const h = repoHarness();
+    const repoDir = mkProfile(h.repoStore, 'review', { description: 'Stance' });
+    mkProfile(h.userStore, 'review', { description: 'Stance' });
+    mkProfile(h.userStore, 'other', { description: 'Other' });
+    expect(h.run('list')).toBe(0);
+    expect(h.out).toEqual([
+      `review  Stance  (repo: ${h.repoStore})`,
+      `other  Other  (user: ${h.userStore})`,
+      `review  Stance  (user: ${h.userStore}, shadowed by ${repoDir})`,
+    ]);
+  });
+  test('show prints the store beside the folder', () => {
+    const h = repoHarness();
+    const dir = mkProfile(h.repoStore, 'review', { description: 'R' });
+    expect(h.run('show', 'review')).toBe(0);
+    expect(h.out.slice(0, 2)).toEqual([`folder: ${dir}`, 'store: repo']);
+  });
+  test('new writes to the user store, inside a work tree too', () => {
+    const h = repoHarness();
+    expect(h.run('new', 'fresh', '--description', 'F')).toBe(0);
+    expect(h.out).toEqual([path.join(h.userStore, 'fresh')]);
+    expect(fs.existsSync(path.join(h.repoStore, 'fresh'))).toBe(false);
+  });
+  test('new --repo writes to the repo store', () => {
+    const h = repoHarness();
+    expect(h.run('new', 'fresh', '--description', 'F', '--repo')).toBe(0);
+    expect(h.out).toEqual([path.join(h.repoStore, 'fresh')]);
+    expect(fs.existsSync(path.join(h.userStore, 'fresh'))).toBe(false);
+  });
+  test('new --repo refuses outside a work tree, saying why', () => {
+    const h = repoHarness();
+    h.penv.workTree = undefined;
+    expect(h.run('new', 'fresh', '--description', 'F', '--repo')).toBe(1);
+    expect(h.err).toEqual([
+      'not inside a git work tree, so there is no repo store',
+    ]);
+  });
+  test('new --repo refuses while SIDEKICK_PROFILES_DIR is set, saying why', () => {
+    const h = repoHarness();
+    h.penv.env = { SIDEKICK_PROFILES_DIR: h.userStore };
+    expect(h.run('new', 'fresh', '--description', 'F', '--repo')).toBe(1);
+    expect(h.err).toEqual([
+      'SIDEKICK_PROFILES_DIR is set, so there is no repo store',
+    ]);
   });
 });

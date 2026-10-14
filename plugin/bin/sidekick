@@ -2937,7 +2937,7 @@ function newProfile(name, description, root) {
 }
 
 // bin/helpers/profile.ts
-var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text>|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]";
+var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]";
 var SHELLS = ["zsh", "bash"];
 var withoutTrailingNewline = (text) => text.replace(/\n$/, "");
 function parseFlags(rest2, options) {
@@ -2963,8 +2963,14 @@ var refuse2 = (err, issues) => {
   return 1;
 };
 function load(name, penv) {
-  const loaded = loadProfile(name, storeRoots(penv.env, penv.cwd, penv.home, undefined));
+  const loaded = loadProfile(name, storeRoots(penv.env, penv.cwd, penv.home, penv.workTree));
   return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
+}
+function provenanceLine(profile) {
+  if (profile.store === "user")
+    return;
+  const shadows = profile.shadows === undefined ? "" : ` (it shadows ${profile.shadows})`;
+  return `profile "${profile.name}" comes from the ${profile.store} store: ${profile.dir}${shadows}`;
 }
 var composed = (profile, penv) => {
   const settings = composeSettings(profile, { home: penv.home });
@@ -2979,9 +2985,11 @@ var runCheck = (settings, penv) => checkSettings(settings, {
 var list = (rest2, penv, out, err) => {
   if (rest2.length > 0)
     return usage(err);
-  const profiles = listProfiles(storeRoots(penv.env, penv.cwd, penv.home, undefined));
+  const profiles = listProfiles(storeRoots(penv.env, penv.cwd, penv.home, penv.workTree));
   for (const p of profiles) {
-    out(p.issues.length > 0 ? `${p.name}  invalid: ${p.issues[0]}  (${p.root})` : `${p.name}  ${p.description}  (${p.root})`);
+    const shadowed = p.shadowedBy === undefined ? "" : `, shadowed by ${p.shadowedBy}`;
+    const where = `(${p.store}: ${p.root}${shadowed})`;
+    out(p.issues.length > 0 ? `${p.name}  invalid: ${p.issues[0]}  ${where}` : `${p.name}  ${p.description}  ${where}`);
   }
   return profiles.some((p) => p.issues.length > 0) ? 1 : 0;
 };
@@ -2996,6 +3004,7 @@ var show = (rest2, penv, out, err) => {
   const { profile } = loaded;
   const { settings, args } = composed(profile, penv);
   out(`folder: ${profile.dir}`);
+  out(`store: ${profile.store}`);
   out(`manifest: ${JSON.stringify(profile.manifest, null, 2)}`);
   out(`settings: ${JSON.stringify(settings, null, 2)}`);
   out("arguments:");
@@ -3004,14 +3013,29 @@ var show = (rest2, penv, out, err) => {
   return 0;
 };
 var create = (rest2, penv, out, err) => {
-  const parsed = parseFlags(rest2, { description: { type: "string" } });
+  const parsed = parseFlags(rest2, {
+    description: { type: "string" },
+    repo: { type: "boolean" }
+  });
   const description = parsed?.values.description;
   if (parsed === undefined || parsed.positionals.length !== 1 || typeof description !== "string") {
     return usage(err);
   }
-  const root = storeRoots(penv.env, penv.cwd, penv.home, undefined).find((r) => r.kind === "user");
+  const wantsRepo = parsed.values.repo === true;
+  if (wantsRepo && penv.env.SIDEKICK_PROFILES_DIR) {
+    return refuse2(err, [
+      "SIDEKICK_PROFILES_DIR is set, so there is no repo store"
+    ]);
+  }
+  if (wantsRepo && penv.workTree === undefined) {
+    return refuse2(err, [
+      "not inside a git work tree, so there is no repo store"
+    ]);
+  }
+  const wanted = wantsRepo ? "repo" : "user";
+  const root = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree).find((r) => r.kind === wanted);
   if (root === undefined)
-    return refuse2(err, ["no store root is set"]);
+    return refuse2(err, [`no ${wanted} store root`]);
   const created = newProfile(parsed.positionals[0], description, root.dir);
   if (!created.ok)
     return refuse2(err, created.issues);
@@ -3026,6 +3050,9 @@ var argv = (rest2, penv, _out, err) => {
   const loaded = load(parsed.positionals[0], penv);
   if ("issues" in loaded)
     return refuse2(err, loaded.issues);
+  const provenance = provenanceLine(loaded.profile);
+  if (provenance !== undefined)
+    err(provenance);
   const { settings, args } = composed(loaded.profile, penv);
   const checked2 = runCheck(settings, penv);
   if (!checked2.ok)
@@ -3055,6 +3082,9 @@ var launch = (rest2, penv, out, err) => {
   const loaded = load(parsed.positionals[0], penv);
   if ("issues" in loaded)
     return refuse2(err, loaded.issues);
+  const provenance = provenanceLine(loaded.profile);
+  if (provenance !== undefined)
+    err(provenance);
   const { settings, args } = composed(loaded.profile, penv);
   const checked2 = runCheck(settings, penv);
   if (!checked2.ok)
@@ -3186,6 +3216,7 @@ function main(argv2, ctx, out, err) {
       env: ctx.env,
       cwd: ctx.cwd,
       home: ctx.env.HOME || os.homedir(),
+      workTree: workTreeRootOf(ctx.cwd),
       tmpdir: ctx.tmpdir ?? os.tmpdir(),
       runClaude: ctx.runClaude ?? execClaude,
       write: ctx.write ?? writeStdout

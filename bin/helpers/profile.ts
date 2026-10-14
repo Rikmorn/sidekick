@@ -27,12 +27,14 @@ import {
 } from './profile-store.js';
 
 export const PROFILE_USAGE_LINE =
-  'sidekick profile list|show <name>|new <name> --description <text>|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]';
+  'sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]';
 
 export interface ProfileEnv {
   env: NodeJS.ProcessEnv;
   cwd: string;
   home: string;
+  /** The enclosing git work tree's top folder, or undefined outside one. */
+  workTree: string | undefined;
   /** Where the settings check keeps its temp file. */
   tmpdir: string;
   runClaude: ClaudeRunner;
@@ -89,9 +91,17 @@ function load(
 ): { profile: Profile } | { issues: string[] } {
   const loaded = loadProfile(
     name,
-    storeRoots(penv.env, penv.cwd, penv.home, undefined),
+    storeRoots(penv.env, penv.cwd, penv.home, penv.workTree),
   );
   return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
+}
+
+/** One line saying where a repo profile came from, or undefined for a user-store one. */
+export function provenanceLine(profile: Profile): string | undefined {
+  if (profile.store === 'user') return undefined;
+  const shadows =
+    profile.shadows === undefined ? '' : ` (it shadows ${profile.shadows})`;
+  return `profile "${profile.name}" comes from the ${profile.store} store: ${profile.dir}${shadows}`;
 }
 
 const composed = (profile: Profile, penv: ProfileEnv) => {
@@ -113,13 +123,16 @@ const runCheck = (
 const list: Verb = (rest, penv, out, err) => {
   if (rest.length > 0) return usage(err);
   const profiles = listProfiles(
-    storeRoots(penv.env, penv.cwd, penv.home, undefined),
+    storeRoots(penv.env, penv.cwd, penv.home, penv.workTree),
   );
   for (const p of profiles) {
+    const shadowed =
+      p.shadowedBy === undefined ? '' : `, shadowed by ${p.shadowedBy}`;
+    const where = `(${p.store}: ${p.root}${shadowed})`;
     out(
       p.issues.length > 0
-        ? `${p.name}  invalid: ${p.issues[0]}  (${p.root})`
-        : `${p.name}  ${p.description}  (${p.root})`,
+        ? `${p.name}  invalid: ${p.issues[0]}  ${where}`
+        : `${p.name}  ${p.description}  ${where}`,
     );
   }
   return profiles.some((p) => p.issues.length > 0) ? 1 : 0;
@@ -135,6 +148,7 @@ const show: Verb = (rest, penv, out, err) => {
   const { profile } = loaded;
   const { settings, args } = composed(profile, penv);
   out(`folder: ${profile.dir}`);
+  out(`store: ${profile.store}`);
   out(`manifest: ${JSON.stringify(profile.manifest, null, 2)}`);
   out(`settings: ${JSON.stringify(settings, null, 2)}`);
   out('arguments:');
@@ -143,7 +157,10 @@ const show: Verb = (rest, penv, out, err) => {
 };
 
 const create: Verb = (rest, penv, out, err) => {
-  const parsed = parseFlags(rest, { description: { type: 'string' } });
+  const parsed = parseFlags(rest, {
+    description: { type: 'string' },
+    repo: { type: 'boolean' },
+  });
   const description = parsed?.values.description;
   if (
     parsed === undefined ||
@@ -152,10 +169,23 @@ const create: Verb = (rest, penv, out, err) => {
   ) {
     return usage(err);
   }
-  const root = storeRoots(penv.env, penv.cwd, penv.home, undefined).find(
-    (r) => r.kind === 'user',
+  const wantsRepo = parsed.values.repo === true;
+  if (wantsRepo && penv.env.SIDEKICK_PROFILES_DIR) {
+    return refuse(err, [
+      'SIDEKICK_PROFILES_DIR is set, so there is no repo store',
+    ]);
+  }
+  if (wantsRepo && penv.workTree === undefined) {
+    return refuse(err, [
+      'not inside a git work tree, so there is no repo store',
+    ]);
+  }
+  const wanted = wantsRepo ? 'repo' : 'user';
+  const root = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree).find(
+    (r) => r.kind === wanted,
   );
-  if (root === undefined) return refuse(err, ['no store root is set']);
+  // Unreachable: the refusals above cover each way a root can be missing.
+  if (root === undefined) return refuse(err, [`no ${wanted} store root`]);
   const created = newProfile(parsed.positionals[0], description, root.dir);
   if (!created.ok) return refuse(err, created.issues);
   out(created.dir);
@@ -169,6 +199,8 @@ const argv: Verb = (rest, penv, _out, err) => {
   }
   const loaded = load(parsed.positionals[0], penv);
   if ('issues' in loaded) return refuse(err, loaded.issues);
+  const provenance = provenanceLine(loaded.profile);
+  if (provenance !== undefined) err(provenance);
   const { settings, args } = composed(loaded.profile, penv);
   const checked = runCheck(settings, penv);
   if (!checked.ok) return refuse(err, checked.issues);
@@ -196,6 +228,8 @@ const launch: Verb = (rest, penv, out, err) => {
   }
   const loaded = load(parsed.positionals[0], penv);
   if ('issues' in loaded) return refuse(err, loaded.issues);
+  const provenance = provenanceLine(loaded.profile);
+  if (provenance !== undefined) err(provenance);
   const { settings, args } = composed(loaded.profile, penv);
   const checked = runCheck(settings, penv);
   if (!checked.ok) return refuse(err, checked.issues);
