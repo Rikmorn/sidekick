@@ -595,7 +595,7 @@ describe('finish clears the worker', () => {
   test.each([
     'stopped',
     'done',
-  ])('without claude stop for a job already %s', (state) => {
+  ])('without claude stop for a job already %s, with no live process', (state) => {
     const fx = fixture();
     fx.integrate();
     const h = harness(fx);
@@ -605,6 +605,28 @@ describe('finish clears the worker', () => {
     expect(h.finish(fx.brief)).toBe(0);
     expect(h.claude.named('stop')).toEqual([]);
     expect(h.claude.named('rm')).toEqual([['rm', ID]]);
+  });
+
+  // Measured on Claude Code 2.1.300: a worker whose turn ended lists as done
+  // while its process still runs and holds the lock.
+  test('with claude stop for a done job whose lock names a live process', () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.writeFileSync(
+      path.join(fx.top, '.git', 'worktrees', 'w1', 'locked'),
+      'claude session w1 (pid 4242 start Wed Oct 14 19:43:38 2026)',
+    );
+    const worker = { running: true };
+    const h = harness(fx, { isAlive: () => worker.running });
+    h.claude.state.agents = JSON.stringify([
+      { id: ID, kind: 'background', name: 'w1', state: 'done' },
+    ]);
+    h.claude.state.whileStopping = () => {
+      worker.running = false;
+    };
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.claude.named('stop')).toEqual([['stop', ID]]);
+    expect(h.slept).toEqual([]);
   });
 
   test('by the discard line, when its sha is the verified head', () => {

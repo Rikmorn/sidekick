@@ -47,7 +47,7 @@ export function parseFinishArgs(
   };
 }
 
-// `claude stop` fails on a session that has already exited.
+// The states a job lists once its turn or its process has ended.
 const ENDED_STATES = ['stopped', 'done'];
 
 const REMOVED = /^removed\b/;
@@ -330,10 +330,13 @@ const failure = (result: ClaudeResult): string =>
     ? 'did not return in time'
     : `failed with exit code ${result.code}`;
 
+// A worker whose turn has ended lists as done while its process idles and holds
+// the worktree's lock. So only a job listed as ended whose lock names no live
+// process skips the stop, which keeps a re-run working after the process exits.
 const stopJob: Step = (ready, wenv) => {
-  if (ready.state !== undefined && ENDED_STATES.includes(ready.state)) {
-    return [];
-  }
+  const listedEnded =
+    ready.state !== undefined && ENDED_STATES.includes(ready.state);
+  if (listedEnded && !lockHeldLive(ready, wenv)) return [];
   const args = ['stop', ready.id];
   const result = claudeAt(ready, wenv, args);
   if (ranClean(result)) return [];
@@ -351,6 +354,11 @@ function lockPid(commonDir: string, name: string): number | undefined {
   if ('issue' in lock || lock.data === undefined) return undefined;
   const pid = Number(LOCK_PID.exec(lock.data.toString())?.[1]);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
+
+function lockHeldLive(ready: Ready, wenv: WorkerEnv): boolean {
+  const pid = lockPid(ready.commonDir, ready.name);
+  return pid !== undefined && wenv.isAlive(pid);
 }
 
 function waitForExit(

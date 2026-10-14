@@ -4251,9 +4251,9 @@ function withText(lead, result) {
 var ranClean = (result) => result.code === 0 && !result.timedOut;
 var failure = (result) => result.timedOut ? "did not return in time" : `failed with exit code ${result.code}`;
 var stopJob = (ready, wenv) => {
-  if (ready.state !== undefined && ENDED_STATES.includes(ready.state)) {
+  const listedEnded = ready.state !== undefined && ENDED_STATES.includes(ready.state);
+  if (listedEnded && !lockHeldLive(ready, wenv))
     return [];
-  }
   const args = ["stop", ready.id];
   const result = claudeAt(ready, wenv, args);
   if (ranClean(result))
@@ -4266,6 +4266,10 @@ function lockPid(commonDir, name) {
     return;
   const pid = Number(LOCK_PID.exec(lock.data.toString())?.[1]);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
+function lockHeldLive(ready, wenv) {
+  const pid = lockPid(ready.commonDir, ready.name);
+  return pid !== undefined && wenv.isAlive(pid);
 }
 function waitForExit(pid, wenv, limitMs = 15000, pollMs = 250) {
   for (let waited = 0;wenv.isAlive(pid); waited += pollMs) {
