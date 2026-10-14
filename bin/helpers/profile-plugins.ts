@@ -2,9 +2,9 @@
  * The plugin dependency check: `claude --settings <file> plugin list --json`
  * run on the profile's composed settings. Claude Code puts an unmet plugin
  * dependency in an entry's `errorDetails`, and a launch does not report it, so
- * this check does. It reads only `id` and `errorDetails`: the other fields
- * (`enabled`, `scope`, `projectEnabled`) are computed for the current folder
- * and ignore `--setting-sources`.
+ * this check does. It reads only `id` and `errorDetails`: Claude Code computes
+ * the other fields for the current folder on every entry, and `enabled`
+ * ignores `--setting-sources`.
  */
 
 import * as fs from 'node:fs';
