@@ -542,6 +542,19 @@ describe('profile switch', () => {
     expect(h.out.join('\n')).toContain("--resume 'from-flag'");
     expect(h.out.join('\n')).not.toContain('from-env');
   });
+  test('an empty --session refuses, saying so, while CLAUDE_CODE_SESSION_ID is set', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A' });
+    withSession(h, 'from-env');
+    for (const flag of [['--session', ''], ['--session=']]) {
+      h.err.length = 0;
+      expect(h.run('switch', 'a', ...flag)).toBe(1);
+      expect(h.err).toEqual([
+        '--session is empty: pass a session id, or leave the flag out inside a session',
+      ]);
+    }
+    expect(h.out).toEqual([]);
+  });
   test('an empty CLAUDE_CODE_SESSION_ID with no --session refuses', () => {
     const h = harness();
     mkProfile(h.store, 'a', { description: 'A' });

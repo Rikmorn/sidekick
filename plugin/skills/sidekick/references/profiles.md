@@ -123,7 +123,7 @@ Start fresh:
 After a resume, skills of plugins "<name>" turns off stay listed but fail when called.
 ```
 
-- The id comes from `--session <id>`, else from `CLAUDE_CODE_SESSION_ID`, which a session's Bash sees. An empty value counts as unset, and with neither, `switch` refuses. The variable follows `/clear`, so it names the current conversation (the 2026-10-14 report, "The session id after `/clear`", run by the operator).
+- The id comes from `--session <id>`, else from `CLAUDE_CODE_SESSION_ID`, which a session's Bash sees. An empty `--session` refuses, saying it is empty. An empty variable counts as unset, and with no id from either, `switch` refuses. The variable follows `/clear`, so it names the current conversation (the 2026-10-14 report, "The session id after `/clear`", run by the operator).
 - `<folder>` is the folder `switch` ran in, quoted for a POSIX shell, so a folder holding a space or a quote stays one word.
 - Before it prints, `switch` loads the profile and runs the checks `argv` runs. A refusal therefore shows before you exit, and a repo profile prints its provenance line.
 

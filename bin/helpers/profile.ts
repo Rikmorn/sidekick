@@ -339,10 +339,13 @@ const switchProfile: Verb = (rest, penv, out, err) => {
   }
   const [name] = parsed.positionals;
   const flagged = parsed.values.session;
+  if (flagged === '') {
+    return refuse(err, [
+      '--session is empty: pass a session id, or leave the flag out inside a session',
+    ]);
+  }
   const sessionId =
-    typeof flagged === 'string' && flagged !== ''
-      ? flagged
-      : penv.env.CLAUDE_CODE_SESSION_ID;
+    typeof flagged === 'string' ? flagged : penv.env.CLAUDE_CODE_SESSION_ID;
   if (sessionId === undefined || sessionId === '') {
     return refuse(err, [
       'no session id: run switch inside a session, or pass --session <id>',
