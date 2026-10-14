@@ -3199,6 +3199,15 @@ var show = (rest2, penv, out, err) => {
     out(arg);
   return 0;
 };
+var noRepoStore = (penv) => {
+  if (penv.env.SIDEKICK_PROFILES_DIR) {
+    return "SIDEKICK_PROFILES_DIR is set, so there is no repo store";
+  }
+  if (penv.workTree === undefined) {
+    return "not inside a git work tree, so there is no repo store";
+  }
+  return "the repo store is the user store here, so --repo has nowhere else to write";
+};
 var create = (rest2, penv, out, err) => {
   const parsed = parseFlags(rest2, {
     description: { type: "string" },
@@ -3208,21 +3217,10 @@ var create = (rest2, penv, out, err) => {
   if (parsed === undefined || parsed.positionals.length !== 1 || typeof description !== "string") {
     return usage(err);
   }
-  const wantsRepo = parsed.values.repo === true;
-  if (wantsRepo && penv.env.SIDEKICK_PROFILES_DIR) {
-    return refuse3(err, [
-      "SIDEKICK_PROFILES_DIR is set, so there is no repo store"
-    ]);
-  }
-  if (wantsRepo && penv.workTree === undefined) {
-    return refuse3(err, [
-      "not inside a git work tree, so there is no repo store"
-    ]);
-  }
-  const wanted = wantsRepo ? "repo" : "user";
+  const wanted = parsed.values.repo === true ? "repo" : "user";
   const root = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree).find((r) => r.kind === wanted);
   if (root === undefined)
-    return refuse3(err, [`no ${wanted} store root`]);
+    return refuse3(err, [noRepoStore(penv)]);
   const created = newProfile(parsed.positionals[0], description, root.dir);
   if (!created.ok)
     return refuse3(err, created.issues);

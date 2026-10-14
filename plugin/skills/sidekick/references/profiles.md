@@ -47,7 +47,7 @@ Under `.claude/`, the layout check allows only `rules/`. It refuses a folder tha
 
 ## The repo store
 
-A repo profile has the layout and checks of a user profile, and travels with the repo. `new --repo` creates one in the repo store. It refuses outside a git work tree, and while `SIDEKICK_PROFILES_DIR` is set, since neither case has a repo store. Without `--repo`, `new` writes to the user store.
+A repo profile has the layout and checks of a user profile, and travels with the repo. `new --repo` creates one in the repo store. It refuses outside a git work tree, and while `SIDEKICK_PROFILES_DIR` is set, since neither case has a repo store. It also refuses where the two stores are the same path, as "The folder" describes, since `--repo` would write where `new` already does. Without `--repo`, `new` writes to the user store.
 
 On a shared name the repo profile wins, so the CLI says where each profile comes from:
 

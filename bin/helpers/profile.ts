@@ -205,6 +205,17 @@ const show: Verb = (rest, penv, out, err) => {
   return 0;
 };
 
+// Why storeRoots holds no repo root, checked in storeRoots' own order.
+const noRepoStore = (penv: ProfileEnv): string => {
+  if (penv.env.SIDEKICK_PROFILES_DIR) {
+    return 'SIDEKICK_PROFILES_DIR is set, so there is no repo store';
+  }
+  if (penv.workTree === undefined) {
+    return 'not inside a git work tree, so there is no repo store';
+  }
+  return 'the repo store is the user store here, so --repo has nowhere else to write';
+};
+
 const create: Verb = (rest, penv, out, err) => {
   const parsed = parseFlags(rest, {
     description: { type: 'string' },
@@ -218,23 +229,12 @@ const create: Verb = (rest, penv, out, err) => {
   ) {
     return usage(err);
   }
-  const wantsRepo = parsed.values.repo === true;
-  if (wantsRepo && penv.env.SIDEKICK_PROFILES_DIR) {
-    return refuse(err, [
-      'SIDEKICK_PROFILES_DIR is set, so there is no repo store',
-    ]);
-  }
-  if (wantsRepo && penv.workTree === undefined) {
-    return refuse(err, [
-      'not inside a git work tree, so there is no repo store',
-    ]);
-  }
-  const wanted = wantsRepo ? 'repo' : 'user';
+  const wanted = parsed.values.repo === true ? 'repo' : 'user';
+  // The user root is always present, so only a repo root can be missing.
   const root = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree).find(
     (r) => r.kind === wanted,
   );
-  // Unreachable: the refusals above cover each way a root can be missing.
-  if (root === undefined) return refuse(err, [`no ${wanted} store root`]);
+  if (root === undefined) return refuse(err, [noRepoStore(penv)]);
   const created = newProfile(parsed.positionals[0], description, root.dir);
   if (!created.ok) return refuse(err, created.issues);
   out(created.dir);

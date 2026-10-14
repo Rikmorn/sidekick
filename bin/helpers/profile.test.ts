@@ -701,6 +701,21 @@ describe('the repo store', () => {
       'not inside a git work tree, so there is no repo store',
     ]);
   });
+  test('new --repo refuses where the repo store is the user store, saying why', () => {
+    const atHome = repoHarness();
+    atHome.penv.home = atHome.workTree;
+    const configInRepo = repoHarness();
+    configInRepo.penv.env = {
+      CLAUDE_CONFIG_DIR: path.join(configInRepo.workTree, '.claude'),
+    };
+    for (const h of [atHome, configInRepo]) {
+      expect(h.run('new', 'fresh', '--description', 'F', '--repo')).toBe(1);
+      expect(h.err).toEqual([
+        'the repo store is the user store here, so --repo has nowhere else to write',
+      ]);
+      expect(fs.existsSync(path.join(h.repoStore, 'fresh'))).toBe(false);
+    }
+  });
   test('new --repo refuses while SIDEKICK_PROFILES_DIR is set, saying why', () => {
     const h = repoHarness();
     h.penv.env = { SIDEKICK_PROFILES_DIR: h.userStore };
