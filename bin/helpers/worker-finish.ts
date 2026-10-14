@@ -428,11 +428,26 @@ function reportChangedIssues(ready: Ready): string[] {
   ];
 }
 
+// A commit made after integratedHead's check is in no integrated HEAD, and the removal loses it.
+function headMovedIssues(runGit: Runner, ready: Ready): string[] {
+  const now = commitOf(runGit, ready.top, `refs/heads/${ready.branch}`);
+  if (now === ready.head) return [];
+  if (now === undefined) {
+    return [
+      `the branch ${ready.branch} is gone, so finish cannot confirm its head is still ${ready.head}, the head it verified as integrated`,
+    ];
+  }
+  return [
+    `${ready.branch} moved to ${now} after finish verified its head ${ready.head} as integrated: integrate the new commits, then run finish again`,
+  ];
+}
+
 // The job may have run on through checkFinish, and a discard destroys what it
 // left, so the worktree is checked again once its process is gone.
 const recheckWorktree: Step = (ready, wenv) => {
   const issues = [
     ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.id),
+    ...headMovedIssues(wenv.runGit, ready),
     ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
     ...reportChangedIssues(ready),
   ];

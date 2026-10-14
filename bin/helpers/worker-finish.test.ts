@@ -505,6 +505,16 @@ describe('finish refuses', () => {
       (fx: Fixture): string =>
         `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, so finish cannot check that its commits are integrated: check out worktree-w1 there and run finish again; discarding it is your call, with claude rm ${ID}`,
     ],
+    [
+      'a commit landing on the branch',
+      (fx: Fixture): void => {
+        fs.writeFileSync(path.join(fx.worktree, 'late.txt'), 'late\n');
+        git(fx.worktree, 'add', 'late.txt');
+        git(fx.worktree, 'commit', '-q', '-m', 'late');
+      },
+      (fx: Fixture): string =>
+        `worktree-w1 moved to ${git(fx.top, 'rev-parse', 'worktree-w1')} after finish verified its head ${fx.head} as integrated: integrate the new commits, then run finish again`,
+    ],
   ])('%s while the job stopped, before claude rm runs', (_label, act, line) => {
     const fx = fixture();
     fx.integrate();
