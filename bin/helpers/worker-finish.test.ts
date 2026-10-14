@@ -13,11 +13,9 @@ const WORKTREE_ID = '2988dbbac0e06558461ca712ce2c6b7d';
 const REPORT = 'docs/run-report.md';
 const REPORT_TEXT = '# Run report\n\nDONE\n';
 
-/**
- * A main checkout whose `docs/` holds the brief for worker `w1`, and that
- * worker's worktree on `worktree-w1`, holding one commit and the run report.
- * `integrate` fast-forwards the main checkout onto the worker's branch.
- */
+// A main checkout whose `docs/` holds the brief for worker `w1`, and that
+// worker's worktree on `worktree-w1`, holding one commit and the run report.
+// `integrate` fast-forwards the main checkout onto the worker's branch.
 function fixture() {
   const top = repo();
   const docs = path.join(top, 'docs');
@@ -93,10 +91,9 @@ interface Call {
   cwd: string;
 }
 
-/**
- * Plays `agents --json --all` from `state.agents`, `stop` from `state.stop`,
- * and each `rm` from `state.rm` in turn. Any other call fails the test.
- */
+// Plays `agents --json --all` from `state.agents`, `stop` from `state.stop`,
+// and each `rm` from `state.rm` in turn. Any other call fails the test.
+// `state.whileStopping` stands for what the worker does before it exits.
 function fakeClaude(fx: Fixture) {
   const calls: Call[] = [];
   const state = {
@@ -104,6 +101,7 @@ function fakeClaude(fx: Fixture) {
       { id: ID, kind: 'background', name: 'w1', state: 'working' },
     ]),
     stop: ok({ stdout: `stopped ${ID}\n` }),
+    whileStopping: (): void => {},
     rm: [removed()],
   };
   const sweep = (removes: Rm['removes']): void => {
@@ -114,7 +112,10 @@ function fakeClaude(fx: Fixture) {
   const run: ClaudeRunner = (args, opts) => {
     calls.push({ args, cwd: opts.cwd });
     if (args[0] === 'agents') return ok({ stdout: state.agents });
-    if (args[0] === 'stop') return state.stop;
+    if (args[0] === 'stop') {
+      state.whileStopping();
+      return state.stop;
+    }
     const rm = args[0] === 'rm' ? state.rm.shift() : undefined;
     if (rm === undefined)
       throw new Error(`unexpected claude ${args.join(' ')}`);
@@ -277,11 +278,16 @@ describe('finish refuses', () => {
     fs.rmSync(fx.worktree, { recursive: true, force: true });
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(1);
-    expect(h.err).toHaveLength(2);
+    expect(h.err).toHaveLength(3);
     expect(h.err[0]).toStartWith(
-      `git status failed in the worktree ${fx.worktree}: fatal: cannot change to`,
+      `the worktree ${fx.worktree} has an unreadable HEAD (`,
     );
-    expect(h.err[1]).toStartWith('the worktree has no run report');
+    expect(h.err[1]).toStartWith(
+      `git status failed in the worktree ${fx.worktree}: `,
+    );
+    expect(h.err[2]).toStartWith(
+      `the worktree has no run report at ${path.join(fx.worktree, REPORT)}: `,
+    );
     expect(h.claude.named('rm')).toEqual([]);
   });
 
@@ -297,6 +303,50 @@ describe('finish refuses', () => {
       h.finish(fx.brief),
       `the branch worktree-w1 does not exist, so finish cannot check that the work is integrated: discarding it is your call, with claude rm ${ID}`,
     );
+  });
+
+  test('a worktree on a detached HEAD, whose commits the branch lacks', () => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.worktree, 'checkout', '-q', '--detach');
+    git(fx.worktree, 'commit', '-q', '--allow-empty', '-m', 'mid-rebase');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, so finish cannot check that its commits are integrated: check out worktree-w1 there and run finish again; discarding it is your call, with claude rm ${ID}`,
+    );
+  });
+
+  test('a worktree folder that is not a worktree, but a folder of the main checkout', () => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.top, 'worktree', 'remove', '--force', fx.worktree);
+    fs.mkdirSync(path.join(fx.worktree, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(fx.worktree, REPORT), REPORT_TEXT);
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(1);
+    const branch = git(fx.top, 'symbolic-ref', 'HEAD');
+    expect(h.err).toContain(
+      `the worktree ${fx.worktree} has ${branch} checked out, not worktree-w1, so finish cannot check that its commits are integrated: check out worktree-w1 there and run finish again; discarding it is your call, with claude rm ${ID}`,
+    );
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+
+  test('a report that cannot be read, even under --no-report', () => {
+    const fx = fixture();
+    fx.integrate();
+    const report = path.join(fx.worktree, REPORT);
+    fs.rmSync(report);
+    fs.mkdirSync(report);
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--no-report')).toBe(1);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toStartWith(`cannot read ${report}: `);
+    expect(h.claude.named('stop')).toEqual([]);
+    expect(h.claude.named('rm')).toEqual([]);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
   });
 
   test('a worktree with no report', () => {
@@ -403,10 +453,85 @@ describe('finish refuses', () => {
     ];
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toEqual([
-      `claude rm ${ID} did not say removed, and finish does not know its answer, so it removed nothing more:`,
+      `claude rm ${ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
       'kept 213245a1 — A Claude Code lock on the worktree names a process that is still running',
     ]);
     expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+
+  test.each([
+    ['exits non-zero', { code: 1 }, 'failed with exit code 1'],
+    ['times out', { code: 1, timedOut: true }, 'did not return in time'],
+  ])('a claude rm that %s while printing removed', (_label, over, what) => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    h.claude.state.rm = [
+      {
+        result: ok({ stdout: `removed ${ID}\n`, ...over }),
+        removes: 'nothing',
+      },
+    ];
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm ${ID} ${what}, so finish removed nothing more:`,
+      `removed ${ID}`,
+    ]);
+    expect(h.out).not.toContain(`session ${ID} removed`);
+  });
+
+  test.each([
+    [
+      'a file left uncommitted',
+      (fx: Fixture): void => {
+        fs.writeFileSync(path.join(fx.worktree, 'late.txt'), 'late\n');
+      },
+      (fx: Fixture): string =>
+        `the worktree ${fx.worktree} holds uncommitted work besides the report, which its removal would destroy: late.txt. Commit and integrate it, or remove it, then run finish again`,
+    ],
+    [
+      'the report edited after it was saved',
+      (fx: Fixture): void => {
+        fs.appendFileSync(path.join(fx.worktree, REPORT), 'one more line\n');
+      },
+      (fx: Fixture): string =>
+        `the worker's report at ${path.join(fx.worktree, REPORT)} no longer matches the copy at ${path.join(fx.top, REPORT)}`,
+    ],
+    [
+      'the worktree moved off its branch',
+      (fx: Fixture): void => {
+        git(fx.worktree, 'checkout', '-q', '--detach');
+      },
+      (fx: Fixture): string =>
+        `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, so finish cannot check that its commits are integrated: check out worktree-w1 there and run finish again; discarding it is your call, with claude rm ${ID}`,
+    ],
+  ])('%s while the job stopped, before claude rm runs', (_label, act, line) => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    h.claude.state.whileStopping = () => act(fx);
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toEqual([
+      'the worktree changed after finish checked it, so finish removed nothing:',
+      line(fx),
+    ]);
+    expect(h.claude.named('rm')).toEqual([]);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+
+  test('a report that appears under --no-report while the job stopped', () => {
+    const fx = fixture();
+    fx.integrate();
+    const report = path.join(fx.worktree, REPORT);
+    fs.rmSync(report);
+    const h = harness(fx);
+    h.claude.state.whileStopping = () => fs.writeFileSync(report, 'late\n');
+    expect(h.finish(fx.brief, '--no-report')).toBe(1);
+    expect(h.err).toEqual([
+      'the worktree changed after finish checked it, so finish removed nothing:',
+      `a run report appeared at ${report}`,
+    ]);
+    expect(h.claude.named('rm')).toEqual([]);
   });
 
   test('a lock whose process outlives 15 seconds, before claude rm runs', () => {
@@ -482,7 +607,7 @@ describe('finish clears the worker', () => {
     h.claude.state.rm = [kept(fx, fx.head), kept(fx, fx.head)];
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err[0]).toBe(
-      `claude rm ${ID} --discard-unpushed ${fx.head}@${WORKTREE_ID} did not say removed, and finish does not know its answer, so it removed nothing more:`,
+      `claude rm ${ID} --discard-unpushed ${fx.head}@${WORKTREE_ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
     );
   });
 

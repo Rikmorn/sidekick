@@ -113,6 +113,15 @@ export interface ClaudeResult {
   timedOut: boolean;
 }
 
+/** Each stream a run printed, trimmed, stdout first; an empty one is left out. */
+export const printedStreams = (result: {
+  stdout: string;
+  stderr: string;
+}): string[] =>
+  [result.stdout, result.stderr]
+    .map((text) => text.trim())
+    .filter((text) => text !== '');
+
 /** Runs `claude` with these arguments, in `cwd`, giving up after `timeoutMs`. */
 export type ClaudeRunner = (
   args: string[],

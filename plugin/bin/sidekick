@@ -2684,6 +2684,7 @@ function launchArgs(profile, settings) {
   ];
 }
 var COULD_NOT_START = 127;
+var printedStreams = (result) => [result.stdout, result.stderr].map((text) => text.trim()).filter((text) => text !== "");
 var spawnClaude = (command, args, opts) => spawnSync2(command, args, {
   ...opts,
   encoding: "utf8",
@@ -2843,7 +2844,6 @@ function judgePluginList(stdout, manifest) {
   issues.push(...unknownIdIssues(manifest, new Set(entries.map((entry) => entry.id))));
   return issues.length > 0 ? refuse2(...issues) : { ok: true, warnings: [...new Set(warnings)] };
 }
-var printed2 = (stdout, stderr) => [stdout, stderr].map((s) => s.trim()).filter((s) => s !== "");
 function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
   if (deps.skip)
     return { ok: true, warnings: [SKIP_WARNING2] };
@@ -2861,10 +2861,10 @@ function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
       "--json"
     ], { cwd: deps.cwd, timeoutMs });
     if (result.timedOut) {
-      return refuse2("claude plugin list timed out.", ...printed2(result.stdout, result.stderr));
+      return refuse2("claude plugin list timed out.", ...printedStreams(result));
     }
     if (result.code !== 0) {
-      return refuse2(`claude plugin list failed with exit code ${result.code}.`, ...printed2(result.stdout, result.stderr));
+      return refuse2(`claude plugin list failed with exit code ${result.code}.`, ...printedStreams(result));
     }
     return judgePluginList(result.stdout, manifest);
   } finally {
@@ -3620,7 +3620,6 @@ var JobSchema = pipe(unknown(), check((row2) => !Array.isArray(row2), "must be a
   state: row2.state ?? undefined
 })));
 var ListingSchema = array(JobSchema);
-var printed3 = (result) => [result.stdout, result.stderr].map((text) => text.trim()).filter((text) => text !== "");
 function parseJson3(text) {
   try {
     return { value: JSON.parse(text) };
@@ -3638,7 +3637,7 @@ function listJobs(run, cwd, timeoutMs = 30000) {
     return {
       issues: [
         `${LISTING} failed with exit code ${result.code}.`,
-        ...printed3(result)
+        ...printedStreams(result)
       ]
     };
   }
@@ -4003,7 +4002,6 @@ function parseFinishArgs(rest2, cwd) {
     noReport: parsed.values["no-report"] === true
   };
 }
-var LISTING2 = "claude agents --json --all";
 var ENDED_STATES = ["stopped", "done"];
 var REMOVED = /^removed\b/;
 var DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
@@ -4016,7 +4014,7 @@ function findJob(wenv, top, name) {
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING2} is named "${name}": check the name in the brief; finish clears only a worker that claude still lists`
+        `no session in ${LISTING} is named "${name}": check the name in the brief; finish clears only a worker that claude still lists`
       ]
     };
   }
@@ -4024,7 +4022,7 @@ function findJob(wenv, top, name) {
     const which = matches.map((job) => job.id ?? "an interactive session");
     return {
       issues: [
-        `${matches.length} sessions in ${LISTING2} are named "${name}" (${which.join(", ")}), so finish cannot tell which is the worker: clear the worker by hand with claude rm <id>`
+        `${matches.length} sessions in ${LISTING} are named "${name}" (${which.join(", ")}), so finish cannot tell which is the worker: clear the worker by hand with claude rm <id>`
       ]
     };
   }
@@ -4057,6 +4055,21 @@ function integratedHead(runGit, top, branch, id) {
     ]
   };
 }
+function checkedOut(result) {
+  if (result.code === 0)
+    return result.stdout.trim();
+  if (result.code === 1)
+    return "a detached HEAD";
+  return `an unreadable HEAD (${result.stderr.trim()})`;
+}
+function onBranchIssues(runGit, worktree, branch, id) {
+  const head = checkedOut(runGit("git", ["symbolic-ref", "-q", "HEAD"], worktree));
+  if (head === `refs/heads/${branch}`)
+    return [];
+  return [
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits are integrated: check out ${branch} there and run finish again; discarding it is your call, with claude rm ${id}`
+  ];
+}
 var RENAMED = /^(?:[RC].|.[RC]) /;
 var STATUS_PREFIX = "XY ".length;
 function statusPaths(stdout) {
@@ -4087,16 +4100,22 @@ function dirtyIssues(runGit, top, worktree, report) {
     `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(", ")}. Commit and integrate it, or remove it, then run finish again`
   ];
 }
-var readIfPresent = (file) => {
+var isMissing2 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+function readIfPresent(file) {
   try {
-    return fs13.readFileSync(file);
-  } catch {
-    return;
+    return { data: fs13.readFileSync(file) };
+  } catch (e) {
+    if (isMissing2(e))
+      return { data: undefined };
+    const why = e instanceof Error ? e.message : String(e);
+    return { issue: `cannot read ${file}: ${why}` };
   }
-};
+}
 function reportStep(from, to, noReport) {
   const worker = readIfPresent(from);
-  if (worker === undefined) {
+  if ("issue" in worker)
+    return { issues: [worker.issue] };
+  if (worker.data === undefined) {
     if (noReport)
       return "none";
     return {
@@ -4106,9 +4125,11 @@ function reportStep(from, to, noReport) {
     };
   }
   const saved = readIfPresent(to);
-  if (saved === undefined)
+  if ("issue" in saved)
+    return { issues: [saved.issue] };
+  if (saved.data === undefined)
     return "copy";
-  if (saved.equals(worker))
+  if (saved.data.equals(worker.data))
     return "in place";
   return {
     issues: [
@@ -4130,15 +4151,20 @@ function checkFinish(brief, opts, wenv) {
   const reportFrom = path12.join(worktree, report);
   const reportTo = path12.join(top, report);
   const integrated = integratedHead(wenv.runGit, top, branch, job.id);
-  const step = reportStep(reportFrom, reportTo, opts.noReport);
-  const issues = [
-    ..."issues" in integrated ? integrated.issues : [],
-    ...dirtyIssues(wenv.runGit, top, worktree, report),
-    ...typeof step === "string" ? [] : step.issues
+  const worktreeIssues = [
+    ...onBranchIssues(wenv.runGit, worktree, branch, job.id),
+    ...dirtyIssues(wenv.runGit, top, worktree, report)
   ];
-  const refused = issues.length > 0 || "issues" in integrated;
-  if (refused || typeof step !== "string")
-    return { issues };
+  const step = reportStep(reportFrom, reportTo, opts.noReport);
+  if ("issues" in integrated || worktreeIssues.length > 0 || typeof step !== "string") {
+    return {
+      issues: [
+        ..."issues" in integrated ? integrated.issues : [],
+        ...worktreeIssues,
+        ...typeof step === "string" ? [] : step.issues
+      ]
+    };
+  }
   return {
     ...job,
     name: brief.name,
@@ -4147,6 +4173,7 @@ function checkFinish(brief, opts, wenv) {
     worktree,
     branch,
     head: integrated.head,
+    report,
     reportFrom,
     reportTo,
     reportStep: step
@@ -4180,12 +4207,12 @@ var saveReport = (ready, _wenv, out) => {
   }
 };
 var claudeAt = (ready, wenv, args, timeoutMs = 30000) => wenv.runClaude(args, { cwd: ready.top, timeoutMs });
-var printed4 = (result) => [result.stdout, result.stderr].map((text) => text.trim()).filter((text) => text !== "");
 function withText(lead, result) {
-  const text = printed4(result);
+  const text = printedStreams(result);
   return text.length > 0 ? [`${lead}:`, ...text] : [lead];
 }
 var ranClean = (result) => result.code === 0 && !result.timedOut;
+var failure = (result) => result.timedOut ? "did not return in time" : `failed with exit code ${result.code}`;
 var stopJob = (ready, wenv) => {
   if (ready.state !== undefined && ENDED_STATES.includes(ready.state)) {
     return [];
@@ -4194,13 +4221,13 @@ var stopJob = (ready, wenv) => {
   const result = claudeAt(ready, wenv, args);
   if (ranClean(result))
     return [];
-  const failure = result.timedOut ? "did not return in time" : `failed with exit code ${result.code}`;
-  return withText(`claude ${args.join(" ")} ${failure}, so finish stopped before claude rm`, result);
+  return withText(`claude ${args.join(" ")} ${failure(result)}, so finish stopped before claude rm`, result);
 };
 function lockPid(commonDir, name) {
   const lock = readIfPresent(path12.join(commonDir, "worktrees", name, "locked"));
-  const match = lock === undefined ? null : LOCK_PID.exec(lock.toString());
-  const pid = Number(match?.[1]);
+  if ("issue" in lock || lock.data === undefined)
+    return;
+  const pid = Number(LOCK_PID.exec(lock.data.toString())?.[1]);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
 }
 function waitForExit(pid, wenv, limitMs = 15000, pollMs = 250) {
@@ -4218,11 +4245,46 @@ var waitForLock = (ready, wenv) => {
   const pid = lockPid(ready.commonDir, ready.name);
   return pid === undefined ? [] : waitForExit(pid, wenv);
 };
-var saidRemoved = (result) => ranClean(result) && REMOVED.test(printed4(result).join(`
+function reportChangedIssues(ready) {
+  const now = readIfPresent(ready.reportFrom);
+  if ("issue" in now)
+    return [now.issue];
+  if (ready.reportStep === "none") {
+    if (now.data === undefined)
+      return [];
+    return [`a run report appeared at ${ready.reportFrom}`];
+  }
+  const saved = readIfPresent(ready.reportTo);
+  if ("issue" in saved)
+    return [saved.issue];
+  const same = now.data !== undefined && saved.data !== undefined && now.data.equals(saved.data);
+  if (same)
+    return [];
+  return [
+    `the worker's report at ${ready.reportFrom} no longer matches the copy at ${ready.reportTo}`
+  ];
+}
+var recheckWorktree = (ready, wenv) => {
+  const issues = [
+    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.id),
+    ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
+    ...reportChangedIssues(ready)
+  ];
+  if (issues.length === 0)
+    return [];
+  return [
+    "the worktree changed after finish checked it, so finish removed nothing:",
+    ...issues
+  ];
+};
+var saidRemoved = (result) => ranClean(result) && REMOVED.test(printedStreams(result).join(`
 `));
-var unknownAnswer = (args, result) => withText(`claude ${args.join(" ")} did not say removed, and finish does not know its answer, so it removed nothing more`, result);
+function unknownAnswer(args, result) {
+  const what = ranClean(result) ? "did not say removed, and finish does not know its answer" : failure(result);
+  return withText(`claude ${args.join(" ")} ${what}, so finish removed nothing more`, result);
+}
 function discard(ready, wenv, kept) {
-  const text = printed4(kept).join(`
+  const text = printedStreams(kept).join(`
 `);
   const offer = ranClean(kept) ? DISCARD_LINE.exec(text) : null;
   if (offer === null)
@@ -4277,6 +4339,7 @@ var STEPS = [
   saveReport,
   stopJob,
   waitForLock,
+  recheckWorktree,
   removeSession,
   removeLeftovers
 ];

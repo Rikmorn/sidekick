@@ -10,7 +10,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
-import type { CheckResult, ClaudeRunner, Settings } from './profile-launch.js';
+import {
+  type CheckResult,
+  type ClaudeRunner,
+  printedStreams,
+  type Settings,
+} from './profile-launch.js';
 import type { ProfileManifest } from './profile-manifest.js';
 
 /** Set to `1` to skip the plugin dependency check. */
@@ -121,9 +126,6 @@ export function judgePluginList(
     : { ok: true, warnings: [...new Set(warnings)] };
 }
 
-const printed = (stdout: string, stderr: string): string[] =>
-  [stdout, stderr].map((s) => s.trim()).filter((s) => s !== '');
-
 /**
  * Runs `plugin list --json` on a copy of `settings` written to a fresh folder
  * under `tmpdir`, removed on every path, and judges the output.
@@ -154,15 +156,12 @@ export function checkPlugins(
       { cwd: deps.cwd, timeoutMs },
     );
     if (result.timedOut) {
-      return refuse(
-        'claude plugin list timed out.',
-        ...printed(result.stdout, result.stderr),
-      );
+      return refuse('claude plugin list timed out.', ...printedStreams(result));
     }
     if (result.code !== 0) {
       return refuse(
         `claude plugin list failed with exit code ${result.code}.`,
-        ...printed(result.stdout, result.stderr),
+        ...printedStreams(result),
       );
     }
     return judgePluginList(result.stdout, manifest);

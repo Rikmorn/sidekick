@@ -7,12 +7,12 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { Runner } from './pm-data.js';
+import type { Runner, RunResult } from './pm-data.js';
 import { parseFlags } from './profile.js';
-import type { ClaudeResult } from './profile-launch.js';
+import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import type { WorkerEnv } from './worker.js';
 import { type Brief, readBrief } from './worker-brief.js';
-import { listJobs } from './worker-jobs.js';
+import { LISTING, listJobs } from './worker-jobs.js';
 import {
   branchExists,
   commitOf,
@@ -43,8 +43,6 @@ export function parseFinishArgs(
     noReport: parsed.values['no-report'] === true,
   };
 }
-
-const LISTING = 'claude agents --json --all';
 
 // `claude stop` fails on a session that has already exited.
 const ENDED_STATES = ['stopped', 'done'];
@@ -123,6 +121,31 @@ function integratedHead(
   };
 }
 
+// What `git symbolic-ref -q HEAD` says is checked out; it exits 1 on a detached HEAD.
+function checkedOut(result: RunResult): string {
+  if (result.code === 0) return result.stdout.trim();
+  if (result.code === 1) return 'a detached HEAD';
+  return `an unreadable HEAD (${result.stderr.trim()})`;
+}
+
+// integratedHead checks only the branch, so the worktree must have that branch
+// checked out. That also proves the folder is the worktree, not a folder of an
+// enclosing repo.
+function onBranchIssues(
+  runGit: Runner,
+  worktree: string,
+  branch: string,
+  id: string,
+): string[] {
+  const head = checkedOut(
+    runGit('git', ['symbolic-ref', '-q', 'HEAD'], worktree),
+  );
+  if (head === `refs/heads/${branch}`) return [];
+  return [
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits are integrated: check out ${branch} there and run finish again; discarding it is your call, with claude rm ${id}`,
+  ];
+}
+
 // A rename or copy entry carries its source path in the next field.
 const RENAMED = /^(?:[RC].|.[RC]) /;
 const STATUS_PREFIX = 'XY '.length;
@@ -143,7 +166,7 @@ function statusPaths(stdout: string): string[] {
 }
 
 // Uncommitted work in the worktree, which removing it would destroy; the
-// report alone is allowed, since step 1 saves it.
+// report alone is allowed, since saveReport saves it.
 function dirtyIssues(
   runGit: Runner,
   top: string,
@@ -168,16 +191,25 @@ function dirtyIssues(
   ];
 }
 
-// What step 1 does with the report.
+// What saveReport does with the report.
 type ReportStep = 'copy' | 'in place' | 'none';
 
-const readIfPresent = (file: string): Buffer | undefined => {
+const isMissing = (e: unknown): boolean =>
+  e instanceof Error && 'code' in e && e.code === 'ENOENT';
+
+// A file's bytes, undefined when it does not exist. Any other failure is an
+// issue, so an unreadable report is never taken for a missing one.
+function readIfPresent(
+  file: string,
+): { data: Buffer | undefined } | { issue: string } {
   try {
-    return fs.readFileSync(file);
-  } catch {
-    return undefined;
+    return { data: fs.readFileSync(file) };
+  } catch (e) {
+    if (isMissing(e)) return { data: undefined };
+    const why = e instanceof Error ? e.message : String(e);
+    return { issue: `cannot read ${file}: ${why}` };
   }
-};
+}
 
 // An identical report already in place is not a refusal, so a re-run after a
 // failed step goes through.
@@ -187,7 +219,8 @@ function reportStep(
   noReport: boolean,
 ): ReportStep | { issues: string[] } {
   const worker = readIfPresent(from);
-  if (worker === undefined) {
+  if ('issue' in worker) return { issues: [worker.issue] };
+  if (worker.data === undefined) {
     if (noReport) return 'none';
     return {
       issues: [
@@ -196,8 +229,9 @@ function reportStep(
     };
   }
   const saved = readIfPresent(to);
-  if (saved === undefined) return 'copy';
-  if (saved.equals(worker)) return 'in place';
+  if ('issue' in saved) return { issues: [saved.issue] };
+  if (saved.data === undefined) return 'copy';
+  if (saved.data.equals(worker.data)) return 'in place';
   return {
     issues: [
       `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`,
@@ -213,13 +247,13 @@ interface Ready extends WorkerJob {
   worktree: string;
   branch: string;
   head: string;
+  report: string;
   reportFrom: string;
   reportTo: string;
   reportStep: ReportStep;
 }
 
-// The brief and the job name the worker, so the worktree's checks run once
-// both are found, and those report together.
+// Every check of the worktree needs the job's id, so those run once it is found.
 function checkFinish(
   brief: Brief,
   opts: FinishOptions,
@@ -237,14 +271,24 @@ function checkFinish(
   const reportFrom = path.join(worktree, report);
   const reportTo = path.join(top, report);
   const integrated = integratedHead(wenv.runGit, top, branch, job.id);
-  const step = reportStep(reportFrom, reportTo, opts.noReport);
-  const issues = [
-    ...('issues' in integrated ? integrated.issues : []),
+  const worktreeIssues = [
+    ...onBranchIssues(wenv.runGit, worktree, branch, job.id),
     ...dirtyIssues(wenv.runGit, top, worktree, report),
-    ...(typeof step === 'string' ? [] : step.issues),
   ];
-  const refused = issues.length > 0 || 'issues' in integrated;
-  if (refused || typeof step !== 'string') return { issues };
+  const step = reportStep(reportFrom, reportTo, opts.noReport);
+  if (
+    'issues' in integrated ||
+    worktreeIssues.length > 0 ||
+    typeof step !== 'string'
+  ) {
+    return {
+      issues: [
+        ...('issues' in integrated ? integrated.issues : []),
+        ...worktreeIssues,
+        ...(typeof step === 'string' ? [] : step.issues),
+      ],
+    };
+  }
   return {
     ...job,
     name: brief.name,
@@ -253,6 +297,7 @@ function checkFinish(
     worktree,
     branch,
     head: integrated.head,
+    report,
     reportFrom,
     reportTo,
     reportStep: step,
@@ -303,19 +348,19 @@ const claudeAt = (
   timeoutMs = 30_000,
 ): ClaudeResult => wenv.runClaude(args, { cwd: ready.top, timeoutMs });
 
-const printed = (result: ClaudeResult): string[] =>
-  [result.stdout, result.stderr]
-    .map((text) => text.trim())
-    .filter((text) => text !== '');
-
 // A refusal line, followed by claude's own text when it printed any.
 function withText(lead: string, result: ClaudeResult): string[] {
-  const text = printed(result);
+  const text = printedStreams(result);
   return text.length > 0 ? [`${lead}:`, ...text] : [lead];
 }
 
 const ranClean = (result: ClaudeResult): boolean =>
   result.code === 0 && !result.timedOut;
+
+const failure = (result: ClaudeResult): string =>
+  result.timedOut
+    ? 'did not return in time'
+    : `failed with exit code ${result.code}`;
 
 const stopJob: Step = (ready, wenv) => {
   if (ready.state !== undefined && ENDED_STATES.includes(ready.state)) {
@@ -324,21 +369,19 @@ const stopJob: Step = (ready, wenv) => {
   const args = ['stop', ready.id];
   const result = claudeAt(ready, wenv, args);
   if (ranClean(result)) return [];
-  const failure = result.timedOut
-    ? 'did not return in time'
-    : `failed with exit code ${result.code}`;
   return withText(
-    `claude ${args.join(' ')} ${failure}, so finish stopped before claude rm`,
+    `claude ${args.join(' ')} ${failure(result)}, so finish stopped before claude rm`,
     result,
   );
 };
 
 // The lock's pid, when it names one. kill(0, 0) signals the process group, so
-// only a positive pid is waited on.
+// only a positive pid is waited on. An unreadable lock means no wait: claude rm
+// then keeps the worktree, and finish refuses its answer.
 function lockPid(commonDir: string, name: string): number | undefined {
   const lock = readIfPresent(path.join(commonDir, 'worktrees', name, 'locked'));
-  const match = lock === undefined ? null : LOCK_PID.exec(lock.toString());
-  const pid = Number(match?.[1]);
+  if ('issue' in lock || lock.data === undefined) return undefined;
+  const pid = Number(LOCK_PID.exec(lock.data.toString())?.[1]);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
 }
 
@@ -365,19 +408,58 @@ const waitForLock: Step = (ready, wenv) => {
   return pid === undefined ? [] : waitForExit(pid, wenv);
 };
 
-const saidRemoved = (result: ClaudeResult): boolean =>
-  ranClean(result) && REMOVED.test(printed(result).join('\n'));
+// The worker's report now: still absent under --no-report, else still the copy.
+function reportChangedIssues(ready: Ready): string[] {
+  const now = readIfPresent(ready.reportFrom);
+  if ('issue' in now) return [now.issue];
+  if (ready.reportStep === 'none') {
+    if (now.data === undefined) return [];
+    return [`a run report appeared at ${ready.reportFrom}`];
+  }
+  const saved = readIfPresent(ready.reportTo);
+  if ('issue' in saved) return [saved.issue];
+  const same =
+    now.data !== undefined &&
+    saved.data !== undefined &&
+    now.data.equals(saved.data);
+  if (same) return [];
+  return [
+    `the worker's report at ${ready.reportFrom} no longer matches the copy at ${ready.reportTo}`,
+  ];
+}
 
-const unknownAnswer = (args: string[], result: ClaudeResult): string[] =>
-  withText(
-    `claude ${args.join(' ')} did not say removed, and finish does not know its answer, so it removed nothing more`,
+// The job may have run on through checkFinish, and a discard destroys what it
+// left, so the worktree is checked again once its process is gone.
+const recheckWorktree: Step = (ready, wenv) => {
+  const issues = [
+    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.id),
+    ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
+    ...reportChangedIssues(ready),
+  ];
+  if (issues.length === 0) return [];
+  return [
+    'the worktree changed after finish checked it, so finish removed nothing:',
+    ...issues,
+  ];
+};
+
+const saidRemoved = (result: ClaudeResult): boolean =>
+  ranClean(result) && REMOVED.test(printedStreams(result).join('\n'));
+
+function unknownAnswer(args: string[], result: ClaudeResult): string[] {
+  const what = ranClean(result)
+    ? 'did not say removed, and finish does not know its answer'
+    : failure(result);
+  return withText(
+    `claude ${args.join(' ')} ${what}, so finish removed nothing more`,
     result,
   );
+}
 
 // Runs claude rm's discard line only when it names the verified head; any
 // other answer refuses, and nothing is lost.
 function discard(ready: Ready, wenv: WorkerEnv, kept: ClaudeResult): string[] {
-  const text = printed(kept).join('\n');
+  const text = printedStreams(kept).join('\n');
   const offer = ranClean(kept) ? DISCARD_LINE.exec(text) : null;
   if (offer === null) return unknownAnswer(['rm', ready.id], kept);
   const [, sha, worktreeId] = offer;
@@ -440,11 +522,13 @@ const removeLeftovers: Step = (ready, wenv, out) => {
   return [];
 };
 
-// In order: nothing is removed until the report is saved and the job has stopped.
+// In order: nothing is removed until the report is saved, the job has stopped,
+// and the worktree has passed its checks again.
 const STEPS: Step[] = [
   saveReport,
   stopJob,
   waitForLock,
+  recheckWorktree,
   removeSession,
   removeLeftovers,
 ];

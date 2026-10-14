@@ -5,10 +5,11 @@
  */
 
 import * as v from 'valibot';
-import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
+import { type ClaudeRunner, printedStreams } from './profile-launch.js';
 
 const LISTING_ARGS = ['agents', '--json', '--all'];
-const LISTING = `claude ${LISTING_ARGS.join(' ')}`;
+/** The listing's command line, as refusals name it. */
+export const LISTING = `claude ${LISTING_ARGS.join(' ')}`;
 
 const OptionalText = v.nullish(v.string());
 
@@ -34,11 +35,6 @@ const JobSchema = v.pipe(
 export type Job = v.InferOutput<typeof JobSchema>;
 
 const ListingSchema = v.array(JobSchema);
-
-const printed = (result: ClaudeResult): string[] =>
-  [result.stdout, result.stderr]
-    .map((text) => text.trim())
-    .filter((text) => text !== '');
 
 // The listing's text as JSON, or the reason it is not.
 function parseJson(text: string): { value: unknown } | { issue: string } {
@@ -67,7 +63,7 @@ export function listJobs(
     return {
       issues: [
         `${LISTING} failed with exit code ${result.code}.`,
-        ...printed(result),
+        ...printedStreams(result),
       ],
     };
   }
