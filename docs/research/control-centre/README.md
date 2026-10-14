@@ -12,6 +12,7 @@ What can Claude Code's extension and session surface do for running many session
 - [2026-10-14-repo-profiles-and-switching-probes.md](./2026-10-14-repo-profiles-and-switching-probes.md): what #213 rests on. It covers a profile folder stored in a repo, and switching a profile by resume. It also covers why a session cannot relaunch itself, plugin dependencies read through `plugin list`, and the session id after `/clear`.
 - [2026-10-14-switch-bench-and-folder-probes.md](./2026-10-14-switch-bench-and-folder-probes.md): what #213's bench measured across a resume, MCP server instructions and hooks among it. It also covers where a resume should start, and `plugin list` under a profile's flags.
 - [2026-10-14-dispatched-worker-probes.md](./2026-10-14-dispatched-worker-probes.md): what #206's dispatched workers rest on. It covers the push block and the worktree in a background session, messages across permission modes, cleanup with `claude rm`, and `sk-worker` as a first prompt.
+- [2026-10-14-dispatched-worker-bench.md](./2026-10-14-dispatched-worker-bench.md): #206's verbs run end to end, from brief to `finish`. It covers the deny rule's spellings, `--settings` against the project layer, how a finished worker lists and stops, and `--plugin-dir` beside an installed sidekick.
 
 ## Served
 

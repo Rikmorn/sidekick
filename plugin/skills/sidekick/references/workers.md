@@ -2,7 +2,7 @@
 
 `sidekick worker` starts a plan's worker and clears it away. `dispatch` checks a brief, then starts `sk-worker` as a background session in a worktree of its own, with pushes blocked. `finish` runs once the worker's branch is integrated. It saves the run report beside the plan, then removes the worker's session, worktree, and branch. `sk-execute` §Hand off to a worker runs both, after the operator chooses the worker mode. `sk-worker` holds the worker's own rules.
 
-Issues #206 and #218 in the `Rikmorn/sidekick` repo decided the shape. Most measurements behind these claims are in `docs/research/control-centre/2026-10-14-dispatched-worker-probes.md` in that repo, called "the dispatch probes" here. They ran on Claude Code 2.1.299.
+Issues #206 and #218 in the `Rikmorn/sidekick` repo decided the shape. Most measurements behind these claims are in `docs/research/control-centre/2026-10-14-dispatched-worker-probes.md` in that repo, called "the dispatch probes" here. They ran on Claude Code 2.1.299. The report beside them, `2026-10-14-dispatched-worker-bench.md`, ran the verbs end to end on 2.1.300. It is called "the dispatch bench" here.
 
 ## The verbs
 
@@ -111,14 +111,14 @@ Three things keep a worker from pushing:
 - **The rewrite.** The overlay's `GIT_CONFIG_*` entries turn every push URL into `sidekick-push-blocked::<url>`. Git reads that as a remote helper that does not exist, so the push fails and fetch still works.
 - **The deny rule.** `Bash(git push:*)` refuses the plain spelling before it runs.
 
-The dispatch probes measured the rewrite and the deny rule in a background session, under "The push block" and "Second round, after the design review". In a worktree session, Claude Code also refuses `git -C` and `sh -c "git …"` before they run.
+The dispatch probes measured the rewrite and the deny rule in a background session, under "The push block" and "Second round, after the design review". In a worktree session, Claude Code also refuses `git -C` and `sh -c "git …"` before they run. It refused a line that mixed git with a shell variable too (the dispatch bench).
 
 The block does not guard against these:
 
-- **A spelling the deny rule misses,** such as `env git push`. The rewrite still fails it, unless the command lifts the rewrite itself.
-- **A worker that lifts the block on purpose.** The block stops the default push and accidental spellings, not a deliberate bypass. `git -c remote.origin.pushurl=<url> push origin HEAD` sets an explicit `pushurl`, so git skips the rewrite and the push lands. That was measured on 2026-10-14, in a plain shell with the block's `GIT_CONFIG_*` variables set, on git 2.50.1. Whether the deny rule matches `git -c … push` was not measured. Under `bypassPermissions` nothing prompts first, so against a worker set on pushing, only `sk-worker`'s instruction stands.
+- **A spelling the deny rule misses,** such as `git -c <key>=<value> push`. The rewrite still fails it, unless the command lifts the rewrite itself. The deny rule did refuse `env git push` (the dispatch bench).
+- **A worker that lifts the block on purpose.** The block stops the default push and accidental spellings, not a deliberate bypass. `git -c remote.origin.pushurl=<url> push origin HEAD` sets an explicit `pushurl`, so git skips the rewrite and the push lands. That was measured on 2026-10-14, in a plain shell with the block's `GIT_CONFIG_*` variables set, on git 2.50.1. The deny rule does not match a `git -c … push` spelling (the dispatch bench). Under `bypassPermissions` nothing prompts first, so against a worker set on pushing, only `sk-worker`'s instruction stands.
 - **A remote with an explicit `pushurl`.** Git ignores `pushInsteadOf` for such a remote, so the rewrite does not apply and a push lands (measured). `dispatch` refuses such a repo unless `--allow-push`. It checks at dispatch only, so a `pushurl` set later is not caught.
-- **`GIT_CONFIG_*` entries in another settings layer.** The block numbers its entry after the profile's own `GIT_CONFIG_COUNT`, and reads no other layer. Nothing checks that the worker's environment still holds the block. If `--settings` outranks the user, project, and local layers, the block's entries win. Those layers then lose their entries at index n or higher. The block replaces the one at n, and its count of n + 1 drops the rest. A managed layer could still outrank the block. The order of the layers was not measured, nor was any clash between them.
+- **`GIT_CONFIG_*` entries in another settings layer.** The block numbers its entry after the profile's own `GIT_CONFIG_COUNT`, and reads no other layer. Nothing checks that the worker's environment still holds the block. `--settings` outranked the project layer: an `env` key set in the repo's `.claude/settings.json` lost to the overlay's (the dispatch bench). Where `--settings` outranks a layer, the block's entries win, and that layer loses its entries at index n or higher. The block replaces the one at n, and its count of n + 1 drops the rest. The user and local layers were not measured, and a managed layer could still outrank the block.
 - **A mod's `$.env.set`.** It changes the environment that every later Bash child inherits, so any installed mod can lift the rewrite. That was read in the mod API's types during #206's design, not run.
 - **A raw `claude --bg`.** A session can start a worker with `claude --bg` or `sidekick profile launch --bg` and skip `dispatch`. Such a worker has no rewrite, no deny rule, and none of `dispatch`'s checks. Agent view lists every background session, such a worker included.
 - **The mode choice.** `dispatch` cannot verify that the operator chose the worker mode. It is a Bash command that any session's model can run, so that choice rests on `sk-execute`'s text.
@@ -149,7 +149,7 @@ Pass the orchestrating session's own mode. A message from a session in another p
 The steps run in order, and the first that fails stops the rest. `finish` prints what became of the report, then each removal: the session, the worktree, and the branch.
 
 1. It copies the report to `<top>/<report>`, creating its folders.
-2. It stops the job with `claude stop <id>`, unless the listing says `stopped` or `done`. For any other state, a failing `stop` refuses before anything is removed.
+2. It stops the job with `claude stop <id>`. A worker whose turn has ended lists as `done` while its process idles and holds the worktree's lock (the dispatch bench). So `finish` skips the stop only when the listing says `stopped` or `done` and the process the lock names has exited. A failing `stop` refuses before anything is removed.
 3. It waits up to 15 seconds for the process that the worktree's lock names to exit. `claude rm` keeps a worktree whose lock names a running process (the dispatch probes, "Stopping and cleanup").
 4. It checks the worktree again: its branch, that branch's head, its status, and the report. The worker may have run on after the first check, so a change there means nothing is removed.
 5. It runs `claude rm <id>`, and output that starts `removed` succeeds. For commits that no remote holds, `claude rm` keeps the worktree and prints a `--discard-unpushed <sha>@<worktree id>` line. `finish` runs that line only when `<sha>` equals the head it verified as integrated. Any other answer refuses, printing `claude rm`'s text.

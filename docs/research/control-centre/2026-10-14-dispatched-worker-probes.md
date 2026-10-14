@@ -1,3 +1,5 @@
+Amended 2026-10-14: [2026-10-14-dispatched-worker-bench.md](./2026-10-14-dispatched-worker-bench.md) ran the shipped verbs on Claude Code 2.1.300. There, a job stopped after its turn had ended listed as `done`, not `stopped`.
+
 > Research for the `control-centre` design (R9, #206). Claude ran it on 2026-10-14 in a session with the operator, on Claude Code 2.1.299. A subagent read the docs. It records what a worker dispatched with `claude --bg` rests on. That covers the push block, the worktree, messages, cleanup, and `sk-worker` as a first prompt. It is a record and takes only the edits that `sk-pm-conventions.md` §Placement test (tense) lists.
 
 # Probes: a worker dispatched in the background (2026-10-14)
