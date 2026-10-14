@@ -1,7 +1,8 @@
 /**
- * Facts about the main checkout that `sidekick worker` reads through git: where
- * it is, its `HEAD`, whether its tracked files are clean, its branches and
- * push URLs, and the exclude entry for Claude Code's worktree folder.
+ * Facts that `sidekick worker` reads through git: where the main checkout is,
+ * its `HEAD`, whether its tracked files are clean, its branches and push URLs,
+ * and the exclude entry for Claude Code's worktree folder. For a worktree:
+ * what it has checked out, and the paths `git status` names there.
  */
 
 import * as fs from 'node:fs';
@@ -96,6 +97,57 @@ export const branchExists = (
     ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`],
     top,
   ).code === 0;
+
+/**
+ * What the work tree at `dir` has checked out: a ref such as
+ * `refs/heads/main`, or `a detached HEAD`, or `an unreadable HEAD (<why>)`.
+ */
+export function checkedOut(runGit: Runner, dir: string): string {
+  const result = runGit('git', ['symbolic-ref', '-q', 'HEAD'], dir);
+  if (result.code === 0) return result.stdout.trim();
+  // symbolic-ref exits 1 on a detached HEAD.
+  if (result.code === 1) return 'a detached HEAD';
+  return `an unreadable HEAD (${result.stderr.trim()})`;
+}
+
+// A rename or copy entry carries its source path in the next field.
+const RENAMED = /^(?:[RC].|.[RC]) /;
+const STATUS_PREFIX = 'XY '.length;
+
+// Every path `git status --porcelain -z` names, sources of renames included.
+function statusPaths(stdout: string): string[] {
+  const fields = stdout.split('\0').filter((field) => field !== '');
+  const paths: string[] = [];
+  let i = 0;
+  while (i < fields.length) {
+    const entry = fields[i];
+    const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
+    paths.push(entry.slice(STATUS_PREFIX));
+    if (source !== undefined) paths.push(source);
+    i += source === undefined ? 1 : 2;
+  }
+  return paths;
+}
+
+/**
+ * Every path `git status` names in the work tree at `dir`, relative to its
+ * top: each untracked file by its own path, and the sources of renames. The
+ * issue is git's message when the status fails.
+ */
+export function statusPathsIn(
+  runGit: Runner,
+  top: string,
+  dir: string,
+): { paths: string[] } | { issue: string } {
+  // -uall names each untracked file, where the default names only its folder.
+  const status = runGit(
+    'git',
+    ['-C', dir, 'status', '--porcelain', '-z', '--untracked-files=all'],
+    top,
+  );
+  if (status.code !== 0) return { issue: status.stderr.trim() };
+  return { paths: statusPaths(status.stdout) };
+}
 
 const PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
 

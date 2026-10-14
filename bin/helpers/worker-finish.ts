@@ -8,7 +8,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { Runner, RunResult } from './pm-data.js';
+import type { Runner } from './pm-data.js';
 import { parseFlags } from './profile.js';
 import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import type { WorkerEnv } from './worker.js';
@@ -16,8 +16,10 @@ import { type Brief, readBrief } from './worker-brief.js';
 import { LISTING, listJobs } from './worker-jobs.js';
 import {
   branchExists,
+  checkedOut,
   commitOf,
   mainCheckout,
+  statusPathsIn,
   WORKTREES_FOLDER,
 } from './worker-repo.js';
 
@@ -74,7 +76,7 @@ function findJob(
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}": check the name in the brief; finish clears only a worker that claude still lists`,
+        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief`,
       ],
     };
   }
@@ -122,13 +124,6 @@ function integratedHead(
   };
 }
 
-// What `git symbolic-ref -q HEAD` says is checked out; it exits 1 on a detached HEAD.
-function checkedOut(result: RunResult): string {
-  if (result.code === 0) return result.stdout.trim();
-  if (result.code === 1) return 'a detached HEAD';
-  return `an unreadable HEAD (${result.stderr.trim()})`;
-}
-
 // integratedHead checks only the branch, so the worktree must have that branch
 // checked out. That also proves the folder is the worktree, not a folder of an
 // enclosing repo.
@@ -138,32 +133,11 @@ function onBranchIssues(
   branch: string,
   id: string,
 ): string[] {
-  const head = checkedOut(
-    runGit('git', ['symbolic-ref', '-q', 'HEAD'], worktree),
-  );
+  const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`) return [];
   return [
     `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits are integrated: check out ${branch} there and run finish again; discarding it is your call, with claude rm ${id}`,
   ];
-}
-
-// A rename or copy entry carries its source path in the next field.
-const RENAMED = /^(?:[RC].|.[RC]) /;
-const STATUS_PREFIX = 'XY '.length;
-
-// Every path `git status --porcelain -z` names, sources of renames included.
-function statusPaths(stdout: string): string[] {
-  const fields = stdout.split('\0').filter((field) => field !== '');
-  const paths: string[] = [];
-  let i = 0;
-  while (i < fields.length) {
-    const entry = fields[i];
-    const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
-    paths.push(entry.slice(STATUS_PREFIX));
-    if (source !== undefined) paths.push(source);
-    i += source === undefined ? 1 : 2;
-  }
-  return paths;
 }
 
 // Uncommitted work in the worktree, which removing it would destroy; the
@@ -174,18 +148,11 @@ function dirtyIssues(
   worktree: string,
   report: string,
 ): string[] {
-  // -uall names each untracked file, where the default names only its folder.
-  const status = runGit(
-    'git',
-    ['-C', worktree, 'status', '--porcelain', '-z', '--untracked-files=all'],
-    top,
-  );
-  if (status.code !== 0) {
-    return [
-      `git status failed in the worktree ${worktree}: ${status.stderr.trim()}`,
-    ];
+  const status = statusPathsIn(runGit, top, worktree);
+  if ('issue' in status) {
+    return [`git status failed in the worktree ${worktree}: ${status.issue}`];
   }
-  const others = statusPaths(status.stdout).filter((file) => file !== report);
+  const others = status.paths.filter((file) => file !== report);
   if (others.length === 0) return [];
   return [
     `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(', ')}. Commit and integrate it, or remove it, then run finish again`,

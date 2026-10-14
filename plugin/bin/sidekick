@@ -3745,6 +3745,36 @@ function isTrackedClean(runGit, top) {
   return result.code === 0 && result.stdout.trim() === "";
 }
 var branchExists = (runGit, top, branch) => runGit("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], top).code === 0;
+function checkedOut(runGit, dir) {
+  const result = runGit("git", ["symbolic-ref", "-q", "HEAD"], dir);
+  if (result.code === 0)
+    return result.stdout.trim();
+  if (result.code === 1)
+    return "a detached HEAD";
+  return `an unreadable HEAD (${result.stderr.trim()})`;
+}
+var RENAMED = /^(?:[RC].|.[RC]) /;
+var STATUS_PREFIX = "XY ".length;
+function statusPaths(stdout) {
+  const fields = stdout.split("\x00").filter((field) => field !== "");
+  const paths = [];
+  let i = 0;
+  while (i < fields.length) {
+    const entry = fields[i];
+    const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
+    paths.push(entry.slice(STATUS_PREFIX));
+    if (source !== undefined)
+      paths.push(source);
+    i += source === undefined ? 1 : 2;
+  }
+  return paths;
+}
+function statusPathsIn(runGit, top, dir) {
+  const status = runGit("git", ["-C", dir, "status", "--porcelain", "-z", "--untracked-files=all"], top);
+  if (status.code !== 0)
+    return { issue: status.stderr.trim() };
+  return { paths: statusPaths(status.stdout) };
+}
 var PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
 function remotesWithPushUrl(runGit, top) {
   const result = runGit("git", ["config", "--get-regexp", "^remote\\..+\\.pushurl$"], top);
@@ -4046,7 +4076,7 @@ function findJob(wenv, top, name) {
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}": check the name in the brief; finish clears only a worker that claude still lists`
+        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief`
       ]
     };
   }
@@ -4087,45 +4117,20 @@ function integratedHead(runGit, top, branch, id) {
     ]
   };
 }
-function checkedOut(result) {
-  if (result.code === 0)
-    return result.stdout.trim();
-  if (result.code === 1)
-    return "a detached HEAD";
-  return `an unreadable HEAD (${result.stderr.trim()})`;
-}
 function onBranchIssues(runGit, worktree, branch, id) {
-  const head = checkedOut(runGit("git", ["symbolic-ref", "-q", "HEAD"], worktree));
+  const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`)
     return [];
   return [
     `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits are integrated: check out ${branch} there and run finish again; discarding it is your call, with claude rm ${id}`
   ];
 }
-var RENAMED = /^(?:[RC].|.[RC]) /;
-var STATUS_PREFIX = "XY ".length;
-function statusPaths(stdout) {
-  const fields = stdout.split("\x00").filter((field) => field !== "");
-  const paths = [];
-  let i = 0;
-  while (i < fields.length) {
-    const entry = fields[i];
-    const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
-    paths.push(entry.slice(STATUS_PREFIX));
-    if (source !== undefined)
-      paths.push(source);
-    i += source === undefined ? 1 : 2;
-  }
-  return paths;
-}
 function dirtyIssues(runGit, top, worktree, report) {
-  const status = runGit("git", ["-C", worktree, "status", "--porcelain", "-z", "--untracked-files=all"], top);
-  if (status.code !== 0) {
-    return [
-      `git status failed in the worktree ${worktree}: ${status.stderr.trim()}`
-    ];
+  const status = statusPathsIn(runGit, top, worktree);
+  if ("issue" in status) {
+    return [`git status failed in the worktree ${worktree}: ${status.issue}`];
   }
-  const others = statusPaths(status.stdout).filter((file) => file !== report);
+  const others = status.paths.filter((file) => file !== report);
   if (others.length === 0)
     return [];
   return [

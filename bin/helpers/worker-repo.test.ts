@@ -5,12 +5,14 @@ import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import {
   branchExists,
+  checkedOut,
   commitOf,
   ensureWorktreesExcluded,
   headCommit,
   isTrackedClean,
   mainCheckout,
   remotesWithPushUrl,
+  statusPathsIn,
 } from './worker-repo.js';
 
 afterEach(removeTemps);
@@ -81,6 +83,38 @@ describe('commits, cleanliness, and branches', () => {
     git(top, 'config', 'remote.up.stream.pushurl', '/nowhere/c');
     git(top, 'config', '--add', 'remote.up.stream.pushurl', '/nowhere/d');
     expect(remotesWithPushUrl(execRunner, top)).toEqual(['up.stream']);
+  });
+});
+
+describe('a worktree: what it has checked out, and its status', () => {
+  test('checkedOut names the branch ref, then a detached HEAD', () => {
+    const top = repo();
+    const branch = git(top, 'symbolic-ref', 'HEAD');
+    expect(checkedOut(execRunner, top)).toBe(branch);
+    git(top, 'checkout', '-q', '--detach');
+    expect(checkedOut(execRunner, top)).toBe('a detached HEAD');
+  });
+
+  test('checkedOut reads a missing folder as an unreadable HEAD', () => {
+    const gone = path.join(tmp(), 'gone');
+    expect(checkedOut(execRunner, gone)).toStartWith('an unreadable HEAD (');
+  });
+
+  test('statusPathsIn names each untracked file in a new folder, and a rename with its source', () => {
+    const top = repo();
+    fs.mkdirSync(path.join(top, 'new', 'deep'), { recursive: true });
+    fs.writeFileSync(path.join(top, 'new', 'deep', 'n.txt'), 'n\n');
+    git(top, 'mv', 'a.txt', 'b.txt');
+    const result = statusPathsIn(execRunner, top, top);
+    const paths = 'paths' in result ? [...result.paths].sort() : [];
+    expect(paths).toEqual(['a.txt', 'b.txt', 'new/deep/n.txt']);
+  });
+
+  test("statusPathsIn gives git's message for a folder outside any repo", () => {
+    const top = repo();
+    expect(statusPathsIn(execRunner, top, tmp())).toEqual({
+      issue: expect.stringContaining('not a git repository'),
+    });
   });
 });
 

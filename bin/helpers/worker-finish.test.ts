@@ -194,8 +194,20 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief),
-      'no session in claude agents --json --all is named "w1": check the name in the brief; finish clears only a worker that claude still lists',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief',
     );
+  });
+
+  test('on a re-run after a finish that removed the worker, naming that cause', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    h.claude.state.agents = JSON.stringify([]);
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toEqual([
+      'no session in claude agents --json --all is named "w1". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief',
+    ]);
   });
 
   test('when two sessions have the name', () => {
