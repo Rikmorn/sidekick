@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
+import type { ProfileManifest, SettingSource } from './profile-manifest.js';
 import {
   checkPlugins,
   judgePluginList,
@@ -24,18 +25,29 @@ const unsatisfied = {
 const issuesOf = (r: ReturnType<typeof judgePluginList>): string[] =>
   r.ok ? [] : r.issues;
 
+const bare: ProfileManifest = { description: 'd' };
+
+// A manifest whose settings.enabledPlugins sets each id true.
+const naming = (...ids: string[]): ProfileManifest => ({
+  description: 'd',
+  settings: { enabledPlugins: Object.fromEntries(ids.map((id) => [id, true])) },
+});
+
+const SYNCED_CLAUSE =
+  'a synced plugin is not listed when the profile leaves out the user source';
+
 describe('judgePluginList', () => {
   test('passes a list with no errorDetails', () => {
     const out = JSON.stringify([
       entry('sidekick@rikmorn'),
       entry('superpowers@claude-plugins-official'),
     ]);
-    expect(judgePluginList(out, [])).toEqual({ ok: true, warnings: [] });
+    expect(judgePluginList(out, bare)).toEqual({ ok: true, warnings: [] });
   });
 
   test('passes errorDetails null and empty', () => {
     const out = JSON.stringify([entry('a@m', null), entry('b@m', [])]);
-    expect(judgePluginList(out, [])).toEqual({ ok: true, warnings: [] });
+    expect(judgePluginList(out, bare)).toEqual({ ok: true, warnings: [] });
   });
 
   test('refuses once for the same unmet dependency on two entries of one plugin', () => {
@@ -43,7 +55,7 @@ describe('judgePluginList', () => {
       entry('sidekick@rikmorn', [unsatisfied]),
       entry('sidekick@rikmorn', [unsatisfied]),
     ]);
-    const issues = issuesOf(judgePluginList(out, []));
+    const issues = issuesOf(judgePluginList(out, bare));
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('sidekick@rikmorn');
     expect(issues[0]).toContain('superpowers@claude-plugins-official');
@@ -55,31 +67,39 @@ describe('judgePluginList', () => {
     const out = JSON.stringify([
       entry('sidekick@rikmorn', [unsatisfied, other]),
     ]);
-    expect(issuesOf(judgePluginList(out, []))).toHaveLength(2);
+    expect(issuesOf(judgePluginList(out, bare))).toHaveLength(2);
   });
 
   test('refuses although the entry is disabled', () => {
     const out = JSON.stringify([
       { ...entry('sidekick@rikmorn', [unsatisfied]), enabled: false },
     ]);
-    expect(issuesOf(judgePluginList(out, []))).toHaveLength(1);
+    expect(issuesOf(judgePluginList(out, bare))).toHaveLength(1);
   });
 
-  test.each([true, false])('refuses an unknown id set %p', () => {
+  test('refuses an unknown id, naming it', () => {
     const out = JSON.stringify([entry('sidekick@rikmorn')]);
-    const issues = issuesOf(judgePluginList(out, ['sidekik@rikmorn']));
+    const issues = issuesOf(judgePluginList(out, naming('sidekik@rikmorn')));
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('"sidekik@rikmorn"');
     expect(issues[0]).toContain("this profile's settings");
-    expect(issues[0]).toContain(
-      'a synced plugin is not listed when the profile leaves out the user source',
-    );
     expect(issues[0]).not.toContain('installed');
+  });
+
+  test('names the synced case only when the profile leaves out the user source', () => {
+    const out = JSON.stringify([entry('sidekick@rikmorn')]);
+    const refusal = (settingSources?: SettingSource[]): string =>
+      issuesOf(
+        judgePluginList(out, { ...naming('sidekik@rikmorn'), settingSources }),
+      ).join('\n');
+    expect(refusal(['project', 'local'])).toContain(SYNCED_CLAUSE);
+    expect(refusal(['user', 'project'])).not.toContain(SYNCED_CLAUSE);
+    expect(refusal()).not.toContain(SYNCED_CLAUSE);
   });
 
   test('accepts a named id that is listed', () => {
     const out = JSON.stringify([entry('sidekick@rikmorn')]);
-    expect(judgePluginList(out, ['sidekick@rikmorn'])).toEqual({
+    expect(judgePluginList(out, naming('sidekick@rikmorn'))).toEqual({
       ok: true,
       warnings: [],
     });
@@ -87,7 +107,9 @@ describe('judgePluginList', () => {
 
   test('exempts @builtin and @inline ids', () => {
     const out = JSON.stringify([entry('sidekick@rikmorn')]);
-    expect(judgePluginList(out, ['x@builtin', 'sidekick@inline'])).toEqual({
+    expect(
+      judgePluginList(out, naming('x@builtin', 'sidekick@inline')),
+    ).toEqual({
       ok: true,
       warnings: [],
     });
@@ -97,7 +119,7 @@ describe('judgePluginList', () => {
     const out = JSON.stringify([
       entry('a@m', [{ type: 'mcp-server-error', message: 'x' }]),
     ]);
-    const r = judgePluginList(out, []);
+    const r = judgePluginList(out, bare);
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.warnings).toHaveLength(1);
@@ -107,20 +129,20 @@ describe('judgePluginList', () => {
   });
 
   test('refuses output that is not JSON, naming the skip variable', () => {
-    const issues = issuesOf(judgePluginList('not json', []));
+    const issues = issuesOf(judgePluginList('not json', bare));
     expect(issues.join('\n')).toContain(PLUGIN_SKIP_VARIABLE);
     expect(issues.join('\n')).toContain('no longer parses');
   });
 
   test('refuses a JSON object that is not an array', () => {
-    expect(issuesOf(judgePluginList('{}', [])).join('\n')).toContain(
+    expect(issuesOf(judgePluginList('{}', bare)).join('\n')).toContain(
       PLUGIN_SKIP_VARIABLE,
     );
   });
 
   test('refuses an entry without id', () => {
     const out = JSON.stringify([{ scope: 'user' }]);
-    expect(issuesOf(judgePluginList(out, [])).join('\n')).toContain(
+    expect(issuesOf(judgePluginList(out, bare)).join('\n')).toContain(
       PLUGIN_SKIP_VARIABLE,
     );
   });
@@ -235,11 +257,15 @@ describe('checkPlugins', () => {
     ]);
   });
 
-  test('judges named ids from settings.enabledPlugins', () => {
+  test('refuses an unknown id set true and one set false', () => {
     const h = harness(() => ok());
-    const settings = { enabledPlugins: { 'nope@rikmorn': false } };
-    const r = checkPlugins(settings, { description: 'd', settings }, h.deps);
-    expect(issuesOf(r).join('\n')).toContain('"nope@rikmorn"');
+    const settings = { enabledPlugins: { 'x@m': true, 'y@m': false } };
+    const issues = issuesOf(
+      checkPlugins(settings, { description: 'd', settings }, h.deps),
+    );
+    expect(issues).toHaveLength(2);
+    expect(issues[0]).toContain('"x@m"');
+    expect(issues[1]).toContain('"y@m"');
   });
 
   test('skips the unknown-id test when enabledPlugins is not an object', () => {

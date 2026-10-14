@@ -47,6 +47,29 @@ const enabledPluginIds = (manifest: ProfileManifest): string[] => {
     : [];
 };
 
+// Leaving out the user source drops the synced-scope entries from `plugin list`.
+const leavesOutUser = (manifest: ProfileManifest): boolean =>
+  manifest.settingSources !== undefined &&
+  !manifest.settingSources.includes('user');
+
+// One refusal for each id the manifest names that `listed` lacks, exempt ids aside.
+const unknownIdIssues = (
+  manifest: ProfileManifest,
+  listed: ReadonlySet<string>,
+): string[] => {
+  const synced = leavesOutUser(manifest)
+    ? '; a synced plugin is not listed when the profile leaves out the user source'
+    : '';
+  return enabledPluginIds(manifest)
+    .filter(
+      (id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s)),
+    )
+    .map(
+      (id) =>
+        `"${id}": no plugin listed under this profile's settings has that id${synced}.`,
+    );
+};
+
 const parseJson = (text: string): unknown => {
   try {
     return JSON.parse(text);
@@ -56,11 +79,14 @@ const parseJson = (text: string): unknown => {
 };
 
 /**
- * Judges `plugin list --json` output. `named` is the ids the profile's
- * `settings.enabledPlugins` sets; each must be listed or end `@builtin` or
+ * Judges `plugin list --json` output against the profile's manifest. Each id
+ * its `settings.enabledPlugins` sets must be listed or end `@builtin` or
  * `@inline`.
  */
-export function judgePluginList(stdout: string, named: string[]): CheckResult {
+export function judgePluginList(
+  stdout: string,
+  manifest: ProfileManifest,
+): CheckResult {
   const parsed = v.safeParse(ListSchema, parseJson(stdout));
   if (!parsed.success) {
     return refuse(
@@ -88,13 +114,9 @@ export function judgePluginList(stdout: string, named: string[]): CheckResult {
       );
     }
   }
-  const listed = new Set(entries.map((entry) => entry.id));
-  for (const id of named) {
-    if (listed.has(id) || EXEMPT_SUFFIXES.some((s) => id.endsWith(s))) continue;
-    issues.push(
-      `"${id}": no plugin listed under this profile's settings has that id; a synced plugin is not listed when the profile leaves out the user source.`,
-    );
-  }
+  issues.push(
+    ...unknownIdIssues(manifest, new Set(entries.map((entry) => entry.id))),
+  );
   return issues.length > 0 ? refuse(...issues) : { ok: true, warnings };
 }
 
@@ -145,7 +167,7 @@ export function checkPlugins(
         printed(result.stdout, result.stderr),
       );
     }
-    return judgePluginList(result.stdout, enabledPluginIds(manifest));
+    return judgePluginList(result.stdout, manifest);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

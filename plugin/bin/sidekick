@@ -2697,6 +2697,11 @@ var enabledPluginIds = (manifest) => {
   const value = manifest.settings?.enabledPlugins;
   return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.keys(value) : [];
 };
+var leavesOutUser = (manifest) => manifest.settingSources !== undefined && !manifest.settingSources.includes("user");
+var unknownIdIssues = (manifest, listed) => {
+  const synced = leavesOutUser(manifest) ? "; a synced plugin is not listed when the profile leaves out the user source" : "";
+  return enabledPluginIds(manifest).filter((id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s))).map((id) => `"${id}": no plugin listed under this profile's settings has that id${synced}.`);
+};
 var parseJson2 = (text) => {
   try {
     return JSON.parse(text);
@@ -2704,7 +2709,7 @@ var parseJson2 = (text) => {
     return;
   }
 };
-function judgePluginList(stdout, named) {
+function judgePluginList(stdout, manifest) {
   const parsed = safeParse(ListSchema, parseJson2(stdout));
   if (!parsed.success) {
     return refuse2("claude plugin list's output no longer parses, so a broken plugin dependency could pass unseen.", `Set ${PLUGIN_SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`);
@@ -2726,12 +2731,7 @@ function judgePluginList(stdout, named) {
       issues.push(`${entry.id} needs ${detail.dependency ?? "(unnamed)"}, which these settings do not enable. Enable it in the profile's settings.enabledPlugins, or set ${entry.id} to false too.`);
     }
   }
-  const listed = new Set(entries.map((entry) => entry.id));
-  for (const id of named) {
-    if (listed.has(id) || EXEMPT_SUFFIXES.some((s) => id.endsWith(s)))
-      continue;
-    issues.push(`"${id}": no plugin listed under this profile's settings has that id; a synced plugin is not listed when the profile leaves out the user source.`);
-  }
+  issues.push(...unknownIdIssues(manifest, new Set(entries.map((entry) => entry.id))));
   return issues.length > 0 ? refuse2(...issues) : { ok: true, warnings };
 }
 var printed2 = (stdout, stderr) => [stdout, stderr].map((s) => s.trim()).filter((s) => s !== "").join(`
@@ -2758,7 +2758,7 @@ function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
     if (result.code !== 0) {
       return refuse2(`claude plugin list failed with exit code ${result.code}.`, printed2(result.stdout, result.stderr));
     }
-    return judgePluginList(result.stdout, enabledPluginIds(manifest));
+    return judgePluginList(result.stdout, manifest);
   } finally {
     fs7.rmSync(dir, { recursive: true, force: true });
   }
