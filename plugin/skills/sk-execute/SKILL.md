@@ -5,7 +5,7 @@ description: How a written plan runs. Lays out the execution modes with a recomm
 
 # sk-execute
 
-A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. §Outward writes and a plan's after-file run outside superpowers. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except the rules this paragraph names, each overridden where it applies. `writing-plans` asks for complete code with no placeholders. Superpowers also tells its executors to carry out the plan exactly, in the implementer's prompt and in `executing-plans`. §A plan carries intent overrides both. Superpowers' task reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. `writing-plans`' handoff question offers two modes with a recommendation. It says, as `executing-plans` does, that native execution runs well on a mid-tier model because the plan carries the design. §Choose the mode replaces the question, and §A plan carries intent replaces the premise. The worker side is `sk-worker`, which only the operator starts.
+A written plan runs under superpowers: `subagent-driven-development`, or `executing-plans` for superpowers' native mode. §Outward writes and a plan's after-file run outside superpowers. This skill chooses how, prepares the plan, and hands it off. It adds to superpowers and replaces none of it, except the rules this paragraph names, each overridden where it applies. `writing-plans` asks for complete code with no placeholders. Superpowers also tells its executors to carry out the plan exactly, in the implementer's prompt and in `executing-plans`. §A plan carries intent overrides both. Superpowers' task reviewers run a check only on a specific doubt; §Before the plan goes out describes the hook that has them reproduce claimed checks. Minor findings never enter superpowers' fix pass; §Route every finding overrides that. `writing-plans`' handoff question offers two modes with a recommendation. It says, as `executing-plans` does, that native execution runs well on a mid-tier model because the plan carries the design. §Choose the mode replaces the question, and §A plan carries intent replaces the premise. The worker side is `sk-worker`, which a session dispatches after the operator chooses the worker mode.
 
 ## Choose the mode
 
@@ -48,6 +48,7 @@ A plan carries intent and acceptance criteria, and code in it is a sketch in the
 These hold in every mode.
 
 - **The plan names its milestone plan.** It applies in a tracked repo, to a plan that carries issues of an active milestone with a plans header. The plan's header names which of those plans it is. A plan matching none means the milestone has grown. `sk-pm-conventions.md` §Change control then decides: a small addition, or a question for the operator before the plan goes out.
+- **The plan names no branch.** It is written before the mode is chosen, so where the work lands is settled later. For a worker the brief settles it, and for a run in this session the chosen mode does.
 - **Gate expectations are measurements.** A gate value that depends on the tree, such as a test count, states the command that measures it, or a formula from the tree. A number measured somewhere else is true there and false at the worker's step. Everything else in the plan is intent, and the executor checks it against the tree.
 - **The planner checks the plan's claims.** Name the source of each fact the plan states: the file, or the command that measures it, so the executor can check it there. Re-measure a fact taken from an issue body or a report before the plan states it; it held only where it was measured. Find every other copy of each fact the plan changes with `git grep`, read the block each copy sits in, and put it in a task's scope. Each implementer sees only its own task, so a copy that no task names costs a fix round when review finds it. An output the plan hands someone to decide on states what complete means, such as one line per removed line, so a gap shows.
 - **Prose tasks run the prose check.** The repo may declare a `prose` script, such as `scripts.prose` in `package.json`. When it does, every task that writes or edits prose ends by running it on the files the task changed. Errors are fixed before the commit; warnings go in the task's report. Check that its summary counts every file named: some prose checkers read a mistyped path as text and pass it. The step sits inside the task because the task's own text is the one part of the plan every implementer is sure to read.
@@ -71,22 +72,38 @@ The whole-branch reviewer also lists what it declined to judge. In every mode, t
 
 ## Hand off to a worker
 
-When the operator chooses the worker mode, they open a session in the repo and start `sk-worker` there. Then:
+When the operator chooses the worker mode, this session dispatches the worker as a background session. The worker runs in a worktree of its own, made from this session's `HEAD`, and it cannot push unless the operator allows it. Then:
 
-1. Find the worker with `ListAgents`.
-2. Message it the handoff:
-   - the plan and the spec;
-   - the baseline commit and the gate results at that commit;
-   - where to work: a branch in the main checkout, a branch in a worktree, or "in place" when the operator agreed to that;
-   - the superpowers skill to run.
-3. Answer its scan report in one reply where you can. Keep a table of any expected value a ruling moves, so later tasks' numbers stay right.
-4. When the run report arrives, review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Add your review's defects under "Defects by stage" in the run report. Route every defect still open there, and every declined line the worker ruled a finding, as §Route every finding says. Then integrate the branch as the repo's guidance says: a fast-forward, or a pull request whose body carries `Closes #N`. Where the guidance is silent, infer the route from the repo's history. Confirm it with the operator, and record it where the repo keeps its guidance. Run the plan's after-file, if it has one, and close the issues through `sk-track`.
+1. **Write the brief** beside the plan, as `<plan>-brief.md`, with the fields `sk-worker` §On start lists.
+   - `place` is `worktree`, the only place `dispatch` starts a worker.
+   - `orchestrator` is this session's name, as `ListAgents` prints it.
+   - `rulings` names a file beside the plan, which need not exist yet. `report` puts the run report beside the plan.
+   - `setup` prepares the fresh worktree, such as installing dependencies. Without it, the worker prepares nothing.
+   - `baseline` is the main checkout's `HEAD`, with no uncommitted changes to tracked files, or `dispatch` refuses.
 
-A change of scope goes in a fresh handoff, never in a message to a running worker.
+   Run the gates at the baseline, and put each command and its result in the brief's body.
+2. **Dispatch** with `sidekick worker dispatch <brief> --permission-mode <mode>`, where `<mode>` is this session's own. A session in another mode holds this session's messages for approval, and they expire. Add `--allow-push` only on the operator's word for this dispatch. Add `--plugin-dir <dir>` when this session tests unreleased plugin content, so the worker runs the same skills. `dispatch` refuses with every reason it finds; fix them and run it again. Once the worker starts, `dispatch` prints its id.
+3. **Subscribe** with `SendMessage`'s `notify_when_idle`, so you hear when the worker goes idle, whether or not it messages you. A subscription fires once, so pass it again with each message you send the worker.
+4. **Answer the scan in one round** where you can. Append the rulings to the rulings file, then message the worker to point at them. The worker acts on the file, not on the message's text. Keep a table of any expected value a ruling moves, so later tasks' numbers stay right.
+5. **When the run report arrives,** review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Add your review's defects under "Defects by stage" in the run report, in the worktree, since `finish` saves that copy. Route every defect still open there, and every declined line the worker ruled a finding, as §Route every finding says. Then integrate the branch as the repo's guidance says: a fast-forward, or a pull request whose body carries `Closes #N`. Where the guidance is silent, infer the route from the repo's history. Confirm it with the operator, and record it where the repo keeps its guidance. Then run `sidekick worker finish <brief>`, the plan's after-file if it has one, and close the issues through `sk-track`.
+
+`finish` saves the run report beside the plan, then removes the worker's session, worktree, and branch. It refuses unless the worktree has `worktree-<name>` checked out, that branch is integrated, the worktree is clean, and the report exists. Each refusal says what to do. Once that is done, run `finish` again; a re-run after a failed step goes through. `--no-report` drops the report's condition, for a worker stopped before writing one, on the operator's word.
+
+- **To steer** mid-run, write the ruling to the rulings file and message the worker to point at it, as in step 4.
+- **To stop** the worker, run `claude stop <id>`. The operator looks in with `claude attach <id>`.
+
+A change of scope goes in a fresh handoff, a new brief and a new dispatch, never in a message to a running worker.
+
+**When agent view is unavailable,** the operator starts the worker instead, typing `/sidekick:sk-worker <brief>` in a session of their own. Write the brief as step 1 says, and skip step 2. Choose `place` for that session:
+
+- `worktree` only when that session's settings set `worktree.baseRef` to `"head"`. `EnterWorktree` branches from that setting. Its default, `"fresh"`, branches from the remote's default branch, off the baseline, so the worker blocks.
+- Otherwise `in-place`, or `branch <name>`.
+
+Steps 3 to 5 hold, except `finish`: it finds a worker by its background job, so it does not apply here. Before any worktree that worker used is removed, save its run report beside the plan by hand.
 
 ## After an in-session run
 
-At `finishing-a-development-branch`, take the option that matches the repo's route, as §Hand off to a worker step 4 describes. Then run the plan's after-file, if it has one.
+At `finishing-a-development-branch`, take the option that matches the repo's route, as §Hand off to a worker step 5 describes. Then run the plan's after-file, if it has one.
 
 The closing summary records these fields beside superpowers' "Rulings I made":
 
