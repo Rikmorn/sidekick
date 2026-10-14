@@ -81,7 +81,7 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 
 ## Profiles
 
-A profile is a folder of rules plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads the layers the profile names. Auto memory and the claude.ai connectors still load in a clean room. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning. When a profile sets `settings.enabledPlugins` or `settingSources`, the CLI also refuses one that leaves a plugin without a dependency, or names a plugin `claude plugin list` does not list.
+A profile is a folder of rules plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads the layers the profile names. Auto memory and the claude.ai connectors still load in a clean room. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning. When a profile sets `settings.enabledPlugins` or `settingSources`, the CLI also refuses one that leaves a plugin without its dependency, or names a plugin `claude plugin list` does not list.
 
 ```bash
 sidekick profile list                          # every profile in the repo and user stores
