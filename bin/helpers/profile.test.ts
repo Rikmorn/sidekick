@@ -112,7 +112,7 @@ describe('profile list', () => {
 });
 
 describe('profile show', () => {
-  test('prints folder, manifest, settings, and arguments without running claude', () => {
+  test('prints folder, manifest, settings, and arguments, and never runs doctor', () => {
     const h = harness();
     const dir = mkProfile(h.store, 'a', {
       description: 'Alpha',
