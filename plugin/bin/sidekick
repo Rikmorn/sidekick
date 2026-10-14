@@ -3100,7 +3100,7 @@ function newProfile(name, description, root) {
 }
 
 // bin/helpers/profile.ts
-var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]";
+var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]|switch <name> [--session <id>]";
 var SHELLS = ["zsh", "bash"];
 var withoutTrailingNewline = (text) => text.replace(/\n$/, "");
 function parseFlags(rest2, options) {
@@ -3315,13 +3315,47 @@ var alias = (rest2, penv, out, err) => {
   out(withoutTrailingNewline(shellFunction(shell, parsed.positionals)));
   return 0;
 };
+var shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+var switchProfile = (rest2, penv, out, err) => {
+  const parsed = parseFlags(rest2, { session: { type: "string" } });
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage(err);
+  }
+  const [name] = parsed.positionals;
+  const flagged = parsed.values.session;
+  const sessionId = typeof flagged === "string" && flagged !== "" ? flagged : penv.env.CLAUDE_CODE_SESSION_ID;
+  if (sessionId === undefined || sessionId === "") {
+    return refuse3(err, [
+      "no session id: run switch inside a session, or pass --session <id>"
+    ]);
+  }
+  const loaded = load(name, penv);
+  if ("issues" in loaded)
+    return refuse3(err, loaded.issues);
+  const provenance = provenanceLine(loaded.profile);
+  if (provenance !== undefined)
+    err(provenance);
+  const { settings } = composed(loaded.profile, penv);
+  const checked2 = checkProfile(loaded.profile, settings, penv);
+  if (!checked2.ok)
+    return refuse3(err, checked2.issues);
+  for (const warning of checked2.warnings)
+    err(warning);
+  const cd = `cd ${shellQuote(penv.cwd)}`;
+  out(`To switch this session to "${name}", type /exit, then run one:`);
+  out(`  ${cd} && skp ${name} --resume ${shellQuote(sessionId)}   # keep the conversation`);
+  out(`  ${cd} && skp ${name}                   # start fresh`);
+  out(`After a resume, skills of plugins "${name}" turns off stay listed but fail when called.`);
+  return 0;
+};
 var VERBS3 = {
   list,
   show,
   new: create,
   argv,
   launch,
-  alias
+  alias,
+  switch: switchProfile
 };
 function runProfileCli(args, penv, out, err) {
   const [name, ...rest2] = args;

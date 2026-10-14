@@ -1,5 +1,5 @@
 /**
- * `sidekick profile list|show|new|argv|launch|alias`: the verbs over a profile
+ * `sidekick profile list|show|new|argv|launch|alias|switch`: the verbs over a profile
  * store. Usage errors and refusals print to stderr and return 1, as the `pm`
  * and `hook` families do.
  */
@@ -32,7 +32,7 @@ import {
 } from './profile-store.js';
 
 export const PROFILE_USAGE_LINE =
-  'sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]';
+  'sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]|switch <name> [--session <id>]';
 
 export interface ProfileEnv {
   env: NodeJS.ProcessEnv;
@@ -322,6 +322,46 @@ const alias: Verb = (rest, penv, out, err) => {
   return 0;
 };
 
+// POSIX single quoting: a quote inside closes the string, adds an escaped quote, and reopens.
+const shellQuote = (value: string): string =>
+  `'${value.replaceAll("'", "'\\''")}'`;
+
+const switchProfile: Verb = (rest, penv, out, err) => {
+  const parsed = parseFlags(rest, { session: { type: 'string' } });
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage(err);
+  }
+  const [name] = parsed.positionals;
+  const flagged = parsed.values.session;
+  const sessionId =
+    typeof flagged === 'string' && flagged !== ''
+      ? flagged
+      : penv.env.CLAUDE_CODE_SESSION_ID;
+  if (sessionId === undefined || sessionId === '') {
+    return refuse(err, [
+      'no session id: run switch inside a session, or pass --session <id>',
+    ]);
+  }
+  const loaded = load(name, penv);
+  if ('issues' in loaded) return refuse(err, loaded.issues);
+  const provenance = provenanceLine(loaded.profile);
+  if (provenance !== undefined) err(provenance);
+  const { settings } = composed(loaded.profile, penv);
+  const checked = checkProfile(loaded.profile, settings, penv);
+  if (!checked.ok) return refuse(err, checked.issues);
+  for (const warning of checked.warnings) err(warning);
+  const cd = `cd ${shellQuote(penv.cwd)}`;
+  out(`To switch this session to "${name}", type /exit, then run one:`);
+  out(
+    `  ${cd} && skp ${name} --resume ${shellQuote(sessionId)}   # keep the conversation`,
+  );
+  out(`  ${cd} && skp ${name}                   # start fresh`);
+  out(
+    `After a resume, skills of plugins "${name}" turns off stay listed but fail when called.`,
+  );
+  return 0;
+};
+
 const VERBS: Record<string, Verb> = {
   list,
   show,
@@ -329,6 +369,7 @@ const VERBS: Record<string, Verb> = {
   argv,
   launch,
   alias,
+  switch: switchProfile,
 };
 
 /** Dispatch one `profile` verb; returns the process exit code. */

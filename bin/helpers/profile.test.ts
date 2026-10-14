@@ -478,6 +478,78 @@ describe('profile alias', () => {
   });
 });
 
+describe('profile switch', () => {
+  const withSession = (h: ReturnType<typeof harness>, id?: string) => {
+    h.penv.env = { ...h.penv.env, CLAUDE_CODE_SESSION_ID: id };
+  };
+  test('takes the id from CLAUDE_CODE_SESSION_ID and prints the relaunch lines', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A' });
+    withSession(h, 'sess-1');
+    expect(h.run('switch', 'a')).toBe(0);
+    const cd = `cd '${h.penv.cwd}'`;
+    expect(h.out).toEqual([
+      'To switch this session to "a", type /exit, then run one:',
+      `  ${cd} && skp a --resume 'sess-1'   # keep the conversation`,
+      `  ${cd} && skp a                   # start fresh`,
+      'After a resume, skills of plugins "a" turns off stay listed but fail when called.',
+    ]);
+  });
+  test('--session wins over CLAUDE_CODE_SESSION_ID', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A' });
+    withSession(h, 'from-env');
+    expect(h.run('switch', 'a', '--session', 'from-flag')).toBe(0);
+    expect(h.out.join('\n')).toContain("--resume 'from-flag'");
+    expect(h.out.join('\n')).not.toContain('from-env');
+  });
+  test('an empty CLAUDE_CODE_SESSION_ID with no --session refuses', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A' });
+    withSession(h, '');
+    expect(h.run('switch', 'a')).toBe(1);
+    expect(h.err.join('\n')).toContain('no session id');
+    expect(h.out).toEqual([]);
+  });
+  test('a refused check prints no relaunch lines and returns 1', () => {
+    const h = harness({ runClaude: () => ok({ stdout: 'no report' }) });
+    mkProfile(h.store, 'a', { description: 'A' });
+    withSession(h, 's');
+    expect(h.run('switch', 'a')).toBe(1);
+    expect(h.out).toEqual([]);
+    expect(h.err.join('\n')).toContain('no longer parses');
+  });
+  test('a folder with a space and a single quote, and an id with a quote, each stay one word', () => {
+    const folder = path.join(tmp(), "it's a folder");
+    fs.mkdirSync(folder);
+    const h = harness({ cwd: folder });
+    mkProfile(h.store, 'a', { description: 'A' });
+    expect(h.run('switch', 'a', '--session', "i'd")).toBe(0);
+    const resume = h.out[1].trim().split('   # ')[0];
+    const [cdPart, rest] = resume.split(' && ');
+    const sh = (script: string) =>
+      Bun.spawnSync(['sh', '-c', script]).stdout.toString();
+    expect(sh(`${cdPart} && pwd -P`).trim()).toBe(fs.realpathSync(folder));
+    expect(sh(`printf %s ${rest.replace('skp a --resume ', '')}`)).toBe("i'd");
+  });
+  test('a repo profile prints the provenance line on err', () => {
+    const h = repoHarness();
+    const dir = mkProfile(h.repoStore, 'review', { description: 'R' });
+    withSession(h, 's');
+    expect(h.run('switch', 'review')).toBe(0);
+    expect(h.err).toEqual([
+      `profile "review" comes from the repo store: ${dir}`,
+    ]);
+  });
+  test('an unknown flag and a missing name print the usage', () => {
+    const h = harness();
+    withSession(h, 's');
+    expect(h.run('switch', 'a', '--bogus')).toBe(1);
+    expect(h.run('switch')).toBe(1);
+    expect(h.err.filter((l) => l.startsWith('usage: '))).toHaveLength(2);
+  });
+});
+
 describe('profile dispatch', () => {
   test('an unknown verb gives the usage and returns 1', () => {
     const h = harness();
