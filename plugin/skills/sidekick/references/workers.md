@@ -17,7 +17,7 @@ sidekick worker finish <brief> [--no-report]
 - `--profile` names the profile the worker launches with, and defaults to `worker`. "A worker profile" suggests one.
 - `--plugin-dir <dir>` loads a plugin folder in the worker, for an orchestrator that tests unreleased plugin content.
 - `--allow-push` leaves out the push block, on the operator's word for that dispatch.
-- `--no-report` lets `finish` run without a run report, for a worker stopped before it wrote one.
+- `--no-report` lets `finish` run without a run report, for a worker stopped before it wrote one, on the operator's word.
 
 `dispatch` exits 1 on a refusal, and otherwise with `claude`'s exit code. `finish` exits 0 only when every step succeeded.
 
@@ -115,11 +115,12 @@ The dispatch probes measured the rewrite and the deny rule in a background sessi
 
 The block does not guard against these:
 
-- **A spelling the deny rule misses,** such as `env git push`. It still meets the rewrite, which fails it.
+- **A spelling the deny rule misses,** such as `env git push`. The rewrite still fails it, unless the command lifts the rewrite itself.
+- **A worker that lifts the block on purpose.** The block stops the default push and accidental spellings, not a deliberate bypass. `git -c remote.origin.pushurl=<url> push origin HEAD` sets an explicit `pushurl`, so git skips the rewrite and the push lands. That was measured on 2026-10-14, in a plain shell with the block's `GIT_CONFIG_*` variables set, on git 2.50.1. Whether the deny rule matches `git -c … push` was not measured. Under `bypassPermissions` nothing prompts first, so against a worker set on pushing, only `sk-worker`'s instruction stands.
 - **A remote with an explicit `pushurl`.** Git ignores `pushInsteadOf` for such a remote, so the rewrite does not apply and a push lands (measured). `dispatch` refuses such a repo unless `--allow-push`. It checks at dispatch only, so a `pushurl` set later is not caught.
-- **`GIT_CONFIG_*` entries in another settings layer.** The block numbers its entry after the profile's own `GIT_CONFIG_COUNT`, and reads no other layer. An entry the user, project, or local settings set at the same index is replaced unseen. Nothing checks that the worker's environment still holds the block. This rests on reading the code; no clash between layers was measured.
+- **`GIT_CONFIG_*` entries in another settings layer.** The block numbers its entry after the profile's own `GIT_CONFIG_COUNT`, and reads no other layer. Nothing checks that the worker's environment still holds the block. If `--settings` outranks the user, project, and local layers, the block's entries win. Those layers then lose their entries at index n or higher. The block replaces the one at n, and its count of n + 1 drops the rest. A managed layer could still outrank the block. The order of the layers was not measured, nor was any clash between them.
 - **A mod's `$.env.set`.** It changes the environment that every later Bash child inherits, so any installed mod can lift the rewrite. That was read in the mod API's types during #206's design, not run.
-- **A raw `claude --bg`.** A session can start a worker with `claude --bg` or `sidekick profile launch --bg` and skip `dispatch`. Such a worker has no rewrite, no deny rule, and no brief check. Agent view lists every background session, such a worker included.
+- **A raw `claude --bg`.** A session can start a worker with `claude --bg` or `sidekick profile launch --bg` and skip `dispatch`. Such a worker has no rewrite, no deny rule, and none of `dispatch`'s checks. Agent view lists every background session, such a worker included.
 - **The mode choice.** `dispatch` cannot verify that the operator chose the worker mode. It is a Bash command that any session's model can run, so that choice rests on `sk-execute`'s text.
 
 With `--allow-push`, only the instruction stays, and `dispatch` skips the `pushurl` check. Pass it only on the operator's word for that dispatch.
@@ -141,20 +142,20 @@ Pass the orchestrating session's own mode. A message from a session in another p
 - **Integrated.** The branch's head is an ancestor of the main checkout's `HEAD`. A squash or rebase merge rewrites the commits, so `finish` refuses after one. Nothing is lost: the worktree stays, and discarding it is the operator's call, through `claude rm <id>`.
 - **Clean.** `git status` in the worktree lists nothing but the report, untracked files included.
 - **Reported.** The report exists at `<worktree>/<report>`, unless `--no-report`.
-- **No other report.** No different file sits at `<top>/<report>`. An identical one is fine, so a re-run after a failed step goes through.
+- **No other report.** No different file sits at `<top>/<report>`. An identical one is fine, so this check lets a re-run through.
 
 ### Its steps
 
-The steps run in order, each printing what it did, and the first that fails stops the rest:
+The steps run in order, and the first that fails stops the rest. `finish` prints what became of the report, then each removal: the session, the worktree, and the branch.
 
 1. It copies the report to `<top>/<report>`, creating its folders.
 2. It stops the job with `claude stop <id>`, unless the listing says `stopped` or `done`. For any other state, a failing `stop` refuses before anything is removed.
 3. It waits up to 15 seconds for the process that the worktree's lock names to exit. `claude rm` keeps a worktree whose lock names a running process (the dispatch probes, "Stopping and cleanup").
-4. It checks the worktree again: its branch, its status, and the report. The worker may have run on after the first check, so a change there means nothing is removed.
+4. It checks the worktree again: its branch, that branch's head, its status, and the report. The worker may have run on after the first check, so a change there means nothing is removed.
 5. It runs `claude rm <id>`, and output that starts `removed` succeeds. For commits that no remote holds, `claude rm` keeps the worktree and prints a `--discard-unpushed <sha>@<worktree id>` line. `finish` runs that line only when `<sha>` equals the head it verified as integrated. Any other answer refuses, printing `claude rm`'s text.
 6. It confirms with `git worktree list` that the worktree is gone. It deletes a leftover branch with `git branch -d`, which refuses an unmerged branch.
 
-After a failure, fix what it names and run `finish` again.
+After a failure, fix what it names and run `finish` again. A re-run works until `claude rm` succeeds. After that, `finish` no longer finds the job, so clear any worktree or branch left by hand.
 
 ### What it reads from `claude rm`
 
@@ -193,4 +194,4 @@ When agent view is unavailable, the operator starts the worker instead. The orch
 
 - **The model.** `opus` is a reasoning model, as `sk-execute` §A plan carries intent asks of the session that runs a plan. Superpowers picks the models of the subagents it dispatches.
 - **The user setting source.** The profile sets no `settingSources`, so it keeps the user layer. A worker under `bypassPermissions` needs that layer, which records the bypass acceptance.
-- **The plugins.** The worker needs sidekick, superpowers, and code-review: `sk-worker` is sidekick's, it runs superpowers' execution skills, and sidekick depends on both. With the user layer kept, the plugins enabled there stay on. A profile that turns plugins off under `settings.enabledPlugins` keeps those three on.
+- **The plugins.** The worker needs sidekick, superpowers, and code-review: `sk-worker` is sidekick's, it runs superpowers' execution skills, and sidekick depends on both. With the user layer kept, the plugins enabled there stay on. In a profile that turns plugins off under `settings.enabledPlugins`, keep those three on.

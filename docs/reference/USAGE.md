@@ -74,7 +74,7 @@ Choosing the worker mode is your only step. The orchestrating session writes a b
 
 `dispatch` prints the worker's id. Look in with `claude attach <id>`, and stop the worker with `claude stop <id>`. The orchestrating session keeps the main checkout while the worker runs. `docs/superpowers/` is gitignored, so a worktree does not contain the spec or the plan; the worker reads them by the main checkout's path.
 
-When agent view is unavailable, you start the worker yourself, typing `/sidekick:sk-worker <brief>` in a session of your own. The brief then names where it works. A branch in the main checkout, `in-place` or `branch <name>`, suits a run where the orchestrating session stays off the tree until the branch is done. A worktree needs `worktree.baseRef: "head"` in that session's settings. `finish` does not apply, so the orchestrating session saves the run report beside the plan by hand.
+When agent view is unavailable, you start the worker yourself, typing `/sidekick:sk-worker <brief>` in a session of your own. The brief then names where it works. A branch in the main checkout, `in-place` or `branch <name>`, suits a run where the orchestrating session stays off the tree until the branch is done. A worktree, which suits a run where the orchestrating session needs the checkout meanwhile, needs `worktree.baseRef: "head"` in your session's settings. `finish` does not apply, so the orchestrating session saves the run report beside the plan by hand.
 
 ## Where things are recorded
 
