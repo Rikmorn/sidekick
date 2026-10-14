@@ -72,7 +72,7 @@ The whole-branch reviewer also lists what it declined to judge. In every mode, t
 
 ## Hand off to a worker
 
-When the operator chooses the worker mode, this session dispatches the worker as a background session. The worker runs in a worktree of its own, made from this session's `HEAD`, and it cannot push unless the operator allows it. Then:
+When the operator chooses the worker mode, this session dispatches the worker as a background session. The worker runs in a worktree of its own, made from this session's `HEAD`, with its pushes blocked unless the operator allows them. The `sidekick` skill's `references/workers.md` says what the block does not stop. Then:
 
 1. **Write the brief** beside the plan, as `<plan>-brief.md`, with the fields `sk-worker` §On start lists.
    - `place` is `worktree`, the only place `dispatch` starts a worker.
