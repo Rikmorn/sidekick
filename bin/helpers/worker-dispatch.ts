@@ -337,6 +337,11 @@ function summary(ready: Ready): string[] {
   ];
 }
 
+const refuse = (err: Out, issues: string[]): number => {
+  for (const issue of issues) err(issue);
+  return 1;
+};
+
 // Excludes the worktrees folder, starts the worker from the top, and relays
 // claude; the summary prints only once claude reports a start.
 function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
@@ -346,7 +351,8 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
     ready.top,
     ready.commonDir,
   );
-  if (excluded !== undefined) out(excluded);
+  if ('issues' in excluded) return refuse(err, excluded.issues);
+  if (excluded.line !== undefined) out(excluded.line);
   const args = bgArgs(ready.args, {
     pluginDir: ready.pluginDir,
     permissionMode: ready.mode,
@@ -362,11 +368,6 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   if (result.code === 0) for (const line of summary(ready)) out(line);
   return result.code;
 }
-
-const refuse = (err: Out, issues: string[]): number => {
-  for (const issue of issues) err(issue);
-  return 1;
-};
 
 /** Runs `dispatch`; returns 1 on a refusal, else `claude`'s exit code. */
 export function dispatch(

@@ -3754,27 +3754,50 @@ function remotesWithPushUrl(runGit, top) {
   return [...new Set(names)];
 }
 var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
-var readOrEmpty = (file) => {
+var reason = (e) => e instanceof Error ? e.message : String(e);
+var isMissing2 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+function readExclude(file) {
   try {
-    return fs11.readFileSync(file, "utf-8");
-  } catch {
-    return "";
+    return { text: fs11.readFileSync(file, "utf-8") };
+  } catch (e) {
+    if (isMissing2(e))
+      return { text: "" };
+    return {
+      issues: [
+        `cannot read ${file}, where dispatch adds ${EXCLUDE_ENTRY}: ${reason(e)}. Fix the file, then run dispatch again`
+      ]
+    };
   }
-};
-function ensureWorktreesExcluded(runGit, top, commonDir) {
-  if (isIgnored(runGit, top))
-    return;
-  const file = path10.join(commonDir, "info", "exclude");
-  const text = readOrEmpty(file);
-  if (text.split(/\r?\n/).includes(EXCLUDE_ENTRY))
-    return;
+}
+function appendExclude(file, text) {
   const separator = text === "" || text.endsWith(`
 `) ? "" : `
 `;
-  fs11.mkdirSync(path10.dirname(file), { recursive: true });
-  fs11.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+  try {
+    fs11.mkdirSync(path10.dirname(file), { recursive: true });
+    fs11.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
 `);
-  return `added ${EXCLUDE_ENTRY} to ${file}`;
+    return [];
+  } catch (e) {
+    return [
+      `cannot add ${EXCLUDE_ENTRY} to ${file}: ${reason(e)}. Fix the file, then run dispatch again`
+    ];
+  }
+}
+function ensureWorktreesExcluded(runGit, top, commonDir) {
+  if (isIgnored(runGit, top))
+    return { line: undefined };
+  const file = path10.join(commonDir, "info", "exclude");
+  const read = readExclude(file);
+  if ("issues" in read)
+    return read;
+  if (read.text.split(/\r?\n/).includes(EXCLUDE_ENTRY)) {
+    return { line: undefined };
+  }
+  const issues = appendExclude(file, read.text);
+  if (issues.length > 0)
+    return { issues };
+  return { line: `added ${EXCLUDE_ENTRY} to ${file}` };
 }
 
 // bin/helpers/worker-dispatch.ts
@@ -3958,12 +3981,19 @@ function summary(ready) {
     `finish: sidekick worker finish ${ready.briefPath}`
   ];
 }
+var refuse4 = (err, issues) => {
+  for (const issue of issues)
+    err(issue);
+  return 1;
+};
 function launch2(ready, wenv, out, err) {
   for (const note of ready.notes)
     err(note);
   const excluded = ensureWorktreesExcluded(wenv.runGit, ready.top, ready.commonDir);
-  if (excluded !== undefined)
-    out(excluded);
+  if ("issues" in excluded)
+    return refuse4(err, excluded.issues);
+  if (excluded.line !== undefined)
+    out(excluded.line);
   const args = bgArgs(ready.args, {
     pluginDir: ready.pluginDir,
     permissionMode: ready.mode,
@@ -3981,11 +4011,6 @@ function launch2(ready, wenv, out, err) {
       out(line);
   return result.code;
 }
-var refuse4 = (err, issues) => {
-  for (const issue of issues)
-    err(issue);
-  return 1;
-};
 function dispatch(opts, wenv, out, err) {
   const read = readBrief(opts.brief);
   if ("issues" in read)
@@ -4106,12 +4131,12 @@ function dirtyIssues(runGit, top, worktree, report) {
     `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(", ")}. Commit and integrate it, or remove it, then run finish again`
   ];
 }
-var isMissing2 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+var isMissing3 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
     return { data: fs13.readFileSync(file) };
   } catch (e) {
-    if (isMissing2(e))
+    if (isMissing3(e))
       return { data: undefined };
     const why = e instanceof Error ? e.message : String(e);
     return { issue: `cannot read ${file}: ${why}` };

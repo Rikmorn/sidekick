@@ -329,6 +329,21 @@ describe('dispatch refuses', () => {
     );
   });
 
+  test('an excludes file it cannot write, before claude starts', () => {
+    const fx = fixture();
+    const exclude = path.join(fx.top, '.git', 'info', 'exclude');
+    fs.chmodSync(exclude, 0o444);
+    const h = harness(fx);
+    const code = h.dispatch(fx.brief, '--permission-mode', 'auto');
+    expect(code).toBe(1);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toStartWith(
+      `cannot add .claude/worktrees/ to ${exclude}: `,
+    );
+    expect(h.claude.launches()).toEqual([]);
+    expect(h.out).toEqual([]);
+  });
+
   test('with every reason it finds at once', () => {
     const fx = fixture();
     fx.rewrite({ place: 'in-place' });

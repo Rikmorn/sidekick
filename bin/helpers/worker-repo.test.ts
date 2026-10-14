@@ -92,12 +92,14 @@ describe('ensureWorktreesExcluded', () => {
     const top = repo();
     const commonDir = path.join(top, '.git');
     const before = fs.readFileSync(excludeOf(top), 'utf-8');
-    expect(ensureWorktreesExcluded(execRunner, top, commonDir)).toBe(
-      `added .claude/worktrees/ to ${excludeOf(top)}`,
-    );
+    expect(ensureWorktreesExcluded(execRunner, top, commonDir)).toEqual({
+      line: `added .claude/worktrees/ to ${excludeOf(top)}`,
+    });
     const after = fs.readFileSync(excludeOf(top), 'utf-8');
     expect(after).toBe(`${before}.claude/worktrees/\n`);
-    expect(ensureWorktreesExcluded(execRunner, top, commonDir)).toBeUndefined();
+    expect(ensureWorktreesExcluded(execRunner, top, commonDir)).toEqual({
+      line: undefined,
+    });
     expect(fs.readFileSync(excludeOf(top), 'utf-8')).toBe(after);
   });
 
@@ -107,7 +109,7 @@ describe('ensureWorktreesExcluded', () => {
     const before = fs.readFileSync(excludeOf(top), 'utf-8');
     expect(
       ensureWorktreesExcluded(execRunner, top, path.join(top, '.git')),
-    ).toBeUndefined();
+    ).toEqual({ line: undefined });
     expect(fs.readFileSync(excludeOf(top), 'utf-8')).toBe(before);
   });
 
@@ -127,5 +129,39 @@ describe('ensureWorktreesExcluded', () => {
     expect(fs.readFileSync(excludeOf(top), 'utf-8')).toBe(
       '.claude/worktrees/\n',
     );
+  });
+
+  test('refuses an excludes file it cannot read, writing nothing', () => {
+    const top = repo();
+    fs.rmSync(excludeOf(top));
+    fs.mkdirSync(excludeOf(top));
+    const result = ensureWorktreesExcluded(
+      execRunner,
+      top,
+      path.join(top, '.git'),
+    );
+    const issues = 'issues' in result ? result.issues : [];
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toStartWith(
+      `cannot read ${excludeOf(top)}, where dispatch adds .claude/worktrees/: `,
+    );
+    expect(fs.readdirSync(excludeOf(top))).toEqual([]);
+  });
+
+  test('refuses an excludes file it cannot write', () => {
+    const top = repo();
+    const before = fs.readFileSync(excludeOf(top), 'utf-8');
+    fs.chmodSync(excludeOf(top), 0o444);
+    const result = ensureWorktreesExcluded(
+      execRunner,
+      top,
+      path.join(top, '.git'),
+    );
+    const issues = 'issues' in result ? result.issues : [];
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toStartWith(
+      `cannot add .claude/worktrees/ to ${excludeOf(top)}: `,
+    );
+    expect(fs.readFileSync(excludeOf(top), 'utf-8')).toBe(before);
   });
 });

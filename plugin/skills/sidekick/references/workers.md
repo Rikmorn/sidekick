@@ -60,7 +60,7 @@ The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI par
 
 Once the checks pass, `dispatch` acts in this order:
 
-1. Unless git already ignores `.claude/worktrees/`, it appends that line to `<common git dir>/info/exclude`, and prints the line it added.
+1. Unless git already ignores `.claude/worktrees/`, it appends that line to `<common git dir>/info/exclude`, and prints the line it added. If it cannot read or write that file, it refuses and starts nothing.
 2. It spawns `claude` from the repo top, with the timeout `profile launch` uses:
 
    ```
