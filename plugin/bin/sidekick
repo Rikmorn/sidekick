@@ -2756,7 +2756,13 @@ function storeRoots(env, cwd, home, workTree) {
     kind: "user",
     dir: path7.resolve(cwd, configDir, "profiles")
   };
-  return workTree === undefined ? [user] : [{ kind: "repo", dir: path7.join(workTree, ".claude", "profiles") }, user];
+  if (workTree === undefined)
+    return [user];
+  const repo = {
+    kind: "repo",
+    dir: path7.resolve(workTree, ".claude", "profiles")
+  };
+  return repo.dir === user.dir ? [user] : [repo, user];
 }
 var isPresent = (file) => {
   try {

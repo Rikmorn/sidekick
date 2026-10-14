@@ -78,6 +78,21 @@ describe('storeRoots with a work tree', () => {
       storeRoots({ SIDEKICK_PROFILES_DIR: '/s' }, '/work', '/home/u', '/repo'),
     ).toEqual([{ kind: 'user', dir: '/s' }]);
   });
+  test('a work tree at home has no repo store: its folder is the user store', () => {
+    expect(storeRoots({}, '/work', '/home/u', '/home/u')).toEqual([
+      { kind: 'user', dir: '/home/u/.claude/profiles' },
+    ]);
+  });
+  test('a CLAUDE_CONFIG_DIR inside the work tree makes its profiles the user store', () => {
+    expect(
+      storeRoots(
+        { CLAUDE_CONFIG_DIR: '/repo/.claude' },
+        '/work',
+        '/home/u',
+        '/repo',
+      ),
+    ).toEqual([{ kind: 'user', dir: '/repo/.claude/profiles' }]);
+  });
   test('no work tree, no repo store', () => {
     expect(storeRoots({}, '/work', '/home/u', undefined)).toEqual([
       { kind: 'user', dir: '/home/u/.claude/profiles' },

@@ -102,9 +102,13 @@ export function storeRoots(
     kind: 'user',
     dir: path.resolve(cwd, configDir, 'profiles'),
   };
-  return workTree === undefined
-    ? [user]
-    : [{ kind: 'repo', dir: path.join(workTree, '.claude', 'profiles') }, user];
+  if (workTree === undefined) return [user];
+  const repo: StoreRoot = {
+    kind: 'repo',
+    dir: path.resolve(workTree, '.claude', 'profiles'),
+  };
+  // The same folder is the user store; listing it twice would shadow each profile by itself.
+  return repo.dir === user.dir ? [user] : [repo, user];
 }
 
 // A dangling symlink counts as present.
