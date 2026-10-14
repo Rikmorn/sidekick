@@ -1,8 +1,9 @@
 /**
  * `sidekick worker finish`: once a worker's branch is integrated, saves its run
  * report in the main checkout and removes its session, worktree, and branch.
- * It refuses whenever a step would lose work. The steps run in order, each
- * printing what it did, and the first that fails stops the rest.
+ * It refuses whenever a step would lose work. The steps run in order, and the
+ * first that fails stops the rest. It prints what became of the report, then
+ * each removal: the session, the worktree, and the branch.
  */
 
 import * as fs from 'node:fs';
@@ -211,8 +212,8 @@ function readIfPresent(
   }
 }
 
-// An identical report already in place is not a refusal, so a re-run after a
-// failed step goes through.
+// An identical report already in place is not a refusal, so this check lets a
+// re-run through after a failed step.
 function reportStep(
   from: string,
   to: string,

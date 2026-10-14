@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * sidekick — the plugin's executable. Five command families: `rules`, `pm`,
- * `hook`, `profile`, and `worker`.
+ * sidekick — the plugin's executable, with the command families `rules`,
+ * `pm`, `hook`, `profile`, and `worker`.
  * Shipped as plugin/bin/sidekick (a Node bundle built from this file) and run
  * from source as `bun bin/cli.ts`; both resolve the shipped rules relative to
  * this file.

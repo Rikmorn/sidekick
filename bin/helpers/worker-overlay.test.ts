@@ -50,9 +50,7 @@ describe('workerOverlay', () => {
   test('a non-string count refuses, saying it is not a string of digits', () => {
     const built = workerOverlay({ env: { GIT_CONFIG_COUNT: 2 } }, opts);
     expect(built).toEqual({
-      issues: [
-        "the profile's GIT_CONFIG_COUNT is 2, not a string of digits",
-      ],
+      issues: ["the profile's GIT_CONFIG_COUNT is 2, not a string of digits"],
     });
   });
 

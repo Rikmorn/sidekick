@@ -61,8 +61,8 @@ const SHELLS: readonly Shell[] = ['zsh', 'bash'];
 const withoutTrailingNewline = (text: string): string =>
   text.replace(/\n$/, '');
 
-/** Flags and positionals as `parseFlags` returns them. */
-export interface Parsed {
+// Flags and positionals as `parseFlags` returns them.
+interface Parsed {
   values: Record<string, string | boolean | undefined>;
   positionals: string[];
 }

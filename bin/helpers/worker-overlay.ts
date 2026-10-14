@@ -6,7 +6,7 @@
 
 import { isPlainObject, type Settings } from './profile-launch.js';
 
-/** The git config key that rewrites every push URL to an empty, unusable one. */
+/** The git config key that prefixes every push URL with `sidekick-push-blocked::`, a remote helper that does not exist. */
 export const PUSH_REWRITE_KEY = 'url.sidekick-push-blocked::.pushInsteadOf';
 
 /** The permission rule that denies the worker's `git push` commands. */

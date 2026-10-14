@@ -118,7 +118,7 @@ export function readBrief(
   return { brief: result.output, path: abs };
 }
 
-/** Resolves symlinks through the nearest existing ancestor, so a path that does not exist yet still compares physically. */
+// Resolves symlinks through the nearest existing ancestor, so a path not yet made still compares physically.
 function physical(p: string): string {
   const abs = path.resolve(p);
   const rest: string[] = [];
