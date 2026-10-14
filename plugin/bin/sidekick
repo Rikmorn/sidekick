@@ -3145,11 +3145,12 @@ var settingsCheck = (settings, penv) => checkSettings(settings, {
   tmpdir: penv.tmpdir,
   skip: penv.env[SKIP_VARIABLE] === "1"
 });
+var skipsPluginCheck = (penv) => penv.env[PLUGIN_SKIP_VARIABLE] === "1";
 var pluginCheck = (profile, settings, penv) => checkPlugins(settings, profile.manifest, {
   run: penv.runClaude,
   cwd: penv.cwd,
   tmpdir: penv.tmpdir,
-  skip: penv.env[PLUGIN_SKIP_VARIABLE] === "1"
+  skip: skipsPluginCheck(penv)
 });
 function checkProfile(profile, settings, penv) {
   const checked2 = settingsCheck(settings, penv);
@@ -3163,6 +3164,9 @@ function pluginReport(profile, settings, penv) {
     return [
       "plugins: not checked; the profile sets neither settings.enabledPlugins nor settingSources"
     ];
+  }
+  if (skipsPluginCheck(penv)) {
+    return [`plugins: not checked; ${PLUGIN_SKIP_VARIABLE}=1 is set`];
   }
   const plugins = pluginCheck(profile, settings, penv);
   return plugins.ok ? ["plugins: ok", ...plugins.warnings.map((w) => `  ${w}`)] : ["plugins: refused", ...plugins.issues.map((i) => `  ${i}`)];

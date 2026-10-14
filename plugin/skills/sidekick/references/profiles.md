@@ -213,4 +213,4 @@ These facts were measured on 2026-10-14 on Claude Code 2.1.299, while building #
 
 The check costs about 0.7 seconds on the launches it runs for. Three timed runs of `plugin list` with `--settings` took 0.64 to 0.67 seconds on Claude Code 2.1.299 (the 2026-10-14 report, "Plugin dependencies through `plugin list`"). It runs after `doctor`, not beside it.
 
-If `plugin list` changes its output and the check refuses every launch, set `SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK=1`. The CLI then skips this check only, and says so in a warning each time it skips. The `doctor` check still runs. Unset the variable once sidekick catches up.
+If `plugin list` changes its output and the check refuses every launch, set `SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK=1`. The CLI then skips this check only, and prints a warning on stderr for each launch that skipped it. `show` prints `plugins: not checked` with the variable's name instead. The `doctor` check still runs. Unset the variable once sidekick catches up.

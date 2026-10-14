@@ -125,6 +125,9 @@ const settingsCheck = (
     skip: penv.env[SKIP_VARIABLE] === '1',
   });
 
+const skipsPluginCheck = (penv: ProfileEnv): boolean =>
+  penv.env[PLUGIN_SKIP_VARIABLE] === '1';
+
 const pluginCheck = (
   profile: Profile,
   settings: ReturnType<typeof composed>['settings'],
@@ -134,7 +137,7 @@ const pluginCheck = (
     run: penv.runClaude,
     cwd: penv.cwd,
     tmpdir: penv.tmpdir,
-    skip: penv.env[PLUGIN_SKIP_VARIABLE] === '1',
+    skip: skipsPluginCheck(penv),
   });
 
 /** Runs the `doctor` check, then the plugin check when `doctor` passes and the manifest needs it. */
@@ -161,6 +164,9 @@ function pluginReport(
     return [
       'plugins: not checked; the profile sets neither settings.enabledPlugins nor settingSources',
     ];
+  }
+  if (skipsPluginCheck(penv)) {
+    return [`plugins: not checked; ${PLUGIN_SKIP_VARIABLE}=1 is set`];
   }
   const plugins = pluginCheck(profile, settings, penv);
   return plugins.ok

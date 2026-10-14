@@ -250,12 +250,17 @@ describe('the plugin dependency check', () => {
     );
     expect(h.runner.calls).toEqual([]);
   });
-  test('show reports the skip warning', () => {
+  test('show says the check did not run when the skip variable is set', () => {
     const h = harness();
     h.penv.env = { ...h.penv.env, SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK: '1' };
     mkProfile(h.store, 'a', withPlugins);
     expect(h.run('show', 'a')).toBe(0);
-    expect(h.out.join('\n')).toContain('SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK=1');
+    const report = h.out.filter((line) =>
+      /^\s*plugins:|SKIP_PLUGIN/.test(line),
+    );
+    expect(report).toEqual([
+      'plugins: not checked; SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK=1 is set',
+    ]);
     expect(h.runner.calls).toEqual([]);
   });
 });
