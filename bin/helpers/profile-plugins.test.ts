@@ -128,6 +128,18 @@ describe('judgePluginList', () => {
     }
   });
 
+  test('warns once for the same detail on two entries of one plugin', () => {
+    const detail = { type: 'mcp-server-error', message: 'x' };
+    const out = JSON.stringify([
+      entry('a@m', [detail]),
+      entry('a@m', [detail]),
+    ]);
+    expect(judgePluginList(out, bare)).toEqual({
+      ok: true,
+      warnings: ['a@m: claude plugin list reports mcp-server-error.'],
+    });
+  });
+
   test('refuses output that is not JSON, naming the skip variable', () => {
     const issues = issuesOf(judgePluginList('not json', bare));
     expect(issues.join('\n')).toContain(PLUGIN_SKIP_VARIABLE);
@@ -309,6 +321,24 @@ describe('checkPlugins', () => {
     expect(text).toContain('out text');
     expect(text).toContain('err text');
     expect(leftover(h.root)).toEqual([]);
+  });
+
+  test('a failed run with no output refuses with its reason alone', () => {
+    for (const failed of [
+      { code: 1, timedOut: true, reason: 'claude plugin list timed out.' },
+      {
+        code: 2,
+        timedOut: false,
+        reason: 'claude plugin list failed with exit code 2.',
+      },
+    ]) {
+      const h = harness(() =>
+        ok({ code: failed.code, timedOut: failed.timedOut, stdout: '' }),
+      );
+      expect(issuesOf(checkPlugins({}, manifest, h.deps))).toEqual([
+        failed.reason,
+      ]);
+    }
   });
 
   test('removes the folder when the runner throws', () => {

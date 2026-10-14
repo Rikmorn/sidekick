@@ -52,7 +52,6 @@ const leavesOutUser = (manifest: ProfileManifest): boolean =>
   manifest.settingSources !== undefined &&
   !manifest.settingSources.includes('user');
 
-// One refusal for each id the manifest names that `listed` lacks, exempt ids aside.
 const unknownIdIssues = (
   manifest: ProfileManifest,
   listed: ReadonlySet<string>,
@@ -117,14 +116,13 @@ export function judgePluginList(
   issues.push(
     ...unknownIdIssues(manifest, new Set(entries.map((entry) => entry.id))),
   );
-  return issues.length > 0 ? refuse(...issues) : { ok: true, warnings };
+  return issues.length > 0
+    ? refuse(...issues)
+    : { ok: true, warnings: [...new Set(warnings)] };
 }
 
-const printed = (stdout: string, stderr: string): string =>
-  [stdout, stderr]
-    .map((s) => s.trim())
-    .filter((s) => s !== '')
-    .join('\n');
+const printed = (stdout: string, stderr: string): string[] =>
+  [stdout, stderr].map((s) => s.trim()).filter((s) => s !== '');
 
 /**
  * Runs `plugin list --json` on a copy of `settings` written to a fresh folder
@@ -158,13 +156,13 @@ export function checkPlugins(
     if (result.timedOut) {
       return refuse(
         'claude plugin list timed out.',
-        printed(result.stdout, result.stderr),
+        ...printed(result.stdout, result.stderr),
       );
     }
     if (result.code !== 0) {
       return refuse(
         `claude plugin list failed with exit code ${result.code}.`,
-        printed(result.stdout, result.stderr),
+        ...printed(result.stdout, result.stderr),
       );
     }
     return judgePluginList(result.stdout, manifest);

@@ -2732,10 +2732,9 @@ function judgePluginList(stdout, manifest) {
     }
   }
   issues.push(...unknownIdIssues(manifest, new Set(entries.map((entry) => entry.id))));
-  return issues.length > 0 ? refuse2(...issues) : { ok: true, warnings };
+  return issues.length > 0 ? refuse2(...issues) : { ok: true, warnings: [...new Set(warnings)] };
 }
-var printed2 = (stdout, stderr) => [stdout, stderr].map((s) => s.trim()).filter((s) => s !== "").join(`
-`);
+var printed2 = (stdout, stderr) => [stdout, stderr].map((s) => s.trim()).filter((s) => s !== "");
 function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
   if (deps.skip)
     return { ok: true, warnings: [SKIP_WARNING2] };
@@ -2753,10 +2752,10 @@ function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
       "--json"
     ], { cwd: deps.cwd, timeoutMs });
     if (result.timedOut) {
-      return refuse2("claude plugin list timed out.", printed2(result.stdout, result.stderr));
+      return refuse2("claude plugin list timed out.", ...printed2(result.stdout, result.stderr));
     }
     if (result.code !== 0) {
-      return refuse2(`claude plugin list failed with exit code ${result.code}.`, printed2(result.stdout, result.stderr));
+      return refuse2(`claude plugin list failed with exit code ${result.code}.`, ...printed2(result.stdout, result.stderr));
     }
     return judgePluginList(result.stdout, manifest);
   } finally {
