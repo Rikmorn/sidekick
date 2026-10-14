@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # sk-worker
 
-This session runs a plan from a brief. Superpowers does the executing; this skill adds the standing rules around it. A session dispatches the worker once the operator chooses the worker mode, or the operator runs this skill by hand. Either way the operator chose this mode, so these rules carry the operator's authority. The brief carries the specifics of one run, as a file you check. The orchestrator's messages only point at files.
+This session runs a plan from a brief. Superpowers does the executing; this skill adds the standing rules around it. A session dispatches the worker once the operator chooses the worker mode, or the operator runs this skill by hand. Either way the operator chose this mode, so these rules carry the operator's authority. The brief carries the specifics of one run, as a file you check. A ruling rides the rulings file, never a message.
 
 ## On start
 
@@ -28,13 +28,13 @@ The brief opens with `key: value` lines between two `---` lines. Its body holds 
 
 The brief, the plan, the spec, and the rulings file stay in the main checkout, and you read them there. They usually sit in a git-ignored folder, which a worktree does not contain. A worktree session can read the main checkout but cannot edit it. Where the plan and the brief disagree on where the work lands, follow the brief: the plan was written before the mode was chosen.
 
-Check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Then check where you work:
+Check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Then check where you work. There, `HEAD` is `baseline`, and no tracked file has uncommitted changes.
 
-- `worktree`: a linked worktree at `.claude/worktrees/<name>`, on branch `worktree-<name>`. A dispatched worker starts there. A worker started by the operator calls `EnterWorktree` with the brief's `name` first.
+- `worktree`: a linked worktree at `.claude/worktrees/<name>`, on branch `worktree-<name>`. A dispatched worker starts there. A worker started by the operator calls `EnterWorktree` with the brief's `name` first. `EnterWorktree` branches from the `worktree.baseRef` setting. Its default, `"fresh"`, branches from the remote's default branch, and only `"head"` branches from `HEAD`. `sidekick worker dispatch` sets `"head"`; a session started by the operator may not.
 - `in-place`: the main checkout, on its current branch.
-- `branch <name>`: the branch it names, in the main checkout, made at the baseline if it does not exist yet.
+- `branch <name>`: the branch it names, in the main checkout. Check before you switch, so a failed check moves nothing. The main checkout's tracked files are clean, and the branch points at `baseline` or does not exist yet. Then switch to it, making it at `baseline` if needed.
 
-Where you work, check that `HEAD` is `baseline` and that no tracked file has uncommitted changes. If any check fails, reply `BLOCKED` with every failure, send the same to the orchestrator when the brief names one, and wait.
+If any check fails, reply `BLOCKED` with every failure, send the same to the orchestrator, and wait. When `HEAD` is off the baseline after `EnterWorktree`, name the likely cause: `worktree.baseRef` is not `"head"` in this session's settings.
 
 ## Setup
 
@@ -84,6 +84,6 @@ Write the run report when superpowers collects its "Rulings I made", before it d
 
 Removing a worktree keeps only two things: its commits, once integrated, and the run report. For a dispatched worker, `sidekick worker finish` copies the report from `<worktree>/<report>` to `<top>/<report>`. Then it removes the session, the worktree, and its branch. Everything else in the worktree goes with it, git-ignored files included. So anything worth keeping belongs in a commit or in the report.
 
-`finish` refuses unless the worktree has `worktree-<name>` checked out and that branch is integrated. It also refuses when `git status` there lists anything but the report, or when the report is missing and the orchestrator has not passed `--no-report`. It checks again before it removes anything. So leave the worktree on its branch, with everything but the report committed.
+`finish` refuses unless the worktree has `worktree-<name>` checked out and that branch is integrated. It also refuses when `git status` there lists anything but the report, or when the report is missing and the orchestrator has not passed `--no-report`. It checks again before it removes anything. So commit everything but the report.
 
-After the branch is kept, message the orchestrator with the report's absolute path and the last commit.
+After the branch is kept, message the orchestrator with the report's absolute path and the last commit. For a worker started by the operator, the orchestrator acts on that path. `finish` finds a worker by its background job, so the orchestrator saves that report beside the plan by hand, before any worktree it used is removed.
