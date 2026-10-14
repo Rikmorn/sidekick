@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * sidekick — the plugin's executable. Four command families: `rules`, `pm`,
- * `hook`, and `profile`.
+ * sidekick — the plugin's executable. Five command families: `rules`, `pm`,
+ * `hook`, `profile`, and `worker`.
  * Shipped as plugin/bin/sidekick (a Node bundle built from this file) and run
  * from source as `bun bin/cli.ts`; both resolve the shipped rules relative to
  * this file.
@@ -14,9 +14,20 @@ import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
 import { HOOK_USAGE_LINE, runHookCli } from './helpers/hook.js';
 import { PM_USAGE_LINE, runPmCli } from './helpers/pm.js';
-import { PROFILE_USAGE_LINE, runProfileCli } from './helpers/profile.js';
+import { execRunner } from './helpers/pm-data.js';
+import {
+  PROFILE_USAGE_LINE,
+  type ProfileEnv,
+  runProfileCli,
+} from './helpers/profile.js';
 import { type ClaudeRunner, execClaude } from './helpers/profile-launch.js';
 import { runRulesCli, workTreeRootOf } from './helpers/rules.js';
+import {
+  processIsAlive,
+  runWorkerCli,
+  sleepSync,
+  WORKER_USAGE_LINE,
+} from './helpers/worker.js';
 
 /**
  * The plugin directory holds `rules/` and `.claude-plugin/plugin.json`.
@@ -61,7 +72,7 @@ export function isMainEntrypoint(
   }
 }
 
-export const USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       ${PROFILE_USAGE_LINE}\n       sidekick --version`;
+export const USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       ${PROFILE_USAGE_LINE}\n       ${WORKER_USAGE_LINE}\n       sidekick --version`;
 
 export interface MainContext {
   env: NodeJS.ProcessEnv;
@@ -71,7 +82,7 @@ export interface MainContext {
   readStdin?: () => string;
   /** Where the context monitor keeps its latch files and the profile check its temp file; defaults to the OS temp folder. */
   tmpdir?: string;
-  /** Runs `claude` for the `profile` family; defaults to the real one. */
+  /** Runs `claude` for the `profile` and `worker` families; defaults to the real one. */
   runClaude?: ClaudeRunner;
   /** Raw stdout for `profile argv`; defaults to a synchronous write to fd 1. */
   write?: (chunk: string) => void;
@@ -90,6 +101,17 @@ function writeStdout(chunk: string): void {
     }
   }
 }
+
+// The environment the `profile` and `worker` families share.
+const profileEnvOf = (ctx: MainContext): ProfileEnv => ({
+  env: ctx.env,
+  cwd: ctx.cwd,
+  home: ctx.env.HOME || os.homedir(),
+  workTree: workTreeRootOf(ctx.cwd),
+  tmpdir: ctx.tmpdir ?? os.tmpdir(),
+  runClaude: ctx.runClaude ?? execClaude,
+  write: ctx.write ?? writeStdout,
+});
 
 function readProcessStdin(): string {
   try {
@@ -122,16 +144,16 @@ export function main(
     );
   }
   if (sub === 'profile') {
-    return runProfileCli(
+    return runProfileCli(rest, profileEnvOf(ctx), out, err);
+  }
+  if (sub === 'worker') {
+    return runWorkerCli(
       rest,
       {
-        env: ctx.env,
-        cwd: ctx.cwd,
-        home: ctx.env.HOME || os.homedir(),
-        workTree: workTreeRootOf(ctx.cwd),
-        tmpdir: ctx.tmpdir ?? os.tmpdir(),
-        runClaude: ctx.runClaude ?? execClaude,
-        write: ctx.write ?? writeStdout,
+        ...profileEnvOf(ctx),
+        runGit: execRunner,
+        sleep: sleepSync,
+        isAlive: processIsAlive,
       },
       out,
       err,

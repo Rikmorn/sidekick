@@ -35,6 +35,9 @@ import {
 export const PROFILE_USAGE_LINE =
   'sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]|switch <name> [--session <id>]';
 
+/** The bound on a `--bg` start, chosen as a generous minute. */
+export const LAUNCH_TIMEOUT_MS = 60_000;
+
 export interface ProfileEnv {
   env: NodeJS.ProcessEnv;
   cwd: string;
@@ -58,13 +61,14 @@ const SHELLS: readonly Shell[] = ['zsh', 'bash'];
 const withoutTrailingNewline = (text: string): string =>
   text.replace(/\n$/, '');
 
-interface Parsed {
+/** Flags and positionals as `parseFlags` returns them. */
+export interface Parsed {
   values: Record<string, string | boolean | undefined>;
   positionals: string[];
 }
 
-// Strict: an unknown flag or a missing value is a usage error.
-function parseFlags(
+/** Parses flags strictly: an unknown flag or a missing value is a usage error, returned as undefined. */
+export function parseFlags(
   rest: string[],
   options: Record<string, { type: 'string' | 'boolean'; short?: string }>,
 ): Parsed | undefined {
@@ -328,8 +332,7 @@ const launch: Verb = (rest, penv, out, err) => {
   }
   const args = checkedLaunch(parsed.positionals[0], penv, err);
   if (args === undefined) return 1;
-  // The bound on a `--bg` start, chosen as a generous minute.
-  const { launchTimeoutMs = 60_000 } = penv;
+  const { launchTimeoutMs = LAUNCH_TIMEOUT_MS } = penv;
   const sessionName = parsed.values.n;
   const result = penv.runClaude(
     bgArgs(args, {

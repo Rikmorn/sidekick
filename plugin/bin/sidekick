@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs10 from "node:fs";
-import { realpathSync as realpathSync3 } from "node:fs";
+import * as fs13 from "node:fs";
+import { realpathSync as realpathSync4 } from "node:fs";
 import * as os from "node:os";
-import * as path9 from "node:path";
+import * as path12 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -78,6 +78,9 @@ function _addIssue(context, label, dataset, config$1, other) {
   else
     dataset.issues = [issue];
 }
+function _isSameValueZero(value1, value2) {
+  return value1 === value2 || Number.isNaN(value1) && Number.isNaN(value2);
+}
 function _isValidObjectKey(object$1, key) {
   return Object.prototype.hasOwnProperty.call(object$1, key) && key !== "__proto__" && key !== "prototype" && key !== "constructor";
 }
@@ -138,6 +141,35 @@ function minLength(requirement, message$1) {
     "~run"(dataset, config$1) {
       if (dataset.typed && dataset.value.length < this.requirement)
         _addIssue(this, "length", dataset, config$1, { received: `${dataset.value.length}` });
+      return dataset;
+    }
+  };
+}
+function regex(requirement, message$1) {
+  return {
+    kind: "validation",
+    type: "regex",
+    reference: regex,
+    async: false,
+    expects: `${requirement}`,
+    requirement,
+    message: message$1,
+    "~run"(dataset, config$1) {
+      if (dataset.typed && !this.requirement.test(dataset.value))
+        _addIssue(this, "format", dataset, config$1);
+      return dataset;
+    }
+  };
+}
+function transform(operation) {
+  return {
+    kind: "transformation",
+    type: "transform",
+    reference: transform,
+    async: false,
+    operation,
+    "~run"(dataset) {
+      dataset.value = this.operation(dataset.value);
       return dataset;
     }
   };
@@ -207,6 +239,24 @@ function boolean(message$1) {
     message: message$1,
     "~run"(dataset, config$1) {
       if (typeof dataset.value === "boolean")
+        dataset.typed = true;
+      else
+        _addIssue(this, "type", dataset, config$1);
+      return dataset;
+    }
+  });
+}
+function literal(literal_, message$1) {
+  return _standardSchema({
+    kind: "schema",
+    type: "literal",
+    reference: literal,
+    expects: /* @__PURE__ */ _stringify(literal_),
+    async: false,
+    literal: literal_,
+    message: message$1,
+    "~run"(dataset, config$1) {
+      if (/* @__PURE__ */ _isSameValueZero(dataset.value, this.literal))
         dataset.typed = true;
       else
         _addIssue(this, "type", dataset, config$1);
@@ -626,6 +676,62 @@ function string(message$1) {
         dataset.typed = true;
       else
         _addIssue(this, "type", dataset, config$1);
+      return dataset;
+    }
+  });
+}
+function _subIssues(datasets) {
+  let issues;
+  if (datasets)
+    for (const dataset of datasets)
+      if (issues)
+        for (const issue of dataset.issues)
+          issues.push(issue);
+      else
+        issues = dataset.issues;
+  return issues;
+}
+function union(options, message$1) {
+  return _standardSchema({
+    kind: "schema",
+    type: "union",
+    reference: union,
+    expects: /* @__PURE__ */ _joinExpects(options.map((option) => option.expects), "|"),
+    async: false,
+    options,
+    message: message$1,
+    "~run"(dataset, config$1) {
+      let validDataset;
+      let typedDatasets;
+      let untypedDatasets;
+      for (const schema of this.options) {
+        const optionDataset = schema["~run"]({ value: dataset.value }, config$1);
+        if (optionDataset.typed)
+          if (optionDataset.issues)
+            if (typedDatasets)
+              typedDatasets.push(optionDataset);
+            else
+              typedDatasets = [optionDataset];
+          else {
+            validDataset = optionDataset;
+            break;
+          }
+        else if (untypedDatasets)
+          untypedDatasets.push(optionDataset);
+        else
+          untypedDatasets = [optionDataset];
+      }
+      if (validDataset)
+        return validDataset;
+      if (typedDatasets) {
+        if (typedDatasets.length === 1)
+          return typedDatasets[0];
+        _addIssue(this, "type", dataset, config$1, { issues: /* @__PURE__ */ _subIssues(typedDatasets) });
+        dataset.typed = true;
+      } else if (untypedDatasets?.length === 1)
+        return untypedDatasets[0];
+      else
+        _addIssue(this, "type", dataset, config$1, { issues: /* @__PURE__ */ _subIssues(untypedDatasets) });
       return dataset;
     }
   });
@@ -3103,6 +3209,7 @@ function newProfile(name, description, root) {
 
 // bin/helpers/profile.ts
 var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]|switch <name> [--session <id>]";
+var LAUNCH_TIMEOUT_MS = 60000;
 var SHELLS = ["zsh", "bash"];
 var withoutTrailingNewline = (text) => text.replace(/\n$/, "");
 function parseFlags(rest2, options) {
@@ -3290,7 +3397,7 @@ var launch = (rest2, penv, out, err) => {
   const args = checkedLaunch(parsed.positionals[0], penv, err);
   if (args === undefined)
     return 1;
-  const { launchTimeoutMs = 60000 } = penv;
+  const { launchTimeoutMs = LAUNCH_TIMEOUT_MS } = penv;
   const sessionName = parsed.values.n;
   const result = penv.runClaude(bgArgs(args, {
     sessionName: typeof sessionName === "string" ? sessionName : undefined,
@@ -3374,24 +3481,563 @@ function runProfileCli(args, penv, out, err) {
   return VERBS3[name](rest2, penv, out, err);
 }
 
+// bin/helpers/worker-dispatch.ts
+import * as fs12 from "node:fs";
+import * as path11 from "node:path";
+
+// bin/helpers/worker-brief.ts
+import * as fs10 from "node:fs";
+import * as path9 from "node:path";
+var FENCE = "---";
+var KEY_LINE = /^([a-z]+):(?: (.*))?$/;
+function parseFrontmatter(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trimEnd());
+  if (lines[0] !== FENCE) {
+    return { issues: ["the brief must open with a --- line"] };
+  }
+  const end = lines.indexOf(FENCE, 1);
+  if (end === -1) {
+    return { issues: ["the brief's frontmatter has no closing --- line"] };
+  }
+  const fields = {};
+  const issues = [];
+  for (const [i, line] of lines.slice(1, end).entries()) {
+    if (line === "")
+      continue;
+    const match = KEY_LINE.exec(line);
+    const key = match?.[1];
+    if (key === undefined) {
+      issues.push(`line ${i + 2}: "${line}" is not "key: value" with a lower-case key`);
+    } else if (Object.hasOwn(fields, key)) {
+      issues.push(`line ${i + 2}: the key "${key}" is repeated`);
+    } else {
+      fields[key] = (match?.[2] ?? "").trim();
+    }
+  }
+  return issues.length > 0 ? { issues } : { fields };
+}
+var AbsolutePath = pipe(string(), check((s) => path9.isAbsolute(s), "must be an absolute path"));
+var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) => !path9.isAbsolute(s), "must be relative to the repo top"), check((s) => !s.split(/[\\/]/).includes(".."), 'must not have a ".." segment'));
+var BriefSchema = strictObject({
+  name: pipe(string(), regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "must match ^[a-z0-9][a-z0-9-]{0,39}$")),
+  plan: AbsolutePath,
+  spec: AbsolutePath,
+  rulings: AbsolutePath,
+  baseline: pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters")),
+  skill: picklist(["subagent-driven-development", "executing-plans"]),
+  place: union([
+    literal("worktree"),
+    literal("in-place"),
+    pipe(string(), regex(/^branch \S+$/))
+  ], 'must be "worktree", "in-place", or "branch <name>"'),
+  setup: optional(pipe(string(), minLength(1))),
+  report: RelativePath,
+  orchestrator: pipe(string(), minLength(1, "must not be empty"))
+});
+function readBrief(file) {
+  const abs = path9.resolve(file);
+  let text;
+  try {
+    text = fs10.readFileSync(abs, "utf-8");
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { issues: [`${abs}: cannot read the brief: ${why}`] };
+  }
+  const parsed = parseFrontmatter(text);
+  if ("issues" in parsed) {
+    return { issues: parsed.issues.map((i) => `${abs}: ${i}`) };
+  }
+  const result = safeParse(BriefSchema, parsed.fields);
+  if (!result.success) {
+    return {
+      issues: result.issues.map((issue) => {
+        const field = issue.path?.map((p) => String(p.key)).join(".");
+        return field ? `${abs}: field "${field}" ${issue.message}` : `${abs}: ${issue.message}`;
+      })
+    };
+  }
+  return { brief: result.output, path: abs };
+}
+function physical(p) {
+  const abs = path9.resolve(p);
+  const rest2 = [];
+  let dir = abs;
+  for (;; ) {
+    try {
+      return path9.join(fs10.realpathSync(dir), ...rest2);
+    } catch {
+      const parent = path9.dirname(dir);
+      if (parent === dir)
+        return abs;
+      rest2.unshift(path9.basename(dir));
+      dir = parent;
+    }
+  }
+}
+var isInside = (top, p) => {
+  const rel = path9.relative(top, p);
+  return rel !== "" && !rel.startsWith("..") && !path9.isAbsolute(rel);
+};
+function briefFileIssues(brief, top) {
+  const issues = [];
+  const realTop = physical(top);
+  if (!fs10.existsSync(brief.plan)) {
+    issues.push(`plan: ${brief.plan} does not exist`);
+  }
+  if (!fs10.existsSync(brief.spec)) {
+    issues.push(`spec: ${brief.spec} does not exist`);
+  }
+  const rulingsDir = path9.dirname(brief.rulings);
+  if (!fs10.existsSync(rulingsDir)) {
+    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
+  }
+  const named = [
+    ["plan", brief.plan],
+    ["spec", brief.spec],
+    ["rulings", brief.rulings]
+  ];
+  for (const [field, file] of named) {
+    if (!isInside(realTop, physical(file))) {
+      issues.push(`${field}: ${file} is outside ${top}`);
+    }
+  }
+  return issues;
+}
+
+// bin/helpers/worker-jobs.ts
+var LISTING_ARGS = ["agents", "--json", "--all"];
+var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
+var OptionalText = nullish(string());
+var JobSchema = pipe(unknown(), check((row2) => !Array.isArray(row2), "must be an object"), object({
+  id: OptionalText,
+  kind: OptionalText,
+  name: OptionalText,
+  state: OptionalText
+}), transform((row2) => ({
+  id: row2.id ?? undefined,
+  kind: row2.kind ?? undefined,
+  name: row2.name ?? undefined,
+  state: row2.state ?? undefined
+})));
+var ListingSchema = array(JobSchema);
+var printed3 = (result) => [result.stdout, result.stderr].map((text) => text.trim()).filter((text) => text !== "");
+function parseJson3(text) {
+  try {
+    return { value: JSON.parse(text) };
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { issue: `${LISTING} printed a listing that is not JSON: ${why}` };
+  }
+}
+function listJobs(run, cwd, timeoutMs = 30000) {
+  const result = run(LISTING_ARGS, { cwd, timeoutMs });
+  if (result.timedOut) {
+    return { issues: [`${LISTING} did not return in time.`] };
+  }
+  if (result.code !== 0) {
+    return {
+      issues: [
+        `${LISTING} failed with exit code ${result.code}.`,
+        ...printed3(result)
+      ]
+    };
+  }
+  const json = parseJson3(result.stdout);
+  if ("issue" in json)
+    return { issues: [json.issue] };
+  const parsed = safeParse(ListingSchema, json.value);
+  if (!parsed.success) {
+    const [first] = parsed.issues;
+    const where = getDotPath(first) ?? "(root)";
+    return {
+      issues: [
+        `${LISTING} printed a listing that does not parse: ${where}: ${first.message}`
+      ]
+    };
+  }
+  return { jobs: parsed.output };
+}
+
+// bin/helpers/worker-overlay.ts
+var PUSH_REWRITE_KEY = "url.sidekick-push-blocked::.pushInsteadOf";
+var PUSH_DENY_RULE = "Bash(git push:*)";
+function pushEnv(count) {
+  return {
+    GIT_CONFIG_COUNT: String(count + 1),
+    [`GIT_CONFIG_KEY_${count}`]: PUSH_REWRITE_KEY,
+    [`GIT_CONFIG_VALUE_${count}`]: ""
+  };
+}
+function workerOverlay(profileSettings, opts) {
+  const base = { worktree: { baseRef: "head" } };
+  if (opts.allowPush) {
+    return {
+      overlay: { ...base, env: { SIDEKICK_WORKER: opts.briefPath } }
+    };
+  }
+  const env = isPlainObject(profileSettings?.env) ? profileSettings.env : {};
+  const raw = env.GIT_CONFIG_COUNT ?? "0";
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) {
+    return {
+      issues: [
+        `the profile's GIT_CONFIG_COUNT is ${JSON.stringify(raw)}, not a non-negative integer`
+      ]
+    };
+  }
+  return {
+    overlay: {
+      ...base,
+      env: { SIDEKICK_WORKER: opts.briefPath, ...pushEnv(Number(raw)) },
+      permissions: { deny: [PUSH_DENY_RULE] }
+    }
+  };
+}
+
+// bin/helpers/worker-repo.ts
+import * as fs11 from "node:fs";
+import * as path10 from "node:path";
+var WORKTREES_FOLDER = ".claude/worktrees";
+var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
+function mainCheckout(runGit, cwd) {
+  const result = runGit("git", [
+    "rev-parse",
+    "--path-format=absolute",
+    "--show-toplevel",
+    "--absolute-git-dir",
+    "--git-common-dir"
+  ], cwd);
+  if (result.code !== 0) {
+    return {
+      issues: [
+        "not inside a git work tree: run sidekick worker from the repo's main checkout"
+      ]
+    };
+  }
+  const [top, gitDir, commonDir] = result.stdout.replace(/\n$/, "").split(`
+`);
+  if (top === undefined || gitDir === undefined || commonDir === undefined) {
+    return {
+      issues: [`git rev-parse printed an unexpected answer: ${result.stdout}`]
+    };
+  }
+  if (gitDir !== commonDir) {
+    return {
+      issues: [
+        `${top} is a linked worktree: run sidekick worker from the main checkout, whose git dir is ${commonDir}`
+      ]
+    };
+  }
+  return { top, commonDir };
+}
+function commitOf(runGit, top, rev) {
+  const result = runGit("git", ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`], top);
+  return result.code === 0 ? result.stdout.trim() : undefined;
+}
+var headCommit = (runGit, top) => commitOf(runGit, top, "HEAD");
+function isTrackedClean(runGit, top) {
+  const result = runGit("git", ["status", "--porcelain", "--untracked-files=no"], top);
+  return result.code === 0 && result.stdout.trim() === "";
+}
+var branchExists = (runGit, top, branch) => runGit("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], top).code === 0;
+var PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
+function remotesWithPushUrl(runGit, top) {
+  const result = runGit("git", ["config", "--get-regexp", "^remote\\..+\\.pushurl$"], top);
+  if (result.code !== 0)
+    return [];
+  const names = result.stdout.split(`
+`).map((line) => PUSH_URL_KEY.exec(line.split(" ")[0])?.[1]).filter((name) => name !== undefined);
+  return [...new Set(names)];
+}
+var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
+var readOrEmpty = (file) => {
+  try {
+    return fs11.readFileSync(file, "utf-8");
+  } catch {
+    return "";
+  }
+};
+function ensureWorktreesExcluded(runGit, top, commonDir) {
+  if (isIgnored(runGit, top))
+    return;
+  const file = path10.join(commonDir, "info", "exclude");
+  const text = readOrEmpty(file);
+  if (text.split(/\r?\n/).includes(EXCLUDE_ENTRY))
+    return;
+  const separator = text === "" || text.endsWith(`
+`) ? "" : `
+`;
+  fs11.mkdirSync(path10.dirname(file), { recursive: true });
+  fs11.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+`);
+  return `added ${EXCLUDE_ENTRY} to ${file}`;
+}
+
+// bin/helpers/worker-dispatch.ts
+var PERMISSION_MODES = [
+  "default",
+  "acceptEdits",
+  "plan",
+  "auto",
+  "dontAsk",
+  "bypassPermissions",
+  "manual"
+];
+var MODE_LIST = PERMISSION_MODES.join(", ");
+var BYPASS = "bypassPermissions";
+var DEFAULT_WORKER_PROFILE = "worker";
+var stringFlag = (values, key) => {
+  const value = values[key];
+  return typeof value === "string" ? value : undefined;
+};
+function parseDispatchArgs(rest2, cwd) {
+  const parsed = parseFlags(rest2, {
+    "permission-mode": { type: "string" },
+    profile: { type: "string" },
+    "plugin-dir": { type: "string" },
+    "allow-push": { type: "boolean" }
+  });
+  if (parsed === undefined || parsed.positionals.length !== 1)
+    return;
+  const pluginDir = stringFlag(parsed.values, "plugin-dir");
+  if (pluginDir === "")
+    return;
+  return {
+    brief: path11.resolve(cwd, parsed.positionals[0]),
+    mode: stringFlag(parsed.values, "permission-mode"),
+    profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
+    pluginDir: pluginDir === undefined ? undefined : path11.resolve(cwd, pluginDir),
+    allowPush: parsed.values["allow-push"] === true
+  };
+}
+var isFolder = (dir) => {
+  try {
+    return fs12.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+};
+function modeIssues(mode) {
+  if (mode === undefined) {
+    return [
+      `--permission-mode is required: pass the orchestrating session's own mode, one of ${MODE_LIST}`
+    ];
+  }
+  const known = PERMISSION_MODES.some((m) => m === mode);
+  return known ? [] : [`--permission-mode "${mode}" is not one of ${MODE_LIST}`];
+}
+var pluginDirIssues = (dir) => dir === undefined || isFolder(dir) ? [] : [`--plugin-dir: ${dir} is not a folder`];
+var placeIssues = (brief) => brief.place === "worktree" ? [] : [
+  `place: "${brief.place}" is not "worktree"; dispatch starts a worker only in a worktree of its own`
+];
+function baselineIssues(runGit, top, baseline) {
+  const head = headCommit(runGit, top);
+  if (head === undefined) {
+    return ["baseline: the main checkout has no commit at HEAD yet"];
+  }
+  return commitOf(runGit, top, baseline) === head ? [] : [
+    `baseline: ${baseline} does not resolve to the main checkout's HEAD (${head})`
+  ];
+}
+var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
+  "tracked files have uncommitted changes, which the worker's worktree would not carry: commit them first"
+];
+function treeNameIssues(runGit, top, name) {
+  const folder = path11.join(top, WORKTREES_FOLDER, name);
+  const branch = `worktree-${name}`;
+  return [
+    ...fs12.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...branchExists(runGit, top, branch) ? [`name: the branch ${branch} already exists`] : []
+  ];
+}
+function listedNameIssues(run, cwd, name) {
+  const listed = listJobs(run, cwd);
+  if ("issues" in listed)
+    return listed.issues;
+  return listed.jobs.some((job) => job.name === name) ? [
+    `name: claude agents --json --all already lists a session named "${name}"`
+  ] : [];
+}
+var pushUrlIssues = (runGit, top) => remotesWithPushUrl(runGit, top).map((remote) => `remote "${remote}" sets pushurl, and git ignores the push rewrite for such a remote: remove the pushurl, or pass --allow-push on the operator's word`);
+function checkoutIssues(brief, opts, runGit, top) {
+  return [
+    ...briefFileIssues(brief, top),
+    ...baselineIssues(runGit, top, brief.baseline),
+    ...cleanIssues(runGit, top),
+    ...treeNameIssues(runGit, top, brief.name),
+    ...opts.allowPush ? [] : pushUrlIssues(runGit, top)
+  ];
+}
+function bypassIssues(profile, mode) {
+  const sources = profile.manifest.settingSources;
+  if (mode !== BYPASS || sources === undefined || sources.includes("user")) {
+    return [];
+  }
+  return [
+    `${BYPASS} needs the user setting source, which profile "${profile.name}" leaves out (settingSources: ${sources.join(", ")}); a background session without it drops the bypass acceptance`
+  ];
+}
+function missingProfileHint(name, penv) {
+  const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
+  const held = roots.some((root) => isFolder(path11.join(root.dir, name)));
+  return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
+}
+function prepareProfile(opts, briefPath, penv) {
+  const lines = [];
+  const collect = (line) => {
+    lines.push(line);
+  };
+  const profile = loadForLaunch(opts.profile, penv, collect);
+  if (profile === undefined) {
+    return {
+      ok: false,
+      issues: [...lines, ...missingProfileHint(opts.profile, penv)]
+    };
+  }
+  const bypass = bypassIssues(profile, opts.mode);
+  const overlay = workerOverlay(profile.manifest.settings, {
+    briefPath,
+    allowPush: opts.allowPush
+  });
+  if ("issues" in overlay) {
+    return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };
+  }
+  const args = checkComposed(profile, penv, collect, overlay.overlay);
+  if (args === undefined || bypass.length > 0) {
+    return { ok: false, issues: [...lines, ...bypass] };
+  }
+  return { ok: true, args, notes: lines };
+}
+function checkDispatch(brief, briefPath, opts, wenv) {
+  const checkout = mainCheckout(wenv.runGit, wenv.cwd);
+  const at = "issues" in checkout ? wenv.cwd : checkout.top;
+  const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at });
+  const issues = [
+    ..."issues" in checkout ? checkout.issues : checkoutIssues(brief, opts, wenv.runGit, checkout.top),
+    ...placeIssues(brief),
+    ...listedNameIssues(wenv.runClaude, at, brief.name),
+    ...modeIssues(opts.mode),
+    ...pluginDirIssues(opts.pluginDir),
+    ...prepared.ok ? [] : prepared.issues
+  ];
+  const refused = issues.length > 0 || "issues" in checkout || !prepared.ok;
+  if (refused || opts.mode === undefined)
+    return { issues };
+  return {
+    brief,
+    briefPath,
+    mode: opts.mode,
+    pluginDir: opts.pluginDir,
+    allowPush: opts.allowPush,
+    top: checkout.top,
+    commonDir: checkout.commonDir,
+    args: prepared.args,
+    notes: prepared.notes
+  };
+}
+var withoutTrailingNewline2 = (text) => text.replace(/\n$/, "");
+function relay(result, out, err) {
+  if (result.stdout !== "")
+    out(withoutTrailingNewline2(result.stdout));
+  if (result.stderr !== "")
+    err(withoutTrailingNewline2(result.stderr));
+  if (result.timedOut)
+    err("claude did not return in time.");
+}
+function summary(ready) {
+  const { brief, mode } = ready;
+  const pushes = ready.allowPush ? "pushes ALLOWED on the operator's word" : "pushes blocked";
+  return [
+    `worker ${brief.name} dispatched · permission mode ${mode} · ${pushes}`,
+    ...mode === BYPASS ? ["every tool call the worker makes is pre-approved"] : [],
+    `steer: rulings in ${brief.rulings}, then message "${brief.name}" to point at them`,
+    `finish: sidekick worker finish ${ready.briefPath}`
+  ];
+}
+function launch2(ready, wenv, out, err) {
+  for (const note of ready.notes)
+    err(note);
+  const excluded = ensureWorktreesExcluded(wenv.runGit, ready.top, ready.commonDir);
+  if (excluded !== undefined)
+    out(excluded);
+  const args = bgArgs(ready.args, {
+    pluginDir: ready.pluginDir,
+    permissionMode: ready.mode,
+    worktree: ready.brief.name,
+    sessionName: ready.brief.name,
+    prompt: `/sidekick:sk-worker ${ready.briefPath}`
+  });
+  const result = wenv.runClaude(args, {
+    cwd: ready.top,
+    timeoutMs: wenv.launchTimeoutMs ?? LAUNCH_TIMEOUT_MS
+  });
+  relay(result, out, err);
+  if (result.code === 0)
+    for (const line of summary(ready))
+      out(line);
+  return result.code;
+}
+var refuse4 = (err, issues) => {
+  for (const issue of issues)
+    err(issue);
+  return 1;
+};
+function dispatch(opts, wenv, out, err) {
+  const read = readBrief(opts.brief);
+  if ("issues" in read)
+    return refuse4(err, read.issues);
+  const checked2 = checkDispatch(read.brief, read.path, opts, wenv);
+  if ("issues" in checked2)
+    return refuse4(err, checked2.issues);
+  return launch2(checked2, wenv, out, err);
+}
+
+// bin/helpers/worker.ts
+var WORKER_USAGE_LINE = "sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report]";
+var usage2 = (err) => {
+  err(`usage: ${WORKER_USAGE_LINE}`);
+  return 1;
+};
+var dispatchVerb = (rest2, wenv, out, err) => {
+  const opts = parseDispatchArgs(rest2, wenv.cwd);
+  return opts === undefined ? usage2(err) : dispatch(opts, wenv, out, err);
+};
+var VERBS4 = { dispatch: dispatchVerb };
+function runWorkerCli(args, wenv, out, err) {
+  const [name, ...rest2] = args;
+  if (name === undefined || !Object.hasOwn(VERBS4, name))
+    return usage2(err);
+  return VERBS4[name](rest2, wenv, out, err);
+}
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return !(e instanceof Error && ("code" in e) && e.code === "ESRCH");
+  }
+}
+
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path9.dirname(fileURLToPath(entryFileUrl));
+  const here = path12.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path9.resolve(here, ".."),
-    path9.resolve(here, "..", "plugin")
+    path12.resolve(here, ".."),
+    path12.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs10.existsSync(path9.join(c, "rules")))
+    if (fs13.existsSync(path12.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path9.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path12.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs10.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs13.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -3401,7 +4047,7 @@ function isMainEntrypoint(importMetaUrl, argv1) {
   if (!argv1)
     return false;
   try {
-    return realpathSync3(fileURLToPath(importMetaUrl)) === realpathSync3(argv1);
+    return realpathSync4(fileURLToPath(importMetaUrl)) === realpathSync4(argv1);
   } catch {
     return false;
   }
@@ -3410,21 +4056,31 @@ var USAGE2 = `usage: sidekick rules <install|check> --project|--user [--strict]
        ${PM_USAGE_LINE}
        ${HOOK_USAGE_LINE}
        ${PROFILE_USAGE_LINE}
+       ${WORKER_USAGE_LINE}
        sidekick --version`;
 function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs10.writeSync(1, buffer, offset);
+      offset += fs13.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
     }
   }
 }
+var profileEnvOf = (ctx) => ({
+  env: ctx.env,
+  cwd: ctx.cwd,
+  home: ctx.env.HOME || os.homedir(),
+  workTree: workTreeRootOf(ctx.cwd),
+  tmpdir: ctx.tmpdir ?? os.tmpdir(),
+  runClaude: ctx.runClaude ?? execClaude,
+  write: ctx.write ?? writeStdout
+});
 function readProcessStdin() {
   try {
-    return fs10.readFileSync(0, "utf-8");
+    return fs13.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -3443,22 +4099,22 @@ function main(argv2, ctx, out, err) {
     return runHookCli(rest2, { readStdin, pluginDir, env: ctx.env, tmpdir: ctx.tmpdir ?? os.tmpdir() }, out, err);
   }
   if (sub === "profile") {
-    return runProfileCli(rest2, {
-      env: ctx.env,
-      cwd: ctx.cwd,
-      home: ctx.env.HOME || os.homedir(),
-      workTree: workTreeRootOf(ctx.cwd),
-      tmpdir: ctx.tmpdir ?? os.tmpdir(),
-      runClaude: ctx.runClaude ?? execClaude,
-      write: ctx.write ?? writeStdout
+    return runProfileCli(rest2, profileEnvOf(ctx), out, err);
+  }
+  if (sub === "worker") {
+    return runWorkerCli(rest2, {
+      ...profileEnvOf(ctx),
+      runGit: execRunner,
+      sleep: sleepSync,
+      isAlive: processIsAlive
     }, out, err);
   }
   if (sub !== "rules") {
     err(USAGE2);
     return 1;
   }
-  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path9.join(os.homedir(), ".claude");
-  const src = ctx.env.SIDEKICK_RULES_DIR || path9.join(pluginDir, "rules");
+  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path12.join(os.homedir(), ".claude");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path12.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

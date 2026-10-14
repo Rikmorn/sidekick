@@ -13,6 +13,7 @@ import {
   USAGE,
 } from './cli.js';
 import { PROFILE_USAGE_LINE } from './helpers/profile.js';
+import { WORKER_USAGE_LINE } from './helpers/worker.js';
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sk-cli-'));
@@ -377,6 +378,31 @@ describe('main: profile', () => {
     expect(r.stdout.toString()).toBe(
       `--add-dir\0${path.resolve(store)}/a\0--settings\0${composed}\0`,
     );
+  });
+});
+
+describe('main: worker', () => {
+  const entryFileUrl = pathToFileURL(path.join(__dirname, 'cli.ts')).href;
+  test('USAGE names the worker family', () => {
+    expect(USAGE).toContain(WORKER_USAGE_LINE);
+  });
+  test('worker with no verb prints the worker usage and returns 1', () => {
+    const err: string[] = [];
+    const code = main(
+      ['worker'],
+      {
+        env: {},
+        cwd: process.cwd(),
+        entryFileUrl,
+        runClaude: () => {
+          throw new Error('no claude in tests');
+        },
+      },
+      () => {},
+      (l) => err.push(l),
+    );
+    expect(code).toBe(1);
+    expect(err).toEqual([`usage: ${WORKER_USAGE_LINE}`]);
   });
 });
 
