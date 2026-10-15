@@ -121,6 +121,28 @@ desk_target="$desk_work/touched.txt"
 desk_prompt="Use the Bash tool to run exactly this command, once: touch '$desk_target'. Then reply with the single word ok."
 desk_job=
 
+# The verdict matches by name, so a session of this name left by an earlier
+# run could pass the check while the cleanup removes only the new one. Prints
+# the id of each listed session so named, and exits 3 when stdin holds no
+# listing.
+desk_leftovers='
+let rows;
+try {
+  rows = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+} catch {
+  process.exit(3);
+}
+if (!Array.isArray(rows)) process.exit(3);
+const named = rows.filter((r) => r !== null && typeof r === "object" && r.name === process.argv[1]);
+console.log(named.map((r) => r.id ?? r.sessionId ?? "unknown").join(" "));
+'
+desk_listed=$(claude agents --json 2>"$desk_work/agents-err.txt") ||
+  fail "claude agents --json failed, so the check cannot tell whether an earlier $desk_name remains: $(cat "$desk_work/agents-err.txt")"
+desk_left=$(printf '%s\n' "$desk_listed" | node -e "$desk_leftovers" "$desk_name") ||
+  fail "claude agents --json printed no listing: $desk_listed"
+[ -z "$desk_left" ] ||
+  fail "a session named $desk_name remains from an earlier run, and the desk stage tells sessions apart by name. Stop and remove each one with claude stop <id>, then claude rm <id>, and run the check again; ids: $desk_left"
+
 # A claude rm run at once after claude stop kept everything while the worktree
 # lock still named the stopped process (docs/research/control-centre/
 # 2026-10-14-dispatched-worker-probes.md, Stopping and cleanup); finish waits
