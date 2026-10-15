@@ -150,8 +150,8 @@ desk_left=$(printf '%s\n' "$desk_listed" | node -e "$desk_leftovers" "$desk_name
 desk_rm_wait=15
 desk_rm_every=1
 
-# Stops and removes the session once it has an id. claude rm exits 0 whether it
-# removes or keeps, so only its stdout tells, as finish reads it.
+# Stops and removes the session once it has an id. claude rm's exit code does
+# not say whether it removed or kept, so only its stdout tells, as finish reads it.
 end_desk_session() {
   [ -n "$desk_job" ] || return 0
   claude stop "$desk_job" >/dev/null 2>&1 || true

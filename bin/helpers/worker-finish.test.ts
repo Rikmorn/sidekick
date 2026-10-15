@@ -675,6 +675,25 @@ describe('finish clears the worker', () => {
     expect(branchRemains(fx)).toBe(false);
   });
 
+  // Measured on 2026-10-15, Claude Code 2.1.300: claude rm on a job finish had
+  // just stopped printed the kept message and exited 1.
+  test('by the discard line, when claude rm exits 1 as it keeps the session', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    const keptOnce = kept(fx, fx.head);
+    h.claude.state.rm = [
+      { ...keptOnce, result: { ...keptOnce.result, code: 1 } },
+      removed(),
+    ];
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.claude.named('rm')).toEqual([
+      ['rm', ID],
+      ['rm', ID, '--discard-unpushed', `${fx.head}@${WORKTREE_ID}`],
+    ]);
+    expect(h.out).toContain(`session ${ID} removed`);
+  });
+
   test('refusing when the discard line does not end in removed', () => {
     const fx = fixture();
     fx.integrate();

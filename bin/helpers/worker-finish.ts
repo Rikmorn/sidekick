@@ -450,10 +450,12 @@ function unknownAnswer(args: string[], result: ClaudeResult): string[] {
 }
 
 // Runs claude rm's discard line only when it names the verified head; any
-// other answer refuses, and nothing is lost.
+// other answer refuses, and nothing is lost. The offer counts whatever the
+// exit code: claude rm exited 1 as it kept a job finish had just stopped
+// (measured 2026-10-15, 2.1.300). A run that timed out offers nothing.
 function discard(ready: Ready, wenv: WorkerEnv, kept: ClaudeResult): string[] {
   const text = printedStreams(kept).join('\n');
-  const offer = ranClean(kept) ? DISCARD_LINE.exec(text) : null;
+  const offer = kept.timedOut ? null : DISCARD_LINE.exec(text);
   if (offer === null) return unknownAnswer(['rm', ready.id], kept);
   const [, sha, worktreeId] = offer;
   if (sha !== ready.head) {
@@ -467,7 +469,8 @@ function discard(ready: Ready, wenv: WorkerEnv, kept: ClaudeResult): string[] {
   return saidRemoved(result) ? [] : unknownAnswer(args, result);
 }
 
-// claude rm exits 0 whether it removes or keeps, so only its text tells.
+// claude rm's exit code does not say whether it removed or kept, so only its
+// text tells.
 const removeSession: Step = (ready, wenv, out) => {
   const first = claudeAt(ready, wenv, ['rm', ready.id]);
   const issues = saidRemoved(first) ? [] : discard(ready, wenv, first);

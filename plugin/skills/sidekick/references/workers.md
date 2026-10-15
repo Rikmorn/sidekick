@@ -162,7 +162,7 @@ After a failure, fix what it names and run `finish` again. A re-run works until 
 
 ### What it reads from `claude rm`
 
-`claude rm` exits 0 whether it removes or keeps, so `finish` reads its text (the dispatch probes, "Stopping and cleanup"). That text belongs to agent view, as do `claude --bg`, `claude attach`, and `claude agents --json`. Claude Code's docs call agent view a research preview. If the text changes, `finish` fails closed: it prints what `claude rm` said and removes nothing more. Cleanup is then manual until sidekick catches up.
+The exit code of `claude rm` does not say whether it removed or kept, so `finish` reads its text. It exited 0 as it kept a live session (the dispatch probes, "Stopping and cleanup"). It exited 1 as it kept a job `finish` had just stopped, on Claude Code 2.1.300 on 2026-10-15. `finish` takes the discard offer whatever the exit code, and still runs it only when its sha is the verified head. That text belongs to agent view, as do `claude --bg`, `claude attach`, and `claude agents --json`. Claude Code's docs call agent view a research preview. If the text changes, `finish` fails closed: it prints what `claude rm` said and removes nothing more. Cleanup is then manual until sidekick catches up.
 
 ### What it does not guard
 

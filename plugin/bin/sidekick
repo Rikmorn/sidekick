@@ -4975,7 +4975,7 @@ function unknownAnswer(args, result) {
 function discard(ready, wenv, kept) {
   const text = printedStreams(kept).join(`
 `);
-  const offer = ranClean(kept) ? DISCARD_LINE.exec(text) : null;
+  const offer = kept.timedOut ? null : DISCARD_LINE.exec(text);
   if (offer === null)
     return unknownAnswer(["rm", ready.id], kept);
   const [, sha, worktreeId] = offer;
