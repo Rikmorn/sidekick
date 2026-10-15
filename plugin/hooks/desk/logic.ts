@@ -27,6 +27,8 @@ interface Entry {
 const WAITING_PREFIX = '● needs you';
 const WORKERS_PREFIX = '◆ workers';
 const AFTER_PREFIX = '  ';
+// Both prefixes pad to the longer one, so entries start in one column.
+const PREFIX_WIDTH = Math.max(width(WAITING_PREFIX), width(WORKERS_PREFIX));
 const WAITING_JOIN = '   ';
 const WORKERS_JOIN = ' · ';
 const FINISHED_JOIN = '   ';
@@ -50,6 +52,10 @@ function moreSuffix(left: number): string {
   return ` +${left} more`;
 }
 
+function padded(prefix: string): string {
+  return prefix + ' '.repeat(PREFIX_WIDTH - width(prefix)) + AFTER_PREFIX;
+}
+
 function joined(entries: Entry[]): string {
   return entries
     .map((entry, index) => (index === 0 ? '' : entry.before) + entry.text)
@@ -58,17 +64,15 @@ function joined(entries: Entry[]): string {
 
 // Whole entries first, then "+N more", then the bare cut text.
 function fitLine(prefix: string, entries: Entry[], columns: number): string {
-  const all = prefix + AFTER_PREFIX + joined(entries);
+  const head = padded(prefix);
+  const all = head + joined(entries);
   if (width(all) <= columns) return all;
   for (let kept = entries.length - 1; kept >= 1; kept -= 1) {
     const candidate =
-      prefix +
-      AFTER_PREFIX +
-      joined(entries.slice(0, kept)) +
-      moreSuffix(entries.length - kept);
+      head + joined(entries.slice(0, kept)) + moreSuffix(entries.length - kept);
     if (width(candidate) <= columns) return candidate;
   }
-  return cut(prefix + moreSuffix(entries.length), columns);
+  return cut(`${head}+${entries.length} more`, columns);
 }
 
 function failureLine(message: string, columns: number): Line {
@@ -231,7 +235,7 @@ export function paneLines(snapshot: DeskSnapshot, columns: number): Line[] {
 
 /** Whether two snapshots draw the same. */
 export function sameSnapshot(a: DeskSnapshot, b: DeskSnapshot): boolean {
-  // The CLI builds every snapshot with keys in a fixed order, so the serialised forms compare by value.
+  // `parseDeskSnapshot` rebuilds each object with literal keys in a fixed order, so the serialised forms compare by value.
   return JSON.stringify(a) === JSON.stringify(b);
 }
 

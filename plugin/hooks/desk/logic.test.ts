@@ -72,9 +72,17 @@ test('the band lists who waits, then the workers with the finished count', () =>
     },
     {
       tone: 'working',
-      text: '◆ workers  p8-board blocked · p7-desk working · p6-gauge done   2 finished',
+      text: '◆ workers    p8-board blocked · p7-desk working · p6-gauge done   2 finished',
     },
   ]);
+});
+
+test('the first entries of both band lines start in the same column', () => {
+  const [waiting, workers] = bandLines(full, 120);
+  expect(waiting?.text.indexOf('odin-ae')).toBe(
+    workers?.text.indexOf('p8-board'),
+  );
+  expect(waiting?.text.indexOf('odin-ae')).toBeGreaterThan(0);
 });
 
 test('with no children the finished count stands alone on a muted line', () => {
@@ -89,7 +97,7 @@ test('the band is empty when nothing waits, finished, or is a child', () => {
 
 test('a workers line with nothing finished has no finished entry', () => {
   const lines = bandLines(snapshot({ children: [child({ name: 'a' })] }), 120);
-  expect(lines).toEqual([{ tone: 'working', text: '◆ workers  a working' }]);
+  expect(lines).toEqual([{ tone: 'working', text: '◆ workers    a working' }]);
 });
 
 test('a failure snapshot gives one failure line, in the band and the pane', () => {
@@ -122,14 +130,14 @@ test('narrow bands keep whole entries and say how many were left out', () => {
     '● needs you  odin-ae · permission prompt +1 more',
   );
   expect(lines[1]?.text).toBe(
-    '◆ workers  p8-board blocked · p7-desk working +2 more',
+    '◆ workers    p8-board blocked · p7-desk working +2 more',
   );
 });
 
 test('when no entry fits the band shows the prefix and the count', () => {
   const lines = bandLines(full, 24);
-  expect(lines[0]?.text).toBe('● needs you +2 more');
-  expect(lines[1]?.text).toBe('◆ workers +4 more');
+  expect(lines[0]?.text).toBe('● needs you  +2 more');
+  expect(lines[1]?.text).toBe('◆ workers    +4 more');
 });
 
 test('when even that is too wide the text is cut without an ellipsis', () => {
@@ -163,12 +171,12 @@ test('the finished count is an entry the cut can drop', () => {
     finished: 3,
   });
   expect(bandLines(snap, 120)[0]?.text).toBe(
-    '◆ workers  a working · b working   3 finished',
+    '◆ workers    a working · b working   3 finished',
   );
-  expect(bandLines(snap, 40)[0]?.text).toBe(
-    '◆ workers  a working · b working +1 more',
+  expect(bandLines(snap, 42)[0]?.text).toBe(
+    '◆ workers    a working · b working +1 more',
   );
-  expect(bandLines(snap, 30)[0]?.text).toBe('◆ workers  a working +2 more');
+  expect(bandLines(snap, 30)[0]?.text).toBe('◆ workers    a working +2 more');
 });
 
 test('the pane heads the children with the repository, one block each', () => {
