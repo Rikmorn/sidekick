@@ -952,53 +952,82 @@ function readLatch(file) {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
     if (!isRecord2(parsed))
-      return;
-    const { level } = parsed;
-    return level === "warning" || level === "critical" ? level : undefined;
+      return {};
+    const { level, canary } = parsed;
+    return {
+      ...level === "warning" || level === "critical" ? { level } : {},
+      ...canary === true ? { canary } : {}
+    };
   } catch {
-    return;
+    return {};
   }
 }
 var LATCH_FLAGS = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW;
 function writeLatch(file, latch) {
-  if (latch === undefined) {
+  if (latch.level === undefined && latch.canary === undefined) {
     fs.rmSync(file, { force: true });
     return;
   }
   const fd = fs.openSync(file, LATCH_FLAGS, 384);
   try {
-    fs.writeFileSync(fd, JSON.stringify({ level: latch }));
+    fs.writeFileSync(fd, JSON.stringify(latch));
   } finally {
     fs.closeSync(fd);
+  }
+}
+var CANARY_TEXT = "sidekick: its mods are not running in this session, so the profile label and the exact compaction point are missing. If mods are not turned off (--safe-mode, --bare), run bun run check:mods in the sidekick repo.";
+function gaugeRuns(monitor, sessionId) {
+  return parseContextLimit(monitor.env[CONTEXT_LIMIT_VAR])?.session === sessionId;
+}
+function warn(transcript, sessionId, monitor, latched) {
+  try {
+    if (typeof transcript !== "string")
+      return { level: latched };
+    const found = readTailEntry(transcript);
+    if (found === undefined)
+      return { level: latched };
+    const { tokens, model } = found;
+    const limit = resolveLimit(monitor.env, sessionId, model);
+    if (limit === undefined)
+      return { level: latched };
+    const next = nextLatch(latched, tokens, limit.tokens);
+    if (next.speak === undefined)
+      return { level: next.latch };
+    const brief = monitor.env.SIDEKICK_WORKER;
+    return {
+      text: warningText(next.speak, tokens, limit, brief === "" ? undefined : brief),
+      level: next.latch
+    };
+  } catch {
+    return { level: latched };
   }
 }
 function postToolBatchContext(stdin, monitor) {
   try {
     const event = JSON.parse(stdin);
     if (!isRecord2(event) || "agent_id" in event)
-      return;
+      return {};
     const { session_id: sessionId, transcript_path: transcript } = event;
     if (typeof sessionId !== "string" || !SESSION_ID.test(sessionId)) {
-      return;
+      return {};
     }
-    if (typeof transcript !== "string")
-      return;
-    const found = readTailEntry(transcript);
-    if (found === undefined)
-      return;
-    const { tokens, model } = found;
-    const limit = resolveLimit(monitor.env, sessionId, model);
-    if (limit === undefined)
-      return;
     const latchFile = path.join(monitor.tmpdir, `sidekick-ctx-${sessionId}.json`);
-    const brief = monitor.env.SIDEKICK_WORKER;
     const latched = readLatch(latchFile);
-    const next = nextLatch(latched, tokens, limit.tokens);
-    if (next.latch !== latched)
-      writeLatch(latchFile, next.latch);
-    return next.speak === undefined ? undefined : warningText(next.speak, tokens, limit, brief === "" ? undefined : brief);
+    const warning = warn(transcript, sessionId, monitor, latched.level);
+    const speaksCanary = latched.canary === undefined && !gaugeRuns(monitor, sessionId);
+    const canary = speaksCanary ? true : latched.canary;
+    if (warning.level !== latched.level || canary !== latched.canary) {
+      writeLatch(latchFile, {
+        ...warning.level === undefined ? {} : { level: warning.level },
+        ...canary === undefined ? {} : { canary }
+      });
+    }
+    return {
+      ...warning.text === undefined ? {} : { context: warning.text },
+      ...speaksCanary ? { notice: CANARY_TEXT } : {}
+    };
   } catch {
-    return;
+    return {};
   }
 }
 
@@ -1196,22 +1225,22 @@ function releaseReviewerLines(pluginDir, packageText) {
 function postSkillContext(stdin, env) {
   const event = parseJson(stdin);
   if (!isSkillHookInput(event))
-    return;
+    return {};
   const nudge = NUDGES.get(event.tool_input.skill);
-  return nudge === undefined ? undefined : nudge(env.pluginDir);
+  return { context: nudge?.(env.pluginDir) };
 }
 function postReadContext(stdin, env) {
   const { pluginDir } = env;
   const event = parseJson(stdin);
   if (!isReadHookInput(event))
-    return;
+    return {};
   const filePath = event.tool_input.file_path;
   if (RELEASE_CHECK_PACKAGE.test(filePath)) {
-    return releaseReviewerLines(pluginDir, readContent(event));
+    return { context: releaseReviewerLines(pluginDir, readContent(event)) };
   }
   if (!REVIEW_PACKAGE.test(filePath))
-    return;
-  return reviewerLines(pluginDir, readContent(event));
+    return {};
+  return { context: reviewerLines(pluginDir, readContent(event)) };
 }
 var VERBS = new Map([
   ["post-skill", { eventName: "PostToolUse", contextFor: postSkillContext }],
@@ -1231,14 +1260,17 @@ function runHookCli(args, env, out, err) {
     err(`usage: ${HOOK_USAGE_LINE}`);
     return 1;
   }
-  const context = entry.contextFor(env.readStdin(), env);
-  if (context === undefined)
+  const { context, notice } = entry.contextFor(env.readStdin(), env) ?? {};
+  if (context === undefined && notice === undefined)
     return 0;
   out(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: entry.eventName,
-      additionalContext: context
-    }
+    ...context === undefined ? {} : {
+      hookSpecificOutput: {
+        hookEventName: entry.eventName,
+        additionalContext: context
+      }
+    },
+    ...notice === undefined ? {} : { systemMessage: notice }
   }));
   return 0;
 }

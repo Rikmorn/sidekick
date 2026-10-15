@@ -3,13 +3,18 @@
  * sidekick's hooks add. The two PostToolUse verbs fire when a skill it extends
  * loads, or when a review package is read: superpowers' own, or the one
  * sk-milestone's release check builds, which gets lines of its own. The
- * PostToolBatch verb warns the model as its context fills. Every other input
- * prints nothing and returns 0, because a hook never blocks or fails the call
- * it watches (ADR-0010, ADR-0011).
+ * PostToolBatch verb warns the model as its context fills, and tells the
+ * operator once, through a `systemMessage`, when sidekick's mods are not
+ * running. Every other input prints nothing and returns 0, because a hook
+ * never blocks or fails the call it watches (ADR-0010, ADR-0011).
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { type MonitorEnv, postToolBatchContext } from './context-monitor.js';
+import {
+  type MonitorEnv,
+  type MonitorOutput,
+  postToolBatchContext,
+} from './context-monitor.js';
 
 export const HOOK_USAGE_LINE =
   'sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)';
@@ -42,7 +47,7 @@ function readContent(event: ReadHookInput): string {
 }
 
 type Nudge = (pluginDir: string) => string | undefined;
-type ContextFor = (stdin: string, env: HookEnv) => string | undefined;
+type ContextFor = (stdin: string, env: HookEnv) => MonitorOutput | undefined;
 
 const DESIGN_SKILL = path.join('skills', 'sk-design', 'SKILL.md');
 const EXECUTE_SKILL = path.join('skills', 'sk-execute', 'SKILL.md');
@@ -255,23 +260,23 @@ function releaseReviewerLines(pluginDir: string, packageText: string): string {
   ].join('\n\n');
 }
 
-function postSkillContext(stdin: string, env: HookEnv): string | undefined {
+function postSkillContext(stdin: string, env: HookEnv): MonitorOutput {
   const event = parseJson(stdin);
-  if (!isSkillHookInput(event)) return undefined;
+  if (!isSkillHookInput(event)) return {};
   const nudge = NUDGES.get(event.tool_input.skill);
-  return nudge === undefined ? undefined : nudge(env.pluginDir);
+  return { context: nudge?.(env.pluginDir) };
 }
 
-function postReadContext(stdin: string, env: HookEnv): string | undefined {
+function postReadContext(stdin: string, env: HookEnv): MonitorOutput {
   const { pluginDir } = env;
   const event = parseJson(stdin);
-  if (!isReadHookInput(event)) return undefined;
+  if (!isReadHookInput(event)) return {};
   const filePath = event.tool_input.file_path;
   if (RELEASE_CHECK_PACKAGE.test(filePath)) {
-    return releaseReviewerLines(pluginDir, readContent(event));
+    return { context: releaseReviewerLines(pluginDir, readContent(event)) };
   }
-  if (!REVIEW_PACKAGE.test(filePath)) return undefined;
-  return reviewerLines(pluginDir, readContent(event));
+  if (!REVIEW_PACKAGE.test(filePath)) return {};
+  return { context: reviewerLines(pluginDir, readContent(event)) };
 }
 
 interface Verb {
@@ -304,14 +309,19 @@ export function runHookCli(
     err(`usage: ${HOOK_USAGE_LINE}`);
     return 1;
   }
-  const context = entry.contextFor(env.readStdin(), env);
-  if (context === undefined) return 0;
+  const { context, notice } = entry.contextFor(env.readStdin(), env) ?? {};
+  if (context === undefined && notice === undefined) return 0;
   out(
     JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: entry.eventName,
-        additionalContext: context,
-      },
+      ...(context === undefined
+        ? {}
+        : {
+            hookSpecificOutput: {
+              hookEventName: entry.eventName,
+              additionalContext: context,
+            },
+          }),
+      ...(notice === undefined ? {} : { systemMessage: notice }),
     }),
   );
   return 0;

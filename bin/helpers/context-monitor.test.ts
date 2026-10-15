@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CONTEXT_LIMIT_VAR } from '../../plugin/hooks/gauge/contract.js';
 import {
+  CANARY_TEXT,
   nextLatch,
   parseTail,
   postToolBatchContext,
@@ -347,12 +348,19 @@ describe('warningText', () => {
 });
 
 describe('postToolBatchContext', () => {
-  const WINDOW_ENV = { CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000' };
+  // The gauge's value for a session: with it the canary stays quiet.
+  const gaugeEnv = (sessionId: string) => ({
+    [CONTEXT_LIMIT_VAR]: gauge({
+      session: sessionId,
+      kind: 'window',
+      tokens: 1000,
+    }),
+  });
 
   function fixture(sessionId = 'aaa') {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ctx-'));
     const transcript = path.join(dir, `${sessionId}.jsonl`);
-    const monitor = { env: WINDOW_ENV, tmpdir: dir };
+    const monitor = { env: gaugeEnv(sessionId), tmpdir: dir };
     const event = (extra: Record<string, unknown> = {}) =>
       JSON.stringify({
         session_id: sessionId,
@@ -366,45 +374,57 @@ describe('postToolBatchContext', () => {
     return { dir, transcript, monitor, event, append, latchFile };
   }
 
+  // A usage entry on the gauge's model, so the gauge's value applies.
+  const usage = (r: number) => entry({ r, model: MODEL });
+  const readLatch = (file: string) =>
+    JSON.parse(fs.readFileSync(file, 'utf-8'));
+
   test('speaks once per level', () => {
     const f = fixture();
-    f.append(entry({ r: 638 }));
-    expect(postToolBatchContext(f.event(), f.monitor)).toBe(
-      warningText('warning', 650, W(1000)),
-    );
-    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
-    f.append(entry({ r: 748 }));
-    expect(postToolBatchContext(f.event(), f.monitor)).toBe(
-      warningText('critical', 760, W(1000)),
-    );
-    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+    f.append(usage(638));
+    expect(postToolBatchContext(f.event(), f.monitor)).toEqual({
+      context: warningText('warning', 650, W(1000)),
+    });
+    expect(postToolBatchContext(f.event(), f.monitor)).toEqual({});
+    f.append(usage(748));
+    expect(postToolBatchContext(f.event(), f.monitor)).toEqual({
+      context: warningText('critical', 760, W(1000)),
+    });
+    expect(postToolBatchContext(f.event(), f.monitor)).toEqual({});
   });
 
   test('passes SIDEKICK_WORKER through, and ignores an empty one', () => {
     const f = fixture();
-    f.append(entry({ r: 748 }));
+    f.append(usage(748));
     const worker = {
       ...f.monitor,
-      env: { ...WINDOW_ENV, SIDEKICK_WORKER: BRIEF },
+      env: { ...f.monitor.env, SIDEKICK_WORKER: BRIEF },
     };
-    expect(postToolBatchContext(f.event(), worker)).toBe(
+    expect(postToolBatchContext(f.event(), worker).context).toBe(
       warningText('critical', 760, W(1000), BRIEF),
     );
     fs.rmSync(f.latchFile);
-    const empty = { ...f.monitor, env: { ...WINDOW_ENV, SIDEKICK_WORKER: '' } };
-    expect(postToolBatchContext(f.event(), empty)).toBe(
+    const empty = {
+      ...f.monitor,
+      env: { ...f.monitor.env, SIDEKICK_WORKER: '' },
+    };
+    expect(postToolBatchContext(f.event(), empty).context).toBe(
       warningText('critical', 760, W(1000)),
     );
   });
 
   test('measures against the gauge value, and falls back when it names another session', () => {
     const f = fixture();
-    f.append(entry({ r: 638, model: MODEL }));
+    f.append(usage(638));
     const env = {
-      [CONTEXT_LIMIT_VAR]: gauge({ tokens: 1000, kind: 'compaction' }),
+      [CONTEXT_LIMIT_VAR]: gauge({
+        session: 'aaa',
+        tokens: 1000,
+        kind: 'compaction',
+      }),
       CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '100000',
     };
-    expect(postToolBatchContext(f.event(), { ...f.monitor, env })).toBe(
+    expect(postToolBatchContext(f.event(), { ...f.monitor, env }).context).toBe(
       warningText('warning', 650, { tokens: 1000, kind: 'compaction' }),
     );
     fs.rmSync(f.latchFile);
@@ -413,87 +433,238 @@ describe('postToolBatchContext', () => {
       [CONTEXT_LIMIT_VAR]: gauge({ session: 'old', tokens: 1000 }),
     };
     expect(
-      postToolBatchContext(f.event(), { ...f.monitor, env: foreign }),
+      postToolBatchContext(f.event(), { ...f.monitor, env: foreign }).context,
     ).toBeUndefined();
   });
 
-  test('stays silent for a subagent, a bad session id, no window, no transcript, or bad JSON', () => {
+  test('stays silent for a subagent, a bad session id, a missing transcript, or bad JSON', () => {
     const f = fixture();
-    f.append(entry({ r: 638 }));
-    const speaks = (stdin: string, monitor = f.monitor) =>
+    f.append(usage(638));
+    const bare = { env: {}, tmpdir: f.dir };
+    const speaks = (stdin: string, monitor = bare) =>
       postToolBatchContext(stdin, monitor);
-    expect(speaks(f.event({ agent_id: 'sub1' }))).toBeUndefined();
-    expect(speaks(f.event({ session_id: '../x' }))).toBeUndefined();
-    expect(speaks(f.event({ session_id: 'a'.repeat(129) }))).toBeUndefined();
-    expect(speaks(f.event({ session_id: 'a b' }))).toBeUndefined();
-    expect(speaks(f.event(), { env: {}, tmpdir: f.dir })).toBeUndefined();
-    expect(
-      speaks(f.event({ transcript_path: path.join(f.dir, 'nope.jsonl') })),
-    ).toBeUndefined();
-    expect(speaks('not json')).toBeUndefined();
+    expect(speaks(f.event({ agent_id: 'sub1' }))).toEqual({});
+    expect(speaks(f.event({ session_id: '../x' }))).toEqual({});
+    expect(speaks(f.event({ session_id: 'a'.repeat(129) }))).toEqual({});
+    expect(speaks(f.event({ session_id: 'a b' }))).toEqual({});
+    expect(speaks('not json')).toEqual({});
     expect(fs.existsSync(f.latchFile)).toBe(false);
+    // With the gauge's value present, a missing transcript leaves nothing to say.
+    expect(
+      speaks(
+        f.event({ transcript_path: path.join(f.dir, 'nope.jsonl') }),
+        f.monitor,
+      ),
+    ).toEqual({});
   });
 
   test('re-arms after compaction', () => {
     const f = fixture();
-    f.append(entry({ r: 738 }));
-    expect(postToolBatchContext(f.event(), f.monitor)).toBeDefined();
+    f.append(usage(738));
+    expect(postToolBatchContext(f.event(), f.monitor).context).toBeDefined();
     expect(fs.existsSync(f.latchFile)).toBe(true);
-    f.append(entry({ r: 88 }));
-    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+    f.append(usage(88));
+    expect(postToolBatchContext(f.event(), f.monitor)).toEqual({});
     expect(fs.existsSync(f.latchFile)).toBe(false);
-    f.append(entry({ r: 638 }));
-    expect(postToolBatchContext(f.event(), f.monitor)).toBe(
+    f.append(usage(638));
+    expect(postToolBatchContext(f.event(), f.monitor).context).toBe(
       warningText('warning', 650, W(1000)),
     );
   });
 
   test('keeps a latch file per session', () => {
     const a = fixture('aaa');
-    const dir = a.dir;
     const b = fixture('bbb');
-    // Both sessions share one tmpdir.
-    const shared = { env: WINDOW_ENV, tmpdir: dir };
-    a.append(entry({ r: 638 }));
-    b.append(entry({ r: 638 }));
-    expect(postToolBatchContext(a.event(), shared)).toBeDefined();
-    expect(postToolBatchContext(b.event(), shared)).toBeDefined();
-    expect(postToolBatchContext(a.event(), shared)).toBeUndefined();
-    expect(postToolBatchContext(b.event(), shared)).toBeUndefined();
+    // Both sessions share one tmpdir, and each has its own gauge value.
+    const sharedFor = (id: string) => ({
+      env: gaugeEnv(id),
+      tmpdir: a.dir,
+    });
+    a.append(usage(638));
+    b.append(usage(638));
+    expect(
+      postToolBatchContext(a.event(), sharedFor('aaa')).context,
+    ).toBeDefined();
+    expect(
+      postToolBatchContext(b.event(), sharedFor('bbb')).context,
+    ).toBeDefined();
+    expect(
+      postToolBatchContext(a.event(), sharedFor('aaa')).context,
+    ).toBeUndefined();
+    expect(
+      postToolBatchContext(b.event(), sharedFor('bbb')).context,
+    ).toBeUndefined();
   });
 
   test('gives silence when the newest main-thread entry is past 2 MB from the end', () => {
     const f = fixture();
     const filler = JSON.stringify({ type: 'user', text: 'x'.repeat(990) });
-    f.append(entry({ r: 638 }));
+    f.append(usage(638));
     f.append(...Array.from({ length: 2150 }, () => filler));
     expect(fs.statSync(f.transcript).size).toBeGreaterThan(2 * 1024 * 1024);
-    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+    expect(postToolBatchContext(f.event(), f.monitor)).toEqual({});
   });
 
   test('records the level in the latch file', () => {
     const f = fixture();
-    f.append(entry({ r: 638 }));
+    f.append(usage(638));
     postToolBatchContext(f.event(), f.monitor);
-    expect(JSON.parse(fs.readFileSync(f.latchFile, 'utf-8'))).toEqual({
-      level: 'warning',
-    });
+    expect(readLatch(f.latchFile)).toEqual({ level: 'warning' });
   });
 
   test('treats a malformed latch file as no latch', () => {
     const f = fixture();
-    f.append(entry({ r: 638 }));
+    f.append(usage(638));
     fs.writeFileSync(f.latchFile, 'garbage');
-    expect(postToolBatchContext(f.event(), f.monitor)).toBeDefined();
+    expect(postToolBatchContext(f.event(), f.monitor).context).toBeDefined();
   });
 
   test('never writes through a symlink planted at the latch path', () => {
     const f = fixture();
-    f.append(entry({ r: 638 }));
+    f.append(usage(638));
     const target = path.join(f.dir, 'victim.txt');
     fs.writeFileSync(target, 'keep me');
     fs.symlinkSync(target, f.latchFile);
-    expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
+    expect(postToolBatchContext(f.event(), f.monitor)).toEqual({});
     expect(fs.readFileSync(target, 'utf-8')).toBe('keep me');
+  });
+
+  describe('the canary', () => {
+    const modelMismatch = (f: ReturnType<typeof fixture>) => ({
+      ...f.monitor,
+      env: {
+        [CONTEXT_LIMIT_VAR]: gauge({
+          session: 'aaa',
+          model: 'claude-haiku-4-5',
+          kind: 'window',
+          tokens: 1000,
+        }),
+      },
+    });
+
+    test('is the verbatim text', () => {
+      expect(CANARY_TEXT).toBe(
+        'sidekick: its mods are not running in this session, so the profile label and the exact compaction point are missing. If mods are not turned off (--safe-mode, --bare), run bun run check:mods in the sidekick repo.',
+      );
+    });
+
+    test.each([
+      ['unset', {}],
+      ['malformed', { [CONTEXT_LIMIT_VAR]: '{"session":' }],
+      ['another session', { [CONTEXT_LIMIT_VAR]: gauge({ session: 'old' }) }],
+    ])('speaks once when the variable is %s', (_name, env) => {
+      const f = fixture();
+      f.append(usage(10));
+      const monitor = { ...f.monitor, env };
+      expect(postToolBatchContext(f.event(), monitor)).toEqual({
+        notice: CANARY_TEXT,
+      });
+      expect(postToolBatchContext(f.event(), monitor)).toEqual({});
+      expect(readLatch(f.latchFile)).toEqual({ canary: true });
+    });
+
+    test('speaks without a transcript figure or any limit source', () => {
+      const f = fixture();
+      const monitor = { env: {}, tmpdir: f.dir };
+      expect(postToolBatchContext(f.event(), monitor)).toEqual({
+        notice: CANARY_TEXT,
+      });
+      expect(postToolBatchContext(f.event(), monitor)).toEqual({});
+    });
+
+    test('speaks again in a new session id', () => {
+      const a = fixture('aaa');
+      const b = fixture('bbb');
+      const shared = { env: {}, tmpdir: a.dir };
+      expect(postToolBatchContext(a.event(), shared).notice).toBe(CANARY_TEXT);
+      expect(postToolBatchContext(b.event(), shared).notice).toBe(CANARY_TEXT);
+      expect(postToolBatchContext(a.event(), shared).notice).toBeUndefined();
+    });
+
+    test("is silent when the value is this session's", () => {
+      const f = fixture();
+      f.append(usage(10));
+      expect(postToolBatchContext(f.event(), f.monitor)).toEqual({});
+      expect(fs.existsSync(f.latchFile)).toBe(false);
+    });
+
+    test("is silent when the value is this session's but its model differs from the transcript's", () => {
+      const f = fixture();
+      f.append(usage(10));
+      expect(postToolBatchContext(f.event(), modelMismatch(f))).toEqual({});
+    });
+
+    test('never speaks for a subagent, even with no value', () => {
+      const f = fixture();
+      const monitor = { env: {}, tmpdir: f.dir };
+      expect(
+        postToolBatchContext(f.event({ agent_id: 'sub1' }), monitor),
+      ).toEqual({});
+      expect(fs.existsSync(f.latchFile)).toBe(false);
+    });
+
+    test('shares a batch with a warning', () => {
+      const f = fixture();
+      f.append(usage(638));
+      const monitor = {
+        env: { CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000' },
+        tmpdir: f.dir,
+      };
+      expect(postToolBatchContext(f.event(), monitor)).toEqual({
+        context: warningText('warning', 650, W(1000)),
+        notice: CANARY_TEXT,
+      });
+      expect(readLatch(f.latchFile)).toEqual({
+        level: 'warning',
+        canary: true,
+      });
+    });
+
+    test('a drop below the first level clears the level and keeps the canary', () => {
+      const f = fixture();
+      const monitor = {
+        env: { CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000' },
+        tmpdir: f.dir,
+      };
+      f.append(usage(638));
+      postToolBatchContext(f.event(), monitor);
+      f.append(usage(88));
+      expect(postToolBatchContext(f.event(), monitor)).toEqual({});
+      expect(readLatch(f.latchFile)).toEqual({ canary: true });
+      f.append(usage(638));
+      expect(postToolBatchContext(f.event(), monitor)).toEqual({
+        context: warningText('warning', 650, W(1000)),
+      });
+    });
+
+    test('writes the latch at mode 0600', () => {
+      const f = fixture();
+      postToolBatchContext(f.event(), { env: {}, tmpdir: f.dir });
+      expect(fs.statSync(f.latchFile).mode & 0o777).toBe(0o600);
+    });
+
+    test('never writes through a symlink planted at the latch path', () => {
+      const f = fixture();
+      const target = path.join(f.dir, 'victim.txt');
+      fs.writeFileSync(target, 'keep me');
+      fs.symlinkSync(target, f.latchFile);
+      expect(
+        postToolBatchContext(f.event(), { env: {}, tmpdir: f.dir }),
+      ).toEqual({});
+      expect(fs.readFileSync(target, 'utf-8')).toBe('keep me');
+    });
+
+    test('reads the old latch shape and a junk one', () => {
+      const f = fixture();
+      const monitor = { env: {}, tmpdir: f.dir };
+      fs.writeFileSync(f.latchFile, JSON.stringify({ level: 'warning' }));
+      expect(postToolBatchContext(f.event(), monitor).notice).toBe(CANARY_TEXT);
+      expect(readLatch(f.latchFile)).toEqual({
+        level: 'warning',
+        canary: true,
+      });
+      fs.writeFileSync(f.latchFile, JSON.stringify({ level: 3, canary: 'x' }));
+      expect(postToolBatchContext(f.event(), monitor).notice).toBe(CANARY_TEXT);
+    });
   });
 });

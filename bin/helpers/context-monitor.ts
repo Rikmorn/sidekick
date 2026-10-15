@@ -1,8 +1,10 @@
 /**
  * The context monitor: the figure and the model from a transcript's tail, the
  * limit from the gauge's variable or the environment, the latch, and the
- * words, as pure functions, and the
- * `post-tool-batch` handler that reads the transcript and keeps the latch file.
+ * words, as pure functions, and the `post-tool-batch` handler that reads the
+ * transcript and keeps the latch file. The handler returns the advisory for
+ * the model and, once per session, a notice for the operator when the
+ * gauge's variable is missing, malformed, or another session's.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -197,14 +199,23 @@ function readTailEntry(transcript: string): TailEntry | undefined {
   }
 }
 
-function readLatch(file: string): Level | undefined {
+/** What the latch file remembers: the level last spoken, and whether the canary has spoken. */
+interface Latch {
+  level?: Level;
+  canary?: true;
+}
+
+function readLatch(file: string): Latch {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    if (!isRecord(parsed)) return undefined;
-    const { level } = parsed;
-    return level === 'warning' || level === 'critical' ? level : undefined;
+    if (!isRecord(parsed)) return {};
+    const { level, canary } = parsed;
+    return {
+      ...(level === 'warning' || level === 'critical' ? { level } : {}),
+      ...(canary === true ? { canary } : {}),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -216,55 +227,107 @@ const LATCH_FLAGS =
   fs.constants.O_TRUNC |
   fs.constants.O_NOFOLLOW;
 
-function writeLatch(file: string, latch: Level | undefined): void {
-  if (latch === undefined) {
+function writeLatch(file: string, latch: Latch): void {
+  if (latch.level === undefined && latch.canary === undefined) {
     fs.rmSync(file, { force: true });
     return;
   }
   const fd = fs.openSync(file, LATCH_FLAGS, 0o600);
   try {
-    fs.writeFileSync(fd, JSON.stringify({ level: latch }));
+    fs.writeFileSync(fd, JSON.stringify(latch));
   } finally {
     fs.closeSync(fd);
   }
 }
 
-/** The advisory to add after a tool batch; undefined when the monitor stays silent. */
+/** What a tool batch adds: `context` for the model, `notice` for the operator. */
+export interface MonitorOutput {
+  context?: string;
+  notice?: string;
+}
+
+/** The operator's notice that the gauge is not running. */
+export const CANARY_TEXT =
+  'sidekick: its mods are not running in this session, so the profile label and the exact compaction point are missing. If mods are not turned off (--safe-mode, --bare), run bun run check:mods in the sidekick repo.';
+
+// The gauge runs when its value parses and names this session; a child process
+// inherits the parent's value, which names another.
+function gaugeRuns(monitor: MonitorEnv, sessionId: string): boolean {
+  return (
+    parseContextLimit(monitor.env[CONTEXT_LIMIT_VAR])?.session === sessionId
+  );
+}
+
+interface Warning {
+  text?: string;
+  level: Level | undefined;
+}
+
+// The advisory the transcript's figure earns; the latched level stands when
+// there is no figure or no limit.
+function warn(
+  transcript: unknown,
+  sessionId: string,
+  monitor: MonitorEnv,
+  latched: Level | undefined,
+): Warning {
+  try {
+    if (typeof transcript !== 'string') return { level: latched };
+    const found = readTailEntry(transcript);
+    if (found === undefined) return { level: latched };
+    const { tokens, model } = found;
+    const limit = resolveLimit(monitor.env, sessionId, model);
+    if (limit === undefined) return { level: latched };
+    const next = nextLatch(latched, tokens, limit.tokens);
+    if (next.speak === undefined) return { level: next.latch };
+    const brief = monitor.env.SIDEKICK_WORKER;
+    return {
+      text: warningText(
+        next.speak,
+        tokens,
+        limit,
+        brief === '' ? undefined : brief,
+      ),
+      level: next.latch,
+    };
+  } catch {
+    return { level: latched };
+  }
+}
+
+/** The advisory and the notice to add after a tool batch; empty when the monitor stays silent. */
 export function postToolBatchContext(
   stdin: string,
   monitor: MonitorEnv,
-): string | undefined {
+): MonitorOutput {
   try {
     const event: unknown = JSON.parse(stdin);
     // A subagent's event carries the parent's session_id, so skip it: its limit is its own.
-    if (!isRecord(event) || 'agent_id' in event) return undefined;
+    if (!isRecord(event) || 'agent_id' in event) return {};
     const { session_id: sessionId, transcript_path: transcript } = event;
     if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) {
-      return undefined;
+      return {};
     }
-    if (typeof transcript !== 'string') return undefined;
-    const found = readTailEntry(transcript);
-    if (found === undefined) return undefined;
-    const { tokens, model } = found;
-    const limit = resolveLimit(monitor.env, sessionId, model);
-    if (limit === undefined) return undefined;
     const latchFile = path.join(
       monitor.tmpdir,
       `sidekick-ctx-${sessionId}.json`,
     );
-    const brief = monitor.env.SIDEKICK_WORKER;
     const latched = readLatch(latchFile);
-    const next = nextLatch(latched, tokens, limit.tokens);
-    if (next.latch !== latched) writeLatch(latchFile, next.latch);
-    return next.speak === undefined
-      ? undefined
-      : warningText(
-          next.speak,
-          tokens,
-          limit,
-          brief === '' ? undefined : brief,
-        );
+    const warning = warn(transcript, sessionId, monitor, latched.level);
+    const speaksCanary =
+      latched.canary === undefined && !gaugeRuns(monitor, sessionId);
+    const canary = speaksCanary ? true : latched.canary;
+    if (warning.level !== latched.level || canary !== latched.canary) {
+      writeLatch(latchFile, {
+        ...(warning.level === undefined ? {} : { level: warning.level }),
+        ...(canary === undefined ? {} : { canary }),
+      });
+    }
+    return {
+      ...(warning.text === undefined ? {} : { context: warning.text }),
+      ...(speaksCanary ? { notice: CANARY_TEXT } : {}),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }

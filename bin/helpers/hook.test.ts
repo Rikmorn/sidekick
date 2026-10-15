@@ -4,7 +4,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { warningText } from './context-monitor.js';
+import { CONTEXT_LIMIT_VAR } from '../../plugin/hooks/gauge/contract.js';
+import { CANARY_TEXT, warningText } from './context-monitor.js';
 import { readSection, readSkillDescription, runHookCli } from './hook.js';
 
 const REPO_ROOT = path.resolve(
@@ -712,7 +713,12 @@ describe('plugin/hooks/post-read', () => {
 });
 
 describe('runHookCli post-tool-batch', () => {
-  test('prints one line whose event name is PostToolBatch', () => {
+  const MODEL = 'claude-opus-5-5';
+  const gaugeFor = (session: string) =>
+    JSON.stringify({ session, model: MODEL, kind: 'window', tokens: 1000 });
+
+  /** Runs the verb on a transcript at 650 tokens; `env` decides what speaks. */
+  function run(env: Record<string, string>, tokens = 648) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ctx-'));
     const transcript = path.join(dir, 't.jsonl');
     fs.writeFileSync(
@@ -721,9 +727,10 @@ describe('runHookCli post-tool-batch', () => {
         type: 'assistant',
         isSidechain: false,
         message: {
+          model: MODEL,
           usage: {
             input_tokens: 2,
-            cache_read_input_tokens: 648,
+            cache_read_input_tokens: tokens,
             cache_creation_input_tokens: 0,
           },
         },
@@ -740,17 +747,48 @@ describe('runHookCli post-tool-batch', () => {
             tool_calls: [],
           }),
         pluginDir: PLUGIN_DIR,
-        env: { CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000' },
+        env,
         tmpdir: dir,
       },
       (l) => out.push(l),
       () => {},
     );
+    return { code, out };
+  }
+
+  test('prints one object with additionalContext for a context', () => {
+    const { code, out } = run({ [CONTEXT_LIMIT_VAR]: gaugeFor('abc') });
     expect(code).toBe(0);
     expect(out.length).toBe(1);
-    expect(JSON.parse(out[0]).hookSpecificOutput.hookEventName).toBe(
-      'PostToolBatch',
+    const parsed = JSON.parse(out[0]);
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('PostToolBatch');
+    expect(parsed.hookSpecificOutput.additionalContext).toBe(
+      warningText('warning', 650, { tokens: 1000, kind: 'window' }),
     );
+    expect(parsed.systemMessage).toBeUndefined();
+  });
+
+  test('prints a top-level systemMessage for a notice alone', () => {
+    const { out } = run({}, 10);
+    expect(out.length).toBe(1);
+    expect(JSON.parse(out[0])).toEqual({ systemMessage: CANARY_TEXT });
+  });
+
+  test('prints both fields in one object when both arrive', () => {
+    const { out } = run({ CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000' });
+    expect(out.length).toBe(1);
+    const parsed = JSON.parse(out[0]);
+    expect(parsed.systemMessage).toBe(CANARY_TEXT);
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('PostToolBatch');
+    expect(parsed.hookSpecificOutput.additionalContext).toBe(
+      warningText('warning', 650, { tokens: 1000, kind: 'window' }),
+    );
+  });
+
+  test('prints nothing when neither arrives', () => {
+    const { code, out } = run({ [CONTEXT_LIMIT_VAR]: gaugeFor('abc') }, 10);
+    expect(code).toBe(0);
+    expect(out).toEqual([]);
   });
 });
 
@@ -765,6 +803,7 @@ describe('plugin/hooks/post-tool-batch', () => {
         type: 'assistant',
         isSidechain: false,
         message: {
+          model: 'claude-opus-5-5',
           usage: {
             input_tokens: 2,
             cache_read_input_tokens: 638,
@@ -785,7 +824,12 @@ describe('plugin/hooks/post-tool-batch', () => {
     const env = (pathValue: string) => ({
       PATH: pathValue,
       TMPDIR: dir,
-      CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000',
+      [CONTEXT_LIMIT_VAR]: JSON.stringify({
+        session: 'abc',
+        model: 'claude-opus-5-5',
+        kind: 'window',
+        tokens: 1000,
+      }),
     });
     return { dir, input, env, latch: path.join(dir, 'sidekick-ctx-abc.json') };
   }
@@ -810,6 +854,18 @@ describe('plugin/hooks/post-tool-batch', () => {
     expect(r.status).toBe(0);
     expectWarning(r.stdout);
     expect(fs.existsSync(f.latch)).toBe(true);
+  });
+
+  test('tells the operator once when the gauge is not running', () => {
+    const f = batchFixture();
+    const { [CONTEXT_LIMIT_VAR]: _gauge, ...bare } = f.env(
+      process.env.PATH ?? '',
+    );
+    const r = spawnBatch(f.input(), bare);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout.trim());
+    expect(parsed).toEqual({ systemMessage: CANARY_TEXT });
+    expect(spawnBatch(f.input(), bare).stdout).toBe('');
   });
 
   test('ends in bash for a subagent event, without starting node', () => {

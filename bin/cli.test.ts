@@ -125,6 +125,7 @@ describe('main', () => {
         type: 'assistant',
         isSidechain: false,
         message: {
+          model: 'claude-opus-5-5',
           usage: {
             input_tokens: 2,
             cache_read_input_tokens: 648,
@@ -137,7 +138,14 @@ describe('main', () => {
     const code = main(
       ['hook', 'post-tool-batch'],
       {
-        env: { CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000' },
+        env: {
+          SIDEKICK_CONTEXT_LIMIT: JSON.stringify({
+            session: 'abc',
+            model: 'claude-opus-5-5',
+            kind: 'window',
+            tokens: 1000,
+          }),
+        },
         tmpdir: dir,
         cwd: process.cwd(),
         entryFileUrl: pathToFileURL(path.join(__dirname, 'cli.ts')).href,
