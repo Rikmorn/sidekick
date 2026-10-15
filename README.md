@@ -28,7 +28,15 @@ claude plugin update -s user sidekick@rikmorn
 
 `-s project` updates a project-scope record. Run from a repo that holds a project-scope record for the plugin, the bare command updates that record, not the user install. Restart Claude Code, then run `sidekick rules install` again for each scope you deliver to. Auto-update is the alternative. It is off by default for a third-party marketplace, and `/plugin` → **Marketplaces** → **Enable auto-update** turns it on for `rikmorn`.
 
-The context monitor hook takes your session's window size from `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, else the `context_window` setting, and stays silent when neither is set. Set the setting for every session under `pluginConfigs` in `~/.claude/settings.json`:
+sidekick's mods need Claude Code 2.1.287 or later. The gauge is the first mod: it draws `profile: <name>` in the footer, and a `⚠` line when no profile settings reached the session. sidekick checks its own mods against the version in `.claude-code-version`.
+
+The context monitor hook takes your session's limit from the first of these that applies:
+
+1. The gauge's figure, for the session and model it was set for. It is the exact compaction point.
+2. `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, read as a compaction window: raised to Claude Code's 100,000 floor, less a 33,000 margin.
+3. The `context_window` setting, read as the window.
+
+It stays silent when none applies. When the gauge's figure is missing on a main-thread batch, the hook tells you once per session that the mods are not running. Set the setting for every session under `pluginConfigs` in `~/.claude/settings.json`:
 
 ```json
 { "pluginConfigs": { "sidekick@rikmorn": { "options": { "context_window": 1000000 } } } }
@@ -40,7 +48,7 @@ For one session, pass the same key to `--settings`:
 claude --settings '{"pluginConfigs":{"sidekick@rikmorn":{"options":{"context_window":1000000}}}}'
 ```
 
-A session started with `--plugin-dir ./plugin` loads the plugin as `sidekick@inline`, and reads that key's options instead. Set the window under both keys to cover both kinds of session.
+A session started with `--plugin-dir ./plugin` loads the plugin as `sidekick@inline`, and reads that key's options instead. Set the setting under both keys to cover both kinds of session.
 
 ## The rules
 
@@ -102,7 +110,7 @@ sidekick profile switch <name>                 # print the lines that resume thi
 | `plugin/rules/` | The portable rules: clean code, TypeScript, language, working standards, guidance authoring, PM conventions, agent-prompt authoring |
 | `plugin/skills/` | The reference skill `sidekick`, the PM skills `sk-orient`, `sk-track`, and `sk-milestone`, the execution skills `sk-execute` and `sk-worker`, and the design skill `sk-design` |
 | `plugin/agents/` | The sealed reviewer `sk-holistic-reviewer`, which `sk-milestone` dispatches to review a milestone's scope at Opening and its release at the close |
-| `plugin/hooks/` | The session-start hook prints the board's pickup in a tracked repo. The Skill-tool hook points the model at `sk-design` when brainstorming loads. It gives `writing-plans` the plan stance and the handoff of `sk-execute`. The Read hook gives sidekick's reviewer lines to superpowers' reviewers and to the release check's. The context monitor hook tells the model once at 65% and once at 75% of its context window. It stays silent while no window is set |
+| `plugin/hooks/` | The session-start hook prints the board's pickup in a tracked repo. The Skill-tool hook points the model at `sk-design` when brainstorming loads. It gives `writing-plans` the plan stance and the handoff of `sk-execute`. The Read hook gives sidekick's reviewer lines to superpowers' reviewers and to the release check's. The context monitor hook tells the model once at 65% and once at 75% of the way to compaction when a compaction point is known, and of the window otherwise. It stays silent while no limit is set. `mods.ts` and `gauge/` draw the footer label and set the limit the monitor reads |
 | `plugin/bin/sidekick` | The executable, built from `bin/cli.ts` |
 | `.claude-plugin/marketplace.json` | The one-plugin marketplace this repo is |
 
@@ -116,10 +124,13 @@ Bun is the dev toolchain; the executable runs on Node 22 (exact patch in `.nvmrc
 bun install
 bun run test        # bun test bin/
 bun run typecheck   # tsc --noEmit
+bun run typecheck:mods  # the mods against Claude Code's declarations
+bun run check:mods  # after a Claude Code upgrade: do the mods load and fire?
 bun run check       # biome
 bun run check:docs  # Markdown links, permalinks, docs layout
 bun run build       # bin/cli.ts → plugin/bin/sidekick (committed)
 claude plugin validate --strict . && claude plugin validate --strict plugin
+claude plugin test plugin  # the mods' tests
 ```
 
 A release is a milestone closed, tagged `sidekick--v<version>` and published as a GitHub Release; `AGENTS.md` §Releasing holds the steps. This repo consumes its own plugin like any other repo, and reads the user-level rules, which only a release updates.

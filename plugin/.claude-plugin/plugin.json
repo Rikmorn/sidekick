@@ -10,7 +10,7 @@
     "context_window": {
       "type": "number",
       "title": "Context window",
-      "description": "Tokens in your sessions' context window, such as 1000000. The context monitor warns at 65% and 75% of it, and stays silent when neither this nor `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is set."
+      "description": "Tokens in your sessions' context window, such as 1000000. The context monitor warns at 65% and 75% of it. When sidekick's mods run, the gauge's compaction point comes first, then `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. The monitor stays silent when none of the three applies."
     }
   },
   "dependencies": [
