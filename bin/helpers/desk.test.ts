@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { DeskSnapshot } from '../../plugin/hooks/desk/contract.js';
+import {
+  type DeskSnapshot,
+  RUN_TIMEOUT_MS,
+} from '../../plugin/hooks/desk/contract.js';
 import { DESK_USAGE_LINE, type DeskEnv, runDeskCli } from './desk.js';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
@@ -13,8 +16,6 @@ afterEach(removeTemps);
 const NOW = Date.parse('2026-10-15T12:00:00Z');
 const MINUTE = 60_000;
 const LISTING_ARGS = ['agents', '--json', '--all'];
-// The mod's run timeout, which the listing's own must stay under.
-const MOD_RUN_TIMEOUT_MS = 8_000;
 
 const JOB = 'aaaa0001';
 const CHILD_SESSION = 'aaaa0001-0000-0000-0000-000000000000';
@@ -268,7 +269,7 @@ describe('runDeskCli: a failing listing', () => {
     expect(h.calls).toHaveLength(1);
     expect(h.calls[0].args).toEqual(LISTING_ARGS);
     expect(h.calls[0].opts.cwd).toBe(cwd);
-    expect(h.calls[0].opts.timeoutMs).toBeLessThan(MOD_RUN_TIMEOUT_MS);
+    expect(h.calls[0].opts.timeoutMs).toBeLessThan(RUN_TIMEOUT_MS);
   });
 });
 

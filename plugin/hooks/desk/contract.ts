@@ -1,8 +1,12 @@
 // What the desk's two halves share: the snapshot `sidekick desk --json` prints
-// and the mod parses. This file imports nothing: `bin/` imports it under
+// and the mod parses, and the mod's run timeout, which the command's own
+// listing stays under. This file imports nothing: `bin/` imports it under
 // NodeNext, and the module loader allows relative files only.
 
 export const DESK_VERSION = 1;
+
+/** How long the mod lets one `sidekick desk --json` run take: under the mod's tick, so a slow run cannot stack behind the next. */
+export const RUN_TIMEOUT_MS = 8_000;
 
 export interface DeskWaiting {
   name: string;
