@@ -490,6 +490,28 @@ test('children appearing after a fullscreen render open the pane once', async ($
   expect(seen.opened).toHaveLength(1);
 });
 
+// A failed run leaves the children unknown, not gone, so their return after
+// it is no first appearance, and a pane the operator closed stays closed.
+test('children back after a failed run leave a closed pane closed', async ($, on) => {
+  const world = worldWith(printed(QUIET));
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await drawnBand($, 'terminal', bandProps(120), FULLSCREEN);
+  world.answer = printed(WORKERS);
+  await clock.advance(TICK_MS);
+  await runDeskCommand($);
+  expect(seen.closed).toEqual(['desk']);
+  world.answer = { exitCode: 1, stdout: '', stderr: 'listing failed' };
+  await clock.advance(TICK_MS);
+  const drawn = await drawnBand($, 'terminal', bandProps(120), FULLSCREEN);
+  expect(drawn[0]?.text).toBe(
+    '⚠ desk: the desk command exited 1: listing failed',
+  );
+  world.answer = printed(WORKERS);
+  await clock.advance(TICK_MS);
+  expect(seen.opened).toEqual([{ id: 'desk', title: 'Desk' }]);
+});
+
 // A tick runs outside any hook, so a rejection it left unhandled would fail
 // the file here, and in a session would surface nowhere the operator looks.
 test('a refused unasked open leaves the desk polling and the band drawn', async ($, on) => {

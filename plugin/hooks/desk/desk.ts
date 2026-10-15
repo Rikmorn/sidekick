@@ -116,6 +116,8 @@ function column(children: RenderElement[]): RenderElement {
 // are declared here and handed this state.
 interface DeskState {
   last: DeskSnapshot | undefined;
+  /** As the last ok snapshot had it: a failed run leaves the children unknown, not gone. */
+  hadChildren: boolean;
   isRunning: boolean;
   /** As the last band render reported it. */
   isFullscreen: boolean;
@@ -133,10 +135,11 @@ async function keepSnapshotIn(
   if (previous !== undefined && sameSnapshot(previous, snapshot)) return;
   desk.last = snapshot;
   $.ui.invalidate('ui.render');
-  const hadChildren = previous !== undefined && hasChildren(previous);
-  if (desk.isFullscreen && !hadChildren && hasChildren(snapshot)) {
-    await settle($.ui.open(PANE));
-  }
+  if (!snapshot.ok) return;
+  const hasChildrenNow = hasChildren(snapshot);
+  const childrenAppeared = !desk.hadChildren && hasChildrenNow;
+  desk.hadChildren = hasChildrenNow;
+  if (desk.isFullscreen && childrenAppeared) await settle($.ui.open(PANE));
 }
 
 async function refreshDesk($: EngineInterface, desk: DeskState): Promise<void> {
@@ -157,6 +160,7 @@ async function refreshDesk($: EngineInterface, desk: DeskState): Promise<void> {
 export function registerDesk(on: On): void {
   const desk: DeskState = {
     last: undefined,
+    hadChildren: false,
     isRunning: false,
     isFullscreen: false,
   };
