@@ -426,17 +426,23 @@ describe('runDeskCli: a missing worktree', () => {
 });
 
 describe('runDeskCli: freshness', () => {
-  test('an idle interactive session counts as finished only while its transcript is under 30 minutes old', () => {
+  // Each session runs alone, so the count names it. Its transcript sits in a
+  // project folder beside another, so the scan covers more than one.
+  test.each([
+    ['a transcript 29 minutes old counts', 29, 1],
+    ['a transcript 31 minutes old does not count', 31, 0],
+    ['no transcript does not count', undefined, 0],
+  ])('an idle interactive session: %s', (_label, ageMinutes, finished) => {
     const config = configFixture();
-    const fresh = 'cccc0001-0000-0000-0000-000000000000';
-    const stale = 'dddd0001-0000-0000-0000-000000000000';
-    const none = 'eeee0001-0000-0000-0000-000000000000';
-    config.transcript(fresh, [usageEntry(1)], 29);
-    config.transcript(stale, [usageEntry(1)], 31, '-other-project');
-    const rows = [fresh, stale, none].map((id) => interactiveRow(id));
+    const session = 'cccc0001-0000-0000-0000-000000000000';
+    config.transcript('ffff0009-0000-0000-0000-000000000000', [], 0);
+    if (ageMinutes !== undefined) {
+      config.transcript(session, [usageEntry(1)], ageMinutes, '-y-other');
+    }
+    const rows = [interactiveRow(session)];
     const s = snapshotOf(harness(tmp(), listing(rows), config.configDir));
-    expect(s.finished).toBe(1);
-    expect(s.others).toHaveLength(3);
+    expect(s.finished).toBe(finished);
+    expect(s.others).toHaveLength(1);
   });
 });
 
