@@ -85,9 +85,10 @@ function answerBeneath(on: On, session: Session): Seen {
       : { window: session.window };
     return { value: { startedAt: 0, context, rateLimits: [] } };
   });
+  // Claude Code 2.1.301 answers a write with `{}`, or `{ deny }` when it holds it.
   on('env.set', (_$, e) => {
     seen.env.set(e.name, e.value);
-    return { value: undefined };
+    return { value: {} };
   });
   on('ui.status', (_$, e) => {
     seen.statuses.push(e.text);
