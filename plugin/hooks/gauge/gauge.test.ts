@@ -9,13 +9,16 @@ import { CONTEXT_LIMIT_VAR, FIXTURE_FLAG, parseContextLimit } from './contract';
 import { UNPROFILED } from './logic';
 
 // The session the test's hooks answer for, beneath the plugin. A test may
-// change `id` between events, as /clear does.
+// change `id` between events, as /clear does. No `threshold` means
+// auto-compaction is off; `hasBreakdown` false is a session that answers no
+// breakdown even when asked.
 type Session = {
   flag: Settings;
   id: string;
   model: string;
   window: number;
-  threshold: number;
+  threshold?: number;
+  hasBreakdown: boolean;
 };
 
 // What the plugin wrote or drew through the engine.
@@ -40,6 +43,7 @@ function sessionWith(flag: Settings): Session {
     model: 'claude-opus-5-5',
     window: 1000000,
     threshold: 967000,
+    hasBreakdown: true,
   };
 }
 
@@ -57,7 +61,7 @@ function breakdownOf(session: Session): SessionContextBreakdown {
     mcpTools: [],
     agents: [],
     autoCompactThreshold: session.threshold,
-    isAutoCompactEnabled: true,
+    isAutoCompactEnabled: session.threshold !== undefined,
     apiUsage: null,
   };
 }
@@ -73,10 +77,10 @@ function answerBeneath(on: On, session: Session): Seen {
   on('session.model', () => ({ value: session.model }));
   // As the engine does, the breakdown comes back only when the call asks.
   on('session.usage', (_$, e) => {
-    const context =
-      e.breakdown === undefined
-        ? { window: session.window }
-        : { window: session.window, breakdown: breakdownOf(session) };
+    const isAnswered = e.breakdown !== undefined && session.hasBreakdown;
+    const context = isAnswered
+      ? { window: session.window, breakdown: breakdownOf(session) }
+      : { window: session.window };
     return { value: { startedAt: 0, context, rateLimits: [] } };
   });
   on('env.set', (_$, e) => {
@@ -110,6 +114,28 @@ test('session start sets the compaction limit and no status when profiled', asyn
     tokens: 967000,
   });
   expect(seen.statuses).toEqual([]);
+});
+
+test('session start sets the window limit when auto-compaction is off', async ($, on) => {
+  const session = { ...sessionWith(FIXTURE_FLAG), threshold: undefined };
+  const seen = answerBeneath(on, session);
+  await $.session.start(START);
+  expect(limitIn(seen)).toEqual({
+    session: 'session-1',
+    model: 'claude-opus-5-5',
+    kind: 'window',
+    tokens: 1000000,
+  });
+});
+
+// The unprofiled status shows the hook ran on past the usage read, so the
+// unset variable is not a hook that failed.
+test('session start writes no limit when the session gives no breakdown', async ($, on) => {
+  const session = { ...sessionWith({}), hasBreakdown: false };
+  const seen = answerBeneath(on, session);
+  await $.session.start(START);
+  expect(seen.env.has(CONTEXT_LIMIT_VAR)).toBe(false);
+  expect(seen.statuses).toEqual([UNPROFILED]);
 });
 
 test('session start pins the unprofiled status when the flag names no profile', async ($, on) => {

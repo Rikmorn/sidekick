@@ -10,14 +10,18 @@ async function flagProfile($: EngineInterface): Promise<string | undefined> {
   return profileOf(await $.settings.read({ source: 'flag' }));
 }
 
-// `$.env.set` takes the name as a literal; it is `CONTEXT_LIMIT_VAR`.
+// Only the breakdown says where compaction runs, so without one the variable
+// keeps its last value and the monitor falls back. `$.env.set` takes the name
+// as a literal; it is `CONTEXT_LIMIT_VAR`.
 async function refreshLimit($: EngineInterface): Promise<void> {
-  const usage = await $.session.usage({ breakdown: 'summary' });
+  const { context } = await $.session.usage({ breakdown: 'summary' });
+  const { breakdown } = context;
+  if (breakdown === undefined) return;
   const value = limitValue({
     session: await $.session.id(),
     model: await $.session.model(),
-    window: usage.context.window,
-    threshold: usage.context.breakdown?.autoCompactThreshold,
+    window: context.window,
+    threshold: breakdown.autoCompactThreshold,
   });
   await $.env.set('SIDEKICK_CONTEXT_LIMIT', value);
 }
