@@ -57,14 +57,20 @@ const RelativePath = v.pipe(
   ),
 );
 
+const WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+/**
+ * A worker's name, the one rule for the brief and the worker record. It names
+ * the session, the worktree `.claude/worktrees/<name>`, the branch
+ * `worktree-<name>`, and the record's file, so it cannot reach outside them.
+ */
+export const WorkerNameSchema = v.pipe(
+  v.string(),
+  v.regex(WORKER_NAME, `must match ${WORKER_NAME.source}`),
+);
+
 export const BriefSchema = v.strictObject({
-  name: v.pipe(
-    v.string(),
-    v.regex(
-      /^[a-z0-9][a-z0-9-]{0,39}$/,
-      'must match ^[a-z0-9][a-z0-9-]{0,39}$',
-    ),
-  ),
+  name: WorkerNameSchema,
   plan: AbsolutePath,
   spec: AbsolutePath,
   rulings: AbsolutePath,

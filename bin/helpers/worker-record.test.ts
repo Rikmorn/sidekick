@@ -84,6 +84,33 @@ describe('records', () => {
     expect(read.warnings).toHaveLength(1);
   });
 
+  test.each([
+    ['../escape', 'escape.json'],
+    ['Bad_Name', 'Bad_Name.json'],
+  ])('a record named "%s", against the worker-name rule, is skipped with a warning', (name, base) => {
+    const dir = tmp();
+    writeRecord(dir, record('w1'));
+    const file = path.join(recordsDir(dir), base);
+    fs.writeFileSync(file, JSON.stringify(record(name)));
+    const read = readRecords(dir);
+    expect(read.records).toEqual([record('w1')]);
+    expect(read.warnings).toEqual([
+      `${file} is not a worker record: must match ^[a-z0-9][a-z0-9-]{0,39}$`,
+    ]);
+  });
+
+  test('a record whose name is not its file name is skipped with a warning', () => {
+    const dir = tmp();
+    writeRecord(dir, record('b'));
+    const file = path.join(recordsDir(dir), 'a.json');
+    fs.renameSync(path.join(recordsDir(dir), 'b.json'), file);
+    const read = readRecords(dir);
+    expect(read.records).toEqual([]);
+    expect(read.warnings).toEqual([
+      `${file} holds the record of "b", not of "a"`,
+    ]);
+  });
+
   test('a missing folder is no records', () => {
     expect(readRecords(tmp())).toEqual({ records: [], warnings: [] });
   });

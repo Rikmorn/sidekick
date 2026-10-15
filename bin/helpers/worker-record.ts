@@ -7,10 +7,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
+import { WorkerNameSchema } from './worker-brief.js';
 
 const RecordSchema = v.strictObject({
   version: v.literal(1),
-  name: v.string(),
+  name: WorkerNameSchema,
   job: v.nullable(v.string()),
   brief: v.string(),
   dispatchedAt: v.string(),
@@ -18,17 +19,19 @@ const RecordSchema = v.strictObject({
 
 export type WorkerRecord = v.InferOutput<typeof RecordSchema>;
 
-// The brief's own rule for `name` (`BriefSchema` in worker-brief.ts). Repeated
-// here so a name from any caller cannot reach outside the records folder.
-const NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+// Checked on every write and removal too, so a name from any caller cannot
+// reach outside the records folder.
+const isWorkerName = (name: string): boolean => v.is(WorkerNameSchema, name);
 
 /** `<commonDir>/sidekick/workers` */
 export function recordsDir(commonDir: string): string {
   return path.join(commonDir, 'sidekick', 'workers');
 }
 
+const RECORD_SUFFIX = '.json';
+
 const fileFor = (commonDir: string, name: string): string =>
-  path.join(recordsDir(commonDir), `${name}.json`);
+  path.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
 
 /**
  * The job id on `claude --bg`'s `backgrounded · <id> · <name>` line for this
@@ -58,7 +61,7 @@ export function writeRecord(
   commonDir: string,
   record: WorkerRecord,
 ): { ok: true } | { issue: string } {
-  if (!NAME.test(record.name)) {
+  if (!isWorkerName(record.name)) {
     return { issue: `worker record not written: bad name "${record.name}"` };
   }
   const file = fileFor(commonDir, record.name);
@@ -71,21 +74,28 @@ export function writeRecord(
   }
 }
 
-// The record in one file, or why it does not parse.
+// The record in one file, or why it does not parse. Its name must be the
+// file's, since pruning removes the file its name picks.
 function parseRecord(file: string): WorkerRecord | string {
   try {
     const parsed = v.safeParse(
       RecordSchema,
       JSON.parse(fs.readFileSync(file, 'utf-8')),
     );
-    if (parsed.success) return parsed.output;
-    return `${file} is not a worker record: ${parsed.issues[0].message}`;
+    if (!parsed.success) {
+      return `${file} is not a worker record: ${parsed.issues[0].message}`;
+    }
+    const base = path.basename(file, RECORD_SUFFIX);
+    if (parsed.output.name !== base) {
+      return `${file} holds the record of "${parsed.output.name}", not of "${base}"`;
+    }
+    return parsed.output;
   } catch (e) {
     return `${file} cannot be read as a worker record: ${reason(e)}`;
   }
 }
 
-/** Every parseable record, and a warning per file that does not parse. A missing folder is no records. */
+/** Every valid record, and a warning per file that does not parse or holds another name than its own. A missing folder is no records. */
 export function readRecords(commonDir: string): {
   records: WorkerRecord[];
   warnings: string[];
@@ -97,7 +107,7 @@ export function readRecords(commonDir: string): {
   try {
     files = fs
       .readdirSync(dir)
-      .filter((f) => f.endsWith('.json'))
+      .filter((f) => f.endsWith(RECORD_SUFFIX))
       .sort();
   } catch (e) {
     if (e instanceof Error && 'code' in e && e.code === 'ENOENT') {
@@ -115,6 +125,6 @@ export function readRecords(commonDir: string): {
 
 /** Removes the named record. A missing file is fine. */
 export function removeRecord(commonDir: string, name: string): void {
-  if (!NAME.test(name)) return;
+  if (!isWorkerName(name)) return;
   fs.rmSync(fileFor(commonDir, name), { force: true });
 }

@@ -174,11 +174,15 @@ function transform(operation) {
     }
   };
 }
+var ABORT_EARLY_CONFIG = { abortEarly: true };
 function getFallback(schema, dataset, config$1) {
   return typeof schema.fallback === "function" ? schema.fallback(dataset, config$1) : schema.fallback;
 }
 function getDefault(schema, dataset, config$1) {
   return typeof schema.default === "function" ? schema.default(dataset, config$1) : schema.default;
+}
+function is(schema, input) {
+  return !schema["~run"]({ value: input }, ABORT_EARLY_CONFIG).issues;
 }
 function array(item, message$1) {
   return _standardSchema({
@@ -1142,8 +1146,10 @@ function parseFrontmatter(text) {
 }
 var AbsolutePath = pipe(string(), check((s) => path3.isAbsolute(s), "must be an absolute path"));
 var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) => !path3.isAbsolute(s), "must be relative to the repo top"), check((s) => !s.split(/[\\/]/).includes(".."), 'must not have a ".." segment'));
+var WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+var WorkerNameSchema = pipe(string(), regex(WORKER_NAME, `must match ${WORKER_NAME.source}`));
 var BriefSchema = strictObject({
-  name: pipe(string(), regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "must match ^[a-z0-9][a-z0-9-]{0,39}$")),
+  name: WorkerNameSchema,
   plan: AbsolutePath,
   spec: AbsolutePath,
   rulings: AbsolutePath,
@@ -2529,16 +2535,17 @@ import * as fs10 from "node:fs";
 import * as path9 from "node:path";
 var RecordSchema = strictObject({
   version: literal(1),
-  name: string(),
+  name: WorkerNameSchema,
   job: nullable(string()),
   brief: string(),
   dispatchedAt: string()
 });
-var NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+var isWorkerName = (name) => is(WorkerNameSchema, name);
 function recordsDir(commonDir) {
   return path9.join(commonDir, "sidekick", "workers");
 }
-var fileFor = (commonDir, name) => path9.join(recordsDir(commonDir), `${name}.json`);
+var RECORD_SUFFIX = ".json";
+var fileFor = (commonDir, name) => path9.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
 function jobIdFrom(stdout, name) {
   const lines = stdout.split(`
 `).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
@@ -2553,7 +2560,7 @@ function jobIdFrom(stdout, name) {
 }
 var reason4 = (e) => e instanceof Error ? e.message : String(e);
 function writeRecord(commonDir, record2) {
-  if (!NAME.test(record2.name)) {
+  if (!isWorkerName(record2.name)) {
     return { issue: `worker record not written: bad name "${record2.name}"` };
   }
   const file = fileFor(commonDir, record2.name);
@@ -2569,9 +2576,14 @@ function writeRecord(commonDir, record2) {
 function parseRecord(file) {
   try {
     const parsed = safeParse(RecordSchema, JSON.parse(fs10.readFileSync(file, "utf-8")));
-    if (parsed.success)
-      return parsed.output;
-    return `${file} is not a worker record: ${parsed.issues[0].message}`;
+    if (!parsed.success) {
+      return `${file} is not a worker record: ${parsed.issues[0].message}`;
+    }
+    const base = path9.basename(file, RECORD_SUFFIX);
+    if (parsed.output.name !== base) {
+      return `${file} holds the record of "${parsed.output.name}", not of "${base}"`;
+    }
+    return parsed.output;
   } catch (e) {
     return `${file} cannot be read as a worker record: ${reason4(e)}`;
   }
@@ -2582,7 +2594,7 @@ function readRecords(commonDir) {
   const warnings = [];
   let files;
   try {
-    files = fs10.readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
+    files = fs10.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { records, warnings };
@@ -2599,7 +2611,7 @@ function readRecords(commonDir) {
   return { records, warnings };
 }
 function removeRecord(commonDir, name) {
-  if (!NAME.test(name))
+  if (!isWorkerName(name))
     return;
   fs10.rmSync(fileFor(commonDir, name), { force: true });
 }
