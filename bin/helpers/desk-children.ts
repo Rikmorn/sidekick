@@ -26,8 +26,9 @@ const firstLine = (text: string): string => text.trim().split('\n')[0];
 
 /**
  * The repository holding `cwd`, from its main checkout or any linked
- * worktree. Undefined outside a repository. The main checkout's top is the
- * first entry `git worktree list` gives.
+ * worktree. The main checkout's top is the first entry `git worktree list`
+ * gives. Undefined outside a repository, and, with a warning, when
+ * `git worktree list` fails inside one.
  */
 export function findRepo(
   runGit: Runner,
