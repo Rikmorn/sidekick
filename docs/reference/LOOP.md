@@ -59,10 +59,12 @@ The band above the prompt has at most three lines, each cut to the band's width,
 
 `sidekick desk --json [--self <session id>]` computes the snapshot, and runs from a terminal without the mod. It reads `claude agents --json --all`, git, and transcript tails. It also reads the worker records in `<common git dir>/sidekick/workers/` of the repository holding the current folder; `references/workers.md` in the `sidekick` skill describes them. It prints one JSON object, whose shape `plugin/hooks/desk/contract.ts` holds: `waiting`, `children`, `finished`, `others`, and `warnings`. Inside a repository it adds `repo`, the main checkout's folder name.
 
-- **Waiting:** a live background session in `state: blocked`, or any live session in `status: waiting`. Its reason is the row's `waitingFor` when it has one.
-- **Finished:** counts sessions that are not children. That is a live background session in `state: done`, or an interactive one in `status: idle` whose transcript changed in the last 30 minutes.
+- **Current:** a row carrying a `pid`, or a background row in `state: working` or `blocked` after its process exited. `claude agents --json` uses the same rule without `--all`. A row that is not current shows only as a child.
+- **Waiting:** a current background session in `state: blocked`, with or without a `pid`, or a session with a `pid` in `status: waiting`. Its reason is the row's `waitingFor` when it has one, else `blocked` or `waiting`.
+- **Others:** every current session that is not a child. One in `state: working` without a `pid`, such as a `/loop` between steps, never waits and is never counted.
+- **Finished:** counts sessions that are not children. That is a background session with a `pid` in `state: done`, or an interactive one in `status: idle` whose transcript changed in the last 30 minutes.
 - **Children:** the repository's workers, each joined to its session by job id, else by name. A child whose session is gone reads `gone` and keeps its git marks.
-- **Warnings:** a listing value the desk does not know is kept, with a warning naming it. So is a live row without `status`, or a background row without `state`. A failed git call or transcript read leaves its field out and adds a warning too.
+- **Warnings:** a listing value the desk does not know is kept, with a warning naming it. So is a row with a `pid` but no `status`, or a background row without `state`. A failed git call or transcript read leaves its field out and adds a warning too.
 
 The command deletes a record whose session has left the listing and whose worktree is gone. It exits 0, with `ok: false` when the listing fails, and 1 on a usage error. The desk's `session.start` turns a failed setup into a failure snapshot, so the band names the failure rather than going blank. It calls `next(e)` once whatever happened. Its render hooks fall back to what lies beneath when their own drawing fails.
 

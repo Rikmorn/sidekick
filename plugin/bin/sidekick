@@ -1492,7 +1492,12 @@ function parseListingRows(value) {
     warnings: entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => !isRecord3(entry)).map(({ index }) => `the listing's entry ${index} is not an object`)
   };
 }
-var isLive = (row) => row.pid !== undefined;
+var hasProcess = (row) => row.pid !== undefined;
+var CURRENT_WITHOUT_PROCESS = new Set([
+  "working",
+  "blocked"
+]);
+var isCurrent = (row) => hasProcess(row) || row.kind === "background" && CURRENT_WITHOUT_PROCESS.has(row.state ?? "");
 var displayName = (row) => row.name ?? row.sessionId?.slice(0, 8) ?? row.id ?? "unknown";
 var WORKTREE_SUFFIX = /\/\.claude\/worktrees\/[^/]+\/?$/;
 function repoOf(cwd) {
@@ -1502,14 +1507,16 @@ function repoOf(cwd) {
   return top.slice(top.lastIndexOf("/") + 1);
 }
 function classify(row, fresh) {
-  if (!isLive(row))
+  if (!isCurrent(row))
     return { class: "neither" };
-  if (row.status === "waiting") {
-    return { class: "waiting", reason: row.waitingFor ?? "waiting" };
-  }
   const stateClass = row.kind === "background" && row.state !== undefined ? STATE_CLASS.get(row.state) : undefined;
   if (stateClass === "waiting") {
     return { class: "waiting", reason: row.waitingFor ?? "blocked" };
+  }
+  if (!hasProcess(row))
+    return { class: "neither" };
+  if (row.status === "waiting") {
+    return { class: "waiting", reason: row.waitingFor ?? "waiting" };
   }
   if (stateClass === "finished")
     return { class: "finished" };
@@ -1526,7 +1533,7 @@ function rowWarnings(row) {
     ...unknown2("kind", row.kind, KNOWN_KINDS.has(row.kind ?? "")),
     ...unknown2("state", row.state, STATE_CLASS.has(row.state ?? "")),
     ...unknown2("status", row.status, KNOWN_STATUSES.has(row.status ?? "")),
-    ...isLive(row) && row.status === undefined ? shape("live row has no status") : [],
+    ...hasProcess(row) && row.status === undefined ? shape("row with a pid has no status") : [],
     ...row.kind === "background" && row.state === undefined ? shape("background row has no state") : []
   ];
 }
@@ -1534,7 +1541,7 @@ function joinRow(record2, rows) {
   if (record2.job !== null)
     return rows.find((row) => row.id === record2.job);
   const named = rows.filter((row) => row.name === record2.name);
-  return named.find(isLive) ?? named[0];
+  return named.find(isCurrent) ?? named[0];
 }
 var RANK_WAITING = 0;
 var RANK_WORKING = 1;
@@ -1542,7 +1549,7 @@ var RANK_REST = 2;
 function joinChild(record2, row, facts, fresh) {
   const classified = row ? classify(row, fresh) : { class: "neither" };
   const { reason: reason4 } = classified;
-  const isWorking = row !== undefined && isLive(row) && (row.state === "working" || row.status === "busy");
+  const isWorking = row !== undefined && isCurrent(row) && (row.state === "working" || row.status === "busy");
   const child = {
     name: record2.name,
     state: row ? row.state ?? row.status ?? "unknown" : "gone",
@@ -1584,7 +1591,7 @@ function otherOf(row, classified) {
 function buildSnapshot(input) {
   const children = joinChildren(input);
   const childRows = new Set(children.flatMap(({ row }) => row ? [row] : []));
-  const others = input.rows.filter((row) => isLive(row) && !childRows.has(row)).filter((row) => input.self === undefined || row.sessionId !== input.self).map((row) => ({ row, classified: classify(row, input.freshInteractive) }));
+  const others = input.rows.filter((row) => isCurrent(row) && !childRows.has(row)).filter((row) => input.self === undefined || row.sessionId !== input.self).map((row) => ({ row, classified: classify(row, input.freshInteractive) }));
   const considered = [...childRows, ...others.map(({ row }) => row)];
   const warnings = [
     ...new Set([...input.warnings, ...considered.flatMap(rowWarnings)])

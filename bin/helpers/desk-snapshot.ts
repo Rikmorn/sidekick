@@ -110,8 +110,20 @@ export function parseListingRows(value: unknown): {
   };
 }
 
-// A row is live when it carries a pid.
-const isLive = (row: ListingRow): boolean => row.pid !== undefined;
+const hasProcess = (row: ListingRow): boolean => row.pid !== undefined;
+
+// The states in which a background row stays current after its process exits.
+const CURRENT_WITHOUT_PROCESS: ReadonlySet<string> = new Set([
+  'working',
+  'blocked',
+]);
+
+// A row is current while it carries a pid, or while it is a background row
+// still working or blocked: the rule `claude agents --json` uses without
+// `--all` (agent-view docs, §List sessions as JSON).
+const isCurrent = (row: ListingRow): boolean =>
+  hasProcess(row) ||
+  (row.kind === 'background' && CURRENT_WITHOUT_PROCESS.has(row.state ?? ''));
 
 const displayName = (row: ListingRow): string =>
   row.name ?? row.sessionId?.slice(0, 8) ?? row.id ?? 'unknown';
@@ -131,16 +143,18 @@ interface Classified {
 }
 
 function classify(row: ListingRow, fresh: ReadonlySet<string>): Classified {
-  if (!isLive(row)) return { class: 'neither' };
-  if (row.status === 'waiting') {
-    return { class: 'waiting', reason: row.waitingFor ?? 'waiting' };
-  }
+  if (!isCurrent(row)) return { class: 'neither' };
   const stateClass =
     row.kind === 'background' && row.state !== undefined
       ? STATE_CLASS.get(row.state)
       : undefined;
   if (stateClass === 'waiting') {
     return { class: 'waiting', reason: row.waitingFor ?? 'blocked' };
+  }
+  // Current without a process, the row is a background one still working.
+  if (!hasProcess(row)) return { class: 'neither' };
+  if (row.status === 'waiting') {
+    return { class: 'waiting', reason: row.waitingFor ?? 'waiting' };
   }
   if (stateClass === 'finished') return { class: 'finished' };
   const isFreshIdle =
@@ -151,6 +165,8 @@ function classify(row: ListingRow, fresh: ReadonlySet<string>): Classified {
   return { class: isFreshIdle ? 'finished' : 'neither' };
 }
 
+// The agent-view docs give `pid` and `status` together, only while the process
+// is alive, so a missing status is a shape change only beside a pid.
 function rowWarnings(row: ListingRow): string[] {
   const who = displayName(row);
   const unknown = (field: string, value: string | undefined, known: boolean) =>
@@ -164,8 +180,8 @@ function rowWarnings(row: ListingRow): string[] {
     ...unknown('kind', row.kind, KNOWN_KINDS.has(row.kind ?? '')),
     ...unknown('state', row.state, STATE_CLASS.has(row.state ?? '')),
     ...unknown('status', row.status, KNOWN_STATUSES.has(row.status ?? '')),
-    ...(isLive(row) && row.status === undefined
-      ? shape('live row has no status')
+    ...(hasProcess(row) && row.status === undefined
+      ? shape('row with a pid has no status')
       : []),
     ...(row.kind === 'background' && row.state === undefined
       ? shape('background row has no state')
@@ -175,7 +191,7 @@ function rowWarnings(row: ListingRow): string[] {
 
 /**
  * The record's row: by job id only when it has one, else by name, preferring
- * a live row, since `--all` keeps old rows of the same name.
+ * a current row, since `--all` keeps old rows of the same name.
  */
 export function joinRow(
   record: WorkerRecord,
@@ -183,7 +199,7 @@ export function joinRow(
 ): ListingRow | undefined {
   if (record.job !== null) return rows.find((row) => row.id === record.job);
   const named = rows.filter((row) => row.name === record.name);
-  return named.find(isLive) ?? named[0];
+  return named.find(isCurrent) ?? named[0];
 }
 
 interface JoinedChild {
@@ -209,7 +225,7 @@ function joinChild(
   const { reason } = classified;
   const isWorking =
     row !== undefined &&
-    isLive(row) &&
+    isCurrent(row) &&
     (row.state === 'working' || row.status === 'busy');
   const child: DeskChild = {
     name: record.name,
@@ -276,7 +292,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
   const children = joinChildren(input);
   const childRows = new Set(children.flatMap(({ row }) => (row ? [row] : [])));
   const others = input.rows
-    .filter((row) => isLive(row) && !childRows.has(row))
+    .filter((row) => isCurrent(row) && !childRows.has(row))
     .filter((row) => input.self === undefined || row.sessionId !== input.self)
     .map((row) => ({ row, classified: classify(row, input.freshInteractive) }));
   const considered = [...childRows, ...others.map(({ row }) => row)];

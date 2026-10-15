@@ -28,6 +28,8 @@ const inter = (over: ListingRow): ListingRow => ({
   name: 'inter',
   ...over,
 });
+// The row once its process has exited: the listing gives it no pid.
+const exited = ({ pid: _pid, ...row }: ListingRow): ListingRow => row;
 
 const record = (name: string, job: string | null = null): WorkerRecord => ({
   version: 1,
@@ -80,7 +82,7 @@ describe('parseListingRows', () => {
 });
 
 describe('classification', () => {
-  test('a live background blocked row on a permission prompt waits with that reason', () => {
+  test('a background blocked row on a permission prompt waits with that reason', () => {
     const row = bg({
       state: 'blocked',
       status: 'waiting',
@@ -96,17 +98,22 @@ describe('classification', () => {
     ]);
   });
 
-  test('a live background blocked idle row without waitingFor waits as blocked', () => {
+  test('a background blocked idle row without waitingFor waits as blocked', () => {
     const row = bg({ state: 'blocked', status: 'idle' });
     expect(build({ rows: [row] }).waiting[0]?.reason).toBe('blocked');
   });
 
-  test('a live interactive waiting row waits with its waitingFor', () => {
+  test('a background blocked row without waitingFor waits as blocked whatever its status', () => {
+    const row = bg({ state: 'blocked', status: 'waiting' });
+    expect(build({ rows: [row] }).waiting[0]?.reason).toBe('blocked');
+  });
+
+  test('an interactive waiting row waits with its waitingFor', () => {
     const row = inter({ status: 'waiting', waitingFor: 'input needed' });
     expect(build({ rows: [row] }).waiting[0]?.reason).toBe('input needed');
   });
 
-  test('a live background done row adds one to finished', () => {
+  test('a background done row with a pid adds one to finished', () => {
     const snapshot = build({
       rows: [bg({ state: 'done', status: 'idle' })],
     });
@@ -114,14 +121,14 @@ describe('classification', () => {
     expect(snapshot.waiting).toEqual([]);
   });
 
-  test('a live interactive idle row finishes only when its transcript is fresh', () => {
+  test('an interactive idle row finishes only when its transcript is fresh', () => {
     const row = inter({ status: 'idle' });
     expect(build({ rows: [row] }).finished).toBe(0);
     const fresh = new Set([row.sessionId ?? '']);
     expect(build({ rows: [row], freshInteractive: fresh }).finished).toBe(1);
   });
 
-  test('a live busy row is neither waiting nor finished, and is listed in others', () => {
+  test('a busy row is neither waiting nor finished, and is listed in others', () => {
     const snapshot = build({
       rows: [bg({ state: 'working', status: 'busy' })],
     });
@@ -132,12 +139,69 @@ describe('classification', () => {
     ]);
   });
 
-  test('a row without a pid is not live: not counted and not in others', () => {
-    const old = bg({ state: 'done', pid: undefined });
-    delete old.pid;
-    const snapshot = build({ rows: [old] });
+  test.each([
+    'done',
+    'stopped',
+    'failed',
+  ])('a background %s row without a pid is not current: not counted, not waiting, and not in others', (state) => {
+    const snapshot = build({ rows: [exited(bg({ state }))] });
     expect(snapshot.finished).toBe(0);
+    expect(snapshot.waiting).toEqual([]);
     expect(snapshot.others).toEqual([]);
+  });
+
+  test('an interactive row without a pid is not current', () => {
+    const row = exited(
+      inter({ status: 'waiting', waitingFor: 'input needed' }),
+    );
+    const snapshot = build({ rows: [row] });
+    expect(snapshot.waiting).toEqual([]);
+    expect(snapshot.others).toEqual([]);
+  });
+
+  test('a blocked non-child without a pid is current: it waits, with its waitingFor, else blocked', () => {
+    const asked = exited(bg({ state: 'blocked', waitingFor: 'input needed' }));
+    expect(build({ rows: [asked] }).waiting).toEqual([
+      { name: 'bg', repo: 'sidekick', reason: 'input needed', child: false },
+    ]);
+    const bare = exited(bg({ state: 'blocked' }));
+    const snapshot = build({ rows: [bare] });
+    expect(snapshot.waiting).toEqual([
+      { name: 'bg', repo: 'sidekick', reason: 'blocked', child: false },
+    ]);
+    expect(snapshot.others).toEqual([
+      {
+        name: 'bg',
+        repo: 'sidekick',
+        kind: 'background',
+        state: 'blocked',
+        reason: 'blocked',
+      },
+    ]);
+    expect(snapshot.finished).toBe(0);
+  });
+
+  test('a working row without a pid is current: listed in others, never waiting, never counted', () => {
+    const between = exited(bg({ state: 'working' }));
+    const asking = exited(bg({ state: 'working', status: 'waiting' }));
+    for (const row of [between, asking]) {
+      const snapshot = build({ rows: [row] });
+      expect(snapshot.others).toEqual([
+        { name: 'bg', repo: 'sidekick', kind: 'background', state: 'working' },
+      ]);
+      expect(snapshot.waiting).toEqual([]);
+      expect(snapshot.finished).toBe(0);
+    }
+  });
+
+  // The agent-view docs give `pid` and `status` only while the process is
+  // alive, so a row without a pid lacks a status with no shape change.
+  test('a current row without a pid or a status adds no warning', () => {
+    const rows = [
+      exited(bg({ state: 'blocked' })),
+      exited(bg({ id: 'b', state: 'working' })),
+    ];
+    expect(build({ rows }).warnings).toEqual([]);
   });
 
   test('the others list carries the reason of a waiting row', () => {
@@ -171,7 +235,7 @@ describe('unknown values and shape changes', () => {
     expect(snapshot.warnings.some((w) => w.includes('"remote"'))).toBe(true);
   });
 
-  test('a live row without status warns that the shape changed', () => {
+  test('a row with a pid and without status warns that the shape changed', () => {
     const snapshot = build({ rows: [inter({})] });
     expect(snapshot.warnings.some((w) => w.includes('shape changed'))).toBe(
       true,
@@ -244,7 +308,7 @@ describe('children', () => {
     expect(snapshot.others).toHaveLength(1);
   });
 
-  test('a record without a job joins by name, preferring the live row', () => {
+  test('a record without a job joins by name, preferring the current row', () => {
     const old = bg({ id: 'old', name: 'w1', state: 'done', pid: undefined });
     delete old.pid;
     const live = bg({ id: 'new', name: 'w1', state: 'working' });
@@ -254,7 +318,14 @@ describe('children', () => {
     expect(reversed.children[0]?.state).toBe('working');
   });
 
-  test('a record without a job and without a live row takes the first listed', () => {
+  test('a current row without a pid is preferred over an old row of the same name', () => {
+    const old = exited(bg({ id: 'old', name: 'w1', state: 'done' }));
+    const blocked = exited(bg({ id: 'new', name: 'w1', state: 'blocked' }));
+    const snapshot = build({ rows: [old, blocked], records: [record('w1')] });
+    expect(snapshot.children[0]?.state).toBe('blocked');
+  });
+
+  test('a record without a job and without a current row takes the first listed', () => {
     const first = bg({ id: 'o1', name: 'w1', state: 'stopped' });
     const second = bg({ id: 'o2', name: 'w1', state: 'done' });
     delete first.pid;
@@ -301,11 +372,72 @@ describe('children', () => {
     });
   });
 
+  test('a blocked child without a pid waits with child true, its reason waitingFor, else blocked', () => {
+    const child = (over: ListingRow) =>
+      exited(bg({ id: 'job1', name: 'w1', state: 'blocked', ...over }));
+    const asked = build({
+      rows: [child({ waitingFor: 'permission prompt' })],
+      records: [record('w1', 'job1')],
+    });
+    expect(asked.waiting).toEqual([
+      {
+        name: 'w1',
+        repo: 'sidekick',
+        reason: 'permission prompt',
+        child: true,
+      },
+    ]);
+    const bare = build({ rows: [child({})], records: [record('w1', 'job1')] });
+    expect(bare.waiting).toEqual([
+      { name: 'w1', repo: 'sidekick', reason: 'blocked', child: true },
+    ]);
+    expect(bare.children).toEqual([
+      {
+        name: 'w1',
+        state: 'blocked',
+        reason: 'blocked',
+        unintegrated: 0,
+        uncommitted: false,
+      },
+    ]);
+    expect(bare.others).toEqual([]);
+  });
+
+  test('a working child without a pid ranks with the working, and does not wait', () => {
+    const rows = [
+      bg({ id: 'j1', name: 'done1', state: 'done' }),
+      exited(bg({ id: 'j2', name: 'loop1', state: 'working' })),
+    ];
+    const snapshot = build({
+      rows,
+      records: ['done1', 'loop1'].map((n) => record(n)),
+    });
+    expect(snapshot.children.map((c) => c.name)).toEqual(['loop1', 'done1']);
+    expect(snapshot.waiting).toEqual([]);
+  });
+
   test('a done child shows its raw state in children and is not counted as finished', () => {
     const child = bg({ id: 'job1', name: 'w1', state: 'done', status: 'idle' });
     const snapshot = build({ rows: [child], records: [record('w1', 'job1')] });
     expect(snapshot.children[0]?.state).toBe('done');
     expect(snapshot.finished).toBe(0);
+  });
+
+  test.each([
+    'done',
+    'stopped',
+    'failed',
+  ])('a %s child without a pid still shows as a child, uncounted', (state) => {
+    const child = exited(bg({ id: 'job1', name: 'w1', state }));
+    const snapshot = build({
+      rows: [child],
+      records: [record('w1', 'job1')],
+    });
+    expect(snapshot.children.map((c) => [c.name, c.state])).toEqual([
+      ['w1', state],
+    ]);
+    expect(snapshot.finished).toBe(0);
+    expect(snapshot.waiting).toEqual([]);
   });
 
   test('a fresh idle interactive child is not counted as finished', () => {
@@ -422,5 +554,19 @@ describe('staleRecordNames', () => {
     expect(staleRecordNames(rows, [record('w1')], gone)).toEqual(['w1']);
     const named = [bg({ id: 'x', name: 'w1' })];
     expect(staleRecordNames(named, [record('w1')], gone)).toEqual([]);
+  });
+
+  // Pruning asks only whether a row is listed, current or not.
+  test.each([
+    'blocked',
+    'working',
+    'done',
+    'stopped',
+    'failed',
+  ])('keeps a record whose row is listed without a pid, in state %s', (state) => {
+    const byJob = [exited(bg({ id: 'job1', state }))];
+    expect(staleRecordNames(byJob, [record('w1', 'job1')], gone)).toEqual([]);
+    const byName = [exited(bg({ id: 'x', name: 'w1', state }))];
+    expect(staleRecordNames(byName, [record('w1')], gone)).toEqual([]);
   });
 });
