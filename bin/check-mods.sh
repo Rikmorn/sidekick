@@ -31,7 +31,10 @@ if [ "$live_only" != 1 ]; then
 fi
 
 # The run's limit is a compaction point of 117,000: autoCompactWindow 150,000
-# less Claude Code's 33,000 margin. The monitor speaks from 65% of it, so the
+# less Claude Code's 33,000 margin, which must agree with COMPACTION_MARGIN in
+# bin/helpers/context-monitor.ts. The warning prints it as "of 117,000 tokens",
+# so a Claude Code upgrade that moves the margin changes that text and fails
+# the check below. The monitor speaks from 65% of it, so the
 # figure that counts a.txt must land between 76,050 and 117,000.
 # A figure lags one batch, so a second Read must follow in a batch of its own.
 # Haiku sent both Reads in one turn when the prompt named both files, so only
@@ -41,15 +44,18 @@ fi
 # bytes) added 89,824, about 56 tokens a line. 965 lines put the figure near
 # 97,000, the band's middle, so a drift of 20,000 either way still lands.
 a_lines=965
-# Read refuses a file over 25,000 tokens by default; a.txt is larger.
+# Read refuses a file over 25,000 tokens by default (read from the 2.1.300
+# binary, not observed); a.txt is larger.
 read_tokens=100000
 settings='{"enabledPlugins":{"sidekick@rikmorn":false},"sidekick":{"profile":"check"},"autoCompactWindow":150000}'
 
+expected_limit=117,000
 work=$(mktemp -d)
 b=$(mktemp "$work/b.XXXXXX")
 echo "The second file, read after the first." >"$b"
 # Varied lines of words and numbers. They run near two bytes a token, which
-# keeps a.txt well inside Read's caps of 2,000 lines and 262,144 bytes.
+# keeps a.txt well inside Read's caps of 2,000 lines and 262,144 bytes (read
+# from the 2.1.300 binary, not observed).
 awk -v lines="$a_lines" -v second="$b" 'BEGIN {
   n = split("amber basin cedar delta ember fjord granite harbor island juniper kestrel lagoon meadow nectar orchard prairie quartz river summit tundra upland valley willow yarrow zephyr", w, " ")
   for (i = 1; i <= lines; i++) {
@@ -89,6 +95,8 @@ grep -F -q "\"file_path\":\"$b\"" "$transcript" ||
   fail "the model never read the second file, so no batch followed the figure that counts a.txt; run it again; $where"
 grep -F -q 'of the way to compaction' "$transcript" ||
   fail "the transcript holds no 'of the way to compaction' line: the gauge's limit did not reach the monitor, or the figure after a.txt left the band from 76,050 to 117,000 and a_lines needs resizing; $where"
+grep -F -q "of $expected_limit tokens" "$transcript" ||
+  fail "the compaction warning does not name $expected_limit tokens: Claude Code's 33,000 margin may have moved. Re-measure it, update COMPACTION_MARGIN in bin/helpers/context-monitor.ts and expected_limit here; $where"
 if grep -F -q 'its mods are not running in this session' "$transcript"; then
   fail "the transcript holds the canary, so the monitor saw no gauge value for this session; $where"
 fi
