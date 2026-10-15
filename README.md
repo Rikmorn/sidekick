@@ -32,7 +32,7 @@ sidekick's mods need Claude Code 2.1.287 or later. The gauge is the first mod: i
 
 The context monitor hook takes your session's limit from the first of these that applies:
 
-1. The gauge's figure, for the session and model it was set for. It is the exact compaction point.
+1. The gauge's figure, for the session and model it was set for. It is the exact compaction point, or the window when auto-compaction is off.
 2. `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, read as a compaction window: raised to Claude Code's 100,000 floor, less a 33,000 margin.
 3. The `context_window` setting, read as the window.
 
