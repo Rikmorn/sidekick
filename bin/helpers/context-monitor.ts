@@ -252,7 +252,7 @@ export interface MonitorOutput {
 
 /** The operator's notice that the gauge is not running. */
 export const CANARY_TEXT =
-  'sidekick: its mods are not running in this session, so the profile label and the exact compaction point are missing. Unless an admin setting turns mods off here, run bun run check:mods in the sidekick repo.';
+  'sidekick: its mods are not running in this session, so the profile label, the exact compaction point, and the desk are missing. Unless an admin setting turns mods off here, run bun run check:mods in the sidekick repo.';
 
 // The gauge runs when its value parses and names this session; a child process
 // inherits the parent's value, which names another.

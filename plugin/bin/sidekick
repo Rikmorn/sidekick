@@ -985,7 +985,7 @@ function writeLatch(file, latch) {
     fs.closeSync(fd);
   }
 }
-var CANARY_TEXT = "sidekick: its mods are not running in this session, so the profile label and the exact compaction point are missing. Unless an admin setting turns mods off here, run bun run check:mods in the sidekick repo.";
+var CANARY_TEXT = "sidekick: its mods are not running in this session, so the profile label, the exact compaction point, and the desk are missing. Unless an admin setting turns mods off here, run bun run check:mods in the sidekick repo.";
 function gaugeRuns(monitor, sessionId) {
   return parseContextLimit(monitor.env[CONTEXT_LIMIT_VAR])?.session === sessionId;
 }
