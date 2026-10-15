@@ -18,6 +18,7 @@
     "format": "biome format --write .",
     "prose": "bun bin/prose.ts",
     "check:docs": "bun bin/check-docs.ts",
+    "check:mods": "sh bin/check-mods.sh",
     "release:install": "sh bin/release-install.sh"
   },
   "devDependencies": {
