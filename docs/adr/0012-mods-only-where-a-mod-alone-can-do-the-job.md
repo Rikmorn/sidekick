@@ -1,5 +1,7 @@
 # ADR-0012 — Mods only where a mod alone can do the job
 
+> **Amended 2026-10-15 (#207):** §Options considered says `--safe-mode` would drop the reviewer lines if they moved into a mod. `claude --help` on Claude Code 2.1.300 says `--safe-mode` starts without hooks or installed plugins, and `--bare` skips plugin hooks. Both drop the settings hooks as well, so that cost does not set the rejected option apart. The decision does not rest on it.
+
 **Status:** Accepted (2026-10-13), as the operator decided it on 2026-10-12. Bounds ADR-0010's Decision 2 to settings hooks. Records ADR-0010's first revisit condition and ADR-0009's override condition as met and declined. Issue #203, milestone R9.
 
 ## Context
