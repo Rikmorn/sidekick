@@ -7,7 +7,7 @@ import {
 } from '../../plugin/hooks/desk/contract.js';
 import { DESK_USAGE_LINE, type DeskEnv, runDeskCli } from './desk.js';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { recordsDir, writeRecord } from './worker-record.js';
 
@@ -162,7 +162,12 @@ interface Call {
   opts: { cwd: string; timeoutMs: number };
 }
 
-function harness(cwd: string, result: ClaudeResult, configDir = tmp()) {
+function harness(
+  cwd: string,
+  result: ClaudeResult,
+  configDir = tmp(),
+  runGit: Runner = execRunner,
+) {
   const calls: Call[] = [];
   const runClaude: ClaudeRunner = (args, opts) => {
     calls.push({ args, opts });
@@ -172,7 +177,7 @@ function harness(cwd: string, result: ClaudeResult, configDir = tmp()) {
     cwd,
     configDir,
     runClaude,
-    runGit: execRunner,
+    runGit,
     now: () => NOW,
   };
   const run = (...args: string[]) => {
@@ -395,6 +400,23 @@ describe('runDeskCli: children', () => {
     const s = snapshotOf(harness(fx.top, listing([childRow()])));
     expect(s.children.map((c) => c.name)).toEqual(['w1']);
     expect(s.warnings).toEqual([startingWith(`${bad} is not a worker record`)]);
+  });
+});
+
+describe('runDeskCli: git in a worker', () => {
+  // `git help status` §BACKGROUND REFRESH: status writes the refreshed index
+  // under a lock, which can fail the worker's own commit.
+  test("git status runs without optional locks, so it never takes the worker's index lock", () => {
+    const fx = repoFixture();
+    const gitCalls: string[][] = [];
+    const recording: Runner = (cmd, args, cwd) => {
+      gitCalls.push(args);
+      return execRunner(cmd, args, cwd);
+    };
+    snapshotOf(harness(fx.top, listing([childRow()]), tmp(), recording));
+    expect(gitCalls.filter((args) => args.includes('status'))).toEqual([
+      ['--no-optional-locks', 'status', '--porcelain'],
+    ]);
   });
 });
 

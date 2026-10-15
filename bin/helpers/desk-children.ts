@@ -58,6 +58,10 @@ export function findRepo(
 
 type GitOutput = { stdout: string } | { warning: string };
 
+// The subcommand a warning names; git-level options come before it.
+const subcommandOf = (args: string[]): string =>
+  args.find((arg) => !arg.startsWith('-')) ?? args.join(' ');
+
 function gitIn(
   runGit: Runner,
   dir: string,
@@ -67,9 +71,13 @@ function gitIn(
   const result = runGit('git', args, dir);
   if (result.code === 0) return { stdout: result.stdout };
   return {
-    warning: `${name}: git ${args[0]} failed in ${dir}: ${firstLine(result.stderr)}`,
+    warning: `${name}: git ${subcommandOf(args)} failed in ${dir}: ${firstLine(result.stderr)}`,
   };
 }
+
+// Status otherwise writes the refreshed index under a lock, which can fail the
+// worker's own commit (`git help status` §BACKGROUND REFRESH).
+const STATUS_ARGS = ['--no-optional-locks', 'status', '--porcelain'];
 
 const COUNT = /^\d+$/;
 
@@ -100,7 +108,7 @@ function gitFacts(runGit: Runner, repo: Repo, name: string): GitFacts {
     };
   }
   const log = gitIn(runGit, worktree, ['log', '-1', '--format=%s'], name);
-  const status = gitIn(runGit, worktree, ['status', '--porcelain'], name);
+  const status = gitIn(runGit, worktree, STATUS_ARGS, name);
   const subject = 'stdout' in log ? log.stdout.trim() : '';
   return {
     worktreeExists: true,
