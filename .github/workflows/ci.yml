@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'milestone/**']
   pull_request:
     branches: [master]
 
@@ -40,6 +40,15 @@ jobs:
         with:
           node-version-file: .nvmrc
 
+      - name: Install the Claude Code build the mods were tested on
+        run: |
+          v=$(tr -d '[:space:]' < .claude-code-version 2>/dev/null)
+          if [ -z "$v" ]; then
+            echo "::error file=.claude-code-version::missing or empty; it holds the Claude Code version CI installs"
+            exit 1
+          fi
+          npm install -g "@anthropic-ai/claude-code@$v"
+
       - name: Cache node_modules
         id: cache
         uses: actions/cache@v6
@@ -74,3 +83,12 @@ jobs:
 
       - name: Run the built executable
         run: node plugin/bin/sidekick --version
+
+      - name: Validate the marketplace manifest (claude plugin validate)
+        run: claude plugin validate --strict .
+
+      - name: Validate the plugin manifest (claude plugin validate)
+        run: claude plugin validate --strict plugin
+
+      - name: Run the mods' tests (claude plugin test)
+        run: claude plugin test plugin
