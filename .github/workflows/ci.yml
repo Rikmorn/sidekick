@@ -42,7 +42,8 @@ jobs:
 
       - name: Install the Claude Code build the mods were tested on
         run: |
-          v=$(tr -d '[:space:]' < .claude-code-version 2>/dev/null)
+          v=
+          [ -f .claude-code-version ] && v=$(tr -d '[:space:]' < .claude-code-version)
           if [ -z "$v" ]; then
             echo "::error file=.claude-code-version::missing or empty; it holds the Claude Code version CI installs"
             exit 1
