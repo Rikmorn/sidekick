@@ -31,3 +31,6 @@ docs/superpowers
 
 # superpowers subagent-driven-development state
 .superpowers/
+
+# Claude Code declaration files for the mod type-check
+.cache/

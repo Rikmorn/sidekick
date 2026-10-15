@@ -14,6 +14,7 @@
     "test:watch": "bun test --watch bin/",
     "typecheck": "tsc --noEmit",
     "check": "biome check .",
+    "typecheck:mods": "sh bin/mod-types.sh",
     "format": "biome format --write .",
     "prose": "bun bin/prose.ts",
     "check:docs": "bun bin/check-docs.ts",
