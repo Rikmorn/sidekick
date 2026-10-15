@@ -74,12 +74,13 @@ async function settle<T>(call: Promise<T>): Promise<Settled<T>> {
   }
 }
 
-// A run rejects when it outlasts its timeout or cannot start.
+// A run rejects when it cannot start, a plugin refuses it, or it outlasts its
+// timeout. The declarations give no way to tell which, so the line names both.
 function snapshotOf(ran: Settled<ProcessRunResult>): DeskSnapshot {
   if ('reason' in ran) {
     const seconds = RUN_TIMEOUT_MS / MS_PER_SECOND;
     return failure(
-      `the desk command did not finish in ${seconds} s: ${ran.reason}`,
+      `the desk command did not start, or did not finish within ${seconds} s: ${ran.reason}`,
     );
   }
   const { exitCode, stdout, stderr } = ran.value;

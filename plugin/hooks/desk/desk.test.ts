@@ -348,6 +348,9 @@ test('a tick while a run is still in flight starts no second run', async ($, on)
   expect(seen.runs).toHaveLength(2);
 });
 
+// A rejected run's line opens with this, whatever the rejection's cause.
+const NO_RESULT = `⚠ desk: the desk command did not start, or did not finish within ${RUN_TIMEOUT_MS / 1_000} s: `;
+
 const FAILURES: { name: string; answer: RunAnswer; line: string | RegExp }[] = [
   {
     name: 'a non-zero exit draws its code and the first line of stderr',
@@ -364,9 +367,14 @@ const FAILURES: { name: string; answer: RunAnswer; line: string | RegExp }[] = [
     line: '⚠ desk: the desk command exited 2',
   },
   {
-    name: 'a run that does not finish draws that, with the reason',
-    answer: { deny: 'killed after 8000 ms' },
-    line: /^⚠ desk: the desk command did not finish in 8 s: .*killed after 8000 ms/,
+    name: 'a run that outlasts its timeout draws the rejection, with the reason',
+    answer: { deny: `killed after ${RUN_TIMEOUT_MS} ms` },
+    line: new RegExp(`^${NO_RESULT}.*killed after ${RUN_TIMEOUT_MS} ms`),
+  },
+  {
+    name: 'a run that cannot start draws the same line, with the reason',
+    answer: { deny: 'spawn ENOENT' },
+    line: new RegExp(`^${NO_RESULT}.*spawn ENOENT`),
   },
   {
     name: 'output that does not parse draws the parse failure',
