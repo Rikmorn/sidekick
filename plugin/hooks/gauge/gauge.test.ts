@@ -156,13 +156,14 @@ test('a tool batch after the session id changes names the new id', async ($, on)
 test('the footer gains the profile label on every surface', async ($, on) => {
   const seen = answerBeneath(on, sessionWith(FIXTURE_FLAG));
   for (const surface of SURFACES) {
+    seen.modes.length = 0;
     const ui = await $.ui.mount({
       plugin: 'sidekick',
       surface,
       component: 'SessionMode',
       props: { modes: ['focus'] },
     });
-    expect(seen.modes.at(-1)).toEqual(['focus', 'profile: fixture']);
+    expect(seen.modes).toEqual([['focus', 'profile: fixture']]);
     await ui.unmount();
   }
 });
@@ -170,13 +171,14 @@ test('the footer gains the profile label on every surface', async ($, on) => {
 test('the footer is left as it was when the flag names no profile', async ($, on) => {
   const seen = answerBeneath(on, sessionWith({}));
   for (const surface of SURFACES) {
+    seen.modes.length = 0;
     const ui = await $.ui.mount({
       plugin: 'sidekick',
       surface,
       component: 'SessionMode',
       props: { modes: ['focus'] },
     });
-    expect(seen.modes.at(-1)).toEqual(['focus']);
+    expect(seen.modes).toEqual([['focus']]);
     await ui.unmount();
   }
 });
