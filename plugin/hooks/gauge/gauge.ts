@@ -11,12 +11,15 @@ async function flagProfile($: EngineInterface): Promise<string | undefined> {
 }
 
 // Only the breakdown says where compaction runs, so without one the variable
-// keeps its last value and the monitor falls back. `$.env.set` takes the name
-// as a literal; it is `CONTEXT_LIMIT_VAR`.
+// keeps its last value and the monitor falls back. The same holds when
+// auto-compaction is on but no threshold arrives: the compaction point is
+// unknown, and the window would overstate it. `$.env.set` takes the name as a
+// literal; it is `CONTEXT_LIMIT_VAR`.
 async function refreshLimit($: EngineInterface): Promise<void> {
   const { context } = await $.session.usage({ breakdown: 'summary' });
   const { breakdown } = context;
   if (breakdown === undefined) return;
+  if (breakdown.isAutoCompactEnabled && breakdown.autoCompactThreshold === undefined) return;
   const value = limitValue({
     session: await $.session.id(),
     model: await $.session.model(),

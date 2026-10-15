@@ -9,15 +9,16 @@ import { CONTEXT_LIMIT_VAR, FIXTURE_FLAG, parseContextLimit } from './contract';
 import { UNPROFILED } from './logic';
 
 // The session the test's hooks answer for, beneath the plugin. A test may
-// change `id` between events, as /clear does. No `threshold` means
-// auto-compaction is off; `hasBreakdown` false is a session that answers no
-// breakdown even when asked.
+// change `id` between events, as /clear does. `isAutoCompactEnabled` is what
+// the breakdown reports, and `threshold` is the compaction point when it comes;
+// `hasBreakdown` false is a session that answers no breakdown even when asked.
 type Session = {
   flag: Settings;
   id: string;
   model: string;
   window: number;
   threshold?: number;
+  isAutoCompactEnabled: boolean;
   hasBreakdown: boolean;
 };
 
@@ -43,6 +44,7 @@ function sessionWith(flag: Settings): Session {
     model: 'claude-opus-5-5',
     window: 1000000,
     threshold: 967000,
+    isAutoCompactEnabled: true,
     hasBreakdown: true,
   };
 }
@@ -61,7 +63,7 @@ function breakdownOf(session: Session): SessionContextBreakdown {
     mcpTools: [],
     agents: [],
     autoCompactThreshold: session.threshold,
-    isAutoCompactEnabled: session.threshold !== undefined,
+    isAutoCompactEnabled: session.isAutoCompactEnabled,
     apiUsage: null,
   };
 }
@@ -117,7 +119,11 @@ test('session start sets the compaction limit and no status when profiled', asyn
 });
 
 test('session start sets the window limit when auto-compaction is off', async ($, on) => {
-  const session = { ...sessionWith(FIXTURE_FLAG), threshold: undefined };
+  const session = {
+    ...sessionWith(FIXTURE_FLAG),
+    threshold: undefined,
+    isAutoCompactEnabled: false,
+  };
   const seen = answerBeneath(on, session);
   await $.session.start(START);
   expect(limitIn(seen)).toEqual({
@@ -126,6 +132,14 @@ test('session start sets the window limit when auto-compaction is off', async ($
     kind: 'window',
     tokens: 1000000,
   });
+});
+
+test('session start writes no limit when auto-compaction is on but no threshold arrives', async ($, on) => {
+  const session = { ...sessionWith({}), threshold: undefined };
+  const seen = answerBeneath(on, session);
+  await $.session.start(START);
+  expect(seen.env.has(CONTEXT_LIMIT_VAR)).toBe(false);
+  expect(seen.statuses).toEqual([UNPROFILED]);
 });
 
 // The unprofiled status shows the hook ran on past the usage read, so the
