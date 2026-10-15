@@ -1,12 +1,15 @@
 #!/bin/sh
 # Proves, after a Claude Code upgrade, that sidekick's mods load and fire: the
 # static checks, then one headless Haiku run whose transcript must hold the
-# gauge's compaction wording and no canary. A full pass records the build in
-# .claude-code-version.
+# gauge's compaction wording and no canary. It also proves the desk still reads
+# agent view's listing: a background Haiku session waits on a permission
+# prompt, and `sidekick desk --json` must name it so, with no warnings. A full
+# pass records the build in .claude-code-version.
 #
-# CHECK_MODS_PLUGIN=<folder> checks that plugin folder in place of plugin/ and
-# skips validating the marketplace. CHECK_MODS_LIVE_ONLY=1 skips the static
-# checks. Either one proves less, so its pass leaves the record as it was.
+# CHECK_MODS_PLUGIN=<folder> checks that plugin folder, its bin/sidekick
+# included, in place of plugin/, and skips validating the marketplace.
+# CHECK_MODS_LIVE_ONLY=1 skips the static checks. Either one proves less, so
+# its pass leaves the record as it was.
 set -eu
 fail() { echo "check:mods: $*" >&2; exit 1; }
 
@@ -18,6 +21,7 @@ live_only=${CHECK_MODS_LIVE_ONLY:-}
 
 command -v claude >/dev/null 2>&1 || fail "claude is not on PATH"
 command -v uuidgen >/dev/null 2>&1 || fail "needs uuidgen on PATH"
+command -v node >/dev/null 2>&1 || fail "needs node on PATH"
 version=$(claude --version | awk '{print $1}')
 [ -n "$version" ] || fail "claude --version printed nothing"
 
@@ -101,6 +105,98 @@ if grep -F -q 'its mods are not running in this session' "$transcript"; then
   fail "the transcript holds the canary, so the monitor saw no gauge value for this session; $where"
 fi
 rm -rf "$work"
+
+# The desk stage keeps a blocked row with a waitingFor in every run, so a
+# renamed listing value fails here. The mode is passed explicitly, so a run
+# started from a session that bypasses permissions still meets a prompt.
+desk_name=sidekick-desk-check
+desk_reason='permission prompt'
+# The desk probes saw a background session's start run up to 16 seconds
+# before its first turn (docs/research/control-centre/2026-10-15-desk-probes.md),
+# so 90 s leaves room for the start and the turn that asks.
+desk_timeout=90
+desk_every=3
+desk_work=$(mktemp -d)
+desk_target="$desk_work/touched.txt"
+desk_prompt="Use the Bash tool to run exactly this command, once: touch '$desk_target'. Then reply with the single word ok."
+desk_job=
+
+# Stops and removes the session once it has an id. claude rm exits 0 whether it
+# removes or keeps, so only its text tells.
+end_desk_session() {
+  [ -n "$desk_job" ] || return 0
+  claude stop "$desk_job" >/dev/null 2>&1 || true
+  removed=$(claude rm "$desk_job" 2>&1) || true
+  case $removed in
+    removed*) ;;
+    *) echo "check:mods: claude rm $desk_job did not say removed, so the session $desk_name may remain: $removed" >&2 ;;
+  esac
+}
+trap end_desk_session EXIT
+# POSIX sh need not run the EXIT trap on a signal, so a signal exits through it.
+trap 'exit 1' HUP INT TERM
+
+(
+  cd "$root" || exit 1
+  claude --bg --model haiku --permission-mode default -n "$desk_name" -- "$desk_prompt"
+) >"$desk_work/launch.txt" 2>"$desk_work/launch-err.txt" ||
+  fail "claude --bg failed; its output is in $desk_work/launch.txt and launch-err.txt"
+# The line reads `backgrounded · <id> · <name>`, measured on Claude Code
+# 2.1.300; a bare `backgrounded <id>` counts when it is the only one. This
+# mirrors jobIdFrom in bin/helpers/worker-record.ts, which the CLI does not
+# expose.
+desk_job=$(awk -v name="$desk_name" '
+  $1 == "backgrounded" {
+    lines++
+    if (NF == 5 && $2 == "·" && $4 == "·" && $5 == name) named = $3
+    if (NF == 2) bare = $2
+  }
+  END { if (named != "") print named; else if (lines == 1 && bare != "") print bare }
+' "$desk_work/launch.txt")
+[ -n "$desk_job" ] ||
+  fail "claude --bg printed no job id for $desk_name, so stop that session by hand; its output is in $desk_work/launch.txt"
+
+# Exits 0 when the snapshot's waiting names the session for the reason, 1
+# while it does not, 2 when it does but warnings is not empty, and 3 when stdin
+# holds no snapshot.
+desk_verdict='
+const [name, reason] = process.argv.slice(1);
+let snapshot;
+try {
+  snapshot = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+} catch {
+  process.exit(3);
+}
+if (snapshot.ok !== true) process.exit(1);
+if (!Array.isArray(snapshot.waiting) || !Array.isArray(snapshot.warnings)) process.exit(3);
+const named = snapshot.waiting.some((w) => w.name === name && w.reason === reason);
+if (!named) process.exit(1);
+process.exit(snapshot.warnings.length === 0 ? 0 : 2);
+'
+# The desk runs outside any repository, so no worker of the caller's can add a
+# warning that has nothing to do with the upgrade.
+desk_waited=0
+while :; do
+  desk_snapshot=$(cd "$desk_work" && node "$plugin/bin/sidekick" desk --json) ||
+    fail "node $plugin/bin/sidekick desk --json failed: $desk_snapshot"
+  desk_status=0
+  printf '%s\n' "$desk_snapshot" | node -e "$desk_verdict" "$desk_name" "$desk_reason" || desk_status=$?
+  case $desk_status in
+    0) break ;;
+    1) ;;
+    2) fail "the desk names $desk_name as waiting on a $desk_reason, but its warnings are not empty, so a listing value may have changed; the snapshot: $desk_snapshot" ;;
+    *) fail "sidekick desk --json printed no snapshot: $desk_snapshot" ;;
+  esac
+  [ ! -e "$desk_target" ] ||
+    fail "$desk_name ran its command without a prompt, so a setting allows it; the last snapshot: $desk_snapshot"
+  [ "$desk_waited" -lt "$desk_timeout" ] ||
+    fail "the desk did not name $desk_name as waiting on a $desk_reason within $desk_timeout s; the last snapshot: $desk_snapshot; the launch output is in $desk_work"
+  sleep "$desk_every"
+  desk_waited=$((desk_waited + desk_every))
+done
+end_desk_session
+desk_job=
+rm -rf "$desk_work"
 
 if [ -n "${CHECK_MODS_PLUGIN:-}" ] || [ "$live_only" = 1 ]; then
   echo "check:mods: pass on Claude Code $version, a partial run, so .claude-code-version stays as it was; transcript $transcript"
