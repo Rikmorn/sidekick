@@ -121,16 +121,30 @@ desk_target="$desk_work/touched.txt"
 desk_prompt="Use the Bash tool to run exactly this command, once: touch '$desk_target'. Then reply with the single word ok."
 desk_job=
 
+# A claude rm run at once after claude stop kept everything while the worktree
+# lock still named the stopped process (docs/research/control-centre/
+# 2026-10-14-dispatched-worker-probes.md, Stopping and cleanup); finish waits
+# up to 15 s for that process, so the removal retries for as long.
+desk_rm_wait=15
+desk_rm_every=1
+
 # Stops and removes the session once it has an id. claude rm exits 0 whether it
-# removes or keeps, so only its text tells.
+# removes or keeps, so only its stdout tells, as finish reads it.
 end_desk_session() {
   [ -n "$desk_job" ] || return 0
   claude stop "$desk_job" >/dev/null 2>&1 || true
-  removed=$(claude rm "$desk_job" 2>&1) || true
-  case $removed in
-    removed*) ;;
-    *) echo "check:mods: claude rm $desk_job did not say removed, so the session $desk_name may remain: $removed" >&2 ;;
-  esac
+  rm_waited=0
+  while :; do
+    rm_out=$(claude rm "$desk_job" 2>"$desk_work/rm-err.txt") || true
+    rm_said=$(printf '%s\n' "$rm_out" | tr -d '\r' | awk 'NF { sub(/^[ \t]+/, ""); print; exit }')
+    case $rm_said in
+      removed | removed[!A-Za-z0-9_]*) return 0 ;;
+    esac
+    [ "$rm_waited" -lt "$desk_rm_wait" ] || break
+    sleep "$desk_rm_every"
+    rm_waited=$((rm_waited + desk_rm_every))
+  done
+  echo "check:mods: claude rm $desk_job did not say removed within $desk_rm_wait s, so the session $desk_name remains, with any worktree and branch it made; remove it with claude rm $desk_job. It said: $rm_out $(cat "$desk_work/rm-err.txt" 2>/dev/null)" >&2
 }
 trap end_desk_session EXIT
 # POSIX sh need not run the EXIT trap on a signal, so a signal exits through it.
@@ -144,8 +158,9 @@ trap 'exit 1' HUP INT TERM
 # The line reads `backgrounded · <id> · <name>`, measured on Claude Code
 # 2.1.300; a bare `backgrounded <id>` counts when it is the only one. This
 # mirrors jobIdFrom in bin/helpers/worker-record.ts, which the CLI does not
-# expose.
+# expose; like its trim, the first rule drops a carriage return.
 desk_job=$(awk -v name="$desk_name" '
+  { gsub(/\r/, "") }
   $1 == "backgrounded" {
     lines++
     if (NF == 5 && $2 == "·" && $4 == "·" && $5 == name) named = $3
