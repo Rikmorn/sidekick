@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs15 from "node:fs";
+import * as fs17 from "node:fs";
 import { realpathSync as realpathSync4 } from "node:fs";
 import * as os from "node:os";
-import * as path14 from "node:path";
+import * as path17 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -791,7 +791,17 @@ function summarize(issues) {
   return summary;
 }
 
-// bin/helpers/hook.ts
+// bin/helpers/desk.ts
+import * as path10 from "node:path";
+
+// plugin/hooks/desk/contract.ts
+var DESK_VERSION = 1;
+
+// bin/helpers/desk-children.ts
+import * as fs5 from "node:fs";
+import * as path5 from "node:path";
+
+// bin/helpers/desk-transcripts.ts
 import * as fs2 from "node:fs";
 import * as path2 from "node:path";
 
@@ -1031,1695 +1041,581 @@ function postToolBatchContext(stdin, monitor) {
   }
 }
 
-// bin/helpers/hook.ts
-var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)";
-function readContent(event) {
-  const response = event.tool_response;
-  if (!isRecord3(response) || !isRecord3(response.file))
-    return "";
-  return typeof response.file.content === "string" ? response.file.content : "";
-}
-var DESIGN_SKILL = path2.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path2.join("skills", "sk-execute", "SKILL.md");
-var PLAN_SECTIONS = [
-  "## A plan carries intent",
-  "## Before the plan goes out",
-  "## Choose the mode"
-];
-var CLEAN_CODE_RULE = path2.join("rules", "sk-clean-code.md");
-var COMMENTS_HEADING = "## Comments";
-var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
-var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
-var RELEASE_CHECK_PACKAGE = /(^|\/)\.superpowers\/sdd\/release-check-[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
-var isRecord3 = (v) => typeof v === "object" && v !== null;
-function isSkillHookInput(v) {
-  if (!isRecord3(v))
-    return false;
-  const input = v.tool_input;
-  return isRecord3(input) && typeof input.skill === "string";
-}
-function isReadHookInput(v) {
-  if (!isRecord3(v) || v.tool_name !== "Read")
-    return false;
-  const input = v.tool_input;
-  return isRecord3(input) && typeof input.file_path === "string";
-}
-function parseJson(raw) {
+// bin/helpers/desk-transcripts.ts
+var SESSION_ID2 = /^[A-Za-z0-9-]{1,128}$/;
+var reason = (e) => e instanceof Error ? e.message : String(e);
+var isMissing = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+function projectFolders(projects) {
   try {
-    return JSON.parse(raw);
-  } catch {
-    return;
-  }
-}
-function readText(file) {
-  try {
-    return fs2.readFileSync(file, "utf-8");
-  } catch {
-    return;
-  }
-}
-function readSkillDescription(skillFile) {
-  const text = readText(skillFile);
-  if (text === undefined)
-    return;
-  const lines = text.split(`
-`);
-  if (lines[0].trim() !== "---")
-    return;
-  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
-  if (close < 0)
-    return;
-  const match = lines.slice(1, close).map((line) => DESCRIPTION_LINE.exec(line)).find((m) => m !== null);
-  if (!match)
-    return;
-  const value = parseJson(match[1]);
-  return typeof value === "string" ? value : undefined;
-}
-function readSection(file, heading) {
-  const text = readText(file);
-  if (text === undefined)
-    return;
-  const lines = text.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trimEnd() === heading);
-  if (start < 0)
-    return;
-  const rest = lines.slice(start + 1);
-  let fenced = false;
-  const next = rest.findIndex((line) => {
-    if (line.trimStart().startsWith("```"))
-      fenced = !fenced;
-    return !fenced && line.startsWith("## ");
-  });
-  const body = next < 0 ? rest : rest.slice(0, next);
-  return [lines[start], ...body].join(`
-`).trim();
-}
-function readRulePaths(file) {
-  const text = readText(file);
-  if (text === undefined)
-    return;
-  const lines = text.split(/\r?\n/);
-  if (lines[0].trim() !== "---")
-    return;
-  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
-  if (close < 0)
-    return;
-  const front = lines.slice(1, close);
-  const key = front.findIndex((line) => line.trimEnd() === "paths:");
-  if (key < 0)
-    return;
-  const globs = [];
-  for (const line of front.slice(key + 1)) {
-    const item = /^\s+-\s+["']?(.*?)["']?\s*$/.exec(line);
-    if (item === null)
-      break;
-    globs.push(item[1]);
-  }
-  return globs.length === 0 ? undefined : globs;
-}
-var EXT_GLOB = /^\*\*\/\*(\.[A-Za-z0-9]+)$/;
-var STAT_LINE = /^\s*(\S.*?)\s+\|\s+(?:\d+|Bin)\b/;
-var DIFF_HEADER = /^diff --git a\/(.+) b\//;
-function visiblePaths(content) {
-  const found = [];
-  for (const line of content.split(/\r?\n/)) {
-    const match = STAT_LINE.exec(line) ?? DIFF_HEADER.exec(line);
-    if (match !== null)
-      found.push(match[1]);
-  }
-  return found;
-}
-function ruleCoversPackage(rulePaths, content) {
-  if (rulePaths === undefined)
-    return true;
-  const exts = [];
-  for (const glob of rulePaths) {
-    const match = EXT_GLOB.exec(glob);
-    if (match === null)
-      return true;
-    exts.push(match[1]);
-  }
-  return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
-}
-function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path2.join(pluginDir, DESIGN_SKILL));
-  if (description === undefined)
-    return;
-  return [
-    "sidekick: before this brainstorm proposes approaches, check whether the change needs a design pass.",
-    `sidekick:sk-design: ${description}`,
-    "If it applies, run it now, or at the approaches step, which it then does itself.",
-    "If a design note for this change already exists, start from it."
-  ].join(" ");
-}
-var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
-function writingPlansNudge(pluginDir) {
-  const file = path2.join(pluginDir, EXECUTE_SKILL);
-  const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
-  const found = sections.flatMap((s) => s === undefined ? [] : [s]);
-  if (found.length < PLAN_SECTIONS.length)
-    return;
-  return [PLAN_LEAD, ...found].join(`
-
-`);
-}
-var NUDGES = new Map([
-  ["superpowers:brainstorming", brainstormNudge],
-  ["superpowers:writing-plans", writingPlansNudge]
-]);
-var READ_LEAD_LINE = "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
-var REPRODUCE_PARAGRAPH = "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a task reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
-var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Where superpowers limits you to risks you can name outside the diff, two kinds count here. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with `git grep`, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
-var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
-var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
-function commentsLines(pluginDir, packageText) {
-  const rule = path2.join(pluginDir, CLEAN_CODE_RULE);
-  const comments = readSection(rule, COMMENTS_HEADING);
-  if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
-    return [];
-  }
-  return [
-    "Hold the comments this diff adds to the house rule. Reading a diff does not load `sk-clean-code.md`, so its Comments section follows. Report each added comment that breaks it as a finding. Where this repo's own rules set a different comment convention, theirs win.",
-    comments
-  ];
-}
-function reviewerLines(pluginDir, packageText) {
-  return [
-    READ_LEAD_LINE,
-    REPRODUCE_PARAGRAPH,
-    CLAIMS_PARAGRAPH,
-    ...commentsLines(pluginDir, packageText)
-  ].join(`
-
-`);
-}
-function releaseReviewerLines(pluginDir, packageText) {
-  return [
-    RELEASE_LEAD_LINE,
-    RELEASE_CLAIMS_PARAGRAPH,
-    ...commentsLines(pluginDir, packageText)
-  ].join(`
-
-`);
-}
-function postSkillContext(stdin, env) {
-  const event = parseJson(stdin);
-  if (!isSkillHookInput(event))
-    return {};
-  const nudge = NUDGES.get(event.tool_input.skill);
-  return { context: nudge?.(env.pluginDir) };
-}
-function postReadContext(stdin, env) {
-  const { pluginDir } = env;
-  const event = parseJson(stdin);
-  if (!isReadHookInput(event))
-    return {};
-  const filePath = event.tool_input.file_path;
-  if (RELEASE_CHECK_PACKAGE.test(filePath)) {
-    return { context: releaseReviewerLines(pluginDir, readContent(event)) };
-  }
-  if (!REVIEW_PACKAGE.test(filePath))
-    return {};
-  return { context: reviewerLines(pluginDir, readContent(event)) };
-}
-var VERBS = new Map([
-  ["post-skill", { eventName: "PostToolUse", contextFor: postSkillContext }],
-  ["post-read", { eventName: "PostToolUse", contextFor: postReadContext }],
-  [
-    "post-tool-batch",
-    {
-      eventName: "PostToolBatch",
-      contextFor: (stdin, env) => postToolBatchContext(stdin, { env: env.env, tmpdir: env.tmpdir })
-    }
-  ]
-]);
-function runHookCli(args, env, out, err) {
-  const [verb] = args;
-  const entry = verb === undefined ? undefined : VERBS.get(verb);
-  if (entry === undefined) {
-    err(`usage: ${HOOK_USAGE_LINE}`);
-    return 1;
-  }
-  const { context, notice } = entry.contextFor(env.readStdin(), env) ?? {};
-  if (context === undefined && notice === undefined)
-    return 0;
-  out(JSON.stringify({
-    ...context === undefined ? {} : {
-      hookSpecificOutput: {
-        hookEventName: entry.eventName,
-        additionalContext: context
-      }
-    },
-    ...notice === undefined ? {} : { systemMessage: notice }
-  }));
-  return 0;
-}
-
-// bin/helpers/pm-plans.ts
-var HEADER_OPEN = "<!-- plans -->";
-var HEADER_CLOSE = "<!-- /plans -->";
-var LINE = /^\s*\d+\.(?!\d)\s*(.*)$/;
-var GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
-var normalise = (text) => text.replace(/\r\n?/g, `
-`);
-var oneLine = (text) => text.replace(/\s+/g, " ").trim();
-var isMarker = (line) => line.trim() === HEADER_OPEN || line.trim() === HEADER_CLOSE;
-function locate(description) {
-  const lines = normalise(description).split(`
-`);
-  const first = lines.findIndex((l) => l.trim() !== "");
-  if (first < 0 || lines[first].trim() !== HEADER_OPEN) {
-    return lines.some(isMarker) ? { at: "elsewhere" } : { at: "none" };
-  }
-  const close = lines.findIndex((l, k) => k > first && l.trim() === HEADER_CLOSE);
-  if (close < 0)
-    return { at: "unclosed" };
-  return {
-    at: "top",
-    lines: lines.slice(first + 1, close),
-    prose: lines.slice(close + 1)
-  };
-}
-var malformed = (reason) => ({
-  parse: "malformed",
-  reason: oneLine(reason)
-});
-function duplicate(plans) {
-  const names = plans.map((p) => p.name);
-  const name = names.find((n, i) => names.indexOf(n) !== i);
-  if (name !== undefined)
-    return `plan "${name}" appears twice`;
-  const issues = plans.flatMap((p) => p.issues);
-  const issue = issues.find((n, i) => issues.indexOf(n) !== i);
-  return issue === undefined ? null : `#${issue} appears in two plans`;
-}
-function parsePlansHeader(description) {
-  const found = locate(description);
-  if (found.at === "none")
-    return { parse: "none" };
-  if (found.at === "elsewhere") {
-    return malformed("the plans header is not at the top");
-  }
-  if (found.at === "unclosed") {
-    return malformed(`the plans header has no ${HEADER_CLOSE} line`);
-  }
-  if (found.prose.some(isMarker)) {
-    return malformed("a second plans header follows the first");
-  }
-  const plans = [];
-  for (const line of found.lines.filter((l) => l.trim() !== "")) {
-    const numbered = LINE.exec(line);
-    const group = numbered === null ? null : GROUP.exec(numbered[1]);
-    if (group === null) {
-      return malformed(`"${line.trim()}" is not <n>. <name> (#N, …)`);
-    }
-    plans.push({
-      name: oneLine(group[1]),
-      issues: group[2].split(",").map((r) => Number(r.trim().slice(1)))
-    });
-  }
-  if (plans.length === 0)
-    return malformed("the plans header lists no plans");
-  const reason = duplicate(plans);
-  return reason === null ? { parse: "ok", plans } : malformed(reason);
-}
-function descriptionProse(description) {
-  const found = locate(description);
-  return found.at === "top" ? found.prose.join(`
-`) : normalise(description);
-}
-var openOf = (issues) => issues.filter((i) => i.open);
-var inProgress = (i) => i.status === "In Progress";
-var notStarted = (i) => i.status === "Backlog" || i.status === null;
-function startable(issues) {
-  const open = openOf(issues);
-  return open.length > 0 && !open.some(inProgress) && open.some(notStarted);
-}
-function stateOf(issues, isNext) {
-  const open = openOf(issues);
-  if (open.length === 0)
-    return "done";
-  if (open.some(inProgress))
-    return "running";
-  if (isNext)
-    return "next";
-  return "later";
-}
-function planView(ms, items) {
-  const c = parsePlansHeader(ms.description);
-  if (c.parse === "none")
-    return { parse: "none", list: [], unplanned: [] };
-  if (c.parse === "malformed") {
-    return { parse: "malformed", reason: c.reason, list: [], unplanned: [] };
-  }
-  const byNumber = new Map(items.map((i) => [i.number, i]));
-  const issueOf = (n) => {
-    const i = byNumber.get(n);
-    return i ? {
-      number: n,
-      title: i.title,
-      open: i.state === "OPEN",
-      status: i.status
-    } : { number: n, title: null, open: true, status: null };
-  };
-  const issues = c.plans.map((p) => p.issues.map(issueOf));
-  const nextAt = issues.findIndex(startable);
-  const list = c.plans.map((p, k) => ({
-    name: p.name,
-    state: stateOf(issues[k], k === nextAt),
-    issues: issues[k]
-  }));
-  const planned = new Set(c.plans.flatMap((p) => p.issues));
-  const unplanned = items.filter((i) => i.state === "OPEN" && i.milestone === ms.title && !planned.has(i.number)).sort((a, b) => a.number - b.number).map((i) => ({ number: i.number, title: i.title }));
-  return { parse: "ok", list, unplanned };
-}
-
-// bin/helpers/pm-brief.ts
-var TITLE_MAX = 60;
-var PER_TIER_MAX = 5;
-function cut(title) {
-  return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title;
-}
-function firstSentence(text) {
-  const t = text.replace(/\s+/g, " ").trim();
-  const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
-  return m ? m[1] : t;
-}
-var titles = (list) => list.map((m) => cut(m.title)).join(", ");
-function ref(i) {
-  return `#${i.number} ${cut(i.title)}`;
-}
-function tierBody(tier, candidates) {
-  const mine = candidates.filter((c) => c.tier === tier);
-  if (mine.length === 0)
-    return null;
-  const shown = mine.slice(0, PER_TIER_MAX).map(ref).join("; ");
-  const more = mine.length > PER_TIER_MAX ? ` +${mine.length - PER_TIER_MAX} more` : "";
-  return `${shown}${more}`;
-}
-function tierLine(tier, candidates) {
-  const body = tierBody(tier, candidates);
-  return body === null ? null : `tier ${tier} ${body}`;
-}
-function parsedPlans(p) {
-  if (p.plans === null || p.plans.parse !== "ok")
-    return null;
-  return { list: p.plans.list, unplanned: p.plans.unplanned };
-}
-var openRefs = (plan) => plan.issues.filter((i) => i.open).map((i) => `#${i.number}`).join(", ");
-var plannedNumbers = (list) => new Set(list.flatMap((pl) => pl.issues.map((i) => i.number)));
-function continueMove(cards, plans) {
-  const lowest = Math.min(...cards.map((i) => i.number));
-  const plan = plans === null ? undefined : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
-  return plan === undefined ? `continue #${lowest}` : `continue plan ${plan.name} (${openRefs(plan)})`;
-}
-function pullMove(p, plans) {
-  if (plans === null) {
-    return p.candidates.some((c) => c.tier === 1) ? "pull one tier-1 candidate" : null;
-  }
-  const next = plans.list.find((pl) => pl.state === "next");
-  if (next !== undefined)
-    return `pull plan ${next.name} (${openRefs(next)})`;
-  const planned = plannedNumbers(plans.list);
-  const unplanned = p.candidates.some((c) => c.tier === 1 && !planned.has(c.number));
-  return unplanned ? "pull one unplanned candidate" : null;
-}
-function nextMove(p) {
-  if (p.milestone === null && p.open_milestones.length > 1) {
-    return `choose a milestone: ${titles(p.open_milestones)}`;
-  }
-  const plans = parsedPlans(p);
-  if (p.in_progress.length > 0)
-    return continueMove(p.in_progress, plans);
-  const pull = pullMove(p, plans);
-  if (pull !== null)
-    return pull;
-  if (p.milestone)
-    return "nothing to pick up: verify, then close the milestone";
-  return "nothing open: open the next milestone";
-}
-var card = (i) => `#${i.number} (${i.age_days} d)`;
-var titledCard = (i) => `${ref(i)} (${i.age_days} d)`;
-function inProgressLine(p, plans) {
-  if (p.in_progress.length === 0)
-    return "in progress: none";
-  if (plans === null) {
-    return `in progress: ${p.in_progress.map(titledCard).join(", ")}`;
-  }
-  const byNumber = new Map(p.in_progress.map((i) => [i.number, i]));
-  const grouped = plans.list.flatMap((pl) => {
-    const cards = pl.issues.flatMap((i) => byNumber.get(i.number) ?? []);
-    return cards.length === 0 ? [] : [`plan ${cut(pl.name)}: ${cards.map(card).join(", ")}`];
-  });
-  const planned = plannedNumbers(plans.list);
-  const loose = p.in_progress.filter((i) => !planned.has(i.number)).map(titledCard);
-  return `in progress: ${[...grouped, ...loose].join(" · ")}`;
-}
-function doneSegment(count) {
-  if (count === 0)
-    return null;
-  return count === 1 ? "1 plan done" : `${count} plans done`;
-}
-function planCandidatesLine(p, plans) {
-  const inState = (state) => plans.list.filter((pl) => pl.state === state);
-  const next = plans.list.find((pl) => pl.state === "next");
-  const later = inState("later");
-  const openCount = (pl) => pl.issues.filter((i) => i.open).length;
-  const running = new Set(p.in_progress.map((i) => i.number));
-  const unplanned = plans.unplanned.filter((i) => !running.has(i.number)).map((i) => `#${i.number}`).join(", ");
-  const segments = [
-    next === undefined ? null : `next plan ${cut(next.name)} (${openRefs(next)})`,
-    later.length === 0 ? null : `then ${later.map((pl) => `${cut(pl.name)} (${openCount(pl)})`).join(", ")}`,
-    doneSegment(inState("done").length),
-    `unplanned: ${unplanned === "" ? "none" : unplanned}`,
-    `tier 2: ${tierBody(2, p.candidates) ?? "none"}`
-  ];
-  return `candidates: ${segments.filter((s) => s !== null).join(" · ")}`;
-}
-function candidatesLine(p, plans) {
-  if (plans !== null)
-    return planCandidatesLine(p, plans);
-  const tiers = [tierLine(1, p.candidates), tierLine(2, p.candidates)].filter((t) => t !== null);
-  const order = p.candidates.length > 1 ? " (order: number, not priority)" : "";
-  return tiers.length > 0 ? `candidates: ${tiers.join(" · ")}${order}` : "candidates: none";
-}
-function milestoneLine(p) {
-  const m = p.milestone;
-  if (m === null) {
-    return p.open_milestones.length === 0 ? "milestone: none" : `milestone: none active · open: ${titles(p.open_milestones)}`;
-  }
-  const outcome = firstSentence(descriptionProse(m.description));
-  const others = p.open_milestones.filter((o) => o.number !== m.number);
-  const c = p.issue_counts;
-  const counts = c === null ? "" : ` (${c.open} open, ${c.closed} closed)`;
-  return [
-    `milestone: ${m.title}${counts}`,
-    ...outcome ? [outcome] : [],
-    ...others.length > 0 ? [`also open: ${titles(others)}`] : []
-  ].join(" · ");
-}
-function renderBrief(p) {
-  const lines = [];
-  lines.push(`sidekick · ${p.board.owner}/${p.board.repo} · board #${p.board.project.number}`);
-  lines.push(milestoneLine(p));
-  const plans = parsedPlans(p);
-  lines.push(inProgressLine(p, plans));
-  lines.push(candidatesLine(p, plans));
-  const drift = [];
-  const unpushed = p.drift.unpushed.count;
-  if (unpushed !== null && unpushed > 0)
-    drift.push(`${unpushed} unpushed`);
-  if (p.drift.stale_in_progress.length > 0) {
-    drift.push(`stale: ${p.drift.stale_in_progress.map((i) => `#${i.number} (${i.age_days} d)`).join(", ")}`);
-  }
-  if (p.drift.open_pr)
-    drift.push(`open PR #${p.drift.open_pr.number}`);
-  if (p.drift.in_progress_split.length > 0) {
-    drift.push(`In Progress split: ${p.drift.in_progress_split.map(cut).join(", ")}`);
-  }
-  if (p.plans !== null && p.plans.parse === "malformed") {
-    drift.push(`plans header: ${p.plans.reason}`);
-  }
-  lines.push(drift.length > 0 ? `drift: ${drift.join(" · ")}` : "drift: none");
-  lines.push(`next: ${nextMove(p)}`);
-  return lines.join(`
-`);
-}
-
-// bin/helpers/pm-data.ts
-import { spawnSync } from "node:child_process";
-var execRunner = (cmd, args, cwd) => {
-  const r = spawnSync(cmd, args, {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  if (r.error)
-    return { code: 127, stdout: "", stderr: r.error.message };
-  return {
-    code: r.status ?? 1,
-    stdout: r.stdout ?? "",
-    stderr: r.stderr ?? ""
-  };
-};
-
-class PmError extends Error {
-  exit;
-  constructor(exit, message) {
-    super(message);
-    this.exit = exit;
-  }
-}
-var ORIGIN = /^(?:git@github\.com:|https:\/\/github\.com\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/;
-function parseOrigin(url) {
-  const m = url.trim().match(ORIGIN);
-  return m ? { owner: m[1], repo: m[2] } : null;
-}
-function parseGhVersion(firstLine) {
-  const m = firstLine.match(/^gh version (\d+\.\d+\.\d+)/);
-  return m ? m[1] : null;
-}
-function versionAtLeast(v, min) {
-  const a = v.split(".").map(Number);
-  const b = min.split(".").map(Number);
-  for (let i = 0;i < 3; i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    if (x !== y)
-      return x > y;
-  }
-  return true;
-}
-function hasProjectScope(headers) {
-  const line = headers.split(/\r?\n/).find((l) => /^x-oauth-scopes:/i.test(l));
-  if (!line)
-    return false;
-  return line.slice(line.indexOf(":") + 1).split(",").map((s) => s.trim()).includes("project");
-}
-function ageDays(iso, now) {
-  return Math.floor((now.getTime() - new Date(iso).getTime()) / 86400000);
-}
-function touchedAt(item) {
-  const { updatedAt, statusUpdatedAt } = item;
-  if (statusUpdatedAt === null)
-    return updatedAt;
-  return Date.parse(statusUpdatedAt) > Date.parse(updatedAt) ? statusUpdatedAt : updatedAt;
-}
-var STALE_DAYS = 7;
-var DISCOVERY_QUERY = "query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }";
-var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url createdAt field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
-var ISSUES_PAGE = 100;
-var ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason closedAt updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id isArchived project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
-var ISSUE_LIMIT = 500;
-var GqlEnvelope = object({
-  data: optional(unknown()),
-  errors: nullish(array(object({ message: string() })))
-});
-function checked(schema, value, what) {
-  const result = safeParse(schema, value);
-  if (!result.success) {
-    throw new PmError(1, `gh returned an unexpected ${what}: ${summarize(result.issues)}`);
-  }
-  return result.output;
-}
-function gql(run, cwd, doc, vars) {
-  const args = ["api", "graphql", "-f", `query=${doc}`];
-  for (const [flag, kv] of vars)
-    args.push(flag, kv);
-  const r = run("gh", args, cwd);
-  if (r.code !== 0) {
-    throw new PmError(1, r.stderr.trim() || "gh api graphql failed");
-  }
-  const parsed = checked(GqlEnvelope, JSON.parse(r.stdout), "GraphQL response");
-  if (parsed.errors?.length)
-    throw new PmError(1, parsed.errors[0].message);
-  return parsed.data;
-}
-function rest(run, cwd, args) {
-  const r = run("gh", args, cwd);
-  if (r.code !== 0) {
-    throw new PmError(1, r.stderr.trim() || `gh ${args[0]} failed`);
-  }
-  return r.stdout;
-}
-function fetchGhVersion(run, cwd) {
-  const r = run("gh", ["--version"], cwd);
-  if (r.code !== 0)
-    return { found: false, version: null };
-  return {
-    found: true,
-    version: parseGhVersion(r.stdout.split(`
-`)[0] ?? "")
-  };
-}
-function fetchLocalLogin(run, cwd) {
-  const r = run("gh", ["config", "get", "-h", "github.com", "user"], cwd);
-  const login = r.stdout.trim();
-  return r.code === 0 && login ? login : null;
-}
-function fetchScopeHeaders(run, cwd) {
-  return rest(run, cwd, ["api", "-i", "user"]);
-}
-var DiscoveryData = object({
-  viewer: object({ login: string() }),
-  repository: nullable(object({
-    projectsV2: object({
-      nodes: array(object({
-        number: number(),
-        title: string(),
-        closed: boolean(),
-        url: string(),
-        id: string(),
-        owner: object({ login: optional(string()) })
-      }))
-    })
-  }))
-});
-function parseDiscovery(data) {
-  const d = checked(DiscoveryData, data, "discovery");
-  const nodes = d.repository?.projectsV2.nodes ?? [];
-  return {
-    viewer: d.viewer.login,
-    boards: nodes.map((n) => ({
-      number: n.number,
-      title: n.title,
-      closed: n.closed,
-      url: n.url,
-      id: n.id,
-      ownerLogin: n.owner.login ?? ""
-    }))
-  };
-}
-function fetchDiscovery(run, cwd, owner, repo) {
-  return parseDiscovery(gql(run, cwd, DISCOVERY_QUERY, [
-    ["-f", `owner=${owner}`],
-    ["-f", `name=${repo}`]
-  ]));
-}
-var FieldData = object({
-  user: object({
-    projectV2: object({
-      id: string(),
-      title: string(),
-      url: string(),
-      createdAt: string(),
-      field: nullable(object({
-        id: string(),
-        options: array(object({ id: string(), name: string() }))
-      }))
-    })
-  })
-});
-function parseStatusField(data) {
-  const p = checked(FieldData, data, "status field").user.projectV2;
-  const statusField = p.field ? {
-    id: p.field.id,
-    options: Object.fromEntries(p.field.options.map((o) => [o.name, o.id]))
-  } : null;
-  return {
-    id: p.id,
-    title: p.title,
-    url: p.url,
-    createdAt: p.createdAt,
-    statusField
-  };
-}
-function fetchStatusField(run, cwd, login, number2) {
-  return parseStatusField(gql(run, cwd, FIELD_QUERY, [
-    ["-f", `login=${login}`],
-    ["-F", `number=${number2}`]
-  ]));
-}
-var IssuesData = object({
-  repository: object({
-    issues: object({
-      pageInfo: object({
-        hasNextPage: boolean(),
-        endCursor: nullable(string())
-      }),
-      nodes: array(object({
-        number: number(),
-        title: string(),
-        state: picklist(["OPEN", "CLOSED"]),
-        stateReason: nullable(string()),
-        closedAt: nullable(string()),
-        updatedAt: string(),
-        url: string(),
-        milestone: nullable(object({ title: string() })),
-        labels: object({ nodes: array(object({ name: string() })) }),
-        assignees: object({
-          nodes: array(object({ login: string() }))
-        }),
-        projectItems: object({
-          pageInfo: object({ hasNextPage: boolean() }),
-          nodes: array(object({
-            id: string(),
-            isArchived: boolean(),
-            project: object({ id: string() }),
-            fieldValueByName: nullable(object({
-              name: optional(string()),
-              updatedAt: optional(string())
-            }))
-          }))
-        })
-      }))
-    })
-  })
-});
-function parseRepoIssuesPage(data, projectId) {
-  const page = checked(IssuesData, data, "issues page").repository.issues;
-  const issues = page.nodes.map((n) => {
-    const hit = n.projectItems.nodes.find((c) => c.project.id === projectId);
-    if (!hit && n.projectItems.pageInfo.hasNextPage) {
-      throw new PmError(1, `#${n.number} sits on more boards than one page lists, so its card on this board cannot be ruled out`);
-    }
-    const cardArchived = hit?.isArchived === true && n.state === "OPEN";
+    const entries = fs2.readdirSync(projects, { withFileTypes: true });
     return {
-      number: n.number,
-      title: n.title,
-      state: n.state,
-      stateReason: n.stateReason ?? null,
-      closedAt: n.closedAt ?? null,
-      updatedAt: n.updatedAt,
-      url: n.url,
-      milestone: n.milestone?.title ?? null,
-      labels: n.labels.nodes.map((l) => l.name),
-      assignees: n.assignees.nodes.map((a) => a.login),
-      card: hit && !cardArchived ? {
-        itemId: hit.id,
-        status: hit.fieldValueByName?.name ?? null,
-        statusUpdatedAt: hit.fieldValueByName?.updatedAt ?? null
-      } : null,
-      cardArchived
+      folders: entries.filter((e) => e.isDirectory()).map((e) => e.name),
+      warnings: []
     };
-  });
-  return {
-    issues,
-    hasNextPage: page.pageInfo.hasNextPage,
-    endCursor: page.pageInfo.endCursor
-  };
+  } catch (e) {
+    if (isMissing(e))
+      return { folders: [], warnings: [] };
+    return {
+      folders: [],
+      warnings: [`cannot list the transcripts in ${projects}: ${reason(e)}`]
+    };
+  }
 }
-function fetchRepoIssues(run, cwd, owner, repo, projectId) {
+function modifiedAt(file) {
+  try {
+    return fs2.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
+  } catch {
+    return;
+  }
+}
+function transcriptFinder(configDir) {
+  const projects = path2.join(configDir, "projects");
+  const { folders, warnings } = projectFolders(projects);
+  const find = (sessionId) => {
+    if (!SESSION_ID2.test(sessionId))
+      return;
+    for (const folder of folders) {
+      const file = path2.join(projects, folder, `${sessionId}.jsonl`);
+      const mtimeMs = modifiedAt(file);
+      if (mtimeMs !== undefined)
+        return { file, mtimeMs };
+    }
+    return;
+  };
+  return { find, warnings };
+}
+function freshSessions(rows, find, now, windowMs = 30 * 60000) {
+  const isFresh = (sessionId) => {
+    const transcript = find(sessionId);
+    return transcript !== undefined && now - transcript.mtimeMs <= windowMs;
+  };
+  return new Set(rows.flatMap(({ kind, sessionId }) => kind === "interactive" && sessionId !== undefined && isFresh(sessionId) ? [sessionId] : []));
+}
+function tokensOf(name, sessionId, find) {
+  if (sessionId === undefined)
+    return { warnings: [] };
+  const transcript = find(sessionId);
+  if (transcript === undefined)
+    return { warnings: [] };
+  try {
+    const entry = readTailEntry(transcript.file);
+    return entry === undefined ? { warnings: [] } : { tokens: entry.tokens, warnings: [] };
+  } catch (e) {
+    return {
+      warnings: [
+        `${name}: cannot read the transcript ${transcript.file}: ${reason(e)}`
+      ]
+    };
+  }
+}
+
+// bin/helpers/worker-brief.ts
+import * as fs3 from "node:fs";
+import * as path3 from "node:path";
+var FENCE = "---";
+var KEY_LINE = /^([a-z]+):(?: (.*))?$/;
+function parseFrontmatter(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trimEnd());
+  if (lines[0] !== FENCE) {
+    return { issues: ["the brief must open with a --- line"] };
+  }
+  const end = lines.indexOf(FENCE, 1);
+  if (end === -1) {
+    return { issues: ["the brief's frontmatter has no closing --- line"] };
+  }
+  const fields = {};
   const issues = [];
-  let after = null;
+  for (const [i, line] of lines.slice(1, end).entries()) {
+    if (line === "")
+      continue;
+    const match = KEY_LINE.exec(line);
+    const key = match?.[1];
+    if (key === undefined) {
+      issues.push(`line ${i + 2}: "${line}" is not "key: value" with a lower-case key`);
+    } else if (Object.hasOwn(fields, key)) {
+      issues.push(`line ${i + 2}: the key "${key}" is repeated`);
+    } else {
+      fields[key] = (match?.[2] ?? "").trim();
+    }
+  }
+  return issues.length > 0 ? { issues } : { fields };
+}
+var AbsolutePath = pipe(string(), check((s) => path3.isAbsolute(s), "must be an absolute path"));
+var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) => !path3.isAbsolute(s), "must be relative to the repo top"), check((s) => !s.split(/[\\/]/).includes(".."), 'must not have a ".." segment'));
+var BriefSchema = strictObject({
+  name: pipe(string(), regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "must match ^[a-z0-9][a-z0-9-]{0,39}$")),
+  plan: AbsolutePath,
+  spec: AbsolutePath,
+  rulings: AbsolutePath,
+  baseline: pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters")),
+  skill: picklist(["subagent-driven-development", "executing-plans"]),
+  place: union([
+    literal("worktree"),
+    literal("in-place"),
+    pipe(string(), regex(/^branch \S+$/))
+  ], 'must be "worktree", "in-place", or "branch <name>"'),
+  setup: optional(pipe(string(), minLength(1))),
+  report: RelativePath,
+  orchestrator: pipe(string(), minLength(1, "must not be empty"))
+});
+function readBrief(file) {
+  const abs = path3.resolve(file);
+  let text;
+  try {
+    text = fs3.readFileSync(abs, "utf-8");
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { issues: [`${abs}: cannot read the brief: ${why}`] };
+  }
+  const parsed = parseFrontmatter(text);
+  if ("issues" in parsed) {
+    return { issues: parsed.issues.map((i) => `${abs}: ${i}`) };
+  }
+  const result = safeParse(BriefSchema, parsed.fields);
+  if (!result.success) {
+    return {
+      issues: result.issues.map((issue) => {
+        const field = issue.path?.map((p) => String(p.key)).join(".");
+        return field ? `${abs}: field "${field}" ${issue.message}` : `${abs}: ${issue.message}`;
+      })
+    };
+  }
+  return { brief: result.output, path: abs };
+}
+function physical(p) {
+  const abs = path3.resolve(p);
+  const rest = [];
+  let dir = abs;
   for (;; ) {
-    const vars = [
-      ["-f", `owner=${owner}`],
-      ["-f", `name=${repo}`]
-    ];
-    if (after)
-      vars.push(["-f", `after=${after}`]);
-    const page = parseRepoIssuesPage(gql(run, cwd, ISSUES_QUERY, vars), projectId);
-    issues.push(...page.issues);
-    if (!page.hasNextPage || !page.endCursor)
-      break;
-    after = page.endCursor;
+    try {
+      return path3.join(fs3.realpathSync(dir), ...rest);
+    } catch {
+      const parent = path3.dirname(dir);
+      if (parent === dir)
+        return abs;
+      rest.unshift(path3.basename(dir));
+      dir = parent;
+    }
+  }
+}
+var isInside = (top, p) => {
+  const rel = path3.relative(top, p);
+  const leaves = rel === ".." || rel.startsWith(`..${path3.sep}`);
+  return rel !== "" && !leaves && !path3.isAbsolute(rel);
+};
+function briefFileIssues(brief, top) {
+  const issues = [];
+  const realTop = physical(top);
+  if (!fs3.existsSync(brief.plan)) {
+    issues.push(`plan: ${brief.plan} does not exist`);
+  }
+  if (!fs3.existsSync(brief.spec)) {
+    issues.push(`spec: ${brief.spec} does not exist`);
+  }
+  const rulingsDir = path3.dirname(brief.rulings);
+  if (!fs3.existsSync(rulingsDir)) {
+    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
+  }
+  const named = [
+    ["plan", brief.plan],
+    ["spec", brief.spec],
+    ["rulings", brief.rulings]
+  ];
+  for (const [field, file] of named) {
+    if (!isInside(realTop, physical(file))) {
+      issues.push(`${field}: ${file} is outside ${top}`);
+    }
   }
   return issues;
 }
-function cardedItems(issues, fullName) {
-  return issues.flatMap(({ card: card2, closedAt, cardArchived, ...i }) => card2 ? [{ ...i, ...card2, repo: fullName }] : []);
-}
-function milestoneCounts(issues, title) {
-  const mine = issues.filter((i) => i.milestone === title);
-  const open = mine.filter((i) => i.state === "OPEN").length;
-  return { open, closed: mine.length - open };
-}
-var RestMilestones = array(object({
-  number: number(),
-  title: string(),
-  description: nullable(string()),
-  due_on: nullable(string()),
-  open_issues: number(),
-  closed_issues: number(),
-  state: picklist(["open", "closed"]),
-  created_at: string()
-}));
-function parseMilestones(json) {
-  return checked(RestMilestones, JSON.parse(json), "milestone list").map((m) => ({
-    number: m.number,
-    title: m.title,
-    description: m.description ?? "",
-    due_on: m.due_on,
-    open_issues: m.open_issues,
-    closed_issues: m.closed_issues,
-    state: m.state,
-    created_at: m.created_at
-  }));
-}
-function fetchMilestones(run, cwd, owner, repo, state) {
-  return parseMilestones(rest(run, cwd, [
-    "api",
-    `repos/${owner}/${repo}/milestones?state=${state}&per_page=100`
-  ]));
-}
-var CliIssues = array(object({
-  number: number(),
-  title: string(),
-  labels: array(object({ name: string() })),
-  body: string(),
-  milestone: nullable(object({ title: string() })),
-  updatedAt: string()
-}));
-function parseIssues(json) {
-  const list = checked(CliIssues, JSON.parse(json), "issue list");
-  if (list.length >= ISSUE_LIMIT) {
-    throw new PmError(1, `gh issue list returned ${list.length} issues, the limit; refusing to reason over a truncated list`);
-  }
-  return list.map((i) => ({
-    number: i.number,
-    title: i.title,
-    labels: i.labels.map((l) => l.name),
-    body: i.body,
-    milestone: i.milestone?.title ?? null,
-    updatedAt: i.updatedAt
-  }));
-}
-function fetchOpenIssues(run, cwd, owner, repo) {
-  return parseIssues(rest(run, cwd, [
-    "issue",
-    "list",
-    "-R",
-    `${owner}/${repo}`,
-    "--state",
-    "open",
-    "--limit",
-    String(ISSUE_LIMIT),
-    "--json",
-    "number,title,labels,body,milestone,updatedAt"
-  ]));
-}
 
-// bin/helpers/pm-lint.ts
-var LINT_IDS = [
-  "area_label_count",
-  "no_status",
-  "open_in_done",
-  "completed_not_done",
-  "backlog_without_condition",
-  "backlog_in_milestone",
-  "position_code_title",
-  "cites_working_file",
-  "unboarded",
-  "stale_in_progress",
-  "multiple_linked_boards"
-];
-var REVISIT_MARKER = /^\s*(?:[-*+][ \t]+)?(?:(\*\*|__|\*|_)revisit when(?::\1|\1:)|revisit when:)/im;
-var POSITION_CODE = [
-  /^\s*\d+(\.\d+)+\s*[—–-]/,
-  /^\s*(bench|wave|step|phase)[- ]?\d+\b/i
-];
-var f = (number2, title, detail) => ({
-  number: number2,
-  title,
-  detail
-});
-var open = (items) => items.filter((i) => i.state === "OPEN");
-function areaLabelCount(issues) {
-  return issues.map((i) => ({
-    i,
-    n: i.labels.filter((l) => l.startsWith("area:")).length
-  })).filter(({ n }) => n !== 1).map(({ i, n }) => f(i.number, i.title, `${n} area:* labels`));
-}
-function noStatus(items) {
-  return open(items).filter((i) => i.status === null).map((i) => f(i.number, i.title, "card has no Status"));
-}
-function openInDone(items) {
-  return open(items).filter((i) => i.status === "Done").map((i) => f(i.number, i.title, "open issue carded Done"));
-}
-function completedNotDone(items) {
-  return items.filter((i) => i.state === "CLOSED" && i.stateReason === "COMPLETED" && i.status !== "Done").map((i) => f(i.number, i.title, `closed as completed, card is ${i.status ?? "unset"}`));
-}
-function backlogWithoutCondition(issues) {
-  return issues.filter((i) => i.labels.includes("backlog") && !REVISIT_MARKER.test(i.body)).map((i) => f(i.number, i.title, 'backlog label without a "Revisit when:" line'));
-}
-var WORKING_FILE_PATH = /\bdocs\/superpowers\b/;
-function citesWorkingFile(issues) {
-  return issues.filter((i) => WORKING_FILE_PATH.test(i.body)).map((i) => f(i.number, i.title, "body names docs/superpowers/, where working files live"));
-}
-function backlogInMilestone(issues) {
-  return issues.filter((i) => i.labels.includes("backlog") && i.milestone !== null).map((i) => f(i.number, i.title, `deferred but in milestone ${i.milestone}`));
-}
-function positionCodeTitle(issues) {
-  return issues.filter((i) => POSITION_CODE.some((re) => re.test(i.title))).map((i) => f(i.number, i.title, "title starts with a position code"));
-}
-function unboarded(uncarded, boardCreatedAt) {
-  const since = Date.parse(boardCreatedAt);
-  return uncarded.filter((i) => i.state === "OPEN" || i.stateReason === "COMPLETED" && i.closedAt !== null && Date.parse(i.closedAt) > since).map((i) => f(i.number, i.title, i.state === "CLOSED" ? "closed as completed, no card on the board" : i.cardArchived ? "card archived" : "no card on the board"));
-}
-function staleInProgress(items, now) {
-  return open(items).filter((i) => i.status === "In Progress" && ageDays(touchedAt(i), now) > STALE_DAYS).map((i) => f(i.number, i.title, `In Progress, untouched ${ageDays(touchedAt(i), now)} days`));
-}
-function multipleLinkedBoards(candidates) {
-  if (candidates.length <= 1)
-    return [];
-  const names = candidates.map((b) => `#${b.number}`).join(", ");
-  return [
-    f(null, "linked boards", `${candidates.length} open boards match: ${names}`)
-  ];
-}
-var PREDICATES = {
-  area_label_count: ({ issues }) => areaLabelCount(issues),
-  no_status: ({ items }) => noStatus(items),
-  open_in_done: ({ items }) => openInDone(items),
-  completed_not_done: ({ items }) => completedNotDone(items),
-  backlog_without_condition: ({ issues }) => backlogWithoutCondition(issues),
-  backlog_in_milestone: ({ issues }) => backlogInMilestone(issues),
-  position_code_title: ({ issues }) => positionCodeTitle(issues),
-  cites_working_file: ({ issues }) => citesWorkingFile(issues),
-  unboarded: ({ uncarded, boardCreatedAt }) => unboarded(uncarded, boardCreatedAt),
-  stale_in_progress: ({ items, now }) => staleInProgress(items, now),
-  multiple_linked_boards: ({ candidates }) => multipleLinkedBoards(candidates)
-};
-function lintAll(input) {
-  const entries = LINT_IDS.map((id) => [id, PREDICATES[id](input)]);
-  const findings = Object.fromEntries(entries);
-  const counts = Object.fromEntries(entries.map(([id, list]) => [id, list.length]));
-  return { findings, counts };
-}
-
-// bin/helpers/pm-report.ts
-var STATE_CELL = {
-  done: "done",
-  running: "running",
-  next: "next",
-  later: ""
-};
-var cell = (text) => text.replaceAll("|", "\\|");
-function row(plan, ref2) {
-  const closed = plan.issues.filter((i) => !i.open).length;
-  const issues = plan.issues.map((i) => ref2(i.number)).join(" ");
-  return `| ${STATE_CELL[plan.state]} | ${cell(plan.name)} | ${closed} of ${plan.issues.length} | ${issues} |`;
-}
-function renderReport(r) {
-  const ref2 = (n) => `${r.board.owner}/${r.board.repo}#${n}`;
-  const running = r.plans.list.filter((p) => p.state === "running").map((p) => `**${p.name}**`);
-  const unplanned = r.plans.unplanned.map((i) => ref2(i.number));
-  return [
-    `**${r.milestone.title}** · ${r.issue_counts.open} open, ${r.issue_counts.closed} closed`,
-    `Running: ${running.length > 0 ? running.join(", ") : "none"}`,
-    "",
-    "| | Plan | Closed | Issues |",
-    "|---|---|---|---|",
-    ...r.plans.list.map((p) => row(p, ref2)),
-    "",
-    `Unplanned: ${unplanned.length > 0 ? unplanned.join(", ") : "none"}.`
-  ].join(`
-`);
-}
-
-// bin/helpers/rules.ts
-import { execFileSync } from "node:child_process";
-import * as fs5 from "node:fs";
-import * as path5 from "node:path";
-
-// bin/helpers/rules-fs.ts
-import * as fs3 from "node:fs";
-import * as path3 from "node:path";
-var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
-function statusOf(dir, name) {
-  const st = fs3.lstatSync(path3.join(dir, name), { throwIfNoEntry: false });
-  if (!st)
-    return "absent";
-  return st.isFile() ? "file" : "other";
-}
-var isRegularFile = (dir, name) => statusOf(dir, name) === "file";
-function ownedRulesIn(dir) {
-  const dirStat = fs3.statSync(dir, { throwIfNoEntry: false });
-  if (!dirStat)
-    return [];
-  if (!dirStat.isDirectory())
-    return [];
-  return fs3.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
-}
-
-// bin/helpers/rules-overlap.ts
+// bin/helpers/worker-repo.ts
 import * as fs4 from "node:fs";
 import * as path4 from "node:path";
-var MIN_SHARED_HEADINGS = 2;
-var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
-function headingsOf(body) {
-  return body.split(`
-`).filter((l) => l.startsWith("## ")).map((l) => normalise2(l.slice(3)));
-}
-function openingOf(body) {
-  let lines = body.split(`
-`);
-  if (lines[0] === "---") {
-    const end = lines.indexOf("---", 1);
-    lines = end === -1 ? [] : lines.slice(end + 1);
-  }
-  const first = lines.find((l) => l.trim() !== "" && !l.startsWith("#"));
-  if (!first)
-    return;
-  const sentence = first.split(/\.\s|\.$/)[0];
-  const value = normalise2(sentence);
-  return value === "" ? undefined : value;
-}
-function signalsFor(file, body, rule) {
-  const signals = [];
-  if (file === rule.name.slice("sk-".length))
-    signals.push("name");
-  const shared = new Set(headingsOf(body).filter((h) => rule.headings.has(h))).size;
-  if (shared >= MIN_SHARED_HEADINGS)
-    signals.push({ headings: shared });
-  const opening = openingOf(body);
-  if (opening !== undefined && opening === rule.opening) {
-    signals.push({ opening });
-  }
-  return signals;
-}
-function findOverlap(src, dest) {
-  const report = { pairs: [], extensions: [] };
-  const destStat = fs4.statSync(dest, { throwIfNoEntry: false });
-  if (!destStat?.isDirectory())
-    return report;
-  const rules = ownedRulesIn(src).map((name) => {
-    const body = fs4.readFileSync(path4.join(src, name), "utf-8");
+var WORKTREES_FOLDER = ".claude/worktrees";
+var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
+function mainCheckout(runGit, cwd) {
+  const result = runGit("git", [
+    "rev-parse",
+    "--path-format=absolute",
+    "--show-toplevel",
+    "--absolute-git-dir",
+    "--git-common-dir"
+  ], cwd);
+  if (result.code !== 0) {
     return {
-      name,
-      headings: new Set(headingsOf(body)),
-      opening: openingOf(body)
+      issues: [
+        "not inside a git work tree: run sidekick worker from the repo's main checkout"
+      ]
     };
-  });
-  const others = fs4.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
-  for (const file of others) {
-    const body = fs4.readFileSync(path4.join(dest, file), "utf-8");
-    for (const rule of rules) {
-      const signals = signalsFor(file, body, rule);
-      if (signals.length === 0)
-        continue;
-      if (body.includes(rule.name)) {
-        report.extensions.push({ file, rule: rule.name });
-      } else {
-        report.pairs.push({ file, rule: rule.name, signals });
-      }
-    }
   }
-  return report;
+  const [top, gitDir, commonDir] = result.stdout.replace(/\n$/, "").split(`
+`);
+  if (top === undefined || gitDir === undefined || commonDir === undefined) {
+    return {
+      issues: [`git rev-parse printed an unexpected answer: ${result.stdout}`]
+    };
+  }
+  if (gitDir !== commonDir) {
+    return {
+      issues: [
+        `${top} is a linked worktree: run sidekick worker from the main checkout, whose git dir is ${commonDir}`
+      ]
+    };
+  }
+  return { top, commonDir };
 }
-function describeSignal(signal) {
-  if (signal === "name")
-    return "name";
-  if ("headings" in signal)
-    return `${signal.headings} headings`;
-  return "opening";
+function commitOf(runGit, top, rev) {
+  const result = runGit("git", ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`], top);
+  return result.code === 0 ? result.stdout.trim() : undefined;
 }
-function formatOverlap(report) {
-  const lines = [];
-  if (report.pairs.length === 0) {
-    lines.push("no overlap found (checked file names, two or more shared H2 headings, and the opening sentence against non-sk-*.md files)");
-  } else {
-    for (const p of report.pairs) {
-      lines.push(`${p.file} overlaps ${p.rule} on ${p.signals.map(describeSignal).join(", ")}`);
-    }
-    lines.push("overlap is reported only; sidekick never edits files it does not own. If a repo file extends or departs from its pair on purpose, name the sk rule in it and the pair moves to the stated extensions");
+var headCommit = (runGit, top) => commitOf(runGit, top, "HEAD");
+function isTrackedClean(runGit, top) {
+  const result = runGit("git", ["status", "--porcelain", "--untracked-files=no"], top);
+  return result.code === 0 && result.stdout.trim() === "";
+}
+var branchExists = (runGit, top, branch) => runGit("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], top).code === 0;
+function checkedOut(runGit, dir) {
+  const result = runGit("git", ["symbolic-ref", "-q", "HEAD"], dir);
+  if (result.code === 0)
+    return result.stdout.trim();
+  if (result.code === 1)
+    return "a detached HEAD";
+  return `an unreadable HEAD (${result.stderr.trim()})`;
+}
+var RENAMED = /^(?:[RC].|.[RC]) /;
+var STATUS_PREFIX = "XY ".length;
+function statusPaths(stdout) {
+  const fields = stdout.split("\x00").filter((field) => field !== "");
+  const paths = [];
+  let i = 0;
+  while (i < fields.length) {
+    const entry = fields[i];
+    const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
+    paths.push(entry.slice(STATUS_PREFIX));
+    if (source !== undefined)
+      paths.push(source);
+    i += source === undefined ? 1 : 2;
   }
-  if (report.extensions.length > 0) {
-    lines.push(`stated extensions, not reported: ${report.extensions.map((e) => `${e.file} → ${e.rule}`).join(", ")}`);
+  return paths;
+}
+function statusPathsIn(runGit, top, dir) {
+  const status = runGit("git", ["-C", dir, "status", "--porcelain", "-z", "--untracked-files=all"], top);
+  if (status.code !== 0)
+    return { issue: status.stderr.trim() };
+  return { paths: statusPaths(status.stdout) };
+}
+var PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
+function remotesWithPushUrl(runGit, top) {
+  const result = runGit("git", ["config", "--get-regexp", "^remote\\..+\\.pushurl$"], top);
+  if (result.code !== 0)
+    return [];
+  const names = result.stdout.split(`
+`).map((line) => PUSH_URL_KEY.exec(line.split(" ")[0])?.[1]).filter((name) => name !== undefined);
+  return [...new Set(names)];
+}
+var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
+var reason2 = (e) => e instanceof Error ? e.message : String(e);
+var isMissing2 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+function readExclude(file) {
+  try {
+    return { text: fs4.readFileSync(file, "utf-8") };
+  } catch (e) {
+    if (isMissing2(e))
+      return { text: "" };
+    return {
+      issues: [
+        `cannot read ${file}, where dispatch adds ${EXCLUDE_ENTRY}: ${reason2(e)}. Fix the file, then run dispatch again`
+      ]
+    };
   }
-  return lines;
+}
+function appendExclude(file, text) {
+  const separator = text === "" || text.endsWith(`
+`) ? "" : `
+`;
+  try {
+    fs4.mkdirSync(path4.dirname(file), { recursive: true });
+    fs4.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+`);
+    return [];
+  } catch (e) {
+    return [
+      `cannot add ${EXCLUDE_ENTRY} to ${file}: ${reason2(e)}. Fix the file, then run dispatch again`
+    ];
+  }
+}
+function ensureWorktreesExcluded(runGit, top, commonDir) {
+  if (isIgnored(runGit, top))
+    return { line: undefined };
+  const file = path4.join(commonDir, "info", "exclude");
+  const read = readExclude(file);
+  if ("issues" in read)
+    return read;
+  if (read.text.split(/\r?\n/).includes(EXCLUDE_ENTRY)) {
+    return { line: undefined };
+  }
+  const issues = appendExclude(file, read.text);
+  if (issues.length > 0)
+    return { issues };
+  return { line: `added ${EXCLUDE_ENTRY} to ${file}` };
 }
 
-// bin/helpers/rules.ts
-function resolveDest(scope, cwd, claudeHome) {
-  return scope === "project" ? path5.join(cwd, ".claude", "rules") : path5.join(claudeHome, "rules");
-}
-function workTreeRootOf(cwd) {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-  } catch {
-    return;
+// bin/helpers/desk-children.ts
+var WORKTREE_LINE = "worktree ";
+var firstLine = (text) => text.trim().split(`
+`)[0];
+function findRepo(runGit, cwd) {
+  const common = runGit("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
+  if (common.code !== 0)
+    return { warnings: [] };
+  const list = runGit("git", ["worktree", "list", "--porcelain"], cwd);
+  const first = list.stdout.split(`
+`)[0];
+  if (list.code !== 0 || !first.startsWith(WORKTREE_LINE)) {
+    return {
+      warnings: [
+        `git worktree list failed in ${cwd}, so no children show: ${firstLine(list.stderr)}`
+      ]
+    };
   }
-}
-var repoRootOf = (cwd) => workTreeRootOf(cwd) ?? cwd;
-var PLUGIN_ONLY_RULES = ["sk-pm-conventions.md"];
-var isRecord4 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-var errorText = (e) => e instanceof Error ? e.message : String(e);
-function pluginEnablement(root) {
-  const file = path5.join(root, ".claude", "settings.json");
-  let text;
-  try {
-    text = fs5.readFileSync(file, "utf-8");
-  } catch (e) {
-    if (e instanceof Error && "code" in e && e.code === "ENOENT") {
-      return { state: "not-enabled" };
-    }
-    return { state: "unreadable", path: file, reason: errorText(e) };
-  }
-  if (text.trim() === "")
-    return { state: "not-enabled" };
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch (e) {
-    return { state: "unreadable", path: file, reason: errorText(e) };
-  }
-  if (!isRecord4(parsed)) {
-    return { state: "unreadable", path: file, reason: "not a JSON object" };
-  }
-  const plugins = parsed.enabledPlugins;
-  const enabled = isRecord4(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
-  return { state: enabled ? "enabled" : "not-enabled" };
-}
-var EVERY_RULE = { leaveOut: [], leaveAsIs: [] };
-function projectSet(e) {
-  switch (e.state) {
-    case "enabled":
-      return EVERY_RULE;
-    case "not-enabled":
-      return { leaveOut: PLUGIN_ONLY_RULES, leaveAsIs: [] };
-    case "unreadable":
-      return { leaveOut: [], leaveAsIs: PLUGIN_ONLY_RULES };
-    default: {
-      const _exhaustive = e;
-      throw new Error(`unhandled enablement: ${JSON.stringify(_exhaustive)}`);
-    }
-  }
-}
-var shippedOnly = (set, shipped) => ({
-  leaveOut: set.leaveOut.filter((n) => shipped.includes(n)),
-  leaveAsIs: set.leaveAsIs.filter((n) => shipped.includes(n))
-});
-var expectedRules = (shipped, set) => shipped.filter((n) => !set.leaveOut.includes(n) && !set.leaveAsIs.includes(n));
-function installRules(src, dest, scope = EVERY_RULE) {
-  const shipped = ownedRulesIn(src);
-  if (shipped.length === 0) {
-    return { installed: [], removed: [], leftOut: [], skipped: [] };
-  }
-  const set = shippedOnly(scope, shipped);
-  fs5.mkdirSync(dest, { recursive: true });
-  const byLowerCase = new Map;
-  for (const existing of fs5.readdirSync(dest)) {
-    byLowerCase.set(existing.toLowerCase(), existing);
-  }
-  const installed = [];
-  const skipped = [];
-  for (const name of expectedRules(shipped, set)) {
-    const onDisk = byLowerCase.get(name.toLowerCase());
-    if (onDisk !== undefined && onDisk !== name) {
-      skipped.push({ name, why: "case-collision" });
-      continue;
-    }
-    if (statusOf(dest, name) === "other") {
-      skipped.push({ name, why: "not-a-regular-file" });
-      continue;
-    }
-    fs5.copyFileSync(path5.join(src, name), path5.join(dest, name));
-    installed.push(name);
-  }
-  const keep = new Set(shipped);
-  const owned = ownedRulesIn(dest);
-  const removed = owned.filter((n) => !keep.has(n));
-  const leftOut = owned.filter((n) => set.leaveOut.includes(n));
-  for (const name of [...removed, ...leftOut]) {
-    fs5.rmSync(path5.join(dest, name));
-  }
-  return { installed, removed, leftOut, skipped };
-}
-function checkRules(src, dest, scope = EVERY_RULE) {
-  const shipped = ownedRulesIn(src);
-  const set = shippedOnly(scope, shipped);
-  const expected = expectedRules(shipped, set);
-  const installed = ownedRulesIn(dest);
-  const drift = [];
-  for (const name of expected) {
-    const there = path5.join(dest, name);
-    if (!fs5.existsSync(there)) {
-      drift.push({ kind: "missing", name });
-      continue;
-    }
-    const same = fs5.readFileSync(path5.join(src, name)).equals(fs5.readFileSync(there));
-    if (!same)
-      drift.push({ kind: "stale", name });
-  }
-  const known = new Set(expected);
-  for (const name of installed) {
-    if (!known.has(name) && !set.leaveAsIs.includes(name)) {
-      drift.push({ kind: "orphaned", name });
-    }
-  }
-  return drift;
-}
-var USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]
-` + `  --project  the current repo's .claude/rules/
-` + `  --user     the user-level rules directory under the Claude config dir
-` + `  --strict   exit 1 when drift or a skipped write is found
-` + "exit: 0 ran, whatever it found; 1 could not run, or --strict found drift";
-var FLAGS = ["--project", "--user", "--strict"];
-function parseArgs(args) {
-  const [verb, ...flags] = args;
-  if (verb !== "install" && verb !== "check")
-    return;
-  if (flags.some((f2) => !FLAGS.includes(f2)))
-    return;
-  const project = flags.includes("--project");
-  const user = flags.includes("--user");
-  if (project === user)
-    return;
+  const commonDir = common.stdout.replace(/\n$/, "");
   return {
-    verb,
-    scope: project ? "project" : "user",
-    strict: flags.includes("--strict")
+    repo: { top: first.slice(WORKTREE_LINE.length), commonDir },
+    warnings: []
   };
 }
-function scopeSet(scope, root) {
-  if (scope === "user")
-    return { set: EVERY_RULE, notes: [] };
-  const enablement = pluginEnablement(root);
-  const set = projectSet(enablement);
-  const notes = [];
-  if (set.leaveOut.length > 0) {
-    notes.push(`not delivered to this repo: ${set.leaveOut.join(", ")}; its .claude/settings.json does not enable sidekick, so it comes from user level only`);
-  }
-  if (set.leaveAsIs.length > 0 && enablement.state === "unreadable") {
-    notes.push(`left ${set.leaveAsIs.join(", ")} as it is: could not read ${enablement.path} (${enablement.reason})`);
-  }
-  return { set, notes };
+function gitIn(runGit, dir, args, name) {
+  const result = runGit("git", args, dir);
+  if (result.code === 0)
+    return { stdout: result.stdout };
+  return {
+    warning: `${name}: git ${args[0]} failed in ${dir}: ${firstLine(result.stderr)}`
+  };
 }
-var deliveryMode = (projectDest) => ownedRulesIn(projectDest).length > 0 ? "project" : "user";
-var realOrSelf = (p) => {
+var COUNT = /^\d+$/;
+var branchOf = (name) => `worktree-${name}`;
+function gitFacts(runGit, repo, name) {
+  const worktree = path5.join(repo.top, WORKTREES_FOLDER, name);
+  const range = `HEAD..refs/heads/${branchOf(name)}`;
+  const rev = gitIn(runGit, repo.top, ["rev-list", "--count", range, "--"], name);
+  const count = "stdout" in rev ? rev.stdout.trim() : "";
+  const unintegrated = COUNT.test(count) ? Number(count) : 0;
+  if (!fs5.existsSync(worktree)) {
+    return {
+      worktreeExists: false,
+      unintegrated,
+      uncommitted: false,
+      warnings: [`${name}: its worktree ${worktree} is missing`]
+    };
+  }
+  const log = gitIn(runGit, worktree, ["log", "-1", "--format=%s"], name);
+  const status = gitIn(runGit, worktree, ["status", "--porcelain"], name);
+  const subject = "stdout" in log ? log.stdout.trim() : "";
+  return {
+    worktreeExists: true,
+    ...subject === "" ? {} : { lastCommit: subject },
+    unintegrated,
+    uncommitted: "stdout" in status && status.stdout.trim() !== "",
+    warnings: [log, status, rev].flatMap((r) => ("warning" in r) ? [r.warning] : [])
+  };
+}
+var H1 = /^# (.+)$/m;
+var reason3 = (e) => e instanceof Error ? e.message : String(e);
+function planTitle(record2) {
+  const noTitle = (why) => ({
+    warnings: [`${record2.name}: no plan title: ${why}`]
+  });
+  const read = readBrief(record2.brief);
+  if ("issues" in read)
+    return noTitle(read.issues.join("; "));
+  const { plan } = read.brief;
   try {
-    return fs5.realpathSync(p);
-  } catch {
-    return path5.resolve(p);
+    const title = H1.exec(fs5.readFileSync(plan, "utf-8"))?.[1].trim();
+    return title === undefined ? { warnings: [] } : { plan: title, warnings: [] };
+  } catch (e) {
+    return noTitle(`cannot read ${plan}: ${reason3(e)}`);
   }
-};
-var sameDir = (a, b) => realOrSelf(a) === realOrSelf(b);
-function pickChecked(scope, verb, t, src, out) {
-  if (scope === "user" || verb === "install" || deliveryMode(t.dest) === "project") {
-    return { dest: t.dest, set: t.set };
-  }
-  out(`no sk-* rules in ${t.dest}; checking the user-level copies at ${t.userDest} against ${src}`);
-  return { dest: t.userDest, set: EVERY_RULE };
 }
-function sharedNames(expected, projectDest, userDest) {
-  const project = new Set(ownedRulesIn(projectDest));
-  const user = new Set(ownedRulesIn(userDest));
-  return expected.filter((n) => project.has(n) && user.has(n)).length;
-}
-function reportDuplicates(expected, dest, userDest, out) {
-  if (sameDir(dest, userDest))
-    return;
-  const shared = sharedNames(expected, dest, userDest);
-  if (shared === 0)
-    return;
-  out(`your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`);
-}
-function refuseNonDirectory(dir, out) {
-  const st = fs5.statSync(dir, { throwIfNoEntry: false });
-  if (!st || st.isDirectory())
-    return false;
-  out(`${dir} exists and is not a directory; refusing to write rules there`);
-  return true;
-}
-function reportInstall(result, dest, out) {
-  out(`installed ${result.installed.length} rule(s) into ${dest}: ${result.installed.join(", ")}`);
-  if (result.removed.length > 0) {
-    out(`removed retired: ${result.removed.join(", ")}`);
-  }
-  if (result.leftOut.length > 0) {
-    out(`removed: ${result.leftOut.join(", ")} (not delivered to this repo)`);
-  }
-  for (const s of result.skipped)
-    out(`[skipped:${s.why}] ${s.name}`);
-}
-function runRulesCli(args, env, out) {
-  const parsed = parseArgs(args);
-  if (parsed === undefined) {
-    out(USAGE);
-    return 1;
-  }
-  const { verb, scope, strict } = parsed;
-  const root = scope === "project" ? repoRootOf(env.cwd) : env.cwd;
-  if (scope === "project")
-    out(`project root: ${root}`);
-  const dest = resolveDest(scope, root, env.claudeHome);
-  if (ownedRulesIn(env.src).length === 0) {
-    out(`no sk-*.md rules found at ${env.src}; refusing to touch ${dest}`);
-    return 1;
-  }
-  if (refuseNonDirectory(dest, out))
-    return 1;
-  const { set, notes } = scopeSet(scope, root);
-  let skipped = [];
-  if (verb === "install") {
-    const result = installRules(env.src, dest, set);
-    skipped = result.skipped;
-    reportInstall(result, dest, out);
-  }
-  for (const note of notes)
-    out(note);
-  const userDest = resolveDest("user", root, env.claudeHome);
-  const checked2 = pickChecked(scope, verb, { dest, userDest, set }, env.src, out);
-  if (checked2.dest !== dest && refuseNonDirectory(checked2.dest, out))
-    return 1;
-  const expected = expectedRules(ownedRulesIn(env.src), checked2.set);
-  const drift = checkRules(env.src, checked2.dest, checked2.set);
-  if (drift.length === 0) {
-    out(`${expected.length} rule(s) match the shipped copies at ${checked2.dest}`);
-  }
-  for (const d of drift)
-    out(`[${d.kind}] ${d.name}`);
-  if (scope === "project" && checked2.dest === dest) {
-    reportDuplicates(expected, dest, userDest, out);
-  }
-  for (const l of formatOverlap(findOverlap(env.src, dest)))
-    out(l);
-  const found = drift.length > 0 || skipped.length > 0;
-  return strict && found ? 1 : 0;
+function childFacts(sources, record2, row) {
+  const { runGit, repo, find } = sources;
+  const { warnings: gitWarnings, ...git } = gitFacts(runGit, repo, record2.name);
+  const { warnings: planWarnings, ...plan } = planTitle(record2);
+  const { warnings: tokenWarnings, ...tokens } = tokensOf(record2.name, row?.sessionId, find);
+  return {
+    facts: { ...git, ...plan, ...tokens },
+    warnings: [...gitWarnings, ...planWarnings, ...tokenWarnings]
+  };
 }
 
-// bin/helpers/pm.ts
-var GH_MIN = "2.98.0";
-function chooseBoard(boards, viewer, repo) {
-  return boards.filter((b) => !b.closed && b.ownerLogin === viewer && b.title === repo).sort((a, b) => a.number - b.number);
+// bin/helpers/desk-snapshot.ts
+var STATE_CLASS = new Map([
+  ["working", "neither"],
+  ["blocked", "waiting"],
+  ["done", "finished"],
+  ["stopped", "neither"],
+  ["failed", "neither"]
+]);
+var KNOWN_STATUSES = new Set([
+  "idle",
+  "busy",
+  "waiting"
+]);
+var KNOWN_KINDS = new Set(["background", "interactive"]);
+var optionalString = (value) => typeof value === "string" ? value : undefined;
+function parseRow(entry) {
+  const fields = {
+    id: optionalString(entry.id),
+    sessionId: optionalString(entry.sessionId),
+    name: optionalString(entry.name),
+    kind: optionalString(entry.kind),
+    cwd: optionalString(entry.cwd),
+    pid: typeof entry.pid === "number" ? entry.pid : undefined,
+    state: optionalString(entry.state),
+    status: optionalString(entry.status),
+    waitingFor: optionalString(entry.waitingFor)
+  };
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
 }
-function preflightOf(version) {
-  const ok = version !== null && versionAtLeast(version, GH_MIN);
-  const warnings = ok ? [] : [
-    `gh ${version ?? "unknown"} < ${GH_MIN}: by-name item-edit unavailable; write by field and option id`
-  ];
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function parseListingRows(value) {
+  if (!Array.isArray(value)) {
+    return { rows: [], warnings: ["the listing is not an array"] };
+  }
+  const entries = value;
   return {
-    gh_version: version,
-    gh_min: GH_MIN,
-    gh_ok: ok,
-    project_scope: null,
+    rows: entries.filter(isRecord3).map(parseRow),
+    warnings: entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => !isRecord3(entry)).map(({ index }) => `the listing's entry ${index} is not an object`)
+  };
+}
+var isLive = (row) => row.pid !== undefined;
+var displayName = (row) => row.name ?? row.sessionId?.slice(0, 8) ?? row.id ?? "unknown";
+var WORKTREE_SUFFIX = /\/\.claude\/worktrees\/[^/]+\/?$/;
+function repoOf(cwd) {
+  if (cwd === undefined)
+    return "";
+  const top = cwd.replace(WORKTREE_SUFFIX, "").replace(/\/+$/, "");
+  return top.slice(top.lastIndexOf("/") + 1);
+}
+function classify(row, fresh) {
+  if (!isLive(row))
+    return { class: "neither" };
+  if (row.status === "waiting") {
+    return { class: "waiting", reason: row.waitingFor ?? "waiting" };
+  }
+  const stateClass = row.kind === "background" && row.state !== undefined ? STATE_CLASS.get(row.state) : undefined;
+  if (stateClass === "waiting") {
+    return { class: "waiting", reason: row.waitingFor ?? "blocked" };
+  }
+  if (stateClass === "finished")
+    return { class: "finished" };
+  const isFreshIdle = row.kind === "interactive" && row.status === "idle" && row.sessionId !== undefined && fresh.has(row.sessionId);
+  return { class: isFreshIdle ? "finished" : "neither" };
+}
+function rowWarnings(row) {
+  const who = displayName(row);
+  const unknown2 = (field, value, known) => value !== undefined && !known ? [`${who}: the listing has an unknown ${field} "${value}"`] : [];
+  const shape = (missing) => [
+    `${who}: the listing's shape changed, a ${missing}`
+  ];
+  return [
+    ...unknown2("kind", row.kind, KNOWN_KINDS.has(row.kind ?? "")),
+    ...unknown2("state", row.state, STATE_CLASS.has(row.state ?? "")),
+    ...unknown2("status", row.status, KNOWN_STATUSES.has(row.status ?? "")),
+    ...isLive(row) && row.status === undefined ? shape("live row has no status") : [],
+    ...row.kind === "background" && row.state === undefined ? shape("background row has no state") : []
+  ];
+}
+function joinRow(record2, rows) {
+  if (record2.job !== null)
+    return rows.find((row) => row.id === record2.job);
+  const named = rows.filter((row) => row.name === record2.name);
+  return named.find(isLive) ?? named[0];
+}
+var RANK_WAITING = 0;
+var RANK_WORKING = 1;
+var RANK_REST = 2;
+function joinChild(record2, row, facts, fresh) {
+  const classified = row ? classify(row, fresh) : { class: "neither" };
+  const { reason: reason4 } = classified;
+  const isWorking = row !== undefined && isLive(row) && (row.state === "working" || row.status === "busy");
+  const child = {
+    name: record2.name,
+    state: row ? row.state ?? row.status ?? "unknown" : "gone",
+    ...reason4 === undefined ? {} : { reason: reason4 },
+    ...facts?.tokens === undefined ? {} : { tokens: facts.tokens },
+    ...facts?.plan === undefined ? {} : { plan: facts.plan },
+    ...facts?.lastCommit === undefined ? {} : { lastCommit: facts.lastCommit },
+    unintegrated: facts?.unintegrated ?? 0,
+    uncommitted: facts?.uncommitted ?? false
+  };
+  if (classified.class === "waiting") {
+    const waiting = {
+      name: record2.name,
+      repo: repoOf(row?.cwd),
+      reason: reason4 ?? "waiting",
+      child: true
+    };
+    return { child, row, rank: RANK_WAITING, waiting };
+  }
+  return { child, row, rank: isWorking ? RANK_WORKING : RANK_REST };
+}
+function orderChildren(children) {
+  return children.map((joined, index) => ({ joined, index })).sort((a, b) => a.joined.rank - b.joined.rank || a.index - b.index).map(({ joined }) => joined);
+}
+function joinChildren(input) {
+  const joined = input.records.map((record2) => ({ record: record2, row: joinRow(record2, input.rows) })).filter(({ row }) => input.self === undefined || row?.sessionId !== input.self).map(({ record: record2, row }) => joinChild(record2, row, input.facts.get(record2.name), input.freshInteractive));
+  return orderChildren(joined);
+}
+function otherOf(row, classified) {
+  const reason4 = classified.reason ?? row.waitingFor;
+  return {
+    name: displayName(row),
+    repo: repoOf(row.cwd),
+    kind: row.kind ?? "unknown",
+    state: row.state ?? row.status ?? "unknown",
+    ...reason4 === undefined ? {} : { reason: reason4 }
+  };
+}
+function buildSnapshot(input) {
+  const children = joinChildren(input);
+  const childRows = new Set(children.flatMap(({ row }) => row ? [row] : []));
+  const others = input.rows.filter((row) => isLive(row) && !childRows.has(row)).filter((row) => input.self === undefined || row.sessionId !== input.self).map((row) => ({ row, classified: classify(row, input.freshInteractive) }));
+  const considered = [...childRows, ...others.map(({ row }) => row)];
+  const warnings = [
+    ...new Set([...input.warnings, ...considered.flatMap(rowWarnings)])
+  ];
+  const waitingOthers = others.filter(({ classified }) => classified.class === "waiting").map(({ row, classified }) => ({
+    name: displayName(row),
+    repo: repoOf(row.cwd),
+    reason: classified.reason ?? "waiting",
+    child: false
+  }));
+  return {
+    version: DESK_VERSION,
+    ok: true,
+    ...input.repo === undefined ? {} : { repo: input.repo },
+    waiting: [
+      ...children.flatMap(({ waiting }) => waiting ? [waiting] : []),
+      ...waitingOthers
+    ],
+    children: children.map(({ child }) => child),
+    finished: others.filter(({ classified }) => classified.class === "finished").length,
+    others: others.map(({ row, classified }) => otherOf(row, classified)),
     warnings
   };
 }
-function discover(run, cwd) {
-  const gh = fetchGhVersion(run, cwd);
-  if (!gh.found)
-    throw new PmError(2, "gh not found on PATH");
-  const root = repoRootOf(cwd);
-  const preflight = preflightOf(gh.version);
-  const untracked = (reason, fields = {}) => ({
-    tracked: false,
-    reason,
-    owner: fields.owner ?? null,
-    repo: fields.repo ?? null,
-    project: null,
-    status_field: null,
-    linked: fields.linked ?? [],
-    preflight,
-    root
-  });
-  const origin = run("git", ["remote", "get-url", "origin"], root);
-  if (origin.code !== 0)
-    return untracked("no-origin");
-  const parsed = parseOrigin(origin.stdout);
-  if (!parsed)
-    return untracked("not-github");
-  const login = fetchLocalLogin(run, root);
-  if (login === null) {
-    return untracked("no-local-login", {
-      owner: parsed.owner,
-      repo: parsed.repo
-    });
-  }
-  if (login !== parsed.owner) {
-    return untracked("remote-owner-mismatch", {
-      owner: parsed.owner,
-      repo: parsed.repo
-    });
-  }
-  preflight.project_scope = hasProjectScope(fetchScopeHeaders(run, root));
-  if (!preflight.project_scope) {
-    throw new PmError(2, "gh token lacks the 'project' scope; run: gh auth refresh -s project");
-  }
-  const d = fetchDiscovery(run, root, parsed.owner, parsed.repo);
-  const chosen = chooseBoard(d.boards, d.viewer, parsed.repo);
-  if (chosen.length === 0) {
-    return untracked("no-board", {
-      owner: parsed.owner,
-      repo: parsed.repo,
-      linked: d.boards
-    });
-  }
-  const first = chosen[0];
-  const f2 = fetchStatusField(run, root, d.viewer, first.number);
-  return {
-    tracked: true,
-    reason: null,
-    owner: parsed.owner,
-    repo: parsed.repo,
-    viewer: d.viewer,
-    project: {
-      number: first.number,
-      id: f2.id,
-      url: f2.url,
-      title: f2.title,
-      createdAt: f2.createdAt
-    },
-    status_field: f2.statusField,
-    linked: d.boards,
-    preflight,
-    root
-  };
-}
-var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report] [--milestone <title>]";
-var PM_USAGE = `usage: ${PM_USAGE_LINE}`;
-var VERBS2 = new Set(["board", "pickup", "lint", "gate"]);
-function milestoneFlag(args) {
-  const at = args.findIndex((a) => a === "--milestone" || a.startsWith("--milestone="));
-  if (at < 0)
-    return { title: undefined, invalid: false };
-  const title = args[at].startsWith("--milestone=") ? args[at].slice("--milestone=".length) : args[at + 1];
-  const usable = title !== undefined && title !== "" && !title.startsWith("--");
-  return usable ? { title, invalid: false } : { title: undefined, invalid: true };
-}
-function runPmCli(args, env, out, err) {
-  const [verb, ...rest2] = args;
-  if (!verb || !VERBS2.has(verb)) {
-    err(PM_USAGE);
-    return 1;
-  }
-  const run = env.run ?? execRunner;
-  const brief = rest2.includes("--brief");
-  const report = rest2.includes("--report");
-  const quiet = rest2.includes("--quiet") || brief;
-  const ms = milestoneFlag(rest2);
-  const msTitle = ms.title;
-  if (verb === "gate" && msTitle === undefined || ms.invalid || brief && report) {
-    err(PM_USAGE);
-    return 1;
-  }
-  const emit = (o) => out(JSON.stringify(o, null, 2));
-  try {
-    const info = discover(run, env.cwd);
-    const { root: _root, ...shown } = info;
-    if (!info.tracked) {
-      if (report) {
-        err(`not tracked: ${info.reason}`);
-        return 1;
-      }
-      if (!quiet)
-        emit(shown);
-      return 0;
-    }
-    if (verb === "board") {
-      emit(shown);
-      return 0;
-    }
-    const now = env.now ?? new Date;
-    const owner = info.owner;
-    const repo = info.repo;
-    const project = info.project;
-    const fullName = `${owner}/${repo}`;
-    const viewer = info.viewer;
-    if (verb === "pickup") {
-      const open2 = fetchMilestones(run, info.root, owner, repo, "open").sort((a, b) => a.number - b.number);
-      const repoIssues = fetchRepoIssues(run, info.root, owner, repo, project.id);
-      const items = cardedItems(repoIssues, fullName);
-      const active = msTitle === undefined ? activeMilestone(open2, items) : namedMilestone(open2, msTitle);
-      const plans = active ? planView(active, items) : null;
-      const issueCounts = active ? milestoneCounts(repoIssues, active.title) : null;
-      if (report) {
-        return emitReport({
-          board: { owner, repo },
-          open: open2,
-          milestone: active,
-          issue_counts: issueCounts,
-          plans
-        }, out, err);
-      }
-      const t = tiers(items, active, now);
-      const working = inProgressMilestones(open2, items);
-      const split = working.length > 1 ? working.map((m) => m.title) : [];
-      const pickup = {
-        board: shown,
-        milestone: active,
-        issue_counts: issueCounts,
-        open_milestones: open2.map((m) => ({
-          number: m.number,
-          title: m.title
-        })),
-        in_progress: t.in_progress,
-        candidates: t.candidates,
-        order_basis: "number",
-        plans,
-        drift: drift(run, info.root, t.in_progress, split)
-      };
-      if (brief)
-        out(renderBrief({ ...pickup, board: { owner, repo, project } }));
-      else
-        emit(pickup);
-      return 0;
-    }
-    if (verb === "lint") {
-      const issues = fetchOpenIssues(run, info.root, owner, repo);
-      const repoIssues = fetchRepoIssues(run, info.root, owner, repo, project.id);
-      const items = cardedItems(repoIssues, fullName);
-      const uncarded = repoIssues.filter((i) => i.card === null);
-      const candidates = chooseBoard(info.linked, viewer, repo);
-      const r = lintAll({
-        issues,
-        items,
-        uncarded,
-        boardCreatedAt: project.createdAt,
-        candidates,
-        now
-      });
-      emit({
-        board: shown,
-        findings: r.findings,
-        counts: r.counts
-      });
-      return 0;
-    }
-    if (verb === "gate") {
-      const openMs = fetchMilestones(run, info.root, owner, repo, "open");
-      const found = openMs.find((m) => m.title === msTitle) ?? fetchMilestones(run, info.root, owner, repo, "closed").find((m) => m.title === msTitle);
-      if (!found) {
-        throw new PmError(1, `no milestone titled "${msTitle}"; open: ${openMs.map((m) => m.title).join(", ") || "(none)"}`);
-      }
-      const issues = fetchOpenIssues(run, info.root, owner, repo);
-      const items = cardedItems(fetchRepoIssues(run, info.root, owner, repo, project.id), fullName);
-      const v = gateVerdict(found, issues, items);
-      emit({ board: shown, milestone: found, ready: v.ready, open: v.open });
-      return 0;
-    }
-    err(PM_USAGE);
-    return 1;
-  } catch (e) {
-    if (e instanceof PmError) {
-      err(e.message);
-      return e.exit;
-    }
-    err(e instanceof Error ? e.message : String(e));
-    return 1;
-  }
-}
-function emitReport(r, out, err) {
-  const { board, open: open2, milestone, issue_counts, plans } = r;
-  if (open2.length === 0) {
-    err("no open milestone to report on");
-    return 1;
-  }
-  if (milestone === null || issue_counts === null || plans === null) {
-    err(`no active milestone among ${open2.length} open (${open2.map((m) => m.title).join(", ")}); pass --milestone`);
-    return 1;
-  }
-  if (plans.parse !== "ok") {
-    err(plans.parse === "none" ? `milestone "${milestone.title}" has no plans header` : `milestone "${milestone.title}": ${plans.reason ?? "malformed plans header"}`);
-    return 1;
-  }
-  out(renderReport({ board, milestone, issue_counts, plans }));
-  return 0;
-}
-function inProgressMilestones(open2, items) {
-  const titles2 = new Set(items.filter((i) => i.state === "OPEN" && i.status === "In Progress").map((i) => i.milestone));
-  return open2.filter((m) => m.state === "open" && titles2.has(m.title)).sort((a, b) => a.number - b.number);
-}
-function activeMilestone(open2, items) {
-  const working = inProgressMilestones(open2, items);
-  if (working.length === 1)
-    return working[0];
-  const live = open2.filter((m) => m.state === "open");
-  return working.length === 0 && live.length === 1 ? live[0] : null;
-}
-function namedMilestone(open2, title) {
-  const found = open2.find((m) => m.title === title);
-  if (found)
-    return found;
-  throw new PmError(1, `no open milestone titled "${title}"; open: ${open2.map((m) => m.title).join(", ") || "(none)"}`);
-}
-function tiers(items, active, now) {
-  const open2 = items.filter((i) => i.state === "OPEN");
-  const byNumber = (a, b) => a.number - b.number;
-  const in_progress = open2.filter((i) => i.status === "In Progress").map((i) => ({
-    number: i.number,
-    title: i.title,
-    item_id: i.itemId,
-    age_days: ageDays(touchedAt(i), now),
-    assignees: i.assignees,
-    milestone: i.milestone
-  })).sort(byNumber);
-  const backlog = open2.filter((i) => i.status === "Backlog");
-  const tier1 = active ? backlog.filter((i) => i.milestone === active.title) : [];
-  const tier2 = backlog.filter((i) => i.milestone === null && !i.labels.includes("backlog"));
-  const cand = (tier) => (i) => ({
-    tier,
-    number: i.number,
-    title: i.title,
-    item_id: i.itemId,
-    labels: i.labels
-  });
-  return {
-    in_progress,
-    candidates: [
-      ...tier1.sort(byNumber).map(cand(1)),
-      ...tier2.sort(byNumber).map(cand(2))
-    ]
-  };
-}
-var OpenPrList = array(object({ number: number(), title: string() }));
-function drift(run, root, inProgress2, inProgressSplit = []) {
-  const branch = run("git", ["branch", "--show-current"], root).stdout.trim();
-  let basis = "none";
-  let base = null;
-  if (run("git", ["rev-parse", "--abbrev-ref", "@{u}"], root).code === 0) {
-    basis = "upstream";
-    base = "@{u}";
-  } else if (branch && run("git", ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`], root).code === 0) {
-    basis = "origin-branch";
-    base = `origin/${branch}`;
-  }
-  let count = null;
-  if (base) {
-    const r = run("git", ["rev-list", "--count", `${base}..HEAD`], root);
-    count = r.code === 0 ? Number(r.stdout.trim()) : null;
-  }
-  let open_pr = null;
-  if (branch) {
-    const r = run("gh", [
-      "pr",
-      "list",
-      "--head",
-      branch,
-      "--state",
-      "open",
-      "--json",
-      "number,title"
-    ], root);
-    if (r.code === 0) {
-      try {
-        const list = safeParse(OpenPrList, JSON.parse(r.stdout));
-        open_pr = list.success ? list.output[0] ?? null : null;
-      } catch {
-        open_pr = null;
-      }
-    }
-  }
-  return {
-    unpushed: { count, basis },
-    stale_in_progress: inProgress2.filter((i) => i.age_days > STALE_DAYS),
-    open_pr,
-    in_progress_split: inProgressSplit
-  };
-}
-function gateVerdict(ms, issues, items) {
-  const itemByNumber = new Map(items.map((i) => [i.number, i]));
-  const open2 = issues.filter((i) => i.milestone === ms.title).sort((a, b) => a.number - b.number).map((i) => ({
-    number: i.number,
-    title: i.title,
-    status: itemByNumber.get(i.number)?.status ?? null,
-    item_id: itemByNumber.get(i.number)?.itemId ?? null,
-    labels: i.labels
-  }));
-  return { ready: ms.open_issues === 0 && open2.length === 0, open: open2 };
+function staleRecordNames(rows, records, facts) {
+  return records.filter((record2) => joinRow(record2, rows) === undefined && facts.get(record2.name)?.worktreeExists === false).map((record2) => record2.name);
 }
 
 // bin/helpers/profile.ts
-import { parseArgs as parseArgs2 } from "node:util";
+import { parseArgs } from "node:util";
 
 // bin/helpers/profile-launch.ts
-import { spawnSync as spawnSync2 } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import * as fs6 from "node:fs";
 import * as path6 from "node:path";
 var isPlainObject = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
@@ -2770,7 +1666,7 @@ function launchArgs(profile, settings) {
 }
 var COULD_NOT_START = 127;
 var printedStreams = (result) => [result.stdout, result.stderr].map((text) => text.trim()).filter((text) => text !== "");
-var spawnClaude = (command, args, opts) => spawnSync2(command, args, {
+var spawnClaude = (command, args, opts) => spawnSync(command, args, {
   ...opts,
   encoding: "utf8",
   stdio: ["ignore", "pipe", "pipe"]
@@ -2809,9 +1705,9 @@ function invalidSettingsLines(doctorOutput, paths) {
   const start = lines.findIndex((line) => line.trim() === "Invalid settings");
   if (start === -1)
     return [];
-  const rest2 = lines.slice(start + 1);
-  const end = rest2.findIndex((line) => line.trim() === "");
-  const section = end === -1 ? rest2 : rest2.slice(0, end);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => line.trim() === "");
+  const section = end === -1 ? rest : rest.slice(0, end);
   return section.filter((line) => line.startsWith("- ") && paths.some((p) => line.startsWith(`- ${p} `)));
 }
 var printed = (result) => [result.stdout, result.stderr].filter((text) => text.trim() !== "").join(`
@@ -2897,7 +1793,7 @@ var unknownIdIssues = (manifest, listed) => {
   const synced = leavesOutUser(manifest) ? "; a synced plugin is not listed when the profile leaves out the user source" : "";
   return enabledPluginIds(manifest).filter((id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s))).map((id) => `"${id}": no plugin listed under this profile's settings has that id${synced}.`);
 };
-var parseJson2 = (text) => {
+var parseJson = (text) => {
   try {
     return JSON.parse(text);
   } catch {
@@ -2905,7 +1801,7 @@ var parseJson2 = (text) => {
   }
 };
 function judgePluginList(stdout, manifest) {
-  const parsed = safeParse(ListSchema, parseJson2(stdout));
+  const parsed = safeParse(ListSchema, parseJson(stdout));
   if (!parsed.success) {
     return refuse2("claude plugin list's output no longer parses, so a broken plugin dependency could pass unseen.", `Set ${PLUGIN_SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`);
   }
@@ -2978,13 +1874,13 @@ function parseManifest(raw) {
     issues: result.issues.map((i) => `${getDotPath(i) ?? "(root)"}: ${i.message}`)
   };
 }
-var isMissing = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
+var isMissing3 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
 function readManifest(file) {
   let text;
   try {
     text = fs8.readFileSync(file, "utf8");
   } catch (err) {
-    const why = isMissing(err) ? "missing" : err instanceof Error ? err.message : String(err);
+    const why = isMissing3(err) ? "missing" : err instanceof Error ? err.message : String(err);
     return { ok: false, issues: [`${file}: ${why}`] };
   }
   let raw;
@@ -3297,10 +2193,10 @@ var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --descrip
 var LAUNCH_TIMEOUT_MS = 60000;
 var SHELLS = ["zsh", "bash"];
 var withoutTrailingNewline = (text) => text.replace(/\n$/, "");
-function parseFlags(rest2, options) {
+function parseFlags(rest, options) {
   try {
-    const { values, positionals } = parseArgs2({
-      args: rest2,
+    const { values, positionals } = parseArgs({
+      args: rest,
       options,
       allowPositionals: true,
       strict: true
@@ -3347,11 +2243,11 @@ var pluginCheck = (profile, settings, penv) => checkPlugins(settings, profile.ma
   skip: skipsPluginCheck(penv)
 });
 function checkProfile(profile, settings, penv) {
-  const checked2 = settingsCheck(settings, penv);
-  if (!checked2.ok || !needsPluginCheck(profile.manifest))
-    return checked2;
+  const checked = settingsCheck(settings, penv);
+  if (!checked.ok || !needsPluginCheck(profile.manifest))
+    return checked;
   const plugins = pluginCheck(profile, settings, penv);
-  return plugins.ok ? { ok: true, warnings: [...checked2.warnings, ...plugins.warnings] } : plugins;
+  return plugins.ok ? { ok: true, warnings: [...checked.warnings, ...plugins.warnings] } : plugins;
 }
 function loadForLaunch(name, penv, err) {
   const loaded = load(name, penv);
@@ -3366,12 +2262,12 @@ function loadForLaunch(name, penv, err) {
 }
 function checkComposed(profile, penv, err, overlay) {
   const { settings, args } = composed(profile, penv, overlay);
-  const checked2 = checkProfile(profile, settings, penv);
-  if (!checked2.ok) {
-    refuse3(err, checked2.issues);
+  const checked = checkProfile(profile, settings, penv);
+  if (!checked.ok) {
+    refuse3(err, checked.issues);
     return;
   }
-  for (const warning of checked2.warnings)
+  for (const warning of checked.warnings)
     err(warning);
   return args;
 }
@@ -3391,8 +2287,8 @@ function pluginReport(profile, settings, penv) {
   const plugins = pluginCheck(profile, settings, penv);
   return plugins.ok ? ["plugins: ok", ...plugins.warnings.map((w) => `  ${w}`)] : ["plugins: refused", ...plugins.issues.map((i) => `  ${i}`)];
 }
-var list = (rest2, penv, out, err) => {
-  if (rest2.length > 0)
+var list = (rest, penv, out, err) => {
+  if (rest.length > 0)
     return usage(err);
   const profiles = listProfiles(storeRoots(penv.env, penv.cwd, penv.home, penv.workTree));
   for (const p of profiles) {
@@ -3402,8 +2298,8 @@ var list = (rest2, penv, out, err) => {
   }
   return profiles.some((p) => p.issues.length > 0) ? 1 : 0;
 };
-var show = (rest2, penv, out, err) => {
-  const parsed = parseFlags(rest2, {});
+var show = (rest, penv, out, err) => {
+  const parsed = parseFlags(rest, {});
   if (parsed === undefined || parsed.positionals.length !== 1) {
     return usage(err);
   }
@@ -3432,8 +2328,8 @@ var noRepoStore = (penv) => {
   }
   return "the repo store is the user store here, so --repo has nowhere else to write";
 };
-var create = (rest2, penv, out, err) => {
-  const parsed = parseFlags(rest2, {
+var create = (rest, penv, out, err) => {
+  const parsed = parseFlags(rest, {
     description: { type: "string" },
     repo: { type: "boolean" }
   });
@@ -3451,8 +2347,8 @@ var create = (rest2, penv, out, err) => {
   out(created.dir);
   return 0;
 };
-var argv = (rest2, penv, _out, err) => {
-  const parsed = parseFlags(rest2, {});
+var argv = (rest, penv, _out, err) => {
+  const parsed = parseFlags(rest, {});
   if (parsed === undefined || parsed.positionals.length !== 1) {
     return usage(err);
   }
@@ -3462,10 +2358,10 @@ var argv = (rest2, penv, _out, err) => {
   penv.write(args.map((arg) => `${arg}\x00`).join(""));
   return 0;
 };
-var launch = (rest2, penv, out, err) => {
-  const split = rest2.indexOf("--");
-  const before = split === -1 ? rest2 : rest2.slice(0, split);
-  const words = split === -1 ? [] : rest2.slice(split + 1);
+var launch = (rest, penv, out, err) => {
+  const split = rest.indexOf("--");
+  const before = split === -1 ? rest : rest.slice(0, split);
+  const words = split === -1 ? [] : rest.slice(split + 1);
   const parsed = parseFlags(before, {
     bg: { type: "boolean" },
     n: { type: "string", short: "n" }
@@ -3497,8 +2393,8 @@ var launch = (rest2, penv, out, err) => {
   return result.code;
 };
 var isShell = (value) => SHELLS.some((shell) => shell === value);
-var alias = (rest2, penv, out, err) => {
-  const parsed = parseFlags(rest2, { shell: { type: "string" } });
+var alias = (rest, penv, out, err) => {
+  const parsed = parseFlags(rest, { shell: { type: "string" } });
   if (parsed === undefined)
     return usage(err);
   const shell = parsed.values.shell ?? "zsh";
@@ -3520,8 +2416,8 @@ var alias = (rest2, penv, out, err) => {
   return 0;
 };
 var shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-var switchProfile = (rest2, penv, out, err) => {
-  const parsed = parseFlags(rest2, { session: { type: "string" } });
+var switchProfile = (rest, penv, out, err) => {
+  const parsed = parseFlags(rest, { session: { type: "string" } });
   if (parsed === undefined || parsed.positionals.length !== 1) {
     return usage(err);
   }
@@ -3550,7 +2446,7 @@ var switchProfile = (rest2, penv, out, err) => {
   out(`After a resume, skills of plugins "${name}" turns off stay listed but fail when called.`);
   return 0;
 };
-var VERBS3 = {
+var VERBS = {
   list,
   show,
   new: create,
@@ -3560,153 +2456,29 @@ var VERBS3 = {
   switch: switchProfile
 };
 function runProfileCli(args, penv, out, err) {
-  const [name, ...rest2] = args;
-  if (name === undefined || !Object.hasOwn(VERBS3, name))
+  const [name, ...rest] = args;
+  if (name === undefined || !Object.hasOwn(VERBS, name))
     return usage(err);
-  return VERBS3[name](rest2, penv, out, err);
-}
-
-// bin/helpers/worker-dispatch.ts
-import * as fs13 from "node:fs";
-import * as path12 from "node:path";
-
-// bin/helpers/worker-brief.ts
-import * as fs10 from "node:fs";
-import * as path9 from "node:path";
-var FENCE = "---";
-var KEY_LINE = /^([a-z]+):(?: (.*))?$/;
-function parseFrontmatter(text) {
-  const lines = text.split(/\r?\n/).map((l) => l.trimEnd());
-  if (lines[0] !== FENCE) {
-    return { issues: ["the brief must open with a --- line"] };
-  }
-  const end = lines.indexOf(FENCE, 1);
-  if (end === -1) {
-    return { issues: ["the brief's frontmatter has no closing --- line"] };
-  }
-  const fields = {};
-  const issues = [];
-  for (const [i, line] of lines.slice(1, end).entries()) {
-    if (line === "")
-      continue;
-    const match = KEY_LINE.exec(line);
-    const key = match?.[1];
-    if (key === undefined) {
-      issues.push(`line ${i + 2}: "${line}" is not "key: value" with a lower-case key`);
-    } else if (Object.hasOwn(fields, key)) {
-      issues.push(`line ${i + 2}: the key "${key}" is repeated`);
-    } else {
-      fields[key] = (match?.[2] ?? "").trim();
-    }
-  }
-  return issues.length > 0 ? { issues } : { fields };
-}
-var AbsolutePath = pipe(string(), check((s) => path9.isAbsolute(s), "must be an absolute path"));
-var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) => !path9.isAbsolute(s), "must be relative to the repo top"), check((s) => !s.split(/[\\/]/).includes(".."), 'must not have a ".." segment'));
-var BriefSchema = strictObject({
-  name: pipe(string(), regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "must match ^[a-z0-9][a-z0-9-]{0,39}$")),
-  plan: AbsolutePath,
-  spec: AbsolutePath,
-  rulings: AbsolutePath,
-  baseline: pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters")),
-  skill: picklist(["subagent-driven-development", "executing-plans"]),
-  place: union([
-    literal("worktree"),
-    literal("in-place"),
-    pipe(string(), regex(/^branch \S+$/))
-  ], 'must be "worktree", "in-place", or "branch <name>"'),
-  setup: optional(pipe(string(), minLength(1))),
-  report: RelativePath,
-  orchestrator: pipe(string(), minLength(1, "must not be empty"))
-});
-function readBrief(file) {
-  const abs = path9.resolve(file);
-  let text;
-  try {
-    text = fs10.readFileSync(abs, "utf-8");
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return { issues: [`${abs}: cannot read the brief: ${why}`] };
-  }
-  const parsed = parseFrontmatter(text);
-  if ("issues" in parsed) {
-    return { issues: parsed.issues.map((i) => `${abs}: ${i}`) };
-  }
-  const result = safeParse(BriefSchema, parsed.fields);
-  if (!result.success) {
-    return {
-      issues: result.issues.map((issue) => {
-        const field = issue.path?.map((p) => String(p.key)).join(".");
-        return field ? `${abs}: field "${field}" ${issue.message}` : `${abs}: ${issue.message}`;
-      })
-    };
-  }
-  return { brief: result.output, path: abs };
-}
-function physical(p) {
-  const abs = path9.resolve(p);
-  const rest2 = [];
-  let dir = abs;
-  for (;; ) {
-    try {
-      return path9.join(fs10.realpathSync(dir), ...rest2);
-    } catch {
-      const parent = path9.dirname(dir);
-      if (parent === dir)
-        return abs;
-      rest2.unshift(path9.basename(dir));
-      dir = parent;
-    }
-  }
-}
-var isInside = (top, p) => {
-  const rel = path9.relative(top, p);
-  const leaves = rel === ".." || rel.startsWith(`..${path9.sep}`);
-  return rel !== "" && !leaves && !path9.isAbsolute(rel);
-};
-function briefFileIssues(brief, top) {
-  const issues = [];
-  const realTop = physical(top);
-  if (!fs10.existsSync(brief.plan)) {
-    issues.push(`plan: ${brief.plan} does not exist`);
-  }
-  if (!fs10.existsSync(brief.spec)) {
-    issues.push(`spec: ${brief.spec} does not exist`);
-  }
-  const rulingsDir = path9.dirname(brief.rulings);
-  if (!fs10.existsSync(rulingsDir)) {
-    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
-  }
-  const named = [
-    ["plan", brief.plan],
-    ["spec", brief.spec],
-    ["rulings", brief.rulings]
-  ];
-  for (const [field, file] of named) {
-    if (!isInside(realTop, physical(file))) {
-      issues.push(`${field}: ${file} is outside ${top}`);
-    }
-  }
-  return issues;
+  return VERBS[name](rest, penv, out, err);
 }
 
 // bin/helpers/worker-jobs.ts
 var LISTING_ARGS = ["agents", "--json", "--all"];
 var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
 var OptionalText = nullish(string());
-var JobSchema = pipe(unknown(), check((row2) => !Array.isArray(row2), "must be an object"), object({
+var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an object"), object({
   id: OptionalText,
   kind: OptionalText,
   name: OptionalText,
   state: OptionalText
-}), transform((row2) => ({
-  id: row2.id ?? undefined,
-  kind: row2.kind ?? undefined,
-  name: row2.name ?? undefined,
-  state: row2.state ?? undefined
+}), transform((row) => ({
+  id: row.id ?? undefined,
+  kind: row.kind ?? undefined,
+  name: row.name ?? undefined,
+  state: row.state ?? undefined
 })));
 var ListingSchema = array(JobSchema);
-function parseJson3(text) {
+function parseJson2(text) {
   try {
     return { value: JSON.parse(text) };
   } catch (e) {
@@ -3727,7 +2499,7 @@ function listJobs(run, cwd, timeoutMs = 30000) {
       ]
     };
   }
-  const json = parseJson3(result.stdout);
+  const json = parseJson2(result.stdout);
   if ("issue" in json)
     return { issues: [json.issue] };
   const parsed = safeParse(ListingSchema, json.value);
@@ -3742,6 +2514,1887 @@ function listJobs(run, cwd, timeoutMs = 30000) {
   }
   return { jobs: parsed.output };
 }
+
+// bin/helpers/worker-record.ts
+import * as fs10 from "node:fs";
+import * as path9 from "node:path";
+var RecordSchema = strictObject({
+  version: literal(1),
+  name: string(),
+  job: nullable(string()),
+  brief: string(),
+  dispatchedAt: string()
+});
+var NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+function recordsDir(commonDir) {
+  return path9.join(commonDir, "sidekick", "workers");
+}
+var fileFor = (commonDir, name) => path9.join(recordsDir(commonDir), `${name}.json`);
+function jobIdFrom(stdout, name) {
+  const lines = stdout.split(`
+`).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
+  for (const line of lines) {
+    const named = /^backgrounded · (\S+) · (.+)$/.exec(line);
+    if (named?.[2] === name)
+      return named[1];
+  }
+  if (lines.length !== 1)
+    return null;
+  return /^backgrounded (\S+)$/.exec(lines[0])?.[1] ?? null;
+}
+var reason4 = (e) => e instanceof Error ? e.message : String(e);
+function writeRecord(commonDir, record2) {
+  if (!NAME.test(record2.name)) {
+    return { issue: `worker record not written: bad name "${record2.name}"` };
+  }
+  const file = fileFor(commonDir, record2.name);
+  try {
+    fs10.mkdirSync(recordsDir(commonDir), { recursive: true });
+    fs10.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+`);
+    return { ok: true };
+  } catch (e) {
+    return { issue: `worker record ${file} not written: ${reason4(e)}` };
+  }
+}
+function parseRecord(file) {
+  try {
+    const parsed = safeParse(RecordSchema, JSON.parse(fs10.readFileSync(file, "utf-8")));
+    if (parsed.success)
+      return parsed.output;
+    return `${file} is not a worker record: ${parsed.issues[0].message}`;
+  } catch (e) {
+    return `${file} cannot be read as a worker record: ${reason4(e)}`;
+  }
+}
+function readRecords(commonDir) {
+  const dir = recordsDir(commonDir);
+  const records = [];
+  const warnings = [];
+  let files;
+  try {
+    files = fs10.readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
+  } catch (e) {
+    if (e instanceof Error && "code" in e && e.code === "ENOENT") {
+      return { records, warnings };
+    }
+    return { records, warnings: [`${dir} cannot be listed: ${reason4(e)}`] };
+  }
+  for (const f of files) {
+    const read = parseRecord(path9.join(dir, f));
+    if (typeof read === "string")
+      warnings.push(read);
+    else
+      records.push(read);
+  }
+  return { records, warnings };
+}
+function removeRecord(commonDir, name) {
+  if (!NAME.test(name))
+    return;
+  fs10.rmSync(fileFor(commonDir, name), { force: true });
+}
+
+// bin/helpers/desk.ts
+var DESK_USAGE_LINE = "sidekick desk --json [--self <session id>]";
+function parseDeskArgs(rest) {
+  const parsed = parseFlags(rest, {
+    json: { type: "boolean" },
+    self: { type: "string" }
+  });
+  if (parsed === undefined || parsed.positionals.length > 0)
+    return;
+  if (parsed.values.json !== true)
+    return;
+  const { self } = parsed.values;
+  return typeof self === "string" ? { self } : {};
+}
+function exitError(result) {
+  const failed = `${LISTING} failed with exit code ${result.code}`;
+  const printed2 = printedStreams(result).at(0);
+  return printed2 === undefined ? failed : `${failed}: ${printed2.split(`
+`)[0]}`;
+}
+function parseJson3(text) {
+  try {
+    return { value: JSON.parse(text) };
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { error: `${LISTING} printed a listing that is not JSON: ${why}` };
+  }
+}
+function readListing(run, cwd, timeoutMs = 5000) {
+  const result = run(LISTING_ARGS, { cwd, timeoutMs });
+  if (result.timedOut)
+    return { error: `${LISTING} did not return in time` };
+  if (result.code !== 0)
+    return { error: exitError(result) };
+  const json = parseJson3(result.stdout);
+  if ("error" in json)
+    return json;
+  if (!Array.isArray(json.value)) {
+    return { error: `${LISTING} printed a listing that is not a JSON array` };
+  }
+  return parseListingRows(json.value);
+}
+var reason5 = (e) => e instanceof Error ? e.message : String(e);
+function pruneRecords(commonDir, names) {
+  return names.flatMap((name) => {
+    try {
+      removeRecord(commonDir, name);
+      return [];
+    } catch (e) {
+      return [`${name}: its stale record was not deleted: ${reason5(e)}`];
+    }
+  });
+}
+function readAndPruneChildren(denv, rows, find) {
+  const found = findRepo(denv.runGit, denv.cwd);
+  if (found.repo === undefined) {
+    return { records: [], facts: new Map, warnings: found.warnings };
+  }
+  const { repo } = found;
+  const sources = { runGit: denv.runGit, repo, find };
+  const read = readRecords(repo.commonDir);
+  const gathered = read.records.map((record2) => ({
+    record: record2,
+    ...childFacts(sources, record2, joinRow(record2, rows))
+  }));
+  const facts = new Map(gathered.map((g) => [g.record.name, g.facts]));
+  const stale = staleRecordNames(rows, read.records, facts);
+  const kept = gathered.filter((g) => !stale.includes(g.record.name));
+  return {
+    repo: path10.basename(repo.top),
+    records: kept.map((g) => g.record),
+    facts,
+    warnings: [
+      ...read.warnings,
+      ...kept.flatMap((g) => g.warnings),
+      ...pruneRecords(repo.commonDir, stale)
+    ]
+  };
+}
+function takeSnapshot(denv, self) {
+  const listing = readListing(denv.runClaude, denv.cwd);
+  if ("error" in listing) {
+    return { version: DESK_VERSION, ok: false, error: listing.error };
+  }
+  const { rows } = listing;
+  const transcripts = transcriptFinder(denv.configDir);
+  const children = readAndPruneChildren(denv, rows, transcripts.find);
+  return buildSnapshot({
+    rows,
+    records: children.records,
+    facts: children.facts,
+    freshInteractive: freshSessions(rows, transcripts.find, denv.now()),
+    self,
+    repo: children.repo,
+    warnings: [
+      ...listing.warnings,
+      ...transcripts.warnings,
+      ...children.warnings
+    ]
+  });
+}
+function runDeskCli(rest, denv, out, err) {
+  const args = parseDeskArgs(rest);
+  if (args === undefined) {
+    err(`usage: ${DESK_USAGE_LINE}`);
+    return 1;
+  }
+  out(JSON.stringify(takeSnapshot(denv, args.self)));
+  return 0;
+}
+
+// bin/helpers/hook.ts
+import * as fs11 from "node:fs";
+import * as path11 from "node:path";
+var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)";
+function readContent(event) {
+  const response = event.tool_response;
+  if (!isRecord4(response) || !isRecord4(response.file))
+    return "";
+  return typeof response.file.content === "string" ? response.file.content : "";
+}
+var DESIGN_SKILL = path11.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path11.join("skills", "sk-execute", "SKILL.md");
+var PLAN_SECTIONS = [
+  "## A plan carries intent",
+  "## Before the plan goes out",
+  "## Choose the mode"
+];
+var CLEAN_CODE_RULE = path11.join("rules", "sk-clean-code.md");
+var COMMENTS_HEADING = "## Comments";
+var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
+var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
+var RELEASE_CHECK_PACKAGE = /(^|\/)\.superpowers\/sdd\/release-check-[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
+var isRecord4 = (v) => typeof v === "object" && v !== null;
+function isSkillHookInput(v) {
+  if (!isRecord4(v))
+    return false;
+  const input = v.tool_input;
+  return isRecord4(input) && typeof input.skill === "string";
+}
+function isReadHookInput(v) {
+  if (!isRecord4(v) || v.tool_name !== "Read")
+    return false;
+  const input = v.tool_input;
+  return isRecord4(input) && typeof input.file_path === "string";
+}
+function parseJson4(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return;
+  }
+}
+function readText(file) {
+  try {
+    return fs11.readFileSync(file, "utf-8");
+  } catch {
+    return;
+  }
+}
+function readSkillDescription(skillFile) {
+  const text = readText(skillFile);
+  if (text === undefined)
+    return;
+  const lines = text.split(`
+`);
+  if (lines[0].trim() !== "---")
+    return;
+  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
+  if (close < 0)
+    return;
+  const match = lines.slice(1, close).map((line) => DESCRIPTION_LINE.exec(line)).find((m) => m !== null);
+  if (!match)
+    return;
+  const value = parseJson4(match[1]);
+  return typeof value === "string" ? value : undefined;
+}
+function readSection(file, heading) {
+  const text = readText(file);
+  if (text === undefined)
+    return;
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trimEnd() === heading);
+  if (start < 0)
+    return;
+  const rest = lines.slice(start + 1);
+  let fenced = false;
+  const next = rest.findIndex((line) => {
+    if (line.trimStart().startsWith("```"))
+      fenced = !fenced;
+    return !fenced && line.startsWith("## ");
+  });
+  const body = next < 0 ? rest : rest.slice(0, next);
+  return [lines[start], ...body].join(`
+`).trim();
+}
+function readRulePaths(file) {
+  const text = readText(file);
+  if (text === undefined)
+    return;
+  const lines = text.split(/\r?\n/);
+  if (lines[0].trim() !== "---")
+    return;
+  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
+  if (close < 0)
+    return;
+  const front = lines.slice(1, close);
+  const key = front.findIndex((line) => line.trimEnd() === "paths:");
+  if (key < 0)
+    return;
+  const globs = [];
+  for (const line of front.slice(key + 1)) {
+    const item = /^\s+-\s+["']?(.*?)["']?\s*$/.exec(line);
+    if (item === null)
+      break;
+    globs.push(item[1]);
+  }
+  return globs.length === 0 ? undefined : globs;
+}
+var EXT_GLOB = /^\*\*\/\*(\.[A-Za-z0-9]+)$/;
+var STAT_LINE = /^\s*(\S.*?)\s+\|\s+(?:\d+|Bin)\b/;
+var DIFF_HEADER = /^diff --git a\/(.+) b\//;
+function visiblePaths(content) {
+  const found = [];
+  for (const line of content.split(/\r?\n/)) {
+    const match = STAT_LINE.exec(line) ?? DIFF_HEADER.exec(line);
+    if (match !== null)
+      found.push(match[1]);
+  }
+  return found;
+}
+function ruleCoversPackage(rulePaths, content) {
+  if (rulePaths === undefined)
+    return true;
+  const exts = [];
+  for (const glob of rulePaths) {
+    const match = EXT_GLOB.exec(glob);
+    if (match === null)
+      return true;
+    exts.push(match[1]);
+  }
+  return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
+}
+function brainstormNudge(pluginDir) {
+  const description = readSkillDescription(path11.join(pluginDir, DESIGN_SKILL));
+  if (description === undefined)
+    return;
+  return [
+    "sidekick: before this brainstorm proposes approaches, check whether the change needs a design pass.",
+    `sidekick:sk-design: ${description}`,
+    "If it applies, run it now, or at the approaches step, which it then does itself.",
+    "If a design note for this change already exists, start from it."
+  ].join(" ");
+}
+var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
+function writingPlansNudge(pluginDir) {
+  const file = path11.join(pluginDir, EXECUTE_SKILL);
+  const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
+  const found = sections.flatMap((s) => s === undefined ? [] : [s]);
+  if (found.length < PLAN_SECTIONS.length)
+    return;
+  return [PLAN_LEAD, ...found].join(`
+
+`);
+}
+var NUDGES = new Map([
+  ["superpowers:brainstorming", brainstormNudge],
+  ["superpowers:writing-plans", writingPlansNudge]
+]);
+var READ_LEAD_LINE = "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
+var REPRODUCE_PARAGRAPH = "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a task reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
+var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Where superpowers limits you to risks you can name outside the diff, two kinds count here. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with `git grep`, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
+var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
+var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
+function commentsLines(pluginDir, packageText) {
+  const rule = path11.join(pluginDir, CLEAN_CODE_RULE);
+  const comments = readSection(rule, COMMENTS_HEADING);
+  if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
+    return [];
+  }
+  return [
+    "Hold the comments this diff adds to the house rule. Reading a diff does not load `sk-clean-code.md`, so its Comments section follows. Report each added comment that breaks it as a finding. Where this repo's own rules set a different comment convention, theirs win.",
+    comments
+  ];
+}
+function reviewerLines(pluginDir, packageText) {
+  return [
+    READ_LEAD_LINE,
+    REPRODUCE_PARAGRAPH,
+    CLAIMS_PARAGRAPH,
+    ...commentsLines(pluginDir, packageText)
+  ].join(`
+
+`);
+}
+function releaseReviewerLines(pluginDir, packageText) {
+  return [
+    RELEASE_LEAD_LINE,
+    RELEASE_CLAIMS_PARAGRAPH,
+    ...commentsLines(pluginDir, packageText)
+  ].join(`
+
+`);
+}
+function postSkillContext(stdin, env) {
+  const event = parseJson4(stdin);
+  if (!isSkillHookInput(event))
+    return {};
+  const nudge = NUDGES.get(event.tool_input.skill);
+  return { context: nudge?.(env.pluginDir) };
+}
+function postReadContext(stdin, env) {
+  const { pluginDir } = env;
+  const event = parseJson4(stdin);
+  if (!isReadHookInput(event))
+    return {};
+  const filePath = event.tool_input.file_path;
+  if (RELEASE_CHECK_PACKAGE.test(filePath)) {
+    return { context: releaseReviewerLines(pluginDir, readContent(event)) };
+  }
+  if (!REVIEW_PACKAGE.test(filePath))
+    return {};
+  return { context: reviewerLines(pluginDir, readContent(event)) };
+}
+var VERBS2 = new Map([
+  ["post-skill", { eventName: "PostToolUse", contextFor: postSkillContext }],
+  ["post-read", { eventName: "PostToolUse", contextFor: postReadContext }],
+  [
+    "post-tool-batch",
+    {
+      eventName: "PostToolBatch",
+      contextFor: (stdin, env) => postToolBatchContext(stdin, { env: env.env, tmpdir: env.tmpdir })
+    }
+  ]
+]);
+function runHookCli(args, env, out, err) {
+  const [verb] = args;
+  const entry = verb === undefined ? undefined : VERBS2.get(verb);
+  if (entry === undefined) {
+    err(`usage: ${HOOK_USAGE_LINE}`);
+    return 1;
+  }
+  const { context, notice } = entry.contextFor(env.readStdin(), env) ?? {};
+  if (context === undefined && notice === undefined)
+    return 0;
+  out(JSON.stringify({
+    ...context === undefined ? {} : {
+      hookSpecificOutput: {
+        hookEventName: entry.eventName,
+        additionalContext: context
+      }
+    },
+    ...notice === undefined ? {} : { systemMessage: notice }
+  }));
+  return 0;
+}
+
+// bin/helpers/pm-plans.ts
+var HEADER_OPEN = "<!-- plans -->";
+var HEADER_CLOSE = "<!-- /plans -->";
+var LINE = /^\s*\d+\.(?!\d)\s*(.*)$/;
+var GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
+var normalise = (text) => text.replace(/\r\n?/g, `
+`);
+var oneLine = (text) => text.replace(/\s+/g, " ").trim();
+var isMarker = (line) => line.trim() === HEADER_OPEN || line.trim() === HEADER_CLOSE;
+function locate(description) {
+  const lines = normalise(description).split(`
+`);
+  const first = lines.findIndex((l) => l.trim() !== "");
+  if (first < 0 || lines[first].trim() !== HEADER_OPEN) {
+    return lines.some(isMarker) ? { at: "elsewhere" } : { at: "none" };
+  }
+  const close = lines.findIndex((l, k) => k > first && l.trim() === HEADER_CLOSE);
+  if (close < 0)
+    return { at: "unclosed" };
+  return {
+    at: "top",
+    lines: lines.slice(first + 1, close),
+    prose: lines.slice(close + 1)
+  };
+}
+var malformed = (reason6) => ({
+  parse: "malformed",
+  reason: oneLine(reason6)
+});
+function duplicate(plans) {
+  const names = plans.map((p) => p.name);
+  const name = names.find((n, i) => names.indexOf(n) !== i);
+  if (name !== undefined)
+    return `plan "${name}" appears twice`;
+  const issues = plans.flatMap((p) => p.issues);
+  const issue = issues.find((n, i) => issues.indexOf(n) !== i);
+  return issue === undefined ? null : `#${issue} appears in two plans`;
+}
+function parsePlansHeader(description) {
+  const found = locate(description);
+  if (found.at === "none")
+    return { parse: "none" };
+  if (found.at === "elsewhere") {
+    return malformed("the plans header is not at the top");
+  }
+  if (found.at === "unclosed") {
+    return malformed(`the plans header has no ${HEADER_CLOSE} line`);
+  }
+  if (found.prose.some(isMarker)) {
+    return malformed("a second plans header follows the first");
+  }
+  const plans = [];
+  for (const line of found.lines.filter((l) => l.trim() !== "")) {
+    const numbered = LINE.exec(line);
+    const group = numbered === null ? null : GROUP.exec(numbered[1]);
+    if (group === null) {
+      return malformed(`"${line.trim()}" is not <n>. <name> (#N, …)`);
+    }
+    plans.push({
+      name: oneLine(group[1]),
+      issues: group[2].split(",").map((r) => Number(r.trim().slice(1)))
+    });
+  }
+  if (plans.length === 0)
+    return malformed("the plans header lists no plans");
+  const reason6 = duplicate(plans);
+  return reason6 === null ? { parse: "ok", plans } : malformed(reason6);
+}
+function descriptionProse(description) {
+  const found = locate(description);
+  return found.at === "top" ? found.prose.join(`
+`) : normalise(description);
+}
+var openOf = (issues) => issues.filter((i) => i.open);
+var inProgress = (i) => i.status === "In Progress";
+var notStarted = (i) => i.status === "Backlog" || i.status === null;
+function startable(issues) {
+  const open = openOf(issues);
+  return open.length > 0 && !open.some(inProgress) && open.some(notStarted);
+}
+function stateOf(issues, isNext) {
+  const open = openOf(issues);
+  if (open.length === 0)
+    return "done";
+  if (open.some(inProgress))
+    return "running";
+  if (isNext)
+    return "next";
+  return "later";
+}
+function planView(ms, items) {
+  const c = parsePlansHeader(ms.description);
+  if (c.parse === "none")
+    return { parse: "none", list: [], unplanned: [] };
+  if (c.parse === "malformed") {
+    return { parse: "malformed", reason: c.reason, list: [], unplanned: [] };
+  }
+  const byNumber = new Map(items.map((i) => [i.number, i]));
+  const issueOf = (n) => {
+    const i = byNumber.get(n);
+    return i ? {
+      number: n,
+      title: i.title,
+      open: i.state === "OPEN",
+      status: i.status
+    } : { number: n, title: null, open: true, status: null };
+  };
+  const issues = c.plans.map((p) => p.issues.map(issueOf));
+  const nextAt = issues.findIndex(startable);
+  const list2 = c.plans.map((p, k) => ({
+    name: p.name,
+    state: stateOf(issues[k], k === nextAt),
+    issues: issues[k]
+  }));
+  const planned = new Set(c.plans.flatMap((p) => p.issues));
+  const unplanned = items.filter((i) => i.state === "OPEN" && i.milestone === ms.title && !planned.has(i.number)).sort((a, b) => a.number - b.number).map((i) => ({ number: i.number, title: i.title }));
+  return { parse: "ok", list: list2, unplanned };
+}
+
+// bin/helpers/pm-brief.ts
+var TITLE_MAX = 60;
+var PER_TIER_MAX = 5;
+function cut(title) {
+  return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title;
+}
+function firstSentence(text) {
+  const t = text.replace(/\s+/g, " ").trim();
+  const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
+  return m ? m[1] : t;
+}
+var titles = (list2) => list2.map((m) => cut(m.title)).join(", ");
+function ref(i) {
+  return `#${i.number} ${cut(i.title)}`;
+}
+function tierBody(tier, candidates) {
+  const mine = candidates.filter((c) => c.tier === tier);
+  if (mine.length === 0)
+    return null;
+  const shown = mine.slice(0, PER_TIER_MAX).map(ref).join("; ");
+  const more = mine.length > PER_TIER_MAX ? ` +${mine.length - PER_TIER_MAX} more` : "";
+  return `${shown}${more}`;
+}
+function tierLine(tier, candidates) {
+  const body = tierBody(tier, candidates);
+  return body === null ? null : `tier ${tier} ${body}`;
+}
+function parsedPlans(p) {
+  if (p.plans === null || p.plans.parse !== "ok")
+    return null;
+  return { list: p.plans.list, unplanned: p.plans.unplanned };
+}
+var openRefs = (plan) => plan.issues.filter((i) => i.open).map((i) => `#${i.number}`).join(", ");
+var plannedNumbers = (list2) => new Set(list2.flatMap((pl) => pl.issues.map((i) => i.number)));
+function continueMove(cards, plans) {
+  const lowest = Math.min(...cards.map((i) => i.number));
+  const plan = plans === null ? undefined : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
+  return plan === undefined ? `continue #${lowest}` : `continue plan ${plan.name} (${openRefs(plan)})`;
+}
+function pullMove(p, plans) {
+  if (plans === null) {
+    return p.candidates.some((c) => c.tier === 1) ? "pull one tier-1 candidate" : null;
+  }
+  const next = plans.list.find((pl) => pl.state === "next");
+  if (next !== undefined)
+    return `pull plan ${next.name} (${openRefs(next)})`;
+  const planned = plannedNumbers(plans.list);
+  const unplanned = p.candidates.some((c) => c.tier === 1 && !planned.has(c.number));
+  return unplanned ? "pull one unplanned candidate" : null;
+}
+function nextMove(p) {
+  if (p.milestone === null && p.open_milestones.length > 1) {
+    return `choose a milestone: ${titles(p.open_milestones)}`;
+  }
+  const plans = parsedPlans(p);
+  if (p.in_progress.length > 0)
+    return continueMove(p.in_progress, plans);
+  const pull = pullMove(p, plans);
+  if (pull !== null)
+    return pull;
+  if (p.milestone)
+    return "nothing to pick up: verify, then close the milestone";
+  return "nothing open: open the next milestone";
+}
+var card = (i) => `#${i.number} (${i.age_days} d)`;
+var titledCard = (i) => `${ref(i)} (${i.age_days} d)`;
+function inProgressLine(p, plans) {
+  if (p.in_progress.length === 0)
+    return "in progress: none";
+  if (plans === null) {
+    return `in progress: ${p.in_progress.map(titledCard).join(", ")}`;
+  }
+  const byNumber = new Map(p.in_progress.map((i) => [i.number, i]));
+  const grouped = plans.list.flatMap((pl) => {
+    const cards = pl.issues.flatMap((i) => byNumber.get(i.number) ?? []);
+    return cards.length === 0 ? [] : [`plan ${cut(pl.name)}: ${cards.map(card).join(", ")}`];
+  });
+  const planned = plannedNumbers(plans.list);
+  const loose = p.in_progress.filter((i) => !planned.has(i.number)).map(titledCard);
+  return `in progress: ${[...grouped, ...loose].join(" · ")}`;
+}
+function doneSegment(count) {
+  if (count === 0)
+    return null;
+  return count === 1 ? "1 plan done" : `${count} plans done`;
+}
+function planCandidatesLine(p, plans) {
+  const inState = (state) => plans.list.filter((pl) => pl.state === state);
+  const next = plans.list.find((pl) => pl.state === "next");
+  const later = inState("later");
+  const openCount = (pl) => pl.issues.filter((i) => i.open).length;
+  const running = new Set(p.in_progress.map((i) => i.number));
+  const unplanned = plans.unplanned.filter((i) => !running.has(i.number)).map((i) => `#${i.number}`).join(", ");
+  const segments = [
+    next === undefined ? null : `next plan ${cut(next.name)} (${openRefs(next)})`,
+    later.length === 0 ? null : `then ${later.map((pl) => `${cut(pl.name)} (${openCount(pl)})`).join(", ")}`,
+    doneSegment(inState("done").length),
+    `unplanned: ${unplanned === "" ? "none" : unplanned}`,
+    `tier 2: ${tierBody(2, p.candidates) ?? "none"}`
+  ];
+  return `candidates: ${segments.filter((s) => s !== null).join(" · ")}`;
+}
+function candidatesLine(p, plans) {
+  if (plans !== null)
+    return planCandidatesLine(p, plans);
+  const tiers = [tierLine(1, p.candidates), tierLine(2, p.candidates)].filter((t) => t !== null);
+  const order = p.candidates.length > 1 ? " (order: number, not priority)" : "";
+  return tiers.length > 0 ? `candidates: ${tiers.join(" · ")}${order}` : "candidates: none";
+}
+function milestoneLine(p) {
+  const m = p.milestone;
+  if (m === null) {
+    return p.open_milestones.length === 0 ? "milestone: none" : `milestone: none active · open: ${titles(p.open_milestones)}`;
+  }
+  const outcome = firstSentence(descriptionProse(m.description));
+  const others = p.open_milestones.filter((o) => o.number !== m.number);
+  const c = p.issue_counts;
+  const counts = c === null ? "" : ` (${c.open} open, ${c.closed} closed)`;
+  return [
+    `milestone: ${m.title}${counts}`,
+    ...outcome ? [outcome] : [],
+    ...others.length > 0 ? [`also open: ${titles(others)}`] : []
+  ].join(" · ");
+}
+function renderBrief(p) {
+  const lines = [];
+  lines.push(`sidekick · ${p.board.owner}/${p.board.repo} · board #${p.board.project.number}`);
+  lines.push(milestoneLine(p));
+  const plans = parsedPlans(p);
+  lines.push(inProgressLine(p, plans));
+  lines.push(candidatesLine(p, plans));
+  const drift = [];
+  const unpushed = p.drift.unpushed.count;
+  if (unpushed !== null && unpushed > 0)
+    drift.push(`${unpushed} unpushed`);
+  if (p.drift.stale_in_progress.length > 0) {
+    drift.push(`stale: ${p.drift.stale_in_progress.map((i) => `#${i.number} (${i.age_days} d)`).join(", ")}`);
+  }
+  if (p.drift.open_pr)
+    drift.push(`open PR #${p.drift.open_pr.number}`);
+  if (p.drift.in_progress_split.length > 0) {
+    drift.push(`In Progress split: ${p.drift.in_progress_split.map(cut).join(", ")}`);
+  }
+  if (p.plans !== null && p.plans.parse === "malformed") {
+    drift.push(`plans header: ${p.plans.reason}`);
+  }
+  lines.push(drift.length > 0 ? `drift: ${drift.join(" · ")}` : "drift: none");
+  lines.push(`next: ${nextMove(p)}`);
+  return lines.join(`
+`);
+}
+
+// bin/helpers/pm-data.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+var execRunner = (cmd, args, cwd) => {
+  const r = spawnSync2(cmd, args, {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (r.error)
+    return { code: 127, stdout: "", stderr: r.error.message };
+  return {
+    code: r.status ?? 1,
+    stdout: r.stdout ?? "",
+    stderr: r.stderr ?? ""
+  };
+};
+
+class PmError extends Error {
+  exit;
+  constructor(exit, message) {
+    super(message);
+    this.exit = exit;
+  }
+}
+var ORIGIN = /^(?:git@github\.com:|https:\/\/github\.com\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/;
+function parseOrigin(url) {
+  const m = url.trim().match(ORIGIN);
+  return m ? { owner: m[1], repo: m[2] } : null;
+}
+function parseGhVersion(firstLine2) {
+  const m = firstLine2.match(/^gh version (\d+\.\d+\.\d+)/);
+  return m ? m[1] : null;
+}
+function versionAtLeast(v, min) {
+  const a = v.split(".").map(Number);
+  const b = min.split(".").map(Number);
+  for (let i = 0;i < 3; i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y)
+      return x > y;
+  }
+  return true;
+}
+function hasProjectScope(headers) {
+  const line = headers.split(/\r?\n/).find((l) => /^x-oauth-scopes:/i.test(l));
+  if (!line)
+    return false;
+  return line.slice(line.indexOf(":") + 1).split(",").map((s) => s.trim()).includes("project");
+}
+function ageDays(iso, now) {
+  return Math.floor((now.getTime() - new Date(iso).getTime()) / 86400000);
+}
+function touchedAt(item) {
+  const { updatedAt, statusUpdatedAt } = item;
+  if (statusUpdatedAt === null)
+    return updatedAt;
+  return Date.parse(statusUpdatedAt) > Date.parse(updatedAt) ? statusUpdatedAt : updatedAt;
+}
+var STALE_DAYS = 7;
+var DISCOVERY_QUERY = "query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }";
+var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url createdAt field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
+var ISSUES_PAGE = 100;
+var ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason closedAt updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id isArchived project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
+var ISSUE_LIMIT = 500;
+var GqlEnvelope = object({
+  data: optional(unknown()),
+  errors: nullish(array(object({ message: string() })))
+});
+function checked(schema, value, what) {
+  const result = safeParse(schema, value);
+  if (!result.success) {
+    throw new PmError(1, `gh returned an unexpected ${what}: ${summarize(result.issues)}`);
+  }
+  return result.output;
+}
+function gql(run, cwd, doc, vars) {
+  const args = ["api", "graphql", "-f", `query=${doc}`];
+  for (const [flag, kv] of vars)
+    args.push(flag, kv);
+  const r = run("gh", args, cwd);
+  if (r.code !== 0) {
+    throw new PmError(1, r.stderr.trim() || "gh api graphql failed");
+  }
+  const parsed = checked(GqlEnvelope, JSON.parse(r.stdout), "GraphQL response");
+  if (parsed.errors?.length)
+    throw new PmError(1, parsed.errors[0].message);
+  return parsed.data;
+}
+function rest(run, cwd, args) {
+  const r = run("gh", args, cwd);
+  if (r.code !== 0) {
+    throw new PmError(1, r.stderr.trim() || `gh ${args[0]} failed`);
+  }
+  return r.stdout;
+}
+function fetchGhVersion(run, cwd) {
+  const r = run("gh", ["--version"], cwd);
+  if (r.code !== 0)
+    return { found: false, version: null };
+  return {
+    found: true,
+    version: parseGhVersion(r.stdout.split(`
+`)[0] ?? "")
+  };
+}
+function fetchLocalLogin(run, cwd) {
+  const r = run("gh", ["config", "get", "-h", "github.com", "user"], cwd);
+  const login = r.stdout.trim();
+  return r.code === 0 && login ? login : null;
+}
+function fetchScopeHeaders(run, cwd) {
+  return rest(run, cwd, ["api", "-i", "user"]);
+}
+var DiscoveryData = object({
+  viewer: object({ login: string() }),
+  repository: nullable(object({
+    projectsV2: object({
+      nodes: array(object({
+        number: number(),
+        title: string(),
+        closed: boolean(),
+        url: string(),
+        id: string(),
+        owner: object({ login: optional(string()) })
+      }))
+    })
+  }))
+});
+function parseDiscovery(data) {
+  const d = checked(DiscoveryData, data, "discovery");
+  const nodes = d.repository?.projectsV2.nodes ?? [];
+  return {
+    viewer: d.viewer.login,
+    boards: nodes.map((n) => ({
+      number: n.number,
+      title: n.title,
+      closed: n.closed,
+      url: n.url,
+      id: n.id,
+      ownerLogin: n.owner.login ?? ""
+    }))
+  };
+}
+function fetchDiscovery(run, cwd, owner, repo) {
+  return parseDiscovery(gql(run, cwd, DISCOVERY_QUERY, [
+    ["-f", `owner=${owner}`],
+    ["-f", `name=${repo}`]
+  ]));
+}
+var FieldData = object({
+  user: object({
+    projectV2: object({
+      id: string(),
+      title: string(),
+      url: string(),
+      createdAt: string(),
+      field: nullable(object({
+        id: string(),
+        options: array(object({ id: string(), name: string() }))
+      }))
+    })
+  })
+});
+function parseStatusField(data) {
+  const p = checked(FieldData, data, "status field").user.projectV2;
+  const statusField = p.field ? {
+    id: p.field.id,
+    options: Object.fromEntries(p.field.options.map((o) => [o.name, o.id]))
+  } : null;
+  return {
+    id: p.id,
+    title: p.title,
+    url: p.url,
+    createdAt: p.createdAt,
+    statusField
+  };
+}
+function fetchStatusField(run, cwd, login, number2) {
+  return parseStatusField(gql(run, cwd, FIELD_QUERY, [
+    ["-f", `login=${login}`],
+    ["-F", `number=${number2}`]
+  ]));
+}
+var IssuesData = object({
+  repository: object({
+    issues: object({
+      pageInfo: object({
+        hasNextPage: boolean(),
+        endCursor: nullable(string())
+      }),
+      nodes: array(object({
+        number: number(),
+        title: string(),
+        state: picklist(["OPEN", "CLOSED"]),
+        stateReason: nullable(string()),
+        closedAt: nullable(string()),
+        updatedAt: string(),
+        url: string(),
+        milestone: nullable(object({ title: string() })),
+        labels: object({ nodes: array(object({ name: string() })) }),
+        assignees: object({
+          nodes: array(object({ login: string() }))
+        }),
+        projectItems: object({
+          pageInfo: object({ hasNextPage: boolean() }),
+          nodes: array(object({
+            id: string(),
+            isArchived: boolean(),
+            project: object({ id: string() }),
+            fieldValueByName: nullable(object({
+              name: optional(string()),
+              updatedAt: optional(string())
+            }))
+          }))
+        })
+      }))
+    })
+  })
+});
+function parseRepoIssuesPage(data, projectId) {
+  const page = checked(IssuesData, data, "issues page").repository.issues;
+  const issues = page.nodes.map((n) => {
+    const hit = n.projectItems.nodes.find((c) => c.project.id === projectId);
+    if (!hit && n.projectItems.pageInfo.hasNextPage) {
+      throw new PmError(1, `#${n.number} sits on more boards than one page lists, so its card on this board cannot be ruled out`);
+    }
+    const cardArchived = hit?.isArchived === true && n.state === "OPEN";
+    return {
+      number: n.number,
+      title: n.title,
+      state: n.state,
+      stateReason: n.stateReason ?? null,
+      closedAt: n.closedAt ?? null,
+      updatedAt: n.updatedAt,
+      url: n.url,
+      milestone: n.milestone?.title ?? null,
+      labels: n.labels.nodes.map((l) => l.name),
+      assignees: n.assignees.nodes.map((a) => a.login),
+      card: hit && !cardArchived ? {
+        itemId: hit.id,
+        status: hit.fieldValueByName?.name ?? null,
+        statusUpdatedAt: hit.fieldValueByName?.updatedAt ?? null
+      } : null,
+      cardArchived
+    };
+  });
+  return {
+    issues,
+    hasNextPage: page.pageInfo.hasNextPage,
+    endCursor: page.pageInfo.endCursor
+  };
+}
+function fetchRepoIssues(run, cwd, owner, repo, projectId) {
+  const issues = [];
+  let after = null;
+  for (;; ) {
+    const vars = [
+      ["-f", `owner=${owner}`],
+      ["-f", `name=${repo}`]
+    ];
+    if (after)
+      vars.push(["-f", `after=${after}`]);
+    const page = parseRepoIssuesPage(gql(run, cwd, ISSUES_QUERY, vars), projectId);
+    issues.push(...page.issues);
+    if (!page.hasNextPage || !page.endCursor)
+      break;
+    after = page.endCursor;
+  }
+  return issues;
+}
+function cardedItems(issues, fullName) {
+  return issues.flatMap(({ card: card2, closedAt, cardArchived, ...i }) => card2 ? [{ ...i, ...card2, repo: fullName }] : []);
+}
+function milestoneCounts(issues, title) {
+  const mine = issues.filter((i) => i.milestone === title);
+  const open = mine.filter((i) => i.state === "OPEN").length;
+  return { open, closed: mine.length - open };
+}
+var RestMilestones = array(object({
+  number: number(),
+  title: string(),
+  description: nullable(string()),
+  due_on: nullable(string()),
+  open_issues: number(),
+  closed_issues: number(),
+  state: picklist(["open", "closed"]),
+  created_at: string()
+}));
+function parseMilestones(json) {
+  return checked(RestMilestones, JSON.parse(json), "milestone list").map((m) => ({
+    number: m.number,
+    title: m.title,
+    description: m.description ?? "",
+    due_on: m.due_on,
+    open_issues: m.open_issues,
+    closed_issues: m.closed_issues,
+    state: m.state,
+    created_at: m.created_at
+  }));
+}
+function fetchMilestones(run, cwd, owner, repo, state) {
+  return parseMilestones(rest(run, cwd, [
+    "api",
+    `repos/${owner}/${repo}/milestones?state=${state}&per_page=100`
+  ]));
+}
+var CliIssues = array(object({
+  number: number(),
+  title: string(),
+  labels: array(object({ name: string() })),
+  body: string(),
+  milestone: nullable(object({ title: string() })),
+  updatedAt: string()
+}));
+function parseIssues(json) {
+  const list2 = checked(CliIssues, JSON.parse(json), "issue list");
+  if (list2.length >= ISSUE_LIMIT) {
+    throw new PmError(1, `gh issue list returned ${list2.length} issues, the limit; refusing to reason over a truncated list`);
+  }
+  return list2.map((i) => ({
+    number: i.number,
+    title: i.title,
+    labels: i.labels.map((l) => l.name),
+    body: i.body,
+    milestone: i.milestone?.title ?? null,
+    updatedAt: i.updatedAt
+  }));
+}
+function fetchOpenIssues(run, cwd, owner, repo) {
+  return parseIssues(rest(run, cwd, [
+    "issue",
+    "list",
+    "-R",
+    `${owner}/${repo}`,
+    "--state",
+    "open",
+    "--limit",
+    String(ISSUE_LIMIT),
+    "--json",
+    "number,title,labels,body,milestone,updatedAt"
+  ]));
+}
+
+// bin/helpers/pm-lint.ts
+var LINT_IDS = [
+  "area_label_count",
+  "no_status",
+  "open_in_done",
+  "completed_not_done",
+  "backlog_without_condition",
+  "backlog_in_milestone",
+  "position_code_title",
+  "cites_working_file",
+  "unboarded",
+  "stale_in_progress",
+  "multiple_linked_boards"
+];
+var REVISIT_MARKER = /^\s*(?:[-*+][ \t]+)?(?:(\*\*|__|\*|_)revisit when(?::\1|\1:)|revisit when:)/im;
+var POSITION_CODE = [
+  /^\s*\d+(\.\d+)+\s*[—–-]/,
+  /^\s*(bench|wave|step|phase)[- ]?\d+\b/i
+];
+var f = (number2, title, detail) => ({
+  number: number2,
+  title,
+  detail
+});
+var open = (items) => items.filter((i) => i.state === "OPEN");
+function areaLabelCount(issues) {
+  return issues.map((i) => ({
+    i,
+    n: i.labels.filter((l) => l.startsWith("area:")).length
+  })).filter(({ n }) => n !== 1).map(({ i, n }) => f(i.number, i.title, `${n} area:* labels`));
+}
+function noStatus(items) {
+  return open(items).filter((i) => i.status === null).map((i) => f(i.number, i.title, "card has no Status"));
+}
+function openInDone(items) {
+  return open(items).filter((i) => i.status === "Done").map((i) => f(i.number, i.title, "open issue carded Done"));
+}
+function completedNotDone(items) {
+  return items.filter((i) => i.state === "CLOSED" && i.stateReason === "COMPLETED" && i.status !== "Done").map((i) => f(i.number, i.title, `closed as completed, card is ${i.status ?? "unset"}`));
+}
+function backlogWithoutCondition(issues) {
+  return issues.filter((i) => i.labels.includes("backlog") && !REVISIT_MARKER.test(i.body)).map((i) => f(i.number, i.title, 'backlog label without a "Revisit when:" line'));
+}
+var WORKING_FILE_PATH = /\bdocs\/superpowers\b/;
+function citesWorkingFile(issues) {
+  return issues.filter((i) => WORKING_FILE_PATH.test(i.body)).map((i) => f(i.number, i.title, "body names docs/superpowers/, where working files live"));
+}
+function backlogInMilestone(issues) {
+  return issues.filter((i) => i.labels.includes("backlog") && i.milestone !== null).map((i) => f(i.number, i.title, `deferred but in milestone ${i.milestone}`));
+}
+function positionCodeTitle(issues) {
+  return issues.filter((i) => POSITION_CODE.some((re) => re.test(i.title))).map((i) => f(i.number, i.title, "title starts with a position code"));
+}
+function unboarded(uncarded, boardCreatedAt) {
+  const since = Date.parse(boardCreatedAt);
+  return uncarded.filter((i) => i.state === "OPEN" || i.stateReason === "COMPLETED" && i.closedAt !== null && Date.parse(i.closedAt) > since).map((i) => f(i.number, i.title, i.state === "CLOSED" ? "closed as completed, no card on the board" : i.cardArchived ? "card archived" : "no card on the board"));
+}
+function staleInProgress(items, now) {
+  return open(items).filter((i) => i.status === "In Progress" && ageDays(touchedAt(i), now) > STALE_DAYS).map((i) => f(i.number, i.title, `In Progress, untouched ${ageDays(touchedAt(i), now)} days`));
+}
+function multipleLinkedBoards(candidates) {
+  if (candidates.length <= 1)
+    return [];
+  const names = candidates.map((b) => `#${b.number}`).join(", ");
+  return [
+    f(null, "linked boards", `${candidates.length} open boards match: ${names}`)
+  ];
+}
+var PREDICATES = {
+  area_label_count: ({ issues }) => areaLabelCount(issues),
+  no_status: ({ items }) => noStatus(items),
+  open_in_done: ({ items }) => openInDone(items),
+  completed_not_done: ({ items }) => completedNotDone(items),
+  backlog_without_condition: ({ issues }) => backlogWithoutCondition(issues),
+  backlog_in_milestone: ({ issues }) => backlogInMilestone(issues),
+  position_code_title: ({ issues }) => positionCodeTitle(issues),
+  cites_working_file: ({ issues }) => citesWorkingFile(issues),
+  unboarded: ({ uncarded, boardCreatedAt }) => unboarded(uncarded, boardCreatedAt),
+  stale_in_progress: ({ items, now }) => staleInProgress(items, now),
+  multiple_linked_boards: ({ candidates }) => multipleLinkedBoards(candidates)
+};
+function lintAll(input) {
+  const entries = LINT_IDS.map((id) => [id, PREDICATES[id](input)]);
+  const findings = Object.fromEntries(entries);
+  const counts = Object.fromEntries(entries.map(([id, list2]) => [id, list2.length]));
+  return { findings, counts };
+}
+
+// bin/helpers/pm-report.ts
+var STATE_CELL = {
+  done: "done",
+  running: "running",
+  next: "next",
+  later: ""
+};
+var cell = (text) => text.replaceAll("|", "\\|");
+function row(plan, ref2) {
+  const closed = plan.issues.filter((i) => !i.open).length;
+  const issues = plan.issues.map((i) => ref2(i.number)).join(" ");
+  return `| ${STATE_CELL[plan.state]} | ${cell(plan.name)} | ${closed} of ${plan.issues.length} | ${issues} |`;
+}
+function renderReport(r) {
+  const ref2 = (n) => `${r.board.owner}/${r.board.repo}#${n}`;
+  const running = r.plans.list.filter((p) => p.state === "running").map((p) => `**${p.name}**`);
+  const unplanned = r.plans.unplanned.map((i) => ref2(i.number));
+  return [
+    `**${r.milestone.title}** · ${r.issue_counts.open} open, ${r.issue_counts.closed} closed`,
+    `Running: ${running.length > 0 ? running.join(", ") : "none"}`,
+    "",
+    "| | Plan | Closed | Issues |",
+    "|---|---|---|---|",
+    ...r.plans.list.map((p) => row(p, ref2)),
+    "",
+    `Unplanned: ${unplanned.length > 0 ? unplanned.join(", ") : "none"}.`
+  ].join(`
+`);
+}
+
+// bin/helpers/rules.ts
+import { execFileSync } from "node:child_process";
+import * as fs14 from "node:fs";
+import * as path14 from "node:path";
+
+// bin/helpers/rules-fs.ts
+import * as fs12 from "node:fs";
+import * as path12 from "node:path";
+var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
+function statusOf(dir, name) {
+  const st = fs12.lstatSync(path12.join(dir, name), { throwIfNoEntry: false });
+  if (!st)
+    return "absent";
+  return st.isFile() ? "file" : "other";
+}
+var isRegularFile = (dir, name) => statusOf(dir, name) === "file";
+function ownedRulesIn(dir) {
+  const dirStat = fs12.statSync(dir, { throwIfNoEntry: false });
+  if (!dirStat)
+    return [];
+  if (!dirStat.isDirectory())
+    return [];
+  return fs12.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
+}
+
+// bin/helpers/rules-overlap.ts
+import * as fs13 from "node:fs";
+import * as path13 from "node:path";
+var MIN_SHARED_HEADINGS = 2;
+var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
+function headingsOf(body) {
+  return body.split(`
+`).filter((l) => l.startsWith("## ")).map((l) => normalise2(l.slice(3)));
+}
+function openingOf(body) {
+  let lines = body.split(`
+`);
+  if (lines[0] === "---") {
+    const end = lines.indexOf("---", 1);
+    lines = end === -1 ? [] : lines.slice(end + 1);
+  }
+  const first = lines.find((l) => l.trim() !== "" && !l.startsWith("#"));
+  if (!first)
+    return;
+  const sentence = first.split(/\.\s|\.$/)[0];
+  const value = normalise2(sentence);
+  return value === "" ? undefined : value;
+}
+function signalsFor(file, body, rule) {
+  const signals = [];
+  if (file === rule.name.slice("sk-".length))
+    signals.push("name");
+  const shared = new Set(headingsOf(body).filter((h) => rule.headings.has(h))).size;
+  if (shared >= MIN_SHARED_HEADINGS)
+    signals.push({ headings: shared });
+  const opening = openingOf(body);
+  if (opening !== undefined && opening === rule.opening) {
+    signals.push({ opening });
+  }
+  return signals;
+}
+function findOverlap(src, dest) {
+  const report = { pairs: [], extensions: [] };
+  const destStat = fs13.statSync(dest, { throwIfNoEntry: false });
+  if (!destStat?.isDirectory())
+    return report;
+  const rules = ownedRulesIn(src).map((name) => {
+    const body = fs13.readFileSync(path13.join(src, name), "utf-8");
+    return {
+      name,
+      headings: new Set(headingsOf(body)),
+      opening: openingOf(body)
+    };
+  });
+  const others = fs13.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
+  for (const file of others) {
+    const body = fs13.readFileSync(path13.join(dest, file), "utf-8");
+    for (const rule of rules) {
+      const signals = signalsFor(file, body, rule);
+      if (signals.length === 0)
+        continue;
+      if (body.includes(rule.name)) {
+        report.extensions.push({ file, rule: rule.name });
+      } else {
+        report.pairs.push({ file, rule: rule.name, signals });
+      }
+    }
+  }
+  return report;
+}
+function describeSignal(signal) {
+  if (signal === "name")
+    return "name";
+  if ("headings" in signal)
+    return `${signal.headings} headings`;
+  return "opening";
+}
+function formatOverlap(report) {
+  const lines = [];
+  if (report.pairs.length === 0) {
+    lines.push("no overlap found (checked file names, two or more shared H2 headings, and the opening sentence against non-sk-*.md files)");
+  } else {
+    for (const p of report.pairs) {
+      lines.push(`${p.file} overlaps ${p.rule} on ${p.signals.map(describeSignal).join(", ")}`);
+    }
+    lines.push("overlap is reported only; sidekick never edits files it does not own. If a repo file extends or departs from its pair on purpose, name the sk rule in it and the pair moves to the stated extensions");
+  }
+  if (report.extensions.length > 0) {
+    lines.push(`stated extensions, not reported: ${report.extensions.map((e) => `${e.file} → ${e.rule}`).join(", ")}`);
+  }
+  return lines;
+}
+
+// bin/helpers/rules.ts
+function resolveDest(scope, cwd, claudeHome) {
+  return scope === "project" ? path14.join(cwd, ".claude", "rules") : path14.join(claudeHome, "rules");
+}
+function workTreeRootOf(cwd) {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return;
+  }
+}
+var repoRootOf = (cwd) => workTreeRootOf(cwd) ?? cwd;
+var PLUGIN_ONLY_RULES = ["sk-pm-conventions.md"];
+var isRecord5 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var errorText = (e) => e instanceof Error ? e.message : String(e);
+function pluginEnablement(root) {
+  const file = path14.join(root, ".claude", "settings.json");
+  let text;
+  try {
+    text = fs14.readFileSync(file, "utf-8");
+  } catch (e) {
+    if (e instanceof Error && "code" in e && e.code === "ENOENT") {
+      return { state: "not-enabled" };
+    }
+    return { state: "unreadable", path: file, reason: errorText(e) };
+  }
+  if (text.trim() === "")
+    return { state: "not-enabled" };
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    return { state: "unreadable", path: file, reason: errorText(e) };
+  }
+  if (!isRecord5(parsed)) {
+    return { state: "unreadable", path: file, reason: "not a JSON object" };
+  }
+  const plugins = parsed.enabledPlugins;
+  const enabled = isRecord5(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
+  return { state: enabled ? "enabled" : "not-enabled" };
+}
+var EVERY_RULE = { leaveOut: [], leaveAsIs: [] };
+function projectSet(e) {
+  switch (e.state) {
+    case "enabled":
+      return EVERY_RULE;
+    case "not-enabled":
+      return { leaveOut: PLUGIN_ONLY_RULES, leaveAsIs: [] };
+    case "unreadable":
+      return { leaveOut: [], leaveAsIs: PLUGIN_ONLY_RULES };
+    default: {
+      const _exhaustive = e;
+      throw new Error(`unhandled enablement: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+var shippedOnly = (set, shipped) => ({
+  leaveOut: set.leaveOut.filter((n) => shipped.includes(n)),
+  leaveAsIs: set.leaveAsIs.filter((n) => shipped.includes(n))
+});
+var expectedRules = (shipped, set) => shipped.filter((n) => !set.leaveOut.includes(n) && !set.leaveAsIs.includes(n));
+function installRules(src, dest, scope = EVERY_RULE) {
+  const shipped = ownedRulesIn(src);
+  if (shipped.length === 0) {
+    return { installed: [], removed: [], leftOut: [], skipped: [] };
+  }
+  const set = shippedOnly(scope, shipped);
+  fs14.mkdirSync(dest, { recursive: true });
+  const byLowerCase = new Map;
+  for (const existing of fs14.readdirSync(dest)) {
+    byLowerCase.set(existing.toLowerCase(), existing);
+  }
+  const installed = [];
+  const skipped = [];
+  for (const name of expectedRules(shipped, set)) {
+    const onDisk = byLowerCase.get(name.toLowerCase());
+    if (onDisk !== undefined && onDisk !== name) {
+      skipped.push({ name, why: "case-collision" });
+      continue;
+    }
+    if (statusOf(dest, name) === "other") {
+      skipped.push({ name, why: "not-a-regular-file" });
+      continue;
+    }
+    fs14.copyFileSync(path14.join(src, name), path14.join(dest, name));
+    installed.push(name);
+  }
+  const keep = new Set(shipped);
+  const owned = ownedRulesIn(dest);
+  const removed = owned.filter((n) => !keep.has(n));
+  const leftOut = owned.filter((n) => set.leaveOut.includes(n));
+  for (const name of [...removed, ...leftOut]) {
+    fs14.rmSync(path14.join(dest, name));
+  }
+  return { installed, removed, leftOut, skipped };
+}
+function checkRules(src, dest, scope = EVERY_RULE) {
+  const shipped = ownedRulesIn(src);
+  const set = shippedOnly(scope, shipped);
+  const expected = expectedRules(shipped, set);
+  const installed = ownedRulesIn(dest);
+  const drift = [];
+  for (const name of expected) {
+    const there = path14.join(dest, name);
+    if (!fs14.existsSync(there)) {
+      drift.push({ kind: "missing", name });
+      continue;
+    }
+    const same = fs14.readFileSync(path14.join(src, name)).equals(fs14.readFileSync(there));
+    if (!same)
+      drift.push({ kind: "stale", name });
+  }
+  const known = new Set(expected);
+  for (const name of installed) {
+    if (!known.has(name) && !set.leaveAsIs.includes(name)) {
+      drift.push({ kind: "orphaned", name });
+    }
+  }
+  return drift;
+}
+var USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]
+` + `  --project  the current repo's .claude/rules/
+` + `  --user     the user-level rules directory under the Claude config dir
+` + `  --strict   exit 1 when drift or a skipped write is found
+` + "exit: 0 ran, whatever it found; 1 could not run, or --strict found drift";
+var FLAGS = ["--project", "--user", "--strict"];
+function parseArgs2(args) {
+  const [verb, ...flags] = args;
+  if (verb !== "install" && verb !== "check")
+    return;
+  if (flags.some((f2) => !FLAGS.includes(f2)))
+    return;
+  const project = flags.includes("--project");
+  const user = flags.includes("--user");
+  if (project === user)
+    return;
+  return {
+    verb,
+    scope: project ? "project" : "user",
+    strict: flags.includes("--strict")
+  };
+}
+function scopeSet(scope, root) {
+  if (scope === "user")
+    return { set: EVERY_RULE, notes: [] };
+  const enablement = pluginEnablement(root);
+  const set = projectSet(enablement);
+  const notes = [];
+  if (set.leaveOut.length > 0) {
+    notes.push(`not delivered to this repo: ${set.leaveOut.join(", ")}; its .claude/settings.json does not enable sidekick, so it comes from user level only`);
+  }
+  if (set.leaveAsIs.length > 0 && enablement.state === "unreadable") {
+    notes.push(`left ${set.leaveAsIs.join(", ")} as it is: could not read ${enablement.path} (${enablement.reason})`);
+  }
+  return { set, notes };
+}
+var deliveryMode = (projectDest) => ownedRulesIn(projectDest).length > 0 ? "project" : "user";
+var realOrSelf = (p) => {
+  try {
+    return fs14.realpathSync(p);
+  } catch {
+    return path14.resolve(p);
+  }
+};
+var sameDir = (a, b) => realOrSelf(a) === realOrSelf(b);
+function pickChecked(scope, verb, t, src, out) {
+  if (scope === "user" || verb === "install" || deliveryMode(t.dest) === "project") {
+    return { dest: t.dest, set: t.set };
+  }
+  out(`no sk-* rules in ${t.dest}; checking the user-level copies at ${t.userDest} against ${src}`);
+  return { dest: t.userDest, set: EVERY_RULE };
+}
+function sharedNames(expected, projectDest, userDest) {
+  const project = new Set(ownedRulesIn(projectDest));
+  const user = new Set(ownedRulesIn(userDest));
+  return expected.filter((n) => project.has(n) && user.has(n)).length;
+}
+function reportDuplicates(expected, dest, userDest, out) {
+  if (sameDir(dest, userDest))
+    return;
+  const shared = sharedNames(expected, dest, userDest);
+  if (shared === 0)
+    return;
+  out(`your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`);
+}
+function refuseNonDirectory(dir, out) {
+  const st = fs14.statSync(dir, { throwIfNoEntry: false });
+  if (!st || st.isDirectory())
+    return false;
+  out(`${dir} exists and is not a directory; refusing to write rules there`);
+  return true;
+}
+function reportInstall(result, dest, out) {
+  out(`installed ${result.installed.length} rule(s) into ${dest}: ${result.installed.join(", ")}`);
+  if (result.removed.length > 0) {
+    out(`removed retired: ${result.removed.join(", ")}`);
+  }
+  if (result.leftOut.length > 0) {
+    out(`removed: ${result.leftOut.join(", ")} (not delivered to this repo)`);
+  }
+  for (const s of result.skipped)
+    out(`[skipped:${s.why}] ${s.name}`);
+}
+function runRulesCli(args, env, out) {
+  const parsed = parseArgs2(args);
+  if (parsed === undefined) {
+    out(USAGE);
+    return 1;
+  }
+  const { verb, scope, strict } = parsed;
+  const root = scope === "project" ? repoRootOf(env.cwd) : env.cwd;
+  if (scope === "project")
+    out(`project root: ${root}`);
+  const dest = resolveDest(scope, root, env.claudeHome);
+  if (ownedRulesIn(env.src).length === 0) {
+    out(`no sk-*.md rules found at ${env.src}; refusing to touch ${dest}`);
+    return 1;
+  }
+  if (refuseNonDirectory(dest, out))
+    return 1;
+  const { set, notes } = scopeSet(scope, root);
+  let skipped = [];
+  if (verb === "install") {
+    const result = installRules(env.src, dest, set);
+    skipped = result.skipped;
+    reportInstall(result, dest, out);
+  }
+  for (const note of notes)
+    out(note);
+  const userDest = resolveDest("user", root, env.claudeHome);
+  const checked2 = pickChecked(scope, verb, { dest, userDest, set }, env.src, out);
+  if (checked2.dest !== dest && refuseNonDirectory(checked2.dest, out))
+    return 1;
+  const expected = expectedRules(ownedRulesIn(env.src), checked2.set);
+  const drift = checkRules(env.src, checked2.dest, checked2.set);
+  if (drift.length === 0) {
+    out(`${expected.length} rule(s) match the shipped copies at ${checked2.dest}`);
+  }
+  for (const d of drift)
+    out(`[${d.kind}] ${d.name}`);
+  if (scope === "project" && checked2.dest === dest) {
+    reportDuplicates(expected, dest, userDest, out);
+  }
+  for (const l of formatOverlap(findOverlap(env.src, dest)))
+    out(l);
+  const found = drift.length > 0 || skipped.length > 0;
+  return strict && found ? 1 : 0;
+}
+
+// bin/helpers/pm.ts
+var GH_MIN = "2.98.0";
+function chooseBoard(boards, viewer, repo) {
+  return boards.filter((b) => !b.closed && b.ownerLogin === viewer && b.title === repo).sort((a, b) => a.number - b.number);
+}
+function preflightOf(version) {
+  const ok = version !== null && versionAtLeast(version, GH_MIN);
+  const warnings = ok ? [] : [
+    `gh ${version ?? "unknown"} < ${GH_MIN}: by-name item-edit unavailable; write by field and option id`
+  ];
+  return {
+    gh_version: version,
+    gh_min: GH_MIN,
+    gh_ok: ok,
+    project_scope: null,
+    warnings
+  };
+}
+function discover(run, cwd) {
+  const gh = fetchGhVersion(run, cwd);
+  if (!gh.found)
+    throw new PmError(2, "gh not found on PATH");
+  const root = repoRootOf(cwd);
+  const preflight = preflightOf(gh.version);
+  const untracked = (reason6, fields = {}) => ({
+    tracked: false,
+    reason: reason6,
+    owner: fields.owner ?? null,
+    repo: fields.repo ?? null,
+    project: null,
+    status_field: null,
+    linked: fields.linked ?? [],
+    preflight,
+    root
+  });
+  const origin = run("git", ["remote", "get-url", "origin"], root);
+  if (origin.code !== 0)
+    return untracked("no-origin");
+  const parsed = parseOrigin(origin.stdout);
+  if (!parsed)
+    return untracked("not-github");
+  const login = fetchLocalLogin(run, root);
+  if (login === null) {
+    return untracked("no-local-login", {
+      owner: parsed.owner,
+      repo: parsed.repo
+    });
+  }
+  if (login !== parsed.owner) {
+    return untracked("remote-owner-mismatch", {
+      owner: parsed.owner,
+      repo: parsed.repo
+    });
+  }
+  preflight.project_scope = hasProjectScope(fetchScopeHeaders(run, root));
+  if (!preflight.project_scope) {
+    throw new PmError(2, "gh token lacks the 'project' scope; run: gh auth refresh -s project");
+  }
+  const d = fetchDiscovery(run, root, parsed.owner, parsed.repo);
+  const chosen = chooseBoard(d.boards, d.viewer, parsed.repo);
+  if (chosen.length === 0) {
+    return untracked("no-board", {
+      owner: parsed.owner,
+      repo: parsed.repo,
+      linked: d.boards
+    });
+  }
+  const first = chosen[0];
+  const f2 = fetchStatusField(run, root, d.viewer, first.number);
+  return {
+    tracked: true,
+    reason: null,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    viewer: d.viewer,
+    project: {
+      number: first.number,
+      id: f2.id,
+      url: f2.url,
+      title: f2.title,
+      createdAt: f2.createdAt
+    },
+    status_field: f2.statusField,
+    linked: d.boards,
+    preflight,
+    root
+  };
+}
+var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report] [--milestone <title>]";
+var PM_USAGE = `usage: ${PM_USAGE_LINE}`;
+var VERBS3 = new Set(["board", "pickup", "lint", "gate"]);
+function milestoneFlag(args) {
+  const at = args.findIndex((a) => a === "--milestone" || a.startsWith("--milestone="));
+  if (at < 0)
+    return { title: undefined, invalid: false };
+  const title = args[at].startsWith("--milestone=") ? args[at].slice("--milestone=".length) : args[at + 1];
+  const usable = title !== undefined && title !== "" && !title.startsWith("--");
+  return usable ? { title, invalid: false } : { title: undefined, invalid: true };
+}
+function runPmCli(args, env, out, err) {
+  const [verb, ...rest2] = args;
+  if (!verb || !VERBS3.has(verb)) {
+    err(PM_USAGE);
+    return 1;
+  }
+  const run = env.run ?? execRunner;
+  const brief = rest2.includes("--brief");
+  const report = rest2.includes("--report");
+  const quiet = rest2.includes("--quiet") || brief;
+  const ms = milestoneFlag(rest2);
+  const msTitle = ms.title;
+  if (verb === "gate" && msTitle === undefined || ms.invalid || brief && report) {
+    err(PM_USAGE);
+    return 1;
+  }
+  const emit = (o) => out(JSON.stringify(o, null, 2));
+  try {
+    const info = discover(run, env.cwd);
+    const { root: _root, ...shown } = info;
+    if (!info.tracked) {
+      if (report) {
+        err(`not tracked: ${info.reason}`);
+        return 1;
+      }
+      if (!quiet)
+        emit(shown);
+      return 0;
+    }
+    if (verb === "board") {
+      emit(shown);
+      return 0;
+    }
+    const now = env.now ?? new Date;
+    const owner = info.owner;
+    const repo = info.repo;
+    const project = info.project;
+    const fullName = `${owner}/${repo}`;
+    const viewer = info.viewer;
+    if (verb === "pickup") {
+      const open2 = fetchMilestones(run, info.root, owner, repo, "open").sort((a, b) => a.number - b.number);
+      const repoIssues = fetchRepoIssues(run, info.root, owner, repo, project.id);
+      const items = cardedItems(repoIssues, fullName);
+      const active = msTitle === undefined ? activeMilestone(open2, items) : namedMilestone(open2, msTitle);
+      const plans = active ? planView(active, items) : null;
+      const issueCounts = active ? milestoneCounts(repoIssues, active.title) : null;
+      if (report) {
+        return emitReport({
+          board: { owner, repo },
+          open: open2,
+          milestone: active,
+          issue_counts: issueCounts,
+          plans
+        }, out, err);
+      }
+      const t = tiers(items, active, now);
+      const working = inProgressMilestones(open2, items);
+      const split = working.length > 1 ? working.map((m) => m.title) : [];
+      const pickup = {
+        board: shown,
+        milestone: active,
+        issue_counts: issueCounts,
+        open_milestones: open2.map((m) => ({
+          number: m.number,
+          title: m.title
+        })),
+        in_progress: t.in_progress,
+        candidates: t.candidates,
+        order_basis: "number",
+        plans,
+        drift: drift(run, info.root, t.in_progress, split)
+      };
+      if (brief)
+        out(renderBrief({ ...pickup, board: { owner, repo, project } }));
+      else
+        emit(pickup);
+      return 0;
+    }
+    if (verb === "lint") {
+      const issues = fetchOpenIssues(run, info.root, owner, repo);
+      const repoIssues = fetchRepoIssues(run, info.root, owner, repo, project.id);
+      const items = cardedItems(repoIssues, fullName);
+      const uncarded = repoIssues.filter((i) => i.card === null);
+      const candidates = chooseBoard(info.linked, viewer, repo);
+      const r = lintAll({
+        issues,
+        items,
+        uncarded,
+        boardCreatedAt: project.createdAt,
+        candidates,
+        now
+      });
+      emit({
+        board: shown,
+        findings: r.findings,
+        counts: r.counts
+      });
+      return 0;
+    }
+    if (verb === "gate") {
+      const openMs = fetchMilestones(run, info.root, owner, repo, "open");
+      const found = openMs.find((m) => m.title === msTitle) ?? fetchMilestones(run, info.root, owner, repo, "closed").find((m) => m.title === msTitle);
+      if (!found) {
+        throw new PmError(1, `no milestone titled "${msTitle}"; open: ${openMs.map((m) => m.title).join(", ") || "(none)"}`);
+      }
+      const issues = fetchOpenIssues(run, info.root, owner, repo);
+      const items = cardedItems(fetchRepoIssues(run, info.root, owner, repo, project.id), fullName);
+      const v = gateVerdict(found, issues, items);
+      emit({ board: shown, milestone: found, ready: v.ready, open: v.open });
+      return 0;
+    }
+    err(PM_USAGE);
+    return 1;
+  } catch (e) {
+    if (e instanceof PmError) {
+      err(e.message);
+      return e.exit;
+    }
+    err(e instanceof Error ? e.message : String(e));
+    return 1;
+  }
+}
+function emitReport(r, out, err) {
+  const { board, open: open2, milestone, issue_counts, plans } = r;
+  if (open2.length === 0) {
+    err("no open milestone to report on");
+    return 1;
+  }
+  if (milestone === null || issue_counts === null || plans === null) {
+    err(`no active milestone among ${open2.length} open (${open2.map((m) => m.title).join(", ")}); pass --milestone`);
+    return 1;
+  }
+  if (plans.parse !== "ok") {
+    err(plans.parse === "none" ? `milestone "${milestone.title}" has no plans header` : `milestone "${milestone.title}": ${plans.reason ?? "malformed plans header"}`);
+    return 1;
+  }
+  out(renderReport({ board, milestone, issue_counts, plans }));
+  return 0;
+}
+function inProgressMilestones(open2, items) {
+  const titles2 = new Set(items.filter((i) => i.state === "OPEN" && i.status === "In Progress").map((i) => i.milestone));
+  return open2.filter((m) => m.state === "open" && titles2.has(m.title)).sort((a, b) => a.number - b.number);
+}
+function activeMilestone(open2, items) {
+  const working = inProgressMilestones(open2, items);
+  if (working.length === 1)
+    return working[0];
+  const live = open2.filter((m) => m.state === "open");
+  return working.length === 0 && live.length === 1 ? live[0] : null;
+}
+function namedMilestone(open2, title) {
+  const found = open2.find((m) => m.title === title);
+  if (found)
+    return found;
+  throw new PmError(1, `no open milestone titled "${title}"; open: ${open2.map((m) => m.title).join(", ") || "(none)"}`);
+}
+function tiers(items, active, now) {
+  const open2 = items.filter((i) => i.state === "OPEN");
+  const byNumber = (a, b) => a.number - b.number;
+  const in_progress = open2.filter((i) => i.status === "In Progress").map((i) => ({
+    number: i.number,
+    title: i.title,
+    item_id: i.itemId,
+    age_days: ageDays(touchedAt(i), now),
+    assignees: i.assignees,
+    milestone: i.milestone
+  })).sort(byNumber);
+  const backlog = open2.filter((i) => i.status === "Backlog");
+  const tier1 = active ? backlog.filter((i) => i.milestone === active.title) : [];
+  const tier2 = backlog.filter((i) => i.milestone === null && !i.labels.includes("backlog"));
+  const cand = (tier) => (i) => ({
+    tier,
+    number: i.number,
+    title: i.title,
+    item_id: i.itemId,
+    labels: i.labels
+  });
+  return {
+    in_progress,
+    candidates: [
+      ...tier1.sort(byNumber).map(cand(1)),
+      ...tier2.sort(byNumber).map(cand(2))
+    ]
+  };
+}
+var OpenPrList = array(object({ number: number(), title: string() }));
+function drift(run, root, inProgress2, inProgressSplit = []) {
+  const branch = run("git", ["branch", "--show-current"], root).stdout.trim();
+  let basis = "none";
+  let base = null;
+  if (run("git", ["rev-parse", "--abbrev-ref", "@{u}"], root).code === 0) {
+    basis = "upstream";
+    base = "@{u}";
+  } else if (branch && run("git", ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`], root).code === 0) {
+    basis = "origin-branch";
+    base = `origin/${branch}`;
+  }
+  let count = null;
+  if (base) {
+    const r = run("git", ["rev-list", "--count", `${base}..HEAD`], root);
+    count = r.code === 0 ? Number(r.stdout.trim()) : null;
+  }
+  let open_pr = null;
+  if (branch) {
+    const r = run("gh", [
+      "pr",
+      "list",
+      "--head",
+      branch,
+      "--state",
+      "open",
+      "--json",
+      "number,title"
+    ], root);
+    if (r.code === 0) {
+      try {
+        const list2 = safeParse(OpenPrList, JSON.parse(r.stdout));
+        open_pr = list2.success ? list2.output[0] ?? null : null;
+      } catch {
+        open_pr = null;
+      }
+    }
+  }
+  return {
+    unpushed: { count, basis },
+    stale_in_progress: inProgress2.filter((i) => i.age_days > STALE_DAYS),
+    open_pr,
+    in_progress_split: inProgressSplit
+  };
+}
+function gateVerdict(ms, issues, items) {
+  const itemByNumber = new Map(items.map((i) => [i.number, i]));
+  const open2 = issues.filter((i) => i.milestone === ms.title).sort((a, b) => a.number - b.number).map((i) => ({
+    number: i.number,
+    title: i.title,
+    status: itemByNumber.get(i.number)?.status ?? null,
+    item_id: itemByNumber.get(i.number)?.itemId ?? null,
+    labels: i.labels
+  }));
+  return { ready: ms.open_issues === 0 && open2.length === 0, open: open2 };
+}
+
+// bin/helpers/worker-dispatch.ts
+import * as fs15 from "node:fs";
+import * as path15 from "node:path";
 
 // bin/helpers/worker-overlay.ts
 var PUSH_REWRITE_KEY = "url.sidekick-push-blocked::.pushInsteadOf";
@@ -3778,186 +4431,6 @@ function workerOverlay(profileSettings, opts) {
   };
 }
 
-// bin/helpers/worker-record.ts
-import * as fs11 from "node:fs";
-import * as path10 from "node:path";
-var RecordSchema = strictObject({
-  version: literal(1),
-  name: string(),
-  job: nullable(string()),
-  brief: string(),
-  dispatchedAt: string()
-});
-var NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
-function recordsDir(commonDir) {
-  return path10.join(commonDir, "sidekick", "workers");
-}
-var fileFor = (commonDir, name) => path10.join(recordsDir(commonDir), `${name}.json`);
-function jobIdFrom(stdout, name) {
-  const lines = stdout.split(`
-`).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
-  for (const line of lines) {
-    const named = /^backgrounded · (\S+) · (.+)$/.exec(line);
-    if (named?.[2] === name)
-      return named[1];
-  }
-  if (lines.length !== 1)
-    return null;
-  return /^backgrounded (\S+)$/.exec(lines[0])?.[1] ?? null;
-}
-var reason = (e) => e instanceof Error ? e.message : String(e);
-function writeRecord(commonDir, record2) {
-  if (!NAME.test(record2.name)) {
-    return { issue: `worker record not written: bad name "${record2.name}"` };
-  }
-  const file = fileFor(commonDir, record2.name);
-  try {
-    fs11.mkdirSync(recordsDir(commonDir), { recursive: true });
-    fs11.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
-`);
-    return { ok: true };
-  } catch (e) {
-    return { issue: `worker record ${file} not written: ${reason(e)}` };
-  }
-}
-function removeRecord(commonDir, name) {
-  if (!NAME.test(name))
-    return;
-  fs11.rmSync(fileFor(commonDir, name), { force: true });
-}
-
-// bin/helpers/worker-repo.ts
-import * as fs12 from "node:fs";
-import * as path11 from "node:path";
-var WORKTREES_FOLDER = ".claude/worktrees";
-var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
-function mainCheckout(runGit, cwd) {
-  const result = runGit("git", [
-    "rev-parse",
-    "--path-format=absolute",
-    "--show-toplevel",
-    "--absolute-git-dir",
-    "--git-common-dir"
-  ], cwd);
-  if (result.code !== 0) {
-    return {
-      issues: [
-        "not inside a git work tree: run sidekick worker from the repo's main checkout"
-      ]
-    };
-  }
-  const [top, gitDir, commonDir] = result.stdout.replace(/\n$/, "").split(`
-`);
-  if (top === undefined || gitDir === undefined || commonDir === undefined) {
-    return {
-      issues: [`git rev-parse printed an unexpected answer: ${result.stdout}`]
-    };
-  }
-  if (gitDir !== commonDir) {
-    return {
-      issues: [
-        `${top} is a linked worktree: run sidekick worker from the main checkout, whose git dir is ${commonDir}`
-      ]
-    };
-  }
-  return { top, commonDir };
-}
-function commitOf(runGit, top, rev) {
-  const result = runGit("git", ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`], top);
-  return result.code === 0 ? result.stdout.trim() : undefined;
-}
-var headCommit = (runGit, top) => commitOf(runGit, top, "HEAD");
-function isTrackedClean(runGit, top) {
-  const result = runGit("git", ["status", "--porcelain", "--untracked-files=no"], top);
-  return result.code === 0 && result.stdout.trim() === "";
-}
-var branchExists = (runGit, top, branch) => runGit("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], top).code === 0;
-function checkedOut(runGit, dir) {
-  const result = runGit("git", ["symbolic-ref", "-q", "HEAD"], dir);
-  if (result.code === 0)
-    return result.stdout.trim();
-  if (result.code === 1)
-    return "a detached HEAD";
-  return `an unreadable HEAD (${result.stderr.trim()})`;
-}
-var RENAMED = /^(?:[RC].|.[RC]) /;
-var STATUS_PREFIX = "XY ".length;
-function statusPaths(stdout) {
-  const fields = stdout.split("\x00").filter((field) => field !== "");
-  const paths = [];
-  let i = 0;
-  while (i < fields.length) {
-    const entry = fields[i];
-    const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
-    paths.push(entry.slice(STATUS_PREFIX));
-    if (source !== undefined)
-      paths.push(source);
-    i += source === undefined ? 1 : 2;
-  }
-  return paths;
-}
-function statusPathsIn(runGit, top, dir) {
-  const status = runGit("git", ["-C", dir, "status", "--porcelain", "-z", "--untracked-files=all"], top);
-  if (status.code !== 0)
-    return { issue: status.stderr.trim() };
-  return { paths: statusPaths(status.stdout) };
-}
-var PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
-function remotesWithPushUrl(runGit, top) {
-  const result = runGit("git", ["config", "--get-regexp", "^remote\\..+\\.pushurl$"], top);
-  if (result.code !== 0)
-    return [];
-  const names = result.stdout.split(`
-`).map((line) => PUSH_URL_KEY.exec(line.split(" ")[0])?.[1]).filter((name) => name !== undefined);
-  return [...new Set(names)];
-}
-var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
-var reason2 = (e) => e instanceof Error ? e.message : String(e);
-var isMissing2 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
-function readExclude(file) {
-  try {
-    return { text: fs12.readFileSync(file, "utf-8") };
-  } catch (e) {
-    if (isMissing2(e))
-      return { text: "" };
-    return {
-      issues: [
-        `cannot read ${file}, where dispatch adds ${EXCLUDE_ENTRY}: ${reason2(e)}. Fix the file, then run dispatch again`
-      ]
-    };
-  }
-}
-function appendExclude(file, text) {
-  const separator = text === "" || text.endsWith(`
-`) ? "" : `
-`;
-  try {
-    fs12.mkdirSync(path11.dirname(file), { recursive: true });
-    fs12.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
-`);
-    return [];
-  } catch (e) {
-    return [
-      `cannot add ${EXCLUDE_ENTRY} to ${file}: ${reason2(e)}. Fix the file, then run dispatch again`
-    ];
-  }
-}
-function ensureWorktreesExcluded(runGit, top, commonDir) {
-  if (isIgnored(runGit, top))
-    return { line: undefined };
-  const file = path11.join(commonDir, "info", "exclude");
-  const read = readExclude(file);
-  if ("issues" in read)
-    return read;
-  if (read.text.split(/\r?\n/).includes(EXCLUDE_ENTRY)) {
-    return { line: undefined };
-  }
-  const issues = appendExclude(file, read.text);
-  if (issues.length > 0)
-    return { issues };
-  return { line: `added ${EXCLUDE_ENTRY} to ${file}` };
-}
-
 // bin/helpers/worker-dispatch.ts
 var PERMISSION_MODES = [
   "default",
@@ -3988,16 +4461,16 @@ function parseDispatchArgs(rest2, cwd) {
   if (pluginDir === "")
     return;
   return {
-    brief: path12.resolve(cwd, parsed.positionals[0]),
+    brief: path15.resolve(cwd, parsed.positionals[0]),
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path12.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path15.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
 }
 var isFolder = (dir) => {
   try {
-    return fs13.statSync(dir).isDirectory();
+    return fs15.statSync(dir).isDirectory();
   } catch {
     return false;
   }
@@ -4028,10 +4501,10 @@ var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
   "tracked files have uncommitted changes, which the worker's worktree would not carry: commit them first"
 ];
 function treeNameIssues(runGit, top, name) {
-  const folder = path12.join(top, WORKTREES_FOLDER, name);
+  const folder = path15.join(top, WORKTREES_FOLDER, name);
   const branch = `worktree-${name}`;
   return [
-    ...fs13.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...fs15.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [`name: the branch ${branch} already exists`] : []
   ];
 }
@@ -4064,7 +4537,7 @@ function bypassIssues(profile, mode) {
 }
 function missingProfileHint(name, penv) {
   const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder(path12.join(root.dir, name)));
+  const held = roots.some((root) => isFolder(path15.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv) {
@@ -4193,14 +4666,14 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-finish.ts
-import * as fs14 from "node:fs";
-import * as path13 from "node:path";
+import * as fs16 from "node:fs";
+import * as path16 from "node:path";
 function parseFinishArgs(rest2, cwd) {
   const parsed = parseFlags(rest2, { "no-report": { type: "boolean" } });
   if (parsed === undefined || parsed.positionals.length !== 1)
     return;
   return {
-    brief: path13.resolve(cwd, parsed.positionals[0]),
+    brief: path16.resolve(cwd, parsed.positionals[0]),
     noReport: parsed.values["no-report"] === true
   };
 }
@@ -4277,12 +4750,12 @@ function dirtyIssues(runGit, top, worktree, report) {
     `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(", ")}. Commit and integrate it, or remove it, then run finish again`
   ];
 }
-var isMissing3 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+var isMissing4 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs14.readFileSync(file) };
+    return { data: fs16.readFileSync(file) };
   } catch (e) {
-    if (isMissing3(e))
+    if (isMissing4(e))
       return { data: undefined };
     const why = e instanceof Error ? e.message : String(e);
     return { issue: `cannot read ${file}: ${why}` };
@@ -4322,11 +4795,11 @@ function checkFinish(brief, opts, wenv) {
   const job = findJob(wenv, top, brief.name);
   if ("issues" in job)
     return job;
-  const worktree = path13.join(top, WORKTREES_FOLDER, brief.name);
+  const worktree = path16.join(top, WORKTREES_FOLDER, brief.name);
   const branch = `worktree-${brief.name}`;
-  const report = path13.posix.normalize(brief.report);
-  const reportFrom = path13.join(worktree, report);
-  const reportTo = path13.join(top, report);
+  const report = path16.posix.normalize(brief.report);
+  const reportFrom = path16.join(worktree, report);
+  const reportTo = path16.join(top, report);
   const integrated = integratedHead(wenv.runGit, top, branch, job.id);
   const worktreeIssues = [
     ...onBranchIssues(wenv.runGit, worktree, branch, job.id),
@@ -4358,8 +4831,8 @@ function checkFinish(brief, opts, wenv) {
 }
 function copyReport(ready, out) {
   try {
-    fs14.mkdirSync(path13.dirname(ready.reportTo), { recursive: true });
-    fs14.copyFileSync(ready.reportFrom, ready.reportTo, fs14.constants.COPYFILE_EXCL);
+    fs16.mkdirSync(path16.dirname(ready.reportTo), { recursive: true });
+    fs16.copyFileSync(ready.reportFrom, ready.reportTo, fs16.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${ready.reportTo}: ${why}`];
@@ -4401,7 +4874,7 @@ var stopJob = (ready, wenv) => {
   return withText(`claude ${args.join(" ")} ${failure(result)}, so finish stopped before claude rm`, result);
 };
 function lockPid(commonDir, name) {
-  const lock = readIfPresent(path13.join(commonDir, "worktrees", name, "locked"));
+  const lock = readIfPresent(path16.join(commonDir, "worktrees", name, "locked"));
   if ("issue" in lock || lock.data === undefined)
     return;
   const pid = Number(LOCK_PID.exec(lock.data.toString())?.[1]);
@@ -4602,22 +5075,22 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path14.dirname(fileURLToPath(entryFileUrl));
+  const here = path17.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path14.resolve(here, ".."),
-    path14.resolve(here, "..", "plugin")
+    path17.resolve(here, ".."),
+    path17.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs15.existsSync(path14.join(c, "rules")))
+    if (fs17.existsSync(path17.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path14.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path17.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs15.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs17.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -4637,12 +5110,13 @@ var USAGE2 = `usage: sidekick rules <install|check> --project|--user [--strict]
        ${HOOK_USAGE_LINE}
        ${PROFILE_USAGE_LINE}
        ${WORKER_USAGE_LINE}
+       ${DESK_USAGE_LINE}
        sidekick --version`;
 function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs15.writeSync(1, buffer, offset);
+      offset += fs17.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -4658,9 +5132,10 @@ var profileEnvOf = (ctx) => ({
   runClaude: ctx.runClaude ?? execClaude,
   write: ctx.write ?? writeStdout
 });
+var claudeHomeOf = (env) => env.CLAUDE_CONFIG_DIR || path17.join(os.homedir(), ".claude");
 function readProcessStdin() {
   try {
-    return fs15.readFileSync(0, "utf-8");
+    return fs17.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -4689,12 +5164,21 @@ function main(argv2, ctx, out, err) {
       isAlive: processIsAlive
     }, out, err);
   }
+  if (sub === "desk") {
+    return runDeskCli(rest2, {
+      cwd: ctx.cwd,
+      configDir: claudeHomeOf(ctx.env),
+      runClaude: ctx.runClaude ?? execClaude,
+      runGit: execRunner,
+      now: Date.now
+    }, out, err);
+  }
   if (sub !== "rules") {
     err(USAGE2);
     return 1;
   }
-  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path14.join(os.homedir(), ".claude");
-  const src = ctx.env.SIDEKICK_RULES_DIR || path14.join(pluginDir, "rules");
+  const claudeHome = claudeHomeOf(ctx.env);
+  const src = ctx.env.SIDEKICK_RULES_DIR || path17.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

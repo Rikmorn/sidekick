@@ -185,7 +185,11 @@ function readTail(fd: number, size: number, bytes: number): string {
   return buffer.toString('utf-8');
 }
 
-function readTailEntry(transcript: string): TailEntry | undefined {
+/**
+ * The newest main-thread assistant entry in a transcript, reading wider tails
+ * until one holds it. Throws when the file cannot be opened or read.
+ */
+export function readTailEntry(transcript: string): TailEntry | undefined {
   const fd = fs.openSync(transcript, 'r');
   try {
     const { size } = fs.fstatSync(fd);

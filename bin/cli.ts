@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * sidekick — the plugin's executable, with the command families `rules`,
- * `pm`, `hook`, `profile`, and `worker`.
+ * `pm`, `hook`, `profile`, `worker`, and `desk`.
  * Shipped as plugin/bin/sidekick (a Node bundle built from this file) and run
  * from source as `bun bin/cli.ts`; both resolve the shipped rules relative to
  * this file.
@@ -12,6 +12,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
+import { DESK_USAGE_LINE, runDeskCli } from './helpers/desk.js';
 import { HOOK_USAGE_LINE, runHookCli } from './helpers/hook.js';
 import { PM_USAGE_LINE, runPmCli } from './helpers/pm.js';
 import { execRunner } from './helpers/pm-data.js';
@@ -72,7 +73,7 @@ export function isMainEntrypoint(
   }
 }
 
-export const USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       ${PROFILE_USAGE_LINE}\n       ${WORKER_USAGE_LINE}\n       sidekick --version`;
+export const USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       ${PROFILE_USAGE_LINE}\n       ${WORKER_USAGE_LINE}\n       ${DESK_USAGE_LINE}\n       sidekick --version`;
 
 export interface MainContext {
   env: NodeJS.ProcessEnv;
@@ -82,7 +83,7 @@ export interface MainContext {
   readStdin?: () => string;
   /** Where the context monitor keeps its latch files and the profile check its temp file; defaults to the OS temp folder. */
   tmpdir?: string;
-  /** Runs `claude` for the `profile` and `worker` families; defaults to the real one. */
+  /** Runs `claude` for the `profile`, `worker`, and `desk` families; defaults to the real one. */
   runClaude?: ClaudeRunner;
   /** Raw stdout for `profile argv`; defaults to a synchronous write to fd 1. */
   write?: (chunk: string) => void;
@@ -112,6 +113,10 @@ const profileEnvOf = (ctx: MainContext): ProfileEnv => ({
   runClaude: ctx.runClaude ?? execClaude,
   write: ctx.write ?? writeStdout,
 });
+
+// Claude Code's config folder; an empty CLAUDE_CONFIG_DIR means unset.
+const claudeHomeOf = (env: NodeJS.ProcessEnv): string =>
+  env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 
 function readProcessStdin(): string {
   try {
@@ -159,13 +164,25 @@ export function main(
       err,
     );
   }
+  if (sub === 'desk') {
+    return runDeskCli(
+      rest,
+      {
+        cwd: ctx.cwd,
+        configDir: claudeHomeOf(ctx.env),
+        runClaude: ctx.runClaude ?? execClaude,
+        runGit: execRunner,
+        now: Date.now,
+      },
+      out,
+      err,
+    );
+  }
   if (sub !== 'rules') {
     err(USAGE);
     return 1;
   }
-  // An empty CLAUDE_CONFIG_DIR means unset.
-  const claudeHome =
-    ctx.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  const claudeHome = claudeHomeOf(ctx.env);
   const src = ctx.env.SIDEKICK_RULES_DIR || path.join(pluginDir, 'rules');
   return runRulesCli(rest, { src, cwd: ctx.cwd, claudeHome }, out);
 }

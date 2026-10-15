@@ -7,11 +7,13 @@ import { pathToFileURL } from 'node:url';
 import * as v from 'valibot';
 import {
   isMainEntrypoint,
+  type MainContext,
   main,
   readVersion,
   resolvePluginDir,
   USAGE,
 } from './cli.js';
+import { DESK_USAGE_LINE } from './helpers/desk.js';
 import { PROFILE_USAGE_LINE } from './helpers/profile.js';
 import { WORKER_USAGE_LINE } from './helpers/worker.js';
 
@@ -411,6 +413,47 @@ describe('main: worker', () => {
     );
     expect(code).toBe(1);
     expect(err).toEqual([`usage: ${WORKER_USAGE_LINE}`]);
+  });
+});
+
+describe('main: desk', () => {
+  const entryFileUrl = pathToFileURL(path.join(__dirname, 'cli.ts')).href;
+  const runDesk = (argv: string[], runClaude: MainContext['runClaude']) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = main(
+      ['desk', ...argv],
+      { env: {}, cwd: process.cwd(), entryFileUrl, runClaude },
+      (l) => out.push(l),
+      (l) => err.push(l),
+    );
+    return { code, out, err };
+  };
+  test('USAGE names the desk family', () => {
+    expect(USAGE).toContain(DESK_USAGE_LINE);
+  });
+  test('desk without --json prints the desk usage and returns 1', () => {
+    const r = runDesk([], () => {
+      throw new Error('no claude in tests');
+    });
+    expect(r.code).toBe(1);
+    expect(r.err).toEqual([`usage: ${DESK_USAGE_LINE}`]);
+  });
+  test('desk --json prints a failure snapshot when the listing fails', () => {
+    const r = runDesk(['--json'], () => ({
+      code: 1,
+      stdout: '',
+      stderr: 'boom',
+      timedOut: false,
+    }));
+    expect(r.code).toBe(0);
+    expect(r.out.map((l) => JSON.parse(l))).toEqual([
+      {
+        version: 1,
+        ok: false,
+        error: 'claude agents --json --all failed with exit code 1: boom',
+      },
+    ]);
   });
 });
 

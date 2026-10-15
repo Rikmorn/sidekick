@@ -173,9 +173,11 @@ function rowWarnings(row: ListingRow): string[] {
   ];
 }
 
-// A record with a job joins by id only. Without one it joins by name,
-// preferring a live row, since `--all` keeps old rows of the same name.
-function joinRow(
+/**
+ * The record's row: by job id only when it has one, else by name, preferring
+ * a live row, since `--all` keeps old rows of the same name.
+ */
+export function joinRow(
   record: WorkerRecord,
   rows: ListingRow[],
 ): ListingRow | undefined {

@@ -7,7 +7,8 @@
 import * as v from 'valibot';
 import { type ClaudeRunner, printedStreams } from './profile-launch.js';
 
-const LISTING_ARGS = ['agents', '--json', '--all'];
+/** The listing's arguments to `claude`. */
+export const LISTING_ARGS = ['agents', '--json', '--all'];
 /** The listing's command line, as refusals name it. */
 export const LISTING = `claude ${LISTING_ARGS.join(' ')}`;
 
