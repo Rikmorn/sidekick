@@ -11,10 +11,11 @@ async function flagProfile($: EngineInterface): Promise<string | undefined> {
 }
 
 // Only the breakdown says where compaction runs, so without one the variable
-// keeps its last value and the monitor falls back. The same holds when
-// auto-compaction is on but no threshold arrives: the compaction point is
-// unknown, and the window would overstate it. `$.env.set` takes the name as a
-// literal; it is `CONTEXT_LIMIT_VAR`.
+// keeps its last value. The same holds when auto-compaction is on but no
+// threshold arrives: the compaction point is unknown, and the window would
+// overstate it. Before any value is set, the monitor then falls back and its
+// canary speaks, though the mods run; the declared types rule out both cases.
+// `$.env.set` takes the name as a literal; it is `CONTEXT_LIMIT_VAR`.
 async function refreshLimit($: EngineInterface): Promise<void> {
   const { context } = await $.session.usage({ breakdown: 'summary' });
   const { breakdown } = context;
@@ -35,9 +36,10 @@ async function refreshLimit($: EngineInterface): Promise<void> {
  * tool batch, the unprofiled status, and the profile label in the footer.
  */
 export function registerGauge(on: On): void {
+  // The status goes first, so a failed usage read cannot hide it.
   on('session.start', async ($, e, next) => {
-    await refreshLimit($);
     if ((await flagProfile($)) === undefined) $.ui.status(UNPROFILED);
+    await refreshLimit($);
     return next(e);
   });
   // A /clear starts a new session id with no `session.start` after it.
