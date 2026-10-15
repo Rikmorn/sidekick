@@ -82,7 +82,7 @@ Run git plainly from where you work. Claude Code refuses `git -C` and `sh -c "gi
 
 Write the run report when superpowers collects its "Rulings I made", before it deletes its workspace. The ledger the report draws on goes with that workspace. Write the report in the shape of `references/run-report.md`, at the brief's `report` path, relative to where you work. Create the folders it needs, since a git-ignored folder such as `docs/superpowers/` is absent from a fresh worktree.
 
-Removing a worktree keeps only two things: its commits, once integrated, and the run report. For a dispatched worker, `sidekick worker finish` copies the report from `<worktree>/<report>` to `<top>/<report>`. Then it removes the session, the worktree, and its branch. Everything else in the worktree goes with it, git-ignored files included. So anything worth keeping belongs in a commit or in the report.
+Removing a worktree keeps only two things: its commits, once integrated, and the run report. For a dispatched worker, `sidekick worker finish` copies the report from `<worktree>/<report>` to `<top>/<report>`. Then it removes the session, the desk's record of the worker, the worktree, and its branch. Everything else in the worktree goes with it, git-ignored files included. So anything worth keeping belongs in a commit or in the report.
 
 `finish` refuses unless the worktree has `worktree-<name>` checked out and that branch is integrated. It also refuses when `git status` there lists anything but the report, or when the report is missing and the orchestrator has not passed `--no-report`. It checks again before it removes anything. So commit everything but the report.
 

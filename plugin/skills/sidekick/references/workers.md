@@ -1,6 +1,6 @@
 # Workers
 
-`sidekick worker` starts a plan's worker and clears it away. `dispatch` checks a brief, then starts `sk-worker` as a background session in a worktree of its own, with pushes blocked. `finish` runs once the worker's branch is integrated. It saves the run report beside the plan, then removes the worker's session, worktree, and branch. `sk-execute` §Hand off to a worker runs both, after the operator chooses the worker mode. `sk-worker` holds the worker's own rules.
+`sidekick worker` starts a plan's worker and clears it away. `dispatch` checks a brief, then starts `sk-worker` as a background session in a worktree of its own, with pushes blocked. `finish` runs once the worker's branch is integrated. It saves the run report beside the plan, then removes the worker's session, desk record, worktree, and branch. `sk-execute` §Hand off to a worker runs both, after the operator chooses the worker mode. `sk-worker` holds the worker's own rules.
 
 Issues #206 and #218 in the `Rikmorn/sidekick` repo decided the shape. Most measurements behind these claims are in `docs/research/control-centre/2026-10-14-dispatched-worker-probes.md` in that repo, called "the dispatch probes" here. They ran on Claude Code 2.1.299. The report beside them, `2026-10-14-dispatched-worker-bench.md`, ran the verbs end to end on 2.1.300. It is called "the dispatch bench" here.
 
@@ -80,6 +80,8 @@ Once the checks pass, `dispatch` acts in this order:
 
    The second line appears only under `bypassPermissions`. With `--allow-push`, the first line ends `pushes ALLOWED on the operator's word`.
 
+4. Once `claude` exits 0, it writes the worker's record, with the job's id from that output, as "The record" says. A write that fails prints why and leaves the exit code as `claude`'s. The worker runs, and only the desk loses sight of it.
+
 `--worktree <name>` starts the session in its worktree from its first command (the dispatch probes, "Second round, after the design review"). The worktree's branch is `worktree-<name>`.
 
 ### The overlay
@@ -153,7 +155,8 @@ The steps run in order, and the first that fails stops the rest. `finish` prints
 3. It waits up to 15 seconds for the process that the worktree's lock names to exit. `claude rm` keeps a worktree whose lock names a running process (the dispatch probes, "Stopping and cleanup").
 4. It checks the worktree again: its branch, that branch's head, its status, and the report. The worker may have run on after the first check, so a change there means nothing is removed.
 5. It runs `claude rm <id>`, and output that starts `removed` succeeds. For commits that no remote holds, `claude rm` keeps the worktree and prints a `--discard-unpushed <sha>@<worktree id>` line. `finish` runs that line only when `<sha>` equals the head it verified as integrated. Any other answer refuses, printing `claude rm`'s text.
-6. It confirms with `git worktree list` that the worktree is gone. It deletes a leftover branch with `git branch -d`, which refuses an unmerged branch.
+6. It deletes the worker's record, as "The record" says. A missing record is fine.
+7. It confirms with `git worktree list` that the worktree is gone. It deletes a leftover branch with `git branch -d`, which refuses an unmerged branch.
 
 After a failure, fix what it names and run `finish` again. A re-run works until `claude rm` succeeds. After that, `finish` no longer finds the job, so clear any worktree or branch left by hand.
 
@@ -164,6 +167,18 @@ After a failure, fix what it names and run `finish` again. A re-run works until 
 ### What it does not guard
 
 Git-ignored files in the worktree go with it. `git status` does not list them, so `finish` neither sees nor saves them. They include `node_modules`, and scratch under `docs/superpowers/` or a superpowers workspace where the repo ignores those. Only the commits, once integrated, and the run report survive. Anything worth keeping belongs in a commit or in the report, as `sk-worker` §At the end says.
+
+## The record
+
+`dispatch` leaves one file per worker for the desk, at `<common git dir>/sidekick/workers/<name>.json`. It sits inside the git directory, outside every work tree, so no commit or `git status` sees it.
+
+```json
+{ "version": 1, "name": "<name>", "job": "<job id or null>", "brief": "<absolute brief path>", "dispatchedAt": "<ISO time>" }
+```
+
+- **The job id** comes from the line `claude --bg` prints, `backgrounded · <id> · <name>`, measured on Claude Code 2.1.300. A bare `backgrounded <id>` counts when it is the only such line. Without either, `job` is `null`.
+- **The desk** lists the repository's workers from these records. `sidekick desk --json` joins each to its session in `claude agents --json --all`, by `job`, else by name. A worker whose session is gone still lists, as `gone`, with its marks for commits not integrated and uncommitted changes.
+- **`finish`** deletes the record once `claude rm` has removed the session. A record whose session has left the listing and whose worktree is gone describes nothing, and `sidekick desk` deletes it.
 
 ## Steering and stopping
 

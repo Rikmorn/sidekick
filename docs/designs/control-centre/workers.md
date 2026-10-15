@@ -83,7 +83,7 @@ Assumptions, and what changes if each is wrong:
 
 - The rewrite holds in a background session as it did headless (W5). If not, the deny rule is the fallback, with its gap (W4) written down.
 - A dispatched worker is a session the operator can attach to, so steering by message plus attach replaces the tab. If attach proves too costly, operator-started workers stay as a second path.
-- Deleting a session with unpushed commits keeps its worktree, and deleting it again discards the worktree and its branch. That is the agent-view docs as the reviewer read them, not re-read. With pushes blocked, the worker's branch is the only copy until it is integrated, so the orchestrator integrates before any delete, and the desk warns.
+- Deleting a session with unpushed commits keeps its worktree, and deleting it again discards the worktree and its branch. The reviewer read that in the agent-view docs, and the desk probes later measured it ([§Deleting](../../research/control-centre/2026-10-15-desk-probes.md#deleting)). With pushes blocked, the worker's branch is the only copy until it is integrated, so the orchestrator integrates before any delete. `claude rm` and agent view both refuse the first delete of such a session. The desk's pane marks each worker's commits not integrated and its uncommitted changes.
 - Tools in the main checkout honour `.git/info/exclude` as they do `.gitignore`. If one does not, as `biome` might not, the repo ignores `.claude/worktrees/` itself.
 - Rulings still travel by message (W6). If the worker refuses them as injection, as W7's subagent did, they go into a reply file the worker reads.
 
