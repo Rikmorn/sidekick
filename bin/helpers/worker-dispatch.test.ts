@@ -73,7 +73,7 @@ function fakeClaude() {
   const calls: Call[] = [];
   const state = {
     agents: '[]',
-    launch: ok({ stdout: 'backgrounded 213245a1\n' }),
+    launch: ok({ stdout: 'backgrounded · 213245a1 · w1\n' }),
   };
   const run: ClaudeRunner = (args, opts) => {
     calls.push({ args, opts });
@@ -508,7 +508,7 @@ describe('dispatch launches', () => {
     expect(h.dispatch(fx.brief, '--permission-mode', 'acceptEdits')).toBe(0);
     expect(h.out).toEqual([
       `added .claude/worktrees/ to ${path.join(fx.top, '.git', 'info', 'exclude')}`,
-      'backgrounded 213245a1',
+      'backgrounded · 213245a1 · w1',
       'worker w1 dispatched · permission mode acceptEdits · pushes blocked',
       `steer: rulings in ${path.join(fx.docs, 'rulings.md')}, then message "w1" to point at them`,
       `finish: sidekick worker finish ${fx.brief}`,
@@ -551,5 +551,60 @@ describe('dispatch launches', () => {
     expect(h.err).toEqual([
       'SIDEKICK_PROFILE_SKIP_CHECK=1 is set, so the settings were not checked with claude doctor.',
     ]);
+  });
+});
+
+describe('dispatch records the worker', () => {
+  const recordFile = (fx: Fixture): string =>
+    path.join(fx.top, '.git', 'sidekick', 'workers', 'w1.json');
+
+  test('after a start: the job id, the absolute brief, and an ISO time', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    const saved = JSON.parse(fs.readFileSync(recordFile(fx), 'utf-8'));
+    expect(saved).toEqual({
+      version: 1,
+      name: 'w1',
+      job: '213245a1',
+      brief: fx.brief,
+      dispatchedAt: saved.dispatchedAt,
+    });
+    expect(new Date(saved.dispatchedAt).toISOString()).toBe(saved.dispatchedAt);
+  });
+
+  test('with a null job when the output names no job', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.launch = ok({ stdout: 'started\n' });
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(JSON.parse(fs.readFileSync(recordFile(fx), 'utf-8')).job).toBeNull();
+  });
+
+  test('taking the id from the bare `backgrounded <id>` form', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.launch = ok({ stdout: 'backgrounded 99887766\n' });
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(JSON.parse(fs.readFileSync(recordFile(fx), 'utf-8')).job).toBe(
+      '99887766',
+    );
+  });
+
+  test('not after a failed start', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.launch = ok({ code: 3, stderr: 'no\n' });
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(3);
+    expect(fs.existsSync(recordFile(fx))).toBe(false);
+  });
+
+  test('warning, not failing, when the record cannot be written', () => {
+    const fx = fixture();
+    fs.writeFileSync(path.join(fx.top, '.git', 'sidekick'), 'a file');
+    const h = harness(fx);
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toContain(recordFile(fx));
   });
 });

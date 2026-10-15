@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs14 from "node:fs";
+import * as fs15 from "node:fs";
 import { realpathSync as realpathSync4 } from "node:fs";
 import * as os from "node:os";
-import * as path13 from "node:path";
+import * as path14 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -3567,8 +3567,8 @@ function runProfileCli(args, penv, out, err) {
 }
 
 // bin/helpers/worker-dispatch.ts
-import * as fs12 from "node:fs";
-import * as path11 from "node:path";
+import * as fs13 from "node:fs";
+import * as path12 from "node:path";
 
 // bin/helpers/worker-brief.ts
 import * as fs10 from "node:fs";
@@ -3778,9 +3778,57 @@ function workerOverlay(profileSettings, opts) {
   };
 }
 
-// bin/helpers/worker-repo.ts
+// bin/helpers/worker-record.ts
 import * as fs11 from "node:fs";
 import * as path10 from "node:path";
+var RecordSchema = strictObject({
+  version: literal(1),
+  name: string(),
+  job: nullable(string()),
+  brief: string(),
+  dispatchedAt: string()
+});
+var NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+function recordsDir(commonDir) {
+  return path10.join(commonDir, "sidekick", "workers");
+}
+var fileFor = (commonDir, name) => path10.join(recordsDir(commonDir), `${name}.json`);
+function jobIdFrom(stdout, name) {
+  const lines = stdout.split(`
+`).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
+  for (const line of lines) {
+    const named = /^backgrounded · (\S+) · (.+)$/.exec(line);
+    if (named?.[2] === name)
+      return named[1];
+  }
+  if (lines.length !== 1)
+    return null;
+  return /^backgrounded (\S+)$/.exec(lines[0])?.[1] ?? null;
+}
+var reason = (e) => e instanceof Error ? e.message : String(e);
+function writeRecord(commonDir, record2) {
+  if (!NAME.test(record2.name)) {
+    return { issue: `worker record not written: bad name "${record2.name}"` };
+  }
+  const file = fileFor(commonDir, record2.name);
+  try {
+    fs11.mkdirSync(recordsDir(commonDir), { recursive: true });
+    fs11.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+`);
+    return { ok: true };
+  } catch (e) {
+    return { issue: `worker record ${file} not written: ${reason(e)}` };
+  }
+}
+function removeRecord(commonDir, name) {
+  if (!NAME.test(name))
+    return;
+  fs11.rmSync(fileFor(commonDir, name), { force: true });
+}
+
+// bin/helpers/worker-repo.ts
+import * as fs12 from "node:fs";
+import * as path11 from "node:path";
 var WORKTREES_FOLDER = ".claude/worktrees";
 var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 function mainCheckout(runGit, cwd) {
@@ -3864,17 +3912,17 @@ function remotesWithPushUrl(runGit, top) {
   return [...new Set(names)];
 }
 var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
-var reason = (e) => e instanceof Error ? e.message : String(e);
+var reason2 = (e) => e instanceof Error ? e.message : String(e);
 var isMissing2 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readExclude(file) {
   try {
-    return { text: fs11.readFileSync(file, "utf-8") };
+    return { text: fs12.readFileSync(file, "utf-8") };
   } catch (e) {
     if (isMissing2(e))
       return { text: "" };
     return {
       issues: [
-        `cannot read ${file}, where dispatch adds ${EXCLUDE_ENTRY}: ${reason(e)}. Fix the file, then run dispatch again`
+        `cannot read ${file}, where dispatch adds ${EXCLUDE_ENTRY}: ${reason2(e)}. Fix the file, then run dispatch again`
       ]
     };
   }
@@ -3884,20 +3932,20 @@ function appendExclude(file, text) {
 `) ? "" : `
 `;
   try {
-    fs11.mkdirSync(path10.dirname(file), { recursive: true });
-    fs11.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+    fs12.mkdirSync(path11.dirname(file), { recursive: true });
+    fs12.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
 `);
     return [];
   } catch (e) {
     return [
-      `cannot add ${EXCLUDE_ENTRY} to ${file}: ${reason(e)}. Fix the file, then run dispatch again`
+      `cannot add ${EXCLUDE_ENTRY} to ${file}: ${reason2(e)}. Fix the file, then run dispatch again`
     ];
   }
 }
 function ensureWorktreesExcluded(runGit, top, commonDir) {
   if (isIgnored(runGit, top))
     return { line: undefined };
-  const file = path10.join(commonDir, "info", "exclude");
+  const file = path11.join(commonDir, "info", "exclude");
   const read = readExclude(file);
   if ("issues" in read)
     return read;
@@ -3940,16 +3988,16 @@ function parseDispatchArgs(rest2, cwd) {
   if (pluginDir === "")
     return;
   return {
-    brief: path11.resolve(cwd, parsed.positionals[0]),
+    brief: path12.resolve(cwd, parsed.positionals[0]),
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path11.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path12.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
 }
 var isFolder = (dir) => {
   try {
-    return fs12.statSync(dir).isDirectory();
+    return fs13.statSync(dir).isDirectory();
   } catch {
     return false;
   }
@@ -3980,10 +4028,10 @@ var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
   "tracked files have uncommitted changes, which the worker's worktree would not carry: commit them first"
 ];
 function treeNameIssues(runGit, top, name) {
-  const folder = path11.join(top, WORKTREES_FOLDER, name);
+  const folder = path12.join(top, WORKTREES_FOLDER, name);
   const branch = `worktree-${name}`;
   return [
-    ...fs12.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...fs13.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [`name: the branch ${branch} already exists`] : []
   ];
 }
@@ -4016,7 +4064,7 @@ function bypassIssues(profile, mode) {
 }
 function missingProfileHint(name, penv) {
   const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder(path11.join(root.dir, name)));
+  const held = roots.some((root) => isFolder(path12.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv) {
@@ -4096,6 +4144,17 @@ var refuse4 = (err, issues) => {
     err(issue);
   return 1;
 };
+function keepRecord(ready, result, err) {
+  const written = writeRecord(ready.commonDir, {
+    version: 1,
+    name: ready.brief.name,
+    job: jobIdFrom(result.stdout, ready.brief.name),
+    brief: ready.briefPath,
+    dispatchedAt: new Date().toISOString()
+  });
+  if ("issue" in written)
+    err(written.issue);
+}
 function launch2(ready, wenv, out, err) {
   for (const note of ready.notes)
     err(note);
@@ -4116,9 +4175,11 @@ function launch2(ready, wenv, out, err) {
     timeoutMs: wenv.launchTimeoutMs ?? LAUNCH_TIMEOUT_MS
   });
   relay(result, out, err);
-  if (result.code === 0)
+  if (result.code === 0) {
     for (const line of summary(ready))
       out(line);
+    keepRecord(ready, result, err);
+  }
   return result.code;
 }
 function dispatch(opts, wenv, out, err) {
@@ -4132,14 +4193,14 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-finish.ts
-import * as fs13 from "node:fs";
-import * as path12 from "node:path";
+import * as fs14 from "node:fs";
+import * as path13 from "node:path";
 function parseFinishArgs(rest2, cwd) {
   const parsed = parseFlags(rest2, { "no-report": { type: "boolean" } });
   if (parsed === undefined || parsed.positionals.length !== 1)
     return;
   return {
-    brief: path12.resolve(cwd, parsed.positionals[0]),
+    brief: path13.resolve(cwd, parsed.positionals[0]),
     noReport: parsed.values["no-report"] === true
   };
 }
@@ -4219,7 +4280,7 @@ function dirtyIssues(runGit, top, worktree, report) {
 var isMissing3 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs13.readFileSync(file) };
+    return { data: fs14.readFileSync(file) };
   } catch (e) {
     if (isMissing3(e))
       return { data: undefined };
@@ -4261,11 +4322,11 @@ function checkFinish(brief, opts, wenv) {
   const job = findJob(wenv, top, brief.name);
   if ("issues" in job)
     return job;
-  const worktree = path12.join(top, WORKTREES_FOLDER, brief.name);
+  const worktree = path13.join(top, WORKTREES_FOLDER, brief.name);
   const branch = `worktree-${brief.name}`;
-  const report = path12.posix.normalize(brief.report);
-  const reportFrom = path12.join(worktree, report);
-  const reportTo = path12.join(top, report);
+  const report = path13.posix.normalize(brief.report);
+  const reportFrom = path13.join(worktree, report);
+  const reportTo = path13.join(top, report);
   const integrated = integratedHead(wenv.runGit, top, branch, job.id);
   const worktreeIssues = [
     ...onBranchIssues(wenv.runGit, worktree, branch, job.id),
@@ -4297,8 +4358,8 @@ function checkFinish(brief, opts, wenv) {
 }
 function copyReport(ready, out) {
   try {
-    fs13.mkdirSync(path12.dirname(ready.reportTo), { recursive: true });
-    fs13.copyFileSync(ready.reportFrom, ready.reportTo, fs13.constants.COPYFILE_EXCL);
+    fs14.mkdirSync(path13.dirname(ready.reportTo), { recursive: true });
+    fs14.copyFileSync(ready.reportFrom, ready.reportTo, fs14.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${ready.reportTo}: ${why}`];
@@ -4340,7 +4401,7 @@ var stopJob = (ready, wenv) => {
   return withText(`claude ${args.join(" ")} ${failure(result)}, so finish stopped before claude rm`, result);
 };
 function lockPid(commonDir, name) {
-  const lock = readIfPresent(path12.join(commonDir, "worktrees", name, "locked"));
+  const lock = readIfPresent(path13.join(commonDir, "worktrees", name, "locked"));
   if ("issue" in lock || lock.data === undefined)
     return;
   const pid = Number(LOCK_PID.exec(lock.data.toString())?.[1]);
@@ -4469,12 +4530,17 @@ var removeLeftovers = (ready, wenv, out) => {
   out(`branch ${ready.branch} removed`);
   return [];
 };
+var forgetRecord = (ready) => {
+  removeRecord(ready.commonDir, ready.name);
+  return [];
+};
 var STEPS = [
   saveReport,
   stopJob,
   waitForLock,
   recheckWorktree,
   removeSession,
+  forgetRecord,
   removeLeftovers
 ];
 function finishIssues(opts, wenv, out) {
@@ -4536,22 +4602,22 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path13.dirname(fileURLToPath(entryFileUrl));
+  const here = path14.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path13.resolve(here, ".."),
-    path13.resolve(here, "..", "plugin")
+    path14.resolve(here, ".."),
+    path14.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs14.existsSync(path13.join(c, "rules")))
+    if (fs15.existsSync(path14.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path13.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path14.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs14.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs15.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -4576,7 +4642,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs14.writeSync(1, buffer, offset);
+      offset += fs15.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -4594,7 +4660,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs14.readFileSync(0, "utf-8");
+    return fs15.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -4627,8 +4693,8 @@ function main(argv2, ctx, out, err) {
     err(USAGE2);
     return 1;
   }
-  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path13.join(os.homedir(), ".claude");
-  const src = ctx.env.SIDEKICK_RULES_DIR || path13.join(pluginDir, "rules");
+  const claudeHome = ctx.env.CLAUDE_CONFIG_DIR || path14.join(os.homedir(), ".claude");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path14.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

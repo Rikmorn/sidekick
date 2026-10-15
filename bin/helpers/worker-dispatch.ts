@@ -27,6 +27,7 @@ import type { WorkerEnv } from './worker.js';
 import { type Brief, briefFileIssues, readBrief } from './worker-brief.js';
 import { listJobs } from './worker-jobs.js';
 import { workerOverlay } from './worker-overlay.js';
+import { jobIdFrom, writeRecord } from './worker-record.js';
 import {
   branchExists,
   commitOf,
@@ -342,6 +343,19 @@ const refuse = (err: Out, issues: string[]): number => {
   return 1;
 };
 
+// Leaves the record that `sidekick desk` lists the worker from. A failure only
+// warns: the worker has started, so claude's exit code stands.
+function keepRecord(ready: Ready, result: ClaudeResult, err: Out): void {
+  const written = writeRecord(ready.commonDir, {
+    version: 1,
+    name: ready.brief.name,
+    job: jobIdFrom(result.stdout, ready.brief.name),
+    brief: ready.briefPath,
+    dispatchedAt: new Date().toISOString(),
+  });
+  if ('issue' in written) err(written.issue);
+}
+
 // Excludes the worktrees folder, starts the worker from the top, and relays
 // claude; the summary prints only once claude reports a start.
 function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
@@ -365,7 +379,10 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
     timeoutMs: wenv.launchTimeoutMs ?? LAUNCH_TIMEOUT_MS,
   });
   relay(result, out, err);
-  if (result.code === 0) for (const line of summary(ready)) out(line);
+  if (result.code === 0) {
+    for (const line of summary(ready)) out(line);
+    keepRecord(ready, result, err);
+  }
   return result.code;
 }
 

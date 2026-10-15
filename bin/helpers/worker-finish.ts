@@ -14,6 +14,7 @@ import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import type { WorkerEnv } from './worker.js';
 import { type Brief, readBrief } from './worker-brief.js';
 import { LISTING, listJobs } from './worker-jobs.js';
+import { removeRecord } from './worker-record.js';
 import {
   branchExists,
   checkedOut,
@@ -513,6 +514,12 @@ const removeLeftovers: Step = (ready, wenv, out) => {
   return [];
 };
 
+// `sidekick desk` lists workers from this record, so it goes with the session.
+const forgetRecord: Step = (ready) => {
+  removeRecord(ready.commonDir, ready.name);
+  return [];
+};
+
 // In order: nothing is removed until the report is saved, the job has stopped,
 // and the worktree has passed its checks again.
 const STEPS: Step[] = [
@@ -521,6 +528,7 @@ const STEPS: Step[] = [
   waitForLock,
   recheckWorktree,
   removeSession,
+  forgetRecord,
   removeLeftovers,
 ];
 

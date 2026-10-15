@@ -5,6 +5,11 @@ import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { runWorkerCli, type WorkerEnv } from './worker.js';
+import {
+  readRecords,
+  type WorkerRecord,
+  writeRecord,
+} from './worker-record.js';
 
 afterEach(removeTemps);
 
@@ -627,6 +632,32 @@ describe('finish clears the worker', () => {
     expect(h.finish(fx.brief)).toBe(0);
     expect(h.claude.named('stop')).toEqual([['stop', ID]]);
     expect(h.slept).toEqual([]);
+  });
+
+  const record = (fx: Fixture): WorkerRecord => ({
+    version: 1,
+    name: 'w1',
+    job: ID,
+    brief: fx.brief,
+    dispatchedAt: '2026-10-15T10:00:00.000Z',
+  });
+
+  test('and removes its dispatch record', () => {
+    const fx = fixture();
+    fx.integrate();
+    const commonDir = path.join(fx.top, '.git');
+    writeRecord(commonDir, record(fx));
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(readRecords(commonDir)).toEqual({ records: [], warnings: [] });
+  });
+
+  test('without a dispatch record present', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.err).toEqual([]);
   });
 
   test('by the discard line, when its sha is the verified head', () => {
