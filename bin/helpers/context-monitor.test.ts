@@ -544,7 +544,7 @@ describe('postToolBatchContext', () => {
 
     test('is the verbatim text', () => {
       expect(CANARY_TEXT).toBe(
-        'sidekick: its mods are not running in this session, so the profile label and the exact compaction point are missing. If mods are not turned off (--safe-mode, --bare), run bun run check:mods in the sidekick repo.',
+        'sidekick: its mods are not running in this session, so the profile label and the exact compaction point are missing. Unless an admin setting turns mods off here, run bun run check:mods in the sidekick repo.',
       );
     });
 
