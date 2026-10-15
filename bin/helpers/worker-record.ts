@@ -36,9 +36,9 @@ const fileFor = (commonDir: string, name: string): string =>
 /**
  * The job id on `claude --bg`'s `backgrounded · <id> · <name>` line for this
  * name, else null. Measured on Claude Code 2.1.300: the dispatch of this
- * plan's own worker printed `backgrounded · e21776e8 · p7-desk`. The listing
- * is a research preview, so a bare `backgrounded <id>` line, with no name, also
- * counts when it is the only `backgrounded` line.
+ * plan's own worker printed `backgrounded · e21776e8 · p7-desk`. That one
+ * version is the only measurement, so a bare `backgrounded <id>` line, with no
+ * name, also counts when it is the only `backgrounded` line.
  */
 export function jobIdFrom(stdout: string, name: string): string | null {
   const lines = stdout
