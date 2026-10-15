@@ -2,8 +2,10 @@
 // limit to the post-tool-batch hook through the process environment. No hook
 // approves or denies anything, and none has a `.catch`. The desk shares the
 // module, and a hook that fails in one mod skips the module's whole hook for
-// that event, so each hook here keeps its own failures and calls `next(e)`
-// once whatever happened. A failed read leaves the limit unset, which the
+// that event. So `session.start`, which the desk also hooks, and
+// `PostToolBatch` keep their own failures and call `next(e)` once whatever
+// happened. The desk does not hook a `SessionMode` render, so a failure there
+// costs only the footer label. A failed read leaves the limit unset, which the
 // context monitor's canary reports.
 
 import type { EngineInterface, On } from 'claude-code';

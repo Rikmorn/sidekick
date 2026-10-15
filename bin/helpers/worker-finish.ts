@@ -1,6 +1,7 @@
 /**
  * `sidekick worker finish`: once a worker's branch is integrated, saves its run
- * report in the main checkout and removes its session, worktree, and branch.
+ * report in the main checkout and removes its session, desk record, worktree,
+ * and branch.
  * It refuses whenever a step would lose work. The steps run in order, and the
  * first that fails stops the rest. It prints what became of the report, then
  * each removal: the session, the worktree, and the branch.

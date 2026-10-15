@@ -2,8 +2,10 @@
 // sessions, keeps the last snapshot, and draws the band and the pane from it.
 // No hook returns context, approves, or denies, and none has a `.catch`. The
 // gauge shares the module, and a hook that fails in one mod skips the module's
-// whole hook for that event, so each hook here keeps its own failures: the
-// band names them, and `next(e)` runs once whatever happened.
+// whole hook for that event. So `session.start`, which the gauge also hooks,
+// keeps its own failures, which the band names, and calls `next(e)` once
+// whatever happened. The render hooks fall back to what lies beneath. The
+// gauge does not hook `/desk`, so a failure there costs only the toggle.
 
 import type {
   EngineInterface,
