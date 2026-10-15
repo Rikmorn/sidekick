@@ -18,11 +18,13 @@ import { bandLines, paneLines } from './logic';
 
 type OkSnapshot = Extract<DeskSnapshot, { ok: true }>;
 
-// What the next desk run answers: an exit with its streams, or a refusal,
-// which rejects the plugin's `$.process.run` as a timeout or a failed start does.
+// What the next desk run answers: an exit with its streams, a refusal, which
+// rejects the plugin's `$.process.run` as a timeout or a failed start does, or
+// no result at all, a shape the desk does not expect.
 type RunAnswer =
   | { exitCode: number; stdout: string; stderr: string }
-  | { deny: string };
+  | { deny: string }
+  | { isMissing: true };
 
 type OpenPane = { title: string; isPlaced: boolean };
 
@@ -35,7 +37,7 @@ type World = {
   answer: RunAnswer;
   hold?: Promise<void>;
   panes: Map<string, OpenPane>;
-  refused: Set<'session.id' | 'ui.open'>;
+  refused: Set<'settings.read' | 'session.id' | 'ui.open' | 'ui.invalidate'>;
 };
 
 const REFUSAL = 'refused by a plugin above';
@@ -169,9 +171,11 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
     closed: [],
   };
   mock.env(on, world.env);
-  // The gauge's `session.start` runs before the desk's, and a throw there
-  // skips the desk's, so its reads are answered too: no profile, no breakdown.
-  on('settings.read', () => ({ value: {} }));
+  // The gauge shares the module, so its reads are answered too: no profile,
+  // no breakdown.
+  on('settings.read', () =>
+    world.refused.has('settings.read') ? { deny: REFUSAL } : { value: {} },
+  );
   on('session.usage', () => ({
     value: { startedAt: 0, context: { window: 1000000 }, rateLimits: [] },
   }));
@@ -187,6 +191,8 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
     await world.hold;
     const { answer } = world;
     if ('deny' in answer) return { deny: answer.deny };
+    // A deliberately invalid answer, past the compiler.
+    if ('isMissing' in answer) return { value: JSON.parse('null') };
     return {
       value: { ...answer, isStdoutTruncated: false, isStderrTruncated: false },
     };
@@ -198,7 +204,7 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
   });
   on('ui.invalidate', (_$, e, next) => {
     seen.invalidations.push(e.event);
-    return next(e);
+    return world.refused.has('ui.invalidate') ? { deny: REFUSAL } : next(e);
   });
   on('ui.open', (_$, e) => {
     if (world.refused.has('ui.open')) return { deny: REFUSAL };
@@ -528,6 +534,42 @@ test('a refused unasked open leaves the desk polling and the band drawn', async 
   expect(drawn.map((line) => line.text)).toContain(
     '◆ workers    p8-board working   2 finished',
   );
+});
+
+// The kit skips a module's whole hook for an event when one mod's part
+// fails, so each mod keeps its own failures (rulings R9).
+test('a gauge that cannot read its settings leaves the desk polling', async ($, on) => {
+  const world = worldWith(printed(QUIET));
+  world.refused.add('settings.read');
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  expect(seen.commands).toEqual(['desk']);
+  expect(seen.runs).toHaveLength(1);
+  await clock.advance(TICK_MS);
+  expect(seen.runs).toHaveLength(2);
+});
+
+// The engine drops a refused `$.ui.invalidate` and reports it; the call does
+// not throw into the tick.
+test('a refused redraw is dropped, and the desk polls and draws on', async ($, on) => {
+  const world = worldWith(printed(WORKERS));
+  world.refused.add('ui.invalidate');
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await clock.advance(TICK_MS);
+  expect(seen.runs).toHaveLength(2);
+  const drawn = await drawnBand($, 'terminal', bandProps(200));
+  expect(drawn[0]?.text).toBe('● needs you  odin-ae · permission prompt');
+});
+
+test('a throw inside the tick stays there, and the band names it', async ($, on) => {
+  const world = worldWith({ isMissing: true });
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await clock.advance(TICK_MS);
+  expect(seen.runs).toHaveLength(2);
+  const drawn = await drawnBand($, 'terminal', bandProps(200));
+  expect(drawn[0]?.text).toMatch(/^⚠ desk: could not refresh: /);
 });
 
 test('a session id the desk cannot read draws that, and runs nothing', async ($, on) => {

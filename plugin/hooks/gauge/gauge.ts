@@ -1,7 +1,10 @@
 // The gauge's adapter: reads the session through `$`, and hands the context
 // limit to the post-tool-batch hook through the process environment. No hook
-// approves or denies anything, and none has a `.catch`, so a failing hook is
-// skipped and the session goes on.
+// approves or denies anything, and none has a `.catch`. The desk shares the
+// module, and a hook that fails in one mod skips the module's whole hook for
+// that event, so each hook here keeps its own failures and calls `next(e)`
+// once whatever happened. A failed read leaves the limit unset, which the
+// context monitor's canary reports.
 
 import type { EngineInterface, On } from 'claude-code';
 import { limitValue, modesWith, profileOf, UNPROFILED } from './logic';
@@ -38,13 +41,21 @@ async function refreshLimit($: EngineInterface): Promise<void> {
 export function registerGauge(on: On): void {
   // The status goes first, so a failed usage read cannot hide it.
   on('session.start', async ($, e, next) => {
-    if ((await flagProfile($)) === undefined) $.ui.status(UNPROFILED);
-    await refreshLimit($);
+    try {
+      if ((await flagProfile($)) === undefined) $.ui.status(UNPROFILED);
+      await refreshLimit($);
+    } catch {
+      // The limit stays unset, which the canary reports.
+    }
     return next(e);
   });
   // A /clear starts a new session id with no `session.start` after it.
   on('classic.PostToolBatch', async ($, e, next) => {
-    await refreshLimit($);
+    try {
+      await refreshLimit($);
+    } catch {
+      // The limit stays unset, which the canary reports.
+    }
     return next(e);
   });
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {

@@ -1,7 +1,9 @@
 // The desk's adapter: runs `sidekick desk --json` on a clock in interactive
 // sessions, keeps the last snapshot, and draws the band and the pane from it.
-// No hook returns context, approves, or denies, and none has a `.catch`, so a
-// failing hook is skipped and the session goes on.
+// No hook returns context, approves, or denies, and none has a `.catch`. The
+// gauge shares the module, and a hook that fails in one mod skips the module's
+// whole hook for that event, so each hook here keeps its own failures: the
+// band names them, and `next(e)` runs once whatever happened.
 
 import type {
   EngineInterface,
@@ -142,14 +144,55 @@ async function keepSnapshotIn(
   if (desk.isFullscreen && childrenAppeared) await settle($.ui.open(PANE));
 }
 
+// The engine drops a refused redraw and reports it rather than throwing, so
+// keeping a failure does not fail in its turn.
+function keepFailureIn(
+  $: EngineInterface,
+  desk: DeskState,
+  error: string,
+): void {
+  desk.last = failure(error);
+  $.ui.invalidate('ui.render');
+}
+
+// A tick runs outside any hook, so a throw the settled calls did not cover is
+// kept here as a failure rather than left unhandled.
 async function refreshDesk($: EngineInterface, desk: DeskState): Promise<void> {
   if (desk.isRunning) return;
   desk.isRunning = true;
   try {
     await keepSnapshotIn($, desk, await fetchSnapshot($));
+  } catch (error) {
+    keepFailureIn($, desk, `could not refresh: ${reasonOf(error)}`);
   } finally {
     desk.isRunning = false;
   }
+}
+
+// The clock starts before the first run, so a setup that fails partway leaves
+// no run to draw over its failure.
+async function startDesk($: EngineInterface, desk: DeskState): Promise<void> {
+  if ((await $.env.get('CLAUDE_JOB_DIR')) !== undefined) return;
+  await $.command.register(COMMAND);
+  $.clock.every(TICK_MS, () => void refreshDesk($, desk));
+  void refreshDesk($, desk);
+}
+
+function bandOver(
+  last: DeskSnapshot | undefined,
+  columns: number,
+  below: RenderElement,
+): RenderElement {
+  const lines = last === undefined ? [] : bandLines(last, columns);
+  return lines.length === 0 ? below : column([...lines.map(textOf), below]);
+}
+
+function paneOf(
+  last: DeskSnapshot | undefined,
+  columns: number,
+): RenderElement {
+  const lines = last === undefined ? [] : paneLines(last, columns);
+  return column(lines.map(textOf));
 }
 
 /**
@@ -170,10 +213,11 @@ export function registerDesk(on: On): void {
   // The engine refuses a second `session.start` hook without a matcher, and
   // the gauge has one.
   on('session.start', { isInteractive: true }, async ($, e, next) => {
-    if ((await $.env.get('CLAUDE_JOB_DIR')) !== undefined) return next(e);
-    await $.command.register(COMMAND);
-    void refreshDesk($, desk);
-    $.clock.every(TICK_MS, () => void refreshDesk($, desk));
+    try {
+      await startDesk($, desk);
+    } catch (error) {
+      keepFailureIn($, desk, `could not start: ${reasonOf(error)}`);
+    }
     return next(e);
   });
 
@@ -186,20 +230,23 @@ export function registerDesk(on: On): void {
     return {};
   });
 
+  // A failure while drawing leaves what lies beneath drawn, in both hooks.
   on('ui.render', { component: 'AbovePrompt' }, async (_$, e, next) => {
     desk.isFullscreen = e.viewport?.isFullscreen === true;
-    if (e.props.hasSurvey) return next(e);
-    const { last } = desk;
-    const lines =
-      last === undefined ? [] : bandLines(last, e.props.bodyColumns);
-    if (lines.length === 0) return next(e);
-    return column([...lines.map(textOf), await next(e)]);
+    const below = await next(e);
+    if (e.props.hasSurvey) return below;
+    try {
+      return bandOver(desk.last, e.props.bodyColumns, below);
+    } catch {
+      return below;
+    }
   });
 
-  on('ui.render', { component: 'Pane', requestId: PANE.id }, (_$, e) => {
-    const { last } = desk;
-    const lines =
-      last === undefined ? [] : paneLines(last, e.props.bodyColumns);
-    return column(lines.map(textOf));
+  on('ui.render', { component: 'Pane', requestId: PANE.id }, (_$, e, next) => {
+    try {
+      return paneOf(desk.last, e.props.bodyColumns);
+    } catch {
+      return next(e);
+    }
   });
 }

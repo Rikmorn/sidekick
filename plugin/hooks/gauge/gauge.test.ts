@@ -4,7 +4,7 @@ import type {
   SessionStartInput,
   Settings,
 } from 'claude-code';
-import { expect, test } from 'claude-code/testing';
+import { expect, mock, test } from 'claude-code/testing';
 import { CONTEXT_LIMIT_VAR, FIXTURE_FLAG, parseContextLimit } from './contract';
 import { UNPROFILED } from './logic';
 
@@ -195,4 +195,39 @@ test('the footer is left as it was when the flag names no profile', async ($, on
     expect(seen.modes).toEqual([['focus']]);
     await ui.unmount();
   }
+});
+
+// The desk shares the module. The kit skips a module's whole hook for an event
+// when one mod's part fails, so each mod keeps its own failures (rulings R9).
+test('a desk that cannot register /desk leaves the gauge whole, and the band names it', async ($, on) => {
+  const seen = answerBeneath(on, sessionWith({}));
+  mock.env(on, {});
+  on('command.register', () => ({ deny: 'refused by a plugin above' }));
+  on('ui.render', { component: 'AbovePrompt' }, () => ({
+    type: 'Text',
+    children: ['drawn beneath'],
+  }));
+  await $.session.start(START);
+  expect(limitIn(seen)).toMatchObject({ session: 'session-1', tokens: 967000 });
+  expect(seen.statuses).toEqual([UNPROFILED]);
+  const ui = await $.ui.mount({
+    plugin: 'sidekick',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: {
+      hasSurvey: false,
+      isWorking: false,
+      maxRows: 10,
+      bodyColumns: 200,
+      scroll: { offset: 0, bodyRows: 10 },
+      view: {},
+    },
+  });
+  const texts = (await ui.findAll({ type: 'Text' })).map((text) => text.text);
+  expect(texts).toEqual([
+    expect.stringMatching(
+      /^⚠ desk: could not start: .*refused by a plugin above/,
+    ),
+    'drawn beneath',
+  ]);
 });
