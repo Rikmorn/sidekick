@@ -1,10 +1,16 @@
 /**
- * The context monitor: the figure from a transcript's tail, the window from
- * the environment, the latch, and the words, as pure functions, and the
+ * The context monitor: the figure and the model from a transcript's tail, the
+ * limit from the gauge's variable or the environment, the latch, and the
+ * words, as pure functions, and the
  * `post-tool-batch` handler that reads the transcript and keeps the latch file.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import {
+  CONTEXT_LIMIT_VAR,
+  type LimitKind,
+  parseContextLimit,
+} from '../../plugin/hooks/gauge/contract.js';
 
 export type Level = 'warning' | 'critical';
 
@@ -14,10 +20,12 @@ const LEVELS: ReadonlyArray<{ level: Level; at: number }> = [
   { level: 'warning', at: 0.65 },
 ];
 const RANK: Record<Level, number> = { warning: 0, critical: 1 };
-const WINDOW_VARS = [
-  'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
-  'CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW',
-] as const;
+// Claude Code raises a smaller window to this.
+const COMPACTION_FLOOR = 100_000;
+// Claude Code compacts this far below its compaction window: measured on
+// Haiku, Sonnet, and Opus 5.5 under 2.1.300
+// (docs/research/control-centre/2026-10-15-mod-foundation-probes.md).
+const COMPACTION_MARGIN = 33_000;
 const USAGE_FIELDS = [
   'input_tokens',
   'cache_read_input_tokens',
@@ -28,9 +36,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-// The usage sum of one transcript line, or undefined when the line is not a
-// usable main-thread assistant entry (including a sum of zero).
-function mainThreadSum(line: string): number | undefined {
+interface TailEntry {
+  tokens: number;
+  model: string | undefined;
+}
+
+// The figure and model of one transcript line, or undefined when the line is
+// not a usable main-thread assistant entry (including a sum of zero).
+function mainThreadEntry(line: string): TailEntry | undefined {
   let entry: unknown;
   try {
     entry = JSON.parse(line);
@@ -51,40 +64,74 @@ function mainThreadSum(line: string): number | undefined {
   });
   if (counts.length !== USAGE_FIELDS.length) return undefined;
   const sum = counts.reduce((total, n) => total + n, 0);
-  return sum > 0 ? sum : undefined;
+  if (sum <= 0) return undefined;
+  const { model } = entry.message;
+  return { tokens: sum, model: typeof model === 'string' ? model : undefined };
 }
 
-/** The newest main-thread assistant entry's token figure; undefined when the text has none. */
-export function parseTail(text: string): number | undefined {
+/** The newest main-thread assistant entry's token figure and model; undefined when the text has none. */
+export function parseTail(text: string): TailEntry | undefined {
   const lines = text.split('\n');
   // Line 0 can be cut mid-way by a chunk boundary; it then fails to parse and is skipped.
   for (let i = lines.length - 1; i >= 0; i--) {
-    const sum = mainThreadSum(lines[i] ?? '');
-    if (sum !== undefined) return sum;
+    const found = mainThreadEntry(lines[i] ?? '');
+    if (found !== undefined) return found;
   }
   return undefined;
 }
 
-/** The first window variable holding a positive integer; undefined when none does. */
-export function resolveWindow(
+export interface Limit {
+  tokens: number;
+  kind: LimitKind;
+}
+
+const POSITIVE_INTEGER = /^[1-9][0-9]*$/;
+
+function positiveInteger(raw: string | undefined): number | undefined {
+  return raw !== undefined && POSITIVE_INTEGER.test(raw)
+    ? Number(raw)
+    : undefined;
+}
+
+/**
+ * Where the limit comes from, first match wins: the gauge's value, when it is
+ * this session's and this model's; the auto-compact window, as a compaction
+ * point (#225); the plugin option, as a window; else undefined.
+ */
+export function resolveLimit(
   env: Readonly<Record<string, string | undefined>>,
-): number | undefined {
-  for (const name of WINDOW_VARS) {
-    const raw = env[name];
-    if (raw !== undefined && /^[1-9][0-9]*$/.test(raw)) return Number(raw);
+  sessionId: string,
+  model: string | undefined,
+): Limit | undefined {
+  const gauge = parseContextLimit(env[CONTEXT_LIMIT_VAR]);
+  if (
+    gauge !== undefined &&
+    gauge.session === sessionId &&
+    model !== undefined &&
+    gauge.model === model
+  ) {
+    return { tokens: gauge.tokens, kind: gauge.kind };
   }
-  return undefined;
+  const compactWindow = positiveInteger(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW);
+  if (compactWindow !== undefined) {
+    return {
+      tokens: Math.max(compactWindow, COMPACTION_FLOOR) - COMPACTION_MARGIN,
+      kind: 'compaction',
+    };
+  }
+  const option = positiveInteger(env.CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW);
+  return option === undefined ? undefined : { tokens: option, kind: 'window' };
 }
 
 /** Each level speaks once; usage below the first level clears the latch. */
 export function nextLatch(
   latched: Level | undefined,
   tokens: number,
-  window: number,
+  limit: number,
 ): { speak?: Level; latch: Level | undefined } {
-  // A figure above the window proves the window wrong.
-  if (tokens > window) return { latch: latched };
-  const reached = LEVELS.find((l) => tokens / window >= l.at)?.level;
+  // A figure above the limit proves the limit wrong, whichever kind it is.
+  if (tokens > limit) return { latch: latched };
+  const reached = LEVELS.find((l) => tokens / limit >= l.at)?.level;
   if (reached === undefined) return { latch: undefined };
   if (latched !== undefined && RANK[latched] >= RANK[reached]) {
     return { latch: latched };
@@ -104,13 +151,15 @@ function workerTail(brief: string): string {
 export function warningText(
   level: Level,
   tokens: number,
-  window: number,
+  limit: Limit,
   workerBrief?: string,
 ): string {
   // Integer arithmetic first: 0.57 * 100 is 56.99999999999999.
-  const percent = Math.floor((tokens * 100) / window);
+  const percent = Math.floor((tokens * 100) / limit.tokens);
   const format = (n: number) => n.toLocaleString('en-US');
-  const lead = `sidekick: context is ${percent}% full (${format(tokens)} of ${format(window)} tokens). There is no need to stop. Where it fits, finish the current step before starting a new one.`;
+  const where =
+    limit.kind === 'compaction' ? 'of the way to compaction' : 'full';
+  const lead = `sidekick: context is ${percent}% ${where} (${format(tokens)} of ${format(limit.tokens)} tokens). There is no need to stop. Where it fits, finish the current step before starting a new one.`;
   if (level !== 'critical') return lead;
   return workerBrief === undefined
     ? `${lead} At the next natural pause, tell the user that context is running low.`
@@ -134,13 +183,13 @@ function readTail(fd: number, size: number, bytes: number): string {
   return buffer.toString('utf-8');
 }
 
-function readFigure(transcript: string): number | undefined {
+function readTailEntry(transcript: string): TailEntry | undefined {
   const fd = fs.openSync(transcript, 'r');
   try {
     const { size } = fs.fstatSync(fd);
     for (const bytes of TAIL_BYTES) {
-      const figure = parseTail(readTail(fd, size, bytes));
-      if (figure !== undefined || bytes >= size) return figure;
+      const found = parseTail(readTail(fd, size, bytes));
+      if (found !== undefined || bytes >= size) return found;
     }
     return undefined;
   } finally {
@@ -187,31 +236,32 @@ export function postToolBatchContext(
 ): string | undefined {
   try {
     const event: unknown = JSON.parse(stdin);
-    // A subagent's event carries the parent's session_id, so skip it: its window is its own.
+    // A subagent's event carries the parent's session_id, so skip it: its limit is its own.
     if (!isRecord(event) || 'agent_id' in event) return undefined;
     const { session_id: sessionId, transcript_path: transcript } = event;
     if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) {
       return undefined;
     }
     if (typeof transcript !== 'string') return undefined;
-    const window = resolveWindow(monitor.env);
-    if (window === undefined) return undefined;
-    const tokens = readFigure(transcript);
-    if (tokens === undefined) return undefined;
+    const found = readTailEntry(transcript);
+    if (found === undefined) return undefined;
+    const { tokens, model } = found;
+    const limit = resolveLimit(monitor.env, sessionId, model);
+    if (limit === undefined) return undefined;
     const latchFile = path.join(
       monitor.tmpdir,
       `sidekick-ctx-${sessionId}.json`,
     );
     const brief = monitor.env.SIDEKICK_WORKER;
     const latched = readLatch(latchFile);
-    const next = nextLatch(latched, tokens, window);
+    const next = nextLatch(latched, tokens, limit.tokens);
     if (next.latch !== latched) writeLatch(latchFile, next.latch);
     return next.speak === undefined
       ? undefined
       : warningText(
           next.speak,
           tokens,
-          window,
+          limit,
           brief === '' ? undefined : brief,
         );
   } catch {

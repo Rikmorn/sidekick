@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { FIXTURE_FLAG } from '../../plugin/hooks/gauge/contract.js';
 import {
   bgArgs,
   type ClaudeResult,
@@ -75,6 +76,13 @@ describe('composeSettings', () => {
     expect(composeSettings(p, { home: '/h' }).sidekick).toEqual({
       profile: 'work',
     });
+  });
+
+  test('a profile named fixture composes the gauge fixture flag', () => {
+    expect(
+      composeSettings(profile({}, { name: 'fixture' }), { home: '/h' })
+        .sidekick,
+    ).toEqual(FIXTURE_FLAG.sidekick);
   });
 
   test('the memory variable is set only when the folder has rules', () => {

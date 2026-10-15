@@ -800,7 +800,7 @@ describe('plugin/hooks/post-tool-batch', () => {
     const parsed = JSON.parse(stdout.trim());
     expect(parsed.hookSpecificOutput.hookEventName).toBe('PostToolBatch');
     expect(parsed.hookSpecificOutput.additionalContext).toBe(
-      warningText('warning', 650, 1000),
+      warningText('warning', 650, { tokens: 1000, kind: 'window' }),
     );
   }
 

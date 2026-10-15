@@ -2,11 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { CONTEXT_LIMIT_VAR } from '../../plugin/hooks/gauge/contract.js';
 import {
   nextLatch,
   parseTail,
   postToolBatchContext,
-  resolveWindow,
+  resolveLimit,
   warningText,
 } from './context-monitor.js';
 
@@ -16,11 +17,13 @@ const entry = (o: {
   r?: number;
   c?: number;
   type?: string;
+  model?: string;
 }) =>
   JSON.stringify({
     type: o.type ?? 'assistant',
     isSidechain: o.side ?? false,
     message: {
+      ...(o.model === undefined ? {} : { model: o.model }),
       usage: {
         input_tokens: o.i ?? 2,
         cache_read_input_tokens: o.r ?? 1000,
@@ -31,9 +34,9 @@ const entry = (o: {
 
 describe('parseTail', () => {
   test('the newest main-thread assistant entry wins', () => {
-    expect(parseTail([entry({ r: 5 }), entry({ r: 100 })].join('\n'))).toBe(
-      112,
-    );
+    expect(
+      parseTail([entry({ r: 5 }), entry({ r: 100 })].join('\n'))?.tokens,
+    ).toBe(112);
   });
 
   test('skips sidechain entries, other types, and a zero sum', () => {
@@ -43,21 +46,21 @@ describe('parseTail', () => {
       entry({ type: 'user' }),
       entry({ i: 0, r: 0, c: 0 }),
     ].join('\n');
-    expect(parseTail(text)).toBe(712);
+    expect(parseTail(text)?.tokens).toBe(712);
   });
 
   test('a zero-sum newest entry yields the next older figure', () => {
     const text = [entry({ r: 300 }), entry({ i: 0, r: 0, c: 0 })].join('\n');
-    expect(parseTail(text)).toBe(312);
+    expect(parseTail(text)?.tokens).toBe(312);
   });
 
   test('skips a partial first line', () => {
-    expect(parseTail(`ge_tokens":3}}}\n${entry({ r: 1 })}`)).toBe(13);
+    expect(parseTail(`ge_tokens":3}}}\n${entry({ r: 1 })}`)?.tokens).toBe(13);
   });
 
   test('skips lines that are not JSON objects', () => {
     const text = [entry({ r: 8 }), 'null', '42', '[1]', '{"type":'].join('\n');
-    expect(parseTail(text)).toBe(20);
+    expect(parseTail(text)?.tokens).toBe(20);
   });
 
   test('skips an entry with a missing or non-numeric usage field', () => {
@@ -79,7 +82,7 @@ describe('parseTail', () => {
       '{"type":"assistant","isSidechain":false}',
     ];
     for (const bad of cases) {
-      expect(parseTail([older, bad].join('\n'))).toBe(62);
+      expect(parseTail([older, bad].join('\n'))?.tokens).toBe(62);
     }
   });
 
@@ -94,7 +97,7 @@ describe('parseTail', () => {
         },
       },
     });
-    expect(parseTail([entry({ r: 50 }), noFlag].join('\n'))).toBe(62);
+    expect(parseTail([entry({ r: 50 }), noFlag].join('\n'))?.tokens).toBe(62);
   });
 
   test('undefined with no usable entry', () => {
@@ -105,18 +108,112 @@ describe('parseTail', () => {
   });
 });
 
-describe('resolveWindow', () => {
-  test('auto-compact window first, then the plugin option', () => {
+describe('parseTail model', () => {
+  test('returns the newest main-thread entry model beside its figure', () => {
+    const text = [
+      entry({ r: 5, model: 'claude-old' }),
+      entry({ r: 100, model: 'claude-opus-5-5' }),
+      entry({ side: true, r: 9, model: 'claude-haiku' }),
+    ].join('\n');
+    expect(parseTail(text)).toEqual({ tokens: 112, model: 'claude-opus-5-5' });
+  });
+
+  test('model is undefined when that entry has none, even if an older one does', () => {
+    const text = [entry({ r: 5, model: 'claude-old' }), entry({ r: 100 })].join(
+      '\n',
+    );
+    expect(parseTail(text)).toEqual({ tokens: 112, model: undefined });
+  });
+});
+
+const MODEL = 'claude-opus-5-5';
+const gauge = (over: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    session: 'aaa',
+    model: MODEL,
+    kind: 'compaction',
+    tokens: 500000,
+    ...over,
+  });
+
+describe('resolveLimit', () => {
+  const both = {
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW: '400000',
+    CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000000',
+  };
+
+  test("the gauge's value wins when session and model match, over both fallbacks", () => {
+    const env = { ...both, [CONTEXT_LIMIT_VAR]: gauge() };
+    expect(resolveLimit(env, 'aaa', MODEL)).toEqual({
+      tokens: 500000,
+      kind: 'compaction',
+    });
+    const window = { [CONTEXT_LIMIT_VAR]: gauge({ kind: 'window' }), ...both };
+    expect(resolveLimit(window, 'aaa', MODEL)).toEqual({
+      tokens: 500000,
+      kind: 'window',
+    });
+  });
+
+  test('a value naming another session falls through (a child process, or after /clear)', () => {
+    const env = { ...both, [CONTEXT_LIMIT_VAR]: gauge({ session: 'old' }) };
+    expect(resolveLimit(env, 'aaa', MODEL)).toEqual({
+      tokens: 367000,
+      kind: 'compaction',
+    });
+  });
+
+  test('a value naming another model falls through', () => {
+    const env = { ...both, [CONTEXT_LIMIT_VAR]: gauge() };
+    expect(resolveLimit(env, 'aaa', 'claude-sonnet-5-5')).toEqual({
+      tokens: 367000,
+      kind: 'compaction',
+    });
+  });
+
+  test('a transcript without a model falls through', () => {
+    const env = { ...both, [CONTEXT_LIMIT_VAR]: gauge() };
+    expect(resolveLimit(env, 'aaa', undefined)).toEqual({
+      tokens: 367000,
+      kind: 'compaction',
+    });
+  });
+
+  test.each([
+    'not json',
+    '{"session":"aaa"',
+    '[]',
+    'null',
+    gauge({ tokens: -1 }),
+    gauge({ tokens: 1.5 }),
+    gauge({ kind: 'other' }),
+    '',
+  ])('a malformed gauge value %p falls through without throwing', (raw) => {
+    const env = { ...both, [CONTEXT_LIMIT_VAR]: raw };
+    expect(resolveLimit(env, 'aaa', MODEL)).toEqual({
+      tokens: 367000,
+      kind: 'compaction',
+    });
+  });
+
+  test('the compaction window is raised to the floor, less the margin (#225)', () => {
     expect(
-      resolveWindow({
-        CLAUDE_CODE_AUTO_COMPACT_WINDOW: '400000',
-        CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000000',
-      }),
-    ).toBe(400000);
+      resolveLimit({ CLAUDE_CODE_AUTO_COMPACT_WINDOW: '400000' }, 'aaa', MODEL),
+    ).toEqual({ tokens: 367000, kind: 'compaction' });
     expect(
-      resolveWindow({ CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000000' }),
-    ).toBe(1000000);
-    expect(resolveWindow({})).toBeUndefined();
+      resolveLimit({ CLAUDE_CODE_AUTO_COMPACT_WINDOW: '60000' }, 'aaa', MODEL),
+    ).toEqual({ tokens: 67000, kind: 'compaction' });
+  });
+
+  test('the option gives a window', () => {
+    expect(
+      resolveLimit(
+        { CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '1000000' },
+        'aaa',
+        MODEL,
+      ),
+    ).toEqual({ tokens: 1000000, kind: 'window' });
+    expect(resolveLimit({}, 'aaa', MODEL)).toBeUndefined();
   });
 
   test.each([
@@ -129,19 +226,27 @@ describe('resolveWindow', () => {
     '12.5',
   ])('skips junk %p in the first variable', (junk) => {
     expect(
-      resolveWindow({
-        CLAUDE_CODE_AUTO_COMPACT_WINDOW: junk,
-        CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '200000',
-      }),
-    ).toBe(200000);
+      resolveLimit(
+        {
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: junk,
+          CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '200000',
+        },
+        'aaa',
+        MODEL,
+      ),
+    ).toEqual({ tokens: 200000, kind: 'window' });
   });
 
   test('junk in both variables gives undefined', () => {
     expect(
-      resolveWindow({
-        CLAUDE_CODE_AUTO_COMPACT_WINDOW: '0',
-        CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: 'abc',
-      }),
+      resolveLimit(
+        {
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: '0',
+          CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: 'abc',
+        },
+        'aaa',
+        MODEL,
+      ),
     ).toBeUndefined();
   });
 });
@@ -197,38 +302,47 @@ describe('nextLatch', () => {
   });
 });
 
+const W = (tokens: number) => ({ tokens, kind: 'window' as const });
 const BRIEF = '/repo/docs/superpowers/plans/x-brief.md';
 const WORKER_CRITICAL =
   "sidekick: context is 76% full (760,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one. This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at `/repo/docs/superpowers/plans/x-brief.md`.";
 
 describe('warningText', () => {
   test('pins the warning', () => {
-    expect(warningText('warning', 670000, 1000000)).toBe(
+    expect(warningText('warning', 670000, W(1000000))).toBe(
       'sidekick: context is 67% full (670,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one.',
     );
   });
 
   test('pins critical', () => {
-    expect(warningText('critical', 760000, 1000000)).toBe(
+    expect(warningText('critical', 760000, W(1000000))).toBe(
       'sidekick: context is 76% full (760,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one. At the next natural pause, tell the user that context is running low.',
     );
   });
 
   test('a worker at critical gets the worker text', () => {
-    expect(warningText('critical', 760000, 1000000, BRIEF)).toBe(
+    expect(warningText('critical', 760000, W(1000000), BRIEF)).toBe(
       WORKER_CRITICAL,
     );
   });
 
   test('a worker at the warning level gets the unchanged text', () => {
-    expect(warningText('warning', 670000, 1000000, BRIEF)).toBe(
-      warningText('warning', 670000, 1000000),
+    expect(warningText('warning', 670000, W(1000000), BRIEF)).toBe(
+      warningText('warning', 670000, W(1000000)),
+    );
+  });
+
+  test('kind compaction says how far to compaction', () => {
+    expect(
+      warningText('warning', 680000, { tokens: 1000000, kind: 'compaction' }),
+    ).toStartWith(
+      'sidekick: context is 68% of the way to compaction (680,000 of 1,000,000 tokens).',
     );
   });
 
   test('floors the percentage without float artefacts', () => {
-    expect(warningText('warning', 57, 100)).toContain('57% full');
-    expect(warningText('warning', 699999, 1000000)).toContain('69% full');
+    expect(warningText('warning', 57, W(100))).toContain('57% full');
+    expect(warningText('warning', 699999, W(1000000))).toContain('69% full');
   });
 });
 
@@ -256,12 +370,12 @@ describe('postToolBatchContext', () => {
     const f = fixture();
     f.append(entry({ r: 638 }));
     expect(postToolBatchContext(f.event(), f.monitor)).toBe(
-      warningText('warning', 650, 1000),
+      warningText('warning', 650, W(1000)),
     );
     expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
     f.append(entry({ r: 748 }));
     expect(postToolBatchContext(f.event(), f.monitor)).toBe(
-      warningText('critical', 760, 1000),
+      warningText('critical', 760, W(1000)),
     );
     expect(postToolBatchContext(f.event(), f.monitor)).toBeUndefined();
   });
@@ -274,13 +388,33 @@ describe('postToolBatchContext', () => {
       env: { ...WINDOW_ENV, SIDEKICK_WORKER: BRIEF },
     };
     expect(postToolBatchContext(f.event(), worker)).toBe(
-      warningText('critical', 760, 1000, BRIEF),
+      warningText('critical', 760, W(1000), BRIEF),
     );
     fs.rmSync(f.latchFile);
     const empty = { ...f.monitor, env: { ...WINDOW_ENV, SIDEKICK_WORKER: '' } };
     expect(postToolBatchContext(f.event(), empty)).toBe(
-      warningText('critical', 760, 1000),
+      warningText('critical', 760, W(1000)),
     );
+  });
+
+  test('measures against the gauge value, and falls back when it names another session', () => {
+    const f = fixture();
+    f.append(entry({ r: 638, model: MODEL }));
+    const env = {
+      [CONTEXT_LIMIT_VAR]: gauge({ tokens: 1000, kind: 'compaction' }),
+      CLAUDE_PLUGIN_OPTION_CONTEXT_WINDOW: '100000',
+    };
+    expect(postToolBatchContext(f.event(), { ...f.monitor, env })).toBe(
+      warningText('warning', 650, { tokens: 1000, kind: 'compaction' }),
+    );
+    fs.rmSync(f.latchFile);
+    const foreign = {
+      ...env,
+      [CONTEXT_LIMIT_VAR]: gauge({ session: 'old', tokens: 1000 }),
+    };
+    expect(
+      postToolBatchContext(f.event(), { ...f.monitor, env: foreign }),
+    ).toBeUndefined();
   });
 
   test('stays silent for a subagent, a bad session id, no window, no transcript, or bad JSON', () => {
@@ -310,7 +444,7 @@ describe('postToolBatchContext', () => {
     expect(fs.existsSync(f.latchFile)).toBe(false);
     f.append(entry({ r: 638 }));
     expect(postToolBatchContext(f.event(), f.monitor)).toBe(
-      warningText('warning', 650, 1000),
+      warningText('warning', 650, W(1000)),
     );
   });
 
