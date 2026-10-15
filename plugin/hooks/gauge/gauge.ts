@@ -19,12 +19,13 @@ async function refreshLimit($: EngineInterface): Promise<void> {
   const { context } = await $.session.usage({ breakdown: 'summary' });
   const { breakdown } = context;
   if (breakdown === undefined) return;
-  if (breakdown.isAutoCompactEnabled && breakdown.autoCompactThreshold === undefined) return;
+  const { isAutoCompactEnabled, autoCompactThreshold } = breakdown;
+  if (isAutoCompactEnabled && autoCompactThreshold === undefined) return;
   const value = limitValue({
     session: await $.session.id(),
     model: await $.session.model(),
     window: context.window,
-    threshold: breakdown.autoCompactThreshold,
+    threshold: autoCompactThreshold,
   });
   await $.env.set('SIDEKICK_CONTEXT_LIMIT', value);
 }
