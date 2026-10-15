@@ -148,14 +148,26 @@ async function keepSnapshotIn(
 }
 
 // The engine drops a refused redraw and reports it rather than throwing, so
-// keeping a failure does not fail in its turn.
+// keeping a failure does not fail in its turn. The debug log keeps the trace
+// the engine would have written for a skipped hook.
 function keepFailureIn(
   $: EngineInterface,
   desk: DeskState,
   error: string,
 ): void {
   desk.last = failure(error);
+  $.ui.log(`sidekick desk: ${error}`, { to: 'debug' });
   $.ui.invalidate('ui.render');
+}
+
+function logDrawFailure(
+  $: EngineInterface,
+  site: string,
+  error: unknown,
+): void {
+  $.ui.log(`sidekick desk: drawing the ${site} failed: ${reasonOf(error)}`, {
+    to: 'debug',
+  });
 }
 
 // A tick runs outside any hook, so a throw the settled calls did not cover is
@@ -234,21 +246,23 @@ export function registerDesk(on: On): void {
   });
 
   // A failure while drawing leaves what lies beneath drawn, in both hooks.
-  on('ui.render', { component: 'AbovePrompt' }, async (_$, e, next) => {
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     desk.isFullscreen = e.viewport?.isFullscreen === true;
     const below = await next(e);
     if (e.props.hasSurvey) return below;
     try {
       return bandOver(desk.last, e.props.bodyColumns, below);
-    } catch {
+    } catch (error) {
+      logDrawFailure($, 'band', error);
       return below;
     }
   });
 
-  on('ui.render', { component: 'Pane', requestId: PANE.id }, (_$, e, next) => {
+  on('ui.render', { component: 'Pane', requestId: PANE.id }, ($, e, next) => {
     try {
       return paneOf(desk.last, e.props.bodyColumns);
-    } catch {
+    } catch (error) {
+      logDrawFailure($, 'pane', error);
       return next(e);
     }
   });

@@ -5,11 +5,18 @@
 // that event. So `session.start`, which the desk also hooks, and
 // `PostToolBatch` keep their own failures and call `next(e)` once whatever
 // happened. The desk does not hook a `SessionMode` render, so a failure there
-// costs only the footer label. A failed read leaves the limit unset, which the
-// context monitor's canary reports.
+// costs only the footer label. A failed read at session start leaves the limit
+// unset, which the context monitor's canary reports; after a tool batch it leaves
+// the last value. Each caught failure goes to the debug log, where the engine
+// names a hook it skips.
 
 import type { EngineInterface, On } from 'claude-code';
 import { limitValue, modesWith, profileOf, UNPROFILED } from './logic';
+
+function logFailure($: EngineInterface, hook: string, error: unknown): void {
+  const reason = error instanceof Error ? error.message : String(error);
+  $.ui.log(`sidekick gauge: ${hook} failed: ${reason}`, { to: 'debug' });
+}
 
 async function flagProfile($: EngineInterface): Promise<string | undefined> {
   return profileOf(await $.settings.read({ source: 'flag' }));
@@ -46,8 +53,9 @@ export function registerGauge(on: On): void {
     try {
       if ((await flagProfile($)) === undefined) $.ui.status(UNPROFILED);
       await refreshLimit($);
-    } catch {
+    } catch (error) {
       // The limit stays unset, which the canary reports.
+      logFailure($, 'session.start', error);
     }
     return next(e);
   });
@@ -55,8 +63,9 @@ export function registerGauge(on: On): void {
   on('classic.PostToolBatch', async ($, e, next) => {
     try {
       await refreshLimit($);
-    } catch {
-      // The limit stays unset, which the canary reports.
+    } catch (error) {
+      // The limit keeps its last value, or stays unset before the first.
+      logFailure($, 'PostToolBatch', error);
     }
     return next(e);
   });

@@ -50,6 +50,8 @@ type Seen = {
   invalidations: string[];
   opened: { id: string; title?: string }[];
   closed: string[];
+  /** Lines sent to the debug log. */
+  debug: string[];
 };
 
 const PLUGIN = 'sidekick';
@@ -169,8 +171,13 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
     invalidations: [],
     opened: [],
     closed: [],
+    debug: [],
   };
   mock.env(on, world.env);
+  on('ui.log', (_$, e) => {
+    if (e.to === 'debug') seen.debug.push(e.text);
+    return { value: undefined };
+  });
   // The gauge shares the module, so its reads are answered too: no profile,
   // no breakdown.
   on('settings.read', () =>
@@ -555,6 +562,11 @@ test('a gauge that cannot read its settings leaves the desk polling', async ($, 
   expect(seen.runs).toHaveLength(1);
   await clock.advance(TICK_MS);
   expect(seen.runs).toHaveLength(2);
+  expect(seen.debug).toEqual([
+    expect.stringMatching(
+      /^sidekick gauge: session\.start failed: .*refused by a plugin above$/,
+    ),
+  ]);
 });
 
 // The engine drops a refused `$.ui.invalidate` and reports it; the call does
@@ -578,6 +590,11 @@ test('a throw inside the tick stays there, and the band names it', async ($, on)
   expect(seen.runs).toHaveLength(2);
   const drawn = await drawnBand($, 'terminal', bandProps(200));
   expect(drawn[0]?.text).toMatch(/^⚠ desk: could not refresh: /);
+  // One line per failed run: the start's and the tick's.
+  const refreshFailed = expect.stringMatching(
+    /^sidekick desk: could not refresh: /,
+  );
+  expect(seen.debug).toEqual([refreshFailed, refreshFailed]);
 });
 
 test('a session id the desk cannot read draws that, and runs nothing', async ($, on) => {
