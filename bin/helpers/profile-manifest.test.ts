@@ -61,6 +61,54 @@ describe('parseManifest', () => {
       true,
     );
   });
+  test('hide holds both lists and parses', () => {
+    const raw = {
+      description: 'd',
+      hide: { agents: ['Explore'], mods: ['desk'] },
+    };
+    expect(parseManifest(raw)).toEqual({ ok: true, manifest: raw });
+  });
+  test('a manifest without hide parses unchanged', () => {
+    expect(parseManifest({ description: 'd' })).toEqual({
+      ok: true,
+      manifest: { description: 'd' },
+    });
+  });
+  test('hide with an unknown key is refused, naming it', () => {
+    expect(issuesOf({ description: 'd', hide: { skills: ['x'] } })).toContain(
+      'skills',
+    );
+  });
+  test('an unknown mod part is refused, naming it', () => {
+    expect(issuesOf({ description: 'd', hide: { mods: ['gauge'] } })).toContain(
+      'gauge',
+    );
+  });
+  test('an empty agent name is refused', () => {
+    expect(issuesOf({ description: 'd', hide: { agents: [''] } })).toContain(
+      'hide.agents.0: must not be empty',
+    );
+  });
+  test('a repeated hide entry is refused', () => {
+    expect(
+      issuesOf({ description: 'd', hide: { mods: ['desk', 'desk'] } }),
+    ).toContain('hide.mods: must not repeat an entry');
+    expect(
+      issuesOf({ description: 'd', hide: { agents: ['a', 'a'] } }),
+    ).toContain('hide.agents: must not repeat an entry');
+  });
+  test.each([
+    ['Explore'],
+    [{}],
+    [null],
+  ])('a non-list %p in hide.agents is refused', (agents) => {
+    expect(issuesOf({ description: 'd', hide: { agents } })).toContain(
+      'hide.agents',
+    );
+  });
+  test('hide that is not an object is refused', () => {
+    expect(issuesOf({ description: 'd', hide: ['desk'] })).toContain('hide');
+  });
   test.each([
     [[]],
     ['text'],

@@ -21,17 +21,19 @@ When the two stores are the same path, only the user store is searched. That hap
 
 A name is 1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit. The name is also a folder name and a shell alias, which is why the rule is that strict.
 
-`profile.json` holds three keys, and the parser rejects any other:
+`profile.json` holds four keys, and the parser rejects any other:
 
 | Key | Meaning |
 |---|---|
 | `description` | Required, non-empty. `list` prints it. |
 | `settingSources` | Optional. A list of `user`, `project`, and `local`, without repeats. It becomes `--setting-sources`. |
 | `settings` | Optional object, passed through to `--settings`. It must not hold a `sidekick` key, because launch writes that one. |
+| `hide` | Optional. `agents` lists agent types the model is not offered. `mods` lists sidekick mod parts that stay off: `board` and `desk`. Each list is non-empty strings or known parts, without repeats. |
 
 Launch composes the settings from the profile's `settings` object, then adds its own keys:
 
 - `sidekick: { profile: <name> }` always. A session or a mod reads the profile's name from there.
+- `sidekick.hide`, a copy of the manifest's `hide`, when the manifest has one. Hiding is a filter that fails open, so nothing that must stay out relies on it. A profile hides a tool through `settings.permissions.deny` instead.
 - `env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1"` when `.claude/rules/` holds a `.md` file at any depth. Claude Code loads rules from an `--add-dir` folder only with that variable set, and a settings `env` block sets it (probes report, "The profile folder as `--add-dir`").
 - `claudeMdExcludes` for the user's `~/.claude/CLAUDE.md` and `~/.claude/rules/**`, when `settingSources` is present and leaves out `user`. The clean-room table in "What each mode drops" explains why.
 

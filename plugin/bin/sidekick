@@ -1656,7 +1656,10 @@ var memoryVariable = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
 function launchKeys(profile, home) {
   const isCleanRoom = profile.manifest.settingSources !== undefined && !profile.manifest.settingSources.includes("user");
   return {
-    sidekick: { profile: profile.name },
+    sidekick: {
+      profile: profile.name,
+      ...profile.manifest.hide === undefined ? {} : { hide: profile.manifest.hide }
+    },
     ...profile.hasRules ? { env: { [memoryVariable]: "1" } } : {},
     ...isCleanRoom ? {
       claudeMdExcludes: [
@@ -1870,15 +1873,26 @@ function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
 
 // bin/helpers/profile-manifest.ts
 import * as fs8 from "node:fs";
+
+// plugin/hooks/scope/contract.ts
+var MOD_PARTS = ["board", "desk"];
+
+// bin/helpers/profile-manifest.ts
 var SETTING_SOURCES = ["user", "project", "local"];
 var PROFILE_NAME_RULE = "1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit";
 var PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var isProfileName = (name) => PROFILE_NAME.test(name);
 var RESERVED_SETTINGS_KEY = "sidekick";
+var uniqueList = (item) => pipe(array(item), check((a) => new Set(a).size === a.length, "must not repeat an entry"));
+var HideSchema = strictObject({
+  agents: optional(uniqueList(pipe(string(), minLength(1, "must not be empty")))),
+  mods: optional(uniqueList(picklist(MOD_PARTS)))
+});
 var ManifestSchema = strictObject({
   description: pipe(string(), minLength(1, "must not be empty")),
   settingSources: optional(pipe(array(picklist(SETTING_SOURCES)), check((a) => new Set(a).size === a.length, "must not repeat a source"))),
-  settings: optional(pipe(unknown(), check((s) => !Array.isArray(s), "must be an object"), record(string(), unknown()), check((s) => !Object.hasOwn(s, RESERVED_SETTINGS_KEY), `must not set "${RESERVED_SETTINGS_KEY}", which launch owns`)))
+  settings: optional(pipe(unknown(), check((s) => !Array.isArray(s), "must be an object"), record(string(), unknown()), check((s) => !Object.hasOwn(s, RESERVED_SETTINGS_KEY), `must not set "${RESERVED_SETTINGS_KEY}", which launch owns`))),
+  hide: optional(HideSchema)
 });
 function parseManifest(raw) {
   const result = safeParse(ManifestSchema, raw);

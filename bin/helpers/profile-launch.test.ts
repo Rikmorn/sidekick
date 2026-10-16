@@ -14,7 +14,7 @@ import {
   makeClaudeRunner,
   mergeSettings,
 } from './profile-launch.js';
-import type { ProfileManifest } from './profile-manifest.js';
+import { type ProfileManifest, parseManifest } from './profile-manifest.js';
 import type { Profile } from './profile-store.js';
 
 const profile = (
@@ -76,6 +76,28 @@ describe('composeSettings', () => {
     expect(composeSettings(p, { home: '/h' }).sidekick).toEqual({
       profile: 'work',
     });
+  });
+
+  test('hide is copied to sidekick.hide beside the profile name', () => {
+    const hide = { agents: ['Explore'], mods: ['desk' as const] };
+    expect(composeSettings(profile({ hide }), { home: '/h' }).sidekick).toEqual(
+      { profile: 'work', hide },
+    );
+  });
+
+  test('without hide, sidekick holds the profile name alone', () => {
+    const { sidekick } = composeSettings(p, { home: '/h' });
+    expect(sidekick).toEqual({ profile: 'work' });
+    expect(Object.keys(sidekick ?? {})).toEqual(['profile']);
+  });
+
+  test('a profile settings block cannot set sidekick.hide', () => {
+    expect(
+      parseManifest({
+        description: 'd',
+        settings: { sidekick: { hide: { mods: ['desk'] } } },
+      }).ok,
+    ).toBe(false);
   });
 
   test('a profile named fixture composes the gauge fixture flag', () => {

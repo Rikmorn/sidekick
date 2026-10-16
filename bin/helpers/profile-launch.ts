@@ -57,7 +57,12 @@ function launchKeys(profile: Profile, home: string): Settings {
     profile.manifest.settingSources !== undefined &&
     !profile.manifest.settingSources.includes('user');
   return {
-    sidekick: { profile: profile.name },
+    sidekick: {
+      profile: profile.name,
+      ...(profile.manifest.hide === undefined
+        ? {}
+        : { hide: profile.manifest.hide }),
+    },
     ...(profile.hasRules ? { env: { [memoryVariable]: '1' } } : {}),
     ...(isCleanRoom
       ? {

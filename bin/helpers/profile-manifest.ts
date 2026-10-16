@@ -5,6 +5,7 @@
 
 import * as fs from 'node:fs';
 import * as v from 'valibot';
+import { MOD_PARTS } from '../../plugin/hooks/scope/contract.js';
 
 export const SETTING_SOURCES = ['user', 'project', 'local'] as const;
 export type SettingSource = (typeof SETTING_SOURCES)[number];
@@ -18,6 +19,19 @@ export const isProfileName = (name: string): boolean => PROFILE_NAME.test(name);
 
 // launch writes this key into every composed settings object.
 const RESERVED_SETTINGS_KEY = 'sidekick';
+
+const uniqueList = <T>(item: v.GenericSchema<T>) =>
+  v.pipe(
+    v.array(item),
+    v.check((a) => new Set(a).size === a.length, 'must not repeat an entry'),
+  );
+
+const HideSchema = v.strictObject({
+  agents: v.optional(
+    uniqueList(v.pipe(v.string(), v.minLength(1, 'must not be empty'))),
+  ),
+  mods: v.optional(uniqueList(v.picklist(MOD_PARTS))),
+});
 
 const ManifestSchema = v.strictObject({
   description: v.pipe(v.string(), v.minLength(1, 'must not be empty')),
@@ -40,6 +54,7 @@ const ManifestSchema = v.strictObject({
       ),
     ),
   ),
+  hide: v.optional(HideSchema),
 });
 
 export type ProfileManifest = v.InferOutput<typeof ManifestSchema>;
