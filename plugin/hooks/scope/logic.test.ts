@@ -7,6 +7,7 @@ import {
   isOffered,
   isPartHidden,
   type PaneLine,
+  type Places,
   profilePaneLines,
   tokensText,
   type UsageRead,
@@ -66,6 +67,7 @@ test('an agent is withheld only on an exact name match', () => {
 });
 
 const NOTHING: Hidden = { agents: new Set(), mods: new Set() };
+const NOWHERE: Places = { session: undefined, home: undefined };
 
 function row(
   name: string,
@@ -106,7 +108,7 @@ function texts(lines: PaneLine[]): string[] {
 
 test('an unprofiled session says so and hides nothing', () => {
   const lines = profilePaneLines(
-    { profile: undefined, hidden: NOTHING, usage: ok() },
+    { profile: undefined, hidden: NOTHING, usage: ok(), places: NOWHERE },
     80,
   );
   expect(lines.slice(0, 3)).toEqual([
@@ -121,7 +123,7 @@ test('a profile names itself and lists what it hides', () => {
     hiding({ agents: ['Explore', 'Plan'], mods: ['desk'] }),
   );
   const lines = profilePaneLines(
-    { profile: 'worker', hidden, usage: ok() },
+    { profile: 'worker', hidden, usage: ok(), places: NOWHERE },
     80,
   );
   expect(texts(lines).slice(0, 4)).toEqual([
@@ -144,7 +146,7 @@ test('only used rows print, in the engine’s order and whatever their names', (
     ],
   });
   const lines = profilePaneLines(
-    { profile: undefined, hidden: NOTHING, usage },
+    { profile: undefined, hidden: NOTHING, usage, places: NOWHERE },
     80,
   );
   expect(texts(lines).slice(3)).toEqual([
@@ -162,7 +164,12 @@ test('each list is largest first, capped at five, with the rest counted', () => 
     tokens: (i + 1) * 100,
   }));
   const lines = profilePaneLines(
-    { profile: undefined, hidden: NOTHING, usage: ok({ agents }) },
+    {
+      profile: undefined,
+      hidden: NOTHING,
+      usage: ok({ agents }),
+      places: NOWHERE,
+    },
     80,
   );
   expect(texts(lines).slice(4)).toEqual([
@@ -193,6 +200,7 @@ test('skills and memory files list the same way, and empty lists are left out', 
         },
         memoryFiles: [{ path: '/p/CLAUDE.md', type: 'Project', tokens: 2_500 }],
       }),
+      places: NOWHERE,
     },
     80,
   );
@@ -211,6 +219,7 @@ test('the pane sums nothing: no total line appears', () => {
       profile: undefined,
       hidden: NOTHING,
       usage: ok({ totalTokens: 99_999, categories: [row('A', 10, 'used')] }),
+      places: NOWHERE,
     },
     80,
   );
@@ -223,6 +232,7 @@ test('a failed read draws one failure line in place of the context', () => {
       profile: 'worker',
       hidden: NOTHING,
       usage: { ok: false, reason: 'refused' },
+      places: NOWHERE,
     },
     80,
   );
@@ -236,13 +246,112 @@ test('a failed read draws one failure line in place of the context', () => {
 test('every line is cut to the columns, by code point', () => {
   const usage = ok({ categories: [row('Messages — long', 1_000, 'used')] });
   const lines = profilePaneLines(
-    { profile: 'a—profile…name', hidden: NOTHING, usage },
+    { profile: 'a—profile…name', hidden: NOTHING, usage, places: NOWHERE },
     10,
   );
   for (const line of lines) {
     expect([...line.text].length).toBeLessThanOrEqual(10);
   }
   expect(texts(lines)).toContain('a—profile…');
+});
+
+const LONG_PATH =
+  '/Users/someone/Documents/Projects/a-long-repository-name/.claude/rules/house-style.md';
+
+function memoryPane(
+  paths: readonly string[],
+  columns: number,
+  places: Places = NOWHERE,
+): string[] {
+  const memoryFiles = paths.map((path) => ({
+    path,
+    type: 'Project',
+    tokens: 2_500,
+  }));
+  const lines = profilePaneLines(
+    { profile: undefined, hidden: NOTHING, usage: ok({ memoryFiles }), places },
+    columns,
+  );
+  // Memory files are the last list, and a narrow pane cuts their heading.
+  const start = lines.findLastIndex((line) => line.tone === 'heading') + 1;
+  return texts(lines.slice(start));
+}
+
+test('a long memory file path keeps its figure and its end within the columns', () => {
+  const [line = ''] = memoryPane([LONG_PATH], 40);
+  expect([...line].length).toBeLessThanOrEqual(40);
+  expect(line).toEndWith('house-style.md  2.5k');
+  expect(line).toStartWith('…');
+  expect(memoryPane([LONG_PATH], 7)).toEqual(['…  2.5k']);
+  expect(memoryPane([LONG_PATH], 5)).toEqual(['2.5k']);
+});
+
+test('a path under the session folder prints relative to it, and one under home with ~', () => {
+  const places: Places = { session: '/work/repo', home: '/home/me' };
+  expect(
+    memoryPane(
+      [
+        '/work/repo/CLAUDE.md',
+        '/home/me/.claude/CLAUDE.md',
+        '/work/repo-two/CLAUDE.md',
+        '/etc/claude/CLAUDE.md',
+      ],
+      80,
+      places,
+    ),
+  ).toEqual([
+    'CLAUDE.md  2.5k',
+    '~/.claude/CLAUDE.md  2.5k',
+    '/work/repo-two/CLAUDE.md  2.5k',
+    '/etc/claude/CLAUDE.md  2.5k',
+  ]);
+});
+
+test('an empty folder shortens nothing', () => {
+  expect(
+    memoryPane(['/home/me/CLAUDE.md'], 80, { session: '', home: '' }),
+  ).toEqual(['/home/me/CLAUDE.md  2.5k']);
+});
+
+test('a long agent, skill, or context row name keeps its figure', () => {
+  const name = 'an-agent-with-a-very-long-name-indeed';
+  const lines = profilePaneLines(
+    {
+      profile: undefined,
+      hidden: NOTHING,
+      usage: ok({
+        categories: [row(name, 1_234, 'used')],
+        agents: [{ agentType: name, source: 'plugin', tokens: 321 }],
+        skills: {
+          totalSkills: 1,
+          includedSkills: 1,
+          tokens: 100,
+          skillFrontmatter: [{ name, source: 'plugin', tokens: 100 }],
+        },
+      }),
+      places: NOWHERE,
+    },
+    20,
+  );
+  expect(texts(lines)).toEqual(
+    expect.arrayContaining([
+      'an-agent-with-  1.2k',
+      'an-agent-with-a  321',
+      'an-agent-with-a  100',
+    ]),
+  );
+});
+
+test('a pane with no columns, or fewer than none, has no lines', () => {
+  for (const columns of [0, -4]) {
+    expect(memoryPane([LONG_PATH], columns)).toEqual([]);
+    expect(
+      profilePaneLines(
+        { profile: 'p', hidden: NOTHING, usage: ok(), places: NOWHERE },
+        columns,
+      ),
+    ).toEqual([]);
+  }
 });
 
 test('tokens print whole below 1,000 and as thousands to one decimal from there', () => {

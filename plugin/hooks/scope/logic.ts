@@ -3,7 +3,7 @@
 
 import type { SessionContextBreakdown } from 'claude-code';
 import { UNPROFILED } from '../gauge/logic';
-import { cut } from '../lines';
+import { cut, width } from '../lines';
 import { MOD_PARTS, type ModPart } from './contract';
 
 export interface Hidden {
@@ -70,18 +70,65 @@ export function tokensText(tokens: number): string {
   return `${(whole / TOKENS_PER_K).toFixed(1)}k`;
 }
 
+/** The folders a memory file's path prints short against, each undefined when unknown. */
+export interface Places {
+  session: string | undefined;
+  home: string | undefined;
+}
+
 interface Item {
   name: string;
   tokens: number;
 }
 
-function itemLines(heading: string, items: readonly Item[]): PaneLine[] {
+type Fit = (name: string, columns: number) => string;
+
+const GAP = '  ';
+const ELLIPSIS = '…';
+
+// A path's end names the file, so a path too long keeps its end.
+function keepEnd(text: string, columns: number): string {
+  const length = width(text);
+  if (length <= columns) return text;
+  if (columns < 1) return '';
+  return ELLIPSIS + [...text].slice(length - columns + 1).join('');
+}
+
+// The figure stays whole, and the name takes the columns left.
+function itemText(item: Item, columns: number, fit: Fit): string {
+  const figure = tokensText(item.tokens);
+  const name = fit(
+    item.name,
+    Math.max(0, columns - width(figure) - width(GAP)),
+  );
+  return name === '' ? figure : `${name}${GAP}${figure}`;
+}
+
+function under(folder: string | undefined, path: string): string | undefined {
+  if (folder === undefined || folder === '') return undefined;
+  const prefix = `${folder}/`;
+  return path.startsWith(prefix) ? path.slice(prefix.length) : undefined;
+}
+
+function shortPath(path: string, places: Places): string {
+  const inSession = under(places.session, path);
+  if (inSession !== undefined) return inSession;
+  const inHome = under(places.home, path);
+  return inHome === undefined ? path : `~/${inHome}`;
+}
+
+function itemLines(
+  heading: string,
+  items: readonly Item[],
+  columns: number,
+  fit: Fit = cut,
+): PaneLine[] {
   if (items.length === 0) return [];
   const largest = [...items].sort((a, b) => b.tokens - a.tokens);
   const shown = largest.slice(0, LIST_CAP).map(
     (item): PaneLine => ({
       tone: 'plain',
-      text: `${item.name}  ${tokensText(item.tokens)}`,
+      text: itemText(item, columns, fit),
     }),
   );
   const more = largest.length - LIST_CAP;
@@ -106,7 +153,11 @@ function hiddenLines(hidden: Hidden): PaneLine[] {
   return lines;
 }
 
-function usageLines(usage: UsageRead): PaneLine[] {
+function usageLines(
+  usage: UsageRead,
+  places: Places,
+  columns: number,
+): PaneLine[] {
   if (!usage.ok) {
     return [
       {
@@ -119,10 +170,7 @@ function usageLines(usage: UsageRead): PaneLine[] {
   const used = breakdown.categories
     .filter((row) => row.kind === 'used')
     .map(
-      (row): PaneLine => ({
-        tone: 'plain',
-        text: `${row.name}  ${tokensText(row.tokens)}`,
-      }),
+      (row): PaneLine => ({ tone: 'plain', text: itemText(row, columns, cut) }),
     );
   return [
     { tone: 'heading', text: 'CONTEXT' },
@@ -130,6 +178,7 @@ function usageLines(usage: UsageRead): PaneLine[] {
     ...itemLines(
       'AGENTS',
       breakdown.agents.map((a) => ({ name: a.agentType, tokens: a.tokens })),
+      columns,
     ),
     ...itemLines(
       'SKILLS',
@@ -137,26 +186,38 @@ function usageLines(usage: UsageRead): PaneLine[] {
         name: s.name,
         tokens: s.tokens,
       })),
+      columns,
     ),
     ...itemLines(
       'MEMORY FILES',
-      breakdown.memoryFiles.map((m) => ({ name: m.path, tokens: m.tokens })),
+      breakdown.memoryFiles.map((m) => ({
+        name: shortPath(m.path, places),
+        tokens: m.tokens,
+      })),
+      columns,
+      keepEnd,
     ),
   ];
 }
 
-/** The `/profile` pane: the profile, what it hides, and what loaded, each line cut to `columns`. */
+/** The `/profile` pane: the profile, what it hides, and what loaded, each line cut to `columns`; none below one column. */
 export function profilePaneLines(
-  input: { profile: string | undefined; hidden: Hidden; usage: UsageRead },
+  input: {
+    profile: string | undefined;
+    hidden: Hidden;
+    usage: UsageRead;
+    places: Places;
+  },
   columns: number,
 ): PaneLine[] {
+  if (columns < 1) return [];
   const lines: PaneLine[] = [
     { tone: 'heading', text: 'PROFILE' },
     input.profile === undefined
       ? { tone: 'muted', text: UNPROFILED }
       : { tone: 'plain', text: input.profile },
     ...hiddenLines(input.hidden),
-    ...usageLines(input.usage),
+    ...usageLines(input.usage, input.places, columns),
   ];
   return lines.map((line) => ({ ...line, text: cut(line.text, columns) }));
 }

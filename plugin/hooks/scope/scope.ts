@@ -14,6 +14,7 @@ import {
   isOffered,
   type PaneLine,
   type PaneTone,
+  type Places,
   profilePaneLines,
   type UsageRead,
 } from './logic';
@@ -35,6 +36,7 @@ interface Loaded {
   profile: string | undefined;
   hidden: Hidden;
   usage: UsageRead;
+  places: Places;
 }
 
 function reasonOf(error: unknown): string {
@@ -73,8 +75,22 @@ async function loadUsage($: EngineInterface): Promise<UsageRead> {
   }
 }
 
+// Fails open: folders that cannot be read leave the paths whole.
+async function loadPlaces($: EngineInterface): Promise<Places> {
+  try {
+    return { session: await $.session.cwd(), home: await $.env.get('HOME') };
+  } catch (error) {
+    logFailure($, 'reading the folders', error);
+    return { session: undefined, home: undefined };
+  }
+}
+
 async function load($: EngineInterface): Promise<Loaded> {
-  return { ...(await loadProfile($)), usage: await loadUsage($) };
+  return {
+    ...(await loadProfile($)),
+    usage: await loadUsage($),
+    places: await loadPlaces($),
+  };
 }
 
 function textOf(line: PaneLine): RenderElement {

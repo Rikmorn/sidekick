@@ -86,6 +86,8 @@ type ProfileWorld = {
   flag: Settings;
   usage: UsageAnswer;
   panes: Map<string, boolean>;
+  /** The session's folder, or a refusal of its read. */
+  cwd: string | 'refuse';
 };
 
 type ProfileSeen = {
@@ -147,6 +149,7 @@ function profileWorld(over: Partial<ProfileWorld> = {}): ProfileWorld {
     flag: { sidekick: { profile: 'worker', hide: { agents: ['Explore'] } } },
     usage: { breakdown: breakdownWith() },
     panes: new Map(),
+    cwd: '/work/repo',
     ...over,
   };
 }
@@ -181,6 +184,9 @@ function answerProfile(
     };
   });
   on('session.id', () => ({ value: 'session-1' }));
+  on('session.cwd', () =>
+    world.cwd === 'refuse' ? { deny: REFUSAL } : { value: world.cwd },
+  );
   on('ui.status', () => ({ value: undefined }));
   const clock = mock.clock(on);
   on('command.register', (_$, e) => {
@@ -335,6 +341,49 @@ for (const usage of ['refuse', 'throw'] as const) {
     expect(failure?.text).toMatch(/^context usage could not be read: /);
   });
 }
+
+const MEMORY_FILES = [
+  { path: '/home/me/.claude/CLAUDE.md', type: 'User', tokens: 1_500 },
+  { path: '/work/repo/CLAUDE.md', type: 'Project', tokens: 900 },
+];
+
+function memoryWorld(over: Partial<ProfileWorld> = {}): ProfileWorld {
+  return profileWorld({
+    env: { HOME: '/home/me' },
+    usage: { breakdown: breakdownWith({ memoryFiles: MEMORY_FILES }) },
+    ...over,
+  });
+}
+
+async function memoryLines($: Engine, columns: number): Promise<string[]> {
+  const texts = (await drawnPane($, 'profile', columns)).map((l) => l.text);
+  return texts.slice(texts.indexOf('MEMORY FILES') + 1);
+}
+
+test('the pane prints memory files short, under the session folder or home', async ($, on) => {
+  const { clock } = answerProfile(on, memoryWorld());
+  await profileStarted($, clock);
+  await runProfile($);
+  expect(await memoryLines($, 40)).toEqual([
+    '~/.claude/CLAUDE.md  1.5k',
+    'CLAUDE.md  900',
+  ]);
+});
+
+test('a refused folder read leaves memory file paths whole, and the debug log names it', async ($, on) => {
+  const { seen, clock } = answerProfile(on, memoryWorld({ cwd: 'refuse' }));
+  await profileStarted($, clock);
+  await runProfile($);
+  expect(await memoryLines($, 80)).toEqual([
+    '/home/me/.claude/CLAUDE.md  1.5k',
+    '/work/repo/CLAUDE.md  900',
+  ]);
+  expect(seen.debug).toContainEqual(
+    expect.stringMatching(
+      /^sidekick scope: reading the folders failed: .*refused by a plugin above$/,
+    ),
+  );
+});
 
 test('a pane of another id is left to what lies beneath', async ($, on) => {
   const { clock } = answerProfile(on, profileWorld());

@@ -86,7 +86,7 @@ The scope mod rewrites what the model is offered, the third rung of ADR-0012's l
 
 - **Agent filter.** Its `agent.offer` hook withholds each agent type that `hide.agents` names, by exact name, so the model's listing leaves it out.
 - **Part switches.** `hide.mods` names mod parts that stay off, `board` and `desk`. Those mods read the same key at session start and do nothing when it names them.
-- **`/profile`.** In an interactive session that is not a background one, `/profile` toggles a pane. It shows the profile's name, or that the session has none, then the agents and mod parts it hides. Below those sit the used rows of the context breakdown, and the largest agents, skills, and memory files, up to five of each. The pane reads the usage once per open, with `$.session.usage({ breakdown: 'summary' })`, and a failed read draws one failure line. Its output goes to the screen and stays out of the model's context.
+- **`/profile`.** In an interactive session that is not a background one, `/profile` toggles a pane. It shows the profile's name, or that the session has none, then the agents and mod parts it hides. Below those sit the used rows of the context breakdown, and the largest agents, skills, and memory files, up to five of each. Each row keeps its token figure, and a name too long for the pane is cut. A memory file's path prints relative to the session's folder, or as `~/…` under `HOME`, and one still too long keeps its end. The pane reads the usage once per open, with `$.session.usage({ breakdown: 'summary' })`, and a failed read draws one failure line. Its output goes to the screen and stays out of the model's context.
 
 ### `sk-orient`
 
