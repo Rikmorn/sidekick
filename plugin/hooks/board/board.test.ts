@@ -363,6 +363,39 @@ test('a compact start runs nothing and keeps the lines it had', async ($, on) =>
   ]);
 });
 
+// The start hook fires again on /clear, with the board as it is then.
+test('a live /clear with a new sidekick entry draws the new brief, stamped then', async ($, on) => {
+  const world = worldWith({ contexts: [OTHER, ENTRY] });
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await captured($, clock);
+  await clock.advance(MINUTE_MS);
+  const cleared = ['Milestone 10 — the loop', 'In progress: none'];
+  world.contexts = [OTHER, `${BRIEF_HEADER}\n\n${cleared.join('\n')}`];
+  await captured($, clock, 'clear');
+  expect(seen.pickups).toEqual([]);
+  const drawn = await drawnBand($, 'terminal', bandProps(200));
+  expect(drawn).toEqual([
+    ...stampedLines(cleared, `as of ${clockText(NOW + MINUTE_MS)}`),
+    UNDER,
+  ]);
+});
+
+test('a live /clear with no sidekick entry runs one pickup and draws its lines', async ($, on) => {
+  const world = worldWith({ contexts: [OTHER, ENTRY] });
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await captured($, clock);
+  world.contexts = [OTHER];
+  await captured($, clock, 'clear');
+  expect(seen.pickups).toHaveLength(1);
+  const drawn = await drawnBand($, 'terminal', bandProps(200));
+  expect(drawn).toEqual([
+    ...stampedLines(PICKED, `as of ${clockText(NOW)}`),
+    UNDER,
+  ]);
+});
+
 test('/board runs one pickup and draws what it printed', async ($, on) => {
   const { seen, clock } = answerBeneath(on, worldWith({ contexts: [ENTRY] }));
   await started($, clock);
@@ -408,6 +441,29 @@ test('a Bash call that closes an issue runs a pickup, and the hook returns what 
   expect(await afterBash($, 'cd /x && gh issue close 5')).toEqual(AFTER_TOOL);
   await clock.settle();
   expect(seen.pickups).toHaveLength(1);
+});
+
+// The tool's result reaches the model before the pickup ends, so a slow pickup
+// never holds the turn.
+test('a Bash board write returns what lay beneath while its pickup still runs', async ($, on) => {
+  const world = worldWith({ contexts: [ENTRY] });
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await captured($, clock);
+  let release = () => {};
+  world.hold = new Promise((resolve) => {
+    release = resolve;
+  });
+  let returned: unknown;
+  const call = afterBash($, 'gh issue close 5').then((result) => {
+    returned = result;
+  });
+  await clock.settle();
+  expect(seen.pickups).toHaveLength(1);
+  expect(returned).toEqual(AFTER_TOOL);
+  release();
+  await call;
+  await clock.settle();
 });
 
 test('a Bash call that only reads the board, or another tool, runs nothing', async ($, on) => {
@@ -536,12 +592,14 @@ test('a refused settings read leaves the board on, and the debug log names it', 
   );
 });
 
+// The classic start goes first, so the only fallback is the interactive
+// start's own, which a refused `/board` must not stop.
 test('a refused /board leaves the band running, and the debug log names it', async ($, on) => {
   const world = worldWith({ contexts: [OTHER] });
   world.refused.add('command.register');
   const { seen, clock } = answerBeneath(on, world);
-  await started($, clock);
   await captured($, clock);
+  await started($, clock);
   expect(seen.pickups).toHaveLength(1);
   const drawn = await drawnBand($, 'terminal', bandProps(200));
   expect(drawn.slice(0, PICKED.length)).toEqual(
