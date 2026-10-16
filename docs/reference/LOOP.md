@@ -25,7 +25,7 @@ What each skill in the loop does when it runs. For each: what it reads, what it 
 
 ### The session-start hook
 
-Fires on `startup` and `clear`, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick pm pickup --brief` from the current directory. In a tracked repo it prints a one-line header, the six-line brief, and the body of `sk-orient`, so the model opens the session already oriented. Anywhere else it prints nothing and exits 0; the same when `node` or `gh` is missing or fails. Cost measured on 2026-09-20: a few seconds in a tracked repo, under a third of a second elsewhere.
+Fires on `startup` and `clear`, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick pm pickup --brief` from the current directory. In a tracked repo it prints one `additionalContext` JSON object: a one-line header that names the `sk-orient` skill, then the six-line brief. The model opens the session oriented and loads the skill on demand. The JSON form lets the board mod read the text, which it cannot do with plain stdout. Anywhere else it prints nothing and exits 0; the same when `node` or `gh` is missing or fails. Size measured on 2026-10-16: 750 bytes of stdout by `echo '{"source":"startup"}' | CLAUDE_PLUGIN_ROOT="$PWD/plugin" bash plugin/hooks/session-start | wc -c`, and 653 characters of `additionalContext` by `.length` on its parsed JSON. The plain-text hook it replaced printed 5,414 bytes.
 
 ### The Skill-tool hook
 
