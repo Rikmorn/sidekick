@@ -16,6 +16,7 @@ What can Claude Code's extension and session surface do for running many session
 - [2026-10-15-mod-foundation-probes.md](./2026-10-15-mod-foundation-probes.md): what #207, #208, and #225 rest on. It covers what `validate` and `claude plugin test` catch, a headless module, where a label and a status line draw, and a variable a module sets. It also covers the compaction point across models, a hook's `systemMessage`, and the files the engine writes.
 - [2026-10-15-desk-probes.md](./2026-10-15-desk-probes.md): what #210 rests on. It covers the session listing state by state, its polling cost, and the `Notification` hook's reach. It also covers attach, `$.store` across sessions, where a band and a pane draw, and deleting unpushed work. It ends with a survey of mods that show other sessions.
 - [2026-10-16-board-band-probes.md](./2026-10-16-board-band-probes.md): what #211's band reads at session start. It covers a settings hook's SessionStart text seen from a mod, JSON against plain stdout, the order of the two start events, identical matchers, and `classic.PostToolUse` on Bash.
+- [2026-10-16-view-placement-probes.md](./2026-10-16-view-placement-probes.md): where #233's and #239's views can draw. It covers rows a mod draws under the prompt, and what a docked pane narrows. It also covers a plugin's status line and a footer label, on the main screen and in fullscreen.
 
 ## Served
 
