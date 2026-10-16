@@ -28,7 +28,7 @@ A name is 1 to 64 lowercase letters, digits, and hyphens, starting with a letter
 | `description` | Required, non-empty. `list` prints it. |
 | `settingSources` | Optional. A list of `user`, `project`, and `local`, without repeats. It becomes `--setting-sources`. |
 | `settings` | Optional object, passed through to `--settings`. It must not hold a `sidekick` key, because launch writes that one. |
-| `hide` | Optional. `agents` lists agent types the model is not offered. `mods` lists sidekick mod parts that stay off: `board` and `desk`. Each list is non-empty strings or known parts, without repeats. |
+| `hide` | Optional. `agents` lists agent types the model is not offered, each named as the agent listing names it, such as `Explore`. `mods` lists sidekick mod parts that stay off: `board` and `desk`. Either list may be empty or left out. An agent name is a non-empty string, and neither list repeats an entry. |
 
 Launch composes the settings from the profile's `settings` object, then adds its own keys:
 
