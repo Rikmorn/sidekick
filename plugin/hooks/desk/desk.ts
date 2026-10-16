@@ -14,6 +14,7 @@ import type {
   RenderElement,
   ThemeKey,
 } from 'claude-code';
+import { isPartHidden } from '../scope/logic';
 import {
   DESK_VERSION,
   type DeskSnapshot,
@@ -184,10 +185,25 @@ async function refreshDesk($: EngineInterface, desk: DeskState): Promise<void> {
   }
 }
 
+// Fails open: a profile hides the desk only when its flag settings say so, and
+// a read that fails leaves the desk on.
+async function isDeskHidden($: EngineInterface): Promise<boolean> {
+  try {
+    return isPartHidden(await $.settings.read({ source: 'flag' }), 'desk');
+  } catch (error) {
+    $.ui.log(
+      `sidekick desk: reading the profile's hidden parts failed: ${reasonOf(error)}`,
+      { to: 'debug' },
+    );
+    return false;
+  }
+}
+
 // The clock starts before the first run, so a setup that fails partway leaves
 // no run to draw over its failure.
 async function startDesk($: EngineInterface, desk: DeskState): Promise<void> {
   if ((await $.env.get('CLAUDE_JOB_DIR')) !== undefined) return;
+  if (await isDeskHidden($)) return;
   await $.command.register(COMMAND);
   $.clock.every(TICK_MS, () => void refreshDesk($, desk));
   void refreshDesk($, desk);

@@ -4,6 +4,7 @@ import type {
   RenderSurface,
   RenderViewport,
   SessionStartInput,
+  Settings,
 } from 'claude-code';
 import {
   type Engine,
@@ -38,6 +39,8 @@ type World = {
   hold?: Promise<void>;
   panes: Map<string, OpenPane>;
   refused: Set<'settings.read' | 'session.id' | 'ui.open' | 'ui.invalidate'>;
+  /** The session's flag settings, as `--settings` gave them. */
+  flag: Settings;
 };
 
 const REFUSAL = 'refused by a plugin above';
@@ -133,6 +136,7 @@ function worldWith(answer: RunAnswer, env: Record<string, string> = {}): World {
     answer,
     panes: new Map(),
     refused: new Set(),
+    flag: {},
   };
 }
 
@@ -181,7 +185,9 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
   // The gauge shares the module, so its reads are answered too: no profile,
   // no breakdown.
   on('settings.read', () =>
-    world.refused.has('settings.read') ? { deny: REFUSAL } : { value: {} },
+    world.refused.has('settings.read')
+      ? { deny: REFUSAL }
+      : { value: world.flag },
   );
   on('session.usage', () => ({
     value: { startedAt: 0, context: { window: 1000000 }, rateLimits: [] },
@@ -533,6 +539,26 @@ test('children back after a failed run leave a closed pane closed', async ($, on
   expect(seen.opened).toEqual([{ id: 'desk', title: 'Desk' }]);
 });
 
+test('a profile that hides the desk gets no /desk, no clock, and no run', async ($, on) => {
+  const world = worldWith(printed(WORKERS));
+  world.flag = { sidekick: { hide: { mods: ['desk'] } } };
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await clock.advance(TICK_MS * 3);
+  expect(seen.commands).toEqual([]);
+  expect(seen.runs).toEqual([]);
+  expect(seen.invalidations).toEqual([]);
+});
+
+test('a profile that hides only the board leaves the desk running', async ($, on) => {
+  const world = worldWith(printed(QUIET));
+  world.flag = { sidekick: { hide: { mods: ['board'] } } };
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  expect(seen.commands).toEqual(['desk']);
+  expect(seen.runs).toHaveLength(1);
+});
+
 // A tick runs outside any hook, so a rejection it left unhandled would fail
 // the file here, and in a session would surface nowhere the operator looks.
 test('a refused unasked open leaves the desk polling and the band drawn', async ($, on) => {
@@ -562,11 +588,17 @@ test('a gauge that cannot read its settings leaves the desk polling', async ($, 
   expect(seen.runs).toHaveLength(1);
   await clock.advance(TICK_MS);
   expect(seen.runs).toHaveLength(2);
-  expect(seen.debug).toEqual([
+  expect(seen.debug).toContainEqual(
     expect.stringMatching(
       /^sidekick gauge: session\.start failed: .*refused by a plugin above$/,
     ),
-  ]);
+  );
+  // The desk's own part check fails open and says so.
+  expect(seen.debug).toContainEqual(
+    expect.stringMatching(
+      /^sidekick desk: reading the profile's hidden parts failed: .*refused by a plugin above$/,
+    ),
+  );
 });
 
 // The engine drops a refused `$.ui.invalidate` and reports it; the call does
