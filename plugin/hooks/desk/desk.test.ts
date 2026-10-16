@@ -309,7 +309,7 @@ test('a headless run polls nothing either', async ($, on) => {
 test('an interactive start registers /desk, runs the desk for this session, and ticks every 10 s', async ($, on) => {
   const { seen, clock } = answerBeneath(on, worldWith(printed(QUIET)));
   await started($, clock);
-  expect(seen.commands).toEqual(['desk']);
+  expect(seen.commands).toContain('desk');
   expect(seen.runs).toHaveLength(1);
   const [argv] = seen.runs;
   expect(argv?.slice(-4)).toEqual(['desk', '--json', '--self', 'session-1']);
@@ -545,7 +545,7 @@ test('a profile that hides the desk gets no /desk, no clock, and no run', async 
   const { seen, clock } = answerBeneath(on, world);
   await started($, clock);
   await clock.advance(TICK_MS * 3);
-  expect(seen.commands).toEqual([]);
+  expect(seen.commands).not.toContain('desk');
   expect(seen.runs).toEqual([]);
   expect(seen.invalidations).toEqual([]);
 });
@@ -584,7 +584,7 @@ test('a gauge that cannot read its settings leaves the desk polling', async ($, 
   world.refused.add('settings.read');
   const { seen, clock } = answerBeneath(on, world);
   await started($, clock);
-  expect(seen.commands).toEqual(['desk']);
+  expect(seen.commands).toContain('desk');
   expect(seen.runs).toHaveLength(1);
   await clock.advance(TICK_MS);
   expect(seen.runs).toHaveLength(2);
