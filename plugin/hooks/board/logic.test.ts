@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing';
 import { BRIEF_HEADER } from './contract';
-import type { BoardView } from './logic';
+import type { BoardView, RunKind } from './logic';
 import {
   afterRun,
   bandLines,
@@ -8,6 +8,7 @@ import {
   clockText,
   fromBrief,
   isBoardWrite,
+  queuedWith,
 } from './logic';
 
 const entry = `${BRIEF_HEADER}\n\nPickup: milestone 9\nIn progress: #211`;
@@ -79,60 +80,98 @@ test('isBoardWrite accepts a quoted match, which costs one refresh', () => {
   expect(isBoardWrite('echo "done; gh issue close 3"')).toBe(true);
 });
 
-test('afterRun gives ok with the lines and the time of a good run', () => {
-  expect(
-    afterRun({ state: 'empty' }, { ok: true, stdout: 'a\nb\n' }, '09:05'),
-  ).toEqual({ state: 'ok', lines: ['a', 'b'], takenAt: '09:05' });
+const KINDS: readonly RunKind[] = ['asked', 'unasked'];
+
+test('afterRun gives ok with the lines and the time of a good run, asked or not', () => {
+  for (const kind of KINDS) {
+    expect(
+      afterRun(
+        { state: 'empty' },
+        { ok: true, stdout: 'a\nb\n' },
+        '09:05',
+        kind,
+      ),
+    ).toEqual({ state: 'ok', lines: ['a', 'b'], takenAt: '09:05' });
+  }
 });
 
 test('afterRun gives empty for a run with no output', () => {
   const ok: BoardView = { state: 'ok', lines: ['a'], takenAt: '09:00' };
-  expect(afterRun(ok, { ok: true, stdout: '\n' }, '09:05')).toEqual({
+  expect(afterRun(ok, { ok: true, stdout: '\n' }, '09:05', 'asked')).toEqual({
     state: 'empty',
   });
 });
 
-test('afterRun keeps the last good lines when a run fails after ok or stale', () => {
+test('afterRun keeps the last good lines when a run fails after ok or stale, asked or not', () => {
   const ok: BoardView = { state: 'ok', lines: ['a'], takenAt: '09:00' };
-  const stale = afterRun(ok, { ok: false, reason: 'timed out' }, '09:05');
-  expect(stale).toEqual({
-    state: 'stale',
-    lines: ['a'],
-    takenAt: '09:00',
-    failedAt: '09:05',
-  });
-  expect(afterRun(stale, { ok: false, reason: 'x' }, '09:10')).toEqual({
-    state: 'stale',
-    lines: ['a'],
-    takenAt: '09:00',
-    failedAt: '09:10',
-  });
+  for (const kind of KINDS) {
+    const stale = afterRun(
+      ok,
+      { ok: false, reason: 'timed out' },
+      '09:05',
+      kind,
+    );
+    expect(stale).toEqual({
+      state: 'stale',
+      lines: ['a'],
+      takenAt: '09:00',
+      failedAt: '09:05',
+    });
+    expect(afterRun(stale, { ok: false, reason: 'x' }, '09:10', kind)).toEqual({
+      state: 'stale',
+      lines: ['a'],
+      takenAt: '09:00',
+      failedAt: '09:10',
+    });
+  }
 });
 
-test('afterRun gives failed when a run fails after empty or failed', () => {
+test('afterRun gives failed when an asked run fails after empty or failed', () => {
   const run = { ok: false, reason: 'gh missing' } as const;
-  expect(afterRun({ state: 'empty' }, run, '09:05')).toEqual({
+  expect(afterRun({ state: 'empty' }, run, '09:05', 'asked')).toEqual({
     state: 'failed',
     reason: 'gh missing',
   });
-  expect(afterRun({ state: 'failed', reason: 'old' }, run, '09:05')).toEqual({
-    state: 'failed',
-    reason: 'gh missing',
-  });
+  expect(
+    afterRun({ state: 'failed', reason: 'old' }, run, '09:05', 'asked'),
+  ).toEqual({ state: 'failed', reason: 'gh missing' });
 });
 
-test('afterRun recovers to ok from stale', () => {
+// Pickup exits non-zero without `gh`, its scope, or a network, even in an
+// untracked repo, where the band must stay empty.
+test('afterRun keeps empty or failed when an unasked run fails', () => {
+  const run = { ok: false, reason: 'gh missing' } as const;
+  expect(afterRun({ state: 'empty' }, run, '09:05', 'unasked')).toEqual({
+    state: 'empty',
+  });
+  expect(
+    afterRun({ state: 'failed', reason: 'old' }, run, '09:05', 'unasked'),
+  ).toEqual({ state: 'failed', reason: 'old' });
+});
+
+test('afterRun recovers to ok from stale or failed, asked or not', () => {
   const stale: BoardView = {
     state: 'stale',
     lines: ['a'],
     takenAt: '09:00',
     failedAt: '09:05',
   };
-  expect(afterRun(stale, { ok: true, stdout: 'b' }, '09:10')).toEqual({
-    state: 'ok',
-    lines: ['b'],
-    takenAt: '09:10',
-  });
+  const failed: BoardView = { state: 'failed', reason: 'old' };
+  for (const kind of KINDS) {
+    for (const previous of [stale, failed]) {
+      expect(
+        afterRun(previous, { ok: true, stdout: 'b' }, '09:10', kind),
+      ).toEqual({ state: 'ok', lines: ['b'], takenAt: '09:10' });
+    }
+  }
+});
+
+test('queuedWith counts the queued run as asked once any request was', () => {
+  expect(queuedWith(undefined, 'unasked')).toBe('unasked');
+  expect(queuedWith(undefined, 'asked')).toBe('asked');
+  expect(queuedWith('unasked', 'unasked')).toBe('unasked');
+  expect(queuedWith('unasked', 'asked')).toBe('asked');
+  expect(queuedWith('asked', 'unasked')).toBe('asked');
 });
 
 test('fromBrief gives ok, or empty for a header with no brief', () => {

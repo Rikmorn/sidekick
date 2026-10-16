@@ -13,6 +13,9 @@ export type RunOutcome =
   | { ok: true; stdout: string }
   | { ok: false; reason: string };
 
+/** Whether the operator asked for a run with `/board`, or the band ran it itself: the start fallback, or a refresh after a board write. */
+export type RunKind = 'asked' | 'unasked';
+
 export type BandTone = 'heading' | 'plain' | 'failure';
 
 export interface BandLine {
@@ -64,11 +67,16 @@ export function fromBrief(lines: string[], at: string): BoardView {
     : { state: 'ok', lines, takenAt: at };
 }
 
-/** The view after a pickup run that ended at `at` (HH:MM). */
+/**
+ * The view after a pickup run that ended at `at` (HH:MM). A failure with no
+ * good lines to keep draws only when asked: pickup also fails in an untracked
+ * repo when `gh`, its scope, or the network is missing.
+ */
 export function afterRun(
   previous: BoardView,
   run: RunOutcome,
   at: string,
+  kind: RunKind,
 ): BoardView {
   if (run.ok) {
     return fromBrief(withoutTrailingBlanks(splitLines(run.stdout)), at);
@@ -81,7 +89,15 @@ export function afterRun(
       failedAt: at,
     };
   }
-  return { state: 'failed', reason: run.reason };
+  return kind === 'asked' ? { state: 'failed', reason: run.reason } : previous;
+}
+
+/** The run queued behind the one in flight, after one more request: asked once any request was. */
+export function queuedWith(
+  queued: RunKind | undefined,
+  kind: RunKind,
+): RunKind {
+  return queued === 'asked' ? 'asked' : kind;
 }
 
 function stamped(lines: string[], stamp: string): BandLine[] {

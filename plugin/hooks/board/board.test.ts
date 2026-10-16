@@ -483,24 +483,32 @@ test('a Bash call that only reads the board, or another tool, runs nothing', asy
   expect(seen.pickups).toEqual([]);
 });
 
-test('a failed run after a good one keeps the lines, stamped refresh failed', async ($, on) => {
-  const world = worldWith({ contexts: [ENTRY] });
-  const { seen, clock } = answerBeneath(on, world);
-  await started($, clock);
-  await captured($, clock);
-  await clock.advance(MINUTE_MS);
-  world.answer = BAD_GATEWAY;
-  await boardCommand($);
-  await clock.settle();
-  const stamp = `refresh failed ${clockText(NOW + MINUTE_MS)}`;
-  for (const surface of SURFACES) {
-    const drawn = await drawnBand($, surface, bandProps(200));
-    expect(drawn).toEqual([...stampedLines(BRIEF, stamp), UNDER]);
-  }
-  expect(seen.debug).toContain(
-    'sidekick board: the pickup exited 1: gh: HTTP 502',
-  );
-});
+// What reruns the pickup: the operator's `/board`, or a Bash board write.
+const RERUNS: { name: string; run: ($: Engine) => Promise<unknown> }[] = [
+  { name: '/board', run: boardCommand },
+  { name: 'a board write', run: ($) => afterBash($, 'gh issue close 5') },
+];
+
+for (const rerun of RERUNS) {
+  test(`a failed run from ${rerun.name} after a good one keeps the lines, stamped refresh failed`, async ($, on) => {
+    const world = worldWith({ contexts: [ENTRY] });
+    const { seen, clock } = answerBeneath(on, world);
+    await started($, clock);
+    await captured($, clock);
+    await clock.advance(MINUTE_MS);
+    world.answer = BAD_GATEWAY;
+    await rerun.run($);
+    await clock.settle();
+    const stamp = `refresh failed ${clockText(NOW + MINUTE_MS)}`;
+    for (const surface of SURFACES) {
+      const drawn = await drawnBand($, surface, bandProps(200));
+      expect(drawn).toEqual([...stampedLines(BRIEF, stamp), UNDER]);
+    }
+    expect(seen.debug).toContain(
+      'sidekick board: the pickup exited 1: gh: HTTP 502',
+    );
+  });
+}
 
 const FAILURES: { name: string; answer: RunAnswer; line: string | RegExp }[] = [
   {
@@ -517,19 +525,122 @@ const FAILURES: { name: string; answer: RunAnswer; line: string | RegExp }[] = [
   },
 ];
 
+// A header with no brief draws nothing and runs no fallback, so the band is
+// empty with no run behind it.
+const NO_BRIEF = BRIEF_HEADER;
+
 for (const failure of FAILURES) {
-  test(`with no good lines yet, ${failure.name}, in the error colour`, async ($, on) => {
-    const world = worldWith({ contexts: [OTHER], answer: failure.answer });
-    const { clock } = answerBeneath(on, world);
+  test(`with no good lines yet, a failed /board: ${failure.name}, in the error colour`, async ($, on) => {
+    const world = worldWith({ contexts: [NO_BRIEF], answer: failure.answer });
+    const { seen, clock } = answerBeneath(on, world);
     await started($, clock);
     await captured($, clock);
+    expect(seen.pickups).toEqual([]);
+    await boardCommand($);
+    await clock.settle();
     const drawn = await drawnBand($, 'terminal', bandProps(200));
     expect(drawn).toHaveLength(2);
     expect(drawn[0]?.text).toMatch(failure.line);
     expect(drawn[0]?.color).toBe('error');
     expect(drawn[1]).toEqual(UNDER);
   });
+
+  // Pickup also fails in an untracked repo when `gh`, its scope, or the
+  // network is missing, and an untracked repo's band draws nothing.
+  test(`with no good lines yet, a failed start fallback leaves the band empty: ${failure.name}`, async ($, on) => {
+    const world = worldWith({ contexts: [OTHER], answer: failure.answer });
+    const { seen, clock } = answerBeneath(on, world);
+    await started($, clock);
+    await captured($, clock);
+    expect(seen.pickups).toHaveLength(1);
+    expect(await drawnBand($, 'terminal', bandProps(200))).toEqual([UNDER]);
+    expect(seen.debug).toContainEqual(
+      expect.stringMatching(/^sidekick board: the pickup /),
+    );
+  });
 }
+
+test('with no good lines yet, a failed refresh after a board write leaves the band empty', async ($, on) => {
+  const world = worldWith({ contexts: [NO_BRIEF], answer: BAD_GATEWAY });
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await captured($, clock);
+  await afterBash($, 'gh issue close 5');
+  await clock.settle();
+  expect(seen.pickups).toHaveLength(1);
+  expect(await drawnBand($, 'terminal', bandProps(200))).toEqual([UNDER]);
+});
+
+test('after a failed /board, a failed unasked run keeps the failure line, and a good one replaces it', async ($, on) => {
+  const world = worldWith({ contexts: [NO_BRIEF], answer: BAD_GATEWAY });
+  const { clock } = answerBeneath(on, world);
+  await started($, clock);
+  await captured($, clock);
+  await boardCommand($);
+  await clock.settle();
+  const failureLine = {
+    text: '⚠ board: the pickup exited 1: gh: HTTP 502',
+    color: 'error',
+  };
+  world.answer = { exitCode: 2, stdout: '', stderr: 'gh: no network\n' };
+  await afterBash($, 'gh issue close 5');
+  await clock.settle();
+  expect(await drawnBand($, 'terminal', bandProps(200))).toEqual([
+    failureLine,
+    UNDER,
+  ]);
+  world.answer = PRINTED;
+  await afterBash($, 'gh issue close 5');
+  await clock.settle();
+  expect(await drawnBand($, 'terminal', bandProps(200))).toEqual([
+    ...stampedLines(PICKED, `as of ${clockText(NOW)}`),
+    UNDER,
+  ]);
+});
+
+// The run in flight keeps its own kind; the one it queues counts as asked
+// once any request behind it was.
+test('a /board during an unasked run makes the run it queues asked, so its failure draws', async ($, on) => {
+  const world = worldWith({ contexts: [NO_BRIEF], answer: BAD_GATEWAY });
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await captured($, clock);
+  let release = () => {};
+  world.hold = new Promise((resolve) => {
+    release = resolve;
+  });
+  await afterBash($, 'gh issue close 5');
+  await clock.settle();
+  await boardCommand($);
+  await afterBash($, 'gh issue close 6');
+  release();
+  await clock.settle();
+  expect(seen.pickups).toHaveLength(2);
+  const drawn = await drawnBand($, 'terminal', bandProps(200));
+  expect(drawn).toEqual([
+    { text: '⚠ board: the pickup exited 1: gh: HTTP 502', color: 'error' },
+    UNDER,
+  ]);
+});
+
+test('board writes during an unasked run queue an unasked run, whose failure leaves the band empty', async ($, on) => {
+  const world = worldWith({ contexts: [NO_BRIEF], answer: BAD_GATEWAY });
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await captured($, clock);
+  let release = () => {};
+  world.hold = new Promise((resolve) => {
+    release = resolve;
+  });
+  await afterBash($, 'gh issue close 5');
+  await clock.settle();
+  await afterBash($, 'gh issue close 6');
+  await afterBash($, 'gh issue close 7');
+  release();
+  await clock.settle();
+  expect(seen.pickups).toHaveLength(2);
+  expect(await drawnBand($, 'terminal', bandProps(200))).toEqual([UNDER]);
+});
 
 // The run is outside any hook, so a throw it left unhandled would fail the
 // file here; the next request must still run.

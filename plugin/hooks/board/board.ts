@@ -29,6 +29,8 @@ import {
   clockText,
   fromBrief,
   isBoardWrite,
+  queuedWith,
+  type RunKind,
   type RunOutcome,
 } from './logic';
 
@@ -123,8 +125,8 @@ function bandOver(
 interface BoardState {
   view: BoardView;
   isRunning: boolean;
-  /** A refresh asked for while one ran: it runs once more when that one ends. */
-  isDirty: boolean;
+  /** A run requested while one ran: it runs once when that one ends. */
+  queued: RunKind | undefined;
   /** Set by the interactive `session.start` hook; undefined until it runs. */
   isLive: boolean | undefined;
   /** What `classic.SessionStart` found; undefined until it resolves. */
@@ -137,7 +139,11 @@ function logFailure($: EngineInterface, what: string, error: unknown): void {
   });
 }
 
-async function runPickup($: EngineInterface, board: BoardState): Promise<void> {
+async function runPickup(
+  $: EngineInterface,
+  board: BoardState,
+  kind: RunKind,
+): Promise<void> {
   const argv = [`${$.plugin.root}/bin/sidekick`, 'pm', 'pickup', '--brief'];
   const outcome = outcomeOf(
     await settle($.process.run(argv, { timeoutMs: PICKUP_TIMEOUT_MS })),
@@ -145,30 +151,40 @@ async function runPickup($: EngineInterface, board: BoardState): Promise<void> {
   if (!outcome.ok) {
     $.ui.log(`sidekick board: ${outcome.reason}`, { to: 'debug' });
   }
-  board.view = afterRun(board.view, outcome, clockText(await $.clock.now()));
+  const at = clockText(await $.clock.now());
+  board.view = afterRun(board.view, outcome, at, kind);
   $.ui.invalidate('ui.render');
 }
 
+function takeQueued(board: BoardState): RunKind | undefined {
+  const { queued } = board;
+  board.queued = undefined;
+  return queued;
+}
+
 // A run happens outside any hook, so the engine skips nothing for it: each
-// throw is caught here, and a request that came during a run reruns it once.
+// throw is caught here. Requests during a run queue one more, which a `/board`
+// among them makes asked.
 async function refreshBoard(
   $: EngineInterface,
   board: BoardState,
+  first: RunKind,
 ): Promise<void> {
   if (board.isRunning) {
-    board.isDirty = true;
+    board.queued = queuedWith(board.queued, first);
     return;
   }
   board.isRunning = true;
   try {
-    do {
-      board.isDirty = false;
+    let kind: RunKind | undefined = first;
+    while (kind !== undefined) {
       try {
-        await runPickup($, board);
+        await runPickup($, board, kind);
       } catch (error) {
         logFailure($, 'a refresh', error);
       }
-    } while (board.isDirty);
+      kind = takeQueued(board);
+    }
   } finally {
     board.isRunning = false;
   }
@@ -178,7 +194,7 @@ async function refreshBoard(
 // their order does not matter.
 function maybeFallback($: EngineInterface, board: BoardState): void {
   if (board.capture === 'missing' && board.isLive === true) {
-    void refreshBoard($, board);
+    void refreshBoard($, board, 'unasked');
   }
 }
 
@@ -234,7 +250,7 @@ export function registerBoard(on: On): void {
   const board: BoardState = {
     view: { state: 'empty' },
     isRunning: false,
-    isDirty: false,
+    queued: undefined,
     isLive: undefined,
     capture: undefined,
   };
@@ -262,7 +278,7 @@ export function registerBoard(on: On): void {
   });
 
   on('command.run', { command: COMMAND.name }, ($) => {
-    if (board.isLive === true) void refreshBoard($, board);
+    if (board.isLive === true) void refreshBoard($, board, 'asked');
     return {};
   });
 
@@ -271,7 +287,9 @@ export function registerBoard(on: On): void {
     try {
       const command = commandOf(e.tool_input);
       const isWrite = command !== undefined && isBoardWrite(command);
-      if (board.isLive === true && isWrite) void refreshBoard($, board);
+      if (board.isLive === true && isWrite) {
+        void refreshBoard($, board, 'unasked');
+      }
     } catch (error) {
       logFailure($, 'classic.PostToolUse', error);
     }
