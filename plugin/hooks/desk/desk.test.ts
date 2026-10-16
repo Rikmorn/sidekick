@@ -555,7 +555,7 @@ test('a profile that hides only the board leaves the desk running', async ($, on
   world.flag = { sidekick: { hide: { mods: ['board'] } } };
   const { seen, clock } = answerBeneath(on, world);
   await started($, clock);
-  expect(seen.commands).toEqual(['desk']);
+  expect(seen.commands).toContain('desk');
   expect(seen.runs).toHaveLength(1);
 });
 

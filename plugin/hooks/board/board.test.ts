@@ -645,7 +645,10 @@ test('with the desk drawing too, the board’s lines come first, and both intera
   const { seen, clock } = answerBeneath(on, world);
   await started($, clock);
   await captured($, clock);
-  expect(seen.commands).toEqual(['board', 'desk']);
+  expect(seen.commands.filter((name) => name !== 'profile')).toEqual([
+    'board',
+    'desk',
+  ]);
   expect(seen.deskRuns).toBe(1);
   for (const surface of SURFACES) {
     expect(await drawnBand($, surface, bandProps(200))).toEqual([
