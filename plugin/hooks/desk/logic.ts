@@ -1,5 +1,6 @@
 // The desk's pure logic: no engine calls, so the tests reach it directly.
 
+import { cut, width } from '../lines';
 import type { DeskChild, DeskSnapshot } from './contract';
 
 export type Tone =
@@ -39,14 +40,6 @@ const CHILD_STATE_TONES: Record<string, Tone> = {
   working: 'working',
   done: 'done',
 };
-
-function width(text: string): number {
-  return [...text].length;
-}
-
-function cut(text: string, columns: number): string {
-  return [...text].slice(0, columns).join('');
-}
 
 function moreSuffix(left: number): string {
   return ` +${left} more`;
