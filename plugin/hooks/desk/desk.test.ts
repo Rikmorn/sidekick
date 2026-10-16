@@ -182,8 +182,9 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
     if (e.to === 'debug') seen.debug.push(e.text);
     return { value: undefined };
   });
-  // The gauge shares the module, so its reads are answered too: no profile,
-  // no breakdown.
+  // The other mods share the module, so their reads are answered too: the
+  // world's flag settings, which the desk's part check reads as well, and a
+  // usage with no breakdown.
   on('settings.read', () =>
     world.refused.has('settings.read')
       ? { deny: REFUSAL }

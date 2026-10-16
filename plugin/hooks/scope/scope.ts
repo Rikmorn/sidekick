@@ -121,8 +121,8 @@ export function registerScope(on: On): void {
     return next(e);
   });
 
-  // The matcher is the desk's and the board's: the gauge's hook has one too,
-  // and the engine refuses a second `session.start` hook without a matcher. A
+  // The matcher is the desk's and the board's. The gauge hooks `session.start`
+  // without one, and the engine refuses a second unmatched hook on it. A
   // background session reads `isInteractive` true, so only `CLAUDE_JOB_DIR`
   // tells it apart.
   on('session.start', { isInteractive: true }, async ($, e, next) => {

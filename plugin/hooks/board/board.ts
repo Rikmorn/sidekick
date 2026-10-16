@@ -1,13 +1,13 @@
 // The board's adapter: draws the board's pickup as a band above the prompt. It
-// observes and draws, ADR-0012's first rung, so no hook returns context,
-// approves, or denies, and none has a `.catch`. The text is the start hook's
-// brief, read from `classic.SessionStart`'s result, or the board's own pickup
-// when that holds none; `/board` and a Bash board write rerun the pickup. The
-// desk shares `session.start` and the `AbovePrompt` render under the same
-// matchers, and the gauge shares `session.start` unmatched. A hook that fails
-// in one mod skips the module's whole hook for that event, so each hook keeps
-// its own failures and calls `next(e)` once. `/board` is the board's alone and
-// answers its own command.
+// observes and draws, ADR-0012's first rung, so no hook adds context, approves,
+// or denies, and none has a `.catch`. The text is the start hook's brief, read
+// from `classic.SessionStart`'s result, or the board's own pickup when that
+// holds none; `/board` and a Bash board write rerun the pickup. The desk and
+// the scope mod share `session.start` under the same matcher, and the gauge
+// shares it unmatched. The desk also shares the `AbovePrompt` render under the
+// same matcher. A hook that fails in one mod skips the module's whole hook for
+// that event, so each hook keeps its own failures and calls `next(e)` once.
+// `/board` is the board's alone and answers its own command.
 
 import type {
   ClassicEventOf,
@@ -68,7 +68,8 @@ async function settle<T>(call: Promise<T>): Promise<Settled<T>> {
 }
 
 // A run rejects when it cannot start, a plugin refuses it, or it outlasts its
-// timeout. The declarations give no way to tell which, so the reason names both.
+// timeout. The declarations give no way to tell which, so the reason covers all
+// three: a refused run did not start either.
 function outcomeOf(ran: Settled<ProcessRunResult>): RunOutcome {
   if ('reason' in ran) {
     const seconds = PICKUP_TIMEOUT_MS / MS_PER_SECOND;
@@ -87,7 +88,7 @@ function outcomeOf(ran: Settled<ProcessRunResult>): RunOutcome {
   };
 }
 
-/** The `tool_input.command` of a Bash call, when it holds a string. */
+// The `tool_input.command` of a Bash call, when it holds a string.
 function commandOf(input: unknown): string | undefined {
   if (typeof input !== 'object' || input === null || !('command' in input)) {
     return undefined;

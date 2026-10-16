@@ -1,11 +1,12 @@
 // The desk's adapter: runs `sidekick desk --json` on a clock in interactive
 // sessions, keeps the last snapshot, and draws the band and the pane from it.
 // No hook returns context, approves, or denies, and none has a `.catch`. The
-// gauge shares the module, and a hook that fails in one mod skips the module's
-// whole hook for that event. So `session.start`, which the gauge also hooks,
-// keeps its own failures, which the band names, and calls `next(e)` once
-// whatever happened. The render hooks fall back to what lies beneath. The
-// gauge does not hook `/desk`, so a failure there costs only the toggle.
+// board, the gauge, and the scope mod share the module, and a hook that fails
+// in one mod skips the module's whole hook for that event. So `session.start`,
+// which all three also hook, keeps its own failures, which the band names, and
+// calls `next(e)` once whatever happened. The render hooks fall back to what
+// lies beneath; the board draws the `AbovePrompt` band too. No other mod hooks
+// `/desk`, so a failure there costs only the toggle.
 
 import type {
   EngineInterface,
