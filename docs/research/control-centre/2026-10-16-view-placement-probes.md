@@ -1,3 +1,5 @@
+Amended 2026-10-16: [2026-10-16-terminal-ui-practice.md](./2026-10-16-terminal-ui-practice.md) finds that the "main screen" replay was most likely fullscreen output, since a background host docks panes. Rows under the prompt are measured in fullscreen only.
+
 > Research for the `control-centre` design (R9, #233 and #239, with #232 inheriting its placement). Claude ran it on 2026-10-16 in a session with the operator, on Claude Code 2.1.301. It records where a mod's rows draw in each layout the operator uses. It is a record and takes only the edits that `sk-pm-conventions.md` §Placement test (tense) lists.
 
 # Probes: where a mod's views draw (2026-10-16)

@@ -17,6 +17,7 @@ What can Claude Code's extension and session surface do for running many session
 - [2026-10-15-desk-probes.md](./2026-10-15-desk-probes.md): what #210 rests on. It covers the session listing state by state, its polling cost, and the `Notification` hook's reach. It also covers attach, `$.store` across sessions, where a band and a pane draw, and deleting unpushed work. It ends with a survey of mods that show other sessions.
 - [2026-10-16-board-band-probes.md](./2026-10-16-board-band-probes.md): what #211's band reads at session start. It covers a settings hook's SessionStart text seen from a mod, JSON against plain stdout, the order of the two start events, identical matchers, and `classic.PostToolUse` on Bash.
 - [2026-10-16-view-placement-probes.md](./2026-10-16-view-placement-probes.md): where #233's and #239's views can draw. It covers rows a mod draws under the prompt, and what a docked pane narrows. It also covers a plugin's status line and a footer label, on the main screen and in fullscreen.
+- [2026-10-16-terminal-ui-practice.md](./2026-10-16-terminal-ui-practice.md): documented practice for glance views in a terminal, and how other tools show many agent sessions and a project's health. It inventories Claude Code's own elements near the prompt. It covers colour, glyph widths, narrow widths, time, notifications, links, and how a mod's views meet Claude Code's.
 
 ## Served
 
