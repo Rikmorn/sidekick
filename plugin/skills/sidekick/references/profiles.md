@@ -110,6 +110,10 @@ Pick a profile name that names no command, since each name you give becomes an a
 - With `alias skp='skp skp'`, every `skp <name>` call runs profile `skp` and passes `<name>` on to `claude`. Sourcing the zsh startup file again then fails with `parse error near '()'`.
 - With an alias named after a reserved word, such as `alias do=…`, later `for … do … done` loops break. zsh reports `parse error near 'done'`, and bash 3.2 reports `syntax error near unexpected token`.
 
+## Seeing a session's profile
+
+`/profile` toggles a pane in an interactive session, though not in a background one. It shows the profile's name, or that the session has none, and the agents and mod parts the profile hides. Below those it shows the context breakdown's used rows, and the largest agents, skills, and memory files, up to five of each. The pane reads the usage once each time it opens. Its output goes to the screen and never into the model's context.
+
 ## Switching a session's profile
 
 A session cannot relaunch itself. Claude Code's mod API has no call that ends, restarts, or relaunches a session, or changes its launch flags. That was read in the mod API's types for Claude Code 2.1.299 (the 2026-10-14 report, "A session cannot relaunch itself"). So a switch ends the session, then resumes it under the new profile.
