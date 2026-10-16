@@ -60,6 +60,19 @@ describe('plugin/hooks/session-start', () => {
     expect(bodyLines.filter((l) => contextLines.includes(l))).toEqual([]);
   });
 
+  // Five bytes a period, over many 64 KiB reads, so some chunk ends
+  // mid-character. A split character decodes as U+FFFD.
+  test('keeps a multibyte character whole across stdin chunks', () => {
+    const brief = `Milestone 9 — R9 · ${'—·'.repeat(60_000)}`;
+    const r = runHook(`process.stdout.write(${JSON.stringify(brief)});`);
+    expect(r.status).toBe(0);
+    const context: string = JSON.parse(r.stdout).hookSpecificOutput
+      .additionalContext;
+    const replaced = context.split(String.fromCodePoint(0xfffd)).length - 1;
+    expect(replaced).toBe(0);
+    expect(context === `${BRIEF_HEADER}\n\n${brief}`).toBe(true);
+  });
+
   test('prints nothing when the CLI prints nothing', () => {
     const r = runHook('');
     expect(r.status).toBe(0);
