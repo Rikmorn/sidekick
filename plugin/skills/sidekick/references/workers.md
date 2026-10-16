@@ -39,6 +39,8 @@ The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI par
 | `report` | yes | A path relative to the repo top, with no `..` segment |
 | `orchestrator` | yes | The orchestrating session's name, as `ListAgents` prints it |
 
+A worktree starts with none of the main checkout's git-ignored files. List the ones the gates need in a `.worktreeinclude` at the repo top. Claude Code copies them into each worktree it makes (the dispatch probes, "`.worktreeinclude` held"). `setup` is then left for what a command rebuilds, such as dependencies.
+
 ## `dispatch`
 
 ### What it checks

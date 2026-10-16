@@ -1,0 +1,3 @@
+# Git-ignored files the gates need, which Claude Code copies into each worktree it makes
+.cache/claude-code-types/
+plugin/.claude-plugin/types/
