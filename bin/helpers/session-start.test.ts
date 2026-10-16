@@ -4,7 +4,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BRIEF_HEADER } from '../../plugin/hooks/board/contract.js';
+import {
+  BRIEF_HEADER,
+  PICKUP_TIMEOUT_MS,
+} from '../../plugin/hooks/board/contract.js';
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -12,6 +15,7 @@ const REPO_ROOT = path.resolve(
   '..',
 );
 const HOOK = path.join(REPO_ROOT, 'plugin', 'hooks', 'session-start');
+const HOOKS_JSON = path.join(REPO_ROOT, 'plugin', 'hooks', 'hooks.json');
 const ORIENT = path.join(
   REPO_ROOT,
   'plugin',
@@ -19,6 +23,27 @@ const ORIENT = path.join(
   'sk-orient',
   'SKILL.md',
 );
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+// The timeout, in seconds, of the SessionStart entry that runs this hook.
+function sessionStartTimeout(config: unknown): number | undefined {
+  if (!isRecord(config) || !isRecord(config.hooks)) return undefined;
+  const groups = config.hooks.SessionStart;
+  if (!Array.isArray(groups)) return undefined;
+  const hook = groups
+    .flatMap((g) => (isRecord(g) && Array.isArray(g.hooks) ? g.hooks : []))
+    .find(
+      (h) =>
+        isRecord(h) &&
+        typeof h.command === 'string' &&
+        h.command.includes('hooks/session-start'),
+    );
+  return isRecord(hook) && typeof hook.timeout === 'number'
+    ? hook.timeout
+    : undefined;
+}
+
 const BRIEF = 'Pickup: milestone 9\nIn progress: #211';
 
 // Copies the hook beside a fake CLI, a node script that runs for any call.
@@ -83,5 +108,10 @@ describe('plugin/hooks/session-start', () => {
     const r = runHook('process.exit(1);');
     expect(r.status).toBe(0);
     expect(r.stdout).toBe('');
+  });
+
+  test("the board's pickup timeout is the hook's own, from hooks.json", () => {
+    const config: unknown = JSON.parse(fs.readFileSync(HOOKS_JSON, 'utf8'));
+    expect(sessionStartTimeout(config)).toBe(PICKUP_TIMEOUT_MS / 1_000);
   });
 });

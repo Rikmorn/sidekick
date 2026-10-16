@@ -105,7 +105,7 @@ function column(children: RenderElement[]): RenderElement {
   return { type: 'Box', props: { flexDirection: 'column' }, children };
 }
 
-/** Hooks the scope mod: a profile's hidden agents stay out of the listing, and `/profile` shows what it hides. */
+/** Hooks the scope mod: a profile's hidden agents stay out of the listing and are refused at dispatch, and `/profile` shows what it hides and what loaded. */
 export function registerScope(on: On): void {
   // One read per open: the open drops it, and the first render after reads it.
   // A promise, so two renders in flight share the one read.
