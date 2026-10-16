@@ -5,10 +5,10 @@
 // the module's whole hook for that event. So `session.start`, which all three
 // also hook, and `PostToolBatch` keep their own failures and call `next(e)`
 // once whatever happened. No other mod hooks a `SessionMode` render, so a
-// failure there costs only the footer label. A failed read at session start leaves the limit
-// unset, which the context monitor's canary reports; after a tool batch it leaves
-// the last value. Each caught failure goes to the debug log, where the engine
-// names a hook it skips.
+// failure there costs only the footer label. A failed read at session start
+// leaves the limit unset, which the context monitor's canary reports; after a
+// tool batch it leaves the last value. Each caught failure goes to the debug
+// log, where the engine names a hook it skips.
 
 import type { EngineInterface, On } from 'claude-code';
 import { limitValue, modesWith, profileOf, UNPROFILED } from './logic';
