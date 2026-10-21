@@ -20,13 +20,16 @@ export type Segment =
 
 export type PaneLine =
   | { tone: 'plain' | 'subtle' | 'failure'; text: string }
-  | { tone: 'link'; text: string; href: string };
+  | { tone: 'link'; text: string; href: string }
+  | { tone: 'gap' };
 
 /** What the adapter joins the row's segments with; the row's widths count it. */
 export const SEPARATOR = ' · ';
 
 // A cut milestone shorter than this says nothing, so it drops instead.
 const MIN_MILESTONE_KEPT = 6;
+
+const ELLIPSIS = '…';
 
 const GLYPHS: Record<GlanceLevel, string> = {
   good: '●',
@@ -95,8 +98,23 @@ function timeText(view: Extract<BoardView, { glance: BoardGlance }>): string {
     : view.takenAt;
 }
 
-function joinedWidth(segments: readonly Segment[]): number {
-  return width(segments.map((segment) => segment.text).join(SEPARATOR));
+function shortestMilestone(text: string): string {
+  return width(text) <= MIN_MILESTONE_KEPT + width(ELLIPSIS)
+    ? text
+    : `${cut(text, MIN_MILESTONE_KEPT)}${ELLIPSIS}`;
+}
+
+/** The fewest cells a row needs: its milestone, which the layout may cut, counted at its shortest. */
+export function leastWidth(segments: readonly Segment[]): number {
+  return width(
+    segments
+      .map((segment) =>
+        segment.kind === 'milestone'
+          ? shortestMilestone(segment.text)
+          : segment.text,
+      )
+      .join(SEPARATOR),
+  );
 }
 
 // Cuts the row itself to `columns`, dropping what has no room left.
@@ -112,9 +130,10 @@ function cutRow(segments: readonly Segment[], columns: number): Segment[] {
 }
 
 /**
- * The row's segments for a view, shed to fit `columns`: the milestone first
- * (cut with an ellipsis, then dropped), then the board, the detail, and the
- * owner, and the repo. The state and the time stay; if they overflow, the row is cut.
+ * The row's segments for a view, shed to fit `columns`. The milestone stays
+ * whole while its shortest form fits, since the adapter's layout cuts it; then
+ * it drops, and the board, the detail, the owner, and the repo follow. The state
+ * and the time stay; if they overflow, the row is cut.
  */
 export function rowSegments(view: BoardView, columns: number): Segment[] {
   switch (view.state) {
@@ -175,20 +194,12 @@ function shed(glance: BoardGlance, time: string, columns: number): Segment[] {
   const { milestone } = glance;
   const keep: Keep = { repo: 'full', board: true, detail: true, milestone };
   const full = buildRow(glance, time, keep);
-  if (joinedWidth(full) <= columns) return full;
+  if (leastWidth(full) <= columns) return full;
 
   if (milestone !== null) {
-    const kept = width(milestone) - (joinedWidth(full) - columns) - 1;
-    if (kept >= MIN_MILESTONE_KEPT) {
-      const trimmed = buildRow(glance, time, {
-        ...keep,
-        milestone: `${cut(milestone, kept)}…`,
-      });
-      if (joinedWidth(trimmed) <= columns) return trimmed;
-    }
     keep.milestone = null;
     const bare = buildRow(glance, time, keep);
-    if (joinedWidth(bare) <= columns) return bare;
+    if (leastWidth(bare) <= columns) return bare;
   }
   const steps: ((keep: Keep) => void)[] = [
     (k) => {
@@ -207,12 +218,12 @@ function shed(glance: BoardGlance, time: string, columns: number): Segment[] {
   for (const step of steps) {
     step(keep);
     const row = buildRow(glance, time, keep);
-    if (joinedWidth(row) <= columns) return row;
+    if (leastWidth(row) <= columns) return row;
   }
   return cutRow(buildRow(glance, time, keep), columns);
 }
 
-/** The pane's lines: the brief whole, a blank line, the board's link, and the stamp. */
+/** The pane's lines: the brief whole, a gap, the board's link, and the stamp. */
 export function paneLines(view: BoardView): PaneLine[] {
   switch (view.state) {
     case 'empty':
@@ -225,7 +236,7 @@ export function paneLines(view: BoardView): PaneLine[] {
         ...view.glance.brief
           .split(/\r?\n/)
           .map((text): PaneLine => ({ tone: 'plain', text })),
-        { tone: 'plain', text: '' },
+        { tone: 'gap' },
         {
           tone: 'link',
           text: view.glance.board.url,

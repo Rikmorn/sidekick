@@ -55,7 +55,7 @@ const LEVEL_COLORS: Record<GlanceLevel, ThemeKey> = {
   unknown: 'inactive',
 };
 
-const PANE_COLORS: Record<PaneLine['tone'], ThemeKey> = {
+const PANE_COLORS: Record<Exclude<PaneLine['tone'], 'gap'>, ThemeKey> = {
   plain: 'text',
   subtle: 'subtle',
   failure: 'error',
@@ -118,24 +118,44 @@ function link(text: string, href: string): RenderElement {
   return { type: 'Link', props: { href }, children: [text] };
 }
 
-function coloured(text: string, color: ThemeKey): RenderElement {
-  return { type: 'Text', props: { color }, children: [text] };
+function fixedPiece(child: RenderNode, color: ThemeKey): RenderElement {
+  return {
+    type: 'Box',
+    props: { flexShrink: 0 },
+    children: [{ type: 'Text', props: { color }, children: [child] }],
+  };
 }
 
-// Inside the row's Text, so a bare string draws in the row's colour.
-function segmentNode(segment: Segment): RenderNode {
+// The viewport can be narrower than the row: with a pane docked it gave the
+// transcript column's width, so the layout cuts the milestone at the real one.
+function milestonePiece(text: string): RenderElement {
+  return {
+    type: 'Box',
+    props: { flexShrink: 1, minWidth: 0 },
+    children: [
+      {
+        type: 'Text',
+        props: { color: ROW_COLOR, wrap: 'truncate-end' },
+        children: [text],
+      },
+    ],
+  };
+}
+
+function pieceOf(segment: Segment): RenderElement {
   switch (segment.kind) {
     case 'board':
-      return link(segment.text, segment.href);
+      return fixedPiece(link(segment.text, segment.href), ROW_COLOR);
     case 'state':
-      return coloured(segment.text, LEVEL_COLORS[segment.level]);
+      return fixedPiece(segment.text, LEVEL_COLORS[segment.level]);
     case 'failure':
-      return coloured(segment.text, 'error');
-    case 'repo':
+      return fixedPiece(segment.text, 'error');
     case 'milestone':
+      return milestonePiece(segment.text);
+    case 'repo':
     case 'time':
     case 'detail':
-      return segment.text;
+      return fixedPiece(segment.text, ROW_COLOR);
     default: {
       const exhaustive: never = segment;
       throw new Error(`Unhandled segment: ${JSON.stringify(exhaustive)}`);
@@ -144,10 +164,12 @@ function segmentNode(segment: Segment): RenderNode {
 }
 
 function rowOf(segments: readonly Segment[]): RenderElement {
-  const children = segments.flatMap((segment, index): RenderNode[] =>
-    index === 0 ? [segmentNode(segment)] : [SEPARATOR, segmentNode(segment)],
+  const children = segments.flatMap((segment, index): RenderElement[] =>
+    index === 0
+      ? [pieceOf(segment)]
+      : [fixedPiece(SEPARATOR, ROW_COLOR), pieceOf(segment)],
   );
-  return { type: 'Text', props: { color: ROW_COLOR }, children };
+  return { type: 'Box', props: { flexDirection: 'row' }, children };
 }
 
 // `cut` keeps most of a segment for a negative width, so a width below 0, as
@@ -166,7 +188,9 @@ function rowUnder(
   };
 }
 
+// An empty Text takes no row, so the gap is a Box one row high.
 function paneLineOf(line: PaneLine): RenderElement {
+  if (line.tone === 'gap') return { type: 'Box', props: { height: 1 } };
   const children =
     line.tone === 'link' ? [link(line.text, line.href)] : [line.text];
   return {

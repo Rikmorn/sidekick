@@ -2,7 +2,14 @@ import { expect, test } from 'claude-code/testing';
 import { width } from '../lines';
 import type { BoardGlance, GlanceLevel } from './contract';
 import type { BoardView } from './view';
-import { afterRun, failureOf, paneLines, readRun, rowSegments } from './view';
+import {
+  afterRun,
+  failureOf,
+  leastWidth,
+  paneLines,
+  readRun,
+  rowSegments,
+} from './view';
 
 const BRIEF = ['Pickup: milestone 9', 'In progress: #211', 'Drift: 3 unpushed'];
 
@@ -167,12 +174,21 @@ test('rowSegments picks the glyph by level and for complete', () => {
   }
 });
 
-test('rowSegments sheds the milestone first, cut with an ellipsis and then dropped', () => {
+// The adapter lets the layout cut the milestone at the row's real width, so
+// the view keeps it whole while its shortest form fits.
+test('rowSegments keeps the milestone whole while its least width fits, then drops it', () => {
   const full = joined(ok, 160);
-  const cutRow = joined(ok, width(full) - 4);
-  expect(cutRow).toContain('R9 — Control c…');
-  expect(cutRow).toContain('board #2');
-  const dropped = rowSegments(ok, width(full) - 17);
+  const least =
+    '▣ Rikmorn/sidekick · board #2 · ▲ drift · 3 unpushed · R9 — C…';
+  const leastRow = `${least} · 15:02`;
+  for (const columns of [width(full) - 4, width(leastRow)]) {
+    expect(rowSegments(ok, columns)).toContainEqual({
+      kind: 'milestone',
+      text: 'R9 — Control centre',
+    });
+    expect(leastWidth(rowSegments(ok, columns))).toBe(width(leastRow));
+  }
+  const dropped = rowSegments(ok, width(leastRow) - 1);
   expect(dropped.map((segment) => segment.kind)).toEqual([
     'repo',
     'board',
@@ -208,10 +224,12 @@ test('rowSegments then sheds the board, the detail, and the owner in order', () 
   );
 });
 
-test('rowSegments keeps the joined row within the columns at every width from 20 to 160', () => {
+test('rowSegments keeps the row’s least width within the columns at every width from 20 to 160', () => {
   for (const view of [ok, stale]) {
     for (let columns = 20; columns <= 160; columns += 1) {
-      expect(width(joined(view, columns))).toBeLessThanOrEqual(columns);
+      expect(leastWidth(rowSegments(view, columns))).toBeLessThanOrEqual(
+        columns,
+      );
     }
   }
 });
@@ -231,7 +249,9 @@ test('rowSegments keeps the exact state and time at every width where they fit t
         text: '▲ drift',
         level: 'warning',
       });
-      expect(width(joined(view, columns))).toBeLessThanOrEqual(columns);
+      expect(leastWidth(rowSegments(view, columns))).toBeLessThanOrEqual(
+        columns,
+      );
     }
   }
 });
@@ -268,10 +288,10 @@ test('rowSegments gives one failure segment for a failed view and none for empty
   expect(rowSegments({ state: 'empty' }, 160)).toEqual([]);
 });
 
-test('paneLines gives the brief whole, a blank line, the link, and the stamp', () => {
+test('paneLines gives the brief whole, a gap, the link, and the stamp', () => {
   expect(paneLines(ok)).toEqual([
     ...BRIEF.map((text) => ({ tone: 'plain', text })),
-    { tone: 'plain', text: '' },
+    { tone: 'gap' },
     {
       tone: 'link',
       text: 'https://github.com/users/Rikmorn/projects/2',

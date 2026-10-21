@@ -16,7 +16,6 @@ import {
   test,
 } from 'claude-code/testing';
 import type { DeskSnapshot } from '../desk/contract';
-import { width } from '../lines';
 import { HINT_INSET } from './board';
 import {
   type BoardGlance,
@@ -25,7 +24,7 @@ import {
   PICKUP_TIMEOUT_MS,
 } from './contract';
 import { clockText } from './logic';
-import { type BoardView, rowSegments, SEPARATOR } from './view';
+import { type BoardView, leastWidth, rowSegments, SEPARATOR } from './view';
 
 // What the next pickup answers: an exit with its streams, a refusal, which
 // rejects the plugin's `$.process.run` as a timeout or a failed start does, or
@@ -397,7 +396,16 @@ function rowText(runs: readonly Run[] | undefined): string {
 
 type PaneRow = { text: string; color: unknown; wrap: unknown; href?: string };
 
+// A one-row Box with nothing in it is the pane's gap.
 function paneRowOf(node: RenderNode): PaneRow {
+  if (
+    typeof node !== 'string' &&
+    node.type === 'Box' &&
+    node.props?.height === 1 &&
+    childrenOf(node).length === 0
+  ) {
+    return { text: '', color: 'gap', wrap: undefined };
+  }
   if (typeof node === 'string' || node.type !== 'Text') {
     return { text: JSON.stringify(node), color: 'not a Text', wrap: undefined };
   }
@@ -519,16 +527,64 @@ test('the row takes its width from the viewport, less the hint area’s inset', 
   }
 });
 
-// GLANCE's whole row is 82 columns, so these widths each shed or cut the
+// A drawn piece's `flexShrink`, when it has one.
+function shrinkOf(node: RenderNode): unknown {
+  if (typeof node === 'string' || !('props' in node)) return undefined;
+  const props: unknown = node.props;
+  return typeof props === 'object' && props !== null && 'flexShrink' in props
+    ? props.flexShrink
+    : undefined;
+}
+
+// GLANCE's whole row is 82 columns, so at these widths the layout cuts the
 // milestone, and a row sized to the surface's full width would overflow.
-test('from 60 to 82 columns the row fits inside the inset, its time whole', async ($, on) => {
+test('from 60 to 82 columns the row’s least width fits inside the inset, its time whole', async ($, on) => {
   const { clock } = answerBeneath(on, worldWith());
   await bothStarts($, clock);
   for (const columns of [60, 76, 80, 82]) {
     const [, row] = await drawnHint($, 'terminal', { ...WIDE, columns });
-    const text = rowText(row);
-    expect(width(text)).toBeLessThanOrEqual(columns - HINT_INSET);
-    expect(text).toEndWith(`${SEPARATOR}${clockText(NOW)}`);
+    const segments = rowSegments(GLANCE_VIEW, columns - HINT_INSET);
+    expect(leastWidth(segments)).toBeLessThanOrEqual(columns - HINT_INSET);
+    expect(rowText(row)).toEndWith(`${SEPARATOR}${clockText(NOW)}`);
+  }
+});
+
+// With a pane docked, the viewport gave the transcript column's width while
+// the row spans the terminal (the operator's screenshot, 2026-10-21), so the
+// layout, not the view, cuts the milestone.
+test('the milestone alone shrinks, cut at its end by the layout', async ($, on) => {
+  const { clock } = answerBeneath(on, worldWith());
+  await bothStarts($, clock);
+  const ui = await $.ui.mount({
+    plugin: PLUGIN,
+    surface: 'terminal',
+    component: 'PromptHint',
+    props: HINT_PROPS,
+    viewport: WIDE,
+  });
+  const tree = await ui.drawn();
+  await ui.unmount();
+  const [, row] = childrenOf(tree);
+  expect(row).toMatchObject({ type: 'Box', props: { flexDirection: 'row' } });
+  const pieces =
+    typeof row === 'string' || row === undefined ? [] : childrenOf(row);
+  const shrinking = pieces.filter((piece) => shrinkOf(piece) === 1);
+  expect(shrinking).toEqual([
+    {
+      type: 'Box',
+      props: { flexShrink: 1, minWidth: 0 },
+      children: [
+        {
+          type: 'Text',
+          props: { color: 'subtle', wrap: 'truncate-end' },
+          children: ['R9 — Control centre'],
+        },
+      ],
+    },
+  ]);
+  for (const piece of pieces) {
+    if (piece === shrinking[0]) continue;
+    expect(piece).toMatchObject({ type: 'Box', props: { flexShrink: 0 } });
   }
 });
 
@@ -660,7 +716,7 @@ test('/board opens the pane and runs one asked pickup, and a second /board close
   expect(seen.pickups).toHaveLength(2);
 });
 
-test('the pane draws the brief wrapped, a blank line, the board as a Link, and the stamp', async ($, on) => {
+test('the pane draws the brief wrapped, a one-row gap, the board as a Link, and the stamp', async ($, on) => {
   const { clock } = answerBeneath(on, worldWith());
   await bothStarts($, clock);
   await boardCommand($);
@@ -668,7 +724,7 @@ test('the pane draws the brief wrapped, a blank line, the board as a Link, and t
   for (const surface of SURFACES) {
     expect(await drawnPane($, surface)).toEqual([
       ...BRIEF.map((text) => ({ text, color: 'text', wrap: 'wrap' })),
-      { text: '', color: 'text', wrap: 'wrap' },
+      { text: '', color: 'gap', wrap: undefined },
       { text: BOARD_URL, color: 'text', wrap: 'wrap', href: BOARD_URL },
       { text: `as of ${clockText(NOW)}`, color: 'subtle', wrap: 'wrap' },
     ]);
