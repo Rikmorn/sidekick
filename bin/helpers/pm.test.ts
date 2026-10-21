@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { parseGlance } from '../../plugin/hooks/board/contract.js';
 import {
   type FixtureMap,
   fixture,
@@ -1240,5 +1241,66 @@ describe('pickup --brief', () => {
     ).toBe(0);
     expect(c.out).toEqual([]);
     expect(c.err).toEqual([]);
+  });
+});
+
+describe('pickup --glance', () => {
+  const STATUS_KEY =
+    'gh api graphql -f query=query StatusUpdates -f id=PVT_kwHOABcx2M4BiJeE';
+  const nodes = (n: unknown): string =>
+    JSON.stringify({ data: { node: { statusUpdates: { nodes: n } } } });
+  const envWith = (
+    status: string | { code: number; stdout: string; stderr: string },
+  ) => ({
+    cwd: '/',
+    run: fixtureRunner({ ...sidekickMap(), [STATUS_KEY]: status }),
+    now: new Date('2026-09-19T12:00:00Z'),
+  });
+
+  test('prints one object parseGlance accepts, with the brief and the board url', () => {
+    const env = envWith(nodes([]));
+    const g = capture();
+    expect(runPmCli(['pickup', '--glance'], env, g.o, g.e)).toBe(0);
+    expect(g.out).toHaveLength(1);
+    const parsed = parseGlance(g.out[0] ?? '');
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const b = capture();
+    runPmCli(['pickup', '--brief'], env, b.o, b.e);
+    expect(parsed.glance.brief).toBe(b.out[0]);
+    expect(parsed.glance.board.url).toBe(
+      'https://github.com/users/Rikmorn/projects/2',
+    );
+    expect(parsed.glance.board.number).toBe(2);
+  });
+  test('is silent in an untracked repo', () => {
+    const c = capture();
+    expect(
+      runPmCli(
+        ['pickup', '--glance'],
+        { cwd: '/', run: untracked() },
+        c.o,
+        c.e,
+      ),
+    ).toBe(0);
+    expect(c.out).toEqual([]);
+    expect(c.err).toEqual([]);
+  });
+  test('is exclusive with --brief and --report', () => {
+    for (const other of ['--brief', '--report']) {
+      const c = capture();
+      expect(
+        runPmCli(['pickup', '--glance', other], envWith(nodes([])), c.o, c.e),
+      ).toBe(1);
+      expect(c.err).toEqual([PM_USAGE]);
+      expect(c.out).toEqual([]);
+    }
+  });
+  test('a failing status read still prints, as status unread', () => {
+    const c = capture();
+    const env = envWith({ code: 1, stdout: '', stderr: 'down' });
+    expect(runPmCli(['pickup', '--glance'], env, c.o, c.e)).toBe(0);
+    const parsed = parseGlance(c.out[0] ?? '');
+    expect(parsed.ok && parsed.glance.state.word).toBe('status unread');
   });
 });

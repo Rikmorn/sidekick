@@ -10,6 +10,7 @@ import {
   fetchOpenIssues,
   fetchRepoIssues,
   fetchStatusField,
+  fetchStatusUpdates,
   hasProjectScope,
   ISSUE_LIMIT,
   milestoneCounts,
@@ -631,5 +632,51 @@ describe('what the schemas accept', () => {
     expect(
       parseDiscovery({ viewer: { login: 'me' }, repository: null }).boards,
     ).toEqual([]);
+  });
+});
+
+describe('fetchStatusUpdates', () => {
+  const key = `gh api graphql -f query=query StatusUpdates -f id=${PROJECT_ID}`;
+  const reply = (nodes: unknown): string =>
+    JSON.stringify({
+      data: { node: { statusUpdates: { nodes } } },
+    });
+  const read = (
+    hit: string | { code: number; stdout: string; stderr: string },
+  ) => fetchStatusUpdates(fixtureRunner({ [key]: hit }), '/', PROJECT_ID);
+
+  test('parses the response into updates, newest first', () => {
+    const r = read(
+      reply([
+        { status: 'AT_RISK', startDate: '2026-10-20' },
+        { status: 'ON_TRACK', startDate: '2026-10-13' },
+      ]),
+    );
+    expect(r).toEqual({
+      ok: true,
+      updates: [
+        { status: 'AT_RISK', startDate: '2026-10-20' },
+        { status: 'ON_TRACK', startDate: '2026-10-13' },
+      ],
+    });
+  });
+  test('an empty list reads as no updates', () => {
+    expect(read(reply([]))).toEqual({ ok: true, updates: [] });
+  });
+  test('a failed gh reads as unread', () => {
+    expect(read({ code: 1, stdout: '', stderr: 'boom' })).toEqual({
+      ok: false,
+    });
+  });
+  test('an errors envelope reads as unread', () => {
+    expect(read('{"errors":[{"message":"nope"}]}')).toEqual({ ok: false });
+  });
+  test('a null node reads as unread', () => {
+    expect(read('{"data":{"node":null}}')).toEqual({ ok: false });
+  });
+  test('a status outside the known set reads as unread', () => {
+    expect(
+      read(reply([{ status: 'PAUSED', startDate: '2026-10-20' }])),
+    ).toEqual({ ok: false });
   });
 });

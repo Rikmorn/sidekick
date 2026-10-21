@@ -7,6 +7,10 @@
  */
 
 import * as v from 'valibot';
+import {
+  type BoardGlance,
+  GLANCE_VERSION,
+} from '../../plugin/hooks/board/contract.js';
 import { renderBrief } from './pm-brief.js';
 import {
   ageDays,
@@ -20,6 +24,7 @@ import {
   fetchRepoIssues,
   fetchScopeHeaders,
   fetchStatusField,
+  fetchStatusUpdates,
   hasProjectScope,
   type Issue,
   type IssueCounts,
@@ -35,6 +40,7 @@ import {
   touchedAt,
   versionAtLeast,
 } from './pm-data.js';
+import { glanceState } from './pm-glance.js';
 import { lintAll } from './pm-lint.js';
 import { type Plans, planView } from './pm-plans.js';
 import { renderReport } from './pm-report.js';
@@ -199,7 +205,7 @@ export function discover(run: Runner, cwd: string): BoardInfo {
 }
 
 export const PM_USAGE_LINE =
-  'sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report] [--milestone <title>]';
+  'sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report|--glance] [--milestone <title>]';
 export const PM_USAGE = `usage: ${PM_USAGE_LINE}`;
 
 export interface PmEnv {
@@ -243,13 +249,15 @@ export function runPmCli(
   const run = env.run ?? execRunner;
   const brief = rest.includes('--brief');
   const report = rest.includes('--report');
-  const quiet = rest.includes('--quiet') || brief;
+  const glance = rest.includes('--glance');
+  const quiet = rest.includes('--quiet') || brief || glance;
   const ms = milestoneFlag(rest);
   const msTitle = ms.title;
   if (
     (verb === 'gate' && msTitle === undefined) ||
     ms.invalid ||
-    (brief && report)
+    (brief && report) ||
+    (glance && (brief || report))
   ) {
     err(PM_USAGE);
     return 1;
@@ -326,8 +334,24 @@ export function runPmCli(
         plans,
         drift: drift(run, info.root, t.in_progress, split),
       };
-      if (brief)
-        out(renderBrief({ ...pickup, board: { owner, repo, project } }));
+      const briefInput = { ...pickup, board: { owner, repo, project } };
+      if (glance) {
+        const state = glanceState({
+          milestone: active,
+          openCount: open.length,
+          plans,
+          drift: pickup.drift,
+          status: fetchStatusUpdates(run, info.root, project.id),
+        });
+        const g: BoardGlance = {
+          version: GLANCE_VERSION,
+          board: { owner, repo, number: project.number, url: project.url },
+          milestone: active ? active.title : null,
+          state,
+          brief: renderBrief(briefInput),
+        };
+        out(JSON.stringify(g));
+      } else if (brief) out(renderBrief(briefInput));
       else emit(pickup);
       return 0;
     }

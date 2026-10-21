@@ -6,6 +6,7 @@
 
 import { spawnSync } from 'node:child_process';
 import * as v from 'valibot';
+import type { StatusRead } from './pm-glance.js';
 
 export interface RunResult {
   code: number;
@@ -192,6 +193,8 @@ export const DISCOVERY_QUERY =
   'query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }';
 export const FIELD_QUERY =
   'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url createdAt field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
+export const STATUS_UPDATES_QUERY =
+  'query StatusUpdates($id: ID!) { node(id: $id) { ... on ProjectV2 { statusUpdates(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { status startDate } } } } }';
 export const ISSUES_PAGE = 100;
 export const ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason closedAt updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id isArchived project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
 /** `gh issue list` truncates silently at `--limit`; hitting it is an error. */
@@ -609,4 +612,42 @@ export function fetchOpenIssues(
       'number,title,labels,body,milestone,updatedAt',
     ]),
   );
+}
+
+const StatusUpdatesData = v.object({
+  node: v.object({
+    statusUpdates: v.object({
+      nodes: v.array(
+        v.object({
+          status: v.picklist([
+            'INACTIVE',
+            'ON_TRACK',
+            'AT_RISK',
+            'OFF_TRACK',
+            'COMPLETE',
+          ]),
+          startDate: v.string(),
+        }),
+      ),
+    }),
+  }),
+});
+
+/** A read that fails is `{ ok: false }`, so the pickup stands without the status. */
+export function fetchStatusUpdates(
+  run: Runner,
+  cwd: string,
+  projectId: string,
+): StatusRead {
+  try {
+    const data = gql(run, cwd, STATUS_UPDATES_QUERY, [
+      ['-f', `id=${projectId}`],
+    ]);
+    const parsed = v.safeParse(StatusUpdatesData, data);
+    if (!parsed.success) return { ok: false };
+    return { ok: true, updates: parsed.output.node.statusUpdates.nodes };
+  } catch (e) {
+    if (e instanceof PmError || e instanceof SyntaxError) return { ok: false };
+    throw e;
+  }
 }
