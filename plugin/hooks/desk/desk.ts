@@ -5,8 +5,8 @@
 // in one mod skips the module's whole hook for that event. So `session.start`,
 // which all three also hook, keeps its own failures, which the band names, and
 // calls `next(e)` once whatever happened. The render hooks fall back to what
-// lies beneath; the board draws the `AbovePrompt` band too. No other mod hooks
-// `/desk`, so a failure there costs only the toggle.
+// lies beneath; no other mod hooks `AbovePrompt`. No other mod hooks `/desk`,
+// so a failure there costs only the toggle.
 
 import type {
   EngineInterface,
