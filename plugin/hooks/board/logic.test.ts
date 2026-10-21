@@ -54,6 +54,10 @@ test('isBoardWrite is true for the writes pickup reads', () => {
     'cd /x && gh issue close 3',
     'git fetch; gh issue close 3 | cat',
     'true || gh issue reopen 4',
+    'git commit -m x',
+    'git push',
+    'cd x && git push origin main',
+    `body="$(sidekick pm pickup --report --milestone "R9")" && gh api graphql -f query='mutation($p:ID!){createProjectV2StatusUpdate(input:{projectId:$p}){statusUpdate{id}}}' -f p=PVT_1`,
   ];
   for (const command of writes) {
     expect(isBoardWrite(command)).toBe(true);
@@ -66,9 +70,13 @@ test('isBoardWrite is false for reads and look-alikes', () => {
     'gh issue view 211',
     'gh project item-list 2',
     'gh api repos/o/r/milestones/9',
-    'gh api graphql -f query=mutation{createProjectV2StatusUpdate(input:{})}',
+    'gh api graphql -f query=mutation{deleteProjectV2Item(input:{})}',
+    'git commit-tree HEAD^{tree}',
+    'git pushx',
+    'git log',
+    'echo git commit',
     'sidekick pm pickup --brief',
-    'git commit -m "gh issue close"',
+    'git log --grep "gh issue close"',
     '',
   ];
   for (const command of reads) {

@@ -23,11 +23,13 @@ export interface BandLine {
   text: string;
 }
 
-// Each row is one write that pickup reads, anchored on `gh` at a command part's start.
+// Each row is one write that pickup reads or the line shows (a commit, a push), anchored on `gh` at a command part's start.
 const BOARD_WRITES: readonly RegExp[] = [
   /^gh\s+project\s+item-(?:edit|add)\b/,
   /^gh\s+issue\s+(?:close|reopen|create|edit)\b/,
   /^gh\s+api\b(?=.*(?:-X\s*|--method[\s=]+)PATCH\b)(?=.*\bmilestones\b)/,
+  /^git\s+(?:commit|push)(?=\s|$)/,
+  /^gh\s+api\s+graphql\b(?=.*\bcreateProjectV2StatusUpdate\b)/,
 ];
 
 const COMMAND_SEPARATORS = /&&|\|\||[;|\n]/;
