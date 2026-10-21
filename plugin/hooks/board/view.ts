@@ -22,7 +22,8 @@ export type PaneLine =
   | { tone: 'plain' | 'subtle' | 'failure'; text: string }
   | { tone: 'link'; text: string; href: string };
 
-const SEPARATOR = ' · ';
+/** What the adapter joins the row's segments with; the row's widths count it. */
+export const SEPARATOR = ' · ';
 
 // A cut milestone shorter than this says nothing, so it drops instead.
 const MIN_MILESTONE_KEPT = 6;

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SessionStart hook: print the board's pickup into context as one
 # hookSpecificOutput.additionalContext JSON object, headed by a line that names
-# the sk-orient skill. A mod reads a settings hook's JSON text, not its plain
-# stdout. Silent, with exit 0, whenever there is nothing to say: an untracked
+# the sk-orient skill. No sidekick mod reads it: the board mod runs its own
+# pickup. Silent, with exit 0, whenever there is nothing to say: an untracked
 # repo, no node on PATH, a failing gh. A session never fails or fills with
 # noise because of the board.
 set -uo pipefail
@@ -13,7 +13,7 @@ command -v node >/dev/null 2>&1 || exit 0
 brief="$(node "$ROOT/bin/sidekick" pm pickup --brief 2>/dev/null)" || exit 0
 [ -z "$brief" ] && exit 0
 
-# Copy of BRIEF_HEADER in hooks/board/contract.ts; bin/helpers/session-start.test.ts pins the two.
+# bin/helpers/session-start.test.ts pins this line as a literal.
 header="sidekick: this repo is tracked. The board's pickup follows; load the sk-orient skill to read it and pick up work."
 printf '%s\n\n%s' "$header" "$brief" | node -e '
   let text = "";

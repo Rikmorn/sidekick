@@ -1,48 +1,60 @@
-// The board's adapter: draws the board's pickup as a band above the prompt. It
-// observes and draws, ADR-0012's first rung, so no hook adds context, approves,
-// or denies, and none has a `.catch`. The text is the start hook's brief, read
-// from `classic.SessionStart`'s result, or the board's own pickup when that
-// holds none; `/board` and a Bash board write rerun the pickup. The desk and
-// the scope mod share `session.start` under the same matcher, and the gauge
-// shares it unmatched. The desk also shares the `AbovePrompt` render under the
-// same matcher. A hook that fails in one mod skips the module's whole hook for
-// that event, so each hook keeps its own failures and calls `next(e)` once.
-// `/board` is the board's alone and answers its own command.
+// The board's adapter: runs `sidekick pm pickup --glance`, draws the glance as
+// one state row under the prompt, and draws its brief in the pane `/board`
+// toggles. It observes and draws, ADR-0012's first rung, so no hook adds
+// context, approves, or denies, and none has a `.catch`. A live start or
+// `/clear`, an open of the pane, and a Bash board write each run the pickup.
+// The desk and the scope mod share `session.start` under the same matcher, and
+// the gauge shares it unmatched. No other mod draws `PromptHint`, and the desk
+// and the scope mod draw panes of their own ids. A hook that fails in one mod
+// skips the module's whole hook for that event, so each hook keeps its own
+// failures and calls `next(e)` once. `/board` and the board's pane are the
+// board's alone, so their hooks answer for themselves.
 
 import type {
-  ClassicEventOf,
   EngineInterface,
   On,
   ProcessRunResult,
   RenderElement,
+  RenderNode,
   ThemeKey,
 } from 'claude-code';
 import { isPartHidden } from '../scope/logic';
-import { PICKUP_TIMEOUT_MS } from './contract';
+import { type GlanceLevel, PICKUP_TIMEOUT_MS, parseGlance } from './contract';
 import {
-  afterRun,
-  type BandLine,
-  type BandTone,
-  type BoardView,
-  bandLines,
-  briefFrom,
   clockText,
-  fromBrief,
   isBoardWrite,
   queuedWith,
   type RunKind,
   type RunOutcome,
 } from './logic';
+import {
+  afterRun,
+  type BoardView,
+  type PaneLine,
+  paneLines,
+  rowSegments,
+  SEPARATOR,
+  type Segment,
+} from './view';
 
-type Source = ClassicEventOf['classic.SessionStart']['source'];
-
-const COMMAND = { name: 'board', description: 'Refresh the board band' };
+const COMMAND = { name: 'board', description: 'Show or hide the board pane' };
+const PANE = { id: 'board', title: 'Board' };
 const MS_PER_SECOND = 1_000;
 
-const TONE_COLORS: Record<BandTone, ThemeKey> = {
-  heading: 'claude',
+const ROW_COLOR: ThemeKey = 'subtle';
+
+const LEVEL_COLORS: Record<GlanceLevel, ThemeKey> = {
+  good: 'success',
+  warning: 'warning',
+  bad: 'error',
+  unknown: 'inactive',
+};
+
+const PANE_COLORS: Record<PaneLine['tone'], ThemeKey> = {
   plain: 'text',
+  subtle: 'subtle',
   failure: 'error',
+  link: 'text',
 };
 
 // A call that rejected gives its reason instead of its value.
@@ -88,6 +100,15 @@ function outcomeOf(ran: Settled<ProcessRunResult>): RunOutcome {
   };
 }
 
+// Why a run failed, for the debug log. `afterRun` parses the glance itself, so
+// this reads empty output as `afterRun` does: no glance, and no failure.
+function failureOf(outcome: RunOutcome): string | undefined {
+  if (!outcome.ok) return outcome.reason;
+  if (outcome.stdout.trim() === '') return undefined;
+  const parsed = parseGlance(outcome.stdout);
+  return parsed.ok ? undefined : parsed.reason;
+}
+
 // The `tool_input.command` of a Bash call, when it holds a string.
 function commandOf(input: unknown): string | undefined {
   if (typeof input !== 'object' || input === null || !('command' in input)) {
@@ -97,26 +118,72 @@ function commandOf(input: unknown): string | undefined {
   return typeof command === 'string' ? command : undefined;
 }
 
-function textOf(line: BandLine): RenderElement {
-  return {
-    type: 'Text',
-    props: { color: TONE_COLORS[line.tone] },
-    children: [line.text],
-  };
+function link(text: string, href: string): RenderElement {
+  return { type: 'Link', props: { href }, children: [text] };
 }
 
-// `cut` keeps most of a line for a negative width, so the width stops at 0.
-function bandOver(
+function coloured(text: string, color: ThemeKey): RenderElement {
+  return { type: 'Text', props: { color }, children: [text] };
+}
+
+// Inside the row's Text, so a bare string draws in the row's colour.
+function segmentNode(segment: Segment): RenderNode {
+  switch (segment.kind) {
+    case 'board':
+      return link(segment.text, segment.href);
+    case 'state':
+      return coloured(segment.text, LEVEL_COLORS[segment.level]);
+    case 'failure':
+      return coloured(segment.text, 'error');
+    case 'repo':
+    case 'milestone':
+    case 'time':
+    case 'detail':
+      return segment.text;
+    default: {
+      const exhaustive: never = segment;
+      throw new Error(`Unhandled segment: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+function rowOf(segments: readonly Segment[]): RenderElement {
+  const children = segments.flatMap((segment, index): RenderNode[] =>
+    index === 0 ? [segmentNode(segment)] : [SEPARATOR, segmentNode(segment)],
+  );
+  return { type: 'Text', props: { color: ROW_COLOR }, children };
+}
+
+// `cut` keeps most of a segment for a negative width, so the width stops at 0.
+function rowUnder(
   view: BoardView,
   columns: number,
   below: RenderElement,
 ): RenderElement {
-  const lines = bandLines(view, Math.max(0, columns));
-  if (lines.length === 0) return below;
+  const segments = rowSegments(view, Math.max(0, columns));
+  if (segments.length === 0) return below;
   return {
     type: 'Box',
     props: { flexDirection: 'column' },
-    children: [...lines.map(textOf), below],
+    children: [below, rowOf(segments)],
+  };
+}
+
+function paneLineOf(line: PaneLine): RenderElement {
+  const children =
+    line.tone === 'link' ? [link(line.text, line.href)] : [line.text];
+  return {
+    type: 'Text',
+    props: { color: PANE_COLORS[line.tone], wrap: 'wrap' },
+    children,
+  };
+}
+
+function paneOf(view: BoardView): RenderElement {
+  return {
+    type: 'Box',
+    props: { flexDirection: 'column' },
+    children: paneLines(view).map(paneLineOf),
   };
 }
 
@@ -130,8 +197,8 @@ interface BoardState {
   queued: RunKind | undefined;
   /** Set by the interactive `session.start` hook; undefined until it runs. */
   isLive: boolean | undefined;
-  /** What `classic.SessionStart` found; undefined until it resolves. */
-  capture: 'found' | 'missing' | undefined;
+  /** A classic start other than a compact whose pickup has not begun. */
+  isStartPending: boolean;
 }
 
 function logFailure($: EngineInterface, what: string, error: unknown): void {
@@ -145,12 +212,13 @@ async function runPickup(
   board: BoardState,
   kind: RunKind,
 ): Promise<void> {
-  const argv = [`${$.plugin.root}/bin/sidekick`, 'pm', 'pickup', '--brief'];
+  const argv = [`${$.plugin.root}/bin/sidekick`, 'pm', 'pickup', '--glance'];
   const outcome = outcomeOf(
     await settle($.process.run(argv, { timeoutMs: PICKUP_TIMEOUT_MS })),
   );
-  if (!outcome.ok) {
-    $.ui.log(`sidekick board: ${outcome.reason}`, { to: 'debug' });
+  const failure = failureOf(outcome);
+  if (failure !== undefined) {
+    $.ui.log(`sidekick board: ${failure}`, { to: 'debug' });
   }
   const at = clockText(await $.clock.now());
   board.view = afterRun(board.view, outcome, at, kind);
@@ -191,28 +259,12 @@ async function refreshBoard(
   }
 }
 
-// Whichever start hook resolves second finds both facts set and decides, so
-// their order does not matter.
-function maybeFallback($: EngineInterface, board: BoardState): void {
-  if (board.capture === 'missing' && board.isLive === true) {
-    void refreshBoard($, board, 'unasked');
-  }
-}
-
-async function captureBrief(
-  $: EngineInterface,
-  board: BoardState,
-  source: Source,
-  contexts: readonly string[] | undefined,
-): Promise<void> {
-  const lines = briefFrom(contexts);
-  if (lines !== undefined) {
-    board.view = fromBrief(lines, clockText(await $.clock.now()));
-    $.ui.invalidate('ui.render');
-  }
-  if (source === 'compact') return;
-  board.capture = lines === undefined ? 'missing' : 'found';
-  maybeFallback($, board);
+// Whichever start hook fires second finds both facts set and runs the
+// pickup, so their order does not matter.
+function maybeRunStart($: EngineInterface, board: BoardState): void {
+  if (!board.isStartPending || board.isLive !== true) return;
+  board.isStartPending = false;
+  void refreshBoard($, board, 'unasked');
 }
 
 // Fails open: a profile hides the board only when its flag settings say so,
@@ -229,8 +281,8 @@ async function isBoardHidden($: EngineInterface): Promise<boolean> {
   }
 }
 
-// The fallback goes before the command, so a refused `/board` costs only the
-// command.
+// The start pickup goes before the command, so a refused `/board` costs only
+// the command.
 async function startBoard(
   $: EngineInterface,
   board: BoardState,
@@ -238,14 +290,30 @@ async function startBoard(
   const isBackground = (await $.env.get('CLAUDE_JOB_DIR')) !== undefined;
   board.isLive = !isBackground && !(await isBoardHidden($));
   if (!board.isLive) return;
-  maybeFallback($, board);
+  maybeRunStart($, board);
   await $.command.register(COMMAND);
 }
 
+// A pane open but unplaced, held for a wider terminal, is opened again rather
+// than closed. The pickup goes before the open, so a refused open costs only
+// the pane.
+async function togglePane(
+  $: EngineInterface,
+  board: BoardState,
+): Promise<void> {
+  const panes = await $.ui.panes();
+  const isShown = panes.some((pane) => pane.id === PANE.id && pane.isPlaced);
+  if (isShown) {
+    await $.ui.close({ id: PANE.id });
+    return;
+  }
+  void refreshBoard($, board, 'asked');
+  await $.ui.open(PANE);
+}
+
 /**
- * Hooks the board: in every session, the start hook's brief read from the
- * classic start; in a live one, `/board`, the pickups, and the band above the
- * prompt.
+ * Hooks the board: in every session, the classic start; in a live one,
+ * `/board`, the pickups, the state row under the prompt, and the board's pane.
  */
 export function registerBoard(on: On): void {
   const board: BoardState = {
@@ -253,18 +321,22 @@ export function registerBoard(on: On): void {
     isRunning: false,
     queued: undefined,
     isLive: undefined,
-    capture: undefined,
+    isStartPending: false,
   };
 
-  // No other mod hooks the classic start, so it takes no matcher.
-  on('classic.SessionStart', async ($, e, next) => {
-    const result = await next(e);
+  // No other mod hooks the classic start, so it takes no matcher. The start is
+  // noted before `next(e)`, so its pickup runs beside the settings hooks
+  // beneath rather than after them.
+  on('classic.SessionStart', ($, e, next) => {
     try {
-      await captureBrief($, board, e.source, result.additionalContext);
+      if (e.source !== 'compact') {
+        board.isStartPending = true;
+        maybeRunStart($, board);
+      }
     } catch (error) {
       logFailure($, 'classic.SessionStart', error);
     }
-    return result;
+    return next(e);
   });
 
   // The desk's matcher: identical matchers load, and `board.test.ts` pins that
@@ -278,8 +350,12 @@ export function registerBoard(on: On): void {
     return next(e);
   });
 
-  on('command.run', { command: COMMAND.name }, ($) => {
-    if (board.isLive === true) void refreshBoard($, board, 'asked');
+  on('command.run', { command: COMMAND.name }, async ($) => {
+    try {
+      if (board.isLive === true) await togglePane($, board);
+    } catch (error) {
+      logFailure($, 'command.run', error);
+    }
     return {};
   });
 
@@ -297,15 +373,24 @@ export function registerBoard(on: On): void {
     return result;
   });
 
-  // A failure while drawing leaves what lies beneath drawn.
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+  // A failure while drawing leaves what lies beneath drawn: the hint line.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const below = await next(e);
-    if (e.props.hasSurvey || board.isLive !== true) return below;
+    if (board.isLive !== true || e.viewport === undefined) return below;
     try {
-      return bandOver(board.view, e.props.bodyColumns, below);
+      return rowUnder(board.view, e.viewport.columns, below);
     } catch (error) {
-      logFailure($, 'drawing the band', error);
+      logFailure($, 'drawing the row', error);
       return below;
+    }
+  });
+
+  on('ui.render', { component: 'Pane', requestId: PANE.id }, ($, e, next) => {
+    try {
+      return paneOf(board.view);
+    } catch (error) {
+      logFailure($, 'drawing the pane', error);
+      return next(e);
     }
   });
 }

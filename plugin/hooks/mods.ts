@@ -4,8 +4,8 @@ import { registerDesk } from './desk/desk';
 import { registerGauge } from './gauge/gauge';
 import { registerScope } from './scope/scope';
 
-// The board goes first: registrations nest first outermost, so its lines sit
-// above the desk's band.
+// Registrations nest first outermost. Each mod draws into sites of its own, so
+// the order sets only which `session.start` hook runs first.
 export const register: Register = (on) => {
   registerBoard(on);
   registerGauge(on);

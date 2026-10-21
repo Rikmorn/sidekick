@@ -4,10 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  BRIEF_HEADER,
-  PICKUP_TIMEOUT_MS,
-} from '../../plugin/hooks/board/contract.js';
+import { PICKUP_TIMEOUT_MS } from '../../plugin/hooks/board/contract.js';
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -44,6 +41,9 @@ function sessionStartTimeout(config: unknown): number | undefined {
     : undefined;
 }
 
+// The hook's first line, which names the sk-orient skill to the model.
+const HEADER =
+  "sidekick: this repo is tracked. The board's pickup follows; load the sk-orient skill to read it and pick up work.";
 const BRIEF = 'Pickup: milestone 9\nIn progress: #211';
 
 // Copies the hook beside a fake CLI, a node script that runs for any call.
@@ -70,7 +70,7 @@ describe('plugin/hooks/session-start', () => {
     const parsed = JSON.parse(r.stdout);
     expect(parsed.hookSpecificOutput.hookEventName).toBe('SessionStart');
     const context: string = parsed.hookSpecificOutput.additionalContext;
-    expect(context).toBe(`${BRIEF_HEADER}\n\n${BRIEF}`);
+    expect(context).toBe(`${HEADER}\n\n${BRIEF}`);
     const body = fs
       .readFileSync(ORIENT, 'utf-8')
       .split(/^---$/m)
@@ -95,7 +95,7 @@ describe('plugin/hooks/session-start', () => {
       .additionalContext;
     const replaced = context.split(String.fromCodePoint(0xfffd)).length - 1;
     expect(replaced).toBe(0);
-    expect(context === `${BRIEF_HEADER}\n\n${brief}`).toBe(true);
+    expect(context === `${HEADER}\n\n${brief}`).toBe(true);
   });
 
   test('prints nothing when the CLI prints nothing', () => {
