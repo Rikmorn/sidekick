@@ -43,7 +43,7 @@ const COMMAND = { name: 'board', description: 'Show or hide the board pane' };
 const PANE = { id: 'board', title: 'Board' };
 const MS_PER_SECOND = 1_000;
 
-/** Cells the hint area keeps from the surface's width: 2 at the left, measured, and 2 at the right, inferred (docs/research/control-centre/2026-10-21-prompt-hint-probes.md). */
+/** Cells the hint area keeps from the surface's width: 2 at the left and 2 at the right, read off the probe screens (docs/research/control-centre/2026-10-21-prompt-hint-probes.md): hint rows start 2 cells in, and the subagent panel's row ends at cell 108 of 110. */
 export const HINT_INSET = 4;
 
 const ROW_COLOR: ThemeKey = 'subtle';
@@ -303,6 +303,9 @@ async function togglePane(
   const panes = await $.ui.panes();
   const isShown = panes.some((pane) => pane.id === PANE.id && pane.isPlaced);
   if (isShown) {
+    // A failure row has no other way off the screen, since rows under the prompt cannot collapse.
+    if (board.view.state === 'failed') board.view = { state: 'empty' };
+    $.ui.invalidate('ui.render');
     await $.ui.close({ id: PANE.id });
     return;
   }

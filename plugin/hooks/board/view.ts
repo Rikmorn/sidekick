@@ -1,7 +1,7 @@
 // The board's pure view: the state after each pickup run, the one-row state line's segments and how they shed to fit, and the pane's lines.
 import { cut, width } from '../lines';
 import type { BoardGlance, GlanceLevel } from './contract';
-import { parseGlance } from './contract';
+import { GLANCE_COMPLETE_WORD, parseGlance } from './contract';
 import type { RunKind, RunOutcome } from './logic';
 
 export type BoardView =
@@ -84,7 +84,8 @@ export function afterRun(
 
 function stateText(glance: BoardGlance): string {
   const { level, word } = glance.state;
-  const glyph = level === 'good' && word === 'complete' ? '✓' : GLYPHS[level];
+  const glyph =
+    level === 'good' && word === GLANCE_COMPLETE_WORD ? '✓' : GLYPHS[level];
   return `${glyph} ${word}`;
 }
 
@@ -98,7 +99,7 @@ function joinedWidth(segments: readonly Segment[]): number {
   return width(segments.map((segment) => segment.text).join(SEPARATOR));
 }
 
-/** Cuts the row itself to `columns`, dropping what has no room left. */
+// Cuts the row itself to `columns`, dropping what has no room left.
 function cutRow(segments: readonly Segment[], columns: number): Segment[] {
   const row: Segment[] = [];
   let room = columns;

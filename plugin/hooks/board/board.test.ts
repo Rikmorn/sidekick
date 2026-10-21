@@ -880,6 +880,27 @@ test('after a failed /board, a failed unasked run keeps the failure line, and a 
   ]);
 });
 
+test('closing the pane clears a failure row, and /board again reruns and shows it if it still fails', async ($, on) => {
+  const { seen, clock } = answerBeneath(on, worldWith({ answer: BAD_GATEWAY }));
+  await bothStarts($, clock);
+  await boardCommand($);
+  await clock.settle();
+  expect(await drawnHint($, 'terminal', WIDE)).toEqual([
+    UNDER,
+    failureRow(/^⚠ board: the pickup exited 1: gh: HTTP 502$/),
+  ]);
+  await boardCommand($);
+  await clock.settle();
+  expect(seen.closed).toEqual(['board']);
+  expect(await drawnHint($, 'terminal', WIDE)).toEqual([UNDER]);
+  await boardCommand($);
+  await clock.settle();
+  expect(await drawnHint($, 'terminal', WIDE)).toEqual([
+    UNDER,
+    failureRow(/^⚠ board: the pickup exited 1: gh: HTTP 502$/),
+  ]);
+});
+
 test('a good run after a failed refresh draws the row fresh', async ($, on) => {
   const world = worldWith();
   const { clock } = answerBeneath(on, world);

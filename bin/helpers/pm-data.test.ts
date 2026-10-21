@@ -660,6 +660,24 @@ describe('fetchStatusUpdates', () => {
       ],
     });
   });
+  describe('a malformed update among good ones', () => {
+    const good1 = { status: 'AT_RISK', startDate: '2026-10-20' };
+    const good2 = { status: 'ON_TRACK', startDate: '2026-10-13' };
+    const cases: Record<string, unknown> = {
+      'a null node': null,
+      'a null startDate': { status: 'ON_TRACK', startDate: null },
+      'a null status': { status: null, startDate: '2026-10-14' },
+      'an unknown status': { status: 'PAUSED', startDate: '2026-10-14' },
+    };
+    for (const [name, bad] of Object.entries(cases)) {
+      test(`${name} is dropped and the good ones are kept`, () => {
+        expect(read(reply([good1, bad, good2]))).toEqual({
+          ok: true,
+          updates: [good1, good2],
+        });
+      });
+    }
+  });
   test('an empty list reads as no updates', () => {
     expect(read(reply([]))).toEqual({ ok: true, updates: [] });
   });
@@ -674,9 +692,9 @@ describe('fetchStatusUpdates', () => {
   test('a null node reads as unread', () => {
     expect(read('{"data":{"node":null}}')).toEqual({ ok: false });
   });
-  test('a status outside the known set reads as unread', () => {
+  test('a status outside the known set, alone, reads as no updates', () => {
     expect(
       read(reply([{ status: 'PAUSED', startDate: '2026-10-20' }])),
-    ).toEqual({ ok: false });
+    ).toEqual({ ok: true, updates: [] });
   });
 });

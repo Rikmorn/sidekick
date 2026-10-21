@@ -2989,6 +2989,7 @@ function runHookCli(args, env, out, err) {
 
 // plugin/hooks/board/contract.ts
 var GLANCE_VERSION = 1;
+var GLANCE_COMPLETE_WORD = "complete";
 
 // bin/helpers/pm-plans.ts
 var HEADER_OPEN = "<!-- plans -->";
@@ -3263,6 +3264,66 @@ function renderBrief(p) {
 
 // bin/helpers/pm-data.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
+
+// bin/helpers/pm-glance.ts
+var UPDATE_STATUSES = [
+  "INACTIVE",
+  "ON_TRACK",
+  "AT_RISK",
+  "OFF_TRACK",
+  "COMPLETE"
+];
+var BY_STATUS = {
+  ON_TRACK: { level: "good", word: "on track", detail: null },
+  COMPLETE: { level: "good", word: GLANCE_COMPLETE_WORD, detail: null },
+  AT_RISK: { level: "warning", word: "at risk", detail: null },
+  OFF_TRACK: { level: "bad", word: "off track", detail: null },
+  INACTIVE: { level: "unknown", word: "inactive", detail: null }
+};
+function unknown2(word) {
+  return { level: "unknown", word, detail: null };
+}
+function floorOf(input) {
+  const { milestone, status } = input;
+  if (milestone === null) {
+    return unknown2(input.openCount > 1 ? "pick a milestone" : "no milestone");
+  }
+  if (!status.ok)
+    return unknown2("status unread");
+  const day = milestone.created_at.slice(0, 10);
+  const counted = status.updates.find((u) => u.startDate === day);
+  return counted ? BY_STATUS[counted.status] : unknown2("no update");
+}
+function driftKinds({ drift, plans }) {
+  const kinds = [];
+  const unpushed = drift.unpushed.count;
+  if (unpushed !== null && unpushed > 0)
+    kinds.push(`${unpushed} unpushed`);
+  const first = drift.stale_in_progress[0];
+  if (first)
+    kinds.push(`stale #${first.number}`);
+  if (drift.open_pr)
+    kinds.push(`open PR #${drift.open_pr.number}`);
+  if (drift.in_progress_split.length > 0)
+    kinds.push("split");
+  if (plans !== null && plans.parse === "malformed")
+    kinds.push("plans header");
+  return kinds;
+}
+function glanceState(input) {
+  const floor = floorOf(input);
+  const kinds = driftKinds(input);
+  const [head, ...rest] = kinds;
+  if (head === undefined)
+    return floor;
+  const detail = rest.length > 0 ? `${head} +${rest.length}` : head;
+  if (floor.level === "good" || floor.level === "unknown") {
+    return { level: "warning", word: "drift", detail };
+  }
+  return { ...floor, detail };
+}
+
+// bin/helpers/pm-data.ts
 var execRunner = (cmd, args, cwd) => {
   const r = spawnSync2(cmd, args, {
     cwd,
@@ -3605,20 +3666,13 @@ function fetchOpenIssues(run, cwd, owner, repo) {
     "number,title,labels,body,milestone,updatedAt"
   ]));
 }
+var StatusUpdateNode = object({
+  status: picklist(UPDATE_STATUSES),
+  startDate: string()
+});
 var StatusUpdatesData = object({
   node: object({
-    statusUpdates: object({
-      nodes: array(object({
-        status: picklist([
-          "INACTIVE",
-          "ON_TRACK",
-          "AT_RISK",
-          "OFF_TRACK",
-          "COMPLETE"
-        ]),
-        startDate: string()
-      }))
-    })
+    statusUpdates: object({ nodes: array(unknown()) })
   })
 });
 function fetchStatusUpdates(run, cwd, projectId) {
@@ -3629,63 +3683,16 @@ function fetchStatusUpdates(run, cwd, projectId) {
     const parsed = safeParse(StatusUpdatesData, data);
     if (!parsed.success)
       return { ok: false };
-    return { ok: true, updates: parsed.output.node.statusUpdates.nodes };
+    const updates = parsed.output.node.statusUpdates.nodes.flatMap((node) => {
+      const update = safeParse(StatusUpdateNode, node);
+      return update.success ? [update.output] : [];
+    });
+    return { ok: true, updates };
   } catch (e) {
     if (e instanceof PmError || e instanceof SyntaxError)
       return { ok: false };
     throw e;
   }
-}
-
-// bin/helpers/pm-glance.ts
-var BY_STATUS = {
-  ON_TRACK: { level: "good", word: "on track", detail: null },
-  COMPLETE: { level: "good", word: "complete", detail: null },
-  AT_RISK: { level: "warning", word: "at risk", detail: null },
-  OFF_TRACK: { level: "bad", word: "off track", detail: null },
-  INACTIVE: { level: "unknown", word: "inactive", detail: null }
-};
-function unknown2(word) {
-  return { level: "unknown", word, detail: null };
-}
-function floorOf(input) {
-  const { milestone, status } = input;
-  if (milestone === null) {
-    return unknown2(input.openCount > 1 ? "pick a milestone" : "no milestone");
-  }
-  if (!status.ok)
-    return unknown2("status unread");
-  const day = milestone.created_at.slice(0, 10);
-  const counted = status.updates.find((u) => u.startDate === day);
-  return counted ? BY_STATUS[counted.status] : unknown2("no update");
-}
-function driftKinds({ drift, plans }) {
-  const kinds = [];
-  const unpushed = drift.unpushed.count;
-  if (unpushed !== null && unpushed > 0)
-    kinds.push(`${unpushed} unpushed`);
-  const first = drift.stale_in_progress[0];
-  if (first)
-    kinds.push(`stale #${first.number}`);
-  if (drift.open_pr)
-    kinds.push(`open PR #${drift.open_pr.number}`);
-  if (drift.in_progress_split.length > 0)
-    kinds.push("split");
-  if (plans !== null && plans.parse === "malformed")
-    kinds.push("plans header");
-  return kinds;
-}
-function glanceState(input) {
-  const floor = floorOf(input);
-  const kinds = driftKinds(input);
-  const [head, ...rest2] = kinds;
-  if (head === undefined)
-    return floor;
-  const detail = rest2.length > 0 ? `${head} +${rest2.length}` : head;
-  if (floor.level === "good" || floor.level === "unknown") {
-    return { level: "warning", word: "drift", detail };
-  }
-  return { ...floor, detail };
 }
 
 // bin/helpers/pm-lint.ts

@@ -23,6 +23,14 @@ test('parseGlance keeps every field of a version-1 glance', () => {
   });
 });
 
+test('parseGlance ignores an unknown field, keeping the known ones', () => {
+  const text = JSON.stringify({ ...full, added: 'later' });
+  expect(parseGlance(text)).toEqual({
+    ok: true,
+    glance: { ...full, version: GLANCE_VERSION },
+  });
+});
+
 test('parseGlance accepts a null milestone and a null detail', () => {
   const parsed = parseGlance(
     JSON.stringify({

@@ -8,7 +8,7 @@ export type RunOutcome =
 /** Whether the operator asked for a run by opening the pane with `/board`, or the board ran it itself: at start, or after a board write. */
 export type RunKind = 'asked' | 'unasked';
 
-// Each row is one write that pickup reads or the line shows (a commit, a push), anchored on `gh` at a command part's start.
+// Each row is one write that pickup reads or the line shows (a commit, a push), anchored on `gh` or `git` at a command part's start.
 const BOARD_WRITES: readonly RegExp[] = [
   /^gh\s+project\s+item-(?:edit|add)\b/,
   /^gh\s+issue\s+(?:close|reopen|create|edit)\b/,

@@ -1,14 +1,20 @@
-import type { GlanceState } from '../../plugin/hooks/board/contract.js';
+import {
+  GLANCE_COMPLETE_WORD,
+  type GlanceState,
+} from '../../plugin/hooks/board/contract.js';
 import type { Drift } from './pm.js';
 import type { Milestone } from './pm-data.js';
 import type { Plans } from './pm-plans.js';
 
-export type UpdateStatus =
-  | 'INACTIVE'
-  | 'ON_TRACK'
-  | 'AT_RISK'
-  | 'OFF_TRACK'
-  | 'COMPLETE';
+export const UPDATE_STATUSES = [
+  'INACTIVE',
+  'ON_TRACK',
+  'AT_RISK',
+  'OFF_TRACK',
+  'COMPLETE',
+] as const;
+
+export type UpdateStatus = (typeof UPDATE_STATUSES)[number];
 
 export interface StatusUpdate {
   status: UpdateStatus;
@@ -30,7 +36,7 @@ export interface GlanceInput {
 
 const BY_STATUS: Record<UpdateStatus, GlanceState> = {
   ON_TRACK: { level: 'good', word: 'on track', detail: null },
-  COMPLETE: { level: 'good', word: 'complete', detail: null },
+  COMPLETE: { level: 'good', word: GLANCE_COMPLETE_WORD, detail: null },
   AT_RISK: { level: 'warning', word: 'at risk', detail: null },
   OFF_TRACK: { level: 'bad', word: 'off track', detail: null },
   INACTIVE: { level: 'unknown', word: 'inactive', detail: null },

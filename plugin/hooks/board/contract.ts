@@ -8,6 +8,9 @@ export const PICKUP_TIMEOUT_MS = 20_000;
 
 export const GLANCE_VERSION = 1;
 
+/** The word for a finished milestone, which the row marks with a tick. */
+export const GLANCE_COMPLETE_WORD = 'complete';
+
 export type GlanceLevel = 'good' | 'warning' | 'bad' | 'unknown';
 
 export interface GlanceState {

@@ -6,7 +6,7 @@
 
 import { spawnSync } from 'node:child_process';
 import * as v from 'valibot';
-import type { StatusRead } from './pm-glance.js';
+import { type StatusRead, UPDATE_STATUSES } from './pm-glance.js';
 
 export interface RunResult {
   code: number;
@@ -614,22 +614,15 @@ export function fetchOpenIssues(
   );
 }
 
+const StatusUpdateNode = v.object({
+  status: v.picklist(UPDATE_STATUSES),
+  startDate: v.string(),
+});
+
+// GitHub's schema allows null for the nodes and both fields, so one is checked at a time.
 const StatusUpdatesData = v.object({
   node: v.object({
-    statusUpdates: v.object({
-      nodes: v.array(
-        v.object({
-          status: v.picklist([
-            'INACTIVE',
-            'ON_TRACK',
-            'AT_RISK',
-            'OFF_TRACK',
-            'COMPLETE',
-          ]),
-          startDate: v.string(),
-        }),
-      ),
-    }),
+    statusUpdates: v.object({ nodes: v.array(v.unknown()) }),
   }),
 });
 
@@ -645,7 +638,11 @@ export function fetchStatusUpdates(
     ]);
     const parsed = v.safeParse(StatusUpdatesData, data);
     if (!parsed.success) return { ok: false };
-    return { ok: true, updates: parsed.output.node.statusUpdates.nodes };
+    const updates = parsed.output.node.statusUpdates.nodes.flatMap((node) => {
+      const update = v.safeParse(StatusUpdateNode, node);
+      return update.success ? [update.output] : [];
+    });
+    return { ok: true, updates };
   } catch (e) {
     if (e instanceof PmError || e instanceof SyntaxError) return { ok: false };
     throw e;
