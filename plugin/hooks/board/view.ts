@@ -92,14 +92,16 @@ function cutRow(segments: readonly Segment[], columns: number): Segment[] {
 /**
  * The row's segments for a view, shed to fit `columns`: the milestone first
  * (cut with an ellipsis, then dropped), then the board, the detail, and the
- * owner. The state and the time stay; if they overflow, the row is cut.
+ * owner, and the repo. The state and the time stay; if they overflow, the row is cut.
  */
 export function rowSegments(view: BoardView, columns: number): Segment[] {
   switch (view.state) {
     case 'empty':
       return [];
     case 'failed':
-      return [{ kind: 'failure', text: `⚠ board: ${view.reason}` }];
+      return [
+        { kind: 'failure', text: cut(`⚠ board: ${view.reason}`, columns) },
+      ];
     case 'ok':
     case 'stale':
       return shed(view.glance, timeText(view), columns);
@@ -110,58 +112,82 @@ export function rowSegments(view: BoardView, columns: number): Segment[] {
   }
 }
 
-function shed(glance: BoardGlance, time: string, columns: number): Segment[] {
-  const { board, milestone, state } = glance;
-  const build = (keep: {
-    owner: boolean;
-    board: boolean;
-    detail: boolean;
-    milestone: string | null;
-  }): Segment[] => {
-    const row: Segment[] = [
-      {
-        kind: 'repo',
-        text: keep.owner ? `▣ ${board.owner}/${board.repo}` : `▣ ${board.repo}`,
-      },
-    ];
-    if (keep.board) {
-      row.push({
-        kind: 'board',
-        text: `board #${board.number}`,
-        href: board.url,
-      });
-    }
-    row.push({ kind: 'state', text: stateText(glance), level: state.level });
-    if (keep.detail && state.detail !== null) {
-      row.push({ kind: 'detail', text: state.detail });
-    }
-    if (keep.milestone !== null) {
-      row.push({ kind: 'milestone', text: keep.milestone });
-    }
-    row.push({ kind: 'time', text: time });
-    return row;
-  };
+interface Keep {
+  repo: 'full' | 'short' | 'none';
+  board: boolean;
+  detail: boolean;
+  milestone: string | null;
+}
 
-  const keep = { owner: true, board: true, detail: true, milestone };
-  const full = build(keep);
+function buildRow(glance: BoardGlance, time: string, keep: Keep): Segment[] {
+  const { board, state } = glance;
+  const row: Segment[] = [];
+  if (keep.repo !== 'none') {
+    row.push({
+      kind: 'repo',
+      text:
+        keep.repo === 'full'
+          ? `▣ ${board.owner}/${board.repo}`
+          : `▣ ${board.repo}`,
+    });
+  }
+  if (keep.board) {
+    row.push({
+      kind: 'board',
+      text: `board #${board.number}`,
+      href: board.url,
+    });
+  }
+  row.push({ kind: 'state', text: stateText(glance), level: state.level });
+  if (keep.detail && state.detail !== null) {
+    row.push({ kind: 'detail', text: state.detail });
+  }
+  if (keep.milestone !== null) {
+    row.push({ kind: 'milestone', text: keep.milestone });
+  }
+  row.push({ kind: 'time', text: time });
+  return row;
+}
+
+function shed(glance: BoardGlance, time: string, columns: number): Segment[] {
+  const { milestone } = glance;
+  const keep: Keep = { repo: 'full', board: true, detail: true, milestone };
+  const full = buildRow(glance, time, keep);
   if (joinedWidth(full) <= columns) return full;
 
   if (milestone !== null) {
     const kept = width(milestone) - (joinedWidth(full) - columns) - 1;
     if (kept >= MIN_MILESTONE_KEPT) {
-      const trimmed = build({ ...keep, milestone: `${cut(milestone, kept)}…` });
+      const trimmed = buildRow(glance, time, {
+        ...keep,
+        milestone: `${cut(milestone, kept)}…`,
+      });
       if (joinedWidth(trimmed) <= columns) return trimmed;
     }
     keep.milestone = null;
-    const bare = build(keep);
+    const bare = buildRow(glance, time, keep);
     if (joinedWidth(bare) <= columns) return bare;
   }
-  for (const step of ['board', 'detail', 'owner'] as const) {
-    keep[step] = false;
-    const row = build(keep);
+  const steps: ((keep: Keep) => void)[] = [
+    (k) => {
+      k.board = false;
+    },
+    (k) => {
+      k.detail = false;
+    },
+    (k) => {
+      k.repo = 'short';
+    },
+    (k) => {
+      k.repo = 'none';
+    },
+  ];
+  for (const step of steps) {
+    step(keep);
+    const row = buildRow(glance, time, keep);
     if (joinedWidth(row) <= columns) return row;
   }
-  return cutRow(build(keep), columns);
+  return cutRow(buildRow(glance, time, keep), columns);
 }
 
 /** The pane's lines: the brief whole, a blank line, the board's link, and the stamp. */

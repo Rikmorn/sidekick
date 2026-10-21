@@ -194,18 +194,49 @@ test('rowSegments keeps the joined row within the columns at every width from 20
   }
 });
 
-test('rowSegments keeps the state and the time while they fit', () => {
-  const kinds = rowSegments(ok, width('▲ drift · 15:02') + 11).map(
-    (segment) => segment.kind,
-  );
-  expect(kinds).toContain('state');
-  expect(kinds).toContain('time');
+test('rowSegments keeps the exact state and time at every width where they fit together', () => {
+  const cases: [BoardView, string][] = [
+    [ok, '15:02'],
+    [stale, 'refresh failed 15:05'],
+  ];
+  for (const [view, time] of cases) {
+    const least = width(`▲ drift · ${time}`);
+    for (let columns = least; columns <= 160; columns += 1) {
+      const segments = rowSegments(view, columns);
+      expect(segments).toContainEqual({ kind: 'time', text: time });
+      expect(segments).toContainEqual({
+        kind: 'state',
+        text: '▲ drift',
+        level: 'warning',
+      });
+      expect(width(joined(view, columns))).toBeLessThanOrEqual(columns);
+    }
+  }
+});
+
+test('rowSegments leaves only the state and the time at the width they need', () => {
+  const kinds = (view: BoardView, columns: number): string[] =>
+    rowSegments(view, columns).map((segment) => segment.kind);
+  expect(kinds(ok, width('▲ drift · 15:02'))).toEqual(['state', 'time']);
+  expect(kinds(stale, width('▲ drift · refresh failed 15:05'))).toEqual([
+    'state',
+    'time',
+  ]);
 });
 
 test('rowSegments cuts the row when the state and the time alone overflow', () => {
-  const text = joined(stale, 12);
-  expect(width(text)).toBeLessThanOrEqual(12);
-  expect(text.length).toBeGreaterThan(0);
+  const columns = width('▲ drift · 15:02') - 3;
+  const text = joined(ok, columns);
+  expect(text).toBe('▲ drift · 15:02'.slice(0, columns));
+  expect(width(joined(stale, 12))).toBeLessThanOrEqual(12);
+});
+
+test('rowSegments cuts a failed view to the columns', () => {
+  const view: BoardView = { state: 'failed', reason: 'gh is not installed' };
+  for (let columns = 0; columns <= 40; columns += 1) {
+    expect(width(joined(view, columns))).toBeLessThanOrEqual(columns);
+  }
+  expect(joined(view, 10)).toBe('⚠ board: g');
 });
 
 test('rowSegments gives one failure segment for a failed view and none for empty', () => {
