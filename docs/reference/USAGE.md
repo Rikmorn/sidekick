@@ -53,7 +53,7 @@ For a repo where someone else owns the tracking, do nothing: `sidekick pm board 
 
 ## The commands
 
-`sidekick pm` reads; the skills write. Every verb prints one JSON object and exits `0` when it ran (the verdict is in the JSON, including `tracked: false`), `1` on usage or an unexpected error, `2` when `gh` is missing or its token lacks `project`. Two flags are the exceptions: `pickup --brief` prints text and `pickup --report` Markdown instead of JSON. `--report` exits `1` with its reason when there is nothing sound to post.
+`sidekick pm` reads; the skills write. Every verb prints one JSON object and exits `0` when it ran (the verdict is in the JSON, including `tracked: false`), `1` on usage or an unexpected error, `2` when `gh` is missing or its token lacks `project`. Three flags are the exceptions: `pickup --brief` prints text and `pickup --report` Markdown instead of JSON, and `pickup --glance` prints nothing in an untracked repo and exits `0`. `--report` exits `1` with its reason when there is nothing sound to post.
 
 | Verb | Prints | Used by |
 |---|---|---|
