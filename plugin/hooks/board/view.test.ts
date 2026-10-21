@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing';
 import { width } from '../lines';
 import type { BoardGlance, GlanceLevel } from './contract';
 import type { BoardView } from './view';
-import { afterRun, paneLines, rowSegments } from './view';
+import { afterRun, failureOf, paneLines, readRun, rowSegments } from './view';
 
 const BRIEF = ['Pickup: milestone 9', 'In progress: #211', 'Drift: 3 unpushed'];
 
@@ -35,52 +35,74 @@ const stale: BoardView = {
   failedAt: '15:05',
 };
 
+const good = readRun({ ok: true, stdout: JSON.stringify(glance) });
+
 function joined(view: BoardView, columns: number): string {
   return rowSegments(view, columns)
     .map((segment) => segment.text)
     .join(' · ');
 }
 
+test('readRun gives a glance for good output, and empty for none', () => {
+  expect(readRun({ ok: true, stdout: `${JSON.stringify(glance)}\n` })).toEqual({
+    kind: 'glance',
+    glance,
+  });
+  for (const stdout of ['', '\n', '  \r\n']) {
+    expect(readRun({ ok: true, stdout })).toEqual({ kind: 'empty' });
+  }
+});
+
+test('readRun fails a run that failed, or whose output does not parse', () => {
+  expect(readRun({ ok: false, reason: 'timed out' })).toEqual({
+    kind: 'failed',
+    reason: 'timed out',
+  });
+  const reason = "the pickup's output did not parse";
+  const newer = JSON.stringify({ ...glance, version: 2 });
+  for (const stdout of ['not json', newer, '{"version":1}']) {
+    expect(readRun({ ok: true, stdout })).toEqual({ kind: 'failed', reason });
+  }
+});
+
+test('failureOf names a failed read, and nothing for a glance or none', () => {
+  expect(failureOf({ kind: 'failed', reason: 'timed out' })).toBe('timed out');
+  expect(failureOf({ kind: 'glance', glance })).toBeUndefined();
+  expect(failureOf({ kind: 'empty' })).toBeUndefined();
+});
+
 test('afterRun gives ok for a good glance, asked or not', () => {
   for (const kind of ['asked', 'unasked'] as const) {
-    expect(
-      afterRun(
-        { state: 'empty' },
-        { ok: true, stdout: JSON.stringify(glance) },
-        '15:02',
-        kind,
-      ),
-    ).toEqual(ok);
+    expect(afterRun({ state: 'empty' }, good, '15:02', kind)).toEqual(ok);
   }
 });
 
 test('afterRun gives empty for a run with no output', () => {
-  expect(afterRun(ok, { ok: true, stdout: '\n' }, '15:05', 'asked')).toEqual({
-    state: 'empty',
-  });
+  const none = readRun({ ok: true, stdout: '\n' });
+  expect(afterRun(ok, none, '15:05', 'asked')).toEqual({ state: 'empty' });
 });
 
 test('afterRun treats unparsed output as a failed run', () => {
-  const run = { ok: true, stdout: 'not json' } as const;
+  const read = readRun({ ok: true, stdout: 'not json' });
   const reason = "the pickup's output did not parse";
-  expect(afterRun(ok, run, '15:05', 'unasked')).toEqual(stale);
-  expect(afterRun({ state: 'empty' }, run, '15:05', 'asked')).toEqual({
+  expect(afterRun(ok, read, '15:05', 'unasked')).toEqual(stale);
+  expect(afterRun({ state: 'empty' }, read, '15:05', 'asked')).toEqual({
     state: 'failed',
     reason,
   });
-  expect(afterRun({ state: 'empty' }, run, '15:05', 'unasked')).toEqual({
+  expect(afterRun({ state: 'empty' }, read, '15:05', 'unasked')).toEqual({
     state: 'empty',
   });
 });
 
 test('afterRun keeps the last good glance when a run fails', () => {
-  const run = { ok: false, reason: 'timed out' } as const;
-  expect(afterRun(ok, run, '15:05', 'unasked')).toEqual(stale);
-  expect(afterRun(stale, run, '15:09', 'asked')).toEqual({
+  const read = readRun({ ok: false, reason: 'timed out' });
+  expect(afterRun(ok, read, '15:05', 'unasked')).toEqual(stale);
+  expect(afterRun(stale, read, '15:09', 'asked')).toEqual({
     ...stale,
     failedAt: '15:09',
   });
-  expect(afterRun({ state: 'empty' }, run, '15:05', 'asked')).toEqual({
+  expect(afterRun({ state: 'empty' }, read, '15:05', 'asked')).toEqual({
     state: 'failed',
     reason: 'timed out',
   });

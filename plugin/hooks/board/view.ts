@@ -35,6 +35,27 @@ const GLYPHS: Record<GlanceLevel, string> = {
   unknown: '○',
 };
 
+/** What a pickup run gave: no glance, as in an untracked repo; a glance; or a failure and its reason. */
+export type RunRead =
+  | { kind: 'empty' }
+  | { kind: 'glance'; glance: BoardGlance }
+  | { kind: 'failed'; reason: string };
+
+/** Reads a run's output once: empty output is no glance, and output that does not parse is a failed run. */
+export function readRun(run: RunOutcome): RunRead {
+  if (!run.ok) return { kind: 'failed', reason: run.reason };
+  if (run.stdout.trim() === '') return { kind: 'empty' };
+  const parsed = parseGlance(run.stdout);
+  return parsed.ok
+    ? { kind: 'glance', glance: parsed.glance }
+    : { kind: 'failed', reason: parsed.reason };
+}
+
+/** Why a run failed, for the debug log; undefined when it gave a glance or none. */
+export function failureOf(read: RunRead): string | undefined {
+  return read.kind === 'failed' ? read.reason : undefined;
+}
+
 /**
  * The view after a pickup run that ended at `at` (HH:MM). A failure with no
  * good glance to keep draws only when asked: pickup also fails in an untracked
@@ -42,13 +63,14 @@ const GLYPHS: Record<GlanceLevel, string> = {
  */
 export function afterRun(
   previous: BoardView,
-  run: RunOutcome,
+  read: RunRead,
   at: string,
   kind: RunKind,
 ): BoardView {
-  if (run.ok && run.stdout.trim() === '') return { state: 'empty' };
-  const parsed = run.ok ? parseGlance(run.stdout) : run;
-  if (parsed.ok) return { state: 'ok', glance: parsed.glance, takenAt: at };
+  if (read.kind === 'empty') return { state: 'empty' };
+  if (read.kind === 'glance') {
+    return { state: 'ok', glance: read.glance, takenAt: at };
+  }
   if (previous.state === 'ok' || previous.state === 'stale') {
     return {
       state: 'stale',
@@ -57,9 +79,7 @@ export function afterRun(
       failedAt: at,
     };
   }
-  return kind === 'asked'
-    ? { state: 'failed', reason: parsed.reason }
-    : previous;
+  return kind === 'asked' ? { state: 'failed', reason: read.reason } : previous;
 }
 
 function stateText(glance: BoardGlance): string {

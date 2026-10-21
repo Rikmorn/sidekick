@@ -16,6 +16,8 @@ import {
   test,
 } from 'claude-code/testing';
 import type { DeskSnapshot } from '../desk/contract';
+import { width } from '../lines';
+import { HINT_INSET } from './board';
 import {
   type BoardGlance,
   GLANCE_VERSION,
@@ -498,21 +500,44 @@ test('the classic start returns what lay beneath, unchanged', async ($, on) => {
   expect(await classicStart($, clock)).toEqual(AT_START);
 });
 
+const GLANCE_VIEW: BoardView = {
+  state: 'ok',
+  glance: GLANCE,
+  takenAt: clockText(NOW),
+};
+
 // The view sheds to the width it is handed, so the row's text says which.
-test('the row takes its width from the viewport', async ($, on) => {
+test('the row takes its width from the viewport, less the hint area’s inset', async ($, on) => {
   const { clock } = answerBeneath(on, worldWith());
   await bothStarts($, clock);
-  const view: BoardView = {
-    state: 'ok',
-    glance: GLANCE,
-    takenAt: clockText(NOW),
-  };
   for (const columns of [30, 48, 64]) {
     const lines = await drawnHint($, 'terminal', { ...WIDE, columns });
-    const expected = rowSegments(view, columns)
+    const expected = rowSegments(GLANCE_VIEW, columns - HINT_INSET)
       .map((segment) => segment.text)
       .join(SEPARATOR);
     expect(rowText(lines[1])).toBe(expected);
+  }
+});
+
+// GLANCE's whole row is 82 columns, so these widths each shed or cut the
+// milestone, and a row sized to the surface's full width would overflow.
+test('from 60 to 82 columns the row fits inside the inset, its time whole', async ($, on) => {
+  const { clock } = answerBeneath(on, worldWith());
+  await bothStarts($, clock);
+  for (const columns of [60, 76, 80, 82]) {
+    const [, row] = await drawnHint($, 'terminal', { ...WIDE, columns });
+    const text = rowText(row);
+    expect(width(text)).toBeLessThanOrEqual(columns - HINT_INSET);
+    expect(text).toEndWith(`${SEPARATOR}${clockText(NOW)}`);
+  }
+});
+
+test('a surface narrower than the inset draws only what lies beneath', async ($, on) => {
+  const { clock } = answerBeneath(on, worldWith());
+  await bothStarts($, clock);
+  for (const columns of [HINT_INSET, 1]) {
+    const lines = await drawnHint($, 'terminal', { ...WIDE, columns });
+    expect(lines).toEqual([UNDER]);
   }
 });
 
@@ -594,6 +619,31 @@ test('a compact start runs nothing, and a live /clear runs one pickup and draws 
   expect(rowText(row)).toBe(
     `▣ Rikmorn/sidekick · board #2 · ● on track · R10 — The loop · ${clockText(NOW + MINUTE_MS)}`,
   );
+});
+
+for (const source of ['resume', 'fork'] as const) {
+  test(`a live ${source} start runs one pickup and draws its row`, async ($, on) => {
+    const { seen, clock } = answerBeneath(on, worldWith());
+    await started($, clock);
+    await classicStart($, clock, source);
+    expect(seen.pickups).toHaveLength(1);
+    expect(await drawnHint($, 'terminal', WIDE)).toEqual([
+      UNDER,
+      wideRow(clockText(NOW)),
+    ]);
+  });
+}
+
+test('/board on a pane held undrawn opens it again, with a pickup, and closes nothing', async ($, on) => {
+  const world = worldWith();
+  const { seen, clock } = answerBeneath(on, world);
+  await bothStarts($, clock);
+  world.panes.set('board', { title: 'Board', isPlaced: false });
+  await boardCommand($);
+  await clock.settle();
+  expect(seen.opened).toEqual([{ id: 'board', title: 'Board' }]);
+  expect(seen.closed).toEqual([]);
+  expect(seen.pickups).toHaveLength(2);
 });
 
 test('/board opens the pane and runs one asked pickup, and a second /board closes it and runs nothing', async ($, on) => {

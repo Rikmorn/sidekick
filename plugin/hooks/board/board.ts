@@ -19,7 +19,7 @@ import type {
   ThemeKey,
 } from 'claude-code';
 import { isPartHidden } from '../scope/logic';
-import { type GlanceLevel, PICKUP_TIMEOUT_MS, parseGlance } from './contract';
+import { type GlanceLevel, PICKUP_TIMEOUT_MS } from './contract';
 import {
   clockText,
   isBoardWrite,
@@ -30,8 +30,10 @@ import {
 import {
   afterRun,
   type BoardView,
+  failureOf,
   type PaneLine,
   paneLines,
+  readRun,
   rowSegments,
   SEPARATOR,
   type Segment,
@@ -40,6 +42,9 @@ import {
 const COMMAND = { name: 'board', description: 'Show or hide the board pane' };
 const PANE = { id: 'board', title: 'Board' };
 const MS_PER_SECOND = 1_000;
+
+/** Cells the hint area keeps from the surface's width: 2 at the left, measured, and 2 at the right, inferred (docs/research/control-centre/2026-10-21-prompt-hint-probes.md). */
+export const HINT_INSET = 4;
 
 const ROW_COLOR: ThemeKey = 'subtle';
 
@@ -100,15 +105,6 @@ function outcomeOf(ran: Settled<ProcessRunResult>): RunOutcome {
   };
 }
 
-// Why a run failed, for the debug log. `afterRun` parses the glance itself, so
-// this reads empty output as `afterRun` does: no glance, and no failure.
-function failureOf(outcome: RunOutcome): string | undefined {
-  if (!outcome.ok) return outcome.reason;
-  if (outcome.stdout.trim() === '') return undefined;
-  const parsed = parseGlance(outcome.stdout);
-  return parsed.ok ? undefined : parsed.reason;
-}
-
 // The `tool_input.command` of a Bash call, when it holds a string.
 function commandOf(input: unknown): string | undefined {
   if (typeof input !== 'object' || input === null || !('command' in input)) {
@@ -154,7 +150,8 @@ function rowOf(segments: readonly Segment[]): RenderElement {
   return { type: 'Text', props: { color: ROW_COLOR }, children };
 }
 
-// `cut` keeps most of a segment for a negative width, so the width stops at 0.
+// `cut` keeps most of a segment for a negative width, so a width below 0, as
+// a surface narrower than the inset gives, stops at 0.
 function rowUnder(
   view: BoardView,
   columns: number,
@@ -213,15 +210,17 @@ async function runPickup(
   kind: RunKind,
 ): Promise<void> {
   const argv = [`${$.plugin.root}/bin/sidekick`, 'pm', 'pickup', '--glance'];
-  const outcome = outcomeOf(
-    await settle($.process.run(argv, { timeoutMs: PICKUP_TIMEOUT_MS })),
+  const read = readRun(
+    outcomeOf(
+      await settle($.process.run(argv, { timeoutMs: PICKUP_TIMEOUT_MS })),
+    ),
   );
-  const failure = failureOf(outcome);
+  const failure = failureOf(read);
   if (failure !== undefined) {
     $.ui.log(`sidekick board: ${failure}`, { to: 'debug' });
   }
   const at = clockText(await $.clock.now());
-  board.view = afterRun(board.view, outcome, at, kind);
+  board.view = afterRun(board.view, read, at, kind);
   $.ui.invalidate('ui.render');
 }
 
@@ -294,9 +293,9 @@ async function startBoard(
   await $.command.register(COMMAND);
 }
 
-// A pane open but unplaced, held for a wider terminal, is opened again rather
-// than closed. The pickup goes before the open, so a refused open costs only
-// the pane.
+// Only a placed pane closes: one held undrawn for a wider terminal opens
+// again. The pickup starts before the open, so a refused open costs only the
+// pane.
 async function togglePane(
   $: EngineInterface,
   board: BoardState,
@@ -324,9 +323,9 @@ export function registerBoard(on: On): void {
     isStartPending: false,
   };
 
-  // No other mod hooks the classic start, so it takes no matcher. The start is
-  // noted before `next(e)`, so its pickup runs beside the settings hooks
-  // beneath rather than after them.
+  // No other mod hooks the classic start, so it takes no matcher. The settings
+  // hooks run inside `next(e)`, and noting the start first starts its pickup
+  // beside them.
   on('classic.SessionStart', ($, e, next) => {
     try {
       if (e.source !== 'compact') {
@@ -378,7 +377,7 @@ export function registerBoard(on: On): void {
     const below = await next(e);
     if (board.isLive !== true || e.viewport === undefined) return below;
     try {
-      return rowUnder(board.view, e.viewport.columns, below);
+      return rowUnder(board.view, e.viewport.columns - HINT_INSET, below);
     } catch (error) {
       logFailure($, 'drawing the row', error);
       return below;
