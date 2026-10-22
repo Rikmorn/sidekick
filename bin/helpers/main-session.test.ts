@@ -147,13 +147,13 @@ describe('withoutMarkers', () => {
 describe('mainLine', () => {
   const suffix =
     ' · sidekick holds this name when this turn ends; ← before then loses it';
-  test('the suffix only for a listing or id main whose name is not held', () => {
+  test('the suffix only for a listed main whose name is not held', () => {
     const listing = { value: 'x', from: 'listing', sessionId: SID } as const;
     expect(mainLine(listing, false)).toBe(`main: x${suffix}`);
     expect(mainLine(listing, true)).toBe('main: x');
     expect(mainLine(listing, null)).toBe('main: x');
     expect(mainLine({ value: 'x', from: 'id', sessionId: SID }, false)).toBe(
-      `main: x${suffix}`,
+      'main: x',
     );
     expect(mainLine({ value: 'x', from: 'inherited' }, false)).toBe('main: x');
   });

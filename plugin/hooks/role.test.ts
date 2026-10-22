@@ -137,6 +137,8 @@ type World = {
   flag: Settings;
   /** Whether a plugin above refuses the settings read. */
   isRefusing: boolean;
+  /** Whether a plugin above refuses the `CLAUDE_JOB_DIR` read. */
+  isEnvRefusing?: boolean;
 };
 
 // Nothing sits beneath the test's hooks but the kit's own bottom, so they end
@@ -145,7 +147,8 @@ type World = {
 // answered. Returns the lines the plugins send to the debug log.
 function answerBeneath(on: On, world: World): string[] {
   const debug: string[] = [];
-  mock.env(on, world.env);
+  if (world.isEnvRefusing === true) on('env.get', () => ({ deny: REFUSAL }));
+  else mock.env(on, world.env);
   mock.clock(on);
   on('ui.log', (_$, e) => {
     if (e.to === 'debug') debug.push(e.text);
@@ -234,6 +237,22 @@ test('a refused settings read settles with no marker, and logs the failure', asy
   expect(roleLines(debug)).toEqual([
     expect.stringMatching(
       /^sidekick role: reading the flag settings failed: .*refused by a plugin above$/,
+    ),
+    'sidekick role: main',
+  ]);
+});
+
+test('a refused CLAUDE_JOB_DIR read counts as unset: a main, and the failure logs', async ($, on) => {
+  const debug = answerBeneath(on, {
+    env: { CLAUDE_JOB_DIR: JOB_DIR },
+    flag: {},
+    isRefusing: false,
+    isEnvRefusing: true,
+  });
+  await startedFrom($, 'startup');
+  expect(roleLines(debug)).toEqual([
+    expect.stringMatching(
+      /^sidekick role: reading CLAUDE_JOB_DIR failed: .*refused by a plugin above$/,
     ),
     'sidekick role: main',
   ]);

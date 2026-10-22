@@ -21,6 +21,9 @@ export interface SessionEnv {
   runClaude: ClaudeRunner;
 }
 
+// The timeout stays under the mod's run timeout, as the desk's does.
+const LISTING_TIMEOUT_MS = 5_000;
+
 type Out = (line: string) => void;
 
 // The session id, or undefined on a usage error: `--json` and `--self` are required.
@@ -42,14 +45,14 @@ export function runSessionCli(
   senv: SessionEnv,
   out: Out,
   err: Out,
+  timeoutMs = LISTING_TIMEOUT_MS,
 ): number {
   const self = parseSessionArgs(rest);
   if (self === undefined) {
     err(`usage: ${SESSION_USAGE_LINE}`);
     return 1;
   }
-  // The timeout stays under the mod's run timeout, as the desk's does.
-  const listing = listJobs(senv.runClaude, senv.cwd, 5_000);
+  const listing = listJobs(senv.runClaude, senv.cwd, timeoutMs);
   if ('issues' in listing) {
     for (const issue of listing.issues) err(issue);
     return 1;

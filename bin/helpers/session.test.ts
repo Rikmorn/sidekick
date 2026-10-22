@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { parseSessionAnswer } from '../../plugin/hooks/name/contract.js';
+import {
+  parseSessionAnswer,
+  RUN_TIMEOUT_MS,
+} from '../../plugin/hooks/name/contract.js';
 import { removeTemps, tmp } from './fixtures/worker/repo.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import {
@@ -92,5 +95,30 @@ describe('runSessionCli', () => {
     const r = run(['--json', '--self', SID], ok({ stdout: 'nope' }));
     expect(r.code).toBe(1);
     expect(r.err[0]).toContain('not JSON');
+  });
+  test('the listing times out before the mod kills the run, and the timeout is a parameter', () => {
+    const seen: (number | undefined)[] = [];
+    const configDir = tmp();
+    const runClaude: ClaudeRunner = (_args, opts) => {
+      seen.push(opts.timeoutMs);
+      return ok();
+    };
+    const senv: SessionEnv = { cwd: configDir, configDir, runClaude };
+    const argv = ['--json', '--self', SID];
+    runSessionCli(
+      argv,
+      senv,
+      () => {},
+      () => {},
+    );
+    runSessionCli(
+      argv,
+      senv,
+      () => {},
+      () => {},
+      1_234,
+    );
+    expect(seen[0]).toBeLessThan(RUN_TIMEOUT_MS);
+    expect(seen[1]).toBe(1_234);
   });
 });

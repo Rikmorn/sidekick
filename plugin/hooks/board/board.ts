@@ -385,8 +385,8 @@ export function registerBoard(on: On): void {
   };
 
   // The role's classic start hook matches `fork` only, so this one takes no
-  // matcher and hears every source. The settings hooks run inside `next(e)`, and noting the start first starts its pickup
-  // beside them.
+  // matcher and hears every source. The settings hooks run inside `next(e)`,
+  // and noting the start first starts its pickup beside them.
   on('classic.SessionStart', ($, e, next) => {
     try {
       if (e.source !== 'compact') {

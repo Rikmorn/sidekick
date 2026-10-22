@@ -294,6 +294,33 @@ test('a failed check leaves the next launch free to check and freeze', async ($,
   expect(seen.ran).toEqual([{ command: 'rename', args: MAIN }]);
 });
 
+const UNSURE: { name: string; answer: RunAnswer }[] = [
+  {
+    name: 'held null',
+    answer: answered({ version: 1, name: MAIN, held: null }),
+  },
+  {
+    name: 'name null',
+    answer: answered({ version: 1, name: null, held: false }),
+  },
+];
+
+for (const row of UNSURE) {
+  test(`an unsure answer, ${row.name}, leaves the next launch free to check and freeze`, async ($, on) => {
+    const world = worldWith(row.answer);
+    const { seen, clock } = answerBeneath(on, world);
+    await started($, clock);
+    await afterBash($, DISPATCH);
+    await clock.advance(RENAME_DELAY_MS);
+    expect(seen.ran).toEqual([]);
+    world.answer = NOT_HELD;
+    expect(await afterBash($, LAUNCH)).toEqual(AFTER_TOOL);
+    await clock.advance(RENAME_DELAY_MS);
+    expect(seen.runs).toHaveLength(2);
+    expect(seen.ran).toEqual([{ command: 'rename', args: MAIN }]);
+  });
+}
+
 test('a refused session id runs nothing, and the debug log names it', async ($, on) => {
   const world = worldWith(NOT_HELD, { refused: new Set(['session.id']) });
   const { seen, clock } = answerBeneath(on, world);

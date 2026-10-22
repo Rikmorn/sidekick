@@ -1682,7 +1682,7 @@ function mainReport(main, env, home) {
 }
 function mainLine(main, held) {
   const base = `main: ${main.value}`;
-  return main.from !== "inherited" && held === false ? `${base} · sidekick holds this name when this turn ends; ← before then loses it` : base;
+  return main.from === "listing" && held === false ? `${base} · sidekick holds this name when this turn ends; ← before then loses it` : base;
 }
 
 // bin/helpers/profile-launch.ts
@@ -4612,6 +4612,7 @@ var SESSION_VERSION = 1;
 
 // bin/helpers/session.ts
 var SESSION_USAGE_LINE = "sidekick session --json --self <session id>";
+var LISTING_TIMEOUT_MS = 5000;
 function parseSessionArgs(rest2) {
   const parsed = parseFlags(rest2, {
     json: { type: "boolean" },
@@ -4622,13 +4623,13 @@ function parseSessionArgs(rest2) {
   const { json, self } = parsed.values;
   return json === true && typeof self === "string" && self !== "" ? self : undefined;
 }
-function runSessionCli(rest2, senv, out, err) {
+function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
   const self = parseSessionArgs(rest2);
   if (self === undefined) {
     err(`usage: ${SESSION_USAGE_LINE}`);
     return 1;
   }
-  const listing = listJobs(senv.runClaude, senv.cwd, 5000);
+  const listing = listJobs(senv.runClaude, senv.cwd, timeoutMs);
   if ("issues" in listing) {
     for (const issue of listing.issues)
       err(issue);

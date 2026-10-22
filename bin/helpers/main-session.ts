@@ -103,10 +103,10 @@ export function mainReport(
   return mainLine(main, held);
 }
 
-/** The CLI's `main: <value>` line; the suffix warns when sidekick, not the operator, holds the name. */
+/** The CLI's `main: <value>` line; the suffix warns only for a listed name that sidekick, not the operator, holds. */
 export function mainLine(main: ResolvedMain, held: boolean | null): string {
   const base = `main: ${main.value}`;
-  return main.from !== 'inherited' && held === false
+  return main.from === 'listing' && held === false
     ? `${base} · sidekick holds this name when this turn ends; ← before then loses it`
     : base;
 }
