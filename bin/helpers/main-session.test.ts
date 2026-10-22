@@ -6,6 +6,7 @@ import {
   configDirOf,
   MAIN_MARKERS,
   mainLine,
+  mainReport,
   nameHeld,
   resolveMain,
   withoutMarkers,
@@ -162,5 +163,49 @@ describe('configDirOf', () => {
   test('an empty CLAUDE_CONFIG_DIR means unset', () => {
     expect(configDirOf({ CLAUDE_CONFIG_DIR: '' }, '/h')).toBe('/h/.claude');
     expect(configDirOf({ CLAUDE_CONFIG_DIR: '/c' }, '/h')).toBe('/c');
+  });
+});
+
+describe('mainReport', () => {
+  const configWith = (nameSource: string): string => {
+    const configDir = tmp();
+    fs.mkdirSync(path.join(configDir, 'sessions'));
+    fs.writeFileSync(
+      path.join(configDir, 'sessions', '1.json'),
+      JSON.stringify({ sessionId: SID, nameSource }),
+    );
+    return configDir;
+  };
+  const suffix =
+    ' · sidekick holds this name when this turn ends; ← before then loses it';
+  const listing = { value: 'x', from: 'listing', sessionId: SID } as const;
+
+  test('adds the suffix for an automatic name, read from CLAUDE_CONFIG_DIR', () => {
+    const env = { CLAUDE_CONFIG_DIR: configWith('derived') };
+    expect(mainReport(listing, env, '/nowhere')).toBe(`main: x${suffix}`);
+  });
+  test('leaves the suffix off for a name the operator chose', () => {
+    const env = { CLAUDE_CONFIG_DIR: configWith('user') };
+    expect(mainReport(listing, env, '/nowhere')).toBe('main: x');
+  });
+  test('reads the default folder under home when CLAUDE_CONFIG_DIR is unset', () => {
+    const home = tmp();
+    fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, '.claude', 'sessions', '1.json'),
+      JSON.stringify({ sessionId: SID, nameSource: 'derived' }),
+    );
+    expect(mainReport(listing, {}, home)).toBe(`main: x${suffix}`);
+  });
+  test('an inherited main never reads the sessions file', () => {
+    const env = { CLAUDE_CONFIG_DIR: '/does/not/exist' };
+    expect(mainReport({ value: 'root', from: 'inherited' }, env, '/h')).toBe(
+      'main: root',
+    );
+  });
+  test('an unreadable sessions folder gives no suffix', () => {
+    expect(mainReport(listing, { CLAUDE_CONFIG_DIR: tmp() }, '/h')).toBe(
+      'main: x',
+    );
   });
 });

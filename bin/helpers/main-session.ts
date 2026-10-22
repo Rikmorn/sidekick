@@ -90,6 +90,19 @@ export function withoutMarkers(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return copy;
 }
 
+/** The `main:` line for a launch: reads the sessions file only for a session sidekick resolved. */
+export function mainReport(
+  main: ResolvedMain,
+  env: NodeJS.ProcessEnv,
+  home: string,
+): string {
+  const held =
+    main.sessionId === undefined
+      ? null
+      : nameHeld(configDirOf(env, home), main.sessionId);
+  return mainLine(main, held);
+}
+
 /** The CLI's `main: <value>` line; the suffix warns when sidekick, not the operator, holds the name. */
 export function mainLine(main: ResolvedMain, held: boolean | null): string {
   const base = `main: ${main.value}`;

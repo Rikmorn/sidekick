@@ -8,13 +8,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import {
-  configDirOf,
-  mainLine,
-  nameHeld,
-  type ResolvedMain,
-  resolveMain,
-} from './main-session.js';
+import { mainReport, type ResolvedMain, resolveMain } from './main-session.js';
 import type { Runner } from './pm-data.js';
 import {
   checkComposed,
@@ -338,16 +332,8 @@ function relay(result: ClaudeResult, out: Out, err: Out): void {
   if (result.timedOut) err('claude did not return in time.');
 }
 
-// Names the recorded main; the suffix needs the sessions file, read only for a session sidekick resolved.
-function mainReport(ready: Ready, wenv: WorkerEnv): string[] {
-  const { main } = ready;
-  if (main === undefined) return [];
-  const held =
-    main.sessionId === undefined
-      ? null
-      : nameHeld(configDirOf(wenv.env, wenv.home), main.sessionId);
-  return [mainLine(main, held)];
-}
+const mainLines = (ready: Ready, wenv: WorkerEnv): string[] =>
+  ready.main === undefined ? [] : [mainReport(ready.main, wenv.env, wenv.home)];
 
 function summary(ready: Ready): string[] {
   const { brief, mode } = ready;
@@ -406,7 +392,7 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   });
   relay(result, out, err);
   if (result.code === 0) {
-    for (const line of [...mainReport(ready, wenv), ...summary(ready)]) {
+    for (const line of [...mainLines(ready, wenv), ...summary(ready)]) {
       out(line);
     }
     keepRecord(ready, result, err);

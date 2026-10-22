@@ -4,13 +4,7 @@
  * and `hook` families do.
  */
 import { parseArgs } from 'node:util';
-import {
-  configDirOf,
-  mainLine,
-  nameHeld,
-  type ResolvedMain,
-  resolveMain,
-} from './main-session.js';
+import { mainReport, type ResolvedMain, resolveMain } from './main-session.js';
 import {
   bgArgs,
   type CheckResult,
@@ -228,14 +222,6 @@ function mainOf(penv: ProfileEnv): ResolvedMain | undefined {
   return resolveMain(penv.env, 'jobs' in listed ? listed.jobs : undefined);
 }
 
-function mainReport(main: ResolvedMain, penv: ProfileEnv): string {
-  const held =
-    main.sessionId === undefined
-      ? null
-      : nameHeld(configDirOf(penv.env, penv.home), main.sessionId);
-  return mainLine(main, held);
-}
-
 // The `plugins:` lines of `show`, which runs the plugin check without `doctor` and never refuses on it.
 function pluginReport(
   profile: Profile,
@@ -377,7 +363,8 @@ const launch: Verb = (rest, penv, out, err) => {
   if (result.stdout !== '') out(withoutTrailingNewline(result.stdout));
   if (result.stderr !== '') err(withoutTrailingNewline(result.stderr));
   if (result.timedOut) err('claude did not return in time.');
-  if (result.code === 0 && main !== undefined) out(mainReport(main, penv));
+  if (result.code === 0 && main !== undefined)
+    out(mainReport(main, penv.env, penv.home));
   return result.code;
 };
 

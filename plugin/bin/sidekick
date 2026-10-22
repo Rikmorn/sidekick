@@ -1676,6 +1676,10 @@ function withoutMarkers(env) {
     delete copy[marker];
   return copy;
 }
+function mainReport(main, env, home) {
+  const held = main.sessionId === undefined ? null : nameHeld(configDirOf(env, home), main.sessionId);
+  return mainLine(main, held);
+}
 function mainLine(main, held) {
   const base = `main: ${main.value}`;
   return main.from !== "inherited" && held === false ? `${base} · sidekick holds this name when this turn ends; ← before then loses it` : base;
@@ -2419,10 +2423,6 @@ function mainOf(penv) {
   const listed = listJobs(penv.runClaude, penv.cwd);
   return resolveMain(penv.env, "jobs" in listed ? listed.jobs : undefined);
 }
-function mainReport(main, penv) {
-  const held = main.sessionId === undefined ? null : nameHeld(configDirOf(penv.env, penv.home), main.sessionId);
-  return mainLine(main, held);
-}
 function pluginReport(profile, settings, penv) {
   if (!needsPluginCheck(profile.manifest)) {
     return [
@@ -2540,7 +2540,7 @@ var launch = (rest, penv, out, err) => {
   if (result.timedOut)
     err("claude did not return in time.");
   if (result.code === 0 && main !== undefined)
-    out(mainReport(main, penv));
+    out(mainReport(main, penv.env, penv.home));
   return result.code;
 };
 var isShell = (value) => SHELLS.some((shell) => shell === value);
@@ -4861,13 +4861,7 @@ function relay(result, out, err) {
   if (result.timedOut)
     err("claude did not return in time.");
 }
-function mainReport2(ready, wenv) {
-  const { main } = ready;
-  if (main === undefined)
-    return [];
-  const held = main.sessionId === undefined ? null : nameHeld(configDirOf(wenv.env, wenv.home), main.sessionId);
-  return [mainLine(main, held)];
-}
+var mainLines = (ready, wenv) => ready.main === undefined ? [] : [mainReport(ready.main, wenv.env, wenv.home)];
 function summary(ready) {
   const { brief, mode } = ready;
   const pushes = ready.allowPush ? "pushes ALLOWED on the operator's word" : "pushes blocked";
@@ -4915,7 +4909,7 @@ function launch2(ready, wenv, out, err) {
   });
   relay(result, out, err);
   if (result.code === 0) {
-    for (const line of [...mainReport2(ready, wenv), ...summary(ready)]) {
+    for (const line of [...mainLines(ready, wenv), ...summary(ready)]) {
       out(line);
     }
     keepRecord(ready, result, err);
