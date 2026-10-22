@@ -22,12 +22,14 @@ const JobSchema = v.pipe(
     id: OptionalText,
     kind: OptionalText,
     name: OptionalText,
+    sessionId: OptionalText,
     state: OptionalText,
   }),
   v.transform((row) => ({
     id: row.id ?? undefined,
     kind: row.kind ?? undefined,
     name: row.name ?? undefined,
+    sessionId: row.sessionId ?? undefined,
     state: row.state ?? undefined,
   })),
 );

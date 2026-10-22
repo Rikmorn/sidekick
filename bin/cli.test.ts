@@ -15,6 +15,7 @@ import {
 } from './cli.js';
 import { DESK_USAGE_LINE } from './helpers/desk.js';
 import { PROFILE_USAGE_LINE } from './helpers/profile.js';
+import { SESSION_USAGE_LINE } from './helpers/session.js';
 import { WORKER_USAGE_LINE } from './helpers/worker.js';
 
 function tmp(): string {
@@ -454,6 +455,43 @@ describe('main: desk', () => {
         error: 'claude agents --json --all failed with exit code 1: boom',
       },
     ]);
+  });
+});
+
+describe('session family', () => {
+  const runSession = (argv: string[]) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = main(
+      ['session', ...argv],
+      {
+        env: {},
+        cwd: process.cwd(),
+        entryFileUrl: pathToFileURL(path.join(__dirname, 'cli.ts')).href,
+        runClaude: () => ({
+          code: 0,
+          stdout: '[]',
+          stderr: '',
+          timedOut: false,
+        }),
+      },
+      (l) => out.push(l),
+      (l) => err.push(l),
+    );
+    return { code, out, err };
+  };
+  test('USAGE names the session family', () => {
+    expect(USAGE).toContain(SESSION_USAGE_LINE);
+  });
+  test('session without --self prints the session usage and returns 1', () => {
+    const r = runSession(['--json']);
+    expect(r.code).toBe(1);
+    expect(r.err).toEqual([`usage: ${SESSION_USAGE_LINE}`]);
+  });
+  test('session --json --self prints one answer line', () => {
+    const r = runSession(['--json', '--self', 'abc']);
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual(['{"version":1,"name":null,"held":null}']);
   });
 });
 

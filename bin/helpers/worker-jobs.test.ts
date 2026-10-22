@@ -44,11 +44,18 @@ describe('listJobs', () => {
     const r = runner({ stdout: JSON.stringify(listing) });
     expect(listJobs(r.run, '/repo')).toEqual({
       jobs: [
-        { id: '213245a1', kind: 'background', name: 'w1', state: 'done' },
+        {
+          id: '213245a1',
+          kind: 'background',
+          name: 'w1',
+          sessionId: 'abc',
+          state: 'done',
+        },
         {
           id: undefined,
           kind: 'interactive',
           name: undefined,
+          sessionId: undefined,
           state: undefined,
         },
       ],
