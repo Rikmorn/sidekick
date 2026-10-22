@@ -105,7 +105,7 @@ export function registerGauge(on: On): void {
           below,
           {
             type: 'Text',
-            props: { color: SIGNPOST_COLOR },
+            props: { color: SIGNPOST_COLOR, wrap: 'truncate-end' },
             children: [cut(signpostText(role.main), columns)],
           },
         ],

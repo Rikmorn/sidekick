@@ -323,6 +323,13 @@ test('the signpost stays within the row in a narrow terminal, wide characters in
   expect(width(text)).toBeLessThanOrEqual(30);
   expect(JSON.stringify(tree)).toContain(text);
   expect(JSON.stringify(tree)).not.toContain(signpostText(long));
+  // The code-point cut is a pre-trim; the renderer bounds the row in cells.
+  expect(tree).toMatchObject({
+    children: [
+      {},
+      { type: 'Text', props: { wrap: 'truncate-end', color: 'inactive' } },
+    ],
+  });
 });
 
 test('a worker without a viewport draws only what lies beneath', async ($, on) => {
