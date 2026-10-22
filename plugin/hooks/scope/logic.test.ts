@@ -363,3 +363,31 @@ test('tokens print whole below 1,000 and as thousands to one decimal from there'
   expect(tokensText(1_250)).toBe('1.3k');
   expect(tokensText(1_234_567)).toBe('1234.6k');
 });
+
+test('the auto-memory file is named by its role, and other types keep their path', () => {
+  const places: Places = { session: '/work/repo', home: '/Users/someone' };
+  const lines = profilePaneLines(
+    {
+      profile: undefined,
+      hidden: NOTHING,
+      usage: ok({
+        memoryFiles: [
+          {
+            path: '/Users/someone/.claude/projects/-Users-someone-work/memory/MEMORY.md',
+            type: 'AutoMem',
+            tokens: 4_700,
+          },
+          {
+            path: '/Users/someone/.claude/CLAUDE.md',
+            type: 'User',
+            tokens: 900,
+          },
+        ],
+      }),
+      places,
+    },
+    80,
+  );
+  expect(texts(lines)).toContain('auto memory: MEMORY.md  4.7k');
+  expect(texts(lines)).toContain('~/.claude/CLAUDE.md  900');
+});

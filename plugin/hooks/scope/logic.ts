@@ -153,6 +153,14 @@ function hiddenLines(hidden: Hidden): PaneLine[] {
   return lines;
 }
 
+function memoryName(
+  file: { path: string; type: string },
+  places: Places,
+): string {
+  if (file.type !== 'AutoMem') return shortPath(file.path, places);
+  return `auto memory: ${file.path.slice(file.path.lastIndexOf('/') + 1)}`;
+}
+
 function usageLines(
   usage: UsageRead,
   places: Places,
@@ -191,7 +199,7 @@ function usageLines(
     ...itemLines(
       'MEMORY FILES',
       breakdown.memoryFiles.map((m) => ({
-        name: shortPath(m.path, places),
+        name: memoryName(m, places),
         tokens: m.tokens,
       })),
       columns,
