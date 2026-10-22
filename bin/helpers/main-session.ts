@@ -90,14 +90,17 @@ export function withoutMarkers(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return copy;
 }
 
-/** The `main:` line for a launch: reads the sessions file only for a session sidekick resolved. */
+/** The `main:` line for a launch: reads the sessions file only for an interactive launcher whose session sidekick resolved. */
 export function mainReport(
   main: ResolvedMain,
   env: NodeJS.ProcessEnv,
   home: string,
 ): string {
+  // A background launcher keeps its name: only an interactive session's first `←` forks and renames.
+  const isBackground =
+    env.CLAUDE_JOB_DIR !== undefined && env.CLAUDE_JOB_DIR !== '';
   const held =
-    main.sessionId === undefined
+    main.sessionId === undefined || isBackground
       ? null
       : nameHeld(configDirOf(env, home), main.sessionId);
   return mainLine(main, held);

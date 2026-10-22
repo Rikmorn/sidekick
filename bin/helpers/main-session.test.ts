@@ -188,6 +188,20 @@ describe('mainReport', () => {
     const env = { CLAUDE_CONFIG_DIR: configWith('user') };
     expect(mainReport(listing, env, '/nowhere')).toBe('main: x');
   });
+  test('a background launcher, with CLAUDE_JOB_DIR set, prints no suffix', () => {
+    const env = {
+      CLAUDE_CONFIG_DIR: configWith('derived'),
+      CLAUDE_JOB_DIR: '/jobs/aaaa0001',
+    };
+    expect(mainReport(listing, env, '/nowhere')).toBe('main: x');
+  });
+  test('an empty CLAUDE_JOB_DIR means unset', () => {
+    const env = {
+      CLAUDE_CONFIG_DIR: configWith('derived'),
+      CLAUDE_JOB_DIR: '',
+    };
+    expect(mainReport(listing, env, '/nowhere')).toBe(`main: x${suffix}`);
+  });
   test('reads the default folder under home when CLAUDE_CONFIG_DIR is unset', () => {
     const home = tmp();
     fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true });

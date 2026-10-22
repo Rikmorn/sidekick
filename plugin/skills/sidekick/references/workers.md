@@ -81,7 +81,7 @@ Once the checks pass, `dispatch` acts in this order:
    finish: sidekick worker finish <absolute brief path>
    ```
 
-   The `main:` line appears only when `dispatch` records a main, as "The overlay" says. While that name is one the listing shows for the dispatching session and does not yet hold, the line ends ` · sidekick holds this name when this turn ends; ← before then loses it`. The `every tool call` line appears only under `bypassPermissions`. With `--allow-push`, the `dispatched` line ends `pushes ALLOWED on the operator's word`.
+   The `main:` line appears only when `dispatch` records a main, as "The overlay" says. When an interactive session dispatches under a name that does not hold yet, the line ends ` · sidekick holds this name when this turn ends; ← before then loses it`. The `every tool call` line appears only under `bypassPermissions`. With `--allow-push`, the `dispatched` line ends `pushes ALLOWED on the operator's word`.
 
 4. Once `claude` exits 0, it writes the worker's record, with the job's id from that output, as "The record" says. A write that fails prints why and leaves the exit code as `claude`'s. The worker runs, and only the desk loses sight of it.
 

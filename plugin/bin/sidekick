@@ -1677,7 +1677,8 @@ function withoutMarkers(env) {
   return copy;
 }
 function mainReport(main, env, home) {
-  const held = main.sessionId === undefined ? null : nameHeld(configDirOf(env, home), main.sessionId);
+  const isBackground = env.CLAUDE_JOB_DIR !== undefined && env.CLAUDE_JOB_DIR !== "";
+  const held = main.sessionId === undefined || isBackground ? null : nameHeld(configDirOf(env, home), main.sessionId);
   return mainLine(main, held);
 }
 function mainLine(main, held) {
