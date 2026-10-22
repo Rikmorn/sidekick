@@ -36,6 +36,23 @@ test('wrapRows keeps an empty line as one empty row', () => {
   expect(wrapRows('', 10)).toEqual(['']);
 });
 
+test('wrapRows draws no blank row for a trailing space', () => {
+  expect(wrapRows('abc def ', 7)).toEqual(['abc def']);
+});
+
+test('wrapRows draws no blank row for a line led by two spaces', () => {
+  expect(wrapRows('  abcdefghij', 5)).toEqual(['  abc', 'defgh', 'ij']);
+  expect(wrapRows('  ab cdef', 5)).toEqual(['  ab', 'cdef']);
+});
+
+test('wrapRows leaves no row led by a space after a hard break', () => {
+  expect(wrapRows('abcde   fghij', 5)).toEqual(['abcde', 'fghij']);
+});
+
+test('wrapRows gives a line of spaces one row, not a blank tail', () => {
+  expect(wrapRows('       ', 3)).toEqual(['   ']);
+});
+
 test('wrapRows gives no rows below one column', () => {
   expect(wrapRows('abc', 0)).toEqual([]);
 });

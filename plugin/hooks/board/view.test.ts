@@ -288,8 +288,8 @@ test('rowSegments gives one failure segment for a failed view and none for empty
   expect(rowSegments({ state: 'empty' }, 160)).toEqual([]);
 });
 
-test('paneLines gives the brief whole, a gap, the link, and the stamp', () => {
-  expect(paneLines(ok)).toEqual([
+test('paneLines gives the brief, a gap, the link, and the stamp', () => {
+  expect(paneLines(ok, 80)).toEqual([
     ...BRIEF.map((text) => ({ tone: 'plain', text })),
     { tone: 'gap' },
     {
@@ -299,15 +299,58 @@ test('paneLines gives the brief whole, a gap, the link, and the stamp', () => {
     },
     { tone: 'subtle', text: 'as of 15:02' },
   ]);
-  expect(paneLines(stale).at(-1)).toEqual({
+  expect(paneLines(stale, 80).at(-1)).toEqual({
     tone: 'subtle',
     text: 'refresh failed 15:05',
   });
 });
 
 test('paneLines gives nothing for empty and the reason for failed', () => {
-  expect(paneLines({ state: 'empty' })).toEqual([]);
-  expect(paneLines({ state: 'failed', reason: 'gh missing' })).toEqual([
+  expect(paneLines({ state: 'empty' }, 80)).toEqual([]);
+  expect(paneLines({ state: 'failed', reason: 'gh missing' }, 80)).toEqual([
     { tone: 'failure', text: '⚠ board: gh missing' },
   ]);
+});
+
+function briefed(brief: string): BoardView {
+  return { state: 'ok', glance: { ...glance, brief }, takenAt: '15:02' };
+}
+
+test('paneLines wraps a brief line wider than the pane into plain rows within it', () => {
+  const rows = paneLines(
+    briefed('In progress: #211 the desk and its band'),
+    16,
+  );
+  const brief = rows.slice(0, -3);
+  expect(brief.length).toBeGreaterThan(1);
+  for (const row of brief) {
+    expect(row.tone).toBe('plain');
+    if (row.tone === 'plain') expect(width(row.text)).toBeLessThanOrEqual(16);
+  }
+});
+
+test('paneLines turns an empty brief line into a gap row', () => {
+  expect(paneLines(briefed('one\n\ntwo'), 40).slice(0, 3)).toEqual([
+    { tone: 'plain', text: 'one' },
+    { tone: 'gap' },
+    { tone: 'plain', text: 'two' },
+  ]);
+});
+
+test('paneLines breaks a URL longer than the pane hard', () => {
+  const url = 'https://github.com/Rikmorn/sidekick/issues/232';
+  const rows = paneLines(briefed(url), 20).slice(0, -3);
+  expect(rows).toHaveLength(3);
+  expect(
+    rows.map((row) => (row.tone === 'plain' ? row.text : '')).join(''),
+  ).toBe(url);
+  for (const row of rows) {
+    if (row.tone === 'plain') expect(width(row.text)).toBeLessThanOrEqual(20);
+  }
+});
+
+test('paneLines keeps the link and the stamp to one row each, however narrow', () => {
+  const rows = paneLines(briefed('x'), 5);
+  expect(rows.slice(-2).map((row) => row.tone)).toEqual(['link', 'subtle']);
+  expect(rows).toHaveLength(4);
 });

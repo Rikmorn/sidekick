@@ -7,8 +7,12 @@
 // the gauge shares it unmatched. No other mod draws `PromptHint`, and the desk
 // and the scope mod draw panes of their own ids. A hook that fails in one mod
 // skips the module's whole hook for that event, so each hook keeps its own
-// failures and calls `next(e)` once. `/board` and the board's pane are the
-// board's alone, so their hooks answer for themselves.
+// failures and calls `next(e)` once. `/board` registers in every session the
+// profile leaves the board on in, and answers in one line in a background
+// session, where nobody sees a pane. A name the engine refuses belongs to
+// another owner: the board still runs, and its `command.run` hook passes the
+// command on. The board's pane is the board's alone, so its hook answers for
+// itself.
 
 import type {
   EngineInterface,
@@ -18,6 +22,8 @@ import type {
   RenderNode,
   ThemeKey,
 } from 'claude-code';
+import { PANE_ROWS, registerOwned } from '../commands';
+import { cut, scrollHint } from '../lines';
 import { isPartHidden } from '../scope/logic';
 import { type GlanceLevel, PICKUP_TIMEOUT_MS } from './contract';
 import {
@@ -188,23 +194,39 @@ function rowUnder(
   };
 }
 
-// An empty Text takes no row, so the gap is a Box one row high.
+// An empty Text takes no row, so the gap is a Box one row high. Each Text is
+// one row: `paneLines` wrapped the lines already, so the rows counted are the
+// rows drawn.
 function paneLineOf(line: PaneLine): RenderElement {
   if (line.tone === 'gap') return { type: 'Box', props: { height: 1 } };
   const children =
     line.tone === 'link' ? [link(line.text, line.href)] : [line.text];
   return {
     type: 'Text',
-    props: { color: PANE_COLORS[line.tone], wrap: 'wrap' },
+    props: { color: PANE_COLORS[line.tone], wrap: 'truncate-end' },
     children,
   };
 }
 
-function paneOf(view: BoardView): RenderElement {
+function paneOf(
+  view: BoardView,
+  columns: number,
+  bodyRows: number,
+  isFocused: boolean,
+): RenderElement {
+  const lines = paneLines(view, columns);
+  const hint = scrollHint(lines.length, bodyRows, isFocused);
+  const shown =
+    hint === undefined
+      ? lines
+      : [
+          { tone: 'subtle', text: cut(hint, columns) } satisfies PaneLine,
+          ...lines,
+        ];
   return {
     type: 'Box',
     props: { flexDirection: 'column' },
-    children: paneLines(view).map(paneLineOf),
+    children: shown.map(paneLineOf),
   };
 }
 
@@ -218,6 +240,10 @@ interface BoardState {
   queued: RunKind | undefined;
   /** Set by the interactive `session.start` hook; undefined until it runs. */
   isLive: boolean | undefined;
+  /** False until the engine accepts the name; a refused name belongs to another owner. */
+  isOwned: boolean;
+  /** Set at the start from `CLAUDE_JOB_DIR`, the one sign a background session gives. */
+  isBackground: boolean;
   /** A classic start other than a compact whose pickup has not begun. */
   isStartPending: boolean;
 }
@@ -305,16 +331,18 @@ async function isBoardHidden($: EngineInterface): Promise<boolean> {
 }
 
 // The start pickup goes before the command, so a refused `/board` costs only
-// the command.
+// the command. A background session registers the command and stops: nobody
+// sees a row or a pane.
 async function startBoard(
   $: EngineInterface,
   board: BoardState,
 ): Promise<void> {
-  const isBackground = (await $.env.get('CLAUDE_JOB_DIR')) !== undefined;
-  board.isLive = !isBackground && !(await isBoardHidden($));
-  if (!board.isLive) return;
-  maybeRunStart($, board);
-  await $.command.register(COMMAND);
+  board.isBackground = (await $.env.get('CLAUDE_JOB_DIR')) !== undefined;
+  const isHidden = await isBoardHidden($);
+  board.isLive = !board.isBackground && !isHidden;
+  if (board.isLive) maybeRunStart($, board);
+  if (isHidden) return;
+  board.isOwned = await registerOwned($, COMMAND, 'board');
 }
 
 // Only a placed pane closes: one held undrawn for a wider terminal opens
@@ -334,12 +362,12 @@ async function togglePane(
     return;
   }
   void refreshBoard($, board, 'asked');
-  await $.ui.open(PANE);
+  await $.ui.open({ ...PANE, rows: PANE_ROWS });
 }
 
 /**
- * Hooks the board: in every session, the classic start; in a live one,
- * `/board`, the pickups, the state row under the prompt, and the board's pane.
+ * Hooks the board: in every session, the classic start and, unless a profile
+ * hides the board, `/board`; in a live one, the pickups, the state row under the prompt, and the board's pane.
  */
 export function registerBoard(on: On): void {
   const board: BoardState = {
@@ -347,6 +375,8 @@ export function registerBoard(on: On): void {
     isRunning: false,
     queued: undefined,
     isLive: undefined,
+    isOwned: false,
+    isBackground: false,
     isStartPending: false,
   };
 
@@ -376,9 +406,13 @@ export function registerBoard(on: On): void {
     return next(e);
   });
 
-  on('command.run', { command: COMMAND.name }, async ($) => {
+  on('command.run', { command: COMMAND.name }, async ($, e, next) => {
+    if (!board.isOwned) return next(e);
+    if (board.isBackground) {
+      return { text: '/board is off in background sessions.' };
+    }
     try {
-      if (board.isLive === true) await togglePane($, board);
+      await togglePane($, board);
     } catch (error) {
       logFailure($, 'command.run', error);
     }
@@ -413,7 +447,12 @@ export function registerBoard(on: On): void {
 
   on('ui.render', { component: 'Pane', requestId: PANE.id }, ($, e, next) => {
     try {
-      return paneOf(board.view);
+      return paneOf(
+        board.view,
+        e.props.bodyColumns,
+        e.props.scroll.bodyRows,
+        e.props.isFocused,
+      );
     } catch (error) {
       logFailure($, 'drawing the pane', error);
       return next(e);

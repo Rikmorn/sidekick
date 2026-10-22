@@ -15,7 +15,9 @@ import {
   mock,
   test,
 } from 'claude-code/testing';
+import { PANE_ROWS } from '../commands';
 import type { DeskSnapshot } from '../desk/contract';
+import { width } from '../lines';
 import { HINT_INSET } from './board';
 import {
   type BoardGlance,
@@ -24,7 +26,13 @@ import {
   PICKUP_TIMEOUT_MS,
 } from './contract';
 import { clockText } from './logic';
-import { type BoardView, leastWidth, rowSegments, SEPARATOR } from './view';
+import {
+  type BoardView,
+  leastWidth,
+  paneLines,
+  rowSegments,
+  SEPARATOR,
+} from './view';
 
 // What the next pickup answers: an exit with its streams, a refusal, which
 // rejects the plugin's `$.process.run` as a timeout or a failed start does, or
@@ -57,6 +65,8 @@ type Seen = {
   deskRuns: number;
   commands: string[];
   opened: { id: string; title?: string }[];
+  openings: { focus: boolean | undefined; rows: number | undefined }[];
+  immediate: Record<string, boolean | undefined>;
   closed: string[];
   /** Lines sent to the debug log. */
   debug: string[];
@@ -179,13 +189,17 @@ function bandProps(bodyColumns: number): RenderPropsOf['AbovePrompt'] {
   };
 }
 
-function paneProps(bodyColumns: number): RenderPropsOf['Pane'] {
+function paneProps(
+  bodyColumns: number,
+  bodyRows = 20,
+  isFocused = false,
+): RenderPropsOf['Pane'] {
   return {
     title: 'Board',
-    isFocused: false,
+    isFocused,
     bodyColumns,
     placement: 'dock',
-    scroll: { offset: 0, bodyRows: 20 },
+    scroll: { offset: 0, bodyRows },
     view: {},
   };
 }
@@ -201,6 +215,8 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
     deskRuns: 0,
     commands: [],
     opened: [],
+    openings: [],
+    immediate: {},
     closed: [],
     debug: [],
   };
@@ -248,10 +264,12 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
   on('command.register', (_$, e) => {
     if (world.refused.has('command.register')) return { deny: REFUSAL };
     seen.commands.push(e.name);
+    seen.immediate[e.name] = e.immediate;
     return { value: { command: e.name } };
   });
   on('ui.open', (_$, e) => {
     seen.opened.push({ id: e.id, title: e.title });
+    seen.openings.push({ focus: e.focus, rows: e.rows });
     world.panes.set(e.id, { title: e.title ?? e.id, isPlaced: true });
     return { value: { isPlaced: true } };
   });
@@ -423,13 +441,15 @@ async function drawnPane(
   $: Engine,
   surface: RenderSurface,
   bodyColumns = 60,
+  bodyRows = 20,
+  isFocused = false,
 ): Promise<PaneRow[]> {
   const ui = await $.ui.mount({
     plugin: PLUGIN,
     surface,
     component: 'Pane',
     requestId: 'board',
-    props: paneProps(bodyColumns),
+    props: paneProps(bodyColumns, bodyRows, isFocused),
   });
   const tree = await ui.drawn();
   await ui.unmount();
@@ -451,6 +471,7 @@ async function drawnBand($: Engine, surface: RenderSurface): Promise<Drawn[]> {
   return texts.map((text) => ({ text: text.text, color: text.props.color }));
 }
 
+const TRUNCATE = 'truncate-end';
 const UNDER: Run[] = [{ text: HINT, color: undefined }];
 
 // The row for GLANCE at 200 columns: every segment, the board a Link, the
@@ -625,7 +646,8 @@ for (const [level, color] of LEVEL_COLORS) {
   });
 }
 
-// Under `-p` the interactive start never fires, and nobody sees a row.
+// Under `-p` the interactive start never fires, and nobody sees a row. A
+// background session reads `isInteractive` true, so its start fires.
 const UNSEEN: {
   name: string;
   over: Partial<World>;
@@ -640,9 +662,10 @@ const UNSEEN: {
 ];
 
 for (const unseen of UNSEEN) {
-  test(`${unseen.name} gets no /board, runs no pickup, and draws no row`, async ($, on) => {
+  test(`${unseen.name} runs no pickup, opens no pane, and draws no row`, async ($, on) => {
     const world = worldWith(unseen.over);
     const { seen, clock } = answerBeneath(on, world);
+    on('command.run', { command: 'board' }, () => ({ text: 'beneath' }));
     await started($, clock, unseen.start);
     await classicStart($, clock);
     await afterBash($, 'gh issue close 5');
@@ -650,11 +673,100 @@ for (const unseen of UNSEEN) {
     await classicStart($, clock, 'clear');
     await clock.settle();
     expect(seen.pickups).toEqual([]);
-    expect(seen.commands).not.toContain('board');
     expect(seen.opened).toEqual([]);
     expect(await drawnHint($, 'terminal', WIDE)).toEqual([UNDER]);
   });
 }
+
+test('a start under -p registers no /board', async ($, on) => {
+  const { seen, clock } = answerBeneath(on, worldWith());
+  await started($, clock, HEADLESS);
+  expect(seen.commands).not.toContain('board');
+});
+
+test('a background session registers /board, and /board answers in one line', async ($, on) => {
+  const world = worldWith({ env: { CLAUDE_JOB_DIR: JOB_DIR } });
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  expect(seen.commands).toContain('board');
+  expect(await boardCommand($)).toEqual({
+    text: '/board is off in background sessions.',
+  });
+  expect(seen.opened).toEqual([]);
+});
+
+const HIDDEN = { sidekick: { hide: { mods: ['board'] } } };
+
+const HIDDEN_ENVS: Record<string, string>[] = [{}, { CLAUDE_JOB_DIR: JOB_DIR }];
+
+for (const env of HIDDEN_ENVS) {
+  test(`a profile that hides the board registers nothing${'CLAUDE_JOB_DIR' in env ? ' in a background session' : ''}, and /board reaches the hook beneath`, async ($, on) => {
+    const world = worldWith({ flag: HIDDEN, env });
+    const { seen, clock } = answerBeneath(on, world);
+    on('command.run', { command: 'board' }, () => ({
+      text: 'the other /board',
+    }));
+    await started($, clock);
+    expect(seen.commands).not.toContain('board');
+    expect(await boardCommand($)).toEqual({ text: 'the other /board' });
+  });
+}
+
+test('an interactive start registers /board to run mid-turn too', async ($, on) => {
+  const { seen, clock } = answerBeneath(on, worldWith());
+  await started($, clock);
+  expect(seen.immediate.board).toBe(true);
+});
+
+test('/board opens asking for the room its tree needs, and without the keys', async ($, on) => {
+  const { seen, clock } = answerBeneath(on, worldWith());
+  await bothStarts($, clock);
+  await boardCommand($);
+  expect(seen.openings).toEqual([{ focus: undefined, rows: PANE_ROWS }]);
+});
+
+test('a pane taller than its body leads with the scroll hint, subtle, and a pane that fits draws none', async ($, on) => {
+  const { clock } = answerBeneath(on, worldWith());
+  await bothStarts($, clock);
+  await boardCommand($);
+  await clock.settle();
+  const count = (await drawnPane($, 'terminal', 200)).length;
+  const tall = await drawnPane($, 'terminal', 200, count - 1);
+  expect(tall[0]).toEqual({
+    text: '+2 rows · ctrl+x tab to focus, then ↓',
+    color: 'subtle',
+    wrap: TRUNCATE,
+  });
+  expect(tall).toHaveLength(count + 1);
+  const focused = await drawnPane($, 'terminal', 200, count - 1, true);
+  expect(focused[0]?.text).toBe('+2 rows · ↓ to scroll');
+  const narrow = (await drawnPane($, 'terminal', 10, count - 1))[0]?.text;
+  expect(narrow).toStartWith('+');
+  expect(width(narrow ?? '')).toBeLessThanOrEqual(10);
+  expect(await drawnPane($, 'terminal', 200, count)).toHaveLength(count);
+});
+
+test('the pane draws as many rows as it counts, a long line and an empty one included', async ($, on) => {
+  const brief =
+    'a long line that wraps in a narrow pane\n\nhttps://example.com/a/very/long/path';
+  const { clock } = answerBeneath(
+    on,
+    worldWith({ answer: printed(glanceOf({ brief })) }),
+  );
+  await bothStarts($, clock);
+  await boardCommand($);
+  await clock.settle();
+  const rows = await drawnPane($, 'terminal', 14);
+  const view: BoardView = {
+    state: 'ok',
+    glance: glanceOf({ brief }),
+    takenAt: clockText(NOW),
+  };
+  expect(rows).toHaveLength(paneLines(view, 14).length);
+  for (const row of rows) {
+    if (row.color !== 'gap') expect(row.wrap).toBe(TRUNCATE);
+  }
+});
 
 test('a compact start runs nothing, and a live /clear runs one pickup and draws it', async ($, on) => {
   const world = worldWith();
@@ -723,10 +835,10 @@ test('the pane draws the brief wrapped, a one-row gap, the board as a Link, and 
   await clock.settle();
   for (const surface of SURFACES) {
     expect(await drawnPane($, surface)).toEqual([
-      ...BRIEF.map((text) => ({ text, color: 'text', wrap: 'wrap' })),
+      ...BRIEF.map((text) => ({ text, color: 'text', wrap: TRUNCATE })),
       { text: '', color: 'gap', wrap: undefined },
-      { text: BOARD_URL, color: 'text', wrap: 'wrap', href: BOARD_URL },
-      { text: `as of ${clockText(NOW)}`, color: 'subtle', wrap: 'wrap' },
+      { text: BOARD_URL, color: 'text', wrap: TRUNCATE, href: BOARD_URL },
+      { text: `as of ${clockText(NOW)}`, color: 'subtle', wrap: TRUNCATE },
     ]);
   }
 });
@@ -861,7 +973,7 @@ test('after a failed refresh, the pane keeps the brief and stamps the failure', 
   expect(rows.at(-1)).toEqual({
     text: `refresh failed ${clockText(NOW + MINUTE_MS)}`,
     color: 'subtle',
-    wrap: 'wrap',
+    wrap: TRUNCATE,
   });
   expect(rows.map((row) => row.text).slice(0, BRIEF.length)).toEqual(BRIEF);
 });
@@ -904,11 +1016,11 @@ for (const failure of FAILURES) {
       UNDER,
       failureRow(failure.line),
     ]);
-    expect(await drawnPane($, 'terminal')).toEqual([
+    expect(await drawnPane($, 'terminal', 200)).toEqual([
       {
         text: expect.stringMatching(failure.line),
         color: 'error',
-        wrap: 'wrap',
+        wrap: TRUNCATE,
       },
     ]);
   });
@@ -1048,10 +1160,11 @@ test('a refused settings read leaves the board on, and the debug log names it', 
 
 // The classic start goes first, so the only start pickup is the interactive
 // start's own, which a refused `/board` must not stop.
-test('a refused /board leaves the row running, and the debug log names it', async ($, on) => {
+test('after a refused register the row still draws, /board reaches the other command, and the debug log names the refusal', async ($, on) => {
   const world = worldWith();
   world.refused.add('command.register');
   const { seen, clock } = answerBeneath(on, world);
+  on('command.run', { command: 'board' }, () => ({ text: 'the other /board' }));
   await classicStart($, clock);
   await started($, clock);
   expect(seen.pickups).toHaveLength(1);
@@ -1059,9 +1172,11 @@ test('a refused /board leaves the row running, and the debug log names it', asyn
     UNDER,
     wideRow(clockText(NOW)),
   ]);
+  expect(await boardCommand($)).toEqual({ text: 'the other /board' });
+  expect(seen.opened).toEqual([]);
   expect(seen.debug).toContainEqual(
     expect.stringMatching(
-      /^sidekick board: session\.start failed: .*refused by a plugin above$/,
+      /^sidekick board: \/board not registered: .*refused by a plugin above$/,
     ),
   );
 });

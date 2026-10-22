@@ -1,5 +1,5 @@
 // The board's pure view: the state after each pickup run, the one-row state line's segments and how they shed to fit, and the pane's lines.
-import { cut, width } from '../lines';
+import { cut, width, wrapRows } from '../lines';
 import type { BoardGlance, GlanceLevel } from './contract';
 import { GLANCE_COMPLETE_WORD, parseGlance } from './contract';
 import type { RunKind, RunOutcome } from './logic';
@@ -223,19 +223,25 @@ function shed(glance: BoardGlance, time: string, columns: number): Segment[] {
   return cutRow(buildRow(glance, time, keep), columns);
 }
 
-/** The pane's lines: the brief whole, a gap, the board's link, and the stamp. */
-export function paneLines(view: BoardView): PaneLine[] {
+/** The pane's drawn rows at `columns`: the brief wrapped, a gap, the board's link, and the stamp. A gap is a row, since an empty Text draws none. */
+export function paneLines(view: BoardView, columns: number): PaneLine[] {
   switch (view.state) {
     case 'empty':
       return [];
     case 'failed':
-      return [{ tone: 'failure', text: `⚠ board: ${view.reason}` }];
+      return wrapRows(`⚠ board: ${view.reason}`, columns).map(
+        (text): PaneLine => ({ tone: 'failure', text }),
+      );
     case 'ok':
     case 'stale':
       return [
         ...view.glance.brief
           .split(/\r?\n/)
-          .map((text): PaneLine => ({ tone: 'plain', text })),
+          .flatMap((line) => wrapRows(line, columns))
+          .map(
+            (text): PaneLine =>
+              text === '' ? { tone: 'gap' } : { tone: 'plain', text },
+          ),
         { tone: 'gap' },
         {
           tone: 'link',
