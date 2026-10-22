@@ -8,6 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { withoutMarkers } from './main-session.js';
 import type { Profile } from './profile-store.js';
 
 export type Settings = Record<string, unknown>;
@@ -143,7 +144,12 @@ interface SpawnOutcome {
 type SpawnFn = (
   command: string,
   args: string[],
-  opts: { cwd: string; timeout: number; shell: false },
+  opts: {
+    cwd: string;
+    timeout: number;
+    shell: false;
+    env: NodeJS.ProcessEnv;
+  },
 ) => SpawnOutcome;
 
 const spawnClaude: SpawnFn = (command, args, opts) =>
@@ -168,6 +174,8 @@ export const makeClaudeRunner =
       cwd,
       timeout: timeoutMs,
       shell: false,
+      // The markers belong to the worker's settings, never to a launcher's own environment.
+      env: withoutMarkers(process.env),
     });
     const stdout = out.stdout ?? '';
     const stderr = out.stderr ?? '';

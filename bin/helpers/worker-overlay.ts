@@ -1,10 +1,16 @@
 /**
  * The settings overlay a dispatched worker launches with: the worktree base,
- * the brief marker in its environment, and, unless the brief allows a push,
+ * the brief marker and the recorded main in its environment, and, unless the brief allows a push,
  * the two blocks on `git push`.
  */
 
 import { isPlainObject, type Settings } from './profile-launch.js';
+
+// The recorded main joins the brief marker in the worker's environment.
+const markers = (opts: { briefPath: string; main?: string }) => ({
+  SIDEKICK_WORKER: opts.briefPath,
+  ...(opts.main === undefined ? {} : { SIDEKICK_MAIN: opts.main }),
+});
 
 /** The git config key that prefixes every push URL with `sidekick-push-blocked::`, a remote helper that does not exist. */
 export const PUSH_REWRITE_KEY = 'url.sidekick-push-blocked::.pushInsteadOf';
@@ -29,12 +35,12 @@ function pushEnv(count: number): Record<string, string> {
  */
 export function workerOverlay(
   profileSettings: Settings | undefined,
-  opts: { briefPath: string; allowPush: boolean },
+  opts: { briefPath: string; allowPush: boolean; main?: string },
 ): { overlay: Settings } | { issues: string[] } {
   const base = { worktree: { baseRef: 'head' } };
   if (opts.allowPush) {
     return {
-      overlay: { ...base, env: { SIDEKICK_WORKER: opts.briefPath } },
+      overlay: { ...base, env: markers(opts) },
     };
   }
   const env = isPlainObject(profileSettings?.env) ? profileSettings.env : {};
@@ -49,7 +55,7 @@ export function workerOverlay(
   return {
     overlay: {
       ...base,
-      env: { SIDEKICK_WORKER: opts.briefPath, ...pushEnv(Number(raw)) },
+      env: { ...markers(opts), ...pushEnv(Number(raw)) },
       permissions: { deny: [PUSH_DENY_RULE] },
     },
   };

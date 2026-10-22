@@ -396,6 +396,83 @@ describe('profile launch', () => {
     mkProfile(h.store, 'a', { description: 'A' });
     expect(h.run('launch', '--bg', 'a')).toBe(1);
   });
+  describe('records the main', () => {
+    const SESSION = 'abcdef0123456789';
+    const inSession = (extra: Record<string, string> = {}, agents = '[]') => {
+      const config = tmp();
+      fs.mkdirSync(path.join(config, 'sessions'));
+      fs.writeFileSync(
+        path.join(config, 'sessions', '1.json'),
+        JSON.stringify({ sessionId: SESSION, nameSource: 'derived' }),
+      );
+      const base = fakeRunner();
+      const h = harness({
+        runClaude: (args, opts) =>
+          args[0] === 'agents' ? ok({ stdout: agents }) : base.run(args, opts),
+      });
+      h.penv.env = {
+        SIDEKICK_PROFILES_DIR: h.store,
+        CLAUDE_CONFIG_DIR: config,
+        CLAUDE_CODE_SESSION_ID: SESSION,
+        ...extra,
+      };
+      mkProfile(h.store, 'a', { description: 'A' });
+      return h;
+    };
+    const settingsOf = (args: string[]) =>
+      JSON.parse(args[args.indexOf('--settings') + 1]);
+
+    test('the listed name goes whole into the settings, and the line carries the suffix', () => {
+      const h = inSession(
+        {},
+        JSON.stringify([{ name: 'Single word reply', sessionId: SESSION }]),
+      );
+      const seen: string[][] = [];
+      const inner = h.penv.runClaude;
+      h.penv.runClaude = (args, opts) => {
+        seen.push(args);
+        return inner(args, opts);
+      };
+      expect(h.run('launch', '--bg', 'a')).toBe(0);
+      expect(settingsOf(seen.at(-1) ?? []).env).toEqual({
+        SIDEKICK_MAIN: 'Single word reply',
+      });
+      expect(h.out).toEqual([
+        'main: Single word reply · sidekick holds this name when this turn ends; ← before then loses it',
+      ]);
+    });
+    test('a listing that fails falls back to the id prefix', () => {
+      const h = inSession({}, 'not json');
+      expect(h.run('launch', '--bg', 'a')).toBe(0);
+      expect(h.out[0]).toStartWith('main: abcdef01');
+    });
+    test('an inherited SIDEKICK_MAIN passes through with no suffix and no listing', () => {
+      const h = inSession({ SIDEKICK_MAIN: 'root main' });
+      let listed = false;
+      const inner = h.penv.runClaude;
+      h.penv.runClaude = (args, opts) => {
+        if (args[0] === 'agents') listed = true;
+        return inner(args, opts);
+      };
+      expect(h.run('launch', '--bg', 'a')).toBe(0);
+      expect(listed).toBe(false);
+      expect(h.out).toEqual(['main: root main']);
+    });
+    test('outside a session it records nothing and prints no main line', () => {
+      const h = harness();
+      mkProfile(h.store, 'a', { description: 'A' });
+      expect(h.run('launch', '--bg', 'a')).toBe(0);
+      expect(h.out).toEqual([]);
+    });
+    test('a failed start prints no main line', () => {
+      const h = inSession();
+      const inner = h.penv.runClaude;
+      h.penv.runClaude = (args, opts) =>
+        args.includes('--bg') ? ok({ code: 2 }) : inner(args, opts);
+      expect(h.run('launch', '--bg', 'a')).toBe(2);
+      expect(h.out).toEqual([]);
+    });
+  });
   test('refuses an unknown flag', () => {
     const h = harness();
     mkProfile(h.store, 'a', { description: 'A' });

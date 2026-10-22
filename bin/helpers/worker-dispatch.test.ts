@@ -608,3 +608,108 @@ describe('dispatch records the worker', () => {
     expect(h.err[0]).toContain(recordFile(fx));
   });
 });
+
+describe('dispatch records the main', () => {
+  const SESSION = '0123456789abcdef';
+
+  // A config folder whose sessions file names SESSION with this name source.
+  function configWith(nameSource: string): string {
+    const dir = tmp();
+    fs.mkdirSync(path.join(dir, 'sessions'));
+    fs.writeFileSync(
+      path.join(dir, 'sessions', '1.json'),
+      JSON.stringify({ sessionId: SESSION, nameSource }),
+    );
+    return dir;
+  }
+
+  function inSession(
+    fx: Fixture,
+    env: Record<string, string>,
+    nameSource = 'user',
+  ) {
+    const h = harness(fx, {
+      env: {
+        SIDEKICK_PROFILES_DIR: fx.store,
+        CLAUDE_CONFIG_DIR: configWith(nameSource),
+        ...env,
+      },
+    });
+    h.claude.state.agents = JSON.stringify([
+      { name: 'Single word reply', sessionId: SESSION },
+    ]);
+    return h;
+  }
+
+  const run = (h: Harness, fx: Fixture) =>
+    h.dispatch(fx.brief, '--permission-mode', 'default');
+
+  test('the listed name goes whole into the settings and the main line, before the summary', () => {
+    const fx = fixture();
+    const h = inSession(fx, { CLAUDE_CODE_SESSION_ID: SESSION });
+    expect(run(h, fx)).toBe(0);
+    const env = settingsOf(onlyLaunch(h)).env;
+    expect(env).toMatchObject({ SIDEKICK_MAIN: 'Single word reply' });
+    const at = h.out.indexOf('main: Single word reply');
+    expect(at).toBeGreaterThan(-1);
+    expect(h.out[at + 1]).toStartWith('worker w1 dispatched');
+  });
+
+  test('an automatic name carries the not-held suffix', () => {
+    const fx = fixture();
+    const h = inSession(fx, { CLAUDE_CODE_SESSION_ID: SESSION }, 'derived');
+    run(h, fx);
+    expect(h.out).toContain(
+      'main: Single word reply · sidekick holds this name when this turn ends; ← before then loses it',
+    );
+  });
+
+  test('an inherited SIDEKICK_MAIN is the root main, with no suffix', () => {
+    const fx = fixture();
+    const h = inSession(
+      fx,
+      { CLAUDE_CODE_SESSION_ID: SESSION, SIDEKICK_MAIN: 'root main' },
+      'derived',
+    );
+    run(h, fx);
+    expect(settingsOf(onlyLaunch(h)).env).toMatchObject({
+      SIDEKICK_MAIN: 'root main',
+    });
+    expect(h.out).toContain('main: root main');
+  });
+
+  test('a session missing from the listing records its id prefix', () => {
+    const fx = fixture();
+    const h = inSession(fx, { CLAUDE_CODE_SESSION_ID: SESSION });
+    h.claude.state.agents = '[]';
+    run(h, fx);
+    expect(settingsOf(onlyLaunch(h)).env).toMatchObject({
+      SIDEKICK_MAIN: '01234567',
+    });
+  });
+
+  test('outside a session it records nothing and prints no main line', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    run(h, fx);
+    expect(settingsOf(onlyLaunch(h)).env).not.toHaveProperty('SIDEKICK_MAIN');
+    expect(h.out.some((line) => line.startsWith('main:'))).toBe(false);
+  });
+
+  test('a failed start prints no main line', () => {
+    const fx = fixture();
+    const h = inSession(fx, { CLAUDE_CODE_SESSION_ID: SESSION });
+    h.claude.state.launch = ok({ code: 2, stderr: 'boom\n' });
+    run(h, fx);
+    expect(h.out.some((line) => line.startsWith('main:'))).toBe(false);
+  });
+
+  test('lists the sessions once', () => {
+    const fx = fixture();
+    const h = inSession(fx, { CLAUDE_CODE_SESSION_ID: SESSION });
+    run(h, fx);
+    expect(h.claude.calls.filter((c) => c.args[0] === 'agents')).toHaveLength(
+      1,
+    );
+  });
+});

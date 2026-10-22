@@ -8,6 +8,13 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import {
+  configDirOf,
+  mainLine,
+  nameHeld,
+  type ResolvedMain,
+  resolveMain,
+} from './main-session.js';
 import type { Runner } from './pm-data.js';
 import {
   checkComposed,
@@ -16,11 +23,7 @@ import {
   type ProfileEnv,
   parseFlags,
 } from './profile.js';
-import {
-  bgArgs,
-  type ClaudeResult,
-  type ClaudeRunner,
-} from './profile-launch.js';
+import { bgArgs, type ClaudeResult } from './profile-launch.js';
 import { isProfileName } from './profile-manifest.js';
 import { type Profile, storeRoots } from './profile-store.js';
 import type { WorkerEnv } from './worker.js';
@@ -173,11 +176,9 @@ function treeNameIssues(runGit: Runner, top: string, name: string): string[] {
 
 // Every listed session counts, interactive ones too: a clash breaks addressing by name.
 function listedNameIssues(
-  run: ClaudeRunner,
-  cwd: string,
+  listed: ReturnType<typeof listJobs>,
   name: string,
 ): string[] {
-  const listed = listJobs(run, cwd);
   if ('issues' in listed) return listed.issues;
   return listed.jobs.some((job) => job.name === name)
     ? [
@@ -238,6 +239,7 @@ function prepareProfile(
   opts: DispatchOptions,
   briefPath: string,
   penv: ProfileEnv,
+  main: string | undefined,
 ): Prepared {
   const lines: string[] = [];
   const collect: Out = (line) => {
@@ -254,6 +256,7 @@ function prepareProfile(
   const overlay = workerOverlay(profile.manifest.settings, {
     briefPath,
     allowPush: opts.allowPush,
+    main,
   });
   if ('issues' in overlay) {
     return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };
@@ -276,6 +279,7 @@ interface Ready {
   commonDir: string;
   args: string[];
   notes: string[];
+  main: ResolvedMain | undefined;
 }
 
 // The checks run from the top, as the launch does; outside a main checkout,
@@ -288,13 +292,23 @@ function checkDispatch(
 ): Ready | { issues: string[] } {
   const checkout = mainCheckout(wenv.runGit, wenv.cwd);
   const at = 'issues' in checkout ? wenv.cwd : checkout.top;
-  const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at });
+  const listed = listJobs(wenv.runClaude, at);
+  const main = resolveMain(
+    wenv.env,
+    'jobs' in listed ? listed.jobs : undefined,
+  );
+  const prepared = prepareProfile(
+    opts,
+    briefPath,
+    { ...wenv, cwd: at },
+    main?.value,
+  );
   const issues = [
     ...('issues' in checkout
       ? checkout.issues
       : checkoutIssues(brief, opts, wenv.runGit, checkout.top)),
     ...placeIssues(brief),
-    ...listedNameIssues(wenv.runClaude, at, brief.name),
+    ...listedNameIssues(listed, brief.name),
     ...modeIssues(opts.mode),
     ...pluginDirIssues(opts.pluginDir),
     ...(prepared.ok ? [] : prepared.issues),
@@ -311,6 +325,7 @@ function checkDispatch(
     commonDir: checkout.commonDir,
     args: prepared.args,
     notes: prepared.notes,
+    main,
   };
 }
 
@@ -321,6 +336,17 @@ function relay(result: ClaudeResult, out: Out, err: Out): void {
   if (result.stdout !== '') out(withoutTrailingNewline(result.stdout));
   if (result.stderr !== '') err(withoutTrailingNewline(result.stderr));
   if (result.timedOut) err('claude did not return in time.');
+}
+
+// Names the recorded main; the suffix needs the sessions file, read only for a session sidekick resolved.
+function mainReport(ready: Ready, wenv: WorkerEnv): string[] {
+  const { main } = ready;
+  if (main === undefined) return [];
+  const held =
+    main.sessionId === undefined
+      ? null
+      : nameHeld(configDirOf(wenv.env, wenv.home), main.sessionId);
+  return [mainLine(main, held)];
 }
 
 function summary(ready: Ready): string[] {
@@ -380,7 +406,9 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   });
   relay(result, out, err);
   if (result.code === 0) {
-    for (const line of summary(ready)) out(line);
+    for (const line of [...mainReport(ready, wenv), ...summary(ready)]) {
+      out(line);
+    }
     keepRecord(ready, result, err);
   }
   return result.code;

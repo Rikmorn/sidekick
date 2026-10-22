@@ -510,6 +510,29 @@ describe('makeClaudeRunner', () => {
     expect(seen).toEqual(['claude', ['a'], '/w', 50, false]);
   });
 
+  test('spawns with process.env minus the two markers', () => {
+    const saved = [process.env.SIDEKICK_MAIN, process.env.SIDEKICK_WORKER];
+    process.env.SIDEKICK_MAIN = 'm';
+    process.env.SIDEKICK_WORKER = '/b.md';
+    try {
+      let seen: NodeJS.ProcessEnv = {};
+      const run = makeClaudeRunner((_cmd, _args, opts) => {
+        seen = opts.env;
+        return { status: 0, stdout: '', stderr: '' };
+      });
+      run([], { cwd: '/w', timeoutMs: 1 });
+      expect(seen).not.toHaveProperty('SIDEKICK_MAIN');
+      expect(seen).not.toHaveProperty('SIDEKICK_WORKER');
+      expect(seen.PATH).toBe(process.env.PATH);
+    } finally {
+      for (const [i, key] of ['SIDEKICK_MAIN', 'SIDEKICK_WORKER'].entries()) {
+        const value = saved[i];
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   test('a timeout error maps to timedOut', () => {
     const err = Object.assign(new Error('spawnSync claude ETIMEDOUT'), {
       code: 'ETIMEDOUT',

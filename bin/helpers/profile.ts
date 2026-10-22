@@ -5,6 +5,13 @@
  */
 import { parseArgs } from 'node:util';
 import {
+  configDirOf,
+  mainLine,
+  nameHeld,
+  type ResolvedMain,
+  resolveMain,
+} from './main-session.js';
+import {
   bgArgs,
   type CheckResult,
   type ClaudeRunner,
@@ -31,6 +38,7 @@ import {
   type Profile,
   storeRoots,
 } from './profile-store.js';
+import { listJobs } from './worker-jobs.js';
 
 export const PROFILE_USAGE_LINE =
   'sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]|switch <name> [--session <id>]';
@@ -204,9 +212,28 @@ function checkedLaunch(
   name: string,
   penv: ProfileEnv,
   err: Out,
+  overlay?: Settings,
 ): string[] | undefined {
   const profile = loadForLaunch(name, penv, err);
-  return profile === undefined ? undefined : checkComposed(profile, penv, err);
+  return profile === undefined
+    ? undefined
+    : checkComposed(profile, penv, err, overlay);
+}
+
+// The listing is read only when the session's name is the answer; a failed listing falls back to the id.
+function mainOf(penv: ProfileEnv): ResolvedMain | undefined {
+  const bare = resolveMain(penv.env, undefined);
+  if (bare?.from !== 'id') return bare;
+  const listed = listJobs(penv.runClaude, penv.cwd);
+  return resolveMain(penv.env, 'jobs' in listed ? listed.jobs : undefined);
+}
+
+function mainReport(main: ResolvedMain, penv: ProfileEnv): string {
+  const held =
+    main.sessionId === undefined
+      ? null
+      : nameHeld(configDirOf(penv.env, penv.home), main.sessionId);
+  return mainLine(main, held);
 }
 
 // The `plugins:` lines of `show`, which runs the plugin check without `doctor` and never refuses on it.
@@ -330,7 +357,13 @@ const launch: Verb = (rest, penv, out, err) => {
       'For an interactive start, use the shell function: skp <name> (sidekick profile alias prints it).',
     ]);
   }
-  const args = checkedLaunch(parsed.positionals[0], penv, err);
+  const main = mainOf(penv);
+  const args = checkedLaunch(
+    parsed.positionals[0],
+    penv,
+    err,
+    main === undefined ? undefined : { env: { SIDEKICK_MAIN: main.value } },
+  );
   if (args === undefined) return 1;
   const { launchTimeoutMs = LAUNCH_TIMEOUT_MS } = penv;
   const sessionName = parsed.values.n;
@@ -344,6 +377,7 @@ const launch: Verb = (rest, penv, out, err) => {
   if (result.stdout !== '') out(withoutTrailingNewline(result.stdout));
   if (result.stderr !== '') err(withoutTrailingNewline(result.stderr));
   if (result.timedOut) err('claude did not return in time.');
+  if (result.code === 0 && main !== undefined) out(mainReport(main, penv));
   return result.code;
 };
 

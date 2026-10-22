@@ -796,7 +796,7 @@ function summarize(issues) {
 }
 
 // bin/helpers/desk.ts
-import * as path10 from "node:path";
+import * as path11 from "node:path";
 
 // plugin/hooks/desk/contract.ts
 var DESK_VERSION = 1;
@@ -1629,10 +1629,62 @@ function staleRecordNames(rows, records, facts) {
 // bin/helpers/profile.ts
 import { parseArgs } from "node:util";
 
+// bin/helpers/main-session.ts
+import * as fs6 from "node:fs";
+import * as os from "node:os";
+import * as path6 from "node:path";
+var configDirOf = (env, home = os.homedir()) => env.CLAUDE_CONFIG_DIR || path6.join(home, ".claude");
+var ID_LENGTH = 8;
+var MAIN_MARKERS = ["SIDEKICK_MAIN", "SIDEKICK_WORKER"];
+function resolveMain(env, jobs) {
+  const inherited = env.SIDEKICK_MAIN;
+  if (inherited !== undefined && inherited !== "") {
+    return { value: inherited, from: "inherited" };
+  }
+  const sessionId = env.CLAUDE_CODE_SESSION_ID;
+  if (sessionId === undefined || sessionId === "")
+    return;
+  const name = jobs?.find((job) => job.sessionId === sessionId)?.name;
+  return name !== undefined && name !== "" ? { value: name, from: "listing", sessionId } : { value: sessionId.slice(0, ID_LENGTH), from: "id", sessionId };
+}
+var SessionFileSchema = object({
+  sessionId: string(),
+  nameSource: optional(string())
+});
+var AUTO_SOURCES = ["derived", "auto"];
+function nameHeld(configDir, sessionId) {
+  const dir = path6.join(configDir, "sessions");
+  let entries;
+  try {
+    entries = fs6.readdirSync(dir).filter((f) => f.endsWith(".json"));
+  } catch {
+    return null;
+  }
+  for (const entry of entries.sort()) {
+    try {
+      const file = safeParse(SessionFileSchema, JSON.parse(fs6.readFileSync(path6.join(dir, entry), "utf-8")));
+      if (file.success && file.output.sessionId === sessionId) {
+        return !AUTO_SOURCES.includes(file.output.nameSource ?? "");
+      }
+    } catch {}
+  }
+  return null;
+}
+function withoutMarkers(env) {
+  const copy = { ...env };
+  for (const marker of MAIN_MARKERS)
+    delete copy[marker];
+  return copy;
+}
+function mainLine(main, held) {
+  const base = `main: ${main.value}`;
+  return main.from !== "inherited" && held === false ? `${base} · sidekick holds this name when this turn ends; ← before then loses it` : base;
+}
+
 // bin/helpers/profile-launch.ts
 import { spawnSync } from "node:child_process";
-import * as fs6 from "node:fs";
-import * as path6 from "node:path";
+import * as fs7 from "node:fs";
+import * as path7 from "node:path";
 var isPlainObject = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var uniqueByValue = (items) => items.filter((item, i) => items.findIndex((o) => JSON.stringify(o) === JSON.stringify(item)) === i);
 function mergeValue(prev, next) {
@@ -1663,8 +1715,8 @@ function launchKeys(profile, home) {
     ...profile.hasRules ? { env: { [memoryVariable]: "1" } } : {},
     ...isCleanRoom ? {
       claudeMdExcludes: [
-        path6.join(home, ".claude", "CLAUDE.md"),
-        path6.join(home, ".claude", "rules", "**")
+        path7.join(home, ".claude", "CLAUDE.md"),
+        path7.join(home, ".claude", "rules", "**")
       ]
     } : {}
   };
@@ -1694,7 +1746,8 @@ var makeClaudeRunner = (spawn = spawnClaude) => (args, { cwd, timeoutMs }) => {
   const out = spawn("claude", args, {
     cwd,
     timeout: timeoutMs,
-    shell: false
+    shell: false,
+    env: withoutMarkers(process.env)
   });
   const stdout = out.stdout ?? "";
   const stderr = out.stderr ?? "";
@@ -1754,10 +1807,10 @@ function checkSettings(settings, deps, timeoutMs = 30000) {
   if (canary === undefined) {
     return refuse(`The settings set both ${CANARY_KEYS.join(" and ")}, so the check has no canary key left.`);
   }
-  const dir = fs6.mkdtempSync(path6.join(deps.tmpdir, "sidekick-profile-"));
+  const dir = fs7.mkdtempSync(path7.join(deps.tmpdir, "sidekick-profile-"));
   try {
-    const file = path6.join(dir, "settings.json");
-    fs6.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
+    const file = path7.join(dir, "settings.json");
+    fs7.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
       mode: 384
     });
     const result = deps.run(["--settings", file, "doctor"], {
@@ -1766,11 +1819,11 @@ function checkSettings(settings, deps, timeoutMs = 30000) {
     });
     const lines = invalidSettingsLines(result.stdout, [
       file,
-      fs6.realpathSync(file)
+      fs7.realpathSync(file)
     ]);
     return judge(result, lines, canary);
   } finally {
-    fs6.rmSync(dir, { recursive: true, force: true });
+    fs7.rmSync(dir, { recursive: true, force: true });
   }
 }
 var bgArgs = (base, opts) => [
@@ -1784,8 +1837,8 @@ var bgArgs = (base, opts) => [
 ];
 
 // bin/helpers/profile-plugins.ts
-import * as fs7 from "node:fs";
-import * as path7 from "node:path";
+import * as fs8 from "node:fs";
+import * as path8 from "node:path";
 var PLUGIN_SKIP_VARIABLE = "SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK";
 var SKIP_WARNING2 = `${PLUGIN_SKIP_VARIABLE}=1 is set, so the plugins were not checked with claude plugin list.`;
 var UNSATISFIED = "dependency-unsatisfied";
@@ -1846,10 +1899,10 @@ function judgePluginList(stdout, manifest) {
 function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
   if (deps.skip)
     return { ok: true, warnings: [SKIP_WARNING2] };
-  const dir = fs7.mkdtempSync(path7.join(deps.tmpdir, "sidekick-profile-"));
+  const dir = fs8.mkdtempSync(path8.join(deps.tmpdir, "sidekick-profile-"));
   try {
-    const file = path7.join(dir, "settings.json");
-    fs7.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
+    const file = path8.join(dir, "settings.json");
+    fs8.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
     const sources = manifest.settingSources;
     const result = deps.run([
       "--settings",
@@ -1867,12 +1920,12 @@ function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
     }
     return judgePluginList(result.stdout, manifest);
   } finally {
-    fs7.rmSync(dir, { recursive: true, force: true });
+    fs8.rmSync(dir, { recursive: true, force: true });
   }
 }
 
 // bin/helpers/profile-manifest.ts
-import * as fs8 from "node:fs";
+import * as fs9 from "node:fs";
 
 // plugin/hooks/scope/contract.ts
 var MOD_PARTS = ["board", "desk"];
@@ -1907,7 +1960,7 @@ var isMissing3 = (err) => err instanceof Error && ("code" in err) && err.code ==
 function readManifest(file) {
   let text;
   try {
-    text = fs8.readFileSync(file, "utf8");
+    text = fs9.readFileSync(file, "utf8");
   } catch (err) {
     const why = isMissing3(err) ? "missing" : err instanceof Error ? err.message : String(err);
     return { ok: false, issues: [`${file}: ${why}`] };
@@ -2011,8 +2064,8 @@ var shellFunction = (shell, aliasNames) => {
 };
 
 // bin/helpers/profile-store.ts
-import * as fs9 from "node:fs";
-import * as path8 from "node:path";
+import * as fs10 from "node:fs";
+import * as path9 from "node:path";
 var MANIFEST_FILE = "profile.json";
 var notAName = (name) => `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
 var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
@@ -2031,23 +2084,23 @@ var CLAUDE_DIR_REASONS = new Map([
 function storeRoots(env, cwd, home, workTree) {
   const override = env.SIDEKICK_PROFILES_DIR;
   if (override)
-    return [{ kind: "user", dir: path8.resolve(cwd, override) }];
-  const configDir = env.CLAUDE_CONFIG_DIR || path8.join(home, ".claude");
+    return [{ kind: "user", dir: path9.resolve(cwd, override) }];
+  const configDir = env.CLAUDE_CONFIG_DIR || path9.join(home, ".claude");
   const user = {
     kind: "user",
-    dir: path8.resolve(cwd, configDir, "profiles")
+    dir: path9.resolve(cwd, configDir, "profiles")
   };
   if (workTree === undefined)
     return [user];
   const repo = {
     kind: "repo",
-    dir: path8.resolve(workTree, ".claude", "profiles")
+    dir: path9.resolve(workTree, ".claude", "profiles")
   };
   return repo.dir === user.dir ? [user] : [repo, user];
 }
 var isPresent = (file) => {
   try {
-    fs9.lstatSync(file);
+    fs10.lstatSync(file);
     return true;
   } catch {
     return false;
@@ -2055,33 +2108,33 @@ var isPresent = (file) => {
 };
 var isDirectory = (dir) => {
   try {
-    return fs9.statSync(dir).isDirectory();
+    return fs10.statSync(dir).isDirectory();
   } catch {
     return false;
   }
 };
 var entriesOf = (dir) => {
   try {
-    return fs9.readdirSync(dir).sort();
+    return fs10.readdirSync(dir).sort();
   } catch {
     return [];
   }
 };
 function checkLayout(dir) {
-  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path8.join(dir, r.path))).map((r) => `${path8.join(dir, r.path)}: ${r.why}`);
-  const claudeDir = path8.join(dir, ".claude");
-  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path8.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
+  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path9.join(dir, r.path))).map((r) => `${path9.join(dir, r.path)}: ${r.why}`);
+  const claudeDir = path9.join(dir, ".claude");
+  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path9.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
   return [...atRoot, ...inClaudeDir];
 }
 var holdsMarkdown = (dir) => {
   let entries;
   try {
-    entries = fs9.readdirSync(dir, { withFileTypes: true });
+    entries = fs10.readdirSync(dir, { withFileTypes: true });
   } catch {
     return false;
   }
   return entries.some((e) => {
-    const full = path8.join(dir, e.name);
+    const full = path9.join(dir, e.name);
     if (e.isDirectory())
       return holdsMarkdown(full);
     if (e.isSymbolicLink() && isDirectory(full))
@@ -2090,11 +2143,11 @@ var holdsMarkdown = (dir) => {
   });
 };
 var readFolder = (name, root, shadows) => {
-  const dir = path8.join(root.dir, name);
+  const dir = path9.join(root.dir, name);
   const layout = checkLayout(dir);
   if (layout.length > 0)
     return { ok: false, issues: layout };
-  const read = readManifest(path8.join(dir, MANIFEST_FILE));
+  const read = readManifest(path9.join(dir, MANIFEST_FILE));
   if (!read.ok)
     return read;
   return {
@@ -2106,14 +2159,14 @@ var readFolder = (name, root, shadows) => {
       store: root.kind,
       shadows,
       manifest: read.manifest,
-      hasRules: holdsMarkdown(path8.join(dir, ".claude", "rules"))
+      hasRules: holdsMarkdown(path9.join(dir, ".claude", "rules"))
     }
   };
 };
 function loadProfile(name, roots) {
   if (!isProfileName(name))
     return { ok: false, issues: [notAName(name)] };
-  const held = (root) => isDirectory(path8.join(root.dir, name));
+  const held = (root) => isDirectory(path9.join(root.dir, name));
   const index = roots.findIndex(held);
   const winner = roots[index];
   if (winner === undefined) {
@@ -2125,17 +2178,17 @@ function loadProfile(name, roots) {
     };
   }
   const later = roots.slice(index + 1).find(held);
-  return readFolder(name, winner, later === undefined ? undefined : path8.join(later.dir, name));
+  return readFolder(name, winner, later === undefined ? undefined : path9.join(later.dir, name));
 }
 var isHidden = (name) => name.startsWith(".");
 var listRoot = (root) => {
   let names;
   try {
-    names = fs9.readdirSync(root.dir).sort();
+    names = fs10.readdirSync(root.dir).sort();
   } catch {
     return [];
   }
-  return names.filter((name) => !isHidden(name) && isDirectory(path8.join(root.dir, name))).map((name) => {
+  return names.filter((name) => !isHidden(name) && isDirectory(path9.join(root.dir, name))).map((name) => {
     const base = {
       name,
       root: root.dir,
@@ -2158,7 +2211,7 @@ function listProfiles(roots) {
   return roots.flatMap((root) => listRoot(root).map((listed) => {
     const winner = winners.get(listed.name);
     if (winner === undefined) {
-      winners.set(listed.name, path8.join(root.dir, listed.name));
+      winners.set(listed.name, path9.join(root.dir, listed.name));
       return listed;
     }
     return { ...listed, shadowedBy: winner };
@@ -2168,7 +2221,7 @@ var isExists = (err) => err instanceof Error && ("code" in err) && err.code === 
 var messageOf = (err) => err instanceof Error ? err.message : String(err);
 var makeRoot = (root) => {
   try {
-    fs9.mkdirSync(root, { recursive: true });
+    fs10.mkdirSync(root, { recursive: true });
     return [];
   } catch (err) {
     return [
@@ -2178,10 +2231,10 @@ var makeRoot = (root) => {
 };
 var unmake = (dir) => {
   try {
-    const manifest = path8.join(dir, MANIFEST_FILE);
+    const manifest = path9.join(dir, MANIFEST_FILE);
     if (isPresent(manifest))
-      fs9.rmSync(manifest);
-    fs9.rmdirSync(dir);
+      fs10.rmSync(manifest);
+    fs10.rmdirSync(dir);
     return [];
   } catch (err) {
     return [`${dir}: could not remove it: ${messageOf(err)}`];
@@ -2197,16 +2250,16 @@ function newProfile(name, description, root) {
   const rootIssues = makeRoot(root);
   if (rootIssues.length > 0)
     return { ok: false, issues: rootIssues };
-  const dir = path8.join(root, name);
+  const dir = path9.join(root, name);
   try {
-    fs9.mkdirSync(dir);
+    fs10.mkdirSync(dir);
   } catch (err) {
     const why = isExists(err) ? "already exists" : messageOf(err);
     return { ok: false, issues: [`${dir}: ${why}`] };
   }
-  const file = path8.join(dir, MANIFEST_FILE);
+  const file = path9.join(dir, MANIFEST_FILE);
   try {
-    fs9.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
+    fs10.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
 `);
   } catch (err) {
     return {
@@ -2215,6 +2268,61 @@ function newProfile(name, description, root) {
     };
   }
   return { ok: true, dir };
+}
+
+// bin/helpers/worker-jobs.ts
+var LISTING_ARGS = ["agents", "--json", "--all"];
+var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
+var OptionalText = nullish(string());
+var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an object"), object({
+  id: OptionalText,
+  kind: OptionalText,
+  name: OptionalText,
+  sessionId: OptionalText,
+  state: OptionalText
+}), transform((row) => ({
+  id: row.id ?? undefined,
+  kind: row.kind ?? undefined,
+  name: row.name ?? undefined,
+  sessionId: row.sessionId ?? undefined,
+  state: row.state ?? undefined
+})));
+var ListingSchema = array(JobSchema);
+function parseJson2(text) {
+  try {
+    return { value: JSON.parse(text) };
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { issue: `${LISTING} printed a listing that is not JSON: ${why}` };
+  }
+}
+function listJobs(run, cwd, timeoutMs = 30000) {
+  const result = run(LISTING_ARGS, { cwd, timeoutMs });
+  if (result.timedOut) {
+    return { issues: [`${LISTING} did not return in time.`] };
+  }
+  if (result.code !== 0) {
+    return {
+      issues: [
+        `${LISTING} failed with exit code ${result.code}.`,
+        ...printedStreams(result)
+      ]
+    };
+  }
+  const json = parseJson2(result.stdout);
+  if ("issue" in json)
+    return { issues: [json.issue] };
+  const parsed = safeParse(ListingSchema, json.value);
+  if (!parsed.success) {
+    const [first] = parsed.issues;
+    const where = getDotPath(first) ?? "(root)";
+    return {
+      issues: [
+        `${LISTING} printed a listing that does not parse: ${where}: ${first.message}`
+      ]
+    };
+  }
+  return { jobs: parsed.output };
 }
 
 // bin/helpers/profile.ts
@@ -2300,9 +2408,20 @@ function checkComposed(profile, penv, err, overlay) {
     err(warning);
   return args;
 }
-function checkedLaunch(name, penv, err) {
+function checkedLaunch(name, penv, err, overlay) {
   const profile = loadForLaunch(name, penv, err);
-  return profile === undefined ? undefined : checkComposed(profile, penv, err);
+  return profile === undefined ? undefined : checkComposed(profile, penv, err, overlay);
+}
+function mainOf(penv) {
+  const bare = resolveMain(penv.env, undefined);
+  if (bare?.from !== "id")
+    return bare;
+  const listed = listJobs(penv.runClaude, penv.cwd);
+  return resolveMain(penv.env, "jobs" in listed ? listed.jobs : undefined);
+}
+function mainReport(main, penv) {
+  const held = main.sessionId === undefined ? null : nameHeld(configDirOf(penv.env, penv.home), main.sessionId);
+  return mainLine(main, held);
 }
 function pluginReport(profile, settings, penv) {
   if (!needsPluginCheck(profile.manifest)) {
@@ -2404,7 +2523,8 @@ var launch = (rest, penv, out, err) => {
       "For an interactive start, use the shell function: skp <name> (sidekick profile alias prints it)."
     ]);
   }
-  const args = checkedLaunch(parsed.positionals[0], penv, err);
+  const main = mainOf(penv);
+  const args = checkedLaunch(parsed.positionals[0], penv, err, main === undefined ? undefined : { env: { SIDEKICK_MAIN: main.value } });
   if (args === undefined)
     return 1;
   const { launchTimeoutMs = LAUNCH_TIMEOUT_MS } = penv;
@@ -2419,6 +2539,8 @@ var launch = (rest, penv, out, err) => {
     err(withoutTrailingNewline(result.stderr));
   if (result.timedOut)
     err("claude did not return in time.");
+  if (result.code === 0 && main !== undefined)
+    out(mainReport(main, penv));
   return result.code;
 };
 var isShell = (value) => SHELLS.some((shell) => shell === value);
@@ -2491,64 +2613,9 @@ function runProfileCli(args, penv, out, err) {
   return VERBS[name](rest, penv, out, err);
 }
 
-// bin/helpers/worker-jobs.ts
-var LISTING_ARGS = ["agents", "--json", "--all"];
-var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
-var OptionalText = nullish(string());
-var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an object"), object({
-  id: OptionalText,
-  kind: OptionalText,
-  name: OptionalText,
-  sessionId: OptionalText,
-  state: OptionalText
-}), transform((row) => ({
-  id: row.id ?? undefined,
-  kind: row.kind ?? undefined,
-  name: row.name ?? undefined,
-  sessionId: row.sessionId ?? undefined,
-  state: row.state ?? undefined
-})));
-var ListingSchema = array(JobSchema);
-function parseJson2(text) {
-  try {
-    return { value: JSON.parse(text) };
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return { issue: `${LISTING} printed a listing that is not JSON: ${why}` };
-  }
-}
-function listJobs(run, cwd, timeoutMs = 30000) {
-  const result = run(LISTING_ARGS, { cwd, timeoutMs });
-  if (result.timedOut) {
-    return { issues: [`${LISTING} did not return in time.`] };
-  }
-  if (result.code !== 0) {
-    return {
-      issues: [
-        `${LISTING} failed with exit code ${result.code}.`,
-        ...printedStreams(result)
-      ]
-    };
-  }
-  const json = parseJson2(result.stdout);
-  if ("issue" in json)
-    return { issues: [json.issue] };
-  const parsed = safeParse(ListingSchema, json.value);
-  if (!parsed.success) {
-    const [first] = parsed.issues;
-    const where = getDotPath(first) ?? "(root)";
-    return {
-      issues: [
-        `${LISTING} printed a listing that does not parse: ${where}: ${first.message}`
-      ]
-    };
-  }
-  return { jobs: parsed.output };
-}
-
 // bin/helpers/worker-record.ts
-import * as fs10 from "node:fs";
-import * as path9 from "node:path";
+import * as fs11 from "node:fs";
+import * as path10 from "node:path";
 var RecordSchema = strictObject({
   version: literal(1),
   name: WorkerNameSchema,
@@ -2558,10 +2625,10 @@ var RecordSchema = strictObject({
 });
 var isWorkerName = (name) => is(WorkerNameSchema, name);
 function recordsDir(commonDir) {
-  return path9.join(commonDir, "sidekick", "workers");
+  return path10.join(commonDir, "sidekick", "workers");
 }
 var RECORD_SUFFIX = ".json";
-var fileFor = (commonDir, name) => path9.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
+var fileFor = (commonDir, name) => path10.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
 function jobIdFrom(stdout, name) {
   const lines = stdout.split(`
 `).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
@@ -2581,8 +2648,8 @@ function writeRecord(commonDir, record2) {
   }
   const file = fileFor(commonDir, record2.name);
   try {
-    fs10.mkdirSync(recordsDir(commonDir), { recursive: true });
-    fs10.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+    fs11.mkdirSync(recordsDir(commonDir), { recursive: true });
+    fs11.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
 `);
     return { ok: true };
   } catch (e) {
@@ -2591,11 +2658,11 @@ function writeRecord(commonDir, record2) {
 }
 function parseRecord(file) {
   try {
-    const parsed = safeParse(RecordSchema, JSON.parse(fs10.readFileSync(file, "utf-8")));
+    const parsed = safeParse(RecordSchema, JSON.parse(fs11.readFileSync(file, "utf-8")));
     if (!parsed.success) {
       return `${file} is not a worker record: ${parsed.issues[0].message}`;
     }
-    const base = path9.basename(file, RECORD_SUFFIX);
+    const base = path10.basename(file, RECORD_SUFFIX);
     if (parsed.output.name !== base) {
       return `${file} holds the record of "${parsed.output.name}", not of "${base}"`;
     }
@@ -2610,7 +2677,7 @@ function readRecords(commonDir) {
   const warnings = [];
   let files;
   try {
-    files = fs10.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
+    files = fs11.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { records, warnings };
@@ -2618,7 +2685,7 @@ function readRecords(commonDir) {
     return { records, warnings: [`${dir} cannot be listed: ${reason4(e)}`] };
   }
   for (const f of files) {
-    const read = parseRecord(path9.join(dir, f));
+    const read = parseRecord(path10.join(dir, f));
     if (typeof read === "string")
       warnings.push(read);
     else
@@ -2629,7 +2696,7 @@ function readRecords(commonDir) {
 function removeRecord(commonDir, name) {
   if (!isWorkerName(name))
     return;
-  fs10.rmSync(fileFor(commonDir, name), { force: true });
+  fs11.rmSync(fileFor(commonDir, name), { force: true });
 }
 
 // bin/helpers/desk.ts
@@ -2701,7 +2768,7 @@ function readAndPruneChildren(denv, rows, find) {
   const stale = staleRecordNames(rows, read.records, facts);
   const kept = gathered.filter((g) => !stale.includes(g.record.name));
   return {
-    repo: path10.basename(repo.top),
+    repo: path11.basename(repo.top),
     records: kept.map((g) => g.record),
     facts,
     warnings: [
@@ -2744,8 +2811,8 @@ function runDeskCli(rest, denv, out, err) {
 }
 
 // bin/helpers/hook.ts
-import * as fs11 from "node:fs";
-import * as path11 from "node:path";
+import * as fs12 from "node:fs";
+import * as path12 from "node:path";
 var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)";
 function readContent(event) {
   const response = event.tool_response;
@@ -2753,14 +2820,14 @@ function readContent(event) {
     return "";
   return typeof response.file.content === "string" ? response.file.content : "";
 }
-var DESIGN_SKILL = path11.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path11.join("skills", "sk-execute", "SKILL.md");
+var DESIGN_SKILL = path12.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path12.join("skills", "sk-execute", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
   "## Before the plan goes out",
   "## Choose the mode"
 ];
-var CLEAN_CODE_RULE = path11.join("rules", "sk-clean-code.md");
+var CLEAN_CODE_RULE = path12.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
@@ -2787,7 +2854,7 @@ function parseJson4(raw) {
 }
 function readText(file) {
   try {
-    return fs11.readFileSync(file, "utf-8");
+    return fs12.readFileSync(file, "utf-8");
   } catch {
     return;
   }
@@ -2876,7 +2943,7 @@ function ruleCoversPackage(rulePaths, content) {
   return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
 }
 function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path11.join(pluginDir, DESIGN_SKILL));
+  const description = readSkillDescription(path12.join(pluginDir, DESIGN_SKILL));
   if (description === undefined)
     return;
   return [
@@ -2888,7 +2955,7 @@ function brainstormNudge(pluginDir) {
 }
 var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
-  const file = path11.join(pluginDir, EXECUTE_SKILL);
+  const file = path12.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
   const found = sections.flatMap((s) => s === undefined ? [] : [s]);
   if (found.length < PLAN_SECTIONS.length)
@@ -2907,7 +2974,7 @@ var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. W
 var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
 var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function commentsLines(pluginDir, packageText) {
-  const rule = path11.join(pluginDir, CLEAN_CODE_RULE);
+  const rule = path12.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
   if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
     return [];
@@ -2987,35 +3054,6 @@ function runHookCli(args, env, out, err) {
     ...notice === undefined ? {} : { systemMessage: notice }
   }));
   return 0;
-}
-
-// bin/helpers/main-session.ts
-import * as fs12 from "node:fs";
-import * as os from "node:os";
-import * as path12 from "node:path";
-var configDirOf = (env, home = os.homedir()) => env.CLAUDE_CONFIG_DIR || path12.join(home, ".claude");
-var SessionFileSchema = object({
-  sessionId: string(),
-  nameSource: optional(string())
-});
-var AUTO_SOURCES = ["derived", "auto"];
-function nameHeld(configDir, sessionId) {
-  const dir = path12.join(configDir, "sessions");
-  let entries;
-  try {
-    entries = fs12.readdirSync(dir).filter((f) => f.endsWith(".json"));
-  } catch {
-    return null;
-  }
-  for (const entry of entries.sort()) {
-    try {
-      const file = safeParse(SessionFileSchema, JSON.parse(fs12.readFileSync(path12.join(dir, entry), "utf-8")));
-      if (file.success && file.output.sessionId === sessionId) {
-        return !AUTO_SOURCES.includes(file.output.nameSource ?? "");
-      }
-    } catch {}
-  }
-  return null;
 }
 
 // plugin/hooks/board/contract.ts
@@ -4611,6 +4649,10 @@ import * as fs16 from "node:fs";
 import * as path16 from "node:path";
 
 // bin/helpers/worker-overlay.ts
+var markers = (opts) => ({
+  SIDEKICK_WORKER: opts.briefPath,
+  ...opts.main === undefined ? {} : { SIDEKICK_MAIN: opts.main }
+});
 var PUSH_REWRITE_KEY = "url.sidekick-push-blocked::.pushInsteadOf";
 var PUSH_DENY_RULE = "Bash(git push:*)";
 function pushEnv(count) {
@@ -4624,7 +4666,7 @@ function workerOverlay(profileSettings, opts) {
   const base = { worktree: { baseRef: "head" } };
   if (opts.allowPush) {
     return {
-      overlay: { ...base, env: { SIDEKICK_WORKER: opts.briefPath } }
+      overlay: { ...base, env: markers(opts) }
     };
   }
   const env = isPlainObject(profileSettings?.env) ? profileSettings.env : {};
@@ -4639,7 +4681,7 @@ function workerOverlay(profileSettings, opts) {
   return {
     overlay: {
       ...base,
-      env: { SIDEKICK_WORKER: opts.briefPath, ...pushEnv(Number(raw)) },
+      env: { ...markers(opts), ...pushEnv(Number(raw)) },
       permissions: { deny: [PUSH_DENY_RULE] }
     }
   };
@@ -4722,8 +4764,7 @@ function treeNameIssues(runGit, top, name) {
     ...branchExists(runGit, top, branch) ? [`name: the branch ${branch} already exists`] : []
   ];
 }
-function listedNameIssues(run, cwd, name) {
-  const listed = listJobs(run, cwd);
+function listedNameIssues(listed, name) {
   if ("issues" in listed)
     return listed.issues;
   return listed.jobs.some((job) => job.name === name) ? [
@@ -4754,7 +4795,7 @@ function missingProfileHint(name, penv) {
   const held = roots.some((root) => isFolder(path16.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
-function prepareProfile(opts, briefPath, penv) {
+function prepareProfile(opts, briefPath, penv, main) {
   const lines = [];
   const collect = (line) => {
     lines.push(line);
@@ -4769,7 +4810,8 @@ function prepareProfile(opts, briefPath, penv) {
   const bypass = bypassIssues(profile, opts.mode);
   const overlay = workerOverlay(profile.manifest.settings, {
     briefPath,
-    allowPush: opts.allowPush
+    allowPush: opts.allowPush,
+    main
   });
   if ("issues" in overlay) {
     return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };
@@ -4783,11 +4825,13 @@ function prepareProfile(opts, briefPath, penv) {
 function checkDispatch(brief, briefPath, opts, wenv) {
   const checkout = mainCheckout(wenv.runGit, wenv.cwd);
   const at = "issues" in checkout ? wenv.cwd : checkout.top;
-  const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at });
+  const listed = listJobs(wenv.runClaude, at);
+  const main = resolveMain(wenv.env, "jobs" in listed ? listed.jobs : undefined);
+  const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at }, main?.value);
   const issues = [
     ..."issues" in checkout ? checkout.issues : checkoutIssues(brief, opts, wenv.runGit, checkout.top),
     ...placeIssues(brief),
-    ...listedNameIssues(wenv.runClaude, at, brief.name),
+    ...listedNameIssues(listed, brief.name),
     ...modeIssues(opts.mode),
     ...pluginDirIssues(opts.pluginDir),
     ...prepared.ok ? [] : prepared.issues
@@ -4804,7 +4848,8 @@ function checkDispatch(brief, briefPath, opts, wenv) {
     top: checkout.top,
     commonDir: checkout.commonDir,
     args: prepared.args,
-    notes: prepared.notes
+    notes: prepared.notes,
+    main
   };
 }
 var withoutTrailingNewline2 = (text) => text.replace(/\n$/, "");
@@ -4815,6 +4860,13 @@ function relay(result, out, err) {
     err(withoutTrailingNewline2(result.stderr));
   if (result.timedOut)
     err("claude did not return in time.");
+}
+function mainReport2(ready, wenv) {
+  const { main } = ready;
+  if (main === undefined)
+    return [];
+  const held = main.sessionId === undefined ? null : nameHeld(configDirOf(wenv.env, wenv.home), main.sessionId);
+  return [mainLine(main, held)];
 }
 function summary(ready) {
   const { brief, mode } = ready;
@@ -4863,8 +4915,9 @@ function launch2(ready, wenv, out, err) {
   });
   relay(result, out, err);
   if (result.code === 0) {
-    for (const line of summary(ready))
+    for (const line of [...mainReport2(ready, wenv), ...summary(ready)]) {
       out(line);
+    }
     keepRecord(ready, result, err);
   }
   return result.code;

@@ -85,4 +85,23 @@ describe('workerOverlay', () => {
       deny: ['Bash(rm:*)', PUSH_DENY_RULE],
     });
   });
+
+  test('a main joins the brief marker whole, with the push block and without', () => {
+    const main = 'Single word reply';
+    expect(overlayOf(undefined, { ...opts, main }).env).toMatchObject({
+      SIDEKICK_WORKER: '/abs/brief.md',
+      SIDEKICK_MAIN: main,
+      GIT_CONFIG_COUNT: '1',
+    });
+    expect(overlayOf(undefined, { ...opts, allowPush: true, main })).toEqual({
+      worktree: { baseRef: 'head' },
+      env: { SIDEKICK_WORKER: '/abs/brief.md', SIDEKICK_MAIN: main },
+    });
+  });
+  test('no main leaves SIDEKICK_MAIN out', () => {
+    expect(overlayOf(undefined).env).not.toHaveProperty('SIDEKICK_MAIN');
+    expect(
+      overlayOf(undefined, { ...opts, allowPush: true }).env,
+    ).not.toHaveProperty('SIDEKICK_MAIN');
+  });
 });
