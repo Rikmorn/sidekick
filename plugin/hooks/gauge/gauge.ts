@@ -4,14 +4,27 @@
 // mod, and the desk share the module, and a hook that fails in one mod skips
 // the module's whole hook for that event. So `session.start`, which all three
 // also hook, and `PostToolBatch` keep their own failures and call `next(e)`
-// once whatever happened. No other mod hooks a `SessionMode` render, so a
-// failure there costs only the footer label. A failed read at session start
+// once whatever happened. In a worker the gauge also draws one signpost row
+// in `PromptHint` under what lies beneath, naming the worker's main and the
+// way back; the board's hook passes it through. No other mod hooks a
+// `SessionMode` render, so a failure there costs only the footer label. A
+// failed read at session start
 // leaves the limit unset, which the context monitor's canary reports; after a
 // tool batch it leaves the last value. Each caught failure goes to the debug
 // log, where the engine names a hook it skips.
 
-import type { EngineInterface, On } from 'claude-code';
-import { limitValue, modesWith, profileOf, UNPROFILED } from './logic';
+import type { EngineInterface, On, ThemeKey } from 'claude-code';
+import { cut, HINT_INSET } from '../lines';
+import { type Role, settleRole } from '../role';
+import {
+  limitValue,
+  modesWith,
+  profileOf,
+  signpostText,
+  UNPROFILED,
+} from './logic';
+
+const SIGNPOST_COLOR: ThemeKey = 'inactive';
 
 function logFailure($: EngineInterface, hook: string, error: unknown): void {
   const reason = error instanceof Error ? error.message : String(error);
@@ -45,12 +58,17 @@ async function refreshLimit($: EngineInterface): Promise<void> {
 
 /**
  * Hooks the gauge: the context-limit variable at session start and after each
- * tool batch, the unprofiled status, and the profile label in the footer.
+ * tool batch, the unprofiled status, the profile label in the footer, and a
+ * worker's signpost row under the prompt.
  */
 export function registerGauge(on: On): void {
+  // Undefined until this load's start hook settles it.
+  const session: { role: Role | undefined } = { role: undefined };
+
   // The status goes first, so a failed usage read cannot hide it.
   on('session.start', async ($, e, next) => {
     try {
+      session.role = await settleRole($);
       if ((await flagProfile($)) === undefined) $.ui.status(UNPROFILED);
       await refreshLimit($);
     } catch (error) {
@@ -72,5 +90,29 @@ export function registerGauge(on: On): void {
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const modes = modesWith(e.props.modes, await flagProfile($));
     return next({ ...e, props: { ...e.props, modes } });
+  });
+  // A failure while drawing leaves what lies beneath drawn.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const below = await next(e);
+    const { role } = session;
+    if (role?.kind !== 'worker' || e.viewport === undefined) return below;
+    try {
+      const columns = Math.max(0, e.viewport.columns - HINT_INSET);
+      return {
+        type: 'Box',
+        props: { flexDirection: 'column' },
+        children: [
+          below,
+          {
+            type: 'Text',
+            props: { color: SIGNPOST_COLOR },
+            children: [cut(signpostText(role.main), columns)],
+          },
+        ],
+      };
+    } catch (error) {
+      logFailure($, 'drawing the signpost', error);
+      return below;
+    }
   });
 }

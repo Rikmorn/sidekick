@@ -1,6 +1,12 @@
 import { expect, test } from 'claude-code/testing';
 import { FIXTURE_FLAG, parseContextLimit } from './contract';
-import { limitValue, modesWith, profileOf, UNPROFILED } from './logic';
+import {
+  limitValue,
+  modesWith,
+  profileOf,
+  signpostText,
+  UNPROFILED,
+} from './logic';
 
 test('profileOf reads the profile name from the flag', () => {
   expect(profileOf(FIXTURE_FLAG)).toBe('fixture');
@@ -82,4 +88,14 @@ test('parseContextLimit reads a malformed value as absent', () => {
   for (const raw of malformed) {
     expect(parseContextLimit(raw)).toBeUndefined();
   }
+});
+
+test('the signpost names the main and the way back', () => {
+  expect(signpostText('Single word reply')).toBe(
+    'worker of Single word reply · to go back: ←, select Single word reply, Enter',
+  );
+});
+
+test('the signpost without a main points at agent view', () => {
+  expect(signpostText(undefined)).toBe('worker · ← opens agent view');
 });

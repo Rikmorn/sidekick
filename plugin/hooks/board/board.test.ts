@@ -17,8 +17,8 @@ import {
 } from 'claude-code/testing';
 import { PANE_ROWS } from '../commands';
 import type { DeskSnapshot } from '../desk/contract';
-import { width } from '../lines';
-import { HINT_INSET } from './board';
+import { signpostText } from '../gauge/logic';
+import { HINT_INSET, width } from '../lines';
 import {
   type BoardGlance,
   GLANCE_VERSION,
@@ -654,6 +654,8 @@ const UNSEEN: {
   name: string;
   over: Partial<World>;
   start?: SessionStartInput;
+  // Rows other than the board's: a worker's gauge draws its signpost through the board's hook.
+  extraRows?: Run[][];
 }[] = [
   { name: 'a start under -p', over: {}, start: HEADLESS },
   {
@@ -663,6 +665,9 @@ const UNSEEN: {
   {
     name: 'a worker',
     over: { flag: { env: { SIDEKICK_MAIN: 'Single word reply' } } },
+    extraRows: [
+      [{ text: signpostText('Single word reply'), color: 'inactive' }],
+    ],
   },
   {
     name: 'a profile that hides the board',
@@ -683,7 +688,10 @@ for (const unseen of UNSEEN) {
     await clock.settle();
     expect(seen.pickups).toEqual([]);
     expect(seen.opened).toEqual([]);
-    expect(await drawnHint($, 'terminal', WIDE)).toEqual([UNDER]);
+    expect(await drawnHint($, 'terminal', WIDE)).toEqual([
+      UNDER,
+      ...(unseen.extraRows ?? []),
+    ]);
   });
 }
 

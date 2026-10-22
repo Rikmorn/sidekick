@@ -1,5 +1,8 @@
 // Line helpers the mods share: they count and cut by code point, so a dash or an ellipsis is one column.
 
+/** Cells the hint area keeps from the surface's width: 2 at the left and 2 at the right, read off the probe screens (docs/research/control-centre/2026-10-21-prompt-hint-probes.md): hint rows start 2 cells in, and the subagent panel's row ends at cell 108 of 110. */
+export const HINT_INSET = 4;
+
 /** The number of columns `text` takes, counted in code points. */
 export function width(text: string): number {
   return [...text].length;

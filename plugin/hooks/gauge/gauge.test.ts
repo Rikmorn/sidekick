@@ -4,9 +4,10 @@ import type {
   SessionStartInput,
   Settings,
 } from 'claude-code';
-import { expect, mock, test } from 'claude-code/testing';
+import { type Engine, expect, mock, test } from 'claude-code/testing';
+import { cut, HINT_INSET, width } from '../lines';
 import { CONTEXT_LIMIT_VAR, FIXTURE_FLAG, parseContextLimit } from './contract';
-import { UNPROFILED } from './logic';
+import { signpostText, UNPROFILED } from './logic';
 
 // The session the test's hooks answer for, beneath the plugin. A test may
 // change `id` between events, as /clear does. `isAutoCompactEnabled` is what
@@ -251,4 +252,104 @@ test('a desk whose /desk is refused leaves the gauge whole, and the band draws t
     expect.stringMatching(/^● needs you {2}odin-ae/),
     'drawn beneath',
   ]);
+});
+
+const MAIN = 'Single word reply';
+
+function hintBeneath(on: On): void {
+  on('ui.log', () => ({ value: undefined }));
+  on('ui.render', { component: 'PromptHint' }, () => ({
+    type: 'Text',
+    children: ['hint'],
+  }));
+}
+
+async function hintDrawn($: Engine, columns: number | undefined) {
+  const ui = await $.ui.mount({
+    plugin: 'sidekick',
+    surface: 'terminal',
+    component: 'PromptHint',
+    props: { isDraft: false, isWorking: false, hint: 'hint' },
+    ...(columns === undefined ? {} : { viewport: { columns, rows: 24 } }),
+  });
+  const tree = await ui.drawn();
+  await ui.unmount();
+  return tree;
+}
+
+function workerFlag(main: string | undefined): Settings {
+  return {
+    env:
+      main === undefined
+        ? { SIDEKICK_WORKER: '/b.md' }
+        : { SIDEKICK_MAIN: main },
+  };
+}
+
+test('a worker draws what lies beneath, then one signpost row in the inactive colour', async ($, on) => {
+  answerBeneath(on, sessionWith(workerFlag(MAIN)));
+  hintBeneath(on);
+  await $.session.start(START);
+  const tree = await hintDrawn($, 200);
+  expect(tree).toMatchObject({
+    type: 'Box',
+    props: { flexDirection: 'column' },
+    children: [
+      { type: 'Text', children: ['hint'] },
+      {
+        type: 'Text',
+        props: { color: 'inactive' },
+        children: [signpostText(MAIN)],
+      },
+    ],
+  });
+});
+
+test('a worker with no main draws the agent-view signpost', async ($, on) => {
+  answerBeneath(on, sessionWith(workerFlag(undefined)));
+  hintBeneath(on);
+  await $.session.start(START);
+  const tree = await hintDrawn($, 200);
+  expect(JSON.stringify(tree)).toContain('worker · ← opens agent view');
+});
+
+test('the signpost stays within the row in a narrow terminal, wide characters included', async ($, on) => {
+  const long = '日本語の長い名前'.repeat(6);
+  answerBeneath(on, sessionWith(workerFlag(long)));
+  hintBeneath(on);
+  await $.session.start(START);
+  const tree = await hintDrawn($, 30 + HINT_INSET);
+  const text = cut(signpostText(long), 30);
+  expect(width(text)).toBeLessThanOrEqual(30);
+  expect(JSON.stringify(tree)).toContain(text);
+  expect(JSON.stringify(tree)).not.toContain(signpostText(long));
+});
+
+test('a worker without a viewport draws only what lies beneath', async ($, on) => {
+  answerBeneath(on, sessionWith(workerFlag(MAIN)));
+  hintBeneath(on);
+  await $.session.start(START);
+  expect(await hintDrawn($, undefined)).toMatchObject({
+    type: 'Text',
+    children: ['hint'],
+  });
+});
+
+test('a main and an other session draw no signpost', async ($, on) => {
+  answerBeneath(on, sessionWith({}));
+  hintBeneath(on);
+  await $.session.start(START);
+  expect(await hintDrawn($, 200)).toMatchObject({
+    type: 'Text',
+    children: ['hint'],
+  });
+});
+
+test('no signpost is drawn before the role settles', async ($, on) => {
+  answerBeneath(on, sessionWith(workerFlag(MAIN)));
+  hintBeneath(on);
+  expect(await hintDrawn($, 200)).toMatchObject({
+    type: 'Text',
+    children: ['hint'],
+  });
 });

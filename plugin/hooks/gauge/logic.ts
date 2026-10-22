@@ -1,5 +1,6 @@
 // The gauge's pure logic: no engine calls, so the tests reach it directly.
 
+import { wayBack } from '../role';
 import type { ContextLimit } from './contract';
 
 export const UNPROFILED = 'no profile settings in this session';
@@ -50,4 +51,11 @@ export function limitValue(input: {
           tokens: input.threshold,
         };
   return JSON.stringify(limit);
+}
+
+/** The row a worker draws under the prompt: its main and the way back, or the agent-view key when it has no main. */
+export function signpostText(main: string | undefined): string {
+  return main === undefined
+    ? 'worker · ← opens agent view'
+    : `worker of ${main} · to go back: ${wayBack(main)}`;
 }

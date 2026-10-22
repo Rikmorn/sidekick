@@ -25,7 +25,7 @@ import type {
   ThemeKey,
 } from 'claude-code';
 import { PANE_ROWS, registerOwned } from '../commands';
-import { cut, scrollHint } from '../lines';
+import { cut, HINT_INSET, scrollHint } from '../lines';
 import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
 import { type GlanceLevel, PICKUP_TIMEOUT_MS } from './contract';
@@ -51,9 +51,6 @@ import {
 const COMMAND = { name: 'board', description: 'Show or hide the board pane' };
 const PANE = { id: 'board', title: 'Board' };
 const MS_PER_SECOND = 1_000;
-
-/** Cells the hint area keeps from the surface's width: 2 at the left and 2 at the right, read off the probe screens (docs/research/control-centre/2026-10-21-prompt-hint-probes.md): hint rows start 2 cells in, and the subagent panel's row ends at cell 108 of 110. */
-export const HINT_INSET = 4;
 
 const ROW_COLOR: ThemeKey = 'subtle';
 
