@@ -660,7 +660,7 @@ describe('dispatch records the main', () => {
     const h = inSession(fx, { CLAUDE_CODE_SESSION_ID: SESSION }, 'derived');
     run(h, fx);
     expect(h.out).toContain(
-      'main: Single word reply · sidekick holds this name when this turn ends; ← before then loses it',
+      'main: Single word reply · sidekick holds this name once this session is idle; ← before then loses it',
     );
   });
 

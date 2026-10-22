@@ -438,7 +438,7 @@ describe('profile launch', () => {
         SIDEKICK_MAIN: 'Single word reply',
       });
       expect(h.out).toEqual([
-        'main: Single word reply · sidekick holds this name when this turn ends; ← before then loses it',
+        'main: Single word reply · sidekick holds this name once this session is idle; ← before then loses it',
       ]);
     });
     test('a listing that fails falls back to the id prefix', () => {

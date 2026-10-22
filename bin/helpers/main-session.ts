@@ -110,6 +110,6 @@ export function mainReport(
 export function mainLine(main: ResolvedMain, held: boolean | null): string {
   const base = `main: ${main.value}`;
   return main.from === 'listing' && held === false
-    ? `${base} · sidekick holds this name when this turn ends; ← before then loses it`
+    ? `${base} · sidekick holds this name once this session is idle; ← before then loses it`
     : base;
 }

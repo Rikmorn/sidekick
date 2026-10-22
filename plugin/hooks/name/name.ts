@@ -117,7 +117,7 @@ async function rename($: EngineInterface, name: string): Promise<void> {
 }
 
 // The hook awaits this, so the timer is set inside the hook: the form known to
-// rename once the turn ends. A failed or unsure check leaves the next launch to check.
+// rename once the session is idle. A failed or unsure check leaves the next launch to check.
 async function checkAfterLaunch(
   $: EngineInterface,
   state: NameState,
@@ -134,7 +134,7 @@ async function checkAfterLaunch(
       case 'freeze':
         $.clock.after(RENAME_DELAY_MS, () => void rename($, verdict.name));
         state.isDone = true;
-        logLine($, `freezing "${verdict.name}" once this turn ends`);
+        logLine($, `freezing "${verdict.name}" once this session is idle`);
         return;
       case 'held':
         state.isDone = true;

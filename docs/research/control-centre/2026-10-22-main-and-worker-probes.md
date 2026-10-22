@@ -1,3 +1,5 @@
+Amended 2026-10-22: the operator's by-hand check of #245 saw the name mod's `/rename` land one turn late. A background command the main had started opened a follow-on turn, and the rename ran once the session was idle, not when the launching turn ended. R1's "once the turn ends" holds for a turn with no background work.
+
 > Research for the `control-centre` design (R9 plan 11, #245). A subagent ran it on 2026-10-22 for the plan's design session, on Claude Code 2.1.308. It measures what `←` does to the main session and how the operator gets back. It also covers an idle backgrounded main, a worker's markers, and whether a mod can return the operator to the main in one key. A second round the same day, R1 to R5, followed the design review. It is a record and takes only the edits that `sk-pm-conventions.md` §Placement test (tense) lists.
 
 # Probes: the main across `←`, going back, a worker's markers, and one-key return (2026-10-22)

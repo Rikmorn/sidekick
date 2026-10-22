@@ -21,7 +21,7 @@ const DISPATCH =
   'cd x && sidekick worker dispatch b.md --permission-mode default';
 const LAUNCH = '"$CLAUDE_PLUGIN_ROOT"/bin/sidekick profile launch qa --bg';
 const FREEZING =
-  'sidekick name: freezing "Single word reply" once this turn ends';
+  'sidekick name: freezing "Single word reply" once this session is idle';
 
 // What the hooks beneath the plugin answer for a tool's classic `PostToolUse`.
 const AFTER_TOOL = { additionalContext: ['from beneath'] };

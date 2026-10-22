@@ -146,7 +146,7 @@ describe('withoutMarkers', () => {
 
 describe('mainLine', () => {
   const suffix =
-    ' · sidekick holds this name when this turn ends; ← before then loses it';
+    ' · sidekick holds this name once this session is idle; ← before then loses it';
   test('the suffix only for a listed main whose name is not held', () => {
     const listing = { value: 'x', from: 'listing', sessionId: SID } as const;
     expect(mainLine(listing, false)).toBe(`main: x${suffix}`);
@@ -177,7 +177,7 @@ describe('mainReport', () => {
     return configDir;
   };
   const suffix =
-    ' · sidekick holds this name when this turn ends; ← before then loses it';
+    ' · sidekick holds this name once this session is idle; ← before then loses it';
   const listing = { value: 'x', from: 'listing', sessionId: SID } as const;
 
   test('adds the suffix for an automatic name, read from CLAUDE_CONFIG_DIR', () => {
