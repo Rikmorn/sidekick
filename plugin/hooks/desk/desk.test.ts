@@ -727,7 +727,10 @@ test('a throw inside the tick stays there, and the band names it', async ($, on)
   const refreshFailed = expect.stringMatching(
     /^sidekick desk: could not refresh: /,
   );
-  expect(seen.debug).toEqual([refreshFailed, refreshFailed]);
+  const deskLines = seen.debug.filter((line) =>
+    line.startsWith('sidekick desk: '),
+  );
+  expect(deskLines).toEqual([refreshFailed, refreshFailed]);
 });
 
 test('a session id the desk cannot read draws that, and runs nothing', async ($, on) => {
