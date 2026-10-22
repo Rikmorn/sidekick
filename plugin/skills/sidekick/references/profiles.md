@@ -112,7 +112,7 @@ Pick a profile name that names no command, since each name you give becomes an a
 
 ## Seeing a session's profile
 
-`/profile` toggles a pane in an interactive session, though not in a background one. It shows the profile's name, or that the session has none, and the agents and mod parts the profile hides. Below those it shows the context breakdown's used rows, and the largest agents, skills, and memory files, up to five of each. The pane reads the usage once each time it opens. Its output goes to the screen and never into the model's context.
+`/profile` toggles a pane, in a background session too. It opens holding the keys, so ↓ scrolls it and Esc closes it. It runs at once when typed mid-turn, and it passes the run on when another plugin or command owns the name. It shows the profile's name, or that the session has none, and the agents and mod parts the profile hides. Below those it shows the context breakdown's used rows, and the largest agents, skills, and memory files, up to five of each. The auto-memory file prints as `auto memory: MEMORY.md`. When the pane has more rows than its room, its first row counts the hidden ones. The pane reads the usage once each time it opens. Its output goes to the screen and never into the model's context.
 
 ## Switching a session's profile
 
