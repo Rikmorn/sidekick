@@ -1,5 +1,9 @@
 // The desk's adapter: runs `sidekick desk --json` on a clock in interactive
 // sessions, keeps the last snapshot, and draws the band and the pane from it.
+// `/desk` registers in every session the profile leaves the desk on in, and
+// answers in one line in a background session, where nobody sees a pane. A
+// name the engine refuses belongs to another owner: the desk still runs, and
+// its `command.run` hook passes the command on.
 // No hook returns context, approves, or denies, and none has a `.catch`. The
 // board, the gauge, and the scope mod share the module, and a hook that fails
 // in one mod skips the module's whole hook for that event. So `session.start`,
@@ -15,6 +19,8 @@ import type {
   RenderElement,
   ThemeKey,
 } from 'claude-code';
+import { PANE_ROWS, registerOwned } from '../commands';
+import { cut, scrollHint } from '../lines';
 import { isPartHidden } from '../scope/logic';
 import {
   DESK_VERSION,
@@ -109,7 +115,7 @@ async function fetchSnapshot($: EngineInterface): Promise<DeskSnapshot> {
 function textOf(line: Line): RenderElement {
   return {
     type: 'Text',
-    props: { color: TONE_COLORS[line.tone] },
+    props: { color: TONE_COLORS[line.tone], wrap: 'truncate-end' },
     children: [line.text],
   };
 }
@@ -126,6 +132,10 @@ interface DeskState {
   /** As the last ok snapshot had it: a failed run leaves the children unknown, not gone. */
   hadChildren: boolean;
   isRunning: boolean;
+  /** False until the engine accepts the name; a refused name belongs to another owner. */
+  isOwned: boolean;
+  /** Set at the start from `CLAUDE_JOB_DIR`, the one sign a background session gives. */
+  isBackground: boolean;
   /** As the last band render reported it. */
   isFullscreen: boolean;
 }
@@ -200,12 +210,13 @@ async function isDeskHidden($: EngineInterface): Promise<boolean> {
   }
 }
 
-// The clock starts before the first run, so a setup that fails partway leaves
-// no run to draw over its failure.
+// A refused register leaves the desk running, since the band does not depend on
+// the command. A background session registers and stops: nobody sees a band.
 async function startDesk($: EngineInterface, desk: DeskState): Promise<void> {
-  if ((await $.env.get('CLAUDE_JOB_DIR')) !== undefined) return;
   if (await isDeskHidden($)) return;
-  await $.command.register(COMMAND);
+  desk.isBackground = (await $.env.get('CLAUDE_JOB_DIR')) !== undefined;
+  desk.isOwned = await registerOwned($, COMMAND, 'desk');
+  if (desk.isBackground) return;
   $.clock.every(TICK_MS, () => void refreshDesk($, desk));
   void refreshDesk($, desk);
 }
@@ -222,9 +233,16 @@ function bandOver(
 function paneOf(
   last: DeskSnapshot | undefined,
   columns: number,
+  bodyRows: number,
+  isFocused: boolean,
 ): RenderElement {
   const lines = last === undefined ? [] : paneLines(last, columns);
-  return column(lines.map(textOf));
+  const hint = scrollHint(lines.length, bodyRows, isFocused);
+  const shown =
+    hint === undefined
+      ? lines
+      : [{ tone: 'muted', text: cut(hint, columns) } satisfies Line, ...lines];
+  return column(shown.map(textOf));
 }
 
 /**
@@ -237,6 +255,8 @@ export function registerDesk(on: On): void {
     last: undefined,
     hadChildren: false,
     isRunning: false,
+    isOwned: false,
+    isBackground: false,
     isFullscreen: false,
   };
 
@@ -254,11 +274,22 @@ export function registerDesk(on: On): void {
   });
 
   // A pane opened unasked on a narrow terminal is open but undrawn: shown, not closed.
-  on('command.run', { command: COMMAND.name }, async ($) => {
-    const panes = await $.ui.panes();
-    const isShown = panes.some((pane) => pane.id === PANE.id && pane.isPlaced);
-    if (isShown) await $.ui.close({ id: PANE.id });
-    else await $.ui.open(PANE);
+  on('command.run', { command: COMMAND.name }, async ($, e, next) => {
+    if (!desk.isOwned) return next(e);
+    if (desk.isBackground)
+      return { text: '/desk is off in background sessions.' };
+    try {
+      const panes = await $.ui.panes();
+      const isShown = panes.some(
+        (pane) => pane.id === PANE.id && pane.isPlaced,
+      );
+      if (isShown) await $.ui.close({ id: PANE.id });
+      else await $.ui.open({ ...PANE, rows: PANE_ROWS });
+    } catch (error) {
+      $.ui.log(`sidekick desk: command.run failed: ${reasonOf(error)}`, {
+        to: 'debug',
+      });
+    }
     return {};
   });
 
@@ -277,7 +308,12 @@ export function registerDesk(on: On): void {
 
   on('ui.render', { component: 'Pane', requestId: PANE.id }, ($, e, next) => {
     try {
-      return paneOf(desk.last, e.props.bodyColumns);
+      return paneOf(
+        desk.last,
+        e.props.bodyColumns,
+        e.props.scroll.bodyRows,
+        e.props.isFocused,
+      );
     } catch (error) {
       logDrawFailure($, 'pane', error);
       return next(e);

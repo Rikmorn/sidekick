@@ -200,10 +200,31 @@ test('the footer is left as it was when the flag names no profile', async ($, on
 
 // The desk shares the module. The kit skips a module's whole hook for an event
 // when one mod's part fails, so each mod keeps its own failures (rulings R9).
-test('a desk that cannot register /desk leaves the gauge whole, and the band names it', async ($, on) => {
+test('a desk whose /desk is refused leaves the gauge whole, and the band draws the desk, not a failure', async ($, on) => {
   const seen = answerBeneath(on, sessionWith({}));
   mock.env(on, {});
   on('command.register', () => ({ deny: 'refused by a plugin above' }));
+  on('ui.log', () => ({ value: undefined }));
+  on('process.run', () => ({
+    value: {
+      exitCode: 0,
+      stdout: `${JSON.stringify({
+        version: 1,
+        ok: true,
+        repo: 'sidekick',
+        waiting: [
+          { name: 'odin-ae', repo: 'odin', reason: 'ask', child: false },
+        ],
+        children: [],
+        finished: 0,
+        others: [],
+        warnings: [],
+      })}\n`,
+      stderr: '',
+      isStdoutTruncated: false,
+      isStderrTruncated: false,
+    },
+  }));
   on('ui.render', { component: 'AbovePrompt' }, () => ({
     type: 'Text',
     children: ['drawn beneath'],
@@ -226,9 +247,7 @@ test('a desk that cannot register /desk leaves the gauge whole, and the band nam
   });
   const texts = (await ui.findAll({ type: 'Text' })).map((text) => text.text);
   expect(texts).toEqual([
-    expect.stringMatching(
-      /^⚠ desk: could not start: .*refused by a plugin above/,
-    ),
+    expect.stringMatching(/^● needs you {2}odin-ae/),
     'drawn beneath',
   ]);
 });

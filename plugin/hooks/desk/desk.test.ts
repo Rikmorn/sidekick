@@ -13,6 +13,7 @@ import {
   mock,
   test,
 } from 'claude-code/testing';
+import { PANE_ROWS } from '../commands';
 import { type DeskSnapshot, RUN_TIMEOUT_MS } from './contract';
 import { TICK_MS } from './desk';
 import { bandLines, paneLines } from './logic';
@@ -39,6 +40,8 @@ type World = {
   hold?: Promise<void>;
   panes: Map<string, OpenPane>;
   refused: Set<'settings.read' | 'session.id' | 'ui.open' | 'ui.invalidate'>;
+  /** Whether the engine refuses `command.register`, as it does a name another owner holds. */
+  isRefusingCommand: boolean;
   /** The session's flag settings, as `--settings` gave them. */
   flag: Settings;
 };
@@ -50,6 +53,8 @@ type Seen = {
   runs: (readonly string[])[];
   timeouts: (number | undefined)[];
   commands: string[];
+  immediate: Record<string, boolean | undefined>;
+  openings: { focus: boolean | undefined; rows: number | undefined }[];
   invalidations: string[];
   opened: { id: string; title?: string }[];
   closed: string[];
@@ -136,6 +141,7 @@ function worldWith(answer: RunAnswer, env: Record<string, string> = {}): World {
     answer,
     panes: new Map(),
     refused: new Set(),
+    isRefusingCommand: false,
     flag: {},
   };
 }
@@ -154,13 +160,17 @@ function bandProps(
   };
 }
 
-function paneProps(bodyColumns: number): RenderPropsOf['Pane'] {
+function paneProps(
+  bodyColumns: number,
+  bodyRows = 20,
+  isFocused = false,
+): RenderPropsOf['Pane'] {
   return {
     title: 'Desk',
-    isFocused: false,
+    isFocused,
     bodyColumns,
     placement: 'dock',
-    scroll: { offset: 0, bodyRows: 20 },
+    scroll: { offset: 0, bodyRows },
     view: {},
   };
 }
@@ -172,6 +182,8 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
     runs: [],
     timeouts: [],
     commands: [],
+    immediate: {},
+    openings: [],
     invalidations: [],
     opened: [],
     closed: [],
@@ -213,7 +225,9 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
   });
   const clock = mock.clock(on);
   on('command.register', (_$, e) => {
+    if (world.isRefusingCommand) return { deny: "it is the user's /desk" };
     seen.commands.push(e.name);
+    seen.immediate[e.name] = e.immediate;
     return { value: { command: e.name } };
   });
   on('ui.invalidate', (_$, e, next) => {
@@ -223,6 +237,7 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
   on('ui.open', (_$, e) => {
     if (world.refused.has('ui.open')) return { deny: REFUSAL };
     seen.opened.push({ id: e.id, title: e.title });
+    seen.openings.push({ focus: e.focus, rows: e.rows });
     world.panes.set(e.id, { title: e.title ?? e.id, isPlaced: true });
     return { value: { isPlaced: true } };
   });
@@ -287,14 +302,98 @@ async function runDeskCommand($: Engine) {
   });
 }
 
-test('a background session runs nothing, ticks nothing, and opens no pane', async ($, on) => {
+test('a background session registers /desk, runs nothing, ticks nothing, and opens no pane', async ($, on) => {
   const world = worldWith(printed(WORKERS), { CLAUDE_JOB_DIR: JOB_DIR });
   const { seen, clock } = answerBeneath(on, world);
   await started($, clock);
   await clock.advance(TICK_MS * 3);
   expect(seen.runs).toEqual([]);
-  expect(seen.commands).not.toContain('desk');
+  expect(seen.commands).toContain('desk');
   expect(seen.opened).toEqual([]);
+  expect(await runDeskCommand($)).toEqual({
+    text: '/desk is off in background sessions.',
+  });
+  expect(seen.opened).toEqual([]);
+});
+
+test('a background session whose profile hides the desk registers nothing, and /desk reaches the hook beneath', async ($, on) => {
+  const world = worldWith(printed(WORKERS), { CLAUDE_JOB_DIR: JOB_DIR });
+  world.flag = { sidekick: { hide: { mods: ['desk'] } } };
+  const { seen, clock } = answerBeneath(on, world);
+  on('command.run', { command: 'desk' }, () => ({ text: 'the other /desk' }));
+  await started($, clock);
+  expect(seen.commands).not.toContain('desk');
+  expect(await runDeskCommand($)).toEqual({ text: 'the other /desk' });
+});
+
+test('an interactive start registers /desk to run mid-turn too', async ($, on) => {
+  const { seen, clock } = answerBeneath(on, worldWith(printed(QUIET)));
+  await started($, clock);
+  expect(seen.immediate.desk).toBe(true);
+});
+
+test('after a refused register the desk still runs and ticks, one debug line names the refusal, and /desk reaches the other command', async ($, on) => {
+  const world = worldWith(printed(QUIET));
+  world.isRefusingCommand = true;
+  const { seen, clock } = answerBeneath(on, world);
+  on('command.run', { command: 'desk' }, () => ({ text: 'the other /desk' }));
+  await started($, clock);
+  expect(seen.runs).toHaveLength(1);
+  await clock.advance(TICK_MS);
+  expect(seen.runs).toHaveLength(2);
+  expect(await runDeskCommand($)).toEqual({ text: 'the other /desk' });
+  expect(seen.opened).toEqual([]);
+  expect(
+    seen.debug.filter((line) =>
+      /^sidekick desk: \/desk not registered: .*it is the user's \/desk$/.test(
+        line,
+      ),
+    ),
+  ).toHaveLength(1);
+  const drawn = await drawnBand($, 'terminal', bandProps(200));
+  expect(drawn.map((line) => line.text)).toEqual([BENEATH]);
+});
+
+test('/desk opens asking for the room its tree needs, and without the keys', async ($, on) => {
+  const { seen, clock } = answerBeneath(on, worldWith(printed(QUIET)));
+  await started($, clock);
+  await runDeskCommand($);
+  expect(seen.openings).toEqual([{ focus: undefined, rows: PANE_ROWS }]);
+});
+
+test('a desk pane taller than its body leads with the scroll hint, muted, and a pane that fits draws none', async ($, on) => {
+  const { clock } = answerBeneath(on, worldWith(printed(WORKERS)));
+  await started($, clock);
+  const count = paneLines(WORKERS, 200).length;
+  const mount = async (bodyRows: number, isFocused: boolean, columns = 200) => {
+    const ui = await $.ui.mount({
+      plugin: PLUGIN,
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'desk',
+      props: paneProps(columns, bodyRows, isFocused),
+      viewport: FULLSCREEN,
+    });
+    const texts = await ui.findAll({ type: 'Text' });
+    await ui.unmount();
+    return texts.map((text) => ({
+      text: text.text,
+      color: text.props.color,
+      wrap: text.props.wrap,
+    }));
+  };
+  const tall = await mount(count - 1, false);
+  expect(tall[0]).toEqual({
+    text: '+2 rows · ctrl+x tab to focus, then ↓',
+    color: 'inactive',
+    wrap: 'truncate-end',
+  });
+  expect(tall).toHaveLength(count + 1);
+  expect((await mount(count - 1, true))[0]?.text).toBe('+2 rows · ↓ to scroll');
+  expect((await mount(count - 1, false, 10))[0]?.text).toBe('+2 rows · ');
+  const fits = await mount(count, false);
+  expect(fits).toHaveLength(count);
+  expect(fits.map((text) => text.wrap)).toEqual(fits.map(() => 'truncate-end'));
 });
 
 // `isInteractive` reads true in background sessions too, so it guards only
