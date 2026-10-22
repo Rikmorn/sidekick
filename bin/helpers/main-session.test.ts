@@ -211,7 +211,7 @@ describe('mainReport', () => {
     );
     expect(mainReport(listing, {}, home)).toBe(`main: x${suffix}`);
   });
-  test('an inherited main never reads the sessions file', () => {
+  test('an inherited main prints no suffix', () => {
     const env = { CLAUDE_CONFIG_DIR: '/does/not/exist' };
     expect(mainReport({ value: 'root', from: 'inherited' }, env, '/h')).toBe(
       'main: root',
