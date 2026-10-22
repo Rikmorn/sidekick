@@ -13,6 +13,7 @@ import {
   mock,
   test,
 } from 'claude-code/testing';
+import { PANE_ROWS } from '../commands';
 
 const REFUSAL = 'refused by a plugin above';
 
@@ -88,10 +89,20 @@ type ProfileWorld = {
   panes: Map<string, boolean>;
   /** The session's folder, or a refusal of its read. */
   cwd: string | 'refuse';
+  /** Whether the engine refuses `command.register`, as it does a name another owner holds. */
+  isRefusingCommand: boolean;
+};
+
+type OpenSeen = {
+  focus: boolean | undefined;
+  closeOnEscape: boolean | undefined;
+  rows: number | undefined;
 };
 
 type ProfileSeen = {
   commands: string[];
+  immediate: Record<string, boolean | undefined>;
+  openings: OpenSeen[];
   opened: string[];
   closed: string[];
   summaryReads: number;
@@ -150,6 +161,7 @@ function profileWorld(over: Partial<ProfileWorld> = {}): ProfileWorld {
     usage: { breakdown: breakdownWith() },
     panes: new Map(),
     cwd: '/work/repo',
+    isRefusingCommand: false,
     ...over,
   };
 }
@@ -160,6 +172,8 @@ function answerProfile(
 ): { seen: ProfileSeen; clock: MockClock } {
   const seen: ProfileSeen = {
     commands: [],
+    immediate: {},
+    openings: [],
     opened: [],
     closed: [],
     summaryReads: 0,
@@ -190,11 +204,18 @@ function answerProfile(
   on('ui.status', () => ({ value: undefined }));
   const clock = mock.clock(on);
   on('command.register', (_$, e) => {
+    if (world.isRefusingCommand) return { deny: "it is the user's /profile" };
     seen.commands.push(e.name);
+    seen.immediate[e.name] = e.immediate;
     return { value: { command: e.name } };
   });
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id);
+    seen.openings.push({
+      focus: e.focus,
+      closeOnEscape: e.closeOnEscape,
+      rows: e.rows,
+    });
     world.panes.set(e.id, true);
     return { value: { isPlaced: true } };
   });
@@ -242,6 +263,7 @@ async function drawnPane(
   $: Engine,
   requestId: string,
   columns = 200,
+  scroll = { bodyRows: 20, isFocused: false },
 ): Promise<{ text: string; color: unknown }[]> {
   const ui = await $.ui.mount({
     plugin: 'sidekick',
@@ -250,10 +272,10 @@ async function drawnPane(
     requestId,
     props: {
       title: 'Profile',
-      isFocused: false,
+      isFocused: scroll.isFocused,
       bodyColumns: columns,
       placement: 'dock',
-      scroll: { offset: 0, bodyRows: 20 },
+      scroll: { offset: 0, bodyRows: scroll.bodyRows },
       view: {},
     },
     viewport: VIEWPORT,
@@ -269,13 +291,118 @@ test('an interactive start registers /profile', async ($, on) => {
   expect(seen.commands).toContain('profile');
 });
 
-test('a background session registers no /profile', async ($, on) => {
+test('an interactive start registers /profile to run mid-turn too', async ($, on) => {
+  const { seen, clock } = answerProfile(on, profileWorld());
+  await profileStarted($, clock);
+  expect(seen.immediate.profile).toBe(true);
+});
+
+test('a background session registers /profile too', async ($, on) => {
   const { seen, clock } = answerProfile(
     on,
     profileWorld({ env: { CLAUDE_JOB_DIR: JOB_DIR } }),
   );
   await profileStarted($, clock);
-  expect(seen.commands).not.toContain('profile');
+  expect(seen.commands).toContain('profile');
+});
+
+test('after a refused register, /profile reaches the other command and the debug log names the refusal', async ($, on) => {
+  const { seen, clock } = answerProfile(
+    on,
+    profileWorld({ isRefusingCommand: true }),
+  );
+  on('command.run', { command: 'profile' }, () => ({
+    text: 'the other /profile',
+  }));
+  await profileStarted($, clock);
+  expect(await runProfile($)).toEqual({ text: 'the other /profile' });
+  expect(seen.opened).toEqual([]);
+  expect(
+    seen.debug.filter((line) =>
+      /^sidekick scope: \/profile not registered: .*it is the user's \/profile$/.test(
+        line,
+      ),
+    ),
+  ).toHaveLength(1);
+});
+
+test('/profile opens holding the keys, asking for the room its tree needs', async ($, on) => {
+  const { seen, clock } = answerProfile(on, profileWorld());
+  await profileStarted($, clock);
+  await runProfile($);
+  expect(seen.openings).toEqual([
+    { focus: true, closeOnEscape: true, rows: PANE_ROWS },
+  ]);
+});
+
+test('a pane taller than its body leads with the scroll hint, muted', async ($, on) => {
+  const { clock } = answerProfile(on, profileWorld());
+  await profileStarted($, clock);
+  await runProfile($);
+  const unfocused = await drawnPane($, 'profile', 200, {
+    bodyRows: 6,
+    isFocused: false,
+  });
+  expect(unfocused[0]).toEqual({
+    text: '+2 rows · ctrl+x tab to focus, then ↓',
+    color: 'inactive',
+  });
+  expect(unfocused).toHaveLength(8);
+  const focused = await drawnPane($, 'profile', 200, {
+    bodyRows: 6,
+    isFocused: true,
+  });
+  expect(focused[0]?.text).toBe('+2 rows · ↓ to scroll');
+});
+
+test('the hint is cut to the pane width', async ($, on) => {
+  const { clock } = answerProfile(on, profileWorld());
+  await profileStarted($, clock);
+  await runProfile($);
+  const drawn = await drawnPane($, 'profile', 10, {
+    bodyRows: 6,
+    isFocused: false,
+  });
+  expect(drawn[0]?.text).toBe('+2 rows · ');
+});
+
+test('a pane whose tree fits its body draws no hint', async ($, on) => {
+  const { clock } = answerProfile(on, profileWorld());
+  await profileStarted($, clock);
+  await runProfile($);
+  const drawn = await drawnPane($, 'profile', 200, {
+    bodyRows: 7,
+    isFocused: false,
+  });
+  expect(drawn[0]?.text).toBe('PROFILE');
+  expect(drawn).toHaveLength(7);
+});
+
+test('every line the pane draws truncates rather than wraps', async ($, on) => {
+  const { clock } = answerProfile(on, profileWorld());
+  await profileStarted($, clock);
+  await runProfile($);
+  const ui = await $.ui.mount({
+    plugin: 'sidekick',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'profile',
+    props: {
+      title: 'Profile',
+      isFocused: false,
+      bodyColumns: 200,
+      placement: 'dock',
+      scroll: { offset: 0, bodyRows: 6 },
+      view: {},
+    },
+    viewport: VIEWPORT,
+  });
+  const texts = await ui.findAll({ type: 'Text' });
+  await ui.unmount();
+  expect(texts.length).toBeGreaterThan(0);
+  expect(texts.map((text) => text.props.wrap)).toEqual(
+    texts.map(() => 'truncate-end'),
+  );
 });
 
 test('/profile opens the pane, and a second /profile closes it', async ($, on) => {

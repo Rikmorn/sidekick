@@ -293,7 +293,7 @@ test('a background session runs nothing, ticks nothing, and opens no pane', asyn
   await started($, clock);
   await clock.advance(TICK_MS * 3);
   expect(seen.runs).toEqual([]);
-  expect(seen.commands).toEqual([]);
+  expect(seen.commands).not.toContain('desk');
   expect(seen.opened).toEqual([]);
 });
 

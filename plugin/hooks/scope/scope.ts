@@ -1,13 +1,16 @@
 // The scope mod's adapter: keeps the agents a profile hides out of the model's
-// listing and its dispatch, and draws `/profile`. Every filter fails open, and
-// no hook approves or denies a call. The mod shares one module with the board,
-// the gauge, and the desk, and a hook that throws skips the module's whole hook
-// for that event. So each hook here keeps its own failures, and the ones on
-// events another mod also hooks carry a matcher. `agent.offer` has no other
-// hook beside it and takes none.
+// listing and its dispatch, and draws `/profile`, which opens holding the keys
+// and leads with how to scroll when its lines outrun the pane. Every filter
+// fails open, and no hook approves or denies a call. The mod shares one module
+// with the board, the gauge, and the desk, and a hook that throws skips the
+// module's whole hook for that event. So each hook here keeps its own failures,
+// and the ones on events another mod also hooks carry a matcher. `agent.offer`
+// has no other hook beside it and takes none.
 
 import type { EngineInterface, On, RenderElement, ThemeKey } from 'claude-code';
+import { PANE_ROWS, registerOwned } from '../commands';
 import { profileOf } from '../gauge/logic';
+import { cut, scrollHint } from '../lines';
 import {
   type Hidden,
   hiddenOf,
@@ -96,7 +99,7 @@ async function load($: EngineInterface): Promise<Loaded> {
 function textOf(line: PaneLine): RenderElement {
   return {
     type: 'Text',
-    props: { color: TONE_COLORS[line.tone] },
+    props: { color: TONE_COLORS[line.tone], wrap: 'truncate-end' },
     children: [line.text],
   };
 }
@@ -110,6 +113,9 @@ export function registerScope(on: On): void {
   // One read per open: the open drops it, and the first render after reads it.
   // A promise, so two renders in flight share the one read.
   let loaded: Promise<Loaded> | undefined;
+  // False until the engine accepts the name; a refused name belongs to another
+  // owner, and its `command.run` hook still answers here.
+  let isOwned = false;
 
   on('agent.offer', async ($, e, next) => {
     try {
@@ -123,13 +129,10 @@ export function registerScope(on: On): void {
 
   // The matcher is the desk's and the board's. The gauge hooks `session.start`
   // without one, and the engine refuses a second unmatched hook on it. A
-  // background session reads `isInteractive` true, so only `CLAUDE_JOB_DIR`
-  // tells it apart.
+  // background session registers too.
   on('session.start', { isInteractive: true }, async ($, e, next) => {
     try {
-      if ((await $.env.get('CLAUDE_JOB_DIR')) === undefined) {
-        await $.command.register(COMMAND);
-      }
+      isOwned = await registerOwned($, COMMAND, 'scope');
     } catch (error) {
       logFailure($, 'session.start', error);
     }
@@ -137,7 +140,8 @@ export function registerScope(on: On): void {
   });
 
   // A pane that is open but undrawn on a narrow terminal is shown, not closed.
-  on('command.run', { command: COMMAND.name }, async ($) => {
+  on('command.run', { command: COMMAND.name }, async ($, e, next) => {
+    if (!isOwned) return next(e);
     try {
       const panes = await $.ui.panes();
       const isShown = panes.some(
@@ -147,7 +151,12 @@ export function registerScope(on: On): void {
         await $.ui.close({ id: PANE.id });
       } else {
         loaded = undefined;
-        await $.ui.open(PANE);
+        await $.ui.open({
+          ...PANE,
+          focus: true,
+          closeOnEscape: true,
+          rows: PANE_ROWS,
+        });
       }
     } catch (error) {
       logFailure($, 'command.run', error);
@@ -162,7 +171,22 @@ export function registerScope(on: On): void {
       try {
         loaded ??= load($);
         const lines = profilePaneLines(await loaded, e.props.bodyColumns);
-        return column(lines.map(textOf));
+        const hint = scrollHint(
+          lines.length,
+          e.props.scroll.bodyRows,
+          e.props.isFocused,
+        );
+        const shown =
+          hint === undefined
+            ? lines
+            : [
+                {
+                  tone: 'muted',
+                  text: cut(hint, e.props.bodyColumns),
+                } satisfies PaneLine,
+                ...lines,
+              ];
+        return column(shown.map(textOf));
       } catch (error) {
         logFailure($, 'the profile pane', error);
         return next(e);
