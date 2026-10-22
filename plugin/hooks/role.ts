@@ -135,7 +135,7 @@ export function registerRole(on: On): void {
   });
 
   // The engine refuses a second `session.start` hook without a matcher, and
-  // the gauge has one. The board, the desk, and the scope mod share this one.
+  // the gauge has one. Every mod but the gauge shares this one.
   on('session.start', { isInteractive: true }, async ($, e, next) => {
     try {
       $.ui.log(`sidekick role: ${roleText(await settleRole($))}`, {

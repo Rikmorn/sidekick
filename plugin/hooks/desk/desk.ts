@@ -1,17 +1,17 @@
-// The desk's adapter: runs `sidekick desk --json` on a clock in interactive
-// sessions, keeps the last snapshot, and draws the band and the pane from it.
+// The desk's adapter: runs `sidekick desk --json` on a clock in a main, keeps
+// the last snapshot, and draws the band and the pane from it.
 // `/desk` registers in every session the profile leaves the desk on in. The
 // desk runs in a main, which keeps it after `←`. A worker answers `/desk` with
 // the way back to its main, and an `other` session answers in one line. A
 // name the engine refuses belongs to another owner: the desk still runs, and
 // its `command.run` hook passes the command on.
-// No hook returns context, approves, or denies. The board, the gauge, and the
-// scope mod share the module, and a hook that fails in one mod skips the
-// module's whole hook for that event. So `session.start`, which all three also
-// hook, keeps its own failures, which the band names, and calls `next(e)` once
-// whatever happened. The render hooks fall back to what lies beneath; no other
-// mod hooks `AbovePrompt`. The `/desk` toggle keeps its own failures too, and
-// no other mod hooks `/desk`.
+// No hook returns context, approves, or denies. The other mods share the
+// module, and a hook that fails in one mod skips the module's whole hook for
+// that event. So `session.start`, which each of them also hooks, keeps its own
+// failures, which the band names, and calls `next(e)` once whatever happened.
+// The render hooks fall back to what lies beneath; no other mod hooks
+// `AbovePrompt`. The `/desk` toggle keeps its own failures too, and no other
+// mod hooks `/desk`.
 
 import type {
   EngineInterface,

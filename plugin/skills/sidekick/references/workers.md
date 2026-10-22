@@ -74,13 +74,14 @@ Once the checks pass, `dispatch` acts in this order:
 3. It relays `claude`'s output, which names the job's id. Once `claude` exits 0, it prints a summary:
 
    ```
+   main: <the main's name>
    worker <name> dispatched · permission mode <mode> · pushes blocked
    every tool call the worker makes is pre-approved
    steer: rulings in <rulings>, then message "<name>" to point at them
    finish: sidekick worker finish <absolute brief path>
    ```
 
-   The second line appears only under `bypassPermissions`. With `--allow-push`, the first line ends `pushes ALLOWED on the operator's word`.
+   The `main:` line appears only when `dispatch` records a main, as "The overlay" says. While that name is the dispatching session's own and does not yet hold, the line ends ` · sidekick holds this name when this turn ends; ← before then loses it`. The `every tool call` line appears only under `bypassPermissions`. With `--allow-push`, the `dispatched` line ends `pushes ALLOWED on the operator's word`.
 
 4. Once `claude` exits 0, it writes the worker's record, with the job's id from that output, as "The record" says. A write that fails prints why and leaves the exit code as `claude`'s. The worker runs, and only the desk loses sight of it.
 
@@ -95,6 +96,7 @@ Once the checks pass, `dispatch` acts in this order:
   "worktree": { "baseRef": "head" },
   "env": {
     "SIDEKICK_WORKER": "<absolute brief path>",
+    "SIDEKICK_MAIN": "<the main's name>",
     "GIT_CONFIG_COUNT": "<n + 1>",
     "GIT_CONFIG_KEY_<n>": "url.sidekick-push-blocked::.pushInsteadOf",
     "GIT_CONFIG_VALUE_<n>": ""
@@ -105,7 +107,8 @@ Once the checks pass, `dispatch` acts in this order:
 
 - `n` is the profile's own `settings.env.GIT_CONFIG_COUNT`, or 0 when it sets none. So the block's entry follows the profile's own entries. `--allow-push` leaves out the three `GIT_CONFIG_*` keys and the deny rule.
 - `worktree.baseRef: "head"` branches the worktree from the main checkout's `HEAD`. The default, `"fresh"`, would branch from the remote's default branch.
-- `SIDEKICK_WORKER` marks the session as a worker. At the critical warning, the context monitor then tells it to carry on rather than stop to tell the user, since no one watches it. It also says to keep superpowers' ledger current and to re-read the brief after a compaction.
+- `SIDEKICK_WORKER` marks the session as a worker, for the mods' role and for the context monitor. At the critical warning, the context monitor then tells it to carry on rather than stop to tell the user, since no one watches it. It also says to keep superpowers' ledger current and to re-read the brief after a compaction.
+- `SIDEKICK_MAIN` names the worker's main: the dispatching session's name as `claude agents --json --all` lists it, or its session id's first 8 characters without one. A worker that dispatches passes its own main on. `dispatch` adds the key only when it runs inside a session. It spawns `claude` without either marker in its environment, so the overlay is their only way in. The worker's mods draw the signpost from it, as `docs/reference/USAGE.md` §Mains and workers in the `Rikmorn/sidekick` repo says.
 
 ## The push block
 

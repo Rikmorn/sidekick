@@ -3,17 +3,19 @@
 // toggles. It observes and draws, ADR-0012's first rung, so no hook adds
 // context, approves, or denies, and none has a `.catch`. A live start or
 // `/clear`, an open of the pane, and a Bash board write each run the pickup.
-// The role, the desk, and the scope mod share `session.start` under the same
-// matcher, and the gauge shares it unmatched. In a worker the gauge draws a row
-// in `PromptHint` too, and the board's hook passes it through. The desk and the
-// scope mod draw panes of their own ids. A hook that fails in one mod skips the
-// module's whole hook for that event, so each hook keeps its own failures and
-// calls `next(e)` once. `/board` registers in every session the profile leaves
-// the board on in. A main keeps the board's line and pickups after `←`. A worker
-// answers `/board` with the way back to its main, and an `other` session
-// answers in one line; the line and pickups stay off in both. A name the engine refuses belongs to
-// another owner: the board still runs, and its `command.run` hook passes the
-// command on. The board's pane is the board's alone, so its hook answers for
+// Every other mod but the gauge shares `session.start` under the same matcher,
+// and the gauge shares it unmatched. The role shares `classic.SessionStart`,
+// matched on `fork`, and the name mod shares `classic.PostToolUse` on Bash. In
+// a worker the gauge draws a row in `PromptHint` too, and the board's hook
+// passes it through. The desk and the scope mod draw panes of their own ids. A
+// hook that fails in one mod skips the module's whole hook for that event, so
+// each hook keeps its own failures and calls `next(e)` once. `/board`
+// registers in every session the profile leaves the board on in. A main keeps
+// the board's line and pickups after `←`. A worker answers `/board` with the
+// way back to its main, and an `other` session answers in one line; the line
+// and pickups stay off in both. A name the engine refuses belongs to another
+// owner: the board still runs, and its `command.run` hook passes the command
+// on. The board's pane is the board's alone, so its hook answers for
 // itself.
 
 import type {

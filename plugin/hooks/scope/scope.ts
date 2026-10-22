@@ -2,10 +2,10 @@
 // listing and its dispatch, and draws `/profile`, which opens holding the keys
 // and leads with how to scroll when its lines outrun the pane. Every filter
 // fails open, and no hook approves or denies a call. The mod shares one module
-// with the board, the gauge, and the desk, and a hook that throws skips the
-// module's whole hook for that event. So each hook here keeps its own failures,
-// and the ones on events another mod also hooks carry a matcher. `agent.offer`
-// has no other hook beside it and takes none.
+// with the other mods, and a hook that throws skips the module's whole hook
+// for that event. So each hook here keeps its own failures, and the ones on
+// events another mod also hooks carry a matcher. `agent.offer` has no other
+// hook beside it and takes none.
 
 import type { EngineInterface, On, RenderElement, ThemeKey } from 'claude-code';
 import { PANE_ROWS, registerOwned } from '../commands';
@@ -127,9 +127,9 @@ export function registerScope(on: On): void {
     return next(e);
   });
 
-  // The matcher is the desk's and the board's. The gauge hooks `session.start`
-  // without one, and the engine refuses a second unmatched hook on it. A
-  // background session registers too.
+  // Every other mod but the gauge hooks `session.start` with this matcher. The
+  // gauge hooks it without one, and the engine refuses a second unmatched hook
+  // on it. A background session registers too.
   on('session.start', { isInteractive: true }, async ($, e, next) => {
     try {
       isOwned = await registerOwned($, COMMAND, 'scope');

@@ -1,17 +1,16 @@
 // The gauge's adapter: reads the session through `$`, and hands the context
 // limit to the post-tool-batch hook through the process environment. No hook
-// approves or denies anything, and none has a `.catch`. The board, the scope
-// mod, and the desk share the module, and a hook that fails in one mod skips
-// the module's whole hook for that event. So `session.start`, which all three
-// also hook, and `PostToolBatch` keep their own failures and call `next(e)`
-// once whatever happened. In a worker the gauge also draws one signpost row
-// in `PromptHint` under what lies beneath, naming the worker's main and the
-// way back; the board's hook passes it through. No other mod hooks a
-// `SessionMode` render, so a failure there costs only the footer label. A
-// failed read at session start
-// leaves the limit unset, which the context monitor's canary reports; after a
-// tool batch it leaves the last value. Each caught failure goes to the debug
-// log, where the engine names a hook it skips.
+// approves or denies anything, and none has a `.catch`. The other mods share
+// the module, and a hook that fails in one mod skips the module's whole hook
+// for that event. So `session.start`, which each of them also hooks, and
+// `PostToolBatch` keep their own failures and call `next(e)` once whatever
+// happened. In a worker the gauge also draws one signpost row in `PromptHint`
+// under what lies beneath, naming the worker's main and the way back; the
+// board's hook passes it through. No other mod hooks a `SessionMode` render,
+// so a failure there costs only the footer label. A failed read at session
+// start leaves the limit unset, which the context monitor's canary reports;
+// after a tool batch it leaves the last value. Each caught failure goes to the
+// debug log, where the engine names a hook it skips.
 
 import type { EngineInterface, On, ThemeKey } from 'claude-code';
 import { cut, HINT_INSET } from '../lines';
