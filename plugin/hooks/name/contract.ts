@@ -1,8 +1,12 @@
 // What the name mod and `sidekick session --json --self <id>` share: the answer
-// line and its parser. This file imports nothing: `bin/` imports it under
+// line and its parser, and the mod's run timeout, which the command's own
+// listing stays under. This file imports nothing: `bin/` imports it under
 // NodeNext, and the module loader allows relative files only.
 
 export const SESSION_VERSION = 1;
+
+/** How long the mod lets one `sidekick session --json` run take: past the command's own listing timeout, so a slow listing exits 1 with its reason. */
+export const RUN_TIMEOUT_MS = 8_000;
 
 /** The CLI's answer: the session's listed name, and whether its name holds (null when unknown). */
 export interface SessionAnswer {
