@@ -612,6 +612,7 @@ test('children appearing after a fullscreen render open the pane once', async ($
   world.answer = printed(WORKERS);
   await clock.advance(TICK_MS);
   expect(seen.opened).toEqual([{ id: 'desk', title: 'Desk' }]);
+  expect(seen.openings).toEqual([{ focus: undefined, rows: PANE_ROWS }]);
   world.answer = printed({ ...WORKERS, finished: 3 });
   await clock.advance(TICK_MS);
   expect(seen.opened).toHaveLength(1);

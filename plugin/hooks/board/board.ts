@@ -9,7 +9,7 @@
 // skips the module's whole hook for that event, so each hook keeps its own
 // failures and calls `next(e)` once. `/board` registers in every session the
 // profile leaves the board on in, and answers in one line in a background
-// session, where nobody sees a pane. A name the engine refuses belongs to
+// session, where the board's line and pickups stay off. A name the engine refuses belongs to
 // another owner: the board still runs, and its `command.run` hook passes the
 // command on. The board's pane is the board's alone, so its hook answers for
 // itself.
@@ -331,8 +331,8 @@ async function isBoardHidden($: EngineInterface): Promise<boolean> {
 }
 
 // The start pickup goes before the command, so a refused `/board` costs only
-// the command. A background session registers the command and stops: nobody
-// sees a row or a pane.
+// the command. A background session registers the command and stops: the
+// operator ruled its board line off.
 async function startBoard(
   $: EngineInterface,
   board: BoardState,
@@ -366,8 +366,9 @@ async function togglePane(
 }
 
 /**
- * Hooks the board: in every session, the classic start and, unless a profile
- * hides the board, `/board`; in a live one, the pickups, the state row under the prompt, and the board's pane.
+ * Hooks the board: the classic start in every session; `/board` in every
+ * interactive session, unless a profile hides the board; in a live one, the
+ * pickups, the state row under the prompt, and the board's pane.
  */
 export function registerBoard(on: On): void {
   const board: BoardState = {

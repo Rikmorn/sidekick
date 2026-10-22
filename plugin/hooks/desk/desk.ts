@@ -1,16 +1,15 @@
 // The desk's adapter: runs `sidekick desk --json` on a clock in interactive
 // sessions, keeps the last snapshot, and draws the band and the pane from it.
 // `/desk` registers in every session the profile leaves the desk on in, and
-// answers in one line in a background session, where nobody sees a pane. A
+// answers in one line in a background session, where the desk stays off. A
 // name the engine refuses belongs to another owner: the desk still runs, and
 // its `command.run` hook passes the command on.
-// No hook returns context, approves, or denies, and none has a `.catch`. The
-// board, the gauge, and the scope mod share the module, and a hook that fails
-// in one mod skips the module's whole hook for that event. So `session.start`,
-// which all three also hook, keeps its own failures, which the band names, and
-// calls `next(e)` once whatever happened. The render hooks fall back to what
-// lies beneath; no other mod hooks `AbovePrompt`. No other mod hooks `/desk`,
-// so a failure there costs only the toggle.
+// No hook returns context, approves, or denies. The board, the gauge, and the
+// scope mod share the module, and a hook that fails in one mod skips the
+// module's whole hook for that event. So `session.start`, which all three also
+// hook, keeps its own failures, which the band names, and calls `next(e)` once
+// whatever happened. The render hooks fall back to what lies beneath; no other mod hooks `AbovePrompt`. The `/desk` toggle keeps its
+// own failures too, and no other mod hooks `/desk`.
 
 import type {
   EngineInterface,
@@ -156,7 +155,8 @@ async function keepSnapshotIn(
   const hasChildrenNow = hasChildren(snapshot);
   const childrenAppeared = !desk.hadChildren && hasChildrenNow;
   desk.hadChildren = hasChildrenNow;
-  if (desk.isFullscreen && childrenAppeared) await settle($.ui.open(PANE));
+  if (desk.isFullscreen && childrenAppeared)
+    await settle($.ui.open({ ...PANE, rows: PANE_ROWS }));
 }
 
 // The engine drops a refused redraw and reports it rather than throwing, so
@@ -211,7 +211,7 @@ async function isDeskHidden($: EngineInterface): Promise<boolean> {
 }
 
 // A refused register leaves the desk running, since the band does not depend on
-// the command. A background session registers and stops: nobody sees a band.
+// the command. A background session registers and stops: the operator ruled its desk off.
 async function startDesk($: EngineInterface, desk: DeskState): Promise<void> {
   if (await isDeskHidden($)) return;
   desk.isBackground = (await $.env.get('CLAUDE_JOB_DIR')) !== undefined;
@@ -246,9 +246,10 @@ function paneOf(
 }
 
 /**
- * Hooks the desk: in an interactive session, `/desk` and a run of
- * `sidekick desk --json` every tick; in every session, the band above the
- * prompt and the desk's pane, drawn from the last snapshot.
+ * Hooks the desk: `/desk` in an interactive session, background ones included;
+ * a run of `sidekick desk --json` every tick outside a background session; in
+ * every session, the band above the prompt and the desk's pane, drawn from the
+ * last snapshot.
  */
 export function registerDesk(on: On): void {
   const desk: DeskState = {

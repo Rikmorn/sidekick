@@ -19,7 +19,7 @@ Provenance grades:
 | Does a second pane resize the first's block? | The panes share one block. It shows the newer pane under a tab row and fits that pane: 4 body rows for a 3-row tree | Measured |
 | In fullscreen, does `rows: 10` keep the board's line and a band row? | It keeps the line and loses the band row, whose `maxRows` fell to 0. `rows: 9` kept both beside a one-row band | Measured at 100 by 40 |
 | Does a pane opened with `rows: 10` still scroll? | Yes, once the keys reach it. `bodyRows` read 10, and each ↓ moved it one row | Measured |
-| With the band drawn, does the first ctrl+x Tab reach the pane? | Only when the band's tree fits its room. A band taller than its room, hidden or shown, takes the first press; a second reaches the pane | Measured |
+| With the band drawn, does the first ctrl+x Tab reach the pane? | Only when the band's tree fits its room. A band taller than its room, hidden or shown, takes the first press; a second reaches the pane | Inferred from seven measured layouts |
 | Does the `Pane` hook run again when `isFocused` changes? | Yes, once per change, reading the new value, on both screens | Measured |
 | Attached to a background session, does `/desk` list ahead of `/desktop` once registered? | Yes. An interactive session lists it first too | Measured |
 | Does a command registered `immediate` open its pane mid-turn? | Yes, at once, while the model thought and while its text streamed. A command without it waited for the turn to end | Measured |
@@ -158,7 +158,7 @@ Where the band took the first press, a second ctrl+x Tab reached the pane. In th
 
 **A typed letter hands the keys back.** While the pane held the keys, a typed `z` dimmed its frame and landed in the prompt. The pane's next render read `isFocused` false (measured, eight presses across two runs).
 
-So a fullscreen pane that fills its room, beside any desk row, needs two presses. Every other layout measured needs one.
+So a fullscreen pane that fills its room, beside a band whose room the pane fills, needs two presses. Every other layout measured needs one.
 
 ### Focus re-renders (P3)
 
