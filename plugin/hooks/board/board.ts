@@ -3,13 +3,15 @@
 // toggles. It observes and draws, ADR-0012's first rung, so no hook adds
 // context, approves, or denies, and none has a `.catch`. A live start or
 // `/clear`, an open of the pane, and a Bash board write each run the pickup.
-// The desk and the scope mod share `session.start` under the same matcher, and
-// the gauge shares it unmatched. No other mod draws `PromptHint`, and the desk
-// and the scope mod draw panes of their own ids. A hook that fails in one mod
-// skips the module's whole hook for that event, so each hook keeps its own
-// failures and calls `next(e)` once. `/board` registers in every session the
-// profile leaves the board on in, and answers in one line in a background
-// session, where the board's line and pickups stay off. A name the engine refuses belongs to
+// The role, the desk, and the scope mod share `session.start` under the same
+// matcher, and the gauge shares it unmatched. In a worker the gauge draws a row
+// in `PromptHint` too, and the board's hook passes it through. The desk and the
+// scope mod draw panes of their own ids. A hook that fails in one mod skips the
+// module's whole hook for that event, so each hook keeps its own failures and
+// calls `next(e)` once. `/board` registers in every session the profile leaves
+// the board on in. A main keeps the board's line and pickups after `←`. A worker
+// answers `/board` with the way back to its main, and an `other` session
+// answers in one line; the line and pickups stay off in both. A name the engine refuses belongs to
 // another owner: the board still runs, and its `command.run` hook passes the
 // command on. The board's pane is the board's alone, so its hook answers for
 // itself.
@@ -24,6 +26,7 @@ import type {
 } from 'claude-code';
 import { PANE_ROWS, registerOwned } from '../commands';
 import { cut, scrollHint } from '../lines';
+import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
 import { type GlanceLevel, PICKUP_TIMEOUT_MS } from './contract';
 import {
@@ -242,8 +245,8 @@ interface BoardState {
   isLive: boolean | undefined;
   /** False until the engine accepts the name; a refused name belongs to another owner. */
   isOwned: boolean;
-  /** Set at the start from `CLAUDE_JOB_DIR`, the one sign a background session gives. */
-  isBackground: boolean;
+  /** Settled at the start; undefined until the start hook runs. */
+  role: Role | undefined;
   /** A classic start other than a compact whose pickup has not begun. */
   isStartPending: boolean;
 }
@@ -331,15 +334,16 @@ async function isBoardHidden($: EngineInterface): Promise<boolean> {
 }
 
 // The start pickup goes before the command, so a refused `/board` costs only
-// the command. A background session registers the command and stops: the
-// operator ruled its board line off.
+// the command. A worker or an `other` session registers the command and stops:
+// the operator ruled its board line off.
 async function startBoard(
   $: EngineInterface,
   board: BoardState,
 ): Promise<void> {
-  board.isBackground = (await $.env.get('CLAUDE_JOB_DIR')) !== undefined;
+  const role = await settleRole($);
+  board.role = role;
   const isHidden = await isBoardHidden($);
-  board.isLive = !board.isBackground && !isHidden;
+  board.isLive = role.kind === 'main' && !isHidden;
   if (board.isLive) maybeRunStart($, board);
   if (isHidden) return;
   board.isOwned = await registerOwned($, COMMAND, 'board');
@@ -367,7 +371,7 @@ async function togglePane(
 
 /**
  * Hooks the board: the classic start in every session; `/board` in every
- * interactive session, unless a profile hides the board; in a live one, the
+ * interactive session, unless a profile hides the board; in a main, the
  * pickups, the state row under the prompt, and the board's pane.
  */
 export function registerBoard(on: On): void {
@@ -377,12 +381,12 @@ export function registerBoard(on: On): void {
     queued: undefined,
     isLive: undefined,
     isOwned: false,
-    isBackground: false,
+    role: undefined,
     isStartPending: false,
   };
 
-  // No other mod hooks the classic start, so it takes no matcher. The settings
-  // hooks run inside `next(e)`, and noting the start first starts its pickup
+  // The role's classic start hook matches `fork` only, so this one takes no
+  // matcher and hears every source. The settings hooks run inside `next(e)`, and noting the start first starts its pickup
   // beside them.
   on('classic.SessionStart', ($, e, next) => {
     try {
@@ -397,7 +401,8 @@ export function registerBoard(on: On): void {
   });
 
   // The desk's matcher: identical matchers load, and `board.test.ts` pins that
-  // both hooks fire. A background session reads `isInteractive` true as well.
+  // both hooks fire. A background session reads `isInteractive` true as well,
+  // so only the role tells it apart.
   on('session.start', { isInteractive: true }, async ($, e, next) => {
     try {
       await startBoard($, board);
@@ -409,8 +414,20 @@ export function registerBoard(on: On): void {
 
   on('command.run', { command: COMMAND.name }, async ($, e, next) => {
     if (!board.isOwned) return next(e);
-    if (board.isBackground) {
-      return { text: '/board is off in background sessions.' };
+    const { role } = board;
+    if (role !== undefined) {
+      switch (role.kind) {
+        case 'main':
+          break;
+        case 'worker':
+          return { text: workerAnswer(COMMAND.name, role.main) };
+        case 'other':
+          return { text: '/board is off in background sessions.' };
+        default: {
+          const unhandled: never = role;
+          throw new Error(`Unhandled role: ${JSON.stringify(unhandled)}`);
+        }
+      }
     }
     try {
       await togglePane($, board);

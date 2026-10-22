@@ -1,15 +1,17 @@
 // The desk's adapter: runs `sidekick desk --json` on a clock in interactive
 // sessions, keeps the last snapshot, and draws the band and the pane from it.
-// `/desk` registers in every session the profile leaves the desk on in, and
-// answers in one line in a background session, where the desk stays off. A
+// `/desk` registers in every session the profile leaves the desk on in. The
+// desk runs in a main, which keeps it after `←`. A worker answers `/desk` with
+// the way back to its main, and an `other` session answers in one line. A
 // name the engine refuses belongs to another owner: the desk still runs, and
 // its `command.run` hook passes the command on.
 // No hook returns context, approves, or denies. The board, the gauge, and the
 // scope mod share the module, and a hook that fails in one mod skips the
 // module's whole hook for that event. So `session.start`, which all three also
 // hook, keeps its own failures, which the band names, and calls `next(e)` once
-// whatever happened. The render hooks fall back to what lies beneath; no other mod hooks `AbovePrompt`. The `/desk` toggle keeps its
-// own failures too, and no other mod hooks `/desk`.
+// whatever happened. The render hooks fall back to what lies beneath; no other
+// mod hooks `AbovePrompt`. The `/desk` toggle keeps its own failures too, and
+// no other mod hooks `/desk`.
 
 import type {
   EngineInterface,
@@ -20,6 +22,7 @@ import type {
 } from 'claude-code';
 import { PANE_ROWS, registerOwned } from '../commands';
 import { cut, scrollHint } from '../lines';
+import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
 import {
   DESK_VERSION,
@@ -133,8 +136,8 @@ interface DeskState {
   isRunning: boolean;
   /** False until the engine accepts the name; a refused name belongs to another owner. */
   isOwned: boolean;
-  /** Set at the start from `CLAUDE_JOB_DIR`, the one sign a background session gives. */
-  isBackground: boolean;
+  /** Settled at the start; undefined until the start hook runs. */
+  role: Role | undefined;
   /** As the last band render reported it. */
   isFullscreen: boolean;
 }
@@ -183,11 +186,14 @@ function logDrawFailure(
 }
 
 // A tick runs outside any hook, so a throw the settled calls did not cover is
-// kept here as a failure rather than left unhandled.
+// kept here as a failure rather than left unhandled. No surface means the
+// session runs on without a screen, as the agent view's tab process does
+// after `←`, so a tick then runs nothing.
 async function refreshDesk($: EngineInterface, desk: DeskState): Promise<void> {
   if (desk.isRunning) return;
   desk.isRunning = true;
   try {
+    if ((await $.session.surfaces()).length === 0) return;
     await keepSnapshotIn($, desk, await fetchSnapshot($));
   } catch (error) {
     keepFailureIn($, desk, `could not refresh: ${reasonOf(error)}`);
@@ -211,12 +217,13 @@ async function isDeskHidden($: EngineInterface): Promise<boolean> {
 }
 
 // A refused register leaves the desk running, since the band does not depend on
-// the command. A background session registers and stops: the operator ruled its desk off.
+// the command. Only a main polls: a worker or an `other` session registers and stops.
 async function startDesk($: EngineInterface, desk: DeskState): Promise<void> {
   if (await isDeskHidden($)) return;
-  desk.isBackground = (await $.env.get('CLAUDE_JOB_DIR')) !== undefined;
+  const role = await settleRole($);
+  desk.role = role;
   desk.isOwned = await registerOwned($, COMMAND, 'desk');
-  if (desk.isBackground) return;
+  if (role.kind !== 'main') return;
   $.clock.every(TICK_MS, () => void refreshDesk($, desk));
   void refreshDesk($, desk);
 }
@@ -246,8 +253,8 @@ function paneOf(
 }
 
 /**
- * Hooks the desk: `/desk` in an interactive session, background ones included;
- * a run of `sidekick desk --json` every tick outside a background session; in
+ * Hooks the desk: `/desk` in an interactive session, whatever its role;
+ * a run of `sidekick desk --json` every tick in a main; in
  * every session, the band above the prompt and the desk's pane, drawn from the
  * last snapshot.
  */
@@ -257,12 +264,12 @@ export function registerDesk(on: On): void {
     hadChildren: false,
     isRunning: false,
     isOwned: false,
-    isBackground: false,
+    role: undefined,
     isFullscreen: false,
   };
 
   // The matcher keeps a `-p` run from polling. A background session reads
-  // `isInteractive` true as well, so only `CLAUDE_JOB_DIR` tells it apart.
+  // `isInteractive` true as well, so only the role tells it apart.
   // The engine refuses a second `session.start` hook without a matcher, and
   // the gauge has one.
   on('session.start', { isInteractive: true }, async ($, e, next) => {
@@ -277,8 +284,21 @@ export function registerDesk(on: On): void {
   // A pane opened unasked on a narrow terminal is open but undrawn: shown, not closed.
   on('command.run', { command: COMMAND.name }, async ($, e, next) => {
     if (!desk.isOwned) return next(e);
-    if (desk.isBackground)
-      return { text: '/desk is off in background sessions.' };
+    const { role } = desk;
+    if (role !== undefined) {
+      switch (role.kind) {
+        case 'main':
+          break;
+        case 'worker':
+          return { text: workerAnswer(COMMAND.name, role.main) };
+        case 'other':
+          return { text: '/desk is off in background sessions.' };
+        default: {
+          const unhandled: never = role;
+          throw new Error(`Unhandled role: ${JSON.stringify(unhandled)}`);
+        }
+      }
+    }
     try {
       const panes = await $.ui.panes();
       const isShown = panes.some(

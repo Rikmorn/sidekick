@@ -230,6 +230,7 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
       ? { deny: REFUSAL }
       : { value: world.flag },
   );
+  on('session.surfaces', () => ({ value: ['terminal'] }));
   on('session.usage', () => ({
     value: { startedAt: 0, context: { window: 1000000 }, rateLimits: [] },
   }));
@@ -647,14 +648,22 @@ for (const [level, color] of LEVEL_COLORS) {
 }
 
 // Under `-p` the interactive start never fires, and nobody sees a row. A
-// background session reads `isInteractive` true, so its start fires.
+// background session reads `isInteractive` true, so its start fires. A
+// session of another role gets no row: only a main does.
 const UNSEEN: {
   name: string;
   over: Partial<World>;
   start?: SessionStartInput;
 }[] = [
   { name: 'a start under -p', over: {}, start: HEADLESS },
-  { name: 'a background session', over: { env: { CLAUDE_JOB_DIR: JOB_DIR } } },
+  {
+    name: 'a background session that is no fork',
+    over: { env: { CLAUDE_JOB_DIR: JOB_DIR } },
+  },
+  {
+    name: 'a worker',
+    over: { flag: { env: { SIDEKICK_MAIN: 'Single word reply' } } },
+  },
   {
     name: 'a profile that hides the board',
     over: { flag: { sidekick: { hide: { mods: ['board'] } } } },
@@ -684,7 +693,18 @@ test('a start under -p registers no /board', async ($, on) => {
   expect(seen.commands).not.toContain('board');
 });
 
-test('a background session registers /board, and /board answers in one line', async ($, on) => {
+test('a forked background session is a main: it runs the pickup and draws the row', async ($, on) => {
+  const world = worldWith({ env: { CLAUDE_JOB_DIR: JOB_DIR } });
+  const { seen, clock } = answerBeneath(on, world);
+  await $.classic.SessionStart({ source: 'fork' });
+  await started($, clock);
+  await clock.settle();
+  expect(seen.pickups).toHaveLength(1);
+  const [, row] = await drawnHint($, 'terminal', WIDE);
+  expect(row).toBeDefined();
+});
+
+test('a background session that is no fork registers /board, and /board answers in one line', async ($, on) => {
   const world = worldWith({ env: { CLAUDE_JOB_DIR: JOB_DIR } });
   const { seen, clock } = answerBeneath(on, world);
   await started($, clock);
@@ -695,17 +715,52 @@ test('a background session registers /board, and /board answers in one line', as
   expect(seen.opened).toEqual([]);
 });
 
+test('a worker registers /board and answers with the way back to its main', async ($, on) => {
+  const world = worldWith({
+    env: { CLAUDE_JOB_DIR: JOB_DIR },
+    flag: { env: { SIDEKICK_MAIN: 'Single word reply' } },
+  });
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  expect(seen.commands).toContain('board');
+  expect(await boardCommand($)).toEqual({
+    text: '/board is off in this worker. Its main is Single word reply: ←, select it, Enter.',
+  });
+  expect(seen.opened).toEqual([]);
+});
+
+test('a worker with no main answers /board in one clause', async ($, on) => {
+  const world = worldWith({ flag: { env: { SIDEKICK_WORKER: '/tmp/b.md' } } });
+  const { clock } = answerBeneath(on, world);
+  await started($, clock);
+  expect(await boardCommand($)).toEqual({
+    text: '/board is off in this worker.',
+  });
+});
+
 const HIDDEN = { sidekick: { hide: { mods: ['board'] } } };
 
-const HIDDEN_ENVS: Record<string, string>[] = [{}, { CLAUDE_JOB_DIR: JOB_DIR }];
+const HIDDEN_ROLES: { name: string; flag: Settings; fork: boolean }[] = [
+  { name: 'a main', flag: HIDDEN, fork: false },
+  { name: 'a forked background main', flag: HIDDEN, fork: true },
+  {
+    name: 'a worker',
+    flag: { ...HIDDEN, env: { SIDEKICK_MAIN: 'Single word reply' } },
+    fork: false,
+  },
+  { name: 'an other session', flag: HIDDEN, fork: false },
+];
 
-for (const env of HIDDEN_ENVS) {
-  test(`a profile that hides the board registers nothing${'CLAUDE_JOB_DIR' in env ? ' in a background session' : ''}, and /board reaches the hook beneath`, async ($, on) => {
-    const world = worldWith({ flag: HIDDEN, env });
+for (const role of HIDDEN_ROLES) {
+  test(`a profile that hides the board registers nothing in ${role.name}, and /board reaches the hook beneath`, async ($, on) => {
+    const env: Record<string, string> =
+      role.name === 'a main' ? {} : { CLAUDE_JOB_DIR: JOB_DIR };
+    const world = worldWith({ flag: role.flag, env });
     const { seen, clock } = answerBeneath(on, world);
     on('command.run', { command: 'board' }, () => ({
       text: 'the other /board',
     }));
+    if (role.fork) await $.classic.SessionStart({ source: 'fork' });
     await started($, clock);
     expect(seen.commands).not.toContain('board');
     expect(await boardCommand($)).toEqual({ text: 'the other /board' });

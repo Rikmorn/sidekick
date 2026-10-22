@@ -204,6 +204,7 @@ test('a desk whose /desk is refused leaves the gauge whole, and the band draws t
   const seen = answerBeneath(on, sessionWith({}));
   mock.env(on, {});
   on('command.register', () => ({ deny: 'refused by a plugin above' }));
+  on('session.surfaces', () => ({ value: ['terminal'] }));
   on('ui.log', () => ({ value: undefined }));
   on('process.run', () => ({
     value: {

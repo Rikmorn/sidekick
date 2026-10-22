@@ -44,6 +44,8 @@ type World = {
   isRefusingCommand: boolean;
   /** The session's flag settings, as `--settings` gave them. */
   flag: Settings;
+  /** What `$.session.surfaces()` resolves; empty after `←`, where no screen draws. */
+  surfaces: readonly RenderSurface[];
 };
 
 const REFUSAL = 'refused by a plugin above';
@@ -143,6 +145,7 @@ function worldWith(answer: RunAnswer, env: Record<string, string> = {}): World {
     refused: new Set(),
     isRefusingCommand: false,
     flag: {},
+    surfaces: ['terminal'],
   };
 }
 
@@ -202,6 +205,7 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
       ? { deny: REFUSAL }
       : { value: world.flag },
   );
+  on('session.surfaces', () => ({ value: world.surfaces }));
   on('session.usage', () => ({
     value: { startedAt: 0, context: { window: 1000000 }, rateLimits: [] },
   }));
@@ -256,6 +260,7 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
     })),
   }));
   on('session.start', (_$, e) => ({ cwd: e.cwd }));
+  on('classic.SessionStart', () => ({}));
   on('ui.render', { component: 'AbovePrompt' }, () => ({
     type: 'Text',
     children: [BENEATH],
@@ -302,7 +307,27 @@ async function runDeskCommand($: Engine) {
   });
 }
 
-test('a background session registers /desk, runs nothing, ticks nothing, and opens no pane', async ($, on) => {
+const MAIN = 'Single word reply';
+const WORKER_MARKERS: Settings = { env: { SIDEKICK_MAIN: MAIN } };
+
+// The board shares the module, and its pickup runs through the same hook.
+function deskRuns(seen: Seen): (readonly string[])[] {
+  return seen.runs.filter((argv) => argv.includes('desk'));
+}
+
+test('a forked background session is a main: it polls, ticks, and toggles the pane', async ($, on) => {
+  const world = worldWith(printed(WORKERS), { CLAUDE_JOB_DIR: JOB_DIR });
+  const { seen, clock } = answerBeneath(on, world);
+  await $.classic.SessionStart({ source: 'fork' });
+  await started($, clock);
+  expect(deskRuns(seen)).toHaveLength(1);
+  await clock.advance(TICK_MS);
+  expect(deskRuns(seen)).toHaveLength(2);
+  await runDeskCommand($);
+  expect(seen.opened).toEqual([{ id: 'desk', title: 'Desk' }]);
+});
+
+test('a background session that is no fork is other: it registers /desk, runs nothing, and answers in one line', async ($, on) => {
   const world = worldWith(printed(WORKERS), { CLAUDE_JOB_DIR: JOB_DIR });
   const { seen, clock } = answerBeneath(on, world);
   await started($, clock);
@@ -316,14 +341,56 @@ test('a background session registers /desk, runs nothing, ticks nothing, and ope
   expect(seen.opened).toEqual([]);
 });
 
-test('a background session whose profile hides the desk registers nothing, and /desk reaches the hook beneath', async ($, on) => {
+test('a worker registers /desk, polls nothing, and answers with the way back to its main', async ($, on) => {
   const world = worldWith(printed(WORKERS), { CLAUDE_JOB_DIR: JOB_DIR });
-  world.flag = { sidekick: { hide: { mods: ['desk'] } } };
+  world.flag = WORKER_MARKERS;
   const { seen, clock } = answerBeneath(on, world);
-  on('command.run', { command: 'desk' }, () => ({ text: 'the other /desk' }));
   await started($, clock);
-  expect(seen.commands).not.toContain('desk');
-  expect(await runDeskCommand($)).toEqual({ text: 'the other /desk' });
+  await clock.advance(TICK_MS * 3);
+  expect(seen.runs).toEqual([]);
+  expect(seen.commands).toContain('desk');
+  expect(await runDeskCommand($)).toEqual({
+    text: `/desk is off in this worker. Its main is ${MAIN}: ←, select it, Enter.`,
+  });
+  expect(seen.opened).toEqual([]);
+});
+
+test('a worker with no main answers in one clause', async ($, on) => {
+  const world = worldWith(printed(WORKERS));
+  world.flag = { env: { SIDEKICK_WORKER: '/tmp/brief.md' } };
+  const { clock } = answerBeneath(on, world);
+  await started($, clock);
+  expect(await runDeskCommand($)).toEqual({
+    text: '/desk is off in this worker.',
+  });
+});
+
+for (const role of ['a main', 'a worker', 'an other session']) {
+  test(`${role} whose profile hides the desk registers nothing, and /desk reaches the hook beneath`, async ($, on) => {
+    const world = worldWith(printed(WORKERS), { CLAUDE_JOB_DIR: JOB_DIR });
+    const hidden = { sidekick: { hide: { mods: ['desk'] } } };
+    world.flag =
+      role === 'a worker' ? { ...hidden, ...WORKER_MARKERS } : hidden;
+    const { seen, clock } = answerBeneath(on, world);
+    on('command.run', { command: 'desk' }, () => ({ text: 'the other /desk' }));
+    if (role === 'a main') await $.classic.SessionStart({ source: 'fork' });
+    await started($, clock);
+    expect(seen.commands).not.toContain('desk');
+    expect(deskRuns(seen)).toEqual([]);
+    expect(await runDeskCommand($)).toEqual({ text: 'the other /desk' });
+  });
+}
+
+test('with no surface the first run and each tick run nothing, and they resume once a terminal returns', async ($, on) => {
+  const world = worldWith(printed(QUIET));
+  world.surfaces = [];
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await clock.advance(TICK_MS * 2);
+  expect(seen.runs).toEqual([]);
+  world.surfaces = ['terminal'];
+  await clock.advance(TICK_MS);
+  expect(seen.runs).toHaveLength(1);
 });
 
 test('an interactive start registers /desk to run mid-turn too', async ($, on) => {
