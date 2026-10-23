@@ -1,0 +1,494 @@
+<title>sidekick Control Centre</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* Layout: a chalkboard page; a section rail on the left, a reading column, and terminal plates that may run wider. One committed dark look. */
+:root {
+  color-scheme: dark;
+  --bg: #0e1013;
+  --panel: #161a1f;
+  --rule: #2a3038;
+  --ink: #ebe7dd;
+  --muted: #9ba4ae;
+  --blue: #58c4dd;
+  --yellow: #f4d345;
+  --green: #83c167;
+  --red: #fc6255;
+  --gold: #f0ac5f;
+  --term-bg: #101112;
+  --term-fg: #d6d6d6;
+  --serif: "STIX Two Text", "Iowan Old Style", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--serif);
+  font-size: 18px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.page { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 48px; max-width: 1240px; margin: 0 auto; padding-block: 40px 96px; }
+nav.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: 15px; }
+nav.rail .brand { font-family: var(--mono); font-size: 13px; color: var(--blue); letter-spacing: .04em; margin-bottom: 18px; }
+nav.rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; counter-reset: s; }
+nav.rail li { counter-increment: s; }
+nav.rail a { color: var(--muted); text-decoration: none; display: grid; grid-template-columns: 22px 1fr; }
+nav.rail a::before { content: counter(s); font-family: var(--mono); font-size: 12px; color: var(--rule); padding-top: 3px; }
+nav.rail a:hover, nav.rail a:focus-visible { color: var(--ink); }
+nav.rail a:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+main { min-width: 0; }
+.prose { max-width: 68ch; }
+h1 { font-weight: 400; font-size: 46px; line-height: 1.1; margin: 0 0 12px; text-wrap: balance; }
+h1 em { color: var(--blue); }
+h2 { font-weight: 400; font-size: 31px; margin: 72px 0 8px; text-wrap: balance; scroll-margin-top: 24px; }
+h2 .n { font-family: var(--mono); font-size: 15px; color: var(--yellow); margin-right: 12px; vertical-align: 6px; }
+h3 { font-weight: 600; font-size: 19px; margin: 32px 0 6px; }
+p { margin: 0 0 14px; }
+.lede { font-size: 21px; color: var(--ink); }
+.meta { font-size: 15px; color: var(--muted); }
+code, kbd { font-family: var(--mono); font-size: .82em; }
+code { color: var(--gold); }
+kbd { border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel); color: var(--ink); white-space: nowrap; }
+a { color: var(--blue); }
+.moves { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin: 28px 0 8px; }
+.moves div { background: var(--panel); padding: 14px 16px; }
+.moves .what { font-size: 15px; color: var(--muted); }
+.moves .how { font-family: var(--mono); font-size: 14px; margin-top: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 16px; }
+.tablewrap { overflow-x: auto; margin: 16px 0 20px; }
+th { text-align: left; font-weight: 600; color: var(--muted); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; border-bottom: 1px solid var(--rule); padding: 8px 12px 8px 0; }
+td { border-bottom: 1px solid var(--rule); padding: 9px 12px 9px 0; vertical-align: top; }
+td:first-child { white-space: nowrap; }
+.callout { border-left: 3px solid var(--gold); background: var(--panel); padding: 12px 16px; margin: 20px 0; font-size: 16px; }
+.callout.warn { border-color: var(--red); }
+.callout strong { color: var(--gold); }
+.callout.warn strong { color: var(--red); }
+figure.term { margin: 24px 0 28px; max-width: 100%; }
+.screen { overflow-x: auto; background: var(--term-bg); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 4px 12px 16px; }
+.screen pre { margin: 0; font-family: var(--mono); font-size: 12.5px; line-height: 1.38; color: var(--term-fg); width: max-content; }
+.screen.wide pre { font-size: 10.5px; }
+.screen .row { display: block; min-height: 1.38em; white-space: pre; }
+.mk { position: relative; }
+.mk::before {
+  content: attr(data-n); position: absolute; left: -.55em; top: -.95em; z-index: 1;
+  width: 1.45em; height: 1.45em; border-radius: 50%; background: var(--yellow); color: #111;
+  font: 700 10px/1.45em var(--mono); text-align: center; box-shadow: 0 0 0 2px var(--term-bg);
+}
+figcaption { font-size: 15px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
+ol.legend { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 16px; max-width: 72ch; }
+ol.legend li { display: grid; grid-template-columns: 28px 1fr; }
+ol.legend li::before { content: attr(data-n); width: 20px; height: 20px; border-radius: 50%; background: var(--yellow); color: #111; font: 700 11px/20px var(--mono); text-align: center; margin-top: 3px; }
+.diagram { overflow-x: auto; margin: 24px 0; }
+.diagram svg { display: block; min-width: 640px; max-width: 900px; width: 100%; height: auto; }
+.diagram text { font-family: var(--serif); fill: var(--ink); }
+.diagram .mono { font-family: var(--mono); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 14px 0; font-size: 16px; }
+.kv dt { font-family: var(--mono); font-size: 14px; padding-top: 2px; }
+.kv dd { margin: 0; color: var(--ink); }
+.dot { display: inline-block; width: .6em; height: .6em; border-radius: 50%; margin-right: 6px; vertical-align: .05em; }
+footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--muted); max-width: 72ch; }
+@media (max-width: 900px) {
+  .page { grid-template-columns: minmax(0, 1fr); gap: 16px; padding-block: 24px 64px; }
+  nav.rail { position: static; }
+  nav.rail ol { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; gap: 16px; padding-bottom: 6px; }
+  h1 { font-size: 36px; }
+  body { font-size: 17px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+</style>
+
+<div class="page">
+<nav class="rail" aria-label="Sections">
+  <div class="brand">sidekick · control centre</div>
+  <ol>
+    <li><a href="#model">The model</a></li>
+    <li><a href="#main">Your main at a glance</a></li>
+    <li><a href="#panes">Panes and commands</a></li>
+    <li><a href="#moving">Getting around</a></li>
+    <li><a href="#workers">Working with workers</a></li>
+    <li><a href="#trouble">When things look wrong</a></li>
+    <li><a href="#try">Settle by use</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="prose">
+  <h1>The <em>control centre</em>, row by row</h1>
+  <p class="lede">sidekick adds a few rows to the Claude Code session you work in: who needs you, what your workers are doing, how the board stands, and which profile is loaded. You move between sessions with Claude Code's own agent view.</p>
+  <p class="meta">Every screen here is a real session, captured on Claude Code 2.1.309 with sidekick at <code>66ed52e</code>, then redrawn. Your colours follow your terminal theme. Session names from other work are replaced with neutral ones.</p>
+</header>
+
+<div class="moves" role="list" aria-label="The moves you use most">
+  <div role="listitem"><div class="what">Switch to another session</div><div class="how"><kbd>←</kbd> pick a row <kbd>Enter</kbd></div></div>
+  <div role="listitem"><div class="what">Back to your main</div><div class="how"><kbd>←</kbd> select it <kbd>Enter</kbd></div></div>
+  <div role="listitem"><div class="what">Who needs you, and the workers</div><div class="how">/desk</div></div>
+  <div role="listitem"><div class="what">How the board stands</div><div class="how">/board</div></div>
+  <div role="listitem"><div class="what">Your profile and context</div><div class="how">/profile</div></div>
+  <div role="listitem"><div class="what">Hide or show sidekick's band</div><div class="how"><kbd>Ctrl+X</kbd> <kbd>Ctrl+A</kbd></div></div>
+</div>
+
+<section id="model" class="prose">
+  <h2><span class="n">1</span>The model</h2>
+  <p>Run one <strong>main</strong> per terminal tab. It is the conversation you work in, and the only kind of session that draws the desk and the board. Everything else runs in the background, and agent view is how you reach it.</p>
+
+  <div class="diagram" role="img" aria-label="Diagram: from your main, left arrow opens agent view; Enter on a row opens that session; left arrow returns to agent view.">
+  <svg viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#58c4dd"/></marker>
+      <marker id="ay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f4d345"/></marker>
+    </defs>
+    <rect x="20" y="100" width="210" height="92" rx="10" fill="#161a1f" stroke="#58c4dd" stroke-width="1.5"/>
+    <text x="125" y="135" text-anchor="middle" font-size="20">Your main</text>
+    <text x="125" y="160" text-anchor="middle" font-size="14" fill="#9ba4ae">the desk, the board line</text>
+    <text x="125" y="179" text-anchor="middle" font-size="14" fill="#9ba4ae">one per tab</text>
+    <rect x="345" y="100" width="210" height="92" rx="10" fill="#161a1f" stroke="#f4d345" stroke-width="1.5"/>
+    <text x="450" y="135" text-anchor="middle" font-size="20">Agent view</text>
+    <text x="450" y="160" text-anchor="middle" font-size="14" fill="#9ba4ae">Claude Code's switcher:</text>
+    <text x="450" y="179" text-anchor="middle" font-size="14" fill="#9ba4ae">every background session</text>
+    <rect x="670" y="100" width="210" height="92" rx="10" fill="#161a1f" stroke="#83c167" stroke-width="1.5"/>
+    <text x="775" y="135" text-anchor="middle" font-size="20">A worker</text>
+    <text x="775" y="160" text-anchor="middle" font-size="14" fill="#9ba4ae">a signpost back to its main</text>
+    <text x="775" y="179" text-anchor="middle" font-size="14" fill="#9ba4ae">dispatched by your main</text>
+    <path d="M230 125 C 275 105, 300 105, 343 125" fill="none" stroke="#58c4dd" stroke-width="1.6" marker-end="url(#ah)"/>
+    <text x="287" y="96" text-anchor="middle" class="mono" font-size="15" fill="#58c4dd">←</text>
+    <path d="M345 168 C 300 190, 275 190, 232 168" fill="none" stroke="#f4d345" stroke-width="1.6" marker-end="url(#ay)"/>
+    <text x="287" y="212" text-anchor="middle" class="mono" font-size="13" fill="#f4d345">Enter on its row</text>
+    <path d="M555 125 C 600 105, 625 105, 668 125" fill="none" stroke="#f4d345" stroke-width="1.6" marker-end="url(#ay)"/>
+    <text x="612" y="96" text-anchor="middle" class="mono" font-size="13" fill="#f4d345">Enter on its row</text>
+    <path d="M670 168 C 625 190, 600 190, 557 168" fill="none" stroke="#58c4dd" stroke-width="1.6" marker-end="url(#ah)"/>
+    <text x="612" y="212" text-anchor="middle" class="mono" font-size="15" fill="#58c4dd">←</text>
+    <text x="450" y="40" text-anchor="middle" font-size="15" fill="#9ba4ae">From any shell: <tspan class="mono" fill="#f0ac5f">claude attach &lt;name or id&gt;</tspan> opens a session in place</text>
+    <line x1="60" y1="262" x2="840" y2="262" stroke="#2a3038"/>
+    <text x="450" y="292" text-anchor="middle" font-size="15" fill="#9ba4ae">The first <tspan class="mono" fill="#58c4dd">←</tspan> moves your main into a background process under a new id.</text>
+    <text x="450" y="314" text-anchor="middle" font-size="15" fill="#9ba4ae">From then on it is a row in agent view like any other, and <tspan class="mono" fill="#f4d345">Enter</tspan> brings it back with its views.</text>
+  </svg>
+  </div>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Role</th><th>What it is</th><th>What sidekick draws there</th></tr></thead>
+    <tbody>
+      <tr><td>Main</td><td>The session you work in, before and after <kbd>←</kbd></td><td>The desk's band and pane, the board's line and pane, the footer's profile label</td></tr>
+      <tr><td>Worker</td><td>A session your main dispatched, in its own worktree</td><td>A grey signpost under the prompt that names its main and the keys back</td></tr>
+      <tr><td>Other</td><td>Any other background session, such as a bare <code>claude --bg</code></td><td>Only the footer's profile label</td></tr>
+    </tbody>
+  </table></div>
+  <p><kbd>←</kbd> works on an empty prompt. The first time your main launches a worker, sidekick fixes the main's name with <code>/rename</code> once the session is idle. That keeps the name the worker points back to. Press <kbd>←</kbd> before then and the name is lost for that worker.</p>
+</section>
+
+<section id="main">
+  <div class="prose">
+  <h2><span class="n">2</span>Your main at a glance</h2>
+  <p>With two workers out, one of them stopped on a permission prompt, the bottom of your main looks like this.</p>
+  </div>
+  <figure class="term">
+    <div class="screen" data-screen="main" role="img" aria-label="A main session with the desk band above the prompt and the footer below it."></div>
+    <ol class="legend">
+      <li data-n="1"><span><strong>Needs you.</strong> Each session waiting on you, with the reason: a permission prompt, a question dialog, or <code>blocked</code> when it ended its turn asking something in text.</span></li>
+      <li data-n="2"><span><strong>Workers.</strong> Each worker this main dispatched, with its state, then a count of other sessions that recently finished.</span></li>
+      <li data-n="3"><span>Claude Code's collapse mark for the band. <kbd>Ctrl+X</kbd> <kbd>Ctrl+A</kbd> hides and shows it.</span></li>
+      <li data-n="4"><span>The session's name, on the prompt's border, once it is set.</span></li>
+      <li data-n="5"><span>The profile this session was launched with.</span></li>
+      <li data-n="6"><span>Claude Code's own count of background sessions, in its hint line.</span></li>
+    </ol>
+    <figcaption>The band sits above the prompt and refreshes every 10 seconds. It draws nothing when there is nothing to report.</figcaption>
+  </figure>
+
+  <div class="prose">
+  <h3>The board's line</h3>
+  <p>In a repository tracked on a GitHub board, one line under the prompt says how the milestone stands.</p>
+  </div>
+  <figure class="term">
+    <div class="screen" data-screen="board-line" role="img" aria-label="The board line under the prompt."></div>
+    <ol class="legend">
+      <li data-n="1"><span>This session was started without a profile. It is a notice, not a fault.</span></li>
+      <li data-n="2"><span>The repository and its board. <code>board #2</code> links to the board.</span></li>
+      <li data-n="3"><span>The milestone's state, then its title and the time of the last refresh.</span></li>
+    </ol>
+  </figure>
+  <div class="prose">
+  <dl class="kv">
+    <dt><span class="dot" style="background:var(--green)"></span>● on track</dt><dd>The last status update says so, and nothing has drifted.</dd>
+    <dt><span class="dot" style="background:var(--green)"></span>✓ complete</dt><dd>The milestone is done.</dd>
+    <dt><span class="dot" style="background:var(--gold)"></span>▲ at risk</dt><dd>The last status update flags a risk.</dd>
+    <dt><span class="dot" style="background:var(--gold)"></span>▲ drift · …</dt><dd>The board and the repository disagree, such as unpushed commits or a stale card. The detail names it.</dd>
+    <dt><span class="dot" style="background:var(--red)"></span>✗ off track</dt><dd>You marked the milestone off track.</dd>
+    <dt><span class="dot" style="background:var(--muted)"></span>○ inactive</dt><dd>The last status update marks the milestone inactive.</dd>
+  </dl>
+  <p>The line refreshes when a session starts, when <code>/board</code> opens, and after a commit, a push, or a board write. It has no clock. When a refresh fails, the time reads <code>refresh failed HH:MM</code> and the rest is the last good reading.</p>
+
+  <h3>When another main asks you something</h3>
+  <p>Your other mains count as waiting once they end a turn on a question. Here a second main sees the first one, <code>todo-app-ce</code>, waiting.</p>
+  </div>
+  <figure class="term">
+    <div class="screen" data-screen="other-main-waits" role="img" aria-label="A second main whose band lists the first main as waiting."></div>
+    <ol class="legend">
+      <li data-n="1"><span>Another main that ended its turn asking for rulings. The engine reads such a turn as <code>blocked</code>. It can misread a very short reply the same way.</span></li>
+    </ol>
+  </figure>
+</section>
+
+<section id="panes">
+  <div class="prose">
+  <h2><span class="n">3</span>Panes and commands</h2>
+  <p>Each command shows or hides its pane. Below 110 columns, or on the classic screen, a pane sits inline above the prompt. In fullscreen from 110 columns it docks on the right.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Command</th><th>Shows</th><th>Keys</th><th>Closes with</th></tr></thead>
+    <tbody>
+      <tr><td>/desk</td><td>Each worker's state, tokens, plan, and last commit, then every other session</td><td>Stay with the prompt</td><td><code>/desk</code> again</td></tr>
+      <tr><td>/board</td><td>The board's six-line brief and its link</td><td>Stay with the prompt</td><td><code>/board</code> again</td></tr>
+      <tr><td>/profile</td><td>The profile, what it hides, and what loaded into context</td><td>Taken by the pane: <kbd>↓</kbd> scrolls at once</td><td><kbd>Esc</kbd>, or <code>/profile</code> again</td></tr>
+    </tbody>
+  </table></div>
+  <p>A pane that holds the keyboard draws its frame bright. To scroll <code>/desk</code> or <code>/board</code>, press <kbd>Ctrl+X</kbd> <kbd>Tab</kbd> to give them the keys, then <kbd>↓</kbd>. <kbd>Esc</kbd> hands the keys back and leaves the pane open. A pane with more rows than room says so in its first row.</p>
+  </div>
+  <figure class="term">
+    <div class="screen" data-screen="desk-inline" role="img" aria-label="The desk pane open inline above the band."></div>
+    <ol class="legend">
+      <li data-n="1"><span>A dim frame: the keys are still with the prompt.</span></li>
+      <li data-n="2"><span>The workers this main dispatched, in this repository.</span></li>
+      <li data-n="3"><span>A worker waiting on you, with the reason.</span></li>
+      <li data-n="4"><span>Its tokens so far and its plan, then its last commit.</span></li>
+      <li data-n="5"><span>Every other current session on this machine.</span></li>
+    </ol>
+  </figure>
+
+  <figure class="term">
+    <div class="screen" data-screen="board-inline" role="img" aria-label="The board pane open inline."></div>
+    <ol class="legend">
+      <li data-n="1"><span>The milestone and its outcome sentence.</span></li>
+      <li data-n="2"><span>The suggested next move.</span></li>
+      <li data-n="3"><span>When it was read. A full pane at this width pushes the board's line off the screen.</span></li>
+    </ol>
+    <figcaption>The board pane today is the brief the model reads at session start, wrapped. This plan redesigns it for a glance.</figcaption>
+  </figure>
+
+  <figure class="term">
+    <div class="screen wide" data-screen="tabs" role="img" aria-label="Two panes open, shown as tabs."></div>
+    <ol class="legend">
+      <li data-n="1"><span>With two panes open, they share one dock as tabs. A lone pane shows no title, only its <code>✕</code>.</span></li>
+    </ol>
+  </figure>
+
+  <figure class="term">
+    <div class="screen" data-screen="collapsed" role="img" aria-label="The band collapsed to one line."></div>
+    <ol class="legend">
+      <li data-n="1"><span><kbd>Ctrl+X</kbd> <kbd>Ctrl+A</kbd> folds the band to this line. The same keys bring it back.</span></li>
+    </ol>
+  </figure>
+</section>
+
+<section id="moving">
+  <div class="prose">
+  <h2><span class="n">4</span>Getting around</h2>
+  <p><kbd>←</kbd> on an empty prompt opens agent view, with the session you left selected.</p>
+  </div>
+  <figure class="term">
+    <div class="screen" data-screen="agent-view" role="img" aria-label="Agent view after the left arrow, listing the main and two workers."></div>
+    <ol class="legend">
+      <li data-n="1"><span>Your conversation is now in the background. <kbd>Enter</kbd> opens it, <kbd>Esc</kbd> returns to it.</span></li>
+      <li data-n="2"><span>Your main, selected. It is under <strong>Needs input</strong> because its last turn asked you something.</span></li>
+      <li data-n="3"><span>A worker on a permission prompt names what it wants.</span></li>
+      <li data-n="4"><span>A worker still working.</span></li>
+      <li data-n="5"><span>The footer names what <kbd>Enter</kbd> does for the selected row.</span></li>
+    </ol>
+    <figcaption>Your other completed sessions are cut from this picture.</figcaption>
+  </figure>
+
+  <div class="prose">
+  <div class="tablewrap"><table>
+    <thead><tr><th>Key</th><th>Where</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>←</kbd></td><td>Any session, empty prompt</td><td>Opens agent view. In a session you are attached to, it detaches and starts nothing.</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Agent view</td><td>Opens the selected session. On a group header it folds or unfolds the group.</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Agent view, right after <kbd>←</kbd></td><td>Returns to your conversation, now running in the background process, like <kbd>Enter</kbd>.</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Agent view</td><td>Moves between rows. Rows reorder as their states change.</td></tr>
+      <tr><td><kbd>Alt+1</kbd>…<kbd>Alt+9</kbd></td><td>Agent view</td><td>Opens session N in this folder. Pin your main with <kbd>Ctrl+T</kbd> so <kbd>Alt+1</kbd> is always your main.</td></tr>
+      <tr><td><kbd>Ctrl+X</kbd></td><td>Agent view</td><td>Stops the selected session. A second press soon after deletes it, worktree included. Check the selection first.</td></tr>
+      <tr><td><kbd>Ctrl+C</kbd> twice</td><td>Anywhere</td><td>Quits the tab. Background sessions, your main among them, keep running.</td></tr>
+      <tr><td><code>claude attach &lt;name&gt;</code></td><td>A shell</td><td>Opens a running session by name or part of it. A stopped one opens by id only.</td></tr>
+      <tr><td><code>/stop</code></td><td>An attached session</td><td>Stops it, keeping its transcript and worktree. <code>/exit</code> only detaches.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Claude Code's <a href="https://code.claude.com/docs/en/agent-view">agent view documentation</a> has the full list. An idle background session stops after about an hour unless pinned, and resumes when you open it.</p>
+
+  <h3>Ctrl+Z does two different things</h3>
+  <p>In a session you started in the terminal, <kbd>Ctrl+Z</kbd> suspends Claude Code to the shell. Type <code>fg</code> to bring it back, views and all.</p>
+  </div>
+  <figure class="term">
+    <div class="screen" data-screen="ctrl-z" role="img" aria-label="Claude Code suspended to the shell."></div>
+    <ol class="legend">
+      <li data-n="1"><span>Claude Code's own notice.</span></li>
+      <li data-n="2"><span>The shell's stopped job. <code>fg</code> resumes it.</span></li>
+    </ol>
+  </figure>
+  <div class="prose">
+  <p>In a session opened with <code>claude attach</code>, <kbd>Ctrl+Z</kbd> closes the attach and the session runs on in the background. Nothing is left stopped.</p>
+
+  <h3>The <code>/desktop</code> trap</h3>
+  <p>Claude Code has its own <code>/desktop</code> command, which hands the session to the Claude desktop app. Where sidekick's <code>/desk</code> is registered, it lists first. Where it is not, <code>/desktop</code> lists first, and <kbd>Enter</kbd> runs it.</p>
+  </div>
+  <figure class="term">
+    <div class="screen" data-screen="typeahead-ok" role="img" aria-label="Typing /desk lists sidekick's command first."></div>
+    <ol class="legend">
+      <li data-n="1"><span>sidekick's <code>/desk</code>, first. <kbd>Enter</kbd> is safe.</span></li>
+      <li data-n="2"><span>Claude Code's <code>/desktop</code>, second.</span></li>
+    </ol>
+  </figure>
+  <figure class="term">
+    <div class="screen" data-screen="typeahead-trap" role="img" aria-label="Typing /desk in a session without sidekick's commands lists /desktop first."></div>
+    <ol class="legend">
+      <li data-n="1"><span>No sidekick command here, so <code>/desktop</code> is first. Press <kbd>Esc</kbd>, not <kbd>Enter</kbd>.</span></li>
+      <li data-n="2"><span>A backgrounded main that came up without sidekick's views (#250).</span></li>
+    </ol>
+  </figure>
+</section>
+
+<section id="workers">
+  <div class="prose">
+  <h2><span class="n">5</span>Working with workers</h2>
+  <p>A worker runs one plan in its own worktree while you keep working in your main. You choose the worker mode when a plan is ready; the main does the rest.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Step</th><th>What happens</th><th>What you see</th></tr></thead>
+    <tbody>
+      <tr><td>Dispatch</td><td>The main writes a brief and runs <code>sidekick worker dispatch</code></td><td>The launch output, and once the main is idle, a <code>/rename</code> that fixes its name</td></tr>
+      <tr><td>Watch</td><td>Within 10 seconds the worker joins the desk</td><td>The band's workers line. In fullscreen from 144 columns, the desk pane opens by itself</td></tr>
+      <tr><td>Questions</td><td>The worker messages its questions to the main and waits</td><td>The message in the main's transcript. A permission prompt shows under needs you</td></tr>
+      <tr><td>Look in</td><td><kbd>←</kbd>, select the worker, <kbd>Enter</kbd></td><td>The worker's signpost under its prompt</td></tr>
+      <tr><td>Steer</td><td>The main writes a ruling to the rulings file and messages the worker</td><td>The worker's transcript, once you look in</td></tr>
+      <tr><td>Finish</td><td>The main reviews the branch, integrates it, and runs <code>sidekick worker finish</code></td><td>The report saved; the worker leaves the desk</td></tr>
+    </tbody>
+  </table></div>
+  </div>
+  <figure class="term">
+    <div class="screen wide" data-screen="docked" role="img" aria-label="The main right after a dispatch, with the desk pane docked on the right."></div>
+    <ol class="legend">
+      <li data-n="1"><span>The desk pane, opened by itself as the first worker appeared. Docked, it is narrow (#251).</span></li>
+      <li data-n="2"><span>The workers, as on the band.</span></li>
+      <li data-n="3"><span>sidekick fixing the main's name, so each worker can point back to it.</span></li>
+    </ol>
+  </figure>
+  <figure class="term">
+    <div class="screen" data-screen="worker" role="img" aria-label="A worker session with its signpost under the prompt."></div>
+    <ol class="legend">
+      <li data-n="1"><span>In a worker, <code>/desk</code> and <code>/board</code> answer with the way back.</span></li>
+      <li data-n="2"><span>The worker's profile.</span></li>
+      <li data-n="3"><span>The signpost: whose worker this is, and the keys back.</span></li>
+    </ol>
+  </figure>
+  <figure class="term">
+    <div class="screen" data-screen="permission" role="img" aria-label="A worker's permission prompt."></div>
+    <ol class="legend">
+      <li data-n="1"><span>A worker in <code>default</code> mode asks before it reads its own brief, which lives outside its worktree (#252).</span></li>
+      <li data-n="2"><span>The dialog covers the signpost and the footer until you answer it.</span></li>
+    </ol>
+  </figure>
+</section>
+
+<section id="trouble" class="prose">
+  <h2><span class="n">6</span>When things look wrong</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>You see</th><th>It means</th><th>Do this</th></tr></thead>
+    <tbody>
+      <tr><td><code>⚠ desk: …</code></td><td>The desk's last refresh failed, or listed a warning</td><td>Read the reason. A slow listing clears on the next tick</td></tr>
+      <tr><td><code>⚠ board: …</code></td><td>The board could not be read when you asked</td><td><code>/board</code> closes the pane and clears the row; open it again to retry</td></tr>
+      <tr><td><code>refresh failed HH:MM</code></td><td>The board line shows its last good reading</td><td>It refreshes at the next commit, push, or <code>/board</code></td></tr>
+      <tr><td>No band or footer label after <kbd>←</kbd></td><td>The backgrounded main came up without sidekick's mods, seen once (#250)</td><td>Avoid <kbd>Enter</kbd> on <code>/desk</code> there. Note the time and tell your main to add it to #250</td></tr>
+      <tr><td><code>blocked · blocked</code></td><td>A waiting session that gave no reason, printed twice (#253)</td><td>Nothing; this plan fixes the print</td></tr>
+      <tr><td><code>⚠ sidekick: no profile settings</code></td><td>The session was not launched with a profile</td><td>Nothing, or launch with <code>sidekick profile launch &lt;name&gt;</code></td></tr>
+      <tr><td><code>sidekick: its mods are not running</code></td><td>The mods did not start in this session</td><td>Run <code>bun run check:mods</code> in the sidekick repository</td></tr>
+      <tr><td>A worker's signpost names an old main</td><td>The main was renamed after the worker started</td><td>Use the new name in agent view</td></tr>
+    </tbody>
+  </table></div>
+  <p>A hot reload of sidekick's code turns a backgrounded main into an ordinary background session until you stop and reopen it. While a permission prompt is open, the band, the panes, and the signpost stay hidden.</p>
+</section>
+
+<section id="try" class="prose">
+  <h2><span class="n">7</span>Settle by use</h2>
+  <p>These are open on purpose. Try each while you work, then tell any main what you found: “file this: …”. Each finding becomes its own issue.</p>
+  <h3>The control centre's shape</h3>
+  <dl class="kv">
+    <dt>The commands</dt><dd>Do all three of <code>/desk</code>, <code>/board</code>, and <code>/profile</code> earn their place? Would the desk serve you better always open?</dd>
+    <dt>The keys</dt><dd><code>/profile</code> takes the keys when it opens; the other two leave them with the prompt. Which feels right?</dd>
+    <dt>The desk's order</dt><dd>The pane lists workers before other sessions, so a long list can hide a waiting session at the bottom. Does that bite?</dd>
+    <dt>Which main</dt><dd>The prompt's border shows a session's name once it is set. Is that enough to tell your mains apart, or should a main say so?</dd>
+    <dt>The notice</dt><dd>Every session without a profile shows <code>⚠ sidekick: no profile settings</code>. Useful, or noise?</dd>
+  </dl>
+  <h3>Only your terminal can show these</h3>
+  <dl class="kv">
+    <dt>The link</dt><dd>Cmd-click <code>board #2</code> on the board's line. Does it open the board?</dd>
+    <dt>Alt+1</dt><dd>In agent view, does <kbd>Alt+1</kbd> reach your pinned main, or does Option type a character?</dd>
+    <dt>Themes</dt><dd>Do the band's colours read in your other themes?</dd>
+    <dt>The desktop app</dt><dd>Open a main in the Claude desktop app. What of the control centre shows there?</dd>
+  </dl>
+</section>
+
+<footer>
+  Captured on 2026-10-23 on Claude Code 2.1.309, with sidekick at <code>66ed52e</code> on <code>milestone/r9-control-centre</code>. The measurements behind each claim are in <code>docs/research/control-centre/2026-10-23-usage-guide-captures.md</code>, and the guide's issue is #240. Source: <code>docs/reference/control-centre-guide.html</code>.
+</footer>
+</main>
+</div>
+
+<script>
+const SCREENS = {"main":{"cols":100,"rows":[[{"t":"✻","f":"999999"},{"t":" "},{"t":"Churned for 8s · done 16:06","f":"999999"}],[],[{"t":"› Message from @add-greeting","f":"999999"},{"t":": add-greeting: baseline confirmed, no questions. Brief fields all ","f":"999999","i":1}],[{"t":"present; plan and spec exist; rulings folder exists. W…","f":"999999","i":1},{"t":" (ctrl+o to expand)","f":"999999"}],[],[{"t":"✽","f":"d77757"},{"t":" "},{"t":"Hullaball","f":"d77757"},{"t":"ooi","f":"eb9f7f"},{"t":"ng… ","f":"d77757"}],[{"t":"  ⎿  Tip: Run tasks in the cloud while you keep coding locally · clau.de/web","f":"999999"}],[{"t":"● needs you  fix-readme · permission prompt","f":"ffc107"},{"t":"                                                     "},{"t":"[-]","f":"999999"}],[{"t":"◆ workers    fix-readme blocked · add-greeting working","f":"b1b9f9"}],[],[{"t":"────────────────────────────────────────────────────────────────────────────────────── todo-app-ce ─","f":"888888"}],[{"t":"❯ ","f":"999999"}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"todo-app","f":"999999","d":1},{"t":" ","f":"999999"},{"t":"░░░░░░░░░░ 7%","f":"green"},{"t":"                                                 "},{"t":"profile: main","f":"999999"}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle) · ← 1 agent","f":"999999"}]],"marks":[{"r":7,"c":0,"n":1},{"r":8,"c":0,"n":2},{"r":7,"c":96,"n":3},{"r":10,"c":87,"n":4},{"r":13,"c":85,"n":5},{"r":14,"c":41,"n":6}],"source":"06-band-footer-100"},"board-line":{"cols":100,"rows":[[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"❯ "},{"t":"Try \"edit desk.test.ts to...\"","d":1}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"⚠ sidekick: no profile settings in this session","f":"ffc107"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"sidekick","f":"999999","d":1}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle)","f":"999999"}],[{"t":"  "},{"t":"▣ Rikmorn/sidekick · board #2 · ","f":"505050"},{"t":"● on track","f":"4eba65"},{"t":" · R9 — Control centre · 16:22","f":"505050"}]],"marks":[{"r":3,"c":2,"n":1},{"r":6,"c":2,"n":2},{"r":6,"c":34,"n":3}],"source":"49-board-line-100"},"other-main-waits":{"cols":100,"rows":[[{"t":"● needs you  fix-readme · permission prompt   todo-app-ce · blocked","f":"ffc107"},{"t":"                             "},{"t":"[-]","f":"999999"}],[{"t":"◆ workers    fix-readme blocked · add-greeting working","f":"b1b9f9"}],[],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"❯ "},{"t":"Try \"fix typecheck errors\"","d":1}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"⚠ sidekick: no profile settings in this session","f":"ffc107"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"todo-app","f":"999999","d":1}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle) · ← 1 agent","f":"999999"}]],"marks":[{"r":0,"c":46,"n":1}],"source":"22-main2-idle-no-profile-100"},"agent-view":{"cols":100,"rows":[[{"t":"Your conversation moved to the background — enter opens it · esc returns to it · ctrl+c twice quits","f":"999999"}],[],[{"t":"Needs input","f":"999999","b":1}],[{"t":"✻","f":"ffc107","g":"373737"},{"t":" ","f":"ffffff","g":"373737"},{"t":"todo-app-ce","f":"ffffff","g":"373737","b":1},{"t":"                    ","g":"373737"},{"t":"The `add-greeting` worker reports it is ready and waiting for…","f":"999999","g":"373737"},{"t":"   ","g":"373737"},{"t":"2s","f":"999999","g":"373737"}],[{"t":"✻","f":"ffc107"},{"t":" fix-readme","f":"999999"},{"t":"                     "},{"t":"approve Read: ~/work/todo-app/docs/…/fix-readme-brief.md      ","f":"999999"},{"t":"   "},{"t":"4m","f":"999999"}],[],[{"t":"Working","f":"999999"}],[{"t":"✻ add-greeting","f":"999999"},{"t":"                   "},{"t":"setup done; waiting on orchestrator's rulings pointer","f":"999999"},{"t":"            "},{"t":"3m","f":"999999"}],[],[{"t":"Completed","f":"999999"}],[],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","d":1}],[{"t":"❯","f":"999999"},{"t":" "},{"t":"describe a task for a new session","f":"999999"}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","d":1}],[{"t":"  "},{"t":"⏵⏵ auto mode","f":"ffc107"},{"t":" · enter to return · space to reply · ctrl+x to delete · ? for shortcuts","f":"999999"}]],"marks":[{"r":0,"c":0,"n":1},{"r":3,"c":2,"n":2},{"r":4,"c":33,"n":3},{"r":3,"c":38,"n":4},{"r":14,"c":17,"n":5}],"source":"13-agent-view-after-left-100"},"desk-inline":{"cols":100,"rows":[[{"t":"✻","f":"999999"},{"t":" "},{"t":"Sautéed for 5s · done 16:07","f":"999999"}],[{"t":"╭────────────────────────────────────────────────────────────────────────────────────────────────","d":1},{"t":"✕","f":"999999"},{"t":"─╮","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"CHILDREN · todo-app","f":"d77757"},{"t":"                                                                              "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"fix-readme blocked · permission prompt","f":"ffc107"},{"t":"                                                           "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"62k tokens · fix-readme plan","f":"999999"},{"t":"                                                                     "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"Initial commit","f":"999999"},{"t":"                                                                                   "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"add-greeting working","f":"b1b9f9"},{"t":"                                                                             "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"77k tokens · add-greeting plan","f":"999999"},{"t":"                                                                   "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"Initial commit","f":"999999"},{"t":"                                                                                   "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"OTHER SESSIONS","f":"d77757"},{"t":"                                                                                   "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"other-main  · sidekick · busy","f":"999999"},{"t":"                                                                    "},{"t":"│","d":1}],[{"t":"╰──────────────────────────────────────────────────────────────────────────────────────────────────╯","d":1}],[{"t":"● needs you  fix-readme · permission prompt","f":"ffc107"},{"t":"                                                     "},{"t":"[-]","f":"999999"}],[{"t":"◆ workers    fix-readme blocked · add-greeting working","f":"b1b9f9"}],[],[{"t":"────────────────────────────────────────────────────────────────────────────────────── todo-app-ce ─","f":"888888"}],[{"t":"❯                                                                                                   "}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"todo-app","f":"999999","d":1},{"t":" ","f":"999999"},{"t":"░░░░░░░░░░ 8%","f":"green"},{"t":"                                                 "},{"t":"profile: main","f":"999999"}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle) · ← 1 agent","f":"999999"}]],"marks":[{"r":1,"c":0,"n":1},{"r":2,"c":2,"n":2},{"r":3,"c":2,"n":3},{"r":4,"c":2,"n":4},{"r":9,"c":2,"n":5}],"source":"07-desk-pane-inline-100"},"docked":{"cols":160,"rows":[[{"t":"                                                                                                                                        "},{"t":"│","g":"262626","d":1},{"t":"                     ","g":"262626"},{"t":"✕","f":"999999","g":"262626"},{"t":" ","g":"262626"}],[{"t":"❯","f":"999999","g":"373737"},{"t":" ","g":"373737"},{"t":"/rename todo-app-ce","f":"ffffff","g":"373737"},{"t":" ","g":"373737"},{"t":"                                                                                                                  "},{"t":"│","g":"262626","d":1},{"t":"CHILDREN · todo-app","f":"d77757","g":"262626"},{"t":"    ","g":"262626"}],[{"t":"  ⎿  ","f":"999999"},{"t":"Session renamed to: todo-app-ce                                                                                                    "},{"t":"│","g":"262626","d":1},{"t":"fix-readme blocked · pe","f":"ffc107","g":"262626"}],[{"t":"                                                                                                                                        "},{"t":"│","g":"262626","d":1},{"t":"62k tokens · fix-readme","f":"999999","g":"262626"}],[{"t":"❯ ","f":"999999","g":"373737"},{"t":"Run this Bash command exactly, then show me its full output and stop: sidekick worker dispatch ","f":"ffffff","g":"373737"},{"t":"                                       ","g":"373737"},{"t":"│","g":"262626","d":1},{"t":"Initial commit","f":"999999","g":"262626"},{"t":"         ","g":"262626"}],[{"t":"  ","g":"373737"},{"t":"docs/superpowers/plans/add-greeting-brief.md --permission-mode auto --plugin-dir ","f":"ffffff","g":"373737"},{"t":"                                                     ","g":"373737"},{"t":"│","g":"262626","d":1},{"t":"add-greeting working","f":"b1b9f9","g":"262626"},{"t":"   ","g":"262626"}],[{"t":"  ","g":"373737"},{"t":"~/Projects/sidekick/plugin                             ","f":"ffffff","g":"373737"},{"t":"                                                                               ","g":"373737"},{"t":"│","g":"262626","d":1},{"t":"62k tokens · add-greeti","f":"999999","g":"262626"}],[{"t":"                                                                                                                                        "},{"t":"│","g":"262626","d":1},{"t":"Initial commit","f":"999999","g":"262626"},{"t":"         ","g":"262626"}],[{"t":"  "},{"t":"Ran ","f":"999999"},{"t":"1","f":"999999","b":1},{"t":" shell command ","f":"999999"},{"t":"                                                                                                                  "},{"t":"│","g":"262626","d":1},{"t":"OTHER SESSIONS","f":"d77757","g":"262626"},{"t":"         ","g":"262626"}],[{"t":"                                                                                                                                        "},{"t":"│","g":"262626","d":1},{"t":"other-main  · sidekick ","f":"999999","g":"262626"}],[{"t":"⏺","f":"ffffff"},{"t":" Command ran. Full output:                                                                                                             "},{"t":"│","g":"262626","d":1},{"t":"                       ","g":"262626"}],[{"t":"                                                                                                                                        "},{"t":"│","g":"262626","d":1},{"t":"                       ","g":"262626"}],[{"t":"                                                                                                                                        "},{"t":"│","g":"262626","d":1},{"t":"                       ","g":"262626"}],[{"t":"✻","f":"999999"},{"t":" "},{"t":"Churned for 8s · done 16:06","f":"999999"},{"t":"                                                                                                           "},{"t":"│","g":"262626","d":1},{"t":"                       ","g":"262626"}],[{"t":"● needs you  fix-readme · permission prompt","f":"ffc107"},{"t":"                                                                                         "},{"t":"[-]","f":"999999"},{"t":" "},{"t":"│","g":"262626","d":1},{"t":"                       ","g":"262626"}],[{"t":"◆ workers    fix-readme blocked · add-greeting working","f":"b1b9f9"},{"t":"                                                                                  "},{"t":"│","g":"262626","d":1},{"t":"                       ","g":"262626"}],[{"t":"                                                                                                                                        "},{"t":"│","g":"262626","d":1},{"t":"                       ","g":"262626"}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── todo-app-ce ─","f":"888888"}],[{"t":"❯                                                                                                                                                               "}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"todo-app","f":"999999","d":1},{"t":" ","f":"999999"},{"t":"░░░░░░░░░░ 7%","f":"green"},{"t":"                                                                                                             "},{"t":"profile: main","f":"999999"}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle) · ← 1 agent","f":"999999"}]],"marks":[{"r":0,"c":158,"n":1},{"r":1,"c":137,"n":2},{"r":1,"c":2,"n":3}],"source":"05-two-workers-band-pane-160"},"board-inline":{"cols":100,"rows":[[{"t":"╭────────────────────────────────────────────────────────────────────────────────────────────────","d":1},{"t":"✕","f":"999999"},{"t":"─╮","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"sidekick · Rikmorn/sidekick · board #2","f":"ffffff"},{"t":"                                                           "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"milestone: R9 — Control centre (3 open, 21 closed) · Outcome: GSD no longer loads, and nothing","f":"ffffff"},{"t":"   "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"it provided is lost.","f":"ffffff"},{"t":"                                                                             "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"in progress: plan The control centre's usage guide: #240 (0 d)","f":"ffffff"},{"t":"                                   "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"candidates: next plan The docs that say what sidekick is (#215) · then GSD's status line and","f":"ffffff"},{"t":"     "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"monitor replaced after the release in… (1) · 12 plans done · unplanned: none · tier 2: none","f":"ffffff"},{"t":"      "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"drift: none","f":"ffffff"},{"t":"                                                                                      "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"next: continue plan The control centre's usage guide (#240)","f":"ffffff"},{"t":"                                      "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":"                                                                                                  "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"https://github.com/users/Rikmorn/projects/2","f":"ffffff"},{"t":"                                                      "},{"t":"│","d":1}],[{"t":"│","d":1},{"t":" "},{"t":"as of 16:22","f":"505050"},{"t":"                                                                                      "},{"t":"│","d":1}],[{"t":"╰──────────────────────────────────────────────────────────────────────────────────────────────────╯","d":1}],[],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"❯                                                                                                   "}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"⚠ sidekick: no profile settings in this session","f":"ffc107"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"sidekick","f":"999999","d":1}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle)","f":"999999"}]],"marks":[{"r":2,"c":2,"n":1},{"r":8,"c":2,"n":2},{"r":11,"c":2,"n":3}],"source":"50-board-pane-inline-100"},"tabs":{"cols":160,"rows":[[{"t":"                                                                                                                                        "},{"t":"│","g":"262626","d":1},{"t":" Board  ","g":"262626"},{"t":" Desk ","g":"262626","b":1,"r":1},{"t":"       ","g":"262626"},{"t":"✕","f":"999999","g":"262626"},{"t":" ","g":"262626"}],[{"t":" ▐","f":"d77757"},{"t":"▛███▛█","f":"d77757","g":"000000"},{"t":"   "},{"t":"Claude Code","b":1},{"t":" "},{"t":"v2.1.309","f":"999999"},{"t":"                                                                                                         "},{"t":"│","g":"262626","d":1},{"t":"OTHER SESSIONS","f":"d77757","g":"262626"},{"t":"         ","g":"262626"}],[{"t":"▝▜","f":"d77757"},{"t":"█████","f":"d77757","g":"000000"},{"t":"█▀","f":"d77757"},{"t":"  "},{"t":"Haiku 5.5 · Claude Max","f":"999999"},{"t":"                                                                                                       "},{"t":"│","g":"262626","d":1},{"t":"other-main  · sidekick ","f":"999999","g":"262626"}],[{"t":" ▝▝   ▝▝ ","f":"d77757"},{"t":"  "},{"t":"~/Documents/Projects/sidekick","f":"999999"},{"t":"                                                                                                "},{"t":"│","g":"262626","d":1},{"t":"                       ","g":"262626"}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"❯                                                                                                                                                               "}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"⚠ sidekick: no profile settings in this session","f":"ffc107"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"sidekick","f":"999999","d":1}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle)","f":"999999"}],[{"t":"  "},{"t":"▣ Rikmorn/sidekick · board #2 · ","f":"505050"},{"t":"● on track","f":"4eba65"},{"t":" · R9 — Control centre · 16:23","f":"505050"}]],"marks":[{"r":0,"c":138,"n":1}],"source":"52-board-and-desk-panes-160"},"collapsed":{"cols":100,"rows":[[{"t":"✻","f":"999999"},{"t":" "},{"t":"Sautéed for 5s · done 16:07","f":"999999"}],[{"t":"▸ plugin panel hidden · ctrl+x ctrl+a or click to show","f":"999999"}],[],[{"t":"────────────────────────────────────────────────────────────────────────────────────── todo-app-ce ─","f":"888888"}],[{"t":"❯                                                                                                   "}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"todo-app","f":"999999","d":1},{"t":" ","f":"999999"},{"t":"░░░░░░░░░░ 8%","f":"green"},{"t":"                                                 "},{"t":"profile: main","f":"999999"}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle) · ← 1 agent","f":"999999"}]],"marks":[{"r":1,"c":0,"n":1}],"source":"11-band-after-ctrl-x-ctrl-a-100"},"worker":{"cols":100,"rows":[[{"t":"✻","f":"999999"},{"t":" "},{"t":"Worked for 6s · done 16:08","f":"999999"}],[],[{"t":"❯","f":"999999","g":"373737"},{"t":" ","g":"373737"},{"t":"/desk","f":"ffffff","g":"373737"},{"t":" ","g":"373737"}],[{"t":"  ⎿  ","f":"999999"},{"t":"sidekick: /desk is off in this worker. Its main is todo-app-ce: ←, select it, Enter.           "}],[],[{"t":"───────────────────────────────────────────────────────────────────────────────────── add-greeting ─","f":"888888"}],[{"t":"❯                                                                                                   "}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"add-greeting","f":"999999","d":1},{"t":" ","f":"999999"},{"t":"█░░░░░░░░░ 10%","f":"green"},{"t":"                                          "},{"t":"profile: worker","f":"999999"}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle) · ← 1 agent","f":"999999"}],[{"t":"  "},{"t":"worker of todo-app-ce · to go back: ←, select todo-app-ce, Enter","f":"999999"}]],"marks":[{"r":3,"c":5,"n":1},{"r":8,"c":83,"n":2},{"r":10,"c":2,"n":3}],"source":"18-worker-desk-answer-100"},"permission":{"cols":100,"rows":[[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"b1b9f9"}],[{"t":" "},{"t":"Read file","f":"b1b9f9","b":1}],[{"t":"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌","f":"505050"}],[{"t":" Read(~/work/todo-app/docs/…/plans/fix-readme-brief.md)","f":"999999"}],[{"t":"╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌","f":"505050"}],[{"t":" Do you want to proceed?                                                                            "}],[{"t":" "},{"t":"❯","f":"b1b9f9"},{"t":" "},{"t":"1. ","f":"999999"},{"t":"Yes","f":"b1b9f9"}],[{"t":"   "},{"t":"2. ","f":"999999"},{"t":"No                                                                                            "}],[],[{"t":" "},{"t":"Esc to cancel · Tab to amend","f":"999999"}]],"marks":[{"r":3,"c":1,"n":1},{"r":5,"c":1,"n":2}],"source":"21-worker-permission-prompt-100"},"typeahead-ok":{"cols":100,"rows":[[{"t":"  "},{"t":"❯ /","f":"b1b9f9"},{"t":"desk","f":"b1b9f9","b":1},{"t":"                                   Show or hide the ","f":"b1b9f9"},{"t":"desk","f":"b1b9f9","b":1},{"t":" pane","f":"b1b9f9"}],[{"t":"  "},{"t":"  /","f":"999999"},{"t":"desk","b":1},{"t":"top                                Continue the current session in Claude ","f":"999999"},{"t":"Desk","b":1},{"t":"top","f":"999999"}],[{"t":"  "},{"t":"  /si","f":"999999"},{"t":"de","b":1},{"t":"kick:","f":"999999"},{"t":"sk","b":1},{"t":"-design                     (sidekick) Designs a change before it is built, as an","f":"999999"}],[{"t":"                                            "},{"t":"architect and senior engineer would. It breaks the pr…","f":"999999"}],[{"t":"───────────────────────────────────────────────────────────────────────────────────── add-greeting ─","f":"888888"}],[{"t":"❯ "},{"t":"/desk","f":"b1b9f9"}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"add-greeting","f":"999999","d":1},{"t":" ","f":"999999"},{"t":"█░░░░░░░░░ 10%","f":"green"},{"t":"                                          "},{"t":"profile: worker","f":"999999"}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle)","f":"999999"}],[{"t":"  "},{"t":"worker of todo-app-ce · to go back: ←, select todo-app-ce, Enter","f":"999999"}]],"marks":[{"r":0,"c":44,"n":1},{"r":1,"c":4,"n":2}],"source":"17-worker-desk-typeahead-100"},"typeahead-trap":{"cols":100,"rows":[[{"t":"  "},{"t":"❯ /","f":"b1b9f9"},{"t":"desk","f":"b1b9f9","b":1},{"t":"top                                Continue the current session in Claude ","f":"b1b9f9"},{"t":"Desk","f":"b1b9f9","b":1},{"t":"top","f":"b1b9f9"}],[{"t":"  "},{"t":"  /si","f":"999999"},{"t":"de","b":1},{"t":"kick:","f":"999999"},{"t":"sk","b":1},{"t":"-design                     (sidekick) Designs a change before it is built, as an","f":"999999"}],[{"t":"                                            "},{"t":"architect and senior engineer would. It breaks the pr…","f":"999999"}],[{"t":"  "},{"t":"  /si","f":"999999"},{"t":"de","b":1},{"t":"kick:","f":"999999"},{"t":"sk","b":1},{"t":"-track                      (sidekick) File a problem as an issue on this repo's","f":"999999"}],[{"t":"                                            "},{"t":"board, or close one with its evidence and, when it ea…","f":"999999"}],[{"t":"──────────────────────────────────────────────────────────────────────────────── Single word reply ─","f":"888888"}],[{"t":"❯ /desk                                                                                             "}],[{"t":"────────────────────────────────────────────────────────────────────────────────────────────────────","f":"888888"}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"todo-app","f":"999999","d":1},{"t":" ","f":"999999"},{"t":"░░░░░░░░░░ 7%","f":"green"}],[{"t":"  "},{"t":"⏵⏵ auto mode on","f":"ffc107"},{"t":" (shift+tab to cycle)","f":"999999"}]],"marks":[{"r":0,"c":4,"n":1},{"r":5,"c":81,"n":2}],"source":"27-main2-fork-desk-typeahead-100"},"ctrl-z":{"cols":100,"rows":[[{"t":"❯ "},{"t":"Try \"edit <filepath> to...\"","d":1}],[{"t":"Claude Code has been suspended. Run `fg` to bring Claude Code back."},{"t":"─────────────────────────────────","f":"888888"}],[{"t":"Note: ctrl + z now suspends Claude Code, ctrl + _ undoes input.                                     "}],[{"t":"  "},{"t":"Haiku 5.5","f":"999999","d":1},{"t":" │ ","f":"999999"},{"t":"todo-app","f":"999999","d":1}],[{"t":"[1]+  Stopped                 claude --model haiku --plugin-dir ~/…/sidekick/plugin","f":"999999"}],[{"t":"$                                                                                                   "}]],"marks":[{"r":1,"c":0,"n":1},{"r":4,"c":0,"n":2}],"source":"40-jobshell-after-ctrl-z-100"}};
+const NAMED = { green: "#4eba65", red: "#e06c75", yellow: "#e5c07b", blue: "#61afef", magenta: "#c678dd", cyan: "#56b6c2", white: "#e6e6e6", black: "#000000" };
+const TERM_FG = "#d6d6d6", TERM_BG = "#101112";
+function colour(value, fallback) {
+  if (!value) return fallback;
+  if (NAMED[value]) return NAMED[value];
+  return /^[0-9a-f]{6}$/i.test(value) ? "#" + value : fallback;
+}
+function styled(run, text) {
+  const span = document.createElement("span");
+  span.textContent = text;
+  let fg = colour(run.f, TERM_FG), bg = colour(run.g, "");
+  if (run.r) { const swap = fg; fg = bg || TERM_BG; bg = swap; }
+  span.style.color = fg;
+  if (bg) span.style.background = bg;
+  if (run.b) span.style.fontWeight = "700";
+  if (run.i) span.style.fontStyle = "italic";
+  if (run.u) span.style.textDecoration = "underline";
+  if (run.d) span.style.opacity = "0.55";
+  return span;
+}
+function marker(n) {
+  const mark = document.createElement("span");
+  mark.className = "mk";
+  mark.dataset.n = String(n);
+  return mark;
+}
+function drawRow(runs, marks) {
+  const row = document.createElement("span");
+  row.className = "row";
+  const pending = marks.slice().sort((a, b) => a.c - b.c);
+  let offset = 0;
+  for (const run of runs) {
+    const chars = Array.from(run.t);
+    let start = 0;
+    while (pending.length && pending[0].c < offset + chars.length) {
+      const cut = Math.max(pending[0].c - offset, start);
+      if (cut > start) row.append(styled(run, chars.slice(start, cut).join("")));
+      row.append(marker(pending.shift().n));
+      start = cut;
+    }
+    if (start < chars.length) row.append(styled(run, chars.slice(start).join("")));
+    offset += chars.length;
+  }
+  for (const mark of pending) row.append(marker(mark.n));
+  if (!row.childNodes.length) row.textContent = " ";
+  return row;
+}
+function drawScreen(el) {
+  const screen = SCREENS[el.dataset.screen];
+  if (!screen) { el.textContent = "Screen not found: " + el.dataset.screen; return; }
+  const pre = document.createElement("pre");
+  screen.rows.forEach((runs, index) => {
+    const marks = screen.marks.filter((m) => m.r === index);
+    pre.append(drawRow(runs, marks));
+  });
+  el.append(pre);
+}
+document.querySelectorAll("[data-screen]").forEach(drawScreen);
+</script>

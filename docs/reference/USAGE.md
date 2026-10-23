@@ -78,6 +78,8 @@ When agent view is unavailable, you start the worker yourself, typing `/sidekick
 
 ## Mains and workers
 
+[The control centre guide](control-centre-guide.html) shows each view and move in pictures from real sessions. Open it in a browser.
+
 Each session that loads sidekick's mods settles one role at its start, and the role decides what it draws. `plugin/hooks/role.ts` settles it. Each citation in parentheses here, such as Q1, links to a section of [the main and worker probes](../research/control-centre/2026-10-22-main-and-worker-probes.md), which measured it.
 
 | Role | Which session | What it draws |
