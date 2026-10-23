@@ -396,7 +396,6 @@ html { scroll-behavior: smooth; }
       <tr><td><code>⚠ board: …</code></td><td>The board could not be read when you asked</td><td><code>/board</code> closes the pane and clears the row; open it again to retry</td></tr>
       <tr><td><code>refresh failed HH:MM</code></td><td>The board line shows its last good reading</td><td>It refreshes at the next commit, push, or <code>/board</code></td></tr>
       <tr><td>No band or footer label after <kbd>←</kbd></td><td>The backgrounded main came up without sidekick's mods, seen once (#250)</td><td>Avoid <kbd>Enter</kbd> on <code>/desk</code> there. Note the time and tell your main to add it to #250</td></tr>
-      <tr><td><code>blocked · blocked</code></td><td>A waiting session that gave no reason, printed twice (#253)</td><td>Nothing; this plan fixes the print</td></tr>
       <tr><td><code>⚠ sidekick: no profile settings</code></td><td>The session was not launched with a profile</td><td>Nothing, or launch with <code>sidekick profile launch &lt;name&gt;</code></td></tr>
       <tr><td><code>sidekick: its mods are not running</code></td><td>The mods did not start in this session</td><td>Run <code>bun run check:mods</code> in the sidekick repository</td></tr>
       <tr><td>A worker's signpost names an old main</td><td>The main was renamed after the worker started</td><td>Use the new name in agent view</td></tr>
