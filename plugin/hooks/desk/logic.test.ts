@@ -227,6 +227,27 @@ test('the pane lists other sessions, waiting ones in the waiting tone', () => {
   ]);
 });
 
+test('a reason that only repeats the state prints once', () => {
+  const snap = snapshot({
+    children: [child({ name: 'w', state: 'blocked', reason: 'blocked' })],
+    others: [
+      {
+        name: 'm',
+        repo: 'todo',
+        kind: 'background',
+        state: 'blocked',
+        reason: 'blocked',
+      },
+    ],
+  });
+  expect(paneLines(snap, 120).map((line) => line.text)).toEqual([
+    'CHILDREN · sidekick',
+    'w blocked',
+    'OTHER SESSIONS',
+    'm · todo · blocked',
+  ]);
+});
+
 test('with no children the pane has no CHILDREN block and others read none', () => {
   expect(paneLines(snapshot(), 120)).toEqual([
     { tone: 'heading', text: 'OTHER SESSIONS' },

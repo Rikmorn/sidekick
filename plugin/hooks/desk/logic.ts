@@ -140,8 +140,14 @@ function tokensText(tokens: number): string {
     : `${Math.round(tokens / thousand)}k tokens`;
 }
 
-function withReason(head: string, reason: string | undefined): string {
-  return reason === undefined || reason === ''
+// The snapshot gives `blocked` as the reason when the listing names none, so a
+// reason equal to the state adds nothing to a row that already shows the state.
+function withReason(
+  head: string,
+  state: string,
+  reason: string | undefined,
+): string {
+  return reason === undefined || reason === '' || reason === state
     ? head
     : `${head}${DETAIL_JOIN}${reason}`;
 }
@@ -157,7 +163,11 @@ function childLines(child: DeskChild, waits: boolean): Line[] {
   const lines: Line[] = [
     {
       tone: nameTone,
-      text: withReason(`${child.name} ${child.state}`, child.reason),
+      text: withReason(
+        `${child.name} ${child.state}`,
+        child.state,
+        child.reason,
+      ),
     },
   ];
   if (stats.length > 0)
@@ -204,6 +214,7 @@ function othersBlock(snapshot: OkSnapshot): Line[] {
     tone: waitingOthers.has(other.name) ? 'waiting' : 'muted',
     text: withReason(
       [other.name, other.repo, other.state].join(DETAIL_JOIN),
+      other.state,
       other.reason,
     ),
   }));
