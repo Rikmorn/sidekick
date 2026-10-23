@@ -107,7 +107,7 @@ A worker's markers decide first. When its `--settings` `env` block holds a non-e
 - The freeze writes one `/rename` line into the transcript, and tells the model the operator named the session ([R1](../research/control-centre/2026-10-22-main-and-worker-probes.md#freezing-a-derived-name-r1)).
 - Every live main polls the desk once per tick, until #226 shares the snapshot.
 - No signpost draws while a permission prompt holds a worker's screen ([R5](../research/control-centre/2026-10-22-main-and-worker-probes.md#the-row-under-the-prompt-during-a-permission-prompt-r5)).
-- An idle backgrounded main can count as waiting in other mains' desks, which #247 tracks ([side findings](../research/control-centre/2026-10-22-main-and-worker-probes.md#side-findings)).
+- A backgrounded main whose turn ends in a question counts as waiting in other mains' desks, as the engine reads its last reply. A reply the engine takes for a question counts too, such as a one-word answer ([side findings](../research/control-centre/2026-10-22-main-and-worker-probes.md#side-findings)). #247 kept this rule, since the one case seen in use was a real question.
 - A hot reload of the plugin's code turns a backgrounded main into `other`: the role keeps its fork in memory. Its desk, board line, and name mod stay off until you stop and reopen it.
 - Under a managed Claude Code, a plugin a person installed runs no classic hooks, so a backgrounded main reads `other` and nothing freezes.
 
