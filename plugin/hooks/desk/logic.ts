@@ -1,16 +1,13 @@
 // The desk's pure logic: no engine calls, so the tests reach it directly.
 
-import { cut, width } from '../lines';
-import type { DeskChild, DeskSnapshot } from './contract';
+import { cut, hiddenRows, scrollHint, scrollKeys, width } from '../lines';
+import type { PublishedSession } from '../publish/contract';
+import { cutRow, rowWidth, type StyledRow, type StyledRun } from '../styled';
+import type { DeskSnapshot } from './contract';
+import { needYouText, type PaneEntry, treeEntries } from './rows';
+import { deskTree } from './tree';
 
-export type Tone =
-  | 'waiting'
-  | 'working'
-  | 'done'
-  | 'mark'
-  | 'muted'
-  | 'heading'
-  | 'failure';
+export type Tone = 'waiting' | 'working' | 'muted' | 'failure';
 
 export interface Line {
   tone: Tone;
@@ -34,12 +31,6 @@ const WAITING_JOIN = '   ';
 const WORKERS_JOIN = ' · ';
 const FINISHED_JOIN = '   ';
 const DETAIL_JOIN = ' · ';
-
-// Anything not listed reads muted, "gone" and unknown states included.
-const CHILD_STATE_TONES: Record<string, Tone> = {
-  working: 'working',
-  done: 'done',
-};
 
 function moreSuffix(left: number): string {
   return ` +${left} more`;
@@ -133,108 +124,77 @@ export function bandLines(snapshot: DeskSnapshot, columns: number): Line[] {
   ];
 }
 
-function tokensText(tokens: number): string {
-  const thousand = 1000;
-  return tokens < thousand
-    ? `${tokens} tokens`
-    : `${Math.round(tokens / thousand)}k tokens`;
+/** A failed run's one row in the pane, in the error tone, cut to `columns`. */
+export function failureRow(message: string, columns: number): StyledRow {
+  return [{ text: failureLine(message, columns).text, tone: 'error' }];
 }
 
-// The snapshot gives `blocked` as the reason when the listing names none, so a
-// reason equal to the state adds nothing to a row that already shows the state.
-function withReason(
-  head: string,
-  state: string,
-  reason: string | undefined,
-): string {
-  return reason === undefined || reason === '' || reason === state
-    ? head
-    : `${head}${DETAIL_JOIN}${reason}`;
-}
-
-function childLines(child: DeskChild, waits: boolean): Line[] {
-  const nameTone: Tone = waits
-    ? 'waiting'
-    : (CHILD_STATE_TONES[child.state] ?? 'muted');
-  const stats = [
-    ...(child.tokens === undefined ? [] : [tokensText(child.tokens)]),
-    ...(child.plan === undefined ? [] : [child.plan]),
-  ];
-  const lines: Line[] = [
-    {
-      tone: nameTone,
-      text: withReason(
-        `${child.name} ${child.state}`,
-        child.state,
-        child.reason,
-      ),
-    },
-  ];
-  if (stats.length > 0)
-    lines.push({ tone: 'muted', text: stats.join(DETAIL_JOIN) });
-  if (child.lastCommit !== undefined)
-    lines.push({ tone: 'muted', text: child.lastCommit });
-  if (child.unintegrated > 0) {
-    lines.push({
-      tone: 'mark',
-      text: `${child.unintegrated} commits not integrated`,
-    });
-  }
-  if (child.uncommitted)
-    lines.push({ tone: 'mark', text: 'uncommitted changes' });
-  return lines;
-}
-
-function childrenBlock(snapshot: OkSnapshot): Line[] {
-  if (snapshot.children.length === 0) return [];
-  const title =
-    snapshot.repo === undefined
-      ? 'CHILDREN'
-      : `CHILDREN${DETAIL_JOIN}${snapshot.repo}`;
-  const waitingChildren = new Set(
-    snapshot.waiting
-      .filter((session) => session.child)
-      .map((session) => session.name),
-  );
-  return [
-    { tone: 'heading', text: title },
-    ...snapshot.children.flatMap((child) =>
-      childLines(child, waitingChildren.has(child.name)),
-    ),
-  ];
-}
-
-function othersBlock(snapshot: OkSnapshot): Line[] {
-  const waitingOthers = new Set(
-    snapshot.waiting
-      .filter((session) => !session.child)
-      .map((session) => session.name),
-  );
-  const rows: Line[] = snapshot.others.map((other) => ({
-    tone: waitingOthers.has(other.name) ? 'waiting' : 'muted',
-    text: withReason(
-      [other.name, other.repo, other.state].join(DETAIL_JOIN),
-      other.state,
-      other.reason,
-    ),
-  }));
-  return [
-    { tone: 'heading', text: 'OTHER SESSIONS' },
-    ...(rows.length > 0 ? rows : [{ tone: 'muted' as const, text: 'none' }]),
-  ];
-}
-
-/** The pane's rows, each cut to `columns`. */
-export function paneLines(snapshot: DeskSnapshot, columns: number): Line[] {
+/** The pane's rows: the tree at `columns`, then each warning, the listing's and job state's, in a failure row. Empty below one column. */
+export function paneEntries(
+  snapshot: OkSnapshot,
+  keys: ReadonlyMap<string, PublishedSession>,
+  columns: number,
+  now: number,
+): PaneEntry[] {
   if (columns < 1) return [];
-  if (!snapshot.ok) return [failureLine(snapshot.error, columns)];
-  return [
-    ...childrenBlock(snapshot),
-    ...othersBlock(snapshot),
-    ...warningLines(snapshot, columns),
-  ]
-    .map((line) => ({ ...line, text: cut(line.text, columns) }))
-    .filter((line) => line.text !== '');
+  const warnings = [...snapshot.warnings, ...snapshot.paneWarnings].map(
+    (warning): PaneEntry => ({
+      row: failureRow(warning, columns),
+      needsYou: false,
+    }),
+  );
+  return [...treeEntries(deskTree(snapshot, keys, now), columns), ...warnings];
+}
+
+/** The pane's rows as drawn, each cut to `columns`. */
+export function paneRows(
+  snapshot: OkSnapshot,
+  keys: ReadonlyMap<string, PublishedSession>,
+  columns: number,
+  now: number,
+): StyledRow[] {
+  return paneEntries(snapshot, keys, columns, now).map(({ row }) => row);
+}
+
+/** How many sessions that need the operator head a row the pane's window hides, once its first row holds the hint. */
+export function hiddenNeeds(
+  entries: readonly PaneEntry[],
+  bodyRows: number,
+): number {
+  if (hiddenRows(entries.length, bodyRows) === 0) return 0;
+  return entries
+    .slice(Math.max(0, bodyRows - 1))
+    .filter((entry) => entry.needsYou).length;
+}
+
+/**
+ * The pane's first row while its rows exceed its body. With no needs-you row
+ * hidden it is the shared scroll hint; else `+N rows · M need you`, then the
+ * keys when they fit. Undefined when the rows fit.
+ */
+export function paneHint(
+  entries: readonly PaneEntry[],
+  bodyRows: number,
+  isFocused: boolean,
+  columns: number,
+): StyledRow | undefined {
+  const shared = scrollHint(entries.length, bodyRows, isFocused);
+  if (shared === undefined) return undefined;
+  const needs = hiddenNeeds(entries, bodyRows);
+  if (needs === 0) return [{ text: cut(shared, columns), tone: 'inactive' }];
+  const named: StyledRun[] = [
+    {
+      text: `+${hiddenRows(entries.length, bodyRows)} rows · `,
+      tone: 'inactive',
+    },
+    { text: needYouText(needs), tone: 'warning' },
+  ];
+  const keys: StyledRun = {
+    text: ` · ${scrollKeys(isFocused)}`,
+    tone: 'inactive',
+  };
+  const full = [...named, keys];
+  return cutRow(rowWidth(full) <= columns ? full : named, columns);
 }
 
 /** Whether two snapshots draw the same. */

@@ -1,8 +1,22 @@
 import { expect, test } from 'claude-code/testing';
-import type { DeskChild, DeskSnapshot } from './contract';
-import { bandLines, hasChildren, paneLines, sameSnapshot } from './logic';
+import { scrollHint, width } from '../lines';
+import type { PublishedSession } from '../publish/contract';
+import type { StyledRow } from '../styled';
+import type { DeskChild, DeskOther, DeskSnapshot } from './contract';
+import {
+  bandLines,
+  failureRow,
+  hasChildren,
+  hiddenNeeds,
+  paneEntries,
+  paneHint,
+  paneRows,
+  sameSnapshot,
+} from './logic';
 
 type OkSnapshot = Extract<DeskSnapshot, { ok: true }>;
+
+const NOW = 1_792_966_244_079;
 
 function child(over: Partial<DeskChild> & { name: string }): DeskChild {
   return {
@@ -121,7 +135,10 @@ test('a failure snapshot gives one failure line, in the band and the pane', () =
   const failed: DeskSnapshot = { version: 2, ok: false, error: 'boom' };
   const expected = [{ tone: 'failure', text: '⚠ desk: boom' }];
   expect(bandLines(failed, 120)).toEqual(expected);
-  expect(paneLines(failed, 120)).toEqual(expected);
+  expect(failureRow('boom', 120)).toEqual([
+    { text: '⚠ desk: boom', tone: 'error' },
+  ]);
+  expect(failureRow('boom', 9)).toEqual([{ text: '⚠ desk: b', tone: 'error' }]);
 });
 
 test('a warning adds one failure line after the others', () => {
@@ -135,10 +152,6 @@ test('a warning adds one failure line after the others', () => {
   ]);
   expect(bandLines(full, 120)).toHaveLength(2);
   expect(bandLines({ ...full, warnings: ['w'] }, 120)).toHaveLength(3);
-  expect(paneLines(snapshot({ warnings: ['w'] }), 120).at(-1)).toEqual({
-    tone: 'failure',
-    text: '⚠ desk: w',
-  });
 });
 
 test('narrow bands keep whole entries and say how many were left out', () => {
@@ -173,7 +186,7 @@ test('no line is empty or wider than the width, at any width', () => {
   const withWarning = { ...full, warnings: ['a long warning text here'] };
   for (const snap of [full, withWarning, failed, snapshot({ finished: 12 })]) {
     for (let columns = 1; columns <= 130; columns += 1) {
-      const lines = [...bandLines(snap, columns), ...paneLines(snap, columns)];
+      const lines = bandLines(snap, columns);
       for (const line of lines) {
         expect([...line.text].length).toBeLessThanOrEqual(columns);
         expect(line.text).not.toBe('');
@@ -196,91 +209,481 @@ test('the finished count is an entry the cut can drop', () => {
   expect(bandLines(snap, 30)[0]?.text).toBe('◆ workers    a working +2 more');
 });
 
-test('the pane heads the children with the repository, one block each', () => {
-  const lines = paneLines(full, 120);
-  expect(lines.slice(0, 9)).toEqual([
-    { tone: 'heading', text: 'CHILDREN · sidekick' },
-    { tone: 'waiting', text: 'p8-board blocked · permission prompt' },
-    { tone: 'muted', text: '412k tokens · The board' },
-    { tone: 'muted', text: 'feat: a thing' },
-    { tone: 'mark', text: '3 commits not integrated' },
-    { tone: 'mark', text: 'uncommitted changes' },
-    { tone: 'working', text: 'p7-desk working' },
-    { tone: 'muted', text: '640 tokens' },
-    { tone: 'done', text: 'p6-gauge done' },
-  ]);
+// The pane: a tree of styled rows.
+
+const plain = (row: StyledRow): string => row.map((run) => run.text).join('');
+
+// The run whose text, without the padding around it, reads `text`.
+const runOf = (row: StyledRow | undefined, text: string) =>
+  row?.find((run) => run.text.trim() === text);
+
+function other(over: Partial<DeskOther> & { name: string }): DeskOther {
+  return {
+    hasPid: true,
+    repo: 'odin',
+    kind: 'interactive',
+    state: 'idle',
+    ...over,
+  };
+}
+
+function key(
+  over: Partial<PublishedSession> & { sessionId: string },
+): PublishedSession {
+  return {
+    version: 1,
+    role: 'worker',
+    subagents: [],
+    publishedAt: NOW - 1_000,
+    ...over,
+  };
+}
+
+function keysOf(...keys: PublishedSession[]): Map<string, PublishedSession> {
+  return new Map(keys.map((entry) => [entry.sessionId, entry]));
+}
+
+const SELF: DeskOther = {
+  hasPid: true,
+  sessionId: 'self',
+  name: 'todo-app-ce',
+  repo: 'todo-app',
+  kind: 'interactive',
+  state: 'idle',
+};
+
+// The L1 plates' sessions, short of the second worker.
+const TREE = snapshot({
+  self: SELF,
+  waiting: [
+    {
+      hasPid: true,
+      sessionId: 'odin',
+      name: 'odin-review',
+      repo: 'odin',
+      reason: 'which branch should I review?',
+      child: false,
+    },
+  ],
+  children: [
+    child({ name: 'add-greeting', sessionId: 'add', plan: 'The plan' }),
+    child({
+      name: 'p7-desk',
+      sessionId: 'p7',
+      state: 'done',
+      hasPid: false,
+      detail: 'report sent',
+      tokens: 140_000,
+      unintegrated: 2,
+    }),
+  ],
+  others: [
+    other({
+      name: 'odin-review',
+      sessionId: 'odin',
+      state: 'waiting',
+      reason: 'which branch should I review?',
+    }),
+    other({ name: 'pm-main', sessionId: 'pm', repo: 'sidekick' }),
+  ],
 });
 
-test('the pane heading drops the repository when the snapshot has none', () => {
-  const { repo: _repo, ...rest } = full;
-  expect(paneLines(rest, 120)[0]).toEqual({
-    tone: 'heading',
-    text: 'CHILDREN',
-  });
-});
-
-test('a gone or unknown child state reads muted', () => {
-  const snap = snapshot({
-    children: [
-      child({ name: 'a', state: 'gone' }),
-      child({ name: 'b', state: 'odd' }),
-    ],
-  });
-  expect(paneLines(snap, 120).slice(1)).toEqual([
-    { tone: 'muted', text: 'a gone' },
-    { tone: 'muted', text: 'b odd' },
-    { tone: 'heading', text: 'OTHER SESSIONS' },
-    { tone: 'muted', text: 'none' },
-  ]);
-});
-
-test('the pane lists other sessions, waiting ones in the waiting tone', () => {
-  const lines = paneLines(full, 120);
-  const at = lines.findIndex((line) => line.text === 'OTHER SESSIONS');
-  expect(lines[at]?.tone).toBe('heading');
-  expect(lines.slice(at + 1)).toEqual([
-    { tone: 'waiting', text: 'odin-ae · odin · blocked · permission prompt' },
-    { tone: 'muted', text: 'scratch · furnace · idle' },
-  ]);
-});
-
-test('a reason that only repeats the state prints once', () => {
-  const snap = snapshot({
-    children: [child({ name: 'w', state: 'blocked', reason: 'blocked' })],
-    others: [
+const TREE_KEYS = keysOf(
+  key({
+    sessionId: 'odin',
+    role: 'main',
+    context: { used: 176_000, limit: 200_000 },
+  }),
+  key({
+    sessionId: 'add',
+    activity: 'Task 2 of 3',
+    context: { used: 156_000, limit: 200_000 },
+    subagents: [
       {
-        hasPid: true,
-        name: 'm',
-        repo: 'todo',
-        kind: 'background',
-        state: 'blocked',
-        reason: 'blocked',
+        type: 'Explore',
+        description: 'find callers of greet',
+        status: 'running',
       },
     ],
-  });
-  expect(paneLines(snap, 120).map((line) => line.text)).toEqual([
-    'CHILDREN · sidekick',
-    'w blocked',
-    'OTHER SESSIONS',
-    'm · todo · blocked',
+  }),
+  key({
+    sessionId: 'pm',
+    role: 'main',
+    context: { used: 120_000, limit: 1_000_000 },
+  }),
+);
+
+// One cell of the plates: `text` padded to `cells`.
+const cell = (text: string, cells: number) =>
+  text + ' '.repeat(cells - width(text));
+
+test('from 80 columns each session takes one row, as the L1 inline plate', () => {
+  const rows = paneRows(TREE, TREE_KEYS, 100, NOW).map(plain);
+  expect(rows).toEqual([
+    cell('', 3) +
+      cell('◇', 2) +
+      cell('odin-review', 15) +
+      cell('needs you', 11) +
+      cell('which branch should I review?', 44) +
+      cell('     odin', 14) +
+      '▰▰▰▰▱  176k',
+    `${cell('▣ todo-app-ce', 20)}this main${' '.repeat(62)}2 workers`,
+    cell('├', 3) +
+      cell('◐', 2) +
+      cell('add-greeting', 15) +
+      cell('working', 11) +
+      cell('Task 2 of 3', 44) +
+      cell('', 14) +
+      '▰▰▰▰▱  156k',
+    `${cell('│  └', 5)}${cell('◦ Explore', 18)}find callers of greet`,
+    cell('└', 3) +
+      cell('✓', 2) +
+      cell('p7-desk', 15) +
+      cell('done', 11) +
+      cell('report sent', 44) +
+      cell('⇡2', 14) +
+      '       140k',
+    '',
+    cell('', 3) +
+      cell('◇', 2) +
+      cell('pm-main', 15) +
+      cell('idle', 11) +
+      cell('', 44) +
+      cell('     sidekick', 14) +
+      '▰▱▱▱▱  120k',
   ]);
 });
 
-test('with no children the pane has no CHILDREN block and others read none', () => {
-  expect(paneLines(snapshot(), 120)).toEqual([
-    { tone: 'heading', text: 'OTHER SESSIONS' },
-    { tone: 'muted', text: 'none' },
+test('below 80 columns each session takes two rows, head then work, as the L1 docked plate', () => {
+  const rows = paneRows(TREE, TREE_KEYS, 60, NOW).map(plain);
+  expect(rows).toEqual([
+    `${cell('◇', 2)}${cell('odin-review', 15)}${cell('needs you', 12)}${cell('odin', 11)}▰▰▰▰▱  176k`,
+    '      which branch should I review?',
+    `${cell('▣ todo-app-ce', 19)}2 workers`,
+    `${cell('├', 2)}${cell('◐', 2)}${cell('add-greeting', 15)}${cell('working', 12)}${cell('', 9)}▰▰▰▰▱  156k`,
+    '│     Task 2 of 3',
+    `│     └ ${cell('◦ Explore', 11)}find callers of greet`,
+    `${cell('└', 2)}${cell('✓', 2)}${cell('p7-desk', 15)}${cell('done', 12)}${cell('⇡2', 9)}       140k`,
+    '      report sent',
+    '',
+    `${cell('◇', 2)}${cell('pm-main', 15)}${cell('idle', 12)}${cell('sidekick', 11)}▰▱▱▱▱  120k`,
   ]);
+});
+
+test('below 40 columns each session takes its head row alone, cut from its end', () => {
+  expect(paneRows(TREE, TREE_KEYS, 24, NOW).map(plain)).toEqual([
+    '◇ odin-review    needs y',
+    '▣ todo-app-ce      2 wor',
+    '├ ◐ add-greeting   worki',
+    '│     └ ◦ Explore  find',
+    '└ ✓ p7-desk        done',
+    '',
+    '◇ pm-main        idle',
+  ]);
+});
+
+test('no row is wider than its columns, and only the gap row is empty', () => {
+  const withWarnings = {
+    ...TREE,
+    warnings: ['a warning'],
+    paneWarnings: ['a job state warning'],
+  };
+  for (const snap of [TREE, withWarnings]) {
+    for (let columns = 1; columns <= 130; columns += 1) {
+      const rows = paneRows(snap, TREE_KEYS, columns, NOW);
+      expect(rows.filter((row) => row.length === 0)).toHaveLength(1);
+      for (const row of rows) {
+        expect(width(plain(row))).toBeLessThanOrEqual(columns);
+        expect(row.filter((run) => run.text === '')).toEqual([]);
+      }
+    }
+  }
+});
+
+test('the root row heads the tree: this main, its workers, and how many need you', () => {
+  const blocked = snapshot({
+    self: SELF,
+    children: [
+      child({ name: 'a', state: 'blocked' }),
+      child({ name: 'b' }),
+      child({ name: 'c', state: 'blocked' }),
+    ],
+  });
+  const [root] = paneRows(blocked, new Map(), 100, NOW);
+  expect(root?.[0]).toEqual({
+    text: cell('▣ todo-app-ce', 20),
+    tone: 'claude',
+    bold: true,
+  });
+  expect(runOf(root, 'this main')?.tone).toBe('inactive');
+  expect(plain(root ?? [])).toEndWith('3 workers · 2 need you');
+  expect(runOf(root, '2 need you')?.tone).toBe('warning');
+  const one = snapshot({
+    self: SELF,
+    children: [child({ name: 'a', state: 'blocked' })],
+  });
+  expect(plain(paneRows(one, new Map(), 100, NOW)[0] ?? [])).toEndWith(
+    '1 worker · 1 needs you',
+  );
+  const calm = snapshot({ self: SELF, children: [child({ name: 'a' })] });
+  expect(plain(paneRows(calm, new Map(), 100, NOW)[0] ?? [])).toEndWith(
+    `this main${' '.repeat(63)}1 worker`,
+  );
+  expect(paneRows(snapshot({ self: SELF }), new Map(), 100, NOW)).toEqual([
+    [
+      { text: cell('▣ todo-app-ce', 20), tone: 'claude', bold: true },
+      { text: 'this main', tone: 'inactive' },
+    ],
+  ]);
+});
+
+test('a child leads with its state icon after the tree glyph, and its name is bold', () => {
+  const rows = paneRows(TREE, TREE_KEYS, 100, NOW);
+  const [glyph, icon, name, state] = rows[2] ?? [];
+  expect(glyph).toEqual({ text: cell('├', 3), tone: 'subtle' });
+  expect(icon).toEqual({ text: cell('◐', 2), tone: 'suggestion' });
+  expect(name).toEqual({
+    text: cell('add-greeting', 15),
+    tone: 'text',
+    bold: true,
+  });
+  expect(state).toEqual({ text: cell('working', 11), tone: 'suggestion' });
+  expect(runOf(rows[4], '✓')?.tone).toBe('success');
+  expect(runOf(rows[4], 'done')?.tone).toBe('success');
+});
+
+test('a row elsewhere leads with its kind: ◇ for a main, ◌ for any other or no key, its name dim', () => {
+  const snap = snapshot({
+    self: SELF,
+    others: [
+      other({ name: 'pm-main', sessionId: 'pm' }),
+      other({ name: 'bare', sessionId: 'bare', repo: 'furnace' }),
+      other({ name: 'helper', sessionId: 'helper' }),
+    ],
+  });
+  const keys = keysOf(
+    key({ sessionId: 'pm', role: 'main' }),
+    key({ sessionId: 'helper', role: 'other' }),
+  );
+  const rows = paneRows(snap, keys, 100, NOW).slice(2);
+  expect(rows.map((row) => row[1])).toEqual([
+    { text: cell('◇', 2), tone: 'inactive' },
+    { text: cell('◌', 2), tone: 'inactive' },
+    { text: cell('◌', 2), tone: 'inactive' },
+  ]);
+  expect(rows[1]?.[2]).toEqual({
+    text: cell('bare', 15),
+    tone: 'text',
+    dim: true,
+  });
+  expect(runOf(rows[1], 'furnace')?.tone).toBe('subtle');
+  expect(runOf(rows[1], 'idle')?.tone).toBe('inactive');
+});
+
+test('a session that needs you reads ● needs you on a child and needs you elsewhere, in the warning tone', () => {
+  const rows = paneRows(
+    snapshot({
+      self: SELF,
+      children: [
+        child({ name: 'fix-readme', state: 'blocked', needs: 'approve Read' }),
+      ],
+    }),
+    new Map(),
+    100,
+    NOW,
+  );
+  expect(runOf(rows[1], '●')?.tone).toBe('warning');
+  expect(runOf(rows[1], 'needs you')?.tone).toBe('warning');
+  expect(runOf(rows[1], 'approve Read')?.tone).toBe('inactive');
+  expect(runOf(paneRows(TREE, TREE_KEYS, 100, NOW)[0], 'needs you')?.tone).toBe(
+    'warning',
+  );
+});
+
+test('any other state word reads raw beside ○, gone included', () => {
+  const rows = paneRows(
+    snapshot({
+      self: SELF,
+      children: [child({ name: 'g', state: 'gone', hasPid: false })],
+    }),
+    new Map(),
+    100,
+    NOW,
+  );
+  expect(runOf(rows[1], '○')?.tone).toBe('inactive');
+  expect(runOf(rows[1], 'gone')?.tone).toBe('inactive');
+});
+
+const barAt = (percent: number): StyledRow | undefined => {
+  const snap = snapshot({
+    self: SELF,
+    children: [child({ name: 'a', sessionId: 'a' })],
+  });
+  const used = percent * 2_000;
+  const keys = keysOf(
+    key({ sessionId: 'a', context: { used, limit: 200_000 } }),
+  );
+  return paneRows(snap, keys, 100, NOW)[1];
+};
+
+test('the context bar takes inactive below 65%, warning from 65%, claude from 75%, and error from 85%', () => {
+  const expected = [
+    { percent: 64, tone: 'inactive', filled: 3, tokens: '128k' },
+    { percent: 65, tone: 'warning', filled: 3, tokens: '130k' },
+    { percent: 75, tone: 'claude', filled: 4, tokens: '150k' },
+    { percent: 85, tone: 'error', filled: 4, tokens: '170k' },
+  ];
+  for (const { percent, tone, filled, tokens } of expected) {
+    const row = barAt(percent);
+    expect(row?.slice(-3)).toEqual([
+      { text: '▰'.repeat(filled), tone },
+      { text: '▱'.repeat(5 - filled), tone: 'subtle' },
+      { text: ` ${tokens}`.padStart(6), tone },
+    ]);
+  }
+});
+
+test('a full bar has no empty cells, and an empty one no filled cells', () => {
+  expect(plain(barAt(100) ?? [])).toEndWith('▰▰▰▰▰  200k');
+  expect(barAt(100)?.at(-2)?.text).toBe('▰▰▰▰▰');
+  expect(plain(barAt(0) ?? [])).toEndWith('▱▱▱▱▱     0');
+});
+
+test('with no published limit the tokens stand alone, inactive', () => {
+  const rows = paneRows(
+    snapshot({ self: SELF, children: [child({ name: 'a', tokens: 31_000 })] }),
+    new Map(),
+    100,
+    NOW,
+  );
+  expect(rows[1]?.at(-1)).toEqual({
+    text: '31k'.padStart(11),
+    tone: 'inactive',
+  });
+  expect(plain(rows[1] ?? [])).not.toMatch(/[▰▱]/);
 });
 
 test('tokens round to k, keep k above a million, and stay bare below 1,000', () => {
   const tokens = (n: number) =>
-    paneLines(snapshot({ children: [child({ name: 'a', tokens: n })] }), 120)[2]
-      ?.text;
-  expect(tokens(412400)).toBe('412k tokens');
-  expect(tokens(999)).toBe('999 tokens');
-  expect(tokens(1000)).toBe('1k tokens');
-  expect(tokens(1234000)).toBe('1234k tokens');
+    paneRows(
+      snapshot({ self: SELF, children: [child({ name: 'a', tokens: n })] }),
+      new Map(),
+      100,
+      NOW,
+    )[1]
+      ?.at(-1)
+      ?.text.trim();
+  expect(tokens(412400)).toBe('412k');
+  expect(tokens(999)).toBe('999');
+  expect(tokens(1000)).toBe('1k');
+  expect(tokens(1234000)).toBe('1234k');
+});
+
+test('a child marks commits not integrated with ⇡N and uncommitted changes with ✎, in warning, gone or not', () => {
+  for (const state of ['working', 'gone']) {
+    const rows = paneRows(
+      snapshot({
+        self: SELF,
+        children: [
+          child({ name: 'a', state, unintegrated: 2, uncommitted: true }),
+        ],
+      }),
+      new Map(),
+      100,
+      NOW,
+    );
+    expect(runOf(rows[1], '⇡2 ✎')?.tone).toBe('warning');
+  }
+});
+
+test('a subagent row names its type in suggestion, then its description, italic and inactive', () => {
+  const row = paneRows(TREE, TREE_KEYS, 100, NOW)[3];
+  expect(row).toEqual([
+    { text: cell('│  └', 5), tone: 'subtle' },
+    { text: cell('◦ Explore', 18), tone: 'suggestion' },
+    { text: 'find callers of greet', tone: 'inactive', italic: true },
+  ]);
+});
+
+test('the pane draws warnings and job state warnings after the tree, in error', () => {
+  const rows = paneRows(
+    { ...TREE, warnings: ['git failed'], paneWarnings: ['job state bad'] },
+    TREE_KEYS,
+    100,
+    NOW,
+  );
+  expect(rows.slice(-2)).toEqual([
+    [{ text: '⚠ desk: git failed', tone: 'error' }],
+    [{ text: '⚠ desk: job state bad', tone: 'error' }],
+  ]);
+});
+
+test('the pane is empty below one column', () => {
+  expect(paneRows(TREE, TREE_KEYS, 0, NOW)).toEqual([]);
+});
+
+// Thirteen sessions elsewhere wait, so three of them fall past an 11-row body.
+const CROWD = snapshot({
+  self: SELF,
+  waiting: Array.from({ length: 13 }, (_, index) => ({
+    hasPid: true,
+    name: `s${index}`,
+    repo: 'odin',
+    reason: 'permission prompt',
+    child: false,
+  })),
+  others: Array.from({ length: 13 }, (_, index) =>
+    other({ name: `s${index}`, state: 'waiting' }),
+  ),
+});
+
+// Review Focus 4: no needs-you row is hidden without the hint naming it.
+test('at 11 body rows, three needs-you rows past the fold are named in the hint', () => {
+  const entries = paneEntries(CROWD, new Map(), 100, NOW);
+  expect(entries).toHaveLength(14);
+  expect(hiddenNeeds(entries, 11)).toBe(3);
+  const hint = paneHint(entries, 11, false, 100);
+  expect(plain(hint ?? [])).toBe(
+    '+4 rows · 3 need you · ctrl+x tab to focus, then ↓',
+  );
+  expect(runOf(hint, '3 need you')?.tone).toBe('warning');
+  expect(runOf(hint, '+4 rows ·')?.tone).toBe('inactive');
+  expect(plain(paneHint(entries, 11, true, 100) ?? [])).toBe(
+    '+4 rows · 3 need you · ↓ to scroll',
+  );
+});
+
+test('a hint too narrow for the keys keeps the needs, then cuts from its end', () => {
+  const entries = paneEntries(CROWD, new Map(), 100, NOW);
+  expect(plain(paneHint(entries, 11, false, 24) ?? [])).toBe(
+    '+4 rows · 3 need you',
+  );
+  expect(plain(paneHint(entries, 13, false, 24) ?? [])).toBe(
+    '+2 rows · 1 needs you',
+  );
+  expect(plain(paneHint(entries, 11, false, 12) ?? [])).toBe('+4 rows · 3 ');
+});
+
+test('with no needs-you row hidden the hint reads as the shared scroll hint', () => {
+  const entries = paneEntries(TREE, TREE_KEYS, 100, NOW);
+  expect(hiddenNeeds(entries, 3)).toBe(0);
+  expect(paneHint(entries, 3, false, 100)).toEqual([
+    { text: scrollHint(entries.length, 3, false) ?? '', tone: 'inactive' },
+  ]);
+  expect(paneHint(entries, 3, false, 10)).toEqual([
+    { text: '+5 rows · ', tone: 'inactive' },
+  ]);
+  expect(paneHint(entries, entries.length, false, 100)).toBeUndefined();
+});
+
+// Only a session's head counts: its work line names no one new.
+test('at 24 docked columns the hint counts each hidden needs-you head once', () => {
+  const docked = paneEntries(CROWD, new Map(), 24, NOW);
+  expect(docked).toHaveLength(14);
+  expect(hiddenNeeds(docked, 11)).toBe(3);
+  const twoRows = paneEntries(CROWD, new Map(), 60, NOW);
+  expect(twoRows).toHaveLength(27);
+  expect(hiddenNeeds(twoRows, 11)).toBe(8);
 });
 
 test('hasChildren is true only for an ok snapshot with children', () => {

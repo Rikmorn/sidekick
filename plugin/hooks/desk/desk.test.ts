@@ -1,5 +1,7 @@
 import type {
   On,
+  RenderElement,
+  RenderNode,
   RenderPropsOf,
   RenderSurface,
   RenderViewport,
@@ -14,9 +16,14 @@ import {
   test,
 } from 'claude-code/testing';
 import { PANE_ROWS } from '../commands';
+import {
+  HEARTBEAT_MS,
+  keyOf,
+  type PublishedSession,
+} from '../publish/contract';
 import { type DeskSnapshot, RUN_TIMEOUT_MS } from './contract';
 import { TICK_MS } from './desk';
-import { bandLines, paneLines } from './logic';
+import { bandLines, paneRows } from './logic';
 
 type OkSnapshot = Extract<DeskSnapshot, { ok: true }>;
 
@@ -46,6 +53,8 @@ type World = {
   flag: Settings;
   /** What `$.session.surfaces()` resolves; empty after `←`, where no screen draws. */
   surfaces: readonly RenderSurface[];
+  /** What sidekick's store holds now: the publisher's key, and any a test seeds. */
+  store: Map<string, unknown>;
 };
 
 const REFUSAL = 'refused by a plugin above';
@@ -56,12 +65,18 @@ type Seen = {
   timeouts: (number | undefined)[];
   commands: string[];
   immediate: Record<string, boolean | undefined>;
-  openings: { focus: boolean | undefined; rows: number | undefined }[];
+  openings: {
+    focus: boolean | undefined;
+    rows: number | undefined;
+    columns: number | undefined;
+  }[];
   invalidations: string[];
   opened: { id: string; title?: string }[];
   closed: string[];
   /** Lines sent to the debug log. */
   debug: string[];
+  /** Store keys deleted, in order. */
+  deleted: string[];
 };
 
 const PLUGIN = 'sidekick';
@@ -151,6 +166,7 @@ function worldWith(answer: RunAnswer, env: Record<string, string> = {}): World {
     isRefusingCommand: false,
     flag: {},
     surfaces: ['terminal'],
+    store: new Map(),
   };
 }
 
@@ -196,8 +212,21 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
     opened: [],
     closed: [],
     debug: [],
+    deleted: [],
   };
   mock.env(on, world.env);
+  // The publisher shares the module and writes its own key here too.
+  on('store.keys', () => ({ value: [...world.store.keys()] }));
+  on('store.get', (_$, e) => ({ value: world.store.get(e.key) }));
+  on('store.set', (_$, e) => {
+    world.store.set(e.key, e.value);
+    return { value: undefined };
+  });
+  on('store.delete', (_$, e) => {
+    seen.deleted.push(e.key);
+    world.store.delete(e.key);
+    return { value: undefined };
+  });
   on('ui.log', (_$, e) => {
     if (e.to === 'debug') seen.debug.push(e.text);
     return { value: undefined };
@@ -248,7 +277,7 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
   on('ui.open', (_$, e) => {
     if (world.refused.has('ui.open')) return { deny: REFUSAL };
     seen.opened.push({ id: e.id, title: e.title });
-    seen.openings.push({ focus: e.focus, rows: e.rows });
+    seen.openings.push({ focus: e.focus, rows: e.rows, columns: e.columns });
     world.panes.set(e.id, { title: e.title ?? e.id, isPlaced: true });
     return { value: { isPlaced: true } };
   });
@@ -286,6 +315,47 @@ async function started($: Engine, clock: MockClock, start = START) {
 }
 
 type Drawn = { text: string; color: unknown };
+
+function textIn(node: RenderNode): string {
+  if (typeof node === 'string') return node;
+  const children = 'children' in node ? (node.children ?? []) : [];
+  return children.map(textIn).join('');
+}
+
+// The text of each row a pane drew: a row's runs joined, and '' for a gap.
+function rowsIn(drawn: RenderElement): string[] {
+  const rows = 'children' in drawn ? (drawn.children ?? []) : [];
+  return rows.map(textIn);
+}
+
+async function drawnPane(
+  $: Engine,
+  surface: RenderSurface,
+  props: RenderPropsOf['Pane'],
+): Promise<string[]> {
+  const ui = await $.ui.mount({
+    plugin: PLUGIN,
+    surface,
+    component: 'Pane',
+    requestId: 'desk',
+    props,
+    viewport: FULLSCREEN,
+  });
+  const rows = rowsIn(await ui.drawn());
+  await ui.unmount();
+  return rows;
+}
+
+// The rows `paneRows` gives, as text: what the pane draws with no hint.
+function expectedRows(
+  shown: Extract<DeskSnapshot, { ok: true }>,
+  columns: number,
+  keys: ReadonlyMap<string, PublishedSession> = new Map(),
+): string[] {
+  return paneRows(shown, keys, columns, 0).map((row) =>
+    row.map((run) => run.text).join(''),
+  );
+}
 
 async function drawnBand(
   $: Engine,
@@ -428,17 +498,20 @@ test('after a refused register the desk still runs and ticks, one debug line nam
   expect(drawn.map((line) => line.text)).toEqual([BENEATH]);
 });
 
-test('/desk opens asking for the room its tree needs, and without the keys', async ($, on) => {
+// P3: asked 56, the dock opens 56 wide unless the operator kept a width of their own.
+const DOCK = { focus: undefined, rows: PANE_ROWS, columns: 56 };
+
+test('/desk opens asking for the room its tree needs and a dock 56 wide, without the keys', async ($, on) => {
   const { seen, clock } = answerBeneath(on, worldWith(printed(QUIET)));
   await started($, clock);
   await runDeskCommand($);
-  expect(seen.openings).toEqual([{ focus: undefined, rows: PANE_ROWS }]);
+  expect(seen.openings).toEqual([DOCK]);
 });
 
 test('a desk pane taller than its body leads with the scroll hint, muted, and a pane that fits draws none', async ($, on) => {
   const { clock } = answerBeneath(on, worldWith(printed(WORKERS)));
   await started($, clock);
-  const count = paneLines(WORKERS, 200).length;
+  const count = expectedRows(WORKERS, 200).length;
   const mount = async (bodyRows: number, isFocused: boolean, columns = 200) => {
     const ui = await $.ui.mount({
       plugin: PLUGIN,
@@ -448,26 +521,71 @@ test('a desk pane taller than its body leads with the scroll hint, muted, and a 
       props: paneProps(columns, bodyRows, isFocused),
       viewport: FULLSCREEN,
     });
+    const rows = rowsIn(await ui.drawn());
     const texts = await ui.findAll({ type: 'Text' });
     await ui.unmount();
-    return texts.map((text) => ({
-      text: text.text,
-      color: text.props.color,
-      wrap: text.props.wrap,
-    }));
+    const [first] = texts;
+    return {
+      rows,
+      first: {
+        text: first?.text,
+        color: first?.props.color,
+        wrap: first?.props.wrap,
+      },
+      wraps: texts.map((text) => text.props.wrap),
+    };
   };
   const tall = await mount(count - 1, false);
-  expect(tall[0]).toEqual({
+  expect(tall.first).toEqual({
     text: '+2 rows · ctrl+x tab to focus, then ↓',
     color: 'inactive',
     wrap: 'truncate-end',
   });
-  expect(tall).toHaveLength(count + 1);
-  expect((await mount(count - 1, true))[0]?.text).toBe('+2 rows · ↓ to scroll');
-  expect((await mount(count - 1, false, 10))[0]?.text).toBe('+2 rows · ');
+  expect(tall.rows).toHaveLength(count + 1);
+  expect((await mount(count - 1, true)).rows[0]).toBe('+2 rows · ↓ to scroll');
+  expect((await mount(count - 1, false, 10)).rows[0]).toBe('+2 rows · ');
   const fits = await mount(count, false);
-  expect(fits).toHaveLength(count);
-  expect(fits.map((text) => text.wrap)).toEqual(fits.map(() => 'truncate-end'));
+  expect(fits.rows).toEqual(expectedRows(WORKERS, 200));
+  expect(fits.wraps).toEqual(fits.wraps.map(() => 'truncate-end'));
+});
+
+// Review Focus 4: the waiting session elsewhere and the waiting child fall past the fold.
+test('a hint over hidden needs-you rows names them in the warning tone', async ($, on) => {
+  const crowd = snapshot({
+    waiting: [
+      {
+        hasPid: true,
+        name: 'fix-readme',
+        repo: 'sidekick',
+        reason: 'permission prompt',
+        child: true,
+      },
+    ],
+    children: [
+      {
+        hasPid: true,
+        name: 'fix-readme',
+        state: 'blocked',
+        unintegrated: 0,
+        uncommitted: false,
+      },
+    ],
+  });
+  const { clock } = answerBeneath(on, worldWith(printed(crowd)));
+  await started($, clock);
+  const ui = await $.ui.mount({
+    plugin: PLUGIN,
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'desk',
+    props: paneProps(100, 1),
+    viewport: FULLSCREEN,
+  });
+  const rows = rowsIn(await ui.drawn());
+  const needs = await ui.find({ type: 'Text', text: '1 needs you' });
+  await ui.unmount();
+  expect(rows[0]).toBe('+2 rows · 1 needs you · ctrl+x tab to focus, then ↓');
+  expect(needs?.props.color).toBe('warning');
 });
 
 // `isInteractive` reads true in background sessions too, so it guards only
@@ -640,24 +758,140 @@ test('with nothing to show the band is what lies beneath alone', async ($, on) =
   }
 });
 
-test('the desk pane draws its lines fitted to the pane body', async ($, on) => {
+test('the desk pane draws its tree fitted to the pane body', async ($, on) => {
   const { clock } = answerBeneath(on, worldWith(printed(WORKERS)));
   await started($, clock);
-  const columns = 24;
-  const expected = paneLines(WORKERS, columns).map((line) => line.text);
-  for (const surface of SURFACES) {
-    const ui = await $.ui.mount({
-      plugin: PLUGIN,
-      surface,
-      component: 'Pane',
-      requestId: 'desk',
-      props: paneProps(columns),
-      viewport: FULLSCREEN,
-    });
-    const texts = await ui.findAll({ type: 'Text' });
-    expect(texts.map((text) => text.text)).toEqual(expected);
-    await ui.unmount();
+  for (const columns of [24, 56, 100]) {
+    const expected = expectedRows(WORKERS, columns);
+    for (const surface of SURFACES) {
+      expect(await drawnPane($, surface, paneProps(columns))).toEqual(expected);
+    }
   }
+});
+
+test('the pane draws a failed run as its one failure row, in error', async ($, on) => {
+  const failed = { exitCode: 1, stdout: '', stderr: 'listing failed' };
+  const { clock } = answerBeneath(on, worldWith(failed));
+  await started($, clock);
+  const ui = await $.ui.mount({
+    plugin: PLUGIN,
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'desk',
+    props: paneProps(100),
+    viewport: FULLSCREEN,
+  });
+  const texts = await ui.findAll({ type: 'Text' });
+  await ui.unmount();
+  expect(texts.map((text) => [text.text, text.props.color])).toEqual([
+    ['⚠ desk: the desk command exited 1: listing failed', 'error'],
+  ]);
+});
+
+const NOW_KEY_AGE = 1_000;
+
+function publishedKey(
+  over: Partial<PublishedSession> & { sessionId: string },
+): PublishedSession {
+  return {
+    version: 1,
+    role: 'worker',
+    subagents: [],
+    publishedAt: -NOW_KEY_AGE,
+    ...over,
+  };
+}
+
+// A worker with a session id, so a published key can join its row.
+const LIVE_WORKER = snapshot({
+  children: [
+    {
+      hasPid: true,
+      sessionId: 'worker-1',
+      name: 'add-greeting',
+      state: 'working',
+      plan: 'The plan',
+      unintegrated: 0,
+      uncommitted: false,
+    },
+  ],
+  sessionIds: ['session-1', 'worker-1'],
+});
+
+const WORKER_KEY = publishedKey({
+  sessionId: 'worker-1',
+  activity: 'Edit: greeting.js',
+  subagents: [
+    { type: 'Explore', description: 'find callers', status: 'running' },
+  ],
+});
+
+test("the pane draws a worker's published activity and its running subagents", async ($, on) => {
+  const world = worldWith(printed(LIVE_WORKER));
+  world.store.set(keyOf('worker-1'), WORKER_KEY);
+  const { clock } = answerBeneath(on, world);
+  await started($, clock);
+  const rows = await drawnPane($, 'terminal', paneProps(100));
+  const keys = new Map([['worker-1', WORKER_KEY]]);
+  expect(rows).toEqual(expectedRows(LIVE_WORKER, 100, keys));
+  expect(rows[1]).toContain('Edit: greeting.js');
+  expect(rows[2]).toContain('◦ Explore');
+});
+
+test('a changed key redraws, as a changed snapshot does, and an unchanged one does not', async ($, on) => {
+  const world = worldWith(printed(LIVE_WORKER));
+  world.store.set(keyOf('worker-1'), WORKER_KEY);
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  expect(seen.invalidations).toEqual(['ui.render']);
+  await clock.advance(TICK_MS);
+  expect(seen.invalidations).toEqual(['ui.render']);
+  world.store.set(keyOf('worker-1'), {
+    ...WORKER_KEY,
+    activity: 'Bash: bun test',
+  });
+  await clock.advance(TICK_MS);
+  expect(seen.invalidations).toEqual(['ui.render', 'ui.render']);
+  const rows = await drawnPane($, 'terminal', paneProps(100));
+  expect(rows[1]).toContain('Bash: bun test');
+});
+
+test('each tick deletes the keys of sessions gone from the listing, and keeps the rest', async ($, on) => {
+  const world = worldWith(printed(LIVE_WORKER));
+  const old = -HEARTBEAT_MS - 1;
+  world.store.set(keyOf('worker-1'), WORKER_KEY);
+  world.store.set(keyOf('left'), publishedKey({ sessionId: 'left' }));
+  world.store.set(
+    keyOf('left-long-ago'),
+    publishedKey({ sessionId: 'left-long-ago', publishedAt: old }),
+  );
+  world.store.set(keyOf('foreign'), { version: 2, sessionId: 'foreign' });
+  world.store.set('unrelated', 'kept');
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  expect(seen.deleted).toEqual([keyOf('left-long-ago'), keyOf('foreign')]);
+  await clock.advance(HEARTBEAT_MS);
+  expect(seen.deleted).toEqual([
+    keyOf('left-long-ago'),
+    keyOf('foreign'),
+    keyOf('left'),
+  ]);
+  expect([...world.store.keys()]).toEqual(
+    expect.arrayContaining([keyOf('worker-1'), 'unrelated']),
+  );
+});
+
+test('a failed run deletes no key', async ($, on) => {
+  const world = worldWith({ exitCode: 1, stdout: '', stderr: 'boom' });
+  world.store.set(
+    keyOf('left'),
+    publishedKey({ sessionId: 'left', publishedAt: -HEARTBEAT_MS * 2 }),
+  );
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await clock.advance(TICK_MS);
+  expect(seen.deleted).toEqual([]);
+  expect(world.store.has(keyOf('left'))).toBe(true);
 });
 
 test('a pane of another id is left to what lies beneath', async ($, on) => {
@@ -686,7 +920,7 @@ test('children appearing after a fullscreen render open the pane once', async ($
   world.answer = printed(WORKERS);
   await clock.advance(TICK_MS);
   expect(seen.opened).toEqual([{ id: 'desk', title: 'Desk' }]);
-  expect(seen.openings).toEqual([{ focus: undefined, rows: PANE_ROWS }]);
+  expect(seen.openings).toEqual([DOCK]);
   world.answer = printed({ ...WORKERS, finished: 3 });
   await clock.advance(TICK_MS);
   expect(seen.opened).toHaveLength(1);

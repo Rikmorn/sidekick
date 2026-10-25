@@ -1,5 +1,12 @@
 import { expect, test } from 'claude-code/testing';
-import { cut, scrollHint, width, wrapRows } from './lines';
+import {
+  cut,
+  hiddenRows,
+  scrollHint,
+  scrollKeys,
+  width,
+  wrapRows,
+} from './lines';
 
 test('width counts code points, so a dash is one column', () => {
   expect(width('a—b')).toBe(3);
@@ -59,6 +66,16 @@ test('wrapRows gives no rows below one column', () => {
 
 test('scrollHint is undefined while the rows fit', () => {
   expect(scrollHint(11, 11, false)).toBeUndefined();
+});
+
+test('hiddenRows is 0 while the rows fit, and counts the hint row once they do not', () => {
+  expect(hiddenRows(11, 11)).toBe(0);
+  expect(hiddenRows(12, 11)).toBe(2);
+});
+
+test('scrollKeys names the keys by whether the pane holds the keyboard', () => {
+  expect(scrollKeys(true)).toBe('↓ to scroll');
+  expect(scrollKeys(false)).toBe('ctrl+x tab to focus, then ↓');
 });
 
 test('scrollHint counts its own row among the hidden ones', () => {

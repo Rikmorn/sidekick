@@ -36,15 +36,23 @@ export function wrapRows(text: string, columns: number): string[] {
   return rows;
 }
 
+/** How many of a pane's rows its window hides once the first row holds the hint; 0 when they fit. */
+export function hiddenRows(rows: number, bodyRows: number): number {
+  return rows <= bodyRows ? 0 : rows - bodyRows + 1;
+}
+
+/** The keys that reach a pane's hidden rows. */
+export function scrollKeys(isFocused: boolean): string {
+  return isFocused ? '↓ to scroll' : 'ctrl+x tab to focus, then ↓';
+}
+
 /** A pane's first row while its rows exceed its body: how many the window hides, and the keys that reach them. Undefined when the rows fit. */
 export function scrollHint(
   rows: number,
   bodyRows: number,
   isFocused: boolean,
 ): string | undefined {
-  if (rows <= bodyRows) return undefined;
-  const hidden = `+${rows - bodyRows + 1} rows`;
-  return isFocused
-    ? `${hidden} · ↓ to scroll`
-    : `${hidden} · ctrl+x tab to focus, then ↓`;
+  const hidden = hiddenRows(rows, bodyRows);
+  if (hidden === 0) return undefined;
+  return `+${hidden} rows · ${scrollKeys(isFocused)}`;
 }

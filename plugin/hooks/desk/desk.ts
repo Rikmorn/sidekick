@@ -1,5 +1,7 @@
 // The desk's adapter: runs `sidekick desk --json` on a clock in a main, keeps
-// the last snapshot, and draws the band and the pane from it.
+// the last snapshot and the live session keys sidekick's store holds, and
+// draws the band and the pane from them. After an ok run it deletes the keys
+// of sessions gone from the listing.
 // `/desk` registers in every session the profile leaves the desk on in. The
 // desk runs in a main, which keeps it after `←`. A worker answers `/desk` with
 // the way back to its main, and an `other` session answers in one line. A
@@ -21,40 +23,54 @@ import type {
   ThemeKey,
 } from 'claude-code';
 import { PANE_ROWS, registerOwned } from '../commands';
-import { cut, scrollHint } from '../lines';
+import type { PublishedSession } from '../publish/contract';
 import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
+import { rowElement } from '../styled';
 import {
   DESK_VERSION,
   type DeskSnapshot,
   parseDeskSnapshot,
   RUN_TIMEOUT_MS,
 } from './contract';
+import { keysToDelete, readKeys, sameKeys, sessionKeys } from './keys';
 import {
   bandLines,
+  failureRow,
   hasChildren,
   type Line,
-  paneLines,
+  paneEntries,
+  paneHint,
   sameSnapshot,
   type Tone,
 } from './logic';
+import type { PaneEntry } from './rows';
+import { liveKeys } from './tree';
 
 /** The period of the desk's run. Why 10 s: the footer's own waiting count refreshes on the same cadence. */
 export const TICK_MS = 10_000;
 
 const PANE = { id: 'desk', title: 'Desk' };
+// Room for the docked form's rows. A width the operator kept wins (P3 in docs/research/control-centre/2026-10-25-desk-pane-probes.md).
+const DOCK_COLUMNS = 56;
+const OPEN = { ...PANE, rows: PANE_ROWS, columns: DOCK_COLUMNS };
 const COMMAND = { name: 'desk', description: 'Show or hide the desk pane' };
 const MS_PER_SECOND = 1_000;
 
 const TONE_COLORS: Record<Tone, ThemeKey> = {
   waiting: 'warning',
   working: 'suggestion',
-  done: 'success',
-  mark: 'warning',
   muted: 'inactive',
-  heading: 'claude',
   failure: 'error',
 };
+
+type OkSnapshot = Extract<DeskSnapshot, { ok: true }>;
+
+// The live keys an ok run read, and the time it judged them at.
+interface Published {
+  keys: ReadonlyMap<string, PublishedSession>;
+  now: number;
+}
 
 // A call that rejected gives its reason instead of its value.
 type Settled<T> = { value: T } | { reason: string };
@@ -114,6 +130,59 @@ async function fetchSnapshot($: EngineInterface): Promise<DeskSnapshot> {
   );
 }
 
+function logLine($: EngineInterface, text: string): void {
+  $.ui.log(`sidekick desk: ${text}`, { to: 'debug' });
+}
+
+// A key the store cannot give reads as none.
+async function readStored($: EngineInterface): Promise<Map<string, unknown>> {
+  const listed = await settle($.store.keys());
+  if ('reason' in listed) {
+    logLine($, `reading the store's keys failed: ${listed.reason}`);
+    return new Map();
+  }
+  const stored = new Map<string, unknown>();
+  for (const storeKey of sessionKeys(listed.value)) {
+    const got = await settle($.store.get(storeKey));
+    if ('value' in got) stored.set(storeKey, got.value);
+    else logLine($, `reading ${storeKey} failed: ${got.reason}`);
+  }
+  return stored;
+}
+
+// A delete that fails is tried again at the next tick.
+async function pruneStored(
+  $: EngineInterface,
+  stored: ReadonlyMap<string, unknown>,
+  snapshot: OkSnapshot,
+  now: number,
+): Promise<void> {
+  for (const storeKey of keysToDelete(stored, snapshot.sessionIds, now)) {
+    const deleted = await settle($.store.delete(storeKey));
+    if ('reason' in deleted) {
+      logLine($, `deleting ${storeKey} failed: ${deleted.reason}`);
+    }
+  }
+}
+
+// Only after an ok run: a failed one leaves the listing unknown, so it deletes nothing.
+async function readPublished(
+  $: EngineInterface,
+  snapshot: OkSnapshot,
+): Promise<Published | undefined> {
+  const now = await settle($.clock.now());
+  if ('reason' in now) {
+    logLine($, `reading the time failed: ${now.reason}`);
+    return undefined;
+  }
+  const stored = await readStored($);
+  await pruneStored($, stored, snapshot, now.value);
+  return {
+    keys: liveKeys(snapshot, readKeys(stored), now.value),
+    now: now.value,
+  };
+}
+
 function textOf(line: Line): RenderElement {
   return {
     type: 'Text',
@@ -131,6 +200,8 @@ function column(children: RenderElement[]): RenderElement {
 // are declared here and handed this state.
 interface DeskState {
   last: DeskSnapshot | undefined;
+  /** The live keys and their time, as the last ok run read them. */
+  published: Published;
   /** As the last ok snapshot had it: a failed run leaves the children unknown, not gone. */
   hadChildren: boolean;
   isRunning: boolean;
@@ -149,17 +220,22 @@ async function keepSnapshotIn(
   $: EngineInterface,
   desk: DeskState,
   snapshot: DeskSnapshot,
+  published: Published | undefined,
 ): Promise<void> {
   const previous = desk.last;
-  if (previous !== undefined && sameSnapshot(previous, snapshot)) return;
+  const isSameSnapshot =
+    previous !== undefined && sameSnapshot(previous, snapshot);
+  const isSameKeys =
+    published === undefined || sameKeys(desk.published.keys, published.keys);
+  if (published !== undefined) desk.published = published;
+  if (isSameSnapshot && isSameKeys) return;
   desk.last = snapshot;
   $.ui.invalidate('ui.render');
   if (!snapshot.ok) return;
   const hasChildrenNow = hasChildren(snapshot);
   const childrenAppeared = !desk.hadChildren && hasChildrenNow;
   desk.hadChildren = hasChildrenNow;
-  if (desk.isFullscreen && childrenAppeared)
-    await settle($.ui.open({ ...PANE, rows: PANE_ROWS }));
+  if (desk.isFullscreen && childrenAppeared) await settle($.ui.open(OPEN));
 }
 
 // The engine drops a refused redraw and reports it rather than throwing, so
@@ -194,7 +270,11 @@ async function refreshDesk($: EngineInterface, desk: DeskState): Promise<void> {
   desk.isRunning = true;
   try {
     if ((await $.session.surfaces()).length === 0) return;
-    await keepSnapshotIn($, desk, await fetchSnapshot($));
+    const snapshot = await fetchSnapshot($);
+    const published = snapshot.ok
+      ? await readPublished($, snapshot)
+      : undefined;
+    await keepSnapshotIn($, desk, snapshot, published);
   } catch (error) {
     keepFailureIn($, desk, `could not refresh: ${reasonOf(error)}`);
   } finally {
@@ -237,19 +317,26 @@ function bandOver(
   return lines.length === 0 ? below : column([...lines.map(textOf), below]);
 }
 
+function entriesOf(desk: DeskState, columns: number): PaneEntry[] {
+  const { last } = desk;
+  if (last === undefined || columns < 1) return [];
+  if (!last.ok)
+    return [{ row: failureRow(last.error, columns), needsYou: false }];
+  const { keys, now } = desk.published;
+  return paneEntries(last, keys, columns, now);
+}
+
 function paneOf(
-  last: DeskSnapshot | undefined,
+  desk: DeskState,
   columns: number,
   bodyRows: number,
   isFocused: boolean,
 ): RenderElement {
-  const lines = last === undefined ? [] : paneLines(last, columns);
-  const hint = scrollHint(lines.length, bodyRows, isFocused);
-  const shown =
-    hint === undefined
-      ? lines
-      : [{ tone: 'muted', text: cut(hint, columns) } satisfies Line, ...lines];
-  return column(shown.map(textOf));
+  const entries = entriesOf(desk, columns);
+  const rows = entries.map(({ row }) => row);
+  const hint = paneHint(entries, bodyRows, isFocused, columns);
+  const shown = hint === undefined ? rows : [hint, ...rows];
+  return column(shown.map(rowElement));
 }
 
 /**
@@ -261,6 +348,7 @@ function paneOf(
 export function registerDesk(on: On): void {
   const desk: DeskState = {
     last: undefined,
+    published: { keys: new Map(), now: 0 },
     hadChildren: false,
     isRunning: false,
     isOwned: false,
@@ -305,7 +393,7 @@ export function registerDesk(on: On): void {
         (pane) => pane.id === PANE.id && pane.isPlaced,
       );
       if (isShown) await $.ui.close({ id: PANE.id });
-      else await $.ui.open({ ...PANE, rows: PANE_ROWS });
+      else await $.ui.open(OPEN);
     } catch (error) {
       $.ui.log(`sidekick desk: command.run failed: ${reasonOf(error)}`, {
         to: 'debug',
@@ -330,7 +418,7 @@ export function registerDesk(on: On): void {
   on('ui.render', { component: 'Pane', requestId: PANE.id }, ($, e, next) => {
     try {
       return paneOf(
-        desk.last,
+        desk,
         e.props.bodyColumns,
         e.props.scroll.bodyRows,
         e.props.isFocused,
