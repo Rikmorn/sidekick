@@ -6,6 +6,7 @@
   "repository": "https://github.com/Rikmorn/sidekick",
   "license": "MIT",
   "keywords": ["workflow", "guidance", "project-management", "superpowers"],
+  "types": "./hooks/state.d.ts",
   "userConfig": {
     "context_window": {
       "type": "number",

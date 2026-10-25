@@ -139,6 +139,10 @@ type World = {
   isRefusing: boolean;
   /** Whether a plugin above refuses the `CLAUDE_JOB_DIR` read. */
   isEnvRefusing?: boolean;
+  /** The values sidekick keeps in `$.state`, by key; the test's own record to read back. */
+  state?: Record<string, unknown>;
+  /** Whether a plugin above refuses every `$.state` call. */
+  isStateRefusing?: boolean;
 };
 
 // Nothing sits beneath the test's hooks but the kit's own bottom, so they end
@@ -157,6 +161,16 @@ function answerBeneath(on: On, world: World): string[] {
   on('settings.read', (_$, e) => {
     if (world.isRefusing) return { deny: REFUSAL };
     return { value: e.source === 'flag' ? world.flag : {} };
+  });
+  const kept = world.state ?? {};
+  on('state.get', (_$, e) => {
+    if (world.isStateRefusing === true) return { deny: REFUSAL };
+    return { value: { value: kept[e.key], version: 0 } };
+  });
+  on('state.set', (_$, e) => {
+    if (world.isStateRefusing === true) return { deny: REFUSAL };
+    kept[e.key] = e.value;
+    return { value: { isSet: true, version: 1 } };
   });
   on('process.run', () => ({ deny: 'no runs beneath this test' }));
   on('ui.status', () => ({ value: undefined }));
@@ -255,6 +269,63 @@ test('a refused CLAUDE_JOB_DIR read counts as unset: a main, and the failure log
       /^sidekick role: reading CLAUDE_JOB_DIR failed: .*refused by a plugin above$/,
     ),
     'sidekick role: main',
+  ]);
+});
+
+// A hot reload loads the module afresh and fires no classic start; the fork
+// an earlier load recorded stands in state.
+test('a load with no classic start reads the fork an earlier load kept in state', async ($, on) => {
+  const debug = answerBeneath(on, {
+    env: { CLAUDE_JOB_DIR: JOB_DIR },
+    flag: {},
+    isRefusing: false,
+    state: { forked: true },
+  });
+  await $.session.start(START);
+  expect(roleLines(debug)).toEqual(['sidekick role: main']);
+});
+
+test('a fork start writes forked to state', async ($, on) => {
+  const state: Record<string, unknown> = {};
+  answerBeneath(on, {
+    env: { CLAUDE_JOB_DIR: JOB_DIR },
+    flag: {},
+    isRefusing: false,
+    state,
+  });
+  await $.classic.SessionStart({ source: 'fork' });
+  expect(state).toEqual({ forked: true });
+});
+
+test('a refused state write still settles the fork as a main, and logs the failure', async ($, on) => {
+  const debug = answerBeneath(on, {
+    env: { CLAUDE_JOB_DIR: JOB_DIR },
+    flag: {},
+    isRefusing: false,
+    isStateRefusing: true,
+  });
+  await startedFrom($, 'fork');
+  expect(roleLines(debug)).toEqual([
+    expect.stringMatching(
+      /^sidekick role: keeping the fork failed: .*refused by a plugin above$/,
+    ),
+    'sidekick role: main',
+  ]);
+});
+
+test('a refused state read counts as no kept fork, and logs the failure', async ($, on) => {
+  const debug = answerBeneath(on, {
+    env: { CLAUDE_JOB_DIR: JOB_DIR },
+    flag: {},
+    isRefusing: false,
+    isStateRefusing: true,
+  });
+  await startedFrom($, 'startup');
+  expect(roleLines(debug)).toEqual([
+    expect.stringMatching(
+      /^sidekick role: reading the kept fork failed: .*refused by a plugin above$/,
+    ),
+    'sidekick role: other',
   ]);
 });
 

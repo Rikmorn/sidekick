@@ -1,7 +1,7 @@
 // The role tracker: settles each session's one role once per load, from the
 // flag settings' markers, `CLAUDE_JOB_DIR`, and a classic start that read
 // `fork`. A hot reload loads the module afresh and fires `session.start` but
-// no classic start, so a backgrounded main reads `other` until its next start.
+// no classic start, so the fork also lives in `$.state`, which a reload keeps.
 // No hook returns context, approves, or denies. The other mods share the
 // module, and a hook that fails in one mod skips the module's whole hook for
 // that event. So the start hook keeps its own failures, which go to the debug
@@ -16,6 +16,8 @@ export type Role =
   | { kind: 'other' };
 
 type Marker = 'SIDEKICK_MAIN' | 'SIDEKICK_WORKER';
+
+const FORKED = { plugin: 'sidekick', key: 'forked' } as const;
 
 // What the role keeps for the module's load.
 const tracker: { forked: boolean; role: Role | undefined } = {
@@ -94,13 +96,31 @@ async function readJobDir($: EngineInterface): Promise<string | undefined> {
   }
 }
 
+// The fork an earlier load kept in state; a failed read counts as no fork.
+async function readForked($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.state.get(FORKED)).value === true;
+  } catch (error) {
+    logFailure($, 'reading the kept fork', error);
+    return false;
+  }
+}
+
+async function keepForked($: EngineInterface): Promise<void> {
+  try {
+    await $.state.set(FORKED, true);
+  } catch (error) {
+    logFailure($, 'keeping the fork', error);
+  }
+}
+
 /** The session's role: the one this load settled, or else one settled now and kept. Never rejects; each failure goes to the debug log. */
 export async function settleRole($: EngineInterface): Promise<Role> {
   if (tracker.role !== undefined) return tracker.role;
   const role = roleOf({
     flagEnv: await readFlagEnv($),
     jobDir: await readJobDir($),
-    forked: tracker.forked,
+    forked: tracker.forked || (await readForked($)),
   });
   tracker.role = role;
   return role;
@@ -123,14 +143,15 @@ export function workerAnswer(
 }
 
 /**
- * Hooks the role: records a fork at the classic start, and settles the role at
+ * Hooks the role: records a fork at the classic start, in memory and in state, and settles the role at
  * each interactive start, naming it in the debug log. Registered first, its
  * start hook runs before the other mods' start hooks.
  */
 export function registerRole(on: On): void {
   // The board's classic start hook takes no matcher; a matched one loads beside it.
-  on('classic.SessionStart', { source: 'fork' }, (_$, e, next) => {
+  on('classic.SessionStart', { source: 'fork' }, async ($, e, next) => {
     tracker.forked = true;
+    await keepForked($);
     return next(e);
   });
 
