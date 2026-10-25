@@ -16,6 +16,7 @@ import type { EngineInterface, On, ThemeKey } from 'claude-code';
 import { cut, HINT_INSET } from '../lines';
 import { type Role, settleRole } from '../role';
 import {
+  limitInputs,
   limitValue,
   modesWith,
   profileOf,
@@ -34,23 +35,19 @@ async function flagProfile($: EngineInterface): Promise<string | undefined> {
   return profileOf(await $.settings.read({ source: 'flag' }));
 }
 
-// Only the breakdown says where compaction runs, so without one the variable
-// keeps its last value. The same holds when auto-compaction is on but no
-// threshold arrives: the compaction point is unknown, and the window would
-// overstate it. Before any value is set, the monitor then falls back and its
-// canary speaks, though the mods run; the declared types rule out both cases.
+// While `limitInputs` finds the limit unknown (no breakdown, or auto-compaction
+// on with no threshold), the variable keeps its last value. Before any value is
+// set, the monitor then falls back and its canary speaks, though the mods run;
+// the declared types rule out both cases.
 // `$.env.set` takes the name as a literal; it is `CONTEXT_LIMIT_VAR`.
 async function refreshLimit($: EngineInterface): Promise<void> {
   const { context } = await $.session.usage({ breakdown: 'summary' });
-  const { breakdown } = context;
-  if (breakdown === undefined) return;
-  const { isAutoCompactEnabled, autoCompactThreshold } = breakdown;
-  if (isAutoCompactEnabled && autoCompactThreshold === undefined) return;
+  const inputs = limitInputs(context);
+  if (inputs === undefined) return;
   const value = limitValue({
     session: await $.session.id(),
     model: await $.session.model(),
-    window: context.window,
-    threshold: autoCompactThreshold,
+    ...inputs,
   });
   await $.env.set('SIDEKICK_CONTEXT_LIMIT', value);
 }

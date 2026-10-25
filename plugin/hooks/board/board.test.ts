@@ -207,7 +207,7 @@ function paneProps(
 // Nothing sits beneath the test's hooks but the kit's own bottom, so they
 // answer every call the board makes and end every chain it continues. The
 // gauge, the scope mod, and the desk share the module, so their calls are
-// answered too.
+// answered too. The publisher shares it as well; its name check is refused.
 function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
   const seen: Seen = {
     pickups: [],
@@ -237,6 +237,7 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
   on('ui.status', () => ({ value: undefined }));
   on('session.id', () => ({ value: 'session-1' }));
   on('process.run', async (_$, e) => {
+    if (e.argv[1] === 'session') return { deny: 'no name checks here' };
     if (e.argv[1] !== 'pm') {
       seen.deskRuns += 1;
       const stdout = `${JSON.stringify(world.desk)}\n`;

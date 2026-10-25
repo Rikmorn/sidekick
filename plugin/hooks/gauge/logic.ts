@@ -1,7 +1,8 @@
 // The gauge's pure logic: no engine calls, so the tests reach it directly.
 
+import type { SessionContextUsage } from 'claude-code';
 import { wayBack } from '../role';
-import type { ContextLimit } from './contract';
+import type { ContextLimit, LimitKind } from './contract';
 
 export const UNPROFILED = 'no profile settings in this session';
 
@@ -25,31 +26,51 @@ export function modesWith(
   return profile === undefined ? [...modes] : [...modes, `profile: ${profile}`];
 }
 
-/**
- * The JSON the context-limit variable holds. A threshold means
- * auto-compaction is on, so the limit is the compaction point. Without one,
- * the limit is the window itself.
- */
-export function limitValue(input: {
-  session: string;
-  model: string;
+/** What resolving the limit takes from a usage reading: the window, and the compaction point when one came. */
+export interface LimitInputs {
   window: number;
   threshold?: number;
-}): string {
-  const limit: ContextLimit =
-    input.threshold === undefined
-      ? {
-          session: input.session,
-          model: input.model,
-          kind: 'window',
-          tokens: input.window,
-        }
-      : {
-          session: input.session,
-          model: input.model,
-          kind: 'compaction',
-          tokens: input.threshold,
-        };
+}
+
+/**
+ * The limit's inputs from a usage reading, or undefined while the limit is
+ * unknown. Only the breakdown says where compaction runs. When auto-compaction
+ * is on but no threshold arrives, the window would overstate the limit.
+ */
+export function limitInputs(
+  context: SessionContextUsage,
+): LimitInputs | undefined {
+  const { breakdown } = context;
+  if (breakdown === undefined) return undefined;
+  const { isAutoCompactEnabled, autoCompactThreshold } = breakdown;
+  if (isAutoCompactEnabled && autoCompactThreshold === undefined) {
+    return undefined;
+  }
+  return { window: context.window, threshold: autoCompactThreshold };
+}
+
+/**
+ * The limit itself. A threshold means auto-compaction is on, so the limit is
+ * the compaction point. Without one, the limit is the window itself.
+ */
+export function limitOf(input: LimitInputs): {
+  kind: LimitKind;
+  tokens: number;
+} {
+  return input.threshold === undefined
+    ? { kind: 'window', tokens: input.window }
+    : { kind: 'compaction', tokens: input.threshold };
+}
+
+/** The JSON the context-limit variable holds, as `limitOf` resolves it. */
+export function limitValue(
+  input: { session: string; model: string } & LimitInputs,
+): string {
+  const limit: ContextLimit = {
+    session: input.session,
+    model: input.model,
+    ...limitOf(input),
+  };
   return JSON.stringify(limit);
 }
 

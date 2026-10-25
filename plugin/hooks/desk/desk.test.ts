@@ -215,7 +215,9 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
       ? { deny: REFUSAL }
       : { value: world.sessionId },
   );
+  // The publisher shares the module too; its name check is refused unseen.
   on('process.run', async (_$, e) => {
+    if (e.argv[1] === 'session') return { deny: 'no name checks here' };
     seen.runs.push(e.argv);
     seen.timeouts.push(e.init?.timeoutMs);
     await world.hold;
