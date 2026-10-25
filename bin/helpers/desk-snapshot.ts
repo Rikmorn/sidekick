@@ -7,10 +7,12 @@
 import type {
   DeskChild,
   DeskOther,
+  DeskSession,
   DeskSnapshot,
   DeskWaiting,
 } from '../../plugin/hooks/desk/contract.js';
 import { DESK_VERSION } from '../../plugin/hooks/desk/contract.js';
+import type { JobState } from './desk-jobs.js';
 import type { WorkerRecord } from './worker-record.js';
 
 /** One listing row, parsed leniently: every field optional, values kept raw. */
@@ -43,11 +45,14 @@ export interface SnapshotInput {
   facts: ReadonlyMap<string, ChildFacts>;
   /** SessionIds whose transcript changed within the freshness window. */
   freshInteractive: ReadonlySet<string>;
-  /** The caller's sessionId, left out. */
+  /** Keyed by listing row id. */
+  jobs: ReadonlyMap<string, JobState>;
+  /** The caller's sessionId: its row becomes `self`, and it chooses the children. */
   self?: string;
   /** The caller's main checkout folder name; absent outside a repository. */
   repo?: string;
   warnings: string[];
+  paneWarnings: string[];
 }
 
 type Class = 'waiting' | 'finished' | 'neither';
@@ -121,7 +126,7 @@ const CURRENT_WITHOUT_PROCESS: ReadonlySet<string> = new Set([
 // A row is current while it carries a pid, or while it is a background row
 // still working or blocked: the rule `claude agents --json` uses without
 // `--all` (agent-view docs, §List sessions as JSON).
-const isCurrent = (row: ListingRow): boolean =>
+export const isCurrent = (row: ListingRow): boolean =>
   hasProcess(row) ||
   (row.kind === 'background' && CURRENT_WITHOUT_PROCESS.has(row.state ?? ''));
 
@@ -202,6 +207,26 @@ export function joinRow(
   return named.find(isCurrent) ?? named[0];
 }
 
+const ID_PREFIX_LENGTH = 8;
+
+// What the listing and job state say about one row; a child with no row has only `hasPid: false`.
+function sessionOf(
+  row: ListingRow | undefined,
+  jobs: ReadonlyMap<string, JobState>,
+): DeskSession {
+  if (row === undefined) return { hasPid: false };
+  const job = row.id === undefined ? undefined : jobs.get(row.id);
+  return {
+    ...(row.sessionId === undefined ? {} : { sessionId: row.sessionId }),
+    ...(row.kind === undefined ? {} : { kind: row.kind }),
+    hasPid: hasProcess(row),
+    ...(row.status === undefined ? {} : { status: row.status }),
+    ...(row.waitingFor === undefined ? {} : { waitingFor: row.waitingFor }),
+    ...(job?.detail === undefined ? {} : { detail: job.detail }),
+    ...(job?.needs === undefined ? {} : { needs: job.needs }),
+  };
+}
+
 interface JoinedChild {
   child: DeskChild;
   rank: number;
@@ -218,6 +243,7 @@ function joinChild(
   row: ListingRow | undefined,
   facts: ChildFacts | undefined,
   fresh: ReadonlySet<string>,
+  jobs: ReadonlyMap<string, JobState>,
 ): JoinedChild {
   const classified: Classified = row
     ? classify(row, fresh)
@@ -227,7 +253,9 @@ function joinChild(
     row !== undefined &&
     isCurrent(row) &&
     (row.state === 'working' || row.status === 'busy');
+  const session = sessionOf(row, jobs);
   const child: DeskChild = {
+    ...session,
     name: record.name,
     state: row ? (row.state ?? row.status ?? 'unknown') : 'gone',
     ...(reason === undefined ? {} : { reason }),
@@ -241,6 +269,7 @@ function joinChild(
   };
   if (classified.class === 'waiting') {
     const waiting: DeskWaiting = {
+      ...session,
       name: record.name,
       repo: repoOf(row?.cwd),
       reason: reason ?? 'waiting',
@@ -259,9 +288,31 @@ function orderChildren(children: JoinedChild[]): JoinedChild[] {
     .map(({ joined }) => joined);
 }
 
-// A record whose row is the caller's own session is left out with it.
-function joinChildren(input: SnapshotInput): JoinedChild[] {
+// The names a record's `main` may hold for the caller: its listing name, or its id prefix.
+function mainNames(
+  self: string | undefined,
+  selfRow: ListingRow | undefined,
+): string[] {
+  if (self === undefined) return [];
+  return [
+    ...(selfRow?.name === undefined ? [] : [selfRow.name]),
+    self.slice(0, ID_PREFIX_LENGTH),
+  ];
+}
+
+// A record whose row is the caller's own session is left out with it. With a
+// caller, only its own workers and those of no main are children.
+function joinChildren(
+  input: SnapshotInput,
+  selfRow: ListingRow | undefined,
+): JoinedChild[] {
+  const names = mainNames(input.self, selfRow);
+  const isMine = (record: WorkerRecord): boolean =>
+    input.self === undefined ||
+    record.main === null ||
+    names.includes(record.main);
   const joined = input.records
+    .filter(isMine)
     .map((record) => ({ record, row: joinRow(record, input.rows) }))
     .filter(
       ({ row }) => input.self === undefined || row?.sessionId !== input.self,
@@ -272,14 +323,20 @@ function joinChildren(input: SnapshotInput): JoinedChild[] {
         row,
         input.facts.get(record.name),
         input.freshInteractive,
+        input.jobs,
       ),
     );
   return orderChildren(joined);
 }
 
-function otherOf(row: ListingRow, classified: Classified): DeskOther {
+function otherOf(
+  row: ListingRow,
+  classified: Classified,
+  jobs: ReadonlyMap<string, JobState>,
+): DeskOther {
   const reason = classified.reason ?? row.waitingFor;
   return {
+    ...sessionOf(row, jobs),
     name: displayName(row),
     repo: repoOf(row.cwd),
     kind: row.kind ?? 'unknown',
@@ -289,12 +346,20 @@ function otherOf(row: ListingRow, classified: Classified): DeskOther {
 }
 
 export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
-  const children = joinChildren(input);
+  const selfRow =
+    input.self === undefined
+      ? undefined
+      : input.rows.find((row) => row.sessionId === input.self);
+  const children = joinChildren(input, selfRow);
   const childRows = new Set(children.flatMap(({ row }) => (row ? [row] : [])));
   const others = input.rows
     .filter((row) => isCurrent(row) && !childRows.has(row))
     .filter((row) => input.self === undefined || row.sessionId !== input.self)
     .map((row) => ({ row, classified: classify(row, input.freshInteractive) }));
+  const self =
+    selfRow === undefined
+      ? undefined
+      : otherOf(selfRow, classify(selfRow, input.freshInteractive), input.jobs);
   const considered = [...childRows, ...others.map(({ row }) => row)];
   const warnings = [
     ...new Set([...input.warnings, ...considered.flatMap(rowWarnings)]),
@@ -302,6 +367,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
   const waitingOthers: DeskWaiting[] = others
     .filter(({ classified }) => classified.class === 'waiting')
     .map(({ row, classified }) => ({
+      ...sessionOf(row, input.jobs),
       name: displayName(row),
       repo: repoOf(row.cwd),
       reason: classified.reason ?? 'waiting',
@@ -311,6 +377,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
     version: DESK_VERSION,
     ok: true,
     ...(input.repo === undefined ? {} : { repo: input.repo }),
+    ...(self === undefined ? {} : { self }),
     waiting: [
       ...children.flatMap(({ waiting }) => (waiting ? [waiting] : [])),
       ...waitingOthers,
@@ -318,8 +385,14 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
     children: children.map(({ child }) => child),
     finished: others.filter(({ classified }) => classified.class === 'finished')
       .length,
-    others: others.map(({ row, classified }) => otherOf(row, classified)),
+    others: others.map(({ row, classified }) =>
+      otherOf(row, classified, input.jobs),
+    ),
     warnings,
+    paneWarnings: input.paneWarnings,
+    sessionIds: [
+      ...new Set(input.rows.flatMap(({ sessionId }) => sessionId ?? [])),
+    ],
   };
 }
 

@@ -84,7 +84,7 @@ const MAIN_SCREEN: RenderViewport = { ...FULLSCREEN, isFullscreen: false };
 
 function snapshot(over: Partial<OkSnapshot> = {}): OkSnapshot {
   return {
-    version: 1,
+    version: 2,
     ok: true,
     repo: 'sidekick',
     waiting: [],
@@ -92,6 +92,8 @@ function snapshot(over: Partial<OkSnapshot> = {}): OkSnapshot {
     finished: 0,
     others: [],
     warnings: [],
+    paneWarnings: [],
+    sessionIds: [],
     ...over,
   };
 }
@@ -100,6 +102,7 @@ const QUIET = snapshot();
 const WAITING = snapshot({
   waiting: [
     {
+      hasPid: true,
       name: 'odin-ae',
       repo: 'odin',
       reason: 'permission prompt',
@@ -111,6 +114,7 @@ const WORKERS = snapshot({
   waiting: WAITING.waiting,
   children: [
     {
+      hasPid: true,
       name: 'p8-board',
       state: 'working',
       tokens: 412000,
@@ -123,6 +127,7 @@ const WORKERS = snapshot({
   finished: 2,
   others: [
     {
+      hasPid: true,
       name: 'odin-ae',
       repo: 'odin',
       kind: 'interactive',

@@ -6,6 +6,7 @@ type OkSnapshot = Extract<DeskSnapshot, { ok: true }>;
 
 function child(over: Partial<DeskChild> & { name: string }): DeskChild {
   return {
+    hasPid: true,
     state: 'working',
     unintegrated: 0,
     uncommitted: false,
@@ -15,7 +16,7 @@ function child(over: Partial<DeskChild> & { name: string }): DeskChild {
 
 function snapshot(over: Partial<OkSnapshot> = {}): OkSnapshot {
   return {
-    version: 1,
+    version: 2,
     ok: true,
     repo: 'sidekick',
     waiting: [],
@@ -23,6 +24,8 @@ function snapshot(over: Partial<OkSnapshot> = {}): OkSnapshot {
     finished: 0,
     others: [],
     warnings: [],
+    paneWarnings: [],
+    sessionIds: [],
     ...over,
   };
 }
@@ -30,12 +33,19 @@ function snapshot(over: Partial<OkSnapshot> = {}): OkSnapshot {
 const full = snapshot({
   waiting: [
     {
+      hasPid: true,
       name: 'odin-ae',
       repo: 'odin',
       reason: 'permission prompt',
       child: false,
     },
-    { name: 'p8-board', repo: 'sidekick', reason: 'blocked', child: true },
+    {
+      hasPid: true,
+      name: 'p8-board',
+      repo: 'sidekick',
+      reason: 'blocked',
+      child: true,
+    },
   ],
   children: [
     child({
@@ -54,13 +64,20 @@ const full = snapshot({
   finished: 2,
   others: [
     {
+      hasPid: true,
       name: 'odin-ae',
       repo: 'odin',
       kind: 'interactive',
       state: 'blocked',
       reason: 'permission prompt',
     },
-    { name: 'scratch', repo: 'furnace', kind: 'interactive', state: 'idle' },
+    {
+      hasPid: true,
+      name: 'scratch',
+      repo: 'furnace',
+      kind: 'interactive',
+      state: 'idle',
+    },
   ],
 });
 
@@ -101,7 +118,7 @@ test('a workers line with nothing finished has no finished entry', () => {
 });
 
 test('a failure snapshot gives one failure line, in the band and the pane', () => {
-  const failed: DeskSnapshot = { version: 1, ok: false, error: 'boom' };
+  const failed: DeskSnapshot = { version: 2, ok: false, error: 'boom' };
   const expected = [{ tone: 'failure', text: '⚠ desk: boom' }];
   expect(bandLines(failed, 120)).toEqual(expected);
   expect(paneLines(failed, 120)).toEqual(expected);
@@ -149,7 +166,7 @@ test('when even that is too wide the text is cut without an ellipsis', () => {
 
 test('no line is empty or wider than the width, at any width', () => {
   const failed: DeskSnapshot = {
-    version: 1,
+    version: 2,
     ok: false,
     error: 'a long error text',
   };
@@ -232,6 +249,7 @@ test('a reason that only repeats the state prints once', () => {
     children: [child({ name: 'w', state: 'blocked', reason: 'blocked' })],
     others: [
       {
+        hasPid: true,
         name: 'm',
         repo: 'todo',
         kind: 'background',
@@ -268,7 +286,7 @@ test('tokens round to k, keep k above a million, and stay bare below 1,000', () 
 test('hasChildren is true only for an ok snapshot with children', () => {
   expect(hasChildren(full)).toBe(true);
   expect(hasChildren(snapshot())).toBe(false);
-  expect(hasChildren({ version: 1, ok: false, error: 'x' })).toBe(false);
+  expect(hasChildren({ version: 2, ok: false, error: 'x' })).toBe(false);
 });
 
 test('sameSnapshot compares by value', () => {
@@ -280,7 +298,7 @@ test('sameSnapshot compares by value', () => {
     finished: 1,
   });
   expect(sameSnapshot(build(), other)).toBe(false);
-  expect(sameSnapshot(build(), { version: 1, ok: false, error: 'x' })).toBe(
+  expect(sameSnapshot(build(), { version: 2, ok: false, error: 'x' })).toBe(
     false,
   );
 });

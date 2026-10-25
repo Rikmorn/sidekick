@@ -251,7 +251,7 @@ describe('runDeskCli: a failing listing', () => {
     const r = harness(tmp(), result).run('--json');
     expect(r.code).toBe(0);
     expect(r.out.map((l) => JSON.parse(l))).toEqual([
-      { version: 1, ok: false, error },
+      { version: 2, ok: false, error },
     ]);
   });
 
@@ -260,7 +260,7 @@ describe('runDeskCli: a failing listing', () => {
     expect(r.code).toBe(0);
     const parsed: DeskSnapshot = JSON.parse(r.out[0]);
     expect(parsed).toEqual({
-      version: 1,
+      version: 2,
       ok: false,
       error: startingWith(
         'claude agents --json --all printed a listing that is not JSON: ',
@@ -299,7 +299,7 @@ describe('runDeskCli: children', () => {
     const h = harness(fx.top, listing([childRow()]), config.configDir);
     const s = snapshotOf(h);
     expect(s.repo).toBe(path.basename(fx.top));
-    expect(s.children).toEqual([
+    expect(s.children).toMatchObject([
       {
         name: 'w1',
         state: 'working',
@@ -318,7 +318,7 @@ describe('runDeskCli: children', () => {
     const fx = repoFixture();
     const s = snapshotOf(harness(fx.worktree, listing([childRow()])));
     expect(s.repo).toBe(path.basename(fx.top));
-    expect(s.children).toEqual([
+    expect(s.children).toMatchObject([
       {
         name: 'w1',
         state: 'working',
@@ -380,7 +380,7 @@ describe('runDeskCli: children', () => {
       childRow({ id: 'cccc0003', name: 'w3', sessionId: undefined }),
     ];
     const s = snapshotOf(harness(fx.top, listing(rows)));
-    expect(s.children.find((c) => c.name === 'w3')).toEqual({
+    expect(s.children.find((c) => c.name === 'w3')).toMatchObject({
       name: 'w3',
       state: 'working',
       plan: 'The plan title',
@@ -426,7 +426,7 @@ describe('runDeskCli: a missing worktree', () => {
     const fx = repoFixture();
     fs.rmSync(fx.worktree, { recursive: true, force: true });
     const s = snapshotOf(harness(fx.top, listing([childRow()])));
-    expect(s.children).toEqual([
+    expect(s.children).toMatchObject([
       {
         name: 'w1',
         state: 'working',
@@ -507,5 +507,72 @@ describe('runDeskCli: self', () => {
     const s = snapshotOf(h, '--self', me);
     expect(s.waiting).toEqual([]);
     expect(s.others.map((o) => o.name)).toEqual([`i-${other.slice(0, 4)}`]);
+    expect(s.self).toMatchObject({ sessionId: me, status: 'waiting' });
+    expect(s.sessionIds).toEqual([me, other]);
+  });
+
+  test('two mains in one repository each list only their own worker', () => {
+    const fx = repoFixture();
+    const me = 'ffff0001-0000-0000-0000-000000000000';
+    const sibling = 'ffff0002-0000-0000-0000-000000000000';
+    // The record `w1` of the fixture belongs to no main; `w2` to the sibling.
+    writeRecord(fx.commonDir, {
+      version: 2,
+      name: 'w2',
+      main: 'sibling',
+      job: 'aaaa0002',
+      brief: path.join(fx.docs, 'w1-brief.md'),
+      dispatchedAt: '2026-10-15T11:00:00Z',
+    });
+    git(fx.top, 'worktree', 'add', '-q', fx.worktreeOf('w2'), '-b', 'wt-w2');
+    const rows = [
+      childRow(),
+      childRow({ id: 'aaaa0002', name: 'w2', sessionId: 'aaaa0002-x' }),
+      interactiveRow(me, { name: 'mine', cwd: fx.top }),
+      interactiveRow(sibling, { name: 'sibling', cwd: fx.top }),
+    ];
+    const h = harness(fx.top, listing(rows));
+    expect(snapshotOf(h, '--self', me).children.map((c) => c.name)).toEqual([
+      'w1',
+    ]);
+    const theirs = snapshotOf(h, '--self', sibling);
+    expect(theirs.children.map((c) => c.name).sort()).toEqual(['w1', 'w2']);
+  });
+
+  test('a version-1 record on disk is a child of either main', () => {
+    const fx = repoFixture();
+    const file = path.join(recordsDir(fx.commonDir), 'w1.json');
+    const { main: _main, ...rest } = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({ ...rest, version: 1 }));
+    const me = 'ffff0001-0000-0000-0000-000000000000';
+    const rows = [childRow(), interactiveRow(me, { name: 'mine' })];
+    const h = harness(fx.top, listing(rows));
+    expect(snapshotOf(h, '--self', me).children.map((c) => c.name)).toEqual([
+      'w1',
+    ]);
+  });
+
+  test('a background row reads job state from the config folder', () => {
+    const configDir = tmp();
+    fs.mkdirSync(path.join(configDir, 'jobs', JOB), { recursive: true });
+    fs.mkdirSync(path.join(configDir, 'jobs', 'bbbb0002'), { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, 'jobs', JOB, 'state.json'),
+      '{"detail":"running tests","needs":"a yes","extra":{}}',
+    );
+    fs.writeFileSync(
+      path.join(configDir, 'jobs', 'bbbb0002', 'state.json'),
+      'not json',
+    );
+    const rows = [
+      childRow(),
+      childRow({ id: 'bbbb0002', name: 'b2', sessionId: 'bbbb0002-x' }),
+    ];
+    const s = snapshotOf(harness(tmp(), listing(rows), configDir));
+    const byName = (name: string) => s.others.find((o) => o.name === name);
+    expect(byName('w1')?.detail).toBe('running tests');
+    expect(byName('w1')).not.toHaveProperty('needs');
+    expect(s.paneWarnings).toEqual(['b2: its job state is not JSON']);
+    expect(s.warnings).toEqual([]);
   });
 });

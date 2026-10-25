@@ -450,7 +450,7 @@ describe('main: desk', () => {
     expect(r.code).toBe(0);
     expect(r.out.map((l) => JSON.parse(l))).toEqual([
       {
-        version: 1,
+        version: 2,
         ok: false,
         error: 'claude agents --json --all failed with exit code 1: boom',
       },

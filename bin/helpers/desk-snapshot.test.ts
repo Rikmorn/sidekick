@@ -31,10 +31,14 @@ const inter = (over: ListingRow): ListingRow => ({
 // The row once its process has exited: the listing gives it no pid.
 const exited = ({ pid: _pid, ...row }: ListingRow): ListingRow => row;
 
-const record = (name: string, job: string | null = null): WorkerRecord => ({
+const record = (
+  name: string,
+  job: string | null = null,
+  main: string | null = null,
+): WorkerRecord => ({
   version: 2,
   name,
-  main: null,
+  main,
   job,
   brief: '/b.md',
   dispatchedAt: '2026-10-15T00:00:00Z',
@@ -53,7 +57,9 @@ const build = (over: Partial<SnapshotInput>) => {
     records: [],
     facts: new Map(),
     freshInteractive: new Set(),
+    jobs: new Map(),
     warnings: [],
+    paneWarnings: [],
     ...over,
   });
   if (!snapshot.ok) throw new Error('expected an ok snapshot');
@@ -89,7 +95,7 @@ describe('classification', () => {
       status: 'waiting',
       waitingFor: 'permission prompt',
     });
-    expect(build({ rows: [row] }).waiting).toEqual([
+    expect(build({ rows: [row] }).waiting).toMatchObject([
       {
         name: 'bg',
         repo: 'sidekick',
@@ -135,7 +141,7 @@ describe('classification', () => {
     });
     expect(snapshot.waiting).toEqual([]);
     expect(snapshot.finished).toBe(0);
-    expect(snapshot.others).toEqual([
+    expect(snapshot.others).toMatchObject([
       { name: 'bg', repo: 'sidekick', kind: 'background', state: 'working' },
     ]);
   });
@@ -162,15 +168,15 @@ describe('classification', () => {
 
   test('a blocked non-child without a pid is current: it waits, with its waitingFor, else blocked', () => {
     const asked = exited(bg({ state: 'blocked', waitingFor: 'input needed' }));
-    expect(build({ rows: [asked] }).waiting).toEqual([
+    expect(build({ rows: [asked] }).waiting).toMatchObject([
       { name: 'bg', repo: 'sidekick', reason: 'input needed', child: false },
     ]);
     const bare = exited(bg({ state: 'blocked' }));
     const snapshot = build({ rows: [bare] });
-    expect(snapshot.waiting).toEqual([
+    expect(snapshot.waiting).toMatchObject([
       { name: 'bg', repo: 'sidekick', reason: 'blocked', child: false },
     ]);
-    expect(snapshot.others).toEqual([
+    expect(snapshot.others).toMatchObject([
       {
         name: 'bg',
         repo: 'sidekick',
@@ -187,7 +193,7 @@ describe('classification', () => {
     const asking = exited(bg({ state: 'working', status: 'waiting' }));
     for (const row of [between, asking]) {
       const snapshot = build({ rows: [row] });
-      expect(snapshot.others).toEqual([
+      expect(snapshot.others).toMatchObject([
         { name: 'bg', repo: 'sidekick', kind: 'background', state: 'working' },
       ]);
       expect(snapshot.waiting).toEqual([]);
@@ -207,7 +213,7 @@ describe('classification', () => {
 
   test('the others list carries the reason of a waiting row', () => {
     const row = inter({ status: 'waiting', waitingFor: 'input needed' });
-    expect(build({ rows: [row] }).others).toEqual([
+    expect(build({ rows: [row] }).others).toMatchObject([
       {
         name: 'inter',
         repo: 'sidekick',
@@ -288,7 +294,7 @@ describe('children', () => {
         ['w1', facts({ tokens: 5, plan: 'P', lastCommit: 'c' })],
       ]),
     });
-    expect(snapshot.children).toEqual([
+    expect(snapshot.children).toMatchObject([
       {
         name: 'w1',
         state: 'working',
@@ -358,7 +364,7 @@ describe('children', () => {
       rows: [other, child],
       records: [record('w1', 'job1')],
     });
-    expect(snapshot.waiting).toEqual([
+    expect(snapshot.waiting).toMatchObject([
       {
         name: 'w1',
         repo: 'sidekick',
@@ -380,7 +386,7 @@ describe('children', () => {
       rows: [child({ waitingFor: 'permission prompt' })],
       records: [record('w1', 'job1')],
     });
-    expect(asked.waiting).toEqual([
+    expect(asked.waiting).toMatchObject([
       {
         name: 'w1',
         repo: 'sidekick',
@@ -389,10 +395,10 @@ describe('children', () => {
       },
     ]);
     const bare = build({ rows: [child({})], records: [record('w1', 'job1')] });
-    expect(bare.waiting).toEqual([
+    expect(bare.waiting).toMatchObject([
       { name: 'w1', repo: 'sidekick', reason: 'blocked', child: true },
     ]);
-    expect(bare.children).toEqual([
+    expect(bare.children).toMatchObject([
       {
         name: 'w1',
         state: 'blocked',
@@ -477,7 +483,7 @@ describe('children', () => {
         ['w1', facts({ unintegrated: 3, uncommitted: true, lastCommit: 'c' })],
       ]),
     });
-    expect(snapshot.children).toEqual([
+    expect(snapshot.children).toMatchObject([
       {
         name: 'w1',
         state: 'gone',
@@ -490,7 +496,7 @@ describe('children', () => {
 
   test('a record with no facts reads as clean', () => {
     const snapshot = build({ records: [record('w1')] });
-    expect(snapshot.children[0]).toEqual({
+    expect(snapshot.children[0]).toMatchObject({
       name: 'w1',
       state: 'gone',
       unintegrated: 0,
@@ -569,5 +575,168 @@ describe('staleRecordNames', () => {
     expect(staleRecordNames(byJob, [record('w1', 'job1')], gone)).toEqual([]);
     const byName = [exited(bg({ id: 'x', name: 'w1', state }))];
     expect(staleRecordNames(byName, [record('w1')], gone)).toEqual([]);
+  });
+});
+
+const ME = 'cccc0001-0000-0000-0000-000000000000';
+const SIBLING = 'dddd0001-0000-0000-0000-000000000000';
+
+describe('version 2: each row carries its session', () => {
+  test('a waiting other, an other, and a child carry the listing facts', () => {
+    const waiting = inter({
+      status: 'waiting',
+      waitingFor: 'input needed',
+      sessionId: SIBLING,
+    });
+    const snapshot = build({
+      rows: [
+        waiting,
+        bg({ id: 'job1', state: 'working', status: 'busy', name: 'w1' }),
+      ],
+      records: [record('w1', 'job1')],
+    });
+    expect(snapshot.waiting[0]).toMatchObject({
+      sessionId: SIBLING,
+      kind: 'interactive',
+      hasPid: true,
+      status: 'waiting',
+      waitingFor: 'input needed',
+    });
+    expect(snapshot.others[0]).toMatchObject({ sessionId: SIBLING });
+    expect(snapshot.children[0]).toMatchObject({
+      sessionId: 'aaaa0001-0000-0000-0000-000000000000',
+      kind: 'background',
+      hasPid: true,
+      status: 'busy',
+    });
+  });
+
+  test('a child with no row has no pid and no session', () => {
+    const child = build({ records: [record('w1', 'job1')] }).children[0];
+    expect(child?.hasPid).toBe(false);
+    expect(child).not.toHaveProperty('sessionId');
+  });
+
+  test('a row without a pid has hasPid false', () => {
+    const row = exited(bg({ state: 'working' }));
+    expect(build({ rows: [row] }).others[0]?.hasPid).toBe(false);
+  });
+
+  test('job state joins by the row id: detail always, needs when given', () => {
+    const snapshot = build({
+      rows: [bg({ id: 'job1', state: 'blocked', waitingFor: 'x' })],
+      jobs: new Map([['job1', { detail: 'testing', needs: 'a yes' }]]),
+    });
+    expect(snapshot.waiting[0]).toMatchObject({
+      detail: 'testing',
+      needs: 'a yes',
+    });
+    expect(snapshot.others[0]).toMatchObject({
+      detail: 'testing',
+      needs: 'a yes',
+    });
+  });
+
+  test('paneWarnings pass through and stay out of warnings', () => {
+    const snapshot = build({ paneWarnings: ['w1: its job state is not JSON'] });
+    expect(snapshot.paneWarnings).toEqual(['w1: its job state is not JSON']);
+    expect(snapshot.warnings).toEqual([]);
+  });
+
+  test('sessionIds lists every listing row once, current or not', () => {
+    const old = exited(bg({ state: 'done' }));
+    const snapshot = build({
+      rows: [
+        old,
+        inter({ sessionId: SIBLING }),
+        inter({ sessionId: SIBLING, name: 'again' }),
+        bg({ id: 'noSession', sessionId: undefined, name: 'x' }),
+      ],
+    });
+    expect(snapshot.sessionIds).toEqual([old.sessionId ?? '', SIBLING]);
+  });
+});
+
+describe('version 2: self and the main-scoped children', () => {
+  const me = inter({ sessionId: ME, name: 'mine', status: 'waiting' });
+
+  test('self is the caller’s row, kept out of others and waiting', () => {
+    const snapshot = build({ rows: [me], self: ME });
+    expect(snapshot.self).toMatchObject({
+      name: 'mine',
+      kind: 'interactive',
+      sessionId: ME,
+      hasPid: true,
+      status: 'waiting',
+    });
+    expect(snapshot.others).toEqual([]);
+    expect(snapshot.waiting).toEqual([]);
+  });
+
+  test('no self row, or no --self, leaves self out', () => {
+    expect(build({ rows: [me] })).not.toHaveProperty('self');
+    expect(build({ rows: [me], self: 'zzzz' })).not.toHaveProperty('self');
+  });
+
+  test('two mains in one repository each see only their own workers', () => {
+    const rows = [
+      me,
+      inter({ sessionId: SIBLING, name: 'sibling' }),
+      bg({ id: 'job1', name: 'mine-w', sessionId: 'aaaa1111' }),
+      bg({ id: 'job2', name: 'theirs-w', sessionId: 'aaaa2222' }),
+    ];
+    const records = [
+      record('mine-w', 'job1', 'mine'),
+      record('theirs-w', 'job2', 'sibling'),
+    ];
+    const mine = build({ rows, records, self: ME });
+    expect(mine.children.map((c) => c.name)).toEqual(['mine-w']);
+    const theirs = build({ rows, records, self: SIBLING });
+    expect(theirs.children.map((c) => c.name)).toEqual(['theirs-w']);
+  });
+
+  test('a record also matches by the 8-character id prefix of self', () => {
+    const rows = [me, bg({ id: 'job1', name: 'w1' })];
+    const snapshot = build({
+      rows,
+      records: [record('w1', 'job1', ME.slice(0, 8))],
+      self: ME,
+    });
+    expect(snapshot.children.map((c) => c.name)).toEqual(['w1']);
+  });
+
+  test('another main’s worker falls to others, and still reaches waiting', () => {
+    const rows = [
+      me,
+      bg({
+        id: 'job2',
+        name: 'theirs-w',
+        state: 'blocked',
+        waitingFor: 'permission prompt',
+      }),
+    ];
+    const snapshot = build({
+      rows,
+      records: [record('theirs-w', 'job2', 'sibling')],
+      self: ME,
+    });
+    expect(snapshot.children).toEqual([]);
+    expect(snapshot.others.map((o) => o.name)).toEqual(['theirs-w']);
+    expect(snapshot.waiting).toMatchObject([
+      { name: 'theirs-w', child: false, reason: 'permission prompt' },
+    ]);
+  });
+
+  test('a record of no main is a child of either main', () => {
+    const rows = [me, bg({ id: 'job1', name: 'w1' })];
+    const records = [record('w1', 'job1', null)];
+    expect(build({ rows, records, self: ME }).children).toHaveLength(1);
+    expect(build({ rows, records, self: SIBLING }).children).toHaveLength(1);
+  });
+
+  test('without --self every record is a child', () => {
+    const rows = [bg({ id: 'job1', name: 'w1' })];
+    const records = [record('w1', 'job1', 'anyone')];
+    expect(build({ rows, records }).children).toHaveLength(1);
   });
 });

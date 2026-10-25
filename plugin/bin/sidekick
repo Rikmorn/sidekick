@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs18 from "node:fs";
+import * as fs19 from "node:fs";
 import { realpathSync as realpathSync4 } from "node:fs";
 import * as os2 from "node:os";
-import * as path18 from "node:path";
+import * as path19 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -868,10 +868,10 @@ function summarize(issues) {
 }
 
 // bin/helpers/desk.ts
-import * as path11 from "node:path";
+import * as path12 from "node:path";
 
 // plugin/hooks/desk/contract.ts
-var DESK_VERSION = 1;
+var DESK_VERSION = 2;
 
 // bin/helpers/desk-children.ts
 import * as fs5 from "node:fs";
@@ -1528,6 +1528,78 @@ function childFacts(sources, record2, row) {
   };
 }
 
+// bin/helpers/desk-jobs.ts
+import * as fs6 from "node:fs";
+import * as path6 from "node:path";
+var reason4 = (e) => e instanceof Error ? e.message : String(e);
+var isMissing3 = (e) => e instanceof Error && ("code" in e) && (e.code === "ENOENT" || e.code === "ENOTDIR");
+var isFolderName = (id) => id !== "" && id !== "." && id !== ".." && path6.basename(id) === id;
+function parseJson(text) {
+  try {
+    return { value: JSON.parse(text) };
+  } catch {
+    return;
+  }
+}
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function stateOf(content, blocked) {
+  const { detail, needs } = content;
+  const wanted = [
+    ["detail", detail],
+    ...blocked ? [["needs", needs]] : []
+  ];
+  const wrong = wanted.filter(([, value]) => value !== undefined && typeof value !== "string").map(([key]) => `${key} is not a string`);
+  return {
+    state: {
+      ...typeof detail === "string" ? { detail } : {},
+      ...blocked && typeof needs === "string" ? { needs } : {}
+    },
+    wrong
+  };
+}
+function readOne(file, who, blocked) {
+  const text = (() => {
+    try {
+      return fs6.readFileSync(file, "utf8");
+    } catch (e) {
+      return isMissing3(e) ? undefined : { failed: `${who}: its job state was not read: ${reason4(e)}` };
+    }
+  })();
+  if (text === undefined)
+    return { warnings: [] };
+  if (typeof text !== "string")
+    return { warnings: [text.failed] };
+  const json = parseJson(text);
+  if (json === undefined)
+    return { warnings: [`${who}: its job state is not JSON`] };
+  if (!isRecord3(json.value)) {
+    return { warnings: [`${who}: its job state is not a JSON object`] };
+  }
+  const { state, wrong } = stateOf(json.value, blocked);
+  return {
+    state,
+    warnings: wrong.length === 0 ? [] : [`${who}: its job state changed shape: ${wrong.join(", ")}`]
+  };
+}
+function readJobStates(configDir, rows) {
+  const reads = rows.flatMap((row) => {
+    const { id } = row;
+    if (row.kind !== "background" || id === undefined || !isFolderName(id)) {
+      return [];
+    }
+    const file = path6.join(configDir, "jobs", id, "state.json");
+    return [
+      { id, read: readOne(file, row.name ?? id, row.state === "blocked") }
+    ];
+  });
+  return {
+    states: new Map(reads.flatMap(({ id, read }) => ("state" in read) ? [[id, read.state]] : [])),
+    warnings: reads.flatMap(({ read }) => read.warnings)
+  };
+}
+
 // bin/helpers/desk-snapshot.ts
 var STATE_CLASS = new Map([
   ["working", "neither"],
@@ -1557,7 +1629,7 @@ function parseRow(entry) {
   };
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
 }
-function isRecord3(value) {
+function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function parseListingRows(value) {
@@ -1566,8 +1638,8 @@ function parseListingRows(value) {
   }
   const entries = value;
   return {
-    rows: entries.filter(isRecord3).map(parseRow),
-    warnings: entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => !isRecord3(entry)).map(({ index }) => `the listing's entry ${index} is not an object`)
+    rows: entries.filter(isRecord4).map(parseRow),
+    warnings: entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => !isRecord4(entry)).map(({ index }) => `the listing's entry ${index} is not an object`)
   };
 }
 var hasProcess = (row) => row.pid !== undefined;
@@ -1621,17 +1693,34 @@ function joinRow(record2, rows) {
   const named = rows.filter((row) => row.name === record2.name);
   return named.find(isCurrent) ?? named[0];
 }
+var ID_PREFIX_LENGTH = 8;
+function sessionOf(row, jobs) {
+  if (row === undefined)
+    return { hasPid: false };
+  const job = row.id === undefined ? undefined : jobs.get(row.id);
+  return {
+    ...row.sessionId === undefined ? {} : { sessionId: row.sessionId },
+    ...row.kind === undefined ? {} : { kind: row.kind },
+    hasPid: hasProcess(row),
+    ...row.status === undefined ? {} : { status: row.status },
+    ...row.waitingFor === undefined ? {} : { waitingFor: row.waitingFor },
+    ...job?.detail === undefined ? {} : { detail: job.detail },
+    ...job?.needs === undefined ? {} : { needs: job.needs }
+  };
+}
 var RANK_WAITING = 0;
 var RANK_WORKING = 1;
 var RANK_REST = 2;
-function joinChild(record2, row, facts, fresh) {
+function joinChild(record2, row, facts, fresh, jobs) {
   const classified = row ? classify(row, fresh) : { class: "neither" };
-  const { reason: reason4 } = classified;
+  const { reason: reason5 } = classified;
   const isWorking = row !== undefined && isCurrent(row) && (row.state === "working" || row.status === "busy");
+  const session = sessionOf(row, jobs);
   const child = {
+    ...session,
     name: record2.name,
     state: row ? row.state ?? row.status ?? "unknown" : "gone",
-    ...reason4 === undefined ? {} : { reason: reason4 },
+    ...reason5 === undefined ? {} : { reason: reason5 },
     ...facts?.tokens === undefined ? {} : { tokens: facts.tokens },
     ...facts?.plan === undefined ? {} : { plan: facts.plan },
     ...facts?.lastCommit === undefined ? {} : { lastCommit: facts.lastCommit },
@@ -1640,9 +1729,10 @@ function joinChild(record2, row, facts, fresh) {
   };
   if (classified.class === "waiting") {
     const waiting = {
+      ...session,
       name: record2.name,
       repo: repoOf(row?.cwd),
-      reason: reason4 ?? "waiting",
+      reason: reason5 ?? "waiting",
       child: true
     };
     return { child, row, rank: RANK_WAITING, waiting };
@@ -1652,29 +1742,43 @@ function joinChild(record2, row, facts, fresh) {
 function orderChildren(children) {
   return children.map((joined, index) => ({ joined, index })).sort((a, b) => a.joined.rank - b.joined.rank || a.index - b.index).map(({ joined }) => joined);
 }
-function joinChildren(input) {
-  const joined = input.records.map((record2) => ({ record: record2, row: joinRow(record2, input.rows) })).filter(({ row }) => input.self === undefined || row?.sessionId !== input.self).map(({ record: record2, row }) => joinChild(record2, row, input.facts.get(record2.name), input.freshInteractive));
+function mainNames(self, selfRow) {
+  if (self === undefined)
+    return [];
+  return [
+    ...selfRow?.name === undefined ? [] : [selfRow.name],
+    self.slice(0, ID_PREFIX_LENGTH)
+  ];
+}
+function joinChildren(input, selfRow) {
+  const names = mainNames(input.self, selfRow);
+  const isMine = (record2) => input.self === undefined || record2.main === null || names.includes(record2.main);
+  const joined = input.records.filter(isMine).map((record2) => ({ record: record2, row: joinRow(record2, input.rows) })).filter(({ row }) => input.self === undefined || row?.sessionId !== input.self).map(({ record: record2, row }) => joinChild(record2, row, input.facts.get(record2.name), input.freshInteractive, input.jobs));
   return orderChildren(joined);
 }
-function otherOf(row, classified) {
-  const reason4 = classified.reason ?? row.waitingFor;
+function otherOf(row, classified, jobs) {
+  const reason5 = classified.reason ?? row.waitingFor;
   return {
+    ...sessionOf(row, jobs),
     name: displayName(row),
     repo: repoOf(row.cwd),
     kind: row.kind ?? "unknown",
     state: row.state ?? row.status ?? "unknown",
-    ...reason4 === undefined ? {} : { reason: reason4 }
+    ...reason5 === undefined ? {} : { reason: reason5 }
   };
 }
 function buildSnapshot(input) {
-  const children = joinChildren(input);
+  const selfRow = input.self === undefined ? undefined : input.rows.find((row) => row.sessionId === input.self);
+  const children = joinChildren(input, selfRow);
   const childRows = new Set(children.flatMap(({ row }) => row ? [row] : []));
   const others = input.rows.filter((row) => isCurrent(row) && !childRows.has(row)).filter((row) => input.self === undefined || row.sessionId !== input.self).map((row) => ({ row, classified: classify(row, input.freshInteractive) }));
+  const self = selfRow === undefined ? undefined : otherOf(selfRow, classify(selfRow, input.freshInteractive), input.jobs);
   const considered = [...childRows, ...others.map(({ row }) => row)];
   const warnings = [
     ...new Set([...input.warnings, ...considered.flatMap(rowWarnings)])
   ];
   const waitingOthers = others.filter(({ classified }) => classified.class === "waiting").map(({ row, classified }) => ({
+    ...sessionOf(row, input.jobs),
     name: displayName(row),
     repo: repoOf(row.cwd),
     reason: classified.reason ?? "waiting",
@@ -1684,14 +1788,19 @@ function buildSnapshot(input) {
     version: DESK_VERSION,
     ok: true,
     ...input.repo === undefined ? {} : { repo: input.repo },
+    ...self === undefined ? {} : { self },
     waiting: [
       ...children.flatMap(({ waiting }) => waiting ? [waiting] : []),
       ...waitingOthers
     ],
     children: children.map(({ child }) => child),
     finished: others.filter(({ classified }) => classified.class === "finished").length,
-    others: others.map(({ row, classified }) => otherOf(row, classified)),
-    warnings
+    others: others.map(({ row, classified }) => otherOf(row, classified, input.jobs)),
+    warnings,
+    paneWarnings: input.paneWarnings,
+    sessionIds: [
+      ...new Set(input.rows.flatMap(({ sessionId }) => sessionId ?? []))
+    ]
   };
 }
 function staleRecordNames(rows, records, facts) {
@@ -1702,10 +1811,10 @@ function staleRecordNames(rows, records, facts) {
 import { parseArgs } from "node:util";
 
 // bin/helpers/main-session.ts
-import * as fs6 from "node:fs";
+import * as fs7 from "node:fs";
 import * as os from "node:os";
-import * as path6 from "node:path";
-var configDirOf = (env, home = os.homedir()) => env.CLAUDE_CONFIG_DIR || path6.join(home, ".claude");
+import * as path7 from "node:path";
+var configDirOf = (env, home = os.homedir()) => env.CLAUDE_CONFIG_DIR || path7.join(home, ".claude");
 var ID_LENGTH = 8;
 var MAIN_MARKERS = ["SIDEKICK_MAIN", "SIDEKICK_WORKER"];
 function resolveMain(env, jobs) {
@@ -1725,16 +1834,16 @@ var SessionFileSchema = object({
 });
 var AUTO_SOURCES = ["derived", "auto"];
 function nameHeld(configDir, sessionId) {
-  const dir = path6.join(configDir, "sessions");
+  const dir = path7.join(configDir, "sessions");
   let entries;
   try {
-    entries = fs6.readdirSync(dir).filter((f) => f.endsWith(".json"));
+    entries = fs7.readdirSync(dir).filter((f) => f.endsWith(".json"));
   } catch {
     return null;
   }
   for (const entry of entries.sort()) {
     try {
-      const file = safeParse(SessionFileSchema, JSON.parse(fs6.readFileSync(path6.join(dir, entry), "utf-8")));
+      const file = safeParse(SessionFileSchema, JSON.parse(fs7.readFileSync(path7.join(dir, entry), "utf-8")));
       if (file.success && file.output.sessionId === sessionId) {
         return !AUTO_SOURCES.includes(file.output.nameSource ?? "");
       }
@@ -1760,8 +1869,8 @@ function mainLine(main, held) {
 
 // bin/helpers/profile-launch.ts
 import { spawnSync } from "node:child_process";
-import * as fs7 from "node:fs";
-import * as path7 from "node:path";
+import * as fs8 from "node:fs";
+import * as path8 from "node:path";
 var isPlainObject = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var uniqueByValue = (items) => items.filter((item, i) => items.findIndex((o) => JSON.stringify(o) === JSON.stringify(item)) === i);
 function mergeValue(prev, next) {
@@ -1792,8 +1901,8 @@ function launchKeys(profile, home) {
     ...profile.hasRules ? { env: { [memoryVariable]: "1" } } : {},
     ...isCleanRoom ? {
       claudeMdExcludes: [
-        path7.join(home, ".claude", "CLAUDE.md"),
-        path7.join(home, ".claude", "rules", "**")
+        path8.join(home, ".claude", "CLAUDE.md"),
+        path8.join(home, ".claude", "rules", "**")
       ]
     } : {}
   };
@@ -1884,10 +1993,10 @@ function checkSettings(settings, deps, timeoutMs = 30000) {
   if (canary === undefined) {
     return refuse(`The settings set both ${CANARY_KEYS.join(" and ")}, so the check has no canary key left.`);
   }
-  const dir = fs7.mkdtempSync(path7.join(deps.tmpdir, "sidekick-profile-"));
+  const dir = fs8.mkdtempSync(path8.join(deps.tmpdir, "sidekick-profile-"));
   try {
-    const file = path7.join(dir, "settings.json");
-    fs7.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
+    const file = path8.join(dir, "settings.json");
+    fs8.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
       mode: 384
     });
     const result = deps.run(["--settings", file, "doctor"], {
@@ -1896,11 +2005,11 @@ function checkSettings(settings, deps, timeoutMs = 30000) {
     });
     const lines = invalidSettingsLines(result.stdout, [
       file,
-      fs7.realpathSync(file)
+      fs8.realpathSync(file)
     ]);
     return judge(result, lines, canary);
   } finally {
-    fs7.rmSync(dir, { recursive: true, force: true });
+    fs8.rmSync(dir, { recursive: true, force: true });
   }
 }
 var bgArgs = (base, opts) => [
@@ -1914,8 +2023,8 @@ var bgArgs = (base, opts) => [
 ];
 
 // bin/helpers/profile-plugins.ts
-import * as fs8 from "node:fs";
-import * as path8 from "node:path";
+import * as fs9 from "node:fs";
+import * as path9 from "node:path";
 var PLUGIN_SKIP_VARIABLE = "SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK";
 var SKIP_WARNING2 = `${PLUGIN_SKIP_VARIABLE}=1 is set, so the plugins were not checked with claude plugin list.`;
 var UNSATISFIED = "dependency-unsatisfied";
@@ -1941,7 +2050,7 @@ var unknownIdIssues = (manifest, listed) => {
   const synced = leavesOutUser(manifest) ? "; a synced plugin is not listed when the profile leaves out the user source" : "";
   return enabledPluginIds(manifest).filter((id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s))).map((id) => `"${id}": no plugin listed under this profile's settings has that id${synced}.`);
 };
-var parseJson = (text) => {
+var parseJson2 = (text) => {
   try {
     return JSON.parse(text);
   } catch {
@@ -1949,7 +2058,7 @@ var parseJson = (text) => {
   }
 };
 function judgePluginList(stdout, manifest) {
-  const parsed = safeParse(ListSchema, parseJson(stdout));
+  const parsed = safeParse(ListSchema, parseJson2(stdout));
   if (!parsed.success) {
     return refuse2("claude plugin list's output no longer parses, so a broken plugin dependency could pass unseen.", `Set ${PLUGIN_SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`);
   }
@@ -1976,10 +2085,10 @@ function judgePluginList(stdout, manifest) {
 function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
   if (deps.skip)
     return { ok: true, warnings: [SKIP_WARNING2] };
-  const dir = fs8.mkdtempSync(path8.join(deps.tmpdir, "sidekick-profile-"));
+  const dir = fs9.mkdtempSync(path9.join(deps.tmpdir, "sidekick-profile-"));
   try {
-    const file = path8.join(dir, "settings.json");
-    fs8.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
+    const file = path9.join(dir, "settings.json");
+    fs9.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
     const sources = manifest.settingSources;
     const result = deps.run([
       "--settings",
@@ -1997,12 +2106,12 @@ function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
     }
     return judgePluginList(result.stdout, manifest);
   } finally {
-    fs8.rmSync(dir, { recursive: true, force: true });
+    fs9.rmSync(dir, { recursive: true, force: true });
   }
 }
 
 // bin/helpers/profile-manifest.ts
-import * as fs9 from "node:fs";
+import * as fs10 from "node:fs";
 
 // plugin/hooks/scope/contract.ts
 var MOD_PARTS = ["board", "desk"];
@@ -2033,13 +2142,13 @@ function parseManifest(raw) {
     issues: result.issues.map((i) => `${getDotPath(i) ?? "(root)"}: ${i.message}`)
   };
 }
-var isMissing3 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
+var isMissing4 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
 function readManifest(file) {
   let text;
   try {
-    text = fs9.readFileSync(file, "utf8");
+    text = fs10.readFileSync(file, "utf8");
   } catch (err) {
-    const why = isMissing3(err) ? "missing" : err instanceof Error ? err.message : String(err);
+    const why = isMissing4(err) ? "missing" : err instanceof Error ? err.message : String(err);
     return { ok: false, issues: [`${file}: ${why}`] };
   }
   let raw;
@@ -2141,8 +2250,8 @@ var shellFunction = (shell, aliasNames) => {
 };
 
 // bin/helpers/profile-store.ts
-import * as fs10 from "node:fs";
-import * as path9 from "node:path";
+import * as fs11 from "node:fs";
+import * as path10 from "node:path";
 var MANIFEST_FILE = "profile.json";
 var notAName = (name) => `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
 var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
@@ -2161,23 +2270,23 @@ var CLAUDE_DIR_REASONS = new Map([
 function storeRoots(env, cwd, home, workTree) {
   const override = env.SIDEKICK_PROFILES_DIR;
   if (override)
-    return [{ kind: "user", dir: path9.resolve(cwd, override) }];
-  const configDir = env.CLAUDE_CONFIG_DIR || path9.join(home, ".claude");
+    return [{ kind: "user", dir: path10.resolve(cwd, override) }];
+  const configDir = env.CLAUDE_CONFIG_DIR || path10.join(home, ".claude");
   const user = {
     kind: "user",
-    dir: path9.resolve(cwd, configDir, "profiles")
+    dir: path10.resolve(cwd, configDir, "profiles")
   };
   if (workTree === undefined)
     return [user];
   const repo = {
     kind: "repo",
-    dir: path9.resolve(workTree, ".claude", "profiles")
+    dir: path10.resolve(workTree, ".claude", "profiles")
   };
   return repo.dir === user.dir ? [user] : [repo, user];
 }
 var isPresent = (file) => {
   try {
-    fs10.lstatSync(file);
+    fs11.lstatSync(file);
     return true;
   } catch {
     return false;
@@ -2185,33 +2294,33 @@ var isPresent = (file) => {
 };
 var isDirectory = (dir) => {
   try {
-    return fs10.statSync(dir).isDirectory();
+    return fs11.statSync(dir).isDirectory();
   } catch {
     return false;
   }
 };
 var entriesOf = (dir) => {
   try {
-    return fs10.readdirSync(dir).sort();
+    return fs11.readdirSync(dir).sort();
   } catch {
     return [];
   }
 };
 function checkLayout(dir) {
-  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path9.join(dir, r.path))).map((r) => `${path9.join(dir, r.path)}: ${r.why}`);
-  const claudeDir = path9.join(dir, ".claude");
-  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path9.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
+  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path10.join(dir, r.path))).map((r) => `${path10.join(dir, r.path)}: ${r.why}`);
+  const claudeDir = path10.join(dir, ".claude");
+  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path10.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
   return [...atRoot, ...inClaudeDir];
 }
 var holdsMarkdown = (dir) => {
   let entries;
   try {
-    entries = fs10.readdirSync(dir, { withFileTypes: true });
+    entries = fs11.readdirSync(dir, { withFileTypes: true });
   } catch {
     return false;
   }
   return entries.some((e) => {
-    const full = path9.join(dir, e.name);
+    const full = path10.join(dir, e.name);
     if (e.isDirectory())
       return holdsMarkdown(full);
     if (e.isSymbolicLink() && isDirectory(full))
@@ -2220,11 +2329,11 @@ var holdsMarkdown = (dir) => {
   });
 };
 var readFolder = (name, root, shadows) => {
-  const dir = path9.join(root.dir, name);
+  const dir = path10.join(root.dir, name);
   const layout = checkLayout(dir);
   if (layout.length > 0)
     return { ok: false, issues: layout };
-  const read = readManifest(path9.join(dir, MANIFEST_FILE));
+  const read = readManifest(path10.join(dir, MANIFEST_FILE));
   if (!read.ok)
     return read;
   return {
@@ -2236,14 +2345,14 @@ var readFolder = (name, root, shadows) => {
       store: root.kind,
       shadows,
       manifest: read.manifest,
-      hasRules: holdsMarkdown(path9.join(dir, ".claude", "rules"))
+      hasRules: holdsMarkdown(path10.join(dir, ".claude", "rules"))
     }
   };
 };
 function loadProfile(name, roots) {
   if (!isProfileName(name))
     return { ok: false, issues: [notAName(name)] };
-  const held = (root) => isDirectory(path9.join(root.dir, name));
+  const held = (root) => isDirectory(path10.join(root.dir, name));
   const index = roots.findIndex(held);
   const winner = roots[index];
   if (winner === undefined) {
@@ -2255,17 +2364,17 @@ function loadProfile(name, roots) {
     };
   }
   const later = roots.slice(index + 1).find(held);
-  return readFolder(name, winner, later === undefined ? undefined : path9.join(later.dir, name));
+  return readFolder(name, winner, later === undefined ? undefined : path10.join(later.dir, name));
 }
 var isHidden = (name) => name.startsWith(".");
 var listRoot = (root) => {
   let names;
   try {
-    names = fs10.readdirSync(root.dir).sort();
+    names = fs11.readdirSync(root.dir).sort();
   } catch {
     return [];
   }
-  return names.filter((name) => !isHidden(name) && isDirectory(path9.join(root.dir, name))).map((name) => {
+  return names.filter((name) => !isHidden(name) && isDirectory(path10.join(root.dir, name))).map((name) => {
     const base = {
       name,
       root: root.dir,
@@ -2288,7 +2397,7 @@ function listProfiles(roots) {
   return roots.flatMap((root) => listRoot(root).map((listed) => {
     const winner = winners.get(listed.name);
     if (winner === undefined) {
-      winners.set(listed.name, path9.join(root.dir, listed.name));
+      winners.set(listed.name, path10.join(root.dir, listed.name));
       return listed;
     }
     return { ...listed, shadowedBy: winner };
@@ -2298,7 +2407,7 @@ var isExists = (err) => err instanceof Error && ("code" in err) && err.code === 
 var messageOf = (err) => err instanceof Error ? err.message : String(err);
 var makeRoot = (root) => {
   try {
-    fs10.mkdirSync(root, { recursive: true });
+    fs11.mkdirSync(root, { recursive: true });
     return [];
   } catch (err) {
     return [
@@ -2308,10 +2417,10 @@ var makeRoot = (root) => {
 };
 var unmake = (dir) => {
   try {
-    const manifest = path9.join(dir, MANIFEST_FILE);
+    const manifest = path10.join(dir, MANIFEST_FILE);
     if (isPresent(manifest))
-      fs10.rmSync(manifest);
-    fs10.rmdirSync(dir);
+      fs11.rmSync(manifest);
+    fs11.rmdirSync(dir);
     return [];
   } catch (err) {
     return [`${dir}: could not remove it: ${messageOf(err)}`];
@@ -2327,16 +2436,16 @@ function newProfile(name, description, root) {
   const rootIssues = makeRoot(root);
   if (rootIssues.length > 0)
     return { ok: false, issues: rootIssues };
-  const dir = path9.join(root, name);
+  const dir = path10.join(root, name);
   try {
-    fs10.mkdirSync(dir);
+    fs11.mkdirSync(dir);
   } catch (err) {
     const why = isExists(err) ? "already exists" : messageOf(err);
     return { ok: false, issues: [`${dir}: ${why}`] };
   }
-  const file = path9.join(dir, MANIFEST_FILE);
+  const file = path10.join(dir, MANIFEST_FILE);
   try {
-    fs10.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
+    fs11.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
 `);
   } catch (err) {
     return {
@@ -2365,7 +2474,7 @@ var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an 
   state: row.state ?? undefined
 })));
 var ListingSchema = array(JobSchema);
-function parseJson2(text) {
+function parseJson3(text) {
   try {
     return { value: JSON.parse(text) };
   } catch (e) {
@@ -2386,7 +2495,7 @@ function listJobs(run, cwd, timeoutMs = 30000) {
       ]
     };
   }
-  const json = parseJson2(result.stdout);
+  const json = parseJson3(result.stdout);
   if ("issue" in json)
     return { issues: [json.issue] };
   const parsed = safeParse(ListingSchema, json.value);
@@ -2687,8 +2796,8 @@ function runProfileCli(args, penv, out, err) {
 }
 
 // bin/helpers/worker-record.ts
-import * as fs11 from "node:fs";
-import * as path10 from "node:path";
+import * as fs12 from "node:fs";
+import * as path11 from "node:path";
 var recordFields = {
   name: WorkerNameSchema,
   job: nullable(string()),
@@ -2705,10 +2814,10 @@ var RecordSchema = pipe(variant("version", [
 ]), transform((record2) => record2.version === 1 ? { ...record2, version: 2, main: null } : record2));
 var isWorkerName = (name) => is(WorkerNameSchema, name);
 function recordsDir(commonDir) {
-  return path10.join(commonDir, "sidekick", "workers");
+  return path11.join(commonDir, "sidekick", "workers");
 }
 var RECORD_SUFFIX = ".json";
-var fileFor = (commonDir, name) => path10.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
+var fileFor = (commonDir, name) => path11.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
 function jobIdFrom(stdout, name) {
   const lines = stdout.split(`
 `).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
@@ -2721,34 +2830,34 @@ function jobIdFrom(stdout, name) {
     return null;
   return /^backgrounded (\S+)$/.exec(lines[0])?.[1] ?? null;
 }
-var reason4 = (e) => e instanceof Error ? e.message : String(e);
+var reason5 = (e) => e instanceof Error ? e.message : String(e);
 function writeRecord(commonDir, record2) {
   if (!isWorkerName(record2.name)) {
     return { issue: `worker record not written: bad name "${record2.name}"` };
   }
   const file = fileFor(commonDir, record2.name);
   try {
-    fs11.mkdirSync(recordsDir(commonDir), { recursive: true });
-    fs11.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+    fs12.mkdirSync(recordsDir(commonDir), { recursive: true });
+    fs12.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
 `);
     return { ok: true };
   } catch (e) {
-    return { issue: `worker record ${file} not written: ${reason4(e)}` };
+    return { issue: `worker record ${file} not written: ${reason5(e)}` };
   }
 }
 function parseRecord(file) {
   try {
-    const parsed = safeParse(RecordSchema, JSON.parse(fs11.readFileSync(file, "utf-8")));
+    const parsed = safeParse(RecordSchema, JSON.parse(fs12.readFileSync(file, "utf-8")));
     if (!parsed.success) {
       return `${file} is not a worker record: ${parsed.issues[0].message}`;
     }
-    const base = path10.basename(file, RECORD_SUFFIX);
+    const base = path11.basename(file, RECORD_SUFFIX);
     if (parsed.output.name !== base) {
       return `${file} holds the record of "${parsed.output.name}", not of "${base}"`;
     }
     return parsed.output;
   } catch (e) {
-    return `${file} cannot be read as a worker record: ${reason4(e)}`;
+    return `${file} cannot be read as a worker record: ${reason5(e)}`;
   }
 }
 function readRecords(commonDir) {
@@ -2757,15 +2866,15 @@ function readRecords(commonDir) {
   const warnings = [];
   let files;
   try {
-    files = fs11.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
+    files = fs12.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { records, warnings };
     }
-    return { records, warnings: [`${dir} cannot be listed: ${reason4(e)}`] };
+    return { records, warnings: [`${dir} cannot be listed: ${reason5(e)}`] };
   }
   for (const f of files) {
-    const read = parseRecord(path10.join(dir, f));
+    const read = parseRecord(path11.join(dir, f));
     if (typeof read === "string")
       warnings.push(read);
     else
@@ -2776,7 +2885,7 @@ function readRecords(commonDir) {
 function removeRecord(commonDir, name) {
   if (!isWorkerName(name))
     return;
-  fs11.rmSync(fileFor(commonDir, name), { force: true });
+  fs12.rmSync(fileFor(commonDir, name), { force: true });
 }
 
 // bin/helpers/desk.ts
@@ -2799,7 +2908,7 @@ function exitError(result) {
   return printed2 === undefined ? failed : `${failed}: ${printed2.split(`
 `)[0]}`;
 }
-function parseJson3(text) {
+function parseJson4(text) {
   try {
     return { value: JSON.parse(text) };
   } catch (e) {
@@ -2813,7 +2922,7 @@ function readListing(run, cwd, timeoutMs = 5000) {
     return { error: `${LISTING} did not return in time` };
   if (result.code !== 0)
     return { error: exitError(result) };
-  const json = parseJson3(result.stdout);
+  const json = parseJson4(result.stdout);
   if ("error" in json)
     return json;
   if (!Array.isArray(json.value)) {
@@ -2821,14 +2930,14 @@ function readListing(run, cwd, timeoutMs = 5000) {
   }
   return parseListingRows(json.value);
 }
-var reason5 = (e) => e instanceof Error ? e.message : String(e);
+var reason6 = (e) => e instanceof Error ? e.message : String(e);
 function pruneRecords(commonDir, names) {
   return names.flatMap((name) => {
     try {
       removeRecord(commonDir, name);
       return [];
     } catch (e) {
-      return [`${name}: its stale record was not deleted: ${reason5(e)}`];
+      return [`${name}: its stale record was not deleted: ${reason6(e)}`];
     }
   });
 }
@@ -2848,7 +2957,7 @@ function readAndPruneChildren(denv, rows, find) {
   const stale = staleRecordNames(rows, read.records, facts);
   const kept = gathered.filter((g) => !stale.includes(g.record.name));
   return {
-    repo: path11.basename(repo.top),
+    repo: path12.basename(repo.top),
     records: kept.map((g) => g.record),
     facts,
     warnings: [
@@ -2866,8 +2975,11 @@ function takeSnapshot(denv, self) {
   const { rows } = listing;
   const transcripts = transcriptFinder(denv.configDir);
   const children = readAndPruneChildren(denv, rows, transcripts.find);
+  const jobs = readJobStates(denv.configDir, rows.filter(isCurrent));
   return buildSnapshot({
     rows,
+    jobs: jobs.states,
+    paneWarnings: jobs.warnings,
     records: children.records,
     facts: children.facts,
     freshInteractive: freshSessions(rows, transcripts.find, denv.now()),
@@ -2891,41 +3003,41 @@ function runDeskCli(rest, denv, out, err) {
 }
 
 // bin/helpers/hook.ts
-import * as fs12 from "node:fs";
-import * as path12 from "node:path";
+import * as fs13 from "node:fs";
+import * as path13 from "node:path";
 var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)";
 function readContent(event) {
   const response = event.tool_response;
-  if (!isRecord4(response) || !isRecord4(response.file))
+  if (!isRecord5(response) || !isRecord5(response.file))
     return "";
   return typeof response.file.content === "string" ? response.file.content : "";
 }
-var DESIGN_SKILL = path12.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path12.join("skills", "sk-execute", "SKILL.md");
+var DESIGN_SKILL = path13.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path13.join("skills", "sk-execute", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
   "## Before the plan goes out",
   "## Choose the mode"
 ];
-var CLEAN_CODE_RULE = path12.join("rules", "sk-clean-code.md");
+var CLEAN_CODE_RULE = path13.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
 var RELEASE_CHECK_PACKAGE = /(^|\/)\.superpowers\/sdd\/release-check-[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
-var isRecord4 = (v) => typeof v === "object" && v !== null;
+var isRecord5 = (v) => typeof v === "object" && v !== null;
 function isSkillHookInput(v) {
-  if (!isRecord4(v))
+  if (!isRecord5(v))
     return false;
   const input = v.tool_input;
-  return isRecord4(input) && typeof input.skill === "string";
+  return isRecord5(input) && typeof input.skill === "string";
 }
 function isReadHookInput(v) {
-  if (!isRecord4(v) || v.tool_name !== "Read")
+  if (!isRecord5(v) || v.tool_name !== "Read")
     return false;
   const input = v.tool_input;
-  return isRecord4(input) && typeof input.file_path === "string";
+  return isRecord5(input) && typeof input.file_path === "string";
 }
-function parseJson4(raw) {
+function parseJson5(raw) {
   try {
     return JSON.parse(raw);
   } catch {
@@ -2934,7 +3046,7 @@ function parseJson4(raw) {
 }
 function readText(file) {
   try {
-    return fs12.readFileSync(file, "utf-8");
+    return fs13.readFileSync(file, "utf-8");
   } catch {
     return;
   }
@@ -2953,7 +3065,7 @@ function readSkillDescription(skillFile) {
   const match = lines.slice(1, close).map((line) => DESCRIPTION_LINE.exec(line)).find((m) => m !== null);
   if (!match)
     return;
-  const value = parseJson4(match[1]);
+  const value = parseJson5(match[1]);
   return typeof value === "string" ? value : undefined;
 }
 function readSection(file, heading) {
@@ -3023,7 +3135,7 @@ function ruleCoversPackage(rulePaths, content) {
   return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
 }
 function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path12.join(pluginDir, DESIGN_SKILL));
+  const description = readSkillDescription(path13.join(pluginDir, DESIGN_SKILL));
   if (description === undefined)
     return;
   return [
@@ -3035,7 +3147,7 @@ function brainstormNudge(pluginDir) {
 }
 var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
-  const file = path12.join(pluginDir, EXECUTE_SKILL);
+  const file = path13.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
   const found = sections.flatMap((s) => s === undefined ? [] : [s]);
   if (found.length < PLAN_SECTIONS.length)
@@ -3054,7 +3166,7 @@ var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. W
 var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
 var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function commentsLines(pluginDir, packageText) {
-  const rule = path12.join(pluginDir, CLEAN_CODE_RULE);
+  const rule = path13.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
   if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
     return [];
@@ -3084,7 +3196,7 @@ function releaseReviewerLines(pluginDir, packageText) {
 `);
 }
 function postSkillContext(stdin, env) {
-  const event = parseJson4(stdin);
+  const event = parseJson5(stdin);
   if (!isSkillHookInput(event))
     return {};
   const nudge = NUDGES.get(event.tool_input.skill);
@@ -3092,7 +3204,7 @@ function postSkillContext(stdin, env) {
 }
 function postReadContext(stdin, env) {
   const { pluginDir } = env;
-  const event = parseJson4(stdin);
+  const event = parseJson5(stdin);
   if (!isReadHookInput(event))
     return {};
   const filePath = event.tool_input.file_path;
@@ -3165,9 +3277,9 @@ function locate(description) {
     prose: lines.slice(close + 1)
   };
 }
-var malformed = (reason6) => ({
+var malformed = (reason7) => ({
   parse: "malformed",
-  reason: oneLine(reason6)
+  reason: oneLine(reason7)
 });
 function duplicate(plans) {
   const names = plans.map((p) => p.name);
@@ -3205,8 +3317,8 @@ function parsePlansHeader(description) {
   }
   if (plans.length === 0)
     return malformed("the plans header lists no plans");
-  const reason6 = duplicate(plans);
-  return reason6 === null ? { parse: "ok", plans } : malformed(reason6);
+  const reason7 = duplicate(plans);
+  return reason7 === null ? { parse: "ok", plans } : malformed(reason7);
 }
 function descriptionProse(description) {
   const found = locate(description);
@@ -3220,7 +3332,7 @@ function startable(issues) {
   const open = openOf(issues);
   return open.length > 0 && !open.some(inProgress) && open.some(notStarted);
 }
-function stateOf(issues, isNext) {
+function stateOf2(issues, isNext) {
   const open = openOf(issues);
   if (open.length === 0)
     return "done";
@@ -3251,7 +3363,7 @@ function planView(ms, items) {
   const nextAt = issues.findIndex(startable);
   const list2 = c.plans.map((p, k) => ({
     name: p.name,
-    state: stateOf(issues[k], k === nextAt),
+    state: stateOf2(issues[k], k === nextAt),
     issues: issues[k]
   }));
   const planned = new Set(c.plans.flatMap((p) => p.issues));
@@ -3964,32 +4076,32 @@ function renderReport(r) {
 
 // bin/helpers/rules.ts
 import { execFileSync } from "node:child_process";
-import * as fs15 from "node:fs";
-import * as path15 from "node:path";
+import * as fs16 from "node:fs";
+import * as path16 from "node:path";
 
 // bin/helpers/rules-fs.ts
-import * as fs13 from "node:fs";
-import * as path13 from "node:path";
+import * as fs14 from "node:fs";
+import * as path14 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
 function statusOf(dir, name) {
-  const st = fs13.lstatSync(path13.join(dir, name), { throwIfNoEntry: false });
+  const st = fs14.lstatSync(path14.join(dir, name), { throwIfNoEntry: false });
   if (!st)
     return "absent";
   return st.isFile() ? "file" : "other";
 }
 var isRegularFile = (dir, name) => statusOf(dir, name) === "file";
 function ownedRulesIn(dir) {
-  const dirStat = fs13.statSync(dir, { throwIfNoEntry: false });
+  const dirStat = fs14.statSync(dir, { throwIfNoEntry: false });
   if (!dirStat)
     return [];
   if (!dirStat.isDirectory())
     return [];
-  return fs13.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
+  return fs14.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
 }
 
 // bin/helpers/rules-overlap.ts
-import * as fs14 from "node:fs";
-import * as path14 from "node:path";
+import * as fs15 from "node:fs";
+import * as path15 from "node:path";
 var MIN_SHARED_HEADINGS = 2;
 var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
 function headingsOf(body) {
@@ -4025,20 +4137,20 @@ function signalsFor(file, body, rule) {
 }
 function findOverlap(src, dest) {
   const report = { pairs: [], extensions: [] };
-  const destStat = fs14.statSync(dest, { throwIfNoEntry: false });
+  const destStat = fs15.statSync(dest, { throwIfNoEntry: false });
   if (!destStat?.isDirectory())
     return report;
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs14.readFileSync(path14.join(src, name), "utf-8");
+    const body = fs15.readFileSync(path15.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
       opening: openingOf(body)
     };
   });
-  const others = fs14.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
+  const others = fs15.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   for (const file of others) {
-    const body = fs14.readFileSync(path14.join(dest, file), "utf-8");
+    const body = fs15.readFileSync(path15.join(dest, file), "utf-8");
     for (const rule of rules) {
       const signals = signalsFor(file, body, rule);
       if (signals.length === 0)
@@ -4077,7 +4189,7 @@ function formatOverlap(report) {
 
 // bin/helpers/rules.ts
 function resolveDest(scope, cwd, claudeHome) {
-  return scope === "project" ? path15.join(cwd, ".claude", "rules") : path15.join(claudeHome, "rules");
+  return scope === "project" ? path16.join(cwd, ".claude", "rules") : path16.join(claudeHome, "rules");
 }
 function workTreeRootOf(cwd) {
   try {
@@ -4092,13 +4204,13 @@ function workTreeRootOf(cwd) {
 }
 var repoRootOf = (cwd) => workTreeRootOf(cwd) ?? cwd;
 var PLUGIN_ONLY_RULES = ["sk-pm-conventions.md"];
-var isRecord5 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var isRecord6 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
-  const file = path15.join(root, ".claude", "settings.json");
+  const file = path16.join(root, ".claude", "settings.json");
   let text;
   try {
-    text = fs15.readFileSync(file, "utf-8");
+    text = fs16.readFileSync(file, "utf-8");
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { state: "not-enabled" };
@@ -4113,11 +4225,11 @@ function pluginEnablement(root) {
   } catch (e) {
     return { state: "unreadable", path: file, reason: errorText(e) };
   }
-  if (!isRecord5(parsed)) {
+  if (!isRecord6(parsed)) {
     return { state: "unreadable", path: file, reason: "not a JSON object" };
   }
   const plugins = parsed.enabledPlugins;
-  const enabled = isRecord5(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
+  const enabled = isRecord6(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
   return { state: enabled ? "enabled" : "not-enabled" };
 }
 var EVERY_RULE = { leaveOut: [], leaveAsIs: [] };
@@ -4146,9 +4258,9 @@ function installRules(src, dest, scope = EVERY_RULE) {
     return { installed: [], removed: [], leftOut: [], skipped: [] };
   }
   const set = shippedOnly(scope, shipped);
-  fs15.mkdirSync(dest, { recursive: true });
+  fs16.mkdirSync(dest, { recursive: true });
   const byLowerCase = new Map;
-  for (const existing of fs15.readdirSync(dest)) {
+  for (const existing of fs16.readdirSync(dest)) {
     byLowerCase.set(existing.toLowerCase(), existing);
   }
   const installed = [];
@@ -4163,7 +4275,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
       skipped.push({ name, why: "not-a-regular-file" });
       continue;
     }
-    fs15.copyFileSync(path15.join(src, name), path15.join(dest, name));
+    fs16.copyFileSync(path16.join(src, name), path16.join(dest, name));
     installed.push(name);
   }
   const keep = new Set(shipped);
@@ -4171,7 +4283,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
   const removed = owned.filter((n) => !keep.has(n));
   const leftOut = owned.filter((n) => set.leaveOut.includes(n));
   for (const name of [...removed, ...leftOut]) {
-    fs15.rmSync(path15.join(dest, name));
+    fs16.rmSync(path16.join(dest, name));
   }
   return { installed, removed, leftOut, skipped };
 }
@@ -4182,12 +4294,12 @@ function checkRules(src, dest, scope = EVERY_RULE) {
   const installed = ownedRulesIn(dest);
   const drift = [];
   for (const name of expected) {
-    const there = path15.join(dest, name);
-    if (!fs15.existsSync(there)) {
+    const there = path16.join(dest, name);
+    if (!fs16.existsSync(there)) {
       drift.push({ kind: "missing", name });
       continue;
     }
-    const same = fs15.readFileSync(path15.join(src, name)).equals(fs15.readFileSync(there));
+    const same = fs16.readFileSync(path16.join(src, name)).equals(fs16.readFileSync(there));
     if (!same)
       drift.push({ kind: "stale", name });
   }
@@ -4238,9 +4350,9 @@ function scopeSet(scope, root) {
 var deliveryMode = (projectDest) => ownedRulesIn(projectDest).length > 0 ? "project" : "user";
 var realOrSelf = (p) => {
   try {
-    return fs15.realpathSync(p);
+    return fs16.realpathSync(p);
   } catch {
-    return path15.resolve(p);
+    return path16.resolve(p);
   }
 };
 var sameDir = (a, b) => realOrSelf(a) === realOrSelf(b);
@@ -4265,7 +4377,7 @@ function reportDuplicates(expected, dest, userDest, out) {
   out(`your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`);
 }
 function refuseNonDirectory(dir, out) {
-  const st = fs15.statSync(dir, { throwIfNoEntry: false });
+  const st = fs16.statSync(dir, { throwIfNoEntry: false });
   if (!st || st.isDirectory())
     return false;
   out(`${dir} exists and is not a directory; refusing to write rules there`);
@@ -4352,9 +4464,9 @@ function discover(run, cwd) {
     throw new PmError(2, "gh not found on PATH");
   const root = repoRootOf(cwd);
   const preflight = preflightOf(gh.version);
-  const untracked = (reason6, fields = {}) => ({
+  const untracked = (reason7, fields = {}) => ({
     tracked: false,
-    reason: reason6,
+    reason: reason7,
     owner: fields.owner ?? null,
     repo: fields.repo ?? null,
     project: null,
@@ -4726,8 +4838,8 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 }
 
 // bin/helpers/worker-dispatch.ts
-import * as fs16 from "node:fs";
-import * as path16 from "node:path";
+import * as fs17 from "node:fs";
+import * as path17 from "node:path";
 
 // bin/helpers/worker-overlay.ts
 var markers = (opts) => ({
@@ -4798,16 +4910,16 @@ function parseDispatchArgs(rest2, cwd) {
   if (pluginDir === "")
     return;
   return {
-    brief: path16.resolve(cwd, parsed.positionals[0]),
+    brief: path17.resolve(cwd, parsed.positionals[0]),
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path16.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path17.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
 }
 var isFolder = (dir) => {
   try {
-    return fs16.statSync(dir).isDirectory();
+    return fs17.statSync(dir).isDirectory();
   } catch {
     return false;
   }
@@ -4838,10 +4950,10 @@ var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
   "tracked files have uncommitted changes, which the worker's worktree would not carry: commit them first"
 ];
 function treeNameIssues(runGit, top, name) {
-  const folder = path16.join(top, WORKTREES_FOLDER, name);
+  const folder = path17.join(top, WORKTREES_FOLDER, name);
   const branch = `worktree-${name}`;
   return [
-    ...fs16.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...fs17.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [`name: the branch ${branch} already exists`] : []
   ];
 }
@@ -4873,7 +4985,7 @@ function bypassIssues(profile, mode) {
 }
 function missingProfileHint(name, penv) {
   const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder(path16.join(root.dir, name)));
+  const held = roots.some((root) => isFolder(path17.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv, main) {
@@ -5009,14 +5121,14 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-finish.ts
-import * as fs17 from "node:fs";
-import * as path17 from "node:path";
+import * as fs18 from "node:fs";
+import * as path18 from "node:path";
 function parseFinishArgs(rest2, cwd) {
   const parsed = parseFlags(rest2, { "no-report": { type: "boolean" } });
   if (parsed === undefined || parsed.positionals.length !== 1)
     return;
   return {
-    brief: path17.resolve(cwd, parsed.positionals[0]),
+    brief: path18.resolve(cwd, parsed.positionals[0]),
     noReport: parsed.values["no-report"] === true
   };
 }
@@ -5093,12 +5205,12 @@ function dirtyIssues(runGit, top, worktree, report) {
     `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(", ")}. Commit and integrate it, or remove it, then run finish again`
   ];
 }
-var isMissing4 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs17.readFileSync(file) };
+    return { data: fs18.readFileSync(file) };
   } catch (e) {
-    if (isMissing4(e))
+    if (isMissing5(e))
       return { data: undefined };
     const why = e instanceof Error ? e.message : String(e);
     return { issue: `cannot read ${file}: ${why}` };
@@ -5138,11 +5250,11 @@ function checkFinish(brief, opts, wenv) {
   const job = findJob(wenv, top, brief.name);
   if ("issues" in job)
     return job;
-  const worktree = path17.join(top, WORKTREES_FOLDER, brief.name);
+  const worktree = path18.join(top, WORKTREES_FOLDER, brief.name);
   const branch = `worktree-${brief.name}`;
-  const report = path17.posix.normalize(brief.report);
-  const reportFrom = path17.join(worktree, report);
-  const reportTo = path17.join(top, report);
+  const report = path18.posix.normalize(brief.report);
+  const reportFrom = path18.join(worktree, report);
+  const reportTo = path18.join(top, report);
   const integrated = integratedHead(wenv.runGit, top, branch, job.id);
   const worktreeIssues = [
     ...onBranchIssues(wenv.runGit, worktree, branch, job.id),
@@ -5174,8 +5286,8 @@ function checkFinish(brief, opts, wenv) {
 }
 function copyReport(ready, out) {
   try {
-    fs17.mkdirSync(path17.dirname(ready.reportTo), { recursive: true });
-    fs17.copyFileSync(ready.reportFrom, ready.reportTo, fs17.constants.COPYFILE_EXCL);
+    fs18.mkdirSync(path18.dirname(ready.reportTo), { recursive: true });
+    fs18.copyFileSync(ready.reportFrom, ready.reportTo, fs18.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${ready.reportTo}: ${why}`];
@@ -5217,7 +5329,7 @@ var stopJob = (ready, wenv) => {
   return withText(`claude ${args.join(" ")} ${failure(result)}, so finish stopped before claude rm`, result);
 };
 function lockPid(commonDir, name) {
-  const lock = readIfPresent(path17.join(commonDir, "worktrees", name, "locked"));
+  const lock = readIfPresent(path18.join(commonDir, "worktrees", name, "locked"));
   if ("issue" in lock || lock.data === undefined)
     return;
   const pid = Number(LOCK_PID.exec(lock.data.toString())?.[1]);
@@ -5418,22 +5530,22 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path18.dirname(fileURLToPath(entryFileUrl));
+  const here = path19.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path18.resolve(here, ".."),
-    path18.resolve(here, "..", "plugin")
+    path19.resolve(here, ".."),
+    path19.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs18.existsSync(path18.join(c, "rules")))
+    if (fs19.existsSync(path19.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path18.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path19.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs18.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs19.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -5460,7 +5572,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs18.writeSync(1, buffer, offset);
+      offset += fs19.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -5478,7 +5590,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs18.readFileSync(0, "utf-8");
+    return fs19.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -5528,7 +5640,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path18.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path19.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

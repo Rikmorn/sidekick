@@ -211,16 +211,24 @@ test('a desk whose /desk is refused leaves the gauge whole, and the band draws t
     value: {
       exitCode: 0,
       stdout: `${JSON.stringify({
-        version: 1,
+        version: 2,
         ok: true,
         repo: 'sidekick',
         waiting: [
-          { name: 'odin-ae', repo: 'odin', reason: 'ask', child: false },
+          {
+            name: 'odin-ae',
+            repo: 'odin',
+            reason: 'ask',
+            child: false,
+            hasPid: true,
+          },
         ],
         children: [],
         finished: 0,
         others: [],
         warnings: [],
+        paneWarnings: [],
+        sessionIds: [],
       })}\n`,
       stderr: '',
       isStdoutTruncated: false,

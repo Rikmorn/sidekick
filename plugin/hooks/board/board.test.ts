@@ -139,7 +139,7 @@ const STATUS_POST = `body="$(sidekick pm pickup --report --milestone "R9 — Con
 
 type OkDesk = Extract<DeskSnapshot, { ok: true }>;
 const QUIET_DESK: OkDesk = {
-  version: 1,
+  version: 2,
   ok: true,
   repo: 'sidekick',
   waiting: [],
@@ -147,11 +147,14 @@ const QUIET_DESK: OkDesk = {
   finished: 0,
   others: [],
   warnings: [],
+  paneWarnings: [],
+  sessionIds: [],
 };
 const WAITING_DESK: OkDesk = {
   ...QUIET_DESK,
   waiting: [
     {
+      hasPid: true,
       name: 'odin-ae',
       repo: 'odin',
       reason: 'permission prompt',
