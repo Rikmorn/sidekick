@@ -32,8 +32,9 @@ const inter = (over: ListingRow): ListingRow => ({
 const exited = ({ pid: _pid, ...row }: ListingRow): ListingRow => row;
 
 const record = (name: string, job: string | null = null): WorkerRecord => ({
-  version: 1,
+  version: 2,
   name,
+  main: null,
   job,
   brief: '/b.md',
   dispatchedAt: '2026-10-15T00:00:00Z',

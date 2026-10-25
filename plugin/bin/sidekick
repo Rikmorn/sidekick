@@ -753,6 +753,78 @@ function unknown() {
     }
   });
 }
+function variant(key, options, message$1) {
+  return _standardSchema({
+    kind: "schema",
+    type: "variant",
+    reference: variant,
+    expects: "Object",
+    async: false,
+    key,
+    options,
+    message: message$1,
+    "~run"(dataset, config$1) {
+      const input = dataset.value;
+      if (input && typeof input === "object") {
+        let outputDataset;
+        let maxDiscriminatorPriority = 0;
+        let invalidDiscriminatorKey = this.key;
+        let expectedDiscriminators = [];
+        const parseOptions = (variant$1, allKeys) => {
+          for (const schema of variant$1.options) {
+            if (schema.type === "variant")
+              parseOptions(schema, new Set(allKeys).add(schema.key));
+            else {
+              let keysAreValid = true;
+              let currentPriority = 0;
+              for (const currentKey of allKeys) {
+                const discriminatorSchema = schema.entries[currentKey];
+                if (currentKey in input ? discriminatorSchema["~run"]({
+                  typed: false,
+                  value: input[currentKey]
+                }, ABORT_EARLY_CONFIG).issues : discriminatorSchema.type !== "exact_optional" && discriminatorSchema.type !== "optional" && discriminatorSchema.type !== "nullish") {
+                  keysAreValid = false;
+                  if (invalidDiscriminatorKey !== currentKey && (maxDiscriminatorPriority < currentPriority || maxDiscriminatorPriority === currentPriority && (currentKey in input) && !(invalidDiscriminatorKey in input))) {
+                    maxDiscriminatorPriority = currentPriority;
+                    invalidDiscriminatorKey = currentKey;
+                    expectedDiscriminators = [];
+                  }
+                  if (invalidDiscriminatorKey === currentKey)
+                    expectedDiscriminators.push(schema.entries[currentKey].expects);
+                  break;
+                }
+                currentPriority++;
+              }
+              if (keysAreValid) {
+                const optionDataset = schema["~run"]({ value: input }, config$1);
+                if (!outputDataset || !outputDataset.typed && optionDataset.typed)
+                  outputDataset = optionDataset;
+              }
+            }
+            if (outputDataset && !outputDataset.issues)
+              break;
+          }
+        };
+        parseOptions(this, new Set([this.key]));
+        if (outputDataset)
+          return outputDataset;
+        _addIssue(this, "type", dataset, config$1, {
+          input: input[invalidDiscriminatorKey],
+          expected: /* @__PURE__ */ _joinExpects(expectedDiscriminators, "|"),
+          path: [{
+            type: "object",
+            origin: "value",
+            input,
+            key: invalidDiscriminatorKey,
+            value: input[invalidDiscriminatorKey]
+          }]
+        });
+      } else
+        _addIssue(this, "type", dataset, config$1);
+      return dataset;
+    }
+  });
+}
 function pipe(...pipe$1) {
   return _standardSchema({
     ...pipe$1[0],
@@ -2617,13 +2689,20 @@ function runProfileCli(args, penv, out, err) {
 // bin/helpers/worker-record.ts
 import * as fs11 from "node:fs";
 import * as path10 from "node:path";
-var RecordSchema = strictObject({
-  version: literal(1),
+var recordFields = {
   name: WorkerNameSchema,
   job: nullable(string()),
   brief: string(),
   dispatchedAt: string()
-});
+};
+var RecordSchema = pipe(variant("version", [
+  strictObject({ version: literal(1), ...recordFields }),
+  strictObject({
+    version: literal(2),
+    main: nullable(string()),
+    ...recordFields
+  })
+]), transform((record2) => record2.version === 1 ? { ...record2, version: 2, main: null } : record2));
 var isWorkerName = (name) => is(WorkerNameSchema, name);
 function recordsDir(commonDir) {
   return path10.join(commonDir, "sidekick", "workers");
@@ -4881,8 +4960,9 @@ var refuse4 = (err, issues) => {
 };
 function keepRecord(ready, result, err) {
   const written = writeRecord(ready.commonDir, {
-    version: 1,
+    version: 2,
     name: ready.brief.name,
+    main: ready.main?.value ?? null,
     job: jobIdFrom(result.stdout, ready.brief.name),
     brief: ready.briefPath,
     dispatchedAt: new Date().toISOString()

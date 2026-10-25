@@ -9,13 +9,29 @@ import * as path from 'node:path';
 import * as v from 'valibot';
 import { WorkerNameSchema } from './worker-brief.js';
 
-const RecordSchema = v.strictObject({
-  version: v.literal(1),
+const recordFields = {
   name: WorkerNameSchema,
   job: v.nullable(v.string()),
   brief: v.string(),
   dispatchedAt: v.string(),
-});
+};
+
+// Version 1 predates `main`; it reads as a record of no main.
+const RecordSchema = v.pipe(
+  v.variant('version', [
+    v.strictObject({ version: v.literal(1), ...recordFields }),
+    v.strictObject({
+      version: v.literal(2),
+      main: v.nullable(v.string()),
+      ...recordFields,
+    }),
+  ]),
+  v.transform((record) =>
+    record.version === 1
+      ? { ...record, version: 2 as const, main: null }
+      : record,
+  ),
+);
 
 export type WorkerRecord = v.InferOutput<typeof RecordSchema>;
 

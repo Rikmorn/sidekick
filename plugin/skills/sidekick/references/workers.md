@@ -178,11 +178,12 @@ Git-ignored files in the worktree go with it. `git status` does not list them, s
 `dispatch` leaves one file per worker for the desk, at `<common git dir>/sidekick/workers/<name>.json`. It sits inside the git directory, outside every work tree, so no commit or `git status` sees it.
 
 ```json
-{ "version": 1, "name": "<name>", "job": "<job id or null>", "brief": "<absolute brief path>", "dispatchedAt": "<ISO time>" }
+{ "version": 2, "name": "<name>", "main": "<main name or null>", "job": "<job id or null>", "brief": "<absolute brief path>", "dispatchedAt": "<ISO time>" }
 ```
 
+- **The main** is the name `dispatch` gives the worker as `SIDEKICK_MAIN`: an inherited one, else the listing's name for the dispatching session, else its 8-character id. Outside a session it is `null`. A version 1 record, written before `main` existed, reads as `main: null`.
 - **The job id** comes from the line `claude --bg` prints, `backgrounded · <id> · <name>`, measured on Claude Code 2.1.300. A bare `backgrounded <id>` counts when it is the only such line. Without either, `job` is `null`.
-- **The desk** lists the repository's workers from these records. `sidekick desk --json` joins each to its session in `claude agents --json --all`, by `job`, else by name. A worker whose session is gone still lists, as `gone`, with its marks for commits not integrated and uncommitted changes.
+- **The desk** lists this main's own workers from these records, plus the records with no main. `sidekick desk --json` joins each to its session in `claude agents --json --all`, by `job`, else by name. A worker whose session is gone still lists, as `gone`, with its marks for commits not integrated and uncommitted changes.
 - **`finish`** deletes the record once `claude rm` has removed the session. A record whose session has left the listing and whose worktree is gone describes nothing, and `sidekick desk` deletes it.
 
 ## Steering and stopping

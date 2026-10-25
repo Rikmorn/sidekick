@@ -635,8 +635,9 @@ describe('finish clears the worker', () => {
   });
 
   const record = (fx: Fixture): WorkerRecord => ({
-    version: 1,
+    version: 2,
     name: 'w1',
+    main: null,
     job: ID,
     brief: fx.brief,
     dispatchedAt: '2026-10-15T10:00:00.000Z',

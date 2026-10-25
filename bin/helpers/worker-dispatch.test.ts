@@ -564,8 +564,9 @@ describe('dispatch records the worker', () => {
     expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
     const saved = JSON.parse(fs.readFileSync(recordFile(fx), 'utf-8'));
     expect(saved).toEqual({
-      version: 1,
+      version: 2,
       name: 'w1',
+      main: null,
       job: '213245a1',
       brief: fx.brief,
       dispatchedAt: saved.dispatchedAt,
@@ -694,6 +695,16 @@ describe('dispatch records the main', () => {
     run(h, fx);
     expect(settingsOf(onlyLaunch(h)).env).not.toHaveProperty('SIDEKICK_MAIN');
     expect(h.out.some((line) => line.startsWith('main:'))).toBe(false);
+  });
+
+  test('the record names the main the worker was given', () => {
+    const fx = fixture();
+    const h = inSession(fx, { CLAUDE_CODE_SESSION_ID: SESSION });
+    run(h, fx);
+    const file = path.join(fx.top, '.git', 'sidekick', 'workers', 'w1.json');
+    expect(JSON.parse(fs.readFileSync(file, 'utf-8')).main).toBe(
+      'Single word reply',
+    );
   });
 
   test('a failed start prints no main line', () => {

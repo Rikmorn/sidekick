@@ -118,8 +118,9 @@ function repoFixture() {
       );
     }
     writeRecord(commonDir, {
-      version: 1,
+      version: 2,
       name,
+      main: null,
       job,
       brief,
       dispatchedAt: '2026-10-15T11:00:00Z',

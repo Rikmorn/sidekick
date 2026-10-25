@@ -359,8 +359,9 @@ const refuse = (err: Out, issues: string[]): number => {
 // warns: the worker has started, so claude's exit code stands.
 function keepRecord(ready: Ready, result: ClaudeResult, err: Out): void {
   const written = writeRecord(ready.commonDir, {
-    version: 1,
+    version: 2,
     name: ready.brief.name,
+    main: ready.main?.value ?? null,
     job: jobIdFrom(result.stdout, ready.brief.name),
     brief: ready.briefPath,
     dispatchedAt: new Date().toISOString(),

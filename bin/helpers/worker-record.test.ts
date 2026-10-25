@@ -14,8 +14,9 @@ import {
 afterEach(removeTemps);
 
 const record = (name: string): WorkerRecord => ({
-  version: 1,
+  version: 2,
   name,
+  main: 'p13-main',
   job: 'abc12345',
   brief: '/r/docs/brief.md',
   dispatchedAt: '2026-10-15T10:00:00.000Z',
@@ -58,6 +59,26 @@ describe('records', () => {
     expect(readRecords(dir)).toEqual({ records: [record('w1')], warnings: [] });
   });
 
+  test('a null main round-trips', () => {
+    const dir = tmp();
+    writeRecord(dir, { ...record('w1'), main: null });
+    expect(readRecords(dir).records[0].main).toBeNull();
+  });
+
+  test('a version 1 record reads as version 2 with a null main', () => {
+    const dir = tmp();
+    fs.mkdirSync(recordsDir(dir), { recursive: true });
+    const { main: _main, ...rest } = record('w1');
+    fs.writeFileSync(
+      path.join(recordsDir(dir), 'w1.json'),
+      JSON.stringify({ ...rest, version: 1 }),
+    );
+    expect(readRecords(dir)).toEqual({
+      records: [{ ...record('w1'), main: null }],
+      warnings: [],
+    });
+  });
+
   test('a null job round-trips', () => {
     const dir = tmp();
     writeRecord(dir, { ...record('w1'), job: null });
@@ -78,7 +99,7 @@ describe('records', () => {
   test('a JSON file of the wrong shape is a warning too', () => {
     const dir = tmp();
     fs.mkdirSync(recordsDir(dir), { recursive: true });
-    fs.writeFileSync(path.join(recordsDir(dir), 'x.json'), '{"version":2}');
+    fs.writeFileSync(path.join(recordsDir(dir), 'x.json'), '{"version":3}');
     const read = readRecords(dir);
     expect(read.records).toEqual([]);
     expect(read.warnings).toHaveLength(1);
