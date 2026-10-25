@@ -35,8 +35,8 @@ For #254's later tasks:
 - **The published key:** `$.store` held one set a second from each of three writers, more often than #254 plans to publish. Keys outlive their sessions, so whoever reads them has to prune them.
 - **Two stores for one sidekick:** a session with sidekick from `--plugin-dir` writes `sidekick_inline-3e4419753454.json`, and an installed one writes `sidekick_rikmorn-0e87d52a3e49.json`. A desk reads only the store its own load writes, so it cannot see the other's sessions (inferred from the naming read for P1).
 - **Subagents:** a finished subagent stays listed as `completed` for about 30 s, so a filter on `running`, `pending`, and `waiting` drops it at once. For the activity line, take `tool.call` from the main loop, or from an `agentId` the list holds. The engine's own forks carry ids the list never shows (P2's findings).
-- **The dock:** `columns: 56` docks at 57 only where no width is kept, and the operator's machine keeps 32. Widening a focused pane with ctrl+x ←, or deleting the kept width, changes the dock for every plugin's pane.
-- **On-screen marker:** no signal tells a session that a terminal shows it, so #254's marker has nothing to read.
+- **The dock:** `columns: 56` docks at 57 only where no width is kept, and the operator's machine keeps 32. Widening a focused pane with ctrl+x ←, or deleting the kept width, changes the dock for every plugin's pane. So where a width is kept, the desk pane's narrow form is its docked form, and #254's guide says how to widen a dock.
+- **On-screen marker:** no signal tells a session that a terminal shows it, so #254 skips its marker for a session on a screen elsewhere. P4's findings say why.
 
 Not tested:
 
