@@ -17,7 +17,6 @@ import { readJobStates } from './desk-jobs.js';
 import {
   buildSnapshot,
   type ChildFacts,
-  isCurrent,
   joinRow,
   type ListingRow,
   parseListingRows,
@@ -169,11 +168,9 @@ function takeSnapshot(denv: DeskEnv, self: string | undefined): DeskSnapshot {
   const { rows } = listing;
   const transcripts = transcriptFinder(denv.configDir);
   const children = readAndPruneChildren(denv, rows, transcripts.find);
-  const jobs = readJobStates(denv.configDir, rows.filter(isCurrent));
   return buildSnapshot({
     rows,
-    jobs: jobs.states,
-    paneWarnings: jobs.warnings,
+    readJobs: (drawn) => readJobStates(denv.configDir, drawn),
     records: children.records,
     facts: children.facts,
     freshInteractive: freshSessions(rows, transcripts.find, denv.now()),

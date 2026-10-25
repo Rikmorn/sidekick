@@ -31,6 +31,19 @@ const inter = (over: ListingRow): ListingRow => ({
 // The row once its process has exited: the listing gives it no pid.
 const exited = ({ pid: _pid, ...row }: ListingRow): ListingRow => row;
 
+// The session facts every row of `bg` and `inter` carries; `GONE` is the same row once its process exits.
+const BG = {
+  sessionId: 'aaaa0001-0000-0000-0000-000000000000',
+  kind: 'background',
+  hasPid: true,
+};
+const BG_GONE = { ...BG, hasPid: false };
+const INTER = {
+  sessionId: 'bbbb0001-0000-0000-0000-000000000000',
+  kind: 'interactive',
+  hasPid: true,
+};
+
 const record = (
   name: string,
   job: string | null = null,
@@ -57,9 +70,8 @@ const build = (over: Partial<SnapshotInput>) => {
     records: [],
     facts: new Map(),
     freshInteractive: new Set(),
-    jobs: new Map(),
+    readJobs: () => ({ states: new Map(), warnings: [] }),
     warnings: [],
-    paneWarnings: [],
     ...over,
   });
   if (!snapshot.ok) throw new Error('expected an ok snapshot');
@@ -95,8 +107,11 @@ describe('classification', () => {
       status: 'waiting',
       waitingFor: 'permission prompt',
     });
-    expect(build({ rows: [row] }).waiting).toMatchObject([
+    expect(build({ rows: [row] }).waiting).toEqual([
       {
+        ...BG,
+        status: 'waiting',
+        waitingFor: 'permission prompt',
         name: 'bg',
         repo: 'sidekick',
         reason: 'permission prompt',
@@ -141,8 +156,15 @@ describe('classification', () => {
     });
     expect(snapshot.waiting).toEqual([]);
     expect(snapshot.finished).toBe(0);
-    expect(snapshot.others).toMatchObject([
-      { name: 'bg', repo: 'sidekick', kind: 'background', state: 'working' },
+    expect(snapshot.others).toEqual([
+      {
+        ...BG,
+        status: 'busy',
+        name: 'bg',
+        repo: 'sidekick',
+        kind: 'background',
+        state: 'working',
+      },
     ]);
   });
 
@@ -168,16 +190,30 @@ describe('classification', () => {
 
   test('a blocked non-child without a pid is current: it waits, with its waitingFor, else blocked', () => {
     const asked = exited(bg({ state: 'blocked', waitingFor: 'input needed' }));
-    expect(build({ rows: [asked] }).waiting).toMatchObject([
-      { name: 'bg', repo: 'sidekick', reason: 'input needed', child: false },
+    expect(build({ rows: [asked] }).waiting).toEqual([
+      {
+        ...BG_GONE,
+        waitingFor: 'input needed',
+        name: 'bg',
+        repo: 'sidekick',
+        reason: 'input needed',
+        child: false,
+      },
     ]);
     const bare = exited(bg({ state: 'blocked' }));
     const snapshot = build({ rows: [bare] });
-    expect(snapshot.waiting).toMatchObject([
-      { name: 'bg', repo: 'sidekick', reason: 'blocked', child: false },
-    ]);
-    expect(snapshot.others).toMatchObject([
+    expect(snapshot.waiting).toEqual([
       {
+        ...BG_GONE,
+        name: 'bg',
+        repo: 'sidekick',
+        reason: 'blocked',
+        child: false,
+      },
+    ]);
+    expect(snapshot.others).toEqual([
+      {
+        ...BG_GONE,
         name: 'bg',
         repo: 'sidekick',
         kind: 'background',
@@ -193,8 +229,15 @@ describe('classification', () => {
     const asking = exited(bg({ state: 'working', status: 'waiting' }));
     for (const row of [between, asking]) {
       const snapshot = build({ rows: [row] });
-      expect(snapshot.others).toMatchObject([
-        { name: 'bg', repo: 'sidekick', kind: 'background', state: 'working' },
+      expect(snapshot.others).toEqual([
+        {
+          ...BG_GONE,
+          status: row.status,
+          name: 'bg',
+          repo: 'sidekick',
+          kind: 'background',
+          state: 'working',
+        },
       ]);
       expect(snapshot.waiting).toEqual([]);
       expect(snapshot.finished).toBe(0);
@@ -213,8 +256,11 @@ describe('classification', () => {
 
   test('the others list carries the reason of a waiting row', () => {
     const row = inter({ status: 'waiting', waitingFor: 'input needed' });
-    expect(build({ rows: [row] }).others).toMatchObject([
+    expect(build({ rows: [row] }).others).toEqual([
       {
+        ...INTER,
+        status: 'waiting',
+        waitingFor: 'input needed',
         name: 'inter',
         repo: 'sidekick',
         kind: 'interactive',
@@ -294,8 +340,9 @@ describe('children', () => {
         ['w1', facts({ tokens: 5, plan: 'P', lastCommit: 'c' })],
       ]),
     });
-    expect(snapshot.children).toMatchObject([
+    expect(snapshot.children).toEqual([
       {
+        ...BG,
         name: 'w1',
         state: 'working',
         tokens: 5,
@@ -364,14 +411,24 @@ describe('children', () => {
       rows: [other, child],
       records: [record('w1', 'job1')],
     });
-    expect(snapshot.waiting).toMatchObject([
+    const asking = { ...BG, status: 'waiting' };
+    expect(snapshot.waiting).toEqual([
       {
+        ...asking,
+        waitingFor: 'permission prompt',
         name: 'w1',
         repo: 'sidekick',
         reason: 'permission prompt',
         child: true,
       },
-      { name: 'other', repo: 'sidekick', reason: 'input needed', child: false },
+      {
+        ...asking,
+        waitingFor: 'input needed',
+        name: 'other',
+        repo: 'sidekick',
+        reason: 'input needed',
+        child: false,
+      },
     ]);
     expect(snapshot.children[0]).toMatchObject({
       state: 'blocked',
@@ -386,8 +443,10 @@ describe('children', () => {
       rows: [child({ waitingFor: 'permission prompt' })],
       records: [record('w1', 'job1')],
     });
-    expect(asked.waiting).toMatchObject([
+    expect(asked.waiting).toEqual([
       {
+        ...BG_GONE,
+        waitingFor: 'permission prompt',
         name: 'w1',
         repo: 'sidekick',
         reason: 'permission prompt',
@@ -395,11 +454,18 @@ describe('children', () => {
       },
     ]);
     const bare = build({ rows: [child({})], records: [record('w1', 'job1')] });
-    expect(bare.waiting).toMatchObject([
-      { name: 'w1', repo: 'sidekick', reason: 'blocked', child: true },
-    ]);
-    expect(bare.children).toMatchObject([
+    expect(bare.waiting).toEqual([
       {
+        ...BG_GONE,
+        name: 'w1',
+        repo: 'sidekick',
+        reason: 'blocked',
+        child: true,
+      },
+    ]);
+    expect(bare.children).toEqual([
+      {
+        ...BG_GONE,
         name: 'w1',
         state: 'blocked',
         reason: 'blocked',
@@ -483,8 +549,9 @@ describe('children', () => {
         ['w1', facts({ unintegrated: 3, uncommitted: true, lastCommit: 'c' })],
       ]),
     });
-    expect(snapshot.children).toMatchObject([
+    expect(snapshot.children).toEqual([
       {
+        hasPid: false,
         name: 'w1',
         state: 'gone',
         lastCommit: 'c',
@@ -496,7 +563,8 @@ describe('children', () => {
 
   test('a record with no facts reads as clean', () => {
     const snapshot = build({ records: [record('w1')] });
-    expect(snapshot.children[0]).toMatchObject({
+    expect(snapshot.children[0]).toEqual({
+      hasPid: false,
       name: 'w1',
       state: 'gone',
       unintegrated: 0,
@@ -625,7 +693,10 @@ describe('version 2: each row carries its session', () => {
   test('job state joins by the row id: detail always, needs when given', () => {
     const snapshot = build({
       rows: [bg({ id: 'job1', state: 'blocked', waitingFor: 'x' })],
-      jobs: new Map([['job1', { detail: 'testing', needs: 'a yes' }]]),
+      readJobs: () => ({
+        states: new Map([['job1', { detail: 'testing', needs: 'a yes' }]]),
+        warnings: [],
+      }),
     });
     expect(snapshot.waiting[0]).toMatchObject({
       detail: 'testing',
@@ -638,7 +709,12 @@ describe('version 2: each row carries its session', () => {
   });
 
   test('paneWarnings pass through and stay out of warnings', () => {
-    const snapshot = build({ paneWarnings: ['w1: its job state is not JSON'] });
+    const snapshot = build({
+      readJobs: () => ({
+        states: new Map(),
+        warnings: ['w1: its job state is not JSON'],
+      }),
+    });
     expect(snapshot.paneWarnings).toEqual(['w1: its job state is not JSON']);
     expect(snapshot.warnings).toEqual([]);
   });
@@ -738,5 +814,50 @@ describe('version 2: self and the main-scoped children', () => {
     const rows = [bg({ id: 'job1', name: 'w1' })];
     const records = [record('w1', 'job1', 'anyone')];
     expect(build({ rows, records }).children).toHaveLength(1);
+  });
+});
+
+describe('version 2: which rows job state is read for', () => {
+  test('the current rows and this main’s children, not another main’s done worker nor an old row', () => {
+    const rows = [
+      inter({ sessionId: ME, name: 'mine' }),
+      bg({ id: 'cur', name: 'cur', state: 'working' }),
+      exited(bg({ id: 'mine-done', name: 'mine-w', state: 'done' })),
+      exited(bg({ id: 'theirs-done', name: 'theirs-w', state: 'done' })),
+      exited(bg({ id: 'old', name: 'old', state: 'done' })),
+    ];
+    const asked: string[][] = [];
+    build({
+      rows,
+      records: [
+        record('mine-w', 'mine-done', 'mine'),
+        record('theirs-w', 'theirs-done', 'sibling'),
+      ],
+      self: ME,
+      readJobs: (drawn) => {
+        asked.push(drawn.map((row) => row.id ?? ''));
+        return { states: new Map(), warnings: [] };
+      },
+    });
+    expect(asked).toEqual([['', 'cur', 'mine-done']]);
+  });
+});
+
+describe('version 2: a done child keeps its job detail', () => {
+  test('a child whose row has no pid is current for job state, and its detail rides on the child', () => {
+    const done = exited(bg({ id: 'job1', name: 'w1', state: 'done' }));
+    const snapshot = build({
+      rows: [done],
+      records: [record('w1', 'job1')],
+      readJobs: () => ({
+        states: new Map([['job1', { detail: 'report sent' }]]),
+        warnings: [],
+      }),
+    });
+    expect(snapshot.children[0]).toMatchObject({
+      state: 'done',
+      hasPid: false,
+      detail: 'report sent',
+    });
   });
 });

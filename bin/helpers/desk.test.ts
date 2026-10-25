@@ -65,6 +65,13 @@ const childRow = (over: object = {}) => ({
   status: 'busy',
   ...over,
 });
+// What `childRow` gives a child's session facts.
+const CHILD_SESSION_FACTS = {
+  hasPid: true,
+  sessionId: CHILD_SESSION,
+  kind: 'background',
+  status: 'busy',
+};
 const interactiveRow = (sessionId: string, over: object = {}) => ({
   kind: 'interactive',
   cwd: '/x/other',
@@ -299,8 +306,9 @@ describe('runDeskCli: children', () => {
     const h = harness(fx.top, listing([childRow()]), config.configDir);
     const s = snapshotOf(h);
     expect(s.repo).toBe(path.basename(fx.top));
-    expect(s.children).toMatchObject([
+    expect(s.children).toEqual([
       {
+        ...CHILD_SESSION_FACTS,
         name: 'w1',
         state: 'working',
         tokens: 1012,
@@ -318,8 +326,9 @@ describe('runDeskCli: children', () => {
     const fx = repoFixture();
     const s = snapshotOf(harness(fx.worktree, listing([childRow()])));
     expect(s.repo).toBe(path.basename(fx.top));
-    expect(s.children).toMatchObject([
+    expect(s.children).toEqual([
       {
+        ...CHILD_SESSION_FACTS,
         name: 'w1',
         state: 'working',
         plan: 'The plan title',
@@ -380,7 +389,10 @@ describe('runDeskCli: children', () => {
       childRow({ id: 'cccc0003', name: 'w3', sessionId: undefined }),
     ];
     const s = snapshotOf(harness(fx.top, listing(rows)));
-    expect(s.children.find((c) => c.name === 'w3')).toMatchObject({
+    expect(s.children.find((c) => c.name === 'w3')).toEqual({
+      hasPid: true,
+      kind: 'background',
+      status: 'busy',
       name: 'w3',
       state: 'working',
       plan: 'The plan title',
@@ -426,8 +438,9 @@ describe('runDeskCli: a missing worktree', () => {
     const fx = repoFixture();
     fs.rmSync(fx.worktree, { recursive: true, force: true });
     const s = snapshotOf(harness(fx.top, listing([childRow()])));
-    expect(s.children).toMatchObject([
+    expect(s.children).toEqual([
       {
+        ...CHILD_SESSION_FACTS,
         name: 'w1',
         state: 'working',
         plan: 'The plan title',
@@ -509,6 +522,55 @@ describe('runDeskCli: self', () => {
     expect(s.others.map((o) => o.name)).toEqual([`i-${other.slice(0, 4)}`]);
     expect(s.self).toMatchObject({ sessionId: me, status: 'waiting' });
     expect(s.sessionIds).toEqual([me, other]);
+  });
+
+  test('a record whose main is the caller’s listing name is its child', () => {
+    const fx = repoFixture();
+    const me = 'ffff0001-0000-0000-0000-000000000000';
+    writeRecord(fx.commonDir, {
+      version: 2,
+      name: 'w2',
+      main: 'mine',
+      job: 'aaaa0002',
+      brief: path.join(fx.docs, 'w1-brief.md'),
+      dispatchedAt: '2026-10-15T11:00:00Z',
+    });
+    git(fx.top, 'worktree', 'add', '-q', fx.worktreeOf('w2'), '-b', 'wt-w2');
+    const rows = [
+      childRow({ id: 'aaaa0002', name: 'w2', sessionId: 'aaaa0002-x' }),
+      interactiveRow(me, { name: 'mine' }),
+    ];
+    const h = harness(fx.top, listing(rows));
+    const mine = snapshotOf(h, '--self', me);
+    expect(mine.children.map((c) => c.name).sort()).toEqual(['w1', 'w2']);
+    // A caller of another name keeps w1 (no main) but not w2.
+    const other = interactiveRow('ffff0003-0000-0000-0000-000000000000', {
+      name: 'someone',
+    });
+    const elsewhere = snapshotOf(
+      harness(fx.top, listing([...rows, other])),
+      '--self',
+      'ffff0003-0000-0000-0000-000000000000',
+    );
+    expect(elsewhere.children.map((c) => c.name)).toEqual(['w1']);
+  });
+
+  test('a done child with no pid still gets its job detail', () => {
+    const fx = repoFixture();
+    const configDir = tmp();
+    fs.mkdirSync(path.join(configDir, 'jobs', JOB), { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, 'jobs', JOB, 'state.json'),
+      '{"detail":"report sent"}',
+    );
+    const done = { ...childRow({ state: 'done', status: undefined }) };
+    const { pid: _pid, ...exited } = done;
+    const s = snapshotOf(harness(fx.top, listing([exited]), configDir));
+    expect(s.children[0]).toMatchObject({
+      state: 'done',
+      hasPid: false,
+      detail: 'report sent',
+    });
   });
 
   test('two mains in one repository each list only their own worker', () => {

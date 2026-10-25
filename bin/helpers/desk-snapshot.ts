@@ -12,7 +12,7 @@ import type {
   DeskWaiting,
 } from '../../plugin/hooks/desk/contract.js';
 import { DESK_VERSION } from '../../plugin/hooks/desk/contract.js';
-import type { JobState } from './desk-jobs.js';
+import type { JobState, JobStates } from './desk-jobs.js';
 import type { WorkerRecord } from './worker-record.js';
 
 /** One listing row, parsed leniently: every field optional, values kept raw. */
@@ -45,14 +45,13 @@ export interface SnapshotInput {
   facts: ReadonlyMap<string, ChildFacts>;
   /** SessionIds whose transcript changed within the freshness window. */
   freshInteractive: ReadonlySet<string>;
-  /** Keyed by listing row id. */
-  jobs: ReadonlyMap<string, JobState>;
+  /** Reads job state for the rows the snapshot draws: the current ones, and the rows of this main's children. */
+  readJobs: (rows: ListingRow[]) => JobStates;
   /** The caller's sessionId: its row becomes `self`, and it chooses the children. */
   self?: string;
   /** The caller's main checkout folder name; absent outside a repository. */
   repo?: string;
   warnings: string[];
-  paneWarnings: string[];
 }
 
 type Class = 'waiting' | 'finished' | 'neither';
@@ -302,31 +301,44 @@ function mainNames(
 
 // A record whose row is the caller's own session is left out with it. With a
 // caller, only its own workers and those of no main are children.
-function joinChildren(
+interface OwnRecord {
+  record: WorkerRecord;
+  row: ListingRow | undefined;
+}
+
+function ownRecords(
   input: SnapshotInput,
   selfRow: ListingRow | undefined,
-): JoinedChild[] {
+): OwnRecord[] {
   const names = mainNames(input.self, selfRow);
   const isMine = (record: WorkerRecord): boolean =>
     input.self === undefined ||
     record.main === null ||
     names.includes(record.main);
-  const joined = input.records
+  return input.records
     .filter(isMine)
     .map((record) => ({ record, row: joinRow(record, input.rows) }))
     .filter(
       ({ row }) => input.self === undefined || row?.sessionId !== input.self,
-    )
-    .map(({ record, row }) =>
+    );
+}
+
+function joinChildren(
+  own: OwnRecord[],
+  input: SnapshotInput,
+  jobs: ReadonlyMap<string, JobState>,
+): JoinedChild[] {
+  return orderChildren(
+    own.map(({ record, row }) =>
       joinChild(
         record,
         row,
         input.facts.get(record.name),
         input.freshInteractive,
-        input.jobs,
+        jobs,
       ),
-    );
-  return orderChildren(joined);
+    ),
+  );
 }
 
 function otherOf(
@@ -350,7 +362,14 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
     input.self === undefined
       ? undefined
       : input.rows.find((row) => row.sessionId === input.self);
-  const children = joinChildren(input, selfRow);
+  const own = ownRecords(input, selfRow);
+  // A done child has no pid, so it is not current, yet its row is drawn.
+  const ownRows = new Set(own.flatMap(({ row }) => (row ? [row] : [])));
+  const read = input.readJobs(
+    input.rows.filter((row) => isCurrent(row) || ownRows.has(row)),
+  );
+  const jobs = read.states;
+  const children = joinChildren(own, input, jobs);
   const childRows = new Set(children.flatMap(({ row }) => (row ? [row] : [])));
   const others = input.rows
     .filter((row) => isCurrent(row) && !childRows.has(row))
@@ -359,7 +378,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
   const self =
     selfRow === undefined
       ? undefined
-      : otherOf(selfRow, classify(selfRow, input.freshInteractive), input.jobs);
+      : otherOf(selfRow, classify(selfRow, input.freshInteractive), jobs);
   const considered = [...childRows, ...others.map(({ row }) => row)];
   const warnings = [
     ...new Set([...input.warnings, ...considered.flatMap(rowWarnings)]),
@@ -367,7 +386,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
   const waitingOthers: DeskWaiting[] = others
     .filter(({ classified }) => classified.class === 'waiting')
     .map(({ row, classified }) => ({
-      ...sessionOf(row, input.jobs),
+      ...sessionOf(row, jobs),
       name: displayName(row),
       repo: repoOf(row.cwd),
       reason: classified.reason ?? 'waiting',
@@ -385,11 +404,9 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
     children: children.map(({ child }) => child),
     finished: others.filter(({ classified }) => classified.class === 'finished')
       .length,
-    others: others.map(({ row, classified }) =>
-      otherOf(row, classified, input.jobs),
-    ),
+    others: others.map(({ row, classified }) => otherOf(row, classified, jobs)),
     warnings,
-    paneWarnings: input.paneWarnings,
+    paneWarnings: read.warnings,
     sessionIds: [
       ...new Set(input.rows.flatMap(({ sessionId }) => sessionId ?? [])),
     ],

@@ -1750,11 +1750,13 @@ function mainNames(self, selfRow) {
     self.slice(0, ID_PREFIX_LENGTH)
   ];
 }
-function joinChildren(input, selfRow) {
+function ownRecords(input, selfRow) {
   const names = mainNames(input.self, selfRow);
   const isMine = (record2) => input.self === undefined || record2.main === null || names.includes(record2.main);
-  const joined = input.records.filter(isMine).map((record2) => ({ record: record2, row: joinRow(record2, input.rows) })).filter(({ row }) => input.self === undefined || row?.sessionId !== input.self).map(({ record: record2, row }) => joinChild(record2, row, input.facts.get(record2.name), input.freshInteractive, input.jobs));
-  return orderChildren(joined);
+  return input.records.filter(isMine).map((record2) => ({ record: record2, row: joinRow(record2, input.rows) })).filter(({ row }) => input.self === undefined || row?.sessionId !== input.self);
+}
+function joinChildren(own, input, jobs) {
+  return orderChildren(own.map(({ record: record2, row }) => joinChild(record2, row, input.facts.get(record2.name), input.freshInteractive, jobs)));
 }
 function otherOf(row, classified, jobs) {
   const reason5 = classified.reason ?? row.waitingFor;
@@ -1769,16 +1771,20 @@ function otherOf(row, classified, jobs) {
 }
 function buildSnapshot(input) {
   const selfRow = input.self === undefined ? undefined : input.rows.find((row) => row.sessionId === input.self);
-  const children = joinChildren(input, selfRow);
+  const own = ownRecords(input, selfRow);
+  const ownRows = new Set(own.flatMap(({ row }) => row ? [row] : []));
+  const read = input.readJobs(input.rows.filter((row) => isCurrent(row) || ownRows.has(row)));
+  const jobs = read.states;
+  const children = joinChildren(own, input, jobs);
   const childRows = new Set(children.flatMap(({ row }) => row ? [row] : []));
   const others = input.rows.filter((row) => isCurrent(row) && !childRows.has(row)).filter((row) => input.self === undefined || row.sessionId !== input.self).map((row) => ({ row, classified: classify(row, input.freshInteractive) }));
-  const self = selfRow === undefined ? undefined : otherOf(selfRow, classify(selfRow, input.freshInteractive), input.jobs);
+  const self = selfRow === undefined ? undefined : otherOf(selfRow, classify(selfRow, input.freshInteractive), jobs);
   const considered = [...childRows, ...others.map(({ row }) => row)];
   const warnings = [
     ...new Set([...input.warnings, ...considered.flatMap(rowWarnings)])
   ];
   const waitingOthers = others.filter(({ classified }) => classified.class === "waiting").map(({ row, classified }) => ({
-    ...sessionOf(row, input.jobs),
+    ...sessionOf(row, jobs),
     name: displayName(row),
     repo: repoOf(row.cwd),
     reason: classified.reason ?? "waiting",
@@ -1795,9 +1801,9 @@ function buildSnapshot(input) {
     ],
     children: children.map(({ child }) => child),
     finished: others.filter(({ classified }) => classified.class === "finished").length,
-    others: others.map(({ row, classified }) => otherOf(row, classified, input.jobs)),
+    others: others.map(({ row, classified }) => otherOf(row, classified, jobs)),
     warnings,
-    paneWarnings: input.paneWarnings,
+    paneWarnings: read.warnings,
     sessionIds: [
       ...new Set(input.rows.flatMap(({ sessionId }) => sessionId ?? []))
     ]
@@ -2975,11 +2981,9 @@ function takeSnapshot(denv, self) {
   const { rows } = listing;
   const transcripts = transcriptFinder(denv.configDir);
   const children = readAndPruneChildren(denv, rows, transcripts.find);
-  const jobs = readJobStates(denv.configDir, rows.filter(isCurrent));
   return buildSnapshot({
     rows,
-    jobs: jobs.states,
-    paneWarnings: jobs.warnings,
+    readJobs: (drawn) => readJobStates(denv.configDir, drawn),
     records: children.records,
     facts: children.facts,
     freshInteractive: freshSessions(rows, transcripts.find, denv.now()),
