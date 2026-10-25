@@ -54,14 +54,14 @@ interface PublishState {
   limit: number | undefined;
   // The main loop's activity line; undefined before any turn, and in a turn before its first tool call.
   activity: string | undefined;
-  // Main-loop turns started, so a turn's late end cannot overwrite the next turn's activity.
+  // Bumped at each main-loop turn start and each session end, so a turn's late end cannot set what follows it.
   turns: number;
   isPublishing: boolean;
   queued: PublishKind | undefined;
   written: PublishedSession | undefined;
   self: SelfFacts | undefined;
-  // Sessions whose end deleted their key: a publish under way must not write it back.
-  ended: Set<string>;
+  // The session the latest end closed. A return to an earlier one follows another end, which moves this on.
+  lastEnded: string | undefined;
 }
 
 function reasonOf(error: unknown): string {
@@ -232,8 +232,9 @@ async function publishOnce(
     state.written !== undefined &&
     sameKey(state.written, key);
   if (isUnchanged) return;
-  // Checked just before the write is issued, so a delete issued earlier stands.
-  if (state.ended.has(sessionId)) return;
+  // Checked just before the write is issued: a publish under way across an
+  // end, or a start still settling, must not write the ended key back.
+  if (sessionId === state.lastEnded) return;
   const written = await settle($.store.set(keyOf(sessionId), key));
   if ('reason' in written) {
     logLine($, `writing the key failed: ${written.reason}`);
@@ -317,28 +318,40 @@ async function measured($: EngineInterface, state: PublishState) {
 
 // A failed clock read leaves the activity out rather than guess the time.
 async function endTurn($: EngineInterface, state: PublishState) {
-  const turn = state.turns;
-  const now = await settle($.clock.now());
-  if (state.turns !== turn) return;
-  if ('reason' in now) {
-    logLine($, `reading the time failed: ${now.reason}`);
-    state.activity = undefined;
-  } else {
-    state.activity = idleText(now.value);
+  try {
+    const turn = state.turns;
+    const now = await settle($.clock.now());
+    if (state.turns !== turn) return;
+    if ('reason' in now) {
+      logLine($, `reading the time failed: ${now.reason}`);
+      state.activity = undefined;
+    } else {
+      state.activity = idleText(now.value);
+    }
+  } catch (error) {
+    logLine($, `turn.complete failed: ${reasonOf(error)}`);
   }
   await requestPublish($, state, 'change');
 }
 
+// The end is recorded before the start check, so a start still settling does
+// not publish the session that ended. The next session begins with no activity.
 async function endSession(
   $: EngineInterface,
   state: PublishState,
   sessionId: string,
 ): Promise<void> {
+  state.lastEnded = sessionId;
+  state.activity = undefined;
+  state.turns += 1;
   if (!state.isStarted) return;
-  state.ended.add(sessionId);
-  const deleted = await settle($.store.delete(keyOf(sessionId)));
-  if ('reason' in deleted) {
-    logLine($, `deleting the key failed: ${deleted.reason}`);
+  try {
+    const deleted = await settle($.store.delete(keyOf(sessionId)));
+    if ('reason' in deleted) {
+      logLine($, `deleting the key failed: ${deleted.reason}`);
+    }
+  } catch (error) {
+    logLine($, `session.end failed: ${reasonOf(error)}`);
   }
 }
 
@@ -361,7 +374,7 @@ export function registerPublish(on: On): void {
     queued: undefined,
     written: undefined,
     self: undefined,
-    ended: new Set(),
+    lastEnded: undefined,
   };
 
   // The engine refuses a second `session.start` hook without a matcher, and

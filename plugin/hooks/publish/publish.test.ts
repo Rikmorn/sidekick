@@ -53,6 +53,10 @@ type World = {
   /** What the session command answers, whose `--self` it was asked about. */
   answerFor: (sessionId: string) => RunAnswer;
   refused: Set<'store.set' | 'session.id'>;
+  /** While set, the agent list answers only once it settles, holding a publish in flight. */
+  agentsHold?: Promise<void>;
+  /** While set, the settings answer only once it settles, holding every start. */
+  settingsHold?: Promise<void>;
 };
 
 // What the plugin asked of the engine.
@@ -153,9 +157,10 @@ function answerTheStore(on: On, world: World, seen: Seen): void {
 
 function answerTheSession(on: On, world: World): void {
   mock.env(on, world.env);
-  on('settings.read', (_$, e) => ({
-    value: e.source === 'flag' ? world.flag : {},
-  }));
+  on('settings.read', async (_$, e) => {
+    await world.settingsHold;
+    return { value: e.source === 'flag' ? world.flag : {} };
+  });
   on('session.id', () =>
     world.refused.has('session.id')
       ? { deny: REFUSAL }
@@ -174,7 +179,10 @@ function answerTheSession(on: On, world: World): void {
     };
     return { value: { startedAt: 0, context, rateLimits: [] } };
   });
-  on('agent.list', () => ({ value: world.agents }));
+  on('agent.list', async () => {
+    await world.agentsHold;
+    return { value: world.agents };
+  });
 }
 
 // Nothing sits beneath the test's hooks but the kit's own bottom, so they
@@ -259,7 +267,7 @@ async function ended(
   $: Engine,
   clock: MockClock,
   sessionId: string,
-  reason: 'clear' | 'other',
+  reason: 'clear' | 'resume' | 'other',
 ) {
   await $.session.end({ reason, sessionId, resume: { id: sessionId } });
   await clock.settle();
@@ -442,17 +450,74 @@ test('after /clear the old key goes, and the new id publishes its own at its nex
   expect(keyIn(seen, SECOND)?.name).toBeUndefined();
 });
 
-test('after /clear with no event, the heartbeat publishes the new id with its own name', async ($, on) => {
+test('after /clear with no event, the heartbeat publishes the new id with its own name and no activity', async ($, on) => {
   const world = worldWith();
   const { seen, clock } = answerBeneath(on, world);
   await started($, clock);
+  await turnStarted($, clock);
+  await $.tool.call({ tool: 'Bash', command: 'ls' });
+  await turnCompleted($, clock);
+  expect(keyIn(seen, FIRST)?.activity).toBe('idle since 09:30');
   await ended($, clock, FIRST, 'clear');
   world.sessionId = SECOND;
   await clock.advance(HEARTBEAT_MS);
   expect(seen.store.has(keyOf(FIRST))).toBe(false);
   expect(keyIn(seen, SECOND)?.name).toBe('name of session-2');
+  expect(keyIn(seen, SECOND)?.activity).toBeUndefined();
   expect(seen.runs).toEqual([FIRST, SECOND]);
   expect(seen.selves.at(-1)).toMatchObject({ name: 'name of session-2' });
+});
+
+test('a publish in flight across session.end writes nothing after the delete', async ($, on) => {
+  const world = worldWith();
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  const writes = seen.sets.length;
+  let release = () => {};
+  world.agentsHold = new Promise((resolve) => {
+    release = resolve;
+  });
+  await $.tool.call({ tool: 'Bash', command: 'ls' });
+  await clock.settle();
+  await ended($, clock, FIRST, 'other');
+  expect(seen.deletes).toEqual([keyOf(FIRST)]);
+  release();
+  await clock.settle();
+  expect(seen.sets).toHaveLength(writes);
+  expect(seen.store.has(keyOf(FIRST))).toBe(false);
+});
+
+test('a return to a session that ended earlier publishes its key again', async ($, on) => {
+  const world = worldWith();
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await ended($, clock, FIRST, 'clear');
+  world.sessionId = SECOND;
+  await turnStarted($, clock);
+  expect(keyIn(seen, SECOND)).toMatchObject({ sessionId: SECOND });
+  await ended($, clock, SECOND, 'resume');
+  world.sessionId = FIRST;
+  await turnStarted($, clock);
+  expect(keyIn(seen, FIRST)).toMatchObject({ sessionId: FIRST });
+  expect(seen.store.has(keyOf(SECOND))).toBe(false);
+});
+
+test('an end while the start still settles leaves no key, and deletes nothing', async ($, on) => {
+  const world = worldWith();
+  const { seen, clock } = answerBeneath(on, world);
+  await $.classic.SessionStart({ source: 'startup' });
+  let release = () => {};
+  world.settingsHold = new Promise((resolve) => {
+    release = resolve;
+  });
+  const start = $.session.start(START);
+  await clock.settle();
+  await ended($, clock, FIRST, 'other');
+  release();
+  await start;
+  await clock.settle();
+  expect(seen.sets).toEqual([]);
+  expect(seen.deletes).toEqual([]);
 });
 
 test('a process with no surface, as the tab after ← is, publishes nothing more', async ($, on) => {
