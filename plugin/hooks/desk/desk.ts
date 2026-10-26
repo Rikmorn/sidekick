@@ -23,6 +23,7 @@ import type {
   ThemeKey,
 } from 'claude-code';
 import { PANE_ROWS, registerOwned } from '../commands';
+import { firstLine, reasonOf, type Settled, settle } from '../failures';
 import type { PublishedSession } from '../publish/contract';
 import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
@@ -72,32 +73,8 @@ interface Published {
   now: number;
 }
 
-// A call that rejected gives its reason instead of its value.
-type Settled<T> = { value: T } | { reason: string };
-
 function failure(error: string): DeskSnapshot {
   return { version: DESK_VERSION, ok: false, error };
-}
-
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function firstLine(text: string): string | undefined {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line !== '');
-}
-
-// A tick runs outside any hook, so the engine skips nothing for it: each call
-// a tick makes that can reject is settled here.
-async function settle<T>(call: Promise<T>): Promise<Settled<T>> {
-  try {
-    return { value: await call };
-  } catch (error) {
-    return { reason: reasonOf(error) };
-  }
 }
 
 // A run rejects when it cannot start, a plugin refuses it, or it outlasts its

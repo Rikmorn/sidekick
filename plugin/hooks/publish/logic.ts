@@ -4,6 +4,7 @@
 
 import type { AgentInfo } from 'claude-code';
 import { clockText } from '../board/logic';
+import { firstLine } from '../failures';
 import { cut, width } from '../lines';
 import type { Role } from '../role';
 import type { SelfFacts } from '../state';
@@ -43,12 +44,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function firstLine(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  return value
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line !== '');
+function firstLineOf(value: unknown): string | undefined {
+  return typeof value === 'string' ? firstLine(value) : undefined;
 }
 
 /** The facts the identity row reads: no field is set to undefined, since state takes JSON data. */
@@ -88,12 +85,12 @@ function fitted(text: string, columns: number, isPath: boolean): string {
 /** The activity line for a main-loop tool call: `<Tool>: <target>`, the target from `file_path`, else `command`'s first line, else `description`, else `pattern`; the tool's name alone without one. */
 export function activityOf(tool: string, args: unknown): string {
   const fields = isRecord(args) ? args : {};
-  const path = firstLine(fields.file_path);
+  const path = firstLineOf(fields.file_path);
   const target =
     path ??
-    firstLine(fields.command) ??
-    firstLine(fields.description) ??
-    firstLine(fields.pattern);
+    firstLineOf(fields.command) ??
+    firstLineOf(fields.description) ??
+    firstLineOf(fields.pattern);
   const lead = `${tool}: `;
   const room = ACTIVITY_COLUMNS - width(lead);
   if (target === undefined || room <= width(ELLIPSIS)) {

@@ -12,9 +12,11 @@
 // store, and calls `next(e)` once. Only `session.end` awaits its delete, within
 // the bound the engine sets on the session's end.
 
-import type { EngineInterface, On, ProcessRunResult } from 'claude-code';
+import type { EngineInterface, On } from 'claude-code';
+import { reasonOf, settle } from '../failures';
 import { limitInputs, limitOf, profileOf } from '../gauge/logic';
-import { parseSessionAnswer, RUN_TIMEOUT_MS } from '../name/contract';
+import { sessionCheckOf } from '../name/check';
+import { RUN_TIMEOUT_MS } from '../name/contract';
 import { type Role, settleRole } from '../role';
 import type { SelfFacts } from '../state';
 import { HEARTBEAT_MS, keyOf, type PublishedSession } from './contract';
@@ -29,13 +31,6 @@ import {
 } from './logic';
 
 const SELF = { plugin: 'sidekick', key: 'self' } as const;
-const MS_PER_SECOND = 1_000;
-
-// A call that rejected gives its reason instead of its value.
-type Settled<T> = { value: T } | { reason: string };
-
-// One name check: the listing's name, null when it gives none, or why there is no answer.
-type NameCheck = { name: string | null } | { failure: string };
 
 // A publish asked for while one runs: `force` writes the key even unchanged.
 type PublishKind = 'change' | 'force';
@@ -67,48 +62,8 @@ interface PublishState {
   lastEnded: string | undefined;
 }
 
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function logLine($: EngineInterface, text: string): void {
   $.ui.log(`sidekick publish: ${text}`, { to: 'debug' });
-}
-
-function firstLine(text: string): string | undefined {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line !== '');
-}
-
-async function settle<T>(call: Promise<T>): Promise<Settled<T>> {
-  try {
-    return { value: await call };
-  } catch (error) {
-    return { reason: reasonOf(error) };
-  }
-}
-
-// A run rejects when it cannot start, a plugin refuses it, or it outlasts its
-// timeout. The declarations give no way to tell which, so the line names both.
-function nameCheckOf(ran: Settled<ProcessRunResult>): NameCheck {
-  if ('reason' in ran) {
-    const seconds = RUN_TIMEOUT_MS / MS_PER_SECOND;
-    return {
-      failure: `the session command did not start, or did not finish within ${seconds} s: ${ran.reason}`,
-    };
-  }
-  const { exitCode, stdout, stderr } = ran.value;
-  if (exitCode !== 0) {
-    const exited = `the session command exited ${exitCode}`;
-    const detail = firstLine(stderr);
-    return { failure: detail === undefined ? exited : `${exited}: ${detail}` };
-  }
-  const answer = parseSessionAnswer(stdout);
-  return answer === undefined
-    ? { failure: 'the session command printed no answer' }
-    : { name: answer.name };
 }
 
 // No surface means the process runs on as agent view's tab after `←`, no
@@ -148,14 +103,15 @@ async function checkName(
   const sessionId = id.value;
   const cli = `${$.plugin.root}/bin/sidekick`;
   const argv = [cli, 'session', '--json', '--self', sessionId];
-  const check = nameCheckOf(
+  const check = sessionCheckOf(
     await settle($.process.run(argv, { timeoutMs: RUN_TIMEOUT_MS })),
   );
   if ('failure' in check) {
     logLine($, check.failure);
     return;
   }
-  if (check.name !== null) state.name = { sessionId, name: check.name };
+  const { name } = check.answer;
+  if (name !== null) state.name = { sessionId, name };
 }
 
 // The breakdown estimates every category, so the limit is read at the start,

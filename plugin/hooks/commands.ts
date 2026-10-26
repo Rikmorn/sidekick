@@ -1,4 +1,5 @@
 import type { CommandSpec, EngineInterface } from 'claude-code';
+import { reasonOf } from './failures';
 
 /** The `rows` every sidekick pane asks for at its open: the engine caps a request at what the layout spares, and an inline frame fits its tree. */
 export const PANE_ROWS = 1_000;
@@ -13,7 +14,7 @@ export async function registerOwned(
     await $.command.register({ ...spec, immediate: true });
     return true;
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = reasonOf(error);
     $.ui.log(`sidekick ${tag}: /${spec.name} not registered: ${reason}`, {
       to: 'debug',
     });

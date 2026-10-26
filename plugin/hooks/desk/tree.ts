@@ -1,6 +1,7 @@
 // The desk's tree, pure: merges each snapshot row with its session's live
 // published key, and orders the sessions the pane draws.
 
+import { firstLine } from '../failures';
 import {
   isIdleActivity,
   isLive,
@@ -161,11 +162,8 @@ function doingOf(
 }
 
 // Text from outside may hold a question or a report; a row is one line.
-function firstLine(text: string | undefined): string | undefined {
-  return text
-    ?.split('\n')
-    .map((line) => line.trim())
-    .find((line) => line !== '');
+function firstLineOf(text: string | undefined): string | undefined {
+  return text === undefined ? undefined : firstLine(text);
 }
 
 function workOf(
@@ -174,13 +172,13 @@ function workOf(
   doing: (string | undefined)[],
 ): string | undefined {
   const lines = status.kind === 'needs' ? [waits, ...doing] : doing;
-  return lines.map(firstLine).find((line) => line !== undefined);
+  return lines.map(firstLineOf).find((line) => line !== undefined);
 }
 
 function subagentsOf(key: PublishedSession | undefined): Subagent[] {
   return (key?.subagents ?? []).map((subagent) => ({
     ...subagent,
-    description: firstLine(subagent.description) ?? '',
+    description: firstLineOf(subagent.description) ?? '',
   }));
 }
 

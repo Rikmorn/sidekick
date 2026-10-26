@@ -8,6 +8,7 @@
 // log, and calls `next(e)` once whatever happened.
 
 import type { EngineInterface, On } from 'claude-code';
+import { reasonOf } from './failures';
 
 /** A session's one role: a `main` keeps sidekick's views, a `worker` points back to its main, and `other` keeps them off. */
 export type Role =
@@ -24,10 +25,6 @@ const tracker: { forked: boolean; role: Role | undefined } = {
   forked: false,
   role: undefined,
 };
-
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function logFailure($: EngineInterface, what: string, error: unknown): void {
   $.ui.log(`sidekick role: ${what} failed: ${reasonOf(error)}`, {

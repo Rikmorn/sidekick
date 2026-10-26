@@ -14,6 +14,7 @@
 // the engine names a hook it skips.
 
 import type { EngineInterface, On } from 'claude-code';
+import { reasonOf } from '../failures';
 import { HINT_INSET } from '../lines';
 import { type Role, settleRole } from '../role';
 import type { SelfFacts } from '../state';
@@ -24,7 +25,7 @@ import { identityRuns, limitInputs, limitValue } from './logic';
 const SELF = { plugin: 'sidekick', key: 'self' } as const;
 
 function logFailure($: EngineInterface, hook: string, error: unknown): void {
-  const reason = error instanceof Error ? error.message : String(error);
+  const reason = reasonOf(error);
   $.ui.log(`sidekick gauge: ${hook} failed: ${reason}`, { to: 'debug' });
 }
 

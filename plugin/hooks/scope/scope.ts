@@ -9,6 +9,7 @@
 
 import type { EngineInterface, On, RenderElement, ThemeKey } from 'claude-code';
 import { PANE_ROWS, registerOwned } from '../commands';
+import { reasonOf } from '../failures';
 import { profileOf } from '../gauge/logic';
 import { cut, scrollHint } from '../lines';
 import {
@@ -40,10 +41,6 @@ interface Loaded {
   hidden: Hidden;
   usage: UsageRead;
   places: Places;
-}
-
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function logFailure($: EngineInterface, hook: string, error: unknown): void {

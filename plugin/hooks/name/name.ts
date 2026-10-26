@@ -10,22 +10,15 @@
 // so each hook here keeps its own failures, which go to the debug log, and
 // calls `next(e)` once.
 
-import type { EngineInterface, On, ProcessRunResult } from 'claude-code';
+import type { EngineInterface, On } from 'claude-code';
+import { reasonOf, settle } from '../failures';
 import { type Role, settleRole } from '../role';
-import {
-  parseSessionAnswer,
-  RUN_TIMEOUT_MS,
-  type SessionAnswer,
-} from './contract';
+import { sessionCheckOf } from './check';
+import { RUN_TIMEOUT_MS, type SessionAnswer } from './contract';
 import { isLaunch, renameCommand, verdictOf } from './logic';
 
 /** How long after a check its rename waits: the timer takes `$.command.run` out of the hook, which may not call it, and the call then queues until the session is idle. */
 export const RENAME_DELAY_MS = 500;
-
-const MS_PER_SECOND = 1_000;
-
-// A call that rejected gives its reason instead of its value.
-type Settled<T> = { value: T } | { reason: string };
 
 // One check: the command's answer, or why there is none.
 type Checked = { answer: SessionAnswer } | { failure: string };
@@ -42,27 +35,8 @@ interface NameState {
   isDone: boolean;
 }
 
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function logLine($: EngineInterface, text: string): void {
   $.ui.log(`sidekick name: ${text}`, { to: 'debug' });
-}
-
-function firstLine(text: string): string | undefined {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line !== '');
-}
-
-async function settle<T>(call: Promise<T>): Promise<Settled<T>> {
-  try {
-    return { value: await call };
-  } catch (error) {
-    return { reason: reasonOf(error) };
-  }
 }
 
 // The `tool_input.command` of a Bash call, when it holds a string.
@@ -74,27 +48,6 @@ function commandOf(input: unknown): string | undefined {
   return typeof command === 'string' ? command : undefined;
 }
 
-// A run rejects when it cannot start, a plugin refuses it, or it outlasts its
-// timeout. The declarations give no way to tell which, so the line names both.
-function checkedOf(ran: Settled<ProcessRunResult>): Checked {
-  if ('reason' in ran) {
-    const seconds = RUN_TIMEOUT_MS / MS_PER_SECOND;
-    return {
-      failure: `the session command did not start, or did not finish within ${seconds} s: ${ran.reason}`,
-    };
-  }
-  const { exitCode, stdout, stderr } = ran.value;
-  if (exitCode !== 0) {
-    const exited = `the session command exited ${exitCode}`;
-    const detail = firstLine(stderr);
-    return { failure: detail === undefined ? exited : `${exited}: ${detail}` };
-  }
-  const answer = parseSessionAnswer(stdout);
-  return answer === undefined
-    ? { failure: 'the session command printed no answer' }
-    : { answer };
-}
-
 // The session id is read at each check: /clear starts a new one with no
 // `session.start` after it.
 async function checkSession($: EngineInterface): Promise<Checked> {
@@ -104,7 +57,7 @@ async function checkSession($: EngineInterface): Promise<Checked> {
   }
   const cli = `${$.plugin.root}/bin/sidekick`;
   const argv = [cli, 'session', '--json', '--self', self.value];
-  return checkedOf(
+  return sessionCheckOf(
     await settle($.process.run(argv, { timeoutMs: RUN_TIMEOUT_MS })),
   );
 }
