@@ -4,7 +4,8 @@ import { cut, hiddenRows, scrollHint, scrollKeys, width } from '../lines';
 import type { PublishedSession } from '../publish/contract';
 import { cutRow, rowWidth, type StyledRow, type StyledRun } from '../styled';
 import type { DeskSnapshot } from './contract';
-import { needYouText, type PaneEntry, treeEntries } from './rows';
+import { needYouText, type PaneEntry } from './look';
+import { treeEntries } from './rows';
 import { deskTree } from './tree';
 
 export type Tone = 'waiting' | 'working' | 'muted' | 'failure';

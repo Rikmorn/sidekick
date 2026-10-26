@@ -508,10 +508,10 @@ test('after a refused register the desk still runs and ticks, one debug line nam
   expect(drawn.map((line) => line.text)).toEqual([BENEATH]);
 });
 
-// P3: asked 56, the dock opens 56 wide unless the operator kept a width of their own.
-const DOCK = { focus: undefined, rows: PANE_ROWS, columns: 56 };
+// P3: asked 40, the dock opens 40 wide unless the operator kept a width of their own.
+const DOCK = { focus: undefined, rows: PANE_ROWS, columns: 40 };
 
-test('/desk opens asking for the room its tree needs and a dock 56 wide, without the keys', async ($, on) => {
+test('/desk opens asking for the room its tree needs and a dock 40 wide, without the keys', async ($, on) => {
   const { seen, clock } = answerBeneath(on, worldWith(printed(QUIET)));
   await started($, clock);
   await runDeskCommand($);
@@ -553,7 +553,8 @@ test('a desk pane taller than its body leads with the scroll hint, muted, and a 
   });
   expect(tall.rows).toHaveLength(count + 1);
   expect((await mount(count - 1, true)).rows[0]).toBe('+2 rows · ↓ to scroll');
-  expect((await mount(count - 1, false, 10)).rows[0]).toBe('+2 rows · ');
+  const narrow = expectedRows(WORKERS, 10).length;
+  expect((await mount(narrow - 1, false, 10)).rows[0]).toBe('+2 rows · ');
   const fits = await mount(count, false);
   expect(fits.rows).toEqual(expectedRows(WORKERS, 200));
   expect(fits.wraps).toEqual(fits.wraps.map(() => 'truncate-end'));
@@ -771,7 +772,7 @@ test('with nothing to show the band is what lies beneath alone', async ($, on) =
 test('the desk pane draws its tree fitted to the pane body', async ($, on) => {
   const { clock } = answerBeneath(on, worldWith(printed(WORKERS)));
   await started($, clock);
-  for (const columns of [24, 56, 100]) {
+  for (const columns of [24, 40, 56, 100]) {
     const expected = expectedRows(WORKERS, columns);
     for (const surface of SURFACES) {
       expect(await drawnPane($, surface, paneProps(columns))).toEqual(expected);

@@ -317,6 +317,14 @@ const TREE_KEYS = keysOf(
 const cell = (text: string, cells: number) =>
   text + ' '.repeat(cells - width(text));
 
+// A row of `columns` with `left` at its start and `right` flush against its end.
+const spread = (left: string, right: string, columns: number) =>
+  left + ' '.repeat(columns - width(left) - width(right)) + right;
+
+// A repo's header, ruled to the end of a row of `columns`.
+const header = (repo: string, columns: number) =>
+  `─ ${repo} ${'─'.repeat(columns - width(repo) - 3)}`;
+
 test('from 80 columns each session takes one row, as the L1 inline plate', () => {
   const rows = paneRows(TREE, TREE_KEYS, 100, NOW).map(plain);
   expect(rows).toEqual([
@@ -324,74 +332,126 @@ test('from 80 columns each session takes one row, as the L1 inline plate', () =>
       cell('□', 2) +
       cell('odin-review', 15) +
       cell('needs you', 11) +
-      cell('which branch should I review?', 44) +
+      cell('which branch should I review?', 41) +
       cell('     odin', 14) +
-      '▰▰▰▰▱  176k',
+      '▰▰▰▰  176k/88%',
     `${cell('▣ todo-app-ce', 20)}this main${' '.repeat(62)}2 workers`,
     cell('├', 3) +
       cell('◐', 2) +
       cell('add-greeting', 15) +
       cell('working', 11) +
-      cell('Task 2 of 3', 44) +
+      cell('Task 2 of 3', 41) +
       cell('', 14) +
-      '▰▰▰▰▱  156k',
+      '▰▰▰▰  156k/78%',
     `${cell('│  └', 5)}${cell('◦ Explore', 18)}find callers of greet`,
     cell('└', 3) +
       cell('✓', 2) +
       cell('p7-desk', 15) +
       cell('done', 11) +
-      cell('report sent', 44) +
+      cell('report sent', 41) +
       cell('⇡2', 14) +
-      '       140k',
+      '140k'.padStart(14),
     '',
     cell('', 3) +
       cell('□', 2) +
       cell('pm-main', 15) +
       cell('idle', 11) +
-      cell('', 44) +
+      cell('', 41) +
       cell('     sidekick', 14) +
-      '▰▱▱▱▱  120k',
+      '▰▱▱▱  120k/12%',
   ]);
 });
 
-test('below 80 columns each session takes two rows, head then work, as the L1 docked plate', () => {
-  const rows = paneRows(TREE, TREE_KEYS, 60, NOW).map(plain);
-  expect(rows).toEqual([
-    `${cell('□', 2)}${cell('odin-review', 15)}${cell('needs you', 12)}${cell('odin', 11)}▰▰▰▰▱  176k`,
-    '      which branch should I review?',
-    `${cell('▣ todo-app-ce', 19)}2 workers`,
-    `${cell('├', 2)}${cell('◐', 2)}${cell('add-greeting', 15)}${cell('working', 12)}${cell('', 9)}▰▰▰▰▱  156k`,
-    '│     Task 2 of 3',
-    `│     └ ${cell('◦ Explore', 11)}find callers of greet`,
-    `${cell('└', 2)}${cell('✓', 2)}${cell('p7-desk', 15)}${cell('done', 12)}${cell('⇡2', 9)}       140k`,
-    '      report sent',
-    '',
-    `${cell('□', 2)}${cell('pm-main', 15)}${cell('idle', 12)}${cell('sidekick', 11)}▰▱▱▱▱  120k`,
+test('below 80 columns the pane stacks: a group per repo, each session a head row and a detail row, its icon its state', () => {
+  for (const columns of [60, 40]) {
+    expect(paneRows(TREE, TREE_KEYS, columns, NOW).map(plain)).toEqual([
+      header('odin', columns),
+      spread('● odin-review', '▰▰▰▰  176k/88%', columns),
+      '  which branch should I review?',
+      header('sidekick', columns),
+      spread('▣ todo-app-ce', '2 workers', columns),
+      spread('├ ◐ add-greeting', '▰▰▰▰  156k/78%', columns),
+      '│ │ Task 2 of 3',
+      '│ └ ◐ Explore',
+      '│     find callers of greet',
+      spread('└ ✓ p7-desk ⇡2', '140k', columns),
+      '    report sent',
+      spread('○ pm-main', '▰▱▱▱  120k/12%', columns),
+      '  idle',
+    ]);
+  }
+});
+
+test('stacked, a question reads in the warning tone, a worker by name in bold, a subagent by type in suggestion', () => {
+  const rows = paneRows(TREE, TREE_KEYS, 60, NOW);
+  expect(rows[0]).toEqual([
+    { text: '─ ', tone: 'subtle' },
+    { text: 'odin', tone: 'inactive', bold: true },
+    { text: ` ${'─'.repeat(53)}`, tone: 'subtle' },
   ]);
+  expect(runOf(rows[1], '●')?.tone).toBe('warning');
+  expect(runOf(rows[1], 'odin-review')).toEqual({
+    text: 'odin-review',
+    tone: 'text',
+  });
+  expect(runOf(rows[2], 'which branch should I review?')?.tone).toBe('warning');
+  expect(rows[4]?.[0]).toEqual({
+    text: '▣ todo-app-ce',
+    tone: 'claude',
+    bold: true,
+  });
+  expect(runOf(rows[5], 'add-greeting')).toEqual({
+    text: 'add-greeting',
+    tone: 'text',
+    bold: true,
+  });
+  expect(runOf(rows[6], 'Task 2 of 3')?.tone).toBe('inactive');
+  expect(runOf(rows[7], '◐')?.tone).toBe('suggestion');
+  expect(runOf(rows[7], 'Explore')?.tone).toBe('suggestion');
+  expect(runOf(rows[8], 'find callers of greet')).toEqual({
+    text: 'find callers of greet',
+    tone: 'inactive',
+    italic: true,
+  });
+  expect(runOf(rows[12], 'idle')?.tone).toBe('inactive');
 });
 
-test('below 40 columns each session takes its head row alone, cut from its end', () => {
-  expect(paneRows(TREE, TREE_KEYS, 24, NOW).map(plain)).toEqual([
-    '□ odin-review    needs y',
-    '▣ todo-app-ce',
-    '├ ◐ add-greeting   worki',
-    '└ ✓ p7-desk        done',
-    '',
-    '□ pm-main        idle',
+test("stacked, a session's profile stands at the right of its detail row while the detail keeps 12 columns", () => {
+  const snap = snapshot({
+    self: SELF,
+    children: [child({ name: 'add-greeting', sessionId: 'add' })],
+    others: [
+      other({ name: 'pm-main', sessionId: 'pm', repo: 'sidekick' }),
+      other({ name: 'bench', sessionId: 'bench', repo: 'sidekick' }),
+    ],
+  });
+  const keys = keysOf(
+    key({
+      sessionId: 'add',
+      profile: 'worker-opus',
+      activity: 'Edit: plugin/hooks/desk/rows.ts',
+    }),
+    key({ sessionId: 'pm', role: 'main', profile: 'main' }),
+  );
+  const rows = (columns: number) =>
+    paneRows(snap, keys, columns, NOW).map(plain);
+  expect(rows(40)).toEqual([
+    header('sidekick', 40),
+    spread('▣ todo-app-ce', '1 worker', 40),
+    '└ ◐ add-greeting',
+    spread('    Edit: plugin/hooks/desk/', 'worker-opus', 40),
+    '○ pm-main',
+    spread('  idle', 'main', 40),
+    '○ bench',
+    '  idle',
   ]);
+  expect(rows(28)[3]).toBe(spread('    Edit: plugin', 'worker-opus', 28));
+  expect(rows(27)[3]).toBe('    Edit: plugin/hooks/desk');
+  const detail = paneRows(snap, keys, 40, NOW)[3];
+  expect(runOf(detail, 'worker-opus')?.tone).toBe('subtle');
 });
 
-test('subagent rows draw from 40 columns and not below, where the head stands alone', () => {
-  const hasSubagent = (columns: number) =>
-    paneRows(TREE, TREE_KEYS, columns, NOW)
-      .map(plain)
-      .some((row) => row.includes('Explore'));
-  expect(hasSubagent(24)).toBe(false);
-  expect(hasSubagent(39)).toBe(false);
-  expect(hasSubagent(40)).toBe(true);
-});
-
-test('no row is wider than its columns, and only the gap row is empty', () => {
+test('no row is wider than its columns; inline only the gap row is empty, and stacked from 24 columns none is', () => {
   const withWarnings = {
     ...TREE,
     warnings: ['a warning'],
@@ -400,7 +460,9 @@ test('no row is wider than its columns, and only the gap row is empty', () => {
   for (const snap of [TREE, withWarnings]) {
     for (let columns = 1; columns <= 130; columns += 1) {
       const rows = paneRows(snap, TREE_KEYS, columns, NOW);
-      expect(rows.filter((row) => row.length === 0)).toHaveLength(1);
+      const empty = rows.filter((row) => row.length === 0);
+      if (columns >= 80) expect(empty).toHaveLength(1);
+      if (columns >= 24 && columns < 80) expect(empty).toHaveLength(0);
       for (const row of rows) {
         expect(width(plain(row))).toBeLessThanOrEqual(columns);
         expect(row.filter((run) => run.text === '')).toEqual([]);
@@ -548,21 +610,21 @@ test("another main's workers draw under it with the tree's glyphs, – and dim, 
       cell('□', 2) +
       cell('demo-main', 15) +
       cell('working', 11) +
-      cell('Edit: a.ts', 44) +
+      cell('Edit: a.ts', 41) +
       '     demo',
     cell('', 3) +
       cell('├', 3) +
       cell('–', 2) +
       cell('wait-perm', 12) +
       cell('needs you', 11) +
-      cell('approve Read: x', 44) +
+      cell('approve Read: x', 41) +
       '     demo',
     cell('', 3) +
       cell('└', 3) +
       cell('–', 2) +
       cell('fan-out', 12) +
       cell('working', 11) +
-      cell('', 44) +
+      cell('', 41) +
       '     demo',
     `${cell('', 6)}└ ${cell('◦ Explore', 18)}find callers of greet`,
     `${cell('▣ todo-app-ce', 20)}this main`,
@@ -572,22 +634,23 @@ test("another main's workers draw under it with the tree's glyphs, – and dim, 
   expect(runOf(worker, 'wait-perm')).toMatchObject({ tone: 'text', dim: true });
 });
 
-test("docked, another main's workers hang from a trunk under its icon, and below 40 columns their heads stand alone", () => {
+test("stacked, another main's workers hang from it, waiting first, and their subagents from them", () => {
   expect(paneRows(NESTED, NESTED_KEYS, 60, NOW).map(plain)).toEqual([
-    `${cell('□', 2)}${cell('demo-main', 15)}${cell('working', 12)}demo`,
-    `${cell('│', 6)}Edit: a.ts`,
-    `${cell('├', 2)}${cell('–', 2)}${cell('wait-perm', 13)}${cell('needs you', 12)}demo`,
-    `${cell('│', 6)}approve Read: x`,
-    `${cell('└', 2)}${cell('–', 2)}${cell('fan-out', 13)}${cell('working', 12)}demo`,
-    `${cell('', 6)}└ ${cell('◦ Explore', 11)}find callers of greet`,
+    header('demo', 60),
+    '◐ demo-main',
+    '│ Edit: a.ts',
+    '├ ● wait-perm',
+    '│   approve Read: x',
+    '└ ◐ fan-out',
+    '  │ working',
+    '  └ ◐ Explore',
+    '      find callers of greet',
+    header('sidekick', 60),
     '▣ todo-app-ce',
   ]);
-  expect(paneRows(NESTED, NESTED_KEYS, 24, NOW).map(plain)).toEqual([
-    '□ demo-main      working',
-    '├ – wait-perm    needs y',
-    '└ – fan-out      working',
-    '▣ todo-app-ce',
-  ]);
+  const rows = paneRows(NESTED, NESTED_KEYS, 60, NOW);
+  expect(runOf(rows[3], '●')?.tone).toBe('warning');
+  expect(runOf(rows[4], 'approve Read: x')?.tone).toBe('warning');
 });
 
 test("a main's own subagents hang from its trunk before its workers", () => {
@@ -609,17 +672,22 @@ test("a main's own subagents hang from its trunk before its workers", () => {
   });
   expect(paneRows(snap, keys, 100, NOW).map(plain).slice(3, 5)).toEqual([
     `${cell('', 3)}├ ${cell('◦ Explore', 18)}find callers of greet`,
-    `${cell('', 3)}${cell('└', 3)}${cell('–', 2)}${cell('fan-out', 12)}${cell('idle', 11)}${cell('', 44)}     demo`,
+    `${cell('', 3)}${cell('└', 3)}${cell('–', 2)}${cell('fan-out', 12)}${cell('idle', 11)}${cell('', 41)}     demo`,
   ]);
-  expect(paneRows(snap, keys, 60, NOW).map(plain).slice(2, 6)).toEqual([
-    `${cell('□', 2)}${cell('demo-main', 15)}${cell('idle', 12)}demo`,
-    `${cell('│', 6)}Edit: a.ts`,
-    `${cell('│', 6)}└ ${cell('◦ Explore', 11)}find callers of greet`,
-    `${cell('└', 2)}${cell('–', 2)}${cell('fan-out', 13)}${cell('idle', 12)}demo`,
+  expect(paneRows(snap, keys, 60, NOW).map(plain)).toEqual([
+    header('sidekick', 60),
+    '▣ todo-app-ce',
+    header('demo', 60),
+    '○ demo-main',
+    '│ Edit: a.ts',
+    '├ ◐ Explore',
+    '│   find callers of greet',
+    '└ ○ fan-out',
+    '    idle',
   ]);
 });
 
-test('each session draws at most three subagent rows, then ◦ +N more, inactive', () => {
+test('each session draws at most three subagents, then one row that counts the rest, inactive', () => {
   const five = ['a', 'b', 'c', 'd', 'e'].map((type) => ({
     type,
     description: `${type} task`,
@@ -647,34 +715,51 @@ test('each session draws at most three subagent rows, then ◦ +N more, inactive
     subagent('   ', '├', 'c', 18),
     '   └ ◦ +1 more',
     '',
-    `${cell('', 3)}${cell('–', 2)}${cell('bench', 15)}${cell('idle', 11)}${cell('', 44)}     other`,
+    `${cell('', 3)}${cell('–', 2)}${cell('bench', 15)}${cell('idle', 11)}${cell('', 41)}     other`,
     subagent('   ', '├', 'a', 18),
     subagent('   ', '├', 'b', 18),
     subagent('   ', '├', 'c', 18),
     '   └ ◦ +2 more',
   ]);
-  const docked = paneRows(snap, keys, 60, NOW);
-  expect(docked.map(plain).slice(-4)).toEqual([
-    subagent('      ', '├', 'a', 11),
-    subagent('      ', '├', 'b', 11),
-    subagent('      ', '├', 'c', 11),
-    '      └ ◦ +2 more',
+  const stacked = paneRows(snap, keys, 60, NOW);
+  expect(stacked.map(plain)).toEqual([
+    header('sidekick', 60),
+    spread('▣ todo-app-ce', '1 worker', 60),
+    '└ ◐ add-greeting',
+    '  │ working',
+    '  ├ ◐ a',
+    '  │   a task',
+    '  ├ ◐ b',
+    '  │   b task',
+    '  ├ ◐ c',
+    '  │   c task',
+    '  └ +1 more',
+    header('other', 60),
+    '○ bench',
+    '│ idle',
+    '├ ◐ a',
+    '│   a task',
+    '├ ◐ b',
+    '│   b task',
+    '├ ◐ c',
+    '│   c task',
+    '└ +2 more',
   ]);
-  expect(runOf(docked.at(-1), '◦ +2 more')?.tone).toBe('inactive');
+  expect(runOf(stacked.at(-1), '+2 more')?.tone).toBe('inactive');
 });
 
-test('docked, a context bar that does not fit whole drops, and its tokens stay when they fit', () => {
-  const head = `${cell('□', 2)}${cell('odin-review', 15)}${cell('needs you', 12)}${cell('odin', 11)}`;
-  const first = (columns: number) =>
-    plain(paneRows(TREE, TREE_KEYS, columns, NOW)[0] ?? []);
-  expect(first(51)).toBe(`${head}▰▰▰▰▱  176k`);
-  expect(first(45)).toBe(`${head} 176k`);
-  expect(first(44)).toBe(`${head}176k`);
-  expect(first(43)).toBe(head.trimEnd());
+test('stacked, the context keeps its bar while the name keeps 8 columns, then its text alone, then gives way', () => {
+  const head = (columns: number) =>
+    plain(paneRows(TREE, TREE_KEYS, columns, NOW)[1] ?? []);
+  expect(head(40)).toBe(spread('● odin-review', '▰▰▰▰  176k/88%', 40));
+  expect(head(25)).toBe('● odin-rev ▰▰▰▰  176k/88%');
+  expect(head(24)).toBe('● odin-rev      176k/88%');
+  expect(head(19)).toBe('● odin-rev 176k/88%');
+  expect(head(18)).toBe('● odin-review');
   for (let columns = 1; columns < 80; columns += 1) {
     for (const row of paneRows(TREE, TREE_KEYS, columns, NOW)) {
       const cells = plain(row).match(/[▰▱]/g) ?? [];
-      expect(cells.length === 0 || cells.length === 5).toBe(true);
+      expect(cells.length === 0 || cells.length === 4).toBe(true);
     }
   }
 });
@@ -698,10 +783,14 @@ test('the root count drops its needs-you phrase whole, then its workers, rather 
     ],
   });
   const root = (columns: number) =>
-    plain(paneRows(snap, new Map(), columns, NOW)[0] ?? []);
-  expect(root(60)).toBe(`${cell('▣ todo-app-ce', 19)}3 workers · 1 needs you`);
-  expect(root(32)).toBe(`${cell('▣ todo-app-ce', 19)}3 workers`);
-  expect(root(27)).toBe('▣ todo-app-ce');
+    paneRows(snap, new Map(), columns, NOW)
+      .map(plain)
+      .find((row) => row.startsWith('▣'));
+  expect(root(100)).toEndWith('3 workers · 1 needs you');
+  expect(root(60)).toBe(spread('▣ todo-app-ce', '3 workers · 1 needs you', 60));
+  expect(root(32)).toBe(spread('▣ todo-app-ce', '3 workers', 32));
+  expect(root(24)).toBe('▣ todo-app-ce  3 workers');
+  expect(root(23)).toBe('▣ todo-app-ce');
 });
 
 test('a session that needs you reads ● needs you on a child and needs you elsewhere, in the warning tone', () => {
@@ -750,27 +839,29 @@ const barAt = (percent: number): StyledRow | undefined => {
   return paneRows(snap, keys, 100, NOW)[1];
 };
 
-test('the context bar takes inactive below 65%, warning from 65%, claude from 75%, and error from 85%', () => {
+test('the context bar lights a cell per 25%, green below 65%, then warning, claude, and error; its text is inactive below 65%, then the same', () => {
   const expected = [
-    { percent: 64, tone: 'inactive', filled: 3, tokens: '128k' },
-    { percent: 65, tone: 'warning', filled: 3, tokens: '130k' },
-    { percent: 75, tone: 'claude', filled: 4, tokens: '150k' },
-    { percent: 85, tone: 'error', filled: 4, tokens: '170k' },
+    { percent: 40, lit: 2, bar: 'success', tone: 'inactive', text: '80k/40%' },
+    { percent: 64, lit: 3, bar: 'success', tone: 'inactive', text: '128k/64%' },
+    { percent: 65, lit: 3, bar: 'warning', tone: 'warning', text: '130k/65%' },
+    { percent: 75, lit: 3, bar: 'claude', tone: 'claude', text: '150k/75%' },
+    { percent: 85, lit: 4, bar: 'error', tone: 'error', text: '170k/85%' },
   ];
-  for (const { percent, tone, filled, tokens } of expected) {
-    const row = barAt(percent);
-    expect(row?.slice(-3)).toEqual([
-      { text: '▰'.repeat(filled), tone },
-      { text: '▱'.repeat(5 - filled), tone: 'subtle' },
-      { text: ` ${tokens}`.padStart(6), tone },
-    ]);
+  for (const { percent, lit, bar, tone, text } of expected) {
+    const runs = [
+      { text: '▰'.repeat(lit), tone: bar },
+      ...(lit < 4 ? [{ text: '▱'.repeat(4 - lit), tone: 'subtle' }] : []),
+      { text: ` ${text.padStart(9)}`, tone },
+    ];
+    expect(barAt(percent)?.slice(-runs.length)).toEqual(runs);
   }
 });
 
-test('a full bar has no empty cells, and an empty one no filled cells', () => {
-  expect(plain(barAt(100) ?? [])).toEndWith('▰▰▰▰▰  200k');
-  expect(barAt(100)?.at(-2)?.text).toBe('▰▰▰▰▰');
-  expect(plain(barAt(0) ?? [])).toEndWith('▱▱▱▱▱     0');
+test('a full bar has no empty cells, and an empty one no lit cells', () => {
+  expect(plain(barAt(100) ?? [])).toEndWith('▰▰▰▰ 200k/100%');
+  expect(barAt(100)?.at(-2)?.text).toBe('▰▰▰▰');
+  expect(plain(barAt(0) ?? [])).toEndWith('▱▱▱▱      0/0%');
+  expect(plain(barAt(0) ?? [])).not.toContain('▰');
 });
 
 test('with no published limit the tokens stand alone, inactive', () => {
@@ -781,7 +872,7 @@ test('with no published limit the tokens stand alone, inactive', () => {
     NOW,
   );
   expect(rows[1]?.at(-1)).toEqual({
-    text: '31k'.padStart(11),
+    text: '31k'.padStart(14),
     tone: 'inactive',
   });
   expect(plain(rows[1] ?? [])).not.toMatch(/[▰▱]/);
@@ -826,6 +917,97 @@ test('a subagent row names its type in suggestion, then its description, italic 
     { text: cell('│  └', 5), tone: 'subtle' },
     { text: cell('◦ Explore', 18), tone: 'suggestion' },
     { text: 'find callers of greet', tone: 'inactive', italic: true },
+  ]);
+});
+
+test("stacked, a subagent's icon is its state: ◐ running, ● waiting, ○ pending", () => {
+  const subagents = ['running', 'waiting', 'pending'].map((status) => ({
+    type: status,
+    description: '',
+    status,
+  }));
+  const snap = snapshot({
+    self: SELF,
+    children: [child({ name: 'a', sessionId: 'a' })],
+  });
+  const rows = paneRows(
+    snap,
+    keysOf(key({ sessionId: 'a', subagents })),
+    40,
+    NOW,
+  );
+  expect(rows.slice(4).map(plain)).toEqual([
+    '  ├ ◐ running',
+    '  ├ ● waiting',
+    '  └ ○ pending',
+  ]);
+  expect(rows.slice(4).map((row) => row[1]?.tone)).toEqual([
+    'suggestion',
+    'warning',
+    'inactive',
+  ]);
+});
+
+test('stacked, a state word its icon cannot say leads the detail row, and stands alone without work', () => {
+  const rows = (detail?: string) =>
+    paneRows(
+      snapshot({
+        self: SELF,
+        children: [
+          child({
+            name: 'g',
+            state: 'gone',
+            hasPid: false,
+            ...(detail === undefined ? {} : { detail }),
+          }),
+        ],
+      }),
+      new Map(),
+      40,
+      NOW,
+    );
+  expect(rows('report sent').slice(2).map(plain)).toEqual([
+    '└ ○ g',
+    '    gone · report sent',
+  ]);
+  expect(runOf(rows('report sent')[3], 'gone ·')?.tone).toBe('inactive');
+  expect(rows().slice(2).map(plain)).toEqual(['└ ○ g', '    gone']);
+});
+
+test("stacked, another repo with a session that needs you comes first, then this repo's waiting sessions, this main, and the rest", () => {
+  const wait = (name: string, repo: string) => ({
+    hasPid: true,
+    name,
+    repo,
+    reason: 'permission prompt',
+    child: false,
+  });
+  const snap = snapshot({
+    self: SELF,
+    waiting: [wait('w-main', 'beta'), wait('s-wait', 'sidekick')],
+    children: [child({ name: 'kid' })],
+    others: [
+      other({ name: 'a-main', repo: 'alpha' }),
+      other({ name: 's-other', repo: 'sidekick' }),
+      other({ name: 'w-main', repo: 'beta', state: 'waiting' }),
+      other({ name: 's-wait', repo: 'sidekick', state: 'waiting' }),
+    ],
+  });
+  expect(paneRows(snap, new Map(), 60, NOW).map(plain)).toEqual([
+    header('beta', 60),
+    '● w-main',
+    '  permission prompt',
+    header('sidekick', 60),
+    '● s-wait',
+    '  permission prompt',
+    spread('▣ todo-app-ce', '1 worker', 60),
+    '└ ◐ kid',
+    '    working',
+    '○ s-other',
+    '  idle',
+    header('alpha', 60),
+    '○ a-main',
+    '  idle',
   ]);
 });
 
@@ -901,13 +1083,12 @@ test('with no needs-you row hidden the hint reads as the shared scroll hint', ()
 });
 
 // Only a session's head counts: its work line names no one new.
-test('at 24 docked columns the hint counts each hidden needs-you head once', () => {
-  const docked = paneEntries(CROWD, new Map(), 24, NOW);
-  expect(docked).toHaveLength(14);
-  expect(hiddenNeeds(docked, 11)).toBe(3);
-  const twoRows = paneEntries(CROWD, new Map(), 60, NOW);
-  expect(twoRows).toHaveLength(27);
-  expect(hiddenNeeds(twoRows, 11)).toBe(8);
+test('stacked, the hint counts each hidden needs-you head once, not its detail row', () => {
+  for (const columns of [24, 60]) {
+    const stacked = paneEntries(CROWD, new Map(), columns, NOW);
+    expect(stacked).toHaveLength(29);
+    expect(hiddenNeeds(stacked, 11)).toBe(8);
+  }
 });
 
 test('hasChildren is true only for an ok snapshot with children', () => {

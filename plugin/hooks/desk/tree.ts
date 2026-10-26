@@ -38,6 +38,8 @@ export interface TreeSession {
   /** One line: what it needs while it waits, else what it is doing. */
   work?: string;
   context?: Context;
+  /** The profile its live key names. */
+  profile?: string;
 }
 
 /** A session that is neither this main nor one of its workers. */
@@ -61,6 +63,7 @@ export interface TreeChild extends TreeSession {
 
 export interface TreeRoot {
   name?: string;
+  repo?: string;
   workers: number;
   needYou: number;
 }
@@ -189,6 +192,10 @@ function contextOf(
   return tokens === undefined ? undefined : { used: tokens };
 }
 
+function profileOf(key: PublishedSession | undefined): { profile?: string } {
+  return key?.profile === undefined ? {} : { profile: key.profile };
+}
+
 // Absent fields stay absent, so a row compares and prints as it reads.
 function sessionOf(
   name: string,
@@ -223,6 +230,7 @@ function childOf(
       workOf(status, waitText(child, entry), doing),
       contextOf(key, child.tokens),
     ),
+    ...profileOf(key),
     unintegrated: child.unintegrated,
     uncommitted: child.uncommitted,
     subagents: subagentsOf(key),
@@ -254,6 +262,7 @@ function otherOf(
       workOf(status, waitText(other, entry), doing),
       contextOf(key, undefined),
     ),
+    ...profileOf(key),
     repo: other.repo,
     isMain: key?.role === 'main',
     subagents: subagentsOf(key),
@@ -323,10 +332,12 @@ export function deskTree(
     snapshot.others.map((other) => otherOf(other, snapshot.waiting, keys, now)),
   );
   const name = snapshot.self?.name;
+  const { repo } = snapshot;
   return {
     waiting: elsewhere.filter(needsYou),
     root: {
       ...(name === undefined ? {} : { name }),
+      ...(repo === undefined ? {} : { repo }),
       workers: children.length,
       needYou: children.filter((child) => child.status.kind === 'needs').length,
     },

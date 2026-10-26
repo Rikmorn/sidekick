@@ -44,15 +44,15 @@ import {
   sameSnapshot,
   type Tone,
 } from './logic';
-import type { PaneEntry } from './rows';
+import type { PaneEntry } from './look';
 import { liveKeys } from './tree';
 
 /** The period of the desk's run. Why 10 s: the footer's own waiting count refreshes on the same cadence. */
 export const TICK_MS = 10_000;
 
 const PANE = { id: 'desk', title: 'Desk' };
-// Room for the docked form's rows. A width the operator kept wins (P3 in docs/research/control-centre/2026-10-25-desk-pane-probes.md).
-const DOCK_COLUMNS = 56;
+// The stacked form's width. A width the operator kept wins (P3 in docs/research/control-centre/2026-10-25-desk-pane-probes.md).
+const DOCK_COLUMNS = 40;
 const OPEN = { ...PANE, rows: PANE_ROWS, columns: DOCK_COLUMNS };
 const COMMAND = { name: 'desk', description: 'Show or hide the desk pane' };
 const MS_PER_SECOND = 1_000;

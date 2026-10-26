@@ -109,7 +109,12 @@ test('a waiting session elsewhere sorts above this main, and draws once', () => 
   expect(tree.waiting.map((session) => session.name)).toEqual(['odin-review']);
   expect(tree.waiting[0]?.status).toEqual({ kind: 'needs' });
   expect(tree.others.map((session) => session.name)).toEqual(['pm-main']);
-  expect(tree.root).toEqual({ name: 'todo-app-ce', workers: 0, needYou: 0 });
+  expect(tree.root).toEqual({
+    name: 'todo-app-ce',
+    repo: 'todo-app',
+    workers: 0,
+    needYou: 0,
+  });
 });
 
 test('a waiting child sorts first among its siblings, then working, then the rest', () => {
@@ -135,7 +140,12 @@ test('a waiting child sorts first among its siblings, then working, then the res
     { kind: 'working' },
     { kind: 'done' },
   ]);
-  expect(tree.root).toEqual({ name: 'todo-app-ce', workers: 3, needYou: 1 });
+  expect(tree.root).toEqual({
+    name: 'todo-app-ce',
+    repo: 'todo-app',
+    workers: 3,
+    needYou: 1,
+  });
 });
 
 test('a child in the waiting list needs the operator whatever its state word', () => {
@@ -202,6 +212,42 @@ test("a live key gives a child its activity, context, and subagents, and another
     isMain: true,
     work: 'idle since 14:02',
   });
+});
+
+test('a live key gives each session its profile; a session with no key, or a key with none, has no profile', () => {
+  const tree = deskTree(
+    snapshot({
+      children: [
+        child({ name: 'add-greeting', sessionId: 'add' }),
+        child({ name: 'p7-desk', sessionId: 'p7' }),
+      ],
+      others: [
+        other({ name: 'pm-main', sessionId: 'pm' }),
+        other({ name: 'bench', sessionId: 'bench' }),
+      ],
+    }),
+    keysOf(
+      key({ sessionId: 'add', profile: 'worker' }),
+      key({ sessionId: 'p7' }),
+      key({ sessionId: 'pm', role: 'main', profile: 'main' }),
+    ),
+    NOW,
+  );
+  expect(tree.children.map((session) => session.profile)).toEqual([
+    'worker',
+    undefined,
+  ]);
+  expect(tree.children[1]).not.toHaveProperty('profile');
+  expect(tree.others.map((session) => session.profile)).toEqual([
+    'main',
+    undefined,
+  ]);
+});
+
+test("the root carries the snapshot's repo, which the docked form heads this main's group with", () => {
+  expect(deskTree(snapshot(), new Map(), NOW).root.repo).toBe('todo-app');
+  const { repo: _repo, ...bare } = snapshot();
+  expect(deskTree(bare, new Map(), NOW).root).not.toHaveProperty('repo');
 });
 
 // Review Focus 1: a crashed session's key must not draw running subagents or a stale activity.
@@ -645,6 +691,7 @@ test("the CLI's fallback reason words read as no reason, so the work line falls 
 test('the root reads no name when the snapshot has no self row', () => {
   const { self: _self, ...rest } = snapshot();
   expect(deskTree(rest, new Map(), NOW).root).toEqual({
+    repo: 'todo-app',
     workers: 0,
     needYou: 0,
   });
