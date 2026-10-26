@@ -2,7 +2,7 @@
 
 import type { ThemeKey } from 'claude-code';
 import { branchAt, trunkOf } from '../leads';
-import { cut, width, wrapRows } from '../lines';
+import { cut, fit, width, wrapRows } from '../lines';
 import { cutRow, rowWidth, type StyledRow, type StyledRun } from '../styled';
 import type {
   BoardGlance,
@@ -14,7 +14,7 @@ import type {
   PaneRow,
   PaneWeight,
 } from './contract';
-import { stateLook } from './view';
+import { type BoardView, refreshFailed, stateLook } from './view';
 
 export interface PaneInput {
   board: BoardGlance['board'];
@@ -25,7 +25,6 @@ export interface PaneInput {
   stamp: string;
 }
 
-const ELLIPSIS = '…';
 const INDENT = '  ';
 const RULE = '─';
 // A repo name cut shorter than this says nothing, so the board link drops instead.
@@ -77,12 +76,6 @@ const PROSE_LOOKS = {
     text: Partial<StyledRun> & { tone: ThemeKey };
   }
 >;
-
-// `text` within `room` columns, ending in an ellipsis when cut.
-function fit(text: string, room: number): string {
-  if (room <= 0) return '';
-  return width(text) <= room ? text : `${cut(text, room - 1)}${ELLIPSIS}`;
-}
 
 function run(
   text: string,
@@ -268,4 +261,29 @@ export function fitPane(input: PaneInput, columns: number): StyledRow[] {
     stampRow(input.stamp, room),
   ];
   return rows.map((row) => cutRow(row, room));
+}
+
+/** The rows the board pane draws for `view` at `columns`: none when empty, the tree and its stamp when ok or stale, and the failure worded in `error` when failed. */
+export function boardPaneRows(view: BoardView, columns: number): StyledRow[] {
+  switch (view.state) {
+    case 'empty':
+      return [];
+    case 'failed':
+      return wrapRows(`⚠ board: ${view.reason}`, columns).map((text) => [
+        run(text, 'error'),
+      ]);
+    case 'ok':
+    case 'stale': {
+      const { board, milestone, state, pane } = view.glance;
+      const stamp =
+        view.state === 'ok'
+          ? `as of ${view.takenAt}`
+          : refreshFailed(view.failedAt);
+      return fitPane({ board, milestone, state, pane, stamp }, columns);
+    }
+    default: {
+      const exhaustive: never = view;
+      throw new Error(`Unhandled view: ${JSON.stringify(exhaustive)}`);
+    }
+  }
 }

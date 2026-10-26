@@ -1,8 +1,13 @@
 import { expect, test } from 'claude-code/testing';
 import { width } from '../lines';
 import { rowWidth, type StyledRow } from '../styled';
-import type { GlancePane, PaneNode } from './contract';
-import { fitPane, type PaneInput } from './pane';
+import {
+  type BoardGlance,
+  GLANCE_VERSION,
+  type GlancePane,
+  type PaneNode,
+} from './contract';
+import { boardPaneRows, fitPane, type PaneInput } from './pane';
 
 const BOARD = {
   owner: 'Rikmorn',
@@ -404,5 +409,41 @@ test('the full pane has no blank row', () => {
   for (const columns of [100, 53, 40, 24]) {
     const rows = fitPane(input(), columns);
     expect(rows.every((row) => text(row).trim() !== '')).toBe(true);
+  }
+});
+
+const GLANCE: BoardGlance = {
+  version: GLANCE_VERSION,
+  board: BOARD,
+  milestone: 'R9',
+  state: STATE,
+  pane: PANE,
+};
+
+test('boardPaneRows: an empty view has no rows', () => {
+  expect(boardPaneRows({ state: 'empty' }, 60)).toEqual([]);
+});
+
+test('boardPaneRows: an ok view ends in the as-of stamp', () => {
+  const rows = boardPaneRows(
+    { state: 'ok', glance: GLANCE, takenAt: '09:41' },
+    60,
+  );
+  expect(text(rows.at(-1) ?? [])).toContain('as of 09:41');
+});
+
+test('boardPaneRows: a stale view ends in the refresh-failed stamp', () => {
+  const rows = boardPaneRows(
+    { state: 'stale', glance: GLANCE, takenAt: '09:41', failedAt: '10:02' },
+    60,
+  );
+  expect(text(rows.at(-1) ?? [])).toContain('refresh failed 10:02');
+});
+
+test('boardPaneRows: a failed view is the reason wrapped, each row one run in error', () => {
+  const rows = boardPaneRows({ state: 'failed', reason: 'gh is down' }, 10);
+  expect(rows.map(text)).toEqual(['⚠ board:', 'gh is down']);
+  for (const row of rows) {
+    expect(row).toEqual([{ text: row[0]?.text, tone: 'error' }]);
   }
 });

@@ -1,6 +1,6 @@
 // The board's pure view: the state after each pickup run, and the one-row state line's segments and how they shed to fit.
 import type { ThemeKey } from 'claude-code';
-import { cut, width } from '../lines';
+import { cut, ELLIPSIS, fit, width } from '../lines';
 import type { BoardGlance, GlanceLevel, GlanceState } from './contract';
 import { GLANCE_COMPLETE_WORD, parseGlance } from './contract';
 import type { RunKind, RunOutcome } from './logic';
@@ -24,8 +24,6 @@ export const SEPARATOR = ' · ';
 
 // A cut milestone shorter than this says nothing, so it drops instead.
 const MIN_MILESTONE_KEPT = 6;
-
-const ELLIPSIS = '…';
 
 /** The tone each level draws in, on the line and in the pane's head row. */
 export const LEVEL_TONES: Record<GlanceLevel, ThemeKey> = {
@@ -114,9 +112,7 @@ function timeText(view: Extract<BoardView, { glance: BoardGlance }>): string {
 }
 
 function shortestMilestone(text: string): string {
-  return width(text) <= MIN_MILESTONE_KEPT + width(ELLIPSIS)
-    ? text
-    : `${cut(text, MIN_MILESTONE_KEPT)}${ELLIPSIS}`;
+  return fit(text, MIN_MILESTONE_KEPT + width(ELLIPSIS));
 }
 
 /** The fewest cells a row needs: its milestone, which the layout may cut, counted at its shortest. */

@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing';
 import {
   cut,
+  ELLIPSIS,
+  fit,
   hiddenRows,
   scrollHint,
   scrollKeys,
@@ -83,4 +85,15 @@ test('scrollHint counts its own row among the hidden ones', () => {
     '+2 rows · ctrl+x tab to focus, then ↓',
   );
   expect(scrollHint(12, 11, true)).toBe('+2 rows · ↓ to scroll');
+});
+
+test('fit keeps text that fits, and cuts the rest to the room with an ellipsis', () => {
+  expect(fit('abcd', 4)).toBe('abcd');
+  expect(fit('abcde', 4)).toBe(`abc${ELLIPSIS}`);
+});
+
+test('fit at room 1 keeps only the ellipsis, and at room 0 or less keeps nothing', () => {
+  expect(fit('abc', 1)).toBe(ELLIPSIS);
+  expect(fit('abc', 0)).toBe('');
+  expect(fit('abc', -2)).toBe('');
 });

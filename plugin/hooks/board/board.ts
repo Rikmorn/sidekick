@@ -28,11 +28,11 @@ import type {
 } from 'claude-code';
 import { DOCK_COLUMNS, PANE_ROWS, registerOwned } from '../commands';
 import { firstLine, reasonOf, type Settled, settle } from '../failures';
-import { cut, HINT_INSET, scrollHint, wrapRows } from '../lines';
+import { cut, HINT_INSET, scrollHint } from '../lines';
 import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
 import { rowElement } from '../styled';
-import { type BoardGlance, PICKUP_TIMEOUT_MS } from './contract';
+import { PICKUP_TIMEOUT_MS } from './contract';
 import {
   clockText,
   isBoardWrite,
@@ -40,14 +40,13 @@ import {
   type RunKind,
   type RunOutcome,
 } from './logic';
-import { fitPane } from './pane';
+import { boardPaneRows } from './pane';
 import {
   afterRun,
   type BoardView,
   failureOf,
   LEVEL_TONES,
   readRun,
-  refreshFailed,
   rowSegments,
   SEPARATOR,
   type Segment,
@@ -173,46 +172,13 @@ function textRow(text: string, color: ThemeKey): RenderElement {
   };
 }
 
-function treeRows(
-  view: Extract<BoardView, { glance: BoardGlance }>,
-  columns: number,
-): RenderElement[] {
-  const { glance } = view;
-  const stamp =
-    view.state === 'ok'
-      ? `as of ${view.takenAt}`
-      : refreshFailed(view.failedAt);
-  const { board, milestone, state, pane } = glance;
-  return fitPane({ board, milestone, state, pane, stamp }, columns).map(
-    rowElement,
-  );
-}
-
-function paneRowsOf(view: BoardView, columns: number): RenderElement[] {
-  switch (view.state) {
-    case 'empty':
-      return [];
-    case 'failed':
-      return wrapRows(`⚠ board: ${view.reason}`, columns).map((text) =>
-        textRow(text, 'error'),
-      );
-    case 'ok':
-    case 'stale':
-      return treeRows(view, columns);
-    default: {
-      const exhaustive: never = view;
-      throw new Error(`Unhandled view: ${JSON.stringify(exhaustive)}`);
-    }
-  }
-}
-
 function paneOf(
   view: BoardView,
   columns: number,
   bodyRows: number,
   isFocused: boolean,
 ): RenderElement {
-  const rows = paneRowsOf(view, columns);
+  const rows = boardPaneRows(view, columns).map(rowElement);
   const hint = scrollHint(rows.length, bodyRows, isFocused);
   const shown =
     hint === undefined

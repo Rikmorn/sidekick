@@ -5,7 +5,7 @@
 import type { AgentInfo } from 'claude-code';
 import { clockText } from '../board/logic';
 import { firstLine } from '../failures';
-import { cut, width } from '../lines';
+import { cut, ELLIPSIS, width } from '../lines';
 import type { Role } from '../role';
 import type { SelfFacts } from '../state';
 import {
@@ -26,8 +26,6 @@ const LIVE_STATUSES: ReadonlySet<string> = new Set([
   'pending',
   'waiting',
 ]);
-
-const ELLIPSIS = '…';
 
 /** What a session knows of itself when it publishes. */
 export interface SessionFacts {

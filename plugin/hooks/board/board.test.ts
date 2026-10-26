@@ -455,7 +455,13 @@ function rowText(runs: readonly Run[] | undefined): string {
   return (runs ?? []).map((run) => run.text).join('');
 }
 
-type PaneRow = { text: string; color: unknown; wrap: unknown; href?: string };
+type PaneRow = {
+  text: string;
+  color: unknown;
+  wrap: unknown;
+  href?: string;
+  runs?: Run[];
+};
 
 // A one-row Box with nothing in it is the pane's gap.
 function paneRowOf(node: RenderNode): PaneRow {
@@ -480,6 +486,7 @@ function paneRowOf(node: RenderNode): PaneRow {
     color: node.props?.color,
     wrap: node.props?.wrap,
     ...(href === undefined ? {} : { href }),
+    ...(node.type === 'Box' && runs.length === 1 ? { runs } : {}),
   };
 }
 
@@ -1141,11 +1148,14 @@ for (const failure of FAILURES) {
       UNDER,
       failureRow(failure.line),
     ]);
-    expect(await drawnPane($, 'terminal', 200)).toEqual([
+    // A row is a Box of Texts, so the tone is read off the run it holds.
+    const failed = await drawnPane($, 'terminal', 200);
+    expect(failed).toEqual([
       {
         text: expect.stringMatching(failure.line),
-        color: 'error',
-        wrap: TRUNCATE,
+        color: undefined,
+        wrap: undefined,
+        runs: [{ text: expect.stringMatching(failure.line), color: 'error' }],
       },
     ]);
   });

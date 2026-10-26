@@ -3,7 +3,7 @@
 
 import type { SessionContextBreakdown } from 'claude-code';
 import { UNPROFILED } from '../gauge/logic';
-import { cut, width } from '../lines';
+import { cut, ELLIPSIS, width } from '../lines';
 import { MOD_PARTS, type ModPart } from './contract';
 
 export interface Hidden {
@@ -84,7 +84,6 @@ interface Item {
 type Fit = (name: string, columns: number) => string;
 
 const GAP = '  ';
-const ELLIPSIS = '…';
 
 // A path's end names the file, so a path too long keeps its end.
 function keepEnd(text: string, columns: number): string {

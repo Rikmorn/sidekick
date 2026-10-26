@@ -8,9 +8,18 @@ export function width(text: string): number {
   return [...text].length;
 }
 
+/** The mark a cut text ends in. */
+export const ELLIPSIS = '…';
+
 /** The first `columns` code points of `text`, never splitting one. */
 export function cut(text: string, columns: number): string {
   return [...text].slice(0, columns).join('');
+}
+
+/** `text` within `room` columns, ending in an ellipsis when cut: room 1 keeps only the ellipsis, and room 0 or less keeps nothing. */
+export function fit(text: string, room: number): string {
+  if (room <= 0) return '';
+  return width(text) <= room ? text : `${cut(text, room - 1)}${ELLIPSIS}`;
 }
 
 /** The rows a plain line takes at `columns`: broken at the last space that fits after its indent, or hard where a word is longer. An empty line is one empty row; none below one column. No row after the first is blank or led by a space. */
