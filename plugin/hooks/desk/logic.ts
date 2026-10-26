@@ -1,8 +1,8 @@
 // The desk's pure logic: no engine calls, so the tests reach it directly.
 
-import { cut, hiddenRows, scrollHint, scrollKeys, width } from '../lines';
+import { fit, hiddenRows, scrollHint, scrollKeys, width } from '../lines';
 import type { PublishedSession } from '../publish/contract';
-import { cutRow, rowWidth, type StyledRow, type StyledRun } from '../styled';
+import { fitRow, rowWidth, type StyledRow, type StyledRun } from '../styled';
 import type { DeskSnapshot } from './contract';
 import { needYouText, type PaneEntry } from './look';
 import { treeEntries } from './rows';
@@ -47,7 +47,7 @@ function joined(entries: Entry[]): string {
     .join('');
 }
 
-// Whole entries first, then "+N more", then the bare cut text.
+// Whole entries first, then "+N more", then that text cut, ending in an ellipsis.
 function fitLine(prefix: string, entries: Entry[], columns: number): string {
   const head = padded(prefix);
   const all = head + joined(entries);
@@ -57,11 +57,11 @@ function fitLine(prefix: string, entries: Entry[], columns: number): string {
       head + joined(entries.slice(0, kept)) + moreSuffix(entries.length - kept);
     if (width(candidate) <= columns) return candidate;
   }
-  return cut(`${head}+${entries.length} more`, columns);
+  return fit(`${head}+${entries.length} more`, columns);
 }
 
 function failureLine(message: string, columns: number): Line {
-  return { tone: 'failure', text: cut(`⚠ desk: ${message}`, columns) };
+  return { tone: 'failure', text: fit(`⚠ desk: ${message}`, columns) };
 }
 
 function warningLines(snapshot: OkSnapshot, columns: number): Line[] {
@@ -99,7 +99,7 @@ function workersLines(snapshot: OkSnapshot, columns: number): Line[] {
   }
   if (snapshot.finished > 0) {
     return [
-      { tone: 'muted', text: cut(`${snapshot.finished} finished`, columns) },
+      { tone: 'muted', text: fit(`${snapshot.finished} finished`, columns) },
     ];
   }
   return [];
@@ -125,7 +125,7 @@ export function bandLines(snapshot: DeskSnapshot, columns: number): Line[] {
   ];
 }
 
-/** A failed run's one row in the pane, in the error tone, cut to `columns`. */
+/** A failed run's one row in the pane, in the error tone, within `columns` and ending in an ellipsis when cut. */
 export function failureRow(message: string, columns: number): StyledRow {
   return [{ text: failureLine(message, columns).text, tone: 'error' }];
 }
@@ -182,7 +182,7 @@ export function paneHint(
   const shared = scrollHint(entries.length, bodyRows, isFocused);
   if (shared === undefined) return undefined;
   const needs = hiddenNeeds(entries, bodyRows);
-  if (needs === 0) return [{ text: cut(shared, columns), tone: 'inactive' }];
+  if (needs === 0) return [{ text: fit(shared, columns), tone: 'inactive' }];
   const named: StyledRun[] = [
     {
       text: `+${hiddenRows(entries.length, bodyRows)} rows · `,
@@ -195,7 +195,7 @@ export function paneHint(
     tone: 'inactive',
   };
   const full = [...named, keys];
-  return cutRow(rowWidth(full) <= columns ? full : named, columns);
+  return fitRow(rowWidth(full) <= columns ? full : named, columns);
 }
 
 /** Whether two snapshots draw the same. */

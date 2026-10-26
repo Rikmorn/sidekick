@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing';
 import {
   cutRow,
+  fitRow,
   rowElement,
   rowWidth,
   type StyledRow,
@@ -106,4 +107,39 @@ test('cutRow keeps the href of the run it cuts', () => {
   expect(
     cutRow([{ text: 'board #9', tone: 'suggestion', href: 'u' }], 5),
   ).toEqual([{ text: 'board', tone: 'suggestion', href: 'u' }]);
+});
+
+test('fitRow draws a row that fits as cutRow draws it', () => {
+  expect(fitRow(ROW, 16)).toEqual(ROW);
+  expect(fitRow(ROW, 99)).toEqual(ROW);
+  expect(fitRow([{ text: '', tone: 'text' }, ...ROW], 99)).toEqual(ROW);
+  expect(fitRow([], 0)).toEqual([]);
+});
+
+test('fitRow ends a cut row in an ellipsis, in the style of the run the cut falls in', () => {
+  expect(fitRow(ROW, 7)).toEqual([
+    { text: '├  ', tone: 'subtle' },
+    { text: 'fix…', tone: 'text', bold: true },
+  ]);
+  expect(fitRow(ROW, 4)).toEqual([
+    { text: '├  ', tone: 'subtle' },
+    { text: '…', tone: 'text', bold: true },
+  ]);
+  expect(fitRow(ROW, 3)).toEqual([{ text: '├ …', tone: 'subtle' }]);
+  expect(fitRow([{ text: '', tone: 'text' }, ...ROW], 4)).toEqual([
+    { text: '├  ', tone: 'subtle' },
+    { text: '…', tone: 'text', bold: true },
+  ]);
+});
+
+test('fitRow keeps the ellipsis alone in one column, and nothing below one', () => {
+  expect(fitRow(ROW, 1)).toEqual([{ text: '…', tone: 'subtle' }]);
+  expect(fitRow(ROW, 0)).toEqual([]);
+  expect(fitRow(ROW, -4)).toEqual([]);
+});
+
+test('fitRow keeps the href of the run it cuts', () => {
+  expect(
+    fitRow([{ text: 'board #9', tone: 'suggestion', href: 'u' }], 5),
+  ).toEqual([{ text: 'boar…', tone: 'suggestion', href: 'u' }]);
 });

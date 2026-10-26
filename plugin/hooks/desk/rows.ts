@@ -2,9 +2,9 @@
 // session takes one row of aligned columns, as the L1 inline plate lays them
 // out; narrower, the pane takes the stacked form in `stacked.ts`.
 
-import { cut, width } from '../lines';
+import { fit, width } from '../lines';
 import {
-  cutRow,
+  fitRow,
   rowWidth,
   type StyledRow,
   type StyledRun,
@@ -61,7 +61,7 @@ function cell(
   columns: number,
   style: Omit<StyledRun, 'text'>,
 ): StyledRun {
-  const kept = cut(text, columns - 1);
+  const kept = fit(text, columns - 1);
   return { ...style, text: kept + ' '.repeat(columns - width(kept)) };
 }
 
@@ -259,8 +259,9 @@ export function treeEntries(tree: DeskTree, columns: number): PaneEntry[] {
     columns < ONE_ROW_COLUMNS
       ? stackedEntries(tree, columns)
       : inlineEntries(tree, columns);
+  // Trimmed before the fit, so only text past the end takes an ellipsis, never trailing spaces.
   return entries.map((entry) => ({
     ...entry,
-    row: trimRow(cutRow(entry.row, columns)),
+    row: fitRow(trimRow(entry.row), columns),
   }));
 }

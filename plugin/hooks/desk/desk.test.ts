@@ -554,7 +554,7 @@ test('a desk pane taller than its body leads with the scroll hint, muted, and a 
   expect(tall.rows).toHaveLength(count + 1);
   expect((await mount(count - 1, true)).rows[0]).toBe('+2 rows · ↓ to scroll');
   const narrow = expectedRows(WORKERS, 10).length;
-  expect((await mount(narrow - 1, false, 10)).rows[0]).toBe('+2 rows · ');
+  expect((await mount(narrow - 1, false, 10)).rows[0]).toBe('+2 rows ·…');
   const fits = await mount(count, false);
   expect(fits.rows).toEqual(expectedRows(WORKERS, 200));
   expect(fits.wraps).toEqual(fits.wraps.map(() => 'truncate-end'));

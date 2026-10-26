@@ -38,24 +38,31 @@ export function needYouText(count: number): string {
 }
 
 const THOUSAND = 1_000;
-const BAR_CELLS = 4;
-const PERCENT_PER_CELL = 100 / BAR_CELLS;
+// The first cell's tone, lit at any usage, and the number's under every level.
+const BELOW_LEVELS: ThemeKey = 'success';
+// Each further cell lights in its own tone once usage reaches its level. 65%
+// and 75% are where the context monitor warns; 85% leaves little room.
+const LEVELS: readonly { from: number; tone: ThemeKey }[] = [
+  { from: 65, tone: 'warning' },
+  { from: 75, tone: 'claude' },
+  { from: 85, tone: 'error' },
+];
+const BAR_CELLS = 1 + LEVELS.length;
 // Wide enough for `999k/100%`; a rarer `1234k/100%` takes one more.
 const CONTEXT_TEXT_COLUMNS = 9;
 
 /** The columns a context takes whole: the bar, a space, and the text, flush right. */
 export const CONTEXT_COLUMNS = BAR_CELLS + 1 + CONTEXT_TEXT_COLUMNS;
 
-// 65% and 75% are where the context monitor warns; 85% leaves little room.
-const LEVELS: readonly { from: number; text: ThemeKey; bar: ThemeKey }[] = [
-  { from: 85, text: 'error', bar: 'error' },
-  { from: 75, text: 'claude', bar: 'claude' },
-  { from: 65, text: 'warning', bar: 'warning' },
-];
-const BELOW_LEVELS = { text: 'inactive', bar: 'success' } as const;
-
-function levelOf(percent: number): { text: ThemeKey; bar: ThemeKey } {
-  return LEVELS.find(({ from }) => percent >= from) ?? BELOW_LEVELS;
+// The lit cells' tones in order, and the last one's, which the number takes.
+function levelOf(percent: number): { lit: ThemeKey[]; tone: ThemeKey } {
+  const reached = LEVELS.filter(({ from }) => percent >= from).map(
+    ({ tone }) => tone,
+  );
+  return {
+    lit: [BELOW_LEVELS, ...reached],
+    tone: reached.at(-1) ?? BELOW_LEVELS,
+  };
 }
 
 function tokensText(tokens: number): string {
@@ -69,9 +76,10 @@ function textRuns(text: string, tone: ThemeKey, room: number): StyledRun[] {
 }
 
 /**
- * A session's context in the room a row has left: four cells of 25% each, lit
- * in the level's colour, then `tokens/percent` in the level's text tone; or the
- * text alone when the bar does not fit whole; or nothing. With no published
+ * A session's context in the room a row has left: four cells, one per level,
+ * each lit in its own tone once usage reaches its level, the first at any
+ * usage, then `tokens/percent` in the last lit cell's tone; or the text alone,
+ * in that tone, when the bar does not fit whole; or nothing. With no published
  * limit, the tokens alone, inactive.
  */
 export function contextRuns(
@@ -88,15 +96,11 @@ export function contextRuns(
   const level = levelOf(percent);
   // Floored, as the context monitor does, so the number never reads a level its tone has not reached.
   const text = `${tokens}/${Math.floor(percent)}%`;
-  if (room < CONTEXT_COLUMNS) return textRuns(text, level.text, room);
-  const lit = Math.min(
-    BAR_CELLS,
-    Math.max(0, Math.ceil(percent / PERCENT_PER_CELL)),
-  );
+  if (room < CONTEXT_COLUMNS) return textRuns(text, level.tone, room);
   const runs: StyledRun[] = [
-    { text: '▰'.repeat(lit), tone: level.bar },
-    { text: '▱'.repeat(BAR_CELLS - lit), tone: 'subtle' },
-    { text: ` ${text.padStart(CONTEXT_TEXT_COLUMNS)}`, tone: level.text },
+    ...level.lit.map((tone) => ({ text: '▰', tone })),
+    { text: '▱'.repeat(BAR_CELLS - level.lit.length), tone: 'subtle' },
+    { text: ` ${text.padStart(CONTEXT_TEXT_COLUMNS)}`, tone: level.tone },
   ];
   return runs.filter((run) => run.text !== '');
 }

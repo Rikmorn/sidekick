@@ -138,7 +138,12 @@ test('a failure snapshot gives one failure line, in the band and the pane', () =
   expect(failureRow('boom', 120)).toEqual([
     { text: '⚠ desk: boom', tone: 'error' },
   ]);
-  expect(failureRow('boom', 9)).toEqual([{ text: '⚠ desk: b', tone: 'error' }]);
+  expect(failureRow('boom', 9)).toEqual([{ text: '⚠ desk: …', tone: 'error' }]);
+  expect(failureRow('boom', 10)).toEqual([
+    { text: '⚠ desk: b…', tone: 'error' },
+  ]);
+  expect(failureRow('boom', 1)).toEqual([{ text: '…', tone: 'error' }]);
+  expect(width(plain(failureRow('boom', 0)))).toBe(0);
 });
 
 test('a warning adds one failure line after the others', () => {
@@ -170,11 +175,31 @@ test('when no entry fits the band shows the prefix and the count', () => {
   expect(lines[1]?.text).toBe('◐ workers    +4 more');
 });
 
-test('when even that is too wide the text is cut without an ellipsis', () => {
+test('when even that is too wide the text is cut, ending in an ellipsis', () => {
   expect(bandLines(full, 8).map((line) => line.text)).toEqual([
-    '● needs ',
-    '◐ worker',
+    '● needs…',
+    '◐ worke…',
   ]);
+});
+
+test('a failure line or a lone finished count cut short ends in an ellipsis', () => {
+  const failed: DeskSnapshot = { version: 2, ok: false, error: 'boom' };
+  expect(bandLines(failed, 11)).toEqual([
+    { tone: 'failure', text: '⚠ desk: bo…' },
+  ]);
+  expect(bandLines(snapshot({ warnings: ['git failed'] }), 11)).toEqual([
+    { tone: 'failure', text: '⚠ desk: gi…' },
+  ]);
+  expect(bandLines(snapshot({ finished: 12 }), 8)).toEqual([
+    { tone: 'muted', text: '12 fini…' },
+  ]);
+});
+
+test('at one column each band line is the ellipsis alone', () => {
+  const failed: DeskSnapshot = { version: 2, ok: false, error: 'boom' };
+  for (const snap of [full, failed, snapshot({ finished: 12 })]) {
+    for (const line of bandLines(snap, 1)) expect(line.text).toBe('…');
+  }
 });
 
 test('no line is empty or wider than the width, at any width', () => {
@@ -342,7 +367,7 @@ test('from 80 columns each session takes one row, as the L1 inline plate', () =>
       cell('working', 11) +
       cell('Task 2 of 3', 41) +
       cell('', 14) +
-      '▰▰▰▰  156k/78%',
+      '▰▰▰▱  156k/78%',
     `${cell('│  └', 5)}${cell('◦ Explore', 18)}find callers of greet`,
     cell('└', 3) +
       cell('✓', 2) +
@@ -370,7 +395,7 @@ test('below 80 columns the pane stacks: a group per repo, each session a head ro
       '  which branch should I review?',
       header('sidekick', columns),
       spread('▣ todo-app-ce', '2 workers', columns),
-      spread('├ ◐ add-greeting', '▰▰▰▰  156k/78%', columns),
+      spread('├ ◐ add-greeting', '▰▰▰▱  156k/78%', columns),
       '│ │ Task 2 of 3',
       '│ └ ◐ Explore',
       '│     find callers of greet',
@@ -442,14 +467,14 @@ test("stacked, a session's profile stands at the right of its detail row while t
     header('sidekick', 40),
     spread('▣ todo-app-ce', '1 worker', 40),
     '└ ◐ add-greeting',
-    spread('    Edit: plugin/hooks/desk/', 'worker-opus', 40),
+    spread('    Edit: plugin/hooks/desk…', 'worker-opus', 40),
     '○ pm-main',
     spread('  idle', 'main', 40),
     '○ bench',
     '  idle',
   ]);
-  expect(rows(28)[3]).toBe(spread('    Edit: plugin', 'worker-opus', 28));
-  expect(rows(27)[3]).toBe('    Edit: plugin/hooks/desk');
+  expect(rows(28)[3]).toBe(spread('    Edit: plugi…', 'worker-opus', 28));
+  expect(rows(27)[3]).toBe('    Edit: plugin/hooks/des…');
   const detail = paneRows(PROFILED, PROFILED_KEYS, 40, NOW)[3];
   expect(runOf(detail, 'worker-opus')?.tone).toBe('subtle');
 });
@@ -755,9 +780,9 @@ test('stacked, the context keeps its bar while the name keeps 8 columns, then it
   const head = (columns: number) =>
     plain(paneRows(TREE, TREE_KEYS, columns, NOW)[1] ?? []);
   expect(head(40)).toBe(spread('● odin-review', '▰▰▰▰  176k/88%', 40));
-  expect(head(25)).toBe('● odin-rev ▰▰▰▰  176k/88%');
+  expect(head(25)).toBe('● odin-re… ▰▰▰▰  176k/88%');
   expect(head(24)).toBe(spread('● odin-review', '176k/88%', 24));
-  expect(head(19)).toBe('● odin-rev 176k/88%');
+  expect(head(19)).toBe('● odin-re… 176k/88%');
   expect(head(18)).toBe('● odin-review');
   for (let columns = 1; columns < 80; columns += 1) {
     for (const row of paneRows(TREE, TREE_KEYS, columns, NOW)) {
@@ -842,36 +867,63 @@ const barAt = (percent: number): StyledRow | undefined => {
   return paneRows(snap, keys, 100, NOW)[1];
 };
 
-test('the context bar lights a cell per 25%, green below 65%, then warning, claude, and error; its text is inactive below 65%, then the same', () => {
+test('the context bar lights a cell per level, each in its own tone: the first under 65%, then from 65%, 75%, and 85%; its number takes the last lit tone', () => {
   const expected = [
-    { percent: 40, lit: 2, bar: 'success', tone: 'inactive', text: '80k/40%' },
-    { percent: 64, lit: 3, bar: 'success', tone: 'inactive', text: '128k/64%' },
+    { percent: 6, lit: ['success'], text: '12k/6%' },
+    { percent: 64.9, lit: ['success'], text: '130k/64%' },
+    { percent: 65, lit: ['success', 'warning'], text: '130k/65%' },
+    { percent: 74, lit: ['success', 'warning'], text: '148k/74%' },
+    { percent: 75, lit: ['success', 'warning', 'claude'], text: '150k/75%' },
+    { percent: 84, lit: ['success', 'warning', 'claude'], text: '168k/84%' },
     {
-      percent: 64.8,
-      lit: 3,
-      bar: 'success',
-      tone: 'inactive',
-      text: '130k/64%',
+      percent: 85,
+      lit: ['success', 'warning', 'claude', 'error'],
+      text: '170k/85%',
     },
-    { percent: 65, lit: 3, bar: 'warning', tone: 'warning', text: '130k/65%' },
-    { percent: 75, lit: 3, bar: 'claude', tone: 'claude', text: '150k/75%' },
-    { percent: 85, lit: 4, bar: 'error', tone: 'error', text: '170k/85%' },
+    {
+      percent: 97,
+      lit: ['success', 'warning', 'claude', 'error'],
+      text: '194k/97%',
+    },
   ];
-  for (const { percent, lit, bar, tone, text } of expected) {
+  for (const { percent, lit, text } of expected) {
     const runs = [
-      { text: '▰'.repeat(lit), tone: bar },
-      ...(lit < 4 ? [{ text: '▱'.repeat(4 - lit), tone: 'subtle' }] : []),
-      { text: ` ${text.padStart(9)}`, tone },
+      ...lit.map((tone) => ({ text: '▰', tone })),
+      ...(lit.length < 4
+        ? [{ text: '▱'.repeat(4 - lit.length), tone: 'subtle' }]
+        : []),
+      { text: ` ${text.padStart(9)}`, tone: lit.at(-1) },
     ];
     expect(barAt(percent)?.slice(-runs.length)).toEqual(runs);
+    expect(plain(barAt(percent) ?? []).match(/[▰▱]/g)).toHaveLength(4);
   }
 });
 
-test('a full bar has no empty cells, and an empty one no lit cells', () => {
+test('a full bar lights all four cells, and an empty one its first', () => {
   expect(plain(barAt(100) ?? [])).toEndWith('▰▰▰▰ 200k/100%');
-  expect(barAt(100)?.at(-2)?.text).toBe('▰▰▰▰');
-  expect(plain(barAt(0) ?? [])).toEndWith('▱▱▱▱      0/0%');
-  expect(plain(barAt(0) ?? [])).not.toContain('▰');
+  expect(barAt(100)?.slice(-5)).toEqual([
+    { text: '▰', tone: 'success' },
+    { text: '▰', tone: 'warning' },
+    { text: '▰', tone: 'claude' },
+    { text: '▰', tone: 'error' },
+    { text: ' 200k/100%', tone: 'error' },
+  ]);
+  expect(plain(barAt(0) ?? [])).toEndWith('▰▱▱▱      0/0%');
+  expect(barAt(0)?.slice(-3)).toEqual([
+    { text: '▰', tone: 'success' },
+    { text: '▱▱▱', tone: 'subtle' },
+    { text: '      0/0%', tone: 'success' },
+  ]);
+});
+
+test("stacked, the context's text alone takes its level's tone, as the number beside the bar does", () => {
+  const pm = paneRows(TREE, TREE_KEYS, 20, NOW).find((row) =>
+    plain(row).startsWith('○ pm-main'),
+  );
+  expect(plain(pm ?? [])).toBe(spread('○ pm-main', '120k/12%', 20));
+  expect(pm?.at(-1)).toEqual({ text: '120k/12%', tone: 'success' });
+  const odin = paneRows(TREE, TREE_KEYS, 24, NOW)[1];
+  expect(odin?.at(-1)).toEqual({ text: '176k/88%', tone: 'error' });
 });
 
 test('with no published limit the tokens stand alone, inactive', () => {
@@ -902,6 +954,106 @@ test('tokens round to k, keep k above a million, and stay bare below 1,000', () 
   expect(tokens(999)).toBe('999');
   expect(tokens(1000)).toBe('1k');
   expect(tokens(1234000)).toBe('1234k');
+});
+
+// A child whose name, state word, work line, subagent type, and subagent
+// description each overflow their room, and a session elsewhere whose repo does.
+const LONG = snapshot({
+  self: SELF,
+  children: [
+    child({
+      name: 'add-greeting-to-readme',
+      sessionId: 'long',
+      state: 'reconnecting',
+    }),
+  ],
+  others: [
+    other({ name: 'pm-main', sessionId: 'pm', repo: 'a-long-repository' }),
+  ],
+});
+
+const LONG_DESCRIPTION =
+  'find every caller of the cell helper in the desk, then in the board, and then in the gauge';
+
+const LONG_KEYS = keysOf(
+  key({
+    sessionId: 'long',
+    activity: 'Edit: plugin/hooks/desk/rows.ts, then its tests',
+    subagents: [
+      {
+        type: 'general-purpose-agent',
+        description: LONG_DESCRIPTION,
+        status: 'running',
+      },
+    ],
+  }),
+);
+
+test('inline, a cut name, state word, work line, repo, subagent type, or description ends in an ellipsis', () => {
+  const rows = paneRows(LONG, LONG_KEYS, 100, NOW);
+  expect(rows.slice(1).map(plain)).toEqual([
+    cell('└', 3) +
+      cell('○', 2) +
+      cell('add-greeting-…', 15) +
+      cell('reconnect…', 11) +
+      'Edit: plugin/hooks/desk/rows.ts, then i…',
+    `   └ ${cell('◦ general-purpos…', 18)}${LONG_DESCRIPTION.slice(0, 76)}…`,
+    '',
+    cell('', 3) +
+      cell('–', 2) +
+      cell('pm-main', 15) +
+      cell('idle', 11) +
+      cell('', 41) +
+      '     a-long-…',
+  ]);
+  expect(rows[2]?.at(-1)).toEqual({
+    text: `${LONG_DESCRIPTION.slice(0, 76)}…`,
+    tone: 'inactive',
+    italic: true,
+  });
+  for (const row of rows) expect(width(plain(row))).toBeLessThanOrEqual(100);
+});
+
+test('stacked, a cut name, work line, subagent type, or description ends in an ellipsis', () => {
+  const rows = paneRows(LONG, LONG_KEYS, 24, NOW);
+  expect(rows.slice(2, 6).map(plain)).toEqual([
+    '└ ○ add-greeting-to-rea…',
+    '  │ reconnecting · Edit…',
+    '  └ ◐ general-purpose-a…',
+    '      find every caller…',
+  ]);
+  expect(runOf(rows[2], 'add-greeting-to-rea…')).toEqual({
+    text: 'add-greeting-to-rea…',
+    tone: 'text',
+    bold: true,
+  });
+  expect(runOf(rows[5], 'find every caller…')).toEqual({
+    text: 'find every caller…',
+    tone: 'inactive',
+    italic: true,
+  });
+});
+
+test('at one column a cut row is the ellipsis alone, in the tone of the run it cuts, and a head whose name has no room keeps its icon', () => {
+  const rows = paneRows(TREE, TREE_KEYS, 1, NOW);
+  expect(rows.map(plain)).toEqual([
+    '…',
+    '●',
+    '…',
+    '…',
+    '…',
+    '…',
+    '…',
+    '…',
+    '…',
+    '…',
+    '…',
+    '○',
+    '…',
+  ]);
+  expect(rows[0]).toEqual([{ text: '…', tone: 'subtle' }]);
+  expect(rows[1]).toEqual([{ text: '●', tone: 'warning' }]);
+  expect(rows[4]).toEqual([{ text: '…', tone: 'claude', bold: true }]);
 });
 
 test('a child marks commits not integrated with ⇡N and uncommitted changes with ✎, in warning, gone or not', () => {
@@ -1144,7 +1296,14 @@ test('a hint too narrow for the keys keeps the needs, then cuts from its end', (
   expect(plain(paneHint(entries, 13, false, 24) ?? [])).toBe(
     '+2 rows · 1 needs you',
   );
-  expect(plain(paneHint(entries, 11, false, 12) ?? [])).toBe('+4 rows · 3 ');
+  expect(paneHint(entries, 11, false, 12)).toEqual([
+    { text: '+4 rows · ', tone: 'inactive' },
+    { text: '3…', tone: 'warning' },
+  ]);
+  expect(paneHint(entries, 11, false, 1)).toEqual([
+    { text: '…', tone: 'inactive' },
+  ]);
+  expect(paneHint(entries, 11, false, 0)).toEqual([]);
 });
 
 test('with no needs-you row hidden the hint reads as the shared scroll hint', () => {
@@ -1154,8 +1313,12 @@ test('with no needs-you row hidden the hint reads as the shared scroll hint', ()
     { text: scrollHint(entries.length, 3, false) ?? '', tone: 'inactive' },
   ]);
   expect(paneHint(entries, 3, false, 10)).toEqual([
-    { text: '+5 rows · ', tone: 'inactive' },
+    { text: '+5 rows ·…', tone: 'inactive' },
   ]);
+  expect(paneHint(entries, 3, false, 1)).toEqual([
+    { text: '…', tone: 'inactive' },
+  ]);
+  expect(width(plain(paneHint(entries, 3, false, 0) ?? []))).toBe(0);
   expect(paneHint(entries, entries.length, false, 100)).toBeUndefined();
 });
 

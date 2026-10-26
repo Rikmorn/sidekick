@@ -5,8 +5,8 @@
 
 import type { ThemeKey } from 'claude-code';
 import { type Branch, branchAt, trunkOf } from '../leads';
-import { cut, width } from '../lines';
-import { cutRow, rowWidth, type StyledRow, type StyledRun } from '../styled';
+import { fit, width } from '../lines';
+import { fitRow, rowWidth, type StyledRow, type StyledRun } from '../styled';
 import {
   CONTEXT_COLUMNS,
   contextRuns,
@@ -164,10 +164,7 @@ function headRow(lead: string, node: Node, columns: number): StyledRow {
   const room = columns - rowWidth(left) - rowWidth(marks);
   const context = headContext(node, room);
   const nameRoom = room - (context.length === 0 ? 0 : rowWidth(context) + 1);
-  const name = {
-    ...node.name,
-    text: cut(node.name.text, Math.max(0, nameRoom)),
-  };
+  const name = { ...node.name, text: fit(node.name.text, nameRoom) };
   const head = [...left, name, ...marks].filter((run) => run.text !== '');
   const gap = columns - rowWidth(head) - rowWidth(context);
   if (context.length === 0 || gap < 1) return head;
@@ -182,7 +179,7 @@ function detailRow(lead: string, node: Node, columns: number): StyledRow {
   const floor = Math.min(rowWidth(node.detail), DETAIL_COLUMNS_MIN);
   const showsProfile = profile !== '' && room - width(profile) - 1 >= floor;
   if (!showsProfile) return [leadRun, ...node.detail];
-  const detail = cutRow(node.detail, room - width(profile) - 1);
+  const detail = fitRow(node.detail, room - width(profile) - 1);
   const gap = room - rowWidth(detail) - width(profile);
   return [
     leadRun,

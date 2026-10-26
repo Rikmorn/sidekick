@@ -2,7 +2,7 @@
 // draws as one Box row with a Text per run. Widths count as `lines.ts` counts.
 
 import type { RenderElement, ThemeKey } from 'claude-code';
-import { cut, width } from './lines';
+import { cut, ELLIPSIS, width } from './lines';
 
 /** One run of a row: its text, its theme key, and how it is weighted and styled. */
 export type StyledRun = {
@@ -31,6 +31,23 @@ export function cutRow(row: readonly StyledRun[], columns: number): StyledRow {
     const text = cut(run.text, room);
     if (text !== '') kept.push({ ...run, text });
     room -= width(text);
+  }
+  return kept;
+}
+
+/** The row within `columns`, drawn as `cutRow` draws it when it fits, else ending in an ellipsis in the style of the run that holds its last column: one column keeps only the ellipsis, and none keeps nothing. */
+export function fitRow(row: readonly StyledRun[], columns: number): StyledRow {
+  if (rowWidth(row) <= columns) return cutRow(row, columns);
+  if (columns < 1) return [];
+  const kept: StyledRun[] = [];
+  let room = columns;
+  for (const run of row) {
+    const runWidth = width(run.text);
+    if (runWidth >= room) {
+      return [...kept, { ...run, text: cut(run.text, room - 1) + ELLIPSIS }];
+    }
+    if (runWidth > 0) kept.push(run);
+    room -= runWidth;
   }
   return kept;
 }
