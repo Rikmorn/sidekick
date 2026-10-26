@@ -11,8 +11,9 @@ describe('the brief and the line, held byte-identical across the pickup view', (
     expect(Object.keys(golden).sort()).toEqual(Object.keys(pickups).sort());
   });
 
-  for (const [name, p] of Object.entries(pickups)) {
-    const expected = golden[name as keyof typeof golden];
+  for (const [name, expected] of Object.entries(golden)) {
+    const p = pickups[name];
+    if (p === undefined) continue;
 
     test(`${name}: renderBrief equals the golden`, () => {
       expect(renderBrief(p)).toBe(expected.brief);
