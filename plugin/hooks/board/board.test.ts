@@ -15,7 +15,7 @@ import {
   mock,
   test,
 } from 'claude-code/testing';
-import { PANE_ROWS } from '../commands';
+import { DOCK_COLUMNS, PANE_ROWS } from '../commands';
 import type { DeskSnapshot } from '../desk/contract';
 import { HINT_INSET, width } from '../lines';
 import {
@@ -840,7 +840,7 @@ test('/board opens asking for the room its tree needs, at 40 columns, and withou
   await bothStarts($, clock);
   await boardCommand($);
   expect(seen.openings).toEqual([
-    { focus: undefined, rows: PANE_ROWS, columns: 40 },
+    { focus: undefined, rows: PANE_ROWS, columns: DOCK_COLUMNS },
   ]);
 });
 

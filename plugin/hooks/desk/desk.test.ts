@@ -15,7 +15,7 @@ import {
   mock,
   test,
 } from 'claude-code/testing';
-import { PANE_ROWS } from '../commands';
+import { DOCK_COLUMNS, PANE_ROWS } from '../commands';
 import {
   HEARTBEAT_MS,
   keyOf,
@@ -509,7 +509,7 @@ test('after a refused register the desk still runs and ticks, one debug line nam
 });
 
 // P3: asked 40, the dock opens 40 wide unless the operator kept a width of their own.
-const DOCK = { focus: undefined, rows: PANE_ROWS, columns: 40 };
+const DOCK = { focus: undefined, rows: PANE_ROWS, columns: DOCK_COLUMNS };
 
 test('/desk opens asking for the room its tree needs and a dock 40 wide, without the keys', async ($, on) => {
   const { seen, clock } = answerBeneath(on, worldWith(printed(QUIET)));

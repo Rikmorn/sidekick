@@ -2,6 +2,7 @@ import type { ProcessRunResult } from 'claude-code';
 import { expect, test } from 'claude-code/testing';
 import type { Settled } from '../failures';
 import { sessionCheckOf } from './check';
+import { RUN_TIMEOUT_MS } from './contract';
 
 function ran(
   partial: Pick<Partial<ProcessRunResult>, 'exitCode' | 'stdout' | 'stderr'>,
@@ -20,8 +21,7 @@ function ran(
 
 test('a rejected run names both ways it can fail, with the timeout and the reason', () => {
   expect(sessionCheckOf({ reason: 'spawn ENOENT' })).toEqual({
-    failure:
-      'the session command did not start, or did not finish within 8 s: spawn ENOENT',
+    failure: `the session command did not start, or did not finish within ${RUN_TIMEOUT_MS / 1000} s: spawn ENOENT`,
   });
 });
 
