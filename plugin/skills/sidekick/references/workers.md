@@ -118,7 +118,7 @@ Three things keep a worker from pushing:
 - **The rewrite.** The overlay's `GIT_CONFIG_*` entries turn every push URL into `sidekick-push-blocked::<url>`. Git reads that as a remote helper that does not exist, so the push fails and fetch still works.
 - **The deny rule.** `Bash(git push:*)` refuses the plain spelling before it runs.
 
-The dispatch probes measured the rewrite and the deny rule in a background session, under "The push block" and "Second round, after the design review". In a worktree session, Claude Code also refuses `git -C` and `sh -c "git …"` before they run. It refused a line that mixed git with a shell variable too (the dispatch bench).
+The dispatch probes measured the rewrite and the deny rule in a background session, under "The push block" and "Second round, after the design review". In a worktree session, Claude Code also refuses `git -C` and `sh -c "git …"` before they run. It refused a line that mixed git with a shell variable too (the dispatch bench). It refuses a shell variable in any operand, such as `S=…; bash $S/script`, and runs the same script named by its literal path. That was measured on 2026-10-26 on Claude Code 2.1.310, in two `claude --worktree … --bg` probe sessions. #240's board pane worker met it, and built superpowers' briefs and review packages by hand. R9 plan 7's worker met three more shapes on 2026-10-15 (#229): `task-done` given a git check, `sdd-workspace` inside `$(…)`, and a heredoc followed by `git status`.
 
 The block does not guard against these:
 
