@@ -38,7 +38,7 @@ export function needYouText(count: number): string {
 }
 
 const THOUSAND = 1_000;
-// The first cell's tone, lit at any usage, and the number's under every level.
+// The first cell's tone, always lit, and the number's under every level.
 const BELOW_LEVELS: ThemeKey = 'success';
 // Each further cell lights in its own tone once usage reaches its level. 65%
 // and 75% are where the context monitor warns; 85% leaves little room.

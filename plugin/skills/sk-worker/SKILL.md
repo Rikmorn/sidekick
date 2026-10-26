@@ -73,7 +73,7 @@ Invoke the superpowers skill the brief's `skill` names, and follow it. Its task 
 
 ## Git
 
-Run git plainly from where you work. In a worktree session, Claude Code refuses a command it cannot show keeps git inside the worktree. It refuses `git -C`, `sh -c "git …"`, and a shell variable or `$(…)` in an operand, such as `S=…; bash $S/script`. It refuses a heredoc followed by git, and a script handed a git command as text, such as superpowers' `task-done` with a git check. It runs a script named by its literal absolute path. So name every path literally, run a git check as a command of its own, and write files with the Write tool. Give each subagent you dispatch this paragraph, since it runs in the same worktree.
+Run git plainly from where you work. In a worktree session, Claude Code refuses a command it cannot show keeps git inside the worktree. It refuses `git -C`, `sh -c "git …"`, and a shell variable or `$(…)` in a command's name or operand, such as `S=…; bash $S/script` or `for c in …; do $c; done`. It refuses a heredoc followed by git, and a script handed a git command as text. It runs a script named by its literal absolute path. So name every path literally, run a git check as a command of its own, and write files with the Write tool. Give each subagent you dispatch this paragraph, since it runs in the same worktree.
 
 - **Each task lands as its own commits,** on the branch where you work. A fix adds a commit and never amends one. The task's base and head stay valid after an amend. The re-review diffs from the last reviewed commit, which an amend removes.
 - **Never push, and open no pull request.** The orchestrator integrates. A background session's default is to push its branch and open a pull request; this rule overrides that default.
