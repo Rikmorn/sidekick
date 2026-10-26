@@ -93,3 +93,113 @@ export function parseGlance(text: string): ParsedGlance {
     glance: { version: GLANCE_VERSION, board, milestone, state, brief },
   };
 }
+
+/** Equals `PlanState` in `bin/helpers/pm-plans.ts`, declared here because this file imports nothing. */
+export type PanePlanState = 'done' | 'running' | 'next' | 'later';
+export type PaneMark = PanePlanState | 'group' | 'more';
+export type PaneWeight = 'strong' | 'plain' | 'quiet';
+
+export interface PaneNode {
+  mark: PaneMark;
+  ref: string | null;
+  text: string;
+  right: string | null;
+  weight: PaneWeight;
+  children: PaneNode[];
+}
+
+export type PaneRow =
+  | { kind: 'prose'; mark: 'next' | 'drift' | 'outcome'; text: string }
+  | { kind: 'cells'; plans: PanePlanState[]; label: string }
+  | { kind: 'tree'; nodes: PaneNode[] };
+
+export interface GlancePane {
+  rows: PaneRow[];
+}
+
+const MAX_TREE_DEPTH = 4;
+
+function isPlanState(value: unknown): value is PanePlanState {
+  return (
+    value === 'done' ||
+    value === 'running' ||
+    value === 'next' ||
+    value === 'later'
+  );
+}
+
+function isMark(value: unknown): value is PaneMark {
+  return isPlanState(value) || value === 'group' || value === 'more';
+}
+
+function isWeight(value: unknown): value is PaneWeight {
+  return value === 'strong' || value === 'plain' || value === 'quiet';
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function parseNode(value: unknown, depth: number): PaneNode | undefined {
+  if (depth > MAX_TREE_DEPTH || !isRecord(value)) return undefined;
+  const { mark, ref, text, right, weight, children } = value;
+  if (!isMark(mark) || !isWeight(weight) || typeof text !== 'string') {
+    return undefined;
+  }
+  if (!isStringOrNull(ref) || !isStringOrNull(right)) return undefined;
+  const parsed = parseNodes(children, depth + 1);
+  if (parsed === undefined) return undefined;
+  return { mark, ref, text, right, weight, children: parsed };
+}
+
+function parseNodes(value: unknown, depth: number): PaneNode[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const nodes: PaneNode[] = [];
+  for (const item of value) {
+    const node = parseNode(item, depth);
+    if (node === undefined) return undefined;
+    nodes.push(node);
+  }
+  return nodes;
+}
+
+function parseProse(value: Record<string, unknown>): PaneRow | undefined {
+  const { mark, text } = value;
+  if (typeof text !== 'string') return undefined;
+  if (mark !== 'next' && mark !== 'drift' && mark !== 'outcome') {
+    return undefined;
+  }
+  return { kind: 'prose', mark, text };
+}
+
+function parseCells(value: Record<string, unknown>): PaneRow | undefined {
+  const { plans, label } = value;
+  if (!Array.isArray(plans) || typeof label !== 'string') return undefined;
+  const states: PanePlanState[] = [];
+  for (const state of plans) {
+    if (!isPlanState(state)) return undefined;
+    states.push(state);
+  }
+  return { kind: 'cells', plans: states, label };
+}
+
+function parseRow(value: unknown): PaneRow | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.kind === 'prose') return parseProse(value);
+  if (value.kind === 'cells') return parseCells(value);
+  if (value.kind !== 'tree') return undefined;
+  const nodes = parseNodes(value.nodes, 1);
+  return nodes === undefined ? undefined : { kind: 'tree', nodes };
+}
+
+/** Parses a glance's `pane`; undefined for anything else, including a tree deeper than four levels. */
+export function parsePane(value: unknown): GlancePane | undefined {
+  if (!isRecord(value) || !Array.isArray(value.rows)) return undefined;
+  const rows: PaneRow[] = [];
+  for (const item of value.rows) {
+    const row = parseRow(item);
+    if (row === undefined) return undefined;
+    rows.push(row);
+  }
+  return { rows };
+}

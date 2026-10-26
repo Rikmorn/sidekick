@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing';
-import { GLANCE_VERSION, parseGlance } from './contract';
+import { GLANCE_VERSION, parseGlance, parsePane } from './contract';
 
 const full = {
   version: 1,
@@ -75,4 +75,89 @@ test('parseGlance reads a string board number as not parsed', () => {
 test('parseGlance reads a missing brief as not parsed', () => {
   const { brief: _brief, ...without } = full;
   expect(parseGlance(JSON.stringify(without))).toEqual(notParsed);
+});
+
+const node = (children: unknown[] = []) => ({
+  mark: 'running',
+  ref: '#240',
+  text: 'The usage guide',
+  right: '3 d',
+  weight: 'strong',
+  children,
+});
+
+const pane = {
+  rows: [
+    { kind: 'prose', mark: 'next', text: 'continue #240' },
+    { kind: 'prose', mark: 'drift', text: '3 unpushed' },
+    { kind: 'prose', mark: 'outcome', text: 'Outcome: it ships.' },
+    {
+      kind: 'cells',
+      plans: ['done', 'running', 'next', 'later'],
+      label: '1/4 plans',
+    },
+    { kind: 'tree', nodes: [node([{ ...node(), ref: null, right: null }])] },
+  ],
+};
+
+const chain = (levels: number): unknown =>
+  levels === 1 ? node() : node([chain(levels - 1)]);
+
+test('parsePane keeps every field of a full pane', () => {
+  expect(parsePane(pane)).toEqual(pane);
+});
+
+test('parsePane accepts a null ref and a null right', () => {
+  const row = { kind: 'tree', nodes: [{ ...node(), ref: null, right: null }] };
+  expect(parsePane({ rows: [row] })).toEqual({ rows: [row] });
+});
+
+test('parsePane rejects an unknown row kind', () => {
+  expect(parsePane({ rows: [{ kind: 'table', nodes: [] }] })).toBeUndefined();
+});
+
+test('parsePane rejects an unknown mark on prose or on a node', () => {
+  const prose = { kind: 'prose', mark: 'warning', text: 'x' };
+  expect(parsePane({ rows: [prose] })).toBeUndefined();
+  const bad = { kind: 'tree', nodes: [{ ...node(), mark: 'open' }] };
+  expect(parsePane({ rows: [bad] })).toBeUndefined();
+});
+
+test('parsePane rejects an unknown weight', () => {
+  const bad = { kind: 'tree', nodes: [{ ...node(), weight: 'bold' }] };
+  expect(parsePane({ rows: [bad] })).toBeUndefined();
+});
+
+test('parsePane rejects a text that is not a string', () => {
+  const bad = { kind: 'tree', nodes: [{ ...node(), text: 4 }] };
+  expect(parsePane({ rows: [bad] })).toBeUndefined();
+  expect(
+    parsePane({ rows: [{ kind: 'prose', mark: 'next', text: null }] }),
+  ).toBeUndefined();
+});
+
+test('parsePane rejects a node with no children', () => {
+  const { children: _children, ...without } = node();
+  expect(
+    parsePane({ rows: [{ kind: 'tree', nodes: [without] }] }),
+  ).toBeUndefined();
+});
+
+test('parsePane rejects a cell state outside the four', () => {
+  const bad = { kind: 'cells', plans: ['done', 'group'], label: '1/2 plans' };
+  expect(parsePane({ rows: [bad] })).toBeUndefined();
+});
+
+test('parsePane accepts a tree four levels deep and rejects five', () => {
+  const four = { rows: [{ kind: 'tree', nodes: [chain(4)] }] };
+  expect(parsePane(four)).toEqual(four);
+  expect(
+    parsePane({ rows: [{ kind: 'tree', nodes: [chain(5)] }] }),
+  ).toBeUndefined();
+});
+
+test('parsePane rejects values that are not a pane', () => {
+  expect(parsePane(undefined)).toBeUndefined();
+  expect(parsePane({ rows: 'none' })).toBeUndefined();
+  expect(parsePane([])).toBeUndefined();
 });
