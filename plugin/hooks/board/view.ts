@@ -104,10 +104,13 @@ function stateText(glance: BoardGlance): string {
   return `${stateLook(glance.state).glyph} ${glance.state.word}`;
 }
 
+/** The stamp for a pickup that failed, naming when it did. */
+export function refreshFailed(at: string): string {
+  return `refresh failed ${at}`;
+}
+
 function timeText(view: Extract<BoardView, { glance: BoardGlance }>): string {
-  return view.state === 'stale'
-    ? `refresh failed ${view.failedAt}`
-    : view.takenAt;
+  return view.state === 'stale' ? refreshFailed(view.failedAt) : view.takenAt;
 }
 
 function shortestMilestone(text: string): string {

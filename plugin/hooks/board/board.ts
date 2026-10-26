@@ -47,6 +47,7 @@ import {
   failureOf,
   LEVEL_TONES,
   readRun,
+  refreshFailed,
   rowSegments,
   SEPARATOR,
   type Segment,
@@ -180,7 +181,7 @@ function treeRows(
   const stamp =
     view.state === 'ok'
       ? `as of ${view.takenAt}`
-      : `refresh failed ${view.failedAt}`;
+      : refreshFailed(view.failedAt);
   const { board, milestone, state, pane } = glance;
   return fitPane({ board, milestone, state, pane, stamp }, columns).map(
     rowElement,
