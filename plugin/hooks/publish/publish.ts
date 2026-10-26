@@ -51,6 +51,9 @@ interface PublishState {
   profile: string | undefined;
   // The listing's name and the session it names, since /clear starts a session the listing names afresh.
   name: { sessionId: string; name: string } | undefined;
+  // The latest session id a publish asked a name check for; /clear moves it on.
+  nameAskedFor: string | undefined;
+  isCheckingName: boolean;
   limit: number | undefined;
   // The main loop's activity line; undefined before any turn, and in a turn before its first tool call.
   activity: string | undefined;
@@ -115,10 +118,25 @@ async function isShown($: EngineInterface): Promise<boolean> {
   return (await $.session.surfaces()).length > 0;
 }
 
+// One check runs at a time: a check asked for while another runs is skipped,
+// and the heartbeat asks again.
+async function refreshName(
+  $: EngineInterface,
+  state: PublishState,
+): Promise<void> {
+  if (state.isCheckingName) return;
+  state.isCheckingName = true;
+  try {
+    await checkName($, state);
+  } finally {
+    state.isCheckingName = false;
+  }
+}
+
 // The session id is read at each check: /clear starts a new one with no
 // `session.start` after it. A failed or nameless answer keeps the name the
 // last good one gave.
-async function refreshName(
+async function checkName(
   $: EngineInterface,
   state: PublishState,
 ): Promise<void> {
@@ -206,6 +224,20 @@ async function keyNow(
   );
 }
 
+// A session id the publisher has no name for gets one check, unawaited so the
+// publish goes on, then a republish; the heartbeat waits up to HEARTBEAT_MS.
+async function learnName(
+  $: EngineInterface,
+  state: PublishState,
+): Promise<void> {
+  try {
+    await refreshName($, state);
+  } catch (error) {
+    logLine($, `the name check failed: ${reasonOf(error)}`);
+  }
+  await requestPublish($, state, 'change');
+}
+
 async function publishOnce(
   $: EngineInterface,
   state: PublishState,
@@ -222,6 +254,11 @@ async function publishOnce(
   const sessionId = id.value;
   const name =
     state.name?.sessionId === sessionId ? state.name.name : undefined;
+  const isNameUnknown = name === undefined && state.nameAskedFor !== sessionId;
+  if (isNameUnknown) {
+    state.nameAskedFor = sessionId;
+    void learnName($, state);
+  }
   const self = selfFactsOf({ role, profile: state.profile, name });
   await keepSelf($, state, self);
   const { activity, limit } = state;
@@ -283,8 +320,8 @@ async function heartbeat($: EngineInterface, state: PublishState) {
   await requestPublish($, state, 'force');
 }
 
-// Publishes before the name comes, so the role shows at once, then again once
-// it has come. A second start in one load keeps the one heartbeat.
+// Publishes before the name comes, so the role shows at once; the name check
+// that publish asks for republishes once the name has come. A second start in one load keeps the one heartbeat.
 async function startPublishing(
   $: EngineInterface,
   state: PublishState,
@@ -298,12 +335,10 @@ async function startPublishing(
       $.clock.every(HEARTBEAT_MS, () => void heartbeat($, state));
     }
     await refreshLimit($, state);
-    await requestPublish($, state, 'change');
-    if (!(await isShown($))) return;
-    await refreshName($, state);
   } catch (error) {
     logLine($, `starting failed: ${reasonOf(error)}`);
   }
+  // The first publish asks for the name, which republishes once it comes.
   await requestPublish($, state, 'change');
 }
 
@@ -367,6 +402,8 @@ export function registerPublish(on: On): void {
     role: undefined,
     profile: undefined,
     name: undefined,
+    nameAskedFor: undefined,
+    isCheckingName: false,
     limit: undefined,
     activity: undefined,
     turns: 0,

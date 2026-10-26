@@ -87,7 +87,7 @@ function roleWords(self: SelfFacts): string {
 /**
  * The identity row, cut from its end to `columns`: the role's icon and the
  * session's name, its role in words, and its profile. Before a name is known it
- * shows the role alone, since the profile arrives with the name. Undefined
+ * shows the role alone, as the desk spec's identity row rule says. Undefined
  * facts give no row.
  */
 export function identityRuns(

@@ -447,7 +447,37 @@ test('after /clear the old key goes, and the new id publishes its own at its nex
     sessionId: SECOND,
     role: 'main',
   });
-  expect(keyIn(seen, SECOND)?.name).toBeUndefined();
+  expect(keyIn(seen, SECOND)?.name).toBe('name of session-2');
+});
+
+test('after /clear the next event runs one name check for the new id, never one per event', async ($, on) => {
+  const world = worldWith();
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  expect(seen.runs).toEqual([FIRST]);
+  await ended($, clock, FIRST, 'clear');
+  world.sessionId = SECOND;
+  await turnStarted($, clock);
+  expect(seen.runs).toEqual([FIRST, SECOND]);
+  await turnCompleted($, clock);
+  await $.tool.call({ tool: 'Bash', command: 'ls' });
+  await clock.settle();
+  expect(seen.runs).toEqual([FIRST, SECOND]);
+  expect(seen.selves.at(-1)).toMatchObject({ name: 'name of session-2' });
+});
+
+test('events that arrive while a name check runs share it', async ($, on) => {
+  const world = worldWith();
+  const { seen, clock } = answerBeneath(on, world);
+  await started($, clock);
+  await ended($, clock, FIRST, 'clear');
+  world.sessionId = SECOND;
+  await Promise.all([
+    $.turn.start({ text: '', turnId: 't1' }),
+    $.tool.call({ tool: 'Bash', command: 'ls' }),
+  ]);
+  await clock.settle();
+  expect(seen.runs).toEqual([FIRST, SECOND]);
 });
 
 test('after /clear with no event, the heartbeat publishes the new id with its own name and no activity', async ($, on) => {
