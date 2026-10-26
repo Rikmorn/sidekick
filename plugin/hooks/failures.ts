@@ -1,3 +1,5 @@
+import type { ProcessRunResult } from 'claude-code';
+
 /** A call that rejected gives its reason instead of its value. */
 export type Settled<T> = { value: T } | { reason: string };
 
@@ -21,4 +23,32 @@ export async function settle<T>(call: Promise<T>): Promise<Settled<T>> {
   } catch (error) {
     return { reason: reasonOf(error) };
   }
+}
+
+const MS_PER_SECOND = 1_000;
+
+/**
+ * A process run's result as stdout, or the words for why there is none. A run
+ * rejects when it cannot start, a plugin refuses it, or it outlasts its timeout.
+ * The declarations give no way to tell which, so the reason names all three.
+ */
+export function runOutcome(
+  ran: Settled<ProcessRunResult>,
+  run: { name: string; timeoutMs: number },
+): { ok: true; stdout: string } | { ok: false; reason: string } {
+  if ('reason' in ran) {
+    const seconds = run.timeoutMs / MS_PER_SECOND;
+    return {
+      ok: false,
+      reason: `${run.name} did not start, or did not finish within ${seconds} s: ${ran.reason}`,
+    };
+  }
+  const { exitCode, stdout, stderr } = ran.value;
+  if (exitCode === 0) return { ok: true, stdout };
+  const exited = `${run.name} exited ${exitCode}`;
+  const detail = firstLine(stderr);
+  return {
+    ok: false,
+    reason: detail === undefined ? exited : `${exited}: ${detail}`,
+  };
 }

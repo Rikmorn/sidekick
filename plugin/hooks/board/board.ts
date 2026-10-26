@@ -27,7 +27,7 @@ import type {
   ThemeKey,
 } from 'claude-code';
 import { DOCK_COLUMNS, PANE_ROWS, registerOwned } from '../commands';
-import { firstLine, reasonOf, type Settled, settle } from '../failures';
+import { reasonOf, runOutcome, type Settled, settle } from '../failures';
 import { cut, HINT_INSET, scrollHint } from '../lines';
 import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
@@ -54,29 +54,11 @@ import {
 
 const COMMAND = { name: 'board', description: 'Show or hide the board pane' };
 const PANE = { id: 'board', title: 'Board' };
-const MS_PER_SECOND = 1_000;
 
 const ROW_COLOR: ThemeKey = 'subtle';
 
-// A run rejects when it cannot start, a plugin refuses it, or it outlasts its
-// timeout. The declarations give no way to tell which, so the reason covers all
-// three: a refused run did not start either.
 function outcomeOf(ran: Settled<ProcessRunResult>): RunOutcome {
-  if ('reason' in ran) {
-    const seconds = PICKUP_TIMEOUT_MS / MS_PER_SECOND;
-    return {
-      ok: false,
-      reason: `the pickup did not start, or did not finish within ${seconds} s: ${ran.reason}`,
-    };
-  }
-  const { exitCode, stdout, stderr } = ran.value;
-  if (exitCode === 0) return { ok: true, stdout };
-  const exited = `the pickup exited ${exitCode}`;
-  const detail = firstLine(stderr);
-  return {
-    ok: false,
-    reason: detail === undefined ? exited : `${exited}: ${detail}`,
-  };
+  return runOutcome(ran, { name: 'the pickup', timeoutMs: PICKUP_TIMEOUT_MS });
 }
 
 // The `tool_input.command` of a Bash call, when it holds a string.

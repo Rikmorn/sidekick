@@ -23,7 +23,7 @@ import type {
   ThemeKey,
 } from 'claude-code';
 import { DOCK_COLUMNS, PANE_ROWS, registerOwned } from '../commands';
-import { firstLine, reasonOf, type Settled, settle } from '../failures';
+import { reasonOf, runOutcome, type Settled, settle } from '../failures';
 import type { PublishedSession } from '../publish/contract';
 import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
@@ -54,7 +54,6 @@ export const TICK_MS = 10_000;
 const PANE = { id: 'desk', title: 'Desk' };
 const OPEN = { ...PANE, rows: PANE_ROWS, columns: DOCK_COLUMNS };
 const COMMAND = { name: 'desk', description: 'Show or hide the desk pane' };
-const MS_PER_SECOND = 1_000;
 
 const TONE_COLORS: Record<Tone, ThemeKey> = {
   waiting: 'warning',
@@ -75,20 +74,14 @@ function failure(error: string): DeskSnapshot {
   return { version: DESK_VERSION, ok: false, error };
 }
 
-// A run rejects when it cannot start, a plugin refuses it, or it outlasts its
-// timeout. The declarations give no way to tell which, so the line names both.
 function snapshotOf(ran: Settled<ProcessRunResult>): DeskSnapshot {
-  if ('reason' in ran) {
-    const seconds = RUN_TIMEOUT_MS / MS_PER_SECOND;
-    return failure(
-      `the desk command did not start, or did not finish within ${seconds} s: ${ran.reason}`,
-    );
-  }
-  const { exitCode, stdout, stderr } = ran.value;
-  if (exitCode === 0) return parseDeskSnapshot(stdout);
-  const exited = `the desk command exited ${exitCode}`;
-  const detail = firstLine(stderr);
-  return failure(detail === undefined ? exited : `${exited}: ${detail}`);
+  const outcome = runOutcome(ran, {
+    name: 'the desk command',
+    timeoutMs: RUN_TIMEOUT_MS,
+  });
+  return outcome.ok
+    ? parseDeskSnapshot(outcome.stdout)
+    : failure(outcome.reason);
 }
 
 // The session id is read on every run: /clear starts a new one with no
