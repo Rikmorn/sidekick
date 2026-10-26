@@ -4,35 +4,28 @@
 // the module, and a hook that fails in one mod skips the module's whole hook
 // for that event. So `session.start`, which each of them also hooks, and
 // `PostToolBatch` keep their own failures and call `next(e)` once whatever
-// happened. In a worker the gauge also draws one signpost row in `PromptHint`
-// under what lies beneath, naming the worker's main and the way back; the
-// board's hook passes it through. No other mod hooks a `SessionMode` render,
-// so a failure there costs only the footer label. A failed read at session
-// start leaves the limit unset, which the context monitor's canary reports;
-// after a tool batch it leaves the last value. Each caught failure goes to the
-// debug log, where the engine names a hook it skips.
+// happened. In every role the gauge also draws one identity row in
+// `PromptHint` under what lies beneath: the session's name, its role, and its
+// profile, read from the facts the publisher keeps in `$.state`. The board's
+// hook is outer, so its line draws under that row. A failure while drawing
+// leaves what lies beneath drawn. A failed read at session start leaves the
+// limit unset, which the context monitor's canary reports; after a tool batch
+// it leaves the last value. Each caught failure goes to the debug log, where
+// the engine names a hook it skips.
 
-import type { EngineInterface, On, ThemeKey } from 'claude-code';
-import { cut, HINT_INSET } from '../lines';
+import type { EngineInterface, On } from 'claude-code';
+import { HINT_INSET } from '../lines';
 import { type Role, settleRole } from '../role';
-import {
-  limitInputs,
-  limitValue,
-  modesWith,
-  profileOf,
-  signpostText,
-  UNPROFILED,
-} from './logic';
+import type { SelfFacts } from '../state';
+import { rowElement } from '../styled';
+import { identityRuns, limitInputs, limitValue } from './logic';
 
-const SIGNPOST_COLOR: ThemeKey = 'inactive';
+// The ref's plugin and key must be literals, so the engine can list them.
+const SELF = { plugin: 'sidekick', key: 'self' } as const;
 
 function logFailure($: EngineInterface, hook: string, error: unknown): void {
   const reason = error instanceof Error ? error.message : String(error);
   $.ui.log(`sidekick gauge: ${hook} failed: ${reason}`, { to: 'debug' });
-}
-
-async function flagProfile($: EngineInterface): Promise<string | undefined> {
-  return profileOf(await $.settings.read({ source: 'flag' }));
 }
 
 // While `limitInputs` finds the limit unknown (no breakdown, or auto-compaction
@@ -54,18 +47,15 @@ async function refreshLimit($: EngineInterface): Promise<void> {
 
 /**
  * Hooks the gauge: the context-limit variable at session start and after each
- * tool batch, the unprofiled status, the profile label in the footer, and a
- * worker's signpost row under the prompt.
+ * tool batch, and the identity row under the prompt.
  */
 export function registerGauge(on: On): void {
   // Undefined until this load's start hook settles it.
   const session: { role: Role | undefined } = { role: undefined };
 
-  // The status goes first, so a failed usage read cannot hide it.
   on('session.start', async ($, e, next) => {
     try {
       session.role = await settleRole($);
-      if ((await flagProfile($)) === undefined) $.ui.status(UNPROFILED);
       await refreshLimit($);
     } catch (error) {
       // The limit stays unset, which the canary reports.
@@ -83,32 +73,30 @@ export function registerGauge(on: On): void {
     }
     return next(e);
   });
-  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
-    const modes = modesWith(e.props.modes, await flagProfile($));
-    return next({ ...e, props: { ...e.props, modes } });
-  });
-  // A failure while drawing leaves what lies beneath drawn.
+  // Until the publisher writes the facts, the settled role gives the row.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const below = await next(e);
-    const { role } = session;
-    if (role?.kind !== 'worker' || e.viewport === undefined) return below;
+    if (e.viewport === undefined) return below;
     try {
-      const columns = Math.max(0, e.viewport.columns - HINT_INSET);
+      const { value } = await $.state.get(SELF);
+      const self = value ?? factsOf(session.role);
+      const runs = identityRuns(self, e.viewport.columns - HINT_INSET);
+      if (runs.length === 0) return below;
       return {
         type: 'Box',
         props: { flexDirection: 'column' },
-        children: [
-          below,
-          {
-            type: 'Text',
-            props: { color: SIGNPOST_COLOR, wrap: 'truncate-end' },
-            children: [cut(signpostText(role.main), columns)],
-          },
-        ],
+        children: [below, rowElement(runs)],
       };
     } catch (error) {
-      logFailure($, 'drawing the signpost', error);
+      logFailure($, 'drawing the identity row', error);
       return below;
     }
   });
+}
+
+function factsOf(role: Role | undefined): SelfFacts | undefined {
+  if (role === undefined) return undefined;
+  return role.kind === 'worker' && role.main !== undefined
+    ? { role: 'worker', main: role.main }
+    : { role: role.kind };
 }

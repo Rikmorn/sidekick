@@ -17,7 +17,6 @@ import {
 } from 'claude-code/testing';
 import { PANE_ROWS } from '../commands';
 import type { DeskSnapshot } from '../desk/contract';
-import { signpostText } from '../gauge/logic';
 import { HINT_INSET, width } from '../lines';
 import {
   type BoardGlance,
@@ -394,6 +393,28 @@ function merged(runs: readonly Run[]): Run[] {
   return out;
 }
 
+// The gauge shares the hint site and draws an identity row of bold runs in
+// every role; the gauge's tests own it, so these tests read the site without it.
+function isIdentityRow(node: RenderNode): boolean {
+  if (typeof node === 'string' || node.type !== 'Box') return false;
+  const first = childrenOf(node)[0];
+  return (
+    typeof first !== 'string' &&
+    first?.type === 'Text' &&
+    first.props?.weight === 'bold'
+  );
+}
+
+function withoutIdentity(node: RenderNode): RenderNode {
+  if (typeof node === 'string' || !('children' in node)) return node;
+  return {
+    ...node,
+    children: childrenOf(node)
+      .filter((child) => !isIdentityRow(child))
+      .map(withoutIdentity),
+  } as RenderElement;
+}
+
 // What the hint site drew, line by line: a column's children, or one tree.
 async function drawnHint(
   $: Engine,
@@ -407,7 +428,7 @@ async function drawnHint(
     props: HINT_PROPS,
     ...(viewport === undefined ? {} : { viewport }),
   });
-  const tree = await ui.drawn();
+  const tree = withoutIdentity(await ui.drawn()) as RenderElement;
   await ui.unmount();
   const lines = tree.type === 'Box' ? childrenOf(tree) : [tree];
   return lines.map((line) => merged(runsOf(line, undefined)));
@@ -527,6 +548,23 @@ for (const order of ORDERS) {
     }
   });
 }
+
+test('the board line draws under the gauge’s identity row', async ($, on) => {
+  const { clock } = answerBeneath(on, worldWith());
+  await bothStarts($, clock);
+  const ui = await $.ui.mount({
+    plugin: PLUGIN,
+    surface: 'terminal',
+    component: 'PromptHint',
+    props: HINT_PROPS,
+    viewport: WIDE,
+  });
+  const tree = await ui.drawn();
+  await ui.unmount();
+  const [inner, boardRow] = childrenOf(tree as RenderElement);
+  expect(JSON.stringify(inner)).toContain('your main');
+  expect(JSON.stringify(boardRow)).toContain('Rikmorn/sidekick');
+});
 
 test('the classic start returns what lay beneath, unchanged', async ($, on) => {
   const { clock } = answerBeneath(on, worldWith());
@@ -658,8 +696,6 @@ const UNSEEN: {
   name: string;
   over: Partial<World>;
   start?: SessionStartInput;
-  // Rows other than the board's: a worker's gauge draws its signpost through the board's hook.
-  extraRows?: Run[][];
 }[] = [
   { name: 'a start under -p', over: {}, start: HEADLESS },
   {
@@ -669,9 +705,6 @@ const UNSEEN: {
   {
     name: 'a worker',
     over: { flag: { env: { SIDEKICK_MAIN: 'Single word reply' } } },
-    extraRows: [
-      [{ text: signpostText('Single word reply'), color: 'inactive' }],
-    ],
   },
   {
     name: 'a profile that hides the board',
@@ -692,10 +725,7 @@ for (const unseen of UNSEEN) {
     await clock.settle();
     expect(seen.pickups).toEqual([]);
     expect(seen.opened).toEqual([]);
-    expect(await drawnHint($, 'terminal', WIDE)).toEqual([
-      UNDER,
-      ...(unseen.extraRows ?? []),
-    ]);
+    expect(await drawnHint($, 'terminal', WIDE)).toEqual([UNDER]);
   });
 }
 

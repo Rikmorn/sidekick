@@ -2,6 +2,8 @@
 
 import type { SessionContextUsage } from 'claude-code';
 import { wayBack } from '../role';
+import type { SelfFacts } from '../state';
+import { cutRow, type StyledRun } from '../styled';
 import type { ContextLimit, LimitKind } from './contract';
 
 export const UNPROFILED = 'no profile settings in this session';
@@ -16,14 +18,6 @@ export function profileOf(flag: Record<string, unknown>): string | undefined {
   if (!isRecord(sidekick)) return undefined;
   const { profile } = sidekick;
   return typeof profile === 'string' && profile !== '' ? profile : undefined;
-}
-
-/** The footer's modes with the profile label appended, as a new array. */
-export function modesWith(
-  modes: readonly string[],
-  profile: string | undefined,
-): string[] {
-  return profile === undefined ? [...modes] : [...modes, `profile: ${profile}`];
 }
 
 /** What resolving the limit takes from a usage reading: the window, and the compaction point when one came. */
@@ -74,9 +68,52 @@ export function limitValue(
   return JSON.stringify(limit);
 }
 
-/** The row a worker draws under the prompt: its main and the way back, or the agent-view key when it has no main. */
-export function signpostText(main: string | undefined): string {
-  return main === undefined
+const ICONS = { main: '▣', worker: '◐', other: '◌' } as const;
+const TONES = {
+  main: 'claude',
+  worker: 'suggestion',
+  other: 'inactive',
+} as const;
+
+// The words after the name; a main or worker without a name leads with them.
+function roleWords(self: SelfFacts): string {
+  if (self.role === 'main') return 'your main';
+  if (self.role === 'other') return 'session';
+  return self.main === undefined
     ? 'worker · ← opens agent view'
-    : `worker of ${main} · to go back: ${wayBack(main)}`;
+    : `worker of ${self.main} · back: ${wayBack(self.main)}`;
+}
+
+/**
+ * The identity row, cut from its end to `columns`: the role's icon and the
+ * session's name, its role in words, and its profile. Before a name is known it
+ * shows the role alone, since the profile arrives with the name. Undefined
+ * facts give no row.
+ */
+export function identityRuns(
+  self: SelfFacts | undefined,
+  columns: number,
+): StyledRun[] {
+  if (self === undefined) return [];
+  const icon = ICONS[self.role];
+  const tone = TONES[self.role];
+  if (self.name === undefined) {
+    return cutRow(
+      [
+        { text: icon, tone, bold: true },
+        { text: ` ${roleWords(self)}`, tone: 'inactive' },
+      ],
+      columns,
+    );
+  }
+  const head: StyledRun = { text: `${icon} ${self.name}`, tone, bold: true };
+  const words = self.role === 'other' ? '' : ` · ${roleWords(self)}`;
+  const profile: StyledRun[] =
+    self.profile === undefined
+      ? [{ text: `${words} · no profile`, tone: 'inactive' }]
+      : [
+          { text: `${words} · profile `, tone: 'inactive' },
+          { text: self.profile, tone: 'text' },
+        ];
+  return cutRow([head, ...profile], columns);
 }

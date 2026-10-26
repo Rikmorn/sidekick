@@ -5,9 +5,10 @@ import type {
   Settings,
 } from 'claude-code';
 import { type Engine, expect, mock, test } from 'claude-code/testing';
-import { cut, HINT_INSET, width } from '../lines';
+import { HINT_INSET } from '../lines';
+import type { SelfFacts } from '../state';
 import { CONTEXT_LIMIT_VAR, FIXTURE_FLAG, parseContextLimit } from './contract';
-import { signpostText, UNPROFILED } from './logic';
+import { identityRuns } from './logic';
 
 // The session the test's hooks answer for, beneath the plugin. A test may
 // change `id` between events, as /clear does. `isAutoCompactEnabled` is what
@@ -28,6 +29,9 @@ type Seen = {
   env: Map<string, string | undefined>;
   statuses: (string | undefined)[];
   modes: (readonly string[])[];
+  // What `$.state` holds under `sidekick.self`; the publisher writes it.
+  self: SelfFacts | undefined;
+  selfReads: number;
 };
 
 const START: SessionStartInput = {
@@ -72,7 +76,13 @@ function breakdownOf(session: Session): SessionContextBreakdown {
 // Nothing sits beneath the test's hooks, so they answer every call the
 // gauge makes and end every chain it continues.
 function answerBeneath(on: On, session: Session): Seen {
-  const seen: Seen = { env: new Map(), statuses: [], modes: [] };
+  const seen: Seen = {
+    env: new Map(),
+    statuses: [],
+    modes: [],
+    self: undefined,
+    selfReads: 0,
+  };
   on('settings.read', (_$, e) => ({
     value: e.source === 'flag' ? session.flag : {},
   }));
@@ -90,6 +100,16 @@ function answerBeneath(on: On, session: Session): Seen {
   on('env.set', (_$, e) => {
     seen.env.set(e.name, e.value);
     return { value: {} };
+  });
+  on('state.get', (_$, e) => {
+    if (e.key === 'self') seen.selfReads += 1;
+    return {
+      value: { value: e.key === 'self' ? seen.self : undefined, version: 0 },
+    };
+  });
+  on('state.set', (_$, e) => {
+    if (e.key === 'self') seen.self = e.value as SelfFacts;
+    return { value: { isSet: true, version: 1 } };
   });
   on('ui.status', (_$, e) => {
     seen.statuses.push(e.text);
@@ -141,23 +161,21 @@ test('session start writes no limit when auto-compaction is on but no threshold 
   const seen = answerBeneath(on, session);
   await $.session.start(START);
   expect(seen.env.has(CONTEXT_LIMIT_VAR)).toBe(false);
-  expect(seen.statuses).toEqual([UNPROFILED]);
+  expect(seen.statuses).toEqual([]);
 });
 
-// The unprofiled status shows the hook ran on past the usage read, so the
-// unset variable is not a hook that failed.
 test('session start writes no limit when the session gives no breakdown', async ($, on) => {
   const session = { ...sessionWith({}), hasBreakdown: false };
   const seen = answerBeneath(on, session);
   await $.session.start(START);
   expect(seen.env.has(CONTEXT_LIMIT_VAR)).toBe(false);
-  expect(seen.statuses).toEqual([UNPROFILED]);
+  expect(seen.statuses).toEqual([]);
 });
 
-test('session start pins the unprofiled status when the flag names no profile', async ($, on) => {
+test('session start draws no unprofiled status when the flag names no profile', async ($, on) => {
   const seen = answerBeneath(on, sessionWith({}));
   await $.session.start(START);
-  expect(seen.statuses).toEqual([UNPROFILED]);
+  expect(seen.statuses).toEqual([]);
 });
 
 test('a tool batch after the session id changes names the new id', async ($, on) => {
@@ -169,35 +187,25 @@ test('a tool batch after the session id changes names the new id', async ($, on)
   expect(limitIn(seen)).toMatchObject({ session: 'session-2' });
 });
 
-test('the footer gains the profile label on every surface', async ($, on) => {
-  const seen = answerBeneath(on, sessionWith(FIXTURE_FLAG));
-  for (const surface of SURFACES) {
-    seen.modes.length = 0;
-    const ui = await $.ui.mount({
-      plugin: 'sidekick',
-      surface,
-      component: 'SessionMode',
-      props: { modes: ['focus'] },
-    });
-    expect(seen.modes).toEqual([['focus', 'profile: fixture']]);
-    await ui.unmount();
-  }
-});
-
-test('the footer is left as it was when the flag names no profile', async ($, on) => {
-  const seen = answerBeneath(on, sessionWith({}));
-  for (const surface of SURFACES) {
-    seen.modes.length = 0;
-    const ui = await $.ui.mount({
-      plugin: 'sidekick',
-      surface,
-      component: 'SessionMode',
-      props: { modes: ['focus'] },
-    });
-    expect(seen.modes).toEqual([['focus']]);
-    await ui.unmount();
-  }
-});
+for (const [name, flag] of [
+  ['profiled', FIXTURE_FLAG],
+  ['unprofiled', {}],
+] as const) {
+  test(`the footer passes its modes through untouched on every surface when ${name}`, async ($, on) => {
+    const seen = answerBeneath(on, sessionWith(flag));
+    for (const surface of SURFACES) {
+      seen.modes.length = 0;
+      const ui = await $.ui.mount({
+        plugin: 'sidekick',
+        surface,
+        component: 'SessionMode',
+        props: { modes: ['focus'] },
+      });
+      expect(seen.modes).toEqual([['focus']]);
+      await ui.unmount();
+    }
+  });
+}
 
 // The desk shares the module. The kit skips a module's whole hook for an event
 // when one mod's part fails, so each mod keeps its own failures (rulings R9).
@@ -241,7 +249,7 @@ test('a desk whose /desk is refused leaves the gauge whole, and the band draws t
   }));
   await $.session.start(START);
   expect(limitIn(seen)).toMatchObject({ session: 'session-1', tokens: 967000 });
-  expect(seen.statuses).toEqual([UNPROFILED]);
+  expect(seen.statuses).toEqual([]);
   const ui = await $.ui.mount({
     plugin: 'sidekick',
     surface: 'terminal',
@@ -294,8 +302,24 @@ function workerFlag(main: string | undefined): Settings {
   };
 }
 
-test('a worker draws what lies beneath, then one signpost row in the inactive colour', async ($, on) => {
-  answerBeneath(on, sessionWith(workerFlag(MAIN)));
+// The row's runs as the engine draws them, joined; what lies beneath is the first child.
+function identityText(tree: unknown): string {
+  const column = tree as { children: { children: { children: string[] }[] }[] };
+  return (
+    column.children[1]?.children.map((run) => run.children[0]).join('') ?? ''
+  );
+}
+
+const FACTS: SelfFacts = {
+  name: 'add-greeting',
+  role: 'worker',
+  main: MAIN,
+  profile: 'worker',
+};
+
+test('a session draws what lies beneath, then one identity row from its facts', async ($, on) => {
+  const seen = answerBeneath(on, sessionWith(workerFlag(MAIN)));
+  seen.self = FACTS;
   hintBeneath(on);
   await $.session.start(START);
   const tree = await hintDrawn($, 200);
@@ -305,43 +329,71 @@ test('a worker draws what lies beneath, then one signpost row in the inactive co
     children: [
       { type: 'Text', children: ['hint'] },
       {
-        type: 'Text',
-        props: { color: 'inactive' },
-        children: [signpostText(MAIN)],
+        type: 'Box',
+        children: [
+          { props: { color: 'suggestion', weight: 'bold' } },
+          { props: { color: 'inactive' } },
+          { props: { color: 'text' }, children: ['worker'] },
+        ],
       },
     ],
   });
+  expect(identityText(tree)).toBe(
+    `◐ add-greeting · worker of ${MAIN} · back: ←, select ${MAIN}, Enter · profile worker`,
+  );
 });
 
-test('a worker with no main draws the agent-view signpost', async ($, on) => {
-  answerBeneath(on, sessionWith(workerFlag(undefined)));
+test('the row cuts from its end at the viewport less the inset', async ($, on) => {
+  const seen = answerBeneath(on, sessionWith({}));
+  seen.self = FACTS;
   hintBeneath(on);
   await $.session.start(START);
-  const tree = await hintDrawn($, 200);
-  expect(JSON.stringify(tree)).toContain('worker · ← opens agent view');
+  const columns = 60;
+  const tree = await hintDrawn($, columns);
+  const expected = identityRuns(FACTS, columns - HINT_INSET)
+    .map((run) => run.text)
+    .join('');
+  expect(identityText(tree)).toBe(expected);
+  expect(identityText(tree)).toContain('back: ←');
+  expect(identityText(tree)).not.toContain('profile');
 });
 
-test('the signpost stays within the row in a narrow terminal, wide characters included', async ($, on) => {
-  const long = '日本語の長い名前'.repeat(6);
-  answerBeneath(on, sessionWith(workerFlag(long)));
-  hintBeneath(on);
-  await $.session.start(START);
-  const tree = await hintDrawn($, 30 + HINT_INSET);
-  const text = cut(signpostText(long), 30);
-  expect(width(text)).toBeLessThanOrEqual(30);
-  expect(JSON.stringify(tree)).toContain(text);
-  expect(JSON.stringify(tree)).not.toContain(signpostText(long));
-  // The code-point cut is a pre-trim; the renderer bounds the row in cells.
-  expect(tree).toMatchObject({
-    children: [
-      {},
-      { type: 'Text', props: { wrap: 'truncate-end', color: 'inactive' } },
-    ],
-  });
-});
-
-test('a worker without a viewport draws only what lies beneath', async ($, on) => {
+test('before the facts are written the settled role gives the row', async ($, on) => {
   answerBeneath(on, sessionWith(workerFlag(MAIN)));
+  hintBeneath(on);
+  await $.session.start(START);
+  expect(identityText(await hintDrawn($, 200))).toBe(
+    `◐ worker of ${MAIN} · back: ←, select ${MAIN}, Enter`,
+  );
+});
+
+test('a main with no facts yet draws its role alone', async ($, on) => {
+  answerBeneath(on, sessionWith({}));
+  hintBeneath(on);
+  await $.session.start(START);
+  expect(identityText(await hintDrawn($, 200))).toBe('▣ your main');
+});
+
+// The engine redraws a site whose draw called `$.state.get` when the value is set; the kit has no `$.state`, so this proves the draw reads through it and follows the value.
+// The engine redraws a site whose draw called `$.state.get` when the value is set, and the kit has no `$.state` to set it with. So this proves the draw reads through `state.get`, and that a fresh draw follows the value.
+test('the row reads the facts through $.state.get when it draws, and follows a change', async ($, on) => {
+  const seen = answerBeneath(on, sessionWith({}));
+  seen.self = { name: 'first', role: 'main' };
+  hintBeneath(on);
+  await $.session.start(START);
+  expect(identityText(await hintDrawn($, 200))).toBe(
+    '▣ first · your main · no profile',
+  );
+  expect(seen.selfReads).toBeGreaterThan(0);
+  seen.self = { name: 'second', role: 'main' };
+  expect(identityText(await hintDrawn($, 200))).toBe(
+    '▣ second · your main · no profile',
+  );
+});
+
+test('a session without a viewport draws only what lies beneath', async ($, on) => {
+  const seen = answerBeneath(on, sessionWith(workerFlag(MAIN)));
+  seen.self = FACTS;
   hintBeneath(on);
   await $.session.start(START);
   expect(await hintDrawn($, undefined)).toMatchObject({
@@ -350,17 +402,7 @@ test('a worker without a viewport draws only what lies beneath', async ($, on) =
   });
 });
 
-test('a main and an other session draw no signpost', async ($, on) => {
-  answerBeneath(on, sessionWith({}));
-  hintBeneath(on);
-  await $.session.start(START);
-  expect(await hintDrawn($, 200)).toMatchObject({
-    type: 'Text',
-    children: ['hint'],
-  });
-});
-
-test('no signpost is drawn before the role settles', async ($, on) => {
+test('no row is drawn before the role settles and the facts are written', async ($, on) => {
   answerBeneath(on, sessionWith(workerFlag(MAIN)));
   hintBeneath(on);
   expect(await hintDrawn($, 200)).toMatchObject({

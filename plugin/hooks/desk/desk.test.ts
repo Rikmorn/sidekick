@@ -46,7 +46,13 @@ type World = {
   answer: RunAnswer;
   hold?: Promise<void>;
   panes: Map<string, OpenPane>;
-  refused: Set<'settings.read' | 'session.id' | 'ui.open' | 'ui.invalidate'>;
+  refused: Set<
+    | 'settings.read'
+    | 'session.id'
+    | 'session.usage'
+    | 'ui.open'
+    | 'ui.invalidate'
+  >;
   /** Whether the engine refuses `command.register`, as it does a name another owner holds. */
   isRefusingCommand: boolean;
   /** The session's flag settings, as `--settings` gave them. */
@@ -240,9 +246,13 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
       : { value: world.flag },
   );
   on('session.surfaces', () => ({ value: world.surfaces }));
-  on('session.usage', () => ({
-    value: { startedAt: 0, context: { window: 1000000 }, rateLimits: [] },
-  }));
+  on('session.usage', () =>
+    world.refused.has('session.usage')
+      ? { deny: REFUSAL }
+      : {
+          value: { startedAt: 0, context: { window: 1000000 }, rateLimits: [] },
+        },
+  );
   on('ui.status', () => ({ value: undefined }));
   on('session.id', () =>
     world.refused.has('session.id')
@@ -988,9 +998,10 @@ test('a refused unasked open leaves the desk polling and the band drawn', async 
 
 // The kit skips a module's whole hook for an event when one mod's part
 // fails, so each mod keeps its own failures (rulings R9).
-test('a gauge that cannot read its settings leaves the desk polling', async ($, on) => {
+test('a gauge that cannot read its usage leaves the desk polling', async ($, on) => {
   const world = worldWith(printed(QUIET));
   world.refused.add('settings.read');
+  world.refused.add('session.usage');
   const { seen, clock } = answerBeneath(on, world);
   await started($, clock);
   expect(seen.commands).toContain('desk');

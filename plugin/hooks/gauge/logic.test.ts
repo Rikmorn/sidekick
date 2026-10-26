@@ -1,12 +1,7 @@
 import { expect, test } from 'claude-code/testing';
+import type { SelfFacts } from '../state';
 import { FIXTURE_FLAG, parseContextLimit } from './contract';
-import {
-  limitValue,
-  modesWith,
-  profileOf,
-  signpostText,
-  UNPROFILED,
-} from './logic';
+import { identityRuns, limitValue, profileOf, UNPROFILED } from './logic';
 
 test('profileOf reads the profile name from the flag', () => {
   expect(profileOf(FIXTURE_FLAG)).toBe('fixture');
@@ -21,21 +16,6 @@ test('profileOf is undefined when the flag names no profile', () => {
 
 test('the unprofiled status is the verbatim text', () => {
   expect(UNPROFILED).toBe('no profile settings in this session');
-});
-
-test('modesWith appends the profile label to a new array', () => {
-  const modes = ['focus'];
-  const withProfile = modesWith(modes, 'work');
-  expect(withProfile).toEqual(['focus', 'profile: work']);
-  expect(withProfile).not.toBe(modes);
-  expect(modes).toEqual(['focus']);
-});
-
-test('modesWith copies the modes when there is no profile', () => {
-  const modes = ['focus'];
-  const same = modesWith(modes, undefined);
-  expect(same).toEqual(['focus']);
-  expect(same).not.toBe(modes);
 });
 
 test('limitValue gives kind compaction when a threshold is set', () => {
@@ -90,12 +70,86 @@ test('parseContextLimit reads a malformed value as absent', () => {
   }
 });
 
-test('the signpost names the main and the way back', () => {
-  expect(signpostText('Single word reply')).toBe(
-    'worker of Single word reply · to go back: ←, select Single word reply, Enter',
+const textOf = (self: SelfFacts | undefined, columns = 200) =>
+  identityRuns(self, columns)
+    .map((run) => run.text)
+    .join('');
+
+test('a main reads as its name, your main, and its profile', () => {
+  const self: SelfFacts = {
+    name: 'todo-app-ce',
+    role: 'main',
+    profile: 'main',
+  };
+  expect(textOf(self)).toBe('▣ todo-app-ce · your main · profile main');
+  expect(identityRuns(self, 200)).toEqual([
+    { text: '▣ todo-app-ce', tone: 'claude', bold: true },
+    { text: ' · your main · profile ', tone: 'inactive' },
+    { text: 'main', tone: 'text' },
+  ]);
+});
+
+test('a worker reads as its main and the way back', () => {
+  const self: SelfFacts = {
+    name: 'add-greeting',
+    role: 'worker',
+    main: 'todo-app-ce',
+    profile: 'worker',
+  };
+  expect(textOf(self)).toBe(
+    '◐ add-greeting · worker of todo-app-ce · back: ←, select todo-app-ce, Enter · profile worker',
+  );
+  expect(identityRuns(self, 200)[0]).toEqual({
+    text: '◐ add-greeting',
+    tone: 'suggestion',
+    bold: true,
+  });
+});
+
+test('a worker without a main points at agent view', () => {
+  const self: SelfFacts = { name: 'w', role: 'worker', profile: 'worker' };
+  expect(textOf(self)).toBe(
+    '◐ w · worker · ← opens agent view · profile worker',
   );
 });
 
-test('the signpost without a main points at agent view', () => {
-  expect(signpostText(undefined)).toBe('worker · ← opens agent view');
+test('an other session reads as its name and profile', () => {
+  const self: SelfFacts = { name: 'scratch', role: 'other', profile: 'p' };
+  expect(textOf(self)).toBe('◌ scratch · profile p');
+  expect(identityRuns(self, 200)[0]).toMatchObject({ tone: 'inactive' });
+});
+
+test('no profile reads no profile, all inactive', () => {
+  const runs = identityRuns({ name: 'sidekick-6f', role: 'main' }, 200);
+  expect(runs.map((run) => run.text).join('')).toBe(
+    '▣ sidekick-6f · your main · no profile',
+  );
+  expect(runs.slice(1).every((run) => run.tone === 'inactive')).toBe(true);
+});
+
+test('before a name is known the row shows the role alone', () => {
+  expect(textOf({ role: 'main', profile: 'main' })).toBe('▣ your main');
+  expect(textOf({ role: 'worker', main: 'm' })).toBe(
+    '◐ worker of m · back: ←, select m, Enter',
+  );
+  expect(textOf({ role: 'worker' })).toBe('◐ worker · ← opens agent view');
+  expect(textOf({ role: 'other' })).toBe('◌ session');
+});
+
+test('no facts draw no row', () => {
+  expect(identityRuns(undefined, 200)).toEqual([]);
+});
+
+test('a narrow worker row keeps the way back and loses the profile', () => {
+  const self: SelfFacts = {
+    name: 'add-greeting',
+    role: 'worker',
+    main: 'todo-app-ce',
+    profile: 'worker',
+  };
+  const text = textOf(self, 60);
+  expect(text).toBe(
+    '◐ add-greeting · worker of todo-app-ce · back: ←, select tod',
+  );
+  expect(text).not.toContain('profile');
 });

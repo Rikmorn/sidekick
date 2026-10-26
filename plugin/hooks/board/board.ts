@@ -6,8 +6,8 @@
 // Every other mod but the gauge shares `session.start` under the same matcher,
 // and the gauge shares it unmatched. The role shares `classic.SessionStart`,
 // matched on `fork`, and the name mod shares `classic.PostToolUse` on Bash. In
-// a worker the gauge draws a row in `PromptHint` too, and the board's hook
-// passes it through. The desk and the scope mod draw panes of their own ids. A
+// every role the gauge draws a row in `PromptHint` too, and the board's line
+// draws under it. The desk and the scope mod draw panes of their own ids. A
 // hook that fails in one mod skips the module's whole hook for that event, so
 // each hook keeps its own failures and calls `next(e)` once. `/board`
 // registers in every session the profile leaves the board on in. A main keeps
