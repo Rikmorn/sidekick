@@ -30,7 +30,7 @@ const MS_PER_SECOND = 1_000;
 /**
  * A process run's result as stdout, or the words for why there is none. A run
  * rejects when it cannot start, a plugin refuses it, or it outlasts its timeout.
- * The declarations give no way to tell which, so the reason names all three.
+ * The declarations give no way to tell which, so the reason covers all three.
  */
 export function runOutcome(
   ran: Settled<ProcessRunResult>,

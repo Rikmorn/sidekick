@@ -144,8 +144,7 @@ function rowUnder(
   };
 }
 
-// Each Text is one row, since the rows are fitted or wrapped to the width
-// already, so the rows counted are the rows drawn.
+// The scroll hint is cut to the width already, so it draws as the one row counted.
 function textRow(text: string, color: ThemeKey): RenderElement {
   return {
     type: 'Text',

@@ -8,7 +8,7 @@ export function width(text: string): number {
   return [...text].length;
 }
 
-/** The mark a cut text ends in. */
+/** The mark a cut text carries. */
 export const ELLIPSIS = '…';
 
 /** The first `columns` code points of `text`, never splitting one. */
