@@ -31,6 +31,9 @@ const NAME_COLUMNS_MIN = 8;
 const DETAIL_COLUMNS_MIN = 12;
 // More would push the sessions after them out of the pane.
 const SUBAGENT_ROWS_MAX = 3;
+// The least room between this main's name and its counts.
+const ROOT_GAP_MIN = 2;
+const RULE = '─';
 
 type Branch = '' | '├ ' | '└ ';
 
@@ -51,10 +54,12 @@ interface Node {
 
 type Item = { kind: 'node'; node: Node } | { kind: 'more'; count: number };
 
-const SUBAGENT_LOOKS: Record<string, { icon: string; tone: ThemeKey }> = {
-  running: { icon: '◐', tone: 'suggestion' },
-  waiting: { icon: '●', tone: 'warning' },
-};
+// A Map, since the status is another process's word and a plain object would answer `constructor`.
+const SUBAGENT_LOOKS: ReadonlyMap<string, { icon: string; tone: ThemeKey }> =
+  new Map([
+    ['running', { icon: '◐', tone: 'suggestion' }],
+    ['waiting', { icon: '●', tone: 'warning' }],
+  ]);
 const SUBAGENT_IDLE = { icon: '○', tone: 'inactive' } as const;
 
 // What a session does, in a question's tone while it waits. Without a work
@@ -70,7 +75,7 @@ function detailRuns(status: Status, work: string | undefined): StyledRun[] {
 }
 
 function subagentNode(subagent: Subagent): Node {
-  const look = SUBAGENT_LOOKS[subagent.status] ?? SUBAGENT_IDLE;
+  const look = SUBAGENT_LOOKS.get(subagent.status) ?? SUBAGENT_IDLE;
   const detail: StyledRun[] =
     subagent.description === ''
       ? []
@@ -140,10 +145,16 @@ function otherNode(other: TreeOther, workers: readonly TreeOther[]): Node {
   ]);
 }
 
-// The context whole while the name keeps its floor, else the text alone, else none.
+// The context whole while the name keeps its floor, else the text alone, else
+// none. The row sets it flush right, so a lone text's padding would only take
+// columns from the name.
 function headContext(node: Node, room: number): StyledRun[] {
   const floor = Math.min(width(node.name.text), NAME_COLUMNS_MIN);
-  return contextRuns(node.context, Math.min(CONTEXT_COLUMNS, room - floor - 1));
+  const contextRoom = Math.min(CONTEXT_COLUMNS, room - floor - 1);
+  const [first, ...rest] = contextRuns(node.context, contextRoom);
+  return first === undefined
+    ? []
+    : [{ ...first, text: first.text.trimStart() }, ...rest];
 }
 
 // The icon, the name, and the marks, then the context flush right; the name gives way first.
@@ -220,12 +231,21 @@ function nodeEntries(
   ];
 }
 
+// A rule across the pane, with the repository's name near its start; a group
+// with no name, outside a repository, takes the rule alone.
 function headerEntry(repo: string, columns: number): PaneEntry {
-  const rule = '─'.repeat(Math.max(0, columns - width(repo) - 3));
+  if (repo === '') {
+    return {
+      row: [{ text: RULE.repeat(columns), tone: 'subtle' }],
+      needsYou: false,
+    };
+  }
+  const lead = `${RULE} `;
+  const tail = ` ${RULE.repeat(Math.max(0, columns - width(lead) - width(repo) - 1))}`;
   const row: StyledRow = [
-    { text: '─ ', tone: 'subtle' },
+    { text: lead, tone: 'subtle' },
     { text: repo, tone: 'inactive', bold: true },
-    { text: ` ${rule}`, tone: 'subtle' },
+    { text: tail, tone: 'subtle' },
   ];
   return { row, needsYou: false };
 }
@@ -238,7 +258,7 @@ function rootEntry(tree: DeskTree, columns: number): PaneEntry {
     tone: 'claude',
     bold: true,
   };
-  const counts = countRuns(root, columns - rowWidth([name]) - 2);
+  const counts = countRuns(root, columns - rowWidth([name]) - ROOT_GAP_MIN);
   const gap = columns - rowWidth([name]) - rowWidth(counts);
   const row: StyledRow =
     counts.length === 0
@@ -284,7 +304,7 @@ export function stackedEntries(tree: DeskTree, columns: number): PaneEntry[] {
       .flatMap((block) => blockEntries(block, columns));
   return [
     ...repos.filter(isWaiting).flatMap(group),
-    ...(own === undefined ? [] : [headerEntry(own, columns)]),
+    headerEntry(own ?? '', columns),
     ...ownOf(tree.waiting),
     rootEntry(tree, columns),
     ...childrenEntries(tree, columns),

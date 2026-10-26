@@ -2,7 +2,7 @@
 // session takes one row of aligned columns, as the L1 inline plate lays them
 // out; narrower, the pane takes the stacked form in `stacked.ts`.
 
-import { width } from '../lines';
+import { cut, width } from '../lines';
 import {
   cutRow,
   rowWidth,
@@ -12,7 +12,6 @@ import {
 } from '../styled';
 import {
   CONTEXT_COLUMNS,
-  cell,
   contextRuns,
   countRuns,
   lookOf,
@@ -55,6 +54,16 @@ const FIXED_COLUMNS =
   STATE_COLUMNS +
   MARKS_COLUMNS +
   CONTEXT_COLUMNS;
+
+// A cell keeps its last column blank, so the next cell never touches it.
+function cell(
+  text: string,
+  columns: number,
+  style: Omit<StyledRun, 'text'>,
+): StyledRun {
+  const kept = cut(text, columns - 1);
+  return { ...style, text: kept + ' '.repeat(columns - width(kept)) };
+}
 
 // The inline form at one width: its work column's width, and the columns its rows end at.
 interface Frame {

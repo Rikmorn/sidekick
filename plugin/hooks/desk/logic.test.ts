@@ -416,25 +416,28 @@ test('stacked, a question reads in the warning tone, a worker by name in bold, a
   expect(runOf(rows[12], 'idle')?.tone).toBe('inactive');
 });
 
+// A worker with a long profile, a main with one, and a session without a key.
+const PROFILED = snapshot({
+  self: SELF,
+  children: [child({ name: 'add-greeting', sessionId: 'add' })],
+  others: [
+    other({ name: 'pm-main', sessionId: 'pm', repo: 'sidekick' }),
+    other({ name: 'bench', sessionId: 'bench', repo: 'sidekick' }),
+  ],
+});
+
+const PROFILED_KEYS = keysOf(
+  key({
+    sessionId: 'add',
+    profile: 'worker-opus',
+    activity: 'Edit: plugin/hooks/desk/rows.ts',
+  }),
+  key({ sessionId: 'pm', role: 'main', profile: 'main' }),
+);
+
 test("stacked, a session's profile stands at the right of its detail row while the detail keeps 12 columns", () => {
-  const snap = snapshot({
-    self: SELF,
-    children: [child({ name: 'add-greeting', sessionId: 'add' })],
-    others: [
-      other({ name: 'pm-main', sessionId: 'pm', repo: 'sidekick' }),
-      other({ name: 'bench', sessionId: 'bench', repo: 'sidekick' }),
-    ],
-  });
-  const keys = keysOf(
-    key({
-      sessionId: 'add',
-      profile: 'worker-opus',
-      activity: 'Edit: plugin/hooks/desk/rows.ts',
-    }),
-    key({ sessionId: 'pm', role: 'main', profile: 'main' }),
-  );
   const rows = (columns: number) =>
-    paneRows(snap, keys, columns, NOW).map(plain);
+    paneRows(PROFILED, PROFILED_KEYS, columns, NOW).map(plain);
   expect(rows(40)).toEqual([
     header('sidekick', 40),
     spread('▣ todo-app-ce', '1 worker', 40),
@@ -447,7 +450,7 @@ test("stacked, a session's profile stands at the right of its detail row while t
   ]);
   expect(rows(28)[3]).toBe(spread('    Edit: plugin', 'worker-opus', 28));
   expect(rows(27)[3]).toBe('    Edit: plugin/hooks/desk');
-  const detail = paneRows(snap, keys, 40, NOW)[3];
+  const detail = paneRows(PROFILED, PROFILED_KEYS, 40, NOW)[3];
   expect(runOf(detail, 'worker-opus')?.tone).toBe('subtle');
 });
 
@@ -748,12 +751,12 @@ test('each session draws at most three subagents, then one row that counts the r
   expect(runOf(stacked.at(-1), '+2 more')?.tone).toBe('inactive');
 });
 
-test('stacked, the context keeps its bar while the name keeps 8 columns, then its text alone, then gives way', () => {
+test('stacked, the context keeps its bar while the name keeps 8 columns, then its text alone, giving the name the rest, then gives way', () => {
   const head = (columns: number) =>
     plain(paneRows(TREE, TREE_KEYS, columns, NOW)[1] ?? []);
   expect(head(40)).toBe(spread('● odin-review', '▰▰▰▰  176k/88%', 40));
   expect(head(25)).toBe('● odin-rev ▰▰▰▰  176k/88%');
-  expect(head(24)).toBe('● odin-rev      176k/88%');
+  expect(head(24)).toBe(spread('● odin-review', '176k/88%', 24));
   expect(head(19)).toBe('● odin-rev 176k/88%');
   expect(head(18)).toBe('● odin-review');
   for (let columns = 1; columns < 80; columns += 1) {
@@ -843,6 +846,13 @@ test('the context bar lights a cell per 25%, green below 65%, then warning, clau
   const expected = [
     { percent: 40, lit: 2, bar: 'success', tone: 'inactive', text: '80k/40%' },
     { percent: 64, lit: 3, bar: 'success', tone: 'inactive', text: '128k/64%' },
+    {
+      percent: 64.8,
+      lit: 3,
+      bar: 'success',
+      tone: 'inactive',
+      text: '130k/64%',
+    },
     { percent: 65, lit: 3, bar: 'warning', tone: 'warning', text: '130k/65%' },
     { percent: 75, lit: 3, bar: 'claude', tone: 'claude', text: '150k/75%' },
     { percent: 85, lit: 4, bar: 'error', tone: 'error', text: '170k/85%' },
@@ -920,30 +930,38 @@ test('a subagent row names its type in suggestion, then its description, italic 
   ]);
 });
 
-test("stacked, a subagent's icon is its state: ◐ running, ● waiting, ○ pending", () => {
-  const subagents = ['running', 'waiting', 'pending'].map((status) => ({
+test("stacked, a subagent's icon is its state: ◐ running, ● waiting, ○ pending or a word the desk does not know", () => {
+  const subagent = (status: string) => ({
     type: status,
     description: '',
     status,
-  }));
+  });
   const snap = snapshot({
     self: SELF,
-    children: [child({ name: 'a', sessionId: 'a' })],
+    children: [
+      child({ name: 'a', sessionId: 'a' }),
+      child({ name: 'b', sessionId: 'b' }),
+    ],
   });
-  const rows = paneRows(
-    snap,
-    keysOf(key({ sessionId: 'a', subagents })),
-    40,
-    NOW,
+  const keys = keysOf(
+    key({
+      sessionId: 'a',
+      subagents: ['running', 'waiting', 'pending'].map(subagent),
+    }),
+    key({ sessionId: 'b', subagents: [subagent('constructor')] }),
   );
-  expect(rows.slice(4).map(plain)).toEqual([
-    '  ├ ◐ running',
-    '  ├ ● waiting',
-    '  └ ○ pending',
+  const rows = paneRows(snap, keys, 40, NOW);
+  const shown = [4, 5, 6, 9].map((index) => rows[index]);
+  expect(shown.map((row) => plain(row ?? []))).toEqual([
+    '│ ├ ◐ running',
+    '│ ├ ● waiting',
+    '│ └ ○ pending',
+    '  └ ○ constructor',
   ]);
-  expect(rows.slice(4).map((row) => row[1]?.tone)).toEqual([
+  expect(shown.map((row) => row?.[1]?.tone)).toEqual([
     'suggestion',
     'warning',
+    'inactive',
     'inactive',
   ]);
 });
@@ -1007,6 +1025,65 @@ test("stacked, another repo with a session that needs you comes first, then this
     '  idle',
     header('alpha', 60),
     '○ a-main',
+    '  idle',
+  ]);
+});
+
+test('stacked, a context or a profile shows whole or not at all, at every width from 24 columns', () => {
+  const contexts = ['176k/88%', '156k/78%', '140k', '120k/12%'];
+  for (let columns = 24; columns < 80; columns += 1) {
+    for (const row of paneRows(TREE, TREE_KEYS, columns, NOW).map(plain)) {
+      for (const text of contexts) {
+        if (row.includes(text.slice(0, 4))) expect(row).toEndWith(text);
+      }
+    }
+    const profiled = paneRows(PROFILED, PROFILED_KEYS, columns, NOW);
+    for (const row of profiled.map(plain)) {
+      if (row.includes('worker-o')) expect(row).toEndWith('worker-opus');
+    }
+  }
+});
+
+test("stacked, only the head row of a session that needs you counts for the hint: a child's, and another main's worker's", () => {
+  const snap = {
+    ...NESTED,
+    waiting: [
+      ...NESTED.waiting,
+      {
+        hasPid: true,
+        name: 'fix',
+        repo: 'sidekick',
+        reason: 'permission prompt',
+        child: true,
+      },
+    ],
+    children: [
+      child({ name: 'fix', state: 'blocked' }),
+      child({ name: 'calm' }),
+    ],
+  };
+  const flagged = paneEntries(snap, NESTED_KEYS, 40, NOW)
+    .filter((entry) => entry.needsYou)
+    .map((entry) => plain(entry.row));
+  expect(flagged).toEqual(['├ ● wait-perm', '├ ● fix']);
+});
+
+test('stacked, a group with no repository name heads with a plain rule', () => {
+  const { repo: _repo, ...bare } = TREE;
+  const rows = paneRows(bare, TREE_KEYS, 40, NOW).map(plain);
+  expect(rows.slice(3, 5)).toEqual([
+    '─'.repeat(40),
+    spread('▣ todo-app-ce', '2 workers', 40),
+  ]);
+  const nameless = snapshot({
+    self: SELF,
+    others: [other({ name: 'x', repo: '' })],
+  });
+  expect(paneRows(nameless, new Map(), 40, NOW).map(plain)).toEqual([
+    header('sidekick', 40),
+    '▣ todo-app-ce',
+    '─'.repeat(40),
+    '○ x',
     '  idle',
   ]);
 });

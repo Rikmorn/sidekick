@@ -2,7 +2,7 @@
 // word, its context, its marks, and the root's counts.
 
 import type { ThemeKey } from 'claude-code';
-import { cut, width } from '../lines';
+import { width } from '../lines';
 import { rowWidth, type StyledRow, type StyledRun } from '../styled';
 import type { Context, Status, TreeChild, TreeRoot } from './tree';
 
@@ -35,16 +35,6 @@ export function lookOf(status: Status): Look {
 /** `N need you`, or `1 needs you`: the root row and the scroll hint both name it. */
 export function needYouText(count: number): string {
   return `${count} ${count === 1 ? 'needs' : 'need'} you`;
-}
-
-/** `text` cut to leave the last of `columns` blank, then padded to fill them, so the next cell never touches it. */
-export function cell(
-  text: string,
-  columns: number,
-  style: Omit<StyledRun, 'text'>,
-): StyledRun {
-  const kept = cut(text, columns - 1);
-  return { ...style, text: kept + ' '.repeat(columns - width(kept)) };
 }
 
 const THOUSAND = 1_000;
@@ -96,7 +86,8 @@ export function contextRuns(
   }
   const percent = (used * 100) / limit;
   const level = levelOf(percent);
-  const text = `${tokens}/${Math.round(percent)}%`;
+  // Floored, as the context monitor does, so the number never reads a level its tone has not reached.
+  const text = `${tokens}/${Math.floor(percent)}%`;
   if (room < CONTEXT_COLUMNS) return textRuns(text, level.text, room);
   const lit = Math.min(
     BAR_CELLS,

@@ -244,7 +244,7 @@ test('a live key gives each session its profile; a session with no key, or a key
   ]);
 });
 
-test("the root carries the snapshot's repo, which the docked form heads this main's group with", () => {
+test("the root carries the snapshot's repo, which the stacked form heads this main's group with", () => {
   expect(deskTree(snapshot(), new Map(), NOW).root.repo).toBe('todo-app');
   const { repo: _repo, ...bare } = snapshot();
   expect(deskTree(bare, new Map(), NOW).root).not.toHaveProperty('repo');
