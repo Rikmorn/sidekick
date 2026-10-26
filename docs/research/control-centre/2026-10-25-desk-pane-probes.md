@@ -14,7 +14,7 @@ Provenance grades:
 
 | Probe | Question | Answer | Grade |
 |---|---|---|---|
-| P1 | Did any key go missing under 2 and 3 concurrent writers, each setting its own key every second for 60 s? | No. The rounds made 120 and 180 sets, and none failed. Every key was in all 808 and 809 reads of the file, no counter went back, and every read-back matched | Measured |
+| P1 | Did any key go missing under 2 and 3 concurrent writers, each setting its own key every second for 60 s? | No. The rounds made 120 and 180 sets, and none failed. In the watcher's 808 and 809 reads, no key that had appeared went absent and no counter went back, and every read-back matched | Measured |
 | P1 | Where is the store file for a `--plugin-dir` plugin? | `~/.claude/plugins/store/deskpaneprobe_inline-4ed08dc79ecc.json`. The `store` folder did not exist before the run; the first set made it | Measured |
 | P1 | How is the file named per plugin? | From the store's name, `<plugin>@inline` for a `--plugin-dir` plugin: each character outside `[A-Za-z0-9_-]` becomes `_`, then `-` and the first 12 hex digits of the name's SHA-256 follow. The plugin's folder plays no part | Read; the hash measured |
 | P1 | How does a set reach the file? | Under a lock file beside it: read the whole file, write the whole file. Keys outlive the session that set them | Read; outliving measured |
@@ -36,7 +36,7 @@ For #254's later tasks:
 - **Two stores for one sidekick:** a session with sidekick from `--plugin-dir` writes `sidekick_inline-3e4419753454.json`, and an installed one writes `sidekick_rikmorn-0e87d52a3e49.json`. A desk reads only the store its own load writes, so it cannot see the other's sessions (inferred from the naming read for P1).
 - **Subagents:** a finished subagent stays listed as `completed` for about 30 s, so a filter on `running`, `pending`, and `waiting` drops it at once. For the activity line, take `tool.call` from the main loop, or from an `agentId` the list holds. The engine's own forks carry ids the list never shows (P2's findings).
 - **The dock:** `columns: 56` docks at 57 only where no width is kept, and the operator's machine keeps 32. Widening a focused pane with ctrl+x ←, or deleting the kept width, changes the dock for every plugin's pane. So where a width is kept, the desk pane's narrow form is its docked form, and #254's guide says how to widen a dock.
-- **On-screen marker:** no signal tells a session that a terminal shows it, so #254 skips its marker for a session on a screen elsewhere. P4's findings say why.
+- **On-screen marker:** P4 found no signal inside a session that tells it a terminal shows it. So #254 skips its marker for a session on a screen elsewhere. P4's findings say why.
 
 Not tested:
 
@@ -161,7 +161,7 @@ The keys are the binary's `Pane` bindings: ctrl+x ← or ↑ grows the dock, and
 
 ### P4: telling attached from detached
 
-**Inside the session, no signal tells the two apart.** The tick log of `1a733324`:
+**P4 found no signal inside the session that tells the two apart.** The tick log of `1a733324`:
 
 | Phase | `surfaces()` | Viewport | `AbovePrompt` renders | `PromptHint` renders |
 |---|---|---|---|---|
