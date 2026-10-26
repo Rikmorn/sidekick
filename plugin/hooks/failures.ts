@@ -25,6 +25,11 @@ export async function settle<T>(call: Promise<T>): Promise<Settled<T>> {
   }
 }
 
+/** A process run's stdout, or the words for why it has none. */
+export type RunOutcome =
+  | { ok: true; stdout: string }
+  | { ok: false; reason: string };
+
 const MS_PER_SECOND = 1_000;
 
 /**
@@ -35,7 +40,7 @@ const MS_PER_SECOND = 1_000;
 export function runOutcome(
   ran: Settled<ProcessRunResult>,
   run: { name: string; timeoutMs: number },
-): { ok: true; stdout: string } | { ok: false; reason: string } {
+): RunOutcome {
   if ('reason' in ran) {
     const seconds = run.timeoutMs / MS_PER_SECOND;
     return {

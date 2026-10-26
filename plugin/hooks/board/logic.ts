@@ -1,9 +1,7 @@
 // When the board runs, as pure logic: the Bash writes that refresh it, the run
 // queued behind the one in flight, and the HH:MM a run is stamped with.
 
-export type RunOutcome =
-  | { ok: true; stdout: string }
-  | { ok: false; reason: string };
+export type { RunOutcome } from '../failures';
 
 /** Whether the operator asked for a run by opening the pane with `/board`, or the board ran it itself: at start, or after a board write. */
 export type RunKind = 'asked' | 'unasked';
