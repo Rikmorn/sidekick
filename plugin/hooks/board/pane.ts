@@ -32,7 +32,7 @@ const RULE = '─';
 const MIN_NAME_KEPT = 4;
 const RULE_OPEN = '─ ';
 const RULE_CLOSE = ' ─';
-// Columns the rule keeps beside the name: its open, one space, one rule cell.
+// Columns the rule keeps beside the name: the opening rule and space before it, a space and one rule cell after.
 const NAME_FRAME = width(RULE_OPEN) + 2;
 // The same, plus the space before the label and the close.
 const LINK_FRAME = NAME_FRAME + 1 + width(RULE_CLOSE);
@@ -52,21 +52,16 @@ const WEIGHTS: Record<PaneWeight, { tone: ThemeKey; bold?: boolean }> = {
   quiet: { tone: 'inactive' },
 };
 
-const CELLS: Record<PanePlanState, { glyph: string; tone: ThemeKey }> = {
+const CELLS: Record<
+  'done' | 'running' | 'rest',
+  { glyph: string; tone: ThemeKey }
+> = {
   done: { glyph: '█', tone: 'success' },
   running: { glyph: '▓', tone: 'suggestion' },
-  next: { glyph: '░', tone: 'subtle' },
-  later: { glyph: '░', tone: 'subtle' },
+  rest: { glyph: '░', tone: 'subtle' },
 };
 
-const PROSE_LOOKS: Record<
-  Extract<PaneRow, { kind: 'prose' }>['mark'],
-  {
-    lead: string;
-    leadTone: ThemeKey;
-    text: Partial<StyledRun> & { tone: ThemeKey };
-  }
-> = {
+const PROSE_LOOKS = {
   next: { lead: '→ ', leadTone: 'claude', text: { tone: 'claude' } },
   drift: { lead: '▲ ', leadTone: 'warning', text: { tone: 'warning' } },
   outcome: {
@@ -74,7 +69,14 @@ const PROSE_LOOKS: Record<
     leadTone: 'subtle',
     text: { tone: 'inactive', italic: true },
   },
-};
+} satisfies Record<
+  Extract<PaneRow, { kind: 'prose' }>['mark'],
+  {
+    lead: string;
+    leadTone: ThemeKey;
+    text: Partial<StyledRun> & { tone: ThemeKey };
+  }
+>;
 
 // `text` within `room` columns, ending in an ellipsis when cut.
 function fit(text: string, room: number): string {
@@ -197,7 +199,7 @@ function cellsRow(
     run(INDENT, 'subtle'),
     run(CELLS.done.glyph.repeat(done), CELLS.done.tone),
     run(CELLS.running.glyph.repeat(running), CELLS.running.tone),
-    run(CELLS.later.glyph.repeat(rest), CELLS.later.tone),
+    run(CELLS.rest.glyph.repeat(rest), CELLS.rest.tone),
     run(' '.repeat(gap), 'subtle'),
     labelRun,
   ];
