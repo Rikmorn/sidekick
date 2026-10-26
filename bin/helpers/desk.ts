@@ -23,6 +23,7 @@ import {
   staleRecordNames,
 } from './desk-snapshot.js';
 import {
+  askedOf,
   freshSessions,
   type TranscriptFinder,
   transcriptFinder,
@@ -171,6 +172,7 @@ function takeSnapshot(denv: DeskEnv, self: string | undefined): DeskSnapshot {
   return buildSnapshot({
     rows,
     readJobs: (drawn) => readJobStates(denv.configDir, drawn),
+    readAsked: (sessionId) => askedOf(sessionId, transcripts.find),
     records: children.records,
     facts: children.facts,
     freshInteractive: freshSessions(rows, transcripts.find, denv.now()),

@@ -71,15 +71,23 @@ function mainThreadEntry(line: string): TailEntry | undefined {
   return { tokens: sum, model: typeof model === 'string' ? model : undefined };
 }
 
-/** The newest main-thread assistant entry's token figure and model; undefined when the text has none. */
-export function parseTail(text: string): TailEntry | undefined {
+// The newest line of `text` that `pick` reads.
+function newestIn<T>(
+  text: string,
+  pick: (line: string) => T | undefined,
+): T | undefined {
   const lines = text.split('\n');
   // Line 0 can be cut mid-way by a chunk boundary; it then fails to parse and is skipped.
   for (let i = lines.length - 1; i >= 0; i--) {
-    const found = mainThreadEntry(lines[i] ?? '');
+    const found = pick(lines[i] ?? '');
     if (found !== undefined) return found;
   }
   return undefined;
+}
+
+/** The newest main-thread assistant entry's token figure and model; undefined when the text has none. */
+export function parseTail(text: string): TailEntry | undefined {
+  return newestIn(text, mainThreadEntry);
 }
 
 export interface Limit {
@@ -186,21 +194,29 @@ function readTail(fd: number, size: number, bytes: number): string {
 }
 
 /**
- * The newest main-thread assistant entry in a transcript, reading wider tails
+ * The newest line of a transcript that `pick` reads, reading wider tails
  * until one holds it. Throws when the file cannot be opened or read.
  */
-export function readTailEntry(transcript: string): TailEntry | undefined {
+export function findInTail<T>(
+  transcript: string,
+  pick: (line: string) => T | undefined,
+): T | undefined {
   const fd = fs.openSync(transcript, 'r');
   try {
     const { size } = fs.fstatSync(fd);
     for (const bytes of TAIL_BYTES) {
-      const found = parseTail(readTail(fd, size, bytes));
+      const found = newestIn(readTail(fd, size, bytes), pick);
       if (found !== undefined || bytes >= size) return found;
     }
     return undefined;
   } finally {
     fs.closeSync(fd);
   }
+}
+
+/** The newest main-thread assistant entry in a transcript. Throws when the file cannot be opened or read. */
+export function readTailEntry(transcript: string): TailEntry | undefined {
+  return findInTail(transcript, mainThreadEntry);
 }
 
 /** What the latch file remembers: the level last spoken, and whether the canary has spoken. */

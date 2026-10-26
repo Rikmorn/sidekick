@@ -47,6 +47,8 @@ export interface SnapshotInput {
   freshInteractive: ReadonlySet<string>;
   /** Reads job state for the rows the snapshot draws: the current ones, and the rows of this main's children. */
   readJobs: (rows: ListingRow[]) => JobStates;
+  /** What a waiting session last said: the first line of its last assistant message. Asked for waiting rows only. */
+  readAsked: (sessionId: string) => string | undefined;
   /** The caller's sessionId: its row becomes `self`, and it chooses the children. */
   self?: string;
   /** The caller's main checkout folder name; absent outside a repository. */
@@ -208,13 +210,18 @@ export function joinRow(
 
 const ID_PREFIX_LENGTH = 8;
 
-// What the listing and job state say about one row; a child with no row has only `hasPid: false`.
-function sessionOf(
-  row: ListingRow | undefined,
-  jobs: ReadonlyMap<string, JobState>,
-): DeskSession {
+// What the snapshot reads beyond the listing: job state by job id, and what each waiting row's session asked.
+interface RowFacts {
+  jobs: ReadonlyMap<string, JobState>;
+  asked: ReadonlyMap<ListingRow, string>;
+}
+
+// What the listing, job state, and a waiting session's transcript say about
+// one row; a child with no row has only `hasPid: false`.
+function sessionOf(row: ListingRow | undefined, known: RowFacts): DeskSession {
   if (row === undefined) return { hasPid: false };
-  const job = row.id === undefined ? undefined : jobs.get(row.id);
+  const job = row.id === undefined ? undefined : known.jobs.get(row.id);
+  const asked = known.asked.get(row);
   return {
     ...(row.sessionId === undefined ? {} : { sessionId: row.sessionId }),
     ...(row.kind === undefined ? {} : { kind: row.kind }),
@@ -223,6 +230,7 @@ function sessionOf(
     ...(row.waitingFor === undefined ? {} : { waitingFor: row.waitingFor }),
     ...(job?.detail === undefined ? {} : { detail: job.detail }),
     ...(job?.needs === undefined ? {} : { needs: job.needs }),
+    ...(asked === undefined ? {} : { asked }),
   };
 }
 
@@ -242,7 +250,7 @@ function joinChild(
   row: ListingRow | undefined,
   facts: ChildFacts | undefined,
   fresh: ReadonlySet<string>,
-  jobs: ReadonlyMap<string, JobState>,
+  known: RowFacts,
 ): JoinedChild {
   const classified: Classified = row
     ? classify(row, fresh)
@@ -252,7 +260,7 @@ function joinChild(
     row !== undefined &&
     isCurrent(row) &&
     (row.state === 'working' || row.status === 'busy');
-  const session = sessionOf(row, jobs);
+  const session = sessionOf(row, known);
   const child: DeskChild = {
     ...session,
     name: record.name,
@@ -338,7 +346,7 @@ function ownRecords(
 function joinChildren(
   own: OwnRecord[],
   input: SnapshotInput,
-  jobs: ReadonlyMap<string, JobState>,
+  known: RowFacts,
 ): JoinedChild[] {
   return orderChildren(
     own.map(({ record, row }) =>
@@ -347,7 +355,7 @@ function joinChildren(
         row,
         input.facts.get(record.name),
         input.freshInteractive,
-        jobs,
+        known,
       ),
     ),
   );
@@ -356,17 +364,33 @@ function joinChildren(
 function otherOf(
   row: ListingRow,
   classified: Classified,
-  jobs: ReadonlyMap<string, JobState>,
+  known: RowFacts,
 ): DeskOther {
   const reason = classified.reason ?? row.waitingFor;
   return {
-    ...sessionOf(row, jobs),
+    ...sessionOf(row, known),
     name: displayName(row),
     repo: repoOf(row.cwd),
     kind: row.kind ?? 'unknown',
     state: row.state ?? row.status ?? 'unknown',
     ...(reason === undefined ? {} : { reason }),
   };
+}
+
+// What each waiting row's session last said; no other row is read, nor the
+// caller's own, whose row draws no work line.
+function askedRows(input: SnapshotInput): Map<ListingRow, string> {
+  return new Map(
+    input.rows.flatMap((row): [ListingRow, string][] => {
+      const isWaiting =
+        classify(row, input.freshInteractive).class === 'waiting';
+      const { sessionId } = row;
+      if (!isWaiting || sessionId === undefined) return [];
+      if (sessionId === input.self) return [];
+      const asked = input.readAsked(sessionId);
+      return asked === undefined ? [] : [[row, asked]];
+    }),
+  );
 }
 
 export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
@@ -380,8 +404,8 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
   const read = input.readJobs(
     input.rows.filter((row) => isCurrent(row) || ownRows.has(row)),
   );
-  const jobs = read.states;
-  const children = joinChildren(own, input, jobs);
+  const known: RowFacts = { jobs: read.states, asked: askedRows(input) };
+  const children = joinChildren(own, input, known);
   const childRows = new Set(children.flatMap(({ row }) => (row ? [row] : [])));
   const others = input.rows
     .filter((row) => isCurrent(row) && !childRows.has(row))
@@ -390,7 +414,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
   const self =
     selfRow === undefined
       ? undefined
-      : otherOf(selfRow, classify(selfRow, input.freshInteractive), jobs);
+      : otherOf(selfRow, classify(selfRow, input.freshInteractive), known);
   const considered = [...childRows, ...others.map(({ row }) => row)];
   const warnings = [
     ...new Set([...input.warnings, ...considered.flatMap(rowWarnings)]),
@@ -398,7 +422,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
   const waitingOthers: DeskWaiting[] = others
     .filter(({ classified }) => classified.class === 'waiting')
     .map(({ row, classified }) => ({
-      ...sessionOf(row, jobs),
+      ...sessionOf(row, known),
       name: displayName(row),
       repo: repoOf(row.cwd),
       reason: classified.reason ?? 'waiting',
@@ -416,7 +440,9 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
     children: children.map(({ child }) => child),
     finished: others.filter(({ classified }) => classified.class === 'finished')
       .length,
-    others: others.map(({ row, classified }) => otherOf(row, classified, jobs)),
+    others: others.map(({ row, classified }) =>
+      otherOf(row, classified, known),
+    ),
     warnings,
     paneWarnings: read.warnings,
     sessionIds: [

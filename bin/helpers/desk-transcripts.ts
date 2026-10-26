@@ -2,12 +2,13 @@
  * The desk's transcript lookup: `<config dir>/projects/<project>/<sessionId>.jsonl`,
  * found by scanning the project folders, which are listed once per snapshot.
  * A transcript's modification time says whether an idle interactive session
- * finished recently, and its tail gives a child's tokens.
+ * finished recently, and its tail gives a child's tokens and what a waiting
+ * session last said.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { readTailEntry } from './context-monitor.js';
+import { findInTail, readTailEntry } from './context-monitor.js';
 import type { ListingRow } from './desk-snapshot.js';
 
 export interface Transcript {
@@ -122,5 +123,62 @@ export function tokensOf(
         `${name}: cannot read the transcript ${transcript.file}: ${reason(e)}`,
       ],
     };
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// The text of a message's content: a string, or the text of its text blocks.
+function contentText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .flatMap((block) =>
+      isRecord(block) && block.type === 'text' && typeof block.text === 'string'
+        ? [block.text]
+        : [],
+    )
+    .join('\n');
+}
+
+function parsedLine(line: string): unknown {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+}
+
+// A main-thread assistant entry's first line of text, or `{}` for one with no
+// text, such as a tool call; undefined for any other line.
+function saidOn(line: string): { said?: string } | undefined {
+  const entry = parsedLine(line);
+  if (!isRecord(entry) || entry.type !== 'assistant') return undefined;
+  if (entry.isSidechain !== false || !isRecord(entry.message)) return undefined;
+  const said = contentText(entry.message.content)
+    .split('\n')
+    .map((part) => part.trim())
+    .find((part) => part !== '');
+  return said === undefined ? {} : { said };
+}
+
+/**
+ * The first line of text in the session's newest main-thread assistant entry:
+ * what a waiting session last said. None when that entry is a tool call, or
+ * when the transcript is missing or cannot be read, since the line only adds
+ * to a row the listing already draws.
+ */
+export function askedOf(
+  sessionId: string,
+  find: TranscriptFinder,
+): string | undefined {
+  const transcript = find(sessionId);
+  if (transcript === undefined) return undefined;
+  try {
+    return findInTail(transcript.file, saidOn)?.said;
+  } catch {
+    return undefined;
   }
 }

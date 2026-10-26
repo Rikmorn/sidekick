@@ -20,6 +20,8 @@ export interface DeskSession {
   detail?: string;
   /** What job state says the session needs, read only while the listing reads blocked. */
   needs?: string;
+  /** The first line of the session's last assistant message, read only while the session waits. */
+  asked?: string;
 }
 
 export interface DeskWaiting extends DeskSession {
@@ -136,6 +138,7 @@ function parseSession(entry: Record<string, unknown>): Parsed<DeskSession> {
   const waitingFor = optional(entry, 'waitingFor', isString);
   const detail = optional(entry, 'detail', isString);
   const needs = optional(entry, 'needs', isString);
+  const asked = optional(entry, 'asked', isString);
   return {
     value: {
       ...(sessionId === undefined ? {} : { sessionId }),
@@ -145,6 +148,7 @@ function parseSession(entry: Record<string, unknown>): Parsed<DeskSession> {
       ...(waitingFor === undefined ? {} : { waitingFor }),
       ...(detail === undefined ? {} : { detail }),
       ...(needs === undefined ? {} : { needs }),
+      ...(asked === undefined ? {} : { asked }),
     },
   };
 }

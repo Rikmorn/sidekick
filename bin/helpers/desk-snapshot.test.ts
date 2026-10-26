@@ -71,6 +71,7 @@ const build = (over: Partial<SnapshotInput>) => {
     facts: new Map(),
     freshInteractive: new Set(),
     readJobs: () => ({ states: new Map(), warnings: [] }),
+    readAsked: () => undefined,
     warnings: [],
     ...over,
   });
@@ -882,5 +883,57 @@ describe('version 2: a done child keeps its job detail', () => {
       hasPid: false,
       detail: 'report sent',
     });
+  });
+});
+
+describe('buildSnapshot: what a waiting session asked', () => {
+  const QUESTION = 'Which colour do you prefer?';
+
+  test('a waiting row carries the line readAsked gives, in its row and its waiting entry; a row that does not wait asks nothing', () => {
+    const asked: string[] = [];
+    const s = build({
+      rows: [
+        inter({ status: 'waiting' }),
+        bg({ name: 'busy', state: 'working', status: 'busy' }),
+      ],
+      readAsked: (sessionId) => {
+        asked.push(sessionId);
+        return QUESTION;
+      },
+    });
+    expect(s.others.map((other) => other.asked)).toEqual([QUESTION, undefined]);
+    expect(s.waiting.map((entry) => entry.asked)).toEqual([QUESTION]);
+    expect(asked).toEqual([INTER.sessionId]);
+  });
+
+  test("the caller's own waiting row is not read", () => {
+    const asked: string[] = [];
+    build({
+      rows: [inter({ status: 'waiting' })],
+      self: INTER.sessionId,
+      readAsked: (sessionId) => {
+        asked.push(sessionId);
+        return undefined;
+      },
+    });
+    expect(asked).toEqual([]);
+  });
+
+  test('a waiting child carries it too, and a row with no answer carries none', () => {
+    const s = build({
+      rows: [
+        bg({ name: 'w1', state: 'blocked' }),
+        inter({ status: 'waiting' }),
+      ],
+      records: [record('w1')],
+      readAsked: (sessionId) =>
+        sessionId === BG.sessionId ? QUESTION : undefined,
+    });
+    expect(s.children[0]?.asked).toBe(QUESTION);
+    expect(s.others[0]).not.toHaveProperty('asked');
+    expect(s.waiting.map((entry) => entry.asked)).toEqual([
+      QUESTION,
+      undefined,
+    ]);
   });
 });

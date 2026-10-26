@@ -14,6 +14,7 @@ const waiting = [
     waitingFor: 'permission prompt',
     detail: 'running tests',
     needs: 'a yes',
+    asked: 'Shall I push?',
   },
 ];
 const children = [
@@ -128,6 +129,7 @@ test('a child with bad optional fields loses them and keeps the rest', () => {
     waitingFor: {},
     detail: 1,
     needs: false,
+    asked: 3,
     tokens: '5',
     reason: 4,
     plan: null,

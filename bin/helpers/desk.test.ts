@@ -638,3 +638,47 @@ describe('runDeskCli: self', () => {
     expect(s.warnings).toEqual([]);
   });
 });
+
+describe('runDeskCli: what a waiting session asked', () => {
+  const SESSION = 'cccc0001-0000-0000-0000-000000000000';
+  const said = (content: unknown, isSidechain = false): string =>
+    JSON.stringify({ type: 'assistant', isSidechain, message: { content } });
+  const text = (value: string) => [{ type: 'text', text: value }];
+
+  test.each([
+    [
+      'the first non-empty line of its last message',
+      [said(text('Earlier.')), said(text('\n Which colour?\nRed or blue.'))],
+      'Which colour?',
+    ],
+    [
+      'none when its last message is a tool call',
+      [
+        said(text('Reading the brief.')),
+        said([{ type: 'tool_use', name: 'Read', input: {} }]),
+      ],
+      undefined,
+    ],
+    [
+      "a subagent's message is passed over",
+      [said(text('Which colour?')), said(text('a subagent'), true)],
+      'Which colour?',
+    ],
+    ['a message given as a string', [said('Ready to push?')], 'Ready to push?'],
+  ])('a waiting session: %s', (_label, lines, asked) => {
+    const config = configFixture();
+    config.transcript(SESSION, lines);
+    const rows = [interactiveRow(SESSION, { status: 'waiting' })];
+    const s = snapshotOf(harness(tmp(), listing(rows), config.configDir));
+    expect(s.others[0]?.asked).toBe(asked);
+    expect(s.waiting[0]?.asked).toBe(asked);
+  });
+
+  test('a session that does not wait asks nothing, whatever its transcript says', () => {
+    const config = configFixture();
+    config.transcript(SESSION, [said(text('Which colour?'))]);
+    const rows = [interactiveRow(SESSION)];
+    const s = snapshotOf(harness(tmp(), listing(rows), config.configDir));
+    expect(s.others[0]).not.toHaveProperty('asked');
+  });
+});
