@@ -22,9 +22,7 @@ import {
 import { type BriefInput, renderBrief } from './pm-brief.js';
 import type { Item, LinkedBoard, Milestone } from './pm-data.js';
 import { LINT_IDS } from './pm-lint.js';
-import { paneRows } from './pm-pane.js';
 import type { Plans } from './pm-plans.js';
-import { pickupView } from './pm-view.js';
 
 const board = (
   n: number,
@@ -1267,11 +1265,20 @@ describe('pickup --glance', () => {
     const parsed = parseGlance(g.out[0] ?? '');
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    const j = capture();
-    runPmCli(['pickup'], env, j.o, j.e);
-    const input = JSON.parse(j.out[0] ?? '') as BriefInput;
-    expect(parsed.glance.pane).toEqual(paneRows(pickupView(input)));
-    expect(parsed.glance.pane.rows.length).toBeGreaterThan(0);
+    const { rows } = parsed.glance.pane;
+    expect(rows[0]).toEqual({
+      kind: 'prose',
+      mark: 'next',
+      text: 'continue #118',
+    });
+    const tree = rows.find((row) => row.kind === 'tree');
+    expect(tree?.nodes.map((node) => node.ref)).toEqual([
+      '#118',
+      '#131',
+      '#153',
+      '#166',
+      '#175',
+    ]);
     expect(parsed.glance.board.url).toBe(
       'https://github.com/users/Rikmorn/projects/2',
     );
