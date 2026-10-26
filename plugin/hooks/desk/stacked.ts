@@ -4,6 +4,7 @@
 // state; where a session sits in the tree says whose it is.
 
 import type { ThemeKey } from 'claude-code';
+import { type Branch, branchAt, trunkOf } from '../leads';
 import { cut, width } from '../lines';
 import { cutRow, rowWidth, type StyledRow, type StyledRun } from '../styled';
 import {
@@ -34,11 +35,6 @@ const SUBAGENT_ROWS_MAX = 3;
 // The least room between this main's name and its counts.
 const ROOT_GAP_MIN = 2;
 const RULE = '─';
-
-type Branch = '' | '├ ' | '└ ';
-
-// The line a branch carries down past the rows under its node.
-const TRUNKS: Record<Branch, string> = { '': '', '├ ': '│ ', '└ ': '  ' };
 
 // A session or a subagent: a head row, a detail row, then what hangs below it.
 interface Node {
@@ -217,8 +213,7 @@ function nodeEntries(
   branch: Branch,
   columns: number,
 ): PaneEntry[] {
-  const under = prefix + TRUNKS[branch];
-  const last = node.below.length - 1;
+  const under = prefix + trunkOf(branch);
   const detailLead = under + (node.below.length > 0 ? '│ ' : '  ');
   return [
     { row: headRow(prefix + branch, node, columns), needsYou: node.needsYou },
@@ -226,7 +221,7 @@ function nodeEntries(
       ? []
       : [{ row: detailRow(detailLead, node, columns), needsYou: false }]),
     ...node.below.flatMap((item, index) =>
-      itemEntries(item, under, index === last ? '└ ' : '├ ', columns),
+      itemEntries(item, under, branchAt(index, node.below.length), columns),
     ),
   ];
 }
@@ -272,9 +267,13 @@ function blockEntries(block: TreeElsewhere, columns: number): PaneEntry[] {
 }
 
 function childrenEntries(tree: DeskTree, columns: number): PaneEntry[] {
-  const last = tree.children.length - 1;
   return tree.children.flatMap((child, index) =>
-    nodeEntries(childNode(child), '', index === last ? '└ ' : '├ ', columns),
+    nodeEntries(
+      childNode(child),
+      '',
+      branchAt(index, tree.children.length),
+      columns,
+    ),
   );
 }
 
