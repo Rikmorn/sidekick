@@ -1,7 +1,11 @@
 // The desk's tree, pure: merges each snapshot row with its session's live
 // published key, and orders the sessions the pane draws.
 
-import { isLive, type PublishedSession } from '../publish/contract';
+import {
+  isIdleActivity,
+  isLive,
+  type PublishedSession,
+} from '../publish/contract';
 import type {
   DeskChild,
   DeskOther,
@@ -41,6 +45,12 @@ export interface TreeOther extends TreeSession {
   repo: string;
   /** Whether its live key says it is a main. */
   isMain: boolean;
+  subagents: Subagent[];
+}
+
+/** A session elsewhere, with the workers its live key's main names nested under it when it is a main: waiting first. */
+export interface TreeElsewhere extends TreeOther {
+  workers: TreeOther[];
 }
 
 export interface TreeChild extends TreeSession {
@@ -56,13 +66,13 @@ export interface TreeRoot {
 }
 
 export interface DeskTree {
-  /** Sessions elsewhere that need the operator, drawn above this main. */
-  waiting: TreeOther[];
+  /** Sessions elsewhere that need the operator, or whose nested worker does, drawn above this main. */
+  waiting: TreeElsewhere[];
   root: TreeRoot;
   /** This main's workers: waiting first, then working, then the rest. */
   children: TreeChild[];
   /** The other sessions, in the listing's order. */
-  others: TreeOther[];
+  others: TreeElsewhere[];
 }
 
 type Keys = ReadonlyMap<string, PublishedSession>;
@@ -109,16 +119,42 @@ function liveKey(
   return key !== undefined && isLive(key, row, now) ? key : undefined;
 }
 
-// The snapshot gives the state word as the reason when the listing names none,
-// and that says nothing the status does not.
+// The CLI's reasons when the listing names none; like the state word, they say nothing the status does not.
+const FALLBACK_REASONS: ReadonlySet<string> = new Set(['waiting', 'blocked']);
+
+// What Claude Code's background service writes as `needs` for a session idle at its prompt (2.1.310).
+const GENERIC_NEEDS: ReadonlySet<string> = new Set(['send a prompt to start']);
+
+// While a session waits: what it needs, else what it last asked, else a reason that says more than the status.
 function waitText(
-  row: { needs?: string; reason?: string; state: string },
+  row: { needs?: string; asked?: string; reason?: string; state: string },
   entry: DeskWaiting | undefined,
 ): string | undefined {
   const reason = row.reason ?? entry?.reason;
-  const isTelling =
-    reason !== undefined && reason !== '' && reason !== row.state;
-  return row.needs ?? (isTelling ? reason : undefined);
+  const isTellingReason =
+    reason !== undefined &&
+    reason !== '' &&
+    reason !== row.state &&
+    !FALLBACK_REASONS.has(reason);
+  const needs = row.needs?.trim();
+  const isTellingNeeds = needs !== undefined && !GENERIC_NEEDS.has(needs);
+  return (
+    (isTellingNeeds ? row.needs : undefined) ??
+    row.asked ??
+    entry?.asked ??
+    (isTellingReason ? reason : undefined)
+  );
+}
+
+// An idle line says less than job state's detail, which then comes first.
+function doingOf(
+  activity: string | undefined,
+  detail: string | undefined,
+): (string | undefined)[] {
+  const isIdle = activity !== undefined && isIdleActivity(activity);
+  return isIdle && detail !== undefined
+    ? [detail, activity]
+    : [activity, detail];
 }
 
 // Text from outside may hold a question or a report; a row is one line.
@@ -179,7 +215,7 @@ function childOf(
   );
   const status = statusOf(child.state, entry !== undefined);
   const key = liveKey(keys, child, now);
-  const doing = [key?.activity, child.detail, child.plan];
+  const doing = [...doingOf(key?.activity, child.detail), child.plan];
   return {
     ...sessionOf(
       child.name,
@@ -193,19 +229,25 @@ function childOf(
   };
 }
 
+// A session elsewhere, and the main its live key names, which nests it.
+interface Placed {
+  session: TreeOther;
+  main: string | undefined;
+}
+
 function otherOf(
   other: DeskOther,
   waiting: readonly DeskWaiting[],
   keys: Keys,
   now: number,
-): TreeOther {
+): Placed {
   const entry = waiting.find(
     (session) => !session.child && isSameSession(session, other),
   );
   const status = statusOf(other.state, entry !== undefined);
   const key = liveKey(keys, other, now);
-  const doing = [key?.activity, other.detail];
-  return {
+  const doing = doingOf(key?.activity, other.detail);
+  const session: TreeOther = {
     ...sessionOf(
       other.name,
       status,
@@ -214,19 +256,56 @@ function otherOf(
     ),
     repo: other.repo,
     isMain: key?.role === 'main',
+    subagents: subagentsOf(key),
   };
+  return { session, main: key?.main };
 }
 
-// Waiting, then working, then the rest; each group keeps the snapshot's order.
-function ordered(children: TreeChild[]): TreeChild[] {
-  return children
-    .map((child, index) => ({ child, index }))
+// Waiting, then working, then the rest; each group keeps the given order.
+function ordered<T extends { status: Status }>(sessions: T[]): T[] {
+  return sessions
+    .map((session, index) => ({ session, index }))
     .sort(
       (a, b) =>
-        STATUS_RANKS[a.child.status.kind] - STATUS_RANKS[b.child.status.kind] ||
-        a.index - b.index,
+        STATUS_RANKS[a.session.status.kind] -
+          STATUS_RANKS[b.session.status.kind] || a.index - b.index,
     )
-    .map(({ child }) => child);
+    .map(({ session }) => session);
+}
+
+// One level: a worker nests under the first listed main of the name its key
+// gives, and a main never nests. The rest stay in the listing's order.
+function nested(placed: readonly Placed[]): TreeElsewhere[] {
+  // Reversed, so the first listed main of a name is the one the Map keeps.
+  const mains = new Map(
+    placed
+      .flatMap(({ session }, index): [string, number][] =>
+        session.isMain ? [[session.name, index]] : [],
+      )
+      .reverse(),
+  );
+  const hostOf = ({ session, main }: Placed): number | undefined =>
+    session.isMain || main === undefined ? undefined : mains.get(main);
+  return placed.flatMap((entry, index): TreeElsewhere[] =>
+    hostOf(entry) === undefined
+      ? [
+          {
+            ...entry.session,
+            workers: ordered(
+              placed
+                .filter((worker) => hostOf(worker) === index)
+                .map(({ session }) => session),
+            ),
+          },
+        ]
+      : [],
+  );
+}
+
+function needsYou(session: TreeElsewhere): boolean {
+  return [session, ...session.workers].some(
+    ({ status }) => status.kind === 'needs',
+  );
 }
 
 /** The pane's sessions, each merged with its live key: a key whose row has no pid, or that is stale, reads as none. */
@@ -240,19 +319,19 @@ export function deskTree(
       childOf(child, snapshot.waiting, keys, now),
     ),
   );
-  const others = snapshot.others.map((other) =>
-    otherOf(other, snapshot.waiting, keys, now),
+  const elsewhere = nested(
+    snapshot.others.map((other) => otherOf(other, snapshot.waiting, keys, now)),
   );
   const name = snapshot.self?.name;
   return {
-    waiting: others.filter((other) => other.status.kind === 'needs'),
+    waiting: elsewhere.filter(needsYou),
     root: {
       ...(name === undefined ? {} : { name }),
       workers: children.length,
       needYou: children.filter((child) => child.status.kind === 'needs').length,
     },
     children,
-    others: others.filter((other) => other.status.kind !== 'needs'),
+    others: elsewhere.filter((session) => !needsYou(session)),
   };
 }
 

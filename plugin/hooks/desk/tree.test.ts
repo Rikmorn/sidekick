@@ -286,12 +286,16 @@ test('a key of version 2, or of a bad shape, is ignored', () => {
       repo: 'odin',
       isMain: false,
       status: { kind: 'idle' },
+      subagents: [],
+      workers: [],
     },
     {
       name: 'odd-one',
       repo: 'odin',
       isMain: false,
       status: { kind: 'idle' },
+      subagents: [],
+      workers: [],
     },
   ]);
 });
@@ -319,6 +323,8 @@ test('a row with no key is not a main, and draws from listing facts alone', () =
       isMain: false,
       status: { kind: 'working' },
       work: 'bench suite 3 of 7',
+      subagents: [],
+      workers: [],
     },
   ]);
 });
@@ -445,16 +451,195 @@ test('with no published context the tokens stand alone: the key, else the snapsh
   ]);
 });
 
-test('subagents nest under children only: the root and other sessions draw none', () => {
-  const withSubagents = (sessionId: string, role: PublishedSession['role']) =>
-    key({ sessionId, role, subagents: [EXPLORE] });
+test("every other session's subagents come with it, a nested worker's too; this main's own draw none", () => {
+  const withSubagents = (
+    over: Partial<PublishedSession> & { sessionId: string },
+  ) => key({ subagents: [EXPLORE], ...over });
   const tree = deskTree(
-    snapshot({ others: [other({ name: 'pm-main', sessionId: 'pm' })] }),
-    keysOf(withSubagents('self', 'main'), withSubagents('pm', 'main')),
+    snapshot({
+      others: [
+        other({ name: 'pm-main', sessionId: 'pm' }),
+        other({ name: 'pm-worker', sessionId: 'pw' }),
+        other({ name: 'bare', sessionId: 'bare' }),
+      ],
+    }),
+    keysOf(
+      withSubagents({ sessionId: 'self', role: 'main' }),
+      withSubagents({ sessionId: 'pm', role: 'main' }),
+      withSubagents({ sessionId: 'pw', main: 'pm-main' }),
+      withSubagents({ sessionId: 'bare', role: 'other' }),
+    ),
     NOW,
   );
-  expect(tree.others[0]).not.toHaveProperty('subagents');
+  expect(tree.others.map((session) => session.subagents)).toEqual([
+    [EXPLORE],
+    [EXPLORE],
+  ]);
+  expect(tree.others[0]?.workers[0]?.subagents).toEqual([EXPLORE]);
   expect(tree.root).not.toHaveProperty('subagents');
+});
+
+test("another main's workers nest under it by its listing name; a worker of an unlisted main, or of a session that is not a main, stays flat", () => {
+  const tree = deskTree(
+    snapshot({
+      others: [
+        other({ name: 'fan-out', sessionId: 'fan', state: 'idle' }),
+        other({ name: 'demo-main', sessionId: 'demo' }),
+        other({ name: 'scan', sessionId: 'scan', state: 'working' }),
+        other({ name: 'stray', sessionId: 'stray' }),
+        other({ name: 'helper', sessionId: 'helper' }),
+        other({ name: 'helped', sessionId: 'helped' }),
+      ],
+    }),
+    keysOf(
+      key({ sessionId: 'demo', role: 'main' }),
+      key({ sessionId: 'fan', main: 'demo-main' }),
+      key({ sessionId: 'scan', main: 'demo-main' }),
+      key({ sessionId: 'stray', main: 'gone-main' }),
+      key({ sessionId: 'helper', role: 'other' }),
+      key({ sessionId: 'helped', main: 'helper' }),
+    ),
+    NOW,
+  );
+  expect(
+    tree.others.map((session) => [
+      session.name,
+      session.workers.map((worker) => worker.name),
+    ]),
+  ).toEqual([
+    ['demo-main', ['scan', 'fan-out']],
+    ['stray', []],
+    ['helper', []],
+    ['helped', []],
+  ]);
+});
+
+test("a waiting worker of another main lifts its main's block above this main, the waiting worker first", () => {
+  const tree = deskTree(
+    snapshot({
+      waiting: [waiting({ name: 'wait-perm', sessionId: 'wait' })],
+      others: [
+        other({ name: 'pm-main', sessionId: 'pm' }),
+        other({ name: 'demo-main', sessionId: 'demo' }),
+        other({ name: 'fan-out', sessionId: 'fan', state: 'working' }),
+        other({ name: 'wait-perm', sessionId: 'wait', state: 'idle' }),
+      ],
+    }),
+    keysOf(
+      key({ sessionId: 'pm', role: 'main' }),
+      key({ sessionId: 'demo', role: 'main' }),
+      key({ sessionId: 'fan', main: 'demo-main' }),
+      key({ sessionId: 'wait', main: 'demo-main' }),
+    ),
+    NOW,
+  );
+  expect(
+    tree.waiting.map((session) => [
+      session.name,
+      session.workers.map((worker) => worker.name),
+    ]),
+  ).toEqual([['demo-main', ['wait-perm', 'fan-out']]]);
+  expect(tree.others.map((session) => session.name)).toEqual(['pm-main']);
+});
+
+test("an idle line yields to job state's detail; any other activity comes first", () => {
+  const tree = deskTree(
+    snapshot({
+      children: [
+        child({ name: 'a', sessionId: 'a', detail: 'paused for rulings' }),
+        child({ name: 'b', sessionId: 'b', detail: 'paused for rulings' }),
+        child({ name: 'c', sessionId: 'c', plan: 'The plan' }),
+      ],
+      others: [other({ name: 'o', sessionId: 'o', detail: 'Which colour?' })],
+    }),
+    keysOf(
+      key({ sessionId: 'a', activity: 'idle since 01:07' }),
+      key({ sessionId: 'b', activity: 'Edit: greeting.js' }),
+      key({ sessionId: 'c', activity: 'idle since 01:07' }),
+      key({ sessionId: 'o', role: 'main', activity: 'idle since 01:07' }),
+    ),
+    NOW,
+  );
+  expect(tree.children.map((session) => session.work)).toEqual([
+    'paused for rulings',
+    'Edit: greeting.js',
+    'idle since 01:07',
+  ]);
+  expect(tree.others[0]?.work).toBe('Which colour?');
+});
+
+test("a waiting row shows what it asked when its needs is absent or Claude Code's generic text", () => {
+  const tree = deskTree(
+    snapshot({
+      waiting: [
+        waiting({ name: 'other-main', sessionId: 'om', reason: 'blocked' }),
+        waiting({ name: 'quiet', sessionId: 'q', reason: 'waiting' }),
+        waiting({ name: 'perm', sessionId: 'p' }),
+      ],
+      others: [
+        other({
+          name: 'other-main',
+          sessionId: 'om',
+          kind: 'background',
+          state: 'blocked',
+          reason: 'blocked',
+          needs: 'send a prompt to start',
+          detail: 'Which colour do you prefer?',
+          asked: 'Which colour do you prefer? Red or blue.',
+        }),
+        other({
+          name: 'quiet',
+          sessionId: 'q',
+          state: 'idle',
+          reason: 'waiting',
+          asked: 'Shall I push?',
+        }),
+        other({
+          name: 'perm',
+          sessionId: 'p',
+          kind: 'background',
+          state: 'blocked',
+          reason: 'permission prompt',
+          needs: 'approve Read: brief.md',
+          asked: 'Reading the brief.',
+        }),
+      ],
+    }),
+    new Map(),
+    NOW,
+  );
+  expect(tree.waiting.map((session) => session.work)).toEqual([
+    'Which colour do you prefer? Red or blue.',
+    'Shall I push?',
+    'approve Read: brief.md',
+  ]);
+});
+
+test("the CLI's fallback reason words read as no reason, so the work line falls to what the session is doing", () => {
+  const tree = deskTree(
+    snapshot({
+      waiting: [
+        waiting({ name: 'a', sessionId: 'a', reason: 'waiting' }),
+        waiting({ name: 'b', sessionId: 'b', reason: 'blocked' }),
+      ],
+      others: [
+        other({
+          name: 'a',
+          sessionId: 'a',
+          state: 'working',
+          reason: 'waiting',
+          detail: 'reading files',
+        }),
+        other({ name: 'b', sessionId: 'b', state: 'idle', reason: 'blocked' }),
+      ],
+    }),
+    new Map(),
+    NOW,
+  );
+  expect(tree.waiting.map((session) => session.work)).toEqual([
+    'reading files',
+    undefined,
+  ]);
 });
 
 test('the root reads no name when the snapshot has no self row', () => {

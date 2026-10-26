@@ -16,6 +16,7 @@ import type {
   DeskTree,
   Status,
   TreeChild,
+  TreeElsewhere,
   TreeOther,
   TreeRoot,
 } from './tree';
@@ -71,6 +72,13 @@ const DOCKED: Layout = {
 
 const HEADS: Layout = { ...DOCKED, work: 'none' };
 
+// A layout at one width: its work column's width, and the columns its rows end at.
+interface Frame {
+  layout: Layout;
+  work: number;
+  columns: number;
+}
+
 const ONE_ROW_COLUMNS = 80;
 const TWO_ROW_COLUMNS = 40;
 // Wider, the context column drifts away from the name it belongs to.
@@ -82,6 +90,8 @@ const WORK_INDENT = 6;
 const BAR_CELLS = 5;
 const PERCENT_PER_CELL = 100 / BAR_CELLS;
 const THOUSAND = 1_000;
+// More would push the sessions after them out of a docked pane.
+const SUBAGENT_ROWS_MAX = 3;
 
 // 65% and 75% are where the context monitor warns; 85% leaves little room.
 const CONTEXT_TONES: readonly { from: number; tone: ThemeKey }[] = [
@@ -132,23 +142,45 @@ function contextTone(percent: number): ThemeKey {
   return CONTEXT_TONES.find(({ from }) => percent >= from)?.tone ?? 'inactive';
 }
 
-// Five cells against the published limit, then the tokens; without a limit, the tokens alone.
-function contextRuns(context: Context | undefined): StyledRun[] {
-  if (context === undefined) return [];
-  const tokens = tokensText(context.used);
-  const { used, limit } = context;
-  if (limit === undefined || limit <= 0) {
-    return [{ text: tokens.padStart(CONTEXT_COLUMNS), tone: 'inactive' }];
-  }
-  const percent = (used * 100) / limit;
+function barRuns(percent: number, tone: ThemeKey, tokens: string): StyledRun[] {
   const cells = Math.round(percent / PERCENT_PER_CELL);
   const filled = Math.min(BAR_CELLS, Math.max(0, cells));
-  const tone = contextTone(percent);
   return [
     { text: '▰'.repeat(filled), tone },
     { text: '▱'.repeat(BAR_CELLS - filled), tone: 'subtle' },
     { text: ` ${tokens}`.padStart(CONTEXT_COLUMNS - BAR_CELLS), tone },
   ];
+}
+
+// The tokens alone, ending where the context column ends, when they fit in `room`.
+function tokensRuns(tokens: string, tone: ThemeKey, room: number): StyledRun[] {
+  if (width(tokens) > room) return [];
+  return [{ text: tokens.padStart(Math.min(room, CONTEXT_COLUMNS)), tone }];
+}
+
+// Five cells against the published limit, then the tokens, when all fit in
+// `room`; else the tokens alone in the level's tone. Never a cut bar.
+function contextRuns(context: Context | undefined, room: number): StyledRun[] {
+  if (context === undefined) return [];
+  const tokens = tokensText(context.used);
+  const { used, limit } = context;
+  if (limit === undefined || limit <= 0) {
+    return tokensRuns(tokens, 'inactive', room);
+  }
+  const percent = (used * 100) / limit;
+  const tone = contextTone(percent);
+  return room >= CONTEXT_COLUMNS
+    ? barRuns(percent, tone, tokens)
+    : tokensRuns(tokens, tone, room);
+}
+
+// A head row's runs, then its context in the room the row has left.
+function withContext(
+  runs: StyledRun[],
+  context: Context | undefined,
+  frame: Frame,
+): StyledRow {
+  return [...runs, ...contextRuns(context, frame.columns - rowWidth(runs))];
 }
 
 function marksText(child: TreeChild): string {
@@ -163,132 +195,204 @@ function workCell(work: string | undefined, columns: number): StyledRun[] {
   return columns > 0 ? [cell(work ?? '', columns, { tone: 'inactive' })] : [];
 }
 
-function childHead(
-  child: TreeChild,
-  isLast: boolean,
-  layout: Layout,
-  work: number,
-): StyledRow {
+function indentRuns(layout: Layout): StyledRun[] {
+  return layout.indent > 0
+    ? [{ text: ' '.repeat(layout.indent), tone: 'subtle' }]
+    : [];
+}
+
+function branchCell(isLast: boolean, layout: Layout): StyledRun {
+  return cell(isLast ? '└' : '├', layout.tree, { tone: 'subtle' });
+}
+
+function childHead(child: TreeChild, isLast: boolean, frame: Frame): StyledRow {
+  const { layout, work } = frame;
   const look = lookOf(child.status);
-  return [
-    cell(isLast ? '└' : '├', layout.tree, { tone: 'subtle' }),
+  const runs = [
+    branchCell(isLast, layout),
     cell(look.icon, ICON_COLUMNS, { tone: look.tone }),
     cell(child.name, NAME_COLUMNS, { tone: 'text', bold: true }),
     cell(look.label, layout.state, { tone: look.tone }),
     ...workCell(child.work, work),
     cell(marksText(child), layout.marks, { tone: 'warning' }),
-    ...contextRuns(child.context),
   ];
+  return withContext(runs, child.context, frame);
 }
 
+// `lead` is the indent, and for another main's worker its branch, which the
+// name gives up columns for so the state column stays in line.
 function elsewhereHead(
   other: TreeOther,
-  layout: Layout,
-  work: number,
+  lead: StyledRun[],
+  frame: Frame,
 ): StyledRow {
+  const { layout, work } = frame;
   const look = lookOf(other.status);
-  const indent: StyledRun[] =
-    layout.indent > 0
-      ? [{ text: ' '.repeat(layout.indent), tone: 'subtle' }]
-      : [];
   const repo = ' '.repeat(layout.repoGap) + other.repo;
-  return [
-    ...indent,
+  const nameColumns = NAME_COLUMNS - (rowWidth(lead) - layout.indent);
+  const runs = [
+    ...lead,
     cell(other.isMain ? '◇' : '◌', ICON_COLUMNS, { tone: 'inactive' }),
-    cell(other.name, NAME_COLUMNS, { tone: 'text', dim: true }),
+    cell(other.name, nameColumns, { tone: 'text', dim: true }),
     cell(look.label, layout.state, { tone: look.tone }),
     ...workCell(other.work, work),
     cell(repo, layout.repo, { tone: 'subtle' }),
-    ...contextRuns(other.context),
   ];
+  return withContext(runs, other.context, frame);
 }
 
-// `trunk` carries the tree's line down past the rows under a child: `│` unless it is the last.
+// `trunk` carries a tree's line, at `trunkColumn`, down past the rows under a
+// session: `│` while more of that tree follows.
 function workEntries(
+  trunkColumn: number,
   trunk: string,
   work: string | undefined,
   layout: Layout,
 ): PaneEntry[] {
   if (layout.work !== 'row' || work === undefined) return [];
+  const lead = ' '.repeat(trunkColumn) + trunk;
   const row: StyledRow = [
-    cell(trunk, WORK_INDENT, { tone: 'subtle' }),
+    cell(lead, trunkColumn + WORK_INDENT, { tone: 'subtle' }),
     { text: work, tone: 'inactive' },
   ];
   return [{ row, needsYou: false }];
 }
 
-function subagentRow(
-  subagent: Subagent,
-  trunk: string,
-  isLast: boolean,
-  layout: Layout,
-): StyledRow {
-  const branch = isLast ? '└' : '├';
+function subagentRuns(subagent: Subagent, layout: Layout): StyledRun[] {
   return [
-    {
-      text: `${trunk.padEnd(layout.subagentIndent)}${branch} `,
-      tone: 'subtle',
-    },
     cell(`◦ ${subagent.type}`, layout.subagentType, { tone: 'suggestion' }),
     { text: subagent.description, tone: 'inactive', italic: true },
   ];
 }
 
+// At most `SUBAGENT_ROWS_MAX` rows, then one that counts the rest, each
+// branching after `lead`. `endsTrunk` is false when rows of the same tree
+// hang from the same line after them. The heads-only form draws none.
+function subagentEntries(
+  subagents: readonly Subagent[],
+  lead: string,
+  endsTrunk: boolean,
+  layout: Layout,
+): PaneEntry[] {
+  if (layout.work === 'none') return [];
+  const shown = subagents.slice(0, SUBAGENT_ROWS_MAX);
+  const more = subagents.length - shown.length;
+  const items: StyledRun[][] = [
+    ...shown.map((subagent) => subagentRuns(subagent, layout)),
+    ...(more > 0
+      ? [[{ text: `◦ +${more} more`, tone: 'inactive' as const }]]
+      : []),
+  ];
+  const last = items.length - 1;
+  return items.map((runs, index) => {
+    const branch = endsTrunk && index === last ? '└' : '├';
+    return {
+      row: [{ text: `${lead}${branch} `, tone: 'subtle' }, ...runs],
+      needsYou: false,
+    };
+  });
+}
+
 function childEntries(
   child: TreeChild,
   isLast: boolean,
-  layout: Layout,
-  work: number,
+  frame: Frame,
 ): PaneEntry[] {
+  const { layout } = frame;
   const trunk = isLast ? ' ' : '│';
-  // The heads-only form draws the head alone.
-  const drawn = layout.work === 'none' ? [] : child.subagents;
-  const subagents = drawn.map((subagent, index) => ({
-    row: subagentRow(subagent, trunk, index === drawn.length - 1, layout),
-    needsYou: false,
-  }));
+  const lead = trunk.padEnd(layout.subagentIndent);
   return [
     {
-      row: childHead(child, isLast, layout, work),
+      row: childHead(child, isLast, frame),
       needsYou: child.status.kind === 'needs',
     },
-    ...workEntries(trunk, child.work, layout),
-    ...subagents,
+    ...workEntries(0, trunk, child.work, layout),
+    ...subagentEntries(child.subagents, lead, true, layout),
   ];
 }
 
-function elsewhereEntries(
-  other: TreeOther,
-  layout: Layout,
-  work: number,
+// A worker of another main, as this main's children hang from the root, from
+// a trunk under that main's icon.
+function workerEntries(
+  worker: TreeOther,
+  isLast: boolean,
+  frame: Frame,
 ): PaneEntry[] {
+  const { layout } = frame;
+  const trunk = isLast ? ' ' : '│';
+  const head = [...indentRuns(layout), branchCell(isLast, layout)];
+  const lead = ' '.repeat(layout.indent) + trunk.padEnd(layout.subagentIndent);
   return [
     {
-      row: elsewhereHead(other, layout, work),
-      needsYou: other.status.kind === 'needs',
+      row: elsewhereHead(worker, head, frame),
+      needsYou: worker.status.kind === 'needs',
     },
-    ...workEntries('', other.work, layout),
+    ...workEntries(layout.indent, trunk, worker.work, layout),
+    ...subagentEntries(worker.subagents, lead, true, layout),
   ];
 }
 
-function countRuns(root: TreeRoot): StyledRun[] {
+// Where a session's subagents branch from the trunk under its icon, they are
+// rows of that trunk, before its workers; else the trunk runs past them.
+function headSubagents(head: TreeElsewhere, layout: Layout): PaneEntry[] {
+  const hasWorkers = head.workers.length > 0;
+  if (layout.subagentIndent === layout.indent) {
+    const lead = ' '.repeat(layout.indent);
+    return subagentEntries(head.subagents, lead, !hasWorkers, layout);
+  }
+  const trunk = hasWorkers ? '│' : ' ';
+  const lead = (' '.repeat(layout.indent) + trunk).padEnd(
+    layout.subagentIndent,
+  );
+  return subagentEntries(head.subagents, lead, true, layout);
+}
+
+function elsewhereEntries(block: TreeElsewhere, frame: Frame): PaneEntry[] {
+  const { layout } = frame;
+  const trunk = block.workers.length > 0 ? '│' : ' ';
+  const lastWorker = block.workers.length - 1;
+  return [
+    {
+      row: elsewhereHead(block, indentRuns(layout), frame),
+      needsYou: block.status.kind === 'needs',
+    },
+    ...workEntries(layout.indent, trunk, block.work, layout),
+    ...headSubagents(block, layout),
+    ...block.workers.flatMap((worker, index) =>
+      workerEntries(worker, index === lastWorker, frame),
+    ),
+  ];
+}
+
+// Whole phrases only: when the row has no room for all, the needs-you count
+// goes first, then the workers.
+function countRuns(root: TreeRoot, room: number): StyledRun[] {
   if (root.workers === 0) return [];
   const workers = `${root.workers} ${root.workers === 1 ? 'worker' : 'workers'}`;
-  if (root.needYou === 0) return [{ text: workers, tone: 'inactive' }];
-  return [
-    { text: `${workers} · `, tone: 'inactive' },
-    { text: needYouText(root.needYou), tone: 'warning' },
-  ];
+  const bare: StyledRun[] = [{ text: workers, tone: 'inactive' }];
+  const full: StyledRun[] =
+    root.needYou === 0
+      ? bare
+      : [
+          { text: `${workers} · `, tone: 'inactive' },
+          { text: needYouText(root.needYou), tone: 'warning' },
+        ];
+  return [full, bare].find((runs) => rowWidth(runs) <= room) ?? [];
 }
 
 // Inline, the counts end where the context column ends; docked, they follow the name.
-function rootRow(root: TreeRoot, layout: Layout, rowEnd: number): StyledRow {
+function rootRow(root: TreeRoot, frame: Frame): StyledRow {
+  const { layout, columns } = frame;
   const headColumns = layout.tree + ICON_COLUMNS + NAME_COLUMNS;
   const name = root.name === undefined ? '▣' : `▣ ${root.name}`;
   const head = cell(name, headColumns, { tone: 'claude', bold: true });
-  const counts = countRuns(root);
-  if (layout.work !== 'column') return [head, ...counts];
+  if (layout.work !== 'column') {
+    return [head, ...countRuns(root, columns - headColumns)];
+  }
   const label: StyledRun = { text: 'this main', tone: 'inactive' };
+  const rowEnd = fixedColumns(layout) + frame.work;
+  const before = headColumns + width(label.text) + 1;
+  const counts = countRuns(root, rowEnd - before);
   if (counts.length === 0) return [head, label];
   const room = rowEnd - headColumns - width(label.text) - rowWidth(counts);
   const gap: StyledRun = {
@@ -309,32 +413,29 @@ function fixedColumns(layout: Layout): number {
   );
 }
 
-function layoutAt(columns: number): { layout: Layout; work: number } {
-  if (columns < TWO_ROW_COLUMNS) return { layout: HEADS, work: 0 };
-  if (columns < ONE_ROW_COLUMNS) return { layout: DOCKED, work: 0 };
+function frameAt(columns: number): Frame {
+  if (columns < TWO_ROW_COLUMNS) return { layout: HEADS, work: 0, columns };
+  if (columns < ONE_ROW_COLUMNS) return { layout: DOCKED, work: 0, columns };
   const work = Math.min(WORK_COLUMNS_MAX, columns - fixedColumns(INLINE));
-  return { layout: INLINE, work };
+  return { layout: INLINE, work, columns };
 }
 
-/** The tree's rows at `columns`, in the pane's order: sessions elsewhere that need you, this main, its children and their subagents, then a blank row and the other sessions. */
+/** The tree's rows at `columns`, in the pane's order: sessions elsewhere that need you, with another main's workers under it, then this main, its children and their subagents, then a blank row and the other sessions. */
 export function treeEntries(tree: DeskTree, columns: number): PaneEntry[] {
-  const { layout, work } = layoutAt(columns);
-  const rowEnd = fixedColumns(layout) + work;
+  const frame = frameAt(columns);
   const lastChild = tree.children.length - 1;
   const others =
     tree.others.length === 0
       ? []
       : [
           { row: [], needsYou: false },
-          ...tree.others.flatMap((other) =>
-            elsewhereEntries(other, layout, work),
-          ),
+          ...tree.others.flatMap((block) => elsewhereEntries(block, frame)),
         ];
   const entries: PaneEntry[] = [
-    ...tree.waiting.flatMap((other) => elsewhereEntries(other, layout, work)),
-    { row: rootRow(tree.root, layout, rowEnd), needsYou: false },
+    ...tree.waiting.flatMap((block) => elsewhereEntries(block, frame)),
+    { row: rootRow(tree.root, frame), needsYou: false },
     ...tree.children.flatMap((child, index) =>
-      childEntries(child, index === lastChild, layout, work),
+      childEntries(child, index === lastChild, frame),
     ),
     ...others,
   ];

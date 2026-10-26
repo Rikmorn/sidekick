@@ -13,6 +13,8 @@ export const STALE_MS = 180_000;
 
 const KEY_PREFIX = 'session:';
 
+const IDLE_PREFIX = 'idle since ';
+
 /** The store key a session publishes under. */
 export function keyOf(sessionId: string): string {
   return `${KEY_PREFIX}${sessionId}`;
@@ -78,6 +80,16 @@ function contextOf(value: unknown): PublishedSession['context'] {
   return isFiniteNumber(used) && isFiniteNumber(limit)
     ? { used, limit }
     : undefined;
+}
+
+/** The activity a session publishes once its main loop's turn has ended, at `clock`, the local time. */
+export function idleActivity(clock: string): string {
+  return `${IDLE_PREFIX}${clock}`;
+}
+
+/** Whether an activity line is the one `idleActivity` makes. */
+export function isIdleActivity(activity: string): boolean {
+  return activity.startsWith(IDLE_PREFIX);
 }
 
 /** A stored value as a key this version reads, or undefined for another version or a bad shape. */

@@ -373,7 +373,7 @@ test('below 80 columns each session takes two rows, head then work, as the L1 do
 test('below 40 columns each session takes its head row alone, cut from its end', () => {
   expect(paneRows(TREE, TREE_KEYS, 24, NOW).map(plain)).toEqual([
     '◇ odin-review    needs y',
-    '▣ todo-app-ce      2 wor',
+    '▣ todo-app-ce',
     '├ ◐ add-greeting   worki',
     '└ ✓ p7-desk        done',
     '',
@@ -468,15 +468,18 @@ test('a row elsewhere leads with its kind: ◇ for a main, ◌ for any other or 
       other({ name: 'pm-main', sessionId: 'pm' }),
       other({ name: 'bare', sessionId: 'bare', repo: 'furnace' }),
       other({ name: 'helper', sessionId: 'helper' }),
+      other({ name: 'worker', sessionId: 'worker' }),
     ],
   });
   const keys = keysOf(
     key({ sessionId: 'pm', role: 'main' }),
     key({ sessionId: 'helper', role: 'other' }),
+    key({ sessionId: 'worker', role: 'worker', main: 'gone-main' }),
   );
   const rows = paneRows(snap, keys, 100, NOW).slice(2);
   expect(rows.map((row) => row[1])).toEqual([
     { text: cell('◇', 2), tone: 'inactive' },
+    { text: cell('◌', 2), tone: 'inactive' },
     { text: cell('◌', 2), tone: 'inactive' },
     { text: cell('◌', 2), tone: 'inactive' },
   ]);
@@ -487,6 +490,218 @@ test('a row elsewhere leads with its kind: ◇ for a main, ◌ for any other or 
   });
   expect(runOf(rows[1], 'furnace')?.tone).toBe('subtle');
   expect(runOf(rows[1], 'idle')?.tone).toBe('inactive');
+});
+
+const EXPLORE = {
+  type: 'Explore',
+  description: 'find callers of greet',
+  status: 'running',
+};
+
+// demo-main, another main, with a waiting worker and a working one that runs a subagent.
+const NESTED = snapshot({
+  self: SELF,
+  waiting: [
+    {
+      hasPid: true,
+      sessionId: 'wait',
+      name: 'wait-perm',
+      repo: 'demo',
+      reason: 'permission prompt',
+      child: false,
+    },
+  ],
+  others: [
+    other({
+      name: 'demo-main',
+      sessionId: 'demo',
+      repo: 'demo',
+      state: 'working',
+    }),
+    other({
+      name: 'wait-perm',
+      sessionId: 'wait',
+      repo: 'demo',
+      kind: 'background',
+      state: 'blocked',
+      needs: 'approve Read: x',
+    }),
+    other({
+      name: 'fan-out',
+      sessionId: 'fan',
+      repo: 'demo',
+      kind: 'background',
+      state: 'working',
+    }),
+  ],
+});
+
+const NESTED_KEYS = keysOf(
+  key({ sessionId: 'demo', role: 'main', activity: 'Edit: a.ts' }),
+  key({ sessionId: 'wait', main: 'demo-main' }),
+  key({ sessionId: 'fan', main: 'demo-main', subagents: [EXPLORE] }),
+);
+
+test("another main's workers draw under it with the tree's glyphs, ◌ and dim, its block lifted while one waits", () => {
+  expect(paneRows(NESTED, NESTED_KEYS, 100, NOW).map(plain)).toEqual([
+    cell('', 3) +
+      cell('◇', 2) +
+      cell('demo-main', 15) +
+      cell('working', 11) +
+      cell('Edit: a.ts', 44) +
+      '     demo',
+    cell('', 3) +
+      cell('├', 3) +
+      cell('◌', 2) +
+      cell('wait-perm', 12) +
+      cell('needs you', 11) +
+      cell('approve Read: x', 44) +
+      '     demo',
+    cell('', 3) +
+      cell('└', 3) +
+      cell('◌', 2) +
+      cell('fan-out', 12) +
+      cell('working', 11) +
+      cell('', 44) +
+      '     demo',
+    `${cell('', 6)}└ ${cell('◦ Explore', 18)}find callers of greet`,
+    `${cell('▣ todo-app-ce', 20)}this main`,
+  ]);
+  const worker = paneRows(NESTED, NESTED_KEYS, 100, NOW)[1];
+  expect(runOf(worker, '◌')?.tone).toBe('inactive');
+  expect(runOf(worker, 'wait-perm')).toMatchObject({ tone: 'text', dim: true });
+});
+
+test("docked, another main's workers hang from a trunk under its icon, and below 40 columns their heads stand alone", () => {
+  expect(paneRows(NESTED, NESTED_KEYS, 60, NOW).map(plain)).toEqual([
+    `${cell('◇', 2)}${cell('demo-main', 15)}${cell('working', 12)}demo`,
+    `${cell('│', 6)}Edit: a.ts`,
+    `${cell('├', 2)}${cell('◌', 2)}${cell('wait-perm', 13)}${cell('needs you', 12)}demo`,
+    `${cell('│', 6)}approve Read: x`,
+    `${cell('└', 2)}${cell('◌', 2)}${cell('fan-out', 13)}${cell('working', 12)}demo`,
+    `${cell('', 6)}└ ${cell('◦ Explore', 11)}find callers of greet`,
+    '▣ todo-app-ce',
+  ]);
+  expect(paneRows(NESTED, NESTED_KEYS, 24, NOW).map(plain)).toEqual([
+    '◇ demo-main      working',
+    '├ ◌ wait-perm    needs y',
+    '└ ◌ fan-out      working',
+    '▣ todo-app-ce',
+  ]);
+});
+
+test("a main's own subagents hang from its trunk before its workers", () => {
+  const keys = keysOf(
+    key({
+      sessionId: 'demo',
+      role: 'main',
+      activity: 'Edit: a.ts',
+      subagents: [EXPLORE],
+    }),
+    key({ sessionId: 'fan', main: 'demo-main' }),
+  );
+  const snap = snapshot({
+    self: SELF,
+    others: [
+      other({ name: 'demo-main', sessionId: 'demo', repo: 'demo' }),
+      other({ name: 'fan-out', sessionId: 'fan', repo: 'demo' }),
+    ],
+  });
+  expect(paneRows(snap, keys, 100, NOW).map(plain).slice(3, 5)).toEqual([
+    `${cell('', 3)}├ ${cell('◦ Explore', 18)}find callers of greet`,
+    `${cell('', 3)}${cell('└', 3)}${cell('◌', 2)}${cell('fan-out', 12)}${cell('idle', 11)}${cell('', 44)}     demo`,
+  ]);
+  expect(paneRows(snap, keys, 60, NOW).map(plain).slice(2, 6)).toEqual([
+    `${cell('◇', 2)}${cell('demo-main', 15)}${cell('idle', 12)}demo`,
+    `${cell('│', 6)}Edit: a.ts`,
+    `${cell('│', 6)}└ ${cell('◦ Explore', 11)}find callers of greet`,
+    `${cell('└', 2)}${cell('◌', 2)}${cell('fan-out', 13)}${cell('idle', 12)}demo`,
+  ]);
+});
+
+test('each session draws at most three subagent rows, then ◦ +N more, inactive', () => {
+  const five = ['a', 'b', 'c', 'd', 'e'].map((type) => ({
+    type,
+    description: `${type} task`,
+    status: 'running',
+  }));
+  const snap = snapshot({
+    self: SELF,
+    children: [child({ name: 'add-greeting', sessionId: 'add' })],
+    others: [other({ name: 'bench', sessionId: 'bench', repo: 'other' })],
+  });
+  const keys = keysOf(
+    key({ sessionId: 'add', subagents: five.slice(0, 4) }),
+    key({ sessionId: 'bench', role: 'other', subagents: five }),
+  );
+  const subagent = (
+    lead: string,
+    branch: string,
+    type: string,
+    cells: number,
+  ) => `${lead}${branch} ${cell(`◦ ${type}`, cells)}${type} task`;
+  expect(paneRows(snap, keys, 100, NOW).map(plain).slice(1)).toEqual([
+    `${cell('└', 3)}${cell('◐', 2)}${cell('add-greeting', 15)}working`,
+    subagent('   ', '├', 'a', 18),
+    subagent('   ', '├', 'b', 18),
+    subagent('   ', '├', 'c', 18),
+    '   └ ◦ +1 more',
+    '',
+    `${cell('', 3)}${cell('◌', 2)}${cell('bench', 15)}${cell('idle', 11)}${cell('', 44)}     other`,
+    subagent('   ', '├', 'a', 18),
+    subagent('   ', '├', 'b', 18),
+    subagent('   ', '├', 'c', 18),
+    '   └ ◦ +2 more',
+  ]);
+  const docked = paneRows(snap, keys, 60, NOW);
+  expect(docked.map(plain).slice(-4)).toEqual([
+    subagent('      ', '├', 'a', 11),
+    subagent('      ', '├', 'b', 11),
+    subagent('      ', '├', 'c', 11),
+    '      └ ◦ +2 more',
+  ]);
+  expect(runOf(docked.at(-1), '◦ +2 more')?.tone).toBe('inactive');
+});
+
+test('docked, a context bar that does not fit whole drops, and its tokens stay when they fit', () => {
+  const head = `${cell('◇', 2)}${cell('odin-review', 15)}${cell('needs you', 12)}${cell('odin', 11)}`;
+  const first = (columns: number) =>
+    plain(paneRows(TREE, TREE_KEYS, columns, NOW)[0] ?? []);
+  expect(first(51)).toBe(`${head}▰▰▰▰▱  176k`);
+  expect(first(45)).toBe(`${head} 176k`);
+  expect(first(44)).toBe(`${head}176k`);
+  expect(first(43)).toBe(head.trimEnd());
+  for (let columns = 1; columns < 80; columns += 1) {
+    for (const row of paneRows(TREE, TREE_KEYS, columns, NOW)) {
+      const cells = plain(row).match(/[▰▱]/g) ?? [];
+      expect(cells.length === 0 || cells.length === 5).toBe(true);
+    }
+  }
+});
+
+test('the root count drops its needs-you phrase whole, then its workers, rather than cut either', () => {
+  const snap = snapshot({
+    self: SELF,
+    waiting: [
+      {
+        hasPid: true,
+        name: 'a',
+        repo: 'todo-app',
+        reason: 'permission prompt',
+        child: true,
+      },
+    ],
+    children: [
+      child({ name: 'a', state: 'blocked' }),
+      child({ name: 'b' }),
+      child({ name: 'c' }),
+    ],
+  });
+  const root = (columns: number) =>
+    plain(paneRows(snap, new Map(), columns, NOW)[0] ?? []);
+  expect(root(60)).toBe(`${cell('▣ todo-app-ce', 19)}3 workers · 1 needs you`);
+  expect(root(32)).toBe(`${cell('▣ todo-app-ce', 19)}3 workers`);
+  expect(root(27)).toBe('▣ todo-app-ce');
 });
 
 test('a session that needs you reads ● needs you on a child and needs you elsewhere, in the warning tone', () => {

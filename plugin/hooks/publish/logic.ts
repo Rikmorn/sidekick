@@ -7,7 +7,11 @@ import { clockText } from '../board/logic';
 import { cut, width } from '../lines';
 import type { Role } from '../role';
 import type { SelfFacts } from '../state';
-import { PUBLISH_VERSION, type PublishedSession } from './contract';
+import {
+  idleActivity,
+  PUBLISH_VERSION,
+  type PublishedSession,
+} from './contract';
 
 /** The most subagents a key lists; the desk nests them under the session's row. */
 export const MAX_SUBAGENTS = 6;
@@ -100,7 +104,7 @@ export function activityOf(tool: string, args: unknown): string {
 
 /** The activity line once the main loop's turn has ended, in the session's local time. */
 export function idleText(endedAt: number): string {
-  return `idle since ${clockText(endedAt)}`;
+  return idleActivity(clockText(endedAt));
 }
 
 /** The key a session's facts publish, its subagents read from `$.agent.list()`. */
