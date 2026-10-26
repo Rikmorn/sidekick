@@ -1,8 +1,7 @@
 /**
- * What a pickup shows, selected and worded once. The brief and the board
- * line read it today and the board pane reads it next, so the three agree on
- * which facts count and how a drift kind is named. Pure: it decides nothing
- * the pickup did not join, except the `next` line, a fixed rule.
+ * What a pickup shows, selected and worded once. The brief and the board pane
+ * read `pickupView`; the board line's state reads `driftEntries`. Pure: it
+ * decides nothing the pickup did not join, except the `next` line, a fixed rule.
  */
 
 import type { Candidate, Drift, InProgress } from './pm.js';

@@ -4179,26 +4179,26 @@ var IN_PROGRESS = "In Progress";
 function ageText(days) {
   return days === null ? null : `${days} d`;
 }
-function issueNode(issue) {
-  const mark = !issue.open ? "done" : issue.status === IN_PROGRESS ? "running" : "later";
+function leaf(mark, ref2, text, age) {
   return {
     mark,
-    ref: `#${issue.number}`,
-    text: issue.title ?? "no card",
-    right: ageText(issue.ageDays),
-    weight: "plain",
-    children: []
-  };
-}
-function titledNode(issue, mark, age) {
-  return {
-    mark,
-    ref: `#${issue.number}`,
-    text: issue.title,
+    ref: ref2,
+    text,
     right: ageText(age),
     weight: "plain",
     children: []
   };
+}
+function markOf(issue) {
+  if (issue.open && issue.status === IN_PROGRESS)
+    return "running";
+  return issue.open ? "later" : "done";
+}
+function issueNode(issue) {
+  return leaf(markOf(issue), `#${issue.number}`, issue.title ?? "no card", issue.ageDays);
+}
+function titledNode(issue, mark, age) {
+  return leaf(mark, `#${issue.number}`, issue.title, age);
 }
 function quiet(mark, text, children = []) {
   return { mark, ref: null, text, right: null, weight: "quiet", children };
@@ -4259,14 +4259,7 @@ function capped(name, issues) {
   return [quiet("group", name, [...shown, ...tail])];
 }
 function milestoneNodes(titles2) {
-  return titles2.map((title) => ({
-    mark: "later",
-    ref: null,
-    text: title,
-    right: null,
-    weight: "plain",
-    children: []
-  }));
+  return titles2.map((title) => leaf("later", null, title, null));
 }
 function alsoOpen(view) {
   if (view.milestone === null || view.otherOpen.length === 0)

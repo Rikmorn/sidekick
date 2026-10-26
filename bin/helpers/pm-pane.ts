@@ -15,35 +15,42 @@ function ageText(days: number | null): string | null {
   return days === null ? null : `${days} d`;
 }
 
-function issueNode(issue: ViewIssue): PaneNode {
-  const mark = !issue.open
-    ? 'done'
-    : issue.status === IN_PROGRESS
-      ? 'running'
-      : 'later';
+function leaf(
+  mark: PaneNode['mark'],
+  ref: string | null,
+  text: string,
+  age: number | null,
+): PaneNode {
   return {
     mark,
-    ref: `#${issue.number}`,
-    text: issue.title ?? 'no card',
-    right: ageText(issue.ageDays),
+    ref,
+    text,
+    right: ageText(age),
     weight: 'plain',
     children: [],
   };
+}
+
+function markOf(issue: ViewIssue): 'done' | 'running' | 'later' {
+  if (issue.open && issue.status === IN_PROGRESS) return 'running';
+  return issue.open ? 'later' : 'done';
+}
+
+function issueNode(issue: ViewIssue): PaneNode {
+  return leaf(
+    markOf(issue),
+    `#${issue.number}`,
+    issue.title ?? 'no card',
+    issue.ageDays,
+  );
 }
 
 function titledNode(
   issue: Titled,
   mark: 'later' | 'running',
   age: number | null,
-) {
-  return {
-    mark,
-    ref: `#${issue.number}`,
-    text: issue.title,
-    right: ageText(age),
-    weight: 'plain',
-    children: [],
-  } satisfies PaneNode;
+): PaneNode {
+  return leaf(mark, `#${issue.number}`, issue.title, age);
 }
 
 function quiet(
@@ -117,14 +124,7 @@ function capped(name: string, issues: Titled[]): PaneNode[] {
 }
 
 function milestoneNodes(titles: string[]): PaneNode[] {
-  return titles.map((title) => ({
-    mark: 'later',
-    ref: null,
-    text: title,
-    right: null,
-    weight: 'plain',
-    children: [],
-  }));
+  return titles.map((title) => leaf('later', null, title, null));
 }
 
 function alsoOpen(view: PickupView): PaneNode[] {
