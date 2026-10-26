@@ -386,6 +386,46 @@ test("a child's work line is its activity, else job state's detail, else its pla
   ]);
 });
 
+test('text from outside is cut to its first non-empty line: needs, detail, reason, and a subagent description', () => {
+  const tree = deskTree(
+    snapshot({
+      waiting: [
+        waiting({
+          name: 'ask',
+          sessionId: 'ask',
+          child: true,
+          reason: '\n  first reason  \nsecond reason',
+        }),
+      ],
+      children: [
+        child({
+          name: 'ask',
+          sessionId: 'ask',
+          state: 'blocked',
+          needs: '\nWhich branch?\nA or B',
+        }),
+        child({ name: 'detail', detail: '\n\nreport sent\nmore text' }),
+      ],
+    }),
+    keysOf(
+      key({
+        sessionId: 'ask',
+        subagents: [
+          { type: 'Explore', description: 'find\ncallers', status: 'running' },
+        ],
+      }),
+    ),
+    NOW,
+  );
+  expect(tree.children.find((s) => s.name === 'ask')).toMatchObject({
+    work: 'Which branch?',
+    subagents: [{ description: 'find' }],
+  });
+  expect(tree.children.find((s) => s.name === 'detail')?.work).toBe(
+    'report sent',
+  );
+});
+
 test('with no published context the tokens stand alone: the key, else the snapshot', () => {
   const tree = deskTree(
     snapshot({

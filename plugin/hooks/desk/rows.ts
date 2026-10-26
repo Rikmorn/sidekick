@@ -241,13 +241,10 @@ function childEntries(
   work: number,
 ): PaneEntry[] {
   const trunk = isLast ? ' ' : '│';
-  const subagents = child.subagents.map((subagent, index) => ({
-    row: subagentRow(
-      subagent,
-      trunk,
-      index === child.subagents.length - 1,
-      layout,
-    ),
+  // The heads-only form draws the head alone.
+  const drawn = layout.work === 'none' ? [] : child.subagents;
+  const subagents = drawn.map((subagent, index) => ({
+    row: subagentRow(subagent, trunk, index === drawn.length - 1, layout),
     needsYou: false,
   }));
   return [

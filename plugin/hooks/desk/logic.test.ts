@@ -375,11 +375,20 @@ test('below 40 columns each session takes its head row alone, cut from its end',
     '◇ odin-review    needs y',
     '▣ todo-app-ce      2 wor',
     '├ ◐ add-greeting   worki',
-    '│     └ ◦ Explore  find',
     '└ ✓ p7-desk        done',
     '',
     '◇ pm-main        idle',
   ]);
+});
+
+test('subagent rows draw from 40 columns and not below, where the head stands alone', () => {
+  const hasSubagent = (columns: number) =>
+    paneRows(TREE, TREE_KEYS, columns, NOW)
+      .map(plain)
+      .some((row) => row.includes('Explore'));
+  expect(hasSubagent(24)).toBe(false);
+  expect(hasSubagent(39)).toBe(false);
+  expect(hasSubagent(40)).toBe(true);
 });
 
 test('no row is wider than its columns, and only the gap row is empty', () => {

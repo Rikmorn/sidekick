@@ -121,13 +121,28 @@ function waitText(
   return row.needs ?? (isTelling ? reason : undefined);
 }
 
+// Text from outside may hold a question or a report; a row is one line.
+function firstLine(text: string | undefined): string | undefined {
+  return text
+    ?.split('\n')
+    .map((line) => line.trim())
+    .find((line) => line !== '');
+}
+
 function workOf(
   status: Status,
   waits: string | undefined,
   doing: (string | undefined)[],
 ): string | undefined {
   const lines = status.kind === 'needs' ? [waits, ...doing] : doing;
-  return lines.find((line) => line !== undefined);
+  return lines.map(firstLine).find((line) => line !== undefined);
+}
+
+function subagentsOf(key: PublishedSession | undefined): Subagent[] {
+  return (key?.subagents ?? []).map((subagent) => ({
+    ...subagent,
+    description: firstLine(subagent.description) ?? '',
+  }));
 }
 
 function contextOf(
@@ -174,7 +189,7 @@ function childOf(
     ),
     unintegrated: child.unintegrated,
     uncommitted: child.uncommitted,
-    subagents: key?.subagents ?? [],
+    subagents: subagentsOf(key),
   };
 }
 
