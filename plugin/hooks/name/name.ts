@@ -13,15 +13,12 @@
 import type { EngineInterface, On } from 'claude-code';
 import { reasonOf, settle } from '../failures';
 import { type Role, settleRole } from '../role';
-import { sessionCheckOf } from './check';
-import { RUN_TIMEOUT_MS, type SessionAnswer } from './contract';
+import { type SessionCheck, sessionCheckOf } from './check';
+import { RUN_TIMEOUT_MS } from './contract';
 import { isLaunch, renameCommand, verdictOf } from './logic';
 
 /** How long after a check its rename waits: the timer takes `$.command.run` out of the hook, which may not call it, and the call then queues until the session is idle. */
 export const RENAME_DELAY_MS = 500;
-
-// One check: the command's answer, or why there is none.
-type Checked = { answer: SessionAnswer } | { failure: string };
 
 // What the name mod keeps between its hooks. The engine follows `$` only into
 // functions declared at the top of the file, so the functions that take it
@@ -50,7 +47,7 @@ function commandOf(input: unknown): string | undefined {
 
 // The session id is read at each check: /clear starts a new one with no
 // `session.start` after it.
-async function checkSession($: EngineInterface): Promise<Checked> {
+async function checkSession($: EngineInterface): Promise<SessionCheck> {
   const self = await settle($.session.id());
   if ('reason' in self) {
     return { failure: `reading the session id failed: ${self.reason}` };
