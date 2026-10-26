@@ -321,7 +321,7 @@ test('from 80 columns each session takes one row, as the L1 inline plate', () =>
   const rows = paneRows(TREE, TREE_KEYS, 100, NOW).map(plain);
   expect(rows).toEqual([
     cell('', 3) +
-      cell('◇', 2) +
+      cell('□', 2) +
       cell('odin-review', 15) +
       cell('needs you', 11) +
       cell('which branch should I review?', 44) +
@@ -345,7 +345,7 @@ test('from 80 columns each session takes one row, as the L1 inline plate', () =>
       '       140k',
     '',
     cell('', 3) +
-      cell('◇', 2) +
+      cell('□', 2) +
       cell('pm-main', 15) +
       cell('idle', 11) +
       cell('', 44) +
@@ -357,7 +357,7 @@ test('from 80 columns each session takes one row, as the L1 inline plate', () =>
 test('below 80 columns each session takes two rows, head then work, as the L1 docked plate', () => {
   const rows = paneRows(TREE, TREE_KEYS, 60, NOW).map(plain);
   expect(rows).toEqual([
-    `${cell('◇', 2)}${cell('odin-review', 15)}${cell('needs you', 12)}${cell('odin', 11)}▰▰▰▰▱  176k`,
+    `${cell('□', 2)}${cell('odin-review', 15)}${cell('needs you', 12)}${cell('odin', 11)}▰▰▰▰▱  176k`,
     '      which branch should I review?',
     `${cell('▣ todo-app-ce', 19)}2 workers`,
     `${cell('├', 2)}${cell('◐', 2)}${cell('add-greeting', 15)}${cell('working', 12)}${cell('', 9)}▰▰▰▰▱  156k`,
@@ -366,18 +366,18 @@ test('below 80 columns each session takes two rows, head then work, as the L1 do
     `${cell('└', 2)}${cell('✓', 2)}${cell('p7-desk', 15)}${cell('done', 12)}${cell('⇡2', 9)}       140k`,
     '      report sent',
     '',
-    `${cell('◇', 2)}${cell('pm-main', 15)}${cell('idle', 12)}${cell('sidekick', 11)}▰▱▱▱▱  120k`,
+    `${cell('□', 2)}${cell('pm-main', 15)}${cell('idle', 12)}${cell('sidekick', 11)}▰▱▱▱▱  120k`,
   ]);
 });
 
 test('below 40 columns each session takes its head row alone, cut from its end', () => {
   expect(paneRows(TREE, TREE_KEYS, 24, NOW).map(plain)).toEqual([
-    '◇ odin-review    needs y',
+    '□ odin-review    needs y',
     '▣ todo-app-ce',
     '├ ◐ add-greeting   worki',
     '└ ✓ p7-desk        done',
     '',
-    '◇ pm-main        idle',
+    '□ pm-main        idle',
   ]);
 });
 
@@ -461,7 +461,7 @@ test('a child leads with its state icon after the tree glyph, and its name is bo
   expect(runOf(rows[4], 'done')?.tone).toBe('success');
 });
 
-test('a row elsewhere leads with its kind: ◇ for a main, ◌ for any other or no key, its name dim', () => {
+test('a row elsewhere leads with its kind: □ for a main, – for any other or no key, its name dim', () => {
   const snap = snapshot({
     self: SELF,
     others: [
@@ -478,10 +478,10 @@ test('a row elsewhere leads with its kind: ◇ for a main, ◌ for any other or 
   );
   const rows = paneRows(snap, keys, 100, NOW).slice(2);
   expect(rows.map((row) => row[1])).toEqual([
-    { text: cell('◇', 2), tone: 'inactive' },
-    { text: cell('◌', 2), tone: 'inactive' },
-    { text: cell('◌', 2), tone: 'inactive' },
-    { text: cell('◌', 2), tone: 'inactive' },
+    { text: cell('□', 2), tone: 'inactive' },
+    { text: cell('–', 2), tone: 'inactive' },
+    { text: cell('–', 2), tone: 'inactive' },
+    { text: cell('–', 2), tone: 'inactive' },
   ]);
   expect(rows[1]?.[2]).toEqual({
     text: cell('bare', 15),
@@ -542,24 +542,24 @@ const NESTED_KEYS = keysOf(
   key({ sessionId: 'fan', main: 'demo-main', subagents: [EXPLORE] }),
 );
 
-test("another main's workers draw under it with the tree's glyphs, ◌ and dim, its block lifted while one waits", () => {
+test("another main's workers draw under it with the tree's glyphs, – and dim, its block lifted while one waits", () => {
   expect(paneRows(NESTED, NESTED_KEYS, 100, NOW).map(plain)).toEqual([
     cell('', 3) +
-      cell('◇', 2) +
+      cell('□', 2) +
       cell('demo-main', 15) +
       cell('working', 11) +
       cell('Edit: a.ts', 44) +
       '     demo',
     cell('', 3) +
       cell('├', 3) +
-      cell('◌', 2) +
+      cell('–', 2) +
       cell('wait-perm', 12) +
       cell('needs you', 11) +
       cell('approve Read: x', 44) +
       '     demo',
     cell('', 3) +
       cell('└', 3) +
-      cell('◌', 2) +
+      cell('–', 2) +
       cell('fan-out', 12) +
       cell('working', 11) +
       cell('', 44) +
@@ -568,24 +568,24 @@ test("another main's workers draw under it with the tree's glyphs, ◌ and dim, 
     `${cell('▣ todo-app-ce', 20)}this main`,
   ]);
   const worker = paneRows(NESTED, NESTED_KEYS, 100, NOW)[1];
-  expect(runOf(worker, '◌')?.tone).toBe('inactive');
+  expect(runOf(worker, '–')?.tone).toBe('inactive');
   expect(runOf(worker, 'wait-perm')).toMatchObject({ tone: 'text', dim: true });
 });
 
 test("docked, another main's workers hang from a trunk under its icon, and below 40 columns their heads stand alone", () => {
   expect(paneRows(NESTED, NESTED_KEYS, 60, NOW).map(plain)).toEqual([
-    `${cell('◇', 2)}${cell('demo-main', 15)}${cell('working', 12)}demo`,
+    `${cell('□', 2)}${cell('demo-main', 15)}${cell('working', 12)}demo`,
     `${cell('│', 6)}Edit: a.ts`,
-    `${cell('├', 2)}${cell('◌', 2)}${cell('wait-perm', 13)}${cell('needs you', 12)}demo`,
+    `${cell('├', 2)}${cell('–', 2)}${cell('wait-perm', 13)}${cell('needs you', 12)}demo`,
     `${cell('│', 6)}approve Read: x`,
-    `${cell('└', 2)}${cell('◌', 2)}${cell('fan-out', 13)}${cell('working', 12)}demo`,
+    `${cell('└', 2)}${cell('–', 2)}${cell('fan-out', 13)}${cell('working', 12)}demo`,
     `${cell('', 6)}└ ${cell('◦ Explore', 11)}find callers of greet`,
     '▣ todo-app-ce',
   ]);
   expect(paneRows(NESTED, NESTED_KEYS, 24, NOW).map(plain)).toEqual([
-    '◇ demo-main      working',
-    '├ ◌ wait-perm    needs y',
-    '└ ◌ fan-out      working',
+    '□ demo-main      working',
+    '├ – wait-perm    needs y',
+    '└ – fan-out      working',
     '▣ todo-app-ce',
   ]);
 });
@@ -609,13 +609,13 @@ test("a main's own subagents hang from its trunk before its workers", () => {
   });
   expect(paneRows(snap, keys, 100, NOW).map(plain).slice(3, 5)).toEqual([
     `${cell('', 3)}├ ${cell('◦ Explore', 18)}find callers of greet`,
-    `${cell('', 3)}${cell('└', 3)}${cell('◌', 2)}${cell('fan-out', 12)}${cell('idle', 11)}${cell('', 44)}     demo`,
+    `${cell('', 3)}${cell('└', 3)}${cell('–', 2)}${cell('fan-out', 12)}${cell('idle', 11)}${cell('', 44)}     demo`,
   ]);
   expect(paneRows(snap, keys, 60, NOW).map(plain).slice(2, 6)).toEqual([
-    `${cell('◇', 2)}${cell('demo-main', 15)}${cell('idle', 12)}demo`,
+    `${cell('□', 2)}${cell('demo-main', 15)}${cell('idle', 12)}demo`,
     `${cell('│', 6)}Edit: a.ts`,
     `${cell('│', 6)}└ ${cell('◦ Explore', 11)}find callers of greet`,
-    `${cell('└', 2)}${cell('◌', 2)}${cell('fan-out', 13)}${cell('idle', 12)}demo`,
+    `${cell('└', 2)}${cell('–', 2)}${cell('fan-out', 13)}${cell('idle', 12)}demo`,
   ]);
 });
 
@@ -647,7 +647,7 @@ test('each session draws at most three subagent rows, then ◦ +N more, inactive
     subagent('   ', '├', 'c', 18),
     '   └ ◦ +1 more',
     '',
-    `${cell('', 3)}${cell('◌', 2)}${cell('bench', 15)}${cell('idle', 11)}${cell('', 44)}     other`,
+    `${cell('', 3)}${cell('–', 2)}${cell('bench', 15)}${cell('idle', 11)}${cell('', 44)}     other`,
     subagent('   ', '├', 'a', 18),
     subagent('   ', '├', 'b', 18),
     subagent('   ', '├', 'c', 18),
@@ -664,7 +664,7 @@ test('each session draws at most three subagent rows, then ◦ +N more, inactive
 });
 
 test('docked, a context bar that does not fit whole drops, and its tokens stay when they fit', () => {
-  const head = `${cell('◇', 2)}${cell('odin-review', 15)}${cell('needs you', 12)}${cell('odin', 11)}`;
+  const head = `${cell('□', 2)}${cell('odin-review', 15)}${cell('needs you', 12)}${cell('odin', 11)}`;
   const first = (columns: number) =>
     plain(paneRows(TREE, TREE_KEYS, columns, NOW)[0] ?? []);
   expect(first(51)).toBe(`${head}▰▰▰▰▱  176k`);

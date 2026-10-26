@@ -232,7 +232,7 @@ function elsewhereHead(
   const nameColumns = NAME_COLUMNS - (rowWidth(lead) - layout.indent);
   const runs = [
     ...lead,
-    cell(other.isMain ? '◇' : '◌', ICON_COLUMNS, { tone: 'inactive' }),
+    cell(other.isMain ? '□' : '–', ICON_COLUMNS, { tone: 'inactive' }),
     cell(other.name, nameColumns, { tone: 'text', dim: true }),
     cell(look.label, layout.state, { tone: look.tone }),
     ...workCell(other.work, work),

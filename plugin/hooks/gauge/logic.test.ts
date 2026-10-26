@@ -115,7 +115,7 @@ test('a worker without a main points at agent view', () => {
 
 test('an other session reads as its name and profile', () => {
   const self: SelfFacts = { name: 'scratch', role: 'other', profile: 'p' };
-  expect(textOf(self)).toBe('◌ scratch · profile p');
+  expect(textOf(self)).toBe('– scratch · profile p');
   expect(identityRuns(self, 200)[0]).toMatchObject({ tone: 'inactive' });
 });
 
@@ -133,7 +133,7 @@ test('before a name is known the row shows the role alone', () => {
     '◐ worker of m · back: ←, select m, Enter',
   );
   expect(textOf({ role: 'worker' })).toBe('◐ worker · ← opens agent view');
-  expect(textOf({ role: 'other' })).toBe('◌ session');
+  expect(textOf({ role: 'other' })).toBe('– session');
 });
 
 test('no facts draw no row', () => {

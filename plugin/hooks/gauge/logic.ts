@@ -68,7 +68,7 @@ export function limitValue(
   return JSON.stringify(limit);
 }
 
-const ICONS = { main: '▣', worker: '◐', other: '◌' } as const;
+const ICONS = { main: '▣', worker: '◐', other: '–' } as const;
 const TONES = {
   main: 'claude',
   worker: 'suggestion',
