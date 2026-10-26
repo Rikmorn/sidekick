@@ -3,9 +3,9 @@
 // is the operator's 2026-10-22 ruling, beyond ADR-0012's four: it renames its
 // own session once, to the name it already shows. The rename draws its line in
 // the transcript and tells the model the session was named. No hook adds
-// context, approves, or denies. The role, the board, the desk, and the scope
-// mod share `session.start` under the same matcher, and the gauge shares it
-// unmatched. The board shares `classic.PostToolUse` on Bash. A hook that fails
+// context, approves, or denies. The role, the publisher, the board, the desk,
+// and the scope mod share `session.start` under the same matcher, and the
+// gauge shares it unmatched. The board shares `classic.PostToolUse` on Bash. A hook that fails
 // in one mod skips the module's whole hook for that event, so each hook here
 // keeps its own failures, which go to the debug log, and calls `next(e)` once.
 

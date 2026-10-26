@@ -11,7 +11,7 @@ Superpowers is the trunk: brainstorm, plan, execute, review. The official code-r
 | House guidance | The `sk-*` rules Claude Code reads in every repo: working standards, language, clean code, TypeScript, guidance authoring, PM conventions, agent prompts | `plugin/rules/`, delivered by `sidekick rules install` |
 | PM layer | Tracking on GitHub for your repos: session-start pickup, filing, closing with a record, a milestone's scope review and release check, a lint. The board, a Claude Code mod, keeps one state line in view under the prompt | `sidekick pm`, its session-start hook, and the `sk-orient`, `sk-track`, and `sk-milestone` skills, and the `sk-holistic-reviewer` agent. The board mod in `plugin/hooks/board/` |
 | Execution | How a written plan runs: a mode chosen per plan, what the plan carries, and the worker handoff. The desk, a Claude Code mod, names the sessions waiting on you and shows what each worker does | The `sk-execute` and `sk-worker` skills, and the `sidekick worker` verbs, `dispatch` and `finish`. The desk in `plugin/hooks/desk/`, and `sidekick desk --json`. The Skill-tool hook that gives `writing-plans` the plan stance and the handoff, and the Read hook that gives reviewers sidekick's reviewer lines |
-| Context | Tells the model when its main-thread context fills, at 65% and 75% of the way to compaction, or of the window when no compaction point is known. The gauge, a Claude Code mod, draws `profile: <name>` in the footer. It also supplies the compaction point | The context monitor hook (`PostToolBatch`), the gauge in `plugin/hooks/gauge/`, and the `context_window` setting |
+| Context | Tells the model when its main-thread context fills, at 65% and 75% of the way to compaction, or of the window when no compaction point is known. The gauge, a Claude Code mod, draws the identity row under the prompt in every session (§Mains and workers). It also supplies the compaction point | The context monitor hook (`PostToolBatch`), the gauge in `plugin/hooks/gauge/`, and the `context_window` setting |
 | Extensions | Design-side steps the ecosystem lacks. Shipped: a design pass before or during brainstorming. To come: a sealed review after a spec, a goal-backward verdict after a build | The `sk-design` skill and the Skill-tool hook's brainstorming nudge; later milestones for the rest |
 
 The PM layer is on where you own the tracking and silent everywhere else. A repo is tracked when one open Projects v2 board is linked to it, titled after the repo, and owned by you. No config file; the board is the switch.
@@ -72,7 +72,24 @@ Every issue entry carries `item_id`, the board item's node id, so a write by id 
 
 Choosing the worker mode is your only step. The orchestrating session writes a brief beside the plan and dispatches the worker with `sidekick worker dispatch`. The worker runs in the background, in a worktree made from the orchestrator's `HEAD`, with its pushes blocked. The orchestrating session rules on the questions from its scan through a rulings file. At the end it reviews the whole branch, because a per-task review cannot see a defect at the seam between tasks. It integrates the branch, then runs `sidekick worker finish`. That saves the run report beside the plan and removes the worker's session, desk record, worktree, and branch.
 
-`dispatch` prints the worker's id. Look in with `claude attach <id>`, and stop the worker with `claude stop <id>`. The desk shows the worker without attaching. Its band, above the prompt of each main, names who waits on you and lists the workers with their states. Its pane gives each worker's tokens, plan, and last commit. It also marks commits not integrated and uncommitted changes. In the fullscreen layout, on a terminal at least 144 columns wide, the pane opens beside the transcript when workers appear. `/desk` shows or hides it in a main. A pane taller than its room says so in its first row: press ctrl+x tab to focus it, then ↓ to scroll. A worker, or a background session that is not a main, draws no desk, attached or not. §Mains and workers says which session is which, and what `/desk` answers there. `dispatch` records each worker it starts for the desk, and `finish` deletes that record. From a terminal, `sidekick desk --json` prints the snapshot the desk draws. The orchestrating session keeps the main checkout while the worker runs. `docs/superpowers/` is gitignored, so a worktree does not contain the spec or the plan; the worker reads them by the main checkout's path.
+`dispatch` prints the worker's id. Look in with `claude attach <id>`, and stop the worker with `claude stop <id>`. The desk shows the worker without attaching. Its band, above the prompt of each main, names who waits on you and lists the workers with their states, led by `◐`. Its pane is a tree of sessions, and each main lists only the workers it dispatched. The rows run in this order:
+
+1. Sessions elsewhere that need you.
+2. This main, headed `▣`.
+3. Its workers, waiting first, each with its running subagents under it.
+4. The other sessions, after a blank row.
+
+A row gives an icon, the name, the state, one work line, marks, and the context. The work line is what the session needs while it waits, else its latest tool call, else job state's detail, else the plan title. The icons:
+
+| Icon | Means |
+|---|---|
+| `▣` / `◇` / `◌` | This main / another main / any other session |
+| `●` / `◐` / `✓` / `○` | A session that needs you / works / is done / idles |
+| `◦` | A subagent running inside a worker |
+
+`⇡N` marks N commits not integrated, and `✎` marks uncommitted changes. The context bar has five cells against the session's limit, then the tokens. It turns `warning` at 65%, `claude` at 75%, and `error` at 85%. A session that publishes no limit shows the tokens alone. A session without sidekick shows `◌` and no bar, since it publishes nothing.
+
+The pane has three width forms. From 80 body columns, each session takes one row. In a narrower pane it takes two: the head, then the work line. At under 40 columns, only the head shows, cut from its end. When the rows exceed the room, the pane's first row names any needs-you row it hides, as `+N rows · M need you`. Docked, the pane asks for `columns: 56`, which gives a body of 56 where no width is kept. A width you dragged or keyed is kept in `pluginPanes.dockColumns` in `~/.claude.json`, and it wins over the request. Widen a focused pane with ctrl+x ←, or delete the key while no session runs ([the desk pane probes, P3](../research/control-centre/2026-10-25-desk-pane-probes.md#p3-the-docks-width)). In the fullscreen layout, on a terminal at least 144 columns wide, the pane opens beside the transcript when workers appear. `/desk` shows or hides it in a main. A pane taller than its room also says so in its first row: press ctrl+x tab to focus it, then ↓ to scroll. Each session publishes the facts the tree shows, as `docs/reference/LOOP.md` §The publisher says. A worker, or a background session that is not a main, draws no desk, attached or not. §Mains and workers says which session is which, and what `/desk` answers there. `dispatch` records each worker it starts for the desk, and `finish` deletes that record. From a terminal, `sidekick desk --json` prints the snapshot the desk draws. The orchestrating session keeps the main checkout while the worker runs. `docs/superpowers/` is gitignored, so a worktree does not contain the spec or the plan; the worker reads them by the main checkout's path.
 
 When agent view is unavailable, you start the worker yourself, typing `/sidekick:sk-worker <brief>` in a session of your own. The brief then names where it works. A branch in the main checkout, `in-place` or `branch <name>`, suits a run where the orchestrating session stays off the tree until the branch is done. A worktree, which suits a run where the orchestrating session needs the checkout meanwhile, needs `worktree.baseRef: "head"` in your session's settings. `finish` does not apply, so the orchestrating session saves the run report beside the plan by hand.
 
@@ -84,15 +101,24 @@ Each session that loads sidekick's mods settles one role at its start, and the r
 
 | Role | Which session | What it draws |
 |---|---|---|
-| Main | The session you work in: an interactive one, and the same conversation after `←` moves it to the background | The desk's band and pane, and the board's line and pane |
-| Worker | A session sidekick launched: one that `sidekick worker dispatch` started, or that `sidekick profile launch --bg` started inside a session | The signpost, a row under the prompt that names its main and the way back |
-| Other | Any other background session, such as one a bare `claude --bg` started | No desk, board line, or signpost |
+| Main | The session you work in: an interactive one, and the same conversation after `←` moves it to the background | The desk's band and pane, the board's line and pane, and the identity row |
+| Worker | A session sidekick launched: one that `sidekick worker dispatch` started, or that `sidekick profile launch --bg` started inside a session | The identity row, which names its main and the way back |
+| Other | Any other background session, such as one a bare `claude --bg` started | The identity row, and no desk or board line |
 
 A worker's markers decide first. When its `--settings` `env` block holds a non-empty `SIDEKICK_MAIN` or `SIDEKICK_WORKER`, the session is a worker. Otherwise a session without `CLAUDE_JOB_DIR`, an interactive one, is a main. A background session is a main when Claude Code started it as a fork. `←` does that, and so does reopening a stopped main ([Q1](../research/control-centre/2026-10-22-main-and-worker-probes.md#what--does-to-the-main-q1), [Q3](../research/control-centre/2026-10-22-main-and-worker-probes.md#an-idle-backgrounded-main-q3)). Every other session is `other`.
 
 `dispatch` and `profile launch --bg` record the main in `SIDEKICK_MAIN` when they run inside a session. The value is the main's name as `claude agents --json --all` lists it, or its session id's first 8 characters when the listing gives none. A worker that names a main passes it on to the workers it starts. Once `claude` reports a start, the launch prints `main: <value>`. Outside any session they record no main and print no such line. A dispatched worker is still a worker then, through `SIDEKICK_WORKER`, and a launched session is `other`.
 
-**The signpost.** `<main>` here is the name the launch recorded. A worker draws one muted row under the prompt: `worker of <main> · to go back: ←, select <main>, Enter`. A worker without a main draws `worker · ← opens agent view`. In a worker, `/desk` answers `/desk is off in this worker. Its main is <main>: ←, select it, Enter.`, and `/board` the same with its own name. Without a main, each answers `/<name> is off in this worker.`, with its own name. In `other`, each answers `/<name> is off in background sessions.`
+**The identity row.** The gauge draws one row under the prompt in every session, whatever its role or profile. It leads with the role's icon and the session's name, then the role in words, then the profile. `<main>` here is the name the launch recorded.
+
+| Role | Row |
+|---|---|
+| Main | `▣ <name> · your main · profile <profile>` |
+| Worker | `◐ <name> · worker of <main> · back: ←, select <main>, Enter · profile <profile>` |
+| Worker without a main | `◐ <name> · worker · ← opens agent view · profile <profile>` |
+| Other | `◌ <name> · profile <profile>` |
+
+A session without profile settings reads `no profile` in place of `profile <profile>`. Before the session's name is known, the row shows the role alone, such as `▣ your main` or `◌ session`. The row cuts from its end to fit. It replaces three older marks: the `⚠ sidekick: no profile settings` notice, the footer's `profile: <name>` label, and the worker's signpost. In a worker, `/desk` answers `/desk is off in this worker. Its main is <main>: ←, select it, Enter.`, and `/board` the same with its own name. Without a main, each answers `/<name> is off in this worker.`, with its own name. In `other`, each answers `/<name> is off in background sessions.`
 
 **Going back.** In the main, `←` on an empty prompt opens agent view with the main selected. Enter brings the main back, and every view with it ([Q2](../research/control-centre/2026-10-22-main-and-worker-probes.md#going-back-q2)). From a worker, `←` selects the worker's row: move to the main's row and press Enter. Pin the main with Ctrl+T in agent view, and it heads the list in a `Pinned` group. Then `←` and Alt+1 open it from a worker ([Q5](../research/control-centre/2026-10-22-main-and-worker-probes.md#one-key-return-q5), [R3](../research/control-centre/2026-10-22-main-and-worker-probes.md#keys-back-from-a-worktree-worker-r3)). A pinned main also keeps its process while idle. Claude Code stops an unpinned one after about an hour unattached, and `claude attach <id>` reopens it as a main ([Q3](../research/control-centre/2026-10-22-main-and-worker-probes.md#an-idle-backgrounded-main-q3)).
 
@@ -102,13 +128,13 @@ A worker's markers decide first. When its `--settings` `env` block holds a non-e
 
 **Accepted tradeoffs.** #245's design accepted these:
 
-- A main renamed after a worker started leaves that worker's signpost naming the old name.
+- A main renamed after a worker started leaves that worker's identity row naming the old name.
 - `←` pressed after a worker's launch but before sidekick holds the name loses the name for that worker. The hold waits until the main is idle, so a background command it runs can delay it past the launching turn.
 - The roles rest on two undocumented engine behaviours: the classic start's `fork` source, and its firing before `session.start` ([Q1](../research/control-centre/2026-10-22-main-and-worker-probes.md#what--does-to-the-main-q1)).
 - The freeze reads an undocumented file, `~/.claude/sessions/<pid>.json`, so a move there stops the freeze and the launch line's warning, and breaks nothing else ([R2](../research/control-centre/2026-10-22-main-and-worker-probes.md#session-files-in-the-background-r2)).
 - The freeze writes one `/rename` line into the transcript, and tells the model the operator named the session ([R1](../research/control-centre/2026-10-22-main-and-worker-probes.md#freezing-a-derived-name-r1)).
 - Every live main polls the desk once per tick, until #226 shares the snapshot.
-- No signpost draws while a permission prompt holds a worker's screen ([R5](../research/control-centre/2026-10-22-main-and-worker-probes.md#the-row-under-the-prompt-during-a-permission-prompt-r5)).
+- No identity row draws while a permission prompt holds a session's screen. R5 measured it on a worker, and the row draws on the same site, `PromptHint` ([R5](../research/control-centre/2026-10-22-main-and-worker-probes.md#the-row-under-the-prompt-during-a-permission-prompt-r5)).
 - A backgrounded main whose turn ends in a question counts as waiting in other mains' desks, as the engine reads its last reply. A reply the engine takes for a question counts too, such as a one-word answer ([side findings](../research/control-centre/2026-10-22-main-and-worker-probes.md#side-findings)). #247 kept this rule, since the one case seen in use was a real question.
 - Under a managed Claude Code, a plugin a person installed runs no classic hooks, so a backgrounded main reads `other` and nothing freezes.
 
