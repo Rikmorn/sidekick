@@ -11,6 +11,8 @@ export type StyledRun = {
   bold?: boolean;
   dim?: boolean;
   italic?: boolean;
+  /** Draws the run as a link to this address. */
+  href?: string;
 };
 
 /** One drawn row; an empty row draws as a blank one. */
@@ -51,7 +53,11 @@ function runElement(run: StyledRun): RenderElement {
       ...(run.italic === true ? { italic: true } : {}),
       wrap: 'truncate-end',
     },
-    children: [run.text],
+    children: [
+      run.href === undefined
+        ? run.text
+        : { type: 'Link', props: { href: run.href }, children: [run.text] },
+    ],
   };
 }
 

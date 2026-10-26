@@ -77,3 +77,33 @@ test('rowElement draws a row Box with a Text per run, carrying its theme key and
 test('rowElement draws an empty row as a Box one row high, since an empty Text takes none', () => {
   expect(rowElement([])).toEqual({ type: 'Box', props: { height: 1 } });
 });
+
+test('rowElement draws a run with an href as a Text holding a Link', () => {
+  expect(
+    rowElement([
+      { text: 'board #9', tone: 'suggestion', href: 'https://x.test/9' },
+    ]),
+  ).toEqual({
+    type: 'Box',
+    props: { flexDirection: 'row' },
+    children: [
+      {
+        type: 'Text',
+        props: { color: 'suggestion', wrap: 'truncate-end' },
+        children: [
+          {
+            type: 'Link',
+            props: { href: 'https://x.test/9' },
+            children: ['board #9'],
+          },
+        ],
+      },
+    ],
+  });
+});
+
+test('cutRow keeps the href of the run it cuts', () => {
+  expect(
+    cutRow([{ text: 'board #9', tone: 'suggestion', href: 'u' }], 5),
+  ).toEqual([{ text: 'board', tone: 'suggestion', href: 'u' }]);
+});

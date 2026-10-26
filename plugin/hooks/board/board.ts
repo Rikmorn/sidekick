@@ -31,7 +31,7 @@ import { firstLine, reasonOf, type Settled, settle } from '../failures';
 import { cut, HINT_INSET, scrollHint } from '../lines';
 import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
-import { type GlanceLevel, PICKUP_TIMEOUT_MS } from './contract';
+import { PICKUP_TIMEOUT_MS } from './contract';
 import {
   clockText,
   isBoardWrite,
@@ -43,6 +43,7 @@ import {
   afterRun,
   type BoardView,
   failureOf,
+  LEVEL_TONES,
   type PaneLine,
   paneLines,
   readRun,
@@ -56,13 +57,6 @@ const PANE = { id: 'board', title: 'Board' };
 const MS_PER_SECOND = 1_000;
 
 const ROW_COLOR: ThemeKey = 'subtle';
-
-const LEVEL_COLORS: Record<GlanceLevel, ThemeKey> = {
-  good: 'success',
-  warning: 'warning',
-  bad: 'error',
-  unknown: 'inactive',
-};
 
 const PANE_COLORS: Record<Exclude<PaneLine['tone'], 'gap'>, ThemeKey> = {
   plain: 'text',
@@ -134,7 +128,7 @@ function pieceOf(segment: Segment): RenderElement {
     case 'board':
       return fixedPiece(link(segment.text, segment.href), ROW_COLOR);
     case 'state':
-      return fixedPiece(segment.text, LEVEL_COLORS[segment.level]);
+      return fixedPiece(segment.text, LEVEL_TONES[segment.level]);
     case 'failure':
       return fixedPiece(segment.text, 'error');
     case 'milestone':

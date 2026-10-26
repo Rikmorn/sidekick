@@ -157,7 +157,7 @@ test('rowSegments picks the glyph by level and for complete', () => {
     ['good', 'on track', '◆'],
     ['good', 'complete', '✓'],
     ['warning', 'at risk', '▲'],
-    ['bad', 'off track', '✗'],
+    ['bad', 'off track', '▼'],
     ['unknown', 'no update', '○'],
   ];
   for (const [level, word, glyph] of cases) {

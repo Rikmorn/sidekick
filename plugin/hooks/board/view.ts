@@ -1,6 +1,7 @@
 // The board's pure view: the state after each pickup run, the one-row state line's segments and how they shed to fit, and the pane's lines.
+import type { ThemeKey } from 'claude-code';
 import { cut, width, wrapRows } from '../lines';
-import type { BoardGlance, GlanceLevel } from './contract';
+import type { BoardGlance, GlanceLevel, GlanceState } from './contract';
 import { GLANCE_COMPLETE_WORD, parseGlance } from './contract';
 import type { RunKind, RunOutcome } from './logic';
 
@@ -31,10 +32,18 @@ const MIN_MILESTONE_KEPT = 6;
 
 const ELLIPSIS = '…';
 
+/** The tone each level draws in, on the line and in the pane's head row. */
+export const LEVEL_TONES: Record<GlanceLevel, ThemeKey> = {
+  good: 'success',
+  warning: 'warning',
+  bad: 'error',
+  unknown: 'inactive',
+};
+
 const GLYPHS: Record<GlanceLevel, string> = {
   good: '◆',
   warning: '▲',
-  bad: '✗',
+  bad: '▼',
   unknown: '○',
 };
 
@@ -85,11 +94,19 @@ export function afterRun(
   return kind === 'asked' ? { state: 'failed', reason: read.reason } : previous;
 }
 
-function stateText(glance: BoardGlance): string {
-  const { level, word } = glance.state;
+/** The glyph and tone a state draws with: a tick for a finished milestone. */
+export function stateLook(state: GlanceState): {
+  glyph: string;
+  tone: ThemeKey;
+} {
+  const { level, word } = state;
   const glyph =
     level === 'good' && word === GLANCE_COMPLETE_WORD ? '✓' : GLYPHS[level];
-  return `${glyph} ${word}`;
+  return { glyph, tone: LEVEL_TONES[level] };
+}
+
+function stateText(glance: BoardGlance): string {
+  return `${stateLook(glance.state).glyph} ${glance.state.word}`;
 }
 
 function timeText(view: Extract<BoardView, { glance: BoardGlance }>): string {
