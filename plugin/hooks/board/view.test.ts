@@ -117,7 +117,7 @@ test('afterRun keeps the last good glance when a run fails', () => {
 
 test('rowSegments shows every segment at 160 columns', () => {
   expect(rowSegments(ok, 160)).toEqual([
-    { kind: 'repo', text: '▣ Rikmorn/sidekick' },
+    { kind: 'repo', text: '▤ Rikmorn/sidekick' },
     {
       kind: 'board',
       text: 'board #2',
@@ -154,7 +154,7 @@ test('rowSegments leaves out a missing milestone and detail', () => {
 
 test('rowSegments picks the glyph by level and for complete', () => {
   const cases: [GlanceLevel, string, string][] = [
-    ['good', 'on track', '●'],
+    ['good', 'on track', '◆'],
     ['good', 'complete', '✓'],
     ['warning', 'at risk', '▲'],
     ['bad', 'off track', '✗'],
@@ -179,7 +179,7 @@ test('rowSegments picks the glyph by level and for complete', () => {
 test('rowSegments keeps the milestone whole while its least width fits, then drops it', () => {
   const full = joined(ok, 160);
   const least =
-    '▣ Rikmorn/sidekick · board #2 · ▲ drift · 3 unpushed · R9 — C…';
+    '▤ Rikmorn/sidekick · board #2 · ▲ drift · 3 unpushed · R9 — C…';
   const leastRow = `${least} · 15:02`;
   for (const columns of [width(full) - 4, width(leastRow)]) {
     expect(rowSegments(ok, columns)).toContainEqual({
@@ -202,25 +202,25 @@ test('rowSegments then sheds the board, the detail, and the owner in order', () 
   const kindsAt = (columns: number): string[] =>
     rowSegments(ok, columns).map((segment) => segment.kind);
   const owner = rowSegments(ok, 160)[0];
-  expect(owner).toEqual({ kind: 'repo', text: '▣ Rikmorn/sidekick' });
+  expect(owner).toEqual({ kind: 'repo', text: '▤ Rikmorn/sidekick' });
   const noMilestone =
-    '▣ Rikmorn/sidekick · board #2 · ▲ drift · 3 unpushed · 15:02';
+    '▤ Rikmorn/sidekick · board #2 · ▲ drift · 3 unpushed · 15:02';
   expect(kindsAt(width(noMilestone) - 1)).toEqual([
     'repo',
     'state',
     'detail',
     'time',
   ]);
-  const noBoard = '▣ Rikmorn/sidekick · ▲ drift · 3 unpushed · 15:02';
+  const noBoard = '▤ Rikmorn/sidekick · ▲ drift · 3 unpushed · 15:02';
   expect(kindsAt(width(noBoard) - 1)).toEqual(['repo', 'state', 'time']);
-  const noDetail = '▣ Rikmorn/sidekick · ▲ drift · 15:02';
+  const noDetail = '▤ Rikmorn/sidekick · ▲ drift · 15:02';
   expect(kindsAt(width(noDetail) - 1)).toEqual(['repo', 'state', 'time']);
   expect(rowSegments(ok, width(noDetail) - 1)[0]).toEqual({
     kind: 'repo',
-    text: '▣ sidekick',
+    text: '▤ sidekick',
   });
-  expect(joined(ok, width('▣ sidekick · ▲ drift · 15:02'))).toBe(
-    '▣ sidekick · ▲ drift · 15:02',
+  expect(joined(ok, width('▤ sidekick · ▲ drift · 15:02'))).toBe(
+    '▤ sidekick · ▲ drift · 15:02',
   );
 });
 

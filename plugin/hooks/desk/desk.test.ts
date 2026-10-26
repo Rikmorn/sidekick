@@ -721,7 +721,7 @@ test('the band draws its lines in their tones, above what lies beneath', async (
         color: 'warning',
       },
       {
-        text: '◆ workers    p8-board working   2 finished',
+        text: '◐ workers    p8-board working   2 finished',
         color: 'suggestion',
       },
       { text: BENEATH, color: undefined },
@@ -992,7 +992,7 @@ test('a refused unasked open leaves the desk polling and the band drawn', async 
   expect(seen.runs).toHaveLength(3);
   const drawn = await drawnBand($, 'terminal', bandProps(200));
   expect(drawn.map((line) => line.text)).toContain(
-    '◆ workers    p8-board working   2 finished',
+    '◐ workers    p8-board working   2 finished',
   );
 });
 

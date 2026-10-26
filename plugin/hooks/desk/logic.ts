@@ -23,7 +23,7 @@ interface Entry {
 }
 
 const WAITING_PREFIX = '● needs you';
-const WORKERS_PREFIX = '◆ workers';
+const WORKERS_PREFIX = '◐ workers';
 const AFTER_PREFIX = '  ';
 // Both prefixes pad to the longer one, so entries start in one column.
 const PREFIX_WIDTH = Math.max(width(WAITING_PREFIX), width(WORKERS_PREFIX));

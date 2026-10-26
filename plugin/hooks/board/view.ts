@@ -32,7 +32,7 @@ const MIN_MILESTONE_KEPT = 6;
 const ELLIPSIS = '…';
 
 const GLYPHS: Record<GlanceLevel, string> = {
-  good: '●',
+  good: '◆',
   warning: '▲',
   bad: '✗',
   unknown: '○',
@@ -168,8 +168,8 @@ function buildRow(glance: BoardGlance, time: string, keep: Keep): Segment[] {
       kind: 'repo',
       text:
         keep.repo === 'full'
-          ? `▣ ${board.owner}/${board.repo}`
-          : `▣ ${board.repo}`,
+          ? `▤ ${board.owner}/${board.repo}`
+          : `▤ ${board.repo}`,
     });
   }
   if (keep.board) {

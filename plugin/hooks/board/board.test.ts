@@ -504,7 +504,7 @@ const UNDER: Run[] = [{ text: HINT, color: undefined }];
 // state in its level's colour, the rest subtle.
 function wideRow(time: string): Run[] {
   return [
-    { text: '▣ Rikmorn/sidekick · ', color: 'subtle' },
+    { text: '▤ Rikmorn/sidekick · ', color: 'subtle' },
     { text: 'board #2', color: 'subtle', href: BOARD_URL },
     { text: ' · ', color: 'subtle' },
     { text: '▲ drift', color: 'warning' },
@@ -882,7 +882,7 @@ test('a compact start runs nothing, and a live /clear runs one pickup and draws 
   expect(seen.pickups).toHaveLength(2);
   const [, row] = await drawnHint($, 'terminal', WIDE);
   expect(rowText(row)).toBe(
-    `▣ Rikmorn/sidekick · board #2 · ● on track · R10 — The loop · ${clockText(NOW + MINUTE_MS)}`,
+    `▤ Rikmorn/sidekick · board #2 · ◆ on track · R10 — The loop · ${clockText(NOW + MINUTE_MS)}`,
   );
 });
 
@@ -1051,7 +1051,7 @@ for (const rerun of RERUNS) {
       const failed = `refresh failed ${clockText(NOW + MINUTE_MS)}`;
       const [, row] = await drawnHint($, 'terminal', WIDE);
       expect(rowText(row)).toBe(
-        `▣ Rikmorn/sidekick · board #2 · ▲ drift · 3 unpushed · R9 — Control centre · ${failed}`,
+        `▤ Rikmorn/sidekick · board #2 · ▲ drift · 3 unpushed · R9 — Control centre · ${failed}`,
       );
       expect(seen.debug).toContainEqual(expect.stringMatching(bad.debug));
     });
@@ -1238,7 +1238,7 @@ test('a run that throws is logged, and the next request still runs', async ($, o
   await clock.settle();
   expect(seen.pickups).toHaveLength(2);
   const [, row] = await drawnHint($, 'terminal', WIDE);
-  expect(rowText(row)).toStartWith('▣ Rikmorn/sidekick');
+  expect(rowText(row)).toStartWith('▤ Rikmorn/sidekick');
 });
 
 test('a refused settings read leaves the board on, and the debug log names it', async ($, on) => {
