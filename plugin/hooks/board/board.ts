@@ -26,7 +26,7 @@ import type {
   RenderNode,
   ThemeKey,
 } from 'claude-code';
-import { PANE_ROWS, registerOwned } from '../commands';
+import { DOCK_COLUMNS, PANE_ROWS, registerOwned } from '../commands';
 import { firstLine, reasonOf, type Settled, settle } from '../failures';
 import { cut, HINT_INSET, scrollHint, wrapRows } from '../lines';
 import { type Role, settleRole, workerAnswer } from '../role';
@@ -57,9 +57,6 @@ const PANE = { id: 'board', title: 'Board' };
 const MS_PER_SECOND = 1_000;
 
 const ROW_COLOR: ThemeKey = 'subtle';
-
-// The stacked form's width. A width the operator kept wins, as for the desk.
-const DOCK_COLUMNS = 40;
 
 // A run rejects when it cannot start, a plugin refuses it, or it outlasts its
 // timeout. The declarations give no way to tell which, so the reason covers all

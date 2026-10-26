@@ -22,7 +22,7 @@ import type {
   RenderElement,
   ThemeKey,
 } from 'claude-code';
-import { PANE_ROWS, registerOwned } from '../commands';
+import { DOCK_COLUMNS, PANE_ROWS, registerOwned } from '../commands';
 import { firstLine, reasonOf, type Settled, settle } from '../failures';
 import type { PublishedSession } from '../publish/contract';
 import { type Role, settleRole, workerAnswer } from '../role';
@@ -52,8 +52,6 @@ import { liveKeys } from './tree';
 export const TICK_MS = 10_000;
 
 const PANE = { id: 'desk', title: 'Desk' };
-// The stacked form's width. A width the operator kept wins (P3 in docs/research/control-centre/2026-10-25-desk-pane-probes.md).
-const DOCK_COLUMNS = 40;
 const OPEN = { ...PANE, rows: PANE_ROWS, columns: DOCK_COLUMNS };
 const COMMAND = { name: 'desk', description: 'Show or hide the desk pane' };
 const MS_PER_SECOND = 1_000;

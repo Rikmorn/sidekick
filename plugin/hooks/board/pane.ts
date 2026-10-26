@@ -1,6 +1,4 @@
-// The board pane fitted to a width: worded rows in, styled rows no wider than
-// the pane out. The CLI decides what the rows say; this decides what width and
-// font change.
+// The board pane fitted to a width: worded rows in, styled rows no wider than the pane out.
 
 import type { ThemeKey } from 'claude-code';
 import { branchAt, trunkOf } from '../leads';
@@ -32,6 +30,12 @@ const INDENT = '  ';
 const RULE = '─';
 // A repo name cut shorter than this says nothing, so the board link drops instead.
 const MIN_NAME_KEPT = 4;
+const RULE_OPEN = '─ ';
+const RULE_CLOSE = ' ─';
+// Columns the rule keeps beside the name: its open, one space, one rule cell.
+const NAME_FRAME = width(RULE_OPEN) + 2;
+// The same, plus the space before the label and the close.
+const LINK_FRAME = NAME_FRAME + 1 + width(RULE_CLOSE);
 
 const MARK_LOOKS: Record<PaneMark, { glyph: string; tone: ThemeKey }> = {
   done: { glyph: '✓ ', tone: 'success' },
@@ -72,7 +76,7 @@ const PROSE_LOOKS: Record<
   },
 };
 
-/** `text` within `room` columns, ending in an ellipsis when cut. */
+// `text` within `room` columns, ending in an ellipsis when cut.
 function fit(text: string, room: number): string {
   if (room <= 0) return '';
   return width(text) <= room ? text : `${cut(text, room - 1)}${ELLIPSIS}`;
@@ -86,8 +90,7 @@ function run(
   return { text, tone, ...more };
 }
 
-// A lead, a text that gives way, and a fact flush right. The fact gives way
-// only when the text would keep no column.
+// The fact flush right gives way only when the text would keep no column.
 function fitLine(
   lead: StyledRow,
   title: StyledRun,
@@ -110,7 +113,6 @@ function fitLine(
   ];
 }
 
-// The owner goes before the repo is cut.
 function nameFor(board: BoardGlance['board'], room: number): string {
   const full = `${board.owner}/${board.repo}`;
   return width(full) <= room ? full : fit(board.repo, room);
@@ -119,21 +121,21 @@ function nameFor(board: BoardGlance['board'], room: number): string {
 function headerRow(input: PaneInput, columns: number): StyledRow {
   const { board } = input;
   const label = `board #${board.number}`;
-  const linkRoom = columns - width(label) - 7;
+  const linkRoom = columns - width(label) - LINK_FRAME;
   const hasLink = linkRoom >= MIN_NAME_KEPT;
-  const name = nameFor(board, hasLink ? linkRoom : columns - 4);
-  const used = 2 + width(name) + 1;
-  const tail = hasLink ? width(label) + 3 : 0;
+  const name = nameFor(board, hasLink ? linkRoom : columns - NAME_FRAME);
+  const used = width(RULE_OPEN) + width(name) + 1;
+  const tail = hasLink ? width(label) + 1 + width(RULE_CLOSE) : 0;
   const fill = RULE.repeat(Math.max(1, columns - used - tail));
   return [
-    run('─ ', 'subtle'),
+    run(RULE_OPEN, 'subtle'),
     run(name, 'inactive', { bold: true }),
     run(` ${fill}`, 'subtle'),
     ...(hasLink
       ? [
           run(' ', 'subtle'),
           run(label, 'suggestion', { href: board.url }),
-          run(' ─', 'subtle'),
+          run(RULE_CLOSE, 'subtle'),
         ]
       : []),
   ];
