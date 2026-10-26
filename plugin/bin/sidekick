@@ -3531,7 +3531,7 @@ function viewPlans(p, cards) {
   if (plans === null)
     return { parse: "none" };
   if (plans.parse === "malformed") {
-    return { parse: "malformed", reason: plans.reason ?? "" };
+    return { parse: "malformed", reason: plans.reason };
   }
   if (plans.parse === "none")
     return { parse: "none" };
@@ -4955,7 +4955,7 @@ function emitReport(r, out, err) {
     return 1;
   }
   if (plans.parse !== "ok") {
-    err(plans.parse === "none" ? `milestone "${milestone.title}" has no plans header` : `milestone "${milestone.title}": ${plans.reason ?? "malformed plans header"}`);
+    err(plans.parse === "none" ? `milestone "${milestone.title}" has no plans header` : `milestone "${milestone.title}": ${plans.reason}`);
     return 1;
   }
   out(renderReport({ board, milestone, issue_counts, plans }));

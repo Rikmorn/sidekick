@@ -284,4 +284,10 @@ describe('planView', () => {
       unplanned: [],
     });
   });
+
+  test('a malformed plan view carries the parser reason', () => {
+    const plans = planView(ms(header('1. A (#1)', '2. A (#2)')), []);
+    if (plans.parse !== 'malformed') throw new Error('header is malformed');
+    expect(plans.reason).toBe('plan "A" appears twice');
+  });
 });

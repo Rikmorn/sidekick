@@ -448,7 +448,7 @@ function emitReport(
     err(
       plans.parse === 'none'
         ? `milestone "${milestone.title}" has no plans header`
-        : `milestone "${milestone.title}": ${plans.reason ?? 'malformed plans header'}`,
+        : `milestone "${milestone.title}": ${plans.reason}`,
     );
     return 1;
   }

@@ -126,12 +126,15 @@ export interface PlanView {
   issues: PlanIssue[];
 }
 
-export interface Plans {
-  parse: 'ok' | 'none' | 'malformed';
-  reason?: string;
+interface PlansBody {
   list: PlanView[];
   unplanned: Array<{ number: number; title: string }>;
 }
+
+export type Plans =
+  | ({ parse: 'ok' } & PlansBody)
+  | ({ parse: 'none' } & PlansBody)
+  | ({ parse: 'malformed'; reason: string } & PlansBody);
 
 const openOf = (issues: PlanIssue[]): PlanIssue[] =>
   issues.filter((i) => i.open);

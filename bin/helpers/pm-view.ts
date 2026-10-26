@@ -209,7 +209,7 @@ function viewPlans(p: BriefInput, cards: Map<number, InProgress>): ViewPlans {
   const plans = p.plans;
   if (plans === null) return { parse: 'none' };
   if (plans.parse === 'malformed') {
-    return { parse: 'malformed', reason: plans.reason ?? '' };
+    return { parse: 'malformed', reason: plans.reason };
   }
   if (plans.parse === 'none') return { parse: 'none' };
   return {
