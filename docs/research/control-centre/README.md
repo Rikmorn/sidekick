@@ -26,6 +26,7 @@ What can Claude Code's extension and session surface do for running many session
 - [2026-10-25-desk-pane-probes.md](./2026-10-25-desk-pane-probes.md): what #254's desk pane rests on. It covers `$.store` under two and three concurrent writers, where its file lives, and subagents and events in a background session. It also covers the dock's width against a kept one, whether a session can tell a terminal shows it, and a status line's environment.
 - [2026-10-26-desk-pane-captures.md](./2026-10-26-desk-pane-captures.md): #254's desk pane, band, and identity row captured live, with every place the screen and the spec part. It covers a main with two workers and a subagent, a second main backgrounded on a question, and the dock at a kept width. It also covers each role's identity row, and whether a backgrounded main keeps its views.
 - [2026-10-26-board-pane-captures.md](./2026-10-26-board-pane-captures.md): the rebuilt board pane, the desk, the band, and the identity row captured live for #240 and #251. It lists every place the screen and the reference docs part, and checks each docked row against the mods' own fit at the dock's width. It also covers the board link's OSC 8 bytes, and two panes sharing the dock.
+- [2026-10-26-desk-follow-up-captures.md](./2026-10-26-desk-follow-up-captures.md): the desk recaptured for #240 after its context bar took one coloured cell per level and its cut texts took `…`. It covers the desk inline, docked, and as a tab beside the board, against LOOP.md and USAGE.md.
 
 ## Served
 
