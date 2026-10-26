@@ -42,8 +42,10 @@ import {
 } from './pm-data.js';
 import { glanceState } from './pm-glance.js';
 import { lintAll } from './pm-lint.js';
+import { paneRows } from './pm-pane.js';
 import { type Plans, planView } from './pm-plans.js';
 import { renderReport } from './pm-report.js';
+import { pickupView } from './pm-view.js';
 import { repoRootOf } from './rules.js';
 
 /** By-name `item-edit --field --value` lands here; older `gh` writes by id. */
@@ -348,7 +350,7 @@ export function runPmCli(
           board: { owner, repo, number: project.number, url: project.url },
           milestone: active ? active.title : null,
           state,
-          brief: renderBrief(briefInput),
+          pane: paneRows(pickupView(briefInput)),
         };
         out(JSON.stringify(g));
       } else if (brief) out(renderBrief(briefInput));

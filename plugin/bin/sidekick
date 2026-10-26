@@ -3315,7 +3315,7 @@ function runHookCli(args, env, out, err) {
 }
 
 // plugin/hooks/board/contract.ts
-var GLANCE_VERSION = 1;
+var GLANCE_VERSION = 2;
 var GLANCE_COMPLETE_WORD = "complete";
 
 // bin/helpers/pm-plans.ts
@@ -4174,6 +4174,148 @@ function lintAll(input) {
   return { findings, counts };
 }
 
+// bin/helpers/pm-pane.ts
+var IN_PROGRESS = "In Progress";
+function ageText(days) {
+  return days === null ? null : `${days} d`;
+}
+function issueNode(issue) {
+  const mark = !issue.open ? "done" : issue.status === IN_PROGRESS ? "running" : "later";
+  return {
+    mark,
+    ref: `#${issue.number}`,
+    text: issue.title ?? "no card",
+    right: ageText(issue.ageDays),
+    weight: "plain",
+    children: []
+  };
+}
+function titledNode(issue, mark, age) {
+  return {
+    mark,
+    ref: `#${issue.number}`,
+    text: issue.title,
+    right: ageText(age),
+    weight: "plain",
+    children: []
+  };
+}
+function quiet(mark, text, children = []) {
+  return { mark, ref: null, text, right: null, weight: "quiet", children };
+}
+function openIssues(plan) {
+  const open2 = plan.issues.filter((i) => i.open);
+  const started = open2.filter((i) => i.status === IN_PROGRESS);
+  const rest2 = open2.filter((i) => i.status !== IN_PROGRESS);
+  return [...started, ...rest2].map(issueNode);
+}
+function closedNode(plan) {
+  const closed = plan.issues.filter((i) => !i.open).length;
+  return closed === 0 ? [] : [quiet("done", `${closed} closed`)];
+}
+function planNode(plan) {
+  const base = { mark: plan.state, ref: null, text: plan.name };
+  if (plan.state === "running") {
+    return {
+      ...base,
+      right: null,
+      weight: "strong",
+      children: [...openIssues(plan), ...closedNode(plan)]
+    };
+  }
+  if (plan.state === "next") {
+    return {
+      ...base,
+      right: "next",
+      weight: "plain",
+      children: openIssues(plan)
+    };
+  }
+  const open2 = plan.issues.filter((i) => i.open).length;
+  return {
+    ...base,
+    right: `${open2} open`,
+    weight: "quiet",
+    children: []
+  };
+}
+function plural(count, noun) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+function planNodes(view) {
+  if (view.plans.parse !== "ok")
+    return [];
+  const done = view.plans.list.filter((p) => p.state === "done").length;
+  const fold = done === 0 ? [] : [quiet("done", `${plural(done, "plan")} done`)];
+  const active = view.plans.list.filter((p) => p.state !== "done");
+  return [...fold, ...active.map(planNode)];
+}
+function capped(name, issues) {
+  if (issues.length === 0)
+    return [];
+  const shown = issues.slice(0, PER_TIER_MAX).map((i) => titledNode(i, "later", null));
+  const hidden = issues.length - shown.length;
+  const tail = hidden > 0 ? [quiet("more", `+${hidden} more`)] : [];
+  return [quiet("group", name, [...shown, ...tail])];
+}
+function milestoneNodes(titles2) {
+  return titles2.map((title) => ({
+    mark: "later",
+    ref: null,
+    text: title,
+    right: null,
+    weight: "plain",
+    children: []
+  }));
+}
+function alsoOpen(view) {
+  if (view.milestone === null || view.otherOpen.length === 0)
+    return [];
+  return [quiet("group", "also open", milestoneNodes(view.otherOpen))];
+}
+function treeNodes(view) {
+  const headerParsed = view.plans.parse === "ok";
+  return [
+    ...view.milestone === null ? milestoneNodes(view.otherOpen) : [],
+    ...planNodes(view),
+    ...view.inProgress.loose.map((i) => titledNode(i, "running", i.age_days)),
+    ...capped("unplanned", view.unplanned),
+    ...capped("candidates", headerParsed ? [] : view.tier1),
+    ...capped("tier 2 · no milestone", view.tier2),
+    ...alsoOpen(view)
+  ];
+}
+function planStates(view) {
+  return view.plans.parse === "ok" ? view.plans.list.map((p) => p.state) : [];
+}
+function cellsRow(view) {
+  if (view.milestone === null)
+    return [];
+  const plans = planStates(view);
+  if (plans.length > 0) {
+    const done = plans.filter((s) => s === "done").length;
+    return [{ kind: "cells", plans, label: `${done}/${plans.length} plans` }];
+  }
+  const { open: open2, closed } = view.milestone.counts ?? { open: 0, closed: 0 };
+  return [{ kind: "cells", plans, label: `${closed} closed · ${open2} open` }];
+}
+function paneRows(view) {
+  const outcome = view.milestone?.outcome ?? null;
+  const nodes = treeNodes(view);
+  const rows = [
+    { kind: "prose", mark: "next", text: view.next },
+    ...view.drift.map((d) => ({
+      kind: "prose",
+      mark: "drift",
+      text: d.full
+    })),
+    ...outcome === null ? [] : [{ kind: "prose", mark: "outcome", text: outcome }],
+    ...cellsRow(view),
+    ...nodes.length === 0 ? [] : [{ kind: "tree", nodes }]
+  ];
+  return { rows };
+}
+
 // bin/helpers/pm-report.ts
 var STATE_CELL = {
   done: "done",
@@ -4679,7 +4821,7 @@ function runPmCli(args, env, out, err) {
   const brief = rest2.includes("--brief");
   const report = rest2.includes("--report");
   const glance = rest2.includes("--glance");
-  const quiet = rest2.includes("--quiet") || brief || glance;
+  const quiet2 = rest2.includes("--quiet") || brief || glance;
   const ms = milestoneFlag(rest2);
   const msTitle = ms.title;
   if (verb === "gate" && msTitle === undefined || ms.invalid || brief && report || glance && (brief || report)) {
@@ -4695,7 +4837,7 @@ function runPmCli(args, env, out, err) {
         err(`not tracked: ${info.reason}`);
         return 1;
       }
-      if (!quiet)
+      if (!quiet2)
         emit(shown);
       return 0;
     }
@@ -4756,7 +4898,7 @@ function runPmCli(args, env, out, err) {
           board: { owner, repo, number: project.number, url: project.url },
           milestone: active ? active.title : null,
           state,
-          brief: renderBrief(briefInput)
+          pane: paneRows(pickupView(briefInput))
         };
         out(JSON.stringify(g));
       } else if (brief)

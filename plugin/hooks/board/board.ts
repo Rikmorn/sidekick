@@ -1,5 +1,5 @@
 // The board's adapter: runs `sidekick pm pickup --glance`, draws the glance as
-// one state row under the prompt, and draws its brief in the pane `/board`
+// one state row under the prompt, and draws its plan tree in the pane `/board`
 // toggles. It observes and draws, ADR-0012's first rung, so no hook adds
 // context, approves, or denies, and none has a `.catch`. A live start or
 // `/clear`, an open of the pane, and a Bash board write each run the pickup.
@@ -28,10 +28,11 @@ import type {
 } from 'claude-code';
 import { PANE_ROWS, registerOwned } from '../commands';
 import { firstLine, reasonOf, type Settled, settle } from '../failures';
-import { cut, HINT_INSET, scrollHint } from '../lines';
+import { cut, HINT_INSET, scrollHint, wrapRows } from '../lines';
 import { type Role, settleRole, workerAnswer } from '../role';
 import { isPartHidden } from '../scope/logic';
-import { PICKUP_TIMEOUT_MS } from './contract';
+import { rowElement } from '../styled';
+import { type BoardGlance, PICKUP_TIMEOUT_MS } from './contract';
 import {
   clockText,
   isBoardWrite,
@@ -39,13 +40,12 @@ import {
   type RunKind,
   type RunOutcome,
 } from './logic';
+import { fitPane } from './pane';
 import {
   afterRun,
   type BoardView,
   failureOf,
   LEVEL_TONES,
-  type PaneLine,
-  paneLines,
   readRun,
   rowSegments,
   SEPARATOR,
@@ -58,12 +58,8 @@ const MS_PER_SECOND = 1_000;
 
 const ROW_COLOR: ThemeKey = 'subtle';
 
-const PANE_COLORS: Record<Exclude<PaneLine['tone'], 'gap'>, ThemeKey> = {
-  plain: 'text',
-  subtle: 'subtle',
-  failure: 'error',
-  link: 'text',
-};
+// The stacked form's width. A width the operator kept wins, as for the desk.
+const DOCK_COLUMNS = 40;
 
 // A run rejects when it cannot start, a plugin refuses it, or it outlasts its
 // timeout. The declarations give no way to tell which, so the reason covers all
@@ -169,18 +165,47 @@ function rowUnder(
   };
 }
 
-// An empty Text takes no row, so the gap is a Box one row high. Each Text is
-// one row: `paneLines` wrapped the lines already, so the rows counted are the
-// rows drawn.
-function paneLineOf(line: PaneLine): RenderElement {
-  if (line.tone === 'gap') return { type: 'Box', props: { height: 1 } };
-  const children =
-    line.tone === 'link' ? [link(line.text, line.href)] : [line.text];
+// Each Text is one row, since the rows are fitted or wrapped to the width
+// already, so the rows counted are the rows drawn.
+function textRow(text: string, color: ThemeKey): RenderElement {
   return {
     type: 'Text',
-    props: { color: PANE_COLORS[line.tone], wrap: 'truncate-end' },
-    children,
+    props: { color, wrap: 'truncate-end' },
+    children: [text],
   };
+}
+
+function treeRows(
+  view: Extract<BoardView, { glance: BoardGlance }>,
+  columns: number,
+): RenderElement[] {
+  const { glance } = view;
+  const stamp =
+    view.state === 'ok'
+      ? `as of ${view.takenAt}`
+      : `refresh failed ${view.failedAt}`;
+  const { board, milestone, state, pane } = glance;
+  return fitPane({ board, milestone, state, pane, stamp }, columns).map(
+    rowElement,
+  );
+}
+
+function paneRowsOf(view: BoardView, columns: number): RenderElement[] {
+  switch (view.state) {
+    case 'empty':
+      return [];
+    case 'failed':
+      return wrapRows(`⚠ board: ${view.reason}`, columns).map((text) =>
+        textRow(text, 'error'),
+      );
+    case 'ok':
+    case 'stale':
+      return treeRows(view, columns);
+    default: {
+      const exhaustive: never = view;
+      throw new Error(`Unhandled view: ${JSON.stringify(exhaustive)}`);
+    }
+  }
 }
 
 function paneOf(
@@ -189,19 +214,16 @@ function paneOf(
   bodyRows: number,
   isFocused: boolean,
 ): RenderElement {
-  const lines = paneLines(view, columns);
-  const hint = scrollHint(lines.length, bodyRows, isFocused);
+  const rows = paneRowsOf(view, columns);
+  const hint = scrollHint(rows.length, bodyRows, isFocused);
   const shown =
     hint === undefined
-      ? lines
-      : [
-          { tone: 'subtle', text: cut(hint, columns) } satisfies PaneLine,
-          ...lines,
-        ];
+      ? rows
+      : [textRow(cut(hint, columns), 'subtle'), ...rows];
   return {
     type: 'Box',
     props: { flexDirection: 'column' },
-    children: shown.map(paneLineOf),
+    children: shown,
   };
 }
 
@@ -338,7 +360,7 @@ async function togglePane(
     return;
   }
   void refreshBoard($, board, 'asked');
-  await $.ui.open({ ...PANE, rows: PANE_ROWS });
+  await $.ui.open({ ...PANE, rows: PANE_ROWS, columns: DOCK_COLUMNS });
 }
 
 /**

@@ -1,17 +1,9 @@
 import { expect, test } from 'claude-code/testing';
 import { width } from '../lines';
 import type { BoardGlance, GlanceLevel } from './contract';
+import { GLANCE_VERSION } from './contract';
 import type { BoardView } from './view';
-import {
-  afterRun,
-  failureOf,
-  leastWidth,
-  paneLines,
-  readRun,
-  rowSegments,
-} from './view';
-
-const BRIEF = ['Pickup: milestone 9', 'In progress: #211', 'Drift: 3 unpushed'];
+import { afterRun, failureOf, leastWidth, readRun, rowSegments } from './view';
 
 function glanceOf(
   level: GlanceLevel,
@@ -20,7 +12,7 @@ function glanceOf(
   milestone: string | null = 'R9 — Control centre',
 ): BoardGlance {
   return {
-    version: 1,
+    version: GLANCE_VERSION,
     board: {
       owner: 'Rikmorn',
       repo: 'sidekick',
@@ -29,7 +21,7 @@ function glanceOf(
     },
     milestone,
     state: { level, word, detail },
-    brief: BRIEF.join('\n'),
+    pane: { rows: [] },
   };
 }
 
@@ -66,7 +58,7 @@ test('readRun fails a run that failed, or whose output does not parse', () => {
     reason: 'timed out',
   });
   const reason = "the pickup's output did not parse";
-  const newer = JSON.stringify({ ...glance, version: 2 });
+  const newer = JSON.stringify({ ...glance, version: GLANCE_VERSION + 1 });
   for (const stdout of ['not json', newer, '{"version":1}']) {
     expect(readRun({ ok: true, stdout })).toEqual({ kind: 'failed', reason });
   }
@@ -286,71 +278,4 @@ test('rowSegments gives one failure segment for a failed view and none for empty
     { kind: 'failure', text: '⚠ board: gh missing' },
   ]);
   expect(rowSegments({ state: 'empty' }, 160)).toEqual([]);
-});
-
-test('paneLines gives the brief, a gap, the link, and the stamp', () => {
-  expect(paneLines(ok, 80)).toEqual([
-    ...BRIEF.map((text) => ({ tone: 'plain', text })),
-    { tone: 'gap' },
-    {
-      tone: 'link',
-      text: 'https://github.com/users/Rikmorn/projects/2',
-      href: 'https://github.com/users/Rikmorn/projects/2',
-    },
-    { tone: 'subtle', text: 'as of 15:02' },
-  ]);
-  expect(paneLines(stale, 80).at(-1)).toEqual({
-    tone: 'subtle',
-    text: 'refresh failed 15:05',
-  });
-});
-
-test('paneLines gives nothing for empty and the reason for failed', () => {
-  expect(paneLines({ state: 'empty' }, 80)).toEqual([]);
-  expect(paneLines({ state: 'failed', reason: 'gh missing' }, 80)).toEqual([
-    { tone: 'failure', text: '⚠ board: gh missing' },
-  ]);
-});
-
-function briefed(brief: string): BoardView {
-  return { state: 'ok', glance: { ...glance, brief }, takenAt: '15:02' };
-}
-
-test('paneLines wraps a brief line wider than the pane into plain rows within it', () => {
-  const rows = paneLines(
-    briefed('In progress: #211 the desk and its band'),
-    16,
-  );
-  const brief = rows.slice(0, -3);
-  expect(brief.length).toBeGreaterThan(1);
-  for (const row of brief) {
-    expect(row.tone).toBe('plain');
-    if (row.tone === 'plain') expect(width(row.text)).toBeLessThanOrEqual(16);
-  }
-});
-
-test('paneLines turns an empty brief line into a gap row', () => {
-  expect(paneLines(briefed('one\n\ntwo'), 40).slice(0, 3)).toEqual([
-    { tone: 'plain', text: 'one' },
-    { tone: 'gap' },
-    { tone: 'plain', text: 'two' },
-  ]);
-});
-
-test('paneLines breaks a URL longer than the pane hard', () => {
-  const url = 'https://github.com/Rikmorn/sidekick/issues/232';
-  const rows = paneLines(briefed(url), 20).slice(0, -3);
-  expect(rows).toHaveLength(3);
-  expect(
-    rows.map((row) => (row.tone === 'plain' ? row.text : '')).join(''),
-  ).toBe(url);
-  for (const row of rows) {
-    if (row.tone === 'plain') expect(width(row.text)).toBeLessThanOrEqual(20);
-  }
-});
-
-test('paneLines keeps the link and the stamp to one row each, however narrow', () => {
-  const rows = paneLines(briefed('x'), 5);
-  expect(rows.slice(-2).map((row) => row.tone)).toEqual(['link', 'subtle']);
-  expect(rows).toHaveLength(4);
 });

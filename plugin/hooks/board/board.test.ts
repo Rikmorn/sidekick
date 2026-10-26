@@ -22,16 +22,12 @@ import {
   type BoardGlance,
   GLANCE_VERSION,
   type GlanceLevel,
+  type GlancePane,
   PICKUP_TIMEOUT_MS,
 } from './contract';
 import { clockText } from './logic';
-import {
-  type BoardView,
-  leastWidth,
-  paneLines,
-  rowSegments,
-  SEPARATOR,
-} from './view';
+import { fitPane } from './pane';
+import { type BoardView, leastWidth, rowSegments, SEPARATOR } from './view';
 
 // What the next pickup answers: an exit with its streams, a refusal, which
 // rejects the plugin's `$.process.run` as a timeout or a failed start does, or
@@ -64,7 +60,11 @@ type Seen = {
   deskRuns: number;
   commands: string[];
   opened: { id: string; title?: string }[];
-  openings: { focus: boolean | undefined; rows: number | undefined }[];
+  openings: {
+    focus: boolean | undefined;
+    rows: number | undefined;
+    columns: number | undefined;
+  }[];
   immediate: Record<string, boolean | undefined>;
   closed: string[];
   /** Lines sent to the debug log. */
@@ -93,11 +93,28 @@ const HEADLESS: SessionStartInput = {
 };
 const WIDE: RenderViewport = { columns: 200, rows: 40, isFullscreen: true };
 
-const BRIEF = [
-  'Milestone 9 — R9 control centre',
-  'In progress: #233 the board’s state line',
-  'Next: #232 /profile that fits',
-];
+function paneOf(text: string): GlancePane {
+  return {
+    rows: [
+      { kind: 'prose', mark: 'next', text: 'continue #233' },
+      {
+        kind: 'tree',
+        nodes: [
+          {
+            mark: 'running',
+            ref: '#233',
+            text,
+            right: null,
+            weight: 'strong',
+            children: [],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+const PANE = paneOf('The board’s state line');
 
 function glanceOf(over: Partial<BoardGlance> = {}): BoardGlance {
   return {
@@ -105,7 +122,7 @@ function glanceOf(over: Partial<BoardGlance> = {}): BoardGlance {
     board: { owner: 'Rikmorn', repo: 'sidekick', number: 2, url: BOARD_URL },
     milestone: 'R9 — Control centre',
     state: { level: 'warning', word: 'drift', detail: '3 unpushed' },
-    brief: BRIEF.join('\n'),
+    pane: PANE,
     ...over,
   };
 }
@@ -273,7 +290,7 @@ function answerBeneath(on: On, world: World): { seen: Seen; clock: MockClock } {
   });
   on('ui.open', (_$, e) => {
     seen.opened.push({ id: e.id, title: e.title });
-    seen.openings.push({ focus: e.focus, rows: e.rows });
+    seen.openings.push({ focus: e.focus, rows: e.rows, columns: e.columns });
     world.panes.set(e.id, { title: e.title ?? e.id, isPlaced: true });
     return { value: { isPlaced: true } };
   });
@@ -450,7 +467,10 @@ function paneRowOf(node: RenderNode): PaneRow {
   ) {
     return { text: '', color: 'gap', wrap: undefined };
   }
-  if (typeof node === 'string' || node.type !== 'Text') {
+  if (
+    typeof node === 'string' ||
+    (node.type !== 'Text' && node.type !== 'Box')
+  ) {
     return { text: JSON.stringify(node), color: 'not a Text', wrap: undefined };
   }
   const runs = runsOf(node, undefined);
@@ -815,11 +835,13 @@ test('an interactive start registers /board to run mid-turn too', async ($, on) 
   expect(seen.immediate.board).toBe(true);
 });
 
-test('/board opens asking for the room its tree needs, and without the keys', async ($, on) => {
+test('/board opens asking for the room its tree needs, at 40 columns, and without the keys', async ($, on) => {
   const { seen, clock } = answerBeneath(on, worldWith());
   await bothStarts($, clock);
   await boardCommand($);
-  expect(seen.openings).toEqual([{ focus: undefined, rows: PANE_ROWS }]);
+  expect(seen.openings).toEqual([
+    { focus: undefined, rows: PANE_ROWS, columns: 40 },
+  ]);
 });
 
 test('a pane taller than its body leads with the scroll hint, subtle, and a pane that fits draws none', async ($, on) => {
@@ -843,26 +865,36 @@ test('a pane taller than its body leads with the scroll hint, subtle, and a pane
   expect(await drawnPane($, 'terminal', 200, count)).toHaveLength(count);
 });
 
-test('the pane draws as many rows as it counts, a long line and an empty one included', async ($, on) => {
-  const brief =
-    'a long line that wraps in a narrow pane\n\nhttps://example.com/a/very/long/path';
+function treeTexts(glance: BoardGlance, stamp: string, columns: number) {
+  return fitPane(
+    {
+      board: glance.board,
+      milestone: glance.milestone,
+      state: glance.state,
+      pane: glance.pane,
+      stamp,
+    },
+    columns,
+  ).map((row) => row.map((run) => run.text).join(''));
+}
+
+test('the pane draws as many rows as it counts, none wider than the pane', async ($, on) => {
+  const long = paneOf('a long line that wraps in a narrow pane of the board');
   const { clock } = answerBeneath(
     on,
-    worldWith({ answer: printed(glanceOf({ brief })) }),
+    worldWith({ answer: printed(glanceOf({ pane: long })) }),
   );
   await bothStarts($, clock);
   await boardCommand($);
   await clock.settle();
   const rows = await drawnPane($, 'terminal', 14);
-  const view: BoardView = {
-    state: 'ok',
-    glance: glanceOf({ brief }),
-    takenAt: clockText(NOW),
-  };
-  expect(rows).toHaveLength(paneLines(view, 14).length);
-  for (const row of rows) {
-    if (row.color !== 'gap') expect(row.wrap).toBe(TRUNCATE);
-  }
+  const expected = treeTexts(
+    glanceOf({ pane: long }),
+    `as of ${clockText(NOW)}`,
+    14,
+  );
+  expect(rows.map((row) => row.text)).toEqual(expected);
+  for (const row of rows) expect(width(row.text)).toBeLessThanOrEqual(14);
 });
 
 test('a compact start runs nothing, and a live /clear runs one pickup and draws it', async ($, on) => {
@@ -925,18 +957,17 @@ test('/board opens the pane and runs one asked pickup, and a second /board close
   expect(seen.pickups).toHaveLength(2);
 });
 
-test('the pane draws the brief wrapped, a one-row gap, the board as a Link, and the stamp', async ($, on) => {
+test('the pane draws the plan tree at its width, with the board as a Link and the stamp last', async ($, on) => {
   const { clock } = answerBeneath(on, worldWith());
   await bothStarts($, clock);
   await boardCommand($);
   await clock.settle();
+  const stamp = `as of ${clockText(NOW)}`;
   for (const surface of SURFACES) {
-    expect(await drawnPane($, surface)).toEqual([
-      ...BRIEF.map((text) => ({ text, color: 'text', wrap: TRUNCATE })),
-      { text: '', color: 'gap', wrap: undefined },
-      { text: BOARD_URL, color: 'text', wrap: TRUNCATE, href: BOARD_URL },
-      { text: `as of ${clockText(NOW)}`, color: 'subtle', wrap: TRUNCATE },
-    ]);
+    const rows = await drawnPane($, surface);
+    expect(rows.map((row) => row.text)).toEqual(treeTexts(GLANCE, stamp, 60));
+    expect(rows.some((row) => row.href === BOARD_URL)).toBe(true);
+    expect(rows.at(-1)?.text.trim()).toBe(stamp);
   }
 });
 
@@ -1058,7 +1089,7 @@ for (const rerun of RERUNS) {
   }
 }
 
-test('after a failed refresh, the pane keeps the brief and stamps the failure', async ($, on) => {
+test('after a failed refresh, the pane keeps the last tree and stamps the failure', async ($, on) => {
   const world = worldWith();
   const { clock } = answerBeneath(on, world);
   await bothStarts($, clock);
@@ -1066,13 +1097,10 @@ test('after a failed refresh, the pane keeps the brief and stamps the failure', 
   world.answer = BAD_GATEWAY;
   await boardCommand($);
   await clock.settle();
+  const stamp = `refresh failed ${clockText(NOW + MINUTE_MS)}`;
   const rows = await drawnPane($, 'terminal');
-  expect(rows.at(-1)).toEqual({
-    text: `refresh failed ${clockText(NOW + MINUTE_MS)}`,
-    color: 'subtle',
-    wrap: TRUNCATE,
-  });
-  expect(rows.map((row) => row.text).slice(0, BRIEF.length)).toEqual(BRIEF);
+  expect(rows.map((row) => row.text)).toEqual(treeTexts(GLANCE, stamp, 60));
+  expect(rows.at(-1)?.text.trim()).toBe(stamp);
 });
 
 const FAILURES: { name: string; answer: RunAnswer; line: string | RegExp }[] = [

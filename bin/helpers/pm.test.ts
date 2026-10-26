@@ -22,7 +22,9 @@ import {
 import { type BriefInput, renderBrief } from './pm-brief.js';
 import type { Item, LinkedBoard, Milestone } from './pm-data.js';
 import { LINT_IDS } from './pm-lint.js';
+import { paneRows } from './pm-pane.js';
 import type { Plans } from './pm-plans.js';
+import { pickupView } from './pm-view.js';
 
 const board = (
   n: number,
@@ -1257,7 +1259,7 @@ describe('pickup --glance', () => {
     now: new Date('2026-09-19T12:00:00Z'),
   });
 
-  test('prints one object parseGlance accepts, with the brief and the board url', () => {
+  test('prints one object parseGlance accepts, with the pane and the board url', () => {
     const env = envWith(nodes([]));
     const g = capture();
     expect(runPmCli(['pickup', '--glance'], env, g.o, g.e)).toBe(0);
@@ -1265,9 +1267,11 @@ describe('pickup --glance', () => {
     const parsed = parseGlance(g.out[0] ?? '');
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    const b = capture();
-    runPmCli(['pickup', '--brief'], env, b.o, b.e);
-    expect(parsed.glance.brief).toBe(b.out[0]);
+    const j = capture();
+    runPmCli(['pickup'], env, j.o, j.e);
+    const input = JSON.parse(j.out[0] ?? '') as BriefInput;
+    expect(parsed.glance.pane).toEqual(paneRows(pickupView(input)));
+    expect(parsed.glance.pane.rows.length).toBeGreaterThan(0);
     expect(parsed.glance.board.url).toBe(
       'https://github.com/users/Rikmorn/projects/2',
     );

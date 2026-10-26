@@ -1,6 +1,6 @@
-// The board's pure view: the state after each pickup run, the one-row state line's segments and how they shed to fit, and the pane's lines.
+// The board's pure view: the state after each pickup run, and the one-row state line's segments and how they shed to fit.
 import type { ThemeKey } from 'claude-code';
-import { cut, width, wrapRows } from '../lines';
+import { cut, width } from '../lines';
 import type { BoardGlance, GlanceLevel, GlanceState } from './contract';
 import { GLANCE_COMPLETE_WORD, parseGlance } from './contract';
 import type { RunKind, RunOutcome } from './logic';
@@ -18,11 +18,6 @@ export type Segment =
   | { kind: 'state'; text: string; level: GlanceLevel }
   | { kind: 'detail'; text: string }
   | { kind: 'failure'; text: string };
-
-export type PaneLine =
-  | { tone: 'plain' | 'subtle' | 'failure'; text: string }
-  | { tone: 'link'; text: string; href: string }
-  | { tone: 'gap' };
 
 /** What the adapter joins the row's segments with; the row's widths count it. */
 export const SEPARATOR = ' · ';
@@ -238,44 +233,4 @@ function shed(glance: BoardGlance, time: string, columns: number): Segment[] {
     if (leastWidth(row) <= columns) return row;
   }
   return cutRow(buildRow(glance, time, keep), columns);
-}
-
-/** The pane's drawn rows at `columns`: the brief wrapped, a gap, the board's link, and the stamp. A gap is a row, since an empty Text draws none. */
-export function paneLines(view: BoardView, columns: number): PaneLine[] {
-  switch (view.state) {
-    case 'empty':
-      return [];
-    case 'failed':
-      return wrapRows(`⚠ board: ${view.reason}`, columns).map(
-        (text): PaneLine => ({ tone: 'failure', text }),
-      );
-    case 'ok':
-    case 'stale':
-      return [
-        ...view.glance.brief
-          .split(/\r?\n/)
-          .flatMap((line) => wrapRows(line, columns))
-          .map(
-            (text): PaneLine =>
-              text === '' ? { tone: 'gap' } : { tone: 'plain', text },
-          ),
-        { tone: 'gap' },
-        {
-          tone: 'link',
-          text: view.glance.board.url,
-          href: view.glance.board.url,
-        },
-        {
-          tone: 'subtle',
-          text:
-            view.state === 'ok'
-              ? `as of ${view.takenAt}`
-              : `refresh failed ${view.failedAt}`,
-        },
-      ];
-    default: {
-      const exhaustive: never = view;
-      throw new Error(`Unhandled view: ${JSON.stringify(exhaustive)}`);
-    }
-  }
 }

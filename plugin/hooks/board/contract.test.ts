@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing';
 import { GLANCE_VERSION, parseGlance, parsePane } from './contract';
 
 const full = {
-  version: 1,
+  version: 2,
   board: {
     owner: 'Rikmorn',
     repo: 'sidekick',
@@ -11,12 +11,17 @@ const full = {
   },
   milestone: 'R9 control centre',
   state: { level: 'warning', word: 'at risk', detail: '#233 waits on you' },
-  brief: 'Pickup: milestone 9\nIn progress: #233',
+  pane: {
+    rows: [
+      { kind: 'prose', mark: 'next', text: 'continue #233' },
+      { kind: 'cells', plans: ['done', 'next'], label: '1/2 plans' },
+    ],
+  },
 };
 
 const notParsed = { ok: false, reason: "the pickup's output did not parse" };
 
-test('parseGlance keeps every field of a version-1 glance', () => {
+test('parseGlance keeps every field of a version-2 glance', () => {
   expect(parseGlance(JSON.stringify(full))).toEqual({
     ok: true,
     glance: { ...full, version: GLANCE_VERSION },
@@ -56,10 +61,12 @@ test('parseGlance reads a truncated object as not parsed', () => {
   expect(parseGlance(text.slice(0, text.length - 10))).toEqual(notParsed);
 });
 
-test('parseGlance reads another version as not parsed', () => {
-  expect(parseGlance(JSON.stringify({ ...full, version: 2 }))).toEqual(
-    notParsed,
-  );
+test('parseGlance reads another version as not parsed, version 1 included', () => {
+  for (const version of [1, GLANCE_VERSION + 1]) {
+    expect(parseGlance(JSON.stringify({ ...full, version }))).toEqual(
+      notParsed,
+    );
+  }
 });
 
 test('parseGlance reads a level outside the four as not parsed', () => {
@@ -72,9 +79,16 @@ test('parseGlance reads a string board number as not parsed', () => {
   expect(parseGlance(JSON.stringify({ ...full, board }))).toEqual(notParsed);
 });
 
-test('parseGlance reads a missing brief as not parsed', () => {
-  const { brief: _brief, ...without } = full;
+test('parseGlance reads a missing pane as not parsed', () => {
+  const { pane: _pane, ...without } = full;
   expect(parseGlance(JSON.stringify(without))).toEqual(notParsed);
+});
+
+test('parseGlance reads a pane that parsePane rejects as not parsed', () => {
+  const bad = { rows: [{ kind: 'prose', mark: 'next' }] };
+  expect(parseGlance(JSON.stringify({ ...full, pane: bad }))).toEqual(
+    notParsed,
+  );
 });
 
 const node = (children: unknown[] = []) => ({

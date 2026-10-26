@@ -6,7 +6,7 @@
 /** How long one pickup may take, the start hook's own timeout (`plugin/hooks/hooks.json`). */
 export const PICKUP_TIMEOUT_MS = 20_000;
 
-export const GLANCE_VERSION = 1;
+export const GLANCE_VERSION = 2;
 
 /** The word for a finished milestone, which the row marks with a tick. */
 export const GLANCE_COMPLETE_WORD = 'complete';
@@ -25,8 +25,8 @@ export interface BoardGlance {
   /** The active milestone's title; null with none open, or several and none active. */
   milestone: string | null;
   state: GlanceState;
-  /** The six lines `--brief` prints, for the pane. */
-  brief: string;
+  /** The pickup as the pane's worded rows. */
+  pane: GlancePane;
 }
 
 export type ParsedGlance =
@@ -73,7 +73,7 @@ function parseBoard(value: unknown): BoardGlance['board'] | undefined {
   return { owner, repo, number, url };
 }
 
-/** Parses `pickup --glance`'s stdout; anything but a version-1 glance reads as not parsed. */
+/** Parses `pickup --glance`'s stdout; anything but a version-2 glance reads as not parsed. */
 export function parseGlance(text: string): ParsedGlance {
   let value: unknown;
   try {
@@ -84,13 +84,14 @@ export function parseGlance(text: string): ParsedGlance {
   if (!isRecord(value) || value.version !== GLANCE_VERSION) return NOT_PARSED;
   const board = parseBoard(value.board);
   const state = parseState(value.state);
-  const { milestone, brief } = value;
+  const { milestone } = value;
+  const pane = parsePane(value.pane);
   if (board === undefined || state === undefined) return NOT_PARSED;
   if (milestone !== null && typeof milestone !== 'string') return NOT_PARSED;
-  if (typeof brief !== 'string') return NOT_PARSED;
+  if (pane === undefined) return NOT_PARSED;
   return {
     ok: true,
-    glance: { version: GLANCE_VERSION, board, milestone, state, brief },
+    glance: { version: GLANCE_VERSION, board, milestone, state, pane },
   };
 }
 
