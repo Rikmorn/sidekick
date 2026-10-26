@@ -238,6 +238,15 @@ test("activityOf keeps a long path's end and a long command's start", () => {
   expect(command).toStartWith('Bash: echo x');
 });
 
+test('activityOf ends a cut target and a cut tool name in an ellipsis', () => {
+  const command = activityOf('Bash', { command: `echo ${'x'.repeat(99)}` });
+  expect(width(command)).toBe(ACTIVITY_COLUMNS);
+  expect(command).toEndWith('x…');
+  const tool = activityOf('T'.repeat(ACTIVITY_COLUMNS + 20), { command: 'x' });
+  expect(width(tool)).toBe(ACTIVITY_COLUMNS);
+  expect(tool).toEndWith('T…');
+});
+
 test('idleText gives the local time the turn ended', () => {
   const at = new Date(2026, 9, 25, 9, 5).getTime();
   expect(idleText(at)).toBe('idle since 09:05');

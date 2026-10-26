@@ -5,7 +5,7 @@
 import type { AgentInfo } from 'claude-code';
 import { clockText } from '../board/logic';
 import { firstLine } from '../failures';
-import { cut, ELLIPSIS, width } from '../lines';
+import { ELLIPSIS, fit, width } from '../lines';
 import type { Role } from '../role';
 import type { SelfFacts } from '../state';
 import {
@@ -72,10 +72,10 @@ export function subagentsOf(
     .map(({ type, description, status }) => ({ type, description, status }));
 }
 
-// A path keeps its end, where the file's name is; anything else keeps its start.
+// A path keeps its end, where the file's name is; anything else keeps its start. Either way a cut text carries the ellipsis.
 function fitted(text: string, columns: number, isPath: boolean): string {
   if (width(text) <= columns) return text;
-  if (!isPath) return cut(text, columns);
+  if (!isPath) return fit(text, columns);
   const kept = [...text].slice(-(columns - width(ELLIPSIS))).join('');
   return `${ELLIPSIS}${kept}`;
 }
@@ -92,7 +92,7 @@ export function activityOf(tool: string, args: unknown): string {
   const lead = `${tool}: `;
   const room = ACTIVITY_COLUMNS - width(lead);
   if (target === undefined || room <= width(ELLIPSIS)) {
-    return cut(tool, ACTIVITY_COLUMNS);
+    return fit(tool, ACTIVITY_COLUMNS);
   }
   return `${lead}${fitted(target, room, path !== undefined)}`;
 }
