@@ -7,7 +7,18 @@
 
 import type { Candidate, Drift, InProgress } from './pm.js';
 import type { IssueCounts, Milestone } from './pm-data.js';
-import { descriptionProse, type Plans, type PlanView } from './pm-plans.js';
+import type { Plans } from './pm-plans.js';
+import {
+  cut,
+  nextMove,
+  type PickupView,
+  pickupView,
+  TITLE_MAX,
+  titles,
+  type ViewPlan,
+} from './pm-view.js';
+
+export { nextMove, TITLE_MAX };
 
 export interface BriefInput {
   board: { owner: string; repo: string; project: { number: number } };
@@ -21,126 +32,48 @@ export interface BriefInput {
   drift: Drift;
 }
 
-interface ParsedPlans {
-  list: PlanView[];
-  unplanned: Plans['unplanned'];
-}
-
-/** Prescriptive: a title longer than this is cut with an ellipsis. */
-export const TITLE_MAX = 60;
 /** Prescriptive: candidates shown per tier before `+n more`. */
 export const PER_TIER_MAX = 5;
-
-function cut(title: string): string {
-  return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title;
-}
-
-function firstSentence(text: string): string {
-  const t = text.replace(/\s+/g, ' ').trim();
-  const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
-  return m ? m[1] : t;
-}
-
-const titles = (list: Array<{ title: string }>): string =>
-  list.map((m) => cut(m.title)).join(', ');
 
 function ref(i: { number: number; title: string }): string {
   return `#${i.number} ${cut(i.title)}`;
 }
 
-function tierBody(tier: 1 | 2, candidates: Candidate[]): string | null {
-  const mine = candidates.filter((c) => c.tier === tier);
-  if (mine.length === 0) return null;
-  const shown = mine.slice(0, PER_TIER_MAX).map(ref).join('; ');
+function tierBody(candidates: Candidate[]): string | null {
+  if (candidates.length === 0) return null;
+  const shown = candidates.slice(0, PER_TIER_MAX).map(ref).join('; ');
   const more =
-    mine.length > PER_TIER_MAX ? ` +${mine.length - PER_TIER_MAX} more` : '';
+    candidates.length > PER_TIER_MAX
+      ? ` +${candidates.length - PER_TIER_MAX} more`
+      : '';
   return `${shown}${more}`;
 }
 
 function tierLine(tier: 1 | 2, candidates: Candidate[]): string | null {
-  const body = tierBody(tier, candidates);
+  const body = tierBody(candidates);
   return body === null ? null : `tier ${tier} ${body}`;
 }
 
-function parsedPlans(p: BriefInput): ParsedPlans | null {
-  if (p.plans === null || p.plans.parse !== 'ok') return null;
-  return { list: p.plans.list, unplanned: p.plans.unplanned };
-}
-
-const openRefs = (plan: PlanView): string =>
+const openRefs = (plan: ViewPlan): string =>
   plan.issues
     .filter((i) => i.open)
     .map((i) => `#${i.number}`)
     .join(', ');
 
-const plannedNumbers = (list: PlanView[]): Set<number> =>
-  new Set(list.flatMap((pl) => pl.issues.map((i) => i.number)));
-
-function continueMove(cards: InProgress[], plans: ParsedPlans | null): string {
-  const lowest = Math.min(...cards.map((i) => i.number));
-  const plan =
-    plans === null
-      ? undefined
-      : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
-  return plan === undefined
-    ? `continue #${lowest}`
-    : `continue plan ${plan.name} (${openRefs(plan)})`;
-}
-
-function pullMove(p: BriefInput, plans: ParsedPlans | null): string | null {
-  if (plans === null) {
-    return p.candidates.some((c) => c.tier === 1)
-      ? 'pull one tier-1 candidate'
-      : null;
-  }
-  const next = plans.list.find((pl) => pl.state === 'next');
-  if (next !== undefined) return `pull plan ${next.name} (${openRefs(next)})`;
-  const planned = plannedNumbers(plans.list);
-  const unplanned = p.candidates.some(
-    (c) => c.tier === 1 && !planned.has(c.number),
-  );
-  return unplanned ? 'pull one unplanned candidate' : null;
-}
-
-/**
- * The fixed rule: with several milestones open and none active, choose one.
- * Otherwise continue what is In Progress, else pull the next plan, an
- * unplanned issue, or a tier-1 candidate, else close or open a milestone.
- * Tier 2 is never the pick; taking it is a judgment.
- */
-export function nextMove(p: BriefInput): string {
-  if (p.milestone === null && p.open_milestones.length > 1) {
-    return `choose a milestone: ${titles(p.open_milestones)}`;
-  }
-  const plans = parsedPlans(p);
-  if (p.in_progress.length > 0) return continueMove(p.in_progress, plans);
-  const pull = pullMove(p, plans);
-  if (pull !== null) return pull;
-  if (p.milestone)
-    return 'nothing to pick up: verify, then close the milestone';
-  return 'nothing open: open the next milestone';
-}
-
 const card = (i: InProgress): string => `#${i.number} (${i.age_days} d)`;
 const titledCard = (i: InProgress): string => `${ref(i)} (${i.age_days} d)`;
 
-function inProgressLine(p: BriefInput, plans: ParsedPlans | null): string {
-  if (p.in_progress.length === 0) return 'in progress: none';
-  if (plans === null) {
-    return `in progress: ${p.in_progress.map(titledCard).join(', ')}`;
-  }
-  const byNumber = new Map(p.in_progress.map((i) => [i.number, i]));
-  const grouped = plans.list.flatMap((pl) => {
-    const cards = pl.issues.flatMap((i) => byNumber.get(i.number) ?? []);
-    return cards.length === 0
-      ? []
-      : [`plan ${cut(pl.name)}: ${cards.map(card).join(', ')}`];
-  });
-  const planned = plannedNumbers(plans.list);
-  const loose = p.in_progress
-    .filter((i) => !planned.has(i.number))
-    .map(titledCard);
-  return `in progress: ${[...grouped, ...loose].join(' · ')}`;
+function inProgressLine(v: PickupView): string {
+  const { byPlan, loose } = v.inProgress;
+  const parts = [
+    ...byPlan.map(
+      (g) => `plan ${cut(g.name)}: ${g.cards.map(card).join(', ')}`,
+    ),
+    ...loose.map(titledCard),
+  ];
+  if (parts.length === 0) return 'in progress: none';
+  // Without a parsed header the cards are one list; with one, groups.
+  return `in progress: ${parts.join(v.plans.parse === 'ok' ? ' · ' : ', ')}`;
 }
 
 function doneSegment(count: number): string | null {
@@ -148,18 +81,13 @@ function doneSegment(count: number): string | null {
   return count === 1 ? '1 plan done' : `${count} plans done`;
 }
 
-function planCandidatesLine(p: BriefInput, plans: ParsedPlans): string {
-  const inState = (state: PlanView['state']) =>
-    plans.list.filter((pl) => pl.state === state);
-  const next = plans.list.find((pl) => pl.state === 'next');
+function planCandidatesLine(v: PickupView, list: ViewPlan[]): string {
+  const inState = (state: ViewPlan['state']) =>
+    list.filter((pl) => pl.state === state);
+  const next = list.find((pl) => pl.state === 'next');
   const later = inState('later');
-  const openCount = (pl: PlanView) => pl.issues.filter((i) => i.open).length;
-  // An In Progress issue already shows in the in-progress line.
-  const running = new Set(p.in_progress.map((i) => i.number));
-  const unplanned = plans.unplanned
-    .filter((i) => !running.has(i.number))
-    .map((i) => `#${i.number}`)
-    .join(', ');
+  const openCount = (pl: ViewPlan) => pl.issues.filter((i) => i.open).length;
+  const unplanned = v.unplanned.map((i) => `#${i.number}`).join(', ');
   const segments = [
     next === undefined
       ? null
@@ -169,71 +97,50 @@ function planCandidatesLine(p: BriefInput, plans: ParsedPlans): string {
       : `then ${later.map((pl) => `${cut(pl.name)} (${openCount(pl)})`).join(', ')}`,
     doneSegment(inState('done').length),
     `unplanned: ${unplanned === '' ? 'none' : unplanned}`,
-    `tier 2: ${tierBody(2, p.candidates) ?? 'none'}`,
+    `tier 2: ${tierBody(v.tier2) ?? 'none'}`,
   ];
   return `candidates: ${segments.filter((s) => s !== null).join(' · ')}`;
 }
 
-function candidatesLine(p: BriefInput, plans: ParsedPlans | null): string {
-  if (plans !== null) return planCandidatesLine(p, plans);
-  const tiers = [tierLine(1, p.candidates), tierLine(2, p.candidates)].filter(
+function candidatesLine(v: PickupView): string {
+  if (v.plans.parse === 'ok') return planCandidatesLine(v, v.plans.list);
+  const tiers = [tierLine(1, v.tier1), tierLine(2, v.tier2)].filter(
     (t): t is string => t !== null,
   );
-  const order = p.candidates.length > 1 ? ' (order: number, not priority)' : '';
+  const order =
+    v.tier1.length + v.tier2.length > 1 ? ' (order: number, not priority)' : '';
   return tiers.length > 0
     ? `candidates: ${tiers.join(' · ')}${order}`
     : 'candidates: none';
 }
 
-function milestoneLine(p: BriefInput): string {
-  const m = p.milestone;
+function milestoneLine(v: PickupView): string {
+  const m = v.milestone;
   if (m === null) {
-    return p.open_milestones.length === 0
+    return v.openMilestones.length === 0
       ? 'milestone: none'
-      : `milestone: none active · open: ${titles(p.open_milestones)}`;
+      : `milestone: none active · open: ${titles(v.openMilestones)}`;
   }
-  const outcome = firstSentence(descriptionProse(m.description));
-  const others = p.open_milestones.filter((o) => o.number !== m.number);
-  const c = p.issue_counts;
+  const c = m.counts;
   const counts = c === null ? '' : ` (${c.open} open, ${c.closed} closed)`;
   return [
     `milestone: ${m.title}${counts}`,
-    ...(outcome ? [outcome] : []),
-    ...(others.length > 0 ? [`also open: ${titles(others)}`] : []),
+    ...(m.outcome === null ? [] : [m.outcome]),
+    ...(v.otherOpen.length > 0
+      ? [`also open: ${v.otherOpen.map(cut).join(', ')}`]
+      : []),
   ].join(' · ');
 }
 
 export function renderBrief(p: BriefInput): string {
-  const lines: string[] = [];
-  lines.push(
-    `sidekick · ${p.board.owner}/${p.board.repo} · board #${p.board.project.number}`,
-  );
-
-  lines.push(milestoneLine(p));
-
-  const plans = parsedPlans(p);
-  lines.push(inProgressLine(p, plans));
-  lines.push(candidatesLine(p, plans));
-
-  const drift: string[] = [];
-  const unpushed = p.drift.unpushed.count;
-  if (unpushed !== null && unpushed > 0) drift.push(`${unpushed} unpushed`);
-  if (p.drift.stale_in_progress.length > 0) {
-    drift.push(
-      `stale: ${p.drift.stale_in_progress.map((i) => `#${i.number} (${i.age_days} d)`).join(', ')}`,
-    );
-  }
-  if (p.drift.open_pr) drift.push(`open PR #${p.drift.open_pr.number}`);
-  if (p.drift.in_progress_split.length > 0) {
-    drift.push(
-      `In Progress split: ${p.drift.in_progress_split.map(cut).join(', ')}`,
-    );
-  }
-  if (p.plans !== null && p.plans.parse === 'malformed') {
-    drift.push(`plans header: ${p.plans.reason}`);
-  }
-  lines.push(drift.length > 0 ? `drift: ${drift.join(' · ')}` : 'drift: none');
-
-  lines.push(`next: ${nextMove(p)}`);
-  return lines.join('\n');
+  const v = pickupView(p);
+  const drift = v.drift.map((d) => d.full);
+  return [
+    `sidekick · ${v.board.owner}/${v.board.repo} · board #${v.board.project}`,
+    milestoneLine(v),
+    inProgressLine(v),
+    candidatesLine(v),
+    drift.length > 0 ? `drift: ${drift.join(' · ')}` : 'drift: none',
+    `next: ${v.next}`,
+  ].join('\n');
 }

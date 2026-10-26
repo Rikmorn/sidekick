@@ -1,0 +1,137 @@
+{
+  "r9": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: R9 — Control centre (5 open, 23 closed) · Outcome: GSD no longer loads, and nothing it provided is lost.\nin progress: plan The control centre's usage guide: #240 (0 d), #251 (0 d)\ncandidates: next plan A backgrounded main that runs none of sidekick's mods (#250) · then The docs that say what sidekick is (1), GSD's status line and monitor replaced after the release in… (1) · 12 plans done · unplanned: none · tier 2: none\ndrift: none\nnext: continue plan The control centre's usage guide (#240, #251)",
+    "glance": {
+      "ON_TRACK": {
+        "level": "good",
+        "word": "on track",
+        "detail": null
+      },
+      "AT_RISK": {
+        "level": "warning",
+        "word": "at risk",
+        "detail": null
+      }
+    }
+  },
+  "everyDrift": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: R6 — PM layer (3 open, 2 closed) · Outcome: sessions start from the board.\nin progress: #240 t240 (9 d), #241 t241 (2 d)\ncandidates: none\ndrift: 3 unpushed · stale: #240 (9 d), #241 (2 d) · open PR #12 · In Progress split: R9, R10 · plans header: plan 2 repeats #240\nnext: continue #240",
+    "glance": {
+      "ON_TRACK": {
+        "level": "warning",
+        "word": "drift",
+        "detail": "3 unpushed +4"
+      },
+      "AT_RISK": {
+        "level": "warning",
+        "word": "at risk",
+        "detail": "3 unpushed +4"
+      }
+    }
+  },
+  "overflowNoHeader": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: R6 — PM layer (3 open, 2 closed) · Outcome: sessions start from the board.\nin progress: #30 t30 (1 d)\ncandidates: tier 1 #11 t11; #12 t12; #13 t13; #14 t14; #15 t15 +2 more · tier 2 #21 t21; #22 t22; #23 t23; #24 t24; #25 t25 +1 more (order: number, not priority)\ndrift: none\nnext: continue #30",
+    "glance": {
+      "ON_TRACK": {
+        "level": "good",
+        "word": "on track",
+        "detail": null
+      },
+      "AT_RISK": {
+        "level": "warning",
+        "word": "at risk",
+        "detail": null
+      }
+    }
+  },
+  "malformedHeader": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: R6 — PM layer (3 open, 2 closed) · Outcome: sessions start from the board.\nin progress: none\ncandidates: tier 1 #11 t11 · tier 2 #21 t21 (order: number, not priority)\ndrift: plans header: the plans header lists no plans\nnext: pull one tier-1 candidate",
+    "glance": {
+      "ON_TRACK": {
+        "level": "warning",
+        "word": "drift",
+        "detail": "plans header"
+      },
+      "AT_RISK": {
+        "level": "warning",
+        "word": "at risk",
+        "detail": "plans header"
+      }
+    }
+  },
+  "noMilestoneSeveralOpen": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: none active · open: R6 — PM layer, R7 — Something else\nin progress: none\ncandidates: none\ndrift: none\nnext: choose a milestone: R6 — PM layer, R7 — Something else",
+    "glance": {
+      "ON_TRACK": {
+        "level": "unknown",
+        "word": "pick a milestone",
+        "detail": null
+      },
+      "AT_RISK": {
+        "level": "unknown",
+        "word": "pick a milestone",
+        "detail": null
+      }
+    }
+  },
+  "noMilestoneNoneOpen": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: none\nin progress: none\ncandidates: none\ndrift: none\nnext: nothing open: open the next milestone",
+    "glance": {
+      "ON_TRACK": {
+        "level": "unknown",
+        "word": "no milestone",
+        "detail": null
+      },
+      "AT_RISK": {
+        "level": "unknown",
+        "word": "no milestone",
+        "detail": null
+      }
+    }
+  },
+  "everyPlanDone": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: R6 — PM layer (3 open, 2 closed) · Outcome: sessions start from the board.\nin progress: none\ncandidates: 2 plans done · unplanned: none · tier 2: none\ndrift: none\nnext: nothing to pick up: verify, then close the milestone",
+    "glance": {
+      "ON_TRACK": {
+        "level": "good",
+        "word": "on track",
+        "detail": null
+      },
+      "AT_RISK": {
+        "level": "warning",
+        "word": "at risk",
+        "detail": null
+      }
+    }
+  },
+  "planIssueWithNoCard": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: R6 — PM layer (3 open, 2 closed) · Outcome: sessions start from the board.\nin progress: plan Running: #40 (3 d) · #45 t45 (1 d) · #46 t46 (1 d)\ncandidates: then Later (1) · unplanned: #44 · tier 2: none\ndrift: none\nnext: continue plan Running (#40, #42)",
+    "glance": {
+      "ON_TRACK": {
+        "level": "good",
+        "word": "on track",
+        "detail": null
+      },
+      "AT_RISK": {
+        "level": "warning",
+        "word": "at risk",
+        "detail": null
+      }
+    }
+  },
+  "emptyMilestone": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: R6 — PM layer (0 open, 0 closed) · Outcome: sessions start from the board.\nin progress: none\ncandidates: none\ndrift: none\nnext: nothing to pick up: verify, then close the milestone",
+    "glance": {
+      "ON_TRACK": {
+        "level": "good",
+        "word": "on track",
+        "detail": null
+      },
+      "AT_RISK": {
+        "level": "warning",
+        "word": "at risk",
+        "detail": null
+      }
+    }
+  }
+}

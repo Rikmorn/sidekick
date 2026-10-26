@@ -5,6 +5,7 @@ import {
 import type { Drift } from './pm.js';
 import type { Milestone } from './pm-data.js';
 import type { Plans } from './pm-plans.js';
+import { driftEntries } from './pm-view.js';
 
 export const UPDATE_STATUSES = [
   'INACTIVE',
@@ -58,17 +59,8 @@ function floorOf(input: GlanceInput): GlanceState {
   return counted ? BY_STATUS[counted.status] : unknown('no update');
 }
 
-function driftKinds({ drift, plans }: GlanceInput): string[] {
-  const kinds: string[] = [];
-  const unpushed = drift.unpushed.count;
-  if (unpushed !== null && unpushed > 0) kinds.push(`${unpushed} unpushed`);
-  const first = drift.stale_in_progress[0];
-  if (first) kinds.push(`stale #${first.number}`);
-  if (drift.open_pr) kinds.push(`open PR #${drift.open_pr.number}`);
-  if (drift.in_progress_split.length > 0) kinds.push('split');
-  if (plans !== null && plans.parse === 'malformed') kinds.push('plans header');
-  return kinds;
-}
+const driftKinds = ({ drift, plans }: GlanceInput): string[] =>
+  driftEntries(drift, plans).map((d) => d.short);
 
 export function glanceState(input: GlanceInput): GlanceState {
   const floor = floorOf(input);

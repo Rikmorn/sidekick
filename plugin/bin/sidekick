@@ -3437,9 +3437,8 @@ function planView(ms, items) {
   return { parse: "ok", list: list2, unplanned };
 }
 
-// bin/helpers/pm-brief.ts
+// bin/helpers/pm-view.ts
 var TITLE_MAX = 60;
-var PER_TIER_MAX = 5;
 function cut(title) {
   return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title;
 }
@@ -3449,21 +3448,6 @@ function firstSentence(text) {
   return m ? m[1] : t;
 }
 var titles = (list2) => list2.map((m) => cut(m.title)).join(", ");
-function ref(i) {
-  return `#${i.number} ${cut(i.title)}`;
-}
-function tierBody(tier, candidates) {
-  const mine = candidates.filter((c) => c.tier === tier);
-  if (mine.length === 0)
-    return null;
-  const shown = mine.slice(0, PER_TIER_MAX).map(ref).join("; ");
-  const more = mine.length > PER_TIER_MAX ? ` +${mine.length - PER_TIER_MAX} more` : "";
-  return `${shown}${more}`;
-}
-function tierLine(tier, candidates) {
-  const body = tierBody(tier, candidates);
-  return body === null ? null : `tier ${tier} ${body}`;
-}
 function parsedPlans(p) {
   if (p.plans === null || p.plans.parse !== "ok")
     return null;
@@ -3501,91 +3485,186 @@ function nextMove(p) {
     return "nothing to pick up: verify, then close the milestone";
   return "nothing open: open the next milestone";
 }
-var card = (i) => `#${i.number} (${i.age_days} d)`;
-var titledCard = (i) => `${ref(i)} (${i.age_days} d)`;
-function inProgressLine(p, plans) {
-  if (p.in_progress.length === 0)
-    return "in progress: none";
-  if (plans === null) {
-    return `in progress: ${p.in_progress.map(titledCard).join(", ")}`;
+function driftEntries(drift, plans) {
+  const entries = [];
+  const unpushed = drift.unpushed.count;
+  if (unpushed !== null && unpushed > 0) {
+    entries.push({
+      full: `${unpushed} unpushed`,
+      short: `${unpushed} unpushed`
+    });
   }
-  const byNumber = new Map(p.in_progress.map((i) => [i.number, i]));
-  const grouped = plans.list.flatMap((pl) => {
-    const cards = pl.issues.flatMap((i) => byNumber.get(i.number) ?? []);
-    return cards.length === 0 ? [] : [`plan ${cut(pl.name)}: ${cards.map(card).join(", ")}`];
+  const [firstStale] = drift.stale_in_progress;
+  if (firstStale !== undefined) {
+    entries.push({
+      full: `stale: ${drift.stale_in_progress.map((i) => `#${i.number} (${i.age_days} d)`).join(", ")}`,
+      short: `stale #${firstStale.number}`
+    });
+  }
+  if (drift.open_pr) {
+    const text = `open PR #${drift.open_pr.number}`;
+    entries.push({ full: text, short: text });
+  }
+  if (drift.in_progress_split.length > 0) {
+    entries.push({
+      full: `In Progress split: ${drift.in_progress_split.map(cut).join(", ")}`,
+      short: "split"
+    });
+  }
+  if (plans !== null && plans.parse === "malformed") {
+    entries.push({
+      full: `plans header: ${plans.reason}`,
+      short: "plans header"
+    });
+  }
+  return entries;
+}
+function viewIssue(issue, cards) {
+  const card = cards.get(issue.number);
+  return {
+    ...issue,
+    ageDays: issue.status === "In Progress" && card !== undefined ? card.age_days : null
+  };
+}
+function viewPlans(p, cards) {
+  const plans = p.plans;
+  if (plans === null)
+    return { parse: "none" };
+  if (plans.parse === "malformed") {
+    return { parse: "malformed", reason: plans.reason ?? "" };
+  }
+  if (plans.parse === "none")
+    return { parse: "none" };
+  return {
+    parse: "ok",
+    list: plans.list.map((pl) => ({
+      name: pl.name,
+      state: pl.state,
+      issues: pl.issues.map((i) => viewIssue(i, cards))
+    }))
+  };
+}
+function groupInProgress(p, plans, cards) {
+  if (plans === null)
+    return { byPlan: [], loose: p.in_progress };
+  const byPlan = plans.list.flatMap((pl) => {
+    const mine = pl.issues.flatMap((i) => cards.get(i.number) ?? []);
+    return mine.length === 0 ? [] : [{ name: pl.name, cards: mine }];
   });
   const planned = plannedNumbers(plans.list);
-  const loose = p.in_progress.filter((i) => !planned.has(i.number)).map(titledCard);
-  return `in progress: ${[...grouped, ...loose].join(" · ")}`;
+  return {
+    byPlan,
+    loose: p.in_progress.filter((i) => !planned.has(i.number))
+  };
+}
+function pickupView(p) {
+  const cards = new Map(p.in_progress.map((i) => [i.number, i]));
+  const plans = parsedPlans(p);
+  const m = p.milestone;
+  const outcome = m === null ? null : firstSentence(descriptionProse(m.description));
+  return {
+    board: {
+      owner: p.board.owner,
+      repo: p.board.repo,
+      project: p.board.project.number
+    },
+    milestone: m === null ? null : {
+      title: m.title,
+      outcome: outcome === "" ? null : outcome,
+      counts: p.issue_counts
+    },
+    openMilestones: p.open_milestones,
+    otherOpen: p.open_milestones.filter((o) => o.number !== m?.number).map((o) => o.title),
+    plans: viewPlans(p, cards),
+    inProgress: groupInProgress(p, plans, cards),
+    unplanned: plans === null ? [] : plans.unplanned.filter((i) => !cards.has(i.number)),
+    tier1: p.candidates.filter((c) => c.tier === 1),
+    tier2: p.candidates.filter((c) => c.tier === 2),
+    drift: driftEntries(p.drift, p.plans),
+    next: nextMove(p)
+  };
+}
+
+// bin/helpers/pm-brief.ts
+var PER_TIER_MAX = 5;
+function ref(i) {
+  return `#${i.number} ${cut(i.title)}`;
+}
+function tierBody(candidates) {
+  if (candidates.length === 0)
+    return null;
+  const shown = candidates.slice(0, PER_TIER_MAX).map(ref).join("; ");
+  const more = candidates.length > PER_TIER_MAX ? ` +${candidates.length - PER_TIER_MAX} more` : "";
+  return `${shown}${more}`;
+}
+function tierLine(tier, candidates) {
+  const body = tierBody(candidates);
+  return body === null ? null : `tier ${tier} ${body}`;
+}
+var openRefs2 = (plan) => plan.issues.filter((i) => i.open).map((i) => `#${i.number}`).join(", ");
+var card = (i) => `#${i.number} (${i.age_days} d)`;
+var titledCard = (i) => `${ref(i)} (${i.age_days} d)`;
+function inProgressLine(v) {
+  const { byPlan, loose } = v.inProgress;
+  const parts = [
+    ...byPlan.map((g) => `plan ${cut(g.name)}: ${g.cards.map(card).join(", ")}`),
+    ...loose.map(titledCard)
+  ];
+  if (parts.length === 0)
+    return "in progress: none";
+  return `in progress: ${parts.join(v.plans.parse === "ok" ? " · " : ", ")}`;
 }
 function doneSegment(count) {
   if (count === 0)
     return null;
   return count === 1 ? "1 plan done" : `${count} plans done`;
 }
-function planCandidatesLine(p, plans) {
-  const inState = (state) => plans.list.filter((pl) => pl.state === state);
-  const next = plans.list.find((pl) => pl.state === "next");
+function planCandidatesLine(v, list2) {
+  const inState = (state) => list2.filter((pl) => pl.state === state);
+  const next = list2.find((pl) => pl.state === "next");
   const later = inState("later");
   const openCount = (pl) => pl.issues.filter((i) => i.open).length;
-  const running = new Set(p.in_progress.map((i) => i.number));
-  const unplanned = plans.unplanned.filter((i) => !running.has(i.number)).map((i) => `#${i.number}`).join(", ");
+  const unplanned = v.unplanned.map((i) => `#${i.number}`).join(", ");
   const segments = [
-    next === undefined ? null : `next plan ${cut(next.name)} (${openRefs(next)})`,
+    next === undefined ? null : `next plan ${cut(next.name)} (${openRefs2(next)})`,
     later.length === 0 ? null : `then ${later.map((pl) => `${cut(pl.name)} (${openCount(pl)})`).join(", ")}`,
     doneSegment(inState("done").length),
     `unplanned: ${unplanned === "" ? "none" : unplanned}`,
-    `tier 2: ${tierBody(2, p.candidates) ?? "none"}`
+    `tier 2: ${tierBody(v.tier2) ?? "none"}`
   ];
   return `candidates: ${segments.filter((s) => s !== null).join(" · ")}`;
 }
-function candidatesLine(p, plans) {
-  if (plans !== null)
-    return planCandidatesLine(p, plans);
-  const tiers = [tierLine(1, p.candidates), tierLine(2, p.candidates)].filter((t) => t !== null);
-  const order = p.candidates.length > 1 ? " (order: number, not priority)" : "";
+function candidatesLine(v) {
+  if (v.plans.parse === "ok")
+    return planCandidatesLine(v, v.plans.list);
+  const tiers = [tierLine(1, v.tier1), tierLine(2, v.tier2)].filter((t) => t !== null);
+  const order = v.tier1.length + v.tier2.length > 1 ? " (order: number, not priority)" : "";
   return tiers.length > 0 ? `candidates: ${tiers.join(" · ")}${order}` : "candidates: none";
 }
-function milestoneLine(p) {
-  const m = p.milestone;
+function milestoneLine(v) {
+  const m = v.milestone;
   if (m === null) {
-    return p.open_milestones.length === 0 ? "milestone: none" : `milestone: none active · open: ${titles(p.open_milestones)}`;
+    return v.openMilestones.length === 0 ? "milestone: none" : `milestone: none active · open: ${titles(v.openMilestones)}`;
   }
-  const outcome = firstSentence(descriptionProse(m.description));
-  const others = p.open_milestones.filter((o) => o.number !== m.number);
-  const c = p.issue_counts;
+  const c = m.counts;
   const counts = c === null ? "" : ` (${c.open} open, ${c.closed} closed)`;
   return [
     `milestone: ${m.title}${counts}`,
-    ...outcome ? [outcome] : [],
-    ...others.length > 0 ? [`also open: ${titles(others)}`] : []
+    ...m.outcome === null ? [] : [m.outcome],
+    ...v.otherOpen.length > 0 ? [`also open: ${v.otherOpen.map(cut).join(", ")}`] : []
   ].join(" · ");
 }
 function renderBrief(p) {
-  const lines = [];
-  lines.push(`sidekick · ${p.board.owner}/${p.board.repo} · board #${p.board.project.number}`);
-  lines.push(milestoneLine(p));
-  const plans = parsedPlans(p);
-  lines.push(inProgressLine(p, plans));
-  lines.push(candidatesLine(p, plans));
-  const drift = [];
-  const unpushed = p.drift.unpushed.count;
-  if (unpushed !== null && unpushed > 0)
-    drift.push(`${unpushed} unpushed`);
-  if (p.drift.stale_in_progress.length > 0) {
-    drift.push(`stale: ${p.drift.stale_in_progress.map((i) => `#${i.number} (${i.age_days} d)`).join(", ")}`);
-  }
-  if (p.drift.open_pr)
-    drift.push(`open PR #${p.drift.open_pr.number}`);
-  if (p.drift.in_progress_split.length > 0) {
-    drift.push(`In Progress split: ${p.drift.in_progress_split.map(cut).join(", ")}`);
-  }
-  if (p.plans !== null && p.plans.parse === "malformed") {
-    drift.push(`plans header: ${p.plans.reason}`);
-  }
-  lines.push(drift.length > 0 ? `drift: ${drift.join(" · ")}` : "drift: none");
-  lines.push(`next: ${nextMove(p)}`);
-  return lines.join(`
+  const v = pickupView(p);
+  const drift = v.drift.map((d) => d.full);
+  return [
+    `sidekick · ${v.board.owner}/${v.board.repo} · board #${v.board.project}`,
+    milestoneLine(v),
+    inProgressLine(v),
+    candidatesLine(v),
+    drift.length > 0 ? `drift: ${drift.join(" · ")}` : "drift: none",
+    `next: ${v.next}`
+  ].join(`
 `);
 }
 
@@ -3621,22 +3700,7 @@ function floorOf(input) {
   const counted = status.updates.find((u) => u.startDate === day);
   return counted ? BY_STATUS[counted.status] : unknown2("no update");
 }
-function driftKinds({ drift, plans }) {
-  const kinds = [];
-  const unpushed = drift.unpushed.count;
-  if (unpushed !== null && unpushed > 0)
-    kinds.push(`${unpushed} unpushed`);
-  const first = drift.stale_in_progress[0];
-  if (first)
-    kinds.push(`stale #${first.number}`);
-  if (drift.open_pr)
-    kinds.push(`open PR #${drift.open_pr.number}`);
-  if (drift.in_progress_split.length > 0)
-    kinds.push("split");
-  if (plans !== null && plans.parse === "malformed")
-    kinds.push("plans header");
-  return kinds;
-}
+var driftKinds = ({ drift, plans }) => driftEntries(drift, plans).map((d) => d.short);
 function glanceState(input) {
   const floor = floorOf(input);
   const kinds = driftKinds(input);
