@@ -275,6 +275,33 @@ describe('paneRows', () => {
       node('done', null, '2 closed', null, 'quiet'),
     );
   });
+
+  test('a running plan lists its In Progress issue before a not-started one that leads the header', () => {
+    const issue = (number: number, status: string | null) => ({
+      number,
+      title: `t${number}`,
+      open: true,
+      status,
+      ageDays: status === 'In Progress' ? 3 : null,
+    });
+    const view = {
+      ...pickupView(pick('r9')),
+      plans: {
+        parse: 'ok' as const,
+        list: [
+          {
+            name: 'Plan',
+            state: 'running' as const,
+            issues: [issue(1, 'Backlog'), issue(2, 'In Progress')],
+          },
+        ],
+      },
+    };
+    const tree = paneRows(view).rows.at(-1);
+    if (tree?.kind !== 'tree') throw new Error('the view has a tree');
+    const plan = tree.nodes.find((n) => n.text === 'Plan');
+    expect(plan?.children.map((c) => c.ref)).toEqual(['#2', '#1']);
+  });
 });
 
 describe('the contract', () => {
