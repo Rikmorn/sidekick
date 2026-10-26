@@ -299,8 +299,16 @@ function mainNames(
   ];
 }
 
+// The names a record's `main` may hold for a listing row: its name, or its id prefix.
+const rowNames = (row: ListingRow): string[] => [
+  ...(row.name === undefined ? [] : [row.name]),
+  ...(row.sessionId === undefined
+    ? []
+    : [row.sessionId.slice(0, ID_PREFIX_LENGTH)]),
+];
+
 // A record whose row is the caller's own session is left out with it. With a
-// caller, only its own workers and those of no main are children.
+// caller, only its own workers and those of no live main are children.
 interface OwnRecord {
   record: WorkerRecord;
   row: ListingRow | undefined;
@@ -311,10 +319,14 @@ function ownRecords(
   selfRow: ListingRow | undefined,
 ): OwnRecord[] {
   const names = mainNames(input.self, selfRow);
+  const live = input.rows.filter(isCurrent).flatMap(rowNames);
+  // A worker whose main is gone from the listing must stay on a desk, for its marks.
+  const isOrphan = (main: string): boolean => !live.includes(main);
   const isMine = (record: WorkerRecord): boolean =>
     input.self === undefined ||
     record.main === null ||
-    names.includes(record.main);
+    names.includes(record.main) ||
+    isOrphan(record.main);
   return input.records
     .filter(isMine)
     .map((record) => ({ record, row: joinRow(record, input.rows) }))

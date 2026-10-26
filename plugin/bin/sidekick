@@ -1750,9 +1750,15 @@ function mainNames(self, selfRow) {
     self.slice(0, ID_PREFIX_LENGTH)
   ];
 }
+var rowNames = (row) => [
+  ...row.name === undefined ? [] : [row.name],
+  ...row.sessionId === undefined ? [] : [row.sessionId.slice(0, ID_PREFIX_LENGTH)]
+];
 function ownRecords(input, selfRow) {
   const names = mainNames(input.self, selfRow);
-  const isMine = (record2) => input.self === undefined || record2.main === null || names.includes(record2.main);
+  const live = input.rows.filter(isCurrent).flatMap(rowNames);
+  const isOrphan = (main) => !live.includes(main);
+  const isMine = (record2) => input.self === undefined || record2.main === null || names.includes(record2.main) || isOrphan(record2.main);
   return input.records.filter(isMine).map((record2) => ({ record: record2, row: joinRow(record2, input.rows) })).filter(({ row }) => input.self === undefined || row?.sessionId !== input.self);
 }
 function joinChildren(own, input, jobs) {
