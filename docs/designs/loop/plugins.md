@@ -32,13 +32,13 @@ The ruling names three domains. The candidate mods in the design also place the 
 
 ## Options
 
-**A. No split.** One `sidekick` plugin. The scope mod would hide skills a profile does not want, a filter #231 holds, since R9's scope mod hides only agents and mods, and the one mod switches its parts by the profile's name.
+**A. No split.** One `sidekick` plugin. The scope mod would hide skills a profile does not want, a filter #231 holds. R9's scope mod hides agents, and the board and the desk as mod parts, read as data from the profile's `hide` key.
 
-1. No pattern at the plugin level; a branch on the profile inside the mod.
+1. No pattern at the plugin level; the profile's `hide` key, read as data inside the mod.
 2. It avoids churn in install records, releases, and skill names.
 3. Today's shape.
-4. Cost: every profile using any part of sidekick loads superpowers and `code-review` (S2), the prod and no-repo profiles included. Separation rides the scope mod on the early-access API (S4), where a plugin boundary would do it natively. One module branches on the profile, and each new profile adds a branch.
-5. Next change: a new profile edits the mod's switch.
+4. Cost: every profile using any part of sidekick loads superpowers and `code-review` (S2), the prod and no-repo profiles included. Separation rides the scope mod on the early-access API (S4), where a plugin boundary would do it natively. One module serves every profile, and each new profile lists what it hides.
+5. Next change: a new profile lists what it hides; a new mod part adds a name the key accepts.
 
 **B. Four plugins, split by what a profile needs.**
 
@@ -78,7 +78,7 @@ Assumptions, and what changes if each is wrong:
 - The Read hook serves both pm's release check and dev's reviewers. Where it lives: the split's issue.
 - The migration order, the release notes, and the sweep of skill names.
 - ADR-0009 Decision 2's amendment: written with the split.
-- The review found that the CLI reads skill and rule files from its own plugin folder (`bin/cli.ts:87`, `bin/helpers/hook.ts:41-42,177,181`). It also delivers `sk-pm-conventions.md` only where a `sidekick@` key is enabled (`bin/helpers/rules.ts:53-54,98`). A split that moves those files breaks both without an error, as ADR-0010 Decision 2 makes every hook failure silent.
+- The review found that the CLI reads skill and rule files from its own plugin folder (`bin/cli.ts:134`, `bin/helpers/hook.ts:187-188,201-202,231-232`). It also delivers `sk-pm-conventions.md` only where a `sidekick@` key is enabled (`bin/helpers/rules.ts:53-54,98`). A split that moves those files breaks both without an error, as ADR-0010 Decision 2 makes every hook failure silent.
 - After a split, install records naming only `sidekick@rikmorn` load the core alone, so the PM layer drops until the records change.
 
 ## Decision

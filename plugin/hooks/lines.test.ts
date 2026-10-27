@@ -17,7 +17,7 @@ test('width counts columns: a dash or an ellipsis is one, an emoji two', () => {
   expect(width('a💀b')).toBe(4);
 });
 
-test('cut keeps the first columns code points', () => {
+test('cut keeps the code points that fit in the columns', () => {
   expect(cut('héllo', 2)).toBe('hé');
 });
 

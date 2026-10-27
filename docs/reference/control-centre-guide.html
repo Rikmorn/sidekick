@@ -188,7 +188,7 @@ html { scroll-behavior: smooth; }
     <div class="screen" data-screen="main" role="img" aria-label="A main session with the desk band above the prompt, and the footer and identity row below it."></div>
     <ol class="legend">
       <li data-n="1"><span><strong>Needs you.</strong> Each session waiting on you, with the reason: a permission prompt, a question dialog, or <code>blocked</code> when it ended its turn asking something in text.</span></li>
-      <li data-n="2"><span><strong>Workers.</strong> Each worker this main dispatched, with its state, then a count of other sessions that recently finished.</span></li>
+      <li data-n="2"><span><strong>Workers.</strong> Each worker this main dispatched, plus any that name no main or whose main has gone, with its state, then a count of other sessions that recently finished.</span></li>
       <li data-n="3"><span>Claude Code's collapse mark for the band. <kbd>Ctrl+X</kbd> <kbd>Ctrl+A</kbd> hides and shows it.</span></li>
       <li data-n="4"><span>The session's name, on the prompt's border, once it is set.</span></li>
       <li data-n="5"><span>Claude Code's own count of background sessions, in its hint line.</span></li>
@@ -426,7 +426,7 @@ html { scroll-behavior: smooth; }
       <tr><td><code>⚠ desk: …</code></td><td>The desk's last refresh failed, or listed a warning</td><td>Read the reason. A slow listing clears on the next tick</td></tr>
       <tr><td><code>⚠ board: …</code></td><td>The board could not be read when you asked</td><td><code>/board</code> closes the pane and clears the row; open it again to retry</td></tr>
       <tr><td><code>refresh failed HH:MM</code></td><td>The board line shows its last good reading</td><td>It refreshes at the next commit, push, or <code>/board</code></td></tr>
-      <tr><td>No band or identity row after <kbd>←</kbd></td><td>The backgrounded main came up without sidekick's mods, as it did on Claude Code 2.1.309 and 2.1.310 (#250). Other mains' desks then mark it <code>–</code>, with no context bar</td><td>Avoid <kbd>Enter</kbd> on <code>/desk</code> there, since it completes to <code>/desktop</code>. <code>/reload-plugins</code> loads the mods, but the session then reads <code>other</code></td></tr>
+      <tr><td>No band or identity row after <kbd>←</kbd></td><td>The backgrounded main came up without sidekick's mods, as it did on Claude Code 2.1.309 and 2.1.310 (#250). Other mains' desks then mark it <code>–</code>, with no context bar</td><td>Avoid <kbd>Enter</kbd> on <code>/desk</code> there, since it completes to <code>/desktop</code>. <code>/reload-plugins</code> loads the mods, but the session then reads <code>other</code>. Tell your main, so it files the recurrence</td></tr>
       <tr><td><code>no profile</code> on the identity row</td><td>The session was not launched with a profile</td><td>Nothing, or start a session with <code>skp &lt;name&gt;</code></td></tr>
       <tr><td><code>sidekick: its mods are not running</code></td><td>The mods did not start in this session</td><td>Run <code>bun run check:mods</code> in the sidekick repository</td></tr>
       <tr><td>A worker's identity row names an old main</td><td>The main was renamed after the worker started</td><td>Use the new name in agent view</td></tr>

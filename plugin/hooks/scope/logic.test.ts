@@ -1,6 +1,7 @@
 import type { ContextCategory, SessionContextBreakdown } from 'claude-code';
 import { expect, test } from 'claude-code/testing';
 import { UNPROFILED } from '../gauge/logic';
+import { width } from '../lines';
 import {
   type Hidden,
   hiddenOf,
@@ -243,14 +244,14 @@ test('a failed read draws one failure line in place of the context', () => {
   expect(texts(lines)).toContain('worker');
 });
 
-test('every line is cut to the columns, by code point', () => {
+test('every line is cut to the columns, a dash or an ellipsis one each', () => {
   const usage = ok({ categories: [row('Messages — long', 1_000, 'used')] });
   const lines = profilePaneLines(
     { profile: 'a—profile…name', hidden: NOTHING, usage, places: NOWHERE },
     10,
   );
   for (const line of lines) {
-    expect([...line.text].length).toBeLessThanOrEqual(10);
+    expect(width(line.text)).toBeLessThanOrEqual(10);
   }
   expect(texts(lines)).toContain('a—profile…');
 });
