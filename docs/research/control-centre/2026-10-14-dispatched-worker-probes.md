@@ -4,7 +4,7 @@ Amended 2026-10-14: [2026-10-14-dispatched-worker-bench.md](./2026-10-14-dispatc
 
 # Probes: a worker dispatched in the background (2026-10-14)
 
-`docs/designs/control-centre/workers.md` decided how a session dispatches a worker, and left six facts inferred or untried. This report measures them in a scratch repository, with four background sessions on Haiku. The earlier probes, in `2026-10-12-probes.md` and `2026-10-13-profile-launch-probes.md`, are not repeated.
+[`docs/designs/control-centre/workers.md`](https://github.com/Rikmorn/sidekick/blob/c0906d6acb2e55a572c6f6d3f5ad07678d4d7901/docs/designs/control-centre/workers.md) decided how a session dispatches a worker, and left six facts inferred or untried. This report measures them in a scratch repository, with four background sessions on Haiku. The earlier probes, in `2026-10-12-probes.md` and `2026-10-13-profile-launch-probes.md`, are not repeated.
 
 Provenance grades:
 

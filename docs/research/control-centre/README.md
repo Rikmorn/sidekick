@@ -31,4 +31,4 @@ What can Claude Code's extension and session surface do for running many session
 
 ## Served
 
-The `control-centre` design, planned as R9's #146, #203, #204, #205, #206, #207, #208, #209, #210, #211, #213, #214, #215. The `loop` design, not started.
+The `control-centre` design, planned as R9's #146, #203, #204, #205, #206, #207, #208, #209, #210, #211, #213, #214, #215. It shipped in 0.6.0, and R9's close deleted it; [its folder at `c0906d6`](https://github.com/Rikmorn/sidekick/tree/c0906d6acb2e55a572c6f6d3f5ad07678d4d7901/docs/designs/control-centre) keeps it. The `loop` design, not started.
