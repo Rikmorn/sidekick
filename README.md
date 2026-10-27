@@ -1,6 +1,6 @@
 # sidekick
 
-The loop I use every day in every repo, packaged as a Claude Code plugin bundle. Superpowers and the official code-review plugin do the work and install as dependencies. sidekick adds the house guidance, a project-management layer on GitHub for the repos where I own the tracking, and design-side extensions the ecosystem lacks. How the loop runs day to day, and how it lands on GitHub, is `docs/reference/USAGE.md`.
+The loop I use every day in every repo, packaged as a Claude Code plugin bundle. Superpowers and the official code-review plugin do the work and install as dependencies. sidekick adds the house guidance, a project-management layer on GitHub for the repos where I own the tracking, and design-side extensions the ecosystem lacks. It also makes Claude Code a control centre for my parallel sessions. A profile declares what each session loads, a session dispatches workers, and sidekick's mods show which sessions need me and what each is doing. How the loop runs day to day, and how it lands on GitHub, is `docs/reference/USAGE.md`.
 
 ## Install
 

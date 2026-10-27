@@ -4,7 +4,7 @@ How the loop runs, session by session, and how each step lands on GitHub. The re
 
 ## The shape
 
-Superpowers is the trunk: brainstorm, plan, execute, review. The official code-review plugin reviews. sidekick adds five things around them, none of which replaces a superpowers skill.
+Superpowers is the trunk: brainstorm, plan, execute, review. The official code-review plugin reviews. sidekick adds these layers around them, none of which replaces a superpowers skill.
 
 | Layer | What it does | Where it lives |
 |---|---|---|
@@ -12,7 +12,10 @@ Superpowers is the trunk: brainstorm, plan, execute, review. The official code-r
 | PM layer | Tracking on GitHub for your repos: session-start pickup, filing, closing with a record, a milestone's scope review and release check, a lint. The board, a Claude Code mod, keeps one state line in view under the prompt | `sidekick pm`, its session-start hook, and the `sk-orient`, `sk-track`, and `sk-milestone` skills, and the `sk-holistic-reviewer` agent. The board mod in `plugin/hooks/board/` |
 | Execution | How a written plan runs: a mode chosen per plan, what the plan carries, and the worker handoff. The desk, a Claude Code mod, names the sessions waiting on you and shows what each worker does | The `sk-execute` and `sk-worker` skills, and the `sidekick worker` verbs, `dispatch` and `finish`. The desk in `plugin/hooks/desk/`, and `sidekick desk --json`. The Skill-tool hook that gives `writing-plans` the plan stance and the handoff, and the Read hook that gives reviewers sidekick's reviewer lines |
 | Context | Tells the model when its main-thread context fills, at 65% and 75% of the way to compaction, or of the window when no compaction point is known. The gauge, a Claude Code mod, draws the identity row under the prompt in every session (§Mains and workers). It also supplies the compaction point | The context monitor hook (`PostToolBatch`), the gauge in `plugin/hooks/gauge/`, and the `context_window` setting |
+| Profiles | What a session loads: a folder of rules plus a manifest, for an interactive session or a background one. The scope mod keeps a profile's hidden agents out of the model's listing, and refuses their dispatch. `/profile` shows the profile, what it hides, and what loaded | `sidekick profile`, its `skp` alias, and the `sidekick` skill's `references/profiles.md`. The scope mod in `plugin/hooks/scope/` |
 | Extensions | Design-side steps the ecosystem lacks. Shipped: a design pass before or during brainstorming. To come: a sealed review after a spec, a goal-backward verdict after a build | The `sk-design` skill and the Skill-tool hook's brainstorming nudge; later milestones for the rest |
+
+Together, profiles, dispatched workers, and the mods that show sessions and context make Claude Code a control centre for parallel sessions. §Mains and workers says which session is which, and [the control centre guide](control-centre-guide.html) shows each view.
 
 The PM layer is on where you own the tracking and silent everywhere else. A repo is tracked when one open Projects v2 board is linked to it, titled after the repo, and owned by you. No config file; the board is the switch.
 
@@ -43,7 +46,7 @@ For a repo where someone else owns the tracking, do nothing: `sidekick pm board 
 
 **3. Shape the work.** When a wrong choice would be costly to undo, `sk-design` designs the change before or during the brainstorm, and a fresh subagent reviews its note. Brainstorm with superpowers — the issue is the problem statement, the brainstorm settles the forks — and write the spec under `docs/superpowers/specs/`. Plan with `writing-plans`, stating each gate value as a command that measures it and the rest as intent. `sk-execute` lists what else a plan carries before it goes out.
 
-**4. Execute.** `sk-execute` lays out three modes with a recommendation, and you choose. The modes are inline, subagent-driven in the session, and a worker session. For a worker, the orchestrating session dispatches `sk-worker` with `sidekick worker dispatch` once you choose that mode. The orchestrating session reviews the whole branch and fast-forwards `master`. Each run records its mode, escalations, review rounds, and defects per stage. Token totals are not collected; #138 keeps the method, parked. The gates are `bun run test`, `bun run typecheck`, `bun run check`, `bun run check:docs`, and `bun run prose` on changed Markdown. For anything touching `bin/`, add `bun run build`, with the control that a second build changes nothing.
+**4. Execute.** `sk-execute` lays out three modes with a recommendation, and you choose. The modes are inline, subagent-driven in the session, and a worker session. For a worker, the orchestrating session dispatches `sk-worker` with `sidekick worker dispatch` once you choose that mode. The orchestrating session reviews the whole branch and integrates it by the repo's route, such as a fast-forward onto `master`. Each run records its mode, escalations, review rounds, and defects per stage. Token totals are not collected; #138 keeps the method, parked. The gates are `bun run test`, `bun run typecheck`, `bun run check`, `bun run check:docs`, and `bun run prose` on changed Markdown. For anything touching `bin/`, add `bun run build`, with the control that a second build changes nothing.
 
 **5. File what you notice.** A problem outside the task is filed, not fixed. `sk-track` §Filing is that one step: duplicate check, one `area:*`, a self-contained brief, the entry gate, the card. The `sk-*` rules are in test mode — when a rule bites or falls short, that is an `area:guidance` issue too.
 
@@ -72,7 +75,7 @@ Every issue entry carries `item_id`, the board item's node id, so a write by id 
 
 Choosing the worker mode is your only step. The orchestrating session writes a brief beside the plan and dispatches the worker with `sidekick worker dispatch`. The worker runs in the background, in a worktree made from the orchestrator's `HEAD`, with its pushes blocked. The orchestrating session rules on the questions from its scan through a rulings file. At the end it reviews the whole branch, because a per-task review cannot see a defect at the seam between tasks. It integrates the branch, then runs `sidekick worker finish`. That saves the run report beside the plan and removes the worker's session, desk record, worktree, and branch.
 
-`dispatch` prints the worker's id. Look in with `claude attach <id>`, and stop the worker with `claude stop <id>`. The desk shows the worker without attaching. Its band, above the prompt of each main, names who waits on you and lists the workers with their states, led by `◐`. Its pane is a tree of sessions, and each main lists only the workers it dispatched. It takes one of two forms, by its width. From 80 body columns, each session takes one row of aligned columns, in this order:
+`dispatch` prints the worker's id. Look in with `claude attach <id>`, and stop the worker with `claude stop <id>`. The desk shows the worker without attaching. Its band, above the prompt of each main, names who waits on you and lists the workers with their states, led by `◐`. Its pane is a tree of sessions, and each main lists only the workers it dispatched, plus any whose main has gone. It takes one of two forms, by its width. From 80 body columns, each session takes one row of aligned columns, in this order:
 
 1. Sessions elsewhere that need you, and another main whose worker needs you.
 2. This main, headed `▣`.

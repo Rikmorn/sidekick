@@ -19,14 +19,15 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 | `bin/release-install.sh` | A repo-only script that the shipped CLI never runs. `bun run release:install` runs it as the last step of §Releasing |
 | `bin/mod-types.sh`, `bin/check-mods.sh` | Repo-only scripts that the shipped CLI never runs. `bun run typecheck:mods` runs the first: it generates Claude Code's declarations into the ignored `.cache/claude-code-types/` and type-checks the mods with `tsconfig.mods.json`. `bun run check:mods` runs the second, the check after a Claude Code upgrade |
 | `.claude-code-version` | The Claude Code build the mods were last checked on. CI installs it, and a full pass of `bun run check:mods` rewrites it |
+| `.worktreeinclude` | The git-ignored files the gates need, which Claude Code copies into each worktree it makes, a dispatched worker's included. A new ignored file that a gate reads goes here |
 | `.vale.ini`, `.vale/styles/Sidekick/` | The house prose style that `bun run prose` checks Markdown against |
 | `docs/` | Records and steering docs; `docs/README.md` lists what sidekick adds to the docs layout |
 
 ## Working here
 
 - One package, `package.json`. `bun run test`, `bun run typecheck`, `bun run check`, `bun run build`, `bun run prose <files>` for Markdown, `bun run typecheck:mods`, and `bun run check:docs`, which checks Markdown links, permalinks, and the docs layout's indexes and status lines. Bun builds and tests; Node runs the executable. Valibot is the CLI's one runtime dependency, and `bun run build` bundles it into `plugin/bin/sidekick`, so an install fetches nothing.
-- `claude plugin validate --strict .` and `claude plugin validate --strict plugin` gate the manifests. `claude plugin test plugin` runs the mods' tests. `tsc --noEmit` does not see `*.test.ts`; only `bun test` does. CI runs `validate` and `plugin test` on the mods but not `bun run typecheck:mods`, with the Claude Code build `.claude-code-version` names. Mods need Claude Code 2.1.287 or later. Run `bun run check:mods` after a Claude Code upgrade, or when the canary speaks.
-- Work integrates by fast-forward onto `master`; this repo takes no pull requests.
+- `claude plugin validate --strict .` and `claude plugin validate --strict plugin` gate the manifests. `claude plugin test plugin` runs the mods' tests. `tsc --noEmit` does not see `bin/**/*.test.ts`; only `bun test` does. `bun run typecheck:mods` covers the mods, their tests included. CI runs `validate` and `plugin test` on the mods but not `bun run typecheck:mods`, with the Claude Code build `.claude-code-version` names. Mods need Claude Code 2.1.287 or later. Run `bun run check:mods` after a Claude Code upgrade, or when the canary speaks.
+- Work integrates by fast-forward onto `master`. A milestone that runs on a `milestone/<name>` branch integrates there instead, and the branch lands on `master` at its release, as §Releasing says. This repo takes no pull requests.
 - Rules are edited in `plugin/rules/`. This repo carries no copies: like the other home repos, it reads the user-level rules, which are always the released ones. A rule edit reaches `~/.claude/rules/` only through a release, so unreleased work stays out of every other repo; do not install rules from the repo bundle. For in-progress skills, agents, hooks, and the CLI, start the session with `claude --plugin-dir ./plugin`. That session loads the plugin as `sidekick@inline`, so the context monitor reads its `context_window` option from `pluginConfigs` under that key. Rules are not plugin content, so an edited rule takes effect after its release.
 - Prose follows `plugin/rules/sk-language.md`; guidance changes follow `plugin/rules/sk-guidance-authoring.md`; agent and skill prompts follow `plugin/rules/sk-agent-prompts.md`.
 - Specs and plans live under `docs/superpowers/`, gitignored and transient. The durable record of a piece of work is its issue, its close comment, and any ADR, research report, or learning record it produced.
@@ -44,7 +45,7 @@ Preparation runs before the ask and changes nothing but the working tree:
 Publication runs after the yes:
 
 1. Commit everything the preparation changed, with the record and the deletions.
-2. Run `git push origin master`. The marketplace serves `origin/master`, so the update finds the release only after this push. Land nothing else on `master` until step 5 passes.
+2. When the milestone ran on a `milestone/<name>` branch, fast-forward `master` to it first, with `git switch master && git merge --ff-only milestone/<name>`. Then run `git push origin master`. The marketplace serves `origin/master`, so the update finds the release only after this push. Land nothing else on `master` until step 5 passes.
 3. Run `claude plugin tag plugin --push -m "sidekick %s"`. It creates `sidekick--v<version>` and pushes it. It refuses a dirty tree, which is why the notes sit on an ignored path.
 4. Run `gh release create sidekick--v<version> --verify-tag --title "sidekick <version>" --notes-file <notes>`.
 5. Run `bun run release:install`. It updates the user install with `-s user` and stops unless that install's version matches `plugin.json`. Then it installs and checks the user-level rules from the released binary, never from `PATH`. Only an install from the released plugin writes user-level rules.

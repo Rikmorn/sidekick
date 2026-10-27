@@ -4,7 +4,7 @@ Each folder here works as `plugin/skills/sidekick/references/docs-layout.md` say
 
 ## The docs check
 
-`bun run check:docs` checks the layout's ADR index, research topic indexes, and design status lines. It also checks relative links, permalinks, and links into `docs/superpowers/`. CI runs it on every push to `master`.
+`bun run check:docs` checks the layout's ADR index, research topic indexes, and design status lines. It also checks relative links, permalinks, and links into `docs/superpowers/`. CI runs it on every push to `master` and to a `milestone/` branch.
 
 ## The watchlist
 
