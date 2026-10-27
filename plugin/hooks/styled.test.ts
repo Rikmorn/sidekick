@@ -14,7 +14,7 @@ const ROW: StyledRow = [
   { text: '   ', tone: 'inactive' },
 ];
 
-test('rowWidth counts every run in code points', () => {
+test('rowWidth counts every run in columns', () => {
   expect(rowWidth(ROW)).toBe(16);
   expect(rowWidth([])).toBe(0);
 });

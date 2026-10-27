@@ -256,7 +256,7 @@ html { scroll-behavior: smooth; }
       <li data-n="1"><span>A dim frame: the keys are still with the prompt.</span></li>
       <li data-n="2"><span>Sessions elsewhere that need you come first, with what they need. <code>other-main</code> is another main, so it reads <code>□</code>.</span></li>
       <li data-n="3"><span>This main, with its counts at the right.</span></li>
-      <li data-n="4"><span>Its workers, waiting first. Each gives its state, what it does, and its context: four cells, one for each level, lit up to the current one, then <code>tokens/percent</code> in that level's colour.</span></li>
+      <li data-n="4"><span>Its workers, waiting first. Each gives its state, what it does, and its context: four cells, one for each level, lit up to the current one, then <code>tokens/percent</code> in that level's colour. From 95%, a 💀 takes the four cells' place.</span></li>
       <li data-n="5"><span>A subagent running inside the worker.</span></li>
       <li data-n="6"><span>After a blank row, every other session, with its repository: <code>□</code> another main, <code>–</code> the rest.</span></li>
       <li data-n="7"><span>The band, squeezed to Claude Code's own <code>↓ 2 more</code> row. A pane this tall at 100 by 40 leaves it no room.</span></li>
@@ -426,8 +426,8 @@ html { scroll-behavior: smooth; }
       <tr><td><code>⚠ desk: …</code></td><td>The desk's last refresh failed, or listed a warning</td><td>Read the reason. A slow listing clears on the next tick</td></tr>
       <tr><td><code>⚠ board: …</code></td><td>The board could not be read when you asked</td><td><code>/board</code> closes the pane and clears the row; open it again to retry</td></tr>
       <tr><td><code>refresh failed HH:MM</code></td><td>The board line shows its last good reading</td><td>It refreshes at the next commit, push, or <code>/board</code></td></tr>
-      <tr><td>No band or identity row after <kbd>←</kbd></td><td>The backgrounded main came up without sidekick's mods (#250). Other mains' desks then mark it <code>–</code>, with no context bar</td><td>Avoid <kbd>Enter</kbd> on <code>/desk</code> there. Note the time and tell your main to add it to #250</td></tr>
-      <tr><td><code>no profile</code> on the identity row</td><td>The session was not launched with a profile</td><td>Nothing, or launch with <code>sidekick profile launch &lt;name&gt;</code></td></tr>
+      <tr><td>No band or identity row after <kbd>←</kbd></td><td>The backgrounded main came up without sidekick's mods, as it did on Claude Code 2.1.309 and 2.1.310 (#250). Other mains' desks then mark it <code>–</code>, with no context bar</td><td>Avoid <kbd>Enter</kbd> on <code>/desk</code> there, since it completes to <code>/desktop</code>. <code>/reload-plugins</code> loads the mods, but the session then reads <code>other</code></td></tr>
+      <tr><td><code>no profile</code> on the identity row</td><td>The session was not launched with a profile</td><td>Nothing, or start a session with <code>skp &lt;name&gt;</code></td></tr>
       <tr><td><code>sidekick: its mods are not running</code></td><td>The mods did not start in this session</td><td>Run <code>bun run check:mods</code> in the sidekick repository</td></tr>
       <tr><td>A worker's identity row names an old main</td><td>The main was renamed after the worker started</td><td>Use the new name in agent view</td></tr>
       <tr><td><code>↓ N more</code> in place of the band</td><td>An inline pane takes the room the band needs</td><td>Close the pane, or widen a fullscreen terminal to 110 columns so the pane docks</td></tr>
@@ -460,7 +460,7 @@ html { scroll-behavior: smooth; }
 </section>
 
 <footer>
-  sidekick's views were captured on 2026-10-26 on Claude Code 2.1.310, with sidekick at <code>31b5826</code> on <code>milestone/r9-control-centre</code>. The other screens were captured on 2026-10-23 on 2.1.309, at <code>66ed52e</code>. The measurements behind each claim are in <code>docs/research/control-centre/2026-10-26-board-pane-captures.md</code>, <code>docs/research/control-centre/2026-10-26-desk-follow-up-captures.md</code>, and <code>docs/research/control-centre/2026-10-23-usage-guide-captures.md</code>. The guide's issue is #240. Source: <code>docs/reference/control-centre-guide.html</code>.
+  sidekick's views were captured on 2026-10-26 on Claude Code 2.1.310, with sidekick at <code>31b5826</code> on <code>milestone/r9-control-centre</code>. The desk's inline, docked, and tab screens were recaptured the same day on 2.1.311, at <code>b9b39b0</code>. The other screens were captured on 2026-10-23 on 2.1.309, at <code>66ed52e</code>. The measurements behind each claim are in <code>docs/research/control-centre/2026-10-26-board-pane-captures.md</code>, <code>docs/research/control-centre/2026-10-26-desk-follow-up-captures.md</code>, and <code>docs/research/control-centre/2026-10-23-usage-guide-captures.md</code>. The guide's issue is #240. Source: <code>docs/reference/control-centre-guide.html</code>.
 </footer>
 </main>
 </div>

@@ -32,7 +32,7 @@ The ruling names three domains. The candidate mods in the design also place the 
 
 ## Options
 
-**A. No split.** One `sidekick` plugin. The scope mod hides skills a profile does not want, and the one mod switches its parts by the profile's name.
+**A. No split.** One `sidekick` plugin. The scope mod would hide skills a profile does not want, a filter #231 holds, since R9's scope mod hides only agents and mods, and the one mod switches its parts by the profile's name.
 
 1. No pattern at the plugin level; a branch on the profile inside the mod.
 2. It avoids churn in install records, releases, and skill names.

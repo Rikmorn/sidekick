@@ -72,9 +72,7 @@ Things seen and not yet reviewed. A lead that becomes an issue leaves this list.
 |---|---|
 | [backnotprop/plannotator](https://github.com/backnotprop/plannotator) | A local browser UI to annotate a plan and send the feedback back. Its hook fires when plan mode ends, and superpowers 6.4.1 writes plans without plan mode, so the fit is unchecked |
 | [gaius-codius/ostrakon](https://github.com/gaius-codius/ostrakon) | Captures notes mid-turn with `/jot` and gives the model a `jot` tool. The shape a capture-an-issue mod would take |
-| [`token-weather`](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/token-weather) | Anthropic's sample: a context forecast above the prompt. Prior art for #146 |
 | [`blast-radius`](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/blast-radius) | Anthropic's sample: holds `rm -rf` or a force push until you confirm. A pattern for production guards |
-| [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) | A status line with no dependencies that shows context and rate limits from what Claude Code passes it. The pick to replace GSD's, per the split in #146 |
 | [Yanir-R/catchup](https://github.com/Yanir-R/catchup) | A mod whose `/catchup` summarises what a session said since you last looked. Lowers the cost of switching back to a session |
 | `cc-plugin-you-should-know` | A built-in mod, off by default, that runs a side agent on long tasks and notes what you might miss |
 
