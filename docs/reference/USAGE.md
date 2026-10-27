@@ -145,6 +145,7 @@ A session without profile settings reads `no profile` in place of `profile <prof
 - No identity row draws while a permission prompt holds a session's screen. R5 measured it on a worker, and the row draws on the same site, `PromptHint` ([R5](../research/control-centre/2026-10-22-main-and-worker-probes.md#the-row-under-the-prompt-during-a-permission-prompt-r5)).
 - A backgrounded main whose turn ends in a question counts as waiting in other mains' desks, as the engine reads its last reply. A reply the engine takes for a question counts too, such as a one-word answer ([side findings](../research/control-centre/2026-10-22-main-and-worker-probes.md#side-findings)). #247 kept this rule, since the one case seen in use was a real question.
 - Under a managed Claude Code, a plugin a person installed runs no classic hooks, so a backgrounded main reads `other` and nothing freezes.
+- On Claude Code 2.1.309 and 2.1.310, three backgrounded mains forked into a fresh process ran none of sidekick's mods. They drew no views, and `/desk` completed to `/desktop`, so Enter would open Claude Desktop. It did not recur in five runs on 2.1.311 (#250, [2026-10-27 probes](../research/control-centre/2026-10-27-backgrounded-main-probes.md)). If it does, `/reload-plugins` loads the mods, but the session then reads `other`.
 
 ## Where things are recorded
 
