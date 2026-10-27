@@ -114,6 +114,7 @@ test('a waiting session elsewhere sorts above this main, and draws once', () => 
     repo: 'todo-app',
     workers: 0,
     needYou: 0,
+    subagents: [],
   });
 });
 
@@ -145,6 +146,7 @@ test('a waiting child sorts first among its siblings, then working, then the res
     repo: 'todo-app',
     workers: 3,
     needYou: 1,
+    subagents: [],
   });
 });
 
@@ -497,7 +499,7 @@ test('with no published context the tokens stand alone: the key, else the snapsh
   ]);
 });
 
-test("every other session's subagents come with it, a nested worker's too; this main's own draw none", () => {
+test("every session's subagents come with it: a nested worker's, and this main's own", () => {
   const withSubagents = (
     over: Partial<PublishedSession> & { sessionId: string },
   ) => key({ subagents: [EXPLORE], ...over });
@@ -522,7 +524,24 @@ test("every other session's subagents come with it, a nested worker's too; this 
     [EXPLORE],
   ]);
   expect(tree.others[0]?.workers[0]?.subagents).toEqual([EXPLORE]);
-  expect(tree.root).not.toHaveProperty('subagents');
+  expect(tree.root.subagents).toEqual([EXPLORE]);
+});
+
+test("this main's key that is not live draws no subagents under it, nor does a snapshot without this main", () => {
+  const stale = keysOf(
+    key({
+      sessionId: 'self',
+      role: 'main',
+      subagents: [EXPLORE],
+      publishedAt: NOW - STALE_MS - 1,
+    }),
+  );
+  expect(deskTree(snapshot(), stale, NOW).root.subagents).toEqual([]);
+  const { self: _self, ...bare } = snapshot();
+  const live = keysOf(
+    key({ sessionId: 'self', role: 'main', subagents: [EXPLORE] }),
+  );
+  expect(deskTree(bare, live, NOW).root.subagents).toEqual([]);
 });
 
 test("another main's workers nest under it by its listing name; a worker of an unlisted main, or of a session that is not a main, stays flat", () => {
@@ -694,10 +713,11 @@ test('the root reads no name when the snapshot has no self row', () => {
     repo: 'todo-app',
     workers: 0,
     needYou: 0,
+    subagents: [],
   });
 });
 
-test('liveKeys keeps only the keys of drawn rows that pass isLive', () => {
+test("liveKeys keeps only the keys of drawn rows that pass isLive, this main's first", () => {
   const snap = snapshot({
     children: [
       child({ name: 'a', sessionId: 'a' }),
@@ -710,6 +730,7 @@ test('liveKeys keeps only the keys of drawn rows that pass isLive', () => {
     key({ sessionId: 'gone' }),
     key({ sessionId: 'pm', publishedAt: NOW - STALE_MS - 1 }),
     key({ sessionId: 'unlisted' }),
+    key({ sessionId: 'self', role: 'main' }),
   );
-  expect([...liveKeys(snap, keys, NOW).keys()]).toEqual(['a']);
+  expect([...liveKeys(snap, keys, NOW).keys()]).toEqual(['self', 'a']);
 });

@@ -715,6 +715,46 @@ test("a main's own subagents hang from its trunk before its workers", () => {
   ]);
 });
 
+test("this main's own subagents hang from the root's trunk before its workers", () => {
+  const keys = keysOf(
+    key({ sessionId: 'self', role: 'main', subagents: [EXPLORE] }),
+  );
+  const snap = snapshot({
+    self: SELF,
+    children: [child({ name: 'add-greeting', sessionId: 'add' })],
+  });
+  const inline = paneRows(snap, keys, 100, NOW).map(plain);
+  expect(inline[1]).toBe(`├ ${cell('◦ Explore', 18)}find callers of greet`);
+  expect(
+    inline[2]?.startsWith(`${cell('└', 3)}${cell('◐', 2)}add-greeting`),
+  ).toBe(true);
+  expect(paneRows(snap, keys, 60, NOW).map(plain)).toEqual([
+    header('sidekick', 60),
+    spread('▣ todo-app-ce', '1 worker', 60),
+    '├ ◐ Explore',
+    '│   find callers of greet',
+    '└ ◐ add-greeting',
+    '    working',
+  ]);
+});
+
+test("this main's own subagents end its trunk when it has no workers", () => {
+  const keys = keysOf(
+    key({ sessionId: 'self', role: 'main', subagents: [EXPLORE] }),
+  );
+  const snap = snapshot({ self: SELF });
+  expect(paneRows(snap, keys, 100, NOW).map(plain)).toEqual([
+    `${cell('▣ todo-app-ce', 20)}this main`,
+    `└ ${cell('◦ Explore', 18)}find callers of greet`,
+  ]);
+  expect(paneRows(snap, keys, 60, NOW).map(plain)).toEqual([
+    header('sidekick', 60),
+    '▣ todo-app-ce',
+    '└ ◐ Explore',
+    '    find callers of greet',
+  ]);
+});
+
 test('each session draws at most three subagents, then one row that counts the rest, inactive', () => {
   const five = ['a', 'b', 'c', 'd', 'e'].map((type) => ({
     type,

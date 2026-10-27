@@ -263,14 +263,16 @@ function blockEntries(block: TreeElsewhere, columns: number): PaneEntry[] {
   return nodeEntries(otherNode(block, block.workers), '', '', columns);
 }
 
-function childrenEntries(tree: DeskTree, columns: number): PaneEntry[] {
-  return tree.children.flatMap((child, index) =>
-    nodeEntries(
-      childNode(child),
-      '',
-      branchAt(index, tree.children.length),
-      columns,
+// This main's subagents, then its workers, each branching from the root's trunk.
+function belowRootEntries(tree: DeskTree, columns: number): PaneEntry[] {
+  const items: Item[] = [
+    ...subagentItems(tree.root.subagents),
+    ...tree.children.map(
+      (child): Item => ({ kind: 'node', node: childNode(child) }),
     ),
+  ];
+  return items.flatMap((item, index) =>
+    itemEntries(item, '', branchAt(index, items.length), columns),
   );
 }
 
@@ -303,7 +305,7 @@ export function stackedEntries(tree: DeskTree, columns: number): PaneEntry[] {
     headerEntry(own ?? '', columns),
     ...ownOf(tree.waiting),
     rootEntry(tree, columns),
-    ...childrenEntries(tree, columns),
+    ...belowRootEntries(tree, columns),
     ...ownOf(tree.others),
     ...repos.filter((repo) => !isWaiting(repo)).flatMap(group),
   ];

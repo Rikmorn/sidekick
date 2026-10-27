@@ -67,6 +67,7 @@ export interface TreeRoot {
   repo?: string;
   workers: number;
   needYou: number;
+  subagents: Subagent[];
 }
 
 export interface DeskTree {
@@ -329,28 +330,34 @@ export function deskTree(
   const elsewhere = nested(
     snapshot.others.map((other) => otherOf(other, snapshot.waiting, keys, now)),
   );
-  const name = snapshot.self?.name;
-  const { repo } = snapshot;
+  const { self, repo } = snapshot;
+  const selfKey = self === undefined ? undefined : liveKey(keys, self, now);
   return {
     waiting: elsewhere.filter(needsYou),
     root: {
-      ...(name === undefined ? {} : { name }),
+      ...(self === undefined ? {} : { name: self.name }),
       ...(repo === undefined ? {} : { repo }),
       workers: children.length,
       needYou: children.filter((child) => child.status.kind === 'needs').length,
+      subagents: subagentsOf(selfKey),
     },
     children,
     others: elsewhere.filter((session) => !needsYou(session)),
   };
 }
 
-/** The keys the tree merges: those of its children and other sessions that pass `isLive`, in the snapshot's order. */
+/** The keys the tree merges: those of this main, its children, and other sessions that pass `isLive`, in the snapshot's order. */
 export function liveKeys(
   snapshot: OkSnapshot,
   keys: Keys,
   now: number,
 ): Map<string, PublishedSession> {
-  const rows: DeskSession[] = [...snapshot.children, ...snapshot.others];
+  const self = snapshot.self === undefined ? [] : [snapshot.self];
+  const rows: DeskSession[] = [
+    ...self,
+    ...snapshot.children,
+    ...snapshot.others,
+  ];
   return new Map(
     rows.flatMap((row): [string, PublishedSession][] => {
       const key = liveKey(keys, row, now);

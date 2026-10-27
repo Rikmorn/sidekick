@@ -246,6 +246,7 @@ function inlineEntries(tree: DeskTree, columns: number): PaneEntry[] {
   return [
     ...tree.waiting.flatMap((block) => elsewhereEntries(block, frame)),
     { row: rootRow(tree.root, frame), needsYou: false },
+    ...subagentEntries(tree.root.subagents, '', tree.children.length === 0),
     ...tree.children.flatMap((child, index) =>
       childEntries(child, index === lastChild, frame),
     ),
