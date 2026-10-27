@@ -1,6 +1,6 @@
 {
   "name": "sidekick",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Personal everyday loop for Claude Code: superpowers plus house guidance, GitHub project management, plan execution, a control centre for parallel sessions, and design-side extensions",
   "author": { "name": "Roberto Sousa" },
   "repository": "https://github.com/Rikmorn/sidekick",
