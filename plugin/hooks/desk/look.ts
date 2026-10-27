@@ -48,6 +48,9 @@ const LEVELS: readonly { from: number; tone: ThemeKey }[] = [
   { from: 85, tone: 'error' },
 ];
 const BAR_CELLS = 1 + LEVELS.length;
+// From here compaction is close, and the skull takes the cells' place.
+const SKULL_FROM = 95;
+const SKULL = '💀';
 // Wide enough for `999k/100%`; a rarer `1234k/100%` takes one more.
 const CONTEXT_TEXT_COLUMNS = 9;
 
@@ -55,7 +58,12 @@ const CONTEXT_TEXT_COLUMNS = 9;
 export const CONTEXT_COLUMNS = BAR_CELLS + 1 + CONTEXT_TEXT_COLUMNS;
 
 // The lit cells' tones in order, and the last one's, which the number takes.
-function levelOf(percent: number): { lit: ThemeKey[]; tone: ThemeKey } {
+interface Level {
+  lit: ThemeKey[];
+  tone: ThemeKey;
+}
+
+function levelOf(percent: number): Level {
   const reached = LEVELS.filter(({ from }) => percent >= from).map(
     ({ tone }) => tone,
   );
@@ -75,12 +83,25 @@ function textRuns(text: string, tone: ThemeKey, room: number): StyledRun[] {
   return [{ text: text.padStart(Math.min(room, CONTEXT_COLUMNS)), tone }];
 }
 
+// The bar's cells, lit to the level; from `SKULL_FROM`, the skull in their columns.
+function barRuns(percent: number, level: Level): StyledRun[] {
+  if (percent >= SKULL_FROM) {
+    return [
+      { text: SKULL + ' '.repeat(BAR_CELLS - width(SKULL)), tone: level.tone },
+    ];
+  }
+  return [
+    ...level.lit.map((tone) => ({ text: '▰', tone })),
+    { text: '▱'.repeat(BAR_CELLS - level.lit.length), tone: 'subtle' },
+  ];
+}
+
 /**
  * A session's context in the room a row has left: four cells, one per level,
  * each lit in its own tone once usage reaches its level, the first at any
- * usage, then `tokens/percent` in the last lit cell's tone; or the text alone,
- * in that tone, when the bar does not fit whole; or nothing. With no published
- * limit, the tokens alone, inactive.
+ * usage, or from 95% a skull in their place, then `tokens/percent` in the last
+ * lit cell's tone; or the text alone, in that tone, when the bar does not fit
+ * whole; or nothing. With no published limit, the tokens alone, inactive.
  */
 export function contextRuns(
   context: Context | undefined,
@@ -98,8 +119,7 @@ export function contextRuns(
   const text = `${tokens}/${Math.floor(percent)}%`;
   if (room < CONTEXT_COLUMNS) return textRuns(text, level.tone, room);
   const runs: StyledRun[] = [
-    ...level.lit.map((tone) => ({ text: '▰', tone })),
-    { text: '▱'.repeat(BAR_CELLS - level.lit.length), tone: 'subtle' },
+    ...barRuns(percent, level),
     { text: ` ${text.padStart(CONTEXT_TEXT_COLUMNS)}`, tone: level.tone },
   ];
   return runs.filter((run) => run.text !== '');

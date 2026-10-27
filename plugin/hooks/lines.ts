@@ -1,19 +1,33 @@
-// Line helpers the mods share: they count and cut by code point, so a dash or an ellipsis is one column.
+// Line helpers the mods share. `width`, `cut`, and `fit` count columns: a code point is one, so a dash or an ellipsis is one, and an emoji is two, as the terminal draws it. `wrapRows` counts code points.
 
 /** Cells the hint area keeps from the surface's width: 2 at the left and 2 at the right, read off the probe screens (docs/research/control-centre/2026-10-21-prompt-hint-probes.md): hint rows start 2 cells in, and the subagent panel's row ends at cell 108 of 110. */
 export const HINT_INSET = 4;
 
-/** The number of columns `text` takes, counted in code points. */
+const EMOJI = /\p{Emoji_Presentation}/u;
+
+// The columns one code point takes.
+function columnsOf(char: string): number {
+  return EMOJI.test(char) ? 2 : 1;
+}
+
+/** The number of columns `text` takes. */
 export function width(text: string): number {
-  return [...text].length;
+  return [...text].reduce((total, char) => total + columnsOf(char), 0);
 }
 
 /** The mark a cut text carries. */
 export const ELLIPSIS = '…';
 
-/** The first `columns` code points of `text`, never splitting one. */
+/** The first `columns` columns of `text`, never splitting a code point, and leaving out an emoji that would cross the edge. */
 export function cut(text: string, columns: number): string {
-  return [...text].slice(0, columns).join('');
+  const kept: string[] = [];
+  let used = 0;
+  for (const char of text) {
+    used += columnsOf(char);
+    if (used > columns) break;
+    kept.push(char);
+  }
+  return kept.join('');
 }
 
 /** `text` within `room` columns, ending in an ellipsis when cut: room 1 keeps only the ellipsis, and room 0 or less keeps nothing. */

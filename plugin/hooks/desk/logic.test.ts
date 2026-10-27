@@ -921,9 +921,9 @@ test('the context bar lights a cell per level, each in its own tone: the first u
       text: '170k/85%',
     },
     {
-      percent: 97,
+      percent: 94,
       lit: ['success', 'warning', 'claude', 'error'],
-      text: '194k/97%',
+      text: '188k/94%',
     },
   ];
   for (const { percent, lit, text } of expected) {
@@ -939,15 +939,21 @@ test('the context bar lights a cell per level, each in its own tone: the first u
   }
 });
 
-test('a full bar lights all four cells, and an empty one its first', () => {
-  expect(plain(barAt(100) ?? [])).toEndWith('▰▰▰▰ 200k/100%');
-  expect(barAt(100)?.slice(-5)).toEqual([
-    { text: '▰', tone: 'success' },
-    { text: '▰', tone: 'warning' },
-    { text: '▰', tone: 'claude' },
-    { text: '▰', tone: 'error' },
+test('from 95% a skull takes the four cells in the error tone, and the row keeps its width', () => {
+  expect(barAt(95)?.slice(-2)).toEqual([
+    { text: '💀  ', tone: 'error' },
+    { text: '  190k/95%', tone: 'error' },
+  ]);
+  expect(barAt(100)?.slice(-2)).toEqual([
+    { text: '💀  ', tone: 'error' },
     { text: ' 200k/100%', tone: 'error' },
   ]);
+  const columns = width(plain(barAt(94) ?? []));
+  expect(width(plain(barAt(95) ?? []))).toBe(columns);
+  expect(width(plain(barAt(100) ?? []))).toBe(columns);
+});
+
+test('an empty bar lights its first cell', () => {
   expect(plain(barAt(0) ?? [])).toEndWith('▰▱▱▱      0/0%');
   expect(barAt(0)?.slice(-3)).toEqual([
     { text: '▰', tone: 'success' },

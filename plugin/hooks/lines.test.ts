@@ -10,12 +10,20 @@ import {
   wrapRows,
 } from './lines';
 
-test('width counts code points, so a dash is one column', () => {
+test('width counts columns: a dash or an ellipsis is one, an emoji two', () => {
   expect(width('a—b')).toBe(3);
+  expect(width(ELLIPSIS)).toBe(1);
+  expect(width('💀')).toBe(2);
+  expect(width('a💀b')).toBe(4);
 });
 
 test('cut keeps the first columns code points', () => {
   expect(cut('héllo', 2)).toBe('hé');
+});
+
+test('cut leaves out an emoji that would cross the edge', () => {
+  expect(cut('a💀b', 2)).toBe('a');
+  expect(cut('a💀b', 3)).toBe('a💀');
 });
 
 test('cut returns the text whole when it already fits', () => {
@@ -90,6 +98,12 @@ test('scrollHint counts its own row among the hidden ones', () => {
 test('fit keeps text that fits, and cuts the rest to the room with an ellipsis', () => {
   expect(fit('abcd', 4)).toBe('abcd');
   expect(fit('abcde', 4)).toBe(`abc${ELLIPSIS}`);
+});
+
+test('fit counts an emoji as two columns, and never returns text wider than its room', () => {
+  expect(fit('💀💀', 4)).toBe('💀💀');
+  expect(fit('💀💀💀', 4)).toBe(`💀${ELLIPSIS}`);
+  expect(width(fit('a💀💀', 4))).toBeLessThanOrEqual(4);
 });
 
 test('fit at room 1 keeps only the ellipsis, and at room 0 or less keeps nothing', () => {
