@@ -1,8 +1,8 @@
 /**
  * Whether a branch's content already sits in a target commit, however it
- * landed: as itself, rebased, squashed, or squashed and then edited. Read-only
- * git queries through a `Runner`; `merge-tree --write-tree` writes objects but
- * moves no ref and touches no work tree.
+ * landed: as itself, rebased, squashed, or squashed and then edited. It runs
+ * git through a `Runner`, moves no ref, and touches no work tree;
+ * `hash-object -w` and `merge-tree --write-tree` write objects.
  */
 
 import type { Runner } from './pm-data.js';
