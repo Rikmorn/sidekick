@@ -895,8 +895,18 @@ const discarded = (fx: Fixture): string =>
   `refs/sidekick/discarded/w1/${fx.head}`;
 
 describe('finish --discard', () => {
-  test('clears an unlanded worker on the operator word, keeping a discarded ref', () => {
+  test("clears an unlanded worker on the operator's word, keeping a discarded ref", () => {
     const fx = fixture();
+    const commonDir = path.join(fx.top, '.git');
+    writeRecord(commonDir, {
+      version: 2,
+      name: 'w1',
+      main: null,
+      job: ID,
+      brief: fx.brief,
+      dispatchedAt: '2026-10-15T10:00:00.000Z',
+    });
+    expect(readRecords(commonDir).records).toHaveLength(1);
     const h = harness(fx);
     expect(h.finish(fx.brief, '--discard')).toBe(0);
     expect(h.err).toEqual([]);
@@ -907,6 +917,7 @@ describe('finish --discard', () => {
     expect(savedReport(fx)).toBe(REPORT_TEXT);
     expect(h.claude.named('stop')).toHaveLength(1);
     expect(h.out).toContain(`session ${ID} removed`);
+    expect(readRecords(commonDir)).toEqual({ records: [], warnings: [] });
     expect(fs.existsSync(fx.worktree)).toBe(false);
     expect(branchRemains(fx)).toBe(false);
     expect(

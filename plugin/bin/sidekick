@@ -5746,16 +5746,33 @@ function walkedText(walked, capped2) {
   const commits = `${walked} ${walked === 1 ? "commit" : "commits"}`;
   return capped2 ? `the history walk tried ${commits} and stopped at its cap of ${DEFAULT_CAP}` : `the history walk tried ${commits} and found no match`;
 }
-function wayOut(discard2, brief, id) {
-  return discard2 ? `to clear it by hand, claude rm ${id}` : `discarding it is your call, with sidekick worker finish ${brief} --discard`;
+var discardRoute = (brief) => `discarding it is your call, with sidekick worker finish ${brief} --discard`;
+var handRoute = (id) => `to clear it by hand, claude rm ${id}`;
+function routeFor(mode, brief, id) {
+  switch (mode) {
+    case "landed":
+      return discardRoute(brief);
+    case "discard":
+      return handRoute(id);
+    default: {
+      const unhandled = mode;
+      throw new Error(`unhandled mode: ${unhandled}`);
+    }
+  }
 }
 function missingBranchIssue(branch, opts, id) {
-  if (opts.mode.kind === "discard") {
-    return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${id}`;
+  switch (opts.mode.kind) {
+    case "landed":
+      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: ${discardRoute(opts.brief)}`;
+    case "discard":
+      return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${id}`;
+    default: {
+      const unhandled = opts.mode;
+      throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
+    }
   }
-  return `the branch ${branch} does not exist, so finish cannot check that the work has landed: ${wayOut(false, opts.brief, id)}`;
 }
-function verdictFor(runGit, top, branch, head, opts, id) {
+function verdictFor(runGit, top, branch, head, opts) {
   if (opts.mode.kind === "discard")
     return { verdict: { kind: "discard" } };
   const target = resolveTarget(runGit, top, opts.mode.into, branch);
@@ -5774,7 +5791,7 @@ function verdictFor(runGit, top, branch, head, opts, id) {
     case "not landed":
       return {
         issues: [
-          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${wayOut(false, opts.brief, id)}`
+          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(opts.brief)}`
         ]
       };
     default: {
@@ -5788,17 +5805,28 @@ function branchVerdict(runGit, top, branch, opts, id) {
   if (head === undefined) {
     return { issues: [missingBranchIssue(branch, opts, id)] };
   }
-  const judged = verdictFor(runGit, top, branch, head, opts, id);
+  const judged = verdictFor(runGit, top, branch, head, opts);
   return "issues" in judged ? judged : { head, verdict: judged.verdict };
 }
-function onBranchIssues(runGit, worktree, branch, discard2, exit) {
+function onBranchIssues(runGit, worktree, branch, mode, brief, id) {
   const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`)
     return [];
-  const why = discard2 ? `and its commits may not all be on ${branch}, which finish keeps as the backup` : "so finish cannot check that its commits have landed";
   return [
-    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${why}: check out ${branch} there and run finish again; ${exit}`
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${offBranchReason(mode, branch)}: check out ${branch} there and run finish again; ${routeFor(mode, brief, id)}`
   ];
+}
+function offBranchReason(mode, branch) {
+  switch (mode) {
+    case "landed":
+      return "so finish cannot check that its commits have landed";
+    case "discard":
+      return `and its commits may not all be on ${branch}, which finish keeps as the backup`;
+    default: {
+      const unhandled = mode;
+      throw new Error(`unhandled mode: ${unhandled}`);
+    }
+  }
 }
 function dirtyIssues(runGit, top, worktree, report) {
   const status = statusPathsIn(runGit, top, worktree);
@@ -5838,6 +5866,13 @@ function reportStep(from, to, noReport) {
     ]
   };
 }
+function allIssues(landed, worktreeIssues, step) {
+  return [
+    ..."issues" in landed ? landed.issues : [],
+    ...worktreeIssues,
+    ...typeof step === "string" ? [] : step.issues
+  ];
+}
 function checkFinish(brief, opts, wenv) {
   const checkout = mainCheckout(wenv.runGit, wenv.cwd);
   if ("issues" in checkout)
@@ -5851,21 +5886,14 @@ function checkFinish(brief, opts, wenv) {
   const report = path19.posix.normalize(brief.report);
   const reportFrom = path19.join(worktree, report);
   const reportTo = path19.join(top, report);
-  const discard2 = opts.mode.kind === "discard";
   const landed = branchVerdict(wenv.runGit, top, branch, opts, job.id);
   const worktreeIssues = [
-    ...onBranchIssues(wenv.runGit, worktree, branch, discard2, wayOut(discard2, opts.brief, job.id)),
+    ...onBranchIssues(wenv.runGit, worktree, branch, opts.mode.kind, opts.brief, job.id),
     ...dirtyIssues(wenv.runGit, top, worktree, report)
   ];
   const step = reportStep(reportFrom, reportTo, opts.noReport);
   if ("issues" in landed || worktreeIssues.length > 0 || typeof step !== "string") {
-    return {
-      issues: [
-        ..."issues" in landed ? landed.issues : [],
-        ...worktreeIssues,
-        ...typeof step === "string" ? [] : step.issues
-      ]
-    };
+    return { issues: allIssues(landed, worktreeIssues, step) };
   }
   return {
     ...job,
@@ -5943,9 +5971,8 @@ function headMovedIssues(runGit, ready) {
   ];
 }
 var recheckWorktree = (ready, wenv) => {
-  const discard2 = ready.verdict.kind === "discard";
   const issues = [
-    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, discard2, wayOut(discard2, ready.brief, ready.id)),
+    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.verdict.kind, ready.brief, ready.id),
     ...headMovedIssues(wenv.runGit, ready),
     ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
     ...reportChangedIssues(ready)

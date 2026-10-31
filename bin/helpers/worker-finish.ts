@@ -157,12 +157,24 @@ function walkedText(walked: number, capped: boolean): string {
     : `the history walk tried ${commits} and found no match`;
 }
 
-// What a refusal offers as the way out: the discard route in landed mode, and
-// in discard mode, which is already that route, clearing the worker by hand.
-function wayOut(discard: boolean, brief: string, id: string): string {
-  return discard
-    ? `to clear it by hand, claude rm ${id}`
-    : `discarding it is your call, with sidekick worker finish ${brief} --discard`;
+// A refusal's way out. Discard mode never offers --discard, the command already running.
+const discardRoute = (brief: string): string =>
+  `discarding it is your call, with sidekick worker finish ${brief} --discard`;
+const handRoute = (id: string): string =>
+  `to clear it by hand, claude rm ${id}`;
+
+// The way out for a mode: landed mode offers the discard, discard mode the hand route.
+function routeFor(mode: FinishMode['kind'], brief: string, id: string): string {
+  switch (mode) {
+    case 'landed':
+      return discardRoute(brief);
+    case 'discard':
+      return handRoute(id);
+    default: {
+      const unhandled: never = mode;
+      throw new Error(`unhandled mode: ${unhandled}`);
+    }
+  }
 }
 
 function missingBranchIssue(
@@ -170,10 +182,16 @@ function missingBranchIssue(
   opts: FinishOptions,
   id: string,
 ): string {
-  if (opts.mode.kind === 'discard') {
-    return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${id}`;
+  switch (opts.mode.kind) {
+    case 'landed':
+      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: ${discardRoute(opts.brief)}`;
+    case 'discard':
+      return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${id}`;
+    default: {
+      const unhandled: never = opts.mode;
+      throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
+    }
   }
-  return `the branch ${branch} does not exist, so finish cannot check that the work has landed: ${wayOut(false, opts.brief, id)}`;
 }
 
 // The verdict for a branch head: the operator's word, or where the head landed.
@@ -183,7 +201,6 @@ function verdictFor(
   branch: string,
   head: string,
   opts: FinishOptions,
-  id: string,
 ): { verdict: Verdict } | { issues: string[] } {
   if (opts.mode.kind === 'discard') return { verdict: { kind: 'discard' } };
   const target = resolveTarget(runGit, top, opts.mode.into, branch);
@@ -201,7 +218,7 @@ function verdictFor(
     case 'not landed':
       return {
         issues: [
-          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${wayOut(false, opts.brief, id)}`,
+          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(opts.brief)}`,
         ],
       };
     default: {
@@ -223,7 +240,7 @@ function branchVerdict(
   if (head === undefined) {
     return { issues: [missingBranchIssue(branch, opts, id)] };
   }
-  const judged = verdictFor(runGit, top, branch, head, opts, id);
+  const judged = verdictFor(runGit, top, branch, head, opts);
   return 'issues' in judged ? judged : { head, verdict: judged.verdict };
 }
 
@@ -234,17 +251,29 @@ function onBranchIssues(
   runGit: Runner,
   worktree: string,
   branch: string,
-  discard: boolean,
-  exit: string,
+  mode: FinishMode['kind'],
+  brief: string,
+  id: string,
 ): string[] {
   const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`) return [];
-  const why = discard
-    ? `and its commits may not all be on ${branch}, which finish keeps as the backup`
-    : 'so finish cannot check that its commits have landed';
   return [
-    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${why}: check out ${branch} there and run finish again; ${exit}`,
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${offBranchReason(mode, branch)}: check out ${branch} there and run finish again; ${routeFor(mode, brief, id)}`,
   ];
+}
+
+// Why a worktree off its branch matters: landed mode cannot check, discard mode may lose commits.
+function offBranchReason(mode: FinishMode['kind'], branch: string): string {
+  switch (mode) {
+    case 'landed':
+      return 'so finish cannot check that its commits have landed';
+    case 'discard':
+      return `and its commits may not all be on ${branch}, which finish keeps as the backup`;
+    default: {
+      const unhandled: never = mode;
+      throw new Error(`unhandled mode: ${unhandled}`);
+    }
+  }
 }
 
 // Uncommitted work in the worktree, which removing it would destroy; the
@@ -294,6 +323,19 @@ function reportStep(
   };
 }
 
+// Every refusal the checks found, in the order they ran.
+function allIssues(
+  landed: { head: string; verdict: Verdict } | { issues: string[] },
+  worktreeIssues: string[],
+  step: ReportStep | { issues: string[] },
+): string[] {
+  return [
+    ...('issues' in landed ? landed.issues : []),
+    ...worktreeIssues,
+    ...(typeof step === 'string' ? [] : step.issues),
+  ];
+}
+
 // Every check of the worktree needs the job's id, so those run once it is found.
 function checkFinish(
   brief: Brief,
@@ -311,15 +353,15 @@ function checkFinish(
   const report = path.posix.normalize(brief.report);
   const reportFrom = path.join(worktree, report);
   const reportTo = path.join(top, report);
-  const discard = opts.mode.kind === 'discard';
   const landed = branchVerdict(wenv.runGit, top, branch, opts, job.id);
   const worktreeIssues = [
     ...onBranchIssues(
       wenv.runGit,
       worktree,
       branch,
-      discard,
-      wayOut(discard, opts.brief, job.id),
+      opts.mode.kind,
+      opts.brief,
+      job.id,
     ),
     ...dirtyIssues(wenv.runGit, top, worktree, report),
   ];
@@ -329,13 +371,7 @@ function checkFinish(
     worktreeIssues.length > 0 ||
     typeof step !== 'string'
   ) {
-    return {
-      issues: [
-        ...('issues' in landed ? landed.issues : []),
-        ...worktreeIssues,
-        ...(typeof step === 'string' ? [] : step.issues),
-      ],
-    };
+    return { issues: allIssues(landed, worktreeIssues, step) };
   }
   return {
     ...job,
@@ -425,14 +461,14 @@ function headMovedIssues(runGit: Runner, ready: Ready): string[] {
 // The job may have run on through checkFinish, and a discard destroys what it
 // left, so the worktree is checked again once its process is gone.
 const recheckWorktree: Step = (ready, wenv) => {
-  const discard = ready.verdict.kind === 'discard';
   const issues = [
     ...onBranchIssues(
       wenv.runGit,
       ready.worktree,
       ready.branch,
-      discard,
-      wayOut(discard, ready.brief, ready.id),
+      ready.verdict.kind,
+      ready.brief,
+      ready.id,
     ),
     ...headMovedIssues(wenv.runGit, ready),
     ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
