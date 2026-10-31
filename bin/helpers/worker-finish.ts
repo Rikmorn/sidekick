@@ -3,8 +3,8 @@
  * report in the main checkout and removes its session, desk record, worktree,
  * and branch.
  * It refuses whenever a step would lose work. The steps run in order, and the
- * first that fails stops the rest. It prints what became of the report, then
- * each removal: the session, the worktree, and the branch.
+ * first that fails stops the rest. It prints where the work landed, what became
+ * of the report, then each removal: the session, the worktree, and the branch.
  */
 
 import * as fs from 'node:fs';
@@ -141,7 +141,7 @@ function resolveTarget(
   const name = targetName(runGit, top, rev);
   if (name === `refs/heads/${branch}`) {
     return {
-      issue: `${into === undefined ? 'the main checkout has' : `--into ${rev} names`} the worker's own branch ${branch}, which holds its head whether or not the work landed: ${into === undefined ? 'check out' : 'name'} the branch it should land in`,
+      issue: `the target ${name} is the worker's own branch, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in with --into <rev>`,
     };
   }
   return { name, sha };
@@ -382,7 +382,7 @@ function headMovedIssues(runGit: Runner, ready: Ready): string[] {
     ];
   }
   return [
-    `${ready.branch} moved to ${now} after finish verified its head ${ready.head}: land the new commits, then run finish again`,
+    `${ready.branch} moved to ${now} after finish verified its head ${ready.head}, so finish has not checked the new commits: run finish again`,
   ];
 }
 

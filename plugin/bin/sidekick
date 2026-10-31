@@ -5700,7 +5700,7 @@ function resolveTarget(runGit, top, into, branch) {
   const name = targetName(runGit, top, rev);
   if (name === `refs/heads/${branch}`) {
     return {
-      issue: `${into === undefined ? "the main checkout has" : `--into ${rev} names`} the worker's own branch ${branch}, which holds its head whether or not the work landed: ${into === undefined ? "check out" : "name"} the branch it should land in`
+      issue: `the target ${name} is the worker's own branch, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in with --into <rev>`
     };
   }
   return { name, sha };
@@ -5896,7 +5896,7 @@ function headMovedIssues(runGit, ready) {
     ];
   }
   return [
-    `${ready.branch} moved to ${now} after finish verified its head ${ready.head}: land the new commits, then run finish again`
+    `${ready.branch} moved to ${now} after finish verified its head ${ready.head}, so finish has not checked the new commits: run finish again`
   ];
 }
 var recheckWorktree = (ready, wenv) => {

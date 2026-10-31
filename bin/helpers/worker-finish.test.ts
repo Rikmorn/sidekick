@@ -133,7 +133,7 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief, '--into', 'worktree-w1'),
-      "--into worktree-w1 names the worker's own branch worktree-w1, which holds its head whether or not the work landed: name the branch it should land in",
+      "the target refs/heads/worktree-w1 is the worker's own branch, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in with --into <rev>",
     );
   });
 
@@ -218,7 +218,7 @@ describe('finish refuses', () => {
     expect(h.claude.named('rm')).toEqual([]);
   });
 
-  test('a branch that is gone, leaving the discard to claude rm', () => {
+  test('a branch that is gone, leaving the discard to finish --discard', () => {
     const fx = fixture();
     fx.integrate();
     git(fx.worktree, 'checkout', '-q', '--detach');
@@ -440,7 +440,7 @@ describe('finish refuses', () => {
         git(fx.worktree, 'commit', '-q', '-m', 'late');
       },
       (fx: Fixture): string =>
-        `worktree-w1 moved to ${git(fx.top, 'rev-parse', 'worktree-w1')} after finish verified its head ${fx.head}: land the new commits, then run finish again`,
+        `worktree-w1 moved to ${git(fx.top, 'rev-parse', 'worktree-w1')} after finish verified its head ${fx.head}, so finish has not checked the new commits: run finish again`,
     ],
   ])('%s while the job stopped, before claude rm runs', (_label, act, line) => {
     const fx = fixture();
