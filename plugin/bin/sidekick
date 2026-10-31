@@ -5763,7 +5763,7 @@ function routeFor(mode, brief, id) {
 function missingBranchIssue(branch, opts, id) {
   switch (opts.mode.kind) {
     case "landed":
-      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: ${discardRoute(opts.brief)}`;
+      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: discarding it is your call, with claude rm ${id}`;
     case "discard":
       return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${id}`;
     default: {

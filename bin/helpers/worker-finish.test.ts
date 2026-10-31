@@ -207,7 +207,7 @@ describe('finish refuses', () => {
     expect(h.claude.named('rm')).toEqual([]);
   });
 
-  test('a branch that is gone, leaving the discard to finish --discard', () => {
+  test('a branch that is gone, leaving the discard to claude rm', () => {
     const fx = fixture();
     fx.integrate();
     git(fx.worktree, 'checkout', '-q', '--detach');
@@ -217,7 +217,7 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief),
-      `the branch worktree-w1 does not exist, so finish cannot check that the work has landed: discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
+      `the branch worktree-w1 does not exist, so finish cannot check that the work has landed: discarding it is your call, with claude rm ${ID}`,
     );
   });
 
