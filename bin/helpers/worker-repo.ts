@@ -2,8 +2,8 @@
  * Facts that `sidekick worker` reads through git: where the main checkout is,
  * its `HEAD`, whether its tracked files are clean, its branches and push URLs,
  * and the exclude entry for Claude Code's worktree folder. For a worktree:
- * what it has checked out, and the entries `git status` names there, with
- * their codes and as bare paths.
+ * what it has checked out, the entries `git status` names there, with their
+ * codes and as bare paths, and whether `git worktree list` still names it.
  */
 
 import * as fs from 'node:fs';
@@ -122,6 +122,9 @@ export interface StatusEntry {
   path: string;
 }
 
+/** Porcelain's code for a tracked file deleted from the work tree, unstaged. */
+export const DELETED = ' D';
+
 // Every entry `git status --porcelain -z` names, sources of renames included.
 function statusEntries(stdout: string): StatusEntry[] {
   const fields = stdout.split('\0').filter((field) => field !== '');
@@ -172,6 +175,21 @@ export function statusPathsIn(
   const status = statusEntriesIn(runGit, top, dir);
   if ('issue' in status) return status;
   return { paths: status.entries.map((entry) => entry.path) };
+}
+
+/**
+ * Whether `git worktree list` names `worktree`. git still lists a worktree
+ * whose `.git` file is gone, marked prunable. The issue is git's message when
+ * the listing fails.
+ */
+export function worktreeListed(
+  runGit: Runner,
+  top: string,
+  worktree: string,
+): { listed: boolean } | { issue: string } {
+  const list = runGit('git', ['worktree', 'list', '--porcelain'], top);
+  if (list.code !== 0) return { issue: list.stderr.trim() };
+  return { listed: list.stdout.split('\n').includes(`worktree ${worktree}`) };
 }
 
 const PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;

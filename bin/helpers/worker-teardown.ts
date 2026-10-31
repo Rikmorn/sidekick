@@ -1,8 +1,9 @@
 /**
  * The steps `sidekick worker finish` runs once its checks pass: stopping the
  * worker's job, waiting out its lock, keeping the branch in a backup ref,
- * removing the session, forgetting the desk record, confirming the worktree is
- * gone, and deleting a leftover branch at its verified head.
+ * restoring the files a cut-short removal deleted, removing the session,
+ * forgetting the desk record, confirming the worktree is gone, and deleting a
+ * leftover branch at its verified head.
  * Each step returns the issues that stop the run, none on success.
  */
 
@@ -12,7 +13,13 @@ import type { Runner } from './pm-data.js';
 import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import type { WorkerEnv } from './worker.js';
 import { removeRecord } from './worker-record.js';
-import { branchExists, commitOf } from './worker-repo.js';
+import {
+  branchExists,
+  commitOf,
+  DELETED,
+  statusEntriesIn,
+  worktreeListed,
+} from './worker-repo.js';
 
 export type Out = (line: string) => void;
 
@@ -33,8 +40,11 @@ export interface WorkerJob {
   state: string | undefined;
 }
 
-// What saveReport does with the report.
-export type ReportStep = 'copy' | 'in place' | 'none';
+/**
+ * What saveReport does with the report. `saved earlier` is a partial
+ * removal's copy in the main checkout, once the worktree's has gone.
+ */
+export type ReportStep = 'copy' | 'in place' | 'saved earlier' | 'none';
 
 const isMissing = (e: unknown): boolean =>
   e instanceof Error && 'code' in e && e.code === 'ENOENT';
@@ -73,11 +83,16 @@ export interface Ready extends WorkerJob {
   reportStep: ReportStep;
   verdict: Verdict;
   brief: string;
+  /** A removal an earlier run cut short: deleted files alone, at a head a backup ref already holds. */
+  partial: boolean;
 }
 
 export type Step = (ready: Ready, wenv: WorkerEnv, out: Out) => string[];
 
-// Runs claude from the top; 30 s matches the agents listing's limit.
+// spawnSync reads a timeout of 0 as no limit.
+const NO_LIMIT = 0;
+
+// Runs claude from the top; the default 30 s matches the agents listing's limit.
 const claudeAt = (
   ready: Ready,
   wenv: WorkerEnv,
@@ -156,14 +171,17 @@ export const waitForLock: Step = (ready, wenv) => {
 const saidRemoved = (result: ClaudeResult): boolean =>
   ranClean(result) && REMOVED.test(printedStreams(result).join('\n'));
 
+// `args` is the claude rm that ran, which is also the command that completes
+// the removal by hand: the discard line once it ran, else `rm <id>`.
 function unknownAnswer(args: string[], result: ClaudeResult): string[] {
   const what = ranClean(result)
     ? 'did not say removed, and finish does not know its answer'
     : failure(result);
-  return withText(
-    `claude ${args.join(' ')} ${what}, so finish removed nothing more`,
-    result,
-  );
+  const command = `claude ${args.join(' ')}`;
+  return [
+    ...withText(`${command} ${what}, so finish removed nothing more`, result),
+    `complete the removal by hand with ${command}`,
+  ];
 }
 
 // Runs claude rm's discard line only when it names the verified head; any
@@ -182,14 +200,14 @@ function discard(ready: Ready, wenv: WorkerEnv, kept: ClaudeResult): string[] {
     );
   }
   const args = ['rm', ready.id, '--discard-unpushed', `${sha}@${worktreeId}`];
-  const result = claudeAt(ready, wenv, args);
+  const result = claudeAt(ready, wenv, args, NO_LIMIT);
   return saidRemoved(result) ? [] : unknownAnswer(args, result);
 }
 
 // claude rm's exit code does not say whether it removed or kept, so only its
-// text tells.
+// text tells. It runs with no limit, since any limit can cut its delete short.
 export const removeSession: Step = (ready, wenv, out) => {
-  const first = claudeAt(ready, wenv, ['rm', ready.id]);
+  const first = claudeAt(ready, wenv, ['rm', ready.id], NO_LIMIT);
   const issues = saidRemoved(first) ? [] : discard(ready, wenv, first);
   if (issues.length > 0) return issues;
   out(`session ${ready.id} removed`);
@@ -201,14 +219,13 @@ function worktreeGoneIssues(
   top: string,
   worktree: string,
 ): string[] {
-  const list = runGit('git', ['worktree', 'list', '--porcelain'], top);
-  if (list.code !== 0) {
+  const list = worktreeListed(runGit, top, worktree);
+  if ('issue' in list) {
     return [
-      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list.stderr.trim()}`,
+      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list.issue}`,
     ];
   }
-  const listed = list.stdout.split('\n').includes(`worktree ${worktree}`);
-  return listed
+  return list.listed
     ? [`claude rm said removed, but git still lists the worktree ${worktree}`]
     : [];
 }
@@ -320,4 +337,35 @@ export const keepBackup: Step = (ready, wenv) => {
   );
   if (result.code === 0) return [];
   return [`cannot keep ${ref}: ${result.stderr.trim()}`];
+};
+
+/** In a partial removal, writes the deleted files back from the index, so claude rm meets a clean worktree. */
+export const restorePartial: Step = (ready, wenv, out) => {
+  if (!ready.partial) return [];
+  const status = statusEntriesIn(wenv.runGit, ready.top, ready.worktree);
+  if ('issue' in status) {
+    return [
+      `git status failed in the worktree ${ready.worktree}: ${status.issue}`,
+    ];
+  }
+  const deleted = status.entries
+    .filter((entry) => entry.code === DELETED)
+    .map((entry) => entry.path);
+  if (deleted.length === 0) return [];
+  // checkout-index refuses to overwrite a file that exists.
+  const result = wenv.runGit(
+    'git',
+    ['-C', ready.worktree, 'checkout-index', '--', ...deleted],
+    ready.top,
+  );
+  if (result.code !== 0) {
+    return [
+      `git checkout-index failed in the worktree ${ready.worktree}, so finish removed nothing: ${result.stderr.trim()}`,
+    ];
+  }
+  const files = `${deleted.length} deleted ${deleted.length === 1 ? 'file' : 'files'}`;
+  out(
+    `restored ${files} in ${ready.worktree} from its index, so claude rm finds it clean`,
+  );
+  return [];
 };

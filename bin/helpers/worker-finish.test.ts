@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   branchRemains,
+  cutShort,
   type Fixture,
   fixture,
   type Harness,
@@ -12,11 +13,13 @@ import {
   ok,
   REPORT,
   REPORT_TEXT,
+  type Rm,
   removed,
   savedReport,
   WORKTREE_ID,
 } from './fixtures/worker/finish.js';
 import { git, removeTemps } from './fixtures/worker/repo.js';
+import { execRunner, type Runner } from './pm-data.js';
 import { SHORT_SHA } from './worker-finish.js';
 import {
   readRecords,
@@ -371,6 +374,7 @@ describe('finish refuses', () => {
     expect(h.err).toEqual([
       `claude rm ${ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
       'kept 213245a1 — A Claude Code lock on the worktree names a process that is still running',
+      `complete the removal by hand with claude rm ${ID}`,
     ]);
     expect(fs.existsSync(fx.worktree)).toBe(true);
   });
@@ -392,6 +396,7 @@ describe('finish refuses', () => {
     expect(h.err).toEqual([
       `claude rm ${ID} ${what}, so finish removed nothing more:`,
       `removed ${ID}`,
+      `complete the removal by hand with claude rm ${ID}`,
     ]);
     expect(h.out).not.toContain(`session ${ID} removed`);
   });
@@ -764,6 +769,20 @@ describe('finish clears the worker', () => {
     expect(h.out).toContain(`session ${ID} removed`);
   });
 
+  test('running both claude rm calls without a limit, and the listing and claude stop with 30 s', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    h.claude.state.rm = [kept(fx, fx.head), removed()];
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.claude.calls.map((c) => [c.args[0], c.timeoutMs])).toEqual([
+      ['agents', 30_000],
+      ['stop', 30_000],
+      ['rm', 0],
+      ['rm', 0],
+    ]);
+  });
+
   test('refusing when the discard line does not end in removed', () => {
     const fx = fixture();
     fx.integrate();
@@ -772,6 +791,9 @@ describe('finish clears the worker', () => {
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err[0]).toBe(
       `claude rm ${ID} --discard-unpushed ${fx.head}@${WORKTREE_ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
+    );
+    expect(h.err.at(-1)).toBe(
+      `complete the removal by hand with claude rm ${ID} --discard-unpushed ${fx.head}@${WORKTREE_ID}`,
     );
   });
 
@@ -888,6 +910,150 @@ describe('finish clears the worker', () => {
       `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
     ]);
     expect(branchRemains(fx)).toBe(true);
+  });
+});
+
+describe('finish after a removal cut short', () => {
+  const uncommitted = (fx: Fixture, paths: string): string =>
+    `the worktree ${fx.worktree} holds uncommitted work besides the report, which its removal would destroy: ${paths}. Commit and integrate it, or remove it, then run finish again`;
+
+  // A first run whose claude rm deletes the tracked files and is cut short,
+  // then a re-run whose claude rm removes; returns the re-run's lines.
+  function cutThenRerun(h: Harness, fx: Fixture, cut: Rm, args: string[]) {
+    h.claude.state.rm = [cut, removed()];
+    expect(h.finish(fx.brief, ...args)).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm ${ID} did not return in time, so finish removed nothing more`,
+      `complete the removal by hand with claude rm ${ID}`,
+    ]);
+    expect(fs.existsSync(path.join(fx.worktree, 'a.txt'))).toBe(false);
+    const first = h.out.length;
+    expect(h.finish(fx.brief, ...args)).toBe(0);
+    return h.out.slice(first);
+  }
+
+  // The lines of a re-run that restores a.txt and b.txt, then removes.
+  const rerunLines = (fx: Fixture, report: string): string[] => [
+    `worktree-w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${git(fx.top, 'rev-parse', 'HEAD').slice(0, SHORT_SHA)}`,
+    report,
+    `restored 2 deleted files in ${fx.worktree} from its index, so claude rm finds it clean`,
+    `session ${ID} removed`,
+    `worktree ${fx.worktree} removed`,
+    'branch worktree-w1 removed',
+    `worktree-w1 is kept as ${backup(fx)}: restore it with git branch worktree-w1 ${backup(fx)}`,
+  ];
+
+  test('completes it on a re-run, restoring the deleted files so claude rm meets a clean worktree', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    const rerun = cutThenRerun(h, fx, cutShort(), []);
+    expect(rerun).toEqual(
+      rerunLines(fx, `report already at ${path.join(fx.top, REPORT)}`),
+    );
+    expect(h.err).toHaveLength(2);
+    expect(h.claude.statusAtRm).toEqual([`?? ${REPORT}`, `?? ${REPORT}`]);
+    expect(h.claude.named('rm')).toEqual([
+      ['rm', ID],
+      ['rm', ID],
+    ]);
+    expect(savedReport(fx)).toBe(REPORT_TEXT);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    expect(branchRemains(fx)).toBe(false);
+  });
+
+  test('completes it on a re-run with --no-report and no report', () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.rmSync(path.join(fx.worktree, REPORT));
+    const h = harness(fx);
+    const rerun = cutThenRerun(h, fx, cutShort(), ['--no-report']);
+    expect(rerun).toEqual(
+      rerunLines(fx, 'no report to save: the worktree holds none'),
+    );
+    expect(h.claude.statusAtRm).toEqual(['', '']);
+    expect(savedReport(fx)).toBeUndefined();
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test("counts the copy beside the plan as saved earlier when the cut also deleted the worktree's report", () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    const cut: Rm = {
+      ...cutShort(),
+      during: () => fs.rmSync(path.join(fx.worktree, REPORT)),
+    };
+    const rerun = cutThenRerun(h, fx, cut, []);
+    expect(rerun).toEqual(
+      rerunLines(fx, `report already at ${path.join(fx.top, REPORT)}`),
+    );
+    expect(h.claude.statusAtRm).toEqual([`?? ${REPORT}`, '']);
+    expect(savedReport(fx)).toBe(REPORT_TEXT);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test("refuses, with git's words, when a deleted file reappears before the restore", () => {
+    const fx = fixture();
+    fx.integrate();
+    const a = path.join(fx.worktree, 'a.txt');
+    const runGit: Runner = (cmd, args, cwd) => {
+      if (args.includes('checkout-index')) fs.writeFileSync(a, 'late\n');
+      return execRunner(cmd, args, cwd);
+    };
+    const h = harness(fx, { runGit });
+    h.claude.state.rm = [cutShort(), removed()];
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err.at(-1)).toBe(
+      `git checkout-index failed in the worktree ${fx.worktree}, so finish removed nothing: a.txt already exists, no checkout`,
+    );
+    expect(h.claude.named('rm')).toEqual([['rm', ID]]);
+    expect(fs.readFileSync(a, 'utf-8')).toBe('late\n');
+  });
+
+  test('refuses a deletion the worker left uncommitted on a first run, restoring nothing and writing no ref', () => {
+    const fx = fixture();
+    fx.integrate();
+    const a = path.join(fx.worktree, 'a.txt');
+    fs.rmSync(a);
+    const h = harness(fx);
+    expectRefusedUntouched(h, fx, h.finish(fx.brief), uncommitted(fx, 'a.txt'));
+    expect(h.err).toHaveLength(1);
+    expect(fs.existsSync(a)).toBe(false);
+    expect(git(fx.top, 'for-each-ref', 'refs/sidekick/')).toBe('');
+  });
+
+  test('refuses deleted files beside an untracked file, even with a backup ref, naming both', () => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.top, 'update-ref', backup(fx), fx.head);
+    const a = path.join(fx.worktree, 'a.txt');
+    fs.rmSync(a);
+    fs.writeFileSync(path.join(fx.worktree, 'notes.txt'), 'notes\n');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      uncommitted(fx, 'a.txt, notes.txt'),
+    );
+    expect(h.err).toHaveLength(1);
+    expect(fs.existsSync(a)).toBe(false);
+  });
+
+  test('refuses a listed worktree folder whose .git file is gone, alone, naming claude rm', () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.rmSync(path.join(fx.worktree, '.git'));
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      `the worktree ${fx.worktree} holds no .git entry while git still lists it, so a removal went past git's link to it: claude rm ${ID} completes the removal`,
+    );
+    expect(h.err).toHaveLength(1);
   });
 });
 

@@ -108,10 +108,13 @@ export const ok = (over: Partial<ClaudeResult> = {}): ClaudeResult => ({
   ...over,
 });
 
-// What one `claude rm` prints, and what it removes, as the real one would.
+/**
+ * What one `claude rm` prints, and what it removes, as the real one would.
+ * `tracked files` deletes the worktree's tracked files and leaves its `.git`.
+ */
 export interface Rm {
   result: ClaudeResult;
-  removes: 'everything' | 'the worktree' | 'nothing';
+  removes: 'everything' | 'the worktree' | 'tracked files' | 'nothing';
   // A side effect that runs after the removal, as the repo changing mid-rm.
   during?: () => void;
 }
@@ -119,6 +122,15 @@ export interface Rm {
 export const removed = (removes: Rm['removes'] = 'everything'): Rm => ({
   result: ok({ stdout: `removed ${ID}\n` }),
   removes,
+});
+
+/**
+ * A `claude rm` cut short, as #267's re-run found it: the tracked files gone,
+ * the worktree and its `.git` file left, and no answer.
+ */
+export const cutShort = (): Rm => ({
+  result: ok({ code: 1, timedOut: true }),
+  removes: 'tracked files',
 });
 
 // The kept message measured on 2026-10-14, offering the discard line for `sha`.
@@ -137,13 +149,32 @@ export const kept = (fx: Fixture, sha: string): Rm => ({
 export interface Call {
   args: string[];
   cwd: string;
+  timeoutMs: number;
 }
 
-// Plays `agents --json --all` from `state.agents`, `stop` from `state.stop`,
-// and each `rm` from `state.rm` in turn. Any other call fails the test.
-// `state.whileStopping` stands for what the worker does before it exits.
+// Every file git tracks in the worktree, deleted from disk.
+function deleteTracked(fx: Fixture): void {
+  const files = git(fx.worktree, 'ls-files', '-z').split('\0');
+  for (const file of files.filter((f) => f !== '')) {
+    fs.rmSync(path.join(fx.worktree, file));
+  }
+}
+
+// The worktree's status as `claude rm` meets it, each untracked file by name.
+const statusNow = (fx: Fixture): string =>
+  fs.existsSync(fx.worktree)
+    ? git(fx.worktree, 'status', '--porcelain', '--untracked-files=all')
+    : '(no worktree)';
+
+/**
+ * Plays `agents --json --all` from `state.agents`, `stop` from `state.stop`,
+ * and each `rm` from `state.rm` in turn. Any other call fails the test.
+ * `state.whileStopping` stands for what the worker does before it exits.
+ * `statusAtRm` keeps the worktree's status at each `rm`, before it removes.
+ */
 export function fakeClaude(fx: Fixture) {
   const calls: Call[] = [];
+  const statusAtRm: string[] = [];
   const state = {
     agents: JSON.stringify([
       { id: ID, kind: 'background', name: 'w1', state: 'working' },
@@ -154,11 +185,15 @@ export function fakeClaude(fx: Fixture) {
   };
   const sweep = (removes: Rm['removes']): void => {
     if (removes === 'nothing') return;
+    if (removes === 'tracked files') {
+      deleteTracked(fx);
+      return;
+    }
     git(fx.top, 'worktree', 'remove', '--force', '--force', fx.worktree);
     if (removes === 'everything') git(fx.top, 'branch', '-D', 'worktree-w1');
   };
   const run: ClaudeRunner = (args, opts) => {
-    calls.push({ args, cwd: opts.cwd });
+    calls.push({ args, cwd: opts.cwd, timeoutMs: opts.timeoutMs });
     if (args[0] === 'agents') return ok({ stdout: state.agents });
     if (args[0] === 'stop') {
       state.whileStopping();
@@ -167,13 +202,14 @@ export function fakeClaude(fx: Fixture) {
     const rm = args[0] === 'rm' ? state.rm.shift() : undefined;
     if (rm === undefined)
       throw new Error(`unexpected claude ${args.join(' ')}`);
+    statusAtRm.push(statusNow(fx));
     sweep(rm.removes);
     rm.during?.();
     return rm.result;
   };
   const named = (verb: string): string[][] =>
     calls.filter((c) => c.args[0] === verb).map((c) => c.args);
-  return { run, calls, state, named };
+  return { run, calls, state, named, statusAtRm };
 }
 
 export function harness(fx: Fixture, over: Partial<WorkerEnv> = {}) {

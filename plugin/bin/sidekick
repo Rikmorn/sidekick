@@ -1405,6 +1405,7 @@ function checkedOut(runGit, dir) {
 var RENAMED = /^(?:[RC].|.[RC]) /;
 var STATUS_CODE_LENGTH = "XY".length;
 var STATUS_PREFIX = "XY ".length;
+var DELETED = " D";
 function statusEntries(stdout) {
   const fields = stdout.split("\x00").filter((field) => field !== "");
   const entries = [];
@@ -1426,11 +1427,12 @@ function statusEntriesIn(runGit, top, dir) {
     return { issue: status.stderr.trim() };
   return { entries: statusEntries(status.stdout) };
 }
-function statusPathsIn(runGit, top, dir) {
-  const status = statusEntriesIn(runGit, top, dir);
-  if ("issue" in status)
-    return status;
-  return { paths: status.entries.map((entry) => entry.path) };
+function worktreeListed(runGit, top, worktree) {
+  const list = runGit("git", ["worktree", "list", "--porcelain"], top);
+  if (list.code !== 0)
+    return { issue: list.stderr.trim() };
+  return { listed: list.stdout.split(`
+`).includes(`worktree ${worktree}`) };
 }
 var PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
 function remotesWithPushUrl(runGit, top) {
@@ -5529,6 +5531,7 @@ function readIfPresent(file) {
     return { issue: `cannot read ${file}: ${why}` };
   }
 }
+var NO_LIMIT = 0;
 var claudeAt = (ready, wenv, args, timeoutMs = 30000) => wenv.runClaude(args, { cwd: ready.top, timeoutMs });
 function withText(lead, result) {
   const text = printedStreams(result);
@@ -5576,7 +5579,11 @@ var saidRemoved = (result) => ranClean(result) && REMOVED.test(printedStreams(re
 `));
 function unknownAnswer(args, result) {
   const what = ranClean(result) ? "did not say removed, and finish does not know its answer" : failure(result);
-  return withText(`claude ${args.join(" ")} ${what}, so finish removed nothing more`, result);
+  const command = `claude ${args.join(" ")}`;
+  return [
+    ...withText(`${command} ${what}, so finish removed nothing more`, result),
+    `complete the removal by hand with ${command}`
+  ];
 }
 function discard(ready, wenv, kept) {
   const text = printedStreams(kept).join(`
@@ -5589,11 +5596,11 @@ function discard(ready, wenv, kept) {
     return withText(`claude rm offers to discard ${sha}, which is not ${ready.branch}'s verified head (${ready.head}), so finish did not run it`, kept);
   }
   const args = ["rm", ready.id, "--discard-unpushed", `${sha}@${worktreeId}`];
-  const result = claudeAt(ready, wenv, args);
+  const result = claudeAt(ready, wenv, args, NO_LIMIT);
   return saidRemoved(result) ? [] : unknownAnswer(args, result);
 }
 var removeSession = (ready, wenv, out) => {
-  const first = claudeAt(ready, wenv, ["rm", ready.id]);
+  const first = claudeAt(ready, wenv, ["rm", ready.id], NO_LIMIT);
   const issues = saidRemoved(first) ? [] : discard(ready, wenv, first);
   if (issues.length > 0)
     return issues;
@@ -5601,15 +5608,13 @@ var removeSession = (ready, wenv, out) => {
   return [];
 };
 function worktreeGoneIssues(runGit, top, worktree) {
-  const list2 = runGit("git", ["worktree", "list", "--porcelain"], top);
-  if (list2.code !== 0) {
+  const list2 = worktreeListed(runGit, top, worktree);
+  if ("issue" in list2) {
     return [
-      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.stderr.trim()}`
+      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.issue}`
     ];
   }
-  const listed = list2.stdout.split(`
-`).includes(`worktree ${worktree}`);
-  return listed ? [`claude rm said removed, but git still lists the worktree ${worktree}`] : [];
+  return list2.listed ? [`claude rm said removed, but git still lists the worktree ${worktree}`] : [];
 }
 function branchGoneIssues(runGit, top, branch, head) {
   if (!branchExists(runGit, top, branch))
@@ -5649,6 +5654,10 @@ var forgetRecord = (ready) => {
   return [];
 };
 var backupRef = (kind, name, head) => `refs/sidekick/${kind}/${name}/${head}`;
+var BACKUP_KINDS = ["landed", "discarded"];
+function heldBackup(runGit, top, name, head) {
+  return BACKUP_KINDS.map((kind) => backupRef(kind, name, head)).find((ref2) => commitOf(runGit, top, ref2) === head);
+}
 function readyBackup(ready) {
   const { verdict } = ready;
   switch (verdict.kind) {
@@ -5670,6 +5679,28 @@ var keepBackup = (ready, wenv) => {
   if (result.code === 0)
     return [];
   return [`cannot keep ${ref2}: ${result.stderr.trim()}`];
+};
+var restorePartial = (ready, wenv, out) => {
+  if (!ready.partial)
+    return [];
+  const status = statusEntriesIn(wenv.runGit, ready.top, ready.worktree);
+  if ("issue" in status) {
+    return [
+      `git status failed in the worktree ${ready.worktree}: ${status.issue}`
+    ];
+  }
+  const deleted = status.entries.filter((entry) => entry.code === DELETED).map((entry) => entry.path);
+  if (deleted.length === 0)
+    return [];
+  const result = wenv.runGit("git", ["-C", ready.worktree, "checkout-index", "--", ...deleted], ready.top);
+  if (result.code !== 0) {
+    return [
+      `git checkout-index failed in the worktree ${ready.worktree}, so finish removed nothing: ${result.stderr.trim()}`
+    ];
+  }
+  const files = `${deleted.length} deleted ${deleted.length === 1 ? "file" : "files"}`;
+  out(`restored ${files} in ${ready.worktree} from its index, so claude rm finds it clean`);
+  return [];
 };
 
 // bin/helpers/worker-finish.ts
@@ -5828,30 +5859,79 @@ function offBranchReason(mode, branch) {
     }
   }
 }
-function dirtyIssues(runGit, top, worktree, report) {
-  const status = statusPathsIn(runGit, top, worktree);
-  if ("issue" in status) {
-    return [`git status failed in the worktree ${worktree}: ${status.issue}`];
+function placesFor(top, brief) {
+  const worktree = path19.join(top, WORKTREES_FOLDER, brief.name);
+  const report = path19.posix.normalize(brief.report);
+  return {
+    top,
+    worktree,
+    branch: `worktree-${brief.name}`,
+    report,
+    reportFrom: path19.join(worktree, report),
+    reportTo: path19.join(top, report)
+  };
+}
+function unlinkedIssues(runGit, top, worktree, id) {
+  const linkless = fs19.existsSync(worktree) && !fs19.existsSync(path19.join(worktree, ".git"));
+  if (!linkless)
+    return [];
+  const list2 = worktreeListed(runGit, top, worktree);
+  if ("issue" in list2) {
+    return [
+      `git worktree list failed, so finish cannot tell whether git still lists the worktree ${worktree}: ${list2.issue}`
+    ];
   }
-  const others = status.paths.filter((file) => file !== report);
-  if (others.length === 0)
+  if (!list2.listed)
     return [];
   return [
-    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(", ")}. Commit and integrate it, or remove it, then run finish again`
+    `the worktree ${worktree} holds no .git entry while git still lists it, so a removal went past git's link to it: claude rm ${id} completes the removal`
   ];
 }
-function reportStep(from, to, noReport) {
+function statusBesideReport(runGit, places) {
+  const status = statusEntriesIn(runGit, places.top, places.worktree);
+  if ("issue" in status) {
+    return {
+      issue: `git status failed in the worktree ${places.worktree}: ${status.issue}`
+    };
+  }
+  const entries = status.entries.filter((entry) => entry.path !== places.report);
+  return { entries };
+}
+var onlyDeleted = (entries) => entries.length > 0 && entries.every((entry) => entry.code === DELETED);
+function dirtyIssues(worktree, status, partial) {
+  if ("issue" in status)
+    return [status.issue];
+  const { entries } = status;
+  const allowed = entries.length === 0 || partial && onlyDeleted(entries);
+  if (allowed)
+    return [];
+  const paths = entries.map((entry) => entry.path).join(", ");
+  return [
+    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${paths}. Commit and integrate it, or remove it, then run finish again`
+  ];
+}
+function isPartial(runGit, top, worker, status) {
+  const { name, head } = worker;
+  if (head === undefined || "issue" in status)
+    return false;
+  if (!onlyDeleted(status.entries))
+    return false;
+  return heldBackup(runGit, top, name, head) !== undefined;
+}
+function worktreeCheck(runGit, places, worker, opts) {
+  const status = statusBesideReport(runGit, places);
+  const partial = isPartial(runGit, places.top, worker, status);
+  const onBranch = onBranchIssues(runGit, places.worktree, places.branch, opts.mode.kind, opts.brief, worker.id);
+  const dirty = dirtyIssues(places.worktree, status, partial);
+  return { issues: [...onBranch, ...dirty], partial };
+}
+function reportStep(places, noReport, partial) {
+  const { reportFrom: from, reportTo: to } = places;
   const worker = readIfPresent(from);
   if ("issue" in worker)
     return { issues: [worker.issue] };
   if (worker.data === undefined) {
-    if (noReport)
-      return "none";
-    return {
-      issues: [
-        `the worktree has no run report at ${from}: ask the worker for it, or pass --no-report to finish without one`
-      ]
-    };
+    return missingReportStep(places, noReport, partial);
   }
   const saved = readIfPresent(to);
   if ("issue" in saved)
@@ -5863,6 +5943,22 @@ function reportStep(from, to, noReport) {
   return {
     issues: [
       `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`
+    ]
+  };
+}
+function missingReportStep(places, noReport, partial) {
+  if (partial) {
+    const saved = readIfPresent(places.reportTo);
+    if ("issue" in saved)
+      return { issues: [saved.issue] };
+    if (saved.data !== undefined)
+      return "saved earlier";
+  }
+  if (noReport)
+    return "none";
+  return {
+    issues: [
+      `the worktree has no run report at ${places.reportFrom}: ask the worker for it, or pass --no-report to finish without one`
     ]
   };
 }
@@ -5881,34 +5977,28 @@ function checkFinish(brief, opts, wenv) {
   const job = findJob(wenv, top, brief.name);
   if ("issues" in job)
     return job;
-  const worktree = path19.join(top, WORKTREES_FOLDER, brief.name);
-  const branch = `worktree-${brief.name}`;
-  const report = path19.posix.normalize(brief.report);
-  const reportFrom = path19.join(worktree, report);
-  const reportTo = path19.join(top, report);
-  const landed = branchVerdict(wenv.runGit, top, branch, opts, job.id);
-  const worktreeIssues = [
-    ...onBranchIssues(wenv.runGit, worktree, branch, opts.mode.kind, opts.brief, job.id),
-    ...dirtyIssues(wenv.runGit, top, worktree, report)
-  ];
-  const step = reportStep(reportFrom, reportTo, opts.noReport);
-  if ("issues" in landed || worktreeIssues.length > 0 || typeof step !== "string") {
-    return { issues: allIssues(landed, worktreeIssues, step) };
+  const places = placesFor(top, brief);
+  const unlinked = unlinkedIssues(wenv.runGit, top, places.worktree, job.id);
+  if (unlinked.length > 0)
+    return { issues: unlinked };
+  const landed = branchVerdict(wenv.runGit, top, places.branch, opts, job.id);
+  const head = "issues" in landed ? undefined : landed.head;
+  const worker = { name: brief.name, id: job.id, head };
+  const tree = worktreeCheck(wenv.runGit, places, worker, opts);
+  const step = reportStep(places, opts.noReport, tree.partial);
+  if ("issues" in landed || tree.issues.length > 0 || typeof step !== "string") {
+    return { issues: allIssues(landed, tree.issues, step) };
   }
   return {
     ...job,
+    ...places,
     name: brief.name,
-    top,
     commonDir,
-    worktree,
-    branch,
     head: landed.head,
     verdict: landed.verdict,
     brief: opts.brief,
-    report,
-    reportFrom,
-    reportTo,
-    reportStep: step
+    reportStep: step,
+    partial: tree.partial
   };
 }
 function copyReport(ready, out) {
@@ -5927,6 +6017,7 @@ var saveReport = (ready, _wenv, out) => {
     case "copy":
       return copyReport(ready, out);
     case "in place":
+    case "saved earlier":
       out(`report already at ${ready.reportTo}`);
       return [];
     case "none":
@@ -5942,15 +6033,26 @@ function reportChangedIssues(ready) {
   const now = readIfPresent(ready.reportFrom);
   if ("issue" in now)
     return [now.issue];
-  if (ready.reportStep === "none") {
-    if (now.data === undefined)
-      return [];
-    return [`a run report appeared at ${ready.reportFrom}`];
+  switch (ready.reportStep) {
+    case "none":
+    case "saved earlier":
+      if (now.data === undefined)
+        return [];
+      return [`a run report appeared at ${ready.reportFrom}`];
+    case "copy":
+    case "in place":
+      return copyChangedIssues(ready, now.data);
+    default: {
+      const unhandled = ready.reportStep;
+      throw new Error(`unhandled report step: ${unhandled}`);
+    }
   }
+}
+function copyChangedIssues(ready, now) {
   const saved = readIfPresent(ready.reportTo);
   if ("issue" in saved)
     return [saved.issue];
-  const same = now.data !== undefined && saved.data !== undefined && now.data.equals(saved.data);
+  const same = now !== undefined && saved.data !== undefined && now.equals(saved.data);
   if (same)
     return [];
   return [
@@ -5974,7 +6076,7 @@ var recheckWorktree = (ready, wenv) => {
   const issues = [
     ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.verdict.kind, ready.brief, ready.id),
     ...headMovedIssues(wenv.runGit, ready),
-    ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
+    ...dirtyIssues(ready.worktree, statusBesideReport(wenv.runGit, ready), ready.partial),
     ...reportChangedIssues(ready)
   ];
   if (issues.length === 0)
@@ -6011,6 +6113,7 @@ var STEPS = [
   waitForLock,
   recheckWorktree,
   keepBackup,
+  restorePartial,
   removeSession,
   forgetRecord,
   removeLeftovers,

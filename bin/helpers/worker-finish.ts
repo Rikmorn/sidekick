@@ -4,7 +4,8 @@
  * and branch.
  * It refuses whenever a step would lose work. The steps run in order, and the
  * first that fails stops the rest. It prints where the work landed, what became
- * of the report, then each removal: the session, the worktree, and the branch.
+ * of the report, any files it restored, then each removal: the session, the
+ * worktree, and the branch. Its last line names the backup ref.
  */
 
 import * as fs from 'node:fs';
@@ -18,12 +19,16 @@ import { DEFAULT_CAP, landedIn } from './worker-landed.js';
 import {
   checkedOut,
   commitOf,
+  DELETED,
   mainCheckout,
-  statusPathsIn,
+  type StatusEntry,
+  statusEntriesIn,
   WORKTREES_FOLDER,
+  worktreeListed,
 } from './worker-repo.js';
 import {
   forgetRecord,
+  heldBackup,
   keepBackup,
   type Out,
   type Ready,
@@ -32,6 +37,7 @@ import {
   readyBackup,
   removeLeftovers,
   removeSession,
+  restorePartial,
   type Step,
   stopJob,
   type Verdict,
@@ -276,41 +282,135 @@ function offBranchReason(mode: FinishMode['kind'], branch: string): string {
   }
 }
 
-// Uncommitted work in the worktree, which removing it would destroy; the
-// report alone is allowed, since saveReport saves it.
-function dirtyIssues(
+// Where the worker's worktree, branch, and report sit.
+type Places = Pick<
+  Ready,
+  'top' | 'worktree' | 'branch' | 'report' | 'reportFrom' | 'reportTo'
+>;
+
+function placesFor(top: string, brief: Brief): Places {
+  const worktree = path.join(top, WORKTREES_FOLDER, brief.name);
+  // git status prints paths in this form.
+  const report = path.posix.normalize(brief.report);
+  return {
+    top,
+    worktree,
+    branch: `worktree-${brief.name}`,
+    report,
+    reportFrom: path.join(worktree, report),
+    reportTo: path.join(top, report),
+  };
+}
+
+// A cut-short removal can delete the worktree's .git file while git still
+// lists it. git run in the folder then reads the enclosing main checkout, so
+// this refusal stands alone.
+function unlinkedIssues(
   runGit: Runner,
   top: string,
   worktree: string,
-  report: string,
+  id: string,
 ): string[] {
-  const status = statusPathsIn(runGit, top, worktree);
-  if ('issue' in status) {
-    return [`git status failed in the worktree ${worktree}: ${status.issue}`];
+  const linkless =
+    fs.existsSync(worktree) && !fs.existsSync(path.join(worktree, '.git'));
+  if (!linkless) return [];
+  const list = worktreeListed(runGit, top, worktree);
+  if ('issue' in list) {
+    return [
+      `git worktree list failed, so finish cannot tell whether git still lists the worktree ${worktree}: ${list.issue}`,
+    ];
   }
-  const others = status.paths.filter((file) => file !== report);
-  if (others.length === 0) return [];
+  if (!list.listed) return [];
   return [
-    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(', ')}. Commit and integrate it, or remove it, then run finish again`,
+    `the worktree ${worktree} holds no .git entry while git still lists it, so a removal went past git's link to it: claude rm ${id} completes the removal`,
   ];
+}
+
+type Status = { entries: StatusEntry[] } | { issue: string };
+
+// The worktree's status entries, the report aside.
+function statusBesideReport(runGit: Runner, places: Places): Status {
+  const status = statusEntriesIn(runGit, places.top, places.worktree);
+  if ('issue' in status) {
+    return {
+      issue: `git status failed in the worktree ${places.worktree}: ${status.issue}`,
+    };
+  }
+  const entries = status.entries.filter(
+    (entry) => entry.path !== places.report,
+  );
+  return { entries };
+}
+
+const onlyDeleted = (entries: StatusEntry[]): boolean =>
+  entries.length > 0 && entries.every((entry) => entry.code === DELETED);
+
+// Uncommitted work in the worktree, which removing it would destroy. The report
+// is allowed, since saveReport saves it, and so are deleted files alone in a
+// partial removal, since restorePartial writes them back.
+function dirtyIssues(
+  worktree: string,
+  status: Status,
+  partial: boolean,
+): string[] {
+  if ('issue' in status) return [status.issue];
+  const { entries } = status;
+  const allowed = entries.length === 0 || (partial && onlyDeleted(entries));
+  if (allowed) return [];
+  const paths = entries.map((entry) => entry.path).join(', ');
+  return [
+    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${paths}. Commit and integrate it, or remove it, then run finish again`,
+  ];
+}
+
+// A partial removal is deleted files alone at a head a backup ref already
+// holds, which an earlier run wrote right before its claude rm.
+function isPartial(
+  runGit: Runner,
+  top: string,
+  worker: { name: string; head: string | undefined },
+  status: Status,
+): boolean {
+  const { name, head } = worker;
+  if (head === undefined || 'issue' in status) return false;
+  if (!onlyDeleted(status.entries)) return false;
+  return heldBackup(runGit, top, name, head) !== undefined;
+}
+
+// The worktree's checks, and whether it holds a partial removal. `head` is
+// the landed check's, undefined when that check refused.
+function worktreeCheck(
+  runGit: Runner,
+  places: Places,
+  worker: { name: string; id: string; head: string | undefined },
+  opts: FinishOptions,
+): { issues: string[]; partial: boolean } {
+  const status = statusBesideReport(runGit, places);
+  const partial = isPartial(runGit, places.top, worker, status);
+  const onBranch = onBranchIssues(
+    runGit,
+    places.worktree,
+    places.branch,
+    opts.mode.kind,
+    opts.brief,
+    worker.id,
+  );
+  const dirty = dirtyIssues(places.worktree, status, partial);
+  return { issues: [...onBranch, ...dirty], partial };
 }
 
 // An identical report already in place is not a refusal, so this check lets a
 // re-run through after a failed step.
 function reportStep(
-  from: string,
-  to: string,
+  places: Places,
   noReport: boolean,
+  partial: boolean,
 ): ReportStep | { issues: string[] } {
+  const { reportFrom: from, reportTo: to } = places;
   const worker = readIfPresent(from);
   if ('issue' in worker) return { issues: [worker.issue] };
   if (worker.data === undefined) {
-    if (noReport) return 'none';
-    return {
-      issues: [
-        `the worktree has no run report at ${from}: ask the worker for it, or pass --no-report to finish without one`,
-      ],
-    };
+    return missingReportStep(places, noReport, partial);
   }
   const saved = readIfPresent(to);
   if ('issue' in saved) return { issues: [saved.issue] };
@@ -319,6 +419,26 @@ function reportStep(
   return {
     issues: [
       `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`,
+    ],
+  };
+}
+
+// The worktree holds no report. In a partial removal, a copy in the main
+// checkout counts as saved earlier, with or without --no-report.
+function missingReportStep(
+  places: Places,
+  noReport: boolean,
+  partial: boolean,
+): ReportStep | { issues: string[] } {
+  if (partial) {
+    const saved = readIfPresent(places.reportTo);
+    if ('issue' in saved) return { issues: [saved.issue] };
+    if (saved.data !== undefined) return 'saved earlier';
+  }
+  if (noReport) return 'none';
+  return {
+    issues: [
+      `the worktree has no run report at ${places.reportFrom}: ask the worker for it, or pass --no-report to finish without one`,
     ],
   };
 }
@@ -347,46 +467,31 @@ function checkFinish(
   const { top, commonDir } = checkout;
   const job = findJob(wenv, top, brief.name);
   if ('issues' in job) return job;
-  const worktree = path.join(top, WORKTREES_FOLDER, brief.name);
-  const branch = `worktree-${brief.name}`;
-  // git status prints paths in this form.
-  const report = path.posix.normalize(brief.report);
-  const reportFrom = path.join(worktree, report);
-  const reportTo = path.join(top, report);
-  const landed = branchVerdict(wenv.runGit, top, branch, opts, job.id);
-  const worktreeIssues = [
-    ...onBranchIssues(
-      wenv.runGit,
-      worktree,
-      branch,
-      opts.mode.kind,
-      opts.brief,
-      job.id,
-    ),
-    ...dirtyIssues(wenv.runGit, top, worktree, report),
-  ];
-  const step = reportStep(reportFrom, reportTo, opts.noReport);
+  const places = placesFor(top, brief);
+  const unlinked = unlinkedIssues(wenv.runGit, top, places.worktree, job.id);
+  if (unlinked.length > 0) return { issues: unlinked };
+  const landed = branchVerdict(wenv.runGit, top, places.branch, opts, job.id);
+  const head = 'issues' in landed ? undefined : landed.head;
+  const worker = { name: brief.name, id: job.id, head };
+  const tree = worktreeCheck(wenv.runGit, places, worker, opts);
+  const step = reportStep(places, opts.noReport, tree.partial);
   if (
     'issues' in landed ||
-    worktreeIssues.length > 0 ||
+    tree.issues.length > 0 ||
     typeof step !== 'string'
   ) {
-    return { issues: allIssues(landed, worktreeIssues, step) };
+    return { issues: allIssues(landed, tree.issues, step) };
   }
   return {
     ...job,
+    ...places,
     name: brief.name,
-    top,
     commonDir,
-    worktree,
-    branch,
     head: landed.head,
     verdict: landed.verdict,
     brief: opts.brief,
-    report,
-    reportFrom,
-    reportTo,
     reportStep: step,
+    partial: tree.partial,
   };
 }
 
@@ -412,6 +517,7 @@ const saveReport: Step = (ready, _wenv, out) => {
     case 'copy':
       return copyReport(ready, out);
     case 'in place':
+    case 'saved earlier':
       out(`report already at ${ready.reportTo}`);
       return [];
     case 'none':
@@ -424,20 +530,31 @@ const saveReport: Step = (ready, _wenv, out) => {
   }
 };
 
-// The worker's report now: still absent under --no-report, else still the copy.
+// The worker's report now: still absent where the worktree held none, else
+// still the copy in the main checkout.
 function reportChangedIssues(ready: Ready): string[] {
   const now = readIfPresent(ready.reportFrom);
   if ('issue' in now) return [now.issue];
-  if (ready.reportStep === 'none') {
-    if (now.data === undefined) return [];
-    return [`a run report appeared at ${ready.reportFrom}`];
+  switch (ready.reportStep) {
+    case 'none':
+    case 'saved earlier':
+      if (now.data === undefined) return [];
+      return [`a run report appeared at ${ready.reportFrom}`];
+    case 'copy':
+    case 'in place':
+      return copyChangedIssues(ready, now.data);
+    default: {
+      const unhandled: never = ready.reportStep;
+      throw new Error(`unhandled report step: ${unhandled}`);
+    }
   }
+}
+
+function copyChangedIssues(ready: Ready, now: Buffer | undefined): string[] {
   const saved = readIfPresent(ready.reportTo);
   if ('issue' in saved) return [saved.issue];
   const same =
-    now.data !== undefined &&
-    saved.data !== undefined &&
-    now.data.equals(saved.data);
+    now !== undefined && saved.data !== undefined && now.equals(saved.data);
   if (same) return [];
   return [
     `the worker's report at ${ready.reportFrom} no longer matches the copy at ${ready.reportTo}`,
@@ -471,7 +588,11 @@ const recheckWorktree: Step = (ready, wenv) => {
       ready.id,
     ),
     ...headMovedIssues(wenv.runGit, ready),
-    ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
+    ...dirtyIssues(
+      ready.worktree,
+      statusBesideReport(wenv.runGit, ready),
+      ready.partial,
+    ),
     ...reportChangedIssues(ready),
   ];
   if (issues.length === 0) return [];
@@ -510,7 +631,8 @@ const sayBackup: Step = (ready, _wenv, out) => {
 };
 
 // In order: nothing is removed until the report is saved, the job has stopped,
-// the worktree has passed its checks again, and the branch is kept in a backup ref.
+// the worktree has passed its checks again, the branch is kept in a backup ref,
+// and a partial removal's deleted files are back.
 const STEPS: Step[] = [
   sayVerdict,
   saveReport,
@@ -518,6 +640,7 @@ const STEPS: Step[] = [
   waitForLock,
   recheckWorktree,
   keepBackup,
+  restorePartial,
   removeSession,
   forgetRecord,
   removeLeftovers,
