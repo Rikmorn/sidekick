@@ -10,7 +10,7 @@ Research: [`docs/research/control-centre/`](../../research/control-centre/README
 
 Goals the operator stated at the control-centre design's gate 1 on 2026-10-12, and handed here, with what was known then:
 
-- **Memory and context management** (was G5). Each fact has one home at the right scope and is retired where it lives. The operator wants more research on tools and approaches to adopt first.
+- **Memory and context management** (was G5). Each fact has one home at the right scope and is retired where it lives. The operator wants more research on tools and approaches to adopt first. The immediate problem, the operator's daily loss of working context (#269), is designed in [the memory design](../memory/design.md) from 2026-10-30; this goal keeps what that design leaves.
 - **The autonomous loop** (was G9, #140). Proposed wording: hold the pauses that guard neither quality nor an outward write, and make the rest cheaper to answer.
 - **In-session context** (the second half of G3).
 - **Views** (was G7) of plans, designs, and the loop itself. Made ad hoc on request until then.
