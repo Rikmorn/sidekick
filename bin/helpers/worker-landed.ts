@@ -16,6 +16,9 @@ export type Landing =
 type Commit = { sha: string; tree: string };
 type Failure = { issue: string };
 
+/** How many commits the history walk lists before it stops. */
+export const DEFAULT_CAP = 200;
+
 /** `git merge-tree` exits 1 for a merge that conflicts. */
 const CONFLICTED = 1;
 
@@ -194,7 +197,7 @@ export function landedIn(
   runGit: Runner,
   top: string,
   refs: { target: string; head: string },
-  { cap = 200 }: { cap?: number } = {},
+  { cap = DEFAULT_CAP }: { cap?: number } = {},
 ): Landing {
   const ancestor = runGit(
     'git',

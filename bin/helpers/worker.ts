@@ -11,7 +11,7 @@ import { dispatch, parseDispatchArgs } from './worker-dispatch.js';
 import { finish, parseFinishArgs } from './worker-finish.js';
 
 export const WORKER_USAGE_LINE =
-  'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report]';
+  'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report] [--into <rev> | --discard]';
 
 /** The profile family's environment, plus git and the seams a lock wait runs through. */
 export interface WorkerEnv extends ProfileEnv {

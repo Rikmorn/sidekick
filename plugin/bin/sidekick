@@ -5397,6 +5397,120 @@ function dispatch(opts, wenv, out, err) {
 import * as fs19 from "node:fs";
 import * as path19 from "node:path";
 
+// bin/helpers/worker-landed.ts
+var DEFAULT_CAP = 200;
+var CONFLICTED = 1;
+var isFailure = (value) => typeof value === "object" && value !== null && ("issue" in value);
+function emptyTreeId(runGit, top) {
+  const result = runGit("git", ["hash-object", "-w", "-t", "tree", "/dev/null"], top);
+  if (result.code !== 0) {
+    return { issue: `git hash-object failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.trim();
+}
+function treeOf(runGit, top, sha) {
+  const result = runGit("git", ["rev-parse", `${sha}^{tree}`], top);
+  if (result.code !== 0) {
+    return { issue: `git rev-parse failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.trim();
+}
+function mergeAddsNothing(runGit, top, emptyTree, commit, head) {
+  const result = runGit("git", [
+    `--attr-source=${emptyTree}`,
+    "merge-tree",
+    "--write-tree",
+    commit.sha,
+    head
+  ], top);
+  if (result.code === 0)
+    return result.stdout.split(`
+`)[0] === commit.tree;
+  if (result.code === CONFLICTED)
+    return false;
+  return {
+    issue: `git merge-tree --write-tree failed, and finish needs git 2.40 or later: ${result.stderr.trim()}`
+  };
+}
+function mergeBase(runGit, top, refs) {
+  const result = runGit("git", ["merge-base", refs.target, refs.head], top);
+  return result.code === 0 ? result.stdout.trim() : null;
+}
+function branchFiles(runGit, top, base, head) {
+  const result = runGit("git", ["diff", "--name-only", "--no-renames", "-z", base, head], top);
+  if (result.code !== 0) {
+    return { issue: `git diff failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.split("\x00").filter((file) => file !== "");
+}
+function candidates(runGit, top, refs, files, cap) {
+  if (files.length === 0)
+    return [];
+  const result = runGit("git", [
+    "--literal-pathspecs",
+    "log",
+    "--full-history",
+    "--no-show-signature",
+    "--no-follow",
+    "--format=%H %T",
+    `--max-count=${cap}`,
+    `${refs.target}^@`,
+    `^${refs.base}`,
+    "--",
+    ...files
+  ], top);
+  if (result.code !== 0) {
+    return { issue: `git log failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.split(`
+`).filter((line) => line !== "").map((line) => {
+    const [sha = "", tree = ""] = line.split(" ");
+    return { sha, tree };
+  });
+}
+function walk(runGit, top, emptyTree, head, list2, cap) {
+  let walked = 0;
+  for (const commit of list2) {
+    walked += 1;
+    const added = mergeAddsNothing(runGit, top, emptyTree, commit, head);
+    if (isFailure(added))
+      return { kind: "error", issue: added.issue };
+    if (added)
+      return { kind: "landed", at: commit.sha, how: "history" };
+  }
+  return { kind: "not landed", walked, capped: list2.length >= cap };
+}
+function searchHistory(runGit, top, emptyTree, refs, base, cap) {
+  const files = branchFiles(runGit, top, base, refs.head);
+  if (isFailure(files))
+    return { kind: "error", issue: files.issue };
+  const list2 = candidates(runGit, top, { target: refs.target, base }, files, cap);
+  if (isFailure(list2))
+    return { kind: "error", issue: list2.issue };
+  return walk(runGit, top, emptyTree, refs.head, list2, cap);
+}
+function landedIn(runGit, top, refs, { cap = DEFAULT_CAP } = {}) {
+  const ancestor = runGit("git", ["merge-base", "--is-ancestor", refs.head, refs.target], top);
+  if (ancestor.code === 0) {
+    return { kind: "landed", at: refs.target, how: "ancestor" };
+  }
+  const base = mergeBase(runGit, top, refs);
+  if (base === null)
+    return { kind: "not landed", walked: 0, capped: false };
+  const emptyTree = emptyTreeId(runGit, top);
+  if (isFailure(emptyTree))
+    return { kind: "error", issue: emptyTree.issue };
+  const tree = treeOf(runGit, top, refs.target);
+  if (isFailure(tree))
+    return { kind: "error", issue: tree.issue };
+  const atTip = mergeAddsNothing(runGit, top, emptyTree, { sha: refs.target, tree }, refs.head);
+  if (isFailure(atTip))
+    return { kind: "error", issue: atTip.issue };
+  if (atTip)
+    return { kind: "landed", at: refs.target, how: "tip" };
+  return searchHistory(runGit, top, emptyTree, refs, base, cap);
+}
+
 // bin/helpers/worker-teardown.ts
 import * as fs18 from "node:fs";
 import * as path18 from "node:path";
@@ -5522,13 +5636,22 @@ var forgetRecord = (ready) => {
 };
 
 // bin/helpers/worker-finish.ts
+var SHORT_SHA = 7;
 function parseFinishArgs(rest2, cwd) {
-  const parsed = parseFlags(rest2, { "no-report": { type: "boolean" } });
+  const parsed = parseFlags(rest2, {
+    "no-report": { type: "boolean" },
+    into: { type: "string" },
+    discard: { type: "boolean" }
+  });
   if (parsed === undefined || parsed.positionals.length !== 1)
+    return;
+  const { into, discard: discard2 } = parsed.values;
+  if (discard2 === true && into !== undefined)
     return;
   return {
     brief: path19.resolve(cwd, parsed.positionals[0]),
-    noReport: parsed.values["no-report"] === true
+    noReport: parsed.values["no-report"] === true,
+    mode: discard2 === true ? { kind: "discard" } : { kind: "landed", into: typeof into === "string" ? into : undefined }
   };
 }
 function findJob(wenv, top, name) {
@@ -5561,31 +5684,78 @@ function findJob(wenv, top, name) {
   }
   return { id, state };
 }
-function integratedHead(runGit, top, branch, id) {
-  const discard2 = `discarding it is your call, with claude rm ${id}`;
+function targetName(runGit, top, rev) {
+  const result = runGit("git", ["rev-parse", "--symbolic-full-name", rev], top);
+  const name = result.code === 0 ? result.stdout.trim() : "";
+  return name === "" ? rev : name;
+}
+function resolveTarget(runGit, top, into, branch) {
+  const rev = into ?? "HEAD";
+  const sha = commitOf(runGit, top, rev);
+  if (sha === undefined) {
+    return {
+      issue: `--into ${rev} names no commit in the main checkout's repo, so finish cannot check that ${branch} landed there: name a branch, tag, or commit that exists`
+    };
+  }
+  const name = targetName(runGit, top, rev);
+  if (name === `refs/heads/${branch}`) {
+    return {
+      issue: `${into === undefined ? "the main checkout has" : `--into ${rev} names`} the worker's own branch ${branch}, which holds its head whether or not the work landed: ${into === undefined ? "check out" : "name"} the branch it should land in`
+    };
+  }
+  return { name, sha };
+}
+function walkedText(walked, capped2) {
+  const commits = `${walked} ${walked === 1 ? "commit" : "commits"}`;
+  return capped2 ? `the history walk tried ${commits} and stopped at its cap of ${DEFAULT_CAP}` : `the history walk tried ${commits} and found no match`;
+}
+function landedHead(runGit, top, branch, opts) {
+  const discard2 = `discarding it is your call, with sidekick worker finish ${opts.brief} --discard`;
   const head = commitOf(runGit, top, `refs/heads/${branch}`);
   if (head === undefined) {
     return {
       issues: [
-        `the branch ${branch} does not exist, so finish cannot check that the work is integrated: ${discard2}`
+        `the branch ${branch} does not exist, so finish cannot check that the work has landed: ${discard2}`
       ]
     };
   }
-  const merge = ["merge-base", "--is-ancestor", head, "HEAD"];
-  if (runGit("git", merge, top).code === 0)
-    return { head };
-  return {
-    issues: [
-      `${branch} is not integrated: its head ${head} is not in the main checkout's HEAD. Integrate it and run finish again; ${discard2}`
-    ]
-  };
+  if (opts.mode.kind === "discard") {
+    return { issues: ["finish --discard is not built yet"] };
+  }
+  const target = resolveTarget(runGit, top, opts.mode.into, branch);
+  if ("issue" in target)
+    return { issues: [target.issue] };
+  const landing = landedIn(runGit, top, { target: target.sha, head });
+  switch (landing.kind) {
+    case "landed":
+      return {
+        head,
+        verdict: { kind: "landed", target, at: landing.at }
+      };
+    case "error":
+      return {
+        issues: [
+          `finish cannot check that ${branch} landed in ${target.name}: ${landing.issue}`
+        ]
+      };
+    case "not landed":
+      return {
+        issues: [
+          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discard2}`
+        ]
+      };
+    default: {
+      const unhandled = landing;
+      throw new Error(`unhandled landing: ${JSON.stringify(unhandled)}`);
+    }
+  }
 }
-function onBranchIssues(runGit, worktree, branch, id) {
+function onBranchIssues(runGit, worktree, branch, brief) {
   const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`)
     return [];
   return [
-    `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits are integrated: check out ${branch} there and run finish again; discarding it is your call, with claude rm ${id}`
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits have landed: check out ${branch} there and run finish again; discarding it is your call, with sidekick worker finish ${brief} --discard`
   ];
 }
 function dirtyIssues(runGit, top, worktree, report) {
@@ -5639,16 +5809,16 @@ function checkFinish(brief, opts, wenv) {
   const report = path19.posix.normalize(brief.report);
   const reportFrom = path19.join(worktree, report);
   const reportTo = path19.join(top, report);
-  const integrated = integratedHead(wenv.runGit, top, branch, job.id);
+  const landed = landedHead(wenv.runGit, top, branch, opts);
   const worktreeIssues = [
-    ...onBranchIssues(wenv.runGit, worktree, branch, job.id),
+    ...onBranchIssues(wenv.runGit, worktree, branch, opts.brief),
     ...dirtyIssues(wenv.runGit, top, worktree, report)
   ];
   const step = reportStep(reportFrom, reportTo, opts.noReport);
-  if ("issues" in integrated || worktreeIssues.length > 0 || typeof step !== "string") {
+  if ("issues" in landed || worktreeIssues.length > 0 || typeof step !== "string") {
     return {
       issues: [
-        ..."issues" in integrated ? integrated.issues : [],
+        ..."issues" in landed ? landed.issues : [],
         ...worktreeIssues,
         ...typeof step === "string" ? [] : step.issues
       ]
@@ -5661,7 +5831,9 @@ function checkFinish(brief, opts, wenv) {
     commonDir,
     worktree,
     branch,
-    head: integrated.head,
+    head: landed.head,
+    verdict: landed.verdict,
+    brief: opts.brief,
     report,
     reportFrom,
     reportTo,
@@ -5720,16 +5892,16 @@ function headMovedIssues(runGit, ready) {
     return [];
   if (now === undefined) {
     return [
-      `the branch ${ready.branch} is gone, so finish cannot confirm its head is still ${ready.head}, the head it verified as integrated`
+      `the branch ${ready.branch} is gone, so finish cannot confirm its head is still ${ready.head}, the head it verified`
     ];
   }
   return [
-    `${ready.branch} moved to ${now} after finish verified its head ${ready.head} as integrated: integrate the new commits, then run finish again`
+    `${ready.branch} moved to ${now} after finish verified its head ${ready.head}: land the new commits, then run finish again`
   ];
 }
 var recheckWorktree = (ready, wenv) => {
   const issues = [
-    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.id),
+    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.brief),
     ...headMovedIssues(wenv.runGit, ready),
     ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
     ...reportChangedIssues(ready)
@@ -5741,7 +5913,22 @@ var recheckWorktree = (ready, wenv) => {
     ...issues
   ];
 };
+var sayVerdict = (ready, _wenv, out) => {
+  const { verdict } = ready;
+  switch (verdict.kind) {
+    case "landed":
+      out(`${ready.branch} landed in ${verdict.target.name} at ${verdict.at.slice(0, SHORT_SHA)}`);
+      return [];
+    case "discard":
+      return [];
+    default: {
+      const unhandled = verdict;
+      throw new Error(`unhandled verdict: ${JSON.stringify(unhandled)}`);
+    }
+  }
+};
 var STEPS = [
+  sayVerdict,
   saveReport,
   stopJob,
   waitForLock,
@@ -5772,7 +5959,7 @@ function finish(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker.ts
-var WORKER_USAGE_LINE = "sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report]";
+var WORKER_USAGE_LINE = "sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report] [--into <rev> | --discard]";
 var usage2 = (err) => {
   err(`usage: ${WORKER_USAGE_LINE}`);
   return 1;
@@ -5810,15 +5997,15 @@ function processIsAlive(pid) {
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
   const here = path20.dirname(fileURLToPath(entryFileUrl));
-  const candidates = [
+  const candidates2 = [
     path20.resolve(here, ".."),
     path20.resolve(here, "..", "plugin")
   ];
-  for (const c of candidates) {
+  for (const c of candidates2) {
     if (fs20.existsSync(path20.join(c, "rules")))
       return c;
   }
-  return candidates[0];
+  return candidates2[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {

@@ -17,6 +17,7 @@ import {
   WORKTREE_ID,
 } from './fixtures/worker/finish.js';
 import { git, removeTemps } from './fixtures/worker/repo.js';
+import { SHORT_SHA } from './worker-finish.js';
 import {
   readRecords,
   type WorkerRecord,
@@ -99,15 +100,71 @@ describe('finish refuses', () => {
     );
   });
 
-  test('work that is not integrated, leaving the discard to claude rm', () => {
+  test('work that has not landed, naming the target and the three ways on', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    const branch = git(fx.top, 'symbolic-ref', 'HEAD');
+    const sha = git(fx.top, 'rev-parse', 'HEAD');
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      `worktree-w1 has not landed in ${branch} (${sha}): its head ${fx.head} is not there, and the history walk tried 0 commits and found no match. Land it and run finish again; name the target with --into <rev>; discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
+    );
+  });
+
+  test('--into a branch the work has not reached, with an orphan target', () => {
+    const fx = fixture();
+    fx.orphan('orphan');
+    const h = harness(fx);
+    const sha = git(fx.top, 'rev-parse', 'orphan');
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, '--into', 'orphan'),
+      `worktree-w1 has not landed in refs/heads/orphan (${sha}): its head ${fx.head} is not there, and the history walk tried 0 commits and found no match. Land it and run finish again; name the target with --into <rev>; discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
+    );
+  });
+
+  test("--into the worker's own branch", () => {
     const fx = fixture();
     const h = harness(fx);
     expectRefusedUntouched(
       h,
       fx,
-      h.finish(fx.brief),
-      `worktree-w1 is not integrated: its head ${fx.head} is not in the main checkout's HEAD. Integrate it and run finish again; discarding it is your call, with claude rm ${ID}`,
+      h.finish(fx.brief, '--into', 'worktree-w1'),
+      "--into worktree-w1 names the worker's own branch worktree-w1, which holds its head whether or not the work landed: name the branch it should land in",
     );
+  });
+
+  test('--into a rev that names no commit', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, '--into', 'nowhere'),
+      "--into nowhere names no commit in the main checkout's repo, so finish cannot check that worktree-w1 landed there: name a branch, tag, or commit that exists",
+    );
+  });
+
+  test('--discard, which is not built yet', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, '--discard'),
+      'finish --discard is not built yet',
+    );
+  });
+
+  test('--into together with --discard, as a usage error', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--into', 'main', '--discard')).toBe(1);
+    expect(h.err[0]).toStartWith('usage: sidekick worker');
+    expect(h.out).toEqual([]);
   });
 
   test.each([
@@ -171,7 +228,7 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief),
-      `the branch worktree-w1 does not exist, so finish cannot check that the work is integrated: discarding it is your call, with claude rm ${ID}`,
+      `the branch worktree-w1 does not exist, so finish cannot check that the work has landed: discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
     );
   });
 
@@ -185,7 +242,7 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief),
-      `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, so finish cannot check that its commits are integrated: check out worktree-w1 there and run finish again; discarding it is your call, with claude rm ${ID}`,
+      `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, so finish cannot check that its commits have landed: check out worktree-w1 there and run finish again; discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
     );
   });
 
@@ -199,7 +256,7 @@ describe('finish refuses', () => {
     expect(h.finish(fx.brief)).toBe(1);
     const branch = git(fx.top, 'symbolic-ref', 'HEAD');
     expect(h.err).toContain(
-      `the worktree ${fx.worktree} has ${branch} checked out, not worktree-w1, so finish cannot check that its commits are integrated: check out worktree-w1 there and run finish again; discarding it is your call, with claude rm ${ID}`,
+      `the worktree ${fx.worktree} has ${branch} checked out, not worktree-w1, so finish cannot check that its commits have landed: check out worktree-w1 there and run finish again; discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
     );
     expect(h.claude.named('rm')).toEqual([]);
   });
@@ -253,7 +310,7 @@ describe('finish refuses', () => {
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toHaveLength(3);
-    expect(h.err.join('\n')).toContain('is not integrated');
+    expect(h.err.join('\n')).toContain('has not landed');
     expect(h.err.join('\n')).toContain('uncommitted work');
     expect(h.err.join('\n')).toContain('no run report');
   });
@@ -373,7 +430,7 @@ describe('finish refuses', () => {
         git(fx.worktree, 'checkout', '-q', '--detach');
       },
       (fx: Fixture): string =>
-        `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, so finish cannot check that its commits are integrated: check out worktree-w1 there and run finish again; discarding it is your call, with claude rm ${ID}`,
+        `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, so finish cannot check that its commits have landed: check out worktree-w1 there and run finish again; discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
     ],
     [
       'a commit landing on the branch',
@@ -383,7 +440,7 @@ describe('finish refuses', () => {
         git(fx.worktree, 'commit', '-q', '-m', 'late');
       },
       (fx: Fixture): string =>
-        `worktree-w1 moved to ${git(fx.top, 'rev-parse', 'worktree-w1')} after finish verified its head ${fx.head} as integrated: integrate the new commits, then run finish again`,
+        `worktree-w1 moved to ${git(fx.top, 'rev-parse', 'worktree-w1')} after finish verified its head ${fx.head}: land the new commits, then run finish again`,
     ],
   ])('%s while the job stopped, before claude rm runs', (_label, act, line) => {
     const fx = fixture();
@@ -431,6 +488,43 @@ describe('finish refuses', () => {
   });
 });
 
+describe('finish passes a landing', () => {
+  test.each([
+    'rebase',
+    'squash',
+  ] as const)('a %s into the main checkout, with no --into', (how) => {
+    const fx = fixture();
+    fx.landOnMain(how);
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    const sha = git(fx.top, 'rev-parse', 'HEAD').slice(0, SHORT_SHA);
+    expect(h.out[0]).toBe(
+      `worktree-w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${sha}`,
+    );
+    expect(h.err).toEqual([]);
+    expect(branchRemains(fx)).toBe(false);
+  });
+
+  test('a squash on a side branch, named with --into', () => {
+    const fx = fixture();
+    fx.landOnBranch('feature', 'squash');
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--into', 'feature')).toBe(0);
+    const sha = git(fx.top, 'rev-parse', 'feature').slice(0, SHORT_SHA);
+    expect(h.out[0]).toBe(`worktree-w1 landed in refs/heads/feature at ${sha}`);
+  });
+
+  test('a fast-forward, with the main checkout on a detached HEAD', () => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.top, 'checkout', '-q', '--detach');
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    const sha = git(fx.top, 'rev-parse', 'HEAD').slice(0, SHORT_SHA);
+    expect(h.out[0]).toBe(`worktree-w1 landed in HEAD at ${sha}`);
+  });
+});
+
 describe('finish clears the worker', () => {
   test('by a plain removed: saves the report, stops the job, and runs rm once', () => {
     const fx = fixture();
@@ -441,6 +535,7 @@ describe('finish clears the worker', () => {
     expect(h.claude.named('stop')).toEqual([['stop', ID]]);
     expect(h.claude.named('rm')).toEqual([['rm', ID]]);
     expect(h.out).toEqual([
+      `worktree-w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${git(fx.top, 'rev-parse', 'HEAD').slice(0, SHORT_SHA)}`,
       `report saved to ${path.join(fx.top, REPORT)}`,
       `session ${ID} removed`,
       `worktree ${fx.worktree} removed`,
@@ -565,7 +660,7 @@ describe('finish clears the worker', () => {
     fs.writeFileSync(path.join(fx.top, REPORT), REPORT_TEXT);
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(0);
-    expect(h.out[0]).toBe(`report already at ${path.join(fx.top, REPORT)}`);
+    expect(h.out[1]).toBe(`report already at ${path.join(fx.top, REPORT)}`);
   });
 
   test('on a re-run after a claude stop that failed', () => {
@@ -586,7 +681,7 @@ describe('finish clears the worker', () => {
     fs.rmSync(path.join(fx.worktree, REPORT));
     const h = harness(fx);
     expect(h.finish(fx.brief, '--no-report')).toBe(0);
-    expect(h.out[0]).toBe('no report to save: the worktree holds none');
+    expect(h.out[1]).toBe('no report to save: the worktree holds none');
     expect(savedReport(fx)).toBeUndefined();
   });
 

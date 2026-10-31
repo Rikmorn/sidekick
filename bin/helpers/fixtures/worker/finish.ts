@@ -52,7 +52,50 @@ export function fixture() {
   const integrate = (): void => {
     git(top, 'merge', '-q', '--ff-only', 'worktree-w1');
   };
-  return { top, docs, brief, worktree, head, integrate };
+  // Puts the worker's commit into `cwd`'s checked-out branch as a new commit
+  // (a rebase landing) or as one squash commit. Cherry-pick writes nothing to
+  // stderr, which `git merge --squash` would.
+  const apply = (cwd: string, how: 'rebase' | 'squash'): void => {
+    if (how === 'rebase') {
+      git(cwd, 'cherry-pick', head);
+      return;
+    }
+    git(cwd, 'cherry-pick', '--no-commit', head);
+    git(cwd, 'commit', '-q', '-m', 'squash');
+  };
+  // Commits something unrelated on the main checkout, then lands the worker's
+  // work there as a new commit.
+  const landOnMain = (how: 'rebase' | 'squash'): void => {
+    fs.writeFileSync(path.join(top, 'c.txt'), 'c\n');
+    git(top, 'add', 'c.txt');
+    git(top, 'commit', '-q', '-m', 'unrelated');
+    apply(top, how);
+  };
+  // Lands the work on a new branch the main checkout does not check out, from
+  // a short-lived worktree of its own.
+  const landOnBranch = (name: string, how: 'rebase' | 'squash'): void => {
+    git(top, 'branch', name);
+    const side = path.join(tmp(), 'side');
+    git(top, 'worktree', 'add', '-q', side, name);
+    apply(side, how);
+    git(top, 'worktree', 'remove', '--force', side);
+  };
+  // A branch with no history in common with the main checkout's.
+  const orphan = (name: string): void => {
+    const root = git(top, 'commit-tree', 'HEAD^{tree}', '-m', 'orphan');
+    git(top, 'branch', name, root);
+  };
+  return {
+    top,
+    docs,
+    brief,
+    worktree,
+    head,
+    integrate,
+    landOnMain,
+    landOnBranch,
+    orphan,
+  };
 }
 
 export type Fixture = ReturnType<typeof fixture>;

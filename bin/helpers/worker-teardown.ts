@@ -52,7 +52,13 @@ export function readIfPresent(
   }
 }
 
-// Everything the steps need once the checks pass.
+// What the landed check found. `target.name` is `git rev-parse
+// --symbolic-full-name`'s answer (`HEAD` when detached), else the rev as typed.
+export type Verdict =
+  | { kind: 'landed'; target: { name: string; sha: string }; at: string }
+  | { kind: 'discard' };
+
+// Everything the steps need once the checks pass; `brief` is its absolute path.
 export interface Ready extends WorkerJob {
   name: string;
   top: string;
@@ -64,6 +70,8 @@ export interface Ready extends WorkerJob {
   reportFrom: string;
   reportTo: string;
   reportStep: ReportStep;
+  verdict: Verdict;
+  brief: string;
 }
 
 export type Step = (ready: Ready, wenv: WorkerEnv, out: Out) => string[];

@@ -66,7 +66,7 @@ describe('runWorkerCli', () => {
 
   test('the usage line names both verbs and every dispatch flag', () => {
     expect(WORKER_USAGE_LINE).toBe(
-      'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report]',
+      'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report] [--into <rev> | --discard]',
     );
   });
 });

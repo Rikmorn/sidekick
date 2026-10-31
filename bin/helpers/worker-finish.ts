@@ -1,5 +1,5 @@
 /**
- * `sidekick worker finish`: once a worker's branch is integrated, saves its run
+ * `sidekick worker finish`: once a worker's branch has landed, saves its run
  * report in the main checkout and removes its session, desk record, worktree,
  * and branch.
  * It refuses whenever a step would lose work. The steps run in order, and the
@@ -14,6 +14,7 @@ import { parseFlags } from './profile.js';
 import type { WorkerEnv } from './worker.js';
 import { type Brief, readBrief } from './worker-brief.js';
 import { LISTING, listJobs } from './worker-jobs.js';
+import { DEFAULT_CAP, landedIn } from './worker-landed.js';
 import {
   checkedOut,
   commitOf,
@@ -31,15 +32,25 @@ import {
   removeSession,
   type Step,
   stopJob,
+  type Verdict,
   type WorkerJob,
   waitForLock,
 } from './worker-teardown.js';
+
+/** Which landing `finish` checks for: a target, or none on the operator's word. */
+export type FinishMode =
+  | { kind: 'landed'; into: string | undefined }
+  | { kind: 'discard' };
 
 /** What `finish` was asked for, the brief's path absolute. */
 export interface FinishOptions {
   brief: string;
   noReport: boolean;
+  mode: FinishMode;
 }
+
+/** The length `finish` shortens a sha to in the landing line. */
+export const SHORT_SHA = 7;
 
 /**
  * Parses `finish`'s arguments, resolving the brief against `cwd`, the folder
@@ -49,11 +60,21 @@ export function parseFinishArgs(
   rest: string[],
   cwd: string,
 ): FinishOptions | undefined {
-  const parsed = parseFlags(rest, { 'no-report': { type: 'boolean' } });
+  const parsed = parseFlags(rest, {
+    'no-report': { type: 'boolean' },
+    into: { type: 'string' },
+    discard: { type: 'boolean' },
+  });
   if (parsed === undefined || parsed.positionals.length !== 1) return undefined;
+  const { into, discard } = parsed.values;
+  if (discard === true && into !== undefined) return undefined;
   return {
     brief: path.resolve(cwd, parsed.positionals[0]),
     noReport: parsed.values['no-report'] === true,
+    mode:
+      discard === true
+        ? { kind: 'discard' }
+        : { kind: 'landed', into: typeof into === 'string' ? into : undefined },
   };
 }
 
@@ -92,44 +113,108 @@ function findJob(
   return { id, state };
 }
 
-// The head of the worker's branch, once the main checkout's HEAD holds it.
-function integratedHead(
+// The target's name: the full ref name git gives it, `HEAD` when detached, else
+// the rev as typed, since a sha or `main~1` has no symbolic name.
+function targetName(runGit: Runner, top: string, rev: string): string {
+  const result = runGit('git', ['rev-parse', '--symbolic-full-name', rev], top);
+  const name = result.code === 0 ? result.stdout.trim() : '';
+  return name === '' ? rev : name;
+}
+
+type Target = { name: string; sha: string };
+
+// The commit the work must have landed in: `--into`'s rev, else the main
+// checkout's HEAD. The worker's own branch is no target, since it holds its head.
+function resolveTarget(
+  runGit: Runner,
+  top: string,
+  into: string | undefined,
+  branch: string,
+): Target | { issue: string } {
+  const rev = into ?? 'HEAD';
+  const sha = commitOf(runGit, top, rev);
+  if (sha === undefined) {
+    return {
+      issue: `--into ${rev} names no commit in the main checkout's repo, so finish cannot check that ${branch} landed there: name a branch, tag, or commit that exists`,
+    };
+  }
+  const name = targetName(runGit, top, rev);
+  if (name === `refs/heads/${branch}`) {
+    return {
+      issue: `${into === undefined ? 'the main checkout has' : `--into ${rev} names`} the worker's own branch ${branch}, which holds its head whether or not the work landed: ${into === undefined ? 'check out' : 'name'} the branch it should land in`,
+    };
+  }
+  return { name, sha };
+}
+
+// How far the walk got, for the not-landed refusal.
+function walkedText(walked: number, capped: boolean): string {
+  const commits = `${walked} ${walked === 1 ? 'commit' : 'commits'}`;
+  return capped
+    ? `the history walk tried ${commits} and stopped at its cap of ${DEFAULT_CAP}`
+    : `the history walk tried ${commits} and found no match`;
+}
+
+// The head of the worker's branch and where its content landed.
+function landedHead(
   runGit: Runner,
   top: string,
   branch: string,
-  id: string,
-): { head: string } | { issues: string[] } {
-  const discard = `discarding it is your call, with claude rm ${id}`;
+  opts: FinishOptions,
+): { head: string; verdict: Verdict } | { issues: string[] } {
+  const discard = `discarding it is your call, with sidekick worker finish ${opts.brief} --discard`;
   const head = commitOf(runGit, top, `refs/heads/${branch}`);
   if (head === undefined) {
     return {
       issues: [
-        `the branch ${branch} does not exist, so finish cannot check that the work is integrated: ${discard}`,
+        `the branch ${branch} does not exist, so finish cannot check that the work has landed: ${discard}`,
       ],
     };
   }
-  const merge = ['merge-base', '--is-ancestor', head, 'HEAD'];
-  if (runGit('git', merge, top).code === 0) return { head };
-  return {
-    issues: [
-      `${branch} is not integrated: its head ${head} is not in the main checkout's HEAD. Integrate it and run finish again; ${discard}`,
-    ],
-  };
+  if (opts.mode.kind === 'discard') {
+    return { issues: ['finish --discard is not built yet'] };
+  }
+  const target = resolveTarget(runGit, top, opts.mode.into, branch);
+  if ('issue' in target) return { issues: [target.issue] };
+  const landing = landedIn(runGit, top, { target: target.sha, head });
+  switch (landing.kind) {
+    case 'landed':
+      return {
+        head,
+        verdict: { kind: 'landed', target, at: landing.at },
+      };
+    case 'error':
+      return {
+        issues: [
+          `finish cannot check that ${branch} landed in ${target.name}: ${landing.issue}`,
+        ],
+      };
+    case 'not landed':
+      return {
+        issues: [
+          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discard}`,
+        ],
+      };
+    default: {
+      const unhandled: never = landing;
+      throw new Error(`unhandled landing: ${JSON.stringify(unhandled)}`);
+    }
+  }
 }
 
-// integratedHead checks only the branch, so the worktree must have that branch
+// landedHead checks only the branch, so the worktree must have that branch
 // checked out. That also proves the folder is the worktree, not a folder of an
 // enclosing repo.
 function onBranchIssues(
   runGit: Runner,
   worktree: string,
   branch: string,
-  id: string,
+  brief: string,
 ): string[] {
   const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`) return [];
   return [
-    `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits are integrated: check out ${branch} there and run finish again; discarding it is your call, with claude rm ${id}`,
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits have landed: check out ${branch} there and run finish again; discarding it is your call, with sidekick worker finish ${brief} --discard`,
   ];
 }
 
@@ -197,20 +282,20 @@ function checkFinish(
   const report = path.posix.normalize(brief.report);
   const reportFrom = path.join(worktree, report);
   const reportTo = path.join(top, report);
-  const integrated = integratedHead(wenv.runGit, top, branch, job.id);
+  const landed = landedHead(wenv.runGit, top, branch, opts);
   const worktreeIssues = [
-    ...onBranchIssues(wenv.runGit, worktree, branch, job.id),
+    ...onBranchIssues(wenv.runGit, worktree, branch, opts.brief),
     ...dirtyIssues(wenv.runGit, top, worktree, report),
   ];
   const step = reportStep(reportFrom, reportTo, opts.noReport);
   if (
-    'issues' in integrated ||
+    'issues' in landed ||
     worktreeIssues.length > 0 ||
     typeof step !== 'string'
   ) {
     return {
       issues: [
-        ...('issues' in integrated ? integrated.issues : []),
+        ...('issues' in landed ? landed.issues : []),
         ...worktreeIssues,
         ...(typeof step === 'string' ? [] : step.issues),
       ],
@@ -223,7 +308,9 @@ function checkFinish(
     commonDir,
     worktree,
     branch,
-    head: integrated.head,
+    head: landed.head,
+    verdict: landed.verdict,
+    brief: opts.brief,
     report,
     reportFrom,
     reportTo,
@@ -285,17 +372,17 @@ function reportChangedIssues(ready: Ready): string[] {
   ];
 }
 
-// A commit made after integratedHead's check is in no integrated HEAD, and the removal loses it.
+// A commit made after landedHead's check was never checked, and the removal loses it.
 function headMovedIssues(runGit: Runner, ready: Ready): string[] {
   const now = commitOf(runGit, ready.top, `refs/heads/${ready.branch}`);
   if (now === ready.head) return [];
   if (now === undefined) {
     return [
-      `the branch ${ready.branch} is gone, so finish cannot confirm its head is still ${ready.head}, the head it verified as integrated`,
+      `the branch ${ready.branch} is gone, so finish cannot confirm its head is still ${ready.head}, the head it verified`,
     ];
   }
   return [
-    `${ready.branch} moved to ${now} after finish verified its head ${ready.head} as integrated: integrate the new commits, then run finish again`,
+    `${ready.branch} moved to ${now} after finish verified its head ${ready.head}: land the new commits, then run finish again`,
   ];
 }
 
@@ -303,7 +390,7 @@ function headMovedIssues(runGit: Runner, ready: Ready): string[] {
 // left, so the worktree is checked again once its process is gone.
 const recheckWorktree: Step = (ready, wenv) => {
   const issues = [
-    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.id),
+    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.brief),
     ...headMovedIssues(wenv.runGit, ready),
     ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
     ...reportChangedIssues(ready),
@@ -315,9 +402,28 @@ const recheckWorktree: Step = (ready, wenv) => {
   ];
 };
 
+// The landing line, so the operator sees what the check found before any removal.
+const sayVerdict: Step = (ready, _wenv, out) => {
+  const { verdict } = ready;
+  switch (verdict.kind) {
+    case 'landed':
+      out(
+        `${ready.branch} landed in ${verdict.target.name} at ${verdict.at.slice(0, SHORT_SHA)}`,
+      );
+      return [];
+    case 'discard':
+      return [];
+    default: {
+      const unhandled: never = verdict;
+      throw new Error(`unhandled verdict: ${JSON.stringify(unhandled)}`);
+    }
+  }
+};
+
 // In order: nothing is removed until the report is saved, the job has stopped,
 // and the worktree has passed its checks again.
 const STEPS: Step[] = [
+  sayVerdict,
   saveReport,
   stopJob,
   waitForLock,
