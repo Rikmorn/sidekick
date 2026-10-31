@@ -2,7 +2,7 @@
 
 `sidekick worker` starts a plan's worker and clears it away. `dispatch` checks a brief, then starts `sk-worker` as a background session in a worktree of its own, with pushes blocked. `finish` runs once the worker's branch is integrated. It saves the run report beside the plan, then removes the worker's session, desk record, worktree, and branch. `sk-execute` §Hand off to a worker runs both, after the operator chooses the worker mode. `sk-worker` holds the worker's own rules.
 
-Issues #206 and #218 in the `Rikmorn/sidekick` repo decided the shape. Most measurements behind these claims are in `docs/research/control-centre/2026-10-14-dispatched-worker-probes.md` in that repo, called "the dispatch probes" here. They ran on Claude Code 2.1.299. The report beside them, `2026-10-14-dispatched-worker-bench.md`, ran the verbs end to end on 2.1.300. It is called "the dispatch bench" here. `2026-10-15-desk-probes.md` in the same folder, called "the desk probes" here, ran on 2.1.300. Its table grades each answer as measured or read, and one answer here is a read.
+Issues #206 and #218 in the `Rikmorn/sidekick` repo decided the shape. Most measurements behind these claims are in `docs/research/control-centre/2026-10-14-dispatched-worker-probes.md` in that repo, called "the dispatch probes" here. They ran on Claude Code 2.1.299. The report beside them, `2026-10-14-dispatched-worker-bench.md`, ran the verbs end to end on 2.1.300. It is called "the dispatch bench" here. The report `2026-10-15-desk-probes.md` in the same folder is called "the desk probes" here. It ran on 2.1.300 and grades each answer as measured or read. One answer cited here is a read.
 
 ## The verbs
 
