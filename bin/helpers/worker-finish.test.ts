@@ -148,17 +148,6 @@ describe('finish refuses', () => {
     );
   });
 
-  test('--discard, which is not built yet', () => {
-    const fx = fixture();
-    const h = harness(fx);
-    expectRefusedUntouched(
-      h,
-      fx,
-      h.finish(fx.brief, '--discard'),
-      'finish --discard is not built yet',
-    );
-  });
-
   test('--into together with --discard, as a usage error', () => {
     const fx = fixture();
     const h = harness(fx);
@@ -899,5 +888,134 @@ describe('finish clears the worker', () => {
       `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
     ]);
     expect(branchRemains(fx)).toBe(true);
+  });
+});
+
+const discarded = (fx: Fixture): string =>
+  `refs/sidekick/discarded/w1/${fx.head}`;
+
+describe('finish --discard', () => {
+  test('clears an unlanded worker on the operator word, keeping a discarded ref', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--discard')).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out[0]).toBe('worktree-w1 is discarded on your word');
+    expect(h.out.at(-1)).toBe(
+      `worktree-w1 is kept as ${discarded(fx)}: restore it with git branch worktree-w1 ${discarded(fx)}`,
+    );
+    expect(savedReport(fx)).toBe(REPORT_TEXT);
+    expect(h.claude.named('stop')).toHaveLength(1);
+    expect(h.out).toContain(`session ${ID} removed`);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    expect(branchRemains(fx)).toBe(false);
+    expect(
+      git(
+        fx.top,
+        'for-each-ref',
+        '--format=%(refname) %(objectname)',
+        'refs/sidekick/',
+      ),
+    ).toBe(`${discarded(fx)} ${fx.head}`);
+  });
+
+  test('keeps a ref that restores the branch at its head', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--discard')).toBe(0);
+    git(fx.top, 'branch', 'worktree-w1', discarded(fx));
+    expect(git(fx.top, 'rev-parse', 'refs/heads/worktree-w1')).toBe(fx.head);
+  });
+
+  test('refuses a worktree holding a modified tracked file, writing no ref', () => {
+    const fx = fixture();
+    fs.writeFileSync(path.join(fx.worktree, 'a.txt'), 'changed\n');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, '--discard'),
+      `the worktree ${fx.worktree} holds uncommitted work besides the report, which its removal would destroy: a.txt. Commit and integrate it, or remove it, then run finish again`,
+    );
+    expect(git(fx.top, 'for-each-ref', 'refs/sidekick/')).toBe('');
+  });
+
+  test('refuses with no report unless --no-report', () => {
+    const fx = fixture();
+    fs.rmSync(path.join(fx.worktree, REPORT));
+    const refused = harness(fx);
+    expectRefusedUntouched(
+      refused,
+      fx,
+      refused.finish(fx.brief, '--discard'),
+      `the worktree has no run report at ${path.join(fx.worktree, REPORT)}: ask the worker for it, or pass --no-report to finish without one`,
+    );
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--discard', '--no-report')).toBe(0);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test('runs the discard line of claude rm when its sha is the verified head', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.rm = [kept(fx, fx.head), removed()];
+    expect(h.finish(fx.brief, '--discard')).toBe(0);
+    expect(h.claude.named('rm')).toEqual([
+      ['rm', ID],
+      ['rm', ID, '--discard-unpushed', `${fx.head}@${WORKTREE_ID}`],
+    ]);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    expect(git(fx.top, 'rev-parse', discarded(fx))).toBe(fx.head);
+  });
+
+  test('refuses a branch that is gone, naming the hand route', () => {
+    const fx = fixture();
+    git(fx.worktree, 'checkout', '-q', '--detach');
+    git(fx.top, 'branch', '-D', 'worktree-w1');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, '--discard'),
+      `the branch worktree-w1 does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${ID}`,
+    );
+  });
+
+  test('refuses a worktree off its branch, naming the hand route', () => {
+    const fx = fixture();
+    git(fx.worktree, 'checkout', '-q', '--detach');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, '--discard'),
+      `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, and its commits may not all be on worktree-w1, which finish keeps as the backup: check out worktree-w1 there and run finish again; to clear it by hand, claude rm ${ID}`,
+    );
+  });
+
+  test('refuses a worktree that moves off its branch while the job stops', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.whileStopping = () =>
+      git(fx.worktree, 'checkout', '-q', '--detach');
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      'the worktree changed after finish checked it, so finish removed nothing:',
+      `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, and its commits may not all be on worktree-w1, which finish keeps as the backup: check out worktree-w1 there and run finish again; to clear it by hand, claude rm ${ID}`,
+    ]);
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+
+  test('refuses a head that moved while the job stopped', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.whileStopping = () => {
+      git(fx.worktree, 'commit', '-q', '--allow-empty', '-m', 'late');
+    };
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err[1]).toBe(
+      `worktree-w1 moved to ${git(fx.top, 'rev-parse', 'worktree-w1')} after finish verified its head ${fx.head}, so finish has not checked the new commits: run finish again`,
+    );
+    expect(git(fx.top, 'for-each-ref', 'refs/sidekick/')).toBe('');
   });
 });

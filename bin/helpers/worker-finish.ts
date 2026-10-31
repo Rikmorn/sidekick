@@ -157,34 +157,41 @@ function walkedText(walked: number, capped: boolean): string {
     : `the history walk tried ${commits} and found no match`;
 }
 
-// The head of the worker's branch and where its content landed.
-function landedHead(
+// What a refusal offers as the way out: the discard route in landed mode, and
+// in discard mode, which is already that route, clearing the worker by hand.
+function wayOut(discard: boolean, brief: string, id: string): string {
+  return discard
+    ? `to clear it by hand, claude rm ${id}`
+    : `discarding it is your call, with sidekick worker finish ${brief} --discard`;
+}
+
+function missingBranchIssue(
+  branch: string,
+  opts: FinishOptions,
+  id: string,
+): string {
+  if (opts.mode.kind === 'discard') {
+    return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${id}`;
+  }
+  return `the branch ${branch} does not exist, so finish cannot check that the work has landed: ${wayOut(false, opts.brief, id)}`;
+}
+
+// The verdict for a branch head: the operator's word, or where the head landed.
+function verdictFor(
   runGit: Runner,
   top: string,
   branch: string,
+  head: string,
   opts: FinishOptions,
-): { head: string; verdict: Verdict } | { issues: string[] } {
-  const discard = `discarding it is your call, with sidekick worker finish ${opts.brief} --discard`;
-  const head = commitOf(runGit, top, `refs/heads/${branch}`);
-  if (head === undefined) {
-    return {
-      issues: [
-        `the branch ${branch} does not exist, so finish cannot check that the work has landed: ${discard}`,
-      ],
-    };
-  }
-  if (opts.mode.kind === 'discard') {
-    return { issues: ['finish --discard is not built yet'] };
-  }
+  id: string,
+): { verdict: Verdict } | { issues: string[] } {
+  if (opts.mode.kind === 'discard') return { verdict: { kind: 'discard' } };
   const target = resolveTarget(runGit, top, opts.mode.into, branch);
   if ('issue' in target) return { issues: [target.issue] };
   const landing = landedIn(runGit, top, { target: target.sha, head });
   switch (landing.kind) {
     case 'landed':
-      return {
-        head,
-        verdict: { kind: 'landed', target, at: landing.at },
-      };
+      return { verdict: { kind: 'landed', target, at: landing.at } };
     case 'error':
       return {
         issues: [
@@ -194,7 +201,7 @@ function landedHead(
     case 'not landed':
       return {
         issues: [
-          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discard}`,
+          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${wayOut(false, opts.brief, id)}`,
         ],
       };
     default: {
@@ -204,19 +211,39 @@ function landedHead(
   }
 }
 
-// landedHead checks only the branch, so the worktree must have that branch
+// The head of the worker's branch and the verdict on it.
+function branchVerdict(
+  runGit: Runner,
+  top: string,
+  branch: string,
+  opts: FinishOptions,
+  id: string,
+): { head: string; verdict: Verdict } | { issues: string[] } {
+  const head = commitOf(runGit, top, `refs/heads/${branch}`);
+  if (head === undefined) {
+    return { issues: [missingBranchIssue(branch, opts, id)] };
+  }
+  const judged = verdictFor(runGit, top, branch, head, opts, id);
+  return 'issues' in judged ? judged : { head, verdict: judged.verdict };
+}
+
+// branchVerdict checks only the branch, so the worktree must have that branch
 // checked out. That also proves the folder is the worktree, not a folder of an
 // enclosing repo.
 function onBranchIssues(
   runGit: Runner,
   worktree: string,
   branch: string,
-  brief: string,
+  discard: boolean,
+  exit: string,
 ): string[] {
   const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`) return [];
+  const why = discard
+    ? `and its commits may not all be on ${branch}, which finish keeps as the backup`
+    : 'so finish cannot check that its commits have landed';
   return [
-    `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits have landed: check out ${branch} there and run finish again; discarding it is your call, with sidekick worker finish ${brief} --discard`,
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${why}: check out ${branch} there and run finish again; ${exit}`,
   ];
 }
 
@@ -284,9 +311,16 @@ function checkFinish(
   const report = path.posix.normalize(brief.report);
   const reportFrom = path.join(worktree, report);
   const reportTo = path.join(top, report);
-  const landed = landedHead(wenv.runGit, top, branch, opts);
+  const discard = opts.mode.kind === 'discard';
+  const landed = branchVerdict(wenv.runGit, top, branch, opts, job.id);
   const worktreeIssues = [
-    ...onBranchIssues(wenv.runGit, worktree, branch, opts.brief),
+    ...onBranchIssues(
+      wenv.runGit,
+      worktree,
+      branch,
+      discard,
+      wayOut(discard, opts.brief, job.id),
+    ),
     ...dirtyIssues(wenv.runGit, top, worktree, report),
   ];
   const step = reportStep(reportFrom, reportTo, opts.noReport);
@@ -374,7 +408,7 @@ function reportChangedIssues(ready: Ready): string[] {
   ];
 }
 
-// A commit made after landedHead's check was never checked, and the removal loses it.
+// A commit made after branchVerdict's check was never checked, and the removal loses it.
 function headMovedIssues(runGit: Runner, ready: Ready): string[] {
   const now = commitOf(runGit, ready.top, `refs/heads/${ready.branch}`);
   if (now === ready.head) return [];
@@ -391,8 +425,15 @@ function headMovedIssues(runGit: Runner, ready: Ready): string[] {
 // The job may have run on through checkFinish, and a discard destroys what it
 // left, so the worktree is checked again once its process is gone.
 const recheckWorktree: Step = (ready, wenv) => {
+  const discard = ready.verdict.kind === 'discard';
   const issues = [
-    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.brief),
+    ...onBranchIssues(
+      wenv.runGit,
+      ready.worktree,
+      ready.branch,
+      discard,
+      wayOut(discard, ready.brief, ready.id),
+    ),
     ...headMovedIssues(wenv.runGit, ready),
     ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
     ...reportChangedIssues(ready),
@@ -414,6 +455,7 @@ const sayVerdict: Step = (ready, _wenv, out) => {
       );
       return [];
     case 'discard':
+      out(`${ready.branch} is discarded on your word`);
       return [];
     default: {
       const unhandled: never = verdict;
