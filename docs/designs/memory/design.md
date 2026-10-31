@@ -479,7 +479,7 @@ Order:
 
 **What ships alone:** piece 2 adds a command and changes no sidekick contract. It does change where each registered repo's memory lives, which removing the key reverses.
 
-**Release:** the whole is one release. The operator ruled on 2026-10-31 that these issues all join the next milestone.
+**Release:** the whole is one release, R10. Pieces #270 to #278 joined it at its Opening on 2026-10-31, and the three registered as backlog stay there until their conditions hold (operator, 2026-10-31).
 
 **Settings changes the operator makes at user level, after work hours:** `cleanupPeriodDays`, the episodic-memory `env` line, the store's `additionalDirectories` entry, and `autoDreamEnabled`.
 

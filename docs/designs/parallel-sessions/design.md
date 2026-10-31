@@ -2,7 +2,7 @@
 
 Status: planned (#266, #267, #282, #283, #284, #285, #286, #287) · Scale: explore · 2026-10-31
 
-The design became #282 to #291, and took #266 and #267 as one of its pieces. They join the next milestone beside the memory design's #270 to #281 (operator, 2026-10-31). Gate 1 approved by the operator on 2026-10-31, with the assumed A3 replaced by the stated K18, and P3's missing case answered (§Constraints, §Cases). Gate 2: T1 and T2 ruled on 2026-10-31, and T4 settled after a survey (§Rulings at gate 2). Gate 3 approved on 2026-10-31 (§Decision).
+The design became #282 to #291, and took #266 and #267 as one of its pieces. #266, #267, and #282 to #287 joined R10 beside the memory design's #270 to #278, and #288 to #291 stay in backlog (operator, 2026-10-31). Gate 1 approved by the operator on 2026-10-31, with the assumed A3 replaced by the stated K18, and P3's missing case answered (§Constraints, §Cases). Gate 2: T1 and T2 ruled on 2026-10-31, and T4 settled after a survey (§Rulings at gate 2). Gate 3 approved on 2026-10-31 (§Decision).
 
 Research: [`docs/research/parallel-sessions/`](../../research/parallel-sessions/README.md).
 
@@ -420,7 +420,7 @@ Assumptions, and what changes if each is wrong:
 
 ## Breakdown
 
-Each piece is a brief for one issue. The operator ruled on 2026-10-31 that they join the next milestone beside #270 to #281.
+Each piece is a brief for one issue. They joined R10 beside #270 to #278 at its Opening on 2026-10-31.
 
 1. **The worktrunk trial** (L-a; #287). Installing the binary changes the machine, so it waits for the evening (K5), and the plugin goes in at local scope in one repo.
    - Problem: worktrees are set up and cleaned by hand, and Claude Code's own creation has no setup hook, prefixes branches, and misses squash merges.
@@ -487,8 +487,8 @@ Order:
 
 **Registered as backlog with this design:**
 
-- X-b, a task folder with one worktree per family repo, #288. Revisit when: the operator runs a full-stack feature across family repos with live sessions in each.
-- X-c, an orchestrator main dispatching into each family repo, #289. Revisit when: #241's profiles play session settles how processes coordinate.
+- X-b, a task folder with one worktree per family repo, #288. Its condition, rewritten at R10's Opening, waits on the first full-stack feature run with one worktree per repo.
+- X-c, an orchestrator main dispatching into each family repo, #289. Its condition, rewritten at R10's Opening, no longer waits on profiles: the operator starts in one repo involved in the work.
 - O-e, Mergiraf as a local merge driver, #290. Revisit when: a conflict at landing costs a session more than a few minutes.
 - A guard on writes in a shared checkout, #291. Revisit when: piece 4's notice fires on two sessions writing tracked files in one checkout, in a week after pieces 4 and 7 ship.
 
