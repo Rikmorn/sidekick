@@ -44,6 +44,10 @@ function expectRefusedUntouched(
   expect(fs.existsSync(fx.worktree)).toBe(true);
 }
 
+// The way out after a claude rm answer finish cannot read: the re-run, then the hand route.
+const wayOut = (rerun: string, hand: string): string =>
+  `run finish again with ${rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${hand}`;
+
 describe('finish refuses', () => {
   test('when no session has the name', () => {
     const fx = fixture();
@@ -374,7 +378,7 @@ describe('finish refuses', () => {
     expect(h.err).toEqual([
       `claude rm ${ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
       'kept 213245a1 — A Claude Code lock on the worktree names a process that is still running',
-      `complete the removal by hand with claude rm ${ID}`,
+      wayOut(`sidekick worker finish ${fx.brief}`, `claude rm ${ID}`),
     ]);
     expect(fs.existsSync(fx.worktree)).toBe(true);
   });
@@ -396,9 +400,34 @@ describe('finish refuses', () => {
     expect(h.err).toEqual([
       `claude rm ${ID} ${what}, so finish removed nothing more:`,
       `removed ${ID}`,
-      `complete the removal by hand with claude rm ${ID}`,
+      wayOut(`sidekick worker finish ${fx.brief}`, `claude rm ${ID}`),
     ]);
     expect(h.out).not.toContain(`session ${ID} removed`);
+  });
+
+  test.each([
+    ['--into', ['--into', 'feature'], '--into feature'],
+    ['--discard', ['--discard'], '--discard'],
+    ['--no-report', ['--no-report'], '--no-report'],
+    [
+      '--into and --no-report, in the usage order',
+      ['--into', 'feature', '--no-report'],
+      '--no-report --into feature',
+    ],
+  ])('a claude rm answer it does not know, naming the re-run with %s', (_label, args, flags) => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.top, 'branch', 'feature');
+    const h = harness(fx);
+    h.claude.state.rm = [
+      { result: ok({ stdout: `kept ${ID}\n` }), removes: 'nothing' },
+    ];
+    expect(h.finish(fx.brief, ...args)).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm ${ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
+      `kept ${ID}`,
+      wayOut(`sidekick worker finish ${fx.brief} ${flags}`, `claude rm ${ID}`),
+    ]);
   });
 
   test.each([
@@ -793,7 +822,10 @@ describe('finish clears the worker', () => {
       `claude rm ${ID} --discard-unpushed ${fx.head}@${WORKTREE_ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
     );
     expect(h.err.at(-1)).toBe(
-      `complete the removal by hand with claude rm ${ID} --discard-unpushed ${fx.head}@${WORKTREE_ID}`,
+      wayOut(
+        `sidekick worker finish ${fx.brief}`,
+        `claude rm ${ID} --discard-unpushed ${fx.head}@${WORKTREE_ID}`,
+      ),
     );
   });
 
@@ -924,7 +956,10 @@ describe('finish after a removal cut short', () => {
     expect(h.finish(fx.brief, ...args)).toBe(1);
     expect(h.err).toEqual([
       `claude rm ${ID} failed with exit code 1, so finish removed nothing more`,
-      `complete the removal by hand with claude rm ${ID}`,
+      wayOut(
+        ['sidekick worker finish', fx.brief, ...args].join(' '),
+        `claude rm ${ID}`,
+      ),
     ]);
     expect(fs.existsSync(path.join(fx.worktree, 'a.txt'))).toBe(false);
     const first = h.out.length;

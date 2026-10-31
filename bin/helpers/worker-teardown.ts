@@ -83,6 +83,8 @@ export interface Ready extends WorkerJob {
   reportStep: ReportStep;
   verdict: Verdict;
   brief: string;
+  /** The command that repeats this run, with the flags it was given. */
+  rerun: string;
   /** A removal an earlier run cut short: deleted files alone, at a head a backup ref already holds. */
   partial: boolean;
 }
@@ -171,16 +173,22 @@ export const waitForLock: Step = (ready, wenv) => {
 const saidRemoved = (result: ClaudeResult): boolean =>
   ranClean(result) && REMOVED.test(printedStreams(result).join('\n'));
 
-// `args` is the claude rm that ran, which is also the command that completes
-// the removal by hand: the discard line once it ran, else `rm <id>`.
-function unknownAnswer(args: string[], result: ClaudeResult): string[] {
+// The re-run comes first: it restores what a cut-short claude rm deleted, and
+// claude rm keeps a worktree with uncommitted changes. `args` is the claude rm
+// that ran, which also completes the removal by hand: the discard line once it
+// ran, else `rm <id>`.
+function unknownAnswer(
+  rerun: string,
+  args: string[],
+  result: ClaudeResult,
+): string[] {
   const what = ranClean(result)
     ? 'did not say removed, and finish does not know its answer'
     : failure(result);
   const command = `claude ${args.join(' ')}`;
   return [
     ...withText(`${command} ${what}, so finish removed nothing more`, result),
-    `complete the removal by hand with ${command}`,
+    `run finish again with ${rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`,
   ];
 }
 
@@ -191,7 +199,7 @@ function unknownAnswer(args: string[], result: ClaudeResult): string[] {
 function discard(ready: Ready, wenv: WorkerEnv, kept: ClaudeResult): string[] {
   const text = printedStreams(kept).join('\n');
   const offer = kept.timedOut ? null : DISCARD_LINE.exec(text);
-  if (offer === null) return unknownAnswer(['rm', ready.id], kept);
+  if (offer === null) return unknownAnswer(ready.rerun, ['rm', ready.id], kept);
   const [, sha, worktreeId] = offer;
   if (sha !== ready.head) {
     return withText(
@@ -201,7 +209,7 @@ function discard(ready: Ready, wenv: WorkerEnv, kept: ClaudeResult): string[] {
   }
   const args = ['rm', ready.id, '--discard-unpushed', `${sha}@${worktreeId}`];
   const result = claudeAt(ready, wenv, args, NO_LIMIT);
-  return saidRemoved(result) ? [] : unknownAnswer(args, result);
+  return saidRemoved(result) ? [] : unknownAnswer(ready.rerun, args, result);
 }
 
 // claude rm's exit code does not say whether it removed or kept, so only its

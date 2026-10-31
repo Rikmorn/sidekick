@@ -443,6 +443,31 @@ function missingReportStep(
   };
 }
 
+// The flags that repeat a mode: `--into` with its rev as typed, or `--discard`.
+function modeFlags(mode: FinishMode): string[] {
+  switch (mode.kind) {
+    case 'landed':
+      return mode.into === undefined ? [] : ['--into', mode.into];
+    case 'discard':
+      return ['--discard'];
+    default: {
+      const unhandled: never = mode;
+      throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+// The command that repeats this run, its flags in the usage's order.
+function rerunCommand(opts: FinishOptions): string {
+  const report = opts.noReport ? ['--no-report'] : [];
+  return [
+    'sidekick worker finish',
+    opts.brief,
+    ...report,
+    ...modeFlags(opts.mode),
+  ].join(' ');
+}
+
 // Every refusal the checks found, in the order they ran.
 function allIssues(
   landed: { head: string; verdict: Verdict } | { issues: string[] },
@@ -490,6 +515,7 @@ function checkFinish(
     head: landed.head,
     verdict: landed.verdict,
     brief: opts.brief,
+    rerun: rerunCommand(opts),
     reportStep: step,
     partial: tree.partial,
   };
