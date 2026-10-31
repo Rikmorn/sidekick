@@ -578,8 +578,41 @@ describe('finish keeps the branch in a backup ref', () => {
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toHaveLength(1);
-    expect(h.err[0]).toContain(`cannot keep ${backup(fx)}`);
+    expect(h.err[0]).toContain(`cannot keep ${backup(fx)}: `);
+    expect(h.err[0]).toContain('refs/sidekick/landed');
+    expect(h.err[0]).toContain('exists');
     expect(h.claude.named('rm')).toEqual([]);
+  });
+
+  test('refusing, naming the ref, when it holds another commit', () => {
+    const fx = fixture();
+    fx.integrate();
+    const other = git(
+      fx.top,
+      'commit-tree',
+      `${fx.head}^{tree}`,
+      '-m',
+      'other',
+    );
+    git(fx.top, 'update-ref', backup(fx), other);
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toContain(`cannot keep ${backup(fx)}: `);
+    expect(h.err[0]).toContain('reference already exists');
+    expect(git(fx.top, 'rev-parse', backup(fx))).toBe(other);
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+
+  test('leaving a key that only resembles the branch config alone', () => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.top, 'config', 'branch-worktree-w1.foo', 'x');
+    const h = harness(fx);
+    h.claude.state.rm = [removed('the worktree')];
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.out.at(-1)).toContain('is kept as');
+    expect(git(fx.top, 'config', '--get', 'branch-worktree-w1.foo')).toBe('x');
   });
 
   test('deleting a leftover branch with its branch config', () => {
@@ -619,6 +652,7 @@ describe('finish keeps the branch in a backup ref', () => {
     expect(h.err[0]).toContain(
       'git update-ref -d refs/heads/worktree-w1 failed',
     );
+    expect(h.err[0]).toContain(`is at ${other} but expected ${fx.head}`);
   });
 });
 

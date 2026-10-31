@@ -432,7 +432,7 @@ const sayBackup: Step = (ready, _wenv, out) => {
 };
 
 // In order: nothing is removed until the report is saved, the job has stopped,
-// and the worktree has passed its checks again.
+// the worktree has passed its checks again, and the branch is kept in a backup ref.
 const STEPS: Step[] = [
   sayVerdict,
   saveReport,

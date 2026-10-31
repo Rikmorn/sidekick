@@ -5623,7 +5623,7 @@ function branchGoneIssues(runGit, top, branch, head) {
 }
 function dropBranchConfig(runGit, top, branch) {
   const section = `branch.${branch}`;
-  const has = runGit("git", ["config", "--get-regexp", `^${section}\\.`], top);
+  const has = runGit("git", ["config", "--local", "--get-regexp", `^branch\\.${branch}\\.`], top);
   if (has.code !== 0)
     return [];
   const result = runGit("git", ["config", "--remove-section", section], top);

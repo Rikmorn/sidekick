@@ -1,7 +1,8 @@
 /**
  * The steps `sidekick worker finish` runs once its checks pass: stopping the
- * worker's job, waiting out its lock, removing the session, forgetting the desk
- * record, and confirming the worktree and branch are gone.
+ * worker's job, waiting out its lock, keeping the branch in a backup ref,
+ * removing the session, forgetting the desk record, confirming the worktree is
+ * gone, and deleting a leftover branch at its verified head.
  * Each step returns the issues that stop the run, none on success.
  */
 
@@ -212,8 +213,7 @@ function worktreeGoneIssues(
     : [];
 }
 
-// update-ref -d with the verified head refuses a branch that moved; branch -d
-// refused a squash-landed branch.
+// update-ref -d with the verified head refuses a branch that moved.
 function branchGoneIssues(
   runGit: Runner,
   top: string,
@@ -229,14 +229,19 @@ function branchGoneIssues(
   return dropBranchConfig(runGit, top, branch);
 }
 
-// A deleted branch leaves its [branch "<name>"] section behind.
+// update-ref -d, unlike git branch -d, leaves the [branch "<name>"] section behind.
 function dropBranchConfig(
   runGit: Runner,
   top: string,
   branch: string,
 ): string[] {
   const section = `branch.${branch}`;
-  const has = runGit('git', ['config', '--get-regexp', `^${section}\\.`], top);
+  // --local: --remove-section writes only the local file.
+  const has = runGit(
+    'git',
+    ['config', '--local', '--get-regexp', `^branch\\.${branch}\\.`],
+    top,
+  );
   if (has.code !== 0) return [];
   const result = runGit('git', ['config', '--remove-section', section], top);
   if (result.code === 0) return [];
