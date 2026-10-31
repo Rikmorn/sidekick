@@ -5611,20 +5611,34 @@ function worktreeGoneIssues(runGit, top, worktree) {
 `).includes(`worktree ${worktree}`);
   return listed ? [`claude rm said removed, but git still lists the worktree ${worktree}`] : [];
 }
-function branchGoneIssues(runGit, top, branch) {
+function branchGoneIssues(runGit, top, branch, head) {
   if (!branchExists(runGit, top, branch))
     return [];
-  const result = runGit("git", ["branch", "-d", branch], top);
+  const ref2 = `refs/heads/${branch}`;
+  const result = runGit("git", ["update-ref", "-d", ref2, head], top);
+  if (result.code !== 0) {
+    return [`git update-ref -d ${ref2} failed: ${result.stderr.trim()}`];
+  }
+  return dropBranchConfig(runGit, top, branch);
+}
+function dropBranchConfig(runGit, top, branch) {
+  const section = `branch.${branch}`;
+  const has = runGit("git", ["config", "--get-regexp", `^${section}\\.`], top);
+  if (has.code !== 0)
+    return [];
+  const result = runGit("git", ["config", "--remove-section", section], top);
   if (result.code === 0)
     return [];
-  return [`git branch -d ${branch} failed: ${result.stderr.trim()}`];
+  return [
+    `git config --remove-section ${section} failed: ${result.stderr.trim()}`
+  ];
 }
 var removeLeftovers = (ready, wenv, out) => {
   const worktree = worktreeGoneIssues(wenv.runGit, ready.top, ready.worktree);
   if (worktree.length > 0)
     return worktree;
   out(`worktree ${ready.worktree} removed`);
-  const branch = branchGoneIssues(wenv.runGit, ready.top, ready.branch);
+  const branch = branchGoneIssues(wenv.runGit, ready.top, ready.branch, ready.head);
   if (branch.length > 0)
     return branch;
   out(`branch ${ready.branch} removed`);
@@ -5633,6 +5647,29 @@ var removeLeftovers = (ready, wenv, out) => {
 var forgetRecord = (ready) => {
   removeRecord(ready.commonDir, ready.name);
   return [];
+};
+var backupRef = (kind, name, head) => `refs/sidekick/${kind}/${name}/${head}`;
+function readyBackup(ready) {
+  const { verdict } = ready;
+  switch (verdict.kind) {
+    case "landed":
+      return backupRef("landed", ready.name, ready.head);
+    case "discard":
+      return backupRef("discarded", ready.name, ready.head);
+    default: {
+      const unhandled = verdict;
+      throw new Error(`unhandled verdict: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+var keepBackup = (ready, wenv) => {
+  const ref2 = readyBackup(ready);
+  if (commitOf(wenv.runGit, ready.top, ref2) === ready.head)
+    return [];
+  const result = wenv.runGit("git", ["update-ref", ref2, ready.head, ""], ready.top);
+  if (result.code === 0)
+    return [];
+  return [`cannot keep ${ref2}: ${result.stderr.trim()}`];
 };
 
 // bin/helpers/worker-finish.ts
@@ -5927,15 +5964,22 @@ var sayVerdict = (ready, _wenv, out) => {
     }
   }
 };
+var sayBackup = (ready, _wenv, out) => {
+  const ref2 = readyBackup(ready);
+  out(`${ready.branch} is kept as ${ref2}: restore it with git branch ${ready.branch} ${ref2}`);
+  return [];
+};
 var STEPS = [
   sayVerdict,
   saveReport,
   stopJob,
   waitForLock,
   recheckWorktree,
+  keepBackup,
   removeSession,
   forgetRecord,
-  removeLeftovers
+  removeLeftovers,
+  sayBackup
 ];
 function finishIssues(opts, wenv, out) {
   const read = readBrief(opts.brief);

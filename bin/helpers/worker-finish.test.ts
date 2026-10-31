@@ -525,6 +525,103 @@ describe('finish passes a landing', () => {
   });
 });
 
+const backup = (fx: Fixture): string => `refs/sidekick/landed/w1/${fx.head}`;
+
+describe('finish keeps the branch in a backup ref', () => {
+  test('writing the ref at the head, and saying how to restore it', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(
+      git(
+        fx.top,
+        'for-each-ref',
+        '--format=%(refname) %(objectname)',
+        'refs/sidekick/',
+      ),
+    ).toBe(`${backup(fx)} ${fx.head}`);
+    expect(h.out.at(-1)).toBe(
+      `worktree-w1 is kept as ${backup(fx)}: restore it with git branch worktree-w1 ${backup(fx)}`,
+    );
+  });
+
+  test('so the printed command restores the branch at the head', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(branchRemains(fx)).toBe(false);
+    git(fx.top, 'branch', 'worktree-w1', backup(fx));
+    expect(git(fx.top, 'rev-parse', 'refs/heads/worktree-w1')).toBe(fx.head);
+  });
+
+  test('and a re-run after an unknown claude rm answer finds the ref in place', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    h.claude.state.rm = [
+      { result: ok({ stdout: 'kept 213245a1\n' }), removes: 'nothing' },
+      removed(),
+    ];
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(git(fx.top, 'rev-parse', backup(fx))).toBe(fx.head);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(git(fx.top, 'rev-parse', backup(fx))).toBe(fx.head);
+  });
+
+  test('refusing, with git words, when the ref cannot be written', () => {
+    const fx = fixture();
+    fx.integrate();
+    // A ref named like a prefix of the backup ref blocks its creation.
+    git(fx.top, 'update-ref', 'refs/sidekick/landed', fx.head);
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toContain(`cannot keep ${backup(fx)}`);
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+
+  test('deleting a leftover branch with its branch config', () => {
+    const fx = fixture();
+    fx.integrate();
+    const key = 'branch.worktree-w1.vscode-merge-base';
+    git(fx.top, 'config', key, 'origin/main');
+    const h = harness(fx);
+    h.claude.state.rm = [removed('the worktree')];
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(branchRemains(fx)).toBe(false);
+    expect(() => git(fx.top, 'config', '--get', key)).toThrow();
+  });
+
+  test('keeping a leftover branch that moved after the check, and refusing', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    const other = git(
+      fx.top,
+      'commit-tree',
+      `${fx.head}^{tree}`,
+      '-m',
+      'other',
+    );
+    h.claude.state.rm = [
+      {
+        ...removed('the worktree'),
+        during: () => {
+          git(fx.top, 'update-ref', 'refs/heads/worktree-w1', other);
+        },
+      },
+    ];
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(git(fx.top, 'rev-parse', 'refs/heads/worktree-w1')).toBe(other);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toContain(
+      'git update-ref -d refs/heads/worktree-w1 failed',
+    );
+  });
+});
+
 describe('finish clears the worker', () => {
   test('by a plain removed: saves the report, stops the job, and runs rm once', () => {
     const fx = fixture();
@@ -540,6 +637,7 @@ describe('finish clears the worker', () => {
       `session ${ID} removed`,
       `worktree ${fx.worktree} removed`,
       'branch worktree-w1 removed',
+      `worktree-w1 is kept as ${backup(fx)}: restore it with git branch worktree-w1 ${backup(fx)}`,
     ]);
     expect(h.err).toEqual([]);
     expect(h.slept).toEqual([]);
@@ -745,7 +843,7 @@ describe('finish clears the worker', () => {
     expect(h.slept).toEqual([]);
   });
 
-  test('deleting a branch that survives claude rm with git branch -d', () => {
+  test('deleting a branch that survives claude rm with git update-ref -d', () => {
     const fx = fixture();
     fx.integrate();
     const h = harness(fx);

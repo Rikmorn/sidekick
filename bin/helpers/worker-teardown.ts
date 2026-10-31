@@ -11,7 +11,7 @@ import type { Runner } from './pm-data.js';
 import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import type { WorkerEnv } from './worker.js';
 import { removeRecord } from './worker-record.js';
-import { branchExists } from './worker-repo.js';
+import { branchExists, commitOf } from './worker-repo.js';
 
 export type Out = (line: string) => void;
 
@@ -212,23 +212,50 @@ function worktreeGoneIssues(
     : [];
 }
 
-// git branch -d refuses a branch that is not merged.
+// update-ref -d with the verified head refuses a branch that moved; branch -d
+// refused a squash-landed branch.
 function branchGoneIssues(
   runGit: Runner,
   top: string,
   branch: string,
+  head: string,
 ): string[] {
   if (!branchExists(runGit, top, branch)) return [];
-  const result = runGit('git', ['branch', '-d', branch], top);
-  if (result.code === 0) return [];
-  return [`git branch -d ${branch} failed: ${result.stderr.trim()}`];
+  const ref = `refs/heads/${branch}`;
+  const result = runGit('git', ['update-ref', '-d', ref, head], top);
+  if (result.code !== 0) {
+    return [`git update-ref -d ${ref} failed: ${result.stderr.trim()}`];
+  }
+  return dropBranchConfig(runGit, top, branch);
 }
 
+// A deleted branch leaves its [branch "<name>"] section behind.
+function dropBranchConfig(
+  runGit: Runner,
+  top: string,
+  branch: string,
+): string[] {
+  const section = `branch.${branch}`;
+  const has = runGit('git', ['config', '--get-regexp', `^${section}\\.`], top);
+  if (has.code !== 0) return [];
+  const result = runGit('git', ['config', '--remove-section', section], top);
+  if (result.code === 0) return [];
+  return [
+    `git config --remove-section ${section} failed: ${result.stderr.trim()}`,
+  ];
+}
+
+/** Confirms the worktree is gone, then deletes a leftover branch only at the verified head. */
 export const removeLeftovers: Step = (ready, wenv, out) => {
   const worktree = worktreeGoneIssues(wenv.runGit, ready.top, ready.worktree);
   if (worktree.length > 0) return worktree;
   out(`worktree ${ready.worktree} removed`);
-  const branch = branchGoneIssues(wenv.runGit, ready.top, ready.branch);
+  const branch = branchGoneIssues(
+    wenv.runGit,
+    ready.top,
+    ready.branch,
+    ready.head,
+  );
   if (branch.length > 0) return branch;
   out(`branch ${ready.branch} removed`);
   return [];
@@ -238,4 +265,54 @@ export const removeLeftovers: Step = (ready, wenv, out) => {
 export const forgetRecord: Step = (ready) => {
   removeRecord(ready.commonDir, ready.name);
   return [];
+};
+
+/** The backup ref that keeps `head` under `name`: one kind for landed work, one for discarded. */
+export const backupRef = (
+  kind: 'landed' | 'discarded',
+  name: string,
+  head: string,
+): string => `refs/sidekick/${kind}/${name}/${head}`;
+
+const BACKUP_KINDS = ['landed', 'discarded'] as const;
+
+/** The first backup ref of either kind that holds `head`, else undefined. */
+export function heldBackup(
+  runGit: Runner,
+  top: string,
+  name: string,
+  head: string,
+): string | undefined {
+  return BACKUP_KINDS.map((kind) => backupRef(kind, name, head)).find(
+    (ref) => commitOf(runGit, top, ref) === head,
+  );
+}
+
+/** The backup ref `ready` writes, its kind taken from the verdict. */
+export function readyBackup(ready: Ready): string {
+  const { verdict } = ready;
+  switch (verdict.kind) {
+    case 'landed':
+      return backupRef('landed', ready.name, ready.head);
+    case 'discard':
+      return backupRef('discarded', ready.name, ready.head);
+    default: {
+      const unhandled: never = verdict;
+      throw new Error(`unhandled verdict: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+/** Writes the backup ref at the verified head; update-ref's empty old value refuses an existing ref. */
+export const keepBackup: Step = (ready, wenv) => {
+  const ref = readyBackup(ready);
+  // A ref already holding the head counts as written, so a re-run passes.
+  if (commitOf(wenv.runGit, ready.top, ref) === ready.head) return [];
+  const result = wenv.runGit(
+    'git',
+    ['update-ref', ref, ready.head, ''],
+    ready.top,
+  );
+  if (result.code === 0) return [];
+  return [`cannot keep ${ref}: ${result.stderr.trim()}`];
 };

@@ -24,10 +24,12 @@ import {
 } from './worker-repo.js';
 import {
   forgetRecord,
+  keepBackup,
   type Out,
   type Ready,
   type ReportStep,
   readIfPresent,
+  readyBackup,
   removeLeftovers,
   removeSession,
   type Step,
@@ -420,6 +422,15 @@ const sayVerdict: Step = (ready, _wenv, out) => {
   }
 };
 
+// The last line: where the branch's commits stay once the branch is deleted.
+const sayBackup: Step = (ready, _wenv, out) => {
+  const ref = readyBackup(ready);
+  out(
+    `${ready.branch} is kept as ${ref}: restore it with git branch ${ready.branch} ${ref}`,
+  );
+  return [];
+};
+
 // In order: nothing is removed until the report is saved, the job has stopped,
 // and the worktree has passed its checks again.
 const STEPS: Step[] = [
@@ -428,9 +439,11 @@ const STEPS: Step[] = [
   stopJob,
   waitForLock,
   recheckWorktree,
+  keepBackup,
   removeSession,
   forgetRecord,
   removeLeftovers,
+  sayBackup,
 ];
 
 // The refusal, or the failure of the first step that fails.

@@ -112,6 +112,8 @@ export const ok = (over: Partial<ClaudeResult> = {}): ClaudeResult => ({
 export interface Rm {
   result: ClaudeResult;
   removes: 'everything' | 'the worktree' | 'nothing';
+  // A side effect that runs after the removal, as the repo changing mid-rm.
+  during?: () => void;
 }
 
 export const removed = (removes: Rm['removes'] = 'everything'): Rm => ({
@@ -166,6 +168,7 @@ export function fakeClaude(fx: Fixture) {
     if (rm === undefined)
       throw new Error(`unexpected claude ${args.join(' ')}`);
     sweep(rm.removes);
+    rm.during?.();
     return rm.result;
   };
   const named = (verb: string): string[][] =>
