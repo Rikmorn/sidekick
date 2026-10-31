@@ -86,4 +86,4 @@ Removing a worktree keeps only two things: its commits, once landed, and the run
 
 `finish` refuses unless the worktree has `worktree-<name>` checked out and that branch has landed. It also refuses when `git status` there lists anything but the report, or when the report is missing and the orchestrator has not passed `--no-report`. It checks again before it removes anything. So commit everything but the report.
 
-After the branch is kept, message the orchestrator with the report's absolute path and the last commit. For a worker started by the operator, the orchestrator acts on that path. `finish` finds a worker by its background job, so the orchestrator saves that report beside the plan by hand, before any worktree it used is removed.
+Keep your branch for the orchestrator to review, and message the orchestrator with the report's absolute path and the last commit. For a worker started by the operator, the orchestrator acts on that path. `finish` finds a worker by its background job, so the orchestrator saves that report beside the plan by hand, before any worktree it used is removed.

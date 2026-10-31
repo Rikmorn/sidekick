@@ -140,7 +140,7 @@ Pass the orchestrating session's own mode. A message from a session in another p
 
 ## `finish`
 
-`finish` reads the brief's `name` and `report`. The worktree is `<top>/.claude/worktrees/<name>`, and the branch is `worktree-<name>`. It removes the worker's session, desk record, worktree, and branch, and, unless `--discard`, only once the work has landed. It also requires the work to be committed and reported. Every branch it deletes stays in a backup ref, as "The backup refs" says.
+`finish` reads the brief's `name` and `report`. The worktree is `<top>/.claude/worktrees/<name>`, and the branch is `worktree-<name>`. It removes the worker's session, desk record, worktree, and branch, and, unless `--discard`, only once the work has landed. It also requires the work to be committed and reported. Every branch it deletes stays in a backup ref, as "The backup refs" says. `finish` needs git 2.40 or later for its landed check, which passes git's `--attr-source` option.
 
 ### What it checks
 
@@ -169,7 +169,7 @@ The steps run in order, and the first that fails stops the rest. `finish` prints
 7. It deletes the worker's record, as "The record" says. A missing record is fine.
 8. It confirms with `git worktree list` that the worktree is gone. It deletes a leftover branch with `git update-ref -d` at the verified head, which refuses a branch that moved, then removes the branch's `branch.<name>` config section.
 
-A foreground call stops at 600 seconds, and `claude rm` may run longer. Run `finish` with the Bash tool's `run_in_background`.
+The Bash tool stops a foreground call at 120 seconds by default and 600 at most, and `claude rm` may run longer. Run `finish` with the Bash tool's `run_in_background`.
 
 After a failure, fix what it names and run `finish` again. A re-run works until `claude rm` succeeds, and it completes a removal that an earlier `claude rm` cut short. The exception is a cut that took the worktree's `.git` entry, which the Linked check refuses. When the worktree's only changes are deleted tracked files and a backup ref already holds the head, `finish` restores those files from the index before `claude rm`. It counts a report already beside the plan as saved. Without the backup ref, deleted files refuse as uncommitted work. After `claude rm` succeeds, `finish` no longer finds the job, so clear any worktree or branch left by hand.
 
