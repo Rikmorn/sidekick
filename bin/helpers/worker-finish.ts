@@ -346,6 +346,21 @@ function statusBesideReport(runGit: Runner, places: Places): Status {
 const onlyDeleted = (entries: StatusEntry[]): boolean =>
   entries.length > 0 && entries.every((entry) => entry.code === DELETED);
 
+// What to do with uncommitted work: landed mode integrates it, and discard mode
+// keeps it in the backup ref.
+function dirtyAdvice(mode: FinishMode['kind']): string {
+  switch (mode) {
+    case 'landed':
+      return 'Commit and integrate it, or remove it, then run finish again';
+    case 'discard':
+      return 'Commit it so that the backup ref keeps it, or remove it, then run finish again';
+    default: {
+      const unhandled: never = mode;
+      throw new Error(`unhandled mode: ${unhandled}`);
+    }
+  }
+}
+
 // Uncommitted work in the worktree, which removing it would destroy. The report
 // is allowed, since saveReport saves it, and so are deleted files alone in a
 // partial removal, since restorePartial writes them back.
@@ -353,6 +368,7 @@ function dirtyIssues(
   worktree: string,
   status: Status,
   partial: boolean,
+  mode: FinishMode['kind'],
 ): string[] {
   if ('issue' in status) return [status.issue];
   const { entries } = status;
@@ -360,7 +376,7 @@ function dirtyIssues(
   if (allowed) return [];
   const paths = entries.map((entry) => entry.path).join(', ');
   return [
-    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${paths}. Commit and integrate it, or remove it, then run finish again`,
+    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${paths}. ${dirtyAdvice(mode)}`,
   ];
 }
 
@@ -396,7 +412,7 @@ function worktreeCheck(
     opts.brief,
     worker.id,
   );
-  const dirty = dirtyIssues(places.worktree, status, partial);
+  const dirty = dirtyIssues(places.worktree, status, partial, opts.mode.kind);
   return { issues: [...onBranch, ...dirty], partial };
 }
 
@@ -622,6 +638,7 @@ const recheckWorktree: Step = (ready, wenv) => {
       ready.worktree,
       statusBesideReport(wenv.runGit, ready),
       ready.partial,
+      ready.verdict.kind,
     ),
     ...reportChangedIssues(ready),
   ];

@@ -5898,7 +5898,19 @@ function statusBesideReport(runGit, places) {
   return { entries };
 }
 var onlyDeleted = (entries) => entries.length > 0 && entries.every((entry) => entry.code === DELETED);
-function dirtyIssues(worktree, status, partial) {
+function dirtyAdvice(mode) {
+  switch (mode) {
+    case "landed":
+      return "Commit and integrate it, or remove it, then run finish again";
+    case "discard":
+      return "Commit it so that the backup ref keeps it, or remove it, then run finish again";
+    default: {
+      const unhandled = mode;
+      throw new Error(`unhandled mode: ${unhandled}`);
+    }
+  }
+}
+function dirtyIssues(worktree, status, partial, mode) {
   if ("issue" in status)
     return [status.issue];
   const { entries } = status;
@@ -5907,7 +5919,7 @@ function dirtyIssues(worktree, status, partial) {
     return [];
   const paths = entries.map((entry) => entry.path).join(", ");
   return [
-    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${paths}. Commit and integrate it, or remove it, then run finish again`
+    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${paths}. ${dirtyAdvice(mode)}`
   ];
 }
 function isPartial(runGit, top, worker, status) {
@@ -5922,7 +5934,7 @@ function worktreeCheck(runGit, places, worker, opts) {
   const status = statusBesideReport(runGit, places);
   const partial = isPartial(runGit, places.top, worker, status);
   const onBranch = onBranchIssues(runGit, places.worktree, places.branch, opts.mode.kind, opts.brief, worker.id);
-  const dirty = dirtyIssues(places.worktree, status, partial);
+  const dirty = dirtyIssues(places.worktree, status, partial, opts.mode.kind);
   return { issues: [...onBranch, ...dirty], partial };
 }
 function reportStep(places, noReport, partial) {
@@ -6099,7 +6111,7 @@ var recheckWorktree = (ready, wenv) => {
   const issues = [
     ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.verdict.kind, ready.brief, ready.id),
     ...headMovedIssues(wenv.runGit, ready),
-    ...dirtyIssues(ready.worktree, statusBesideReport(wenv.runGit, ready), ready.partial),
+    ...dirtyIssues(ready.worktree, statusBesideReport(wenv.runGit, ready), ready.partial, ready.verdict.kind),
     ...reportChangedIssues(ready)
   ];
   if (issues.length === 0)

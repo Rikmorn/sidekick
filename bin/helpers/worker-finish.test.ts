@@ -1174,7 +1174,7 @@ describe('finish --discard', () => {
       h,
       fx,
       h.finish(fx.brief, '--discard'),
-      `the worktree ${fx.worktree} holds uncommitted work besides the report, which its removal would destroy: a.txt. Commit and integrate it, or remove it, then run finish again`,
+      `the worktree ${fx.worktree} holds uncommitted work besides the report, which its removal would destroy: a.txt. Commit it so that the backup ref keeps it, or remove it, then run finish again`,
     );
     expect(git(fx.top, 'for-each-ref', 'refs/sidekick/')).toBe('');
   });
