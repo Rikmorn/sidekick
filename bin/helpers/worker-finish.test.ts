@@ -1028,6 +1028,33 @@ describe('finish after a removal cut short', () => {
     expect(fs.existsSync(fx.worktree)).toBe(false);
   });
 
+  test.each([
+    ['--into feature', ['--into', 'feature']],
+    ['--discard', ['--discard']],
+  ])("refuses a re-run without the cut run's %s with the not-landed text alone, not the deleted files", (_label, args) => {
+    const fx = fixture();
+    fx.landOnBranch('feature', 'squash');
+    const h = harness(fx);
+    h.claude.state.rm = [cutShort()];
+    expect(h.finish(fx.brief, ...args)).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm ${ID} failed with exit code 1, so finish removed nothing more`,
+      wayOut(
+        ['sidekick worker finish', fx.brief, ...args].join(' '),
+        `claude rm ${ID}`,
+      ),
+    ]);
+    const first = h.err.length;
+    const branch = git(fx.top, 'symbolic-ref', 'HEAD');
+    const sha = git(fx.top, 'rev-parse', 'HEAD');
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err.slice(first)).toEqual([
+      `worktree-w1 has not landed in ${branch} (${sha}): its head ${fx.head} is not there, and the history walk tried 0 commits and found no match. Land it and run finish again; name the target with --into <rev>; discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
+    ]);
+    expect(h.claude.named('rm')).toEqual([['rm', ID]]);
+    expect(fs.existsSync(path.join(fx.worktree, 'a.txt'))).toBe(false);
+  });
+
   test("refuses, with git's words, when a deleted file reappears before the restore", () => {
     const fx = fixture();
     fx.integrate();

@@ -234,19 +234,20 @@ function verdictFor(
   }
 }
 
-// The head of the worker's branch and the verdict on it.
+// The verdict on the worker's branch, whose `head` is undefined when the
+// branch does not exist.
 function branchVerdict(
   runGit: Runner,
   top: string,
-  branch: string,
+  branch: { name: string; head: string | undefined },
   opts: FinishOptions,
   id: string,
 ): { head: string; verdict: Verdict } | { issues: string[] } {
-  const head = commitOf(runGit, top, `refs/heads/${branch}`);
+  const { name, head } = branch;
   if (head === undefined) {
-    return { issues: [missingBranchIssue(branch, opts, id)] };
+    return { issues: [missingBranchIssue(name, opts, id)] };
   }
-  const judged = verdictFor(runGit, top, branch, head, opts);
+  const judged = verdictFor(runGit, top, name, head, opts);
   return 'issues' in judged ? judged : { head, verdict: judged.verdict };
 }
 
@@ -377,8 +378,8 @@ function isPartial(
   return heldBackup(runGit, top, name, head) !== undefined;
 }
 
-// The worktree's checks, and whether it holds a partial removal. `head` is
-// the landed check's, undefined when that check refused.
+// The worktree's checks, and whether it holds a partial removal. `head` is the
+// branch's, undefined when the branch does not exist.
 function worktreeCheck(
   runGit: Runner,
   places: Places,
@@ -495,8 +496,11 @@ function checkFinish(
   const places = placesFor(top, brief);
   const unlinked = unlinkedIssues(wenv.runGit, top, places.worktree, job.id);
   if (unlinked.length > 0) return { issues: unlinked };
-  const landed = branchVerdict(wenv.runGit, top, places.branch, opts, job.id);
-  const head = 'issues' in landed ? undefined : landed.head;
+  // The partial check reads the head even when the landed check refuses, since
+  // a refusal runs no step and so restores nothing.
+  const head = commitOf(wenv.runGit, top, `refs/heads/${places.branch}`);
+  const branch = { name: places.branch, head };
+  const landed = branchVerdict(wenv.runGit, top, branch, opts, job.id);
   const worker = { name: brief.name, id: job.id, head };
   const tree = worktreeCheck(wenv.runGit, places, worker, opts);
   const step = reportStep(places, opts.noReport, tree.partial);
