@@ -2535,7 +2535,7 @@ function newProfile(name, description, root) {
 
 // bin/helpers/shell.ts
 var shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-var SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
+var SAFE_WORD = /^[A-Za-z0-9_@%+:,./-][A-Za-z0-9_@%+=:,./-]*$/;
 var shellArg = (value) => SAFE_WORD.test(value) ? value : shellQuote(value);
 
 // bin/helpers/worker-jobs.ts

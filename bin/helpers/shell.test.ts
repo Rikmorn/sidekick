@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { shellArg, shellQuote } from './shell.js';
 
 // What `sh` makes of the text: the quoted value spliced into a printf command.
@@ -23,6 +24,12 @@ const AWKWARD = [
   '',
   "'",
 ];
+
+const ZSH = '/bin/zsh';
+
+// What zsh makes of the text, where it is installed.
+const throughZsh = (quoted: string): string =>
+  execFileSync(ZSH, ['-c', `printf %s ${quoted}`], { encoding: 'utf-8' });
 
 describe('shellQuote', () => {
   test('wraps in single quotes and escapes an inner quote', () => {
@@ -60,5 +67,16 @@ describe('shellArg', () => {
 
   test.each(AWKWARD)('round-trips %j through sh', (value) => {
     expect(throughSh(shellArg(value))).toBe(value);
+  });
+
+  test('quotes a leading =, which zsh expands, and keeps = elsewhere bare', () => {
+    expect(shellArg('=x')).toBe("'=x'");
+    expect(shellArg('--into=x')).toBe('--into=x');
+    expect(throughSh(shellArg('=x'))).toBe('=x');
+  });
+
+  test.skipIf(!existsSync(ZSH))('round-trips a leading = through zsh', () => {
+    expect(throughZsh(shellArg('=ls'))).toBe('=ls');
+    expect(throughZsh(shellArg('a=b'))).toBe('a=b');
   });
 });

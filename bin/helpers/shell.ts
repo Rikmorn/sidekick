@@ -7,8 +7,9 @@
 export const shellQuote = (value: string): string =>
   `'${value.replaceAll("'", "'\\''")}'`;
 
-// Characters a POSIX shell never treats specially inside a word.
-const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
+// Characters a shell never treats specially inside a word. A leading `=` is
+// excluded: zsh expands `=ls` to the path of `ls`. Elsewhere `=` is safe.
+const SAFE_WORD = /^[A-Za-z0-9_@%+:,./-][A-Za-z0-9_@%+=:,./-]*$/;
 
 /**
  * Returns `value` bare when every character is shell-safe, else quoted with
