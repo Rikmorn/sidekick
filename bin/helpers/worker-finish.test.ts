@@ -923,7 +923,7 @@ describe('finish after a removal cut short', () => {
     h.claude.state.rm = [cut, removed()];
     expect(h.finish(fx.brief, ...args)).toBe(1);
     expect(h.err).toEqual([
-      `claude rm ${ID} did not return in time, so finish removed nothing more`,
+      `claude rm ${ID} failed with exit code 1, so finish removed nothing more`,
       `complete the removal by hand with claude rm ${ID}`,
     ]);
     expect(fs.existsSync(path.join(fx.worktree, 'a.txt'))).toBe(false);

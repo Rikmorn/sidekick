@@ -126,10 +126,11 @@ export const removed = (removes: Rm['removes'] = 'everything'): Rm => ({
 
 /**
  * A `claude rm` cut short, as #267's re-run found it: the tracked files gone,
- * the worktree and its `.git` file left, and no answer.
+ * the worktree and its `.git` file left, and no answer. It exits non-zero, as
+ * a killed run does; `finish` sets `claude rm` no limit, so it never times out.
  */
 export const cutShort = (): Rm => ({
-  result: ok({ code: 1, timedOut: true }),
+  result: ok({ code: 1 }),
   removes: 'tracked files',
 });
 
