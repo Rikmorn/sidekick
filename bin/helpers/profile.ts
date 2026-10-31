@@ -32,6 +32,7 @@ import {
   type Profile,
   storeRoots,
 } from './profile-store.js';
+import { shellQuote } from './shell.js';
 import { listJobs } from './worker-jobs.js';
 
 export const PROFILE_USAGE_LINE =
@@ -390,10 +391,6 @@ const alias: Verb = (rest, penv, out, err) => {
   out(withoutTrailingNewline(shellFunction(shell, parsed.positionals)));
   return 0;
 };
-
-// POSIX single quoting: a quote inside closes the string, adds an escaped quote, and reopens.
-const shellQuote = (value: string): string =>
-  `'${value.replaceAll("'", "'\\''")}'`;
 
 const switchProfile: Verb = (rest, penv, out, err) => {
   const parsed = parseFlags(rest, { session: { type: 'string' } });

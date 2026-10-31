@@ -20,6 +20,7 @@ import {
 import { bgArgs, type ClaudeResult } from './profile-launch.js';
 import { isProfileName } from './profile-manifest.js';
 import { type Profile, storeRoots } from './profile-store.js';
+import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
 import { type Brief, briefFileIssues, readBrief } from './worker-brief.js';
 import { listJobs } from './worker-jobs.js';
@@ -346,7 +347,7 @@ function summary(ready: Ready): string[] {
       ? ['every tool call the worker makes is pre-approved']
       : []),
     `steer: rulings in ${brief.rulings}, then message "${brief.name}" to point at them`,
-    `finish: sidekick worker finish ${ready.briefPath}`,
+    `finish: sidekick worker finish ${shellArg(ready.briefPath)}`,
   ];
 }
 

@@ -11,6 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 import { type ClaudeResult, printedStreams } from './profile-launch.js';
+import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
 import { removeRecord } from './worker-record.js';
 import {
@@ -187,7 +188,7 @@ function unknownAnswer(
   const what = ranClean(result)
     ? 'did not say removed, and finish does not know its answer'
     : failure(result);
-  const command = `claude ${args.join(' ')}`;
+  const command = `claude ${args.map(shellArg).join(' ')}`;
   return [
     ...withText(`${command} ${what}, so finish removed nothing more`, result),
     `run finish again with ${rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`,

@@ -1301,3 +1301,76 @@ describe('finish --discard', () => {
     expect(git(fx.top, 'for-each-ref', 'refs/sidekick/')).toBe('');
   });
 });
+
+describe('finish prints commands that survive a space', () => {
+  // The fixture's brief, copied under a folder and a file name that hold a space.
+  function spacedBrief(fx: Fixture, report = REPORT): string {
+    const dir = path.join(fx.top, 'my docs');
+    fs.mkdirSync(dir);
+    const file = path.join(dir, 'x brief.md');
+    fs.writeFileSync(
+      file,
+      fs
+        .readFileSync(fx.brief, 'utf-8')
+        .replace(`report: ${REPORT}`, `report: ${report}`),
+    );
+    return file;
+  }
+
+  test('a brief path with a space, in the discard command', () => {
+    const fx = fixture();
+    const brief = spacedBrief(fx);
+    const h = harness(fx);
+    expect(h.finish(brief)).toBe(1);
+    expect(h.err.join('\n')).toContain(
+      `discarding it is your call, with sidekick worker finish '${brief}' --discard`,
+    );
+  });
+
+  test('a brief path with a space, in the re-run command', () => {
+    const fx = fixture();
+    fx.integrate();
+    const brief = spacedBrief(fx);
+    const h = harness(fx);
+    h.claude.state.rm = [
+      { result: ok({ stdout: `kept ${ID}\n` }), removes: 'nothing' },
+    ];
+    expect(h.finish(brief)).toBe(1);
+    expect(h.err.at(-1)).toBe(
+      wayOut(`sidekick worker finish '${brief}'`, `claude rm ${ID}`),
+    );
+  });
+
+  test('a report path with a space passes', () => {
+    const fx = fixture();
+    fx.integrate();
+    const report = 'docs/run report.md';
+    fs.renameSync(
+      path.join(fx.worktree, REPORT),
+      path.join(fx.worktree, report),
+    );
+    const brief = spacedBrief(fx, report);
+    const h = harness(fx);
+    expect(h.finish(brief)).toBe(0);
+    expect(fs.readFileSync(path.join(fx.top, report), 'utf-8')).toBe(
+      REPORT_TEXT,
+    );
+  });
+
+  test('an --into rev with a space, in the re-run command', () => {
+    const fx = fixture();
+    fx.landOnBranch('feature', 'squash');
+    const rev = 'feature@{2099-01-01 00:00}';
+    const h = harness(fx);
+    h.claude.state.rm = [
+      { result: ok({ stdout: `kept ${ID}\n` }), removes: 'nothing' },
+    ];
+    expect(h.finish(fx.brief, '--into', rev)).toBe(1);
+    expect(h.err.at(-1)).toBe(
+      wayOut(
+        `sidekick worker finish ${fx.brief} --into '${rev}'`,
+        `claude rm ${ID}`,
+      ),
+    );
+  });
+});

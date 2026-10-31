@@ -12,6 +12,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 import { parseFlags } from './profile.js';
+import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
 import { type Brief, readBrief } from './worker-brief.js';
 import { LISTING, listJobs } from './worker-jobs.js';
@@ -167,7 +168,7 @@ function walkedText(walked: number, capped: boolean): string {
 const discardRoute = (discardCommand: string): string =>
   `discarding it is your call, with ${discardCommand}`;
 const handRoute = (id: string): string =>
-  `to clear it by hand, claude rm ${id}`;
+  `to clear it by hand, claude rm ${shellArg(id)}`;
 
 // The way out for a mode: landed mode offers the discard, discard mode the hand route.
 function routeFor(
@@ -194,9 +195,9 @@ function missingBranchIssue(
 ): string {
   switch (opts.mode.kind) {
     case 'landed':
-      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: discarding it is your call, with claude rm ${id}`;
+      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: discarding it is your call, with claude rm ${shellArg(id)}`;
     case 'discard':
-      return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${id}`;
+      return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${shellArg(id)}`;
     default: {
       const unhandled: never = opts.mode;
       throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
@@ -327,7 +328,7 @@ function unlinkedIssues(
   }
   if (!list.listed) return [];
   return [
-    `the worktree ${worktree} holds no .git entry while git still lists it, so a removal went past git's link to it: claude rm ${id} completes the removal`,
+    `the worktree ${worktree} holds no .git entry while git still lists it, so a removal went past git's link to it: claude rm ${shellArg(id)} completes the removal`,
   ];
 }
 
@@ -468,7 +469,7 @@ function missingReportStep(
 function modeFlags(mode: FinishMode): string[] {
   switch (mode.kind) {
     case 'landed':
-      return mode.into === undefined ? [] : ['--into', mode.into];
+      return mode.into === undefined ? [] : ['--into', shellArg(mode.into)];
     case 'discard':
       return ['--discard'];
     default: {
@@ -483,7 +484,7 @@ function commandFor(opts: FinishOptions, mode: FinishMode): string {
   const report = opts.noReport ? ['--no-report'] : [];
   return [
     'sidekick worker finish',
-    opts.brief,
+    shellArg(opts.brief),
     ...report,
     ...modeFlags(mode),
   ].join(' ');
@@ -685,7 +686,7 @@ const sayVerdict: Step = (ready, _wenv, out) => {
 const sayBackup: Step = (ready, _wenv, out) => {
   const ref = readyBackup(ready);
   out(
-    `${ready.branch} is kept as ${ref}: restore it with git branch ${ready.branch} ${ref}`,
+    `${ready.branch} is kept as ${ref}: restore it with git branch ${shellArg(ready.branch)} ${shellArg(ref)}`,
   );
   return [];
 };

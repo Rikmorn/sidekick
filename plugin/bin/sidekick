@@ -2533,6 +2533,11 @@ function newProfile(name, description, root) {
   return { ok: true, dir };
 }
 
+// bin/helpers/shell.ts
+var shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+var SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
+var shellArg = (value) => SAFE_WORD.test(value) ? value : shellQuote(value);
+
 // bin/helpers/worker-jobs.ts
 var LISTING_ARGS = ["agents", "--json", "--all"];
 var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
@@ -2825,7 +2830,6 @@ var alias = (rest, penv, out, err) => {
   out(withoutTrailingNewline(shellFunction(shell, parsed.positionals)));
   return 0;
 };
-var shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 var switchProfile = (rest, penv, out, err) => {
   const parsed = parseFlags(rest, { session: { type: "string" } });
   if (parsed === undefined || parsed.positionals.length !== 1) {
@@ -5337,7 +5341,7 @@ function summary(ready) {
     `worker ${brief.name} dispatched · permission mode ${mode} · ${pushes}`,
     ...mode === BYPASS ? ["every tool call the worker makes is pre-approved"] : [],
     `steer: rulings in ${brief.rulings}, then message "${brief.name}" to point at them`,
-    `finish: sidekick worker finish ${ready.briefPath}`
+    `finish: sidekick worker finish ${shellArg(ready.briefPath)}`
   ];
 }
 var refuse4 = (err, issues) => {
@@ -5579,7 +5583,7 @@ var saidRemoved = (result) => ranClean(result) && REMOVED.test(printedStreams(re
 `));
 function unknownAnswer(rerun, args, result) {
   const what = ranClean(result) ? "did not say removed, and finish does not know its answer" : failure(result);
-  const command = `claude ${args.join(" ")}`;
+  const command = `claude ${args.map(shellArg).join(" ")}`;
   return [
     ...withText(`${command} ${what}, so finish removed nothing more`, result),
     `run finish again with ${rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`
@@ -5778,7 +5782,7 @@ function walkedText(walked, capped2) {
   return capped2 ? `the history walk tried ${commits} and stopped at its cap of ${DEFAULT_CAP}` : `the history walk tried ${commits} and found no match`;
 }
 var discardRoute = (discardCommand) => `discarding it is your call, with ${discardCommand}`;
-var handRoute = (id) => `to clear it by hand, claude rm ${id}`;
+var handRoute = (id) => `to clear it by hand, claude rm ${shellArg(id)}`;
 function routeFor(mode, discardCommand, id) {
   switch (mode) {
     case "landed":
@@ -5794,9 +5798,9 @@ function routeFor(mode, discardCommand, id) {
 function missingBranchIssue(branch, opts, id) {
   switch (opts.mode.kind) {
     case "landed":
-      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: discarding it is your call, with claude rm ${id}`;
+      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: discarding it is your call, with claude rm ${shellArg(id)}`;
     case "discard":
-      return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${id}`;
+      return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${shellArg(id)}`;
     default: {
       const unhandled = opts.mode;
       throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
@@ -5884,7 +5888,7 @@ function unlinkedIssues(runGit, top, worktree, id) {
   if (!list2.listed)
     return [];
   return [
-    `the worktree ${worktree} holds no .git entry while git still lists it, so a removal went past git's link to it: claude rm ${id} completes the removal`
+    `the worktree ${worktree} holds no .git entry while git still lists it, so a removal went past git's link to it: claude rm ${shellArg(id)} completes the removal`
   ];
 }
 function statusBesideReport(runGit, places) {
@@ -5977,7 +5981,7 @@ function missingReportStep(places, noReport, partial) {
 function modeFlags(mode) {
   switch (mode.kind) {
     case "landed":
-      return mode.into === undefined ? [] : ["--into", mode.into];
+      return mode.into === undefined ? [] : ["--into", shellArg(mode.into)];
     case "discard":
       return ["--discard"];
     default: {
@@ -5990,7 +5994,7 @@ function commandFor(opts, mode) {
   const report = opts.noReport ? ["--no-report"] : [];
   return [
     "sidekick worker finish",
-    opts.brief,
+    shellArg(opts.brief),
     ...report,
     ...modeFlags(mode)
   ].join(" ");
@@ -6141,7 +6145,7 @@ var sayVerdict = (ready, _wenv, out) => {
 };
 var sayBackup = (ready, _wenv, out) => {
   const ref2 = readyBackup(ready);
-  out(`${ready.branch} is kept as ${ref2}: restore it with git branch ${ready.branch} ${ref2}`);
+  out(`${ready.branch} is kept as ${ref2}: restore it with git branch ${shellArg(ready.branch)} ${shellArg(ref2)}`);
   return [];
 };
 var STEPS = [

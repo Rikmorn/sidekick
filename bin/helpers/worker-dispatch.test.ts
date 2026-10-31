@@ -451,6 +451,15 @@ describe('dispatch launches', () => {
     ]);
   });
 
+  test('the finish line quotes a brief path with a space', () => {
+    const fx = fixture();
+    const spaced = path.join(fx.docs, 'my brief.md');
+    fs.copyFileSync(fx.brief, spaced);
+    const h = harness(fx);
+    expect(h.dispatch(spaced, '--permission-mode', 'auto')).toBe(0);
+    expect(h.out).toContain(`finish: sidekick worker finish '${spaced}'`);
+  });
+
   test('from the top when run in a subfolder, with a relative brief made absolute', () => {
     const fx = fixture();
     const h = harness(fx, { cwd: fx.docs });
