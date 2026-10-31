@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs19 from "node:fs";
+import * as fs20 from "node:fs";
 import { realpathSync as realpathSync4 } from "node:fs";
 import * as os2 from "node:os";
-import * as path19 from "node:path";
+import * as path20 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -5386,90 +5386,16 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-finish.ts
+import * as fs19 from "node:fs";
+import * as path19 from "node:path";
+
+// bin/helpers/worker-teardown.ts
 import * as fs18 from "node:fs";
 import * as path18 from "node:path";
-function parseFinishArgs(rest2, cwd) {
-  const parsed = parseFlags(rest2, { "no-report": { type: "boolean" } });
-  if (parsed === undefined || parsed.positionals.length !== 1)
-    return;
-  return {
-    brief: path18.resolve(cwd, parsed.positionals[0]),
-    noReport: parsed.values["no-report"] === true
-  };
-}
 var ENDED_STATES = ["stopped", "done"];
 var REMOVED = /^removed\b/;
 var DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
 var LOCK_PID = /\(pid (\d+)\b/;
-function findJob(wenv, top, name) {
-  const listed = listJobs(wenv.runClaude, top);
-  if ("issues" in listed)
-    return listed;
-  const matches = listed.jobs.filter((job) => job.name === name);
-  if (matches.length === 0) {
-    return {
-      issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief`
-      ]
-    };
-  }
-  if (matches.length > 1) {
-    const which = matches.map((job) => job.id ?? "an interactive session");
-    return {
-      issues: [
-        `${matches.length} sessions in ${LISTING} are named "${name}" (${which.join(", ")}), so finish cannot tell which is the worker: clear the worker by hand with claude rm <id>`
-      ]
-    };
-  }
-  const [{ id, state }] = matches;
-  if (id === undefined) {
-    return {
-      issues: [
-        `the session named "${name}" is an interactive session, not a worker job: finish clears only a worker that sidekick worker dispatch started`
-      ]
-    };
-  }
-  return { id, state };
-}
-function integratedHead(runGit, top, branch, id) {
-  const discard = `discarding it is your call, with claude rm ${id}`;
-  const head = commitOf(runGit, top, `refs/heads/${branch}`);
-  if (head === undefined) {
-    return {
-      issues: [
-        `the branch ${branch} does not exist, so finish cannot check that the work is integrated: ${discard}`
-      ]
-    };
-  }
-  const merge = ["merge-base", "--is-ancestor", head, "HEAD"];
-  if (runGit("git", merge, top).code === 0)
-    return { head };
-  return {
-    issues: [
-      `${branch} is not integrated: its head ${head} is not in the main checkout's HEAD. Integrate it and run finish again; ${discard}`
-    ]
-  };
-}
-function onBranchIssues(runGit, worktree, branch, id) {
-  const head = checkedOut(runGit, worktree);
-  if (head === `refs/heads/${branch}`)
-    return [];
-  return [
-    `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits are integrated: check out ${branch} there and run finish again; discarding it is your call, with claude rm ${id}`
-  ];
-}
-function dirtyIssues(runGit, top, worktree, report) {
-  const status = statusPathsIn(runGit, top, worktree);
-  if ("issue" in status) {
-    return [`git status failed in the worktree ${worktree}: ${status.issue}`];
-  }
-  const others = status.paths.filter((file) => file !== report);
-  if (others.length === 0)
-    return [];
-  return [
-    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(", ")}. Commit and integrate it, or remove it, then run finish again`
-  ];
-}
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
@@ -5481,101 +5407,6 @@ function readIfPresent(file) {
     return { issue: `cannot read ${file}: ${why}` };
   }
 }
-function reportStep(from, to, noReport) {
-  const worker = readIfPresent(from);
-  if ("issue" in worker)
-    return { issues: [worker.issue] };
-  if (worker.data === undefined) {
-    if (noReport)
-      return "none";
-    return {
-      issues: [
-        `the worktree has no run report at ${from}: ask the worker for it, or pass --no-report to finish without one`
-      ]
-    };
-  }
-  const saved = readIfPresent(to);
-  if ("issue" in saved)
-    return { issues: [saved.issue] };
-  if (saved.data === undefined)
-    return "copy";
-  if (saved.data.equals(worker.data))
-    return "in place";
-  return {
-    issues: [
-      `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`
-    ]
-  };
-}
-function checkFinish(brief, opts, wenv) {
-  const checkout = mainCheckout(wenv.runGit, wenv.cwd);
-  if ("issues" in checkout)
-    return checkout;
-  const { top, commonDir } = checkout;
-  const job = findJob(wenv, top, brief.name);
-  if ("issues" in job)
-    return job;
-  const worktree = path18.join(top, WORKTREES_FOLDER, brief.name);
-  const branch = `worktree-${brief.name}`;
-  const report = path18.posix.normalize(brief.report);
-  const reportFrom = path18.join(worktree, report);
-  const reportTo = path18.join(top, report);
-  const integrated = integratedHead(wenv.runGit, top, branch, job.id);
-  const worktreeIssues = [
-    ...onBranchIssues(wenv.runGit, worktree, branch, job.id),
-    ...dirtyIssues(wenv.runGit, top, worktree, report)
-  ];
-  const step = reportStep(reportFrom, reportTo, opts.noReport);
-  if ("issues" in integrated || worktreeIssues.length > 0 || typeof step !== "string") {
-    return {
-      issues: [
-        ..."issues" in integrated ? integrated.issues : [],
-        ...worktreeIssues,
-        ...typeof step === "string" ? [] : step.issues
-      ]
-    };
-  }
-  return {
-    ...job,
-    name: brief.name,
-    top,
-    commonDir,
-    worktree,
-    branch,
-    head: integrated.head,
-    report,
-    reportFrom,
-    reportTo,
-    reportStep: step
-  };
-}
-function copyReport(ready, out) {
-  try {
-    fs18.mkdirSync(path18.dirname(ready.reportTo), { recursive: true });
-    fs18.copyFileSync(ready.reportFrom, ready.reportTo, fs18.constants.COPYFILE_EXCL);
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return [`cannot save the report to ${ready.reportTo}: ${why}`];
-  }
-  out(`report saved to ${ready.reportTo}`);
-  return [];
-}
-var saveReport = (ready, _wenv, out) => {
-  switch (ready.reportStep) {
-    case "copy":
-      return copyReport(ready, out);
-    case "in place":
-      out(`report already at ${ready.reportTo}`);
-      return [];
-    case "none":
-      out("no report to save: the worktree holds none");
-      return [];
-    default: {
-      const unhandled = ready.reportStep;
-      throw new Error(`unhandled report step: ${unhandled}`);
-    }
-  }
-};
 var claudeAt = (ready, wenv, args, timeoutMs = 30000) => wenv.runClaude(args, { cwd: ready.top, timeoutMs });
 function withText(lead, result) {
   const text = printedStreams(result);
@@ -5618,52 +5449,6 @@ function waitForExit(pid, wenv, limitMs = 15000, pollMs = 250) {
 var waitForLock = (ready, wenv) => {
   const pid = lockPid(ready.commonDir, ready.name);
   return pid === undefined ? [] : waitForExit(pid, wenv);
-};
-function reportChangedIssues(ready) {
-  const now = readIfPresent(ready.reportFrom);
-  if ("issue" in now)
-    return [now.issue];
-  if (ready.reportStep === "none") {
-    if (now.data === undefined)
-      return [];
-    return [`a run report appeared at ${ready.reportFrom}`];
-  }
-  const saved = readIfPresent(ready.reportTo);
-  if ("issue" in saved)
-    return [saved.issue];
-  const same = now.data !== undefined && saved.data !== undefined && now.data.equals(saved.data);
-  if (same)
-    return [];
-  return [
-    `the worker's report at ${ready.reportFrom} no longer matches the copy at ${ready.reportTo}`
-  ];
-}
-function headMovedIssues(runGit, ready) {
-  const now = commitOf(runGit, ready.top, `refs/heads/${ready.branch}`);
-  if (now === ready.head)
-    return [];
-  if (now === undefined) {
-    return [
-      `the branch ${ready.branch} is gone, so finish cannot confirm its head is still ${ready.head}, the head it verified as integrated`
-    ];
-  }
-  return [
-    `${ready.branch} moved to ${now} after finish verified its head ${ready.head} as integrated: integrate the new commits, then run finish again`
-  ];
-}
-var recheckWorktree = (ready, wenv) => {
-  const issues = [
-    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.id),
-    ...headMovedIssues(wenv.runGit, ready),
-    ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
-    ...reportChangedIssues(ready)
-  ];
-  if (issues.length === 0)
-    return [];
-  return [
-    "the worktree changed after finish checked it, so finish removed nothing:",
-    ...issues
-  ];
 };
 var saidRemoved = (result) => ranClean(result) && REMOVED.test(printedStreams(result).join(`
 `));
@@ -5726,6 +5511,227 @@ var removeLeftovers = (ready, wenv, out) => {
 var forgetRecord = (ready) => {
   removeRecord(ready.commonDir, ready.name);
   return [];
+};
+
+// bin/helpers/worker-finish.ts
+function parseFinishArgs(rest2, cwd) {
+  const parsed = parseFlags(rest2, { "no-report": { type: "boolean" } });
+  if (parsed === undefined || parsed.positionals.length !== 1)
+    return;
+  return {
+    brief: path19.resolve(cwd, parsed.positionals[0]),
+    noReport: parsed.values["no-report"] === true
+  };
+}
+function findJob(wenv, top, name) {
+  const listed = listJobs(wenv.runClaude, top);
+  if ("issues" in listed)
+    return listed;
+  const matches = listed.jobs.filter((job) => job.name === name);
+  if (matches.length === 0) {
+    return {
+      issues: [
+        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief`
+      ]
+    };
+  }
+  if (matches.length > 1) {
+    const which = matches.map((job) => job.id ?? "an interactive session");
+    return {
+      issues: [
+        `${matches.length} sessions in ${LISTING} are named "${name}" (${which.join(", ")}), so finish cannot tell which is the worker: clear the worker by hand with claude rm <id>`
+      ]
+    };
+  }
+  const [{ id, state }] = matches;
+  if (id === undefined) {
+    return {
+      issues: [
+        `the session named "${name}" is an interactive session, not a worker job: finish clears only a worker that sidekick worker dispatch started`
+      ]
+    };
+  }
+  return { id, state };
+}
+function integratedHead(runGit, top, branch, id) {
+  const discard2 = `discarding it is your call, with claude rm ${id}`;
+  const head = commitOf(runGit, top, `refs/heads/${branch}`);
+  if (head === undefined) {
+    return {
+      issues: [
+        `the branch ${branch} does not exist, so finish cannot check that the work is integrated: ${discard2}`
+      ]
+    };
+  }
+  const merge = ["merge-base", "--is-ancestor", head, "HEAD"];
+  if (runGit("git", merge, top).code === 0)
+    return { head };
+  return {
+    issues: [
+      `${branch} is not integrated: its head ${head} is not in the main checkout's HEAD. Integrate it and run finish again; ${discard2}`
+    ]
+  };
+}
+function onBranchIssues(runGit, worktree, branch, id) {
+  const head = checkedOut(runGit, worktree);
+  if (head === `refs/heads/${branch}`)
+    return [];
+  return [
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, so finish cannot check that its commits are integrated: check out ${branch} there and run finish again; discarding it is your call, with claude rm ${id}`
+  ];
+}
+function dirtyIssues(runGit, top, worktree, report) {
+  const status = statusPathsIn(runGit, top, worktree);
+  if ("issue" in status) {
+    return [`git status failed in the worktree ${worktree}: ${status.issue}`];
+  }
+  const others = status.paths.filter((file) => file !== report);
+  if (others.length === 0)
+    return [];
+  return [
+    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${others.join(", ")}. Commit and integrate it, or remove it, then run finish again`
+  ];
+}
+function reportStep(from, to, noReport) {
+  const worker = readIfPresent(from);
+  if ("issue" in worker)
+    return { issues: [worker.issue] };
+  if (worker.data === undefined) {
+    if (noReport)
+      return "none";
+    return {
+      issues: [
+        `the worktree has no run report at ${from}: ask the worker for it, or pass --no-report to finish without one`
+      ]
+    };
+  }
+  const saved = readIfPresent(to);
+  if ("issue" in saved)
+    return { issues: [saved.issue] };
+  if (saved.data === undefined)
+    return "copy";
+  if (saved.data.equals(worker.data))
+    return "in place";
+  return {
+    issues: [
+      `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`
+    ]
+  };
+}
+function checkFinish(brief, opts, wenv) {
+  const checkout = mainCheckout(wenv.runGit, wenv.cwd);
+  if ("issues" in checkout)
+    return checkout;
+  const { top, commonDir } = checkout;
+  const job = findJob(wenv, top, brief.name);
+  if ("issues" in job)
+    return job;
+  const worktree = path19.join(top, WORKTREES_FOLDER, brief.name);
+  const branch = `worktree-${brief.name}`;
+  const report = path19.posix.normalize(brief.report);
+  const reportFrom = path19.join(worktree, report);
+  const reportTo = path19.join(top, report);
+  const integrated = integratedHead(wenv.runGit, top, branch, job.id);
+  const worktreeIssues = [
+    ...onBranchIssues(wenv.runGit, worktree, branch, job.id),
+    ...dirtyIssues(wenv.runGit, top, worktree, report)
+  ];
+  const step = reportStep(reportFrom, reportTo, opts.noReport);
+  if ("issues" in integrated || worktreeIssues.length > 0 || typeof step !== "string") {
+    return {
+      issues: [
+        ..."issues" in integrated ? integrated.issues : [],
+        ...worktreeIssues,
+        ...typeof step === "string" ? [] : step.issues
+      ]
+    };
+  }
+  return {
+    ...job,
+    name: brief.name,
+    top,
+    commonDir,
+    worktree,
+    branch,
+    head: integrated.head,
+    report,
+    reportFrom,
+    reportTo,
+    reportStep: step
+  };
+}
+function copyReport(ready, out) {
+  try {
+    fs19.mkdirSync(path19.dirname(ready.reportTo), { recursive: true });
+    fs19.copyFileSync(ready.reportFrom, ready.reportTo, fs19.constants.COPYFILE_EXCL);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return [`cannot save the report to ${ready.reportTo}: ${why}`];
+  }
+  out(`report saved to ${ready.reportTo}`);
+  return [];
+}
+var saveReport = (ready, _wenv, out) => {
+  switch (ready.reportStep) {
+    case "copy":
+      return copyReport(ready, out);
+    case "in place":
+      out(`report already at ${ready.reportTo}`);
+      return [];
+    case "none":
+      out("no report to save: the worktree holds none");
+      return [];
+    default: {
+      const unhandled = ready.reportStep;
+      throw new Error(`unhandled report step: ${unhandled}`);
+    }
+  }
+};
+function reportChangedIssues(ready) {
+  const now = readIfPresent(ready.reportFrom);
+  if ("issue" in now)
+    return [now.issue];
+  if (ready.reportStep === "none") {
+    if (now.data === undefined)
+      return [];
+    return [`a run report appeared at ${ready.reportFrom}`];
+  }
+  const saved = readIfPresent(ready.reportTo);
+  if ("issue" in saved)
+    return [saved.issue];
+  const same = now.data !== undefined && saved.data !== undefined && now.data.equals(saved.data);
+  if (same)
+    return [];
+  return [
+    `the worker's report at ${ready.reportFrom} no longer matches the copy at ${ready.reportTo}`
+  ];
+}
+function headMovedIssues(runGit, ready) {
+  const now = commitOf(runGit, ready.top, `refs/heads/${ready.branch}`);
+  if (now === ready.head)
+    return [];
+  if (now === undefined) {
+    return [
+      `the branch ${ready.branch} is gone, so finish cannot confirm its head is still ${ready.head}, the head it verified as integrated`
+    ];
+  }
+  return [
+    `${ready.branch} moved to ${now} after finish verified its head ${ready.head} as integrated: integrate the new commits, then run finish again`
+  ];
+}
+var recheckWorktree = (ready, wenv) => {
+  const issues = [
+    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.id),
+    ...headMovedIssues(wenv.runGit, ready),
+    ...dirtyIssues(wenv.runGit, ready.top, ready.worktree, ready.report),
+    ...reportChangedIssues(ready)
+  ];
+  if (issues.length === 0)
+    return [];
+  return [
+    "the worktree changed after finish checked it, so finish removed nothing:",
+    ...issues
+  ];
 };
 var STEPS = [
   saveReport,
@@ -5795,22 +5801,22 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path19.dirname(fileURLToPath(entryFileUrl));
+  const here = path20.dirname(fileURLToPath(entryFileUrl));
   const candidates = [
-    path19.resolve(here, ".."),
-    path19.resolve(here, "..", "plugin")
+    path20.resolve(here, ".."),
+    path20.resolve(here, "..", "plugin")
   ];
   for (const c of candidates) {
-    if (fs19.existsSync(path19.join(c, "rules")))
+    if (fs20.existsSync(path20.join(c, "rules")))
       return c;
   }
   return candidates[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path19.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path20.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs19.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs20.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -5837,7 +5843,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs19.writeSync(1, buffer, offset);
+      offset += fs20.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -5855,7 +5861,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs19.readFileSync(0, "utf-8");
+    return fs20.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -5905,7 +5911,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path19.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path20.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;
