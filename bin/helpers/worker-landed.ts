@@ -22,10 +22,15 @@ const CONFLICTED = 1;
 const isFailure = (value: unknown): value is Failure =>
   typeof value === 'object' && value !== null && 'issue' in value;
 
-// The empty tree's id in this repo's hash format; `/dev/null` is an argument
-// because the runner gives git no stdin.
+// The empty tree's id in this repo's hash format, written so the object exists
+// whatever the git version; `/dev/null` is an argument because the runner gives
+// git no stdin.
 function emptyTreeId(runGit: Runner, top: string): string | Failure {
-  const result = runGit('git', ['hash-object', '-t', 'tree', '/dev/null'], top);
+  const result = runGit(
+    'git',
+    ['hash-object', '-w', '-t', 'tree', '/dev/null'],
+    top,
+  );
   if (result.code !== 0) {
     return { issue: `git hash-object failed: ${result.stderr.trim()}` };
   }
@@ -42,8 +47,8 @@ function treeOf(runGit: Runner, top: string, sha: string): string | Failure {
 }
 
 // Merging `head` into `commit` adds nothing when the merge is clean and yields
-// `commit`'s own tree. The empty attr source hides in-tree attributes, so no
-// `merge=` driver can fake a clean merge.
+// `commit`'s own tree. In-tree attributes are not read, so a `merge=` driver in
+// `.gitattributes` cannot fake a clean merge; `$GIT_DIR/info/attributes` still applies.
 function mergeAddsNothing(
   runGit: Runner,
   top: string,
@@ -115,6 +120,8 @@ function candidates(
       '--literal-pathspecs',
       'log',
       '--full-history',
+      '--no-show-signature',
+      '--no-follow',
       '--format=%H %T',
       `--max-count=${cap}`,
       `${refs.target}^@`,
