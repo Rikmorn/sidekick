@@ -299,7 +299,7 @@ Finding 3; G1; #266, #267.
 
 ### T4. Parallel runs and overlap
 
-Finding 4; G2; C1. The operator's framing at gate 2: overlap is plain for plans from one design and not for unrelated issues, and it "will never be perfect". Also: "at the end of the day it's just a merge and I can help with priority". Each feature should keep working "in alignment with all objectives". K20 to K23 carry the evidence: conflicts are common and small, replay is cheap, and a note about what landed recovers most semantic breaks.
+Finding 4; G2; C1. The operator's framing at gate 2: overlap is plain for plans from one design and not for unrelated issues, and it "will never be perfect". Also, a conflict is in the end a merge, and the operator can help with priority. Each feature should keep working "in alignment with all objectives". K20 to K23 carry the evidence: conflicts are common and small, replay is cheap, and a note about what landed recovers most semantic breaks.
 
 **O-b. Replay every pair of in-flight branches.** Proposed; the other options read its result.
 
@@ -377,9 +377,9 @@ G4; P3, anticipated.
 
 On 2026-10-31:
 
-- **T1: S-d with S-c.** The operator: "I also don't mind being able to say, let's start a new session or whatever off main to do support, or production checks, spawn a worker and do move there, or start a new fresh session and say something similar and just have that session be in a worktree. It'll likely just get discarded with no real code changes; if there is, it'll be a new branch and PR."
+- **T1: S-d with S-c.** The operator is content to start support or production checks off main. A worker can move there, or a fresh session can start in a worktree. Such a session will likely be discarded with no real code changes. Any changes it does make become a new branch and a pull request.
 - **T2: the worktrunk trial goes ahead** ("yeah sure"). It becomes the breakdown's first piece. Installing its binary waits for the evening (K5), and its plugin goes in at local scope.
-- **T4: open, proposed after the survey (§T4).** Overlap is plain for plans from one design, and not for unrelated issues, unless planning knows what other live sessions touch: "it will never be perfect". The operator asked what solutions exist, since "at the end of the day it's just a merge and I can help with priority". Each feature should keep working "in alignment with all objectives". A survey is running.
+- **T4: open, proposed after the survey (§T4).** Overlap is plain for plans from one design. It is not for unrelated issues, unless planning knows what other live sessions touch, and "it will never be perfect". The operator asked what solutions exist, since a conflict is in the end a merge, and the operator can help with priority. Each feature should keep working "in alignment with all objectives". A survey is running.
 - **T3 and T5:** not yet ruled; they stand as proposed for gate 3.
 
 ## Recommendation
@@ -500,7 +500,7 @@ Order:
 
 Approved by the operator at gate 3 on 2026-10-31 ("yeah"). Their rulings:
 
-- **The support worktree is thrown away**, over S-b's reused seat: "memory is more important, not the worktree itself; if we need to keep something then we just make it a branch and push a PR".
+- **The support worktree is thrown away**, over S-b's reused seat. The operator ruled memory more important than the worktree itself. Anything worth keeping becomes a branch and a pull request.
 - **Release timing is left to planning.** The early-release suggestion sits on #266 and #267, and the operator "will likely bundle this and the memory work in the milestone".
 - **T3 and T5 as proposed**, with a caveat: "bit uncertain as it's difficult to make a determination without seeing it in action". So at planning, the probes in #286 and the trial in #287 go first, and their results can reshape the later pieces.
 
