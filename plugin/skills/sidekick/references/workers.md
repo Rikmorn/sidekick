@@ -154,7 +154,7 @@ Pass the orchestrating session's own mode. A message from a session in another p
 - **Reported.** The report exists at `<worktree>/<report>`, unless `--no-report`.
 - **No other report.** No different file sits at `<top>/<report>`. An identical one is fine, so this check lets a re-run through.
 
-With `--discard`, the landed check is skipped on the operator's word. The job, the branch, the on-branch check, the clean check, and the report all still hold, and so does the backup. In that mode, the off-branch and missing-branch refusals name `claude rm <id>` as the hand route. The uncommitted-work refusal names no way out.
+With `--discard`, the landed check is skipped on the operator's word. The job, the branch, the on-branch check, the clean check, and the report all still hold, and so does the backup. In that mode, the off-branch and missing-branch refusals name `claude rm <id>` as the hand route. The uncommitted-work refusal does not name `claude rm <id>`: it says to commit and integrate the work or remove it, then run `finish` again.
 
 ### Its steps
 
