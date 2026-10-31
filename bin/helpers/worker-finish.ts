@@ -164,16 +164,20 @@ function walkedText(walked: number, capped: boolean): string {
 }
 
 // A refusal's way out. Discard mode never offers --discard, the command already running.
-const discardRoute = (brief: string): string =>
-  `discarding it is your call, with sidekick worker finish ${brief} --discard`;
+const discardRoute = (discardCommand: string): string =>
+  `discarding it is your call, with ${discardCommand}`;
 const handRoute = (id: string): string =>
   `to clear it by hand, claude rm ${id}`;
 
 // The way out for a mode: landed mode offers the discard, discard mode the hand route.
-function routeFor(mode: FinishMode['kind'], brief: string, id: string): string {
+function routeFor(
+  mode: FinishMode['kind'],
+  discardCommand: string,
+  id: string,
+): string {
   switch (mode) {
     case 'landed':
-      return discardRoute(brief);
+      return discardRoute(discardCommand);
     case 'discard':
       return handRoute(id);
     default: {
@@ -224,7 +228,7 @@ function verdictFor(
     case 'not landed':
       return {
         issues: [
-          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(opts.brief)}`,
+          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(discardCommandFor(opts))}`,
         ],
       };
     default: {
@@ -259,13 +263,13 @@ function onBranchIssues(
   worktree: string,
   branch: string,
   mode: FinishMode['kind'],
-  brief: string,
+  discardCommand: string,
   id: string,
 ): string[] {
   const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`) return [];
   return [
-    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${offBranchReason(mode, branch)}: check out ${branch} there and run finish again; ${routeFor(mode, brief, id)}`,
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${offBranchReason(mode, branch)}: check out ${branch} there and run finish again; ${routeFor(mode, discardCommand, id)}`,
   ];
 }
 
@@ -409,7 +413,7 @@ function worktreeCheck(
     places.worktree,
     places.branch,
     opts.mode.kind,
-    opts.brief,
+    discardCommandFor(opts),
     worker.id,
   );
   const dirty = dirtyIssues(places.worktree, status, partial, opts.mode.kind);
@@ -474,16 +478,24 @@ function modeFlags(mode: FinishMode): string[] {
   }
 }
 
-// The command that repeats this run, its flags in the usage's order.
-function rerunCommand(opts: FinishOptions): string {
+// The command that runs `finish` on this brief in `mode`, its flags in the usage's order.
+function commandFor(opts: FinishOptions, mode: FinishMode): string {
   const report = opts.noReport ? ['--no-report'] : [];
   return [
     'sidekick worker finish',
     opts.brief,
     ...report,
-    ...modeFlags(opts.mode),
+    ...modeFlags(mode),
   ].join(' ');
 }
+
+// The command that repeats this run.
+const rerunCommand = (opts: FinishOptions): string =>
+  commandFor(opts, opts.mode);
+
+// The command that discards instead; it keeps --no-report, or it would refuse for the missing report.
+const discardCommandFor = (opts: FinishOptions): string =>
+  commandFor(opts, { kind: 'discard' });
 
 // Every refusal the checks found, in the order they ran.
 function allIssues(
@@ -536,6 +548,7 @@ function checkFinish(
     verdict: landed.verdict,
     brief: opts.brief,
     rerun: rerunCommand(opts),
+    discardCommand: discardCommandFor(opts),
     reportStep: step,
     partial: tree.partial,
   };
@@ -630,7 +643,7 @@ const recheckWorktree: Step = (ready, wenv) => {
       ready.worktree,
       ready.branch,
       ready.verdict.kind,
-      ready.brief,
+      ready.discardCommand,
       ready.id,
     ),
     ...headMovedIssues(wenv.runGit, ready),

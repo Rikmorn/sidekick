@@ -2,8 +2,8 @@
  * Facts that `sidekick worker` reads through git: where the main checkout is,
  * its `HEAD`, whether its tracked files are clean, its branches and push URLs,
  * and the exclude entry for Claude Code's worktree folder. For a worktree:
- * what it has checked out, the entries `git status` names there, with their
- * codes and as bare paths, and whether `git worktree list` still names it.
+ * what it has checked out, the entries `git status` names there with their
+ * codes, and whether `git worktree list` still names it.
  */
 
 import * as fs from 'node:fs';
@@ -160,21 +160,6 @@ export function statusEntriesIn(
   );
   if (status.code !== 0) return { issue: status.stderr.trim() };
   return { entries: statusEntries(status.stdout) };
-}
-
-/**
- * Every path `git status` names in the work tree at `dir`, relative to its
- * top: each untracked file by its own path, and the sources of renames. The
- * issue is git's message when the status fails.
- */
-export function statusPathsIn(
-  runGit: Runner,
-  top: string,
-  dir: string,
-): { paths: string[] } | { issue: string } {
-  const status = statusEntriesIn(runGit, top, dir);
-  if ('issue' in status) return status;
-  return { paths: status.entries.map((entry) => entry.path) };
 }
 
 /**

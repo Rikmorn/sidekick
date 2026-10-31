@@ -120,6 +120,31 @@ describe('finish refuses', () => {
     );
   });
 
+  test('work that has not landed, in a run with --no-report, offering --discard with --no-report', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    const branch = git(fx.top, 'symbolic-ref', 'HEAD');
+    const sha = git(fx.top, 'rev-parse', 'HEAD');
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, '--no-report'),
+      `worktree-w1 has not landed in ${branch} (${sha}): its head ${fx.head} is not there, and the history walk tried 0 commits and found no match. Land it and run finish again; name the target with --into <rev>; discarding it is your call, with sidekick worker finish ${fx.brief} --no-report --discard`,
+    );
+  });
+
+  test('a worktree off its branch, in a run with --no-report, offering --discard with --no-report', () => {
+    const fx = fixture();
+    git(fx.worktree, 'checkout', '-q', '--detach');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, '--no-report'),
+      `the worktree ${fx.worktree} has a detached HEAD checked out, not worktree-w1, so finish cannot check that its commits have landed: check out worktree-w1 there and run finish again; discarding it is your call, with sidekick worker finish ${fx.brief} --no-report --discard`,
+    );
+  });
+
   test('--into a branch the work has not reached, with an orphan target', () => {
     const fx = fixture();
     fx.orphan('orphan');
@@ -383,22 +408,19 @@ describe('finish refuses', () => {
     expect(fs.existsSync(fx.worktree)).toBe(true);
   });
 
-  test.each([
-    ['exits non-zero', { code: 1 }, 'failed with exit code 1'],
-    ['times out', { code: 1, timedOut: true }, 'did not return in time'],
-  ])('a claude rm that %s while printing removed', (_label, over, what) => {
+  test('a claude rm that exits non-zero while printing removed', () => {
     const fx = fixture();
     fx.integrate();
     const h = harness(fx);
     h.claude.state.rm = [
       {
-        result: ok({ stdout: `removed ${ID}\n`, ...over }),
+        result: ok({ stdout: `removed ${ID}\n`, code: 1 }),
         removes: 'nothing',
       },
     ];
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toEqual([
-      `claude rm ${ID} ${what}, so finish removed nothing more:`,
+      `claude rm ${ID} failed with exit code 1, so finish removed nothing more:`,
       `removed ${ID}`,
       wayOut(`sidekick worker finish ${fx.brief}`, `claude rm ${ID}`),
     ]);
@@ -526,6 +548,27 @@ describe('finish passes a landing', () => {
     );
     expect(h.err).toEqual([]);
     expect(branchRemains(fx)).toBe(false);
+  });
+
+  test.each([
+    'rebase',
+    'squash',
+  ] as const)('a %s that a later edit on the main checkout conflicts with, naming the landing commit, not the tip', (how) => {
+    const fx = fixture();
+    fx.landOnMain(how);
+    const landing = git(fx.top, 'rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(fx.top, 'b.txt'), 'b\nedited\n');
+    git(fx.top, 'add', 'b.txt');
+    git(fx.top, 'commit', '-q', '-m', 'edit beside the landed lines');
+    const tip = git(fx.top, 'rev-parse', 'HEAD');
+    expect(tip).not.toBe(landing);
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.out[0]).toBe(
+      `worktree-w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${landing.slice(0, SHORT_SHA)}`,
+    );
+    expect(h.out[0]).not.toContain(tip.slice(0, SHORT_SHA));
+    expect(h.err).toEqual([]);
   });
 
   test('a squash on a side branch, named with --into', () => {

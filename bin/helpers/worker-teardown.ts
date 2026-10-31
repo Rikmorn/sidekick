@@ -85,6 +85,8 @@ export interface Ready extends WorkerJob {
   brief: string;
   /** The command that repeats this run, with the flags it was given. */
   rerun: string;
+  /** The command that discards the worker, with the run's `--no-report`. */
+  discardCommand: string;
   /** A removal an earlier run cut short: deleted files alone, at a head a backup ref already holds. */
   partial: boolean;
 }
@@ -195,10 +197,10 @@ function unknownAnswer(
 // Runs claude rm's discard line only when it names the verified head; any
 // other answer refuses, and nothing is lost. The offer counts whatever the
 // exit code: claude rm exited 1 as it kept a job finish had just stopped
-// (measured 2026-10-15, 2.1.300). A run that timed out offers nothing.
+// (measured 2026-10-15, 2.1.300).
 function discard(ready: Ready, wenv: WorkerEnv, kept: ClaudeResult): string[] {
   const text = printedStreams(kept).join('\n');
-  const offer = kept.timedOut ? null : DISCARD_LINE.exec(text);
+  const offer = DISCARD_LINE.exec(text);
   if (offer === null) return unknownAnswer(ready.rerun, ['rm', ready.id], kept);
   const [, sha, worktreeId] = offer;
   if (sha !== ready.head) {

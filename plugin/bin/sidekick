@@ -5588,7 +5588,7 @@ function unknownAnswer(rerun, args, result) {
 function discard(ready, wenv, kept) {
   const text = printedStreams(kept).join(`
 `);
-  const offer = kept.timedOut ? null : DISCARD_LINE.exec(text);
+  const offer = DISCARD_LINE.exec(text);
   if (offer === null)
     return unknownAnswer(ready.rerun, ["rm", ready.id], kept);
   const [, sha, worktreeId] = offer;
@@ -5777,12 +5777,12 @@ function walkedText(walked, capped2) {
   const commits = `${walked} ${walked === 1 ? "commit" : "commits"}`;
   return capped2 ? `the history walk tried ${commits} and stopped at its cap of ${DEFAULT_CAP}` : `the history walk tried ${commits} and found no match`;
 }
-var discardRoute = (brief) => `discarding it is your call, with sidekick worker finish ${brief} --discard`;
+var discardRoute = (discardCommand) => `discarding it is your call, with ${discardCommand}`;
 var handRoute = (id) => `to clear it by hand, claude rm ${id}`;
-function routeFor(mode, brief, id) {
+function routeFor(mode, discardCommand, id) {
   switch (mode) {
     case "landed":
-      return discardRoute(brief);
+      return discardRoute(discardCommand);
     case "discard":
       return handRoute(id);
     default: {
@@ -5822,7 +5822,7 @@ function verdictFor(runGit, top, branch, head, opts) {
     case "not landed":
       return {
         issues: [
-          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(opts.brief)}`
+          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(discardCommandFor(opts))}`
         ]
       };
     default: {
@@ -5839,12 +5839,12 @@ function branchVerdict(runGit, top, branch, opts, id) {
   const judged = verdictFor(runGit, top, name, head, opts);
   return "issues" in judged ? judged : { head, verdict: judged.verdict };
 }
-function onBranchIssues(runGit, worktree, branch, mode, brief, id) {
+function onBranchIssues(runGit, worktree, branch, mode, discardCommand, id) {
   const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`)
     return [];
   return [
-    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${offBranchReason(mode, branch)}: check out ${branch} there and run finish again; ${routeFor(mode, brief, id)}`
+    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${offBranchReason(mode, branch)}: check out ${branch} there and run finish again; ${routeFor(mode, discardCommand, id)}`
   ];
 }
 function offBranchReason(mode, branch) {
@@ -5933,7 +5933,7 @@ function isPartial(runGit, top, worker, status) {
 function worktreeCheck(runGit, places, worker, opts) {
   const status = statusBesideReport(runGit, places);
   const partial = isPartial(runGit, places.top, worker, status);
-  const onBranch = onBranchIssues(runGit, places.worktree, places.branch, opts.mode.kind, opts.brief, worker.id);
+  const onBranch = onBranchIssues(runGit, places.worktree, places.branch, opts.mode.kind, discardCommandFor(opts), worker.id);
   const dirty = dirtyIssues(places.worktree, status, partial, opts.mode.kind);
   return { issues: [...onBranch, ...dirty], partial };
 }
@@ -5986,15 +5986,17 @@ function modeFlags(mode) {
     }
   }
 }
-function rerunCommand(opts) {
+function commandFor(opts, mode) {
   const report = opts.noReport ? ["--no-report"] : [];
   return [
     "sidekick worker finish",
     opts.brief,
     ...report,
-    ...modeFlags(opts.mode)
+    ...modeFlags(mode)
   ].join(" ");
 }
+var rerunCommand = (opts) => commandFor(opts, opts.mode);
+var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 function allIssues(landed, worktreeIssues, step) {
   return [
     ..."issues" in landed ? landed.issues : [],
@@ -6032,6 +6034,7 @@ function checkFinish(brief, opts, wenv) {
     verdict: landed.verdict,
     brief: opts.brief,
     rerun: rerunCommand(opts),
+    discardCommand: discardCommandFor(opts),
     reportStep: step,
     partial: tree.partial
   };
@@ -6109,7 +6112,7 @@ function headMovedIssues(runGit, ready) {
 }
 var recheckWorktree = (ready, wenv) => {
   const issues = [
-    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.verdict.kind, ready.brief, ready.id),
+    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.verdict.kind, ready.discardCommand, ready.id),
     ...headMovedIssues(wenv.runGit, ready),
     ...dirtyIssues(ready.worktree, statusBesideReport(wenv.runGit, ready), ready.partial, ready.verdict.kind),
     ...reportChangedIssues(ready)
