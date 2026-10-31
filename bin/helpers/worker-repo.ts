@@ -2,7 +2,8 @@
  * Facts that `sidekick worker` reads through git: where the main checkout is,
  * its `HEAD`, whether its tracked files are clean, its branches and push URLs,
  * and the exclude entry for Claude Code's worktree folder. For a worktree:
- * what it has checked out, and the paths `git status` names there.
+ * what it has checked out, and the entries `git status` names there, with
+ * their codes and as bare paths.
  */
 
 import * as fs from 'node:fs';
@@ -112,21 +113,50 @@ export function checkedOut(runGit: Runner, dir: string): string {
 
 // A rename or copy entry carries its source path in the next field.
 const RENAMED = /^(?:[RC].|.[RC]) /;
+const STATUS_CODE_LENGTH = 'XY'.length;
 const STATUS_PREFIX = 'XY '.length;
 
-// Every path `git status --porcelain -z` names, sources of renames included.
-function statusPaths(stdout: string): string[] {
+/** One path that `git status` names, with porcelain's two `XY` characters. */
+export interface StatusEntry {
+  code: string;
+  path: string;
+}
+
+// Every entry `git status --porcelain -z` names, sources of renames included.
+function statusEntries(stdout: string): StatusEntry[] {
   const fields = stdout.split('\0').filter((field) => field !== '');
-  const paths: string[] = [];
+  const entries: StatusEntry[] = [];
   let i = 0;
   while (i < fields.length) {
     const entry = fields[i];
+    const code = entry.slice(0, STATUS_CODE_LENGTH);
     const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
-    paths.push(entry.slice(STATUS_PREFIX));
-    if (source !== undefined) paths.push(source);
+    entries.push({ code, path: entry.slice(STATUS_PREFIX) });
+    if (source !== undefined) entries.push({ code, path: source });
     i += source === undefined ? 1 : 2;
   }
-  return paths;
+  return entries;
+}
+
+/**
+ * Every entry `git status` names in the work tree at `dir`, with its `XY`
+ * code and a path relative to the top: each untracked file by its own path,
+ * and a rename's source as its own entry with the rename's code. The issue is
+ * git's message when the status fails.
+ */
+export function statusEntriesIn(
+  runGit: Runner,
+  top: string,
+  dir: string,
+): { entries: StatusEntry[] } | { issue: string } {
+  // -uall names each untracked file, where the default names only its folder.
+  const status = runGit(
+    'git',
+    ['-C', dir, 'status', '--porcelain', '-z', '--untracked-files=all'],
+    top,
+  );
+  if (status.code !== 0) return { issue: status.stderr.trim() };
+  return { entries: statusEntries(status.stdout) };
 }
 
 /**
@@ -139,14 +169,9 @@ export function statusPathsIn(
   top: string,
   dir: string,
 ): { paths: string[] } | { issue: string } {
-  // -uall names each untracked file, where the default names only its folder.
-  const status = runGit(
-    'git',
-    ['-C', dir, 'status', '--porcelain', '-z', '--untracked-files=all'],
-    top,
-  );
-  if (status.code !== 0) return { issue: status.stderr.trim() };
-  return { paths: statusPaths(status.stdout) };
+  const status = statusEntriesIn(runGit, top, dir);
+  if ('issue' in status) return status;
+  return { paths: status.entries.map((entry) => entry.path) };
 }
 
 const PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;

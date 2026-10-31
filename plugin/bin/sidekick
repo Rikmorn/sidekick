@@ -1403,26 +1403,34 @@ function checkedOut(runGit, dir) {
   return `an unreadable HEAD (${result.stderr.trim()})`;
 }
 var RENAMED = /^(?:[RC].|.[RC]) /;
+var STATUS_CODE_LENGTH = "XY".length;
 var STATUS_PREFIX = "XY ".length;
-function statusPaths(stdout) {
+function statusEntries(stdout) {
   const fields = stdout.split("\x00").filter((field) => field !== "");
-  const paths = [];
+  const entries = [];
   let i = 0;
   while (i < fields.length) {
     const entry = fields[i];
+    const code = entry.slice(0, STATUS_CODE_LENGTH);
     const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
-    paths.push(entry.slice(STATUS_PREFIX));
+    entries.push({ code, path: entry.slice(STATUS_PREFIX) });
     if (source !== undefined)
-      paths.push(source);
+      entries.push({ code, path: source });
     i += source === undefined ? 1 : 2;
   }
-  return paths;
+  return entries;
 }
-function statusPathsIn(runGit, top, dir) {
+function statusEntriesIn(runGit, top, dir) {
   const status = runGit("git", ["-C", dir, "status", "--porcelain", "-z", "--untracked-files=all"], top);
   if (status.code !== 0)
     return { issue: status.stderr.trim() };
-  return { paths: statusPaths(status.stdout) };
+  return { entries: statusEntries(status.stdout) };
+}
+function statusPathsIn(runGit, top, dir) {
+  const status = statusEntriesIn(runGit, top, dir);
+  if ("issue" in status)
+    return status;
+  return { paths: status.entries.map((entry) => entry.path) };
 }
 var PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
 function remotesWithPushUrl(runGit, top) {

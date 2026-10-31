@@ -12,6 +12,7 @@ import {
   isTrackedClean,
   mainCheckout,
   remotesWithPushUrl,
+  statusEntriesIn,
   statusPathsIn,
 } from './worker-repo.js';
 
@@ -108,6 +109,38 @@ describe('a worktree: what it has checked out, and its status', () => {
     const result = statusPathsIn(execRunner, top, top);
     const paths = 'paths' in result ? [...result.paths].sort() : [];
     expect(paths).toEqual(['a.txt', 'b.txt', 'new/deep/n.txt']);
+  });
+
+  test('statusEntriesIn gives a deleted, a modified, and an untracked file their codes', () => {
+    const top = repo();
+    fs.writeFileSync(path.join(top, 'o.txt'), 'o\n');
+    git(top, 'add', 'o.txt');
+    git(top, 'commit', '-q', '-m', 'add o');
+    fs.rmSync(path.join(top, 'a.txt'));
+    fs.writeFileSync(path.join(top, 'o.txt'), 'changed\n');
+    fs.writeFileSync(path.join(top, 'u.txt'), 'u\n');
+    const result = statusEntriesIn(execRunner, top, top);
+    const entries = 'entries' in result ? result.entries : [];
+    expect(entries).toContainEqual({ code: ' D', path: 'a.txt' });
+    expect(entries).toContainEqual({ code: ' M', path: 'o.txt' });
+    expect(entries).toContainEqual({ code: '??', path: 'u.txt' });
+  });
+
+  test("statusEntriesIn gives a staged rename's two paths the same R code", () => {
+    const top = repo();
+    git(top, 'mv', 'a.txt', 'b.txt');
+    const result = statusEntriesIn(execRunner, top, top);
+    const entries = 'entries' in result ? result.entries : [];
+    expect(entries).toHaveLength(2);
+    expect(entries).toContainEqual({ code: 'R ', path: 'b.txt' });
+    expect(entries).toContainEqual({ code: 'R ', path: 'a.txt' });
+  });
+
+  test("statusEntriesIn gives git's message for a folder outside any repo", () => {
+    const top = repo();
+    expect(statusEntriesIn(execRunner, top, tmp())).toEqual({
+      issue: expect.stringContaining('not a git repository'),
+    });
   });
 
   test("statusPathsIn gives git's message for a folder outside any repo", () => {
