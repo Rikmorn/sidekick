@@ -140,40 +140,42 @@ Pass the orchestrating session's own mode. A message from a session in another p
 
 ## `finish`
 
-`finish` reads the brief's `name` and `report`. The worktree is `<top>/.claude/worktrees/<name>`, and the branch is `worktree-<name>`. It removes the worker's session, desk record, worktree, and branch, and only once the work has landed, is committed, and is reported. Every branch it deletes stays in a backup ref, as "The backup refs" says.
+`finish` reads the brief's `name` and `report`. The worktree is `<top>/.claude/worktrees/<name>`, and the branch is `worktree-<name>`. It removes the worker's session, desk record, worktree, and branch, and, unless `--discard`, only once the work has landed. It also requires the work to be committed and reported. Every branch it deletes stays in a backup ref, as "The backup refs" says.
 
 ### What it checks
 
 `finish` refuses, exits 1, and says why and what to do, unless every one of these holds:
 
 - **One job.** Exactly one session in `claude agents --json --all` carries the name, and it is a background job with an id. An interactive session the operator started is not a job, so `finish` does not apply to it.
+- **Linked.** If the worktree folder exists with no `.git` entry while git still lists it, a removal went past git's link to it. `finish` refuses with that one issue and names `claude rm <id>`.
 - **On its branch.** The worktree has `worktree-<name>` checked out.
 - **Landed.** The target is the main checkout's `HEAD`, detached or not, or the commit that `--into <rev>` names. `finish` accepts the first of three checks that passes. The branch's head is an ancestor of the target. Else a simulated merge of the head into the target's tip adds nothing. Else the same merge adds nothing against a commit in the target's history since the merge base. Only commits that touched a file the branch changed count, newest first, up to 200. So a rebase or squash landing counts, even after the target edited near the landed lines. The simulated merge reads no in-tree attributes. A landing that changed the worker's content refuses, as does a walk that reaches its cap. Nothing is lost: the worktree stays. The refusal names `sidekick worker finish <brief> --discard`, the operator's call. It names `claude rm <id>` instead when the branch does not exist, since `--discard` needs the branch.
-- **Discard.** With `--discard`, the landed check is skipped on the operator's word. The job, the branch, the on-branch check, the clean check, the report, and the backup all still hold. A refusal then names `claude rm <id>` as the hand route.
 - **Clean.** `git status` in the worktree lists nothing but the report, untracked files included.
 - **Reported.** The report exists at `<worktree>/<report>`, unless `--no-report`.
 - **No other report.** No different file sits at `<top>/<report>`. An identical one is fine, so this check lets a re-run through.
 
+With `--discard`, the landed check is skipped on the operator's word. The job, the branch, the on-branch check, the clean check, and the report all still hold, and so does the backup. In that mode, the off-branch and missing-branch refusals name `claude rm <id>` as the hand route. The uncommitted-work refusal names no way out.
+
 ### Its steps
 
-The steps run in order, and the first that fails stops the rest. `finish` prints the landing line first, `<branch> landed in <target> at <short sha>`, or `<branch> is discarded on your word`. It then prints what became of the report, then each removal: the session, the worktree, and the branch. Its last line names the backup ref, as "The backup refs" says.
+The steps run in order, and the first that fails stops the rest. `finish` prints the landing line first, `<branch> landed in <target> at <short sha>`, or `<branch> is discarded on your word`. It then prints what became of the report, then each removal: the session, the worktree, and the branch. On a re-run that restores deleted files, a `restored N deleted files` line comes between the report line and the session line. Its last line names the backup ref, as "The backup refs" says.
 
 1. It copies the report to `<top>/<report>`, creating its folders.
-2. It stops the job with `claude stop <id>`. A worker whose turn has ended lists as `done` while its process idles and holds the worktree's lock (the dispatch bench). So `finish` skips the stop only when the listing says `stopped` or `done` and the process the lock names has exited. A failing `stop` refuses before anything is removed.
+2. It stops the job with `claude stop <id>`. A worker whose turn has ended lists as `done` while its process idles and holds the worktree's lock (the dispatch bench). So `finish` skips the stop only when the listing says `stopped` or `done` and the process the lock names has exited. A failing `stop` refuses before anything is removed. `claude stop` keeps a 30-second limit.
 3. It waits up to 15 seconds for the process that the worktree's lock names to exit. `claude rm` keeps a worktree whose lock names a running process (the dispatch probes, "Stopping and cleanup").
 4. It checks the worktree again: its branch, that branch's head, its status, and the report. The worker may have run on after the first check, so a change there means nothing is removed.
 5. It writes the backup ref for the verified head, create-only, and in a partial removal restores the deleted files from the index.
-6. It runs `claude rm <id>` with no time limit, since any limit can cut its delete short. Output that starts `removed` succeeds. For commits that no remote holds, `claude rm` keeps the worktree and prints a `--discard-unpushed <sha>@<worktree id>` line. `finish` runs that line only when `<sha>` equals the head it verified. Any other answer refuses, printing `claude rm`'s text. `claude stop` keeps a 30-second limit.
+6. It runs `claude rm <id>` with no time limit, since any limit can cut its delete short. Output that starts `removed` succeeds. For commits that no remote holds, `claude rm` keeps the worktree and prints a `--discard-unpushed <sha>@<worktree id>` line. `finish` runs that line only when `<sha>` equals the head it verified. Any other answer refuses, printing `claude rm`'s text.
 7. It deletes the worker's record, as "The record" says. A missing record is fine.
 8. It confirms with `git worktree list` that the worktree is gone. It deletes a leftover branch with `git update-ref -d` at the verified head, which refuses a branch that moved, then removes the branch's `branch.<name>` config section.
 
 A foreground call stops at 600 seconds, and `claude rm` may run longer. Run `finish` with the Bash tool's `run_in_background`.
 
-After a failure, fix what it names and run `finish` again. A re-run works until `claude rm` succeeds, and it completes a removal that an earlier `claude rm` cut short. When the worktree's only changes are deleted tracked files and a backup ref already holds the head, `finish` restores those files from the index before `claude rm`. It counts a report already beside the plan as saved. Without the backup ref, deleted files refuse as uncommitted work. After `claude rm` succeeds, `finish` no longer finds the job, so clear any worktree or branch left by hand.
+After a failure, fix what it names and run `finish` again. A re-run works until `claude rm` succeeds, and it completes a removal that an earlier `claude rm` cut short. The exception is a cut that took the worktree's `.git` entry, which the Linked check refuses. When the worktree's only changes are deleted tracked files and a backup ref already holds the head, `finish` restores those files from the index before `claude rm`. It counts a report already beside the plan as saved. Without the backup ref, deleted files refuse as uncommitted work. After `claude rm` succeeds, `finish` no longer finds the job, so clear any worktree or branch left by hand.
 
 ### The backup refs
 
-Every `finish` writes `refs/sidekick/landed/<name>/<head>`, or `refs/sidekick/discarded/<name>/<head>` under `--discard`, before `claude rm`. The ref keeps the branch's commits after the branch is deleted. List the refs with `git for-each-ref refs/sidekick/`, and restore one with `git branch <branch> <ref>`. Nothing removes them yet; #284 tidies them.
+Every `finish` writes `refs/sidekick/landed/<name>/<head>`, or `refs/sidekick/discarded/<name>/<head>` under `--discard`, before `claude rm`. The ref keeps the branch's commits after the branch is deleted. List the refs with `git for-each-ref refs/sidekick/`, and restore one with `git branch <branch> <ref>`. Nothing removes them yet, and #284 is filed to tidy them.
 
 ### What it reads from `claude rm`
 
