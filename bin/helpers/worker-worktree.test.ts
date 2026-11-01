@@ -53,18 +53,42 @@ describe('findWorktree', () => {
       kind: 'found',
       path: '/r/w1',
       branch: 'feature',
+      branchFrom: 'transcript',
       locked: undefined,
       prunable: undefined,
       via: 'transcript',
     });
   });
 
-  test('uses the worktree branch, short, when the transcript names none', () => {
+  test('uses the worktree branch, short, when the transcript names none, saying git gave it', () => {
     const candidates: Candidate[] = [
       { via: 'transcript', cwd: '/r/w1', gitBranch: undefined },
     ];
     const found = findWorktree(input({ candidates }));
-    expect(found.kind === 'found' && found.branch).toBe('w1');
+    expect(found).toMatchObject({ branch: 'w1', branchFrom: 'git' });
+  });
+
+  test('says git gave the branch on the listing, the name, and the operator routes', () => {
+    const at = (candidates: Candidate[]) =>
+      findWorktree(
+        input({
+          worktrees: [entry(MAIN, 'master'), entry('/r/w1', 'worktree-w1')],
+          candidates,
+        }),
+      );
+    const routes = [
+      at([{ via: 'listing', cwd: '/r/w1' }]),
+      at([]),
+      at([{ via: 'operator', cwd: '/r/w1' }]),
+    ];
+    expect(routes.map((found) => found.kind === 'found' && found.via)).toEqual([
+      'listing',
+      'name',
+      'operator',
+    ]);
+    for (const found of routes) {
+      expect(found).toMatchObject({ branchFrom: 'git' });
+    }
   });
 
   test('finds by the listing', () => {
@@ -363,6 +387,7 @@ describe('locateWorktree', () => {
       kind: 'found',
       path: f.worktree,
       branch: 'w1',
+      branchFrom: 'transcript',
       locked: undefined,
       prunable: undefined,
       via: 'transcript',

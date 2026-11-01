@@ -1,9 +1,10 @@
 /**
  * The checks of a worker's worktree. They say where its worktree, branch, and
  * report sit, refuse when the finder found no worktree, or none at the
- * operator's `--worktree`, and check whether it is on its branch, still linked
- * to git, and free of uncommitted work, and whether it holds a partial removal
- * that an earlier run left.
+ * operator's `--worktree`, or found one on a branch nothing shows is the
+ * worker's. They check whether it is on its branch, still linked to git, and
+ * free of uncommitted work, and whether it holds a partial removal that an
+ * earlier run left.
  */
 
 import * as fs from 'node:fs';
@@ -31,7 +32,7 @@ import {
   worktreeListed,
 } from './worker-repo.js';
 import { heldBackup, type Ready } from './worker-teardown.js';
-import { type Found, shortBranch } from './worker-worktree.js';
+import { type Found, nativeBranch, shortBranch } from './worker-worktree.js';
 
 // branchVerdict checks only the branch, so the worktree must have that branch
 // checked out: the branch it started on, when its transcript names one.
@@ -142,6 +143,32 @@ export function notFoundIssues(name: string, tried: Tried[]): string[] {
     `finish cannot find the worktree of ${name}, so it removed nothing. It tried:`,
     ...tried.map(triedLine),
     'name the worktree with --worktree <path>, or discard the worker with --discard',
+  ];
+}
+
+/**
+ * finish acts on a branch only with evidence it is the worker's: the
+ * transcript's `gitBranch`, Claude Code's own name, or the operator's
+ * `--worktree`. The branch git lists at a worktree found any other way
+ * refuses, with `confirm`, the command that names the worktree.
+ */
+export function unprovenIssues(
+  found: FoundWorktree,
+  name: string,
+  confirm: string,
+): string[] {
+  const native = nativeBranch(name);
+  const shown =
+    found.via === 'operator' ||
+    found.branchFrom === 'transcript' ||
+    found.branch === native;
+  if (shown) return [];
+  const how =
+    found.via === 'listing'
+      ? "the job listing's cwd"
+      : "the transcript's first cwd, which names no branch";
+  return [
+    `finish found the worktree ${found.path} through ${how}, but it is on ${found.branch}, not ${native}, so nothing shows the branch is the worker's: if it is, confirm with ${confirm}`,
   ];
 }
 

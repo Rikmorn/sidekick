@@ -33,6 +33,8 @@ export type Found =
       path: string;
       /** A short name. */
       branch: string;
+      /** Where `branch` came from: the transcript's `gitBranch`, or what git lists at the path now. */
+      branchFrom: 'transcript' | 'git';
       locked: string | undefined;
       /** git's reason, `''` when it gives none; undefined when not prunable. */
       prunable: string | undefined;
@@ -88,28 +90,35 @@ function refusal(input: FindInput, match: WorktreeEntry): string | undefined {
   return undefined;
 }
 
+type Branch = Pick<Extract<Found, { kind: 'found' }>, 'branch' | 'branchFrom'>;
+
 function foundOf(
   match: WorktreeEntry,
-  branch: string,
+  { branch, branchFrom }: Branch,
   via: Candidate['via'] | 'name',
 ): Found {
   return {
     kind: 'found',
     path: match.path,
     branch,
+    branchFrom,
     locked: match.locked,
     prunable: match.prunable,
     via,
   };
 }
 
-// The worker's branch for a candidate that matched `match`, or undefined when
-// the worker has none to land.
-function branchFor(candidate: Candidate, match: WorktreeEntry) {
+// The worker's branch for a candidate that matched `match`, and where it came
+// from; undefined when the worker has none to land.
+function branchFor(
+  candidate: Candidate,
+  match: WorktreeEntry,
+): Branch | undefined {
   if (candidate.via === 'transcript' && candidate.gitBranch !== undefined) {
-    return candidate.gitBranch;
+    return { branch: candidate.gitBranch, branchFrom: 'transcript' };
   }
-  return match.branch === undefined ? undefined : shortBranch(match.branch);
+  if (match.branch === undefined) return undefined;
+  return { branch: shortBranch(match.branch), branchFrom: 'git' };
 }
 
 // The operator's path is the only candidate, so no transcript was read for it.
@@ -142,7 +151,8 @@ function byName(input: FindInput): Found | Tried {
       why: `no worktree has ${nativeBranch(input.name)} checked out`,
     };
   }
-  return foundOf(match, nativeBranch(input.name), 'name');
+  const branch = nativeBranch(input.name);
+  return foundOf(match, { branch, branchFrom: 'git' }, 'name');
 }
 
 const isFound = (r: Found | Tried): r is Found => 'kind' in r;

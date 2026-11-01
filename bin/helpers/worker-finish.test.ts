@@ -1438,6 +1438,11 @@ const worktrunk = {
 const targetLines = (h: Harness): string[] =>
   h.out.filter((line) => line.startsWith('target: '));
 
+// The refusal when a reader found the worktree on a branch nothing shows is
+// the worker's, with the command that confirms it.
+const unproven = (fx: Fixture, how: string, confirm: string): string =>
+  `finish found the worktree ${fx.worktree} through ${how}, but it is on ${fx.branch}, not worktree-w1, so nothing shows the branch is the worker's: if it is, confirm with ${confirm}`;
+
 // Hides a worktrunk-shaped worktree from every reader: the transcript starts
 // in a folder no worktree holds, the listing names the main checkout, and no
 // worktree is on worktree-w1. Gives the lines that say what the finder tried.
@@ -1479,16 +1484,98 @@ describe('finish finds the worktree wherever it was made', () => {
     expect(branchRemains(fx)).toBe(false);
   });
 
-  test("through the job listing's cwd when no transcript names it", () => {
-    const fx = fixture(worktrunk);
+  test("through the job listing's cwd when no transcript names it, on Claude Code's own branch", () => {
+    const fx = fixture({ worktree: (top) => beside(top, '.w1') });
     fx.integrate();
     fs.rmSync(fx.transcript);
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(0);
     expect(h.err).toEqual([]);
     expect(h.out).toContain(`worktree ${fx.worktree} removed`);
-    expect(h.out).toContain('branch w1 removed');
+    expect(h.out).toContain('branch worktree-w1 removed');
     expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test.each([
+    ['landed', []],
+    ['discard', ['--discard']],
+  ])("refusing in %s mode a branch only the listing found, which is not Claude Code's, naming --worktree", (_label, args) => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    fs.rmSync(fx.transcript);
+    const commonDir = path.join(fx.top, '.git');
+    writeRecord(commonDir, recordFor(fx));
+    const refs = allRefs(fx);
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, ...args),
+      unproven(
+        fx,
+        "the job listing's cwd",
+        `sidekick worker finish ${fx.brief} ${[...args, '--worktree', fx.worktree].join(' ')}`,
+      ),
+    );
+    expect(h.err).toHaveLength(1);
+    expect(h.out).toEqual([]);
+    expect(readRecords(commonDir).records).toHaveLength(1);
+    expect(allRefs(fx)).toBe(refs);
+  });
+
+  test('then landing the same worktree once --worktree confirms it', () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    fs.rmSync(fx.transcript);
+    expect(harness(fx).finish(fx.brief)).toBe(1);
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--worktree', fx.worktree)).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out).toContain(`worktree ${fx.worktree} removed`);
+    expect(h.out).toContain('branch w1 removed');
+    expect(branchRemains(fx)).toBe(false);
+  });
+
+  test("refusing a branch the transcript found with no gitBranch, which is not Claude Code's", () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    writeTranscript(fx.configDir, { cwd: fx.worktree });
+    const h = harness(fx);
+    h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: null })]);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      unproven(
+        fx,
+        "the transcript's first cwd, which names no branch",
+        `sidekick worker finish ${fx.brief} --worktree ${fx.worktree}`,
+      ),
+    );
+  });
+
+  test.each([
+    [
+      'landed',
+      [],
+      (fx: Fixture) =>
+        `the worktree ${fx.worktree} has refs/heads/other checked out, not w1, so finish cannot check that its commits have landed: check out w1 there and run finish again; discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
+    ],
+    [
+      'discard',
+      ['--discard'],
+      (fx: Fixture) =>
+        `the worktree ${fx.worktree} has refs/heads/other checked out, not w1, and its commits may not all be on w1, which finish keeps as the backup: check out w1 there and run finish again; to clear it by hand, claude rm ${ID}`,
+    ],
+  ])('refusing in %s mode a transcript-found worktree switched to another named branch, as off its branch', (_label, args, line) => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    git(fx.worktree, 'checkout', '-q', '-b', 'other');
+    const refs = allRefs(fx);
+    const h = harness(fx);
+    expectRefusedUntouched(h, fx, h.finish(fx.brief, ...args), line(fx));
+    expect(h.err).toHaveLength(1);
+    expect(allRefs(fx)).toBe(refs);
   });
 
   test('from a sibling checkout, running claude from the main checkout', () => {

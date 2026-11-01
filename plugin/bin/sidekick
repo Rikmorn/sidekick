@@ -5309,11 +5309,12 @@ function refusal(input, match) {
   }
   return;
 }
-function foundOf(match, branch, via) {
+function foundOf(match, { branch, branchFrom }, via) {
   return {
     kind: "found",
     path: match.path,
     branch,
+    branchFrom,
     locked: match.locked,
     prunable: match.prunable,
     via
@@ -5321,9 +5322,11 @@ function foundOf(match, branch, via) {
 }
 function branchFor(candidate, match) {
   if (candidate.via === "transcript" && candidate.gitBranch !== undefined) {
-    return candidate.gitBranch;
+    return { branch: candidate.gitBranch, branchFrom: "transcript" };
   }
-  return match.branch === undefined ? undefined : shortBranch(match.branch);
+  if (match.branch === undefined)
+    return;
+  return { branch: shortBranch(match.branch), branchFrom: "git" };
 }
 var detachedWhy = (via) => via === "operator" ? "is detached" : "is detached, and the transcript names no branch";
 function tryCandidate(input, candidate) {
@@ -5349,7 +5352,8 @@ function byName(input) {
       why: `no worktree has ${nativeBranch(input.name)} checked out`
     };
   }
-  return foundOf(match, nativeBranch(input.name), "name");
+  const branch = nativeBranch(input.name);
+  return foundOf(match, { branch, branchFrom: "git" }, "name");
 }
 var isFound = (r) => ("kind" in r);
 function findWorktree(input) {
@@ -6251,6 +6255,16 @@ function notFoundIssues(name, tried) {
     "name the worktree with --worktree <path>, or discard the worker with --discard"
   ];
 }
+function unprovenIssues(found, name, confirm) {
+  const native = nativeBranch(name);
+  const shown = found.via === "operator" || found.branchFrom === "transcript" || found.branch === native;
+  if (shown)
+    return [];
+  const how = found.via === "listing" ? "the job listing's cwd" : "the transcript's first cwd, which names no branch";
+  return [
+    `finish found the worktree ${found.path} through ${how}, but it is on ${found.branch}, not ${native}, so nothing shows the branch is the worker's: if it is, confirm with ${confirm}`
+  ];
+}
 var listedLine = (entry) => `${entry.path}: ${entry.branch === undefined ? "detached" : shortBranch(entry.branch)}`;
 function operatorIssues(name, tried, linked) {
   const listed = linked.length === 0 ? ["git lists no linked worktree"] : ["git lists these linked worktrees:", ...linked.map(listedLine)];
@@ -6630,6 +6644,10 @@ function locate2(subject, opts, wenv) {
     const gone = whenNotFound(found.tried, at, opts);
     return "issues" in gone ? gone : { kind: "gone", gone };
   }
+  const confirm = rerunCommand({ ...opts, worktree: found.path });
+  const unproven = unprovenIssues(found, subject.name, confirm);
+  if (unproven.length > 0)
+    return { issues: unproven };
   const places = placesFor({ mainTop, launchTop }, found, subject.read);
   return { kind: "found", places, job, commonDir };
 }

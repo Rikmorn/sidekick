@@ -3,7 +3,8 @@
  * report in the checkout that holds the brief and removes its session, desk
  * record, worktree, and branch. It runs from any checkout of the repo, and
  * finds the worktree wherever its creator made it, or at the operator's
- * `--worktree`. `--name` stands in for a brief that is gone.
+ * `--worktree`. `--name` stands in for a brief that is gone. It acts on a
+ * branch only with evidence the branch is the worker's.
  * It refuses whenever a step would lose work. The steps run in order, and the
  * first that fails stops the rest. It prints the target and why, where the work
  * landed, what became of the report, any files it restored, then each removal:
@@ -42,6 +43,7 @@ import {
   placesFor,
   statusBesideReport,
   unlinkedIssues,
+  unprovenIssues,
   worktreeCheck,
 } from './worker-finish-tree.js';
 import { LISTING, listJobs } from './worker-jobs.js';
@@ -204,6 +206,9 @@ function locate(
     const gone = whenNotFound(found.tried, at, opts);
     return 'issues' in gone ? gone : { kind: 'gone', gone };
   }
+  const confirm = rerunCommand({ ...opts, worktree: found.path });
+  const unproven = unprovenIssues(found, subject.name, confirm);
+  if (unproven.length > 0) return { issues: unproven };
   const places = placesFor({ mainTop, launchTop }, found, subject.read);
   return { kind: 'found', places, job, commonDir };
 }
