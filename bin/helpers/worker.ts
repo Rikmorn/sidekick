@@ -8,7 +8,8 @@
 import type { Runner } from './pm-data.js';
 import type { ProfileEnv } from './profile.js';
 import { dispatch, parseDispatchArgs } from './worker-dispatch.js';
-import { finish, parseFinishArgs } from './worker-finish.js';
+import { finish } from './worker-finish.js';
+import { parseFinishArgs } from './worker-finish-args.js';
 
 export const WORKER_USAGE_LINE =
   'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report] [--into <rev> | --discard]';

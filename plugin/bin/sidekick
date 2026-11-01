@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs20 from "node:fs";
+import * as fs21 from "node:fs";
 import { realpathSync as realpathSync4 } from "node:fs";
 import * as os2 from "node:os";
-import * as path20 from "node:path";
+import * as path22 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -5404,127 +5404,56 @@ function dispatch(opts, wenv, out, err) {
   return launch2(checked2, wenv, out, err);
 }
 
-// bin/helpers/worker-finish.ts
-import * as fs19 from "node:fs";
-import * as path19 from "node:path";
-
-// bin/helpers/worker-landed.ts
-var DEFAULT_CAP = 200;
-var CONFLICTED = 1;
-var isFailure = (value) => typeof value === "object" && value !== null && ("issue" in value);
-function emptyTreeId(runGit, top) {
-  const result = runGit("git", ["hash-object", "-w", "-t", "tree", "/dev/null"], top);
-  if (result.code !== 0) {
-    return { issue: `git hash-object failed: ${result.stderr.trim()}` };
-  }
-  return result.stdout.trim();
-}
-function treeOf(runGit, top, sha) {
-  const result = runGit("git", ["rev-parse", `${sha}^{tree}`], top);
-  if (result.code !== 0) {
-    return { issue: `git rev-parse failed: ${result.stderr.trim()}` };
-  }
-  return result.stdout.trim();
-}
-function mergeAddsNothing(runGit, top, emptyTree, commit, head) {
-  const result = runGit("git", [
-    `--attr-source=${emptyTree}`,
-    "merge-tree",
-    "--write-tree",
-    commit.sha,
-    head
-  ], top);
-  if (result.code === 0)
-    return result.stdout.split(`
-`)[0] === commit.tree;
-  if (result.code === CONFLICTED)
-    return false;
+// bin/helpers/worker-finish-args.ts
+import * as path18 from "node:path";
+function parseFinishArgs(rest2, cwd) {
+  const parsed = parseFlags(rest2, {
+    "no-report": { type: "boolean" },
+    into: { type: "string" },
+    discard: { type: "boolean" }
+  });
+  if (parsed === undefined || parsed.positionals.length !== 1)
+    return;
+  const { into, discard } = parsed.values;
+  if (discard === true && into !== undefined)
+    return;
   return {
-    issue: `git merge-tree --write-tree failed, and finish needs git 2.40 or later: ${result.stderr.trim()}`
+    brief: path18.resolve(cwd, parsed.positionals[0]),
+    noReport: parsed.values["no-report"] === true,
+    mode: discard === true ? { kind: "discard" } : { kind: "landed", into: typeof into === "string" ? into : undefined }
   };
 }
-function mergeBase(runGit, top, refs) {
-  const result = runGit("git", ["merge-base", refs.target, refs.head], top);
-  return result.code === 0 ? result.stdout.trim() : null;
-}
-function branchFiles(runGit, top, base, head) {
-  const result = runGit("git", ["diff", "--name-only", "--no-renames", "-z", base, head], top);
-  if (result.code !== 0) {
-    return { issue: `git diff failed: ${result.stderr.trim()}` };
+function modeFlags(mode) {
+  switch (mode.kind) {
+    case "landed":
+      return mode.into === undefined ? [] : ["--into", shellArg(mode.into)];
+    case "discard":
+      return ["--discard"];
+    default: {
+      const unhandled = mode;
+      throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
+    }
   }
-  return result.stdout.split("\x00").filter((file) => file !== "");
 }
-function candidates(runGit, top, refs, files, cap) {
-  if (files.length === 0)
-    return [];
-  const result = runGit("git", [
-    "--literal-pathspecs",
-    "log",
-    "--full-history",
-    "--no-show-signature",
-    "--no-follow",
-    "--format=%H %T",
-    `--max-count=${cap}`,
-    `${refs.target}^@`,
-    `^${refs.base}`,
-    "--",
-    ...files
-  ], top);
-  if (result.code !== 0) {
-    return { issue: `git log failed: ${result.stderr.trim()}` };
-  }
-  return result.stdout.split(`
-`).filter((line) => line !== "").map((line) => {
-    const [sha = "", tree = ""] = line.split(" ");
-    return { sha, tree };
-  });
+function commandFor(opts, mode) {
+  const report = opts.noReport ? ["--no-report"] : [];
+  return [
+    "sidekick worker finish",
+    shellArg(opts.brief),
+    ...report,
+    ...modeFlags(mode)
+  ].join(" ");
 }
-function walk(runGit, top, emptyTree, head, list2, cap) {
-  let walked = 0;
-  for (const commit of list2) {
-    walked += 1;
-    const added = mergeAddsNothing(runGit, top, emptyTree, commit, head);
-    if (isFailure(added))
-      return { kind: "error", issue: added.issue };
-    if (added)
-      return { kind: "landed", at: commit.sha, how: "history" };
-  }
-  return { kind: "not landed", walked, capped: list2.length >= cap };
-}
-function searchHistory(runGit, top, emptyTree, refs, base, cap) {
-  const files = branchFiles(runGit, top, base, refs.head);
-  if (isFailure(files))
-    return { kind: "error", issue: files.issue };
-  const list2 = candidates(runGit, top, { target: refs.target, base }, files, cap);
-  if (isFailure(list2))
-    return { kind: "error", issue: list2.issue };
-  return walk(runGit, top, emptyTree, refs.head, list2, cap);
-}
-function landedIn(runGit, top, refs, { cap = DEFAULT_CAP } = {}) {
-  const ancestor = runGit("git", ["merge-base", "--is-ancestor", refs.head, refs.target], top);
-  if (ancestor.code === 0) {
-    return { kind: "landed", at: refs.target, how: "ancestor" };
-  }
-  const base = mergeBase(runGit, top, refs);
-  if (base === null)
-    return { kind: "not landed", walked: 0, capped: false };
-  const emptyTree = emptyTreeId(runGit, top);
-  if (isFailure(emptyTree))
-    return { kind: "error", issue: emptyTree.issue };
-  const tree = treeOf(runGit, top, refs.target);
-  if (isFailure(tree))
-    return { kind: "error", issue: tree.issue };
-  const atTip = mergeAddsNothing(runGit, top, emptyTree, { sha: refs.target, tree }, refs.head);
-  if (isFailure(atTip))
-    return { kind: "error", issue: atTip.issue };
-  if (atTip)
-    return { kind: "landed", at: refs.target, how: "tip" };
-  return searchHistory(runGit, top, emptyTree, refs, base, cap);
-}
+var rerunCommand = (opts) => commandFor(opts, opts.mode);
+var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
+
+// bin/helpers/worker-finish-report.ts
+import * as fs19 from "node:fs";
+import * as path20 from "node:path";
 
 // bin/helpers/worker-teardown.ts
 import * as fs18 from "node:fs";
-import * as path18 from "node:path";
+import * as path19 from "node:path";
 var ENDED_STATES = ["stopped", "done"];
 var REMOVED = /^removed\b/;
 var DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
@@ -5559,7 +5488,7 @@ var stopJob = (ready, wenv) => {
   return withText(`claude ${args.join(" ")} ${failure(result)}, so finish stopped before claude rm`, result);
 };
 function lockPid(commonDir, name) {
-  const lock = readIfPresent(path18.join(commonDir, "worktrees", name, "locked"));
+  const lock = readIfPresent(path19.join(commonDir, "worktrees", name, "locked"));
   if ("issue" in lock || lock.data === undefined)
     return;
   const pid = Number(LOCK_PID.exec(lock.data.toString())?.[1]);
@@ -5712,55 +5641,218 @@ var restorePartial = (ready, wenv, out) => {
   return [];
 };
 
-// bin/helpers/worker-finish.ts
-var SHORT_SHA = 7;
-function parseFinishArgs(rest2, cwd) {
-  const parsed = parseFlags(rest2, {
-    "no-report": { type: "boolean" },
-    into: { type: "string" },
-    discard: { type: "boolean" }
-  });
-  if (parsed === undefined || parsed.positionals.length !== 1)
-    return;
-  const { into, discard: discard2 } = parsed.values;
-  if (discard2 === true && into !== undefined)
-    return;
+// bin/helpers/worker-finish-report.ts
+function reportStep(places, noReport, partial) {
+  const { reportFrom: from, reportTo: to } = places;
+  const worker = readIfPresent(from);
+  if ("issue" in worker)
+    return { issues: [worker.issue] };
+  if (worker.data === undefined) {
+    return missingReportStep(places, noReport, partial);
+  }
+  const saved = readIfPresent(to);
+  if ("issue" in saved)
+    return { issues: [saved.issue] };
+  if (saved.data === undefined)
+    return "copy";
+  if (saved.data.equals(worker.data))
+    return "in place";
   return {
-    brief: path19.resolve(cwd, parsed.positionals[0]),
-    noReport: parsed.values["no-report"] === true,
-    mode: discard2 === true ? { kind: "discard" } : { kind: "landed", into: typeof into === "string" ? into : undefined }
+    issues: [
+      `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`
+    ]
   };
 }
-function findJob(wenv, top, name) {
-  const listed = listJobs(wenv.runClaude, top);
-  if ("issues" in listed)
-    return listed;
-  const matches = listed.jobs.filter((job) => job.name === name);
-  if (matches.length === 0) {
-    return {
-      issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief`
-      ]
-    };
+function missingReportStep(places, noReport, partial) {
+  if (partial) {
+    const saved = readIfPresent(places.reportTo);
+    if ("issue" in saved)
+      return { issues: [saved.issue] };
+    if (saved.data !== undefined)
+      return "saved earlier";
   }
-  if (matches.length > 1) {
-    const which = matches.map((job) => job.id ?? "an interactive session");
-    return {
-      issues: [
-        `${matches.length} sessions in ${LISTING} are named "${name}" (${which.join(", ")}), so finish cannot tell which is the worker: clear the worker by hand with claude rm <id>`
-      ]
-    };
-  }
-  const [{ id, state }] = matches;
-  if (id === undefined) {
-    return {
-      issues: [
-        `the session named "${name}" is an interactive session, not a worker job: finish clears only a worker that sidekick worker dispatch started`
-      ]
-    };
-  }
-  return { id, state };
+  if (noReport)
+    return "none";
+  return {
+    issues: [
+      `the worktree has no run report at ${places.reportFrom}: ask the worker for it, or pass --no-report to finish without one`
+    ]
+  };
 }
+function copyReport(ready, out) {
+  try {
+    fs19.mkdirSync(path20.dirname(ready.reportTo), { recursive: true });
+    fs19.copyFileSync(ready.reportFrom, ready.reportTo, fs19.constants.COPYFILE_EXCL);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return [`cannot save the report to ${ready.reportTo}: ${why}`];
+  }
+  out(`report saved to ${ready.reportTo}`);
+  return [];
+}
+var saveReport = (ready, _wenv, out) => {
+  switch (ready.reportStep) {
+    case "copy":
+      return copyReport(ready, out);
+    case "in place":
+    case "saved earlier":
+      out(`report already at ${ready.reportTo}`);
+      return [];
+    case "none":
+      out("no report to save: the worktree holds none");
+      return [];
+    default: {
+      const unhandled = ready.reportStep;
+      throw new Error(`unhandled report step: ${unhandled}`);
+    }
+  }
+};
+function reportChangedIssues(ready) {
+  const now = readIfPresent(ready.reportFrom);
+  if ("issue" in now)
+    return [now.issue];
+  switch (ready.reportStep) {
+    case "none":
+    case "saved earlier":
+      if (now.data === undefined)
+        return [];
+      return [`a run report appeared at ${ready.reportFrom}`];
+    case "copy":
+    case "in place":
+      return copyChangedIssues(ready, now.data);
+    default: {
+      const unhandled = ready.reportStep;
+      throw new Error(`unhandled report step: ${unhandled}`);
+    }
+  }
+}
+function copyChangedIssues(ready, now) {
+  const saved = readIfPresent(ready.reportTo);
+  if ("issue" in saved)
+    return [saved.issue];
+  const same = now !== undefined && saved.data !== undefined && now.equals(saved.data);
+  if (same)
+    return [];
+  return [
+    `the worker's report at ${ready.reportFrom} no longer matches the copy at ${ready.reportTo}`
+  ];
+}
+
+// bin/helpers/worker-landed.ts
+var DEFAULT_CAP = 200;
+var CONFLICTED = 1;
+var isFailure = (value) => typeof value === "object" && value !== null && ("issue" in value);
+function emptyTreeId(runGit, top) {
+  const result = runGit("git", ["hash-object", "-w", "-t", "tree", "/dev/null"], top);
+  if (result.code !== 0) {
+    return { issue: `git hash-object failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.trim();
+}
+function treeOf(runGit, top, sha) {
+  const result = runGit("git", ["rev-parse", `${sha}^{tree}`], top);
+  if (result.code !== 0) {
+    return { issue: `git rev-parse failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.trim();
+}
+function mergeAddsNothing(runGit, top, emptyTree, commit, head) {
+  const result = runGit("git", [
+    `--attr-source=${emptyTree}`,
+    "merge-tree",
+    "--write-tree",
+    commit.sha,
+    head
+  ], top);
+  if (result.code === 0)
+    return result.stdout.split(`
+`)[0] === commit.tree;
+  if (result.code === CONFLICTED)
+    return false;
+  return {
+    issue: `git merge-tree --write-tree failed, and finish needs git 2.40 or later: ${result.stderr.trim()}`
+  };
+}
+function mergeBase(runGit, top, refs) {
+  const result = runGit("git", ["merge-base", refs.target, refs.head], top);
+  return result.code === 0 ? result.stdout.trim() : null;
+}
+function branchFiles(runGit, top, base, head) {
+  const result = runGit("git", ["diff", "--name-only", "--no-renames", "-z", base, head], top);
+  if (result.code !== 0) {
+    return { issue: `git diff failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.split("\x00").filter((file) => file !== "");
+}
+function candidates(runGit, top, refs, files, cap) {
+  if (files.length === 0)
+    return [];
+  const result = runGit("git", [
+    "--literal-pathspecs",
+    "log",
+    "--full-history",
+    "--no-show-signature",
+    "--no-follow",
+    "--format=%H %T",
+    `--max-count=${cap}`,
+    `${refs.target}^@`,
+    `^${refs.base}`,
+    "--",
+    ...files
+  ], top);
+  if (result.code !== 0) {
+    return { issue: `git log failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.split(`
+`).filter((line) => line !== "").map((line) => {
+    const [sha = "", tree = ""] = line.split(" ");
+    return { sha, tree };
+  });
+}
+function walk(runGit, top, emptyTree, head, list2, cap) {
+  let walked = 0;
+  for (const commit of list2) {
+    walked += 1;
+    const added = mergeAddsNothing(runGit, top, emptyTree, commit, head);
+    if (isFailure(added))
+      return { kind: "error", issue: added.issue };
+    if (added)
+      return { kind: "landed", at: commit.sha, how: "history" };
+  }
+  return { kind: "not landed", walked, capped: list2.length >= cap };
+}
+function searchHistory(runGit, top, emptyTree, refs, base, cap) {
+  const files = branchFiles(runGit, top, base, refs.head);
+  if (isFailure(files))
+    return { kind: "error", issue: files.issue };
+  const list2 = candidates(runGit, top, { target: refs.target, base }, files, cap);
+  if (isFailure(list2))
+    return { kind: "error", issue: list2.issue };
+  return walk(runGit, top, emptyTree, refs.head, list2, cap);
+}
+function landedIn(runGit, top, refs, { cap = DEFAULT_CAP } = {}) {
+  const ancestor = runGit("git", ["merge-base", "--is-ancestor", refs.head, refs.target], top);
+  if (ancestor.code === 0) {
+    return { kind: "landed", at: refs.target, how: "ancestor" };
+  }
+  const base = mergeBase(runGit, top, refs);
+  if (base === null)
+    return { kind: "not landed", walked: 0, capped: false };
+  const emptyTree = emptyTreeId(runGit, top);
+  if (isFailure(emptyTree))
+    return { kind: "error", issue: emptyTree.issue };
+  const tree = treeOf(runGit, top, refs.target);
+  if (isFailure(tree))
+    return { kind: "error", issue: tree.issue };
+  const atTip = mergeAddsNothing(runGit, top, emptyTree, { sha: refs.target, tree }, refs.head);
+  if (isFailure(atTip))
+    return { kind: "error", issue: atTip.issue };
+  if (atTip)
+    return { kind: "landed", at: refs.target, how: "tip" };
+  return searchHistory(runGit, top, emptyTree, refs, base, cap);
+}
+
+// bin/helpers/worker-finish-target.ts
 function targetName(runGit, top, rev) {
   const result = runGit("git", ["rev-parse", "--symbolic-full-name", rev], top);
   const name = result.code === 0 ? result.stdout.trim() : "";
@@ -5848,6 +5940,10 @@ function branchVerdict(runGit, top, branch, opts, id) {
   const judged = verdictFor(runGit, top, name, head, opts);
   return "issues" in judged ? judged : { head, verdict: judged.verdict };
 }
+
+// bin/helpers/worker-finish-tree.ts
+import * as fs20 from "node:fs";
+import * as path21 from "node:path";
 function onBranchIssues(runGit, worktree, branch, mode, discardCommand, id) {
   const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`)
@@ -5869,19 +5965,19 @@ function offBranchReason(mode, branch) {
   }
 }
 function placesFor(top, brief) {
-  const worktree = path19.join(top, WORKTREES_FOLDER, brief.name);
-  const report = path19.posix.normalize(brief.report);
+  const worktree = path21.join(top, WORKTREES_FOLDER, brief.name);
+  const report = path21.posix.normalize(brief.report);
   return {
     top,
     worktree,
     branch: `worktree-${brief.name}`,
     report,
-    reportFrom: path19.join(worktree, report),
-    reportTo: path19.join(top, report)
+    reportFrom: path21.join(worktree, report),
+    reportTo: path21.join(top, report)
   };
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs19.existsSync(worktree) && !fs19.existsSync(path19.join(worktree, ".git"));
+  const linkless = fs20.existsSync(worktree) && !fs20.existsSync(path21.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -5946,66 +6042,52 @@ function worktreeCheck(runGit, places, worker, opts) {
   const dirty = dirtyIssues(places.worktree, status, partial, opts.mode.kind);
   return { issues: [...onBranch, ...dirty], partial };
 }
-function reportStep(places, noReport, partial) {
-  const { reportFrom: from, reportTo: to } = places;
-  const worker = readIfPresent(from);
-  if ("issue" in worker)
-    return { issues: [worker.issue] };
-  if (worker.data === undefined) {
-    return missingReportStep(places, noReport, partial);
+function headMovedIssues(runGit, ready) {
+  const now = commitOf(runGit, ready.top, `refs/heads/${ready.branch}`);
+  if (now === ready.head)
+    return [];
+  if (now === undefined) {
+    return [
+      `the branch ${ready.branch} is gone, so finish cannot confirm its head is still ${ready.head}, the head it verified`
+    ];
   }
-  const saved = readIfPresent(to);
-  if ("issue" in saved)
-    return { issues: [saved.issue] };
-  if (saved.data === undefined)
-    return "copy";
-  if (saved.data.equals(worker.data))
-    return "in place";
-  return {
-    issues: [
-      `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`
-    ]
-  };
-}
-function missingReportStep(places, noReport, partial) {
-  if (partial) {
-    const saved = readIfPresent(places.reportTo);
-    if ("issue" in saved)
-      return { issues: [saved.issue] };
-    if (saved.data !== undefined)
-      return "saved earlier";
-  }
-  if (noReport)
-    return "none";
-  return {
-    issues: [
-      `the worktree has no run report at ${places.reportFrom}: ask the worker for it, or pass --no-report to finish without one`
-    ]
-  };
-}
-function modeFlags(mode) {
-  switch (mode.kind) {
-    case "landed":
-      return mode.into === undefined ? [] : ["--into", shellArg(mode.into)];
-    case "discard":
-      return ["--discard"];
-    default: {
-      const unhandled = mode;
-      throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function commandFor(opts, mode) {
-  const report = opts.noReport ? ["--no-report"] : [];
   return [
-    "sidekick worker finish",
-    shellArg(opts.brief),
-    ...report,
-    ...modeFlags(mode)
-  ].join(" ");
+    `${ready.branch} moved to ${now} after finish verified its head ${ready.head}, so finish has not checked the new commits: run finish again`
+  ];
 }
-var rerunCommand = (opts) => commandFor(opts, opts.mode);
-var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
+
+// bin/helpers/worker-finish.ts
+var SHORT_SHA = 7;
+function findJob(wenv, top, name) {
+  const listed = listJobs(wenv.runClaude, top);
+  if ("issues" in listed)
+    return listed;
+  const matches = listed.jobs.filter((job) => job.name === name);
+  if (matches.length === 0) {
+    return {
+      issues: [
+        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief`
+      ]
+    };
+  }
+  if (matches.length > 1) {
+    const which = matches.map((job) => job.id ?? "an interactive session");
+    return {
+      issues: [
+        `${matches.length} sessions in ${LISTING} are named "${name}" (${which.join(", ")}), so finish cannot tell which is the worker: clear the worker by hand with claude rm <id>`
+      ]
+    };
+  }
+  const [{ id, state }] = matches;
+  if (id === undefined) {
+    return {
+      issues: [
+        `the session named "${name}" is an interactive session, not a worker job: finish clears only a worker that sidekick worker dispatch started`
+      ]
+    };
+  }
+  return { id, state };
+}
 function allIssues(landed, worktreeIssues, step) {
   return [
     ..."issues" in landed ? landed.issues : [],
@@ -6047,77 +6129,6 @@ function checkFinish(brief, opts, wenv) {
     reportStep: step,
     partial: tree.partial
   };
-}
-function copyReport(ready, out) {
-  try {
-    fs19.mkdirSync(path19.dirname(ready.reportTo), { recursive: true });
-    fs19.copyFileSync(ready.reportFrom, ready.reportTo, fs19.constants.COPYFILE_EXCL);
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return [`cannot save the report to ${ready.reportTo}: ${why}`];
-  }
-  out(`report saved to ${ready.reportTo}`);
-  return [];
-}
-var saveReport = (ready, _wenv, out) => {
-  switch (ready.reportStep) {
-    case "copy":
-      return copyReport(ready, out);
-    case "in place":
-    case "saved earlier":
-      out(`report already at ${ready.reportTo}`);
-      return [];
-    case "none":
-      out("no report to save: the worktree holds none");
-      return [];
-    default: {
-      const unhandled = ready.reportStep;
-      throw new Error(`unhandled report step: ${unhandled}`);
-    }
-  }
-};
-function reportChangedIssues(ready) {
-  const now = readIfPresent(ready.reportFrom);
-  if ("issue" in now)
-    return [now.issue];
-  switch (ready.reportStep) {
-    case "none":
-    case "saved earlier":
-      if (now.data === undefined)
-        return [];
-      return [`a run report appeared at ${ready.reportFrom}`];
-    case "copy":
-    case "in place":
-      return copyChangedIssues(ready, now.data);
-    default: {
-      const unhandled = ready.reportStep;
-      throw new Error(`unhandled report step: ${unhandled}`);
-    }
-  }
-}
-function copyChangedIssues(ready, now) {
-  const saved = readIfPresent(ready.reportTo);
-  if ("issue" in saved)
-    return [saved.issue];
-  const same = now !== undefined && saved.data !== undefined && now.equals(saved.data);
-  if (same)
-    return [];
-  return [
-    `the worker's report at ${ready.reportFrom} no longer matches the copy at ${ready.reportTo}`
-  ];
-}
-function headMovedIssues(runGit, ready) {
-  const now = commitOf(runGit, ready.top, `refs/heads/${ready.branch}`);
-  if (now === ready.head)
-    return [];
-  if (now === undefined) {
-    return [
-      `the branch ${ready.branch} is gone, so finish cannot confirm its head is still ${ready.head}, the head it verified`
-    ];
-  }
-  return [
-    `${ready.branch} moved to ${now} after finish verified its head ${ready.head}, so finish has not checked the new commits: run finish again`
-  ];
 }
 var recheckWorktree = (ready, wenv) => {
   const issues = [
@@ -6225,22 +6236,22 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path20.dirname(fileURLToPath(entryFileUrl));
+  const here = path22.dirname(fileURLToPath(entryFileUrl));
   const candidates2 = [
-    path20.resolve(here, ".."),
-    path20.resolve(here, "..", "plugin")
+    path22.resolve(here, ".."),
+    path22.resolve(here, "..", "plugin")
   ];
   for (const c of candidates2) {
-    if (fs20.existsSync(path20.join(c, "rules")))
+    if (fs21.existsSync(path22.join(c, "rules")))
       return c;
   }
   return candidates2[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path20.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path22.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs20.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs21.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -6267,7 +6278,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs20.writeSync(1, buffer, offset);
+      offset += fs21.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -6285,7 +6296,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs20.readFileSync(0, "utf-8");
+    return fs21.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -6335,7 +6346,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path20.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path22.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;
