@@ -15,11 +15,9 @@
  * a `worker-finish-*` module of their own.
  */
 
-import * as path from 'node:path';
 import { configDirOf } from './main-session.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
-import { readBrief } from './worker-brief.js';
 import {
   discardCommandFor,
   type FinishOptions,
@@ -33,9 +31,13 @@ import {
   reportStep,
   saveReport,
 } from './worker-finish-report.js';
+import {
+  launcherOf,
+  readSubject,
+  type Subject,
+} from './worker-finish-subject.js';
 import { branchVerdict } from './worker-finish-target.js';
 import {
-  type BriefRead,
   dirtyIssues,
   headMovedIssues,
   onBranchIssues,
@@ -47,7 +49,7 @@ import {
   worktreeCheck,
 } from './worker-finish-tree.js';
 import { LISTING, listJobs } from './worker-jobs.js';
-import { checkoutFacts, checkoutOf, commitOf } from './worker-repo.js';
+import { checkoutFacts, commitOf } from './worker-repo.js';
 import {
   forgetRecord,
   keepBackup,
@@ -63,7 +65,11 @@ import {
   type WorkerJob,
   waitForLock,
 } from './worker-teardown.js';
-import { type Found, locateWorktree } from './worker-worktree.js';
+import {
+  type Found,
+  type Launcher,
+  locateWorktree,
+} from './worker-worktree.js';
 
 /** The length `finish` shortens a sha to in the landing line. */
 export const SHORT_SHA = 7;
@@ -79,13 +85,6 @@ const NAME_FROM = {
   brief: 'the name in the brief',
   name: 'the name given to --name',
 } satisfies Record<FinishSubject['kind'], string>;
-
-// The worker's name, where it came from, and the brief as read; undefined under --name.
-interface Subject {
-  name: string;
-  from: FinishSubject['kind'];
-  read: BriefRead | undefined;
-}
 
 // The one listed session by the worker's name, which must be a background job.
 function findJob(
@@ -123,51 +122,20 @@ function findJob(
   return { id, state, cwd, sessionId };
 }
 
-// The checkout holding the brief, undefined when its folder is in none.
-function briefTopOf(wenv: WorkerEnv, folder: string): string | undefined {
-  const found = checkoutOf(wenv.runGit, folder);
-  return 'top' in found ? found.top : undefined;
-}
-
-// The worker's name, and under a brief, the brief with where it sits.
-function readSubject(
-  subject: FinishSubject,
-  wenv: WorkerEnv,
-): Subject | { issues: string[] } {
-  switch (subject.kind) {
-    case 'brief': {
-      const read = readBrief(subject.brief);
-      if ('issues' in read) return read;
-      const folder = path.dirname(subject.brief);
-      const top = briefTopOf(wenv, folder);
-      const { brief } = read;
-      return { name: brief.name, from: 'brief', read: { brief, folder, top } };
-    }
-    case 'name':
-      return { name: subject.name, from: 'name', read: undefined };
-    default: {
-      const unhandled: never = subject;
-      throw new Error(`unhandled subject: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-
 // The worker's worktree, from the operator's --worktree alone when given,
 // else its transcript, its listing's cwd, or Claude Code's own branch name.
+// None may be the main checkout or the checkout that launched the worker.
 function worktreeOf(
   wenv: WorkerEnv,
-  subject: Subject,
-  mainTop: string,
+  where: { name: string; mainTop: string; launcher: Launcher | undefined },
   job: ListedWorker,
   operatorPath: string | undefined,
 ): Found | { issues: string[] } {
-  const { name } = subject;
+  const { name } = where;
   const found = locateWorktree({
     runGit: wenv.runGit,
     configDir: configDirOf(wenv.env, wenv.home),
-    name,
-    mainTop,
-    briefTop: subject.read?.top,
+    ...where,
     sessionId: job.sessionId,
     listingCwd: job.cwd,
     operatorPath,
@@ -197,7 +165,9 @@ function locate(
   const { mainTop, launchTop, commonDir } = facts;
   const job = findJob(wenv, mainTop, subject);
   if ('issues' in job) return job;
-  const found = worktreeOf(wenv, subject, mainTop, job, opts.worktree);
+  const launcher = launcherOf(subject, facts, wenv.runGit);
+  const where = { name: subject.name, mainTop, launcher };
+  const found = worktreeOf(wenv, where, job, opts.worktree);
   if ('issues' in found) return found;
   if (found.kind === 'not found') {
     const { id, state } = job;
@@ -253,7 +223,6 @@ function checkFinish(
     state: job.state,
     name,
     mainTop,
-    briefTop: places.brief?.top,
     commonDir: located.commonDir,
     worktree,
     branch: places.branch,
@@ -348,7 +317,7 @@ function finishIssues(
   wenv: WorkerEnv,
   out: Out,
 ): string[] {
-  const subject = readSubject(opts.subject, wenv);
+  const subject = readSubject(opts.subject, wenv.runGit);
   if ('issues' in subject) return subject.issues;
   const located = locate(subject, opts, wenv);
   if ('issues' in located) return located.issues;

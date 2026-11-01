@@ -36,7 +36,7 @@ export const DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
 // The lock reads `claude session <name> (pid <n> start <date>)`.
 const LOCK_PID = /\(pid (\d+)\b/;
 
-// The listed job the brief names.
+// The listed job by the worker's name.
 export interface WorkerJob {
   id: string;
   state: string | undefined;
@@ -57,8 +57,6 @@ export type Verdict =
 export interface Ready extends WorkerJob {
   name: string;
   mainTop: string;
-  /** The checkout holding the brief; undefined when its folder is in none, or under `--name`. */
-  briefTop: string | undefined;
   commonDir: string;
   /** The worker's worktree, as git lists it. */
   worktree: string;

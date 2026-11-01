@@ -2082,6 +2082,94 @@ describe('finish --name', () => {
   });
 });
 
+// A worker dispatched from a sibling checkout on `feature`, whose brief is
+// gone and whose session, after a respawn, names that checkout in both its
+// transcript and its listing. With `record`, the dispatch record names the
+// brief's folder in the sibling, which still exists.
+function dispatchedFromSibling(
+  fx: Fixture,
+  { record }: { record: boolean },
+): { side: string; h: Harness } {
+  const side = sibling(fx);
+  const folder = path.join(side, 'docs');
+  fs.mkdirSync(folder);
+  fs.rmSync(fx.brief);
+  if (record) {
+    const brief = path.join(folder, 'x-brief.md');
+    writeRecord(path.join(fx.top, '.git'), { ...recordFor(fx), brief });
+  }
+  writeTranscript(fx.configDir, { cwd: side, gitBranch: 'feature' });
+  return { side, h: harness(fx) };
+}
+
+describe('finish --name keeps the checkout that dispatched the worker', () => {
+  test('rejecting it by the dispatch record, as that checkout', () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    const { side, h } = dispatchedFromSibling(fx, { record: true });
+    h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: side })]);
+    const main = mainBranch(fx);
+    expect(h.finish('--name', 'w1', '--no-report', '--into', main)).toBe(1);
+    expect(h.err).toEqual(
+      notFound([
+        `the transcript's first cwd ${side} is the checkout that dispatched the worker ${side}`,
+        `the job listing's cwd ${side} is the checkout that dispatched the worker ${side}`,
+        'by name, no worktree has worktree-w1 checked out',
+      ]),
+    );
+    expect(h.claude.named('stop')).toEqual([]);
+    expect(fs.existsSync(side)).toBe(true);
+  });
+
+  test('rejecting the checkout finish runs in when the record is gone', () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    const { side } = dispatchedFromSibling(fx, { record: false });
+    const h = harness(fx, { cwd: side, workTree: side });
+    h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: side })]);
+    const main = mainBranch(fx);
+    expect(h.finish('--name', 'w1', '--no-report', '--into', main)).toBe(1);
+    expect(h.err).toEqual(
+      notFound([
+        `the transcript's first cwd ${side} is the checkout finish runs in ${side}`,
+        `the job listing's cwd ${side} is the checkout finish runs in ${side}`,
+        'by name, no worktree has worktree-w1 checked out',
+      ]),
+    );
+    expect(h.claude.named('stop')).toEqual([]);
+  });
+
+  test('rejecting the checkout finish runs in when the folder the record names is gone', () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    const { side } = dispatchedFromSibling(fx, { record: true });
+    fs.rmSync(path.join(side, 'docs'), { recursive: true });
+    const h = harness(fx, { cwd: side, workTree: side });
+    h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: side })]);
+    expect(
+      h.finish('--name', 'w1', '--no-report', '--into', mainBranch(fx)),
+    ).toBe(1);
+    expect(h.err[1]).toBe(
+      `the transcript's first cwd ${side} is the checkout finish runs in ${side}`,
+    );
+  });
+
+  test("then finding the worker's own worktree by Claude Code's name, and landing it", () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.rmSync(path.join(fx.worktree, REPORT));
+    const { side, h } = dispatchedFromSibling(fx, { record: true });
+    h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: side })]);
+    expect(
+      h.finish('--name', 'w1', '--no-report', '--into', mainBranch(fx)),
+    ).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out).toContain(`worktree ${fx.worktree} removed`);
+    expect(fs.existsSync(side)).toBe(true);
+    expect(git(side, 'symbolic-ref', '--short', 'HEAD')).toBe('feature');
+  });
+});
+
 const GONE_HEAD =
   'finish cannot find the worktree of w1, so it removes only its session and record. It tried:';
 const GONE_TAIL =

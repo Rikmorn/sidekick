@@ -32,7 +32,7 @@ const NO_NAME = { via: 'name', why: 'no worktree has worktree-w1 checked out' };
 const input = (over: Partial<FindInput>): FindInput => ({
   name: 'w1',
   mainTop: MAIN,
-  briefTop: undefined,
+  launcher: undefined,
   worktrees: [entry(MAIN, 'master'), entry('/r/w1', 'w1')],
   candidates: [],
   ...over,
@@ -218,11 +218,11 @@ describe('findWorktree', () => {
     });
   });
 
-  test("rejects the brief's checkout", () => {
+  test('rejects the launching checkout, naming its role', () => {
     const found = findWorktree(
       input({
         worktrees: [entry(MAIN, 'master'), entry('/r/b', 'b')],
-        briefTop: '/r/b',
+        launcher: { top: '/r/b', role: "the brief's checkout" },
         candidates: [{ via: 'transcript', cwd: '/r/b', gitBranch: 'b' }],
       }),
     );
@@ -375,7 +375,7 @@ describe('locateWorktree', () => {
     configDir: f.configDir,
     name: 'w1',
     mainTop: f.main,
-    briefTop: undefined,
+    launcher: undefined,
     sessionId: undefined,
     listingCwd: undefined,
     operatorPath: undefined,

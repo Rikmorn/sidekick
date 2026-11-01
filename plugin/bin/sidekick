@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs20 from "node:fs";
+import * as fs21 from "node:fs";
 import { realpathSync as realpathSync4 } from "node:fs";
 import * as os2 from "node:os";
 import * as path23 from "node:path";
@@ -5304,8 +5304,9 @@ function enclosing(worktrees, cwd) {
 function refusal(input, match) {
   if (match.path === input.mainTop)
     return "is the main checkout";
-  if (match.path === input.briefTop) {
-    return `is the brief's checkout ${match.path}`;
+  const { launcher } = input;
+  if (launcher !== undefined && match.path === launcher.top) {
+    return `is ${launcher.role} ${match.path}`;
   }
   return;
 }
@@ -5393,10 +5394,11 @@ function locateWorktree(opts) {
   const listed = listWorktrees(opts.runGit, mainTop);
   if ("issue" in listed)
     return listed;
+  const { launcher } = opts;
   return findWorktree({
     name: opts.name,
     mainTop,
-    briefTop: opts.briefTop === undefined ? undefined : physical(opts.briefTop),
+    launcher: launcher === undefined ? undefined : { ...launcher, top: physical(launcher.top) },
     worktrees: listed.worktrees,
     candidates: candidatesFor(opts)
   });
@@ -5672,9 +5674,6 @@ function dispatch(opts, wenv, out, err) {
     return refuse4(err, checked2.issues);
   return launch2(checked2, wenv, out, err);
 }
-
-// bin/helpers/worker-finish.ts
-import * as path22 from "node:path";
 
 // bin/helpers/worker-finish-args.ts
 import * as path19 from "node:path";
@@ -6546,6 +6545,56 @@ function copyChangedIssues(from, to, now) {
   return [`the worker's report at ${from} no longer matches the copy at ${to}`];
 }
 
+// bin/helpers/worker-finish-subject.ts
+import * as fs20 from "node:fs";
+import * as path22 from "node:path";
+function topOf(runGit, folder) {
+  const found = checkoutOf(runGit, folder);
+  return "top" in found ? found.top : undefined;
+}
+function readSubject(subject, runGit) {
+  switch (subject.kind) {
+    case "brief": {
+      const read = readBrief(subject.brief);
+      if ("issues" in read)
+        return read;
+      const folder = path22.dirname(subject.brief);
+      const top = topOf(runGit, folder);
+      const { brief } = read;
+      return { name: brief.name, from: "brief", read: { brief, folder, top } };
+    }
+    case "name":
+      return { name: subject.name, from: "name", read: undefined };
+    default: {
+      const unhandled = subject;
+      throw new Error(`unhandled subject: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function recordedTop(runGit, commonDir, name) {
+  const { records } = readRecords(commonDir);
+  const record2 = records.find((r) => r.name === name);
+  if (record2 === undefined)
+    return;
+  const folder = path22.dirname(record2.brief);
+  return fs20.existsSync(folder) ? topOf(runGit, folder) : undefined;
+}
+function launcherOf(subject, facts, runGit) {
+  const { read } = subject;
+  if (read !== undefined) {
+    const { top } = read;
+    return top === undefined ? undefined : { top, role: "the brief's checkout" };
+  }
+  const recorded = recordedTop(runGit, facts.commonDir, subject.name);
+  if (recorded !== undefined) {
+    return { top: recorded, role: "the checkout that dispatched the worker" };
+  }
+  const linked = physical(facts.launchTop) !== physical(facts.mainTop);
+  if (!linked)
+    return;
+  return { top: facts.launchTop, role: "the checkout finish runs in" };
+}
+
 // bin/helpers/worker-finish.ts
 var SHORT_SHA = 7;
 var NAME_FROM = {
@@ -6583,37 +6632,12 @@ function findJob(wenv, top, subject) {
   }
   return { id, state, cwd, sessionId };
 }
-function briefTopOf(wenv, folder) {
-  const found = checkoutOf(wenv.runGit, folder);
-  return "top" in found ? found.top : undefined;
-}
-function readSubject(subject, wenv) {
-  switch (subject.kind) {
-    case "brief": {
-      const read = readBrief(subject.brief);
-      if ("issues" in read)
-        return read;
-      const folder = path22.dirname(subject.brief);
-      const top = briefTopOf(wenv, folder);
-      const { brief } = read;
-      return { name: brief.name, from: "brief", read: { brief, folder, top } };
-    }
-    case "name":
-      return { name: subject.name, from: "name", read: undefined };
-    default: {
-      const unhandled = subject;
-      throw new Error(`unhandled subject: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function worktreeOf(wenv, subject, mainTop, job, operatorPath) {
-  const { name } = subject;
+function worktreeOf(wenv, where, job, operatorPath) {
+  const { name } = where;
   const found = locateWorktree({
     runGit: wenv.runGit,
     configDir: configDirOf(wenv.env, wenv.home),
-    name,
-    mainTop,
-    briefTop: subject.read?.top,
+    ...where,
     sessionId: job.sessionId,
     listingCwd: job.cwd,
     operatorPath
@@ -6634,7 +6658,9 @@ function locate2(subject, opts, wenv) {
   const job = findJob(wenv, mainTop, subject);
   if ("issues" in job)
     return job;
-  const found = worktreeOf(wenv, subject, mainTop, job, opts.worktree);
+  const launcher = launcherOf(subject, facts, wenv.runGit);
+  const where = { name: subject.name, mainTop, launcher };
+  const found = worktreeOf(wenv, where, job, opts.worktree);
   if ("issues" in found)
     return found;
   if (found.kind === "not found") {
@@ -6678,7 +6704,6 @@ function checkFinish(name, located, opts, wenv) {
     state: job.state,
     name,
     mainTop,
-    briefTop: places.brief?.top,
     commonDir: located.commonDir,
     worktree,
     branch: places.branch,
@@ -6740,7 +6765,7 @@ var STEPS = [
   sayBackup
 ];
 function finishIssues(opts, wenv, out) {
-  const subject = readSubject(opts.subject, wenv);
+  const subject = readSubject(opts.subject, wenv.runGit);
   if ("issues" in subject)
     return subject.issues;
   const located = locate2(subject, opts, wenv);
@@ -6818,7 +6843,7 @@ function resolvePluginDir(entryFileUrl) {
     path23.resolve(here, "..", "plugin")
   ];
   for (const c of candidates2) {
-    if (fs20.existsSync(path23.join(c, "rules")))
+    if (fs21.existsSync(path23.join(c, "rules")))
       return c;
   }
   return candidates2[0];
@@ -6827,7 +6852,7 @@ var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
   const manifest = path23.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs20.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs21.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -6854,7 +6879,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs20.writeSync(1, buffer, offset);
+      offset += fs21.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -6872,7 +6897,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs20.readFileSync(0, "utf-8");
+    return fs21.readFileSync(0, "utf-8");
   } catch {
     return "";
   }

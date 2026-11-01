@@ -17,11 +17,20 @@ export type Candidate =
   | { via: 'listing'; cwd: string }
   | { via: 'operator'; cwd: string };
 
+/**
+ * The checkout that launched the worker, which its worktree cannot be: its
+ * top, and what it is to the operator, such as "the brief's checkout".
+ */
+export interface Launcher {
+  top: string;
+  role: string;
+}
+
 export interface FindInput {
   name: string;
   mainTop: string;
-  /** The checkout holding the brief, when readable. */
-  briefTop: string | undefined;
+  /** Besides the main checkout, the one checkout no candidate may match; its top physical. */
+  launcher: Launcher | undefined;
   worktrees: WorktreeEntry[];
   /** Physical paths, in order; an `operator` candidate is the only one when given. */
   candidates: Candidate[];
@@ -84,8 +93,9 @@ function enclosing(
 // Why this entry cannot be a worker's worktree, or undefined when it can.
 function refusal(input: FindInput, match: WorktreeEntry): string | undefined {
   if (match.path === input.mainTop) return 'is the main checkout';
-  if (match.path === input.briefTop) {
-    return `is the brief's checkout ${match.path}`;
+  const { launcher } = input;
+  if (launcher !== undefined && match.path === launcher.top) {
+    return `is ${launcher.role} ${match.path}`;
   }
   return undefined;
 }
@@ -221,7 +231,7 @@ export function locateWorktree(opts: {
   configDir: string;
   name: string;
   mainTop: string;
-  briefTop: string | undefined;
+  launcher: Launcher | undefined;
   sessionId: string | undefined;
   listingCwd: string | undefined;
   operatorPath: string | undefined;
@@ -229,10 +239,14 @@ export function locateWorktree(opts: {
   const mainTop = physical(opts.mainTop);
   const listed = listWorktrees(opts.runGit, mainTop);
   if ('issue' in listed) return listed;
+  const { launcher } = opts;
   return findWorktree({
     name: opts.name,
     mainTop,
-    briefTop: opts.briefTop === undefined ? undefined : physical(opts.briefTop),
+    launcher:
+      launcher === undefined
+        ? undefined
+        : { ...launcher, top: physical(launcher.top) },
     worktrees: listed.worktrees,
     candidates: candidatesFor(opts),
   });
