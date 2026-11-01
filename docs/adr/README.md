@@ -23,7 +23,8 @@ Each line gives the standing from the ADR's own status and amendment lines, plus
 
 ### The plugin bundle
 
-- [0009](./0009-pivot-to-plugin-bundle.md): Pivot to a plugin bundle, where superpowers does the work and sidekick adds what it lacks. Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002, and parks the programmes of ADR-0006, ADR-0007, and ADR-0008. Amended by #119, #132, #142, and #203.
+- [0009](./0009-pivot-to-plugin-bundle.md): Pivot to a plugin bundle, where superpowers does the work and sidekick adds what it lacks. Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002, and parks the programmes of ADR-0006, ADR-0007, and ADR-0008. Amended by #119, #132, #142, #203, and #271.
 - [0010](./0010-extensions-attach-through-skill-hooks.md): Extensions attach to superpowers through hooks on the Skill tool. Accepted (2026-09-25). Amends ADR-0009's Consequences. Amended by #161, #177, #188, and #203.
 - [0011](./0011-extensions-attach-to-superpowers-work-files.md): Extensions attach to superpowers' work files through hooks on Read. Accepted (2026-09-30). Amends ADR-0010's Decision 1. Amended by #160 and #186.
 - [0012](./0012-mods-only-where-a-mod-alone-can-do-the-job.md): Mods only where a mod alone can do the job, each on a stated rung, with the settings hooks kept on superpowers' skills. Accepted (2026-10-13). Bounds ADR-0010's Decision 2 to settings hooks, and records the revisit conditions of ADR-0009 and ADR-0010 as met and declined. Amended by #207, #245, and #208.
+- [0013](./0013-sidekick-writes-the-one-settings-key-it-owns.md): sidekick writes only what it owns, which in a repo's gitignored local settings is the one `autoMemoryDirectory` key a store marker proves it wrote. Accepted (2026-11-01). Amends ADR-0009's Decision 3.

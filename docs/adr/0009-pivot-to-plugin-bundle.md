@@ -8,6 +8,8 @@
 
 > **Amended 2026-10-13 (#203):** the second revisit condition is met in mechanism. The mod event `skill.prompt` overrides another plugin's skill, on an early-access API. The operator declined it for R9: sidekick keeps its hooks and its delivery design, as ADR-0012 records.
 
+> **Amended 2026-11-01 (#271):** §Decision 3 has a second case. sidekick writes only what it owns, shown by a prefix, a namespace, or a marker. In a repo's gitignored `.claude/settings.local.json` it owns the one `autoMemoryDirectory` key that a store marker proves it wrote, and it may change or remove that key. ADR-0013 records it. The installer's `sk-*.md` rule is unchanged.
+
 **Status:** Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002; parks the eval, knowledge-layer, and measurement programmes of ADR-0006, ADR-0007, and ADR-0008. Issue #93, milestone R5.
 
 ## Context
