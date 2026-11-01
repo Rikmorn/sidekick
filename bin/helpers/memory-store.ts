@@ -1,0 +1,268 @@
+/**
+ * The memory store's layout: where it lives, how a repo's folder is marked,
+ * how the markers are found, and how the store is created and committed.
+ * The store is a git repo that holds families, repo folders, `sources/`, and
+ * `archive/`.
+ */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as v from 'valibot';
+import type { Runner } from './pm-data.js';
+
+/** Top-level names the store keeps for itself; no family or repo folder takes one. */
+export const RESERVED_NAMES: readonly string[] = ['sources', 'archive'];
+
+/** The file that makes a folder a repo folder. */
+export const MARKER_FILE = '.sidekick.json';
+
+const README_FILE = 'README.md';
+const KEEP_FILE = '.gitkeep';
+
+/** The store folder: `SIDEKICK_MEMORY_STORE` when set and non-empty, else `<home>/AI-Memory-Store`. */
+export function storeRoot(env: NodeJS.ProcessEnv, home: string): string {
+  const override = env.SIDEKICK_MEMORY_STORE;
+  return override !== undefined && override !== ''
+    ? override
+    : path.join(home, 'AI-Memory-Store');
+}
+
+/** Why `name` cannot be a family or repo folder, or `undefined` when it can. */
+export function folderNameIssue(name: string): string | undefined {
+  if (name === '') return 'a folder name cannot be empty';
+  if (name.includes('/') || name.includes('\\')) {
+    return `"${name}" holds a path separator`;
+  }
+  if (name.startsWith('.')) return `"${name}" cannot start with "."`;
+  if (RESERVED_NAMES.includes(name)) {
+    return `"${name}" is a reserved name (${RESERVED_NAMES.join(', ')})`;
+  }
+  return undefined;
+}
+
+/** The marker's content: the main checkout's real root. */
+export const MarkerSchema = v.object({ root: v.string() });
+export type Marker = v.InferOutput<typeof MarkerSchema>;
+
+export type MarkerRead =
+  | { kind: 'none' }
+  | { kind: 'marker'; root: string }
+  | { kind: 'invalid'; issue: string };
+
+/** Reads `<folder>/.sidekick.json`; a file that is not JSON of the marker's shape is `invalid`. */
+export function readMarker(folder: string): MarkerRead {
+  const file = path.join(folder, MARKER_FILE);
+  if (!fs.existsSync(file)) return { kind: 'none' };
+  try {
+    const parsed = v.safeParse(
+      MarkerSchema,
+      JSON.parse(fs.readFileSync(file, 'utf-8')),
+    );
+    if (parsed.success) return { kind: 'marker', root: parsed.output.root };
+    return { kind: 'invalid', issue: `${file} must be {"root": "<path>"}` };
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { kind: 'invalid', issue: `${file} is not readable JSON: ${why}` };
+  }
+}
+
+/** Writes `<folder>/.sidekick.json` naming `root`. */
+export function writeMarker(folder: string, root: string): void {
+  const marker: Marker = { root };
+  fs.writeFileSync(
+    path.join(folder, MARKER_FILE),
+    `${JSON.stringify(marker, null, 2)}\n`,
+  );
+}
+
+// Folders that can be a repo or family folder: not dot folders, not reserved names.
+function children(folder: string): string[] {
+  try {
+    return fs
+      .readdirSync(folder, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined)
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+
+function markerRoot(folder: string): string | undefined {
+  const read = readMarker(folder);
+  return read.kind === 'marker' ? read.root : undefined;
+}
+
+export interface FoundMarker {
+  folder: string;
+  root: string;
+  family: string | undefined;
+}
+
+/**
+ * Every valid marker one level down (a repo with no family) and two levels
+ * down (the parent is the family). A folder with a marker is a repo folder,
+ * so the scan does not look inside it.
+ */
+export function findMarkers(store: string): FoundMarker[] {
+  return children(store).flatMap((first): FoundMarker[] => {
+    const firstFolder = path.join(store, first);
+    const own = markerRoot(firstFolder);
+    if (own !== undefined) {
+      return [{ folder: firstFolder, root: own, family: undefined }];
+    }
+    return children(firstFolder).flatMap((second): FoundMarker[] => {
+      const folder = path.join(firstFolder, second);
+      const root = markerRoot(folder);
+      return root === undefined ? [] : [{ folder, root, family: first }];
+    });
+  });
+}
+
+export type StoreState =
+  | { kind: 'absent' }
+  | { kind: 'empty' }
+  | { kind: 'store' }
+  | { kind: 'foreign'; issue: string };
+
+function realPath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+// True when `store` is itself a git work tree's top.
+function isWorkTreeTop(store: string, runGit: Runner): boolean {
+  const top = runGit('git', ['rev-parse', '--show-toplevel'], store);
+  return top.code === 0 && realPath(top.stdout.trim()) === realPath(store);
+}
+
+/**
+ * What `store` is: absent, an empty folder, a store (a git work tree whose
+ * top is `store` and which holds `README.md`), or foreign (a file, or a
+ * non-empty folder that is not a store).
+ */
+export function storeState(store: string, runGit: Runner): StoreState {
+  if (!fs.existsSync(store)) return { kind: 'absent' };
+  if (!fs.statSync(store).isDirectory()) {
+    return { kind: 'foreign', issue: `${store} is a file, not a store folder` };
+  }
+  if (fs.readdirSync(store).length === 0) return { kind: 'empty' };
+  if (
+    isWorkTreeTop(store, runGit) &&
+    fs.existsSync(path.join(store, README_FILE))
+  ) {
+    return { kind: 'store' };
+  }
+  return {
+    kind: 'foreign',
+    issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`,
+  };
+}
+
+export type Outcome = { ok: true } | { ok: false; issue: string };
+
+function gitIssue(
+  args: string[],
+  r: { stderr: string; stdout: string },
+): string {
+  const detail = r.stderr.trim() || r.stdout.trim() || 'no output';
+  return `git ${args[0]} failed: ${detail}`;
+}
+
+/**
+ * Commits only `paths`, so another session's uncommitted writes stay
+ * uncommitted: `git add -- paths`, then `git commit -m message -- paths`.
+ */
+export function commitPaths(
+  store: string,
+  paths: string[],
+  message: string,
+  runGit: Runner,
+): Outcome {
+  const steps = [
+    ['add', '--', ...paths],
+    ['commit', '-m', message, '--', ...paths],
+  ];
+  for (const args of steps) {
+    const r = runGit('git', args, store);
+    if (r.code !== 0) return { ok: false, issue: gitIssue(args, r) };
+  }
+  return { ok: true };
+}
+
+/**
+ * Creates the store in an absent or empty folder: `git init`, the README,
+ * `sources/.gitkeep`, `archive/.gitkeep`, then one commit of exactly those
+ * paths. Any other folder, or a file, refuses and is left as it was.
+ */
+export function createStore(
+  store: string,
+  runGit: Runner,
+): { ok: true; paths: string[] } | { ok: false; issue: string } {
+  const state = storeState(store, runGit);
+  if (state.kind === 'foreign') return { ok: false, issue: state.issue };
+  if (state.kind === 'store') {
+    return { ok: false, issue: `${store} is already a store` };
+  }
+  fs.mkdirSync(store, { recursive: true });
+  const init = runGit('git', ['init'], store);
+  if (init.code !== 0) return { ok: false, issue: gitIssue(['init'], init) };
+  const paths = [
+    README_FILE,
+    ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`),
+  ];
+  fs.writeFileSync(path.join(store, README_FILE), STORE_README);
+  for (const name of RESERVED_NAMES) {
+    fs.mkdirSync(path.join(store, name), { recursive: true });
+    fs.writeFileSync(path.join(store, name, KEEP_FILE), '');
+  }
+  const committed = commitPaths(
+    store,
+    paths,
+    'chore: create the memory store',
+    runGit,
+  );
+  return committed.ok ? { ok: true, paths } : committed;
+}
+
+/** The README written once, when the store is created. */
+export const STORE_README = `# Memory store
+
+This folder is a git repo that holds the auto-memory of several repos. A repo's \`.claude/settings.local.json\` points Claude Code at one folder here through its \`autoMemoryDirectory\` key.
+
+## Layout
+
+- A family folder groups related repos. It holds the repo folders and the family's own files: a family index and the workstreams that span repos.
+- A repo folder holds one repo's memory. A repo with no family sits at the top level.
+- \`sessions/\` inside a repo folder holds one record per session. Claude Code's auto-dream reviews that folder.
+- \`sources/\` holds reference material that is not memory.
+- \`archive/\` holds retired memory, such as a repo's old default memory folder after it moved here.
+
+## The marker
+
+A repo folder holds \`.sidekick.json\`, which names the repo's main checkout as \`{"root": "<path>"}\`. A folder with a marker is a repo folder. A top-level folder without one is a family, or a reserved area.
+
+## Reserved names
+
+\`sources\` and \`archive\` belong to the store. No family or repo folder takes either name, a name that starts with ".", or a name with a path separator.
+
+## Changes by hand
+
+- **Unlink a repo.** Remove the \`autoMemoryDirectory\` entry from the repo's \`.claude/settings.local.json\`, in its main checkout. Claude Code then uses its default memory folder again. The repo folder here stays until you delete it.
+- **Move a repo between families.** Move its folder to the new family folder with \`mv\`, then set \`autoMemoryDirectory\` in the repo's \`.claude/settings.local.json\` to the new path. Close the repo's sessions first, since a running session keeps writing to the old path.
+- **Move the store.** Move this folder, then update \`autoMemoryDirectory\` in every linked repo's \`.claude/settings.local.json\`. Each marker holds the repo's root rather than the store's path, so markers stay as they are. Set \`SIDEKICK_MEMORY_STORE\` to the new path if you keep the store anywhere other than \`~/AI-Memory-Store\`.
+
+## Settings that affect auto-memory
+
+With \`blockReadsOutsideWorkingDirectories\` turned on, Claude Code may switch auto-memory off in a linked repo when it judges the local settings file tracked. Leave the setting off in \`~/.claude/settings.json\`.
+
+## Searches
+
+Leave \`archive/\` out of searches. It holds retired memory that no longer describes the repos.
+
+## Rules for sessions
+
+The user-level rule \`sk-memory.md\` says what a session writes here and what it only reads.
+`;
