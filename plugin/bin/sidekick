@@ -1838,7 +1838,7 @@ function gitFacts(runGit, repo, name, found, base) {
       worktreeExists: false,
       unintegrated: 0,
       uncommitted: false,
-      warnings: [...base.warnings, `${name}: no worktree was found for it`]
+      warnings: [`${name}: no worktree was found for it`]
     };
   }
   const count = countOf(runGit, repo, name, found, base);

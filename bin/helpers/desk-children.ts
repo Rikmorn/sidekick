@@ -220,7 +220,8 @@ function countOf(
 }
 
 // A prunable worktree is missing as far as the desk goes, so the git calls in
-// it are skipped. Its branch remains, so countOf still decides the count.
+// it are skipped. Its branch remains, so countOf still decides the count. A
+// worker nothing finds counts nothing, so its base goes unsaid.
 function gitFacts(
   runGit: Runner,
   repo: Repo,
@@ -233,7 +234,7 @@ function gitFacts(
       worktreeExists: false,
       unintegrated: 0,
       uncommitted: false,
-      warnings: [...base.warnings, `${name}: no worktree was found for it`],
+      warnings: [`${name}: no worktree was found for it`],
     };
   }
   const count = countOf(runGit, repo, name, found, base);

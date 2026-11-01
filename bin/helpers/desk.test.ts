@@ -684,6 +684,19 @@ describe('runDeskCli: finding the worktree', () => {
     expect(s.warnings).toEqual(['w2: no worktree was found for it']);
   });
 
+  test('a worker nothing finds, with a brief that cannot be read, claims no count', () => {
+    const fx = repoFixture();
+    const missing = path.join(fx.docs, 'missing-brief.md');
+    fx.addWorker('w2', 'bbbb0002', { worktree: false, brief: missing });
+    const rows = [
+      childRow(),
+      childRow({ id: 'bbbb0002', name: 'w2', sessionId: undefined }),
+    ];
+    const s = snapshotOf(harness(fx.top, listing(rows)));
+    expect(s.warnings).toContain('w2: no worktree was found for it');
+    expect(s.warnings.filter((w) => w.includes('commits count'))).toEqual([]);
+  });
+
   test('a record whose job is gone and whose worktree git marks prunable is pruned', () => {
     const fx = repoFixture();
     const folder = fx.addWorker('w2', 'gone0002');
