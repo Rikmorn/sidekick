@@ -451,8 +451,9 @@ describe('PLUGIN_ONLY_RULES', () => {
     }
   });
 
-  test('the parallel-sessions rule is plugin-only', () => {
+  test('the parallel-sessions and memory rules are plugin-only', () => {
     expect(PLUGIN_ONLY_RULES).toContain('sk-parallel-sessions.md');
+    expect(PLUGIN_ONLY_RULES).toContain('sk-memory.md');
   });
 });
 

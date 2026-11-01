@@ -6111,7 +6111,8 @@ function workTreeRootOf(cwd) {
 var repoRootOf = (cwd) => workTreeRootOf(cwd) ?? cwd;
 var PLUGIN_ONLY_RULES = [
   "sk-pm-conventions.md",
-  "sk-parallel-sessions.md"
+  "sk-parallel-sessions.md",
+  "sk-memory.md"
 ];
 var isRecord7 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText = (e) => e instanceof Error ? e.message : String(e);

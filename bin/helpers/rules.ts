@@ -58,6 +58,7 @@ export const repoRootOf = (cwd: string): string => workTreeRootOf(cwd) ?? cwd;
 export const PLUGIN_ONLY_RULES: readonly string[] = [
   'sk-pm-conventions.md',
   'sk-parallel-sessions.md',
+  'sk-memory.md',
 ];
 
 export type Enablement =
