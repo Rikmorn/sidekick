@@ -1640,7 +1640,7 @@ function refusal(input, match) {
     return "is in the main checkout";
   const { launcher } = input;
   if (launcher !== undefined && match.path === launcher.top) {
-    return `is ${launcher.role} ${match.path}`;
+    return `is in ${launcher.role} ${match.path}`;
   }
   return;
 }

@@ -1967,7 +1967,23 @@ describe('finish --worktree', () => {
     const h = harness(fx);
     expect(h.finish(brief, '--worktree', side)).toBe(1);
     expect(h.err[1]).toBe(
-      `the --worktree path ${side} is the brief's checkout ${side}`,
+      `the --worktree path ${side} is in the brief's checkout ${side}`,
+    );
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+
+  test("refuses a subfolder of the brief's checkout, naming that checkout", () => {
+    const fx = fixture();
+    fx.integrate();
+    const side = sibling(fx);
+    const docs = path.join(side, 'docs');
+    fs.mkdirSync(docs);
+    const brief = path.join(docs, 'x-brief.md');
+    fs.copyFileSync(fx.brief, brief);
+    const h = harness(fx);
+    expect(h.finish(brief, '--worktree', docs)).toBe(1);
+    expect(h.err[1]).toBe(
+      `the --worktree path ${docs} is in the brief's checkout ${side}`,
     );
     expect(h.claude.named('rm')).toEqual([]);
   });
@@ -2112,8 +2128,8 @@ describe('finish --name keeps the checkout that dispatched the worker', () => {
     expect(h.finish('--name', 'w1', '--no-report', '--into', main)).toBe(1);
     expect(h.err).toEqual(
       notFound([
-        `the transcript's first cwd ${side} is the checkout that dispatched the worker ${side}`,
-        `the job listing's cwd ${side} is the checkout that dispatched the worker ${side}`,
+        `the transcript's first cwd ${side} is in the checkout that dispatched the worker ${side}`,
+        `the job listing's cwd ${side} is in the checkout that dispatched the worker ${side}`,
         'by name, no worktree has worktree-w1 checked out',
       ]),
     );
@@ -2131,8 +2147,8 @@ describe('finish --name keeps the checkout that dispatched the worker', () => {
     expect(h.finish('--name', 'w1', '--no-report', '--into', main)).toBe(1);
     expect(h.err).toEqual(
       notFound([
-        `the transcript's first cwd ${side} is the checkout finish runs in ${side}`,
-        `the job listing's cwd ${side} is the checkout finish runs in ${side}`,
+        `the transcript's first cwd ${side} is in the checkout finish runs in ${side}`,
+        `the job listing's cwd ${side} is in the checkout finish runs in ${side}`,
         'by name, no worktree has worktree-w1 checked out',
       ]),
     );
@@ -2150,7 +2166,7 @@ describe('finish --name keeps the checkout that dispatched the worker', () => {
       h.finish('--name', 'w1', '--no-report', '--into', mainBranch(fx)),
     ).toBe(1);
     expect(h.err[1]).toBe(
-      `the transcript's first cwd ${side} is the checkout finish runs in ${side}`,
+      `the transcript's first cwd ${side} is in the checkout finish runs in ${side}`,
     );
   });
 

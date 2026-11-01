@@ -98,7 +98,7 @@ function refusal(input: FindInput, match: WorktreeEntry): string | undefined {
   if (match.path === input.mainTop) return 'is in the main checkout';
   const { launcher } = input;
   if (launcher !== undefined && match.path === launcher.top) {
-    return `is ${launcher.role} ${match.path}`;
+    return `is in ${launcher.role} ${match.path}`;
   }
   return undefined;
 }

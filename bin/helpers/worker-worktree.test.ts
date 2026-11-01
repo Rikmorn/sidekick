@@ -262,7 +262,28 @@ describe('findWorktree', () => {
         {
           via: 'transcript',
           cwd: '/r/b',
-          why: "is the brief's checkout /r/b",
+          why: "is in the brief's checkout /r/b",
+        },
+        NO_NAME,
+      ],
+    });
+  });
+
+  test('rejects a subfolder of the launching checkout, saying it is in that checkout', () => {
+    const found = findWorktree(
+      input({
+        worktrees: [entry(MAIN, 'master'), entry('/r/b', 'b')],
+        launcher: { top: '/r/b', role: "the brief's checkout" },
+        candidates: [{ via: 'listing', cwd: '/r/b/docs/plans' }],
+      }),
+    );
+    expect(found).toEqual({
+      kind: 'not found',
+      tried: [
+        {
+          via: 'listing',
+          cwd: '/r/b/docs/plans',
+          why: "is in the brief's checkout /r/b",
         },
         NO_NAME,
       ],
