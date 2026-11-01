@@ -35,6 +35,11 @@ describe('firstPlace', () => {
     expect(firstPlace(file)).toEqual({ cwd: '/w/one', gitBranch: undefined });
   });
 
+  test('reads an empty gitBranch as no branch', () => {
+    const file = transcript(line({ cwd: '/w/one', gitBranch: '' }));
+    expect(firstPlace(file)).toEqual({ cwd: '/w/one', gitBranch: undefined });
+  });
+
   test('never parses a line that crosses the bound', () => {
     const first = line({ type: 'x' });
     const file = transcript(first + line({ cwd: '/w/long', gitBranch: 'b' }));

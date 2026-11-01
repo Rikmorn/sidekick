@@ -1245,7 +1245,8 @@ function placeOf(entry) {
   const { cwd, gitBranch } = entry;
   if (typeof cwd !== "string" || cwd === "")
     return;
-  const branch = typeof gitBranch === "string" && gitBranch !== "HEAD" ? gitBranch : undefined;
+  const isBranch = typeof gitBranch === "string" && gitBranch !== "HEAD" && gitBranch !== "";
+  const branch = isBranch ? gitBranch : undefined;
   return { cwd, gitBranch: branch };
 }
 function firstPlace(file, maxBytes = 256 * 1024) {

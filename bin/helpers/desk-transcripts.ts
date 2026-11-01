@@ -213,11 +213,11 @@ function placeOf(entry: unknown): StartPlace | undefined {
   if (!isRecord(entry)) return undefined;
   const { cwd, gitBranch } = entry;
   if (typeof cwd !== 'string' || cwd === '') return undefined;
-  // git forbids a branch named HEAD; Claude Code writes it for a detached HEAD.
-  const branch =
-    typeof gitBranch === 'string' && gitBranch !== 'HEAD'
-      ? gitBranch
-      : undefined;
+  // git forbids a branch named HEAD, or an empty name; Claude Code writes HEAD
+  // for a detached HEAD.
+  const isBranch =
+    typeof gitBranch === 'string' && gitBranch !== 'HEAD' && gitBranch !== '';
+  const branch = isBranch ? gitBranch : undefined;
   return { cwd, gitBranch: branch };
 }
 
