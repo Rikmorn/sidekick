@@ -25,5 +25,8 @@
         "repo": "Rikmorn/sidekick"
       }
     }
+  },
+  "worktree": {
+    "baseRef": "head"
   }
 }
