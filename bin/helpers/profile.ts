@@ -3,8 +3,12 @@
  * store. Usage errors and refusals print to stderr and return 1, as the `pm`
  * and `hook` families do.
  */
+import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 import { mainReport, type ResolvedMain, resolveMain } from './main-session.js';
+import { readKey } from './memory-settings.js';
+import { storeRoot } from './memory-store.js';
+import { execRunner } from './pm-data.js';
 import {
   bgArgs,
   type CheckResult,
@@ -12,6 +16,7 @@ import {
   checkSettings,
   composeSettings,
   launchArgs,
+  type MemoryLaunch,
   type Settings,
   SKIP_VARIABLE,
 } from './profile-launch.js';
@@ -117,8 +122,22 @@ function provenanceLine(profile: Profile): string | undefined {
   return `profile "${profile.name}" comes from the ${profile.store} store: ${profile.dir}${shadows}`;
 }
 
+// The launch folder's memory key and the absolute store path; undefined when the repo has no key.
+function memoryLaunch(penv: ProfileEnv): MemoryLaunch | undefined {
+  const key = readKey(penv.cwd, execRunner);
+  if (key === undefined) return undefined;
+  return {
+    key,
+    store: path.resolve(penv.cwd, storeRoot(penv.env, penv.home)),
+  };
+}
+
 const composed = (profile: Profile, penv: ProfileEnv, overlay?: Settings) => {
-  const settings = composeSettings(profile, { home: penv.home, overlay });
+  const settings = composeSettings(profile, {
+    home: penv.home,
+    overlay,
+    memory: memoryLaunch(penv),
+  });
   return { settings, args: launchArgs(profile, settings) };
 };
 

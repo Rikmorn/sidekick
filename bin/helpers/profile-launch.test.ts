@@ -107,6 +107,63 @@ describe('composeSettings', () => {
     ).toEqual(FIXTURE_FLAG.sidekick);
   });
 
+  describe('memory key and store', () => {
+    const memory = { key: '/store/repo', store: '/store' };
+    const compose = (
+      settingSources: ProfileManifest['settingSources'],
+      settings?: ProfileManifest['settings'],
+      mem: typeof memory = memory,
+    ) =>
+      composeSettings(profile({ settingSources, settings }), {
+        home: '/h',
+        memory: mem,
+      });
+
+    test('sources without local carry the key', () => {
+      expect(compose(['user']).autoMemoryDirectory).toBe('/store/repo');
+    });
+
+    test('sources with local leave the key to the file', () => {
+      expect(compose(['user', 'local'])).not.toHaveProperty(
+        'autoMemoryDirectory',
+      );
+    });
+
+    test('sources without local and a repo with no key add nothing', () => {
+      const bare = profile({ settingSources: ['project'] });
+      expect(composeSettings(bare, { home: '/h' })).not.toHaveProperty(
+        'autoMemoryDirectory',
+      );
+      expect(composeSettings(bare, { home: '/h' })).not.toHaveProperty(
+        'permissions',
+      );
+    });
+
+    test('sources without user add the store to additionalDirectories', () => {
+      expect(compose(['project']).permissions).toEqual({
+        additionalDirectories: ['/store'],
+      });
+    });
+
+    test('the store merges with the profile own additionalDirectories', () => {
+      const settings = { permissions: { additionalDirectories: ['/own'] } };
+      expect(compose(['project'], settings).permissions).toEqual({
+        additionalDirectories: ['/own', '/store'],
+      });
+    });
+
+    test('sources with user add no store', () => {
+      expect(compose(['user', 'local'])).not.toHaveProperty('permissions');
+    });
+
+    test('no sources, with a key, gives the output it gave before', () => {
+      expect(compose(undefined)).toEqual(composeSettings(p, { home: '/h' }));
+      expect(JSON.stringify(compose(undefined))).toBe(
+        JSON.stringify(composeSettings(p, { home: '/h' })),
+      );
+    });
+  });
+
   test('the memory variable is set only when the folder has rules', () => {
     const with_ = composeSettings(profile({}, { hasRules: true }), {
       home: '/h',

@@ -52,12 +52,37 @@ export const mergeSettings = (...layers: Settings[]): Settings =>
 
 const memoryVariable = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD';
 
-// The keys launch owns: the profile's name, and the two that depend on its folder.
-function launchKeys(profile: Profile, home: string): Settings {
+/** A repo's memory key and the store's absolute path; passed only when the repo has a key. */
+export interface MemoryLaunch {
+  key: string;
+  store: string;
+}
+
+// What the sources would drop: the key when `local` is out, the store when `user` is out.
+function memoryKeys(
+  sources: readonly string[] | undefined,
+  memory: MemoryLaunch | undefined,
+): Settings {
+  if (sources === undefined || memory === undefined) return {};
+  return {
+    ...(sources.includes('local') ? {} : { autoMemoryDirectory: memory.key }),
+    ...(sources.includes('user')
+      ? {}
+      : { permissions: { additionalDirectories: [memory.store] } }),
+  };
+}
+
+// The keys launch owns: the profile's name, the two that depend on its folder, and the memory ones.
+function launchKeys(
+  profile: Profile,
+  home: string,
+  memory: MemoryLaunch | undefined,
+): Settings {
   const isCleanRoom =
     profile.manifest.settingSources !== undefined &&
     !profile.manifest.settingSources.includes('user');
   return {
+    ...memoryKeys(profile.manifest.settingSources, memory),
     sidekick: {
       profile: profile.name,
       ...(profile.manifest.hide === undefined
@@ -79,16 +104,17 @@ function launchKeys(profile: Profile, home: string): Settings {
 /**
  * Layers the profile's `settings`, then the overlay, then launch's own keys.
  * The excludes sit under `home`, where the user-level copies load, never under
- * `CLAUDE_CONFIG_DIR`.
+ * `CLAUDE_CONFIG_DIR`. `memory` puts back the repo's key and the store when
+ * the manifest's setting sources leave out the files that carry them.
  */
 export function composeSettings(
   profile: Profile,
-  opts: { home: string; overlay?: Settings },
+  opts: { home: string; overlay?: Settings; memory?: MemoryLaunch },
 ): Settings {
   return mergeSettings(
     profile.manifest.settings ?? {},
     opts.overlay ?? {},
-    launchKeys(profile, opts.home),
+    launchKeys(profile, opts.home, opts.memory),
   );
 }
 

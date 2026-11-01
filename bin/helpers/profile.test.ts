@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -289,6 +289,45 @@ describe('profile new', () => {
     expect(
       h.run('new', 'fresh', '--description', 'x', '--descripton', 'y'),
     ).toBe(1);
+  });
+});
+
+describe('profile show and the memory key', () => {
+  const repoWithKey = (key: string): string => {
+    const repo = fs.realpathSync(tmp());
+    spawnSync('git', ['init', '-q'], { cwd: repo });
+    fs.mkdirSync(path.join(repo, '.claude'));
+    fs.writeFileSync(
+      path.join(repo, '.claude', 'settings.local.json'),
+      JSON.stringify({ autoMemoryDirectory: key }),
+    );
+    return repo;
+  };
+
+  test('sources without local and user carry the key and the store', () => {
+    const cwd = repoWithKey('/m/repo');
+    const h = harness({
+      cwd,
+      env: {
+        SIDEKICK_PROFILES_DIR: tmp(),
+        SIDEKICK_MEMORY_STORE: '/m',
+      },
+    });
+    mkProfile(h.penv.env.SIDEKICK_PROFILES_DIR ?? '', 'a', {
+      description: 'A',
+      settingSources: ['project'],
+    });
+    expect(h.run('show', 'a')).toBe(0);
+    const text = h.out.join('\n');
+    expect(text).toContain('"autoMemoryDirectory": "/m/repo"');
+    expect(text).toContain('"/m"');
+  });
+
+  test('a repo with no key leaves the settings as they were', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A', settingSources: ['project'] });
+    expect(h.run('show', 'a')).toBe(0);
+    expect(h.out.join('\n')).not.toContain('autoMemoryDirectory');
   });
 });
 

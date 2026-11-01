@@ -6,7 +6,7 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 import * as fs27 from "node:fs";
 import { realpathSync as realpathSync8 } from "node:fs";
 import * as os2 from "node:os";
-import * as path31 from "node:path";
+import * as path32 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -868,7 +868,7 @@ function summarize(issues) {
 }
 
 // bin/helpers/desk.ts
-import * as path13 from "node:path";
+import * as path16 from "node:path";
 
 // plugin/hooks/desk/contract.ts
 var DESK_VERSION = 2;
@@ -2214,6 +2214,7 @@ function staleRecordNames(rows, records, facts) {
 }
 
 // bin/helpers/profile.ts
+import * as path14 from "node:path";
 import { parseArgs } from "node:util";
 
 // bin/helpers/main-session.ts
@@ -2273,1494 +2274,23 @@ function mainLine(main, held) {
   return main.from === "listing" && held === false ? `${base} · sidekick holds this name once this session is idle; ← before then loses it` : base;
 }
 
-// bin/helpers/profile-launch.ts
-import { spawnSync } from "node:child_process";
+// bin/helpers/memory-settings.ts
 import * as fs8 from "node:fs";
 import * as path9 from "node:path";
-var isPlainObject = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
-var uniqueByValue = (items) => items.filter((item, i) => items.findIndex((o) => JSON.stringify(o) === JSON.stringify(item)) === i);
-function mergeValue(prev, next) {
-  if (isPlainObject(prev) && isPlainObject(next))
-    return mergeTwo(prev, next);
-  if (Array.isArray(prev) && Array.isArray(next)) {
-    return uniqueByValue([...prev, ...next]);
-  }
-  return next;
-}
-function mergeTwo(base, next) {
-  const carried = Object.entries(base).map(([key, prev]) => [
-    key,
-    Object.hasOwn(next, key) ? mergeValue(prev, next[key]) : prev
-  ]);
-  const added = Object.entries(next).filter(([key]) => !Object.hasOwn(base, key));
-  return Object.fromEntries([...carried, ...added]);
-}
-var mergeSettings = (...layers) => layers.reduce(mergeTwo, {});
-var memoryVariable = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
-function launchKeys(profile, home) {
-  const isCleanRoom = profile.manifest.settingSources !== undefined && !profile.manifest.settingSources.includes("user");
-  return {
-    sidekick: {
-      profile: profile.name,
-      ...profile.manifest.hide === undefined ? {} : { hide: profile.manifest.hide }
-    },
-    ...profile.hasRules ? { env: { [memoryVariable]: "1" } } : {},
-    ...isCleanRoom ? {
-      claudeMdExcludes: [
-        path9.join(home, ".claude", "CLAUDE.md"),
-        path9.join(home, ".claude", "rules", "**")
-      ]
-    } : {}
-  };
-}
-function composeSettings(profile, opts) {
-  return mergeSettings(profile.manifest.settings ?? {}, opts.overlay ?? {}, launchKeys(profile, opts.home));
-}
-function launchArgs(profile, settings) {
-  const sources = profile.manifest.settingSources;
-  return [
-    "--add-dir",
-    profile.dir,
-    "--settings",
-    JSON.stringify(settings),
-    ...sources === undefined ? [] : ["--setting-sources", sources.join(",")]
-  ];
-}
-var COULD_NOT_START = 127;
-var printedStreams = (result) => [result.stdout, result.stderr].map((text) => text.trim()).filter((text) => text !== "");
-var spawnClaude = (command, args, opts) => spawnSync(command, args, {
-  ...opts,
-  encoding: "utf8",
-  stdio: ["ignore", "pipe", "pipe"]
-});
-var isTimeout = (error) => ("code" in error) && error.code === "ETIMEDOUT";
-var makeClaudeRunner = (spawn = spawnClaude) => (args, { cwd, timeoutMs }) => {
-  const out = spawn("claude", args, {
-    cwd,
-    timeout: timeoutMs,
-    shell: false,
-    env: withoutMarkers(process.env)
-  });
-  const stdout = out.stdout ?? "";
-  const stderr = out.stderr ?? "";
-  if (out.error === undefined) {
-    return { code: out.status ?? 1, stdout, stderr, timedOut: false };
-  }
-  if (isTimeout(out.error)) {
-    return { code: out.status ?? 1, stdout, stderr, timedOut: true };
-  }
-  return {
-    code: COULD_NOT_START,
-    stdout,
-    stderr: stderr || out.error.message,
-    timedOut: false
-  };
-};
-var execClaude = makeClaudeRunner();
-var CANARY_KEYS = ["feedbackSurveyRate", "cleanupPeriodDays"];
-var CANARY_VALUE = "sidekick-canary";
-var SKIP_VARIABLE = "SIDEKICK_PROFILE_SKIP_CHECK";
-var SKIP_WARNING = `${SKIP_VARIABLE}=1 is set, so the settings were not checked with claude doctor.`;
-var refuse = (...issues) => ({ ok: false, issues });
-function invalidSettingsLines(doctorOutput, paths) {
-  const lines = doctorOutput.split(`
-`);
-  const start = lines.findIndex((line) => line.trim() === "Invalid settings");
-  if (start === -1)
-    return [];
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((line) => line.trim() === "");
-  const section = end === -1 ? rest : rest.slice(0, end);
-  return section.filter((line) => line.startsWith("- ") && paths.some((p) => line.startsWith(`- ${p} `)));
-}
-var printed = (result) => [result.stdout, result.stderr].filter((text) => text.trim() !== "").join(`
-`);
-function judge(result, lines, canary) {
-  if (result.timedOut) {
-    return refuse("claude doctor timed out.", printed(result));
-  }
-  if (result.code === COULD_NOT_START) {
-    return refuse("The settings check could not start claude.", printed(result));
-  }
-  if (result.code !== 0) {
-    return refuse(`claude doctor failed with exit code ${result.code}.`, printed(result));
-  }
-  const isCanaryLine = (line) => line.includes(` › ${canary}:`);
-  if (!lines.some(isCanaryLine)) {
-    return refuse("claude doctor's output no longer parses: its report for the canary key is missing, so a launch could drop settings silently.", `Set ${SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`);
-  }
-  const real = lines.filter((line) => !isCanaryLine(line));
-  return real.length === 0 ? { ok: true, warnings: [] } : refuse(...real);
-}
-function checkSettings(settings, deps, timeoutMs = 30000) {
-  if (deps.skip)
-    return { ok: true, warnings: [SKIP_WARNING] };
-  const canary = CANARY_KEYS.find((key) => !Object.hasOwn(settings, key));
-  if (canary === undefined) {
-    return refuse(`The settings set both ${CANARY_KEYS.join(" and ")}, so the check has no canary key left.`);
-  }
-  const dir = fs8.mkdtempSync(path9.join(deps.tmpdir, "sidekick-profile-"));
-  try {
-    const file = path9.join(dir, "settings.json");
-    fs8.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
-      mode: 384
-    });
-    const result = deps.run(["--settings", file, "doctor"], {
-      cwd: deps.cwd,
-      timeoutMs
-    });
-    const lines = invalidSettingsLines(result.stdout, [
-      file,
-      fs8.realpathSync(file)
-    ]);
-    return judge(result, lines, canary);
-  } finally {
-    fs8.rmSync(dir, { recursive: true, force: true });
-  }
-}
-var bgArgs = (base, opts) => [
-  ...base,
-  ...opts.pluginDir === undefined ? [] : ["--plugin-dir", opts.pluginDir],
-  ...opts.permissionMode === undefined ? [] : ["--permission-mode", opts.permissionMode],
-  ...opts.worktree === undefined ? [] : ["--worktree", opts.worktree],
-  "--bg",
-  ...opts.sessionName === undefined ? [] : ["-n", opts.sessionName],
-  ...opts.prompt === undefined ? [] : ["--", opts.prompt]
-];
-
-// bin/helpers/profile-plugins.ts
-import * as fs9 from "node:fs";
-import * as path10 from "node:path";
-var PLUGIN_SKIP_VARIABLE = "SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK";
-var SKIP_WARNING2 = `${PLUGIN_SKIP_VARIABLE}=1 is set, so the plugins were not checked with claude plugin list.`;
-var UNSATISFIED = "dependency-unsatisfied";
-var EXEMPT_SUFFIXES = ["@builtin", "@inline"];
-var DetailSchema = looseObject({
-  type: string(),
-  plugin: optional(string()),
-  dependency: optional(string())
-});
-var EntrySchema = looseObject({
-  id: string(),
-  errorDetails: nullish(array(DetailSchema))
-});
-var ListSchema = array(EntrySchema);
-var refuse2 = (...issues) => ({ ok: false, issues });
-var needsPluginCheck = (manifest) => manifest.settingSources !== undefined || manifest.settings !== undefined && Object.hasOwn(manifest.settings, "enabledPlugins");
-var enabledPluginIds = (manifest) => {
-  const value = manifest.settings?.enabledPlugins;
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.keys(value) : [];
-};
-var leavesOutUser = (manifest) => manifest.settingSources !== undefined && !manifest.settingSources.includes("user");
-var unknownIdIssues = (manifest, listed) => {
-  const synced = leavesOutUser(manifest) ? "; a synced plugin is not listed when the profile leaves out the user source" : "";
-  return enabledPluginIds(manifest).filter((id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s))).map((id) => `"${id}": no plugin listed under this profile's settings has that id${synced}.`);
-};
-var parseJson2 = (text) => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return;
-  }
-};
-function judgePluginList(stdout, manifest) {
-  const parsed = safeParse(ListSchema, parseJson2(stdout));
-  if (!parsed.success) {
-    return refuse2("claude plugin list's output no longer parses, so a broken plugin dependency could pass unseen.", `Set ${PLUGIN_SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`);
-  }
-  const entries = parsed.output;
-  const issues = [];
-  const warnings = [];
-  const seen = new Set;
-  for (const entry of entries) {
-    for (const detail of entry.errorDetails ?? []) {
-      if (detail.type !== UNSATISFIED) {
-        warnings.push(`${entry.id}: claude plugin list reports ${detail.type}.`);
-        continue;
-      }
-      const key = JSON.stringify([detail.plugin, detail.dependency]);
-      if (seen.has(key))
-        continue;
-      seen.add(key);
-      issues.push(`${entry.id} needs ${detail.dependency ?? "(unnamed)"}, which these settings do not enable. Enable it in the profile's settings.enabledPlugins, or set ${entry.id} to false too.`);
-    }
-  }
-  issues.push(...unknownIdIssues(manifest, new Set(entries.map((entry) => entry.id))));
-  return issues.length > 0 ? refuse2(...issues) : { ok: true, warnings: [...new Set(warnings)] };
-}
-function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
-  if (deps.skip)
-    return { ok: true, warnings: [SKIP_WARNING2] };
-  const dir = fs9.mkdtempSync(path10.join(deps.tmpdir, "sidekick-profile-"));
-  try {
-    const file = path10.join(dir, "settings.json");
-    fs9.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
-    const sources = manifest.settingSources;
-    const result = deps.run([
-      "--settings",
-      file,
-      ...sources === undefined ? [] : ["--setting-sources", sources.join(",")],
-      "plugin",
-      "list",
-      "--json"
-    ], { cwd: deps.cwd, timeoutMs });
-    if (result.timedOut) {
-      return refuse2("claude plugin list timed out.", ...printedStreams(result));
-    }
-    if (result.code !== 0) {
-      return refuse2(`claude plugin list failed with exit code ${result.code}.`, ...printedStreams(result));
-    }
-    return judgePluginList(result.stdout, manifest);
-  } finally {
-    fs9.rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// bin/helpers/profile-manifest.ts
-import * as fs10 from "node:fs";
-
-// plugin/hooks/scope/contract.ts
-var MOD_PARTS = ["board", "desk"];
-
-// bin/helpers/profile-manifest.ts
-var SETTING_SOURCES = ["user", "project", "local"];
-var PROFILE_NAME_RULE = "1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit";
-var PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
-var isProfileName = (name) => PROFILE_NAME.test(name);
-var RESERVED_SETTINGS_KEY = "sidekick";
-var uniqueList = (item) => pipe(array(item), check((a) => new Set(a).size === a.length, "must not repeat an entry"));
-var HideSchema = strictObject({
-  agents: optional(uniqueList(pipe(string(), minLength(1, "must not be empty")))),
-  mods: optional(uniqueList(picklist(MOD_PARTS)))
-});
-var ManifestSchema = strictObject({
-  description: pipe(string(), minLength(1, "must not be empty")),
-  settingSources: optional(pipe(array(picklist(SETTING_SOURCES)), check((a) => new Set(a).size === a.length, "must not repeat a source"))),
-  settings: optional(pipe(unknown(), check((s) => !Array.isArray(s), "must be an object"), record(string(), unknown()), check((s) => !Object.hasOwn(s, RESERVED_SETTINGS_KEY), `must not set "${RESERVED_SETTINGS_KEY}", which launch owns`))),
-  hide: optional(HideSchema)
-});
-function parseManifest(raw) {
-  const result = safeParse(ManifestSchema, raw);
-  if (result.success)
-    return { ok: true, manifest: result.output };
-  return {
-    ok: false,
-    issues: result.issues.map((i) => `${getDotPath(i) ?? "(root)"}: ${i.message}`)
-  };
-}
-var isMissing4 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
-function readManifest(file) {
-  let text;
-  try {
-    text = fs10.readFileSync(file, "utf8");
-  } catch (err) {
-    const why = isMissing4(err) ? "missing" : err instanceof Error ? err.message : String(err);
-    return { ok: false, issues: [`${file}: ${why}`] };
-  }
-  let raw;
-  try {
-    raw = JSON.parse(text);
-  } catch (err) {
-    const why = err instanceof Error ? err.message : String(err);
-    return { ok: false, issues: [`${file}: invalid JSON: ${why}`] };
-  }
-  const parsed = parseManifest(raw);
-  if (parsed.ok)
-    return parsed;
-  return { ok: false, issues: parsed.issues.map((i) => `${file}: ${i}`) };
-}
-
-// bin/helpers/profile-shell.ts
-var FIND_INSTALL = 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{try{const e=JSON.parse(s).find(x=>x.id==="sidekick@rikmorn"&&x.scope==="user");if(e&&typeof e.installPath==="string"){process.stdout.write(e.installPath);return}}catch{}process.exit(1)})';
-var NO_INSTALL = "skp: no user-scope sidekick@rikmorn install";
-var ZSH_FUNCTION = `skp() {
-  builtin emulate -L zsh
-  if (( $# < 1 )); then builtin print -u2 'usage: skp <profile> [claude arguments...]'; builtin return 2; fi
-  local name=$1; builtin shift
-  local list cli out
-  list=$(command claude plugin list --json) || { builtin print -u2 'skp: claude plugin list failed'; builtin return 1; }
-  cli=$(builtin print -r -- "$list" | command node -e '${FIND_INSTALL}') || { builtin print -u2 '${NO_INSTALL}'; builtin return 1; }
-  out=$(command node "$cli/bin/sidekick" profile argv "$name") || builtin return
-  local -a args=("\${(@0)out}")
-  (( \${#args} )) && [[ -z \${args[-1]} ]] && args[-1]=()
-  command claude "\${args[@]}" "$@"
-}
-`;
-var BASH_FUNCTION = `skp() {
-  if [ $# -lt 1 ]; then builtin echo 'usage: skp <profile> [claude arguments...]' >&2; builtin return 2; fi
-  local name="$1"; builtin shift
-  local list cli tmp rc a
-  list=$(command claude plugin list --json) || { builtin echo 'skp: claude plugin list failed' >&2; builtin return 1; }
-  cli=$(builtin printf '%s' "$list" | command node -e '${FIND_INSTALL}') || { builtin echo '${NO_INSTALL}' >&2; builtin return 1; }
-  tmp=$(command mktemp "\${TMPDIR:-/tmp}/skp.XXXXXX") || builtin return 1
-  command node "$cli/bin/sidekick" profile argv "$name" >| "$tmp"; rc=$?
-  if [ "$rc" -ne 0 ]; then command rm -f "$tmp"; builtin return "$rc"; fi
-  local args=()
-  while IFS= builtin read -r -d '' a; do args+=("$a"); done < "$tmp"
-  command rm -f "$tmp"
-  command claude "\${args[@]}" "$@"
-}
-`;
-var RESERVED_WORDS = new Set([
-  "case",
-  "coproc",
-  "declare",
-  "do",
-  "done",
-  "elif",
-  "else",
-  "end",
-  "esac",
-  "export",
-  "fi",
-  "float",
-  "for",
-  "foreach",
-  "function",
-  "if",
-  "in",
-  "integer",
-  "local",
-  "nocorrect",
-  "readonly",
-  "repeat",
-  "select",
-  "then",
-  "time",
-  "typeset",
-  "until",
-  "while"
-]);
-var SKP_RUNS_THROUGH = new Set(["command", "builtin"]);
-function aliasNameRefusal(name) {
-  if (name === "skp") {
-    return '"skp" cannot be an alias: the alias would replace the skp function itself.';
-  }
-  if (SKP_RUNS_THROUGH.has(name)) {
-    return `"${name}" cannot be an alias: skp runs its commands through command and builtin, and the alias would take them over.`;
-  }
-  if (RESERVED_WORDS.has(name)) {
-    return `"${name}" cannot be an alias: it is a reserved word in zsh or bash, and the alias would break shell code that uses it.`;
-  }
-  return;
-}
-var shellFunction = (shell, aliasNames) => {
-  for (const name of aliasNames) {
-    if (!isProfileName(name)) {
-      throw new Error(`invalid alias name: ${JSON.stringify(name)}`);
-    }
-  }
-  const aliases = aliasNames.map((name) => `alias ${name}='skp ${name}'
-`);
-  return [shell === "zsh" ? ZSH_FUNCTION : BASH_FUNCTION, ...aliases].join("");
-};
-
-// bin/helpers/profile-store.ts
-import * as fs11 from "node:fs";
-import * as path11 from "node:path";
-var MANIFEST_FILE = "profile.json";
-var notAName = (name) => `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
-var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
-var ENABLES_PLUGINS = "can enable plugins outside the checked settings block; put settings in profile.json";
-var RULES_ONLY = "a profile holds only rules; agents, skills, and commands belong in a plugin the profile enables";
-var REFUSED_AT_ROOT = [
-  { path: "CLAUDE.md", why: HIDES_AGENTS },
-  { path: "CLAUDE.local.md", why: HIDES_AGENTS }
-];
-var CLAUDE_DIR_ALLOWS = "rules";
-var CLAUDE_DIR_REASONS = new Map([
-  ["CLAUDE.md", HIDES_AGENTS],
-  ["settings.json", ENABLES_PLUGINS],
-  ["settings.local.json", ENABLES_PLUGINS]
-]);
-function storeRoots(env, cwd, home, workTree) {
-  const override = env.SIDEKICK_PROFILES_DIR;
-  if (override)
-    return [{ kind: "user", dir: path11.resolve(cwd, override) }];
-  const configDir = env.CLAUDE_CONFIG_DIR || path11.join(home, ".claude");
-  const user = {
-    kind: "user",
-    dir: path11.resolve(cwd, configDir, "profiles")
-  };
-  if (workTree === undefined)
-    return [user];
-  const repo = {
-    kind: "repo",
-    dir: path11.resolve(workTree, ".claude", "profiles")
-  };
-  return repo.dir === user.dir ? [user] : [repo, user];
-}
-var isPresent = (file) => {
-  try {
-    fs11.lstatSync(file);
-    return true;
-  } catch {
-    return false;
-  }
-};
-var isDirectory = (dir) => {
-  try {
-    return fs11.statSync(dir).isDirectory();
-  } catch {
-    return false;
-  }
-};
-var entriesOf = (dir) => {
-  try {
-    return fs11.readdirSync(dir).sort();
-  } catch {
-    return [];
-  }
-};
-function checkLayout(dir) {
-  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path11.join(dir, r.path))).map((r) => `${path11.join(dir, r.path)}: ${r.why}`);
-  const claudeDir = path11.join(dir, ".claude");
-  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path11.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
-  return [...atRoot, ...inClaudeDir];
-}
-var holdsMarkdown = (dir) => {
-  let entries;
-  try {
-    entries = fs11.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return false;
-  }
-  return entries.some((e) => {
-    const full = path11.join(dir, e.name);
-    if (e.isDirectory())
-      return holdsMarkdown(full);
-    if (e.isSymbolicLink() && isDirectory(full))
-      return holdsMarkdown(full);
-    return e.name.endsWith(".md");
-  });
-};
-var readFolder = (name, root, shadows) => {
-  const dir = path11.join(root.dir, name);
-  const layout = checkLayout(dir);
-  if (layout.length > 0)
-    return { ok: false, issues: layout };
-  const read = readManifest(path11.join(dir, MANIFEST_FILE));
-  if (!read.ok)
-    return read;
-  return {
-    ok: true,
-    profile: {
-      name,
-      dir,
-      root: root.dir,
-      store: root.kind,
-      shadows,
-      manifest: read.manifest,
-      hasRules: holdsMarkdown(path11.join(dir, ".claude", "rules"))
-    }
-  };
-};
-function loadProfile(name, roots) {
-  if (!isProfileName(name))
-    return { ok: false, issues: [notAName(name)] };
-  const held = (root) => isDirectory(path11.join(root.dir, name));
-  const index = roots.findIndex(held);
-  const winner = roots[index];
-  if (winner === undefined) {
-    return {
-      ok: false,
-      issues: [
-        `no profile named "${name}"; searched: ${roots.map((r) => r.dir).join(", ")}`
-      ]
-    };
-  }
-  const later = roots.slice(index + 1).find(held);
-  return readFolder(name, winner, later === undefined ? undefined : path11.join(later.dir, name));
-}
-var isHidden = (name) => name.startsWith(".");
-var listRoot = (root) => {
-  let names;
-  try {
-    names = fs11.readdirSync(root.dir).sort();
-  } catch {
-    return [];
-  }
-  return names.filter((name) => !isHidden(name) && isDirectory(path11.join(root.dir, name))).map((name) => {
-    const base = {
-      name,
-      root: root.dir,
-      store: root.kind,
-      shadowedBy: undefined
-    };
-    if (!isProfileName(name)) {
-      return { ...base, description: undefined, issues: [notAName(name)] };
-    }
-    const loaded = readFolder(name, root, undefined);
-    return loaded.ok ? {
-      ...base,
-      description: loaded.profile.manifest.description,
-      issues: []
-    } : { ...base, description: undefined, issues: loaded.issues };
-  });
-};
-function listProfiles(roots) {
-  const winners = new Map;
-  return roots.flatMap((root) => listRoot(root).map((listed) => {
-    const winner = winners.get(listed.name);
-    if (winner === undefined) {
-      winners.set(listed.name, path11.join(root.dir, listed.name));
-      return listed;
-    }
-    return { ...listed, shadowedBy: winner };
-  }));
-}
-var isExists = (err) => err instanceof Error && ("code" in err) && err.code === "EEXIST";
-var messageOf = (err) => err instanceof Error ? err.message : String(err);
-var makeRoot = (root) => {
-  try {
-    fs11.mkdirSync(root, { recursive: true });
-    return [];
-  } catch (err) {
-    return [
-      `${root}: ${isExists(err) ? "exists and is not a folder" : messageOf(err)}`
-    ];
-  }
-};
-var unmake = (dir) => {
-  try {
-    const manifest = path11.join(dir, MANIFEST_FILE);
-    if (isPresent(manifest))
-      fs11.rmSync(manifest);
-    fs11.rmdirSync(dir);
-    return [];
-  } catch (err) {
-    return [`${dir}: could not remove it: ${messageOf(err)}`];
-  }
-};
-function newProfile(name, description, root) {
-  if (!isProfileName(name))
-    return { ok: false, issues: [notAName(name)] };
-  const manifest = { description };
-  const parsed = parseManifest(manifest);
-  if (!parsed.ok)
-    return parsed;
-  const rootIssues = makeRoot(root);
-  if (rootIssues.length > 0)
-    return { ok: false, issues: rootIssues };
-  const dir = path11.join(root, name);
-  try {
-    fs11.mkdirSync(dir);
-  } catch (err) {
-    const why = isExists(err) ? "already exists" : messageOf(err);
-    return { ok: false, issues: [`${dir}: ${why}`] };
-  }
-  const file = path11.join(dir, MANIFEST_FILE);
-  try {
-    fs11.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
-`);
-  } catch (err) {
-    return {
-      ok: false,
-      issues: [`${file}: ${messageOf(err)}`, ...unmake(dir)]
-    };
-  }
-  return { ok: true, dir };
-}
 
 // bin/helpers/shell.ts
 var shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 var SAFE_WORD = /^[A-Za-z0-9_@%+:,./-][A-Za-z0-9_@%+=:,./-]*$/;
 var shellArg = (value) => SAFE_WORD.test(value) ? value : shellQuote(value);
 
-// bin/helpers/worker-jobs.ts
-var LISTING_ARGS = ["agents", "--json", "--all"];
-var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
-var OptionalText = nullish(string());
-var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an object"), object({
-  id: OptionalText,
-  kind: OptionalText,
-  name: OptionalText,
-  cwd: OptionalText,
-  sessionId: OptionalText,
-  state: OptionalText
-}), transform((row) => ({
-  id: row.id ?? undefined,
-  kind: row.kind ?? undefined,
-  name: row.name ?? undefined,
-  cwd: row.cwd ?? undefined,
-  sessionId: row.sessionId ?? undefined,
-  state: row.state ?? undefined
-})));
-var ListingSchema = array(JobSchema);
-function parseJson3(text) {
-  try {
-    return { value: JSON.parse(text) };
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return { issue: `${LISTING} printed a listing that is not JSON: ${why}` };
-  }
-}
-function listJobs(run, cwd, timeoutMs = 30000) {
-  const result = run(LISTING_ARGS, { cwd, timeoutMs });
-  if (result.timedOut) {
-    return { issues: [`${LISTING} did not return in time.`] };
-  }
-  if (result.code !== 0) {
-    return {
-      issues: [
-        `${LISTING} failed with exit code ${result.code}.`,
-        ...printedStreams(result)
-      ]
-    };
-  }
-  const json = parseJson3(result.stdout);
-  if ("issue" in json)
-    return { issues: [json.issue] };
-  const parsed = safeParse(ListingSchema, json.value);
-  if (!parsed.success) {
-    const [first] = parsed.issues;
-    const where = getDotPath(first) ?? "(root)";
-    return {
-      issues: [
-        `${LISTING} printed a listing that does not parse: ${where}: ${first.message}`
-      ]
-    };
-  }
-  return { jobs: parsed.output };
-}
-
-// bin/helpers/profile.ts
-var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]|switch <name> [--session <id>]";
-var LAUNCH_TIMEOUT_MS = 60000;
-var SHELLS = ["zsh", "bash"];
-var withoutTrailingNewline = (text) => text.replace(/\n$/, "");
-function parseFlags(rest, options) {
-  try {
-    const { values, positionals } = parseArgs({
-      args: rest,
-      options,
-      allowPositionals: true,
-      strict: true
-    });
-    return { values, positionals };
-  } catch {
-    return;
-  }
-}
-var usage = (err) => {
-  err(`usage: ${PROFILE_USAGE_LINE}`);
-  return 1;
-};
-var refuse3 = (err, issues) => {
-  for (const issue of issues)
-    err(issue);
-  return 1;
-};
-function load(name, penv) {
-  const loaded = loadProfile(name, storeRoots(penv.env, penv.cwd, penv.home, penv.workTree));
-  return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
-}
-function provenanceLine(profile) {
-  if (profile.store === "user")
-    return;
-  const shadows = profile.shadows === undefined ? "" : ` (it shadows ${profile.shadows})`;
-  return `profile "${profile.name}" comes from the ${profile.store} store: ${profile.dir}${shadows}`;
-}
-var composed = (profile, penv, overlay) => {
-  const settings = composeSettings(profile, { home: penv.home, overlay });
-  return { settings, args: launchArgs(profile, settings) };
-};
-var settingsCheck = (settings, penv) => checkSettings(settings, {
-  run: penv.runClaude,
-  cwd: penv.cwd,
-  tmpdir: penv.tmpdir,
-  skip: penv.env[SKIP_VARIABLE] === "1"
-});
-var skipsPluginCheck = (penv) => penv.env[PLUGIN_SKIP_VARIABLE] === "1";
-var pluginCheck = (profile, settings, penv) => checkPlugins(settings, profile.manifest, {
-  run: penv.runClaude,
-  cwd: penv.cwd,
-  tmpdir: penv.tmpdir,
-  skip: skipsPluginCheck(penv)
-});
-function checkProfile(profile, settings, penv) {
-  const checked = settingsCheck(settings, penv);
-  if (!checked.ok || !needsPluginCheck(profile.manifest))
-    return checked;
-  const plugins = pluginCheck(profile, settings, penv);
-  return plugins.ok ? { ok: true, warnings: [...checked.warnings, ...plugins.warnings] } : plugins;
-}
-function loadForLaunch(name, penv, err) {
-  const loaded = load(name, penv);
-  if ("issues" in loaded) {
-    refuse3(err, loaded.issues);
-    return;
-  }
-  const provenance = provenanceLine(loaded.profile);
-  if (provenance !== undefined)
-    err(provenance);
-  return loaded.profile;
-}
-function checkComposed(profile, penv, err, overlay) {
-  const { settings, args } = composed(profile, penv, overlay);
-  const checked = checkProfile(profile, settings, penv);
-  if (!checked.ok) {
-    refuse3(err, checked.issues);
-    return;
-  }
-  for (const warning of checked.warnings)
-    err(warning);
-  return args;
-}
-function checkedLaunch(name, penv, err, overlay) {
-  const profile = loadForLaunch(name, penv, err);
-  return profile === undefined ? undefined : checkComposed(profile, penv, err, overlay);
-}
-function mainOf(penv) {
-  const bare = resolveMain(penv.env, undefined);
-  if (bare?.from !== "id")
-    return bare;
-  const listed = listJobs(penv.runClaude, penv.cwd);
-  return resolveMain(penv.env, "jobs" in listed ? listed.jobs : undefined);
-}
-function pluginReport(profile, settings, penv) {
-  if (!needsPluginCheck(profile.manifest)) {
-    return [
-      "plugins: not checked; the profile sets neither settings.enabledPlugins nor settingSources"
-    ];
-  }
-  if (skipsPluginCheck(penv)) {
-    return [`plugins: not checked; ${PLUGIN_SKIP_VARIABLE}=1 is set`];
-  }
-  const plugins = pluginCheck(profile, settings, penv);
-  return plugins.ok ? ["plugins: ok", ...plugins.warnings.map((w) => `  ${w}`)] : ["plugins: refused", ...plugins.issues.map((i) => `  ${i}`)];
-}
-var list = (rest, penv, out, err) => {
-  if (rest.length > 0)
-    return usage(err);
-  const profiles = listProfiles(storeRoots(penv.env, penv.cwd, penv.home, penv.workTree));
-  for (const p of profiles) {
-    const shadowed = p.shadowedBy === undefined ? "" : `, shadowed by ${p.shadowedBy}`;
-    const where = `(${p.store}: ${p.root}${shadowed})`;
-    out(p.issues.length > 0 ? `${p.name}  invalid: ${p.issues[0]}  ${where}` : `${p.name}  ${p.description}  ${where}`);
-  }
-  return profiles.some((p) => p.issues.length > 0) ? 1 : 0;
-};
-var show = (rest, penv, out, err) => {
-  const parsed = parseFlags(rest, {});
-  if (parsed === undefined || parsed.positionals.length !== 1) {
-    return usage(err);
-  }
-  const loaded = load(parsed.positionals[0], penv);
-  if ("issues" in loaded)
-    return refuse3(err, loaded.issues);
-  const { profile } = loaded;
-  const { settings, args } = composed(profile, penv);
-  out(`folder: ${profile.dir}`);
-  out(`store: ${profile.store}`);
-  out(`manifest: ${JSON.stringify(profile.manifest, null, 2)}`);
-  out(`settings: ${JSON.stringify(settings, null, 2)}`);
-  for (const line of pluginReport(profile, settings, penv))
-    out(line);
-  out("arguments:");
-  for (const arg of args)
-    out(arg);
-  return 0;
-};
-var noRepoStore = (penv) => {
-  if (penv.env.SIDEKICK_PROFILES_DIR) {
-    return "SIDEKICK_PROFILES_DIR is set, so there is no repo store";
-  }
-  if (penv.workTree === undefined) {
-    return "not inside a git work tree, so there is no repo store";
-  }
-  return "the repo store is the user store here, so --repo has nowhere else to write";
-};
-var create = (rest, penv, out, err) => {
-  const parsed = parseFlags(rest, {
-    description: { type: "string" },
-    repo: { type: "boolean" }
-  });
-  const description = parsed?.values.description;
-  if (parsed === undefined || parsed.positionals.length !== 1 || typeof description !== "string") {
-    return usage(err);
-  }
-  const wanted = parsed.values.repo === true ? "repo" : "user";
-  const root = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree).find((r) => r.kind === wanted);
-  if (root === undefined)
-    return refuse3(err, [noRepoStore(penv)]);
-  const created = newProfile(parsed.positionals[0], description, root.dir);
-  if (!created.ok)
-    return refuse3(err, created.issues);
-  out(created.dir);
-  return 0;
-};
-var argv = (rest, penv, _out, err) => {
-  const parsed = parseFlags(rest, {});
-  if (parsed === undefined || parsed.positionals.length !== 1) {
-    return usage(err);
-  }
-  const args = checkedLaunch(parsed.positionals[0], penv, err);
-  if (args === undefined)
-    return 1;
-  penv.write(args.map((arg) => `${arg}\x00`).join(""));
-  return 0;
-};
-var launch = (rest, penv, out, err) => {
-  const split = rest.indexOf("--");
-  const before = split === -1 ? rest : rest.slice(0, split);
-  const words = split === -1 ? [] : rest.slice(split + 1);
-  const parsed = parseFlags(before, {
-    bg: { type: "boolean" },
-    n: { type: "string", short: "n" }
-  });
-  if (parsed === undefined || parsed.positionals.length !== 1) {
-    return usage(err);
-  }
-  if (parsed.values.bg !== true) {
-    return refuse3(err, [
-      "launch only starts background sessions: pass --bg.",
-      "For an interactive start, use the shell function: skp <name> (sidekick profile alias prints it)."
-    ]);
-  }
-  const main = mainOf(penv);
-  const args = checkedLaunch(parsed.positionals[0], penv, err, main === undefined ? undefined : { env: { SIDEKICK_MAIN: main.value } });
-  if (args === undefined)
-    return 1;
-  const { launchTimeoutMs = LAUNCH_TIMEOUT_MS } = penv;
-  const sessionName = parsed.values.n;
-  const result = penv.runClaude(bgArgs(args, {
-    sessionName: typeof sessionName === "string" ? sessionName : undefined,
-    prompt: words.length > 0 ? words.join(" ") : undefined
-  }), { cwd: penv.cwd, timeoutMs: launchTimeoutMs });
-  if (result.stdout !== "")
-    out(withoutTrailingNewline(result.stdout));
-  if (result.stderr !== "")
-    err(withoutTrailingNewline(result.stderr));
-  if (result.timedOut)
-    err("claude did not return in time.");
-  if (result.code === 0 && main !== undefined)
-    out(mainReport(main, penv.env, penv.home));
-  return result.code;
-};
-var isShell = (value) => SHELLS.some((shell) => shell === value);
-var alias = (rest, penv, out, err) => {
-  const parsed = parseFlags(rest, { shell: { type: "string" } });
-  if (parsed === undefined)
-    return usage(err);
-  const shell = parsed.values.shell ?? "zsh";
-  if (!isShell(shell)) {
-    return refuse3(err, [
-      `unknown shell "${String(shell)}": use ${SHELLS.join(" or ")}`
-    ]);
-  }
-  const issues = parsed.positionals.flatMap((name) => {
-    const refusal2 = aliasNameRefusal(name);
-    if (refusal2 !== undefined)
-      return [refusal2];
-    const loaded = load(name, penv);
-    return "issues" in loaded ? loaded.issues : [];
-  });
-  if (issues.length > 0)
-    return refuse3(err, issues);
-  out(withoutTrailingNewline(shellFunction(shell, parsed.positionals)));
-  return 0;
-};
-var switchProfile = (rest, penv, out, err) => {
-  const parsed = parseFlags(rest, { session: { type: "string" } });
-  if (parsed === undefined || parsed.positionals.length !== 1) {
-    return usage(err);
-  }
-  const [name] = parsed.positionals;
-  const flagged = parsed.values.session;
-  if (flagged === "") {
-    return refuse3(err, [
-      "--session is empty: pass a session id, or leave the flag out inside a session"
-    ]);
-  }
-  const sessionId = typeof flagged === "string" ? flagged : penv.env.CLAUDE_CODE_SESSION_ID;
-  if (sessionId === undefined || sessionId === "") {
-    return refuse3(err, [
-      "no session id: run switch inside a session, or pass --session <id>"
-    ]);
-  }
-  if (checkedLaunch(name, penv, err) === undefined)
-    return 1;
-  const folder = penv.workTree ?? penv.cwd;
-  const cd = `cd ${shellQuote(folder)}`;
-  out(`To switch this session to "${name}", type /exit, then run one of these.`);
-  out("Keep the conversation:");
-  out(`  ${cd} && skp ${name} --resume ${shellQuote(sessionId)}`);
-  out("Start fresh:");
-  out(`  ${cd} && skp ${name}`);
-  out(`After a resume, skills of plugins "${name}" turns off stay listed but fail when called.`);
-  return 0;
-};
-var VERBS = {
-  list,
-  show,
-  new: create,
-  argv,
-  launch,
-  alias,
-  switch: switchProfile
-};
-function runProfileCli(args, penv, out, err) {
-  const [name, ...rest] = args;
-  if (name === undefined || !Object.hasOwn(VERBS, name))
-    return usage(err);
-  return VERBS[name](rest, penv, out, err);
-}
-
-// bin/helpers/worker-record.ts
-import * as fs12 from "node:fs";
-import * as path12 from "node:path";
-var recordFields = {
-  name: WorkerNameSchema,
-  job: nullable(string()),
-  brief: string(),
-  dispatchedAt: string()
-};
-var RecordSchema = pipe(variant("version", [
-  strictObject({ version: literal(1), ...recordFields }),
-  strictObject({
-    version: literal(2),
-    main: nullable(string()),
-    ...recordFields
-  })
-]), transform((record2) => record2.version === 1 ? { ...record2, version: 2, main: null } : record2));
-var isWorkerName = (name) => is(WorkerNameSchema, name);
-function recordsDir(commonDir) {
-  return path12.join(commonDir, "sidekick", "workers");
-}
-var RECORD_SUFFIX = ".json";
-var fileFor = (commonDir, name) => path12.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
-function jobIdFrom(stdout, name) {
-  const lines = stdout.split(`
-`).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
-  for (const line of lines) {
-    const named = /^backgrounded · (\S+) · (.+)$/.exec(line);
-    if (named?.[2] === name)
-      return named[1];
-  }
-  if (lines.length !== 1)
-    return null;
-  return /^backgrounded (\S+)$/.exec(lines[0])?.[1] ?? null;
-}
-var reason5 = (e) => e instanceof Error ? e.message : String(e);
-function writeRecord(commonDir, record2) {
-  if (!isWorkerName(record2.name)) {
-    return { issue: `worker record not written: bad name "${record2.name}"` };
-  }
-  const file = fileFor(commonDir, record2.name);
-  try {
-    fs12.mkdirSync(recordsDir(commonDir), { recursive: true });
-    fs12.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
-`);
-    return { ok: true };
-  } catch (e) {
-    return { issue: `worker record ${file} not written: ${reason5(e)}` };
-  }
-}
-function parseRecord(file) {
-  try {
-    const parsed = safeParse(RecordSchema, JSON.parse(fs12.readFileSync(file, "utf-8")));
-    if (!parsed.success) {
-      return `${file} is not a worker record: ${parsed.issues[0].message}`;
-    }
-    const base = path12.basename(file, RECORD_SUFFIX);
-    if (parsed.output.name !== base) {
-      return `${file} holds the record of "${parsed.output.name}", not of "${base}"`;
-    }
-    return parsed.output;
-  } catch (e) {
-    return `${file} cannot be read as a worker record: ${reason5(e)}`;
-  }
-}
-function readRecords(commonDir) {
-  const dir = recordsDir(commonDir);
-  const records = [];
-  const warnings = [];
-  let files;
-  try {
-    files = fs12.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
-  } catch (e) {
-    if (e instanceof Error && "code" in e && e.code === "ENOENT") {
-      return { records, warnings };
-    }
-    return { records, warnings: [`${dir} cannot be listed: ${reason5(e)}`] };
-  }
-  for (const f of files) {
-    const read = parseRecord(path12.join(dir, f));
-    if (typeof read === "string")
-      warnings.push(read);
-    else
-      records.push(read);
-  }
-  return { records, warnings };
-}
-function removeRecord(commonDir, name) {
-  if (!isWorkerName(name))
-    return;
-  fs12.rmSync(fileFor(commonDir, name), { force: true });
-}
-
-// bin/helpers/desk.ts
-var DESK_USAGE_LINE = "sidekick desk --json [--self <session id>]";
-function parseDeskArgs(rest) {
-  const parsed = parseFlags(rest, {
-    json: { type: "boolean" },
-    self: { type: "string" }
-  });
-  if (parsed === undefined || parsed.positionals.length > 0)
-    return;
-  if (parsed.values.json !== true)
-    return;
-  const { self } = parsed.values;
-  return typeof self === "string" ? { self } : {};
-}
-function exitError(result) {
-  const failed = `${LISTING} failed with exit code ${result.code}`;
-  const printed2 = printedStreams(result).at(0);
-  return printed2 === undefined ? failed : `${failed}: ${printed2.split(`
-`)[0]}`;
-}
-function parseJson4(text) {
-  try {
-    return { value: JSON.parse(text) };
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return { error: `${LISTING} printed a listing that is not JSON: ${why}` };
-  }
-}
-function readListing(run, cwd, timeoutMs = 5000) {
-  const result = run(LISTING_ARGS, { cwd, timeoutMs });
-  if (result.timedOut)
-    return { error: `${LISTING} did not return in time` };
-  if (result.code !== 0)
-    return { error: exitError(result) };
-  const json = parseJson4(result.stdout);
-  if ("error" in json)
-    return json;
-  if (!Array.isArray(json.value)) {
-    return { error: `${LISTING} printed a listing that is not a JSON array` };
-  }
-  return parseListingRows(json.value);
-}
-var reason6 = (e) => e instanceof Error ? e.message : String(e);
-function pruneRecords(commonDir, names) {
-  return names.flatMap((name) => {
-    try {
-      removeRecord(commonDir, name);
-      return [];
-    } catch (e) {
-      return [`${name}: its stale record was not deleted: ${reason6(e)}`];
-    }
-  });
-}
-function readAndPruneChildren(denv, rows, find) {
-  const found = findRepo(denv.runGit, denv.cwd);
-  if (found.repo === undefined) {
-    return { records: [], facts: new Map, warnings: found.warnings };
-  }
-  const { repo } = found;
-  const sources = { runGit: denv.runGit, repo, find };
-  const read = readRecords(repo.commonDir);
-  const gathered = read.records.map((record2) => ({
-    record: record2,
-    ...childFacts(sources, record2, joinRow(record2, rows))
-  }));
-  const facts = new Map(gathered.map((g) => [g.record.name, g.facts]));
-  const stale = staleRecordNames(rows, read.records, facts);
-  const kept = gathered.filter((g) => !stale.includes(g.record.name));
-  return {
-    repo: path13.basename(repo.top),
-    records: kept.map((g) => g.record),
-    facts,
-    warnings: [
-      ...read.warnings,
-      ...kept.flatMap((g) => g.warnings),
-      ...pruneRecords(repo.commonDir, stale)
-    ]
-  };
-}
-var GIT_SUFFIX = ".git";
-function repoNameFor(runGit, cwd) {
-  const common = runGit("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
-  if (common.code !== 0)
-    return;
-  const commonDir = common.stdout.replace(/\n$/, "");
-  if (path13.basename(commonDir) === GIT_SUFFIX) {
-    return path13.basename(path13.dirname(commonDir));
-  }
-  const list2 = listWorktrees(runGit, cwd);
-  return "issue" in list2 ? undefined : path13.basename(list2.worktrees[0].path);
-}
-function repoNamesOf(runGit, rows) {
-  const cwds = new Set(rows.flatMap(({ cwd }) => cwd ?? []));
-  return new Map([...cwds].flatMap((cwd) => {
-    const name = repoNameFor(runGit, cwd);
-    return name === undefined ? [] : [[cwd, name]];
-  }));
-}
-function takeSnapshot(denv, self) {
-  const listing = readListing(denv.runClaude, denv.cwd);
-  if ("error" in listing) {
-    return { version: DESK_VERSION, ok: false, error: listing.error };
-  }
-  const { rows } = listing;
-  const transcripts = transcriptFinder(denv.configDir);
-  const children = readAndPruneChildren(denv, rows, transcripts.find);
-  return buildSnapshot({
-    rows,
-    readJobs: (drawn) => readJobStates(denv.configDir, drawn),
-    readAsked: (sessionId) => askedOf(sessionId, transcripts.find),
-    records: children.records,
-    facts: children.facts,
-    freshInteractive: freshSessions(rows, transcripts.find, denv.now()),
-    self,
-    repo: children.repo,
-    repoNames: repoNamesOf(denv.runGit, rows),
-    warnings: [
-      ...listing.warnings,
-      ...transcripts.warnings,
-      ...children.warnings
-    ]
-  });
-}
-function runDeskCli(rest, denv, out, err) {
-  const args = parseDeskArgs(rest);
-  if (args === undefined) {
-    err(`usage: ${DESK_USAGE_LINE}`);
-    return 1;
-  }
-  out(JSON.stringify(takeSnapshot(denv, args.self)));
-  return 0;
-}
-
-// bin/helpers/hook.ts
-import * as fs13 from "node:fs";
-import * as path14 from "node:path";
-var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)";
-function readContent(event) {
-  const response = event.tool_response;
-  if (!isRecord6(response) || !isRecord6(response.file))
-    return "";
-  return typeof response.file.content === "string" ? response.file.content : "";
-}
-var DESIGN_SKILL = path14.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path14.join("skills", "sk-execute", "SKILL.md");
-var PLAN_SECTIONS = [
-  "## A plan carries intent",
-  "## Before the plan goes out",
-  "## Choose the mode"
-];
-var CLEAN_CODE_RULE = path14.join("rules", "sk-clean-code.md");
-var COMMENTS_HEADING = "## Comments";
-var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
-var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
-var RELEASE_CHECK_PACKAGE = /(^|\/)\.superpowers\/sdd\/release-check-[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
-var isRecord6 = (v) => typeof v === "object" && v !== null;
-function isSkillHookInput(v) {
-  if (!isRecord6(v))
-    return false;
-  const input = v.tool_input;
-  return isRecord6(input) && typeof input.skill === "string";
-}
-function isReadHookInput(v) {
-  if (!isRecord6(v) || v.tool_name !== "Read")
-    return false;
-  const input = v.tool_input;
-  return isRecord6(input) && typeof input.file_path === "string";
-}
-function parseJson5(raw) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return;
-  }
-}
-function readText(file) {
-  try {
-    return fs13.readFileSync(file, "utf-8");
-  } catch {
-    return;
-  }
-}
-function readSkillDescription(skillFile) {
-  const text = readText(skillFile);
-  if (text === undefined)
-    return;
-  const lines = text.split(`
-`);
-  if (lines[0].trim() !== "---")
-    return;
-  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
-  if (close < 0)
-    return;
-  const match = lines.slice(1, close).map((line) => DESCRIPTION_LINE.exec(line)).find((m) => m !== null);
-  if (!match)
-    return;
-  const value = parseJson5(match[1]);
-  return typeof value === "string" ? value : undefined;
-}
-function readSection(file, heading) {
-  const text = readText(file);
-  if (text === undefined)
-    return;
-  const lines = text.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trimEnd() === heading);
-  if (start < 0)
-    return;
-  const rest = lines.slice(start + 1);
-  let fenced = false;
-  const next = rest.findIndex((line) => {
-    if (line.trimStart().startsWith("```"))
-      fenced = !fenced;
-    return !fenced && line.startsWith("## ");
-  });
-  const body = next < 0 ? rest : rest.slice(0, next);
-  return [lines[start], ...body].join(`
-`).trim();
-}
-function readRulePaths(file) {
-  const text = readText(file);
-  if (text === undefined)
-    return;
-  const lines = text.split(/\r?\n/);
-  if (lines[0].trim() !== "---")
-    return;
-  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
-  if (close < 0)
-    return;
-  const front = lines.slice(1, close);
-  const key = front.findIndex((line) => line.trimEnd() === "paths:");
-  if (key < 0)
-    return;
-  const globs = [];
-  for (const line of front.slice(key + 1)) {
-    const item = /^\s+-\s+["']?(.*?)["']?\s*$/.exec(line);
-    if (item === null)
-      break;
-    globs.push(item[1]);
-  }
-  return globs.length === 0 ? undefined : globs;
-}
-var EXT_GLOB = /^\*\*\/\*(\.[A-Za-z0-9]+)$/;
-var STAT_LINE = /^\s*(\S.*?)\s+\|\s+(?:\d+|Bin)\b/;
-var DIFF_HEADER = /^diff --git a\/(.+) b\//;
-function visiblePaths(content) {
-  const found = [];
-  for (const line of content.split(/\r?\n/)) {
-    const match = STAT_LINE.exec(line) ?? DIFF_HEADER.exec(line);
-    if (match !== null)
-      found.push(match[1]);
-  }
-  return found;
-}
-function ruleCoversPackage(rulePaths, content) {
-  if (rulePaths === undefined)
-    return true;
-  const exts = [];
-  for (const glob of rulePaths) {
-    const match = EXT_GLOB.exec(glob);
-    if (match === null)
-      return true;
-    exts.push(match[1]);
-  }
-  return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
-}
-function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path14.join(pluginDir, DESIGN_SKILL));
-  if (description === undefined)
-    return;
-  return [
-    "sidekick: before this brainstorm proposes approaches, check whether the change needs a design pass.",
-    `sidekick:sk-design: ${description}`,
-    "If it applies, run it now, or at the approaches step, which it then does itself.",
-    "If a design note for this change already exists, start from it."
-  ].join(" ");
-}
-var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
-function writingPlansNudge(pluginDir) {
-  const file = path14.join(pluginDir, EXECUTE_SKILL);
-  const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
-  const found = sections.flatMap((s) => s === undefined ? [] : [s]);
-  if (found.length < PLAN_SECTIONS.length)
-    return;
-  return [PLAN_LEAD, ...found].join(`
-
-`);
-}
-var NUDGES = new Map([
-  ["superpowers:brainstorming", brainstormNudge],
-  ["superpowers:writing-plans", writingPlansNudge]
-]);
-var READ_LEAD_LINE = "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
-var REPRODUCE_PARAGRAPH = "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a task reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
-var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Where superpowers limits you to risks you can name outside the diff, two kinds count here. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with `git grep`, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
-var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
-var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
-function commentsLines(pluginDir, packageText) {
-  const rule = path14.join(pluginDir, CLEAN_CODE_RULE);
-  const comments = readSection(rule, COMMENTS_HEADING);
-  if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
-    return [];
-  }
-  return [
-    "Hold the comments this diff adds to the house rule. Reading a diff does not load `sk-clean-code.md`, so its Comments section follows. Report each added comment that breaks it as a finding. Where this repo's own rules set a different comment convention, theirs win.",
-    comments
-  ];
-}
-function reviewerLines(pluginDir, packageText) {
-  return [
-    READ_LEAD_LINE,
-    REPRODUCE_PARAGRAPH,
-    CLAIMS_PARAGRAPH,
-    ...commentsLines(pluginDir, packageText)
-  ].join(`
-
-`);
-}
-function releaseReviewerLines(pluginDir, packageText) {
-  return [
-    RELEASE_LEAD_LINE,
-    RELEASE_CLAIMS_PARAGRAPH,
-    ...commentsLines(pluginDir, packageText)
-  ].join(`
-
-`);
-}
-function postSkillContext(stdin, env) {
-  const event = parseJson5(stdin);
-  if (!isSkillHookInput(event))
-    return {};
-  const nudge = NUDGES.get(event.tool_input.skill);
-  return { context: nudge?.(env.pluginDir) };
-}
-function postReadContext(stdin, env) {
-  const { pluginDir } = env;
-  const event = parseJson5(stdin);
-  if (!isReadHookInput(event))
-    return {};
-  const filePath = event.tool_input.file_path;
-  if (RELEASE_CHECK_PACKAGE.test(filePath)) {
-    return { context: releaseReviewerLines(pluginDir, readContent(event)) };
-  }
-  if (!REVIEW_PACKAGE.test(filePath))
-    return {};
-  return { context: reviewerLines(pluginDir, readContent(event)) };
-}
-var VERBS2 = new Map([
-  ["post-skill", { eventName: "PostToolUse", contextFor: postSkillContext }],
-  ["post-read", { eventName: "PostToolUse", contextFor: postReadContext }],
-  [
-    "post-tool-batch",
-    {
-      eventName: "PostToolBatch",
-      contextFor: (stdin, env) => postToolBatchContext(stdin, { env: env.env, tmpdir: env.tmpdir })
-    }
-  ]
-]);
-function runHookCli(args, env, out, err) {
-  const [verb] = args;
-  const entry = verb === undefined ? undefined : VERBS2.get(verb);
-  if (entry === undefined) {
-    err(`usage: ${HOOK_USAGE_LINE}`);
-    return 1;
-  }
-  const { context, notice } = entry.contextFor(env.readStdin(), env) ?? {};
-  if (context === undefined && notice === undefined)
-    return 0;
-  out(JSON.stringify({
-    ...context === undefined ? {} : {
-      hookSpecificOutput: {
-        hookEventName: entry.eventName,
-        additionalContext: context
-      }
-    },
-    ...notice === undefined ? {} : { systemMessage: notice }
-  }));
-  return 0;
-}
-
-// bin/helpers/memory.ts
-import * as path22 from "node:path";
-
-// bin/helpers/memory-link.ts
-import * as fs19 from "node:fs";
-import * as path21 from "node:path";
-
-// bin/helpers/memory-link-facts.ts
-import * as fs18 from "node:fs";
-import * as path20 from "node:path";
-
-// bin/helpers/memory-default.ts
-import * as fs14 from "node:fs";
-import * as path15 from "node:path";
-var MAX_KEY_LENGTH = 200;
-var WRITE_BITS = 146;
-function hashOf(text) {
-  let h = 0;
-  for (let i = 0;i < text.length; i++) {
-    h = (h << 5) - h + text.charCodeAt(i) | 0;
-  }
-  return h;
-}
-function projectKey(p) {
-  const key = p.replace(/[^a-zA-Z0-9]/g, "-");
-  if (key.length <= MAX_KEY_LENGTH)
-    return key;
-  return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
-}
-function defaultMemoryFolder(root, configDir) {
-  return path15.join(configDir, "projects", projectKey(root), "memory");
-}
-function overrideIssue(env) {
-  if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
-    return "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere";
-  }
-  if (env.CLAUDE_CODE_REMOTE_MEMORY_DIR !== undefined) {
-    return "CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere";
-  }
-  if (env.CLAUDE_CODE_PROJECT_DIR_NAME !== undefined && env.CLAUDE_CONFIG_DIR !== undefined) {
-    return "CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently";
-  }
-  return;
-}
-var ClaudeJson = object({ projects: record(string(), unknown()) });
-function knownRoot(root, claudeJson) {
-  try {
-    const parsed = safeParse(ClaudeJson, JSON.parse(fs14.readFileSync(claudeJson, "utf-8")));
-    return parsed.success && Object.hasOwn(parsed.output.projects, root);
-  } catch {
-    return false;
-  }
-}
-function legacyPreferred(legacy, current) {
-  try {
-    const stat = fs14.statSync(legacy);
-    if (!stat.isFile())
-      return false;
-    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs14.existsSync(current);
-  } catch {
-    return false;
-  }
-}
-function claudeJsonPath(env, home) {
-  const current = path15.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
-  const legacy = path15.join(configDirOf(env, home), ".config.json");
-  return legacyPreferred(legacy, current) ? legacy : current;
-}
-
-// bin/helpers/memory-link-plan.ts
-import * as path18 from "node:path";
-
 // bin/helpers/memory-settings.ts
-import * as fs15 from "node:fs";
-import * as path16 from "node:path";
 var SETTINGS_KEY = "autoMemoryDirectory";
-var SETTINGS_REL = path16.join(".claude", "settings.local.json");
+var SETTINGS_REL = path9.join(".claude", "settings.local.json");
 var SETTINGS_GIT_PATH = ".claude/settings.local.json";
 var KeySchema = optional(string());
 var isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-var messageOf2 = (error) => error instanceof Error ? error.message : String(error);
-var defaultOwned = (target) => fs15.statSync(target).uid === process.getuid?.();
+var messageOf = (error) => error instanceof Error ? error.message : String(error);
+var defaultOwned = (target) => fs8.statSync(target).uid === process.getuid?.();
 function mainCheckout(target, runGit, home, owned = defaultOwned) {
   const found = findRepo(runGit, target);
   if (found.repo === undefined) {
@@ -3768,18 +2298,18 @@ function mainCheckout(target, runGit, home, owned = defaultOwned) {
     return { issue: `${target} has no main checkout: ${why}` };
   }
   const { repo } = found;
-  if (path16.basename(repo.commonDir) !== ".git") {
+  if (path9.basename(repo.commonDir) !== ".git") {
     return {
       issue: `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout`
     };
   }
-  const root = fs15.realpathSync(repo.top);
+  const root = fs8.realpathSync(repo.top);
   if (root === physical(home)) {
     return {
       issue: `${root} is the home folder, which Claude Code does not treat as a repo root`
     };
   }
-  const unowned = [root, path16.join(root, ".git"), path16.join(root, ".claude")].filter((entry) => entry !== path16.join(root, ".claude") || fs15.existsSync(entry)).find((entry) => !owned(entry));
+  const unowned = [root, path9.join(root, ".git"), path9.join(root, ".claude")].filter((entry) => entry !== path9.join(root, ".claude") || fs8.existsSync(entry)).find((entry) => !owned(entry));
   if (unowned !== undefined) {
     return {
       issue: `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}`
@@ -3799,7 +2329,7 @@ function parseSettings(text, file) {
   } catch (error) {
     return {
       ok: false,
-      issue: `${file} is not valid JSON (${messageOf2(error)}); fix it by hand and run the command again`
+      issue: `${file} is not valid JSON (${messageOf(error)}); fix it by hand and run the command again`
     };
   }
   if (!isObject(parsed)) {
@@ -3817,14 +2347,14 @@ function parseSettings(text, file) {
   }
   return { ok: true, settings: parsed, key: key.output };
 }
-function readText2(file) {
+function readText(file) {
   try {
-    return { text: fs15.readFileSync(file, "utf-8") };
+    return { text: fs8.readFileSync(file, "utf-8") };
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       return { text: "" };
     }
-    return { issue: `${file} cannot be read: ${messageOf2(error)}` };
+    return { issue: `${file} cannot be read: ${messageOf(error)}` };
   }
 }
 function gitRefusal(root, runGit) {
@@ -3836,16 +2366,16 @@ function gitRefusal(root, runGit) {
   if (ignored.code === 0)
     return;
   if (ignored.code === 1) {
-    return `git does not ignore ${SETTINGS_GIT_PATH}, so a key written there would show up as a change. Add this line to ${shellQuote(path16.join(root, ".gitignore"))}: ${SETTINGS_GIT_PATH}`;
+    return `git does not ignore ${SETTINGS_GIT_PATH}, so a key written there would show up as a change. Add this line to ${shellQuote(path9.join(root, ".gitignore"))}: ${SETTINGS_GIT_PATH}`;
   }
   return `git check-ignore failed in ${root}: ${ignored.stderr.trim()}`;
 }
 function settingsState(root, runGit) {
-  const file = path16.join(root, SETTINGS_REL);
+  const file = path9.join(root, SETTINGS_REL);
   const refusal2 = gitRefusal(root, runGit);
   if (refusal2 !== undefined)
     return { kind: "refused", issue: refusal2 };
-  const read = readText2(file);
+  const read = readText(file);
   if ("issue" in read)
     return { kind: "refused", issue: read.issue };
   const parsed = parseSettings(read.text, file);
@@ -3869,14 +2399,14 @@ function ownKeyIssue(parsed, value, file) {
   return `${file} now holds ${SETTINGS_KEY} ${parsed.key}, not ${value}; sidekick writes only a key that is absent or already its own`;
 }
 function writeTemp(file, text) {
-  fs15.mkdirSync(path16.dirname(file), { recursive: true });
-  const temp = path16.join(path16.dirname(file), `.${path16.basename(file)}.${process.pid}.tmp`);
+  fs8.mkdirSync(path9.dirname(file), { recursive: true });
+  const temp = path9.join(path9.dirname(file), `.${path9.basename(file)}.${process.pid}.tmp`);
   try {
-    fs15.writeFileSync(temp, text, { flag: "wx" });
-    if (fs15.existsSync(file))
-      fs15.chmodSync(temp, fs15.statSync(file).mode & 511);
+    fs8.writeFileSync(temp, text, { flag: "wx" });
+    if (fs8.existsSync(file))
+      fs8.chmodSync(temp, fs8.statSync(file).mode & 511);
   } catch (error) {
-    fs15.rmSync(temp, { force: true });
+    fs8.rmSync(temp, { force: true });
     throw error;
   }
   return temp;
@@ -3889,7 +2419,7 @@ function mergeKey(file, value, expected, afterWrite = () => {}) {
     issue: `${file} changed while sidekick was writing it, twice; run the command again`
   });
   for (;; ) {
-    const read = readText2(file);
+    const read = readText(file);
     if ("issue" in read)
       return { ok: false, issue: read.issue };
     if (read.text !== base) {
@@ -3918,7 +2448,7 @@ function mergeKey(file, value, expected, afterWrite = () => {}) {
   }
 }
 function readNow(file) {
-  const read = readText2(file);
+  const read = readText(file);
   return "text" in read ? read.text : "";
 }
 function replaceIfUnchanged(file, text, base, afterWrite) {
@@ -3926,37 +2456,47 @@ function replaceIfUnchanged(file, text, base, afterWrite) {
   try {
     temp = writeTemp(file, text);
     afterWrite();
-    const again = readText2(file);
+    const again = readText(file);
     if ("issue" in again) {
-      fs15.rmSync(temp, { force: true });
+      fs8.rmSync(temp, { force: true });
       return { ok: false, issue: again.issue };
     }
     if (again.text !== base) {
-      fs15.rmSync(temp, { force: true });
+      fs8.rmSync(temp, { force: true });
       return "changed";
     }
-    fs15.renameSync(temp, file);
+    fs8.renameSync(temp, file);
     return "written";
   } catch (error) {
     if (temp !== undefined)
-      fs15.rmSync(temp, { force: true });
+      fs8.rmSync(temp, { force: true });
     return {
       ok: false,
-      issue: `${file} cannot be written: ${messageOf2(error)}`
+      issue: `${file} cannot be written: ${messageOf(error)}`
     };
   }
 }
+function readKey(target, runGit) {
+  const found = findRepo(runGit, target);
+  if (found.repo === undefined)
+    return;
+  const read = readText(path9.join(found.repo.top, SETTINGS_REL));
+  if ("issue" in read)
+    return;
+  const parsed = parseSettings(read.text, SETTINGS_REL);
+  return parsed.ok ? parsed.key : undefined;
+}
 
 // bin/helpers/memory-store.ts
-import * as fs16 from "node:fs";
-import * as path17 from "node:path";
+import * as fs9 from "node:fs";
+import * as path10 from "node:path";
 var RESERVED_NAMES = ["sources", "archive"];
 var MARKER_FILE = ".sidekick.json";
 var README_FILE = "README.md";
 var KEEP_FILE = ".gitkeep";
 function storeRoot(env, home) {
   const override = env.SIDEKICK_MEMORY_STORE;
-  return override !== undefined && override !== "" ? override : path17.join(home, "AI-Memory-Store");
+  return override !== undefined && override !== "" ? override : path10.join(home, "AI-Memory-Store");
 }
 function folderNameIssue(name) {
   if (name === "")
@@ -3973,11 +2513,11 @@ function folderNameIssue(name) {
 }
 var MarkerSchema = object({ root: string() });
 function readMarker(folder) {
-  const file = path17.join(folder, MARKER_FILE);
-  if (!fs16.existsSync(file))
+  const file = path10.join(folder, MARKER_FILE);
+  if (!fs9.existsSync(file))
     return { kind: "none" };
   try {
-    const parsed = safeParse(MarkerSchema, JSON.parse(fs16.readFileSync(file, "utf-8")));
+    const parsed = safeParse(MarkerSchema, JSON.parse(fs9.readFileSync(file, "utf-8")));
     if (parsed.success)
       return { kind: "marker", root: parsed.output.root };
     return { kind: "invalid", issue: `${file} must be {"root": "<path>"}` };
@@ -3988,12 +2528,12 @@ function readMarker(folder) {
 }
 function writeMarker(folder, root) {
   const marker = { root };
-  fs16.writeFileSync(path17.join(folder, MARKER_FILE), `${JSON.stringify(marker, null, 2)}
+  fs9.writeFileSync(path10.join(folder, MARKER_FILE), `${JSON.stringify(marker, null, 2)}
 `);
 }
 function children(folder) {
   try {
-    return fs16.readdirSync(folder, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name);
+    return fs9.readdirSync(folder, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name);
   } catch {
     return [];
   }
@@ -4004,13 +2544,13 @@ function markerRoot(folder) {
 }
 function findMarkers(store) {
   return children(store).flatMap((first) => {
-    const firstFolder = path17.join(store, first);
+    const firstFolder = path10.join(store, first);
     const own = markerRoot(firstFolder);
     if (own !== undefined) {
       return [{ folder: firstFolder, root: own, family: undefined }];
     }
     return children(firstFolder).flatMap((second) => {
-      const folder = path17.join(firstFolder, second);
+      const folder = path10.join(firstFolder, second);
       const root = markerRoot(folder);
       return root === undefined ? [] : [{ folder, root, family: first }];
     });
@@ -4018,9 +2558,9 @@ function findMarkers(store) {
 }
 function realPath(p) {
   try {
-    return fs16.realpathSync(p);
+    return fs9.realpathSync(p);
   } catch {
-    return path17.resolve(p);
+    return path10.resolve(p);
   }
 }
 function isWorkTreeTop(store, runGit) {
@@ -4028,14 +2568,14 @@ function isWorkTreeTop(store, runGit) {
   return top.code === 0 && realPath(top.stdout.trim()) === realPath(store);
 }
 function storeState(store, runGit) {
-  if (!fs16.existsSync(store))
+  if (!fs9.existsSync(store))
     return { kind: "absent" };
-  if (!fs16.statSync(store).isDirectory()) {
+  if (!fs9.statSync(store).isDirectory()) {
     return { kind: "foreign", issue: `${store} is a file, not a store folder` };
   }
-  if (fs16.readdirSync(store).length === 0)
+  if (fs9.readdirSync(store).length === 0)
     return { kind: "empty" };
-  if (isWorkTreeTop(store, runGit) && fs16.existsSync(path17.join(store, README_FILE))) {
+  if (isWorkTreeTop(store, runGit) && fs9.existsSync(path10.join(store, README_FILE))) {
     return { kind: "store" };
   }
   return {
@@ -4066,7 +2606,7 @@ function createStore(store, runGit) {
   if (state.kind === "store") {
     return { ok: false, issue: `${store} is already a store` };
   }
-  fs16.mkdirSync(store, { recursive: true });
+  fs9.mkdirSync(store, { recursive: true });
   const init = runGit("git", ["init"], store);
   if (init.code !== 0)
     return { ok: false, issue: gitIssue(["init"], init) };
@@ -4074,10 +2614,10 @@ function createStore(store, runGit) {
     README_FILE,
     ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`)
   ];
-  fs16.writeFileSync(path17.join(store, README_FILE), STORE_README);
+  fs9.writeFileSync(path10.join(store, README_FILE), STORE_README);
   for (const name of RESERVED_NAMES) {
-    fs16.mkdirSync(path17.join(store, name), { recursive: true });
-    fs16.writeFileSync(path17.join(store, name, KEEP_FILE), "");
+    fs9.mkdirSync(path10.join(store, name), { recursive: true });
+    fs9.writeFileSync(path10.join(store, name, KEEP_FILE), "");
   }
   const committed = commitPaths(store, paths, "chore: create the memory store", runGit);
   return committed.ok ? { ok: true, paths } : committed;
@@ -4121,757 +2661,8 @@ Leave \`archive/\` out of searches. It holds retired memory that no longer descr
 The user-level rule \`sk-memory.md\` says what a session writes here and what it only reads.
 `;
 
-// bin/helpers/memory-link-plan.ts
-var ARCHIVE_DIR = "archive/default-folders";
-function planLink(facts, opts) {
-  const refusals = refusalsOf(facts, opts);
-  const ready = readyOf(facts);
-  if (refusals.length > 0 || ready === undefined) {
-    return { kind: "refused", refusals };
-  }
-  const actions = actionsOf(ready, facts);
-  return {
-    kind: "ready",
-    root: ready.repo.root,
-    target: ready.target.folder,
-    actions,
-    notes: notesOf(ready, facts, actions)
-  };
-}
-function readyOf(facts) {
-  const { repo } = facts;
-  if (facts.storeState.kind === "foreign" || repo.kind === "refused") {
-    return;
-  }
-  const { settings, target } = repo;
-  if (settings.kind !== "ready" || target === undefined)
-    return;
-  if ("issue" in target.pending)
-    return;
-  return { repo, settings, target, pending: target.pending.paths };
-}
-function linkCommand(root, names, extra = "") {
-  const flags = [
-    names.family === undefined ? "" : ` --family ${shellArg(names.family)}`,
-    names.name === undefined ? "" : ` --name ${shellArg(names.name)}`,
-    extra === "" ? "" : ` ${extra}`
-  ];
-  return `sidekick memory link ${shellArg(root)}${flags.join("")}`;
-}
-function isFirstLink(repo) {
-  const { settings, target } = repo;
-  const keyInPlace = settings.kind === "ready" && target !== undefined && settings.key === target.folder;
-  return !keyInPlace;
-}
-function strands(repo) {
-  return isFirstLink(repo) || repo.defaultFolder.kind === "present";
-}
-function refusalsOf(facts, opts) {
-  const { repo } = facts;
-  return [
-    ...storeRefusals(facts.storeState),
-    ...facts.overrideIssue === undefined ? [] : [`${facts.overrideIssue}. Unset it and run link again.`],
-    ...facts.nameIssues.map((issue) => `${issue}; choose another with --family or --name.`),
-    ...repo.kind === "refused" ? [repo.issue] : repoRefusals(repo, opts)
-  ];
-}
-function storeRefusals(state) {
-  if (state.kind !== "foreign")
-    return [];
-  return [
-    `${state.issue}. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`
-  ];
-}
-function repoRefusals(repo, opts) {
-  return [
-    ...settingsRefusals(repo),
-    ...keyMissedRefusals(repo),
-    ...defaultFolderRefusals(repo),
-    ...sessionRefusals(repo, opts),
-    ...repo.target === undefined ? [] : targetRefusals(repo.target, repo.root)
-  ];
-}
-function settingsRefusals(repo) {
-  const { settings, target } = repo;
-  if (settings.kind === "refused")
-    return [settings.issue];
-  const ownOrAbsent = settings.key === undefined || settings.key === target?.folder;
-  if (ownOrAbsent || target === undefined)
-    return [];
-  return [
-    `${settings.file} already sets ${SETTINGS_KEY} to ${settings.key}, not ${target.folder}, and sidekick changes only a key it wrote. If that folder is in the store, run link with the --family and --name that name it. Otherwise remove the entry by hand, as the store's README says under Changes by hand.`
-  ];
-}
-function keyMissedRefusals(repo) {
-  if (repo.keyMissed === undefined)
-    return [];
-  const { claudeJson, projectFolder } = repo.keyMissed;
-  return [
-    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path18.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`
-  ];
-}
-function defaultFolderRefusals(repo) {
-  const { defaultFolder } = repo;
-  if (defaultFolder.kind === "absent")
-    return [];
-  if (!isFirstLink(repo))
-    return defaultFolder.issues;
-  const forged = defaultFolder.files.some((f) => f.rel === MARKER_FILE) ? [
-    `${path18.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
-  ] : [];
-  const into = repo.target?.folder;
-  const conflicts = into === undefined ? [] : defaultFolder.files.flatMap((f) => copyRefusals(defaultFolder.folder, into, f));
-  return [...defaultFolder.issues, ...forged, ...conflicts];
-}
-function copyRefusals(from, into, file) {
-  if (file.rel === MARKER_FILE)
-    return [];
-  const source = path18.join(from, file.rel);
-  const copy = path18.join(into, file.rel);
-  if (file.copy === "differs") {
-    return [
-      `${source} differs from ${copy}, which is already in the store. Merge the two by hand into the store copy, then run link again.`
-    ];
-  }
-  if (file.copy === "notFile") {
-    return [
-      `${copy} is in the way of ${source}, since it is not a file. Move it by hand and run link again.`
-    ];
-  }
-  return [];
-}
-var describeJob = (job) => `${job.name ?? job.sessionId ?? job.id ?? "a session"} in ${job.cwd ?? "an unknown folder"}`;
-function sessionRefusals(repo, opts) {
-  if (opts.force || !strands(repo))
-    return [];
-  const retry = linkCommand(repo.root, opts, "--force");
-  const { sessions } = repo;
-  if (sessions.kind === "failed") {
-    return [
-      `link cannot tell whether another session is open in the repo: ${sessions.issues.join(" ")} Fix the listing, or run again with --force: ${retry}`
-    ];
-  }
-  if (sessions.others.length === 0)
-    return [];
-  return [
-    `Other sessions are open in the repo: ${sessions.others.map(describeJob).join("; ")}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`
-  ];
-}
-function targetRefusals(target, root) {
-  return [
-    ...targetStateRefusals(target, root),
-    ...familyRefusals(target),
-    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path18.basename(found.folder) })}`),
-    ..."issue" in target.pending ? [
-      `${target.pending.issue}. Fix the store's git repo, then run link again.`
-    ] : []
-  ];
-}
-function targetStateRefusals(target, root) {
-  const { folder, state } = target;
-  switch (state.kind) {
-    case "absent":
-    case "empty":
-      return [];
-    case "notFolder":
-      return [
-        `${folder} is a file, not a folder. Choose another folder name with --name.`
-      ];
-    case "unmarked":
-      return [
-        `${folder} holds files but no ${MARKER_FILE}, so link did not make it for this repo, and it may be a family folder. Choose another folder name with --name.`
-      ];
-    case "invalidMarker":
-      return [`${state.issue}. Fix or remove it by hand, then run link again.`];
-    case "marked":
-      return state.root === root ? [] : [
-        `${folder} belongs to ${state.root}, as its ${MARKER_FILE} says. Choose another folder name with --name.`
-      ];
-    default: {
-      const unhandled = state;
-      throw new Error(`Unhandled target state: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function familyRefusals(target) {
-  const { family } = target;
-  const folder = path18.dirname(target.folder);
-  if (family === "marked") {
-    return [
-      `${folder} holds a ${MARKER_FILE}, so it is a repo folder, not a family. Choose another family with --family.`
-    ];
-  }
-  if (family === "notFolder") {
-    return [
-      `${folder} is a file, not a family folder. Choose another family with --family.`
-    ];
-  }
-  return [];
-}
-var COMMITTED_KINDS = new Set([
-  "writeMarker",
-  "copyFile",
-  "archiveDefault"
-]);
-function actionsOf(ready, facts) {
-  const first = isFirstLink(ready.repo);
-  const steps = [
-    ...storeActions(facts),
-    ...folderActions(ready),
-    ...first ? copyActions(ready) : [],
-    ...first ? [mergeAction(ready)] : [],
-    ...archiveActions(ready, facts, first)
-  ];
-  const writesStore = steps.some((step) => COMMITTED_KINDS.has(step.kind)) || ready.pending.length > 0;
-  return writesStore ? [...steps, commitAction(ready, facts.store)] : steps;
-}
-function storeActions(facts) {
-  const { kind } = facts.storeState;
-  const creates = kind === "absent" || kind === "empty";
-  return creates ? [{ kind: "createStore", store: facts.store }] : [];
-}
-function folderActions(ready) {
-  const { folder, state } = ready.target;
-  const marker = {
-    kind: "writeMarker",
-    folder,
-    root: ready.repo.root
-  };
-  if (state.kind === "absent") {
-    return [{ kind: "createFolder", folder }, marker];
-  }
-  return state.kind === "empty" ? [marker] : [];
-}
-function copyActions(ready) {
-  const { defaultFolder } = ready.repo;
-  if (defaultFolder.kind === "absent")
-    return [];
-  return defaultFolder.files.filter((f) => f.copy === "absent" && f.rel !== MARKER_FILE).map((f) => ({
-    kind: "copyFile",
-    from: path18.join(defaultFolder.folder, f.rel),
-    to: path18.join(ready.target.folder, f.rel)
-  }));
-}
-function mergeAction(ready) {
-  return {
-    kind: "mergeKey",
-    file: ready.settings.file,
-    value: ready.target.folder,
-    expected: ready.settings.text
-  };
-}
-function archiveActions(ready, facts, first) {
-  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
-  if (defaultFolder.kind === "absent")
-    return [];
-  const name = archiveName(projectKey2, facts.today, ready.target.archives);
-  return [
-    {
-      kind: "archiveDefault",
-      from: defaultFolder.folder,
-      to: path18.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
-      copies: ready.target.folder,
-      reappeared: !first
-    }
-  ];
-}
-function archiveName(key, today, taken) {
-  const base = `${key}-${today}`;
-  if (!taken.includes(base))
-    return base;
-  let n = 2;
-  while (taken.includes(`${base}-${n}`))
-    n += 1;
-  return `${base}-${n}`;
-}
-function commitAction(ready, store) {
-  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
-  const owned = {
-    folderRel: ready.target.rel,
-    projectKey: projectKey2,
-    defaultFolder: defaultFolder.folder
-  };
-  return {
-    kind: "commit",
-    store,
-    message: `link ${ready.target.rel}`,
-    owned
-  };
-}
-function notesOf(ready, facts, actions) {
-  const { defaultFolder } = ready.repo;
-  const moves = actions.some((a) => a.kind === "mergeKey" || a.kind === "archiveDefault");
-  const noDefault = isFirstLink(ready.repo) && defaultFolder.kind === "absent" ? [
-    `No default memory folder at ${defaultFolder.folder}: nothing to copy or archive.`
-  ] : [];
-  return [
-    ...noDefault,
-    ...moves ? sessionNotes(ready.repo.sessions, defaultFolder.folder) : [],
-    ...userSettingsNotes(facts)
-  ];
-}
-function sessionNotes(sessions, folder) {
-  if (sessions.kind === "failed") {
-    return [
-      `The check for other open sessions did not run: ${sessions.issues.join(" ")} Any session open in the repo keeps writing to ${folder} until it restarts.`
-    ];
-  }
-  const forced = sessions.others.map((job) => `Passed over with --force: ${describeJob(job)}. It keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`);
-  const self = sessions.self === undefined ? [] : [
-    `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`
-  ];
-  return [...forced, ...self];
-}
-function userSettingsNotes(facts) {
-  const { file, covered } = facts.userSettings;
-  if (covered)
-    return [];
-  return [
-    `No permissions.additionalDirectories entry in ${file} covers the store. link never writes that file, so add this entry to that list by hand: ${JSON.stringify(facts.store)}`
-  ];
-}
-
-// bin/helpers/memory-sessions.ts
-import * as fs17 from "node:fs";
-import * as path19 from "node:path";
-function realOrResolved(p) {
-  try {
-    return fs17.realpathSync(p);
-  } catch {
-    return path19.resolve(p);
-  }
-}
-function isInside(dir, checkout) {
-  const rel = path19.relative(checkout, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path19.sep}`) || path19.isAbsolute(rel));
-}
-function sessionsInRepo(jobs, checkouts, selfId) {
-  const roots = checkouts.map(realOrResolved);
-  const inRepo = jobs.filter((j) => j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
-  const hasSelf = selfId !== undefined && selfId !== "";
-  const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
-  return { self, others: inRepo.filter((j) => j !== self) };
-}
-
-// bin/helpers/memory-link-facts.ts
-function gatherFacts(opts, deps) {
-  const store = path20.resolve(storeRoot(deps.env, deps.home));
-  const state = storeState(store, deps.runGit);
-  const found = mainCheckout(path20.resolve(opts.repo), deps.runGit, deps.home);
-  const name = opts.name ?? ("root" in found ? path20.basename(found.root) : undefined);
-  const nameIssues = [opts.family, name].flatMap((n) => {
-    const issue = n === undefined ? undefined : folderNameIssue(n);
-    return issue === undefined ? [] : [issue];
-  });
-  const repo = "issue" in found ? { kind: "refused", issue: found.issue } : repoFacts({
-    ...found,
-    store,
-    state,
-    family: opts.family,
-    name: name ?? path20.basename(found.root),
-    namesOk: nameIssues.length === 0,
-    deps
-  });
-  return {
-    store,
-    storeState: state,
-    overrideIssue: overrideIssue(deps.env),
-    nameIssues,
-    repo,
-    userSettings: userSettingsFacts(deps.configDir, store, deps.home),
-    today: deps.today()
-  };
-}
-function repoFacts(input) {
-  const { root, deps } = input;
-  const settings = settingsState(root, deps.runGit);
-  const key = projectKey(root);
-  const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
-  const folder = path20.join(input.store, ...rel.split("/"));
-  const knowsFolder = input.namesOk && input.state.kind !== "foreign";
-  const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
-  const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
-  return {
-    kind: "found",
-    root,
-    settings,
-    projectKey: key,
-    keyMissed: keyMissed(root, key, deps),
-    defaultFolder,
-    sessions: sessionFacts(input),
-    target
-  };
-}
-function keyMissed(root, key, deps) {
-  const claudeJson = claudeJsonPath(deps.env, deps.home);
-  const projectFolder = path20.join(deps.configDir, "projects", key);
-  const missed = knownRoot(root, claudeJson) && !fs18.existsSync(projectFolder);
-  return missed ? { claudeJson, projectFolder } : undefined;
-}
-function sessionFacts(input) {
-  const listed = listJobs(input.deps.runClaude, input.root);
-  if ("issues" in listed)
-    return { kind: "failed", issues: listed.issues };
-  const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
-  return {
-    kind: "listed",
-    ...sessionsInRepo(listed.jobs, input.checkouts, selfId)
-  };
-}
-function targetFacts(input) {
-  const { store, folder, rel, key, defaultFolder } = input;
-  const owned = {
-    folderRel: rel,
-    projectKey: key,
-    defaultFolder: defaultFolder.folder
-  };
-  return {
-    folder,
-    rel,
-    state: targetState(folder),
-    family: input.family === undefined ? "none" : familyState(path20.join(store, input.family)),
-    elsewhere: findMarkers(store).filter((m) => m.root === input.root && m.folder !== folder).map((m) => ({ folder: m.folder, family: m.family })),
-    archives: archiveNames(store),
-    pending: input.state.kind === "store" ? ownedChanges(store, owned, input.deps.runGit) : { paths: [] }
-  };
-}
-function targetState(folder) {
-  const stat = fs18.statSync(folder, { throwIfNoEntry: false });
-  if (stat === undefined)
-    return { kind: "absent" };
-  if (!stat.isDirectory())
-    return { kind: "notFolder" };
-  const marker = readMarker(folder);
-  if (marker.kind === "marker")
-    return { kind: "marked", root: marker.root };
-  if (marker.kind === "invalid") {
-    return { kind: "invalidMarker", issue: marker.issue };
-  }
-  return fs18.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
-}
-function familyState(folder) {
-  const stat = fs18.statSync(folder, { throwIfNoEntry: false });
-  if (stat === undefined)
-    return "absent";
-  if (!stat.isDirectory())
-    return "notFolder";
-  return readMarker(folder).kind === "none" ? "folder" : "marked";
-}
-function archiveNames(store) {
-  const folder = path20.join(store, ...ARCHIVE_DIR.split("/"));
-  return fs18.existsSync(folder) ? fs18.readdirSync(folder) : [];
-}
-function isInside2(dir, parent) {
-  const rel = path20.relative(parent, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path20.sep}`) || path20.isAbsolute(rel));
-}
-function walkFolder(root) {
-  const entries = entriesOf2(fs18.realpathSync(root), root, "");
-  return {
-    files: entries.flatMap((e) => ("file" in e) ? [e.file] : []),
-    issues: entries.flatMap((e) => ("issue" in e) ? [e.issue] : [])
-  };
-}
-function entriesOf2(real, root, rel) {
-  return fs18.readdirSync(path20.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
-    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
-    if (entry.isDirectory())
-      return entriesOf2(real, root, child);
-    if (entry.isFile())
-      return [{ file: child }];
-    if (entry.isSymbolicLink())
-      return [linkEntry(real, root, child)];
-    return [
-      {
-        issue: `${path20.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
-      }
-    ];
-  });
-}
-function linkEntry(real, root, child) {
-  const full = path20.join(root, child);
-  const way = "Replace it with the file itself, or remove it, then run link again.";
-  try {
-    const named = fs18.realpathSync(full);
-    if (isInside2(named, real) && fs18.statSync(named).isFile()) {
-      return { file: child };
-    }
-    return {
-      issue: `${full} is a link to ${named}, which is not a file inside the default folder. ${way}`
-    };
-  } catch {
-    return { issue: `${full} is a broken link. ${way}` };
-  }
-}
-function readDefaultFolder(folder, target) {
-  const stat = fs18.lstatSync(folder, { throwIfNoEntry: false });
-  if (stat === undefined)
-    return { kind: "absent", folder };
-  if (!stat.isDirectory()) {
-    const issue = `${folder} is not a folder, so link cannot copy it. Move it aside by hand, then run link again.`;
-    return { kind: "present", folder, files: [], issues: [issue] };
-  }
-  const walked = walkFolder(folder);
-  const files = walked.files.map((rel) => ({
-    rel,
-    copy: target === undefined ? "absent" : copyState(path20.join(folder, rel), path20.join(target, rel))
-  }));
-  return { kind: "present", folder, files, issues: walked.issues };
-}
-function copyState(from, to) {
-  try {
-    if (!fs18.statSync(to).isFile())
-      return "notFile";
-  } catch (error) {
-    const absent = error instanceof Error && "code" in error && error.code === "ENOENT";
-    return absent ? "absent" : "notFile";
-  }
-  return fs18.readFileSync(from).equals(fs18.readFileSync(to)) ? "same" : "differs";
-}
-function ownedChanges(store, owned, runGit) {
-  const args = [
-    "--no-optional-locks",
-    "--literal-pathspecs",
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-    "--",
-    owned.folderRel,
-    ARCHIVE_DIR
-  ];
-  const r = runGit("git", args, store);
-  if (r.code !== 0) {
-    return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
-  }
-  const sources = [
-    owned.defaultFolder,
-    ...ownArchives(store, owned.projectKey)
-  ];
-  const isOwned = (p) => fs18.existsSync(path20.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
-  return { paths: porcelainPaths(r.stdout).filter(isOwned) };
-}
-function isOwnCopy(store, folderRel, sources, p) {
-  const prefix = `${folderRel}/`;
-  if (!p.startsWith(prefix))
-    return false;
-  const rel = p.slice(prefix.length);
-  if (rel === MARKER_FILE)
-    return true;
-  const file = path20.join(store, p);
-  return sources.some((source) => sameBytes(path20.join(source, rel), file));
-}
-function sameBytes(a, b) {
-  try {
-    const bothFiles = fs18.statSync(a).isFile() && fs18.statSync(b).isFile();
-    return bothFiles && fs18.readFileSync(a).equals(fs18.readFileSync(b));
-  } catch {
-    return false;
-  }
-}
-function ownArchives(store, key) {
-  const parent = path20.join(store, ...ARCHIVE_DIR.split("/"));
-  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path20.join(parent, name));
-}
-function porcelainPaths(output) {
-  const fields = output.split("\x00").filter((field) => field !== "");
-  const paths = [];
-  for (let i = 0;i < fields.length; i++) {
-    const status = fields[i].slice(0, 2);
-    paths.push(fields[i].slice(3));
-    if (status.includes("R") || status.includes("C"))
-      i++;
-  }
-  return paths;
-}
-var ARCHIVE_DATE = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
-var isOwnArchiveName = (entry, key) => entry.startsWith(`${key}-`) && ARCHIVE_DATE.test(entry.slice(key.length + 1));
-function isOwnArchivePath(p, key) {
-  const prefix = `${ARCHIVE_DIR}/`;
-  if (!p.startsWith(prefix))
-    return false;
-  const [entry] = p.slice(prefix.length).split("/");
-  return isOwnArchiveName(entry, key);
-}
-var UserSettingsSchema = object({
-  permissions: optional(object({
-    additionalDirectories: optional(array(string()), [])
-  }), { additionalDirectories: [] })
-});
-function additionalDirectories(file) {
-  try {
-    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs18.readFileSync(file, "utf-8")));
-    return parsed.success ? parsed.output.permissions.additionalDirectories : [];
-  } catch {
-    return [];
-  }
-}
-var expandHome = (entry, home) => entry === "~" || entry.startsWith("~/") ? path20.join(home, entry.slice(1)) : entry;
-function userSettingsFacts(configDir, store, home) {
-  const file = path20.join(configDir, "settings.json");
-  const covered = additionalDirectories(file).some((entry) => {
-    const dir = path20.resolve(expandHome(entry, home));
-    return isInside2(store, dir) || isInside2(physical(store), physical(dir));
-  });
-  return { file, covered };
-}
-
-// bin/helpers/memory-link.ts
-var messageOf3 = (error) => error instanceof Error ? error.message : String(error);
-function runLink(opts, deps, out, err) {
-  const gathered = gather(opts, deps);
-  if ("issue" in gathered) {
-    err(`link could not read what it needs, and wrote nothing: ${gathered.issue}`);
-    return 1;
-  }
-  const plan = planLink(gathered.facts, opts);
-  if (plan.kind === "refused") {
-    err("link refused, and wrote nothing:");
-    for (const refusal2 of plan.refusals)
-      err(`- ${refusal2}`);
-    return 1;
-  }
-  if (plan.actions.length === 0) {
-    out(`${plan.root} is already linked to ${plan.target}.`);
-  } else if (opts.dryRun) {
-    out("Dry run: link writes nothing. These are the steps it would take:");
-    for (const action of plan.actions)
-      out(phrase(action).todo);
-  } else if (!applyAll(plan.actions, deps.runGit, out, err)) {
-    return 1;
-  }
-  for (const note of plan.notes)
-    out(note);
-  return 0;
-}
-function gather(opts, deps) {
-  try {
-    return { facts: gatherFacts(opts, deps) };
-  } catch (error) {
-    return { issue: messageOf3(error) };
-  }
-}
-function applyAll(actions, runGit, out, err) {
-  for (const action of actions) {
-    const applied = applyAction(action, runGit);
-    if (!applied.ok) {
-      err(`link stopped before it could ${phrase(action).step}: ${applied.issue}`);
-      err("Fix that, then run the same command again; it skips each step already done.");
-      return false;
-    }
-    for (const line of applied.lines)
-      out(line);
-  }
-  return true;
-}
-function applyAction(action, runGit) {
-  try {
-    return runAction(action, runGit);
-  } catch (error) {
-    return { ok: false, issue: messageOf3(error) };
-  }
-}
-function runAction(action, runGit) {
-  const done = { ok: true, lines: [phrase(action).done] };
-  switch (action.kind) {
-    case "createStore": {
-      const created = createStore(action.store, runGit);
-      return created.ok ? done : created;
-    }
-    case "createFolder":
-      fs19.mkdirSync(action.folder, { recursive: true });
-      return done;
-    case "writeMarker":
-      writeMarker(action.folder, action.root);
-      return done;
-    case "copyFile":
-      fs19.mkdirSync(path21.dirname(action.to), { recursive: true });
-      fs19.copyFileSync(action.from, action.to, fs19.constants.COPYFILE_EXCL);
-      return done;
-    case "mergeKey": {
-      const merged = mergeKey(action.file, action.value, action.expected);
-      return merged.ok ? done : merged;
-    }
-    case "archiveDefault":
-      return archive(action);
-    case "commit":
-      return commit(action, runGit);
-    default: {
-      const unhandled = action;
-      throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function archive(action) {
-  const kept = walkFolder(action.from).files.filter((rel) => copyState(path21.join(action.from, rel), path21.join(action.copies, rel)) !== "same");
-  moveFolder(action.from, action.to);
-  const listed = kept.map((rel) => `  ${path21.join(action.to, rel)}`);
-  if (kept.length === 0)
-    return { ok: true, lines: [phrase(action).done] };
-  const why = action.reappeared ? `The default folder came back after the link. These files in it differ from ${action.copies} or are missing there, so merge what is new by hand:` : `These files changed after the copy, so their latest version is kept in the archive only:`;
-  return { ok: true, lines: [phrase(action).done, why, ...listed] };
-}
-function moveFolder(from, to, rename = fs19.renameSync) {
-  fs19.mkdirSync(path21.dirname(to), { recursive: true });
-  try {
-    rename(from, to);
-  } catch (error) {
-    const crossDevice = error instanceof Error && "code" in error && error.code === "EXDEV";
-    if (!crossDevice)
-      throw error;
-    fs19.cpSync(from, to, {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-      verbatimSymlinks: true,
-      preserveTimestamps: true
-    });
-    fs19.rmSync(from, { recursive: true });
-  }
-}
-function commit(action, runGit) {
-  const changes = ownedChanges(action.store, action.owned, runGit);
-  if ("issue" in changes)
-    return { ok: false, issue: changes.issue };
-  if (changes.paths.length === 0) {
-    return {
-      ok: true,
-      lines: ["The store holds nothing of link's left to commit."]
-    };
-  }
-  const committed = commitPaths(action.store, changes.paths, action.message, runGit);
-  return committed.ok ? { ok: true, lines: [phrase(action).done] } : committed;
-}
-function phrase(action) {
-  const forms = (done, todo, rest) => ({
-    done: `${done} ${rest}`,
-    todo: `Would ${todo} ${rest}`,
-    step: `${todo} ${rest}`
-  });
-  switch (action.kind) {
-    case "createStore":
-      return forms("Created", "create", `the store at ${action.store}`);
-    case "createFolder":
-      return forms("Created", "create", action.folder);
-    case "writeMarker":
-      return forms("Wrote", "write", `${path21.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
-    case "copyFile":
-      return forms("Copied", "copy", `${action.from} to ${action.to}`);
-    case "mergeKey":
-      return forms("Set", "set", `${SETTINGS_KEY} to ${action.value} in ${action.file}`);
-    case "archiveDefault":
-      return forms("Moved", "move", `${action.from} to ${action.to}`);
-    case "commit":
-      return forms("Committed", "commit", `link's paths in the store as "${action.message}"`);
-    default: {
-      const unhandled = action;
-      throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-
 // bin/helpers/pm-data.ts
-import { spawnSync as spawnSync2 } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 // plugin/hooks/board/contract.ts
 var GLANCE_VERSION = 2;
@@ -4902,9 +2693,9 @@ function locate(description) {
     prose: lines.slice(close + 1)
   };
 }
-var malformed = (reason7) => ({
+var malformed = (reason5) => ({
   parse: "malformed",
-  reason: oneLine(reason7)
+  reason: oneLine(reason5)
 });
 function duplicate(plans) {
   const names = plans.map((p) => p.name);
@@ -4942,8 +2733,8 @@ function parsePlansHeader(description) {
   }
   if (plans.length === 0)
     return malformed("the plans header lists no plans");
-  const reason7 = duplicate(plans);
-  return reason7 === null ? { parse: "ok", plans } : malformed(reason7);
+  const reason5 = duplicate(plans);
+  return reason5 === null ? { parse: "ok", plans } : malformed(reason5);
 }
 function descriptionProse(description) {
   const found = locate(description);
@@ -4986,14 +2777,14 @@ function planView(ms, items) {
   };
   const issues = c.plans.map((p) => p.issues.map(issueOf));
   const nextAt = issues.findIndex(startable);
-  const list2 = c.plans.map((p, k) => ({
+  const list = c.plans.map((p, k) => ({
     name: p.name,
     state: stateOf2(issues[k], k === nextAt),
     issues: issues[k]
   }));
   const planned = new Set(c.plans.flatMap((p) => p.issues));
   const unplanned = items.filter((i) => i.state === "OPEN" && i.milestone === ms.title && !planned.has(i.number)).sort((a, b) => a.number - b.number).map((i) => ({ number: i.number, title: i.title }));
-  return { parse: "ok", list: list2, unplanned };
+  return { parse: "ok", list, unplanned };
 }
 
 // bin/helpers/pm-view.ts
@@ -5006,14 +2797,14 @@ function firstSentence(text) {
   const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
   return m ? m[1] : t;
 }
-var titles = (list2) => list2.map((m) => cut(m.title)).join(", ");
+var titles = (list) => list.map((m) => cut(m.title)).join(", ");
 function parsedPlans(p) {
   if (p.plans === null || p.plans.parse !== "ok")
     return null;
   return { list: p.plans.list, unplanned: p.plans.unplanned };
 }
 var openRefs = (plan) => plan.issues.filter((i) => i.open).map((i) => `#${i.number}`).join(", ");
-var plannedNumbers = (list2) => new Set(list2.flatMap((pl) => pl.issues.map((i) => i.number)));
+var plannedNumbers = (list) => new Set(list.flatMap((pl) => pl.issues.map((i) => i.number)));
 function continueMove(cards, plans) {
   const lowest = Math.min(...cards.map((i) => i.number));
   const plan = plans === null ? undefined : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
@@ -5189,7 +2980,7 @@ function glanceState(input) {
 
 // bin/helpers/pm-data.ts
 var execRunner = (cmd, args, cwd) => {
-  const r = spawnSync2(cmd, args, {
+  const r = spawnSync(cmd, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -5503,11 +3294,11 @@ var CliIssues = array(object({
   updatedAt: string()
 }));
 function parseIssues(json) {
-  const list2 = checked(CliIssues, JSON.parse(json), "issue list");
-  if (list2.length >= ISSUE_LIMIT) {
-    throw new PmError(1, `gh issue list returned ${list2.length} issues, the limit; refusing to reason over a truncated list`);
+  const list = checked(CliIssues, JSON.parse(json), "issue list");
+  if (list.length >= ISSUE_LIMIT) {
+    throw new PmError(1, `gh issue list returned ${list.length} issues, the limit; refusing to reason over a truncated list`);
   }
-  return list2.map((i) => ({
+  return list.map((i) => ({
     number: i.number,
     title: i.title,
     labels: i.labels.map((l) => l.name),
@@ -5559,6 +3350,2248 @@ function fetchStatusUpdates(run, cwd, projectId) {
   }
 }
 
+// bin/helpers/profile-launch.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+import * as fs10 from "node:fs";
+import * as path11 from "node:path";
+var isPlainObject = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var uniqueByValue = (items) => items.filter((item, i) => items.findIndex((o) => JSON.stringify(o) === JSON.stringify(item)) === i);
+function mergeValue(prev, next) {
+  if (isPlainObject(prev) && isPlainObject(next))
+    return mergeTwo(prev, next);
+  if (Array.isArray(prev) && Array.isArray(next)) {
+    return uniqueByValue([...prev, ...next]);
+  }
+  return next;
+}
+function mergeTwo(base, next) {
+  const carried = Object.entries(base).map(([key, prev]) => [
+    key,
+    Object.hasOwn(next, key) ? mergeValue(prev, next[key]) : prev
+  ]);
+  const added = Object.entries(next).filter(([key]) => !Object.hasOwn(base, key));
+  return Object.fromEntries([...carried, ...added]);
+}
+var mergeSettings = (...layers) => layers.reduce(mergeTwo, {});
+var memoryVariable = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
+function memoryKeys(sources, memory) {
+  if (sources === undefined || memory === undefined)
+    return {};
+  return {
+    ...sources.includes("local") ? {} : { autoMemoryDirectory: memory.key },
+    ...sources.includes("user") ? {} : { permissions: { additionalDirectories: [memory.store] } }
+  };
+}
+function launchKeys(profile, home, memory) {
+  const isCleanRoom = profile.manifest.settingSources !== undefined && !profile.manifest.settingSources.includes("user");
+  return {
+    ...memoryKeys(profile.manifest.settingSources, memory),
+    sidekick: {
+      profile: profile.name,
+      ...profile.manifest.hide === undefined ? {} : { hide: profile.manifest.hide }
+    },
+    ...profile.hasRules ? { env: { [memoryVariable]: "1" } } : {},
+    ...isCleanRoom ? {
+      claudeMdExcludes: [
+        path11.join(home, ".claude", "CLAUDE.md"),
+        path11.join(home, ".claude", "rules", "**")
+      ]
+    } : {}
+  };
+}
+function composeSettings(profile, opts) {
+  return mergeSettings(profile.manifest.settings ?? {}, opts.overlay ?? {}, launchKeys(profile, opts.home, opts.memory));
+}
+function launchArgs(profile, settings) {
+  const sources = profile.manifest.settingSources;
+  return [
+    "--add-dir",
+    profile.dir,
+    "--settings",
+    JSON.stringify(settings),
+    ...sources === undefined ? [] : ["--setting-sources", sources.join(",")]
+  ];
+}
+var COULD_NOT_START = 127;
+var printedStreams = (result) => [result.stdout, result.stderr].map((text) => text.trim()).filter((text) => text !== "");
+var spawnClaude = (command, args, opts) => spawnSync2(command, args, {
+  ...opts,
+  encoding: "utf8",
+  stdio: ["ignore", "pipe", "pipe"]
+});
+var isTimeout = (error) => ("code" in error) && error.code === "ETIMEDOUT";
+var makeClaudeRunner = (spawn = spawnClaude) => (args, { cwd, timeoutMs }) => {
+  const out = spawn("claude", args, {
+    cwd,
+    timeout: timeoutMs,
+    shell: false,
+    env: withoutMarkers(process.env)
+  });
+  const stdout = out.stdout ?? "";
+  const stderr = out.stderr ?? "";
+  if (out.error === undefined) {
+    return { code: out.status ?? 1, stdout, stderr, timedOut: false };
+  }
+  if (isTimeout(out.error)) {
+    return { code: out.status ?? 1, stdout, stderr, timedOut: true };
+  }
+  return {
+    code: COULD_NOT_START,
+    stdout,
+    stderr: stderr || out.error.message,
+    timedOut: false
+  };
+};
+var execClaude = makeClaudeRunner();
+var CANARY_KEYS = ["feedbackSurveyRate", "cleanupPeriodDays"];
+var CANARY_VALUE = "sidekick-canary";
+var SKIP_VARIABLE = "SIDEKICK_PROFILE_SKIP_CHECK";
+var SKIP_WARNING = `${SKIP_VARIABLE}=1 is set, so the settings were not checked with claude doctor.`;
+var refuse = (...issues) => ({ ok: false, issues });
+function invalidSettingsLines(doctorOutput, paths) {
+  const lines = doctorOutput.split(`
+`);
+  const start = lines.findIndex((line) => line.trim() === "Invalid settings");
+  if (start === -1)
+    return [];
+  const rest2 = lines.slice(start + 1);
+  const end = rest2.findIndex((line) => line.trim() === "");
+  const section = end === -1 ? rest2 : rest2.slice(0, end);
+  return section.filter((line) => line.startsWith("- ") && paths.some((p) => line.startsWith(`- ${p} `)));
+}
+var printed = (result) => [result.stdout, result.stderr].filter((text) => text.trim() !== "").join(`
+`);
+function judge(result, lines, canary) {
+  if (result.timedOut) {
+    return refuse("claude doctor timed out.", printed(result));
+  }
+  if (result.code === COULD_NOT_START) {
+    return refuse("The settings check could not start claude.", printed(result));
+  }
+  if (result.code !== 0) {
+    return refuse(`claude doctor failed with exit code ${result.code}.`, printed(result));
+  }
+  const isCanaryLine = (line) => line.includes(` › ${canary}:`);
+  if (!lines.some(isCanaryLine)) {
+    return refuse("claude doctor's output no longer parses: its report for the canary key is missing, so a launch could drop settings silently.", `Set ${SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`);
+  }
+  const real = lines.filter((line) => !isCanaryLine(line));
+  return real.length === 0 ? { ok: true, warnings: [] } : refuse(...real);
+}
+function checkSettings(settings, deps, timeoutMs = 30000) {
+  if (deps.skip)
+    return { ok: true, warnings: [SKIP_WARNING] };
+  const canary = CANARY_KEYS.find((key) => !Object.hasOwn(settings, key));
+  if (canary === undefined) {
+    return refuse(`The settings set both ${CANARY_KEYS.join(" and ")}, so the check has no canary key left.`);
+  }
+  const dir = fs10.mkdtempSync(path11.join(deps.tmpdir, "sidekick-profile-"));
+  try {
+    const file = path11.join(dir, "settings.json");
+    fs10.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
+      mode: 384
+    });
+    const result = deps.run(["--settings", file, "doctor"], {
+      cwd: deps.cwd,
+      timeoutMs
+    });
+    const lines = invalidSettingsLines(result.stdout, [
+      file,
+      fs10.realpathSync(file)
+    ]);
+    return judge(result, lines, canary);
+  } finally {
+    fs10.rmSync(dir, { recursive: true, force: true });
+  }
+}
+var bgArgs = (base, opts) => [
+  ...base,
+  ...opts.pluginDir === undefined ? [] : ["--plugin-dir", opts.pluginDir],
+  ...opts.permissionMode === undefined ? [] : ["--permission-mode", opts.permissionMode],
+  ...opts.worktree === undefined ? [] : ["--worktree", opts.worktree],
+  "--bg",
+  ...opts.sessionName === undefined ? [] : ["-n", opts.sessionName],
+  ...opts.prompt === undefined ? [] : ["--", opts.prompt]
+];
+
+// bin/helpers/profile-plugins.ts
+import * as fs11 from "node:fs";
+import * as path12 from "node:path";
+var PLUGIN_SKIP_VARIABLE = "SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK";
+var SKIP_WARNING2 = `${PLUGIN_SKIP_VARIABLE}=1 is set, so the plugins were not checked with claude plugin list.`;
+var UNSATISFIED = "dependency-unsatisfied";
+var EXEMPT_SUFFIXES = ["@builtin", "@inline"];
+var DetailSchema = looseObject({
+  type: string(),
+  plugin: optional(string()),
+  dependency: optional(string())
+});
+var EntrySchema = looseObject({
+  id: string(),
+  errorDetails: nullish(array(DetailSchema))
+});
+var ListSchema = array(EntrySchema);
+var refuse2 = (...issues) => ({ ok: false, issues });
+var needsPluginCheck = (manifest) => manifest.settingSources !== undefined || manifest.settings !== undefined && Object.hasOwn(manifest.settings, "enabledPlugins");
+var enabledPluginIds = (manifest) => {
+  const value = manifest.settings?.enabledPlugins;
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.keys(value) : [];
+};
+var leavesOutUser = (manifest) => manifest.settingSources !== undefined && !manifest.settingSources.includes("user");
+var unknownIdIssues = (manifest, listed) => {
+  const synced = leavesOutUser(manifest) ? "; a synced plugin is not listed when the profile leaves out the user source" : "";
+  return enabledPluginIds(manifest).filter((id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s))).map((id) => `"${id}": no plugin listed under this profile's settings has that id${synced}.`);
+};
+var parseJson2 = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return;
+  }
+};
+function judgePluginList(stdout, manifest) {
+  const parsed = safeParse(ListSchema, parseJson2(stdout));
+  if (!parsed.success) {
+    return refuse2("claude plugin list's output no longer parses, so a broken plugin dependency could pass unseen.", `Set ${PLUGIN_SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`);
+  }
+  const entries = parsed.output;
+  const issues = [];
+  const warnings = [];
+  const seen = new Set;
+  for (const entry of entries) {
+    for (const detail of entry.errorDetails ?? []) {
+      if (detail.type !== UNSATISFIED) {
+        warnings.push(`${entry.id}: claude plugin list reports ${detail.type}.`);
+        continue;
+      }
+      const key = JSON.stringify([detail.plugin, detail.dependency]);
+      if (seen.has(key))
+        continue;
+      seen.add(key);
+      issues.push(`${entry.id} needs ${detail.dependency ?? "(unnamed)"}, which these settings do not enable. Enable it in the profile's settings.enabledPlugins, or set ${entry.id} to false too.`);
+    }
+  }
+  issues.push(...unknownIdIssues(manifest, new Set(entries.map((entry) => entry.id))));
+  return issues.length > 0 ? refuse2(...issues) : { ok: true, warnings: [...new Set(warnings)] };
+}
+function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
+  if (deps.skip)
+    return { ok: true, warnings: [SKIP_WARNING2] };
+  const dir = fs11.mkdtempSync(path12.join(deps.tmpdir, "sidekick-profile-"));
+  try {
+    const file = path12.join(dir, "settings.json");
+    fs11.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
+    const sources = manifest.settingSources;
+    const result = deps.run([
+      "--settings",
+      file,
+      ...sources === undefined ? [] : ["--setting-sources", sources.join(",")],
+      "plugin",
+      "list",
+      "--json"
+    ], { cwd: deps.cwd, timeoutMs });
+    if (result.timedOut) {
+      return refuse2("claude plugin list timed out.", ...printedStreams(result));
+    }
+    if (result.code !== 0) {
+      return refuse2(`claude plugin list failed with exit code ${result.code}.`, ...printedStreams(result));
+    }
+    return judgePluginList(result.stdout, manifest);
+  } finally {
+    fs11.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// bin/helpers/profile-manifest.ts
+import * as fs12 from "node:fs";
+
+// plugin/hooks/scope/contract.ts
+var MOD_PARTS = ["board", "desk"];
+
+// bin/helpers/profile-manifest.ts
+var SETTING_SOURCES = ["user", "project", "local"];
+var PROFILE_NAME_RULE = "1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit";
+var PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
+var isProfileName = (name) => PROFILE_NAME.test(name);
+var RESERVED_SETTINGS_KEY = "sidekick";
+var uniqueList = (item) => pipe(array(item), check((a) => new Set(a).size === a.length, "must not repeat an entry"));
+var HideSchema = strictObject({
+  agents: optional(uniqueList(pipe(string(), minLength(1, "must not be empty")))),
+  mods: optional(uniqueList(picklist(MOD_PARTS)))
+});
+var ManifestSchema = strictObject({
+  description: pipe(string(), minLength(1, "must not be empty")),
+  settingSources: optional(pipe(array(picklist(SETTING_SOURCES)), check((a) => new Set(a).size === a.length, "must not repeat a source"))),
+  settings: optional(pipe(unknown(), check((s) => !Array.isArray(s), "must be an object"), record(string(), unknown()), check((s) => !Object.hasOwn(s, RESERVED_SETTINGS_KEY), `must not set "${RESERVED_SETTINGS_KEY}", which launch owns`))),
+  hide: optional(HideSchema)
+});
+function parseManifest(raw) {
+  const result = safeParse(ManifestSchema, raw);
+  if (result.success)
+    return { ok: true, manifest: result.output };
+  return {
+    ok: false,
+    issues: result.issues.map((i) => `${getDotPath(i) ?? "(root)"}: ${i.message}`)
+  };
+}
+var isMissing4 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
+function readManifest(file) {
+  let text;
+  try {
+    text = fs12.readFileSync(file, "utf8");
+  } catch (err) {
+    const why = isMissing4(err) ? "missing" : err instanceof Error ? err.message : String(err);
+    return { ok: false, issues: [`${file}: ${why}`] };
+  }
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    return { ok: false, issues: [`${file}: invalid JSON: ${why}`] };
+  }
+  const parsed = parseManifest(raw);
+  if (parsed.ok)
+    return parsed;
+  return { ok: false, issues: parsed.issues.map((i) => `${file}: ${i}`) };
+}
+
+// bin/helpers/profile-shell.ts
+var FIND_INSTALL = 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{try{const e=JSON.parse(s).find(x=>x.id==="sidekick@rikmorn"&&x.scope==="user");if(e&&typeof e.installPath==="string"){process.stdout.write(e.installPath);return}}catch{}process.exit(1)})';
+var NO_INSTALL = "skp: no user-scope sidekick@rikmorn install";
+var ZSH_FUNCTION = `skp() {
+  builtin emulate -L zsh
+  if (( $# < 1 )); then builtin print -u2 'usage: skp <profile> [claude arguments...]'; builtin return 2; fi
+  local name=$1; builtin shift
+  local list cli out
+  list=$(command claude plugin list --json) || { builtin print -u2 'skp: claude plugin list failed'; builtin return 1; }
+  cli=$(builtin print -r -- "$list" | command node -e '${FIND_INSTALL}') || { builtin print -u2 '${NO_INSTALL}'; builtin return 1; }
+  out=$(command node "$cli/bin/sidekick" profile argv "$name") || builtin return
+  local -a args=("\${(@0)out}")
+  (( \${#args} )) && [[ -z \${args[-1]} ]] && args[-1]=()
+  command claude "\${args[@]}" "$@"
+}
+`;
+var BASH_FUNCTION = `skp() {
+  if [ $# -lt 1 ]; then builtin echo 'usage: skp <profile> [claude arguments...]' >&2; builtin return 2; fi
+  local name="$1"; builtin shift
+  local list cli tmp rc a
+  list=$(command claude plugin list --json) || { builtin echo 'skp: claude plugin list failed' >&2; builtin return 1; }
+  cli=$(builtin printf '%s' "$list" | command node -e '${FIND_INSTALL}') || { builtin echo '${NO_INSTALL}' >&2; builtin return 1; }
+  tmp=$(command mktemp "\${TMPDIR:-/tmp}/skp.XXXXXX") || builtin return 1
+  command node "$cli/bin/sidekick" profile argv "$name" >| "$tmp"; rc=$?
+  if [ "$rc" -ne 0 ]; then command rm -f "$tmp"; builtin return "$rc"; fi
+  local args=()
+  while IFS= builtin read -r -d '' a; do args+=("$a"); done < "$tmp"
+  command rm -f "$tmp"
+  command claude "\${args[@]}" "$@"
+}
+`;
+var RESERVED_WORDS = new Set([
+  "case",
+  "coproc",
+  "declare",
+  "do",
+  "done",
+  "elif",
+  "else",
+  "end",
+  "esac",
+  "export",
+  "fi",
+  "float",
+  "for",
+  "foreach",
+  "function",
+  "if",
+  "in",
+  "integer",
+  "local",
+  "nocorrect",
+  "readonly",
+  "repeat",
+  "select",
+  "then",
+  "time",
+  "typeset",
+  "until",
+  "while"
+]);
+var SKP_RUNS_THROUGH = new Set(["command", "builtin"]);
+function aliasNameRefusal(name) {
+  if (name === "skp") {
+    return '"skp" cannot be an alias: the alias would replace the skp function itself.';
+  }
+  if (SKP_RUNS_THROUGH.has(name)) {
+    return `"${name}" cannot be an alias: skp runs its commands through command and builtin, and the alias would take them over.`;
+  }
+  if (RESERVED_WORDS.has(name)) {
+    return `"${name}" cannot be an alias: it is a reserved word in zsh or bash, and the alias would break shell code that uses it.`;
+  }
+  return;
+}
+var shellFunction = (shell, aliasNames) => {
+  for (const name of aliasNames) {
+    if (!isProfileName(name)) {
+      throw new Error(`invalid alias name: ${JSON.stringify(name)}`);
+    }
+  }
+  const aliases = aliasNames.map((name) => `alias ${name}='skp ${name}'
+`);
+  return [shell === "zsh" ? ZSH_FUNCTION : BASH_FUNCTION, ...aliases].join("");
+};
+
+// bin/helpers/profile-store.ts
+import * as fs13 from "node:fs";
+import * as path13 from "node:path";
+var MANIFEST_FILE = "profile.json";
+var notAName = (name) => `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
+var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
+var ENABLES_PLUGINS = "can enable plugins outside the checked settings block; put settings in profile.json";
+var RULES_ONLY = "a profile holds only rules; agents, skills, and commands belong in a plugin the profile enables";
+var REFUSED_AT_ROOT = [
+  { path: "CLAUDE.md", why: HIDES_AGENTS },
+  { path: "CLAUDE.local.md", why: HIDES_AGENTS }
+];
+var CLAUDE_DIR_ALLOWS = "rules";
+var CLAUDE_DIR_REASONS = new Map([
+  ["CLAUDE.md", HIDES_AGENTS],
+  ["settings.json", ENABLES_PLUGINS],
+  ["settings.local.json", ENABLES_PLUGINS]
+]);
+function storeRoots(env, cwd, home, workTree) {
+  const override = env.SIDEKICK_PROFILES_DIR;
+  if (override)
+    return [{ kind: "user", dir: path13.resolve(cwd, override) }];
+  const configDir = env.CLAUDE_CONFIG_DIR || path13.join(home, ".claude");
+  const user = {
+    kind: "user",
+    dir: path13.resolve(cwd, configDir, "profiles")
+  };
+  if (workTree === undefined)
+    return [user];
+  const repo = {
+    kind: "repo",
+    dir: path13.resolve(workTree, ".claude", "profiles")
+  };
+  return repo.dir === user.dir ? [user] : [repo, user];
+}
+var isPresent = (file) => {
+  try {
+    fs13.lstatSync(file);
+    return true;
+  } catch {
+    return false;
+  }
+};
+var isDirectory = (dir) => {
+  try {
+    return fs13.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+};
+var entriesOf = (dir) => {
+  try {
+    return fs13.readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
+};
+function checkLayout(dir) {
+  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path13.join(dir, r.path))).map((r) => `${path13.join(dir, r.path)}: ${r.why}`);
+  const claudeDir = path13.join(dir, ".claude");
+  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path13.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
+  return [...atRoot, ...inClaudeDir];
+}
+var holdsMarkdown = (dir) => {
+  let entries;
+  try {
+    entries = fs13.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  return entries.some((e) => {
+    const full = path13.join(dir, e.name);
+    if (e.isDirectory())
+      return holdsMarkdown(full);
+    if (e.isSymbolicLink() && isDirectory(full))
+      return holdsMarkdown(full);
+    return e.name.endsWith(".md");
+  });
+};
+var readFolder = (name, root, shadows) => {
+  const dir = path13.join(root.dir, name);
+  const layout = checkLayout(dir);
+  if (layout.length > 0)
+    return { ok: false, issues: layout };
+  const read = readManifest(path13.join(dir, MANIFEST_FILE));
+  if (!read.ok)
+    return read;
+  return {
+    ok: true,
+    profile: {
+      name,
+      dir,
+      root: root.dir,
+      store: root.kind,
+      shadows,
+      manifest: read.manifest,
+      hasRules: holdsMarkdown(path13.join(dir, ".claude", "rules"))
+    }
+  };
+};
+function loadProfile(name, roots) {
+  if (!isProfileName(name))
+    return { ok: false, issues: [notAName(name)] };
+  const held = (root) => isDirectory(path13.join(root.dir, name));
+  const index = roots.findIndex(held);
+  const winner = roots[index];
+  if (winner === undefined) {
+    return {
+      ok: false,
+      issues: [
+        `no profile named "${name}"; searched: ${roots.map((r) => r.dir).join(", ")}`
+      ]
+    };
+  }
+  const later = roots.slice(index + 1).find(held);
+  return readFolder(name, winner, later === undefined ? undefined : path13.join(later.dir, name));
+}
+var isHidden = (name) => name.startsWith(".");
+var listRoot = (root) => {
+  let names;
+  try {
+    names = fs13.readdirSync(root.dir).sort();
+  } catch {
+    return [];
+  }
+  return names.filter((name) => !isHidden(name) && isDirectory(path13.join(root.dir, name))).map((name) => {
+    const base = {
+      name,
+      root: root.dir,
+      store: root.kind,
+      shadowedBy: undefined
+    };
+    if (!isProfileName(name)) {
+      return { ...base, description: undefined, issues: [notAName(name)] };
+    }
+    const loaded = readFolder(name, root, undefined);
+    return loaded.ok ? {
+      ...base,
+      description: loaded.profile.manifest.description,
+      issues: []
+    } : { ...base, description: undefined, issues: loaded.issues };
+  });
+};
+function listProfiles(roots) {
+  const winners = new Map;
+  return roots.flatMap((root) => listRoot(root).map((listed) => {
+    const winner = winners.get(listed.name);
+    if (winner === undefined) {
+      winners.set(listed.name, path13.join(root.dir, listed.name));
+      return listed;
+    }
+    return { ...listed, shadowedBy: winner };
+  }));
+}
+var isExists = (err) => err instanceof Error && ("code" in err) && err.code === "EEXIST";
+var messageOf2 = (err) => err instanceof Error ? err.message : String(err);
+var makeRoot = (root) => {
+  try {
+    fs13.mkdirSync(root, { recursive: true });
+    return [];
+  } catch (err) {
+    return [
+      `${root}: ${isExists(err) ? "exists and is not a folder" : messageOf2(err)}`
+    ];
+  }
+};
+var unmake = (dir) => {
+  try {
+    const manifest = path13.join(dir, MANIFEST_FILE);
+    if (isPresent(manifest))
+      fs13.rmSync(manifest);
+    fs13.rmdirSync(dir);
+    return [];
+  } catch (err) {
+    return [`${dir}: could not remove it: ${messageOf2(err)}`];
+  }
+};
+function newProfile(name, description, root) {
+  if (!isProfileName(name))
+    return { ok: false, issues: [notAName(name)] };
+  const manifest = { description };
+  const parsed = parseManifest(manifest);
+  if (!parsed.ok)
+    return parsed;
+  const rootIssues = makeRoot(root);
+  if (rootIssues.length > 0)
+    return { ok: false, issues: rootIssues };
+  const dir = path13.join(root, name);
+  try {
+    fs13.mkdirSync(dir);
+  } catch (err) {
+    const why = isExists(err) ? "already exists" : messageOf2(err);
+    return { ok: false, issues: [`${dir}: ${why}`] };
+  }
+  const file = path13.join(dir, MANIFEST_FILE);
+  try {
+    fs13.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
+`);
+  } catch (err) {
+    return {
+      ok: false,
+      issues: [`${file}: ${messageOf2(err)}`, ...unmake(dir)]
+    };
+  }
+  return { ok: true, dir };
+}
+
+// bin/helpers/worker-jobs.ts
+var LISTING_ARGS = ["agents", "--json", "--all"];
+var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
+var OptionalText = nullish(string());
+var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an object"), object({
+  id: OptionalText,
+  kind: OptionalText,
+  name: OptionalText,
+  cwd: OptionalText,
+  sessionId: OptionalText,
+  state: OptionalText
+}), transform((row) => ({
+  id: row.id ?? undefined,
+  kind: row.kind ?? undefined,
+  name: row.name ?? undefined,
+  cwd: row.cwd ?? undefined,
+  sessionId: row.sessionId ?? undefined,
+  state: row.state ?? undefined
+})));
+var ListingSchema = array(JobSchema);
+function parseJson3(text) {
+  try {
+    return { value: JSON.parse(text) };
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { issue: `${LISTING} printed a listing that is not JSON: ${why}` };
+  }
+}
+function listJobs(run, cwd, timeoutMs = 30000) {
+  const result = run(LISTING_ARGS, { cwd, timeoutMs });
+  if (result.timedOut) {
+    return { issues: [`${LISTING} did not return in time.`] };
+  }
+  if (result.code !== 0) {
+    return {
+      issues: [
+        `${LISTING} failed with exit code ${result.code}.`,
+        ...printedStreams(result)
+      ]
+    };
+  }
+  const json = parseJson3(result.stdout);
+  if ("issue" in json)
+    return { issues: [json.issue] };
+  const parsed = safeParse(ListingSchema, json.value);
+  if (!parsed.success) {
+    const [first] = parsed.issues;
+    const where = getDotPath(first) ?? "(root)";
+    return {
+      issues: [
+        `${LISTING} printed a listing that does not parse: ${where}: ${first.message}`
+      ]
+    };
+  }
+  return { jobs: parsed.output };
+}
+
+// bin/helpers/profile.ts
+var PROFILE_USAGE_LINE = "sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]|switch <name> [--session <id>]";
+var LAUNCH_TIMEOUT_MS = 60000;
+var SHELLS = ["zsh", "bash"];
+var withoutTrailingNewline = (text) => text.replace(/\n$/, "");
+function parseFlags(rest2, options) {
+  try {
+    const { values, positionals } = parseArgs({
+      args: rest2,
+      options,
+      allowPositionals: true,
+      strict: true
+    });
+    return { values, positionals };
+  } catch {
+    return;
+  }
+}
+var usage = (err) => {
+  err(`usage: ${PROFILE_USAGE_LINE}`);
+  return 1;
+};
+var refuse3 = (err, issues) => {
+  for (const issue of issues)
+    err(issue);
+  return 1;
+};
+function load(name, penv) {
+  const loaded = loadProfile(name, storeRoots(penv.env, penv.cwd, penv.home, penv.workTree));
+  return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
+}
+function provenanceLine(profile) {
+  if (profile.store === "user")
+    return;
+  const shadows = profile.shadows === undefined ? "" : ` (it shadows ${profile.shadows})`;
+  return `profile "${profile.name}" comes from the ${profile.store} store: ${profile.dir}${shadows}`;
+}
+function memoryLaunch(penv) {
+  const key = readKey(penv.cwd, execRunner);
+  if (key === undefined)
+    return;
+  return {
+    key,
+    store: path14.resolve(penv.cwd, storeRoot(penv.env, penv.home))
+  };
+}
+var composed = (profile, penv, overlay) => {
+  const settings = composeSettings(profile, {
+    home: penv.home,
+    overlay,
+    memory: memoryLaunch(penv)
+  });
+  return { settings, args: launchArgs(profile, settings) };
+};
+var settingsCheck = (settings, penv) => checkSettings(settings, {
+  run: penv.runClaude,
+  cwd: penv.cwd,
+  tmpdir: penv.tmpdir,
+  skip: penv.env[SKIP_VARIABLE] === "1"
+});
+var skipsPluginCheck = (penv) => penv.env[PLUGIN_SKIP_VARIABLE] === "1";
+var pluginCheck = (profile, settings, penv) => checkPlugins(settings, profile.manifest, {
+  run: penv.runClaude,
+  cwd: penv.cwd,
+  tmpdir: penv.tmpdir,
+  skip: skipsPluginCheck(penv)
+});
+function checkProfile(profile, settings, penv) {
+  const checked2 = settingsCheck(settings, penv);
+  if (!checked2.ok || !needsPluginCheck(profile.manifest))
+    return checked2;
+  const plugins = pluginCheck(profile, settings, penv);
+  return plugins.ok ? { ok: true, warnings: [...checked2.warnings, ...plugins.warnings] } : plugins;
+}
+function loadForLaunch(name, penv, err) {
+  const loaded = load(name, penv);
+  if ("issues" in loaded) {
+    refuse3(err, loaded.issues);
+    return;
+  }
+  const provenance = provenanceLine(loaded.profile);
+  if (provenance !== undefined)
+    err(provenance);
+  return loaded.profile;
+}
+function checkComposed(profile, penv, err, overlay) {
+  const { settings, args } = composed(profile, penv, overlay);
+  const checked2 = checkProfile(profile, settings, penv);
+  if (!checked2.ok) {
+    refuse3(err, checked2.issues);
+    return;
+  }
+  for (const warning of checked2.warnings)
+    err(warning);
+  return args;
+}
+function checkedLaunch(name, penv, err, overlay) {
+  const profile = loadForLaunch(name, penv, err);
+  return profile === undefined ? undefined : checkComposed(profile, penv, err, overlay);
+}
+function mainOf(penv) {
+  const bare = resolveMain(penv.env, undefined);
+  if (bare?.from !== "id")
+    return bare;
+  const listed = listJobs(penv.runClaude, penv.cwd);
+  return resolveMain(penv.env, "jobs" in listed ? listed.jobs : undefined);
+}
+function pluginReport(profile, settings, penv) {
+  if (!needsPluginCheck(profile.manifest)) {
+    return [
+      "plugins: not checked; the profile sets neither settings.enabledPlugins nor settingSources"
+    ];
+  }
+  if (skipsPluginCheck(penv)) {
+    return [`plugins: not checked; ${PLUGIN_SKIP_VARIABLE}=1 is set`];
+  }
+  const plugins = pluginCheck(profile, settings, penv);
+  return plugins.ok ? ["plugins: ok", ...plugins.warnings.map((w) => `  ${w}`)] : ["plugins: refused", ...plugins.issues.map((i) => `  ${i}`)];
+}
+var list = (rest2, penv, out, err) => {
+  if (rest2.length > 0)
+    return usage(err);
+  const profiles = listProfiles(storeRoots(penv.env, penv.cwd, penv.home, penv.workTree));
+  for (const p of profiles) {
+    const shadowed = p.shadowedBy === undefined ? "" : `, shadowed by ${p.shadowedBy}`;
+    const where = `(${p.store}: ${p.root}${shadowed})`;
+    out(p.issues.length > 0 ? `${p.name}  invalid: ${p.issues[0]}  ${where}` : `${p.name}  ${p.description}  ${where}`);
+  }
+  return profiles.some((p) => p.issues.length > 0) ? 1 : 0;
+};
+var show = (rest2, penv, out, err) => {
+  const parsed = parseFlags(rest2, {});
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage(err);
+  }
+  const loaded = load(parsed.positionals[0], penv);
+  if ("issues" in loaded)
+    return refuse3(err, loaded.issues);
+  const { profile } = loaded;
+  const { settings, args } = composed(profile, penv);
+  out(`folder: ${profile.dir}`);
+  out(`store: ${profile.store}`);
+  out(`manifest: ${JSON.stringify(profile.manifest, null, 2)}`);
+  out(`settings: ${JSON.stringify(settings, null, 2)}`);
+  for (const line of pluginReport(profile, settings, penv))
+    out(line);
+  out("arguments:");
+  for (const arg of args)
+    out(arg);
+  return 0;
+};
+var noRepoStore = (penv) => {
+  if (penv.env.SIDEKICK_PROFILES_DIR) {
+    return "SIDEKICK_PROFILES_DIR is set, so there is no repo store";
+  }
+  if (penv.workTree === undefined) {
+    return "not inside a git work tree, so there is no repo store";
+  }
+  return "the repo store is the user store here, so --repo has nowhere else to write";
+};
+var create = (rest2, penv, out, err) => {
+  const parsed = parseFlags(rest2, {
+    description: { type: "string" },
+    repo: { type: "boolean" }
+  });
+  const description = parsed?.values.description;
+  if (parsed === undefined || parsed.positionals.length !== 1 || typeof description !== "string") {
+    return usage(err);
+  }
+  const wanted = parsed.values.repo === true ? "repo" : "user";
+  const root = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree).find((r) => r.kind === wanted);
+  if (root === undefined)
+    return refuse3(err, [noRepoStore(penv)]);
+  const created = newProfile(parsed.positionals[0], description, root.dir);
+  if (!created.ok)
+    return refuse3(err, created.issues);
+  out(created.dir);
+  return 0;
+};
+var argv = (rest2, penv, _out, err) => {
+  const parsed = parseFlags(rest2, {});
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage(err);
+  }
+  const args = checkedLaunch(parsed.positionals[0], penv, err);
+  if (args === undefined)
+    return 1;
+  penv.write(args.map((arg) => `${arg}\x00`).join(""));
+  return 0;
+};
+var launch = (rest2, penv, out, err) => {
+  const split = rest2.indexOf("--");
+  const before = split === -1 ? rest2 : rest2.slice(0, split);
+  const words = split === -1 ? [] : rest2.slice(split + 1);
+  const parsed = parseFlags(before, {
+    bg: { type: "boolean" },
+    n: { type: "string", short: "n" }
+  });
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage(err);
+  }
+  if (parsed.values.bg !== true) {
+    return refuse3(err, [
+      "launch only starts background sessions: pass --bg.",
+      "For an interactive start, use the shell function: skp <name> (sidekick profile alias prints it)."
+    ]);
+  }
+  const main = mainOf(penv);
+  const args = checkedLaunch(parsed.positionals[0], penv, err, main === undefined ? undefined : { env: { SIDEKICK_MAIN: main.value } });
+  if (args === undefined)
+    return 1;
+  const { launchTimeoutMs = LAUNCH_TIMEOUT_MS } = penv;
+  const sessionName = parsed.values.n;
+  const result = penv.runClaude(bgArgs(args, {
+    sessionName: typeof sessionName === "string" ? sessionName : undefined,
+    prompt: words.length > 0 ? words.join(" ") : undefined
+  }), { cwd: penv.cwd, timeoutMs: launchTimeoutMs });
+  if (result.stdout !== "")
+    out(withoutTrailingNewline(result.stdout));
+  if (result.stderr !== "")
+    err(withoutTrailingNewline(result.stderr));
+  if (result.timedOut)
+    err("claude did not return in time.");
+  if (result.code === 0 && main !== undefined)
+    out(mainReport(main, penv.env, penv.home));
+  return result.code;
+};
+var isShell = (value) => SHELLS.some((shell) => shell === value);
+var alias = (rest2, penv, out, err) => {
+  const parsed = parseFlags(rest2, { shell: { type: "string" } });
+  if (parsed === undefined)
+    return usage(err);
+  const shell = parsed.values.shell ?? "zsh";
+  if (!isShell(shell)) {
+    return refuse3(err, [
+      `unknown shell "${String(shell)}": use ${SHELLS.join(" or ")}`
+    ]);
+  }
+  const issues = parsed.positionals.flatMap((name) => {
+    const refusal2 = aliasNameRefusal(name);
+    if (refusal2 !== undefined)
+      return [refusal2];
+    const loaded = load(name, penv);
+    return "issues" in loaded ? loaded.issues : [];
+  });
+  if (issues.length > 0)
+    return refuse3(err, issues);
+  out(withoutTrailingNewline(shellFunction(shell, parsed.positionals)));
+  return 0;
+};
+var switchProfile = (rest2, penv, out, err) => {
+  const parsed = parseFlags(rest2, { session: { type: "string" } });
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage(err);
+  }
+  const [name] = parsed.positionals;
+  const flagged = parsed.values.session;
+  if (flagged === "") {
+    return refuse3(err, [
+      "--session is empty: pass a session id, or leave the flag out inside a session"
+    ]);
+  }
+  const sessionId = typeof flagged === "string" ? flagged : penv.env.CLAUDE_CODE_SESSION_ID;
+  if (sessionId === undefined || sessionId === "") {
+    return refuse3(err, [
+      "no session id: run switch inside a session, or pass --session <id>"
+    ]);
+  }
+  if (checkedLaunch(name, penv, err) === undefined)
+    return 1;
+  const folder = penv.workTree ?? penv.cwd;
+  const cd = `cd ${shellQuote(folder)}`;
+  out(`To switch this session to "${name}", type /exit, then run one of these.`);
+  out("Keep the conversation:");
+  out(`  ${cd} && skp ${name} --resume ${shellQuote(sessionId)}`);
+  out("Start fresh:");
+  out(`  ${cd} && skp ${name}`);
+  out(`After a resume, skills of plugins "${name}" turns off stay listed but fail when called.`);
+  return 0;
+};
+var VERBS = {
+  list,
+  show,
+  new: create,
+  argv,
+  launch,
+  alias,
+  switch: switchProfile
+};
+function runProfileCli(args, penv, out, err) {
+  const [name, ...rest2] = args;
+  if (name === undefined || !Object.hasOwn(VERBS, name))
+    return usage(err);
+  return VERBS[name](rest2, penv, out, err);
+}
+
+// bin/helpers/worker-record.ts
+import * as fs14 from "node:fs";
+import * as path15 from "node:path";
+var recordFields = {
+  name: WorkerNameSchema,
+  job: nullable(string()),
+  brief: string(),
+  dispatchedAt: string()
+};
+var RecordSchema = pipe(variant("version", [
+  strictObject({ version: literal(1), ...recordFields }),
+  strictObject({
+    version: literal(2),
+    main: nullable(string()),
+    ...recordFields
+  })
+]), transform((record2) => record2.version === 1 ? { ...record2, version: 2, main: null } : record2));
+var isWorkerName = (name) => is(WorkerNameSchema, name);
+function recordsDir(commonDir) {
+  return path15.join(commonDir, "sidekick", "workers");
+}
+var RECORD_SUFFIX = ".json";
+var fileFor = (commonDir, name) => path15.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
+function jobIdFrom(stdout, name) {
+  const lines = stdout.split(`
+`).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
+  for (const line of lines) {
+    const named = /^backgrounded · (\S+) · (.+)$/.exec(line);
+    if (named?.[2] === name)
+      return named[1];
+  }
+  if (lines.length !== 1)
+    return null;
+  return /^backgrounded (\S+)$/.exec(lines[0])?.[1] ?? null;
+}
+var reason5 = (e) => e instanceof Error ? e.message : String(e);
+function writeRecord(commonDir, record2) {
+  if (!isWorkerName(record2.name)) {
+    return { issue: `worker record not written: bad name "${record2.name}"` };
+  }
+  const file = fileFor(commonDir, record2.name);
+  try {
+    fs14.mkdirSync(recordsDir(commonDir), { recursive: true });
+    fs14.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+`);
+    return { ok: true };
+  } catch (e) {
+    return { issue: `worker record ${file} not written: ${reason5(e)}` };
+  }
+}
+function parseRecord(file) {
+  try {
+    const parsed = safeParse(RecordSchema, JSON.parse(fs14.readFileSync(file, "utf-8")));
+    if (!parsed.success) {
+      return `${file} is not a worker record: ${parsed.issues[0].message}`;
+    }
+    const base = path15.basename(file, RECORD_SUFFIX);
+    if (parsed.output.name !== base) {
+      return `${file} holds the record of "${parsed.output.name}", not of "${base}"`;
+    }
+    return parsed.output;
+  } catch (e) {
+    return `${file} cannot be read as a worker record: ${reason5(e)}`;
+  }
+}
+function readRecords(commonDir) {
+  const dir = recordsDir(commonDir);
+  const records = [];
+  const warnings = [];
+  let files;
+  try {
+    files = fs14.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
+  } catch (e) {
+    if (e instanceof Error && "code" in e && e.code === "ENOENT") {
+      return { records, warnings };
+    }
+    return { records, warnings: [`${dir} cannot be listed: ${reason5(e)}`] };
+  }
+  for (const f of files) {
+    const read = parseRecord(path15.join(dir, f));
+    if (typeof read === "string")
+      warnings.push(read);
+    else
+      records.push(read);
+  }
+  return { records, warnings };
+}
+function removeRecord(commonDir, name) {
+  if (!isWorkerName(name))
+    return;
+  fs14.rmSync(fileFor(commonDir, name), { force: true });
+}
+
+// bin/helpers/desk.ts
+var DESK_USAGE_LINE = "sidekick desk --json [--self <session id>]";
+function parseDeskArgs(rest2) {
+  const parsed = parseFlags(rest2, {
+    json: { type: "boolean" },
+    self: { type: "string" }
+  });
+  if (parsed === undefined || parsed.positionals.length > 0)
+    return;
+  if (parsed.values.json !== true)
+    return;
+  const { self } = parsed.values;
+  return typeof self === "string" ? { self } : {};
+}
+function exitError(result) {
+  const failed = `${LISTING} failed with exit code ${result.code}`;
+  const printed2 = printedStreams(result).at(0);
+  return printed2 === undefined ? failed : `${failed}: ${printed2.split(`
+`)[0]}`;
+}
+function parseJson4(text) {
+  try {
+    return { value: JSON.parse(text) };
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { error: `${LISTING} printed a listing that is not JSON: ${why}` };
+  }
+}
+function readListing(run, cwd, timeoutMs = 5000) {
+  const result = run(LISTING_ARGS, { cwd, timeoutMs });
+  if (result.timedOut)
+    return { error: `${LISTING} did not return in time` };
+  if (result.code !== 0)
+    return { error: exitError(result) };
+  const json = parseJson4(result.stdout);
+  if ("error" in json)
+    return json;
+  if (!Array.isArray(json.value)) {
+    return { error: `${LISTING} printed a listing that is not a JSON array` };
+  }
+  return parseListingRows(json.value);
+}
+var reason6 = (e) => e instanceof Error ? e.message : String(e);
+function pruneRecords(commonDir, names) {
+  return names.flatMap((name) => {
+    try {
+      removeRecord(commonDir, name);
+      return [];
+    } catch (e) {
+      return [`${name}: its stale record was not deleted: ${reason6(e)}`];
+    }
+  });
+}
+function readAndPruneChildren(denv, rows, find) {
+  const found = findRepo(denv.runGit, denv.cwd);
+  if (found.repo === undefined) {
+    return { records: [], facts: new Map, warnings: found.warnings };
+  }
+  const { repo } = found;
+  const sources = { runGit: denv.runGit, repo, find };
+  const read = readRecords(repo.commonDir);
+  const gathered = read.records.map((record2) => ({
+    record: record2,
+    ...childFacts(sources, record2, joinRow(record2, rows))
+  }));
+  const facts = new Map(gathered.map((g) => [g.record.name, g.facts]));
+  const stale = staleRecordNames(rows, read.records, facts);
+  const kept = gathered.filter((g) => !stale.includes(g.record.name));
+  return {
+    repo: path16.basename(repo.top),
+    records: kept.map((g) => g.record),
+    facts,
+    warnings: [
+      ...read.warnings,
+      ...kept.flatMap((g) => g.warnings),
+      ...pruneRecords(repo.commonDir, stale)
+    ]
+  };
+}
+var GIT_SUFFIX = ".git";
+function repoNameFor(runGit, cwd) {
+  const common = runGit("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
+  if (common.code !== 0)
+    return;
+  const commonDir = common.stdout.replace(/\n$/, "");
+  if (path16.basename(commonDir) === GIT_SUFFIX) {
+    return path16.basename(path16.dirname(commonDir));
+  }
+  const list2 = listWorktrees(runGit, cwd);
+  return "issue" in list2 ? undefined : path16.basename(list2.worktrees[0].path);
+}
+function repoNamesOf(runGit, rows) {
+  const cwds = new Set(rows.flatMap(({ cwd }) => cwd ?? []));
+  return new Map([...cwds].flatMap((cwd) => {
+    const name = repoNameFor(runGit, cwd);
+    return name === undefined ? [] : [[cwd, name]];
+  }));
+}
+function takeSnapshot(denv, self) {
+  const listing = readListing(denv.runClaude, denv.cwd);
+  if ("error" in listing) {
+    return { version: DESK_VERSION, ok: false, error: listing.error };
+  }
+  const { rows } = listing;
+  const transcripts = transcriptFinder(denv.configDir);
+  const children2 = readAndPruneChildren(denv, rows, transcripts.find);
+  return buildSnapshot({
+    rows,
+    readJobs: (drawn) => readJobStates(denv.configDir, drawn),
+    readAsked: (sessionId) => askedOf(sessionId, transcripts.find),
+    records: children2.records,
+    facts: children2.facts,
+    freshInteractive: freshSessions(rows, transcripts.find, denv.now()),
+    self,
+    repo: children2.repo,
+    repoNames: repoNamesOf(denv.runGit, rows),
+    warnings: [
+      ...listing.warnings,
+      ...transcripts.warnings,
+      ...children2.warnings
+    ]
+  });
+}
+function runDeskCli(rest2, denv, out, err) {
+  const args = parseDeskArgs(rest2);
+  if (args === undefined) {
+    err(`usage: ${DESK_USAGE_LINE}`);
+    return 1;
+  }
+  out(JSON.stringify(takeSnapshot(denv, args.self)));
+  return 0;
+}
+
+// bin/helpers/hook.ts
+import * as fs15 from "node:fs";
+import * as path17 from "node:path";
+var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)";
+function readContent(event) {
+  const response = event.tool_response;
+  if (!isRecord6(response) || !isRecord6(response.file))
+    return "";
+  return typeof response.file.content === "string" ? response.file.content : "";
+}
+var DESIGN_SKILL = path17.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path17.join("skills", "sk-execute", "SKILL.md");
+var PLAN_SECTIONS = [
+  "## A plan carries intent",
+  "## Before the plan goes out",
+  "## Choose the mode"
+];
+var CLEAN_CODE_RULE = path17.join("rules", "sk-clean-code.md");
+var COMMENTS_HEADING = "## Comments";
+var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
+var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
+var RELEASE_CHECK_PACKAGE = /(^|\/)\.superpowers\/sdd\/release-check-[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
+var isRecord6 = (v) => typeof v === "object" && v !== null;
+function isSkillHookInput(v) {
+  if (!isRecord6(v))
+    return false;
+  const input = v.tool_input;
+  return isRecord6(input) && typeof input.skill === "string";
+}
+function isReadHookInput(v) {
+  if (!isRecord6(v) || v.tool_name !== "Read")
+    return false;
+  const input = v.tool_input;
+  return isRecord6(input) && typeof input.file_path === "string";
+}
+function parseJson5(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return;
+  }
+}
+function readText2(file) {
+  try {
+    return fs15.readFileSync(file, "utf-8");
+  } catch {
+    return;
+  }
+}
+function readSkillDescription(skillFile) {
+  const text = readText2(skillFile);
+  if (text === undefined)
+    return;
+  const lines = text.split(`
+`);
+  if (lines[0].trim() !== "---")
+    return;
+  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
+  if (close < 0)
+    return;
+  const match = lines.slice(1, close).map((line) => DESCRIPTION_LINE.exec(line)).find((m) => m !== null);
+  if (!match)
+    return;
+  const value = parseJson5(match[1]);
+  return typeof value === "string" ? value : undefined;
+}
+function readSection(file, heading) {
+  const text = readText2(file);
+  if (text === undefined)
+    return;
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trimEnd() === heading);
+  if (start < 0)
+    return;
+  const rest2 = lines.slice(start + 1);
+  let fenced = false;
+  const next = rest2.findIndex((line) => {
+    if (line.trimStart().startsWith("```"))
+      fenced = !fenced;
+    return !fenced && line.startsWith("## ");
+  });
+  const body = next < 0 ? rest2 : rest2.slice(0, next);
+  return [lines[start], ...body].join(`
+`).trim();
+}
+function readRulePaths(file) {
+  const text = readText2(file);
+  if (text === undefined)
+    return;
+  const lines = text.split(/\r?\n/);
+  if (lines[0].trim() !== "---")
+    return;
+  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
+  if (close < 0)
+    return;
+  const front = lines.slice(1, close);
+  const key = front.findIndex((line) => line.trimEnd() === "paths:");
+  if (key < 0)
+    return;
+  const globs = [];
+  for (const line of front.slice(key + 1)) {
+    const item = /^\s+-\s+["']?(.*?)["']?\s*$/.exec(line);
+    if (item === null)
+      break;
+    globs.push(item[1]);
+  }
+  return globs.length === 0 ? undefined : globs;
+}
+var EXT_GLOB = /^\*\*\/\*(\.[A-Za-z0-9]+)$/;
+var STAT_LINE = /^\s*(\S.*?)\s+\|\s+(?:\d+|Bin)\b/;
+var DIFF_HEADER = /^diff --git a\/(.+) b\//;
+function visiblePaths(content) {
+  const found = [];
+  for (const line of content.split(/\r?\n/)) {
+    const match = STAT_LINE.exec(line) ?? DIFF_HEADER.exec(line);
+    if (match !== null)
+      found.push(match[1]);
+  }
+  return found;
+}
+function ruleCoversPackage(rulePaths, content) {
+  if (rulePaths === undefined)
+    return true;
+  const exts = [];
+  for (const glob of rulePaths) {
+    const match = EXT_GLOB.exec(glob);
+    if (match === null)
+      return true;
+    exts.push(match[1]);
+  }
+  return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
+}
+function brainstormNudge(pluginDir) {
+  const description = readSkillDescription(path17.join(pluginDir, DESIGN_SKILL));
+  if (description === undefined)
+    return;
+  return [
+    "sidekick: before this brainstorm proposes approaches, check whether the change needs a design pass.",
+    `sidekick:sk-design: ${description}`,
+    "If it applies, run it now, or at the approaches step, which it then does itself.",
+    "If a design note for this change already exists, start from it."
+  ].join(" ");
+}
+var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
+function writingPlansNudge(pluginDir) {
+  const file = path17.join(pluginDir, EXECUTE_SKILL);
+  const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
+  const found = sections.flatMap((s) => s === undefined ? [] : [s]);
+  if (found.length < PLAN_SECTIONS.length)
+    return;
+  return [PLAN_LEAD, ...found].join(`
+
+`);
+}
+var NUDGES = new Map([
+  ["superpowers:brainstorming", brainstormNudge],
+  ["superpowers:writing-plans", writingPlansNudge]
+]);
+var READ_LEAD_LINE = "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";
+var REPRODUCE_PARAGRAPH = "Reproduce what the implementer claims. For each check the implementer reports as passing, other than the test suite, re-run it where it runs read-only in this checkout: a prose check, a search, or a count. Credit only the results you reproduce. This departs from superpowers' rule that a task reviewer runs checks only on a specific doubt; the test suite stays exempt, as superpowers rules.";
+var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Where superpowers limits you to risks you can name outside the diff, two kinds count here. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with `git grep`, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
+var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
+var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
+function commentsLines(pluginDir, packageText) {
+  const rule = path17.join(pluginDir, CLEAN_CODE_RULE);
+  const comments = readSection(rule, COMMENTS_HEADING);
+  if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
+    return [];
+  }
+  return [
+    "Hold the comments this diff adds to the house rule. Reading a diff does not load `sk-clean-code.md`, so its Comments section follows. Report each added comment that breaks it as a finding. Where this repo's own rules set a different comment convention, theirs win.",
+    comments
+  ];
+}
+function reviewerLines(pluginDir, packageText) {
+  return [
+    READ_LEAD_LINE,
+    REPRODUCE_PARAGRAPH,
+    CLAIMS_PARAGRAPH,
+    ...commentsLines(pluginDir, packageText)
+  ].join(`
+
+`);
+}
+function releaseReviewerLines(pluginDir, packageText) {
+  return [
+    RELEASE_LEAD_LINE,
+    RELEASE_CLAIMS_PARAGRAPH,
+    ...commentsLines(pluginDir, packageText)
+  ].join(`
+
+`);
+}
+function postSkillContext(stdin, env) {
+  const event = parseJson5(stdin);
+  if (!isSkillHookInput(event))
+    return {};
+  const nudge = NUDGES.get(event.tool_input.skill);
+  return { context: nudge?.(env.pluginDir) };
+}
+function postReadContext(stdin, env) {
+  const { pluginDir } = env;
+  const event = parseJson5(stdin);
+  if (!isReadHookInput(event))
+    return {};
+  const filePath = event.tool_input.file_path;
+  if (RELEASE_CHECK_PACKAGE.test(filePath)) {
+    return { context: releaseReviewerLines(pluginDir, readContent(event)) };
+  }
+  if (!REVIEW_PACKAGE.test(filePath))
+    return {};
+  return { context: reviewerLines(pluginDir, readContent(event)) };
+}
+var VERBS2 = new Map([
+  ["post-skill", { eventName: "PostToolUse", contextFor: postSkillContext }],
+  ["post-read", { eventName: "PostToolUse", contextFor: postReadContext }],
+  [
+    "post-tool-batch",
+    {
+      eventName: "PostToolBatch",
+      contextFor: (stdin, env) => postToolBatchContext(stdin, { env: env.env, tmpdir: env.tmpdir })
+    }
+  ]
+]);
+function runHookCli(args, env, out, err) {
+  const [verb] = args;
+  const entry = verb === undefined ? undefined : VERBS2.get(verb);
+  if (entry === undefined) {
+    err(`usage: ${HOOK_USAGE_LINE}`);
+    return 1;
+  }
+  const { context, notice } = entry.contextFor(env.readStdin(), env) ?? {};
+  if (context === undefined && notice === undefined)
+    return 0;
+  out(JSON.stringify({
+    ...context === undefined ? {} : {
+      hookSpecificOutput: {
+        hookEventName: entry.eventName,
+        additionalContext: context
+      }
+    },
+    ...notice === undefined ? {} : { systemMessage: notice }
+  }));
+  return 0;
+}
+
+// bin/helpers/memory.ts
+import * as path23 from "node:path";
+
+// bin/helpers/memory-link.ts
+import * as fs19 from "node:fs";
+import * as path22 from "node:path";
+
+// bin/helpers/memory-link-facts.ts
+import * as fs18 from "node:fs";
+import * as path21 from "node:path";
+
+// bin/helpers/memory-default.ts
+import * as fs16 from "node:fs";
+import * as path18 from "node:path";
+var MAX_KEY_LENGTH = 200;
+var WRITE_BITS = 146;
+function hashOf(text) {
+  let h = 0;
+  for (let i = 0;i < text.length; i++) {
+    h = (h << 5) - h + text.charCodeAt(i) | 0;
+  }
+  return h;
+}
+function projectKey(p) {
+  const key = p.replace(/[^a-zA-Z0-9]/g, "-");
+  if (key.length <= MAX_KEY_LENGTH)
+    return key;
+  return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
+}
+function defaultMemoryFolder(root, configDir) {
+  return path18.join(configDir, "projects", projectKey(root), "memory");
+}
+function overrideIssue(env) {
+  if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
+    return "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere";
+  }
+  if (env.CLAUDE_CODE_REMOTE_MEMORY_DIR !== undefined) {
+    return "CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere";
+  }
+  if (env.CLAUDE_CODE_PROJECT_DIR_NAME !== undefined && env.CLAUDE_CONFIG_DIR !== undefined) {
+    return "CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently";
+  }
+  return;
+}
+var ClaudeJson = object({ projects: record(string(), unknown()) });
+function knownRoot(root, claudeJson) {
+  try {
+    const parsed = safeParse(ClaudeJson, JSON.parse(fs16.readFileSync(claudeJson, "utf-8")));
+    return parsed.success && Object.hasOwn(parsed.output.projects, root);
+  } catch {
+    return false;
+  }
+}
+function legacyPreferred(legacy, current) {
+  try {
+    const stat = fs16.statSync(legacy);
+    if (!stat.isFile())
+      return false;
+    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs16.existsSync(current);
+  } catch {
+    return false;
+  }
+}
+function claudeJsonPath(env, home) {
+  const current = path18.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
+  const legacy = path18.join(configDirOf(env, home), ".config.json");
+  return legacyPreferred(legacy, current) ? legacy : current;
+}
+
+// bin/helpers/memory-link-plan.ts
+import * as path19 from "node:path";
+var ARCHIVE_DIR = "archive/default-folders";
+function planLink(facts, opts) {
+  const refusals = refusalsOf(facts, opts);
+  const ready = readyOf(facts);
+  if (refusals.length > 0 || ready === undefined) {
+    return { kind: "refused", refusals };
+  }
+  const actions = actionsOf(ready, facts);
+  return {
+    kind: "ready",
+    root: ready.repo.root,
+    target: ready.target.folder,
+    actions,
+    notes: notesOf(ready, facts, actions)
+  };
+}
+function readyOf(facts) {
+  const { repo } = facts;
+  if (facts.storeState.kind === "foreign" || repo.kind === "refused") {
+    return;
+  }
+  const { settings, target } = repo;
+  if (settings.kind !== "ready" || target === undefined)
+    return;
+  if ("issue" in target.pending)
+    return;
+  return { repo, settings, target, pending: target.pending.paths };
+}
+function linkCommand(root, names, extra = "") {
+  const flags = [
+    names.family === undefined ? "" : ` --family ${shellArg(names.family)}`,
+    names.name === undefined ? "" : ` --name ${shellArg(names.name)}`,
+    extra === "" ? "" : ` ${extra}`
+  ];
+  return `sidekick memory link ${shellArg(root)}${flags.join("")}`;
+}
+function isFirstLink(repo) {
+  const { settings, target } = repo;
+  const keyInPlace = settings.kind === "ready" && target !== undefined && settings.key === target.folder;
+  return !keyInPlace;
+}
+function strands(repo) {
+  return isFirstLink(repo) || repo.defaultFolder.kind === "present";
+}
+function refusalsOf(facts, opts) {
+  const { repo } = facts;
+  return [
+    ...storeRefusals(facts.storeState),
+    ...facts.overrideIssue === undefined ? [] : [`${facts.overrideIssue}. Unset it and run link again.`],
+    ...facts.nameIssues.map((issue) => `${issue}; choose another with --family or --name.`),
+    ...repo.kind === "refused" ? [repo.issue] : repoRefusals(repo, opts)
+  ];
+}
+function storeRefusals(state) {
+  if (state.kind !== "foreign")
+    return [];
+  return [
+    `${state.issue}. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`
+  ];
+}
+function repoRefusals(repo, opts) {
+  return [
+    ...settingsRefusals(repo),
+    ...keyMissedRefusals(repo),
+    ...defaultFolderRefusals(repo),
+    ...sessionRefusals(repo, opts),
+    ...repo.target === undefined ? [] : targetRefusals(repo.target, repo.root)
+  ];
+}
+function settingsRefusals(repo) {
+  const { settings, target } = repo;
+  if (settings.kind === "refused")
+    return [settings.issue];
+  const ownOrAbsent = settings.key === undefined || settings.key === target?.folder;
+  if (ownOrAbsent || target === undefined)
+    return [];
+  return [
+    `${settings.file} already sets ${SETTINGS_KEY} to ${settings.key}, not ${target.folder}, and sidekick changes only a key it wrote. If that folder is in the store, run link with the --family and --name that name it. Otherwise remove the entry by hand, as the store's README says under Changes by hand.`
+  ];
+}
+function keyMissedRefusals(repo) {
+  if (repo.keyMissed === undefined)
+    return [];
+  const { claudeJson, projectFolder } = repo.keyMissed;
+  return [
+    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path19.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`
+  ];
+}
+function defaultFolderRefusals(repo) {
+  const { defaultFolder } = repo;
+  if (defaultFolder.kind === "absent")
+    return [];
+  if (!isFirstLink(repo))
+    return defaultFolder.issues;
+  const forged = defaultFolder.files.some((f) => f.rel === MARKER_FILE) ? [
+    `${path19.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
+  ] : [];
+  const into = repo.target?.folder;
+  const conflicts = into === undefined ? [] : defaultFolder.files.flatMap((f) => copyRefusals(defaultFolder.folder, into, f));
+  return [...defaultFolder.issues, ...forged, ...conflicts];
+}
+function copyRefusals(from, into, file) {
+  if (file.rel === MARKER_FILE)
+    return [];
+  const source = path19.join(from, file.rel);
+  const copy = path19.join(into, file.rel);
+  if (file.copy === "differs") {
+    return [
+      `${source} differs from ${copy}, which is already in the store. Merge the two by hand into the store copy, then run link again.`
+    ];
+  }
+  if (file.copy === "notFile") {
+    return [
+      `${copy} is in the way of ${source}, since it is not a file. Move it by hand and run link again.`
+    ];
+  }
+  return [];
+}
+var describeJob = (job) => `${job.name ?? job.sessionId ?? job.id ?? "a session"} in ${job.cwd ?? "an unknown folder"}`;
+function sessionRefusals(repo, opts) {
+  if (opts.force || !strands(repo))
+    return [];
+  const retry = linkCommand(repo.root, opts, "--force");
+  const { sessions } = repo;
+  if (sessions.kind === "failed") {
+    return [
+      `link cannot tell whether another session is open in the repo: ${sessions.issues.join(" ")} Fix the listing, or run again with --force: ${retry}`
+    ];
+  }
+  if (sessions.others.length === 0)
+    return [];
+  return [
+    `Other sessions are open in the repo: ${sessions.others.map(describeJob).join("; ")}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`
+  ];
+}
+function targetRefusals(target, root) {
+  return [
+    ...targetStateRefusals(target, root),
+    ...familyRefusals(target),
+    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path19.basename(found.folder) })}`),
+    ..."issue" in target.pending ? [
+      `${target.pending.issue}. Fix the store's git repo, then run link again.`
+    ] : []
+  ];
+}
+function targetStateRefusals(target, root) {
+  const { folder, state } = target;
+  switch (state.kind) {
+    case "absent":
+    case "empty":
+      return [];
+    case "notFolder":
+      return [
+        `${folder} is a file, not a folder. Choose another folder name with --name.`
+      ];
+    case "unmarked":
+      return [
+        `${folder} holds files but no ${MARKER_FILE}, so link did not make it for this repo, and it may be a family folder. Choose another folder name with --name.`
+      ];
+    case "invalidMarker":
+      return [`${state.issue}. Fix or remove it by hand, then run link again.`];
+    case "marked":
+      return state.root === root ? [] : [
+        `${folder} belongs to ${state.root}, as its ${MARKER_FILE} says. Choose another folder name with --name.`
+      ];
+    default: {
+      const unhandled = state;
+      throw new Error(`Unhandled target state: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function familyRefusals(target) {
+  const { family } = target;
+  const folder = path19.dirname(target.folder);
+  if (family === "marked") {
+    return [
+      `${folder} holds a ${MARKER_FILE}, so it is a repo folder, not a family. Choose another family with --family.`
+    ];
+  }
+  if (family === "notFolder") {
+    return [
+      `${folder} is a file, not a family folder. Choose another family with --family.`
+    ];
+  }
+  return [];
+}
+var COMMITTED_KINDS = new Set([
+  "writeMarker",
+  "copyFile",
+  "archiveDefault"
+]);
+function actionsOf(ready, facts) {
+  const first = isFirstLink(ready.repo);
+  const steps = [
+    ...storeActions(facts),
+    ...folderActions(ready),
+    ...first ? copyActions(ready) : [],
+    ...first ? [mergeAction(ready)] : [],
+    ...archiveActions(ready, facts, first)
+  ];
+  const writesStore = steps.some((step) => COMMITTED_KINDS.has(step.kind)) || ready.pending.length > 0;
+  return writesStore ? [...steps, commitAction(ready, facts.store)] : steps;
+}
+function storeActions(facts) {
+  const { kind } = facts.storeState;
+  const creates = kind === "absent" || kind === "empty";
+  return creates ? [{ kind: "createStore", store: facts.store }] : [];
+}
+function folderActions(ready) {
+  const { folder, state } = ready.target;
+  const marker = {
+    kind: "writeMarker",
+    folder,
+    root: ready.repo.root
+  };
+  if (state.kind === "absent") {
+    return [{ kind: "createFolder", folder }, marker];
+  }
+  return state.kind === "empty" ? [marker] : [];
+}
+function copyActions(ready) {
+  const { defaultFolder } = ready.repo;
+  if (defaultFolder.kind === "absent")
+    return [];
+  return defaultFolder.files.filter((f) => f.copy === "absent" && f.rel !== MARKER_FILE).map((f) => ({
+    kind: "copyFile",
+    from: path19.join(defaultFolder.folder, f.rel),
+    to: path19.join(ready.target.folder, f.rel)
+  }));
+}
+function mergeAction(ready) {
+  return {
+    kind: "mergeKey",
+    file: ready.settings.file,
+    value: ready.target.folder,
+    expected: ready.settings.text
+  };
+}
+function archiveActions(ready, facts, first) {
+  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
+  if (defaultFolder.kind === "absent")
+    return [];
+  const name = archiveName(projectKey2, facts.today, ready.target.archives);
+  return [
+    {
+      kind: "archiveDefault",
+      from: defaultFolder.folder,
+      to: path19.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
+      copies: ready.target.folder,
+      reappeared: !first
+    }
+  ];
+}
+function archiveName(key, today, taken) {
+  const base = `${key}-${today}`;
+  if (!taken.includes(base))
+    return base;
+  let n = 2;
+  while (taken.includes(`${base}-${n}`))
+    n += 1;
+  return `${base}-${n}`;
+}
+function commitAction(ready, store) {
+  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
+  const owned = {
+    folderRel: ready.target.rel,
+    projectKey: projectKey2,
+    defaultFolder: defaultFolder.folder
+  };
+  return {
+    kind: "commit",
+    store,
+    message: `link ${ready.target.rel}`,
+    owned
+  };
+}
+function notesOf(ready, facts, actions) {
+  const { defaultFolder } = ready.repo;
+  const moves = actions.some((a) => a.kind === "mergeKey" || a.kind === "archiveDefault");
+  const noDefault = isFirstLink(ready.repo) && defaultFolder.kind === "absent" ? [
+    `No default memory folder at ${defaultFolder.folder}: nothing to copy or archive.`
+  ] : [];
+  return [
+    ...noDefault,
+    ...moves ? sessionNotes(ready.repo.sessions, defaultFolder.folder) : [],
+    ...userSettingsNotes(facts)
+  ];
+}
+function sessionNotes(sessions, folder) {
+  if (sessions.kind === "failed") {
+    return [
+      `The check for other open sessions did not run: ${sessions.issues.join(" ")} Any session open in the repo keeps writing to ${folder} until it restarts.`
+    ];
+  }
+  const forced = sessions.others.map((job) => `Passed over with --force: ${describeJob(job)}. It keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`);
+  const self = sessions.self === undefined ? [] : [
+    `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`
+  ];
+  return [...forced, ...self];
+}
+function userSettingsNotes(facts) {
+  const { file, covered } = facts.userSettings;
+  if (covered)
+    return [];
+  return [
+    `No permissions.additionalDirectories entry in ${file} covers the store. link never writes that file, so add this entry to that list by hand: ${JSON.stringify(facts.store)}`
+  ];
+}
+
+// bin/helpers/memory-sessions.ts
+import * as fs17 from "node:fs";
+import * as path20 from "node:path";
+function realOrResolved(p) {
+  try {
+    return fs17.realpathSync(p);
+  } catch {
+    return path20.resolve(p);
+  }
+}
+function isInside(dir, checkout) {
+  const rel = path20.relative(checkout, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path20.sep}`) || path20.isAbsolute(rel));
+}
+function sessionsInRepo(jobs, checkouts, selfId) {
+  const roots = checkouts.map(realOrResolved);
+  const inRepo = jobs.filter((j) => j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
+  const hasSelf = selfId !== undefined && selfId !== "";
+  const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
+  return { self, others: inRepo.filter((j) => j !== self) };
+}
+
+// bin/helpers/memory-link-facts.ts
+function gatherFacts(opts, deps) {
+  const store = path21.resolve(storeRoot(deps.env, deps.home));
+  const state = storeState(store, deps.runGit);
+  const found = mainCheckout(path21.resolve(opts.repo), deps.runGit, deps.home);
+  const name = opts.name ?? ("root" in found ? path21.basename(found.root) : undefined);
+  const nameIssues = [opts.family, name].flatMap((n) => {
+    const issue = n === undefined ? undefined : folderNameIssue(n);
+    return issue === undefined ? [] : [issue];
+  });
+  const repo = "issue" in found ? { kind: "refused", issue: found.issue } : repoFacts({
+    ...found,
+    store,
+    state,
+    family: opts.family,
+    name: name ?? path21.basename(found.root),
+    namesOk: nameIssues.length === 0,
+    deps
+  });
+  return {
+    store,
+    storeState: state,
+    overrideIssue: overrideIssue(deps.env),
+    nameIssues,
+    repo,
+    userSettings: userSettingsFacts(deps.configDir, store, deps.home),
+    today: deps.today()
+  };
+}
+function repoFacts(input) {
+  const { root, deps } = input;
+  const settings = settingsState(root, deps.runGit);
+  const key = projectKey(root);
+  const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
+  const folder = path21.join(input.store, ...rel.split("/"));
+  const knowsFolder = input.namesOk && input.state.kind !== "foreign";
+  const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
+  const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
+  return {
+    kind: "found",
+    root,
+    settings,
+    projectKey: key,
+    keyMissed: keyMissed(root, key, deps),
+    defaultFolder,
+    sessions: sessionFacts(input),
+    target
+  };
+}
+function keyMissed(root, key, deps) {
+  const claudeJson = claudeJsonPath(deps.env, deps.home);
+  const projectFolder = path21.join(deps.configDir, "projects", key);
+  const missed = knownRoot(root, claudeJson) && !fs18.existsSync(projectFolder);
+  return missed ? { claudeJson, projectFolder } : undefined;
+}
+function sessionFacts(input) {
+  const listed = listJobs(input.deps.runClaude, input.root);
+  if ("issues" in listed)
+    return { kind: "failed", issues: listed.issues };
+  const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
+  return {
+    kind: "listed",
+    ...sessionsInRepo(listed.jobs, input.checkouts, selfId)
+  };
+}
+function targetFacts(input) {
+  const { store, folder, rel, key, defaultFolder } = input;
+  const owned = {
+    folderRel: rel,
+    projectKey: key,
+    defaultFolder: defaultFolder.folder
+  };
+  return {
+    folder,
+    rel,
+    state: targetState(folder),
+    family: input.family === undefined ? "none" : familyState(path21.join(store, input.family)),
+    elsewhere: findMarkers(store).filter((m) => m.root === input.root && m.folder !== folder).map((m) => ({ folder: m.folder, family: m.family })),
+    archives: archiveNames(store),
+    pending: input.state.kind === "store" ? ownedChanges(store, owned, input.deps.runGit) : { paths: [] }
+  };
+}
+function targetState(folder) {
+  const stat = fs18.statSync(folder, { throwIfNoEntry: false });
+  if (stat === undefined)
+    return { kind: "absent" };
+  if (!stat.isDirectory())
+    return { kind: "notFolder" };
+  const marker = readMarker(folder);
+  if (marker.kind === "marker")
+    return { kind: "marked", root: marker.root };
+  if (marker.kind === "invalid") {
+    return { kind: "invalidMarker", issue: marker.issue };
+  }
+  return fs18.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
+}
+function familyState(folder) {
+  const stat = fs18.statSync(folder, { throwIfNoEntry: false });
+  if (stat === undefined)
+    return "absent";
+  if (!stat.isDirectory())
+    return "notFolder";
+  return readMarker(folder).kind === "none" ? "folder" : "marked";
+}
+function archiveNames(store) {
+  const folder = path21.join(store, ...ARCHIVE_DIR.split("/"));
+  return fs18.existsSync(folder) ? fs18.readdirSync(folder) : [];
+}
+function isInside2(dir, parent) {
+  const rel = path21.relative(parent, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path21.sep}`) || path21.isAbsolute(rel));
+}
+function walkFolder(root) {
+  const entries = entriesOf2(fs18.realpathSync(root), root, "");
+  return {
+    files: entries.flatMap((e) => ("file" in e) ? [e.file] : []),
+    issues: entries.flatMap((e) => ("issue" in e) ? [e.issue] : [])
+  };
+}
+function entriesOf2(real, root, rel) {
+  return fs18.readdirSync(path21.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
+    if (entry.isDirectory())
+      return entriesOf2(real, root, child);
+    if (entry.isFile())
+      return [{ file: child }];
+    if (entry.isSymbolicLink())
+      return [linkEntry(real, root, child)];
+    return [
+      {
+        issue: `${path21.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
+      }
+    ];
+  });
+}
+function linkEntry(real, root, child) {
+  const full = path21.join(root, child);
+  const way = "Replace it with the file itself, or remove it, then run link again.";
+  try {
+    const named = fs18.realpathSync(full);
+    if (isInside2(named, real) && fs18.statSync(named).isFile()) {
+      return { file: child };
+    }
+    return {
+      issue: `${full} is a link to ${named}, which is not a file inside the default folder. ${way}`
+    };
+  } catch {
+    return { issue: `${full} is a broken link. ${way}` };
+  }
+}
+function readDefaultFolder(folder, target) {
+  const stat = fs18.lstatSync(folder, { throwIfNoEntry: false });
+  if (stat === undefined)
+    return { kind: "absent", folder };
+  if (!stat.isDirectory()) {
+    const issue = `${folder} is not a folder, so link cannot copy it. Move it aside by hand, then run link again.`;
+    return { kind: "present", folder, files: [], issues: [issue] };
+  }
+  const walked = walkFolder(folder);
+  const files = walked.files.map((rel) => ({
+    rel,
+    copy: target === undefined ? "absent" : copyState(path21.join(folder, rel), path21.join(target, rel))
+  }));
+  return { kind: "present", folder, files, issues: walked.issues };
+}
+function copyState(from, to) {
+  try {
+    if (!fs18.statSync(to).isFile())
+      return "notFile";
+  } catch (error) {
+    const absent = error instanceof Error && "code" in error && error.code === "ENOENT";
+    return absent ? "absent" : "notFile";
+  }
+  return fs18.readFileSync(from).equals(fs18.readFileSync(to)) ? "same" : "differs";
+}
+function ownedChanges(store, owned, runGit) {
+  const args = [
+    "--no-optional-locks",
+    "--literal-pathspecs",
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--",
+    owned.folderRel,
+    ARCHIVE_DIR
+  ];
+  const r = runGit("git", args, store);
+  if (r.code !== 0) {
+    return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
+  }
+  const sources = [
+    owned.defaultFolder,
+    ...ownArchives(store, owned.projectKey)
+  ];
+  const isOwned = (p) => fs18.existsSync(path21.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
+  return { paths: porcelainPaths(r.stdout).filter(isOwned) };
+}
+function isOwnCopy(store, folderRel, sources, p) {
+  const prefix = `${folderRel}/`;
+  if (!p.startsWith(prefix))
+    return false;
+  const rel = p.slice(prefix.length);
+  if (rel === MARKER_FILE)
+    return true;
+  const file = path21.join(store, p);
+  return sources.some((source) => sameBytes(path21.join(source, rel), file));
+}
+function sameBytes(a, b) {
+  try {
+    const bothFiles = fs18.statSync(a).isFile() && fs18.statSync(b).isFile();
+    return bothFiles && fs18.readFileSync(a).equals(fs18.readFileSync(b));
+  } catch {
+    return false;
+  }
+}
+function ownArchives(store, key) {
+  const parent = path21.join(store, ...ARCHIVE_DIR.split("/"));
+  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path21.join(parent, name));
+}
+function porcelainPaths(output) {
+  const fields = output.split("\x00").filter((field) => field !== "");
+  const paths = [];
+  for (let i = 0;i < fields.length; i++) {
+    const status = fields[i].slice(0, 2);
+    paths.push(fields[i].slice(3));
+    if (status.includes("R") || status.includes("C"))
+      i++;
+  }
+  return paths;
+}
+var ARCHIVE_DATE = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
+var isOwnArchiveName = (entry, key) => entry.startsWith(`${key}-`) && ARCHIVE_DATE.test(entry.slice(key.length + 1));
+function isOwnArchivePath(p, key) {
+  const prefix = `${ARCHIVE_DIR}/`;
+  if (!p.startsWith(prefix))
+    return false;
+  const [entry] = p.slice(prefix.length).split("/");
+  return isOwnArchiveName(entry, key);
+}
+var UserSettingsSchema = object({
+  permissions: optional(object({
+    additionalDirectories: optional(array(string()), [])
+  }), { additionalDirectories: [] })
+});
+function additionalDirectories(file) {
+  try {
+    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs18.readFileSync(file, "utf-8")));
+    return parsed.success ? parsed.output.permissions.additionalDirectories : [];
+  } catch {
+    return [];
+  }
+}
+var expandHome = (entry, home) => entry === "~" || entry.startsWith("~/") ? path21.join(home, entry.slice(1)) : entry;
+function userSettingsFacts(configDir, store, home) {
+  const file = path21.join(configDir, "settings.json");
+  const covered = additionalDirectories(file).some((entry) => {
+    const dir = path21.resolve(expandHome(entry, home));
+    return isInside2(store, dir) || isInside2(physical(store), physical(dir));
+  });
+  return { file, covered };
+}
+
+// bin/helpers/memory-link.ts
+var messageOf3 = (error) => error instanceof Error ? error.message : String(error);
+function runLink(opts, deps, out, err) {
+  const gathered = gather(opts, deps);
+  if ("issue" in gathered) {
+    err(`link could not read what it needs, and wrote nothing: ${gathered.issue}`);
+    return 1;
+  }
+  const plan = planLink(gathered.facts, opts);
+  if (plan.kind === "refused") {
+    err("link refused, and wrote nothing:");
+    for (const refusal2 of plan.refusals)
+      err(`- ${refusal2}`);
+    return 1;
+  }
+  if (plan.actions.length === 0) {
+    out(`${plan.root} is already linked to ${plan.target}.`);
+  } else if (opts.dryRun) {
+    out("Dry run: link writes nothing. These are the steps it would take:");
+    for (const action of plan.actions)
+      out(phrase(action).todo);
+  } else if (!applyAll(plan.actions, deps.runGit, out, err)) {
+    return 1;
+  }
+  for (const note of plan.notes)
+    out(note);
+  return 0;
+}
+function gather(opts, deps) {
+  try {
+    return { facts: gatherFacts(opts, deps) };
+  } catch (error) {
+    return { issue: messageOf3(error) };
+  }
+}
+function applyAll(actions, runGit, out, err) {
+  for (const action of actions) {
+    const applied = applyAction(action, runGit);
+    if (!applied.ok) {
+      err(`link stopped before it could ${phrase(action).step}: ${applied.issue}`);
+      err("Fix that, then run the same command again; it skips each step already done.");
+      return false;
+    }
+    for (const line of applied.lines)
+      out(line);
+  }
+  return true;
+}
+function applyAction(action, runGit) {
+  try {
+    return runAction(action, runGit);
+  } catch (error) {
+    return { ok: false, issue: messageOf3(error) };
+  }
+}
+function runAction(action, runGit) {
+  const done = { ok: true, lines: [phrase(action).done] };
+  switch (action.kind) {
+    case "createStore": {
+      const created = createStore(action.store, runGit);
+      return created.ok ? done : created;
+    }
+    case "createFolder":
+      fs19.mkdirSync(action.folder, { recursive: true });
+      return done;
+    case "writeMarker":
+      writeMarker(action.folder, action.root);
+      return done;
+    case "copyFile":
+      fs19.mkdirSync(path22.dirname(action.to), { recursive: true });
+      fs19.copyFileSync(action.from, action.to, fs19.constants.COPYFILE_EXCL);
+      return done;
+    case "mergeKey": {
+      const merged = mergeKey(action.file, action.value, action.expected);
+      return merged.ok ? done : merged;
+    }
+    case "archiveDefault":
+      return archive(action);
+    case "commit":
+      return commit(action, runGit);
+    default: {
+      const unhandled = action;
+      throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function archive(action) {
+  const kept = walkFolder(action.from).files.filter((rel) => copyState(path22.join(action.from, rel), path22.join(action.copies, rel)) !== "same");
+  moveFolder(action.from, action.to);
+  const listed = kept.map((rel) => `  ${path22.join(action.to, rel)}`);
+  if (kept.length === 0)
+    return { ok: true, lines: [phrase(action).done] };
+  const why = action.reappeared ? `The default folder came back after the link. These files in it differ from ${action.copies} or are missing there, so merge what is new by hand:` : `These files changed after the copy, so their latest version is kept in the archive only:`;
+  return { ok: true, lines: [phrase(action).done, why, ...listed] };
+}
+function moveFolder(from, to, rename = fs19.renameSync) {
+  fs19.mkdirSync(path22.dirname(to), { recursive: true });
+  try {
+    rename(from, to);
+  } catch (error) {
+    const crossDevice = error instanceof Error && "code" in error && error.code === "EXDEV";
+    if (!crossDevice)
+      throw error;
+    fs19.cpSync(from, to, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      verbatimSymlinks: true,
+      preserveTimestamps: true
+    });
+    fs19.rmSync(from, { recursive: true });
+  }
+}
+function commit(action, runGit) {
+  const changes = ownedChanges(action.store, action.owned, runGit);
+  if ("issue" in changes)
+    return { ok: false, issue: changes.issue };
+  if (changes.paths.length === 0) {
+    return {
+      ok: true,
+      lines: ["The store holds nothing of link's left to commit."]
+    };
+  }
+  const committed = commitPaths(action.store, changes.paths, action.message, runGit);
+  return committed.ok ? { ok: true, lines: [phrase(action).done] } : committed;
+}
+function phrase(action) {
+  const forms = (done, todo, rest2) => ({
+    done: `${done} ${rest2}`,
+    todo: `Would ${todo} ${rest2}`,
+    step: `${todo} ${rest2}`
+  });
+  switch (action.kind) {
+    case "createStore":
+      return forms("Created", "create", `the store at ${action.store}`);
+    case "createFolder":
+      return forms("Created", "create", action.folder);
+    case "writeMarker":
+      return forms("Wrote", "write", `${path22.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
+    case "copyFile":
+      return forms("Copied", "copy", `${action.from} to ${action.to}`);
+    case "mergeKey":
+      return forms("Set", "set", `${SETTINGS_KEY} to ${action.value} in ${action.file}`);
+    case "archiveDefault":
+      return forms("Moved", "move", `${action.from} to ${action.to}`);
+    case "commit":
+      return forms("Committed", "commit", `link's paths in the store as "${action.message}"`);
+    default: {
+      const unhandled = action;
+      throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
 // bin/helpers/memory.ts
 var MEMORY_USAGE_LINE = "sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run]";
 function parseLinkArgs(rest2) {
@@ -5591,7 +5624,7 @@ function envWithAbsoluteStore(env, cwd) {
   const store = env.SIDEKICK_MEMORY_STORE;
   if (store === undefined || store === "")
     return env;
-  return { ...env, SIDEKICK_MEMORY_STORE: path22.resolve(cwd, store) };
+  return { ...env, SIDEKICK_MEMORY_STORE: path23.resolve(cwd, store) };
 }
 function runMemoryCli(argv2, ctx, out, err) {
   const [verb, ...rest2] = argv2;
@@ -5601,7 +5634,7 @@ function runMemoryCli(argv2, ctx, out, err) {
     return 1;
   }
   const env = envWithAbsoluteStore(ctx.env, ctx.cwd);
-  return runLink({ ...parsed, repo: path22.resolve(ctx.cwd, parsed.repo) }, {
+  return runLink({ ...parsed, repo: path23.resolve(ctx.cwd, parsed.repo) }, {
     env,
     home: ctx.home,
     configDir: configDirOf(env, ctx.home),
@@ -5950,14 +5983,14 @@ function renderReport(r) {
 // bin/helpers/rules.ts
 import { execFileSync } from "node:child_process";
 import * as fs22 from "node:fs";
-import * as path25 from "node:path";
+import * as path26 from "node:path";
 
 // bin/helpers/rules-fs.ts
 import * as fs20 from "node:fs";
-import * as path23 from "node:path";
+import * as path24 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
 function statusOf(dir, name) {
-  const st = fs20.lstatSync(path23.join(dir, name), { throwIfNoEntry: false });
+  const st = fs20.lstatSync(path24.join(dir, name), { throwIfNoEntry: false });
   if (!st)
     return "absent";
   return st.isFile() ? "file" : "other";
@@ -5974,7 +6007,7 @@ function ownedRulesIn(dir) {
 
 // bin/helpers/rules-overlap.ts
 import * as fs21 from "node:fs";
-import * as path24 from "node:path";
+import * as path25 from "node:path";
 var MIN_SHARED_HEADINGS = 2;
 var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
 function headingsOf(body) {
@@ -6014,7 +6047,7 @@ function findOverlap(src, dest) {
   if (!destStat?.isDirectory())
     return report;
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs21.readFileSync(path24.join(src, name), "utf-8");
+    const body = fs21.readFileSync(path25.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
@@ -6023,7 +6056,7 @@ function findOverlap(src, dest) {
   });
   const others = fs21.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   for (const file of others) {
-    const body = fs21.readFileSync(path24.join(dest, file), "utf-8");
+    const body = fs21.readFileSync(path25.join(dest, file), "utf-8");
     for (const rule of rules) {
       const signals = signalsFor(file, body, rule);
       if (signals.length === 0)
@@ -6062,7 +6095,7 @@ function formatOverlap(report) {
 
 // bin/helpers/rules.ts
 function resolveDest(scope, cwd, claudeHome) {
-  return scope === "project" ? path25.join(cwd, ".claude", "rules") : path25.join(claudeHome, "rules");
+  return scope === "project" ? path26.join(cwd, ".claude", "rules") : path26.join(claudeHome, "rules");
 }
 function workTreeRootOf(cwd) {
   try {
@@ -6083,7 +6116,7 @@ var PLUGIN_ONLY_RULES = [
 var isRecord7 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
-  const file = path25.join(root, ".claude", "settings.json");
+  const file = path26.join(root, ".claude", "settings.json");
   let text;
   try {
     text = fs22.readFileSync(file, "utf-8");
@@ -6151,7 +6184,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
       skipped.push({ name, why: "not-a-regular-file" });
       continue;
     }
-    fs22.copyFileSync(path25.join(src, name), path25.join(dest, name));
+    fs22.copyFileSync(path26.join(src, name), path26.join(dest, name));
     installed.push(name);
   }
   const keep = new Set(shipped);
@@ -6159,7 +6192,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
   const removed = owned.filter((n) => !keep.has(n));
   const leftOut = owned.filter((n) => set.leaveOut.includes(n));
   for (const name of [...removed, ...leftOut]) {
-    fs22.rmSync(path25.join(dest, name));
+    fs22.rmSync(path26.join(dest, name));
   }
   return { installed, removed, leftOut, skipped };
 }
@@ -6170,12 +6203,12 @@ function checkRules(src, dest, scope = EVERY_RULE) {
   const installed = ownedRulesIn(dest);
   const drift = [];
   for (const name of expected) {
-    const there = path25.join(dest, name);
+    const there = path26.join(dest, name);
     if (!fs22.existsSync(there)) {
       drift.push({ kind: "missing", name });
       continue;
     }
-    const same = fs22.readFileSync(path25.join(src, name)).equals(fs22.readFileSync(there));
+    const same = fs22.readFileSync(path26.join(src, name)).equals(fs22.readFileSync(there));
     if (!same)
       drift.push({ kind: "stale", name });
   }
@@ -6230,7 +6263,7 @@ var realOrSelf = (p) => {
   try {
     return fs22.realpathSync(p);
   } catch {
-    return path25.resolve(p);
+    return path26.resolve(p);
   }
 };
 var sameDir = (a, b) => realOrSelf(a) === realOrSelf(b);
@@ -6717,7 +6750,7 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 
 // bin/helpers/worker-dispatch.ts
 import * as fs23 from "node:fs";
-import * as path26 from "node:path";
+import * as path27 from "node:path";
 
 // bin/helpers/worker-overlay.ts
 var markers = (opts) => ({
@@ -6802,10 +6835,10 @@ function parseDispatchArgs(rest2, cwd) {
   if (pluginDir === "")
     return;
   return {
-    brief: path26.resolve(cwd, parsed.positionals[0]),
+    brief: path27.resolve(cwd, parsed.positionals[0]),
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path26.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path27.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
 }
@@ -6842,7 +6875,7 @@ var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
   "tracked files have uncommitted changes, which the worker's worktree would not carry: commit them first"
 ];
 function treeNameIssues(runGit, top, name) {
-  const folder = path26.join(top, WORKTREES_FOLDER, name);
+  const folder = path27.join(top, WORKTREES_FOLDER, name);
   const branch = nativeBranch(name);
   return [
     ...fs23.existsSync(folder) ? [`name: ${folder} already exists`] : [],
@@ -6894,7 +6927,7 @@ function bypassIssues(profile, mode) {
 }
 function missingProfileHint(name, penv) {
   const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder(path26.join(root.dir, name)));
+  const held = roots.some((root) => isFolder(path27.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv, main, reads) {
@@ -7044,7 +7077,7 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-finish-args.ts
-import * as path27 from "node:path";
+import * as path28 from "node:path";
 var NEEDS_REPORT = "--name needs --no-report or --discard, since there is no brief to say where the run report goes";
 var NEEDS_INTO = "--name needs --into <rev> or --discard, since there is no brief to name the target";
 var stringFlag2 = (values, key) => {
@@ -7070,7 +7103,7 @@ function parseFinishArgs(rest2, cwd) {
   const shared = {
     noReport: values["no-report"] === true,
     mode: discard ? { kind: "discard" } : { kind: "landed", into },
-    worktree: worktree === undefined ? undefined : path27.resolve(cwd, worktree)
+    worktree: worktree === undefined ? undefined : path28.resolve(cwd, worktree)
   };
   const name = stringFlag2(values, "name");
   if (name !== undefined) {
@@ -7078,7 +7111,7 @@ function parseFinishArgs(rest2, cwd) {
   }
   if (positionals.length !== 1)
     return;
-  const brief = path27.resolve(cwd, positionals[0]);
+  const brief = path28.resolve(cwd, positionals[0]);
   return { subject: { kind: "brief", brief }, ...shared };
 }
 function byName2(name, shared) {
@@ -7141,7 +7174,7 @@ var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
 import * as fs24 from "node:fs";
-import * as path28 from "node:path";
+import * as path29 from "node:path";
 
 // bin/helpers/worker-landed.ts
 var DEFAULT_CAP = 200;
@@ -7599,15 +7632,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report = path28.posix.normalize(read.brief.report);
+  const report = path29.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: read.brief.target,
     report,
-    reportFrom: path28.join(worktree, report),
-    reportTo: top === undefined ? undefined : path28.join(top, report)
+    reportFrom: path29.join(worktree, report),
+    reportTo: top === undefined ? undefined : path29.join(top, report)
   };
 }
 function placesFor(tops, found, read) {
@@ -7652,7 +7685,7 @@ function operatorIssues(name, tried, linked) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs24.existsSync(worktree) && !fs24.existsSync(path28.join(worktree, ".git"));
+  const linkless = fs24.existsSync(worktree) && !fs24.existsSync(path29.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -7805,7 +7838,7 @@ function clearGone(gone, wenv, out) {
 
 // bin/helpers/worker-finish-report.ts
 import * as fs25 from "node:fs";
-import * as path29 from "node:path";
+import * as path30 from "node:path";
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
@@ -7862,7 +7895,7 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs25.mkdirSync(path29.dirname(to), { recursive: true });
+    fs25.mkdirSync(path30.dirname(to), { recursive: true });
     fs25.copyFileSync(from, to, fs25.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
@@ -7926,7 +7959,7 @@ function copyChangedIssues(from, to, now) {
 
 // bin/helpers/worker-finish-subject.ts
 import * as fs26 from "node:fs";
-import * as path30 from "node:path";
+import * as path31 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -7937,7 +7970,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path30.dirname(subject.brief);
+      const folder = path31.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -7955,7 +7988,7 @@ function recordedTop(runGit, commonDir, name) {
   const record2 = records.find((r) => r.name === name);
   if (record2 === undefined)
     return;
-  const folder = path30.dirname(record2.brief);
+  const folder = path31.dirname(record2.brief);
   return fs26.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
@@ -8234,20 +8267,20 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path31.dirname(fileURLToPath(entryFileUrl));
+  const here = path32.dirname(fileURLToPath(entryFileUrl));
   const candidates2 = [
-    path31.resolve(here, ".."),
-    path31.resolve(here, "..", "plugin")
+    path32.resolve(here, ".."),
+    path32.resolve(here, "..", "plugin")
   ];
   for (const c of candidates2) {
-    if (fs27.existsSync(path31.join(c, "rules")))
+    if (fs27.existsSync(path32.join(c, "rules")))
       return c;
   }
   return candidates2[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path31.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path32.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
     const parsed = safeParse(ManifestVersion, JSON.parse(fs27.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
@@ -8353,7 +8386,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path31.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path32.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;
