@@ -73,6 +73,7 @@ const build = (over: Partial<SnapshotInput>) => {
     readJobs: () => ({ states: new Map(), warnings: [] }),
     readAsked: () => undefined,
     warnings: [],
+    repoNames: new Map(),
     ...over,
   });
   if (!snapshot.ok) throw new Error('expected an ok snapshot');
@@ -934,6 +935,27 @@ describe('buildSnapshot: what a waiting session asked', () => {
     expect(s.waiting.map((entry) => entry.asked)).toEqual([
       QUESTION,
       undefined,
+    ]);
+  });
+});
+
+describe('repoNames', () => {
+  test("names a session's repository from the map, and falls back to the suffix strip", () => {
+    const rows = [
+      inter({ cwd: '/work/proj.feature', status: 'waiting', waitingFor: 'x' }),
+      bg({
+        cwd: '/work/other/.claude/worktrees/w',
+        state: 'blocked',
+        status: 'waiting',
+      }),
+    ];
+    const snapshot = build({
+      rows,
+      repoNames: new Map([['/work/proj.feature', 'proj']]),
+    });
+    expect(snapshot.waiting.map((w) => w.repo).sort()).toEqual([
+      'other',
+      'proj',
     ]);
   });
 });

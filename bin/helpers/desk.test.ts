@@ -375,20 +375,30 @@ describe('runDeskCli: children', () => {
       ['w2', undefined],
     ]);
     expect(s.warnings).toEqual([
+      "w2: its brief cannot be read, so its commits count from the main checkout's HEAD",
       startingWith(`w2: no plan title: ${missing}: cannot read the brief: `),
     ]);
   });
 
   test('a failed git call leaves its field out or at its default, with a warning naming the child and the call', () => {
     const fx = repoFixture();
-    const worktree = fx.addWorker('w3', 'cccc0003', { worktree: false });
-    fs.mkdirSync(worktree, { recursive: true });
-    fs.writeFileSync(path.join(worktree, '.git'), 'gitdir: /nonexistent/w3\n');
+    const worktree = fx.addWorker('w3', 'cccc0003');
+    const failing: Runner = (cmd, args, cwd) => {
+      const hitsW3 =
+        cwd === worktree ||
+        args.some((a) => a.endsWith('..refs/heads/worktree-w3'));
+      const isRead = ['log', 'status', 'rev-list'].some((a) =>
+        args.includes(a),
+      );
+      return hitsW3 && isRead
+        ? { code: 128, stdout: '', stderr: 'fatal: broken' }
+        : execRunner(cmd, args, cwd);
+    };
     const rows = [
       childRow(),
       childRow({ id: 'cccc0003', name: 'w3', sessionId: undefined }),
     ];
-    const s = snapshotOf(harness(fx.top, listing(rows)));
+    const s = snapshotOf(harness(fx.top, listing(rows), tmp(), failing));
     expect(s.children.find((c) => c.name === 'w3')).toEqual({
       hasPid: true,
       kind: 'background',
@@ -458,7 +468,185 @@ describe('runDeskCli: a missing worktree', () => {
     git(fx.top, 'branch', '-D', '-q', 'worktree-w1');
     const s = snapshotOf(harness(fx.top, listing([childRow()])));
     expect(s.children[0].unintegrated).toBe(0);
-    expect(s.warnings).toEqual([`w1: its worktree ${fx.worktree} is missing`]);
+    expect(s.warnings).toEqual(['w1: no worktree was found for it']);
+  });
+});
+
+describe('runDeskCli: finding the worktree', () => {
+  // A linked worktree outside the repo, as a sibling, on `branch` with one commit.
+  function sibling(top: string, name: string, branch: string, base = 'HEAD') {
+    const folder = path.join(tmp(), `${path.basename(top)}.${name}`);
+    git(top, 'worktree', 'add', '-q', folder, '-b', branch, base);
+    fs.writeFileSync(path.join(folder, `${name}.txt`), `${name}\n`);
+    git(folder, 'add', `${name}.txt`);
+    git(folder, 'commit', '-q', '-m', `${name} work`);
+    return folder;
+  }
+
+  const startEntry = (cwd: string, gitBranch: string): string =>
+    JSON.stringify({ type: 'user', cwd, gitBranch });
+
+  const w5Row = (over: object = {}) =>
+    childRow({ id: 'bbbb0005', name: 'w5', sessionId: undefined, ...over });
+
+  test('a worker in a sibling worktree is found by its transcript and gets its facts', () => {
+    const fx = repoFixture();
+    fx.addWorker('w5', 'bbbb0005', { worktree: false });
+    const folder = sibling(fx.top, 'w5', 'w5');
+    fs.writeFileSync(path.join(folder, 'dirty.txt'), 'x\n');
+    const config = configFixture();
+    const session = 'bbbb0005-0000-0000-0000-000000000000';
+    config.transcript(session, [startEntry(folder, 'w5')]);
+    const rows = [childRow(), w5Row({ sessionId: session, cwd: '/gone/x' })];
+    const s = snapshotOf(harness(fx.top, listing(rows), config.configDir));
+    expect(s.children.find((c) => c.name === 'w5')).toMatchObject({
+      lastCommit: 'w5 work',
+      unintegrated: 1,
+      uncommitted: true,
+    });
+    expect(s.warnings).toEqual([]);
+  });
+
+  test("a worker's row cwd finds its worktree when no transcript does", () => {
+    const fx = repoFixture();
+    fx.addWorker('w5', 'bbbb0005', { worktree: false });
+    const folder = sibling(fx.top, 'w5', 'w5');
+    const rows = [childRow(), w5Row({ cwd: folder })];
+    const s = snapshotOf(harness(fx.top, listing(rows)));
+    expect(s.children.find((c) => c.name === 'w5')).toMatchObject({
+      lastCommit: 'w5 work',
+      unintegrated: 1,
+    });
+  });
+
+  test("the commits count against the brief's target branch, not the main checkout's HEAD", () => {
+    const fx = repoFixture();
+    fx.addWorker('w5', 'bbbb0005', { worktree: false });
+    const brief = path.join(fx.docs, 'w5-brief.md');
+    fs.writeFileSync(
+      brief,
+      fs
+        .readFileSync(brief, 'utf-8')
+        .replace('orchestrator: orch', 'target: dev\norchestrator: orch'),
+    );
+    const folder = sibling(fx.top, 'w5', 'w5');
+    fs.writeFileSync(path.join(folder, 'more.txt'), 'm\n');
+    git(folder, 'add', 'more.txt');
+    git(folder, 'commit', '-q', '-m', 'more');
+    git(fx.top, 'branch', 'dev', 'w5~1');
+    const s = snapshotOf(
+      harness(fx.top, listing([childRow(), w5Row({ cwd: folder })])),
+    );
+    // Two commits ahead of the main checkout's HEAD, one ahead of `dev`.
+    expect(s.children.find((c) => c.name === 'w5')?.unintegrated).toBe(1);
+  });
+
+  test('a target never reaches git as an option', () => {
+    const fx = repoFixture();
+    const brief = path.join(fx.docs, 'w1-brief.md');
+    fs.writeFileSync(
+      brief,
+      fs
+        .readFileSync(brief, 'utf-8')
+        .replace('orchestrator: orch', 'target: --all\norchestrator: orch'),
+    );
+    const calls: string[][] = [];
+    const recording: Runner = (cmd, args, cwd) => {
+      calls.push(args);
+      return execRunner(cmd, args, cwd);
+    };
+    snapshotOf(harness(fx.top, listing([childRow()]), tmp(), recording));
+    expect(
+      calls.find((args) => args.includes('rev-list'))?.slice(0, 3),
+    ).toEqual([
+      'rev-list',
+      '--count',
+      'refs/heads/--all..refs/heads/worktree-w1',
+    ]);
+  });
+
+  test("without a target, the commits count against the HEAD of the brief's checkout", () => {
+    const fx = repoFixture();
+    const feature = sibling(fx.top, 'feature', 'feature');
+    const brief = path.join(feature, 'w5-brief.md');
+    fx.addWorker('w5', 'bbbb0005', { worktree: false, brief });
+    fs.writeFileSync(
+      brief,
+      briefText(
+        'w5',
+        path.join(fx.docs, 'plan.md'),
+        git(fx.top, 'rev-parse', 'HEAD'),
+      ),
+    );
+    const folder = sibling(feature, 'w5', 'w5', 'feature');
+    const s = snapshotOf(
+      harness(fx.top, listing([childRow(), w5Row({ cwd: folder })])),
+    );
+    // The main checkout's HEAD is two commits behind; the feature checkout's is one.
+    expect(s.children.find((c) => c.name === 'w5')?.unintegrated).toBe(1);
+  });
+
+  test("a brief that cannot be read counts against the main checkout's HEAD, with a warning", () => {
+    const fx = repoFixture();
+    const missing = path.join(fx.docs, 'missing-brief.md');
+    fx.addWorker('w2', 'bbbb0002', { brief: missing });
+    const rows = [
+      childRow(),
+      childRow({ id: 'bbbb0002', name: 'w2', sessionId: undefined }),
+    ];
+    const s = snapshotOf(harness(fx.top, listing(rows)));
+    expect(s.warnings).toContain(
+      "w2: its brief cannot be read, so its commits count from the main checkout's HEAD",
+    );
+  });
+
+  test('a worker nothing finds adds one warning and counts no commits', () => {
+    const fx = repoFixture();
+    fx.addWorker('w2', 'bbbb0002', { worktree: false });
+    const rows = [
+      childRow(),
+      childRow({ id: 'bbbb0002', name: 'w2', sessionId: undefined }),
+    ];
+    const s = snapshotOf(harness(fx.top, listing(rows)));
+    expect(s.children.find((c) => c.name === 'w2')).toMatchObject({
+      unintegrated: 0,
+      uncommitted: false,
+    });
+    expect(s.warnings).toEqual(['w2: no worktree was found for it']);
+  });
+
+  test('a record whose job is gone and whose worktree git marks prunable is pruned', () => {
+    const fx = repoFixture();
+    const folder = fx.addWorker('w2', 'gone0002');
+    fs.rmSync(folder, { recursive: true, force: true });
+    const s = snapshotOf(harness(fx.top, listing([childRow()])));
+    expect(fs.existsSync(path.join(recordsDir(fx.commonDir), 'w2.json'))).toBe(
+      false,
+    );
+    expect(s.children.map((c) => c.name)).toEqual(['w1']);
+  });
+});
+
+describe('runDeskCli: naming the repository', () => {
+  test('a session in a sibling worktree is named for the main checkout', () => {
+    const fx = repoFixture();
+    const folder = path.join(tmp(), `${path.basename(fx.top)}.feature`);
+    git(fx.top, 'worktree', 'add', '-q', folder, '-b', 'feature');
+    const rows = [
+      interactiveRow('dddd0001-0000-0000-0000-000000000000', { cwd: folder }),
+    ];
+    const s = snapshotOf(harness(fx.top, listing(rows)));
+    expect(s.others[0].repo).toBe(path.basename(fx.top));
+  });
+
+  test('a cwd that no longer exists falls back to the suffix strip', () => {
+    const rows = [
+      interactiveRow('dddd0002-0000-0000-0000-000000000000', {
+        cwd: '/gone/proj/.claude/worktrees/x',
+      }),
+    ];
+    const s = snapshotOf(harness(tmp(), listing(rows)));
+    expect(s.others[0].repo).toBe('proj');
   });
 });
 

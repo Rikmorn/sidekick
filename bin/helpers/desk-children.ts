@@ -8,16 +8,29 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ChildFacts, ListingRow } from './desk-snapshot.js';
-import { type TranscriptFinder, tokensOf } from './desk-transcripts.js';
+import {
+  firstPlace,
+  type TranscriptFinder,
+  tokensOf,
+} from './desk-transcripts.js';
 import type { Runner } from './pm-data.js';
 import { readBrief } from './worker-brief.js';
 import type { WorkerRecord } from './worker-record.js';
-import { listWorktrees, WORKTREES_FOLDER } from './worker-repo.js';
+import {
+  checkoutOf,
+  headCommit,
+  listWorktrees,
+  physical,
+  type WorktreeEntry,
+} from './worker-repo.js';
+import { type Candidate, type Found, findWorktree } from './worker-worktree.js';
 
 /** The repository's main checkout top and its common git dir. */
 export interface Repo {
   top: string;
   commonDir: string;
+  /** What `git worktree list` gave, the main checkout first. */
+  worktrees: WorktreeEntry[];
 }
 
 const firstLine = (text: string): string => text.trim().split('\n')[0];
@@ -49,7 +62,11 @@ export function findRepo(
   // Only the final newline goes, since a path may end in a space.
   const commonDir = common.stdout.replace(/\n$/, '');
   return {
-    repo: { top: list.worktrees[0].path, commonDir },
+    repo: {
+      top: list.worktrees[0].path,
+      commonDir,
+      worktrees: list.worktrees,
+    },
     warnings: [],
   };
 }
@@ -79,43 +96,127 @@ const STATUS_ARGS = ['--no-optional-locks', 'status', '--porcelain'];
 
 const COUNT = /^\d+$/;
 
-// `claude --worktree <name>` checks out this branch, as dispatch and finish name it.
-const branchOf = (name: string): string => `worktree-${name}`;
-
 type GitFacts = Omit<ChildFacts, 'tokens' | 'plan'> & { warnings: string[] };
 
-// A missing worktree is one warning: the git calls in it are skipped, and the
-// count, tried still since the branch may remain, adds none of its own.
-function gitFacts(runGit: Runner, repo: Repo, name: string): GitFacts {
-  const worktree = path.join(repo.top, WORKTREES_FOLDER, name);
-  const range = `HEAD..refs/heads/${branchOf(name)}`;
+// The place `find` knows the session started, then the listing's cwd, as the
+// finder wants them: physical paths, in order.
+function candidatesOf(
+  find: TranscriptFinder,
+  row: ListingRow | undefined,
+): Candidate[] {
+  const transcript =
+    row?.sessionId === undefined ? undefined : find(row.sessionId);
+  const place =
+    transcript === undefined ? undefined : firstPlace(transcript.file);
+  const fromTranscript: Candidate[] =
+    place === undefined
+      ? []
+      : [
+          {
+            via: 'transcript',
+            cwd: physical(place.cwd),
+            gitBranch: place.gitBranch,
+          },
+        ];
+  const fromListing: Candidate[] =
+    row?.cwd === undefined ? [] : [{ via: 'listing', cwd: physical(row.cwd) }];
+  return [...fromTranscript, ...fromListing];
+}
+
+type Read = ReturnType<typeof readBrief>;
+
+// The top of the checkout holding the brief's folder; undefined when the
+// brief was not read or sits in no checkout.
+function briefTopOf(runGit: Runner, read: Read): string | undefined {
+  if ('issues' in read) return undefined;
+  const found = checkoutOf(runGit, path.dirname(read.path));
+  return 'top' in found ? found.top : undefined;
+}
+
+interface Base {
+  /** A revision git takes whole. */
+  rev: string;
+  warnings: string[];
+}
+
+// What the commit count measures against: the brief's target branch, else the
+// HEAD of the brief's checkout, else the main checkout's HEAD.
+function countBase(
+  runGit: Runner,
+  name: string,
+  read: Read,
+  briefTop: string | undefined,
+): Base {
+  const fallback = (why: string): Base => ({
+    rev: 'HEAD',
+    warnings: [
+      `${name}: ${why}, so its commits count from the main checkout's HEAD`,
+    ],
+  });
+  if ('issues' in read) return fallback('its brief cannot be read');
+  const { target } = read.brief;
+  // A target may start with `-`, so it never reaches git bare.
+  if (target !== undefined) {
+    return { rev: `refs/heads/${target}`, warnings: [] };
+  }
+  const head =
+    briefTop === undefined ? undefined : headCommit(runGit, briefTop);
+  return head === undefined
+    ? fallback("its brief's checkout has no readable HEAD")
+    : { rev: head, warnings: [] };
+}
+
+// A prunable worktree is missing as far as the desk goes: one warning, and
+// the git calls in it are skipped. The count is tried still, since the branch remains.
+function gitFacts(
+  runGit: Runner,
+  repo: Repo,
+  name: string,
+  found: Found,
+  base: Base,
+): GitFacts {
+  if (found.kind === 'not found') {
+    return {
+      worktreeExists: false,
+      unintegrated: 0,
+      uncommitted: false,
+      warnings: [...base.warnings, `${name}: no worktree was found for it`],
+    };
+  }
   const rev = gitIn(
     runGit,
     repo.top,
-    ['rev-list', '--count', range, '--'],
+    ['rev-list', '--count', `${base.rev}..refs/heads/${found.branch}`, '--'],
     name,
   );
   const count = 'stdout' in rev ? rev.stdout.trim() : '';
   const unintegrated = COUNT.test(count) ? Number(count) : 0;
-  if (!fs.existsSync(worktree)) {
+  const countWarnings = 'warning' in rev ? [rev.warning] : [];
+  if (found.prunable !== undefined) {
     return {
       worktreeExists: false,
       unintegrated,
       uncommitted: false,
-      warnings: [`${name}: its worktree ${worktree} is missing`],
+      warnings: [
+        `${name}: its worktree ${found.path} is missing`,
+        ...base.warnings,
+        ...countWarnings,
+      ],
     };
   }
-  const log = gitIn(runGit, worktree, ['log', '-1', '--format=%s'], name);
-  const status = gitIn(runGit, worktree, STATUS_ARGS, name);
+  const log = gitIn(runGit, found.path, ['log', '-1', '--format=%s'], name);
+  const status = gitIn(runGit, found.path, STATUS_ARGS, name);
   const subject = 'stdout' in log ? log.stdout.trim() : '';
   return {
     worktreeExists: true,
     ...(subject === '' ? {} : { lastCommit: subject }),
     unintegrated,
     uncommitted: 'stdout' in status && status.stdout.trim() !== '',
-    warnings: [log, status, rev].flatMap((r) =>
-      'warning' in r ? [r.warning] : [],
-    ),
+    warnings: [
+      ...[log, status].flatMap((r) => ('warning' in r ? [r.warning] : [])),
+      ...countWarnings,
+      ...base.warnings,
+    ],
   };
 }
 
@@ -125,14 +226,16 @@ const reason = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
 
 // The first `# ` line of the brief's plan; a plan without one has no title.
-function planTitle(record: WorkerRecord): {
+function planTitle(
+  name: string,
+  read: Read,
+): {
   plan?: string;
   warnings: string[];
 } {
   const noTitle = (why: string) => ({
-    warnings: [`${record.name}: no plan title: ${why}`],
+    warnings: [`${name}: no plan title: ${why}`],
   });
-  const read = readBrief(record.brief);
   if ('issues' in read) return noTitle(read.issues.join('; '));
   const { plan } = read.brief;
   try {
@@ -159,10 +262,30 @@ export function childFacts(
   row: ListingRow | undefined,
 ): { facts: ChildFacts; warnings: string[] } {
   const { runGit, repo, find } = sources;
-  const { warnings: gitWarnings, ...git } = gitFacts(runGit, repo, record.name);
-  const { warnings: planWarnings, ...plan } = planTitle(record);
+  const { name } = record;
+  const read = readBrief(record.brief);
+  const briefTop = briefTopOf(runGit, read);
+  const found = findWorktree({
+    name,
+    mainTop: physical(repo.top),
+    launcher:
+      briefTop === undefined
+        ? undefined
+        : { top: physical(briefTop), role: "the brief's checkout" },
+    worktrees: repo.worktrees,
+    candidates: candidatesOf(find, row),
+  });
+  const base = countBase(runGit, name, read, briefTop);
+  const { warnings: gitWarnings, ...git } = gitFacts(
+    runGit,
+    repo,
+    name,
+    found,
+    base,
+  );
+  const { warnings: planWarnings, ...plan } = planTitle(name, read);
   const { warnings: tokenWarnings, ...tokens } = tokensOf(
-    record.name,
+    name,
     row?.sessionId,
     find,
   );

@@ -53,6 +53,8 @@ export interface SnapshotInput {
   self?: string;
   /** The caller's main checkout folder name; absent outside a repository. */
   repo?: string;
+  /** From a session's `cwd` to its repository's name, as git gives it; a `cwd` git could not read is absent. */
+  repoNames: ReadonlyMap<string, string>;
   warnings: string[];
 }
 
@@ -142,6 +144,12 @@ function repoOf(cwd: string | undefined): string {
   const top = cwd.replace(WORKTREE_SUFFIX, '').replace(/\/+$/, '');
   return top.slice(top.lastIndexOf('/') + 1);
 }
+
+// The repository's name as git gave it, else the suffix strip's guess.
+const repoNameOf = (
+  repoNames: ReadonlyMap<string, string>,
+  cwd: string | undefined,
+): string => (cwd === undefined ? '' : (repoNames.get(cwd) ?? repoOf(cwd)));
 
 interface Classified {
   class: Class;
@@ -251,6 +259,7 @@ function joinChild(
   facts: ChildFacts | undefined,
   fresh: ReadonlySet<string>,
   known: RowFacts,
+  repoNames: ReadonlyMap<string, string>,
 ): JoinedChild {
   const classified: Classified = row
     ? classify(row, fresh)
@@ -278,7 +287,7 @@ function joinChild(
     const waiting: DeskWaiting = {
       ...session,
       name: record.name,
-      repo: repoOf(row?.cwd),
+      repo: repoNameOf(repoNames, row?.cwd),
       reason: reason ?? 'waiting',
       child: true,
     };
@@ -356,6 +365,7 @@ function joinChildren(
         input.facts.get(record.name),
         input.freshInteractive,
         known,
+        input.repoNames,
       ),
     ),
   );
@@ -365,12 +375,13 @@ function otherOf(
   row: ListingRow,
   classified: Classified,
   known: RowFacts,
+  repoNames: ReadonlyMap<string, string>,
 ): DeskOther {
   const reason = classified.reason ?? row.waitingFor;
   return {
     ...sessionOf(row, known),
     name: displayName(row),
-    repo: repoOf(row.cwd),
+    repo: repoNameOf(repoNames, row.cwd),
     kind: row.kind ?? 'unknown',
     state: row.state ?? row.status ?? 'unknown',
     ...(reason === undefined ? {} : { reason }),
@@ -414,7 +425,12 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
   const self =
     selfRow === undefined
       ? undefined
-      : otherOf(selfRow, classify(selfRow, input.freshInteractive), known);
+      : otherOf(
+          selfRow,
+          classify(selfRow, input.freshInteractive),
+          known,
+          input.repoNames,
+        );
   const considered = [...childRows, ...others.map(({ row }) => row)];
   const warnings = [
     ...new Set([...input.warnings, ...considered.flatMap(rowWarnings)]),
@@ -424,7 +440,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
     .map(({ row, classified }) => ({
       ...sessionOf(row, known),
       name: displayName(row),
-      repo: repoOf(row.cwd),
+      repo: repoNameOf(input.repoNames, row.cwd),
       reason: classified.reason ?? 'waiting',
       child: false,
     }));
@@ -441,7 +457,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
     finished: others.filter(({ classified }) => classified.class === 'finished')
       .length,
     others: others.map(({ row, classified }) =>
-      otherOf(row, classified, known),
+      otherOf(row, classified, known, input.repoNames),
     ),
     warnings,
     paneWarnings: read.warnings,

@@ -41,6 +41,7 @@ import {
   removeRecord,
   type WorkerRecord,
 } from './worker-record.js';
+import { listWorktrees } from './worker-repo.js';
 
 export const DESK_USAGE_LINE = 'sidekick desk --json [--self <session id>]';
 
@@ -161,6 +162,40 @@ function readAndPruneChildren(
   };
 }
 
+const GIT_SUFFIX = '.git';
+
+// The main checkout's folder name for the repository holding `cwd`: the
+// folder holding a common dir that ends in `.git`, else the first worktree
+// git lists. Undefined when git cannot read `cwd`.
+function repoNameFor(runGit: Runner, cwd: string): string | undefined {
+  const common = runGit(
+    'git',
+    ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+    cwd,
+  );
+  if (common.code !== 0) return undefined;
+  const commonDir = common.stdout.replace(/\n$/, '');
+  if (path.basename(commonDir) === GIT_SUFFIX) {
+    return path.basename(path.dirname(commonDir));
+  }
+  const list = listWorktrees(runGit, cwd);
+  return 'issue' in list ? undefined : path.basename(list.worktrees[0].path);
+}
+
+// From each distinct row `cwd` to its repository's name; a `cwd` git cannot read is left out.
+function repoNamesOf(
+  runGit: Runner,
+  rows: ListingRow[],
+): ReadonlyMap<string, string> {
+  const cwds = new Set(rows.flatMap(({ cwd }) => cwd ?? []));
+  return new Map(
+    [...cwds].flatMap((cwd): [string, string][] => {
+      const name = repoNameFor(runGit, cwd);
+      return name === undefined ? [] : [[cwd, name]];
+    }),
+  );
+}
+
 function takeSnapshot(denv: DeskEnv, self: string | undefined): DeskSnapshot {
   const listing = readListing(denv.runClaude, denv.cwd);
   if ('error' in listing) {
@@ -178,6 +213,7 @@ function takeSnapshot(denv: DeskEnv, self: string | undefined): DeskSnapshot {
     freshInteractive: freshSessions(rows, transcripts.find, denv.now()),
     self,
     repo: children.repo,
+    repoNames: repoNamesOf(denv.runGit, rows),
     warnings: [
       ...listing.warnings,
       ...transcripts.warnings,
