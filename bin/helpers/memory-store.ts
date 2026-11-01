@@ -174,6 +174,7 @@ function gitIssue(
 /**
  * Commits only `paths`, so another session's uncommitted writes stay
  * uncommitted: `git add -- paths`, then `git commit -m message -- paths`.
+ * Each path is literal, never a glob, so `a[1].md` does not take `a1.md`.
  */
 export function commitPaths(
   store: string,
@@ -186,7 +187,7 @@ export function commitPaths(
     ['commit', '-m', message, '--', ...paths],
   ];
   for (const args of steps) {
-    const r = runGit('git', args, store);
+    const r = runGit('git', ['--literal-pathspecs', ...args], store);
     if (r.code !== 0) return { ok: false, issue: gitIssue(args, r) };
   }
   return { ok: true };

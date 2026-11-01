@@ -229,6 +229,18 @@ describe('commitPaths', () => {
     expect(git(store, 'status', '--porcelain').trim()).toBe('?? other.md');
   });
 
+  test('reads each path literally, so a name with glob characters commits only itself', () => {
+    const store = path.join(tmp, 'store');
+    createStore(store, execRunner);
+    fs.writeFileSync(path.join(store, 'a[1].md'), 'mine');
+    fs.writeFileSync(path.join(store, 'a1.md'), 'someone else');
+    expect(commitPaths(store, ['a[1].md'], 'add', execRunner)).toEqual({
+      ok: true,
+    });
+    const files = git(store, 'show', '--name-only', '--format=', 'HEAD').trim();
+    expect(files).toBe('a[1].md');
+  });
+
   test('reports a failure with the git message', () => {
     const result = commitPaths(tmp, ['nope'], 'm', execRunner);
     expect(result.ok).toBe(false);
