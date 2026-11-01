@@ -1,0 +1,370 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
+import {
+  mainCheckout,
+  mergeKey,
+  readKey,
+  SETTINGS_KEY,
+  settingsState,
+} from './memory-settings.js';
+import { execRunner } from './pm-data.js';
+
+const IDENTITY = {
+  GIT_AUTHOR_NAME: 'test',
+  GIT_AUTHOR_EMAIL: 'test@example.com',
+  GIT_COMMITTER_NAME: 'test',
+  GIT_COMMITTER_EMAIL: 'test@example.com',
+};
+const saved: Record<string, string | undefined> = {};
+
+beforeEach(() => {
+  for (const [name, value] of Object.entries(IDENTITY)) {
+    saved[name] = process.env[name];
+    process.env[name] = value;
+  }
+});
+
+afterEach(() => {
+  for (const [name, value] of Object.entries(saved)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  removeTemps();
+});
+
+const REL = path.join('.claude', 'settings.local.json');
+const mine = () => true;
+const notMine = () => false;
+
+/** A repo whose own `.git/info/exclude` ignores the settings file. */
+function ignoringRepo(): string {
+  const top = repo();
+  fs.appendFileSync(path.join(top, '.git', 'info', 'exclude'), `${REL}\n`);
+  return top;
+}
+
+function writeSettings(top: string, text: string): string {
+  const file = path.join(top, REL);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, text);
+  return file;
+}
+
+function issueOf(result: { issue: string } | object): string {
+  if (!('issue' in result)) throw new Error('expected a refusal');
+  return result.issue;
+}
+
+describe('mainCheckout', () => {
+  test('gives the real root and every checkout from the root, a subdirectory, and a linked worktree', () => {
+    const top = repo();
+    const linked = path.join(tmp(), 'linked');
+    git(top, 'worktree', 'add', '-q', linked);
+    fs.mkdirSync(path.join(top, 'sub'));
+    const home = tmp();
+    for (const start of [top, path.join(top, 'sub'), linked]) {
+      const found = mainCheckout(start, execRunner, home, mine);
+      expect(found).toEqual({
+        root: top,
+        checkouts: expect.arrayContaining([top, fs.realpathSync(linked)]),
+      });
+    }
+  });
+
+  test('refuses a path outside git', () => {
+    const outside = tmp();
+    expect(issueOf(mainCheckout(outside, execRunner, tmp(), mine))).toContain(
+      outside,
+    );
+  });
+
+  test('refuses a repo whose git dir is not named .git', () => {
+    const work = tmp();
+    const gitDir = path.join(tmp(), 'store.git');
+    git(work, 'init', '-q', `--separate-git-dir=${gitDir}`);
+    expect(issueOf(mainCheckout(work, execRunner, tmp(), mine))).toContain(
+      '.git',
+    );
+  });
+
+  test('refuses a root equal to the home folder', () => {
+    const top = repo();
+    expect(issueOf(mainCheckout(top, execRunner, top, mine))).toContain('home');
+  });
+
+  test('refuses a root, .git, or .claude the user does not own', () => {
+    const top = repo();
+    fs.mkdirSync(path.join(top, '.claude'));
+    const home = tmp();
+    const only = (blocked: string) => (p: string) => p !== blocked;
+    for (const blocked of [
+      top,
+      path.join(top, '.git'),
+      path.join(top, '.claude'),
+    ]) {
+      const issue = issueOf(mainCheckout(top, execRunner, home, only(blocked)));
+      expect(issue).toContain(blocked);
+    }
+    expect(issueOf(mainCheckout(top, execRunner, home, notMine))).toContain(
+      'own',
+    );
+  });
+
+  test('passes when .claude is absent', () => {
+    const top = repo();
+    const seen: string[] = [];
+    const found = mainCheckout(top, execRunner, tmp(), (p) => {
+      seen.push(p);
+      return true;
+    });
+    expect('root' in found).toBe(true);
+    expect(seen).toEqual([top, path.join(top, '.git')]);
+  });
+
+  test('checks ownership with the process uid by default', () => {
+    const top = repo();
+    expect('root' in mainCheckout(top, execRunner, tmp())).toBe(true);
+  });
+});
+
+describe('settingsState', () => {
+  test('reads a missing file as an empty object', () => {
+    const top = ignoringRepo();
+    expect(settingsState(top, execRunner)).toEqual({
+      kind: 'ready',
+      file: path.join(top, REL),
+      text: '',
+      settings: {},
+      key: undefined,
+    });
+  });
+
+  test('reads a whitespace-only file as an empty object, keeping its text', () => {
+    const top = ignoringRepo();
+    writeSettings(top, ' \n\t\n');
+    expect(settingsState(top, execRunner)).toMatchObject({
+      kind: 'ready',
+      text: ' \n\t\n',
+      settings: {},
+      key: undefined,
+    });
+  });
+
+  test('reads the key and the other entries of an ignored file', () => {
+    const top = ignoringRepo();
+    const text =
+      '{"permissions":{"allow":["Bash(ls)"]},"autoMemoryDirectory":"/s/r"}';
+    writeSettings(top, text);
+    expect(settingsState(top, execRunner)).toMatchObject({
+      kind: 'ready',
+      text,
+      key: '/s/r',
+      settings: { permissions: { allow: ['Bash(ls)'] } },
+    });
+  });
+
+  test('refuses a file git does not ignore, naming the line to add', () => {
+    const top = repo();
+    writeSettings(top, '{}');
+    const state = settingsState(top, execRunner);
+    expect(state.kind).toBe('refused');
+    if (state.kind === 'refused') {
+      expect(state.issue).toContain('.gitignore');
+      expect(state.issue).toContain(REL);
+    }
+  });
+
+  test('refuses a tracked file, naming how to untrack it with the path quoted', () => {
+    const top = ignoringRepo();
+    const file = writeSettings(top, '{}');
+    git(top, 'add', '-f', file);
+    git(top, 'commit', '-q', '-m', 'track');
+    const state = settingsState(top, execRunner);
+    expect(state.kind).toBe('refused');
+    if (state.kind === 'refused') {
+      expect(state.issue).toContain('tracked');
+      expect(state.issue).toContain('rm --cached');
+    }
+  });
+
+  test('quotes the root in a printed command when it holds a space', () => {
+    const base = tmp();
+    const top = path.join(base, 'my repo');
+    fs.mkdirSync(top);
+    git(top, 'init', '-q');
+    git(top, 'config', 'core.excludesFile', path.join(base, 'no-excludes'));
+    writeSettings(top, '{}');
+    const state = settingsState(top, execRunner);
+    expect(state.kind).toBe('refused');
+    if (state.kind === 'refused')
+      expect(state.issue).toContain(`'${top}/.gitignore'`);
+  });
+
+  test.each([
+    ['invalid JSON', '{nope'],
+    ['an array', '[]'],
+    ['null', 'null'],
+    ['a string', '"x"'],
+  ])('refuses %s', (_name, text) => {
+    const top = ignoringRepo();
+    writeSettings(top, text);
+    const state = settingsState(top, execRunner);
+    expect(state.kind).toBe('refused');
+    if (state.kind === 'refused') expect(state.issue).toContain(REL);
+  });
+
+  test('refuses a key that is not a string', () => {
+    const top = ignoringRepo();
+    writeSettings(top, '{"autoMemoryDirectory": 5}');
+    const state = settingsState(top, execRunner);
+    expect(state.kind).toBe('refused');
+    if (state.kind === 'refused') expect(state.issue).toContain(SETTINGS_KEY);
+  });
+});
+
+describe('mergeKey', () => {
+  test('creates .claude and the file when absent', () => {
+    const top = ignoringRepo();
+    const file = path.join(top, REL);
+    expect(mergeKey(file, '/s/r', '')).toEqual({ ok: true });
+    expect(fs.readFileSync(file, 'utf-8')).toBe(
+      '{\n  "autoMemoryDirectory": "/s/r"\n}\n',
+    );
+  });
+
+  test('keeps a permissions block, a nested object, and the key order', () => {
+    const top = ignoringRepo();
+    const original = {
+      permissions: { allow: ['Bash(ls)'], deny: [] },
+      nested: { a: { b: [1, 2, { c: null }] } },
+      model: 'x',
+    };
+    const file = writeSettings(top, JSON.stringify(original));
+    const expected = fs.readFileSync(file, 'utf-8');
+    expect(mergeKey(file, '/s/r', expected)).toEqual({ ok: true });
+    const after = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    expect(after).toEqual({ ...original, autoMemoryDirectory: '/s/r' });
+    expect(Object.keys(after)).toEqual([
+      ...Object.keys(original),
+      SETTINGS_KEY,
+    ]);
+  });
+
+  test('keeps an own __proto__ entry', () => {
+    const top = ignoringRepo();
+    const file = writeSettings(top, '{"__proto__":{"x":1},"a":2}');
+    const expected = fs.readFileSync(file, 'utf-8');
+    expect(mergeKey(file, '/s/r', expected)).toEqual({ ok: true });
+    expect(fs.readFileSync(file, 'utf-8')).toContain('"__proto__"');
+  });
+
+  test('keeps the existing file permission bits and leaves no temporary file', () => {
+    const top = ignoringRepo();
+    const file = writeSettings(top, '{}');
+    fs.chmodSync(file, 0o600);
+    expect(mergeKey(file, '/s/r', '{}')).toEqual({ ok: true });
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['settings.local.json']);
+  });
+
+  test('skips the write of a key already equal', () => {
+    const top = ignoringRepo();
+    const text = '{"autoMemoryDirectory":"/s/r"}';
+    const file = writeSettings(top, text);
+    expect(mergeKey(file, '/s/r', text)).toEqual({ ok: true });
+    expect(fs.readFileSync(file, 'utf-8')).toBe(text);
+  });
+
+  test('retries once on a file changed after it was read, keeping the new entry', () => {
+    const top = ignoringRepo();
+    const file = writeSettings(top, '{"a":1}');
+    const stale = fs.readFileSync(file, 'utf-8');
+    fs.writeFileSync(file, '{"a":1,"permissions":{"allow":["x"]}}');
+    expect(mergeKey(file, '/s/r', stale)).toEqual({ ok: true });
+    expect(JSON.parse(fs.readFileSync(file, 'utf-8'))).toEqual({
+      a: 1,
+      permissions: { allow: ['x'] },
+      autoMemoryDirectory: '/s/r',
+    });
+  });
+
+  test('retries when the file appeared after it was read as absent', () => {
+    const top = ignoringRepo();
+    const file = writeSettings(top, '{"a":1}');
+    expect(mergeKey(file, '/s/r', '')).toEqual({ ok: true });
+    expect(JSON.parse(fs.readFileSync(file, 'utf-8'))).toEqual({
+      a: 1,
+      autoMemoryDirectory: '/s/r',
+    });
+  });
+
+  test('refuses, writing nothing, when the file changes again before the rename', () => {
+    const top = ignoringRepo();
+    const file = writeSettings(top, '{"a":1}');
+    const stale = fs.readFileSync(file, 'utf-8');
+    fs.writeFileSync(file, '{"a":1,"b":2}');
+    const changed = '{"a":1,"b":2,"c":3}';
+    const result = mergeKey(file, '/s/r', stale, () =>
+      fs.writeFileSync(file, changed),
+    );
+    expect(result.ok).toBe(false);
+    expect(fs.readFileSync(file, 'utf-8')).toBe(changed);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['settings.local.json']);
+  });
+
+  test('refuses a file that stopped being a JSON object', () => {
+    const top = ignoringRepo();
+    const file = writeSettings(top, '[1]');
+    const result = mergeKey(file, '/s/r', '{}');
+    expect(result.ok).toBe(false);
+    expect(fs.readFileSync(file, 'utf-8')).toBe('[1]');
+  });
+
+  test('refuses a file that now holds the key with another value', () => {
+    const top = ignoringRepo();
+    const text = '{"autoMemoryDirectory":"/other"}';
+    const file = writeSettings(top, text);
+    const result = mergeKey(file, '/s/r', '{}');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issue).toContain('/other');
+    expect(fs.readFileSync(file, 'utf-8')).toBe(text);
+  });
+
+  test('refuses and removes its temporary file when the rename fails', () => {
+    const top = ignoringRepo();
+    const file = path.join(top, REL);
+    fs.mkdirSync(file, { recursive: true });
+    const result = mergeKey(file, '/s/r', '');
+    expect(result.ok).toBe(false);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(['settings.local.json']);
+  });
+});
+
+describe('readKey', () => {
+  test('gives the key from the main checkout, from a linked worktree too', () => {
+    const top = ignoringRepo();
+    writeSettings(top, '{"autoMemoryDirectory":"/s/r"}');
+    const linked = path.join(tmp(), 'linked');
+    git(top, 'worktree', 'add', '-q', linked);
+    expect(readKey(top, execRunner)).toBe('/s/r');
+    expect(readKey(linked, execRunner)).toBe('/s/r');
+  });
+
+  test('gives undefined outside git', () => {
+    expect(readKey(tmp(), execRunner)).toBeUndefined();
+  });
+
+  test.each([
+    ['a missing file', undefined],
+    ['invalid JSON', '{nope'],
+    ['a non-string key', '{"autoMemoryDirectory":3}'],
+    ['an empty file', ''],
+    ['an array', '[]'],
+  ])('gives undefined for %s', (_name, text) => {
+    const top = ignoringRepo();
+    if (text !== undefined) writeSettings(top, text);
+    expect(readKey(top, execRunner)).toBeUndefined();
+  });
+});
