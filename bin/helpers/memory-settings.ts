@@ -263,7 +263,10 @@ function replaceIfUnchanged(
     temp = writeTemp(file, text);
     afterWrite();
     const again = readText(file);
-    if ('issue' in again) return { ok: false, issue: again.issue };
+    if ('issue' in again) {
+      fs.rmSync(temp, { force: true });
+      return { ok: false, issue: again.issue };
+    }
     if (again.text !== base) {
       fs.rmSync(temp, { force: true });
       return 'changed';

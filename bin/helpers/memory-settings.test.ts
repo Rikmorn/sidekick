@@ -332,13 +332,30 @@ describe('mergeKey', () => {
     expect(fs.readFileSync(file, 'utf-8')).toBe(text);
   });
 
-  test('refuses and removes its temporary file when the rename fails', () => {
+  test('refuses and removes its temporary file when the re-read fails after the temp write', () => {
     const top = ignoringRepo();
-    const file = path.join(top, REL);
-    fs.mkdirSync(file, { recursive: true });
-    const result = mergeKey(file, '/s/r', '');
+    const file = writeSettings(top, '{"a":1}');
+    const result = mergeKey(file, '/s/r', '{"a":1}', () => {
+      fs.rmSync(file);
+      fs.mkdirSync(file);
+    });
     expect(result.ok).toBe(false);
     expect(fs.readdirSync(path.dirname(file))).toEqual(['settings.local.json']);
+  });
+
+  test('refuses and removes its temporary file when the rename fails', () => {
+    const top = ignoringRepo();
+    const file = writeSettings(top, '');
+    const folder = path.dirname(file);
+    // The temporary file vanishes after the write, so the rename throws.
+    const result = mergeKey(file, '/s/r', '', () => {
+      for (const name of fs.readdirSync(folder)) {
+        if (name.endsWith('.tmp')) fs.rmSync(path.join(folder, name));
+      }
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issue).toContain('cannot be written');
+    expect(fs.readdirSync(folder)).toEqual(['settings.local.json']);
   });
 });
 
