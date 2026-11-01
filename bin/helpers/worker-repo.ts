@@ -280,7 +280,8 @@ export function checkoutFacts(
   };
 }
 
-const HEADS = 'refs/heads/';
+/** The prefix of a branch's full ref, such as `refs/heads/w1`. */
+export const HEADS = 'refs/heads/';
 
 // The short name of the branch `cwd` holds; undefined when detached or on a
 // ref outside refs/heads/. `--short` prints `heads/<name>` when a tag shares

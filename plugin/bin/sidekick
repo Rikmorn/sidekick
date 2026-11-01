@@ -1624,8 +1624,7 @@ function briefFileIssues(brief, bounds) {
 import * as path5 from "node:path";
 var nativeBranch = (name) => `worktree-${name}`;
 var isBranchProven = (found, name) => found.via === "operator" || found.branchFrom === "transcript" || found.branch === nativeBranch(name);
-var HEADS2 = "refs/heads/";
-var shortBranch = (ref) => ref.startsWith(HEADS2) ? ref.slice(HEADS2.length) : ref;
+var shortBranch = (ref) => ref.startsWith(HEADS) ? ref.slice(HEADS.length) : ref;
 function contains(parent, child) {
   const rel = path5.relative(parent, child);
   if (rel === "")
@@ -1680,7 +1679,7 @@ function tryCandidate(input, candidate) {
   return foundOf(match, branch, via);
 }
 function byName(input) {
-  const ref = `${HEADS2}${nativeBranch(input.name)}`;
+  const ref = `${HEADS}${nativeBranch(input.name)}`;
   const match = input.worktrees.find((w) => w.branch === ref && refusal(input, w) === undefined);
   if (match === undefined) {
     return {

@@ -15,7 +15,12 @@ import {
   transcriptFinder,
 } from './desk-transcripts.js';
 import type { Runner } from './pm-data.js';
-import { listWorktrees, physical, type WorktreeEntry } from './worker-repo.js';
+import {
+  HEADS,
+  listWorktrees,
+  physical,
+  type WorktreeEntry,
+} from './worker-repo.js';
 
 /** A place the worker's worktree may be, as a physical path. */
 export type Candidate =
@@ -82,8 +87,6 @@ export const isBranchProven = (found: FoundWorktree, name: string): boolean =>
   found.via === 'operator' ||
   found.branchFrom === 'transcript' ||
   found.branch === nativeBranch(name);
-
-const HEADS = 'refs/heads/';
 
 /** A branch's short name, from a full ref such as `refs/heads/w1`. */
 export const shortBranch = (ref: string): string =>
