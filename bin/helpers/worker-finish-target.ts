@@ -1,6 +1,7 @@
 /**
  * Where a worker's work must have landed, and the verdict on its branch. It
- * resolves the target, walks history through `landedIn`, and words each
+ * picks the target from `--into`, the brief's `target`, or the `HEAD` of the
+ * brief's checkout, walks history through `landedIn`, and words each
  * refusal's way out for the mode `finish` runs in.
  */
 
@@ -15,6 +16,18 @@ import { DEFAULT_CAP, landedIn } from './worker-landed.js';
 import { commitOf } from './worker-repo.js';
 import type { Verdict } from './worker-teardown.js';
 
+/** The checkouts a target resolves in, and the brief's own `target`. */
+export interface TargetContext {
+  /** The checkout finish runs in, where `--into` resolves. */
+  launchTop: string;
+  mainTop: string;
+  /** The checkout holding the brief, whose `HEAD` is the fallback target. */
+  briefTop: string | undefined;
+  briefFolder: string;
+  /** The brief's `target`, a branch's short name. */
+  briefTarget: string | undefined;
+}
+
 // The target's name: the full ref name git gives it, `HEAD` when detached, else
 // the rev as typed, since a sha or `main~1` has no symbolic name.
 function targetName(runGit: Runner, top: string, rev: string): string {
@@ -23,30 +36,79 @@ function targetName(runGit: Runner, top: string, rev: string): string {
   return name === '' ? rev : name;
 }
 
-type Target = { name: string; sha: string };
+type Target = { name: string; sha: string; why: string };
 
-// The commit the work must have landed in: `--into`'s rev, else the main
-// checkout's HEAD. The worker's own branch is no target, since it holds its head.
+// Where a target's rev resolves, why it is the target, and the refusal when
+// the rev names no commit.
+type Lookup = { rev: string; top: string; why: string; missing: string };
+
+// The operator typed `--into` where finish runs, so it resolves there.
+const intoLookup = (ctx: TargetContext, into: string, branch: string) => ({
+  rev: into,
+  top: ctx.launchTop,
+  why: 'from --into',
+  missing: `--into ${into} names no commit in the main checkout's repo, so finish cannot check that ${branch} landed there: name a branch, tag, or commit that exists`,
+});
+
+// The brief's target goes to git as a full ref, since a bare name starting
+// with `-` would read as an option.
+const briefLookup = (ctx: TargetContext, target: string, branch: string) => ({
+  rev: `refs/heads/${target}`,
+  top: ctx.mainTop,
+  why: "the brief's target",
+  missing: `the brief's target ${target} names no branch, so finish cannot check that ${branch} landed there: create the branch, fix the brief's target, or name the target with --into <rev>`,
+});
+
+function headLookup(
+  ctx: TargetContext,
+  branch: string,
+): Lookup | { issue: string } {
+  const { briefTop } = ctx;
+  if (briefTop === undefined) {
+    return {
+      issue: `the brief's folder ${ctx.briefFolder} is in no git checkout, so finish has no HEAD to check that ${branch} landed in: name the target with --into <rev>`,
+    };
+  }
+  return {
+    rev: 'HEAD',
+    top: briefTop,
+    why: `the HEAD of ${briefTop}, since the brief names no target`,
+    missing: `the HEAD of ${briefTop} names no commit, so finish cannot check that ${branch} landed there: name the target with --into <rev>`,
+  };
+}
+
+// `--into`, else the brief's target, else the HEAD of the brief's checkout.
+function lookupFor(
+  ctx: TargetContext,
+  into: string | undefined,
+  branch: string,
+): Lookup | { issue: string } {
+  if (into !== undefined) return intoLookup(ctx, into, branch);
+  if (ctx.briefTarget !== undefined) {
+    return briefLookup(ctx, ctx.briefTarget, branch);
+  }
+  return headLookup(ctx, branch);
+}
+
+// The commit the work must have landed in. The worker's own branch is no
+// target, since it holds its head.
 function resolveTarget(
   runGit: Runner,
-  top: string,
+  ctx: TargetContext,
   into: string | undefined,
   branch: string,
 ): Target | { issue: string } {
-  const rev = into ?? 'HEAD';
-  const sha = commitOf(runGit, top, rev);
-  if (sha === undefined) {
-    return {
-      issue: `--into ${rev} names no commit in the main checkout's repo, so finish cannot check that ${branch} landed there: name a branch, tag, or commit that exists`,
-    };
-  }
-  const name = targetName(runGit, top, rev);
+  const lookup = lookupFor(ctx, into, branch);
+  if ('issue' in lookup) return lookup;
+  const sha = commitOf(runGit, lookup.top, lookup.rev);
+  if (sha === undefined) return { issue: lookup.missing };
+  const name = targetName(runGit, lookup.top, lookup.rev);
   if (name === `refs/heads/${branch}`) {
     return {
       issue: `the target ${name} is the worker's own branch, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in with --into <rev>`,
     };
   }
-  return { name, sha };
+  return { name, sha, why: lookup.why };
 }
 
 // How far the walk got, for the not-landed refusal.
@@ -101,15 +163,15 @@ function missingBranchIssue(
 // The verdict for a branch head: the operator's word, or where the head landed.
 function verdictFor(
   runGit: Runner,
-  top: string,
-  branch: string,
-  head: string,
+  ctx: TargetContext,
+  worker: { branch: string; head: string },
   opts: FinishOptions,
 ): { verdict: Verdict } | { issues: string[] } {
+  const { branch, head } = worker;
   if (opts.mode.kind === 'discard') return { verdict: { kind: 'discard' } };
-  const target = resolveTarget(runGit, top, opts.mode.into, branch);
+  const target = resolveTarget(runGit, ctx, opts.mode.into, branch);
   if ('issue' in target) return { issues: [target.issue] };
-  const landing = landedIn(runGit, top, { target: target.sha, head });
+  const landing = landedIn(runGit, ctx.mainTop, { target: target.sha, head });
   switch (landing.kind) {
     case 'landed':
       return { verdict: { kind: 'landed', target, at: landing.at } };
@@ -136,7 +198,7 @@ function verdictFor(
 // branch does not exist.
 export function branchVerdict(
   runGit: Runner,
-  top: string,
+  ctx: TargetContext,
   branch: { name: string; head: string | undefined },
   opts: FinishOptions,
   id: string,
@@ -145,6 +207,6 @@ export function branchVerdict(
   if (head === undefined) {
     return { issues: [missingBranchIssue(name, opts, id)] };
   }
-  const judged = verdictFor(runGit, top, name, head, opts);
+  const judged = verdictFor(runGit, ctx, { branch: name, head }, opts);
   return 'issues' in judged ? judged : { head, verdict: judged.verdict };
 }

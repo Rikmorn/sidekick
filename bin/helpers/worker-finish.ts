@@ -1,15 +1,18 @@
 /**
  * `sidekick worker finish`: once a worker's branch has landed, saves its run
- * report in the main checkout and removes its session, desk record, worktree,
- * and branch.
+ * report in the checkout that holds the brief and removes its session, desk
+ * record, worktree, and branch. It runs from any checkout of the repo, and
+ * finds the worktree wherever its creator made it.
  * It refuses whenever a step would lose work. The steps run in order, and the
- * first that fails stops the rest. It prints where the work landed, what became
- * of the report, any files it restored, then each removal: the session, the
- * worktree, and the branch. Its last line names the backup ref.
+ * first that fails stops the rest. It prints the target and why, where the work
+ * landed, what became of the report, any files it restored, then each removal:
+ * the session, the worktree, and the branch. Its last line names the backup ref.
  * The arguments, the target, the worktree checks, and the report each live in
  * a `worker-finish-*` module of their own.
  */
 
+import * as path from 'node:path';
+import { configDirOf } from './main-session.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
 import { type Brief, readBrief } from './worker-brief.js';
@@ -26,15 +29,18 @@ import {
 import { branchVerdict } from './worker-finish-target.js';
 import {
   dirtyIssues,
+  type FoundWorktree,
   headMovedIssues,
+  notFoundIssues,
   onBranchIssues,
+  type Places,
   placesFor,
   statusBesideReport,
   unlinkedIssues,
   worktreeCheck,
 } from './worker-finish-tree.js';
 import { LISTING, listJobs } from './worker-jobs.js';
-import { commitOf, mainCheckout } from './worker-repo.js';
+import { checkoutFacts, checkoutOf, commitOf } from './worker-repo.js';
 import {
   forgetRecord,
   keepBackup,
@@ -51,16 +57,23 @@ import {
   type WorkerJob,
   waitForLock,
 } from './worker-teardown.js';
+import { locateWorktree } from './worker-worktree.js';
 
 /** The length `finish` shortens a sha to in the landing line. */
 export const SHORT_SHA = 7;
+
+// The listed job, with the places its session is known to have started.
+type ListedWorker = WorkerJob & {
+  cwd: string | undefined;
+  sessionId: string | undefined;
+};
 
 // The one listed session by the brief's name, which must be a background job.
 function findJob(
   wenv: WorkerEnv,
   top: string,
   name: string,
-): WorkerJob | { issues: string[] } {
+): ListedWorker | { issues: string[] } {
   const listed = listJobs(wenv.runClaude, top);
   if ('issues' in listed) return listed;
   const matches = listed.jobs.filter((job) => job.name === name);
@@ -79,7 +92,7 @@ function findJob(
       ],
     };
   }
-  const [{ id, state }] = matches;
+  const [{ id, state, cwd, sessionId }] = matches;
   if (id === undefined) {
     return {
       issues: [
@@ -87,7 +100,64 @@ function findJob(
       ],
     };
   }
-  return { id, state };
+  return { id, state, cwd, sessionId };
+}
+
+// The checkout holding the brief, undefined when its folder is in none.
+function briefTopOf(wenv: WorkerEnv, folder: string): string | undefined {
+  const found = checkoutOf(wenv.runGit, folder);
+  return 'top' in found ? found.top : undefined;
+}
+
+// The worker's worktree, from its transcript, its listing's cwd, or Claude
+// Code's own branch name.
+function worktreeOf(
+  wenv: WorkerEnv,
+  name: string,
+  tops: { mainTop: string; briefTop: string | undefined },
+  job: ListedWorker,
+): FoundWorktree | { issues: string[] } {
+  const found = locateWorktree({
+    runGit: wenv.runGit,
+    configDir: configDirOf(wenv.env, wenv.home),
+    name,
+    ...tops,
+    sessionId: job.sessionId,
+    listingCwd: job.cwd,
+    operatorPath: undefined,
+  });
+  if ('issue' in found) {
+    return {
+      issues: [
+        `git worktree list failed, so finish cannot find the worktree of ${name}: ${found.issue}`,
+      ],
+    };
+  }
+  if (found.kind === 'not found') {
+    return { issues: notFoundIssues(name, found.tried) };
+  }
+  return found;
+}
+
+// The checkouts, the listed job, and where its worktree, branch, and report sit.
+function locate(
+  brief: Brief,
+  opts: FinishOptions,
+  wenv: WorkerEnv,
+):
+  | { places: Places; job: ListedWorker; commonDir: string }
+  | { issues: string[] } {
+  const facts = checkoutFacts(wenv.runGit, wenv.cwd);
+  if ('issues' in facts) return facts;
+  const { mainTop, launchTop, commonDir } = facts;
+  const job = findJob(wenv, mainTop, brief.name);
+  if ('issues' in job) return job;
+  const briefFolder = path.dirname(opts.brief);
+  const briefTop = briefTopOf(wenv, briefFolder);
+  const found = worktreeOf(wenv, brief.name, { mainTop, briefTop }, job);
+  if ('issues' in found) return found;
+  const tops = { mainTop, launchTop, briefTop, briefFolder };
+  return { places: placesFor(tops, found, brief), job, commonDir };
 }
 
 // Every refusal the checks found, in the order they ran.
@@ -99,7 +169,7 @@ function allIssues(
   return [
     ...('issues' in landed ? landed.issues : []),
     ...worktreeIssues,
-    ...(typeof step === 'string' ? [] : step.issues),
+    ...('issues' in step ? step.issues : []),
   ];
 }
 
@@ -109,40 +179,41 @@ function checkFinish(
   opts: FinishOptions,
   wenv: WorkerEnv,
 ): Ready | { issues: string[] } {
-  const checkout = mainCheckout(wenv.runGit, wenv.cwd);
-  if ('issues' in checkout) return checkout;
-  const { top, commonDir } = checkout;
-  const job = findJob(wenv, top, brief.name);
-  if ('issues' in job) return job;
-  const places = placesFor(top, brief);
-  const unlinked = unlinkedIssues(wenv.runGit, top, places.worktree, job.id);
+  const located = locate(brief, opts, wenv);
+  if ('issues' in located) return located;
+  const { places, job } = located;
+  const { mainTop, worktree } = places;
+  const unlinked = unlinkedIssues(wenv.runGit, mainTop, worktree, job.id);
   if (unlinked.length > 0) return { issues: unlinked };
   // The partial check reads the head even when the landed check refuses, since
   // a refusal runs no step and so restores nothing.
-  const head = commitOf(wenv.runGit, top, `refs/heads/${places.branch}`);
+  const head = commitOf(wenv.runGit, mainTop, `refs/heads/${places.branch}`);
   const branch = { name: places.branch, head };
-  const landed = branchVerdict(wenv.runGit, top, branch, opts, job.id);
+  const ctx = { ...places, briefTarget: brief.target };
+  const landed = branchVerdict(wenv.runGit, ctx, branch, opts, job.id);
   const worker = { name: brief.name, id: job.id, head };
   const tree = worktreeCheck(wenv.runGit, places, worker, opts);
   const step = reportStep(places, opts.noReport, tree.partial);
-  if (
-    'issues' in landed ||
-    tree.issues.length > 0 ||
-    typeof step !== 'string'
-  ) {
+  if ('issues' in landed || tree.issues.length > 0 || 'issues' in step) {
     return { issues: allIssues(landed, tree.issues, step) };
   }
   return {
-    ...job,
-    ...places,
+    id: job.id,
+    state: job.state,
     name: brief.name,
-    commonDir,
+    mainTop,
+    briefTop: places.briefTop,
+    commonDir: located.commonDir,
+    worktree,
+    branch: places.branch,
     head: landed.head,
+    report: places.report,
+    reportFrom: places.reportFrom,
+    reportStep: step,
     verdict: landed.verdict,
     brief: opts.brief,
     rerun: rerunCommand(opts),
     discardCommand: discardCommandFor(opts),
-    reportStep: step,
     partial: tree.partial,
   };
 }
@@ -175,11 +246,13 @@ const recheckWorktree: Step = (ready, wenv) => {
   ];
 };
 
-// The landing line, so the operator sees what the check found before any removal.
+// The target and why, then the landing line, so the operator sees what the
+// check found before any removal. Discard mode has no target.
 const sayVerdict: Step = (ready, _wenv, out) => {
   const { verdict } = ready;
   switch (verdict.kind) {
     case 'landed':
+      out(`target: ${verdict.target.name} (${verdict.target.why})`);
       out(
         `${ready.branch} landed in ${verdict.target.name} at ${verdict.at.slice(0, SHORT_SHA)}`,
       );

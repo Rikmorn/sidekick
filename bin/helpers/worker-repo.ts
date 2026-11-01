@@ -3,7 +3,7 @@
  * its `HEAD`, whether its tracked files are clean, its branches and push URLs,
  * and the exclude entry for Claude Code's worktree folder. For a worktree:
  * what it has checked out, the entries `git status` names there with their
- * codes, and whether `git worktree list` still names it.
+ * codes, whether `git worktree list` still names it, and its lock reason.
  */
 
 import * as fs from 'node:fs';
@@ -14,50 +14,6 @@ import type { Runner } from './pm-data.js';
 export const WORKTREES_FOLDER = '.claude/worktrees';
 
 const EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
-
-/**
- * The main checkout's top and common git dir, from `cwd` or any folder below
- * it. Refuses outside a work tree, and inside a linked worktree, whose git dir
- * is not the common one.
- */
-export function mainCheckout(
-  runGit: Runner,
-  cwd: string,
-): { top: string; commonDir: string } | { issues: string[] } {
-  const result = runGit(
-    'git',
-    [
-      'rev-parse',
-      '--path-format=absolute',
-      '--show-toplevel',
-      '--absolute-git-dir',
-      '--git-common-dir',
-    ],
-    cwd,
-  );
-  if (result.code !== 0) {
-    return {
-      issues: [
-        "not inside a git work tree: run sidekick worker from the repo's main checkout",
-      ],
-    };
-  }
-  // One path per line; only the final newline goes, since a path may hold spaces.
-  const [top, gitDir, commonDir] = result.stdout.replace(/\n$/, '').split('\n');
-  if (top === undefined || gitDir === undefined || commonDir === undefined) {
-    return {
-      issues: [`git rev-parse printed an unexpected answer: ${result.stdout}`],
-    };
-  }
-  if (gitDir !== commonDir) {
-    return {
-      issues: [
-        `${top} is a linked worktree: run sidekick worker from the main checkout, whose git dir is ${commonDir}`,
-      ],
-    };
-  }
-  return { top, commonDir };
-}
 
 /** The full sha `rev` names in the repo at `top`, or undefined when it names no commit. */
 export function commitOf(
@@ -247,6 +203,25 @@ export function listWorktrees(
     return { issue: 'git worktree list printed no worktrees' };
   }
   return { worktrees };
+}
+
+/**
+ * The lock reason `git worktree list` gives `worktree`, matched by physical
+ * path: `''` when locked with none, undefined when not locked, not listed, or
+ * when the listing fails. git names a worktree's admin folder after the path's
+ * last segment, suffixed when that name is taken, so only the listing finds
+ * the lock that belongs to a path.
+ */
+export function lockReasonOf(
+  runGit: Runner,
+  top: string,
+  worktree: string,
+): string | undefined {
+  const list = listWorktrees(runGit, top);
+  if ('issue' in list) return undefined;
+  const wanted = physical(worktree);
+  const entry = list.worktrees.find((w) => physical(w.path) === wanted);
+  return entry === undefined ? undefined : entry.locked;
 }
 
 /** What `sidekick worker` reads about the checkout it runs in and its repo. */

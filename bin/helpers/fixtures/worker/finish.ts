@@ -15,11 +15,64 @@ export const ID = '213245a1';
 export const WORKTREE_ID = '2988dbbac0e06558461ca712ce2c6b7d';
 export const REPORT = 'docs/run-report.md';
 export const REPORT_TEXT = '# Run report\n\nDONE\n';
+/** The worker's session id, which its listing row and its transcript carry. */
+export const SESSION_ID = '0b5e1c2a-7d4f-4e6b-9a1c-3f2e8d7c6b5a';
+
+const besides: string[] = [];
+
+/**
+ * A folder beside `top`, named `<top><suffix>`, as worktrunk places a
+ * worktree. `removeTemps` does not reach it, so each test file that uses it
+ * registers `afterEach(removeBesides)`.
+ */
+export function beside(top: string, suffix: string): string {
+  const dir = `${top}${suffix}`;
+  besides.push(dir);
+  return dir;
+}
+
+/** Removes every folder `beside` named since the last call. */
+export function removeBesides(): void {
+  for (const dir of besides.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Writes Claude Code's transcript of the worker's session under `configDir`,
+ * with `start` as its first entry, and returns the file.
+ */
+export function writeTranscript(
+  configDir: string,
+  start: Record<string, unknown>,
+): string {
+  const folder = path.join(configDir, 'projects', 'worker-project');
+  fs.mkdirSync(folder, { recursive: true });
+  const file = path.join(folder, `${SESSION_ID}.jsonl`);
+  fs.writeFileSync(file, `${JSON.stringify(start)}\n`);
+  return file;
+}
+
+export interface FixtureOptions {
+  /** Where the worker's worktree goes, given the main checkout's top. */
+  worktree?: (top: string) => string;
+  /** The worker's branch. */
+  branch?: string;
+}
+
+// Claude Code's own place for worker w1's worktree.
+const nativeWorktree = (top: string): string =>
+  path.join(top, '.claude', 'worktrees', 'w1');
 
 // A main checkout whose `docs/` holds the brief for worker `w1`, and that
-// worker's worktree on `worktree-w1`, holding one commit and the run report.
-// `integrate` fast-forwards the main checkout onto the worker's branch.
-export function fixture() {
+// worker's worktree, by default Claude Code's own on `worktree-w1`, holding one
+// commit and the run report. The worker's transcript, under `configDir`, says
+// it started in the worktree on its branch. `integrate` fast-forwards the main
+// checkout onto the worker's branch.
+export function fixture({
+  worktree: placeWorktree = nativeWorktree,
+  branch = 'worktree-w1',
+}: FixtureOptions = {}) {
   const top = repo();
   const docs = path.join(top, 'docs');
   fs.mkdirSync(docs);
@@ -41,16 +94,21 @@ export function fixture() {
       '',
     ].join('\n'),
   );
-  const worktree = path.join(top, '.claude', 'worktrees', 'w1');
-  git(top, 'worktree', 'add', '-q', worktree, '-b', 'worktree-w1');
+  const worktree = placeWorktree(top);
+  git(top, 'worktree', 'add', '-q', worktree, '-b', branch);
   fs.writeFileSync(path.join(worktree, 'b.txt'), 'b\n');
   git(worktree, 'add', 'b.txt');
   git(worktree, 'commit', '-q', '-m', 'work');
   const head = git(worktree, 'rev-parse', 'HEAD');
   fs.mkdirSync(path.join(worktree, 'docs'));
   fs.writeFileSync(path.join(worktree, REPORT), REPORT_TEXT);
+  const configDir = tmp();
+  const transcript = writeTranscript(configDir, {
+    cwd: worktree,
+    gitBranch: branch,
+  });
   const integrate = (): void => {
-    git(top, 'merge', '-q', '--ff-only', 'worktree-w1');
+    git(top, 'merge', '-q', '--ff-only', branch);
   };
   // Puts the worker's commit into `cwd`'s checked-out branch as a new commit
   // (a rebase landing) or as one squash commit. Cherry-pick writes nothing to
@@ -90,7 +148,10 @@ export function fixture() {
     docs,
     brief,
     worktree,
+    branch,
     head,
+    configDir,
+    transcript,
     integrate,
     landOnMain,
     landOnBranch,
@@ -139,7 +200,7 @@ export const kept = (fx: Fixture, sha: string): Rm => ({
   result: ok({
     stdout: [
       `kept ${ID} — its worktree is still at “${fx.worktree}”`,
-      `  1 unpushed commit on “worktree-w1”: ${sha.slice(0, 7)} “work”. It exists on no remote, so deleting the worktree would lose it.`,
+      `  1 unpushed commit on “${fx.branch}”: ${sha.slice(0, 7)} “work”. It exists on no remote, so deleting the worktree would lose it.`,
       `  push it and run 'claude rm ${ID}' again, or discard the worktree and its commits: claude rm ${ID} --discard-unpushed ${sha}@${WORKTREE_ID}`,
       '',
     ].join('\n'),
@@ -168,6 +229,23 @@ const statusNow = (fx: Fixture): string =>
     : '(no worktree)';
 
 /**
+ * The worker's row in `claude agents --json --all`: a background job whose
+ * session started in the worktree. `over` replaces or adds fields.
+ */
+export const agentRow = (
+  fx: Fixture,
+  over: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  id: ID,
+  kind: 'background',
+  name: 'w1',
+  state: 'working',
+  cwd: fx.worktree,
+  sessionId: SESSION_ID,
+  ...over,
+});
+
+/**
  * Plays `agents --json --all` from `state.agents`, `stop` from `state.stop`,
  * and each `rm` from `state.rm` in turn. Any other call fails the test.
  * `state.whileStopping` stands for what the worker does before it exits.
@@ -177,9 +255,7 @@ export function fakeClaude(fx: Fixture) {
   const calls: Call[] = [];
   const statusAtRm: string[] = [];
   const state = {
-    agents: JSON.stringify([
-      { id: ID, kind: 'background', name: 'w1', state: 'working' },
-    ]),
+    agents: JSON.stringify([agentRow(fx)]),
     stop: ok({ stdout: `stopped ${ID}\n` }),
     whileStopping: (): void => {},
     rm: [removed()],
@@ -191,7 +267,7 @@ export function fakeClaude(fx: Fixture) {
       return;
     }
     git(fx.top, 'worktree', 'remove', '--force', '--force', fx.worktree);
-    if (removes === 'everything') git(fx.top, 'branch', '-D', 'worktree-w1');
+    if (removes === 'everything') git(fx.top, 'branch', '-D', fx.branch);
   };
   const run: ClaudeRunner = (args, opts) => {
     calls.push({ args, cwd: opts.cwd, timeoutMs: opts.timeoutMs });
@@ -219,7 +295,7 @@ export function harness(fx: Fixture, over: Partial<WorkerEnv> = {}) {
   const err: string[] = [];
   const slept: number[] = [];
   const wenv: WorkerEnv = {
-    env: {},
+    env: { CLAUDE_CONFIG_DIR: fx.configDir },
     cwd: fx.top,
     home: '/home/test',
     workTree: fx.top,
@@ -251,4 +327,4 @@ export const savedReport = (fx: Fixture): string | undefined => {
 };
 
 export const branchRemains = (fx: Fixture): boolean =>
-  git(fx.top, 'branch', '--list', 'worktree-w1') !== '';
+  git(fx.top, 'branch', '--list', fx.branch) !== '';

@@ -1,7 +1,8 @@
 /**
- * The checks of a worker's worktree. They find where it sits, whether it is on
- * its branch, still linked to git, and free of uncommitted work, and whether
- * it holds a partial removal that an earlier run left.
+ * The checks of a worker's worktree. They say where its worktree, branch, and
+ * report sit, refuse when the finder found no worktree, and check whether it
+ * is on its branch, still linked to git, and free of uncommitted work, and
+ * whether it holds a partial removal that an earlier run left.
  */
 
 import * as fs from 'node:fs';
@@ -21,14 +22,13 @@ import {
   DELETED,
   type StatusEntry,
   statusEntriesIn,
-  WORKTREES_FOLDER,
   worktreeListed,
 } from './worker-repo.js';
 import { heldBackup, type Ready } from './worker-teardown.js';
+import type { Found } from './worker-worktree.js';
 
 // branchVerdict checks only the branch, so the worktree must have that branch
-// checked out. That also proves the folder is the worktree, not a folder of an
-// enclosing repo.
+// checked out: the branch it started on, when its transcript names one.
 export function onBranchIssues(
   runGit: Runner,
   worktree: string,
@@ -58,28 +58,65 @@ function offBranchReason(mode: FinishMode['kind'], branch: string): string {
   }
 }
 
-// Where the worker's worktree, branch, and report sit.
+/** The checkouts finish reads, and where the worker's worktree, branch, and report sit. */
 export type Places = Pick<
   Ready,
-  'top' | 'worktree' | 'branch' | 'report' | 'reportFrom' | 'reportTo'
->;
+  'mainTop' | 'briefTop' | 'worktree' | 'branch' | 'report' | 'reportFrom'
+> & {
+  /** The checkout finish runs in. */
+  launchTop: string;
+  /** The brief's folder, which a refusal names when no checkout holds it. */
+  briefFolder: string;
+  /** `<briefTop>/<report>`; undefined when no checkout holds the brief. */
+  reportTo: string | undefined;
+};
 
-export function placesFor(top: string, brief: Brief): Places {
-  const worktree = path.join(top, WORKTREES_FOLDER, brief.name);
+/** The finder's answer when it found the worktree. */
+export type FoundWorktree = Extract<Found, { kind: 'found' }>;
+
+export function placesFor(
+  tops: Pick<Places, 'mainTop' | 'launchTop' | 'briefTop' | 'briefFolder'>,
+  found: FoundWorktree,
+  brief: Brief,
+): Places {
   // git status prints paths in this form.
   const report = path.posix.normalize(brief.report);
+  const { briefTop } = tops;
   return {
-    top,
-    worktree,
-    branch: `worktree-${brief.name}`,
+    ...tops,
+    worktree: found.path,
+    branch: found.branch,
     report,
-    reportFrom: path.join(worktree, report),
-    reportTo: path.join(top, report),
+    reportFrom: path.join(found.path, report),
+    reportTo: briefTop === undefined ? undefined : path.join(briefTop, report),
   };
 }
 
+type Tried = Extract<Found, { kind: 'not found' }>['tried'][number];
+
+const TRIED_LABEL = {
+  transcript: "the transcript's first cwd",
+  listing: "the job listing's cwd",
+  operator: 'the --worktree path',
+  name: 'by name,',
+} satisfies Record<Tried['via'], string>;
+
+const triedLine = (tried: Tried): string =>
+  [TRIED_LABEL[tried.via], tried.cwd, tried.why]
+    .filter((part) => part !== undefined)
+    .join(' ');
+
+/** The refusal when the finder found no worktree: each place it tried, then the ways out. */
+export function notFoundIssues(name: string, tried: Tried[]): string[] {
+  return [
+    `finish cannot find the worktree of ${name}, so it removed nothing. It tried:`,
+    ...tried.map(triedLine),
+    'name the worktree with --worktree <path>, or discard the worker with --discard',
+  ];
+}
+
 // A cut-short removal can delete the worktree's .git file while git still
-// lists it. git run in the folder then reads the enclosing main checkout, so
+// lists it. git run in the folder then reads whatever repo encloses it, so
 // this refusal stands alone.
 export function unlinkedIssues(
   runGit: Runner,
@@ -105,8 +142,11 @@ export function unlinkedIssues(
 type Status = { entries: StatusEntry[] } | { issue: string };
 
 // The worktree's status entries, the report aside.
-export function statusBesideReport(runGit: Runner, places: Places): Status {
-  const status = statusEntriesIn(runGit, places.top, places.worktree);
+export function statusBesideReport(
+  runGit: Runner,
+  places: Pick<Places, 'mainTop' | 'worktree' | 'report'>,
+): Status {
+  const status = statusEntriesIn(runGit, places.mainTop, places.worktree);
   if ('issue' in status) {
     return {
       issue: `git status failed in the worktree ${places.worktree}: ${status.issue}`,
@@ -178,7 +218,7 @@ export function worktreeCheck(
   opts: FinishOptions,
 ): { issues: string[]; partial: boolean } {
   const status = statusBesideReport(runGit, places);
-  const partial = isPartial(runGit, places.top, worker, status);
+  const partial = isPartial(runGit, places.mainTop, worker, status);
   const onBranch = onBranchIssues(
     runGit,
     places.worktree,
@@ -193,7 +233,7 @@ export function worktreeCheck(
 
 // A commit made after branchVerdict's check was never checked, and the removal loses it.
 export function headMovedIssues(runGit: Runner, ready: Ready): string[] {
-  const now = commitOf(runGit, ready.top, `refs/heads/${ready.branch}`);
+  const now = commitOf(runGit, ready.mainTop, `refs/heads/${ready.branch}`);
   if (now === ready.head) return [];
   if (now === undefined) {
     return [

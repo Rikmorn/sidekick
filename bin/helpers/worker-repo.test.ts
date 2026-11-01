@@ -13,7 +13,7 @@ import {
   headCommit,
   isTrackedClean,
   listWorktrees,
-  mainCheckout,
+  lockReasonOf,
   parseWorktrees,
   physical,
   remotesWithPushUrl,
@@ -22,39 +22,6 @@ import {
 } from './worker-repo.js';
 
 afterEach(removeTemps);
-
-describe('mainCheckout', () => {
-  test('finds the top and the common git dir from a subfolder', () => {
-    const top = repo();
-    const sub = path.join(top, 'x', 'y');
-    fs.mkdirSync(sub, { recursive: true });
-    expect(mainCheckout(execRunner, sub)).toEqual({
-      top,
-      commonDir: path.join(top, '.git'),
-    });
-  });
-
-  test('refuses inside a linked worktree, naming the main checkout', () => {
-    const top = repo();
-    const linked = path.join(tmp(), 'wt');
-    git(top, 'worktree', 'add', '-q', linked);
-    const result = mainCheckout(execRunner, linked);
-    expect(result).toEqual({
-      issues: [
-        `${linked} is a linked worktree: run sidekick worker from the main checkout, whose git dir is ${path.join(top, '.git')}`,
-      ],
-    });
-  });
-
-  test('refuses outside any repo', () => {
-    const result = mainCheckout(execRunner, tmp());
-    expect(result).toEqual({
-      issues: [
-        "not inside a git work tree: run sidekick worker from the repo's main checkout",
-      ],
-    });
-  });
-});
 
 describe('commits, cleanliness, and branches', () => {
   test('headCommit and commitOf resolve a short sha to the full one', () => {
@@ -358,6 +325,37 @@ describe('worktreeListed', () => {
     expect(worktreeListed(execRunner, top, path.join(top, 'nope'))).toEqual({
       listed: false,
     });
+  });
+});
+
+describe('lockReasonOf', () => {
+  test("reads the path's own lock when its admin folder took a suffix, through a symlink too", () => {
+    const top = repo();
+    const held = path.join(tmp(), 'w1');
+    git(top, 'worktree', 'add', '-q', held, '-b', 'held');
+    git(top, 'worktree', 'lock', '--reason', 'held lock', held);
+    const wt = path.join(tmp(), 'w1');
+    git(top, 'worktree', 'add', '-q', wt, '-b', 'wt');
+    expect(fs.existsSync(path.join(top, '.git', 'worktrees', 'w11'))).toBe(
+      true,
+    );
+    expect(lockReasonOf(execRunner, top, wt)).toBeUndefined();
+    git(top, 'worktree', 'lock', '--reason', 'claude session wt (pid 7)', wt);
+    const link = path.join(tmp(), 'link');
+    fs.symlinkSync(wt, link);
+    expect(lockReasonOf(execRunner, top, wt)).toBe('claude session wt (pid 7)');
+    expect(lockReasonOf(execRunner, top, link)).toBe(
+      'claude session wt (pid 7)',
+    );
+    expect(lockReasonOf(execRunner, top, held)).toBe('held lock');
+  });
+
+  test('gives undefined for a path git does not list, or when the listing fails', () => {
+    const top = repo();
+    expect(lockReasonOf(execRunner, top, path.join(top, 'nope'))).toBe(
+      undefined,
+    );
+    expect(lockReasonOf(execRunner, tmp(), top)).toBeUndefined();
   });
 });
 

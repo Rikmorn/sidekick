@@ -8,7 +8,6 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import { shellArg } from './shell.js';
@@ -18,6 +17,7 @@ import {
   branchExists,
   commitOf,
   DELETED,
+  lockReasonOf,
   statusEntriesIn,
   worktreeListed,
 } from './worker-repo.js';
@@ -42,10 +42,13 @@ export interface WorkerJob {
 }
 
 /**
- * What saveReport does with the report. `saved earlier` is a partial
- * removal's copy in the main checkout, once the worktree's has gone.
+ * What saveReport does with the report, and where the saved copy goes. `saved
+ * earlier` is a partial removal's copy in the brief's checkout, once the
+ * worktree's has gone.
  */
-export type ReportStep = 'copy' | 'in place' | 'saved earlier' | 'none';
+export type ReportStep =
+  | { kind: 'copy' | 'in place' | 'saved earlier'; to: string }
+  | { kind: 'none' };
 
 const isMissing = (e: unknown): boolean =>
   e instanceof Error && 'code' in e && e.code === 'ENOENT';
@@ -65,22 +68,30 @@ export function readIfPresent(
 }
 
 // What the landed check found. `target.name` is `git rev-parse
-// --symbolic-full-name`'s answer (`HEAD` when detached), else the rev as typed.
+// --symbolic-full-name`'s answer (`HEAD` when detached), else the rev as typed;
+// `target.why` says where finish took it from.
 export type Verdict =
-  | { kind: 'landed'; target: { name: string; sha: string }; at: string }
+  | {
+      kind: 'landed';
+      target: { name: string; sha: string; why: string };
+      at: string;
+    }
   | { kind: 'discard' };
 
 // Everything the steps need once the checks pass; `brief` is its absolute path.
 export interface Ready extends WorkerJob {
   name: string;
-  top: string;
+  mainTop: string;
+  /** The checkout holding the brief; undefined when its folder is in none. */
+  briefTop: string | undefined;
   commonDir: string;
+  /** The worker's worktree, as git lists it. */
   worktree: string;
+  /** The worker's branch, a short name. */
   branch: string;
   head: string;
   report: string;
   reportFrom: string;
-  reportTo: string;
   reportStep: ReportStep;
   verdict: Verdict;
   brief: string;
@@ -97,13 +108,13 @@ export type Step = (ready: Ready, wenv: WorkerEnv, out: Out) => string[];
 // spawnSync reads a timeout of 0 as no limit.
 const NO_LIMIT = 0;
 
-// Runs claude from the top; the default 30 s matches the agents listing's limit.
+// Runs claude from the main checkout's top; the default 30 s matches the agents listing's limit.
 const claudeAt = (
   ready: Ready,
   wenv: WorkerEnv,
   args: string[],
   timeoutMs = 30_000,
-): ClaudeResult => wenv.runClaude(args, { cwd: ready.top, timeoutMs });
+): ClaudeResult => wenv.runClaude(args, { cwd: ready.mainTop, timeoutMs });
 
 // A refusal line, followed by claude's own text when it printed any.
 function withText(lead: string, result: ClaudeResult): string[] {
@@ -138,15 +149,18 @@ export const stopJob: Step = (ready, wenv) => {
 // The lock's pid, when it names one. kill(0, 0) signals the process group, so
 // only a positive pid is waited on. An unreadable lock means no wait: claude rm
 // then keeps the worktree, and finish refuses its answer.
-function lockPid(commonDir: string, name: string): number | undefined {
-  const lock = readIfPresent(path.join(commonDir, 'worktrees', name, 'locked'));
-  if ('issue' in lock || lock.data === undefined) return undefined;
-  const pid = Number(LOCK_PID.exec(lock.data.toString())?.[1]);
+function lockPid(reason: string | undefined): number | undefined {
+  if (reason === undefined) return undefined;
+  const pid = Number(LOCK_PID.exec(reason)?.[1]);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
 }
 
+// Read at each call, never kept in Ready, since the lock can change while finish runs.
+const lockPidNow = (ready: Ready, wenv: WorkerEnv): number | undefined =>
+  lockPid(lockReasonOf(wenv.runGit, ready.mainTop, ready.worktree));
+
 function lockHeldLive(ready: Ready, wenv: WorkerEnv): boolean {
-  const pid = lockPid(ready.commonDir, ready.name);
+  const pid = lockPidNow(ready, wenv);
   return pid !== undefined && wenv.isAlive(pid);
 }
 
@@ -169,7 +183,7 @@ function waitForExit(
 
 // claude rm keeps a worktree whose lock names a process still running.
 export const waitForLock: Step = (ready, wenv) => {
-  const pid = lockPid(ready.commonDir, ready.name);
+  const pid = lockPidNow(ready, wenv);
   return pid === undefined ? [] : waitForExit(pid, wenv);
 };
 
@@ -280,12 +294,16 @@ function dropBranchConfig(
 
 /** Confirms the worktree is gone, then deletes a leftover branch only at the verified head. */
 export const removeLeftovers: Step = (ready, wenv, out) => {
-  const worktree = worktreeGoneIssues(wenv.runGit, ready.top, ready.worktree);
+  const worktree = worktreeGoneIssues(
+    wenv.runGit,
+    ready.mainTop,
+    ready.worktree,
+  );
   if (worktree.length > 0) return worktree;
   out(`worktree ${ready.worktree} removed`);
   const branch = branchGoneIssues(
     wenv.runGit,
-    ready.top,
+    ready.mainTop,
     ready.branch,
     ready.head,
   );
@@ -340,11 +358,11 @@ export function readyBackup(ready: Ready): string {
 export const keepBackup: Step = (ready, wenv) => {
   const ref = readyBackup(ready);
   // A ref already holding the head counts as written, so a re-run passes.
-  if (commitOf(wenv.runGit, ready.top, ref) === ready.head) return [];
+  if (commitOf(wenv.runGit, ready.mainTop, ref) === ready.head) return [];
   const result = wenv.runGit(
     'git',
     ['update-ref', ref, ready.head, ''],
-    ready.top,
+    ready.mainTop,
   );
   if (result.code === 0) return [];
   return [`cannot keep ${ref}: ${result.stderr.trim()}`];
@@ -353,7 +371,7 @@ export const keepBackup: Step = (ready, wenv) => {
 /** In a partial removal, writes the deleted files back from the index, so claude rm meets a clean worktree. */
 export const restorePartial: Step = (ready, wenv, out) => {
   if (!ready.partial) return [];
-  const status = statusEntriesIn(wenv.runGit, ready.top, ready.worktree);
+  const status = statusEntriesIn(wenv.runGit, ready.mainTop, ready.worktree);
   if ('issue' in status) {
     return [
       `git status failed in the worktree ${ready.worktree}: ${status.issue}`,
@@ -367,7 +385,7 @@ export const restorePartial: Step = (ready, wenv, out) => {
   const result = wenv.runGit(
     'git',
     ['-C', ready.worktree, 'checkout-index', '--', ...deleted],
-    ready.top,
+    ready.mainTop,
   );
   if (result.code !== 0) {
     return [

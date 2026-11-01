@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  agentRow,
+  beside,
   branchRemains,
   cutShort,
   type Fixture,
@@ -14,11 +16,13 @@ import {
   REPORT,
   REPORT_TEXT,
   type Rm,
+  removeBesides,
   removed,
   savedReport,
   WORKTREE_ID,
+  writeTranscript,
 } from './fixtures/worker/finish.js';
-import { git, removeTemps } from './fixtures/worker/repo.js';
+import { git, removeTemps, tmp } from './fixtures/worker/repo.js';
 import { execRunner, type Runner } from './pm-data.js';
 import { SHORT_SHA } from './worker-finish.js';
 import {
@@ -28,6 +32,28 @@ import {
 } from './worker-record.js';
 
 afterEach(removeTemps);
+afterEach(removeBesides);
+
+// The target line when the brief names no target and `top` holds the brief.
+const headTarget = (top: string): string =>
+  `target: ${git(top, 'symbolic-ref', 'HEAD')} (the HEAD of ${top}, since the brief names no target)`;
+
+// Adds a `target` line to a brief's frontmatter.
+function addTarget(brief: string, target: string): void {
+  const text = fs.readFileSync(brief, 'utf-8');
+  fs.writeFileSync(
+    brief,
+    text.replace('orchestrator: orch', `orchestrator: orch\ntarget: ${target}`),
+  );
+}
+
+// A sibling checkout of the fixture's repo, outside the main checkout, on a
+// new branch `feature` at the main checkout's HEAD.
+function sibling(fx: Fixture): string {
+  const side = path.join(tmp(), 'side');
+  git(fx.top, 'worktree', 'add', '-q', side, '-b', 'feature');
+  return side;
+}
 
 // A refusal before any step: nothing stopped, removed, or copied.
 function expectRefusedUntouched(
@@ -43,6 +69,13 @@ function expectRefusedUntouched(
   expect(savedReport(fx)).toBeUndefined();
   expect(fs.existsSync(fx.worktree)).toBe(true);
 }
+
+// The refusal when the finder finds no worktree for w1, with what it tried.
+const notFound = (tried: string[]): string[] => [
+  'finish cannot find the worktree of w1, so it removed nothing. It tried:',
+  ...tried,
+  'name the worktree with --worktree <path>, or discard the worker with --discard',
+];
 
 // The way out after a claude rm answer finish cannot read: the re-run, then the hand route.
 const wayOut = (rerun: string, hand: string): string =>
@@ -267,7 +300,7 @@ describe('finish refuses', () => {
     );
   });
 
-  test('a worktree folder that is not a worktree, but a folder of the main checkout', () => {
+  test('a worktree folder that is not a worktree, but a folder of the main checkout, as no worktree found', () => {
     const fx = fixture();
     fx.integrate();
     git(fx.top, 'worktree', 'remove', '--force', fx.worktree);
@@ -275,10 +308,14 @@ describe('finish refuses', () => {
     fs.writeFileSync(path.join(fx.worktree, REPORT), REPORT_TEXT);
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(1);
-    const branch = git(fx.top, 'symbolic-ref', 'HEAD');
-    expect(h.err).toContain(
-      `the worktree ${fx.worktree} has ${branch} checked out, not worktree-w1, so finish cannot check that its commits have landed: check out worktree-w1 there and run finish again; discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
+    expect(h.err).toEqual(
+      notFound([
+        `the transcript's first cwd ${fx.worktree} is the main checkout`,
+        `the job listing's cwd ${fx.worktree} is the main checkout`,
+        'by name, no worktree has worktree-w1 checked out',
+      ]),
     );
+    expect(h.claude.named('stop')).toEqual([]);
     expect(h.claude.named('rm')).toEqual([]);
   });
 
@@ -334,18 +371,6 @@ describe('finish refuses', () => {
     expect(h.err.join('\n')).toContain('has not landed');
     expect(h.err.join('\n')).toContain('uncommitted work');
     expect(h.err.join('\n')).toContain('no run report');
-  });
-
-  test('a run from a linked worktree, naming the main checkout', () => {
-    const fx = fixture();
-    fx.integrate();
-    const h = harness(fx, { cwd: fx.worktree, workTree: fx.worktree });
-    const code = h.finish(fx.brief);
-    expect(code).toBe(1);
-    expect(h.err).toEqual([
-      `${fx.worktree} is a linked worktree: run sidekick worker from the main checkout, whose git dir is ${path.join(fx.top, '.git')}`,
-    ]);
-    expect(h.claude.calls).toEqual([]);
   });
 
   test('a brief that fails to parse, and checks nothing else', () => {
@@ -543,7 +568,7 @@ describe('finish passes a landing', () => {
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(0);
     const sha = git(fx.top, 'rev-parse', 'HEAD').slice(0, SHORT_SHA);
-    expect(h.out[0]).toBe(
+    expect(h.out[1]).toBe(
       `worktree-w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${sha}`,
     );
     expect(h.err).toEqual([]);
@@ -564,10 +589,10 @@ describe('finish passes a landing', () => {
     expect(tip).not.toBe(landing);
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(0);
-    expect(h.out[0]).toBe(
+    expect(h.out[1]).toBe(
       `worktree-w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${landing.slice(0, SHORT_SHA)}`,
     );
-    expect(h.out[0]).not.toContain(tip.slice(0, SHORT_SHA));
+    expect(h.out[1]).not.toContain(tip.slice(0, SHORT_SHA));
     expect(h.err).toEqual([]);
   });
 
@@ -577,7 +602,7 @@ describe('finish passes a landing', () => {
     const h = harness(fx);
     expect(h.finish(fx.brief, '--into', 'feature')).toBe(0);
     const sha = git(fx.top, 'rev-parse', 'feature').slice(0, SHORT_SHA);
-    expect(h.out[0]).toBe(`worktree-w1 landed in refs/heads/feature at ${sha}`);
+    expect(h.out[1]).toBe(`worktree-w1 landed in refs/heads/feature at ${sha}`);
   });
 
   test('a fast-forward, with the main checkout on a detached HEAD', () => {
@@ -587,7 +612,10 @@ describe('finish passes a landing', () => {
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(0);
     const sha = git(fx.top, 'rev-parse', 'HEAD').slice(0, SHORT_SHA);
-    expect(h.out[0]).toBe(`worktree-w1 landed in HEAD at ${sha}`);
+    expect(h.out.slice(0, 2)).toEqual([
+      `target: HEAD (the HEAD of ${fx.top}, since the brief names no target)`,
+      `worktree-w1 landed in HEAD at ${sha}`,
+    ]);
   });
 });
 
@@ -732,6 +760,7 @@ describe('finish clears the worker', () => {
     expect(h.claude.named('stop')).toEqual([['stop', ID]]);
     expect(h.claude.named('rm')).toEqual([['rm', ID]]);
     expect(h.out).toEqual([
+      headTarget(fx.top),
       `worktree-w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${git(fx.top, 'rev-parse', 'HEAD').slice(0, SHORT_SHA)}`,
       `report saved to ${path.join(fx.top, REPORT)}`,
       `session ${ID} removed`,
@@ -878,7 +907,7 @@ describe('finish clears the worker', () => {
     fs.writeFileSync(path.join(fx.top, REPORT), REPORT_TEXT);
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(0);
-    expect(h.out[1]).toBe(`report already at ${path.join(fx.top, REPORT)}`);
+    expect(h.out[2]).toBe(`report already at ${path.join(fx.top, REPORT)}`);
   });
 
   test('on a re-run after a claude stop that failed', () => {
@@ -899,7 +928,7 @@ describe('finish clears the worker', () => {
     fs.rmSync(path.join(fx.worktree, REPORT));
     const h = harness(fx);
     expect(h.finish(fx.brief, '--no-report')).toBe(0);
-    expect(h.out[1]).toBe('no report to save: the worktree holds none');
+    expect(h.out[2]).toBe('no report to save: the worktree holds none');
     expect(savedReport(fx)).toBeUndefined();
   });
 
@@ -1012,6 +1041,7 @@ describe('finish after a removal cut short', () => {
 
   // The lines of a re-run that restores a.txt and b.txt, then removes.
   const rerunLines = (fx: Fixture, report: string): string[] => [
+    headTarget(fx.top),
     `worktree-w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${git(fx.top, 'rev-parse', 'HEAD').slice(0, SHORT_SHA)}`,
     report,
     `restored 2 deleted files in ${fx.worktree} from its index, so claude rm finds it clean`,
@@ -1372,5 +1402,307 @@ describe('finish prints commands that survive a space', () => {
         `claude rm ${ID}`,
       ),
     );
+  });
+});
+
+// worktrunk's shape: a worktree beside the main checkout, on a branch named
+// for the worker, neither of them Claude Code's.
+const worktrunk = {
+  worktree: (top: string): string => beside(top, '.w1'),
+  branch: 'w1',
+};
+
+const targetLines = (h: Harness): string[] =>
+  h.out.filter((line) => line.startsWith('target: '));
+
+describe('finish finds the worktree wherever it was made', () => {
+  test("in worktrunk's shape, ../<repo>.w1 on w1, through the transcript alone, landing and tearing it down", () => {
+    const fx = fixture(worktrunk);
+    expect(fx.worktree).toBe(
+      path.join(path.dirname(fx.top), `${path.basename(fx.top)}.w1`),
+    );
+    fx.integrate();
+    const h = harness(fx);
+    // The row names no cwd and no worktree is on worktree-w1, so only the
+    // transcript can find it.
+    h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: null })]);
+    expect(h.finish(fx.brief)).toBe(0);
+    const ref = `refs/sidekick/landed/w1/${fx.head}`;
+    expect(h.out).toEqual([
+      headTarget(fx.top),
+      `w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${fx.head.slice(0, SHORT_SHA)}`,
+      `report saved to ${path.join(fx.top, REPORT)}`,
+      `session ${ID} removed`,
+      `worktree ${fx.worktree} removed`,
+      'branch w1 removed',
+      `w1 is kept as ${ref}: restore it with git branch w1 ${ref}`,
+    ]);
+    expect(h.err).toEqual([]);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    expect(branchRemains(fx)).toBe(false);
+  });
+
+  test("through the job listing's cwd when no transcript names it", () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    fs.rmSync(fx.transcript);
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out).toContain(`worktree ${fx.worktree} removed`);
+    expect(h.out).toContain('branch w1 removed');
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test('from a sibling checkout, running claude from the main checkout', () => {
+    const fx = fixture();
+    fx.integrate();
+    const side = sibling(fx);
+    const h = harness(fx, { cwd: side, workTree: side });
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out[0]).toBe(headTarget(fx.top));
+    expect(h.claude.calls.length).toBeGreaterThan(0);
+    for (const call of h.claude.calls) expect(call.cwd).toBe(fx.top);
+    expect(savedReport(fx)).toBe(REPORT_TEXT);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    expect(fs.existsSync(side)).toBe(true);
+  });
+
+  test('copying the report into the sibling checkout that holds the brief, run from there', () => {
+    const fx = fixture();
+    const side = sibling(fx);
+    git(side, 'merge', '-q', '--ff-only', fx.branch);
+    fs.mkdirSync(path.join(side, 'docs'));
+    const brief = path.join(side, 'docs', 'x-brief.md');
+    fs.copyFileSync(fx.brief, brief);
+    const h = harness(fx, { cwd: side, workTree: side });
+    expect(h.finish(brief)).toBe(0);
+    expect(h.out.slice(0, 3)).toEqual([
+      `target: refs/heads/feature (the HEAD of ${side}, since the brief names no target)`,
+      `worktree-w1 landed in refs/heads/feature at ${fx.head.slice(0, SHORT_SHA)}`,
+      `report saved to ${path.join(side, REPORT)}`,
+    ]);
+    expect(fs.readFileSync(path.join(side, REPORT), 'utf-8')).toBe(REPORT_TEXT);
+    expect(savedReport(fx)).toBeUndefined();
+  });
+
+  test('waiting on the lock git lists for the worktree when its admin folder took a suffix', () => {
+    const fx = fixture({
+      worktree: (top) => {
+        // Held first, this worktree takes the admin folder w1, so the
+        // worker's takes w11.
+        const other = path.join(tmp(), 'w1');
+        git(top, 'worktree', 'add', '-q', other, '-b', 'other');
+        git(
+          top,
+          'worktree',
+          'lock',
+          '--reason',
+          'claude session other (pid 1111 start x)',
+          other,
+        );
+        return path.join(top, '.claude', 'worktrees', 'w1');
+      },
+    });
+    fx.integrate();
+    const gitdir = path.join(fx.top, '.git', 'worktrees', 'w11', 'gitdir');
+    expect(fs.readFileSync(gitdir, 'utf-8').trim()).toBe(
+      path.join(fx.worktree, '.git'),
+    );
+    git(
+      fx.top,
+      'worktree',
+      'lock',
+      '--reason',
+      'claude session w1 (pid 4242 start x)',
+      fx.worktree,
+    );
+    const asked: number[] = [];
+    const h = harness(fx, {
+      isAlive: (pid) => {
+        asked.push(pid);
+        return asked.length <= 2;
+      },
+    });
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(asked).toEqual([4242, 4242, 4242]);
+    expect(h.slept).toHaveLength(2);
+  });
+
+  test.each([
+    ['landed', []],
+    ['discard', ['--discard']],
+  ])('refusing in %s mode when nothing finds it, naming each place it tried', (_label, args) => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    const elsewhere = tmp();
+    writeTranscript(fx.configDir, { cwd: elsewhere, gitBranch: 'w1' });
+    const h = harness(fx);
+    h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: fx.top })]);
+    expect(h.finish(fx.brief, ...args)).toBe(1);
+    expect(h.err).toEqual(
+      notFound([
+        `the transcript's first cwd ${elsewhere} is in no worktree git lists`,
+        `the job listing's cwd ${fx.top} is the main checkout`,
+        'by name, no worktree has worktree-w1 checked out',
+      ]),
+    );
+    expect(h.out).toEqual([]);
+    expect(h.claude.named('stop')).toEqual([]);
+    expect(h.claude.named('rm')).toEqual([]);
+    expect(savedReport(fx)).toBeUndefined();
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+    expect(branchRemains(fx)).toBe(true);
+  });
+
+  test("refusing with git's words when git worktree list fails as it looks", () => {
+    const fx = fixture();
+    fx.integrate();
+    const listed: string[] = [];
+    // checkoutFacts lists first; the finder's listing is the second.
+    const runGit: Runner = (cmd, args, cwd) => {
+      const listing = args[0] === 'worktree' && args[1] === 'list';
+      if (listing) listed.push(cwd);
+      if (listing && listed.length === 2) {
+        return { code: 128, stdout: '', stderr: 'fatal: cannot list\n' };
+      }
+      return execRunner(cmd, args, cwd);
+    };
+    const h = harness(fx, { runGit });
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toEqual([
+      'git worktree list failed, so finish cannot find the worktree of w1: fatal: cannot list',
+    ]);
+    expect(h.claude.named('stop')).toEqual([]);
+  });
+});
+
+describe('finish names its target in one line', () => {
+  test('from --into', () => {
+    const fx = fixture();
+    fx.landOnBranch('feature', 'squash');
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--into', 'feature')).toBe(0);
+    expect(h.out[0]).toBe('target: refs/heads/feature (from --into)');
+    expect(targetLines(h)).toHaveLength(1);
+  });
+
+  test("from the brief's target", () => {
+    const fx = fixture();
+    fx.landOnBranch('feature', 'squash');
+    addTarget(fx.brief, 'feature');
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.out[0]).toBe("target: refs/heads/feature (the brief's target)");
+    expect(targetLines(h)).toHaveLength(1);
+  });
+
+  test("from the HEAD of the brief's checkout, since the brief names no target", () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.out[0]).toBe(headTarget(fx.top));
+    expect(targetLines(h)).toHaveLength(1);
+  });
+
+  test("from --into over the brief's target, which it then never reads", () => {
+    const fx = fixture();
+    fx.landOnBranch('feature', 'squash');
+    addTarget(fx.brief, 'nowhere');
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--into', 'feature')).toBe(0);
+    expect(h.out[0]).toBe('target: refs/heads/feature (from --into)');
+  });
+
+  test('from --into, resolved in the checkout finish runs in', () => {
+    const fx = fixture();
+    const side = sibling(fx);
+    git(side, 'merge', '-q', '--ff-only', fx.branch);
+    const h = harness(fx, { cwd: side, workTree: side });
+    expect(h.finish(fx.brief, '--into', 'HEAD')).toBe(0);
+    expect(h.out[0]).toBe('target: refs/heads/feature (from --into)');
+  });
+
+  test("from a brief's target that starts with a dash, read as a branch, not an option", () => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.top, 'update-ref', 'refs/heads/-x', 'HEAD');
+    addTarget(fx.brief, '-x');
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.out[0]).toBe("target: refs/heads/-x (the brief's target)");
+  });
+
+  test('none in discard mode', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--discard')).toBe(0);
+    expect(targetLines(h)).toEqual([]);
+  });
+
+  test("refusing a brief's target that names no branch", () => {
+    const fx = fixture();
+    fx.integrate();
+    addTarget(fx.brief, 'nowhere');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      "the brief's target nowhere names no branch, so finish cannot check that worktree-w1 landed there: create the branch, fix the brief's target, or name the target with --into <rev>",
+    );
+    expect(h.out).toEqual([]);
+  });
+
+  test("refusing the worker's own branch as the brief's target", () => {
+    const fx = fixture();
+    addTarget(fx.brief, 'worktree-w1');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      "the target refs/heads/worktree-w1 is the worker's own branch, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in with --into <rev>",
+    );
+  });
+});
+
+describe('finish with a brief in no checkout', () => {
+  // The fixture's brief, copied to a folder no git checkout holds.
+  function strayBrief(fx: Fixture): string {
+    const file = path.join(tmp(), 'x-brief.md');
+    fs.copyFileSync(fx.brief, file);
+    return file;
+  }
+
+  test("refuses the HEAD fallback and the report's copy, naming the brief's folder", () => {
+    const fx = fixture();
+    fx.integrate();
+    const brief = strayBrief(fx);
+    const folder = path.dirname(brief);
+    const h = harness(fx);
+    expect(h.finish(brief)).toBe(1);
+    expect(h.err).toEqual([
+      `the brief's folder ${folder} is in no git checkout, so finish has no HEAD to check that worktree-w1 landed in: name the target with --into <rev>`,
+      `the brief's folder ${folder} is in no git checkout, so finish has nowhere to save the run report at ${path.join(fx.worktree, REPORT)}: move the brief into a checkout of the repo, then run finish again`,
+    ]);
+    expect(h.claude.named('stop')).toEqual([]);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+
+  test('passes with --into and --no-report when the worktree holds no report', () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.rmSync(path.join(fx.worktree, REPORT));
+    const brief = strayBrief(fx);
+    const main = git(fx.top, 'symbolic-ref', '--short', 'HEAD');
+    const h = harness(fx);
+    expect(h.finish(brief, '--no-report', '--into', main)).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out[0]).toBe(`target: refs/heads/${main} (from --into)`);
+    expect(h.out).toContain('no report to save: the worktree holds none');
+    expect(fs.existsSync(fx.worktree)).toBe(false);
   });
 });
