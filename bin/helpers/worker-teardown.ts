@@ -104,9 +104,21 @@ export const failure = (result: ClaudeResult): string =>
     ? 'did not return in time'
     : `failed with exit code ${result.code}`;
 
-/** The job to stop, and its worktree; undefined when finish found none, so no lock is read. */
-export type JobAt = Pick<Ready, 'id' | 'state' | 'mainTop'> & {
-  worktree: string | undefined;
+/** The job to stop, and its worktree, whose lock is read. */
+export type JobAt = Pick<Ready, 'id' | 'state' | 'mainTop' | 'worktree'>;
+
+/** Runs `claude stop` on the job whatever it lists as; the issues when it fails. */
+export const runStop = (
+  job: Pick<Ready, 'id' | 'mainTop'>,
+  wenv: WorkerEnv,
+): string[] => {
+  const args = ['stop', job.id];
+  const result = claudeAt(job, wenv, args);
+  if (ranClean(result)) return [];
+  return withText(
+    `claude ${args.join(' ')} ${failure(result)}, so finish stopped before claude rm`,
+    result,
+  );
 };
 
 // A worker whose turn has ended lists as done while its process idles and holds
@@ -116,13 +128,7 @@ export const stopJob = (job: JobAt, wenv: WorkerEnv): string[] => {
   const listedEnded =
     job.state !== undefined && ENDED_STATES.includes(job.state);
   if (listedEnded && !lockHeldLive(job, wenv)) return [];
-  const args = ['stop', job.id];
-  const result = claudeAt(job, wenv, args);
-  if (ranClean(result)) return [];
-  return withText(
-    `claude ${args.join(' ')} ${failure(result)}, so finish stopped before claude rm`,
-    result,
-  );
+  return runStop(job, wenv);
 };
 
 // The lock's pid, when it names one. kill(0, 0) signals the process group, so
@@ -139,7 +145,6 @@ function lockPidNow(
   at: Pick<JobAt, 'mainTop' | 'worktree'>,
   wenv: WorkerEnv,
 ): number | undefined {
-  if (at.worktree === undefined) return undefined;
   return lockPid(lockReasonOf(wenv.runGit, at.mainTop, at.worktree));
 }
 

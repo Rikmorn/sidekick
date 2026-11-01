@@ -6135,15 +6135,18 @@ function withText(lead, result) {
 }
 var ranClean = (result) => result.code === 0 && !result.timedOut;
 var failure = (result) => result.timedOut ? "did not return in time" : `failed with exit code ${result.code}`;
-var stopJob = (job, wenv) => {
-  const listedEnded = job.state !== undefined && ENDED_STATES.includes(job.state);
-  if (listedEnded && !lockHeldLive(job, wenv))
-    return [];
+var runStop = (job, wenv) => {
   const args = ["stop", job.id];
   const result = claudeAt(job, wenv, args);
   if (ranClean(result))
     return [];
   return withText(`claude ${args.join(" ")} ${failure(result)}, so finish stopped before claude rm`, result);
+};
+var stopJob = (job, wenv) => {
+  const listedEnded = job.state !== undefined && ENDED_STATES.includes(job.state);
+  if (listedEnded && !lockHeldLive(job, wenv))
+    return [];
+  return runStop(job, wenv);
 };
 function lockPid(reason7) {
   if (reason7 === undefined)
@@ -6152,8 +6155,6 @@ function lockPid(reason7) {
   return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
 }
 function lockPidNow(at, wenv) {
-  if (at.worktree === undefined)
-    return;
   return lockPid(lockReasonOf(wenv.runGit, at.mainTop, at.worktree));
 }
 function lockHeldLive(job, wenv) {
@@ -6479,7 +6480,7 @@ var sayNotFound = (gone, _wenv, out) => {
     out(triedLine(tried));
   return [];
 };
-var stop = (gone, wenv) => stopJob({ ...gone, worktree: undefined }, wenv);
+var stop = (gone, wenv) => runStop(gone, wenv);
 function keptIssues(gone, result) {
   const hand = `claude rm ${shellArg(gone.id)}`;
   const offer = DISCARD_LINE.exec(printedStreams(result).join(`
@@ -6491,9 +6492,10 @@ function keptIssues(gone, result) {
     ];
   }
   const what = ranClean(result) ? "did not say removed, and finish does not know its answer" : failure(result);
+  const stopFirst = `claude stop ${shellArg(gone.id)}, then ${hand}`;
   return [
     ...withText(`${hand} ${what}, so finish removed nothing more`, result),
-    `run finish again with ${gone.rerun}, or complete the removal by hand with ${hand}`
+    `run finish again with ${gone.rerun}, or complete the removal by hand with ${stopFirst}`
   ];
 }
 var removeSession2 = (gone, wenv, out) => {
@@ -6768,9 +6770,9 @@ function locate2(subject, opts, wenv) {
   if ("issues" in found)
     return found;
   if (found.kind === "not found") {
-    const { id, state } = job;
+    const { id } = job;
     const linked = facts.worktrees.slice(1);
-    const at = { id, state, name: subject.name, mainTop, commonDir, linked };
+    const at = { id, name: subject.name, mainTop, commonDir, linked };
     const gone = whenNotFound(found.tried, at, opts);
     return "issues" in gone ? gone : { kind: "gone", gone };
   }

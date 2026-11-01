@@ -2210,17 +2210,46 @@ describe('finish --discard with no worktree found', () => {
     expect(rm).toEqual([{ args: ['rm', ID], cwd: fx.top, timeoutMs: 0 }]);
   });
 
-  test('skips claude stop for a job listed as done', () => {
+  // With no worktree there is no lock to read, and a done worker's idle process
+  // still holds one (the dispatch bench, 2026-10-14), so the stop always runs.
+  test.each([
+    'done',
+    'stopped',
+  ])('runs claude stop before claude rm for a job listed as %s', (state) => {
     const fx = fixture(worktrunk);
     const h = harness(fx);
     lose(fx, h);
     h.claude.state.agents = JSON.stringify([
-      agentRow(fx, { cwd: fx.top, state: 'done' }),
+      agentRow(fx, { cwd: fx.top, state }),
     ]);
     h.claude.state.rm = [removed('nothing')];
     expect(h.finish(fx.brief, '--discard')).toBe(0);
-    expect(h.claude.named('stop')).toEqual([]);
-    expect(h.claude.named('rm')).toEqual([['rm', ID]]);
+    const verbs = h.claude.calls
+      .map((c) => c.args[0])
+      .filter((verb) => verb !== 'agents');
+    expect(verbs).toEqual(['stop', 'rm']);
+    expect(h.claude.named('stop')).toEqual([['stop', ID]]);
+  });
+
+  // claude rm keeps a session whose worktree lock names a running process,
+  // exiting 0 (the dispatch probes, "Stopping and cleanup").
+  test('refuses when claude rm keeps the session, naming claude stop before claude rm by hand', () => {
+    const fx = fixture(worktrunk);
+    const commonDir = path.join(fx.top, '.git');
+    writeRecord(commonDir, recordFor(fx));
+    const h = harness(fx);
+    lose(fx, h);
+    const text = `kept ${ID}: a Claude Code lock on the worktree names a process that is still running`;
+    h.claude.state.rm = [
+      { result: ok({ stdout: `${text}\n` }), removes: 'nothing' },
+    ];
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm ${ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
+      text,
+      `run finish again with sidekick worker finish ${fx.brief} --discard, or complete the removal by hand with claude stop ${ID}, then claude rm ${ID}`,
+    ]);
+    expect(readRecords(commonDir).records).toHaveLength(1);
   });
 
   test('clears a worker named with --name whose brief is gone', () => {
@@ -2272,7 +2301,7 @@ describe('finish --discard with no worktree found', () => {
     expect(h.err).toEqual([
       `claude rm ${ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
       `kept ${ID}`,
-      `run finish again with sidekick worker finish ${fx.brief} --discard, or complete the removal by hand with claude rm ${ID}`,
+      `run finish again with sidekick worker finish ${fx.brief} --discard, or complete the removal by hand with claude stop ${ID}, then claude rm ${ID}`,
     ]);
   });
 
@@ -2284,7 +2313,7 @@ describe('finish --discard with no worktree found', () => {
     expect(h.finish(fx.brief, '--discard')).toBe(1);
     expect(h.err).toEqual([
       `claude rm ${ID} failed with exit code 2, so finish removed nothing more`,
-      `run finish again with sidekick worker finish ${fx.brief} --discard, or complete the removal by hand with claude rm ${ID}`,
+      `run finish again with sidekick worker finish ${fx.brief} --discard, or complete the removal by hand with claude stop ${ID}, then claude rm ${ID}`,
     ]);
   });
 

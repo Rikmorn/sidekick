@@ -170,9 +170,9 @@ function locate(
   const found = worktreeOf(wenv, where, job, opts.worktree);
   if ('issues' in found) return found;
   if (found.kind === 'not found') {
-    const { id, state } = job;
+    const { id } = job;
     const linked = facts.worktrees.slice(1);
-    const at = { id, state, name: subject.name, mainTop, commonDir, linked };
+    const at = { id, name: subject.name, mainTop, commonDir, linked };
     const gone = whenNotFound(found.tried, at, opts);
     return 'issues' in gone ? gone : { kind: 'gone', gone };
   }

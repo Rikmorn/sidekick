@@ -24,15 +24,14 @@ import {
   NO_LIMIT,
   type Out,
   ranClean,
+  runStop,
   saidRemoved,
-  stopJob,
   withText,
 } from './worker-teardown.js';
 
 /** What `finish --discard` clears when the finder found no worktree. */
 export interface Gone {
   id: string;
-  state: string | undefined;
   name: string;
   mainTop: string;
   commonDir: string;
@@ -76,9 +75,10 @@ const sayNotFound: GoneStep = (gone, _wenv, out) => {
   return [];
 };
 
-// With no worktree there is no lock to read, so a job listed as ended is not stopped.
-const stop: GoneStep = (gone, wenv) =>
-  stopJob({ ...gone, worktree: undefined }, wenv);
+// With no worktree there is no lock to read, and a job listed as done may still
+// idle and hold one, which makes claude rm keep everything. So the stop runs
+// whatever the job lists as; claude stop exits 0 on a done job either way.
+const stop: GoneStep = (gone, wenv) => runStop(gone, wenv);
 
 // claude rm's offer names a sha, and with no worktree finish verified no head
 // to check it against, so the offer goes to the operator.
@@ -97,9 +97,12 @@ function keptIssues(gone: Gone, result: ClaudeResult): string[] {
   const what = ranClean(result)
     ? 'did not say removed, and finish does not know its answer'
     : failure(result);
+  // claude rm keeps a session whose lock names a running process, so the hand
+  // route stops the job first.
+  const stopFirst = `claude stop ${shellArg(gone.id)}, then ${hand}`;
   return [
     ...withText(`${hand} ${what}, so finish removed nothing more`, result),
-    `run finish again with ${gone.rerun}, or complete the removal by hand with ${hand}`,
+    `run finish again with ${gone.rerun}, or complete the removal by hand with ${stopFirst}`,
   ];
 }
 
