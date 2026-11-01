@@ -1,7 +1,8 @@
 /**
  * The settings overlay a dispatched worker launches with: the worktree base,
- * the brief marker and the recorded main in its environment, and, unless the brief allows a push,
- * the two blocks on `git push`.
+ * the brief marker and the recorded main in its environment, the `Read` allow
+ * rules that let it read the files dispatch names with no prompt, and, unless
+ * the brief allows a push, the two blocks on `git push`.
  */
 
 import { isPlainObject, type Settings } from './profile-launch.js';

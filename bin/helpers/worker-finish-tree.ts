@@ -220,10 +220,12 @@ export function unlinkedIssues(
   ];
 }
 
-type Status = { entries: StatusEntry[] } | { issue: string };
+type Status =
+  | { entries: StatusEntry[]; report: string | undefined }
+  | { issue: string };
 
-// The worktree's status entries, the report aside. Under --name the report is
-// unknown, so every entry counts.
+// The worktree's status entries, the report aside, and the report's path. Under
+// --name the report is unknown, so every entry counts.
 export function statusBesideReport(
   runGit: Runner,
   places: { mainTop: string; worktree: string; report: string | undefined },
@@ -237,7 +239,7 @@ export function statusBesideReport(
   const entries = status.entries.filter(
     (entry) => entry.path !== places.report,
   );
-  return { entries };
+  return { entries, report: places.report };
 }
 
 const onlyDeleted = (entries: StatusEntry[]): boolean =>
@@ -268,12 +270,14 @@ export function dirtyIssues(
   mode: FinishMode['kind'],
 ): string[] {
   if ('issue' in status) return [status.issue];
-  const { entries } = status;
+  const { entries, report } = status;
   const allowed = entries.length === 0 || (partial && onlyDeleted(entries));
   if (allowed) return [];
   const paths = entries.map((entry) => entry.path).join(', ');
+  // Under --name there is no report to set aside.
+  const besides = report === undefined ? '' : ' besides the report';
   return [
-    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${paths}. ${dirtyAdvice(mode)}`,
+    `the worktree ${worktree} holds uncommitted work${besides}, which its removal would destroy: ${paths}. ${dirtyAdvice(mode)}`,
   ];
 }
 

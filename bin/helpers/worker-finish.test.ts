@@ -2036,7 +2036,7 @@ describe('finish --name', () => {
       h,
       fx,
       h.finish('--name', 'w1', '--no-report', '--into', mainBranch(fx)),
-      `the worktree ${fx.worktree} holds uncommitted work besides the report, which its removal would destroy: ${REPORT}. Commit and integrate it, or remove it, then run finish again`,
+      `the worktree ${fx.worktree} holds uncommitted work, which its removal would destroy: ${REPORT}. Commit and integrate it, or remove it, then run finish again`,
     );
   });
 

@@ -160,7 +160,7 @@ Pass the orchestrating session's own mode. A message from a session in another p
 2. The `cwd` in the job listing.
 3. Failing both, the worktree git lists on the branch `worktree-<name>`.
 
-A place that is detached, with no branch in the transcript, is skipped. `--worktree <path>` replaces all three as the only place it tries. A match counts only when it is a linked worktree, and neither the main checkout nor the brief's checkout. Under `--name`, the second is the checkout that holds the brief folder the worker's dispatch record names. Failing that, it is the linked checkout `finish` runs in. A worktree that git marks prunable is found, and the checks in "What it checks" run on it.
+A place that is detached, with no branch in the transcript, is skipped. `--worktree <path>` replaces all three as the only place it tries. A match counts only when it is a linked worktree, and neither the main checkout nor the brief's checkout. Under `--name`, the checkout that stands in for the brief's is the one holding the brief folder the worker's dispatch record names. Failing that, it is the linked checkout `finish` runs in. A worktree that git marks prunable is found, and the checks in "What it checks" run on it.
 
 `finish` acts on a branch only with evidence that it is the worker's. The evidence is the transcript's `gitBranch`, Claude Code's own name `worktree-<name>`, or `--worktree`. A branch other than `worktree-<name>` refuses, in landed and discard mode, when `finish` found the worktree through the listing or through a transcript entry with no branch. The refusal names the worktree, its branch, and how `finish` found it, and gives `--worktree <path>` as the confirmation.
 

@@ -6408,7 +6408,7 @@ function statusBesideReport(runGit, places) {
     };
   }
   const entries = status.entries.filter((entry) => entry.path !== places.report);
-  return { entries };
+  return { entries, report: places.report };
 }
 var onlyDeleted = (entries) => entries.length > 0 && entries.every((entry) => entry.code === DELETED);
 function dirtyAdvice(mode) {
@@ -6426,13 +6426,14 @@ function dirtyAdvice(mode) {
 function dirtyIssues(worktree, status, partial, mode) {
   if ("issue" in status)
     return [status.issue];
-  const { entries } = status;
+  const { entries, report } = status;
   const allowed = entries.length === 0 || partial && onlyDeleted(entries);
   if (allowed)
     return [];
   const paths = entries.map((entry) => entry.path).join(", ");
+  const besides = report === undefined ? "" : " besides the report";
   return [
-    `the worktree ${worktree} holds uncommitted work besides the report, which its removal would destroy: ${paths}. ${dirtyAdvice(mode)}`
+    `the worktree ${worktree} holds uncommitted work${besides}, which its removal would destroy: ${paths}. ${dirtyAdvice(mode)}`
   ];
 }
 function isPartial(runGit, top, worker, status) {
