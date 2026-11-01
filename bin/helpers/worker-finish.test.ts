@@ -25,7 +25,7 @@ import {
 import { git, removeTemps, tmp } from './fixtures/worker/repo.js';
 import { execRunner, type Runner } from './pm-data.js';
 import { SHORT_SHA } from './worker-finish.js';
-import { branchVerdict } from './worker-finish-target.js';
+import { judgeFor } from './worker-finish-target.js';
 import {
   readRecords,
   type WorkerRecord,
@@ -1755,6 +1755,72 @@ describe('finish names its target in one line', () => {
     expect(targetLines(h)).toEqual([]);
   });
 
+  test('before a not-landed refusal, naming the target it judged and why', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    const branch = git(fx.top, 'symbolic-ref', 'HEAD');
+    const sha = git(fx.top, 'rev-parse', 'HEAD');
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.out).toEqual([headTarget(fx.top)]);
+    expect(h.err).toEqual([
+      `worktree-w1 has not landed in ${branch} (${sha}): its head ${fx.head} is not there, and the history walk tried 0 commits and found no match. Land it and run finish again; name the target with --into <rev>; discarding it is your call, with sidekick worker finish ${fx.brief} --discard`,
+    ]);
+  });
+
+  test('before a not-landed refusal against --into, saying it came from --into', () => {
+    const fx = fixture();
+    fx.orphan('orphan');
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--into', 'orphan')).toBe(1);
+    expect(h.out).toEqual(['target: refs/heads/orphan (from --into)']);
+    expect(h.err).toHaveLength(1);
+  });
+
+  test('before a refusal from a landed check that fails to run', () => {
+    const fx = fixture();
+    const runGit: Runner = (cmd, args, cwd) =>
+      args.includes('merge-tree')
+        ? { code: 129, stdout: '', stderr: 'usage: git merge-tree\n' }
+        : execRunner(cmd, args, cwd);
+    const h = harness(fx, { runGit });
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.out).toEqual([headTarget(fx.top)]);
+    expect(h.err).toEqual([
+      `finish cannot check that worktree-w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')}: git merge-tree --write-tree failed, and finish needs git 2.40 or later: usage: git merge-tree`,
+    ]);
+  });
+
+  test("before the other checks' refusals, once the target resolves", () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.writeFileSync(path.join(fx.worktree, 'notes.md'), 'x\n');
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.out).toEqual([headTarget(fx.top)]);
+    expect(h.err).toEqual([
+      `the worktree ${fx.worktree} holds uncommitted work besides the report, which its removal would destroy: notes.md. Commit and integrate it, or remove it, then run finish again`,
+    ]);
+  });
+
+  test('none before a refusal when the branch does not exist, since no target resolves', () => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.worktree, 'checkout', '-q', '--detach');
+    git(fx.top, 'branch', '-D', 'worktree-w1');
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.out).toEqual([]);
+  });
+
+  test('none before a refusal in discard mode', () => {
+    const fx = fixture();
+    fs.writeFileSync(path.join(fx.worktree, 'notes.md'), 'x\n');
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.out).toEqual([]);
+    expect(h.err).toHaveLength(1);
+  });
+
   test("refusing a brief's target that names no branch", () => {
     const fx = fixture();
     fx.integrate();
@@ -2349,7 +2415,7 @@ describe('finish --discard with no worktree found', () => {
 
 describe('the target with no brief', () => {
   test('refuses without --into, which the arguments already require', () => {
-    const verdict = branchVerdict(
+    const judge = judgeFor(
       execRunner,
       { launchTop: '/r', mainTop: '/r', brief: undefined },
       { name: 'worktree-w1', head: 'a'.repeat(40) },
@@ -2361,7 +2427,7 @@ describe('the target with no brief', () => {
       },
       ID,
     );
-    expect(verdict).toEqual({
+    expect(judge).toEqual({
       issues: [
         '--name reads no brief, so finish has no target to check that worktree-w1 landed in: name the target with --into <rev>',
       ],

@@ -3,7 +3,8 @@
  * picks the target from `--into`, the brief's `target`, or the `HEAD` of the
  * brief's checkout, walks history through `landedIn`, and words each
  * refusal's way out for the mode `finish` runs in. Under `--name` there is no
- * brief, so only `--into` names the target.
+ * brief, so only `--into` names the target. Picking the target and walking
+ * history are two calls, so `finish` can print the target between them.
  */
 
 import type { Runner } from './pm-data.js';
@@ -44,7 +45,12 @@ function targetName(runGit: Runner, top: string, rev: string): string {
   return name === '' ? rev : name;
 }
 
-type Target = { name: string; sha: string; why: string };
+/** The commit the work must have landed in, its name, and why it is the target. */
+export type Target = { name: string; sha: string; why: string };
+
+/** The line `finish` prints once the target resolves, before it walks history. */
+export const targetLine = (target: Target): string =>
+  `target: ${target.name} (${target.why})`;
 
 // Where a target's rev resolves, why it is the target, and the refusal when
 // the rev names no commit.
@@ -176,17 +182,50 @@ function missingBranchIssue(
   }
 }
 
-// The verdict for a branch head: the operator's word, or where the head landed.
-function verdictFor(
+/** What judges the worker's branch at `head`: the operator's word, or a target. */
+export type Judge =
+  | { kind: 'discard'; head: string }
+  | { kind: 'landed'; head: string; target: Target };
+
+/**
+ * What judges the worker's branch, whose `head` is undefined when the branch
+ * does not exist: in discard mode the operator's word, else the target.
+ */
+export function judgeFor(
   runGit: Runner,
   ctx: TargetContext,
-  worker: { branch: string; head: string },
+  branch: { name: string; head: string | undefined },
+  opts: FinishOptions,
+  id: string,
+): Judge | { issues: string[] } {
+  const { name, head } = branch;
+  if (head === undefined) {
+    return { issues: [missingBranchIssue(name, opts, id)] };
+  }
+  const { mode } = opts;
+  switch (mode.kind) {
+    case 'discard':
+      return { kind: 'discard', head };
+    case 'landed': {
+      const target = resolveTarget(runGit, ctx, mode.into, name);
+      if ('issue' in target) return { issues: [target.issue] };
+      return { kind: 'landed', head, target };
+    }
+    default: {
+      const unhandled: never = mode;
+      throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+/** Where the branch's head landed in the target: the verdict, or the refusal. */
+export function landedVerdict(
+  runGit: Runner,
+  ctx: TargetContext,
+  worker: { branch: string; head: string; target: Target },
   opts: FinishOptions,
 ): { verdict: Verdict } | { issues: string[] } {
-  const { branch, head } = worker;
-  if (opts.mode.kind === 'discard') return { verdict: { kind: 'discard' } };
-  const target = resolveTarget(runGit, ctx, opts.mode.into, branch);
-  if ('issue' in target) return { issues: [target.issue] };
+  const { branch, head, target } = worker;
   const landing = landedIn(runGit, ctx.mainTop, { target: target.sha, head });
   switch (landing.kind) {
     case 'landed':
@@ -208,21 +247,4 @@ function verdictFor(
       throw new Error(`unhandled landing: ${JSON.stringify(unhandled)}`);
     }
   }
-}
-
-// The verdict on the worker's branch, whose `head` is undefined when the
-// branch does not exist.
-export function branchVerdict(
-  runGit: Runner,
-  ctx: TargetContext,
-  branch: { name: string; head: string | undefined },
-  opts: FinishOptions,
-  id: string,
-): { head: string; verdict: Verdict } | { issues: string[] } {
-  const { name, head } = branch;
-  if (head === undefined) {
-    return { issues: [missingBranchIssue(name, opts, id)] };
-  }
-  const judged = verdictFor(runGit, ctx, { branch: name, head }, opts);
-  return 'issues' in judged ? judged : { head, verdict: judged.verdict };
 }

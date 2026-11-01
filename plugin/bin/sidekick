@@ -6021,6 +6021,7 @@ function targetName(runGit, top, rev) {
   const name = result.code === 0 ? result.stdout.trim() : "";
   return name === "" ? rev : name;
 }
+var targetLine = (target) => `target: ${target.name} (${target.why})`;
 var intoLookup = (ctx, into, branch) => ({
   rev: into,
   top: ctx.launchTop,
@@ -6106,13 +6107,29 @@ function missingBranchIssue(branch, opts, id) {
     }
   }
 }
-function verdictFor(runGit, ctx, worker, opts) {
-  const { branch, head } = worker;
-  if (opts.mode.kind === "discard")
-    return { verdict: { kind: "discard" } };
-  const target = resolveTarget(runGit, ctx, opts.mode.into, branch);
-  if ("issue" in target)
-    return { issues: [target.issue] };
+function judgeFor(runGit, ctx, branch, opts, id) {
+  const { name, head } = branch;
+  if (head === undefined) {
+    return { issues: [missingBranchIssue(name, opts, id)] };
+  }
+  const { mode } = opts;
+  switch (mode.kind) {
+    case "discard":
+      return { kind: "discard", head };
+    case "landed": {
+      const target = resolveTarget(runGit, ctx, mode.into, name);
+      if ("issue" in target)
+        return { issues: [target.issue] };
+      return { kind: "landed", head, target };
+    }
+    default: {
+      const unhandled = mode;
+      throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function landedVerdict(runGit, ctx, worker, opts) {
+  const { branch, head, target } = worker;
   const landing = landedIn(runGit, ctx.mainTop, { target: target.sha, head });
   switch (landing.kind) {
     case "landed":
@@ -6134,14 +6151,6 @@ function verdictFor(runGit, ctx, worker, opts) {
       throw new Error(`unhandled landing: ${JSON.stringify(unhandled)}`);
     }
   }
-}
-function branchVerdict(runGit, ctx, branch, opts, id) {
-  const { name, head } = branch;
-  if (head === undefined) {
-    return { issues: [missingBranchIssue(name, opts, id)] };
-  }
-  const judged = verdictFor(runGit, ctx, { branch: name, head }, opts);
-  return "issues" in judged ? judged : { head, verdict: judged.verdict };
 }
 
 // bin/helpers/worker-teardown.ts
@@ -6805,6 +6814,25 @@ function locate2(subject, opts, wenv) {
   const places = placesFor({ mainTop, launchTop }, found, subject.read);
   return { kind: "found", places, job, commonDir };
 }
+function landedCheck(wenv, places, branch, opts, { id, out }) {
+  const judge2 = judgeFor(wenv.runGit, places, branch, opts, id);
+  if ("issues" in judge2)
+    return judge2;
+  const { head } = judge2;
+  switch (judge2.kind) {
+    case "discard":
+      return { head, verdict: { kind: "discard" } };
+    case "landed": {
+      out(targetLine(judge2.target));
+      const judged = landedVerdict(wenv.runGit, places, { branch: branch.name, head, target: judge2.target }, opts);
+      return "issues" in judged ? judged : { head, verdict: judged.verdict };
+    }
+    default: {
+      const unhandled = judge2;
+      throw new Error(`unhandled judge: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
 function allIssues(landed, worktreeIssues, step) {
   return [
     ..."issues" in landed ? landed.issues : [],
@@ -6812,7 +6840,7 @@ function allIssues(landed, worktreeIssues, step) {
     ..."issues" in step ? step.issues : []
   ];
 }
-function checkFinish(name, located, opts, wenv) {
+function checkFinish(name, located, opts, { wenv, out }) {
   const { places, job } = located;
   const { mainTop, worktree } = places;
   const unlinked = unlinkedIssues(wenv.runGit, mainTop, worktree, job.id);
@@ -6820,7 +6848,7 @@ function checkFinish(name, located, opts, wenv) {
     return { issues: unlinked };
   const head = commitOf(wenv.runGit, mainTop, `refs/heads/${places.branch}`);
   const branch = { name: places.branch, head };
-  const landed = branchVerdict(wenv.runGit, places, branch, opts, job.id);
+  const landed = landedCheck(wenv, places, branch, opts, { id: job.id, out });
   const worker = { name, id: job.id, head };
   const tree = worktreeCheck(wenv.runGit, places, worker, opts);
   const step = reportStep(places.brief, opts.noReport, tree.partial);
@@ -6862,7 +6890,6 @@ var sayVerdict = (ready, _wenv, out) => {
   const { verdict } = ready;
   switch (verdict.kind) {
     case "landed":
-      out(`target: ${verdict.target.name} (${verdict.target.why})`);
       out(`${ready.branch} landed in ${verdict.target.name} at ${verdict.at.slice(0, SHORT_SHA)}`);
       return [];
     case "discard":
@@ -6901,7 +6928,7 @@ function finishIssues(opts, wenv, out) {
     return located.issues;
   if (located.kind === "gone")
     return clearGone(located.gone, wenv, out);
-  const ready = checkFinish(subject.name, located, opts, wenv);
+  const ready = checkFinish(subject.name, located, opts, { wenv, out });
   if ("issues" in ready)
     return ready.issues;
   for (const step of STEPS) {

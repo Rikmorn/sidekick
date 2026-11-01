@@ -5,10 +5,12 @@
  * finds the worktree wherever its creator made it, or at the operator's
  * `--worktree`. `--name` stands in for a brief that is gone. It acts on a
  * branch only with evidence the branch is the worker's.
- * It refuses whenever a step would lose work. The steps run in order, and the
- * first that fails stops the rest. It prints the target and why, where the work
- * landed, what became of the report, any files it restored, then each removal:
- * the session, the worktree, and the branch. Its last line names the backup ref.
+ * It refuses whenever a step would lose work. It prints the target and why once
+ * the target resolves, before the landed check, so a refusal from any check
+ * then follows it. The steps run in order, and the first that fails stops the
+ * rest. They print where the work landed, what became of the report, any files
+ * it restored, then each removal: the session, the worktree, and the branch.
+ * Its last line names the backup ref.
  * In discard mode with no worktree found, it removes the session and the record
  * alone, through `worker-finish-gone.ts`.
  * The arguments, the target, the worktree checks, and the report each live in
@@ -36,7 +38,7 @@ import {
   readSubject,
   type Subject,
 } from './worker-finish-subject.js';
-import { branchVerdict } from './worker-finish-target.js';
+import { judgeFor, landedVerdict, targetLine } from './worker-finish-target.js';
 import {
   dirtyIssues,
   headMovedIssues,
@@ -183,9 +185,44 @@ function locate(
   return { kind: 'found', places, job, commonDir };
 }
 
+type Landed = { head: string; verdict: Verdict } | { issues: string[] };
+
+// The verdict on the worker's branch. The target line prints once the target
+// resolves, before the history walk and before any refusal, so a refusal
+// follows the target finish judged.
+function landedCheck(
+  wenv: WorkerEnv,
+  places: Places,
+  branch: { name: string; head: string | undefined },
+  opts: FinishOptions,
+  { id, out }: { id: string; out: Out },
+): Landed {
+  const judge = judgeFor(wenv.runGit, places, branch, opts, id);
+  if ('issues' in judge) return judge;
+  const { head } = judge;
+  switch (judge.kind) {
+    case 'discard':
+      return { head, verdict: { kind: 'discard' } };
+    case 'landed': {
+      out(targetLine(judge.target));
+      const judged = landedVerdict(
+        wenv.runGit,
+        places,
+        { branch: branch.name, head, target: judge.target },
+        opts,
+      );
+      return 'issues' in judged ? judged : { head, verdict: judged.verdict };
+    }
+    default: {
+      const unhandled: never = judge;
+      throw new Error(`unhandled judge: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
 // Every refusal the checks found, in the order they ran.
 function allIssues(
-  landed: { head: string; verdict: Verdict } | { issues: string[] },
+  landed: Landed,
   worktreeIssues: string[],
   step: ReportStep | { issues: string[] },
 ): string[] {
@@ -196,12 +233,13 @@ function allIssues(
   ];
 }
 
-// Every check of the worktree needs the job's id, so those run once it is found.
+// Every check of the worktree needs the job's id, so those run once it is
+// found. It prints the target line, through landedCheck.
 function checkFinish(
   name: string,
   located: Extract<Located, { kind: 'found' }>,
   opts: FinishOptions,
-  wenv: WorkerEnv,
+  { wenv, out }: { wenv: WorkerEnv; out: Out },
 ): Ready | { issues: string[] } {
   const { places, job } = located;
   const { mainTop, worktree } = places;
@@ -211,7 +249,7 @@ function checkFinish(
   // a refusal runs no step and so restores nothing.
   const head = commitOf(wenv.runGit, mainTop, `refs/heads/${places.branch}`);
   const branch = { name: places.branch, head };
-  const landed = branchVerdict(wenv.runGit, places, branch, opts, job.id);
+  const landed = landedCheck(wenv, places, branch, opts, { id: job.id, out });
   const worker = { name, id: job.id, head };
   const tree = worktreeCheck(wenv.runGit, places, worker, opts);
   const step = reportStep(places.brief, opts.noReport, tree.partial);
@@ -264,13 +302,12 @@ const recheckWorktree: Step = (ready, wenv) => {
   ];
 };
 
-// The target and why, then the landing line, so the operator sees what the
-// check found before any removal. Discard mode has no target.
+// The landing line, under the target line landedCheck printed, so the operator
+// sees what the check found before any removal. Discard mode has no target.
 const sayVerdict: Step = (ready, _wenv, out) => {
   const { verdict } = ready;
   switch (verdict.kind) {
     case 'landed':
-      out(`target: ${verdict.target.name} (${verdict.target.why})`);
       out(
         `${ready.branch} landed in ${verdict.target.name} at ${verdict.at.slice(0, SHORT_SHA)}`,
       );
@@ -322,7 +359,7 @@ function finishIssues(
   const located = locate(subject, opts, wenv);
   if ('issues' in located) return located.issues;
   if (located.kind === 'gone') return clearGone(located.gone, wenv, out);
-  const ready = checkFinish(subject.name, located, opts, wenv);
+  const ready = checkFinish(subject.name, located, opts, { wenv, out });
   if ('issues' in ready) return ready.issues;
   for (const step of STEPS) {
     const issues = step(ready, wenv, out);
