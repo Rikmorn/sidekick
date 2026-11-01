@@ -2628,7 +2628,7 @@ This folder is a git repo that holds the auto-memory of several repos. A repo's 
 
 ## Layout
 
-- A family folder groups related repos. It holds the repo folders and the family's own files: a family index and the workstreams that span repos.
+- A family folder groups related repos. It holds the repo folders and the family's own files: a family index, the workstreams that span repos, the support file, and the script catalogue.
 - A repo folder holds one repo's memory. A repo with no family sits at the top level.
 - \`sessions/\` inside a repo folder holds one record per session. Claude Code's auto-dream reviews that folder.
 - \`sources/\` holds reference material that is not memory.
