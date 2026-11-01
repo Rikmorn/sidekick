@@ -258,6 +258,7 @@ function prepareProfile(
     briefPath,
     allowPush: opts.allowPush,
     main,
+    reads: [],
   });
   if ('issues' in overlay) {
     return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };

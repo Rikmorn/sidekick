@@ -5,6 +5,7 @@
  */
 
 import { isPlainObject, type Settings } from './profile-launch.js';
+import { physical } from './worker-repo.js';
 
 // The recorded main joins the brief marker in the worker's environment.
 const markers = (opts: { briefPath: string; main?: string }) => ({
@@ -28,19 +29,50 @@ function pushEnv(count: number): Record<string, string> {
 }
 
 /**
+ * The allow rule that lets a session read one file with no prompt. `absPath`
+ * must be absolute: a path without a leading `/` is a programming error.
+ */
+export function readRule(absPath: string): string {
+  // `//` anchors at the filesystem root, and rules follow gitignore syntax, which Claude Code does not escape for you.
+  const escaped = absPath
+    .slice(1)
+    .replace(/[\\*?[\]]/g, '\\$&')
+    .replace(/ +$/, (spaces) => '\\ '.repeat(spaces.length));
+  return `Read(//${escaped})`;
+}
+
+// One rule per path, plus a second when its physical form differs; each rule once.
+function readRules(reads: readonly string[]): string[] {
+  const rules = reads.flatMap((p) => [readRule(p), readRule(physical(p))]);
+  return [...new Set(rules)];
+}
+
+/**
  * Builds the overlay for a worker. The push block numbers its `GIT_CONFIG_*`
  * entry after the profile's own `env.GIT_CONFIG_COUNT`, or from 0 when it sets
  * none. A count that is not a string of digits refuses, unless `allowPush`
- * leaves the push block out.
+ * leaves the push block out. `reads` are absolute paths the worker may read
+ * with no prompt.
  */
 export function workerOverlay(
   profileSettings: Settings | undefined,
-  opts: { briefPath: string; allowPush: boolean; main?: string },
+  opts: {
+    briefPath: string;
+    allowPush: boolean;
+    main?: string;
+    reads?: readonly string[];
+  },
 ): { overlay: Settings } | { issues: string[] } {
   const base = { worktree: { baseRef: 'head' } };
+  const allow = readRules(opts.reads ?? []);
+  const allowRules = allow.length === 0 ? {} : { allow };
   if (opts.allowPush) {
     return {
-      overlay: { ...base, env: markers(opts) },
+      overlay: {
+        ...base,
+        env: markers(opts),
+        ...(allow.length === 0 ? {} : { permissions: allowRules }),
+      },
     };
   }
   const env = isPlainObject(profileSettings?.env) ? profileSettings.env : {};
@@ -56,7 +88,7 @@ export function workerOverlay(
     overlay: {
       ...base,
       env: { ...markers(opts), ...pushEnv(Number(raw)) },
-      permissions: { deny: [PUSH_DENY_RULE] },
+      permissions: { ...allowRules, deny: [PUSH_DENY_RULE] },
     },
   };
 }

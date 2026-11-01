@@ -1,9 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { composeSettings } from './profile-launch.js';
 import type { Profile } from './profile-store.js';
 import {
   PUSH_DENY_RULE,
   PUSH_REWRITE_KEY,
+  readRule,
   workerOverlay,
 } from './worker-overlay.js';
 
@@ -103,5 +107,68 @@ describe('workerOverlay', () => {
     expect(
       overlayOf(undefined, { ...opts, allowPush: true }).env,
     ).not.toHaveProperty('SIDEKICK_MAIN');
+  });
+});
+
+describe('readRule', () => {
+  test.each([
+    ['/a/b.md', 'Read(//a/b.md)'],
+    ['/a/b c.md', 'Read(//a/b c.md)'],
+    ['/a/[1]/x', 'Read(//a/\\[1\\]/x)'],
+    ['/a/*.md', 'Read(//a/\\*.md)'],
+    ['/a/b ', 'Read(//a/b\\ )'],
+    ['/a/b  ', 'Read(//a/b\\ \\ )'],
+    ['/a/b?\\c', 'Read(//a/b\\?\\\\c)'],
+  ])('%p becomes %p', (input, rule) => {
+    expect(readRule(input)).toBe(rule);
+  });
+});
+
+describe('workerOverlay reads', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'overlay-reads-'));
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  test('the overlay allows exactly the rules for its reads', () => {
+    const overlay = overlayOf(undefined, {
+      ...opts,
+      reads: ['/zz-nope/a.md', '/zz-nope/b.md', '/zz-nope/a.md'],
+    });
+    expect(overlay.permissions).toEqual({
+      allow: ['Read(//zz-nope/a.md)', 'Read(//zz-nope/b.md)'],
+      deny: [PUSH_DENY_RULE],
+    });
+  });
+
+  test('a path under a symlinked folder gets both forms', () => {
+    const real = fs.realpathSync(dir);
+    fs.mkdirSync(path.join(real, 'real'));
+    fs.symlinkSync(path.join(real, 'real'), path.join(real, 'link'));
+    const written = path.join(real, 'link', 'rulings.md');
+    const overlay = overlayOf(undefined, { ...opts, reads: [written] });
+    expect(overlay.permissions).toEqual({
+      allow: [
+        readRule(written),
+        readRule(path.join(real, 'real', 'rulings.md')),
+      ],
+      deny: [PUSH_DENY_RULE],
+    });
+  });
+
+  test('allowPush keeps the allow rules and has no deny rule', () => {
+    const overlay = overlayOf(undefined, {
+      ...opts,
+      allowPush: true,
+      reads: ['/zz-nope/a.md'],
+    });
+    expect(overlay.permissions).toEqual({ allow: ['Read(//zz-nope/a.md)'] });
+  });
+
+  test('no reads and allowPush leaves out permissions', () => {
+    const overlay = overlayOf(undefined, {
+      ...opts,
+      allowPush: true,
+      reads: [],
+    });
+    expect('permissions' in overlay).toBe(false);
   });
 });

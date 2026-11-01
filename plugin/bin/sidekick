@@ -5210,11 +5210,25 @@ function pushEnv(count) {
     [`GIT_CONFIG_VALUE_${count}`]: ""
   };
 }
+function readRule(absPath) {
+  const escaped = absPath.slice(1).replace(/[\\*?[\]]/g, "\\$&").replace(/ +$/, (spaces) => "\\ ".repeat(spaces.length));
+  return `Read(//${escaped})`;
+}
+function readRules(reads) {
+  const rules = reads.flatMap((p) => [readRule(p), readRule(physical(p))]);
+  return [...new Set(rules)];
+}
 function workerOverlay(profileSettings, opts) {
   const base = { worktree: { baseRef: "head" } };
+  const allow = readRules(opts.reads ?? []);
+  const allowRules = allow.length === 0 ? {} : { allow };
   if (opts.allowPush) {
     return {
-      overlay: { ...base, env: markers(opts) }
+      overlay: {
+        ...base,
+        env: markers(opts),
+        ...allow.length === 0 ? {} : { permissions: allowRules }
+      }
     };
   }
   const env = isPlainObject(profileSettings?.env) ? profileSettings.env : {};
@@ -5230,7 +5244,7 @@ function workerOverlay(profileSettings, opts) {
     overlay: {
       ...base,
       env: { ...markers(opts), ...pushEnv(Number(raw)) },
-      permissions: { deny: [PUSH_DENY_RULE] }
+      permissions: { ...allowRules, deny: [PUSH_DENY_RULE] }
     }
   };
 }
@@ -5364,7 +5378,8 @@ function prepareProfile(opts, briefPath, penv, main) {
   const overlay = workerOverlay(profile.manifest.settings, {
     briefPath,
     allowPush: opts.allowPush,
-    main
+    main,
+    reads: []
   });
   if ("issues" in overlay) {
     return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };
