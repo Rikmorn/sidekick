@@ -120,7 +120,7 @@ Three things keep a worker from pushing:
 - **The rewrite.** The overlay's `GIT_CONFIG_*` entries turn every push URL into `sidekick-push-blocked::<url>`. Git reads that as a remote helper that does not exist, so the push fails and fetch still works.
 - **The deny rule.** `Bash(git push:*)` refuses the plain spelling before it runs.
 
-The dispatch probes measured the rewrite and the deny rule in a background session, under "The push block" and "Second round, after the design review". In a worktree session, Claude Code also refuses `git -C` and `sh -c "git …"` before they run. It refused a line that mixed git with a shell variable too (the dispatch bench). It refuses a shell variable or `$(…)` in a command's name or operand, such as `S=…; bash $S/script`. It also refuses a heredoc followed by git, and a script handed a git command as text. It runs a script named by its literal path. #229 in the `Rikmorn/sidekick` repo holds the measurements.
+The dispatch probes measured the rewrite and the deny rule in a background session, under "The push block" and "Second round, after the design review". In a worktree session, Claude Code's isolation guard also refuses spellings that could dodge the deny rule, such as `git -C` and `sh -c "git …"`, before they run. `sk-parallel-sessions.md` §The isolation guard gives the spellings that pass. #229 in the `Rikmorn/sidekick` repo holds the measurements.
 
 The block does not guard against these:
 
