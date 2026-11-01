@@ -311,8 +311,8 @@ describe('finish refuses', () => {
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toEqual(
       notFound([
-        `the transcript's first cwd ${fx.worktree} is the main checkout`,
-        `the job listing's cwd ${fx.worktree} is the main checkout`,
+        `the transcript's first cwd ${fx.worktree} is in the main checkout`,
+        `the job listing's cwd ${fx.worktree} is in the main checkout`,
         'by name, no worktree has worktree-w1 checked out',
       ]),
     );
@@ -1452,7 +1452,7 @@ function lose(fx: Fixture, h: Harness): string[] {
   h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: fx.top })]);
   return [
     `the transcript's first cwd ${elsewhere} is in no worktree git lists`,
-    `the job listing's cwd ${fx.top} is the main checkout`,
+    `the job listing's cwd ${fx.top} is in the main checkout`,
     'by name, no worktree has worktree-w1 checked out',
   ];
 }
@@ -1889,7 +1889,7 @@ describe('finish --worktree', () => {
     const h = harness(fx);
     expect(h.finish(fx.brief, '--worktree', fx.top)).toBe(1);
     expect(h.err).toEqual(
-      operatorRefusal(`the --worktree path ${fx.top} is the main checkout`, [
+      operatorRefusal(`the --worktree path ${fx.top} is in the main checkout`, [
         `${fx.worktree}: worktree-w1`,
       ]),
     );
@@ -1951,7 +1951,7 @@ describe('finish --worktree', () => {
     expect(h.finish(fx.brief, '--worktree', fx.worktree)).toBe(1);
     expect(h.err).toEqual(
       operatorRefusal(
-        `the --worktree path ${fx.worktree} is the main checkout`,
+        `the --worktree path ${fx.worktree} is in the main checkout`,
         [],
       ),
     );

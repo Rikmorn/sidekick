@@ -69,10 +69,13 @@ const HEADS = 'refs/heads/';
 export const shortBranch = (ref: string): string =>
   ref.startsWith(HEADS) ? ref.slice(HEADS.length) : ref;
 
-// Whole path segments only, so `/r/w1` never contains `/r/w10`.
+// Whole path segments only, so `/r/w1` never contains `/r/w10`, and only a
+// whole `..` segment leaves `parent`: a child folder may be named `..cache`.
 function contains(parent: string, child: string): boolean {
   const rel = path.relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  if (rel === '') return true;
+  const leaves = rel === '..' || rel.startsWith(`..${path.sep}`);
+  return !leaves && !path.isAbsolute(rel);
 }
 
 // The nearest enclosing entry: the longest path wins, so a worktree nested
@@ -92,7 +95,7 @@ function enclosing(
 
 // Why this entry cannot be a worker's worktree, or undefined when it can.
 function refusal(input: FindInput, match: WorktreeEntry): string | undefined {
-  if (match.path === input.mainTop) return 'is the main checkout';
+  if (match.path === input.mainTop) return 'is in the main checkout';
   const { launcher } = input;
   if (launcher !== undefined && match.path === launcher.top) {
     return `is ${launcher.role} ${match.path}`;

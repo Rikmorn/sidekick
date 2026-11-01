@@ -202,6 +202,36 @@ describe('findWorktree', () => {
     expect(found).toMatchObject({ kind: 'found', path: nested });
   });
 
+  test('a folder named ..x inside a nested worktree lies in that worktree', () => {
+    const nested = `${MAIN}/.claude/worktrees/w1`;
+    const found = findWorktree(
+      input({
+        worktrees: [entry(MAIN, 'master'), entry(nested, 'worktree-w1')],
+        candidates: [{ via: 'listing', cwd: `${nested}/..cache/x` }],
+      }),
+    );
+    expect(found).toMatchObject({
+      kind: 'found',
+      path: nested,
+      via: 'listing',
+    });
+  });
+
+  test('a folder named ..x inside a sibling worktree lies in that worktree', () => {
+    const sibling = `${MAIN}.w2`;
+    const found = findWorktree(
+      input({
+        worktrees: [entry(MAIN, 'master'), entry(sibling, 'w2')],
+        candidates: [{ via: 'listing', cwd: `${sibling}/..cache` }],
+      }),
+    );
+    expect(found).toMatchObject({
+      kind: 'found',
+      path: sibling,
+      via: 'listing',
+    });
+  });
+
   test('rejects the main checkout', () => {
     const found = findWorktree(
       input({
@@ -212,7 +242,7 @@ describe('findWorktree', () => {
     expect(found).toEqual({
       kind: 'not found',
       tried: [
-        { via: 'listing', cwd: `${MAIN}/src`, why: 'is the main checkout' },
+        { via: 'listing', cwd: `${MAIN}/src`, why: 'is in the main checkout' },
         NO_NAME,
       ],
     });
@@ -414,7 +444,7 @@ describe('locateWorktree', () => {
     const found = locateWorktree({ ...base(f), operatorPath: f.main });
     expect(found).toEqual({
       kind: 'not found',
-      tried: [{ via: 'operator', cwd: f.main, why: 'is the main checkout' }],
+      tried: [{ via: 'operator', cwd: f.main, why: 'is in the main checkout' }],
     });
   });
 

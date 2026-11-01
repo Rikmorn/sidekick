@@ -1609,14 +1609,17 @@ var HEADS = "refs/heads/";
 var shortBranch = (ref) => ref.startsWith(HEADS) ? ref.slice(HEADS.length) : ref;
 function contains(parent, child) {
   const rel = path5.relative(parent, child);
-  return rel === "" || !rel.startsWith("..") && !path5.isAbsolute(rel);
+  if (rel === "")
+    return true;
+  const leaves = rel === ".." || rel.startsWith(`..${path5.sep}`);
+  return !leaves && !path5.isAbsolute(rel);
 }
 function enclosing(worktrees, cwd) {
   return worktrees.filter((w) => contains(w.path, cwd)).reduce((best, w) => best === undefined || w.path.length > best.path.length ? w : best, undefined);
 }
 function refusal(input, match) {
   if (match.path === input.mainTop)
-    return "is the main checkout";
+    return "is in the main checkout";
   const { launcher } = input;
   if (launcher !== undefined && match.path === launcher.top) {
     return `is ${launcher.role} ${match.path}`;
