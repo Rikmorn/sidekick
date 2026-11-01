@@ -42,15 +42,21 @@ function fixture(manifest: object = { description: 'Worker' }) {
     place: 'worktree',
     report: 'docs/run-report.md',
     orchestrator: 'orch',
+    target: git(top, 'symbolic-ref', '--short', 'HEAD'),
   };
   const brief = path.join(docs, 'x-brief.md');
   const rewrite = (over: Record<string, string>): void =>
     fs.writeFileSync(brief, briefText({ ...fields, ...over }));
   rewrite({});
-  return { top, docs, head, store, brief, rewrite };
+  return { top, docs, head, store, brief, rewrite, fields };
 }
 
 type Fixture = ReturnType<typeof fixture>;
+
+const readRulesOf = (fx: Fixture): string[] =>
+  [fx.brief, fx.fields.plan, fx.fields.spec, fx.fields.rulings].map(
+    (p) => `Read(/${p})`,
+  );
 
 const ok = (over: Partial<ClaudeResult> = {}): ClaudeResult => ({
   code: 0,
@@ -141,6 +147,26 @@ function expectRefused(h: Harness, code: number, line: string): void {
   expect(h.claude.launches()).toEqual([]);
 }
 
+/**
+ * A linked worktree of the fixture repo on its own branch, with a brief in its
+ * own `docs/`. The plan and the spec stay in the main checkout.
+ */
+function sibling(fx: Fixture, where: string, branch = 'sib') {
+  git(fx.top, 'worktree', 'add', '-q', where, '-b', branch);
+  const top = fs.realpathSync(where);
+  fs.mkdirSync(path.join(top, 'docs'));
+  const text = (over: Record<string, string> = {}): string =>
+    briefText({
+      ...fx.fields,
+      rulings: path.join(top, 'docs', 'rulings.md'),
+      target: branch,
+      ...over,
+    });
+  const brief = path.join(top, 'docs', 'x-brief.md');
+  fs.writeFileSync(brief, text());
+  return { top, brief, branch, text };
+}
+
 describe('dispatch refuses', () => {
   test('a brief that fails to parse, and checks nothing else', () => {
     const fx = fixture();
@@ -182,7 +208,7 @@ describe('dispatch refuses', () => {
     expectRefused(
       h,
       code,
-      `baseline: ${fx.head} does not resolve to the main checkout's HEAD (${head})`,
+      `baseline: ${fx.head} does not resolve to this checkout's HEAD (${head})`,
     );
   });
 
@@ -316,16 +342,82 @@ describe('dispatch refuses', () => {
     expect(h.err).toContain(`no profile named "worker"; searched: ${fx.store}`);
   });
 
-  test('a run from a linked worktree, naming the main checkout', () => {
+  test('a run inside a worker', () => {
     const fx = fixture();
-    const linked = path.join(tmp(), 'wt');
-    git(fx.top, 'worktree', 'add', '-q', linked);
-    const h = harness(fx, { cwd: linked, workTree: linked });
+    const h = harness(fx, {
+      env: { SIDEKICK_PROFILES_DIR: fx.store, SIDEKICK_WORKER: '/x/brief.md' },
+    });
     const code = h.dispatch(fx.brief, '--permission-mode', 'auto');
     expectRefused(
       h,
       code,
-      `${linked} is a linked worktree: run sidekick worker from the main checkout, whose git dir is ${path.join(fx.top, '.git')}`,
+      'SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)',
+    );
+  });
+
+  test('a brief with no target', () => {
+    const fx = fixture();
+    const { target: _target, ...rest } = fx.fields;
+    fs.writeFileSync(fx.brief, briefText(rest));
+    const branch = git(fx.top, 'symbolic-ref', '--short', 'HEAD');
+    const h = harness(fx);
+    const code = h.dispatch(fx.brief, '--permission-mode', 'auto');
+    expectRefused(
+      h,
+      code,
+      `target: missing; this checkout holds the branch ${branch}: add the line "target: ${branch}" to the brief`,
+    );
+  });
+
+  test('a target other than the branch the checkout holds', () => {
+    const fx = fixture();
+    fx.rewrite({ target: 'elsewhere' });
+    const branch = git(fx.top, 'symbolic-ref', '--short', 'HEAD');
+    const h = harness(fx);
+    const code = h.dispatch(fx.brief, '--permission-mode', 'auto');
+    expectRefused(
+      h,
+      code,
+      `target: "elsewhere" is not the branch this checkout holds (${branch}); write the line "target: ${branch}"`,
+    );
+  });
+
+  test('a target that starts with a dash is compared, never given to git', () => {
+    const fx = fixture();
+    fx.rewrite({ target: '--help' });
+    const branch = git(fx.top, 'symbolic-ref', '--short', 'HEAD');
+    const h = harness(fx);
+    const code = h.dispatch(fx.brief, '--permission-mode', 'auto');
+    expectRefused(
+      h,
+      code,
+      `target: "--help" is not the branch this checkout holds (${branch}); write the line "target: ${branch}"`,
+    );
+  });
+
+  test('a target on a detached HEAD', () => {
+    const fx = fixture();
+    git(fx.top, 'checkout', '-q', '--detach');
+    const h = harness(fx);
+    const code = h.dispatch(fx.brief, '--permission-mode', 'auto');
+    expectRefused(
+      h,
+      code,
+      "target: this checkout's HEAD is detached, so the worker would land on a branch it does not hold: check out the branch the worker lands in, or drop the target key",
+    );
+  });
+
+  test('a rulings file in the main checkout, launched from a sibling', () => {
+    const fx = fixture();
+    const sib = sibling(fx, path.join(tmp(), 'sib'));
+    const rulings = path.join(fx.docs, 'rulings.md');
+    fs.writeFileSync(sib.brief, sib.text({ rulings }));
+    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    const code = h.dispatch(sib.brief, '--permission-mode', 'auto');
+    expectRefused(
+      h,
+      code,
+      `rulings: ${rulings} is in the checkout ${fx.top}; it must be in the launching checkout ${sib.top}`,
     );
   });
 
@@ -484,7 +576,7 @@ describe('dispatch launches', () => {
         GIT_CONFIG_KEY_0: PUSH_REWRITE_KEY,
         GIT_CONFIG_VALUE_0: '',
       },
-      permissions: { deny: [PUSH_DENY_RULE] },
+      permissions: { deny: [PUSH_DENY_RULE], allow: readRulesOf(fx) },
       sidekick: { profile: 'worker' },
     });
   });
@@ -504,6 +596,7 @@ describe('dispatch launches', () => {
     expect(settingsOf(onlyLaunch(h))).toEqual({
       worktree: { baseRef: 'head' },
       env: { SIDEKICK_WORKER: fx.brief },
+      permissions: { allow: readRulesOf(fx) },
       sidekick: { profile: 'worker' },
     });
     expect(h.out).toContain(
@@ -519,6 +612,7 @@ describe('dispatch launches', () => {
       `added .claude/worktrees/ to ${path.join(fx.top, '.git', 'info', 'exclude')}`,
       'backgrounded · 213245a1 · w1',
       'worker w1 dispatched · permission mode acceptEdits · pushes blocked',
+      `lands in: ${git(fx.top, 'symbolic-ref', '--short', 'HEAD')}`,
       `steer: rulings in ${path.join(fx.docs, 'rulings.md')}, then message "w1" to point at them`,
       `finish: sidekick worker finish ${fx.brief}`,
     ]);
@@ -530,10 +624,11 @@ describe('dispatch launches', () => {
     expect(h.dispatch(fx.brief, '--permission-mode', 'bypassPermissions')).toBe(
       0,
     );
-    expect(h.out.slice(-4, -2)).toEqual([
+    expect(h.out.slice(-5, -3)).toEqual([
       'worker w1 dispatched · permission mode bypassPermissions · pushes blocked',
       'every tool call the worker makes is pre-approved',
     ]);
+    expect(h.out.at(-3)).toStartWith('lands in: ');
   });
 
   test("returns claude's exit code, relaying its text, with no summary on a failure", () => {
@@ -560,6 +655,89 @@ describe('dispatch launches', () => {
     expect(h.err).toEqual([
       'SIDEKICK_PROFILE_SKIP_CHECK=1 is set, so the settings were not checked with claude doctor.',
     ]);
+  });
+});
+
+describe('dispatch from another checkout', () => {
+  const readRules = (call: Call): unknown => {
+    const permissions = settingsOf(call).permissions;
+    return typeof permissions === 'object' && permissions !== null
+      ? Reflect.get(permissions, 'allow')
+      : undefined;
+  };
+
+  test.each([
+    ['a sibling worktree', (_fx: Fixture) => path.join(tmp(), 'sib')],
+    [
+      'a nested worktree',
+      (fx: Fixture) => path.join(fx.top, '.claude', 'worktrees', 'x'),
+    ],
+  ])('from %s: launches there, checks its HEAD, names the target', (_l, where) => {
+    const fx = fixture();
+    const sib = sibling(fx, where(fx));
+    git(sib.top, 'commit', '-q', '--allow-empty', '-m', 'sib work');
+    const sibHead = git(sib.top, 'rev-parse', 'HEAD');
+    fs.writeFileSync(sib.brief, sib.text({ baseline: sibHead }));
+    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    expect(h.dispatch(sib.brief, '--permission-mode', 'auto')).toBe(0);
+    const launch = onlyLaunch(h);
+    expect(launch.opts.cwd).toBe(sib.top);
+    expect(h.out).toContain(`lands in: sib · launched from ${sib.top}`);
+    expect(readRules(launch)).toEqual([
+      `Read(/${sib.brief})`,
+      `Read(/${fx.fields.plan})`,
+      `Read(/${fx.fields.spec})`,
+      `Read(/${path.join(sib.top, 'docs', 'rulings.md')})`,
+    ]);
+    const record = path.join(fx.top, '.git', 'sidekick', 'workers', 'w1.json');
+    expect(JSON.parse(fs.readFileSync(record, 'utf-8')).version).toBe(2);
+  });
+
+  test('refuses a baseline that is the main checkout HEAD, not the sibling HEAD', () => {
+    const fx = fixture();
+    const sib = sibling(fx, path.join(tmp(), 'sib'));
+    git(sib.top, 'commit', '-q', '--allow-empty', '-m', 'sib work');
+    const sibHead = git(sib.top, 'rev-parse', 'HEAD');
+    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    const code = h.dispatch(sib.brief, '--permission-mode', 'auto');
+    expectRefused(
+      h,
+      code,
+      `baseline: ${fx.head} does not resolve to this checkout's HEAD (${sibHead})`,
+    );
+  });
+
+  test('checks the name clashes against the main checkout', () => {
+    const fx = fixture();
+    const sib = sibling(fx, path.join(tmp(), 'sib'));
+    const folder = path.join(fx.top, '.claude', 'worktrees', 'w1');
+    fs.mkdirSync(folder, { recursive: true });
+    git(fx.top, 'branch', 'worktree-w1');
+    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    const code = h.dispatch(sib.brief, '--permission-mode', 'auto');
+    expect(code).toBe(1);
+    expect(h.err).toContain(`name: ${folder} already exists`);
+    expect(h.err).toContain('name: the branch worktree-w1 already exists');
+  });
+
+  test('the main checkout gets the four read rules too, and no launched-from text', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(readRules(onlyLaunch(h))).toEqual(readRulesOf(fx));
+    expect(h.out.some((l) => l.includes('launched from'))).toBe(false);
+  });
+
+  test('a detached HEAD with no target lands where the operator lands it', () => {
+    const fx = fixture();
+    git(fx.top, 'checkout', '-q', '--detach');
+    const { target: _target, ...rest } = fx.fields;
+    fs.writeFileSync(fx.brief, briefText(rest));
+    const h = harness(fx);
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(h.out).toContain(
+      "lands in: where the operator lands it (this checkout's HEAD is detached)",
+    );
   });
 });
 

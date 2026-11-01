@@ -1,5 +1,5 @@
 /**
- * `sidekick worker dispatch`: checks a brief, the main checkout, and the
+ * `sidekick worker dispatch`: checks a brief, the launching checkout, and the
  * profile, then starts `sk-worker` as a background session in a worktree of
  * its own, with pushes blocked unless the operator allows them. A refusal
  * names every reason it finds, except that a brief that does not parse stops
@@ -28,14 +28,16 @@ import { workerOverlay } from './worker-overlay.js';
 import { jobIdFrom, writeRecord } from './worker-record.js';
 import {
   branchExists,
+  type CheckoutFacts,
+  checkoutFacts,
   commitOf,
   ensureWorktreesExcluded,
   headCommit,
   isTrackedClean,
-  mainCheckout,
   remotesWithPushUrl,
   WORKTREES_FOLDER,
 } from './worker-repo.js';
+import { nativeBranch } from './worker-worktree.js';
 
 type Out = (line: string) => void;
 
@@ -141,12 +143,12 @@ function baselineIssues(
 ): string[] {
   const head = headCommit(runGit, top);
   if (head === undefined) {
-    return ['baseline: the main checkout has no commit at HEAD yet'];
+    return ["baseline: this checkout's HEAD has no commit yet"];
   }
   return commitOf(runGit, top, baseline) === head
     ? []
     : [
-        `baseline: ${baseline} does not resolve to the main checkout's HEAD (${head})`,
+        `baseline: ${baseline} does not resolve to this checkout's HEAD (${head})`,
       ];
 }
 
@@ -160,7 +162,7 @@ const cleanIssues = (runGit: Runner, top: string): string[] =>
 // The worktree folder and branch `claude --worktree <name>` makes must both be free.
 function treeNameIssues(runGit: Runner, top: string, name: string): string[] {
   const folder = path.join(top, WORKTREES_FOLDER, name);
-  const branch = `worktree-${name}`;
+  const branch = nativeBranch(name);
   return [
     ...(fs.existsSync(folder) ? [`name: ${folder} already exists`] : []),
     ...(branchExists(runGit, top, branch)
@@ -189,24 +191,42 @@ const pushUrlIssues = (runGit: Runner, top: string): string[] =>
       `remote "${remote}" sets pushurl, and git ignores the push rewrite for such a remote: remove the pushurl, or pass --allow-push on the operator's word`,
   );
 
+// Compared here, never passed to git: the schema allows a leading dash.
+function targetIssues(brief: Brief, branch: string | undefined): string[] {
+  if (branch === undefined) {
+    return brief.target === undefined
+      ? []
+      : [
+          "target: this checkout's HEAD is detached, so the worker would land on a branch it does not hold: check out the branch the worker lands in, or drop the target key",
+        ];
+  }
+  if (brief.target === undefined) {
+    return [
+      `target: missing; this checkout holds the branch ${branch}: add the line "target: ${branch}" to the brief`,
+    ];
+  }
+  return brief.target === branch
+    ? []
+    : [
+        `target: "${brief.target}" is not the branch this checkout holds (${branch}); write the line "target: ${branch}"`,
+      ];
+}
+
 function checkoutIssues(
   brief: Brief,
   briefPath: string,
   opts: DispatchOptions,
   runGit: Runner,
-  top: string,
+  facts: CheckoutFacts,
 ): string[] {
+  const { launchTop, mainTop } = facts;
   return [
-    ...briefFileIssues(brief, {
-      briefPath,
-      launchTop: top,
-      mainTop: top,
-      runGit,
-    }),
-    ...baselineIssues(runGit, top, brief.baseline),
-    ...cleanIssues(runGit, top),
-    ...treeNameIssues(runGit, top, brief.name),
-    ...(opts.allowPush ? [] : pushUrlIssues(runGit, top)),
+    ...briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }),
+    ...baselineIssues(runGit, launchTop, brief.baseline),
+    ...cleanIssues(runGit, launchTop),
+    ...targetIssues(brief, facts.branch),
+    ...treeNameIssues(runGit, mainTop, brief.name),
+    ...(opts.allowPush ? [] : pushUrlIssues(runGit, launchTop)),
   ];
 }
 
@@ -241,6 +261,7 @@ function prepareProfile(
   briefPath: string,
   penv: ProfileEnv,
   main: string | undefined,
+  reads: string[],
 ): Prepared {
   const lines: string[] = [];
   const collect: Out = (line) => {
@@ -258,7 +279,7 @@ function prepareProfile(
     briefPath,
     allowPush: opts.allowPush,
     main,
-    reads: [],
+    reads,
   });
   if ('issues' in overlay) {
     return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };
@@ -277,45 +298,54 @@ interface Ready {
   mode: string;
   pluginDir: string | undefined;
   allowPush: boolean;
-  top: string;
+  launchTop: string;
+  mainTop: string;
   commonDir: string;
   args: string[];
   notes: string[];
   main: ResolvedMain | undefined;
 }
 
-// The checks run from the top, as the launch does; outside a main checkout,
-// those that need no checkout still run from the current folder.
+const insideWorkerIssue =
+  'SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)';
+
+// The checks run from the launching checkout, as the launch does; outside a
+// work tree, those that need no checkout still run from the current folder.
 function checkDispatch(
   brief: Brief,
   briefPath: string,
   opts: DispatchOptions,
   wenv: WorkerEnv,
 ): Ready | { issues: string[] } {
-  const checkout = mainCheckout(wenv.runGit, wenv.cwd);
-  const at = 'issues' in checkout ? wenv.cwd : checkout.top;
+  if (wenv.env.SIDEKICK_WORKER !== undefined) {
+    return { issues: [insideWorkerIssue] };
+  }
+  const facts = checkoutFacts(wenv.runGit, wenv.cwd);
+  const at = 'issues' in facts ? wenv.cwd : facts.launchTop;
   const listed = listJobs(wenv.runClaude, at);
   const main = resolveMain(
     wenv.env,
     'jobs' in listed ? listed.jobs : undefined,
   );
+  const reads = [briefPath, brief.plan, brief.spec, brief.rulings];
   const prepared = prepareProfile(
     opts,
     briefPath,
     { ...wenv, cwd: at },
     main?.value,
+    reads,
   );
   const issues = [
-    ...('issues' in checkout
-      ? checkout.issues
-      : checkoutIssues(brief, briefPath, opts, wenv.runGit, checkout.top)),
+    ...('issues' in facts
+      ? facts.issues
+      : checkoutIssues(brief, briefPath, opts, wenv.runGit, facts)),
     ...placeIssues(brief),
     ...listedNameIssues(listed, brief.name),
     ...modeIssues(opts.mode),
     ...pluginDirIssues(opts.pluginDir),
     ...(prepared.ok ? [] : prepared.issues),
   ];
-  const refused = issues.length > 0 || 'issues' in checkout || !prepared.ok;
+  const refused = issues.length > 0 || 'issues' in facts || !prepared.ok;
   if (refused || opts.mode === undefined) return { issues };
   return {
     brief,
@@ -323,8 +353,9 @@ function checkDispatch(
     mode: opts.mode,
     pluginDir: opts.pluginDir,
     allowPush: opts.allowPush,
-    top: checkout.top,
-    commonDir: checkout.commonDir,
+    launchTop: facts.launchTop,
+    mainTop: facts.mainTop,
+    commonDir: facts.commonDir,
     args: prepared.args,
     notes: prepared.notes,
     main,
@@ -343,6 +374,19 @@ function relay(result: ClaudeResult, out: Out, err: Out): void {
 const mainLines = (ready: Ready, wenv: WorkerEnv): string[] =>
   ready.main === undefined ? [] : [mainReport(ready.main, wenv.env, wenv.home)];
 
+const DETACHED_LANDING =
+  "where the operator lands it (this checkout's HEAD is detached)";
+
+// The launching checkout is named only when it is not the main checkout.
+function landingLine(ready: Ready): string {
+  const target = ready.brief.target ?? DETACHED_LANDING;
+  const from =
+    ready.launchTop === ready.mainTop
+      ? ''
+      : ` · launched from ${ready.launchTop}`;
+  return `lands in: ${target}${from}`;
+}
+
 function summary(ready: Ready): string[] {
   const { brief, mode } = ready;
   const pushes = ready.allowPush
@@ -353,6 +397,7 @@ function summary(ready: Ready): string[] {
     ...(mode === BYPASS
       ? ['every tool call the worker makes is pre-approved']
       : []),
+    landingLine(ready),
     `steer: rulings in ${brief.rulings}, then message "${brief.name}" to point at them`,
     `finish: sidekick worker finish ${shellArg(ready.briefPath)}`,
   ];
@@ -377,13 +422,13 @@ function keepRecord(ready: Ready, result: ClaudeResult, err: Out): void {
   if ('issue' in written) err(written.issue);
 }
 
-// Excludes the worktrees folder, starts the worker from the top, and relays
+// Excludes the worktrees folder, starts the worker from the launching checkout, and relays
 // claude; the summary prints only once claude reports a start.
 function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   for (const note of ready.notes) err(note);
   const excluded = ensureWorktreesExcluded(
     wenv.runGit,
-    ready.top,
+    ready.mainTop,
     ready.commonDir,
   );
   if ('issues' in excluded) return refuse(err, excluded.issues);
@@ -396,7 +441,7 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
     prompt: `/sidekick:sk-worker ${ready.briefPath}`,
   });
   const result = wenv.runClaude(args, {
-    cwd: ready.top,
+    cwd: ready.launchTop,
     timeoutMs: wenv.launchTimeoutMs ?? LAUNCH_TIMEOUT_MS,
   });
   relay(result, out, err);

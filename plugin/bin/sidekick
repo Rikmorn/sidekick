@@ -1368,6 +1368,39 @@ function listWorktrees(runGit, dir) {
   }
   return { worktrees };
 }
+function checkoutFacts(runGit, cwd) {
+  const result = runGit("git", [
+    "rev-parse",
+    "--path-format=absolute",
+    "--show-toplevel",
+    "--git-common-dir"
+  ], cwd);
+  if (result.code !== 0) {
+    return {
+      issues: [
+        "not inside a git work tree: run sidekick worker from a checkout of the repo"
+      ]
+    };
+  }
+  const [launchTop, commonDir] = result.stdout.replace(/\n$/, "").split(`
+`);
+  if (launchTop === undefined || commonDir === undefined) {
+    return {
+      issues: [`git rev-parse printed an unexpected answer: ${result.stdout}`]
+    };
+  }
+  const listing = listWorktrees(runGit, cwd);
+  if ("issue" in listing)
+    return { issues: [listing.issue] };
+  const branch = runGit("git", ["symbolic-ref", "-q", "--short", "HEAD"], cwd);
+  return {
+    launchTop,
+    mainTop: listing.worktrees[0].path,
+    commonDir,
+    branch: branch.code === 0 ? branch.stdout.trim() : undefined,
+    worktrees: listing.worktrees
+  };
+}
 function checkoutOf(runGit, folder) {
   const result = runGit("git", ["rev-parse", "--path-format=absolute", "--show-toplevel"], folder);
   if (result.code !== 0)
@@ -5249,6 +5282,9 @@ function workerOverlay(profileSettings, opts) {
   };
 }
 
+// bin/helpers/worker-worktree.ts
+var nativeBranch = (name) => `worktree-${name}`;
+
 // bin/helpers/worker-dispatch.ts
 var PERMISSION_MODES = [
   "default",
@@ -5309,10 +5345,10 @@ var placeIssues = (brief) => brief.place === "worktree" ? [] : [
 function baselineIssues(runGit, top, baseline) {
   const head = headCommit(runGit, top);
   if (head === undefined) {
-    return ["baseline: the main checkout has no commit at HEAD yet"];
+    return ["baseline: this checkout's HEAD has no commit yet"];
   }
   return commitOf(runGit, top, baseline) === head ? [] : [
-    `baseline: ${baseline} does not resolve to the main checkout's HEAD (${head})`
+    `baseline: ${baseline} does not resolve to this checkout's HEAD (${head})`
   ];
 }
 var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
@@ -5320,7 +5356,7 @@ var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
 ];
 function treeNameIssues(runGit, top, name) {
   const folder = path17.join(top, WORKTREES_FOLDER, name);
-  const branch = `worktree-${name}`;
+  const branch = nativeBranch(name);
   return [
     ...fs17.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [`name: the branch ${branch} already exists`] : []
@@ -5334,18 +5370,30 @@ function listedNameIssues(listed, name) {
   ] : [];
 }
 var pushUrlIssues = (runGit, top) => remotesWithPushUrl(runGit, top).map((remote) => `remote "${remote}" sets pushurl, and git ignores the push rewrite for such a remote: remove the pushurl, or pass --allow-push on the operator's word`);
-function checkoutIssues(brief, briefPath, opts, runGit, top) {
+function targetIssues(brief, branch) {
+  if (branch === undefined) {
+    return brief.target === undefined ? [] : [
+      "target: this checkout's HEAD is detached, so the worker would land on a branch it does not hold: check out the branch the worker lands in, or drop the target key"
+    ];
+  }
+  if (brief.target === undefined) {
+    return [
+      `target: missing; this checkout holds the branch ${branch}: add the line "target: ${branch}" to the brief`
+    ];
+  }
+  return brief.target === branch ? [] : [
+    `target: "${brief.target}" is not the branch this checkout holds (${branch}); write the line "target: ${branch}"`
+  ];
+}
+function checkoutIssues(brief, briefPath, opts, runGit, facts) {
+  const { launchTop, mainTop } = facts;
   return [
-    ...briefFileIssues(brief, {
-      briefPath,
-      launchTop: top,
-      mainTop: top,
-      runGit
-    }),
-    ...baselineIssues(runGit, top, brief.baseline),
-    ...cleanIssues(runGit, top),
-    ...treeNameIssues(runGit, top, brief.name),
-    ...opts.allowPush ? [] : pushUrlIssues(runGit, top)
+    ...briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }),
+    ...baselineIssues(runGit, launchTop, brief.baseline),
+    ...cleanIssues(runGit, launchTop),
+    ...targetIssues(brief, facts.branch),
+    ...treeNameIssues(runGit, mainTop, brief.name),
+    ...opts.allowPush ? [] : pushUrlIssues(runGit, launchTop)
   ];
 }
 function bypassIssues(profile, mode) {
@@ -5362,7 +5410,7 @@ function missingProfileHint(name, penv) {
   const held = roots.some((root) => isFolder(path17.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
-function prepareProfile(opts, briefPath, penv, main) {
+function prepareProfile(opts, briefPath, penv, main, reads) {
   const lines = [];
   const collect = (line) => {
     lines.push(line);
@@ -5379,7 +5427,7 @@ function prepareProfile(opts, briefPath, penv, main) {
     briefPath,
     allowPush: opts.allowPush,
     main,
-    reads: []
+    reads
   });
   if ("issues" in overlay) {
     return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };
@@ -5390,21 +5438,26 @@ function prepareProfile(opts, briefPath, penv, main) {
   }
   return { ok: true, args, notes: lines };
 }
+var insideWorkerIssue = "SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)";
 function checkDispatch(brief, briefPath, opts, wenv) {
-  const checkout = mainCheckout(wenv.runGit, wenv.cwd);
-  const at = "issues" in checkout ? wenv.cwd : checkout.top;
+  if (wenv.env.SIDEKICK_WORKER !== undefined) {
+    return { issues: [insideWorkerIssue] };
+  }
+  const facts = checkoutFacts(wenv.runGit, wenv.cwd);
+  const at = "issues" in facts ? wenv.cwd : facts.launchTop;
   const listed = listJobs(wenv.runClaude, at);
   const main = resolveMain(wenv.env, "jobs" in listed ? listed.jobs : undefined);
-  const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at }, main?.value);
+  const reads = [briefPath, brief.plan, brief.spec, brief.rulings];
+  const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at }, main?.value, reads);
   const issues = [
-    ..."issues" in checkout ? checkout.issues : checkoutIssues(brief, briefPath, opts, wenv.runGit, checkout.top),
+    ..."issues" in facts ? facts.issues : checkoutIssues(brief, briefPath, opts, wenv.runGit, facts),
     ...placeIssues(brief),
     ...listedNameIssues(listed, brief.name),
     ...modeIssues(opts.mode),
     ...pluginDirIssues(opts.pluginDir),
     ...prepared.ok ? [] : prepared.issues
   ];
-  const refused = issues.length > 0 || "issues" in checkout || !prepared.ok;
+  const refused = issues.length > 0 || "issues" in facts || !prepared.ok;
   if (refused || opts.mode === undefined)
     return { issues };
   return {
@@ -5413,8 +5466,9 @@ function checkDispatch(brief, briefPath, opts, wenv) {
     mode: opts.mode,
     pluginDir: opts.pluginDir,
     allowPush: opts.allowPush,
-    top: checkout.top,
-    commonDir: checkout.commonDir,
+    launchTop: facts.launchTop,
+    mainTop: facts.mainTop,
+    commonDir: facts.commonDir,
     args: prepared.args,
     notes: prepared.notes,
     main
@@ -5430,12 +5484,19 @@ function relay(result, out, err) {
     err("claude did not return in time.");
 }
 var mainLines = (ready, wenv) => ready.main === undefined ? [] : [mainReport(ready.main, wenv.env, wenv.home)];
+var DETACHED_LANDING = "where the operator lands it (this checkout's HEAD is detached)";
+function landingLine(ready) {
+  const target = ready.brief.target ?? DETACHED_LANDING;
+  const from = ready.launchTop === ready.mainTop ? "" : ` · launched from ${ready.launchTop}`;
+  return `lands in: ${target}${from}`;
+}
 function summary(ready) {
   const { brief, mode } = ready;
   const pushes = ready.allowPush ? "pushes ALLOWED on the operator's word" : "pushes blocked";
   return [
     `worker ${brief.name} dispatched · permission mode ${mode} · ${pushes}`,
     ...mode === BYPASS ? ["every tool call the worker makes is pre-approved"] : [],
+    landingLine(ready),
     `steer: rulings in ${brief.rulings}, then message "${brief.name}" to point at them`,
     `finish: sidekick worker finish ${shellArg(ready.briefPath)}`
   ];
@@ -5460,7 +5521,7 @@ function keepRecord(ready, result, err) {
 function launch2(ready, wenv, out, err) {
   for (const note of ready.notes)
     err(note);
-  const excluded = ensureWorktreesExcluded(wenv.runGit, ready.top, ready.commonDir);
+  const excluded = ensureWorktreesExcluded(wenv.runGit, ready.mainTop, ready.commonDir);
   if ("issues" in excluded)
     return refuse4(err, excluded.issues);
   if (excluded.line !== undefined)
@@ -5473,7 +5534,7 @@ function launch2(ready, wenv, out, err) {
     prompt: `/sidekick:sk-worker ${ready.briefPath}`
   });
   const result = wenv.runClaude(args, {
-    cwd: ready.top,
+    cwd: ready.launchTop,
     timeoutMs: wenv.launchTimeoutMs ?? LAUNCH_TIMEOUT_MS
   });
   relay(result, out, err);
