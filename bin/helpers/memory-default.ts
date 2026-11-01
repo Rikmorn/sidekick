@@ -36,10 +36,12 @@ const MAX_KEY_LENGTH = 200;
 const WRITE_BITS = 0o222;
 
 function hashOf(text: string): number {
-  return [...text].reduce(
-    (h, _, i) => ((h << 5) - h + text.charCodeAt(i)) | 0,
-    0,
-  );
+  // Folds UTF-16 code units, as Claude Code's `charCodeAt` loop does.
+  let h = 0;
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) - h + text.charCodeAt(i)) | 0;
+  }
+  return h;
 }
 
 /** Claude Code's project key for `p`: non-alphanumerics become `-`, long keys get a hash suffix. */

@@ -28,6 +28,17 @@ describe('projectKey', () => {
     expect(key.endsWith('egmen-tdqjxf')).toBe(true);
   });
 
+  // Expected suffix from a plain `for (i < text.length)` charCodeAt loop run
+  // with bun (the binary's own loop); the astral character is two code units
+  // and two dashes in the key, as the binary's regex has no `u` flag.
+  test('hashes UTF-16 code units, so an astral character does not skip the tail', () => {
+    const p = `/a\u{1F600}${'b'.repeat(210)}`;
+    const key = projectKey(p);
+    expect(key.slice(0, 5)).toBe('-a--b');
+    expect(key.endsWith('-dowuff')).toBe(true);
+    expect(key).toHaveLength(207);
+  });
+
   test('leaves a path of exactly 200 characters without a suffix', () => {
     expect(projectKey(`/${'a'.repeat(199)}`)).toHaveLength(200);
   });
