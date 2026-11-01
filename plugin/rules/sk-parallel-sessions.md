@@ -1,13 +1,13 @@
 # sk-* Parallel sessions
 
-Sessions that share a checkout move files and `HEAD` under each other. A session that needs its own seat works in a worktree Claude Code makes.
+Sessions sharing a checkout move files and `HEAD` under each other, so a session needing its own seat works in a worktree Claude Code makes.
 
 ## Moving into a worktree
 
 - Move on the operator's word, or when another live session has work on this checkout's branch.
 - Move before writing a spec or plan. A worktree session cannot edit the main checkout.
 - Use `EnterWorktree`, or `claude -w <name>` for a new session. Both copy what `.worktreeinclude` lists, and offer removal. A hand-built worktree gets neither.
-- In a fresh worktree, run the repo's declared setup first, and link nothing from the main checkout: installs write through links. Skipping setup lets a nested worktree borrow the main checkout's packages silently.
+- In a fresh worktree, run the repo's declared setup before any other command, even for a task with no gates. Without it, tools borrow the main checkout's packages. Link nothing from the main checkout: installs write through links.
 
 ## Bases
 
@@ -15,11 +15,11 @@ The repo's `worktree.baseRef` sets the base. `"fresh"`, the default, is the remo
 
 ## Support work
 
-Support work starts from the remote's default branch, and ends by removing its worktree unchanged. Changed code becomes a branch landing by the repo's own route; its worktree stays until then. Name a support session for its workstream.
+Support work, such as a production check, runs in its own worktree from the remote's default branch. "Go off main" asks for one, even when this checkout holds that branch. Remove it unchanged at the end. Changed code becomes a branch landing by the repo's own route; its worktree stays until then. Name a support session for its workstream.
 
 ## The isolation guard
 
-Claude Code refuses a worktree session's or subagent's command when its text cannot show that git stays in the worktree. These pass:
+Claude Code refuses any command in a worktree, a subagent's too, whose text cannot show that git stays there. These pass:
 
 - git with literal arguments; pipes, `&&`, and redirects are fine;
 - no `$VAR` or `$(…)` beside git; elsewhere, spell paths out, or double-quote a value starting with literal text, as in `"./$f"`;
