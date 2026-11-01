@@ -172,9 +172,171 @@ export function worktreeListed(
   top: string,
   worktree: string,
 ): { listed: boolean } | { issue: string } {
-  const list = runGit('git', ['worktree', 'list', '--porcelain'], top);
+  const list = listWorktrees(runGit, top);
+  if ('issue' in list) return list;
+  const wanted = physical(worktree);
+  return {
+    listed: list.worktrees.some((entry) => physical(entry.path) === wanted),
+  };
+}
+
+/** One entry of `git worktree list`. */
+export interface WorktreeEntry {
+  /** Physical, as git lists it. */
+  path: string;
+  head: string | undefined;
+  /** A full ref, `refs/heads/<x>`; undefined when detached. */
+  branch: string | undefined;
+  /** The lock reason, `''` when locked with none, undefined when not locked. */
+  locked: string | undefined;
+  /** git's reason, `''` when it gives none, undefined when not prunable. */
+  prunable: string | undefined;
+}
+
+// A field is `<key>` or `<key> <value>`; the value keeps any further spaces.
+function fieldOf(field: string): { key: string; value: string } {
+  const space = field.indexOf(' ');
+  if (space === -1) return { key: field, value: '' };
+  return { key: field.slice(0, space), value: field.slice(space + 1) };
+}
+
+// A record without a `worktree` field is not an entry.
+function entryOf(fields: string[]): WorktreeEntry | undefined {
+  const entry: WorktreeEntry = {
+    path: '',
+    head: undefined,
+    branch: undefined,
+    locked: undefined,
+    prunable: undefined,
+  };
+  let named = false;
+  for (const { key, value } of fields.map(fieldOf)) {
+    if (key === 'worktree') {
+      entry.path = value;
+      named = true;
+    } else if (key === 'HEAD') entry.head = value;
+    else if (key === 'branch') entry.branch = value;
+    else if (key === 'locked') entry.locked = value;
+    else if (key === 'prunable') entry.prunable = value;
+  }
+  return named ? entry : undefined;
+}
+
+/**
+ * The entries of `git worktree list --porcelain -z`: a NUL ends each field
+ * and an empty field ends each record. The first entry is the main checkout.
+ */
+export function parseWorktrees(porcelainZ: string): WorktreeEntry[] {
+  const records: string[][] = [[]];
+  for (const field of porcelainZ.split('\0')) {
+    if (field === '') records.push([]);
+    else records[records.length - 1].push(field);
+  }
+  return records.flatMap((fields) => entryOf(fields) ?? []);
+}
+
+/** The worktrees git lists for the repo holding `dir`, or git's message when it fails. */
+export function listWorktrees(
+  runGit: Runner,
+  dir: string,
+): { worktrees: WorktreeEntry[] } | { issue: string } {
+  const list = runGit('git', ['worktree', 'list', '--porcelain', '-z'], dir);
   if (list.code !== 0) return { issue: list.stderr.trim() };
-  return { listed: list.stdout.split('\n').includes(`worktree ${worktree}`) };
+  const worktrees = parseWorktrees(list.stdout);
+  if (worktrees.length === 0) {
+    return { issue: 'git worktree list printed no worktrees' };
+  }
+  return { worktrees };
+}
+
+/** What `sidekick worker` reads about the checkout it runs in and its repo. */
+export interface CheckoutFacts {
+  launchTop: string;
+  mainTop: string;
+  commonDir: string;
+  /** The short name the launching checkout holds; undefined when detached. */
+  branch: string | undefined;
+  worktrees: WorktreeEntry[];
+}
+
+/**
+ * The launching checkout's top, the main checkout's top, the common git dir,
+ * and the branch the launching checkout holds, from `cwd` or any folder below
+ * it. Refuses outside a work tree.
+ */
+export function checkoutFacts(
+  runGit: Runner,
+  cwd: string,
+): CheckoutFacts | { issues: string[] } {
+  const result = runGit(
+    'git',
+    [
+      'rev-parse',
+      '--path-format=absolute',
+      '--show-toplevel',
+      '--git-common-dir',
+    ],
+    cwd,
+  );
+  if (result.code !== 0) {
+    return {
+      issues: [
+        'not inside a git work tree: run sidekick worker from a checkout of the repo',
+      ],
+    };
+  }
+  // One path per line; only the final newline goes, since a path may hold spaces.
+  const [launchTop, commonDir] = result.stdout.replace(/\n$/, '').split('\n');
+  if (launchTop === undefined || commonDir === undefined) {
+    return {
+      issues: [`git rev-parse printed an unexpected answer: ${result.stdout}`],
+    };
+  }
+  const listing = listWorktrees(runGit, cwd);
+  if ('issue' in listing) return { issues: [listing.issue] };
+  const branch = runGit('git', ['symbolic-ref', '-q', '--short', 'HEAD'], cwd);
+  return {
+    launchTop,
+    mainTop: listing.worktrees[0].path,
+    commonDir,
+    // symbolic-ref exits 1 on a detached HEAD.
+    branch: branch.code === 0 ? branch.stdout.trim() : undefined,
+    worktrees: listing.worktrees,
+  };
+}
+
+/** The top of the checkout holding `folder`, or git's message when it is in no work tree. */
+export function checkoutOf(
+  runGit: Runner,
+  folder: string,
+): { top: string } | { issue: string } {
+  const result = runGit(
+    'git',
+    ['rev-parse', '--path-format=absolute', '--show-toplevel'],
+    folder,
+  );
+  if (result.code !== 0) return { issue: result.stderr.trim() };
+  return { top: result.stdout.replace(/\n$/, '') };
+}
+
+/**
+ * Resolves symlinks through the nearest existing ancestor, so a path not yet
+ * made still compares physically against git's listing.
+ */
+export function physical(p: string): string {
+  const abs = path.resolve(p);
+  const rest: string[] = [];
+  let dir = abs;
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(dir), ...rest);
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) return abs;
+      rest.unshift(path.basename(dir));
+      dir = parent;
+    }
+  }
 }
 
 const PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;

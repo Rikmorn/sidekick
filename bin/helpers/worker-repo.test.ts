@@ -6,13 +6,19 @@ import { execRunner } from './pm-data.js';
 import {
   branchExists,
   checkedOut,
+  checkoutFacts,
+  checkoutOf,
   commitOf,
   ensureWorktreesExcluded,
   headCommit,
   isTrackedClean,
+  listWorktrees,
   mainCheckout,
+  parseWorktrees,
+  physical,
   remotesWithPushUrl,
   statusEntriesIn,
+  worktreeListed,
 } from './worker-repo.js';
 
 afterEach(removeTemps);
@@ -222,5 +228,225 @@ describe('ensureWorktreesExcluded', () => {
       `cannot add .claude/worktrees/ to ${excludeOf(top)}: `,
     );
     expect(fs.readFileSync(excludeOf(top), 'utf-8')).toBe(before);
+  });
+});
+
+describe('parseWorktrees', () => {
+  const record = (...fields: string[]): string => `${fields.join('\0')}\0\0`;
+
+  test('reads each field of locked, prunable, detached, and spaced entries', () => {
+    const text = [
+      record('worktree /r', 'HEAD aaa', 'branch refs/heads/main'),
+      record(
+        'worktree /w 1',
+        'HEAD bbb',
+        'branch refs/heads/w1',
+        'locked claude session (pid 1)',
+      ),
+      record('worktree /w2', 'HEAD ccc', 'branch refs/heads/w2', 'locked'),
+      record(
+        'worktree /w3',
+        'HEAD ddd',
+        'branch refs/heads/w3',
+        'prunable gitdir file points to non-existent location',
+      ),
+      record('worktree /w4', 'HEAD eee', 'detached'),
+      record('worktree /w5', 'HEAD fff', 'detached', 'prunable'),
+    ].join('');
+    expect(parseWorktrees(text)).toEqual([
+      {
+        path: '/r',
+        head: 'aaa',
+        branch: 'refs/heads/main',
+        locked: undefined,
+        prunable: undefined,
+      },
+      {
+        path: '/w 1',
+        head: 'bbb',
+        branch: 'refs/heads/w1',
+        locked: 'claude session (pid 1)',
+        prunable: undefined,
+      },
+      {
+        path: '/w2',
+        head: 'ccc',
+        branch: 'refs/heads/w2',
+        locked: '',
+        prunable: undefined,
+      },
+      {
+        path: '/w3',
+        head: 'ddd',
+        branch: 'refs/heads/w3',
+        locked: undefined,
+        prunable: 'gitdir file points to non-existent location',
+      },
+      {
+        path: '/w4',
+        head: 'eee',
+        branch: undefined,
+        locked: undefined,
+        prunable: undefined,
+      },
+      {
+        path: '/w5',
+        head: 'fff',
+        branch: undefined,
+        locked: undefined,
+        prunable: '',
+      },
+    ]);
+  });
+
+  test('keeps a path with a newline whole and ignores a bare entry', () => {
+    const text = record('worktree /a\nb', 'bare');
+    expect(parseWorktrees(text)).toEqual([
+      {
+        path: '/a\nb',
+        head: undefined,
+        branch: undefined,
+        locked: undefined,
+        prunable: undefined,
+      },
+    ]);
+  });
+
+  test('gives nothing for empty text', () => {
+    expect(parseWorktrees('')).toEqual([]);
+  });
+});
+
+describe('listWorktrees', () => {
+  test("lists the main checkout first, then a linked worktree's lock and a prunable one", () => {
+    const top = repo();
+    const locked = path.join(tmp(), 'locked');
+    const gone = path.join(tmp(), 'gone');
+    git(top, 'worktree', 'add', '-q', '--detach', locked);
+    git(top, 'worktree', 'lock', '--reason', 'because', locked);
+    git(top, 'worktree', 'add', '-q', '--detach', gone);
+    fs.rmSync(gone, { recursive: true });
+    const result = listWorktrees(execRunner, top);
+    const list = 'worktrees' in result ? result.worktrees : [];
+    expect(list[0].path).toBe(top);
+    expect(list.map((w) => w.path).sort()).toEqual([top, locked, gone].sort());
+    expect(list.find((w) => w.path === locked)?.locked).toBe('because');
+    expect(list.find((w) => w.path === gone)?.prunable).toStartWith(
+      'gitdir file',
+    );
+    expect(list[0].prunable).toBeUndefined();
+  });
+
+  test("gives git's message outside a repo", () => {
+    expect(listWorktrees(execRunner, tmp())).toEqual({
+      issue: expect.stringContaining('not a git repository'),
+    });
+  });
+});
+
+describe('worktreeListed', () => {
+  test('counts a prunable entry as listed and compares physically', () => {
+    const top = repo();
+    const wt = path.join(tmp(), 'wt');
+    git(top, 'worktree', 'add', '-q', wt);
+    const link = path.join(tmp(), 'link');
+    fs.symlinkSync(wt, link);
+    expect(worktreeListed(execRunner, top, wt)).toEqual({ listed: true });
+    expect(worktreeListed(execRunner, top, link)).toEqual({ listed: true });
+    fs.rmSync(wt, { recursive: true });
+    expect(worktreeListed(execRunner, top, wt)).toEqual({ listed: true });
+    expect(worktreeListed(execRunner, top, path.join(top, 'nope'))).toEqual({
+      listed: false,
+    });
+  });
+});
+
+describe('physical', () => {
+  test('resolves symlinks through the nearest existing ancestor', () => {
+    const real = tmp();
+    const link = path.join(tmp(), 'link');
+    fs.symlinkSync(real, link);
+    expect(physical(path.join(link, 'not', 'yet'))).toBe(
+      path.join(real, 'not', 'yet'),
+    );
+  });
+});
+
+describe('checkoutFacts', () => {
+  test('gives the same main checkout from the main, a sibling, a nested worktree, and their subfolders', () => {
+    const top = repo();
+    const sibling = path.join(tmp(), 'sib');
+    const nested = path.join(top, '.claude', 'worktrees', 'x');
+    git(top, 'worktree', 'add', '-q', '-b', 'sib', sibling);
+    git(top, 'worktree', 'add', '-q', '-b', 'nest', nested);
+    const main = git(top, 'symbolic-ref', '--short', 'HEAD');
+    const commonDir = path.join(top, '.git');
+    const cases: [string, string][] = [
+      [top, main],
+      [sibling, 'sib'],
+      [nested, 'nest'],
+    ];
+    for (const [launch, branch] of cases) {
+      const sub = path.join(launch, 'sub', 'deep');
+      fs.mkdirSync(sub, { recursive: true });
+      for (const cwd of [launch, sub]) {
+        const facts = checkoutFacts(execRunner, cwd);
+        expect(facts).toMatchObject({
+          launchTop: launch,
+          mainTop: top,
+          commonDir,
+          branch,
+        });
+        const listed = 'worktrees' in facts ? facts.worktrees : [];
+        expect(listed[0].path).toBe(top);
+        expect(listed.map((w) => w.path).sort()).toEqual(
+          [top, sibling, nested].sort(),
+        );
+      }
+    }
+  });
+
+  test('resolves a symlinked path to the physical checkout', () => {
+    const top = repo();
+    const link = path.join(tmp(), 'link');
+    fs.symlinkSync(top, link);
+    expect(checkoutFacts(execRunner, link)).toMatchObject({
+      launchTop: top,
+      mainTop: top,
+    });
+  });
+
+  test('gives no branch on a detached HEAD', () => {
+    const top = repo();
+    git(top, 'checkout', '-q', '--detach');
+    expect(checkoutFacts(execRunner, top)).toMatchObject({
+      launchTop: top,
+      branch: undefined,
+    });
+  });
+
+  test('gives an issue outside a work tree', () => {
+    expect(checkoutFacts(execRunner, tmp())).toEqual({
+      issues: [expect.stringContaining('not inside a git work tree')],
+    });
+  });
+});
+
+describe('checkoutOf', () => {
+  test("gives the nested worktree's top for a folder inside it", () => {
+    const top = repo();
+    const nested = path.join(top, '.claude', 'worktrees', 'x');
+    git(top, 'worktree', 'add', '-q', '-b', 'nest', nested);
+    const sub = path.join(nested, 'a', 'b');
+    fs.mkdirSync(sub, { recursive: true });
+    expect(checkoutOf(execRunner, sub)).toEqual({ top: nested });
+    fs.mkdirSync(path.join(top, 'zzz'));
+    expect(checkoutOf(execRunner, path.join(top, 'zzz'))).toEqual({ top });
+  });
+
+  test('gives an issue for a folder in no work tree', () => {
+    expect(checkoutOf(execRunner, tmp())).toEqual({
+      issue: expect.stringContaining('not a git repository'),
+    });
   });
 });

@@ -1227,130 +1227,12 @@ function askedOf(sessionId, find) {
 }
 
 // bin/helpers/worker-brief.ts
-import * as fs3 from "node:fs";
-import * as path3 from "node:path";
-var FENCE = "---";
-var KEY_LINE = /^([a-z]+):(?: (.*))?$/;
-function parseFrontmatter(text) {
-  const lines = text.split(/\r?\n/).map((l) => l.trimEnd());
-  if (lines[0] !== FENCE) {
-    return { issues: ["the brief must open with a --- line"] };
-  }
-  const end = lines.indexOf(FENCE, 1);
-  if (end === -1) {
-    return { issues: ["the brief's frontmatter has no closing --- line"] };
-  }
-  const fields = {};
-  const issues = [];
-  for (const [i, line] of lines.slice(1, end).entries()) {
-    if (line === "")
-      continue;
-    const match = KEY_LINE.exec(line);
-    const key = match?.[1];
-    if (key === undefined) {
-      issues.push(`line ${i + 2}: "${line}" is not "key: value" with a lower-case key`);
-    } else if (Object.hasOwn(fields, key)) {
-      issues.push(`line ${i + 2}: the key "${key}" is repeated`);
-    } else {
-      fields[key] = (match?.[2] ?? "").trim();
-    }
-  }
-  return issues.length > 0 ? { issues } : { fields };
-}
-var AbsolutePath = pipe(string(), check((s) => path3.isAbsolute(s), "must be an absolute path"));
-var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) => !path3.isAbsolute(s), "must be relative to the repo top"), check((s) => !s.split(/[\\/]/).includes(".."), 'must not have a ".." segment'));
-var WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
-var WorkerNameSchema = pipe(string(), regex(WORKER_NAME, `must match ${WORKER_NAME.source}`));
-var BriefSchema = strictObject({
-  name: WorkerNameSchema,
-  plan: AbsolutePath,
-  spec: AbsolutePath,
-  rulings: AbsolutePath,
-  baseline: pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters")),
-  skill: picklist(["subagent-driven-development", "executing-plans"]),
-  place: union([
-    literal("worktree"),
-    literal("in-place"),
-    pipe(string(), regex(/^branch \S+$/))
-  ], 'must be "worktree", "in-place", or "branch <name>"'),
-  setup: optional(pipe(string(), minLength(1))),
-  report: RelativePath,
-  orchestrator: pipe(string(), minLength(1, "must not be empty"))
-});
-function readBrief(file) {
-  const abs = path3.resolve(file);
-  let text;
-  try {
-    text = fs3.readFileSync(abs, "utf-8");
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return { issues: [`${abs}: cannot read the brief: ${why}`] };
-  }
-  const parsed = parseFrontmatter(text);
-  if ("issues" in parsed) {
-    return { issues: parsed.issues.map((i) => `${abs}: ${i}`) };
-  }
-  const result = safeParse(BriefSchema, parsed.fields);
-  if (!result.success) {
-    return {
-      issues: result.issues.map((issue) => {
-        const field = issue.path?.map((p) => String(p.key)).join(".");
-        return field ? `${abs}: field "${field}" ${issue.message}` : `${abs}: ${issue.message}`;
-      })
-    };
-  }
-  return { brief: result.output, path: abs };
-}
-function physical(p) {
-  const abs = path3.resolve(p);
-  const rest = [];
-  let dir = abs;
-  for (;; ) {
-    try {
-      return path3.join(fs3.realpathSync(dir), ...rest);
-    } catch {
-      const parent = path3.dirname(dir);
-      if (parent === dir)
-        return abs;
-      rest.unshift(path3.basename(dir));
-      dir = parent;
-    }
-  }
-}
-var isInside = (top, p) => {
-  const rel = path3.relative(top, p);
-  const leaves = rel === ".." || rel.startsWith(`..${path3.sep}`);
-  return rel !== "" && !leaves && !path3.isAbsolute(rel);
-};
-function briefFileIssues(brief, top) {
-  const issues = [];
-  const realTop = physical(top);
-  if (!fs3.existsSync(brief.plan)) {
-    issues.push(`plan: ${brief.plan} does not exist`);
-  }
-  if (!fs3.existsSync(brief.spec)) {
-    issues.push(`spec: ${brief.spec} does not exist`);
-  }
-  const rulingsDir = path3.dirname(brief.rulings);
-  if (!fs3.existsSync(rulingsDir)) {
-    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
-  }
-  const named = [
-    ["plan", brief.plan],
-    ["spec", brief.spec],
-    ["rulings", brief.rulings]
-  ];
-  for (const [field, file] of named) {
-    if (!isInside(realTop, physical(file))) {
-      issues.push(`${field}: ${file} is outside ${top}`);
-    }
-  }
-  return issues;
-}
-
-// bin/helpers/worker-repo.ts
 import * as fs4 from "node:fs";
 import * as path4 from "node:path";
+
+// bin/helpers/worker-repo.ts
+import * as fs3 from "node:fs";
+import * as path3 from "node:path";
 var WORKTREES_FOLDER = ".claude/worktrees";
 var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 function mainCheckout(runGit, cwd) {
@@ -1428,11 +1310,79 @@ function statusEntriesIn(runGit, top, dir) {
   return { entries: statusEntries(status.stdout) };
 }
 function worktreeListed(runGit, top, worktree) {
-  const list = runGit("git", ["worktree", "list", "--porcelain"], top);
+  const list = listWorktrees(runGit, top);
+  if ("issue" in list)
+    return list;
+  const wanted = physical(worktree);
+  return {
+    listed: list.worktrees.some((entry) => physical(entry.path) === wanted)
+  };
+}
+function fieldOf(field) {
+  const space = field.indexOf(" ");
+  if (space === -1)
+    return { key: field, value: "" };
+  return { key: field.slice(0, space), value: field.slice(space + 1) };
+}
+function entryOf(fields) {
+  const entry = {
+    path: "",
+    head: undefined,
+    branch: undefined,
+    locked: undefined,
+    prunable: undefined
+  };
+  let named = false;
+  for (const { key, value } of fields.map(fieldOf)) {
+    if (key === "worktree") {
+      entry.path = value;
+      named = true;
+    } else if (key === "HEAD")
+      entry.head = value;
+    else if (key === "branch")
+      entry.branch = value;
+    else if (key === "locked")
+      entry.locked = value;
+    else if (key === "prunable")
+      entry.prunable = value;
+  }
+  return named ? entry : undefined;
+}
+function parseWorktrees(porcelainZ) {
+  const records = [[]];
+  for (const field of porcelainZ.split("\x00")) {
+    if (field === "")
+      records.push([]);
+    else
+      records[records.length - 1].push(field);
+  }
+  return records.flatMap((fields) => entryOf(fields) ?? []);
+}
+function listWorktrees(runGit, dir) {
+  const list = runGit("git", ["worktree", "list", "--porcelain", "-z"], dir);
   if (list.code !== 0)
     return { issue: list.stderr.trim() };
-  return { listed: list.stdout.split(`
-`).includes(`worktree ${worktree}`) };
+  const worktrees = parseWorktrees(list.stdout);
+  if (worktrees.length === 0) {
+    return { issue: "git worktree list printed no worktrees" };
+  }
+  return { worktrees };
+}
+function physical(p) {
+  const abs = path3.resolve(p);
+  const rest = [];
+  let dir = abs;
+  for (;; ) {
+    try {
+      return path3.join(fs3.realpathSync(dir), ...rest);
+    } catch {
+      const parent = path3.dirname(dir);
+      if (parent === dir)
+        return abs;
+      rest.unshift(path3.basename(dir));
+      dir = parent;
+    }
+  }
 }
 var PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
 function remotesWithPushUrl(runGit, top) {
@@ -1448,7 +1398,7 @@ var reason2 = (e) => e instanceof Error ? e.message : String(e);
 var isMissing2 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readExclude(file) {
   try {
-    return { text: fs4.readFileSync(file, "utf-8") };
+    return { text: fs3.readFileSync(file, "utf-8") };
   } catch (e) {
     if (isMissing2(e))
       return { text: "" };
@@ -1464,8 +1414,8 @@ function appendExclude(file, text) {
 `) ? "" : `
 `;
   try {
-    fs4.mkdirSync(path4.dirname(file), { recursive: true });
-    fs4.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+    fs3.mkdirSync(path3.dirname(file), { recursive: true });
+    fs3.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
 `);
     return [];
   } catch (e) {
@@ -1477,7 +1427,7 @@ function appendExclude(file, text) {
 function ensureWorktreesExcluded(runGit, top, commonDir) {
   if (isIgnored(runGit, top))
     return { line: undefined };
-  const file = path4.join(commonDir, "info", "exclude");
+  const file = path3.join(commonDir, "info", "exclude");
   const read = readExclude(file);
   if ("issues" in read)
     return read;
@@ -1490,27 +1440,128 @@ function ensureWorktreesExcluded(runGit, top, commonDir) {
   return { line: `added ${EXCLUDE_ENTRY} to ${file}` };
 }
 
+// bin/helpers/worker-brief.ts
+var FENCE = "---";
+var KEY_LINE = /^([a-z]+):(?: (.*))?$/;
+function parseFrontmatter(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trimEnd());
+  if (lines[0] !== FENCE) {
+    return { issues: ["the brief must open with a --- line"] };
+  }
+  const end = lines.indexOf(FENCE, 1);
+  if (end === -1) {
+    return { issues: ["the brief's frontmatter has no closing --- line"] };
+  }
+  const fields = {};
+  const issues = [];
+  for (const [i, line] of lines.slice(1, end).entries()) {
+    if (line === "")
+      continue;
+    const match = KEY_LINE.exec(line);
+    const key = match?.[1];
+    if (key === undefined) {
+      issues.push(`line ${i + 2}: "${line}" is not "key: value" with a lower-case key`);
+    } else if (Object.hasOwn(fields, key)) {
+      issues.push(`line ${i + 2}: the key "${key}" is repeated`);
+    } else {
+      fields[key] = (match?.[2] ?? "").trim();
+    }
+  }
+  return issues.length > 0 ? { issues } : { fields };
+}
+var AbsolutePath = pipe(string(), check((s) => path4.isAbsolute(s), "must be an absolute path"));
+var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) => !path4.isAbsolute(s), "must be relative to the repo top"), check((s) => !s.split(/[\\/]/).includes(".."), 'must not have a ".." segment'));
+var WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+var WorkerNameSchema = pipe(string(), regex(WORKER_NAME, `must match ${WORKER_NAME.source}`));
+var BriefSchema = strictObject({
+  name: WorkerNameSchema,
+  plan: AbsolutePath,
+  spec: AbsolutePath,
+  rulings: AbsolutePath,
+  baseline: pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters")),
+  skill: picklist(["subagent-driven-development", "executing-plans"]),
+  place: union([
+    literal("worktree"),
+    literal("in-place"),
+    pipe(string(), regex(/^branch \S+$/))
+  ], 'must be "worktree", "in-place", or "branch <name>"'),
+  setup: optional(pipe(string(), minLength(1))),
+  report: RelativePath,
+  orchestrator: pipe(string(), minLength(1, "must not be empty"))
+});
+function readBrief(file) {
+  const abs = path4.resolve(file);
+  let text;
+  try {
+    text = fs4.readFileSync(abs, "utf-8");
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { issues: [`${abs}: cannot read the brief: ${why}`] };
+  }
+  const parsed = parseFrontmatter(text);
+  if ("issues" in parsed) {
+    return { issues: parsed.issues.map((i) => `${abs}: ${i}`) };
+  }
+  const result = safeParse(BriefSchema, parsed.fields);
+  if (!result.success) {
+    return {
+      issues: result.issues.map((issue) => {
+        const field = issue.path?.map((p) => String(p.key)).join(".");
+        return field ? `${abs}: field "${field}" ${issue.message}` : `${abs}: ${issue.message}`;
+      })
+    };
+  }
+  return { brief: result.output, path: abs };
+}
+var isInside = (top, p) => {
+  const rel = path4.relative(top, p);
+  const leaves = rel === ".." || rel.startsWith(`..${path4.sep}`);
+  return rel !== "" && !leaves && !path4.isAbsolute(rel);
+};
+function briefFileIssues(brief, top) {
+  const issues = [];
+  const realTop = physical(top);
+  if (!fs4.existsSync(brief.plan)) {
+    issues.push(`plan: ${brief.plan} does not exist`);
+  }
+  if (!fs4.existsSync(brief.spec)) {
+    issues.push(`spec: ${brief.spec} does not exist`);
+  }
+  const rulingsDir = path4.dirname(brief.rulings);
+  if (!fs4.existsSync(rulingsDir)) {
+    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
+  }
+  const named = [
+    ["plan", brief.plan],
+    ["spec", brief.spec],
+    ["rulings", brief.rulings]
+  ];
+  for (const [field, file] of named) {
+    if (!isInside(realTop, physical(file))) {
+      issues.push(`${field}: ${file} is outside ${top}`);
+    }
+  }
+  return issues;
+}
+
 // bin/helpers/desk-children.ts
-var WORKTREE_LINE = "worktree ";
 var firstLine = (text) => text.trim().split(`
 `)[0];
 function findRepo(runGit, cwd) {
   const common = runGit("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
   if (common.code !== 0)
     return { warnings: [] };
-  const list = runGit("git", ["worktree", "list", "--porcelain"], cwd);
-  const first = list.stdout.split(`
-`)[0];
-  if (list.code !== 0 || !first.startsWith(WORKTREE_LINE)) {
+  const list = listWorktrees(runGit, cwd);
+  if ("issue" in list) {
     return {
       warnings: [
-        `git worktree list failed in ${cwd}, so no children show: ${firstLine(list.stderr)}`
+        `git worktree list failed in ${cwd}, so no children show: ${firstLine(list.issue)}`
       ]
     };
   }
   const commonDir = common.stdout.replace(/\n$/, "");
   return {
-    repo: { top: first.slice(WORKTREE_LINE.length), commonDir },
+    repo: { top: list.worktrees[0].path, commonDir },
     warnings: []
   };
 }

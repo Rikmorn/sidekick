@@ -12,15 +12,13 @@ import { type TranscriptFinder, tokensOf } from './desk-transcripts.js';
 import type { Runner } from './pm-data.js';
 import { readBrief } from './worker-brief.js';
 import type { WorkerRecord } from './worker-record.js';
-import { WORKTREES_FOLDER } from './worker-repo.js';
+import { listWorktrees, WORKTREES_FOLDER } from './worker-repo.js';
 
 /** The repository's main checkout top and its common git dir. */
 export interface Repo {
   top: string;
   commonDir: string;
 }
-
-const WORKTREE_LINE = 'worktree ';
 
 const firstLine = (text: string): string => text.trim().split('\n')[0];
 
@@ -40,19 +38,18 @@ export function findRepo(
     cwd,
   );
   if (common.code !== 0) return { warnings: [] };
-  const list = runGit('git', ['worktree', 'list', '--porcelain'], cwd);
-  const first = list.stdout.split('\n')[0];
-  if (list.code !== 0 || !first.startsWith(WORKTREE_LINE)) {
+  const list = listWorktrees(runGit, cwd);
+  if ('issue' in list) {
     return {
       warnings: [
-        `git worktree list failed in ${cwd}, so no children show: ${firstLine(list.stderr)}`,
+        `git worktree list failed in ${cwd}, so no children show: ${firstLine(list.issue)}`,
       ],
     };
   }
   // Only the final newline goes, since a path may end in a space.
   const commonDir = common.stdout.replace(/\n$/, '');
   return {
-    repo: { top: first.slice(WORKTREE_LINE.length), commonDir },
+    repo: { top: list.worktrees[0].path, commonDir },
     warnings: [],
   };
 }

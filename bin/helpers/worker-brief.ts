@@ -8,6 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
+import { physical } from './worker-repo.js';
 
 const FENCE = '---';
 const KEY_LINE = /^([a-z]+):(?: (.*))?$/;
@@ -122,23 +123,6 @@ export function readBrief(
     };
   }
   return { brief: result.output, path: abs };
-}
-
-// Resolves symlinks through the nearest existing ancestor, so a path not yet made still compares physically.
-function physical(p: string): string {
-  const abs = path.resolve(p);
-  const rest: string[] = [];
-  let dir = abs;
-  for (;;) {
-    try {
-      return path.join(fs.realpathSync(dir), ...rest);
-    } catch {
-      const parent = path.dirname(dir);
-      if (parent === dir) return abs;
-      rest.unshift(path.basename(dir));
-      dir = parent;
-    }
-  }
 }
 
 // A top-level entry may be named `..docs`, so only a whole `..` segment leaves top.
