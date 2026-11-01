@@ -1,8 +1,6 @@
-> Research for #271, `sidekick memory link`. Run 2026-11-01 by Claude for the operator, on Claude Code 2.1.316, in interactive sessions driven through tmux. The CLI under test was `plugin/bin/sidekick` as built at commit `3919395`. #274, #276, and #278 rest on these results. A record: it takes only the edits `sk-pm-conventions.md` §Placement test (tense) lists.
+> Research for #271, `sidekick memory link`, and #272, the rule `sk-memory.md`. Run 2026-11-01 by Claude for the operator, on Claude Code 2.1.316. The link probes ran in interactive sessions driven through tmux, on `plugin/bin/sidekick` as built at commit `3919395`. The rule's replay ran in headless `claude -p` sessions at commit `3112d95`. #274, #276, and #278 rest on the link probes' results. A record: it takes only the edits `sk-pm-conventions.md` §Placement test (tense) lists.
 
-> **Amended 2026-11-01 (#272):** §The paired replay of `sk-memory.md` adds a replay of that rule on five of the memory trial's scenarios. It ran in headless `claude -p` sessions at commit `3112d95`, so the first line's interactive sessions and commit describe the link probes alone.
-
-# What Claude Code does with a linked repo (2026-11-01)
+# What Claude Code and `sk-memory.md` do with a linked repo (2026-11-01)
 
 `sidekick memory link` moves a repo's auto-memory into a store folder and sets `autoMemoryDirectory` in the main checkout's gitignored `.claude/settings.local.json`. Unit tests cover `link` itself. These probes check what Claude Code does with the result, in interactive sessions. The design for #271 rested on four assumptions about that:
 
@@ -12,6 +10,8 @@
 - **A4.** A running session keeps the folder it started with, and recreates the default folder on its next memory write.
 
 All four held. The design also read Claude Code's binary as honouring the local key only in a trusted workspace. An interactive session in an untrusted folder never started, so no session could run without trust.
+
+A paired replay then ran five of the memory trial's scenarios headless, once with `sk-memory.md` loaded and once without it. Both arms passed every read, and the rule changed where saves landed. §The paired replay of `sk-memory.md` holds its results, and §Results covers the link probes.
 
 ## Results
 
@@ -815,7 +815,7 @@ source "$(dirname "$0")/lib.sh"
 
 ## The paired replay of `sk-memory.md`
 
-The rule changed where saves landed and how many files they made, but not what a later session found. Both arms passed all five reads. With the rule, each kind of fact joined one file: a workstream, a family support file, a family script catalogue, or a reference file. Alpha's index ended at four lines. Without the rule, each fact took its own file and index line, six by the end. The rule cost 31% more, most of it on S8, where it sent the session after a skill it had no permission to write.
+The rule changed where saves landed and how many files they made, but not what a later session found. Both arms passed all five reads. With the rule, each kind of fact joined one file: a workstream, a family support file, a family script catalogue, or a reference file. Alpha's index ended at four lines. Without the rule, each fact took its own file and index line, six by the end. This was a single pass, one run per scenario and arm, so run-to-run spread is unknown. In it, arm A cost 31% more, and most of that gap is S8, whose write run held a refused skill write.
 
 ### Setup
 
@@ -884,13 +884,13 @@ Paths are under `<arm>/store/acme/`. Placement names each file the run wrote or 
 
 ### Comparison
 
-**The answers tie at 5 of 5, and arm A answered worse on no scenario.** Every read ran in an alpha checkout, which reads alpha's folder. A fact in the repo folder was therefore as easy to find as one in the family folder. The replay leaves out the scenarios where placement decides the answer: S5 reads a sibling repo's fact, and in S3 two sessions write at once.
+**The answers tie at 5 of 5, and arm A answered worse on no scenario.** Every read ran in an alpha checkout, which reads alpha's folder. A fact in the repo folder was therefore as easy to find as one in the family folder. The replay leaves out the scenarios where placement decides the answer: S5 reads a sibling repo's fact, and in S3 two sessions write at once. The writes' pass bar, "Something is saved", is too low to separate the arms on answers.
 
 **Arm A's index grew by kind of file, and arm B's by fact.** Arm A's later facts joined files it already had, so its lines name the workstream, the reference file, the support file, and the catalogue. Arm B added a line for each fact. Inferred, not measured: the gap widens with each fact, since arm A's index grows only with new workstreams.
 
 Where arm A did worse than arm B:
 
-- **Cost.** Arm A cost 5.24 USD over 109 turns, and arm B 4.01 USD over 82, so arm A cost 31% more. S8 accounts for 0.86 USD of the 1.23 USD gap.
+- **Cost.** In this single pass, arm A cost 5.24 USD over 109 turns, and arm B 4.01 USD over 82: 31% more. Each cell ran once, so run-to-run spread is unknown, and the gap is not shown to come from the rule. S8 accounts for 0.86 USD of the 1.23 USD gap, and its write run held the refused skill write.
 - **S8w's skill.** The rule's preference for a skill sent the session to `.claude/skills/release/SKILL.md`, a write that needed a permission the headless run could not grant. The session also loaded `superpowers:writing-skills`, whose list of what not to make a skill includes project-specific conventions. The session named that clash. Inferred, not tested: an interactive session would have asked the operator instead.
 - **A skill the worktree cannot see.** Inferred, not tested: a skill written in alpha's main checkout is untracked, so the worktree would not see it, as S7 showed for `playground/`. The S8w session also offered to delete the memory copy once the skill existed, which would leave the worktree with nothing.
 - **Session record names.** The S1w session tried to read its id with `env`, which needed approval, so it named its record by topic. Later records were named the same way, and S2w wrote no record. Claude Code still added `originSessionId` to each record's front matter.
