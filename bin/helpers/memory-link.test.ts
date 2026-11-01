@@ -398,7 +398,61 @@ describe('runLink: re-runs', () => {
     );
     expect(settingsOf(w.top)).toEqual({ autoMemoryDirectory: folder });
   });
+
+  test('a re-run after a failed commit commits the staged copies, and leaves a later session write out', () => {
+    const w = world();
+    const failing: LinkDeps['runGit'] = (cmd, args, cwd) =>
+      args.includes('commit') && args.some((a) => a.startsWith('link '))
+        ? { code: 1, stdout: '', stderr: 'gpg failed to sign the data' }
+        : execRunner(cmd, args, cwd);
+    const first = link(w, opts(w.top), { ...w.deps, runGit: failing });
+    expect(first.code).toBe(1);
+    expect(first.err.join('\n')).toContain('gpg failed to sign the data');
+    const name = path.basename(w.top);
+    expect(git(w.store, 'status', '--porcelain')).toContain(
+      `A  ${name}/MEMORY.md`,
+    );
+    fs.writeFileSync(
+      path.join(w.store, name, 'session.md'),
+      'a session wrote this\n',
+    );
+    expect(link(w, opts(w.top)).code).toBe(0);
+    expect(committed(w.store)).toEqual(linkPaths(w));
+    expect(git(w.store, 'status', '--porcelain')).toBe(`?? ${name}/session.md`);
+  });
+
+  test('a re-run after a failed archive commits the untracked copies with the archive', () => {
+    const w = world();
+    expect(createStore(w.store, execRunner).ok).toBe(true);
+    const archives = path.join(w.store, 'archive', 'default-folders');
+    fs.mkdirSync(archives);
+    fs.chmodSync(archives, 0o555);
+    const first = link(w, opts(w.top));
+    fs.chmodSync(archives, 0o755);
+    expect(first.code).toBe(1);
+    expect(first.err[0]).toContain('move');
+    expect(fs.existsSync(w.memory)).toBe(true);
+    const name = path.basename(w.top);
+    expect(git(w.store, 'status', '--porcelain')).toContain(`?? ${name}/`);
+    expect(link(w, opts(w.top)).code).toBe(0);
+    expect(fs.existsSync(w.memory)).toBe(false);
+    expect(committed(w.store)).toEqual(linkPaths(w));
+    expect(git(w.store, 'status', '--porcelain')).toBe('');
+  });
 });
+
+// Every path a link of the world's two default files writes in the store, sorted.
+function linkPaths(w: World): string[] {
+  const name = path.basename(w.top);
+  const archive = `archive/default-folders/${projectKey(w.top)}-${TODAY}`;
+  return [
+    `${archive}/MEMORY.md`,
+    `${archive}/notes.md`,
+    `${name}/.sidekick.json`,
+    `${name}/MEMORY.md`,
+    `${name}/notes.md`,
+  ].sort();
+}
 
 /** The state a link leaves when it stops after its copies: a store, the marker, and the copies, none committed. */
 function stoppedAfterCopying(w: World): string {

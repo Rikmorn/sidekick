@@ -66,19 +66,6 @@ function readyOf(facts: LinkFacts): Ready | undefined {
   return { repo, settings, target, pending: target.pending.paths };
 }
 
-/** The paths of a repo folder that `link` owns, for its commit. */
-export function ownedPaths(
-  folderRel: string,
-  projectKey: string,
-  copies: string[],
-): OwnedPaths {
-  return {
-    folderRel,
-    files: [MARKER_FILE, ...copies.filter((rel) => rel !== MARKER_FILE)],
-    projectKey,
-  };
-}
-
 /** A command that runs `link` again on `root` with these names and extra flags, safe to paste. */
 export function linkCommand(
   root: string,
@@ -369,15 +356,16 @@ function archiveName(key: string, today: string, taken: string[]): string {
 
 function commitAction(ready: Ready, store: string): LinkAction {
   const { defaultFolder, projectKey } = ready.repo;
-  const copies =
-    isFirstLink(ready.repo) && defaultFolder.kind === 'present'
-      ? defaultFolder.files.map((f) => f.rel)
-      : [];
+  const owned: OwnedPaths = {
+    folderRel: ready.target.rel,
+    projectKey,
+    defaultFolder: defaultFolder.folder,
+  };
   return {
     kind: 'commit',
     store,
     message: `link ${ready.target.rel}`,
-    owned: ownedPaths(ready.target.rel, projectKey, copies),
+    owned,
   };
 }
 

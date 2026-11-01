@@ -14,7 +14,7 @@ import {
   overrideIssue,
   projectKey,
 } from './memory-default.js';
-import { ARCHIVE_DIR, ownedPaths } from './memory-link-plan.js';
+import { ARCHIVE_DIR } from './memory-link-plan.js';
 import type {
   CopyState,
   DefaultFolder,
@@ -31,6 +31,7 @@ import { mainCheckout, settingsState } from './memory-settings.js';
 import {
   findMarkers,
   folderNameIssue,
+  MARKER_FILE,
   readMarker,
   type StoreState,
   storeRoot,
@@ -117,9 +118,8 @@ function repoFacts(input: RepoInput): RepoFacts {
     defaultMemoryFolder(root, deps.configDir),
     knowsFolder ? folder : undefined,
   );
-  const keyInPlace = settings.kind === 'ready' && settings.key === folder;
   const target = knowsFolder
-    ? targetFacts({ ...input, folder, rel, key, keyInPlace, defaultFolder })
+    ? targetFacts({ ...input, folder, rel, key, defaultFolder })
     : undefined;
   return {
     kind: 'found',
@@ -158,17 +158,16 @@ interface TargetInput extends RepoInput {
   folder: string;
   rel: string;
   key: string;
-  keyInPlace: boolean;
   defaultFolder: DefaultFolder;
 }
 
 function targetFacts(input: TargetInput): TargetFacts {
   const { store, folder, rel, key, defaultFolder } = input;
-  const copies =
-    !input.keyInPlace && defaultFolder.kind === 'present'
-      ? defaultFolder.files.map((f) => f.rel)
-      : [];
-  const owned = ownedPaths(rel, key, copies);
+  const owned: OwnedPaths = {
+    folderRel: rel,
+    projectKey: key,
+    defaultFolder: defaultFolder.folder,
+  };
   return {
     folder,
     rel,
@@ -310,15 +309,16 @@ export function copyState(from: string, to: string): CopyState {
 }
 
 /**
- * The uncommitted store paths `link` owns: the repo folder's named files, and
- * every file under an archive folder named `<projectKey>-<date>`.
+ * The uncommitted or staged store files `link` owns: the repo folder's
+ * marker, every file in this repo's archive folders, and each repo-folder
+ * file whose bytes equal the same path in the default folder or in one of
+ * those archives, which is what a copy is. A deleted path never counts.
  */
 export function ownedChanges(
   store: string,
   owned: OwnedPaths,
   runGit: Runner,
 ): { paths: string[] } | { issue: string } {
-  const named = owned.files.map((file) => `${owned.folderRel}/${file}`);
   const args = [
     '--no-optional-locks',
     '--literal-pathspecs',
@@ -327,17 +327,54 @@ export function ownedChanges(
     '-z',
     '--untracked-files=all',
     '--',
-    ...named,
+    owned.folderRel,
     ARCHIVE_DIR,
   ];
   const r = runGit('git', args, store);
   if (r.code !== 0) {
     return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
   }
-  const paths = porcelainPaths(r.stdout).filter(
-    (p) => named.includes(p) || isOwnArchive(p, owned.projectKey),
-  );
-  return { paths };
+  const sources = [
+    owned.defaultFolder,
+    ...ownArchives(store, owned.projectKey),
+  ];
+  const isOwned = (p: string): boolean =>
+    fs.existsSync(path.join(store, p)) &&
+    (isOwnArchivePath(p, owned.projectKey) ||
+      isOwnCopy(store, owned.folderRel, sources, p));
+  return { paths: porcelainPaths(r.stdout).filter(isOwned) };
+}
+
+// The marker, or a file equal byte for byte to its counterpart in a source.
+function isOwnCopy(
+  store: string,
+  folderRel: string,
+  sources: string[],
+  p: string,
+): boolean {
+  const prefix = `${folderRel}/`;
+  if (!p.startsWith(prefix)) return false;
+  const rel = p.slice(prefix.length);
+  if (rel === MARKER_FILE) return true;
+  const file = path.join(store, p);
+  return sources.some((source) => sameBytes(path.join(source, rel), file));
+}
+
+function sameBytes(a: string, b: string): boolean {
+  try {
+    const bothFiles = fs.statSync(a).isFile() && fs.statSync(b).isFile();
+    return bothFiles && fs.readFileSync(a).equals(fs.readFileSync(b));
+  } catch {
+    // A missing counterpart, or a file where a folder should be: no match.
+    return false;
+  }
+}
+
+function ownArchives(store: string, key: string): string[] {
+  const parent = path.join(store, ...ARCHIVE_DIR.split('/'));
+  return archiveNames(store)
+    .filter((name) => isOwnArchiveName(name, key))
+    .map((name) => path.join(parent, name));
 }
 
 // `git status -z` gives `XY path` per entry, and a rename's old path as the next entry.
@@ -354,14 +391,14 @@ function porcelainPaths(output: string): string[] {
 
 const ARCHIVE_DATE = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
 
-function isOwnArchive(p: string, key: string): boolean {
+const isOwnArchiveName = (entry: string, key: string): boolean =>
+  entry.startsWith(`${key}-`) && ARCHIVE_DATE.test(entry.slice(key.length + 1));
+
+function isOwnArchivePath(p: string, key: string): boolean {
   const prefix = `${ARCHIVE_DIR}/`;
   if (!p.startsWith(prefix)) return false;
   const [entry] = p.slice(prefix.length).split('/');
-  return (
-    entry.startsWith(`${key}-`) &&
-    ARCHIVE_DATE.test(entry.slice(key.length + 1))
-  );
+  return isOwnArchiveName(entry, key);
 }
 
 const UserSettingsSchema = v.object({

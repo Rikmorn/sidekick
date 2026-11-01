@@ -117,12 +117,13 @@ function refusalsOf(plan: LinkPlan): string[] {
   return plan.refusals;
 }
 
-const commit = (files: string[]): LinkAction => ({
+// Every phase commits the same owned set; the bytes decide which files are copies.
+const COMMIT: LinkAction = {
   kind: 'commit',
   store: STORE,
   message: 'link odin',
-  owned: { folderRel: 'odin', files, projectKey: KEY },
-});
+  owned: { folderRel: 'odin', projectKey: KEY, defaultFolder: DEFAULT },
+};
 
 const copy = (rel: string): LinkAction => ({
   kind: 'copyFile',
@@ -158,7 +159,7 @@ describe('planLink: a first link', () => {
       copy('notes.md'),
       MERGE,
       archive(ARCHIVED, false),
-      commit(['.sidekick.json', 'MEMORY.md', 'notes.md']),
+      COMMIT,
     ]);
   });
 
@@ -188,8 +189,8 @@ describe('planLink: a first link', () => {
         message: 'link fam/odin',
         owned: {
           folderRel: 'fam/odin',
-          files: ['.sidekick.json'],
           projectKey: KEY,
+          defaultFolder: DEFAULT,
         },
       },
     ]);
@@ -204,7 +205,7 @@ describe('planLink: a first link', () => {
       { kind: 'createFolder', folder: TARGET },
       { kind: 'writeMarker', folder: TARGET, root: ROOT },
       MERGE,
-      commit(['.sidekick.json']),
+      COMMIT,
     ]);
     expect(notesOf(plan).join('\n')).toContain(DEFAULT);
   });
@@ -265,7 +266,7 @@ describe('planLink: a re-run after each action', () => {
       copy('notes.md'),
       MERGE,
       archive(ARCHIVED, false),
-      commit(['.sidekick.json', 'MEMORY.md', 'notes.md']),
+      COMMIT,
     ]);
   });
 
@@ -282,11 +283,7 @@ describe('planLink: a re-run after each action', () => {
       }),
       NO_FLAGS,
     );
-    expect(actionsOf(plan)).toEqual([
-      MERGE,
-      archive(ARCHIVED, false),
-      commit(['.sidekick.json', 'MEMORY.md', 'notes.md']),
-    ]);
+    expect(actionsOf(plan)).toEqual([MERGE, archive(ARCHIVED, false), COMMIT]);
   });
 
   test('after the key: archives the default folder as it is, copying nothing', () => {
@@ -303,10 +300,7 @@ describe('planLink: a re-run after each action', () => {
       }),
       NO_FLAGS,
     );
-    expect(actionsOf(plan)).toEqual([
-      archive(ARCHIVED, true),
-      commit(['.sidekick.json']),
-    ]);
+    expect(actionsOf(plan)).toEqual([archive(ARCHIVED, true), COMMIT]);
   });
 
   test('after the archive: commits what an earlier run left', () => {
@@ -328,7 +322,7 @@ describe('planLink: a re-run after each action', () => {
       }),
       NO_FLAGS,
     );
-    expect(actionsOf(plan)).toEqual([commit(['.sidekick.json'])]);
+    expect(actionsOf(plan)).toEqual([COMMIT]);
   });
 
   test('after the commit: nothing to do, so the repo is already linked', () => {
@@ -370,10 +364,7 @@ describe('planLink: a default folder that reappears after the link', () => {
       }),
       NO_FLAGS,
     );
-    expect(actionsOf(plan)).toEqual([
-      archive(`${ARCHIVED}-2`, true),
-      commit(['.sidekick.json']),
-    ]);
+    expect(actionsOf(plan)).toEqual([archive(`${ARCHIVED}-2`, true), COMMIT]);
   });
 
   test('is archived even when it holds a top-level marker file, since nothing is copied', () => {

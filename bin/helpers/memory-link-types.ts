@@ -98,11 +98,16 @@ export interface PlanOptions {
 
 /** The store paths `link` owns, which its commit may take. */
 export interface OwnedPaths {
+  /** The repo folder relative to the store. Its marker is `link`'s. */
   folderRel: string;
-  /** Paths inside the repo folder, slash-separated: the marker, plus the copies during a first link. */
-  files: string[];
-  /** The archive folders named `<projectKey>-<date>` are this repo's. */
+  /** The archive folders named `<projectKey>-<date>[-n]` are this repo's, and so is every file in them. */
   projectKey: string;
+  /**
+   * The default folder. A repo-folder file is one of `link`'s copies when its
+   * bytes equal the same path here or in one of this repo's archive folders;
+   * a session's later write differs or has no counterpart.
+   */
+  defaultFolder: string;
 }
 
 /** One step of a link, in the order it runs. */
