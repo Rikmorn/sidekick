@@ -4482,7 +4482,10 @@ function workTreeRootOf(cwd) {
   }
 }
 var repoRootOf = (cwd) => workTreeRootOf(cwd) ?? cwd;
-var PLUGIN_ONLY_RULES = ["sk-pm-conventions.md"];
+var PLUGIN_ONLY_RULES = [
+  "sk-pm-conventions.md",
+  "sk-parallel-sessions.md"
+];
 var isRecord7 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
@@ -4619,10 +4622,12 @@ function scopeSet(scope, root) {
   const set = projectSet(enablement);
   const notes = [];
   if (set.leaveOut.length > 0) {
-    notes.push(`not delivered to this repo: ${set.leaveOut.join(", ")}; its .claude/settings.json does not enable sidekick, so it comes from user level only`);
+    const come = set.leaveOut.length === 1 ? "it comes" : "they come";
+    notes.push(`not delivered to this repo: ${set.leaveOut.join(", ")}; its .claude/settings.json does not enable sidekick, so ${come} from user level only`);
   }
   if (set.leaveAsIs.length > 0 && enablement.state === "unreadable") {
-    notes.push(`left ${set.leaveAsIs.join(", ")} as it is: could not read ${enablement.path} (${enablement.reason})`);
+    const are = set.leaveAsIs.length === 1 ? "it is" : "they are";
+    notes.push(`left ${set.leaveAsIs.join(", ")} as ${are}: could not read ${enablement.path} (${enablement.reason})`);
   }
   return { set, notes };
 }

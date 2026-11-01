@@ -54,8 +54,11 @@ export function workTreeRootOf(cwd: string): string | undefined {
  */
 export const repoRootOf = (cwd: string): string => workTreeRootOf(cwd) ?? cwd;
 
-/** Rules a project install delivers only where the repo enables the plugin: they govern its PM layer. */
-export const PLUGIN_ONLY_RULES: readonly string[] = ['sk-pm-conventions.md'];
+/** Rules a project install delivers only where the repo enables the plugin: each governs how the operator works through it, which a team repo has not agreed. */
+export const PLUGIN_ONLY_RULES: readonly string[] = [
+  'sk-pm-conventions.md',
+  'sk-parallel-sessions.md',
+];
 
 export type Enablement =
   | { state: 'enabled' }
@@ -271,13 +274,15 @@ function scopeSet(
   const set = projectSet(enablement);
   const notes: string[] = [];
   if (set.leaveOut.length > 0) {
+    const come = set.leaveOut.length === 1 ? 'it comes' : 'they come';
     notes.push(
-      `not delivered to this repo: ${set.leaveOut.join(', ')}; its .claude/settings.json does not enable sidekick, so it comes from user level only`,
+      `not delivered to this repo: ${set.leaveOut.join(', ')}; its .claude/settings.json does not enable sidekick, so ${come} from user level only`,
     );
   }
   if (set.leaveAsIs.length > 0 && enablement.state === 'unreadable') {
+    const are = set.leaveAsIs.length === 1 ? 'it is' : 'they are';
     notes.push(
-      `left ${set.leaveAsIs.join(', ')} as it is: could not read ${enablement.path} (${enablement.reason})`,
+      `left ${set.leaveAsIs.join(', ')} as ${are}: could not read ${enablement.path} (${enablement.reason})`,
     );
   }
   return { set, notes };

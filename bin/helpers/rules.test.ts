@@ -450,6 +450,10 @@ describe('PLUGIN_ONLY_RULES', () => {
       expect(fs.existsSync(path.join(real, name))).toBe(true);
     }
   });
+
+  test('the parallel-sessions rule is plugin-only', () => {
+    expect(PLUGIN_ONLY_RULES).toContain('sk-parallel-sessions.md');
+  });
 });
 
 describe('pluginEnablement', () => {
@@ -646,9 +650,10 @@ describe('runRulesCli --project and the plugin-only rules', () => {
     const cwd = tmp();
     gitInit(cwd);
     write(src, 'sk-a.md', RULE_A);
-    write(src, PM, RULE_B);
+    for (const name of PLUGIN_ONLY_RULES) write(src, name, RULE_B);
     return { src, cwd, copy: path.join(cwd, '.claude', 'rules', PM) };
   };
+  const pluginOnly = PLUGIN_ONLY_RULES.join(', ');
 
   test('with no settings the PM rule is not delivered, and a later check is clean', () => {
     const { src, cwd, copy } = setup();
@@ -656,12 +661,24 @@ describe('runRulesCli --project and the plugin-only rules', () => {
     expect(r.code).toBe(0);
     expect(fs.existsSync(copy)).toBe(false);
     expect(r.text).toContain(
-      `not delivered to this repo: ${PM}; its .claude/settings.json does not enable sidekick, so it comes from user level only`,
+      `not delivered to this repo: ${pluginOnly}; its .claude/settings.json does not enable sidekick, so they come from user level only`,
     );
     const c = run(['check', '--project', '--strict'], { src, cwd });
     expect(c.code).toBe(0);
     expect(c.text).toContain('1 rule(s) match');
     expect(c.text).not.toContain('[missing]');
+  });
+
+  test('with no settings no plugin-only rule is delivered, and an old copy of each is removed', () => {
+    const { src, cwd } = setup();
+    const rules = path.join(cwd, '.claude', 'rules');
+    for (const name of PLUGIN_ONLY_RULES) write(rules, name, 'old');
+    const r = run(['install', '--project'], { src, cwd });
+    expect(r.code).toBe(0);
+    for (const name of PLUGIN_ONLY_RULES) {
+      expect(fs.existsSync(path.join(rules, name))).toBe(false);
+    }
+    expect(fs.existsSync(path.join(rules, 'sk-a.md'))).toBe(true);
   });
 
   test('enabling delivers it, disabling removes it with its own line', () => {
@@ -672,7 +689,9 @@ describe('runRulesCli --project and the plugin-only rules', () => {
     fs.writeFileSync(file, '{}');
     const r = run(['install', '--project'], { src, cwd });
     expect(fs.existsSync(copy)).toBe(false);
-    expect(r.text).toContain(`removed: ${PM} (not delivered to this repo)`);
+    const removed = r.text.split('\n').find((l) => l.startsWith('removed: '));
+    expect(removed).toEndWith(' (not delivered to this repo)');
+    for (const name of PLUGIN_ONLY_RULES) expect(removed).toContain(name);
     expect(r.text).not.toContain('removed retired');
   });
 
@@ -694,7 +713,9 @@ describe('runRulesCli --project and the plugin-only rules', () => {
     const r = run(['install', '--project'], { src, cwd });
     expect(r.code).toBe(0);
     expect(fs.readFileSync(copy, 'utf-8')).toBe('precious');
-    expect(r.text).toContain(`left ${PM} as it is: could not read ${file} (`);
+    expect(r.text).toContain(
+      `left ${pluginOnly} as they are: could not read ${file} (`,
+    );
     expect(r.text).not.toContain('removed');
     const c = run(['check', '--project', '--strict'], { src, cwd });
     expect(c.code).toBe(0);
