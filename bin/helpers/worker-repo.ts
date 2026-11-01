@@ -229,7 +229,7 @@ export interface CheckoutFacts {
   launchTop: string;
   mainTop: string;
   commonDir: string;
-  /** The short name the launching checkout holds; undefined when detached. */
+  /** The short name the launching checkout holds; undefined when detached or on a ref outside `refs/heads/`. */
   branch: string | undefined;
   worktrees: WorktreeEntry[];
 }
@@ -269,14 +269,37 @@ export function checkoutFacts(
   }
   const listing = listWorktrees(runGit, cwd);
   if ('issue' in listing) return { issues: [listing.issue] };
-  const branch = runGit('git', ['symbolic-ref', '-q', '--short', 'HEAD'], cwd);
+  const held = heldBranch(runGit, cwd);
+  if ('issue' in held) return { issues: [held.issue] };
   return {
     launchTop,
     mainTop: listing.worktrees[0].path,
     commonDir,
-    // symbolic-ref exits 1 on a detached HEAD.
-    branch: branch.code === 0 ? branch.stdout.trim() : undefined,
+    branch: held.branch,
     worktrees: listing.worktrees,
+  };
+}
+
+const HEADS = 'refs/heads/';
+
+// The short name of the branch `cwd` holds; undefined when detached or on a
+// ref outside refs/heads/. `--short` prints `heads/<name>` when a tag shares
+// the name, so the prefix is stripped here.
+function heldBranch(
+  runGit: Runner,
+  cwd: string,
+): { branch: string | undefined } | { issue: string } {
+  const result = runGit('git', ['symbolic-ref', '-q', 'HEAD'], cwd);
+  // symbolic-ref exits 1 on a detached HEAD.
+  if (result.code === 1) return { branch: undefined };
+  if (result.code !== 0) {
+    const why = result.stderr.trim();
+    const lead = `git symbolic-ref HEAD failed with exit code ${result.code}`;
+    return { issue: why === '' ? lead : `${lead}: ${why}` };
+  }
+  const ref = result.stdout.trim();
+  return {
+    branch: ref.startsWith(HEADS) ? ref.slice(HEADS.length) : undefined,
   };
 }
 

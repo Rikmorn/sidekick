@@ -1399,13 +1399,30 @@ function checkoutFacts(runGit, cwd) {
   const listing = listWorktrees(runGit, cwd);
   if ("issue" in listing)
     return { issues: [listing.issue] };
-  const branch = runGit("git", ["symbolic-ref", "-q", "--short", "HEAD"], cwd);
+  const held = heldBranch(runGit, cwd);
+  if ("issue" in held)
+    return { issues: [held.issue] };
   return {
     launchTop,
     mainTop: listing.worktrees[0].path,
     commonDir,
-    branch: branch.code === 0 ? branch.stdout.trim() : undefined,
+    branch: held.branch,
     worktrees: listing.worktrees
+  };
+}
+var HEADS = "refs/heads/";
+function heldBranch(runGit, cwd) {
+  const result = runGit("git", ["symbolic-ref", "-q", "HEAD"], cwd);
+  if (result.code === 1)
+    return { branch: undefined };
+  if (result.code !== 0) {
+    const why = result.stderr.trim();
+    const lead = `git symbolic-ref HEAD failed with exit code ${result.code}`;
+    return { issue: why === "" ? lead : `${lead}: ${why}` };
+  }
+  const ref = result.stdout.trim();
+  return {
+    branch: ref.startsWith(HEADS) ? ref.slice(HEADS.length) : undefined
   };
 }
 function checkoutOf(runGit, folder) {
@@ -1605,8 +1622,8 @@ function briefFileIssues(brief, bounds) {
 // bin/helpers/worker-worktree.ts
 import * as path5 from "node:path";
 var nativeBranch = (name) => `worktree-${name}`;
-var HEADS = "refs/heads/";
-var shortBranch = (ref) => ref.startsWith(HEADS) ? ref.slice(HEADS.length) : ref;
+var HEADS2 = "refs/heads/";
+var shortBranch = (ref) => ref.startsWith(HEADS2) ? ref.slice(HEADS2.length) : ref;
 function contains(parent, child) {
   const rel = path5.relative(parent, child);
   if (rel === "")
@@ -1661,7 +1678,7 @@ function tryCandidate(input, candidate) {
   return foundOf(match, branch, via);
 }
 function byName(input) {
-  const ref = `${HEADS}${nativeBranch(input.name)}`;
+  const ref = `${HEADS2}${nativeBranch(input.name)}`;
   const match = input.worktrees.find((w) => w.branch === ref && refusal(input, w) === undefined);
   if (match === undefined) {
     return {

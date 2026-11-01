@@ -720,6 +720,16 @@ describe('dispatch from another checkout', () => {
     expect(h.err).toContain('name: the branch worktree-w1 already exists');
   });
 
+  test('accepts target: <branch> when a tag shares the branch name', () => {
+    const fx = fixture();
+    const branch = fx.fields.target;
+    git(fx.top, 'tag', branch);
+    const h = harness(fx);
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out).toContain(`lands in: ${branch}`);
+  });
+
   test('the main checkout gets the four read rules too, and no launched-from text', () => {
     const fx = fixture();
     const h = harness(fx);
