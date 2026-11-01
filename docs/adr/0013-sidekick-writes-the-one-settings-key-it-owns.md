@@ -6,11 +6,11 @@
 
 R10 moves each repo's auto-memory into one shared store. Claude Code finds a repo's memory folder through the `autoMemoryDirectory` setting. That key can only live in a repo's gitignored `.claude/settings.local.json`, for three reasons:
 
-- A plugin cannot set it. A plugin's settings file takes only `agent` and `subagentStatusLine` ([memory design](../designs/memory/design.md) K8).
-- The local route worked in probes on 2026-10-31, for the main checkout and for a plain worktree, which took the main checkout's file. The committed `settings.json` route also worked headless. The local route is used either way: it stays out of git and belongs to the operator ([probes report](../research/memory/2026-10-31-auto-memory-location-probes.md)).
-- A user-level value is one folder for every repo, which the memory design rejected for the index cap. The first source that sets the key wins, and a local key overrides a user one (Claude Code 2.1.316 binary, read on 2026-11-01).
+- A plugin cannot set it. A plugin's settings file takes only `agent` and `subagentStatusLine` ([memory design K8](https://github.com/Rikmorn/sidekick/blob/b708f0ce7cfd157fd4b9b37df192dbf7f1824e91/docs/designs/memory/design.md)).
+- The local route worked in probes on 2026-10-31 on Claude Code 2.1.314, for the main checkout and for a plain worktree, which took the main checkout's file ([probes report](../research/memory/2026-10-31-auto-memory-location-probes.md)). The committed `settings.json` route also worked headless, but the 2.1.316 settings schema says the key is ignored in project settings ([memory design K7](https://github.com/Rikmorn/sidekick/blob/b708f0ce7cfd157fd4b9b37df192dbf7f1824e91/docs/designs/memory/design.md)). The local file also stays out of git and belongs to the operator.
+- A user-level value is one folder for every repo, which the memory design rejected for the index cap. The first source that sets the key wins, and a local key overrides a user one (read in the Claude Code 2.1.316 binary on 2026-11-01).
 
-So `sidekick memory link` has to write a repo's settings file. ADR-0009's Decision 3 says rules delivery is non-destructive: the installer writes and prunes only `sk-*.md` files. The pre-plugin installer wrote entries into repos' `settings.local.json` and left them broken (#126). #126 closed on the operator's reading that removing entries from a settings file needs an amendment to Decision 3 ([memory design](../designs/memory/design.md) records that reading).
+So `sidekick memory link` has to write a repo's settings file. ADR-0009's Decision 3 says rules delivery is non-destructive: the installer writes and prunes only `sk-*.md` files. The pre-plugin installer wrote entries into repos' `settings.local.json` and left entries behind (#126). #126 closed as not planned on 2026-10-09, because removing entries from a settings file would need an amendment to Decision 3 ([#126's close comment](https://github.com/Rikmorn/sidekick/issues/126)).
 
 ## Options considered
 
@@ -40,12 +40,12 @@ This narrows #271's first wording, "never removes or rewrites entries", on the o
 - A fresh clone starts unlinked, since the file is gitignored. #274 adds the warning.
 - Claude Code writes the same file, so sidekick re-reads it before each write, and a change between read and write retries.
 - The key and the marker are two records of one link. A lint reconciles them.
-- A move between families is done by hand from the store's README. The ADR already permits a move command, and nothing needs one yet.
+- A move between families is done by hand from the store's README. Sidekick may change or remove its own key, so a later command that moves a repo between families needs no new ADR. None is planned until a move needs one.
 
 ## Assumptions
 
 - The marker proves authorship. A person who copies a marker into another folder defeats it. The cost is a refused write, not a wrong one, because `link` refuses a key it cannot match to its marker.
-- Claude Code keeps reading `autoMemoryDirectory` from the local file with the precedence in §Context. The probes ran on 2.1.316; a later build can change it.
+- Claude Code keeps reading `autoMemoryDirectory` from the local file with the precedence in §Context. The probes ran on 2.1.314 and the precedence was read in the 2.1.316 binary; a later build can change it.
 - The operator is sidekick's only user, as ADR-0012 assumes.
 
 ## Revisit when
@@ -56,4 +56,4 @@ This narrows #271's first wording, "never removes or rewrites entries", on the o
 
 ## Links
 
-ADR-0009 · ADR-0012 · [probes report](../research/memory/2026-10-31-auto-memory-location-probes.md) · [memory design](../designs/memory/design.md) · `plugin/rules/sk-memory.md` · #126 · #271 · #274
+ADR-0009 · ADR-0012 · [probes report](../research/memory/2026-10-31-auto-memory-location-probes.md) · [memory design](https://github.com/Rikmorn/sidekick/blob/b708f0ce7cfd157fd4b9b37df192dbf7f1824e91/docs/designs/memory/design.md) · `plugin/rules/sk-memory.md` · #126 · #271 · #274
