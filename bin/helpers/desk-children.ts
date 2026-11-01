@@ -219,8 +219,8 @@ function countOf(
   };
 }
 
-// A prunable worktree is missing as far as the desk goes: one warning, and
-// the git calls in it are skipped. The count is tried still, since the branch remains.
+// A prunable worktree is missing as far as the desk goes, so the git calls in
+// it are skipped. Its branch remains, so countOf still decides the count.
 function gitFacts(
   runGit: Runner,
   repo: Repo,

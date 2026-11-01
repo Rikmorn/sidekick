@@ -5,9 +5,9 @@
  * finds the worktree wherever its creator made it, or at the operator's
  * `--worktree`. `--name` stands in for a brief that is gone. It acts on a
  * branch only with evidence the branch is the worker's.
- * It refuses whenever a step would lose work. It prints the target and why once
- * the target resolves, before the landed check, so a refusal from any check
- * then follows it. The steps run in order, and the first that fails stops the
+ * It refuses whenever a step would lose work. In landed mode it prints the
+ * target and why once the target resolves, before it walks the history, so a
+ * refusal from the landed check or a later check follows it. The steps run in order, and the first that fails stops the
  * rest. They print where the work landed, what became of the report, any files
  * it restored, then each removal: the session, the worktree, and the branch.
  * Its last line names the backup ref.
@@ -187,8 +187,8 @@ function locate(
 
 type Landed = { head: string; verdict: Verdict } | { issues: string[] };
 
-// The verdict on the worker's branch. The target line prints once the target
-// resolves, before the history walk and before any refusal, so a refusal
+// The verdict on the worker's branch. In landed mode the target line prints
+// once the target resolves, before the history walk, so the verdict's refusal
 // follows the target finish judged.
 function landedCheck(
   wenv: WorkerEnv,

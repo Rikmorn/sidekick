@@ -40,8 +40,9 @@ import {
   shortBranch,
 } from './worker-worktree.js';
 
-// landedVerdict checks only the branch, so the worktree must have that branch
-// checked out: the branch it started on, when its transcript names one.
+// finish verifies the branch's head, not the worktree's, in both modes, so the
+// worktree must have that branch checked out: the branch it started on, when
+// its transcript names one.
 export function onBranchIssues(
   runGit: Runner,
   worktree: string,
@@ -319,7 +320,7 @@ export function worktreeCheck(
   return { issues: [...onBranch, ...dirty], partial };
 }
 
-// A commit made after landedVerdict's check was never checked, and the removal loses it.
+// A commit made after finish verified the branch's head was never checked, and the removal loses it.
 export function headMovedIssues(runGit: Runner, ready: Ready): string[] {
   const now = commitOf(runGit, ready.mainTop, `refs/heads/${ready.branch}`);
   if (now === ready.head) return [];

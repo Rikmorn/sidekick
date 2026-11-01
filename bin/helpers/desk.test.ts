@@ -507,7 +507,7 @@ describe('runDeskCli: finding the worktree', () => {
     expect(s.warnings).toEqual([]);
   });
 
-  test("a worker's row cwd finds its worktree when no transcript does", () => {
+  test('a worker in a sibling worktree on worktree-w5, with no transcript, shows its last commit and count', () => {
     const fx = repoFixture();
     fx.addWorker('w5', 'bbbb0005', { worktree: false });
     const folder = sibling(fx.top, 'w5', 'worktree-w5');
