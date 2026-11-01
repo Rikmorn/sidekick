@@ -16,21 +16,23 @@ The brief opens with `key: value` lines between two `---` lines. Its body holds 
 
 | Field | What it holds |
 |---|---|
-| `name` | One name for the session, the worktree folder, and the branch `worktree-<name>` |
-| `plan`, `spec` | Absolute paths in the main checkout |
-| `rulings` | An absolute path in the main checkout, for the orchestrator's rulings. The file may not exist yet; its folder does |
+| `name` | The session's name. Claude Code's own creation names the worktree folder and the branch from it |
+| `plan`, `spec` | Absolute paths in the launching checkout or the main checkout |
+| `rulings` | An absolute path in the launching checkout, for the orchestrator's rulings. The file may not exist yet; its folder does |
 | `baseline` | The commit the run starts from |
 | `skill` | `subagent-driven-development`, or `executing-plans` |
 | `place` | `worktree`, `in-place`, or `branch <name>` |
+| `target` | Optional: the branch the work lands in. The orchestrator uses it at `finish` |
+| `workstream` | Optional: the memory workstream the run belongs to |
 | `setup` | Optional: the command that prepares where you work |
 | `report` | The run report's path, relative to the repo top |
 | `orchestrator` | The session to message |
 
-The brief, the plan, the spec, and the rulings file stay in the main checkout, and you read them there. They usually sit in a git-ignored folder, which a worktree does not contain. A worktree session can read the main checkout but cannot edit it. Where the plan and the brief disagree on where the work lands, follow the brief: the plan was written before the mode was chosen.
+The brief, the plan, the spec, and the rulings file stay in the launching checkout or the main checkout, and you read them there. They usually sit in a git-ignored folder, which a worktree does not contain. A worktree session can read those checkouts but cannot edit them. Where the plan and the brief disagree on where the work lands, follow the brief: the plan was written before the mode was chosen.
 
 Check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Then check where you work. There, `HEAD` is `baseline`, and no tracked file has uncommitted changes.
 
-- `worktree`: a linked worktree at `.claude/worktrees/<name>`, on branch `worktree-<name>`. A dispatched worker starts there. A worker started by the operator calls `EnterWorktree` with the brief's `name` first. `EnterWorktree` branches from the `worktree.baseRef` setting. Its default, `"fresh"`, branches from the remote's default branch, and only `"head"` branches from `HEAD`. `sidekick worker dispatch` sets `"head"`; a session started by the operator may not.
+- `worktree`: a linked worktree with `HEAD` at `baseline` and clean tracked files. A dispatched worker starts there. A worker started by the operator calls `EnterWorktree` with the brief's `name` first. `EnterWorktree` branches from the `worktree.baseRef` setting. Its default, `"fresh"`, branches from the remote's default branch, and only `"head"` branches from `HEAD`. `sidekick worker dispatch` sets `"head"`; a session started by the operator may not.
 - `in-place`: the main checkout, on its current branch.
 - `branch <name>`: the branch it names, in the main checkout. Check before you switch, so a failed check moves nothing. The main checkout's tracked files are clean, and the branch points at `baseline` or does not exist yet. Then switch to it, making it at `baseline` if needed.
 
@@ -82,8 +84,8 @@ Run git plainly from where you work. In a worktree session, Claude Code refuses 
 
 Write the run report when superpowers collects its "Rulings I made", before it deletes its workspace. The ledger the report draws on goes with that workspace. Write the report in the shape of `references/run-report.md`, at the brief's `report` path, relative to where you work. Create the folders it needs, since a git-ignored folder such as `docs/superpowers/` is absent from a fresh worktree.
 
-Removing a worktree keeps only two things: its commits, once landed, and the run report. For a dispatched worker, `sidekick worker finish` copies the report from `<worktree>/<report>` to `<top>/<report>`. Then it removes the session, the desk's record of the worker, the worktree, and its branch, which it keeps as a backup ref. Everything else in the worktree goes with it, git-ignored files included. So anything worth keeping belongs in a commit or in the report.
+Removing a worktree keeps only two things: its commits, once landed, and the run report. For a dispatched worker, `sidekick worker finish` copies the report from `<worktree>/<report>` to `<report>` in the brief's checkout. Then it removes the session, the desk's record of the worker, the worktree, and its branch, which it keeps as a backup ref. Everything else in the worktree goes with it, git-ignored files included. So anything worth keeping belongs in a commit or in the report.
 
-`finish` refuses unless the worktree has `worktree-<name>` checked out and that branch has landed. It also refuses when `git status` there lists anything but the report, or when the report is missing and the orchestrator has not passed `--no-report`. It checks again before it removes anything. So commit everything but the report.
+`finish` refuses unless the worktree has the branch it started on checked out and that branch has landed. It also refuses when `git status` there lists anything but the report, or when the report is missing and the orchestrator has not passed `--no-report`. It checks again before it removes anything. So commit everything but the report.
 
-Keep your branch for the orchestrator to review, and message the orchestrator with the report's absolute path and the last commit. For a worker started by the operator, the orchestrator acts on that path. `finish` finds a worker by its background job, so the orchestrator saves that report beside the plan by hand, before any worktree it used is removed.
+Keep your branch for the orchestrator to review, and message the orchestrator with the report's absolute path and the last commit. For a worker started by the operator, the orchestrator acts on that path. `finish` finds a worker by its background job. So the orchestrator saves that report to the brief's `report` path by hand, before any worktree it used is removed.

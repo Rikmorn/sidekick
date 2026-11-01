@@ -49,7 +49,7 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 
 ## Workers
 
-`sidekick worker` starts a plan's worker and clears it away. `dispatch <brief> --permission-mode <mode>` checks the brief, the main checkout, and the `worker` profile. Then it starts `sk-worker` as a background session, in a worktree of its own, with pushes blocked. `finish <brief>` runs once the worker's branch is integrated. It saves the run report beside the plan and removes the worker's session, desk record, worktree, and branch. `sk-execute` §Hand off to a worker runs both, after the operator chooses the worker mode. `references/workers.md` covers the brief, what each verb checks, the record the desk lists a worker from, and the push block with what it does not guard. It also covers steering and stopping, the fallback when agent view is unavailable, and a suggested `worker` profile.
+`sidekick worker` starts a plan's worker and clears it away. `dispatch <brief> --permission-mode <mode>` checks the brief, the launching checkout, and the `worker` profile. Then it starts `sk-worker` as a background session, in a worktree of its own, with pushes blocked. `finish <brief>` runs once the worker's branch is integrated. It saves the run report to the brief's `report` path and removes the worker's session, desk record, worktree, and branch. `sk-execute` §Hand off to a worker runs both, after the operator chooses the worker mode. `references/workers.md` covers the brief, what each verb checks, the record the desk lists a worker from, and the push block with what it does not guard. It also covers steering and stopping, the fallback when agent view is unavailable, and a suggested `worker` profile.
 
 ## The docs layout
 

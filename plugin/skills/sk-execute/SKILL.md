@@ -72,14 +72,16 @@ The whole-branch reviewer also lists what it declined to judge. In every mode, t
 
 ## Hand off to a worker
 
-When the operator chooses the worker mode, this session dispatches the worker as a background session. The worker runs in a worktree of its own, made from this session's `HEAD`, with its pushes blocked unless the operator allows them. The `sidekick` skill's `references/workers.md` says what the block does not stop. Then:
+When the operator chooses the worker mode, this session dispatches the worker as a background session. The worker runs in a worktree of its own, made from the `HEAD` of this session's checkout. Its pushes are blocked unless the operator allows them. The `sidekick` skill's `references/workers.md` says what the block does not stop. Then:
 
-1. **Write the brief** beside the plan, as `<plan>-brief.md`, with the fields `sk-worker` §On start lists.
+1. **Write the brief** in this checkout, as `<plan>-brief.md`, with the fields `sk-worker` §On start lists.
    - `place` is `worktree`, the only place `dispatch` starts a worker.
    - `orchestrator` is this session's name, as `ListAgents` prints it.
-   - `rulings` names a file beside the plan, which need not exist yet. `report` puts the run report beside the plan.
+   - `rulings` names a file in this checkout, which need not exist yet. `report` is the run report's path in the repo; `finish` copies the report to that path in this checkout.
+   - `target` is the branch this checkout holds, where the work lands. Leave it out on a detached `HEAD`; `dispatch` refuses a `target` there.
+   - `workstream` is optional, and names the memory workstream.
    - `setup` prepares the fresh worktree, such as installing dependencies. Without it, the worker prepares nothing.
-   - `baseline` is the main checkout's `HEAD`, with no uncommitted changes to tracked files, or `dispatch` refuses.
+   - `baseline` is this checkout's `HEAD`, with no uncommitted changes to tracked files, or `dispatch` refuses.
 
    Run the gates at the baseline, and put each command and its result in the brief's body.
 2. **Dispatch** with `sidekick worker dispatch <brief> --permission-mode <mode>`, where `<mode>` is this session's own mode, as its context states; when unsure, ask the operator. A session in another mode holds this session's messages for approval, and they expire. Add `--allow-push` only on the operator's word for this dispatch. Add `--plugin-dir <dir>` when this session tests unreleased plugin content, so the worker runs the same skills. `dispatch` refuses with every reason it finds; fix them and run it again. Once the worker starts, `dispatch` prints its id. When `dispatch` prints the `main:` line with its `←` warning, tell the operator not to press `←` until this session is idle.
@@ -88,13 +90,15 @@ When the operator chooses the worker mode, this session dispatches the worker as
 5. **When the run report arrives,** take these in order.
    - **Review and route.** Review the whole branch yourself, since a per-task review cannot see a defect at the seam between tasks. Add your review's defects under "Defects by stage" in the run report, in the worktree, since `finish` saves that copy. Route every defect still open there, and every declined line the worker ruled a finding, as §Route every finding says.
    - **Integrate** the branch as the repo's guidance says: a fast-forward, or a pull request whose body carries `Closes #N`. Where the guidance is silent, infer the route from the repo's history. Confirm it with the operator, and record it where the repo keeps its guidance.
-   - **Finish** with `sidekick worker finish <brief>`, once the work has landed in the main checkout's `HEAD`. A merged pull request counts once the main checkout pulls it, or once a fetch makes it visible and `--into origin/<default branch>` names it. To name another target, such as a feature branch, pass `--into <rev>`. A rebase or squash landing counts, since `finish` checks the content, not only the commit ids. A landing that changed the worker's content refuses, and `--discard` is then the operator's call. Run `finish` with the Bash tool's `run_in_background`, since `claude rm` may run for minutes. The Bash tool stops a foreground call at 120 seconds by default and 600 at most.
+   - **Finish** with `sidekick worker finish <brief>`, once the work has landed in the brief's `target`. A merged pull request counts once this checkout pulls it, or once a fetch makes it visible and `--into origin/<default branch>` names it. To name another target, pass `--into <rev>`. `finish` runs from any checkout. A rebase or squash landing counts, since `finish` checks the content, not only the commit ids. A landing that changed the worker's content refuses, and `--discard` is then the operator's call. Run `finish` with the Bash tool's `run_in_background`, since `claude rm` may run for minutes. The Bash tool stops a foreground call at 120 seconds by default and 600 at most.
    - **Close out.** Run the plan's after-file, if it has one, and close the issues through `sk-track`.
 
-`finish` saves the run report beside the plan, then removes the worker's session, desk record, worktree, and branch. It refuses unless the worktree has `worktree-<name>` checked out, that branch has landed, the worktree is clean, and the report exists. It also refuses when no job or several carry the brief's name, or when a different report already sits beside the plan. Each refusal says what to do. Once that is done, run `finish` again. A re-run works until `claude rm` succeeds, and it also completes a removal that an earlier `claude rm` cut short. After `claude rm` succeeds, clear any worktree or branch left by hand. `finish` keeps every branch it deletes in a backup ref under `refs/sidekick/`. `--no-report` drops the report's condition, for a worker stopped before writing one, on the operator's word. `--discard` clears a worker that did not land, on the operator's word, and still keeps the branch in a backup ref.
+`finish` saves the run report to the brief's `report` path in the checkout that holds the brief, then removes the worker's session, desk record, worktree, and branch. It refuses unless the worktree has the branch it started on checked out, that branch has landed, the worktree is clean, and the report exists. It also refuses when no job or several carry the brief's name, or when a different report already sits at that path. When `finish` cannot find the worktree, or finds one on a branch other than `worktree-<name>`, it names `--worktree <path>` to point it at the right one. `--name <name>` stands in for a brief that is gone; it needs `--no-report` or `--discard`, and `--into <rev>` in landed mode. Each refusal says what to do. Once that is done, run `finish` again. A re-run works until `claude rm` succeeds, and it also completes a removal that an earlier `claude rm` cut short. After `claude rm` succeeds, clear any worktree or branch left by hand. `finish` keeps every branch it deletes in a backup ref under `refs/sidekick/`. `--no-report` drops the report's condition, for a worker stopped before writing one, on the operator's word. `--discard` clears a worker that did not land, on the operator's word, and still keeps the branch in a backup ref.
 
 - **To steer** mid-run, write the ruling to the rulings file and message the worker to point at it, as in step 4.
 - **To stop** the worker, run `claude stop <id>`. The operator looks in with `claude attach <id>`.
+
+Finish or discard each worker before you remove the checkout that dispatched it, since `finish` reads the brief there.
 
 A change of scope goes in a fresh handoff, a new brief and a new dispatch, never in a message to a running worker.
 
@@ -103,7 +107,7 @@ A change of scope goes in a fresh handoff, a new brief and a new dispatch, never
 - `worktree` only when that session's settings set `worktree.baseRef` to `"head"`. `EnterWorktree` branches from that setting. Its default, `"fresh"`, branches from the remote's default branch, off the baseline, so the worker blocks.
 - Otherwise `in-place`, or `branch <name>`.
 
-Steps 3 to 5 hold, except `finish`: it finds a worker by its background job, so it does not apply here. Before any worktree that worker used is removed, save its run report beside the plan by hand.
+Steps 3 to 5 hold, except `finish`: it finds a worker by its background job, so it does not apply here. Before any worktree that worker used is removed, save its run report to the brief's `report` path by hand.
 
 ## After an in-session run
 
