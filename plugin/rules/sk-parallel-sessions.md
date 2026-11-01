@@ -15,7 +15,7 @@ The repo's `worktree.baseRef` sets the base. `"fresh"`, the default, is the remo
 
 ## Support work
 
-Support work, such as a production check, runs in its own worktree from the remote's default branch. "Go off main" asks for one, even when this checkout holds that branch. Remove it unchanged at the end. Changed code becomes a branch landing by the repo's own route; its worktree stays until then. Name a support session for its workstream.
+Support work, such as a production check, runs in its own worktree from the remote's default branch. "Go off main" asks for one, even when this checkout holds that branch. Removing it unchanged at the end is the operator's standing request: call `ExitWorktree` with `remove` without asking. Changed code instead becomes a branch landing by the repo's own route, and its worktree stays until then.
 
 ## The isolation guard
 
