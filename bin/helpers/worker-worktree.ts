@@ -54,7 +54,8 @@ export const nativeBranch = (name: string): string => `worktree-${name}`;
 
 const HEADS = 'refs/heads/';
 
-const shortBranch = (ref: string): string =>
+/** A branch's short name, from a full ref such as `refs/heads/w1`. */
+export const shortBranch = (ref: string): string =>
   ref.startsWith(HEADS) ? ref.slice(HEADS.length) : ref;
 
 // Whole path segments only, so `/r/w1` never contains `/r/w10`.
@@ -111,6 +112,12 @@ function branchFor(candidate: Candidate, match: WorktreeEntry) {
   return match.branch === undefined ? undefined : shortBranch(match.branch);
 }
 
+// The operator's path is the only candidate, so no transcript was read for it.
+const detachedWhy = (via: Candidate['via']): string =>
+  via === 'operator'
+    ? 'is detached'
+    : 'is detached, and the transcript names no branch';
+
 function tryCandidate(input: FindInput, candidate: Candidate): Found | Tried {
   const { via, cwd } = candidate;
   const match = enclosing(input.worktrees, cwd);
@@ -120,13 +127,7 @@ function tryCandidate(input: FindInput, candidate: Candidate): Found | Tried {
   const why = refusal(input, match);
   if (why !== undefined) return { via, cwd, why };
   const branch = branchFor(candidate, match);
-  if (branch === undefined) {
-    return {
-      via,
-      cwd,
-      why: 'is detached, and the transcript names no branch',
-    };
-  }
+  if (branch === undefined) return { via, cwd, why: detachedWhy(via) };
   return foundOf(match, branch, via);
 }
 

@@ -4,14 +4,15 @@
  * restoring the files a cut-short removal deleted, removing the session,
  * forgetting the desk record, confirming the worktree is gone, and deleting a
  * leftover branch at its verified head.
- * Each step returns the issues that stop the run, none on success.
+ * Each step returns the issues that stop the run, none on success. The stop
+ * and the readings of claude's answers also serve `worker-finish-gone.ts`.
  */
 
-import * as fs from 'node:fs';
 import type { Runner } from './pm-data.js';
 import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
+import type { ReportStep } from './worker-finish-report.js';
 import { removeRecord } from './worker-record.js';
 import {
   branchExists,
@@ -29,8 +30,8 @@ const ENDED_STATES = ['stopped', 'done'];
 
 const REMOVED = /^removed\b/;
 
-// claude rm's offer to discard the commits no remote holds: `<sha>@<worktree id>`.
-const DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
+/** claude rm's offer to discard the commits no remote holds: `<sha>@<worktree id>`. */
+export const DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
 
 // The lock reads `claude session <name> (pid <n> start <date>)`.
 const LOCK_PID = /\(pid (\d+)\b/;
@@ -39,32 +40,6 @@ const LOCK_PID = /\(pid (\d+)\b/;
 export interface WorkerJob {
   id: string;
   state: string | undefined;
-}
-
-/**
- * What saveReport does with the report, and where the saved copy goes. `saved
- * earlier` is a partial removal's copy in the brief's checkout, once the
- * worktree's has gone.
- */
-export type ReportStep =
-  | { kind: 'copy' | 'in place' | 'saved earlier'; to: string }
-  | { kind: 'none' };
-
-const isMissing = (e: unknown): boolean =>
-  e instanceof Error && 'code' in e && e.code === 'ENOENT';
-
-// A file's bytes, undefined when it does not exist. Any other failure is an
-// issue, so an unreadable report is never taken for a missing one.
-export function readIfPresent(
-  file: string,
-): { data: Buffer | undefined } | { issue: string } {
-  try {
-    return { data: fs.readFileSync(file) };
-  } catch (e) {
-    if (isMissing(e)) return { data: undefined };
-    const why = e instanceof Error ? e.message : String(e);
-    return { issue: `cannot read ${file}: ${why}` };
-  }
 }
 
 // What the landed check found. `target.name` is `git rev-parse
@@ -78,11 +53,11 @@ export type Verdict =
     }
   | { kind: 'discard' };
 
-// Everything the steps need once the checks pass; `brief` is its absolute path.
+// Everything the steps need once the checks pass.
 export interface Ready extends WorkerJob {
   name: string;
   mainTop: string;
-  /** The checkout holding the brief; undefined when its folder is in none. */
+  /** The checkout holding the brief; undefined when its folder is in none, or under `--name`. */
   briefTop: string | undefined;
   commonDir: string;
   /** The worker's worktree, as git lists it. */
@@ -90,14 +65,13 @@ export interface Ready extends WorkerJob {
   /** The worker's branch, a short name. */
   branch: string;
   head: string;
-  report: string;
-  reportFrom: string;
+  /** The report's path from the worktree's top; undefined under `--name`, which reads no brief. */
+  report: string | undefined;
   reportStep: ReportStep;
   verdict: Verdict;
-  brief: string;
   /** The command that repeats this run, with the flags it was given. */
   rerun: string;
-  /** The command that discards the worker, with the run's `--no-report`. */
+  /** The command that discards the worker, with the run's `--no-report`, `--name`, and `--worktree`. */
   discardCommand: string;
   /** A removal an earlier run cut short: deleted files alone, at a head a backup ref already holds. */
   partial: boolean;
@@ -105,40 +79,47 @@ export interface Ready extends WorkerJob {
 
 export type Step = (ready: Ready, wenv: WorkerEnv, out: Out) => string[];
 
-// spawnSync reads a timeout of 0 as no limit.
-const NO_LIMIT = 0;
+/** spawnSync reads a timeout of 0 as no limit. */
+export const NO_LIMIT = 0;
 
 // Runs claude from the main checkout's top; the default 30 s matches the agents listing's limit.
 const claudeAt = (
-  ready: Ready,
+  at: Pick<Ready, 'mainTop'>,
   wenv: WorkerEnv,
   args: string[],
   timeoutMs = 30_000,
-): ClaudeResult => wenv.runClaude(args, { cwd: ready.mainTop, timeoutMs });
+): ClaudeResult => wenv.runClaude(args, { cwd: at.mainTop, timeoutMs });
 
-// A refusal line, followed by claude's own text when it printed any.
-function withText(lead: string, result: ClaudeResult): string[] {
+/** A refusal line, followed by claude's own text when it printed any. */
+export function withText(lead: string, result: ClaudeResult): string[] {
   const text = printedStreams(result);
   return text.length > 0 ? [`${lead}:`, ...text] : [lead];
 }
 
-const ranClean = (result: ClaudeResult): boolean =>
+/** Whether claude exited 0 in time. */
+export const ranClean = (result: ClaudeResult): boolean =>
   result.code === 0 && !result.timedOut;
 
-const failure = (result: ClaudeResult): string =>
+/** How a claude call that did not run clean ended. */
+export const failure = (result: ClaudeResult): string =>
   result.timedOut
     ? 'did not return in time'
     : `failed with exit code ${result.code}`;
 
+/** The job to stop, and its worktree; undefined when finish found none, so no lock is read. */
+export type JobAt = Pick<Ready, 'id' | 'state' | 'mainTop'> & {
+  worktree: string | undefined;
+};
+
 // A worker whose turn has ended lists as done while its process idles and holds
 // the worktree's lock. So only a job listed as ended whose lock names no live
 // process skips the stop, which keeps a re-run working after the process exits.
-export const stopJob: Step = (ready, wenv) => {
+export const stopJob = (job: JobAt, wenv: WorkerEnv): string[] => {
   const listedEnded =
-    ready.state !== undefined && ENDED_STATES.includes(ready.state);
-  if (listedEnded && !lockHeldLive(ready, wenv)) return [];
-  const args = ['stop', ready.id];
-  const result = claudeAt(ready, wenv, args);
+    job.state !== undefined && ENDED_STATES.includes(job.state);
+  if (listedEnded && !lockHeldLive(job, wenv)) return [];
+  const args = ['stop', job.id];
+  const result = claudeAt(job, wenv, args);
   if (ranClean(result)) return [];
   return withText(
     `claude ${args.join(' ')} ${failure(result)}, so finish stopped before claude rm`,
@@ -156,11 +137,16 @@ function lockPid(reason: string | undefined): number | undefined {
 }
 
 // Read at each call, never kept in Ready, since the lock can change while finish runs.
-const lockPidNow = (ready: Ready, wenv: WorkerEnv): number | undefined =>
-  lockPid(lockReasonOf(wenv.runGit, ready.mainTop, ready.worktree));
+function lockPidNow(
+  at: Pick<JobAt, 'mainTop' | 'worktree'>,
+  wenv: WorkerEnv,
+): number | undefined {
+  if (at.worktree === undefined) return undefined;
+  return lockPid(lockReasonOf(wenv.runGit, at.mainTop, at.worktree));
+}
 
-function lockHeldLive(ready: Ready, wenv: WorkerEnv): boolean {
-  const pid = lockPidNow(ready, wenv);
+function lockHeldLive(job: JobAt, wenv: WorkerEnv): boolean {
+  const pid = lockPidNow(job, wenv);
   return pid !== undefined && wenv.isAlive(pid);
 }
 
@@ -187,7 +173,8 @@ export const waitForLock: Step = (ready, wenv) => {
   return pid === undefined ? [] : waitForExit(pid, wenv);
 };
 
-const saidRemoved = (result: ClaudeResult): boolean =>
+/** Whether claude rm ran clean and said removed; its exit code alone does not tell. */
+export const saidRemoved = (result: ClaudeResult): boolean =>
   ranClean(result) && REMOVED.test(printedStreams(result).join('\n'));
 
 // The re-run comes first: it restores what a cut-short claude rm deleted, and

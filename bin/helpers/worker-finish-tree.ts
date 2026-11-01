@@ -1,8 +1,9 @@
 /**
  * The checks of a worker's worktree. They say where its worktree, branch, and
- * report sit, refuse when the finder found no worktree, and check whether it
- * is on its branch, still linked to git, and free of uncommitted work, and
- * whether it holds a partial removal that an earlier run left.
+ * report sit, refuse when the finder found no worktree, or none at the
+ * operator's `--worktree`, and check whether it is on its branch, still linked
+ * to git, and free of uncommitted work, and whether it holds a partial removal
+ * that an earlier run left.
  */
 
 import * as fs from 'node:fs';
@@ -15,17 +16,22 @@ import {
   type FinishMode,
   type FinishOptions,
 } from './worker-finish-args.js';
-import { routeFor } from './worker-finish-target.js';
+import {
+  type BriefAt,
+  routeFor,
+  type TargetContext,
+} from './worker-finish-target.js';
 import {
   checkedOut,
   commitOf,
   DELETED,
   type StatusEntry,
   statusEntriesIn,
+  type WorktreeEntry,
   worktreeListed,
 } from './worker-repo.js';
 import { heldBackup, type Ready } from './worker-teardown.js';
-import type { Found } from './worker-worktree.js';
+import { type Found, shortBranch } from './worker-worktree.js';
 
 // branchVerdict checks only the branch, so the worktree must have that branch
 // checked out: the branch it started on, when its transcript names one.
@@ -58,41 +64,65 @@ function offBranchReason(mode: FinishMode['kind'], branch: string): string {
   }
 }
 
-/** The checkouts finish reads, and where the worker's worktree, branch, and report sit. */
-export type Places = Pick<
-  Ready,
-  'mainTop' | 'briefTop' | 'worktree' | 'branch' | 'report' | 'reportFrom'
-> & {
-  /** The checkout finish runs in. */
-  launchTop: string;
-  /** The brief's folder, which a refusal names when no checkout holds it. */
-  briefFolder: string;
-  /** `<briefTop>/<report>`; undefined when no checkout holds the brief. */
+/** Where the brief sits, and where its report is copied from and to. */
+export interface BriefPlaces extends BriefAt {
+  /** The report's path from a checkout's top, in the form git status prints. */
+  report: string;
+  /** `<worktree>/<report>` */
+  reportFrom: string;
+  /** `<top>/<report>`; undefined when no checkout holds the brief. */
   reportTo: string | undefined;
-};
+}
+
+/** The checkouts finish reads, and where the worker's worktree, branch, and brief sit. */
+export interface Places extends TargetContext {
+  /** The worker's worktree, as git lists it. */
+  worktree: string;
+  /** The worker's branch, a short name. */
+  branch: string;
+  /** Undefined under `--name`, which reads no brief. */
+  brief: BriefPlaces | undefined;
+}
+
+/** The brief as read, with its folder and the checkout that holds it. */
+export interface BriefRead {
+  brief: Brief;
+  folder: string;
+  top: string | undefined;
+}
 
 /** The finder's answer when it found the worktree. */
 export type FoundWorktree = Extract<Found, { kind: 'found' }>;
 
-export function placesFor(
-  tops: Pick<Places, 'mainTop' | 'launchTop' | 'briefTop' | 'briefFolder'>,
-  found: FoundWorktree,
-  brief: Brief,
-): Places {
+function briefPlaces(read: BriefRead, worktree: string): BriefPlaces {
   // git status prints paths in this form.
-  const report = path.posix.normalize(brief.report);
-  const { briefTop } = tops;
+  const report = path.posix.normalize(read.brief.report);
+  const { folder, top } = read;
+  return {
+    folder,
+    top,
+    target: read.brief.target,
+    report,
+    reportFrom: path.join(worktree, report),
+    reportTo: top === undefined ? undefined : path.join(top, report),
+  };
+}
+
+export function placesFor(
+  tops: Pick<Places, 'mainTop' | 'launchTop'>,
+  found: FoundWorktree,
+  read: BriefRead | undefined,
+): Places {
   return {
     ...tops,
     worktree: found.path,
     branch: found.branch,
-    report,
-    reportFrom: path.join(found.path, report),
-    reportTo: briefTop === undefined ? undefined : path.join(briefTop, report),
+    brief: read === undefined ? undefined : briefPlaces(read, found.path),
   };
 }
 
-type Tried = Extract<Found, { kind: 'not found' }>['tried'][number];
+/** One place the finder tried, and why it rejected it. */
+export type Tried = Extract<Found, { kind: 'not found' }>['tried'][number];
 
 const TRIED_LABEL = {
   transcript: "the transcript's first cwd",
@@ -101,17 +131,41 @@ const TRIED_LABEL = {
   name: 'by name,',
 } satisfies Record<Tried['via'], string>;
 
-const triedLine = (tried: Tried): string =>
+export const triedLine = (tried: Tried): string =>
   [TRIED_LABEL[tried.via], tried.cwd, tried.why]
     .filter((part) => part !== undefined)
     .join(' ');
 
-/** The refusal when the finder found no worktree: each place it tried, then the ways out. */
+/** The refusal in landed mode when no reader found the worktree: each place it tried, then the ways out. */
 export function notFoundIssues(name: string, tried: Tried[]): string[] {
   return [
     `finish cannot find the worktree of ${name}, so it removed nothing. It tried:`,
     ...tried.map(triedLine),
     'name the worktree with --worktree <path>, or discard the worker with --discard',
+  ];
+}
+
+const listedLine = (entry: WorktreeEntry): string =>
+  `${entry.path}: ${entry.branch === undefined ? 'detached' : shortBranch(entry.branch)}`;
+
+/**
+ * The refusal in either mode when `--worktree` names no worktree finish can
+ * clear: why, then each linked worktree git lists, with its branch.
+ */
+export function operatorIssues(
+  name: string,
+  tried: Tried[],
+  linked: WorktreeEntry[],
+): string[] {
+  const listed =
+    linked.length === 0
+      ? ['git lists no linked worktree']
+      : ['git lists these linked worktrees:', ...linked.map(listedLine)];
+  return [
+    `finish cannot find the worktree of ${name}, so it removed nothing. It tried:`,
+    ...tried.map(triedLine),
+    ...listed,
+    "name the worker's worktree with --worktree <path>, or run finish without --worktree",
   ];
 }
 
@@ -141,10 +195,11 @@ export function unlinkedIssues(
 
 type Status = { entries: StatusEntry[] } | { issue: string };
 
-// The worktree's status entries, the report aside.
+// The worktree's status entries, the report aside. Under --name the report is
+// unknown, so every entry counts.
 export function statusBesideReport(
   runGit: Runner,
-  places: Pick<Places, 'mainTop' | 'worktree' | 'report'>,
+  places: { mainTop: string; worktree: string; report: string | undefined },
 ): Status {
   const status = statusEntriesIn(runGit, places.mainTop, places.worktree);
   if ('issue' in status) {
@@ -217,7 +272,11 @@ export function worktreeCheck(
   worker: { name: string; id: string; head: string | undefined },
   opts: FinishOptions,
 ): { issues: string[]; partial: boolean } {
-  const status = statusBesideReport(runGit, places);
+  const status = statusBesideReport(runGit, {
+    mainTop: places.mainTop,
+    worktree: places.worktree,
+    report: places.brief?.report,
+  });
   const partial = isPartial(runGit, places.mainTop, worker, status);
   const onBranch = onBranchIssues(
     runGit,

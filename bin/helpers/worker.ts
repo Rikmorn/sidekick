@@ -12,7 +12,7 @@ import { finish } from './worker-finish.js';
 import { parseFinishArgs } from './worker-finish-args.js';
 
 export const WORKER_USAGE_LINE =
-  'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report] [--into <rev> | --discard]';
+  'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]';
 
 /** The profile family's environment, plus git and the seams a lock wait runs through. */
 export interface WorkerEnv extends ProfileEnv {
@@ -31,14 +31,21 @@ const usage = (err: Out): number => {
   return 1;
 };
 
+const refuse = (err: Out, lines: string[]): number => {
+  for (const line of lines) err(line);
+  return 1;
+};
+
 const dispatchVerb: Verb = (rest, wenv, out, err) => {
   const opts = parseDispatchArgs(rest, wenv.cwd);
   return opts === undefined ? usage(err) : dispatch(opts, wenv, out, err);
 };
 
 const finishVerb: Verb = (rest, wenv, out, err) => {
-  const opts = parseFinishArgs(rest, wenv.cwd);
-  return opts === undefined ? usage(err) : finish(opts, wenv, out, err);
+  const args = parseFinishArgs(rest, wenv.cwd);
+  if (args === undefined) return usage(err);
+  if ('usageErrors' in args) return refuse(err, args.usageErrors);
+  return finish(args, wenv, out, err);
 };
 
 const VERBS: Record<string, Verb> = {

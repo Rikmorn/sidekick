@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs21 from "node:fs";
+import * as fs20 from "node:fs";
 import { realpathSync as realpathSync4 } from "node:fs";
 import * as os2 from "node:os";
 import * as path23 from "node:path";
@@ -5325,6 +5325,7 @@ function branchFor(candidate, match) {
   }
   return match.branch === undefined ? undefined : shortBranch(match.branch);
 }
+var detachedWhy = (via) => via === "operator" ? "is detached" : "is detached, and the transcript names no branch";
 function tryCandidate(input, candidate) {
   const { via, cwd } = candidate;
   const match = enclosing(input.worktrees, cwd);
@@ -5335,13 +5336,8 @@ function tryCandidate(input, candidate) {
   if (why !== undefined)
     return { via, cwd, why };
   const branch = branchFor(candidate, match);
-  if (branch === undefined) {
-    return {
-      via,
-      cwd,
-      why: "is detached, and the transcript names no branch"
-    };
-  }
+  if (branch === undefined)
+    return { via, cwd, why: detachedWhy(via) };
   return foundOf(match, branch, via);
 }
 function byName(input) {
@@ -5678,22 +5674,73 @@ import * as path22 from "node:path";
 
 // bin/helpers/worker-finish-args.ts
 import * as path19 from "node:path";
+var NEEDS_REPORT = "--name needs --no-report or --discard, since there is no brief to say where the run report goes";
+var NEEDS_INTO = "--name needs --into <rev> or --discard, since there is no brief to name the target";
+var stringFlag2 = (values, key) => {
+  const value = values[key];
+  return typeof value === "string" ? value : undefined;
+};
 function parseFinishArgs(rest2, cwd) {
   const parsed = parseFlags(rest2, {
     "no-report": { type: "boolean" },
     into: { type: "string" },
-    discard: { type: "boolean" }
+    discard: { type: "boolean" },
+    name: { type: "string" },
+    worktree: { type: "string" }
   });
-  if (parsed === undefined || parsed.positionals.length !== 1)
+  if (parsed === undefined)
     return;
-  const { into, discard } = parsed.values;
-  if (discard === true && into !== undefined)
+  const { values, positionals } = parsed;
+  const into = stringFlag2(values, "into");
+  const worktree = stringFlag2(values, "worktree");
+  const discard = values.discard === true;
+  if (discard && into !== undefined || worktree === "")
     return;
-  return {
-    brief: path19.resolve(cwd, parsed.positionals[0]),
-    noReport: parsed.values["no-report"] === true,
-    mode: discard === true ? { kind: "discard" } : { kind: "landed", into: typeof into === "string" ? into : undefined }
+  const shared = {
+    noReport: values["no-report"] === true,
+    mode: discard ? { kind: "discard" } : { kind: "landed", into },
+    worktree: worktree === undefined ? undefined : path19.resolve(cwd, worktree)
   };
+  const name = stringFlag2(values, "name");
+  if (name !== undefined) {
+    return positionals.length === 0 ? byName2(name, shared) : undefined;
+  }
+  if (positionals.length !== 1)
+    return;
+  const brief = path19.resolve(cwd, positionals[0]);
+  return { subject: { kind: "brief", brief }, ...shared };
+}
+function byName2(name, shared) {
+  const valid = safeParse(WorkerNameSchema, name);
+  if (!valid.success) {
+    return {
+      usageErrors: [
+        `--name "${name}" is not a worker's name: it ${valid.issues[0].message}`
+      ]
+    };
+  }
+  const { noReport, mode } = shared;
+  const reportSettled = noReport || mode.kind === "discard";
+  const targetSettled = mode.kind === "discard" || mode.into !== undefined;
+  const usageErrors = [
+    ...reportSettled ? [] : [NEEDS_REPORT],
+    ...targetSettled ? [] : [NEEDS_INTO]
+  ];
+  if (usageErrors.length > 0)
+    return { usageErrors };
+  return { subject: { kind: "name", name }, ...shared };
+}
+function subjectArgs(subject) {
+  switch (subject.kind) {
+    case "brief":
+      return [shellArg(subject.brief)];
+    case "name":
+      return ["--name", shellArg(subject.name)];
+    default: {
+      const unhandled = subject;
+      throw new Error(`unhandled subject: ${JSON.stringify(unhandled)}`);
+    }
+  }
 }
 function modeFlags(mode) {
   switch (mode.kind) {
@@ -5709,51 +5756,284 @@ function modeFlags(mode) {
 }
 function commandFor(opts, mode) {
   const report = opts.noReport ? ["--no-report"] : [];
+  const worktree = opts.worktree === undefined ? [] : ["--worktree", shellArg(opts.worktree)];
   return [
     "sidekick worker finish",
-    shellArg(opts.brief),
+    ...subjectArgs(opts.subject),
     ...report,
-    ...modeFlags(mode)
+    ...modeFlags(mode),
+    ...worktree
   ].join(" ");
 }
 var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
-// bin/helpers/worker-finish-report.ts
-import * as fs19 from "node:fs";
+// bin/helpers/worker-finish-tree.ts
+import * as fs18 from "node:fs";
 import * as path20 from "node:path";
 
+// bin/helpers/worker-landed.ts
+var DEFAULT_CAP = 200;
+var CONFLICTED = 1;
+var isFailure = (value) => typeof value === "object" && value !== null && ("issue" in value);
+function emptyTreeId(runGit, top) {
+  const result = runGit("git", ["hash-object", "-w", "-t", "tree", "/dev/null"], top);
+  if (result.code !== 0) {
+    return { issue: `git hash-object failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.trim();
+}
+function treeOf(runGit, top, sha) {
+  const result = runGit("git", ["rev-parse", `${sha}^{tree}`], top);
+  if (result.code !== 0) {
+    return { issue: `git rev-parse failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.trim();
+}
+function mergeAddsNothing(runGit, top, emptyTree, commit, head) {
+  const result = runGit("git", [
+    `--attr-source=${emptyTree}`,
+    "merge-tree",
+    "--write-tree",
+    commit.sha,
+    head
+  ], top);
+  if (result.code === 0)
+    return result.stdout.split(`
+`)[0] === commit.tree;
+  if (result.code === CONFLICTED)
+    return false;
+  return {
+    issue: `git merge-tree --write-tree failed, and finish needs git 2.40 or later: ${result.stderr.trim()}`
+  };
+}
+function mergeBase(runGit, top, refs) {
+  const result = runGit("git", ["merge-base", refs.target, refs.head], top);
+  return result.code === 0 ? result.stdout.trim() : null;
+}
+function branchFiles(runGit, top, base, head) {
+  const result = runGit("git", ["diff", "--name-only", "--no-renames", "-z", base, head], top);
+  if (result.code !== 0) {
+    return { issue: `git diff failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.split("\x00").filter((file) => file !== "");
+}
+function candidates(runGit, top, refs, files, cap) {
+  if (files.length === 0)
+    return [];
+  const result = runGit("git", [
+    "--literal-pathspecs",
+    "log",
+    "--full-history",
+    "--no-show-signature",
+    "--no-follow",
+    "--format=%H %T",
+    `--max-count=${cap}`,
+    `${refs.target}^@`,
+    `^${refs.base}`,
+    "--",
+    ...files
+  ], top);
+  if (result.code !== 0) {
+    return { issue: `git log failed: ${result.stderr.trim()}` };
+  }
+  return result.stdout.split(`
+`).filter((line) => line !== "").map((line) => {
+    const [sha = "", tree = ""] = line.split(" ");
+    return { sha, tree };
+  });
+}
+function walk(runGit, top, emptyTree, head, list2, cap) {
+  let walked = 0;
+  for (const commit of list2) {
+    walked += 1;
+    const added = mergeAddsNothing(runGit, top, emptyTree, commit, head);
+    if (isFailure(added))
+      return { kind: "error", issue: added.issue };
+    if (added)
+      return { kind: "landed", at: commit.sha, how: "history" };
+  }
+  return { kind: "not landed", walked, capped: list2.length >= cap };
+}
+function searchHistory(runGit, top, emptyTree, refs, base, cap) {
+  const files = branchFiles(runGit, top, base, refs.head);
+  if (isFailure(files))
+    return { kind: "error", issue: files.issue };
+  const list2 = candidates(runGit, top, { target: refs.target, base }, files, cap);
+  if (isFailure(list2))
+    return { kind: "error", issue: list2.issue };
+  return walk(runGit, top, emptyTree, refs.head, list2, cap);
+}
+function landedIn(runGit, top, refs, { cap = DEFAULT_CAP } = {}) {
+  const ancestor = runGit("git", ["merge-base", "--is-ancestor", refs.head, refs.target], top);
+  if (ancestor.code === 0) {
+    return { kind: "landed", at: refs.target, how: "ancestor" };
+  }
+  const base = mergeBase(runGit, top, refs);
+  if (base === null)
+    return { kind: "not landed", walked: 0, capped: false };
+  const emptyTree = emptyTreeId(runGit, top);
+  if (isFailure(emptyTree))
+    return { kind: "error", issue: emptyTree.issue };
+  const tree = treeOf(runGit, top, refs.target);
+  if (isFailure(tree))
+    return { kind: "error", issue: tree.issue };
+  const atTip = mergeAddsNothing(runGit, top, emptyTree, { sha: refs.target, tree }, refs.head);
+  if (isFailure(atTip))
+    return { kind: "error", issue: atTip.issue };
+  if (atTip)
+    return { kind: "landed", at: refs.target, how: "tip" };
+  return searchHistory(runGit, top, emptyTree, refs, base, cap);
+}
+
+// bin/helpers/worker-finish-target.ts
+function targetName(runGit, top, rev) {
+  const result = runGit("git", ["rev-parse", "--symbolic-full-name", rev], top);
+  const name = result.code === 0 ? result.stdout.trim() : "";
+  return name === "" ? rev : name;
+}
+var intoLookup = (ctx, into, branch) => ({
+  rev: into,
+  top: ctx.launchTop,
+  why: "from --into",
+  missing: `--into ${into} names no commit in the main checkout's repo, so finish cannot check that ${branch} landed there: name a branch, tag, or commit that exists`
+});
+var briefLookup = (ctx, target, branch) => ({
+  rev: `refs/heads/${target}`,
+  top: ctx.mainTop,
+  why: "the brief's target",
+  missing: `the brief's target ${target} names no branch, so finish cannot check that ${branch} landed there: create the branch, fix the brief's target, or name the target with --into <rev>`
+});
+function headLookup(brief, branch) {
+  const { top } = brief;
+  if (top === undefined) {
+    return {
+      issue: `the brief's folder ${brief.folder} is in no git checkout, so finish has no HEAD to check that ${branch} landed in: name the target with --into <rev>`
+    };
+  }
+  return {
+    rev: "HEAD",
+    top,
+    why: `the HEAD of ${top}, since the brief names no target`,
+    missing: `the HEAD of ${top} names no commit, so finish cannot check that ${branch} landed there: name the target with --into <rev>`
+  };
+}
+function lookupFor(ctx, into, branch) {
+  if (into !== undefined)
+    return intoLookup(ctx, into, branch);
+  const { brief } = ctx;
+  if (brief === undefined) {
+    return {
+      issue: `--name reads no brief, so finish has no target to check that ${branch} landed in: name the target with --into <rev>`
+    };
+  }
+  if (brief.target !== undefined) {
+    return briefLookup(ctx, brief.target, branch);
+  }
+  return headLookup(brief, branch);
+}
+function resolveTarget(runGit, ctx, into, branch) {
+  const lookup = lookupFor(ctx, into, branch);
+  if ("issue" in lookup)
+    return lookup;
+  const sha = commitOf(runGit, lookup.top, lookup.rev);
+  if (sha === undefined)
+    return { issue: lookup.missing };
+  const name = targetName(runGit, lookup.top, lookup.rev);
+  if (name === `refs/heads/${branch}`) {
+    return {
+      issue: `the target ${name} is the worker's own branch, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in with --into <rev>`
+    };
+  }
+  return { name, sha, why: lookup.why };
+}
+function walkedText(walked, capped2) {
+  const commits = `${walked} ${walked === 1 ? "commit" : "commits"}`;
+  return capped2 ? `the history walk tried ${commits} and stopped at its cap of ${DEFAULT_CAP}` : `the history walk tried ${commits} and found no match`;
+}
+var discardRoute = (discardCommand) => `discarding it is your call, with ${discardCommand}`;
+var handRoute = (id) => `to clear it by hand, claude rm ${shellArg(id)}`;
+function routeFor(mode, discardCommand, id) {
+  switch (mode) {
+    case "landed":
+      return discardRoute(discardCommand);
+    case "discard":
+      return handRoute(id);
+    default: {
+      const unhandled = mode;
+      throw new Error(`unhandled mode: ${unhandled}`);
+    }
+  }
+}
+function missingBranchIssue(branch, opts, id) {
+  switch (opts.mode.kind) {
+    case "landed":
+      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: discarding it is your call, with claude rm ${shellArg(id)}`;
+    case "discard":
+      return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${shellArg(id)}`;
+    default: {
+      const unhandled = opts.mode;
+      throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function verdictFor(runGit, ctx, worker, opts) {
+  const { branch, head } = worker;
+  if (opts.mode.kind === "discard")
+    return { verdict: { kind: "discard" } };
+  const target = resolveTarget(runGit, ctx, opts.mode.into, branch);
+  if ("issue" in target)
+    return { issues: [target.issue] };
+  const landing = landedIn(runGit, ctx.mainTop, { target: target.sha, head });
+  switch (landing.kind) {
+    case "landed":
+      return { verdict: { kind: "landed", target, at: landing.at } };
+    case "error":
+      return {
+        issues: [
+          `finish cannot check that ${branch} landed in ${target.name}: ${landing.issue}`
+        ]
+      };
+    case "not landed":
+      return {
+        issues: [
+          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(discardCommandFor(opts))}`
+        ]
+      };
+    default: {
+      const unhandled = landing;
+      throw new Error(`unhandled landing: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function branchVerdict(runGit, ctx, branch, opts, id) {
+  const { name, head } = branch;
+  if (head === undefined) {
+    return { issues: [missingBranchIssue(name, opts, id)] };
+  }
+  const judged = verdictFor(runGit, ctx, { branch: name, head }, opts);
+  return "issues" in judged ? judged : { head, verdict: judged.verdict };
+}
+
 // bin/helpers/worker-teardown.ts
-import * as fs18 from "node:fs";
 var ENDED_STATES = ["stopped", "done"];
 var REMOVED = /^removed\b/;
 var DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
 var LOCK_PID = /\(pid (\d+)\b/;
-var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
-function readIfPresent(file) {
-  try {
-    return { data: fs18.readFileSync(file) };
-  } catch (e) {
-    if (isMissing5(e))
-      return { data: undefined };
-    const why = e instanceof Error ? e.message : String(e);
-    return { issue: `cannot read ${file}: ${why}` };
-  }
-}
 var NO_LIMIT = 0;
-var claudeAt = (ready, wenv, args, timeoutMs = 30000) => wenv.runClaude(args, { cwd: ready.mainTop, timeoutMs });
+var claudeAt = (at, wenv, args, timeoutMs = 30000) => wenv.runClaude(args, { cwd: at.mainTop, timeoutMs });
 function withText(lead, result) {
   const text = printedStreams(result);
   return text.length > 0 ? [`${lead}:`, ...text] : [lead];
 }
 var ranClean = (result) => result.code === 0 && !result.timedOut;
 var failure = (result) => result.timedOut ? "did not return in time" : `failed with exit code ${result.code}`;
-var stopJob = (ready, wenv) => {
-  const listedEnded = ready.state !== undefined && ENDED_STATES.includes(ready.state);
-  if (listedEnded && !lockHeldLive(ready, wenv))
+var stopJob = (job, wenv) => {
+  const listedEnded = job.state !== undefined && ENDED_STATES.includes(job.state);
+  if (listedEnded && !lockHeldLive(job, wenv))
     return [];
-  const args = ["stop", ready.id];
-  const result = claudeAt(ready, wenv, args);
+  const args = ["stop", job.id];
+  const result = claudeAt(job, wenv, args);
   if (ranClean(result))
     return [];
   return withText(`claude ${args.join(" ")} ${failure(result)}, so finish stopped before claude rm`, result);
@@ -5764,9 +6044,13 @@ function lockPid(reason7) {
   const pid = Number(LOCK_PID.exec(reason7)?.[1]);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
 }
-var lockPidNow = (ready, wenv) => lockPid(lockReasonOf(wenv.runGit, ready.mainTop, ready.worktree));
-function lockHeldLive(ready, wenv) {
-  const pid = lockPidNow(ready, wenv);
+function lockPidNow(at, wenv) {
+  if (at.worktree === undefined)
+    return;
+  return lockPid(lockReasonOf(wenv.runGit, at.mainTop, at.worktree));
+}
+function lockHeldLive(job, wenv) {
+  const pid = lockPidNow(job, wenv);
   return pid !== undefined && wenv.isAlive(pid);
 }
 function waitForExit(pid, wenv, limitMs = 15000, pollMs = 250) {
@@ -5912,347 +6196,7 @@ var restorePartial = (ready, wenv, out) => {
   return [];
 };
 
-// bin/helpers/worker-finish-report.ts
-function reportStep(places, noReport, partial) {
-  const { reportFrom: from, reportTo: to } = places;
-  const worker = readIfPresent(from);
-  if ("issue" in worker)
-    return { issues: [worker.issue] };
-  if (worker.data === undefined) {
-    return missingReportStep(places, noReport, partial);
-  }
-  if (to === undefined)
-    return { issues: [nowhereIssue(places)] };
-  const saved = readIfPresent(to);
-  if ("issue" in saved)
-    return { issues: [saved.issue] };
-  if (saved.data === undefined)
-    return { kind: "copy", to };
-  if (saved.data.equals(worker.data))
-    return { kind: "in place", to };
-  return {
-    issues: [
-      `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`
-    ]
-  };
-}
-var nowhereIssue = (places) => `the brief's folder ${places.briefFolder} is in no git checkout, so finish has nowhere to save the run report at ${places.reportFrom}: move the brief into a checkout of the repo, then run finish again`;
-function missingReportStep(places, noReport, partial) {
-  const { reportTo: to } = places;
-  if (partial && to !== undefined) {
-    const saved = readIfPresent(to);
-    if ("issue" in saved)
-      return { issues: [saved.issue] };
-    if (saved.data !== undefined)
-      return { kind: "saved earlier", to };
-  }
-  if (noReport)
-    return { kind: "none" };
-  return {
-    issues: [
-      `the worktree has no run report at ${places.reportFrom}: ask the worker for it, or pass --no-report to finish without one`
-    ]
-  };
-}
-function copyReport(from, to, out) {
-  try {
-    fs19.mkdirSync(path20.dirname(to), { recursive: true });
-    fs19.copyFileSync(from, to, fs19.constants.COPYFILE_EXCL);
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return [`cannot save the report to ${to}: ${why}`];
-  }
-  out(`report saved to ${to}`);
-  return [];
-}
-var saveReport = (ready, _wenv, out) => {
-  const step = ready.reportStep;
-  switch (step.kind) {
-    case "copy":
-      return copyReport(ready.reportFrom, step.to, out);
-    case "in place":
-    case "saved earlier":
-      out(`report already at ${step.to}`);
-      return [];
-    case "none":
-      out("no report to save: the worktree holds none");
-      return [];
-    default: {
-      const unhandled = step;
-      throw new Error(`unhandled report step: ${JSON.stringify(unhandled)}`);
-    }
-  }
-};
-function reportChangedIssues(ready) {
-  const now = readIfPresent(ready.reportFrom);
-  if ("issue" in now)
-    return [now.issue];
-  const step = ready.reportStep;
-  switch (step.kind) {
-    case "none":
-    case "saved earlier":
-      if (now.data === undefined)
-        return [];
-      return [`a run report appeared at ${ready.reportFrom}`];
-    case "copy":
-    case "in place":
-      return copyChangedIssues(ready.reportFrom, step.to, now.data);
-    default: {
-      const unhandled = step;
-      throw new Error(`unhandled report step: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function copyChangedIssues(from, to, now) {
-  const saved = readIfPresent(to);
-  if ("issue" in saved)
-    return [saved.issue];
-  const same = now !== undefined && saved.data !== undefined && now.equals(saved.data);
-  if (same)
-    return [];
-  return [`the worker's report at ${from} no longer matches the copy at ${to}`];
-}
-
-// bin/helpers/worker-landed.ts
-var DEFAULT_CAP = 200;
-var CONFLICTED = 1;
-var isFailure = (value) => typeof value === "object" && value !== null && ("issue" in value);
-function emptyTreeId(runGit, top) {
-  const result = runGit("git", ["hash-object", "-w", "-t", "tree", "/dev/null"], top);
-  if (result.code !== 0) {
-    return { issue: `git hash-object failed: ${result.stderr.trim()}` };
-  }
-  return result.stdout.trim();
-}
-function treeOf(runGit, top, sha) {
-  const result = runGit("git", ["rev-parse", `${sha}^{tree}`], top);
-  if (result.code !== 0) {
-    return { issue: `git rev-parse failed: ${result.stderr.trim()}` };
-  }
-  return result.stdout.trim();
-}
-function mergeAddsNothing(runGit, top, emptyTree, commit, head) {
-  const result = runGit("git", [
-    `--attr-source=${emptyTree}`,
-    "merge-tree",
-    "--write-tree",
-    commit.sha,
-    head
-  ], top);
-  if (result.code === 0)
-    return result.stdout.split(`
-`)[0] === commit.tree;
-  if (result.code === CONFLICTED)
-    return false;
-  return {
-    issue: `git merge-tree --write-tree failed, and finish needs git 2.40 or later: ${result.stderr.trim()}`
-  };
-}
-function mergeBase(runGit, top, refs) {
-  const result = runGit("git", ["merge-base", refs.target, refs.head], top);
-  return result.code === 0 ? result.stdout.trim() : null;
-}
-function branchFiles(runGit, top, base, head) {
-  const result = runGit("git", ["diff", "--name-only", "--no-renames", "-z", base, head], top);
-  if (result.code !== 0) {
-    return { issue: `git diff failed: ${result.stderr.trim()}` };
-  }
-  return result.stdout.split("\x00").filter((file) => file !== "");
-}
-function candidates(runGit, top, refs, files, cap) {
-  if (files.length === 0)
-    return [];
-  const result = runGit("git", [
-    "--literal-pathspecs",
-    "log",
-    "--full-history",
-    "--no-show-signature",
-    "--no-follow",
-    "--format=%H %T",
-    `--max-count=${cap}`,
-    `${refs.target}^@`,
-    `^${refs.base}`,
-    "--",
-    ...files
-  ], top);
-  if (result.code !== 0) {
-    return { issue: `git log failed: ${result.stderr.trim()}` };
-  }
-  return result.stdout.split(`
-`).filter((line) => line !== "").map((line) => {
-    const [sha = "", tree = ""] = line.split(" ");
-    return { sha, tree };
-  });
-}
-function walk(runGit, top, emptyTree, head, list2, cap) {
-  let walked = 0;
-  for (const commit of list2) {
-    walked += 1;
-    const added = mergeAddsNothing(runGit, top, emptyTree, commit, head);
-    if (isFailure(added))
-      return { kind: "error", issue: added.issue };
-    if (added)
-      return { kind: "landed", at: commit.sha, how: "history" };
-  }
-  return { kind: "not landed", walked, capped: list2.length >= cap };
-}
-function searchHistory(runGit, top, emptyTree, refs, base, cap) {
-  const files = branchFiles(runGit, top, base, refs.head);
-  if (isFailure(files))
-    return { kind: "error", issue: files.issue };
-  const list2 = candidates(runGit, top, { target: refs.target, base }, files, cap);
-  if (isFailure(list2))
-    return { kind: "error", issue: list2.issue };
-  return walk(runGit, top, emptyTree, refs.head, list2, cap);
-}
-function landedIn(runGit, top, refs, { cap = DEFAULT_CAP } = {}) {
-  const ancestor = runGit("git", ["merge-base", "--is-ancestor", refs.head, refs.target], top);
-  if (ancestor.code === 0) {
-    return { kind: "landed", at: refs.target, how: "ancestor" };
-  }
-  const base = mergeBase(runGit, top, refs);
-  if (base === null)
-    return { kind: "not landed", walked: 0, capped: false };
-  const emptyTree = emptyTreeId(runGit, top);
-  if (isFailure(emptyTree))
-    return { kind: "error", issue: emptyTree.issue };
-  const tree = treeOf(runGit, top, refs.target);
-  if (isFailure(tree))
-    return { kind: "error", issue: tree.issue };
-  const atTip = mergeAddsNothing(runGit, top, emptyTree, { sha: refs.target, tree }, refs.head);
-  if (isFailure(atTip))
-    return { kind: "error", issue: atTip.issue };
-  if (atTip)
-    return { kind: "landed", at: refs.target, how: "tip" };
-  return searchHistory(runGit, top, emptyTree, refs, base, cap);
-}
-
-// bin/helpers/worker-finish-target.ts
-function targetName(runGit, top, rev) {
-  const result = runGit("git", ["rev-parse", "--symbolic-full-name", rev], top);
-  const name = result.code === 0 ? result.stdout.trim() : "";
-  return name === "" ? rev : name;
-}
-var intoLookup = (ctx, into, branch) => ({
-  rev: into,
-  top: ctx.launchTop,
-  why: "from --into",
-  missing: `--into ${into} names no commit in the main checkout's repo, so finish cannot check that ${branch} landed there: name a branch, tag, or commit that exists`
-});
-var briefLookup = (ctx, target, branch) => ({
-  rev: `refs/heads/${target}`,
-  top: ctx.mainTop,
-  why: "the brief's target",
-  missing: `the brief's target ${target} names no branch, so finish cannot check that ${branch} landed there: create the branch, fix the brief's target, or name the target with --into <rev>`
-});
-function headLookup(ctx, branch) {
-  const { briefTop } = ctx;
-  if (briefTop === undefined) {
-    return {
-      issue: `the brief's folder ${ctx.briefFolder} is in no git checkout, so finish has no HEAD to check that ${branch} landed in: name the target with --into <rev>`
-    };
-  }
-  return {
-    rev: "HEAD",
-    top: briefTop,
-    why: `the HEAD of ${briefTop}, since the brief names no target`,
-    missing: `the HEAD of ${briefTop} names no commit, so finish cannot check that ${branch} landed there: name the target with --into <rev>`
-  };
-}
-function lookupFor(ctx, into, branch) {
-  if (into !== undefined)
-    return intoLookup(ctx, into, branch);
-  if (ctx.briefTarget !== undefined) {
-    return briefLookup(ctx, ctx.briefTarget, branch);
-  }
-  return headLookup(ctx, branch);
-}
-function resolveTarget(runGit, ctx, into, branch) {
-  const lookup = lookupFor(ctx, into, branch);
-  if ("issue" in lookup)
-    return lookup;
-  const sha = commitOf(runGit, lookup.top, lookup.rev);
-  if (sha === undefined)
-    return { issue: lookup.missing };
-  const name = targetName(runGit, lookup.top, lookup.rev);
-  if (name === `refs/heads/${branch}`) {
-    return {
-      issue: `the target ${name} is the worker's own branch, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in with --into <rev>`
-    };
-  }
-  return { name, sha, why: lookup.why };
-}
-function walkedText(walked, capped2) {
-  const commits = `${walked} ${walked === 1 ? "commit" : "commits"}`;
-  return capped2 ? `the history walk tried ${commits} and stopped at its cap of ${DEFAULT_CAP}` : `the history walk tried ${commits} and found no match`;
-}
-var discardRoute = (discardCommand) => `discarding it is your call, with ${discardCommand}`;
-var handRoute = (id) => `to clear it by hand, claude rm ${shellArg(id)}`;
-function routeFor(mode, discardCommand, id) {
-  switch (mode) {
-    case "landed":
-      return discardRoute(discardCommand);
-    case "discard":
-      return handRoute(id);
-    default: {
-      const unhandled = mode;
-      throw new Error(`unhandled mode: ${unhandled}`);
-    }
-  }
-}
-function missingBranchIssue(branch, opts, id) {
-  switch (opts.mode.kind) {
-    case "landed":
-      return `the branch ${branch} does not exist, so finish cannot check that the work has landed: discarding it is your call, with claude rm ${shellArg(id)}`;
-    case "discard":
-      return `the branch ${branch} does not exist, so finish has nothing to keep as a backup: clear the worker by hand with claude rm ${shellArg(id)}`;
-    default: {
-      const unhandled = opts.mode;
-      throw new Error(`unhandled mode: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function verdictFor(runGit, ctx, worker, opts) {
-  const { branch, head } = worker;
-  if (opts.mode.kind === "discard")
-    return { verdict: { kind: "discard" } };
-  const target = resolveTarget(runGit, ctx, opts.mode.into, branch);
-  if ("issue" in target)
-    return { issues: [target.issue] };
-  const landing = landedIn(runGit, ctx.mainTop, { target: target.sha, head });
-  switch (landing.kind) {
-    case "landed":
-      return { verdict: { kind: "landed", target, at: landing.at } };
-    case "error":
-      return {
-        issues: [
-          `finish cannot check that ${branch} landed in ${target.name}: ${landing.issue}`
-        ]
-      };
-    case "not landed":
-      return {
-        issues: [
-          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing.walked, landing.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(discardCommandFor(opts))}`
-        ]
-      };
-    default: {
-      const unhandled = landing;
-      throw new Error(`unhandled landing: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function branchVerdict(runGit, ctx, branch, opts, id) {
-  const { name, head } = branch;
-  if (head === undefined) {
-    return { issues: [missingBranchIssue(name, opts, id)] };
-  }
-  const judged = verdictFor(runGit, ctx, { branch: name, head }, opts);
-  return "issues" in judged ? judged : { head, verdict: judged.verdict };
-}
-
 // bin/helpers/worker-finish-tree.ts
-import * as fs20 from "node:fs";
-import * as path21 from "node:path";
 function onBranchIssues(runGit, worktree, branch, mode, discardCommand, id) {
   const head = checkedOut(runGit, worktree);
   if (head === `refs/heads/${branch}`)
@@ -6273,16 +6217,24 @@ function offBranchReason(mode, branch) {
     }
   }
 }
-function placesFor(tops, found, brief) {
-  const report = path21.posix.normalize(brief.report);
-  const { briefTop } = tops;
+function briefPlaces(read, worktree) {
+  const report = path20.posix.normalize(read.brief.report);
+  const { folder, top } = read;
+  return {
+    folder,
+    top,
+    target: read.brief.target,
+    report,
+    reportFrom: path20.join(worktree, report),
+    reportTo: top === undefined ? undefined : path20.join(top, report)
+  };
+}
+function placesFor(tops, found, read) {
   return {
     ...tops,
     worktree: found.path,
     branch: found.branch,
-    report,
-    reportFrom: path21.join(found.path, report),
-    reportTo: briefTop === undefined ? undefined : path21.join(briefTop, report)
+    brief: read === undefined ? undefined : briefPlaces(read, found.path)
   };
 }
 var TRIED_LABEL = {
@@ -6299,8 +6251,18 @@ function notFoundIssues(name, tried) {
     "name the worktree with --worktree <path>, or discard the worker with --discard"
   ];
 }
+var listedLine = (entry) => `${entry.path}: ${entry.branch === undefined ? "detached" : shortBranch(entry.branch)}`;
+function operatorIssues(name, tried, linked) {
+  const listed = linked.length === 0 ? ["git lists no linked worktree"] : ["git lists these linked worktrees:", ...linked.map(listedLine)];
+  return [
+    `finish cannot find the worktree of ${name}, so it removed nothing. It tried:`,
+    ...tried.map(triedLine),
+    ...listed,
+    "name the worker's worktree with --worktree <path>, or run finish without --worktree"
+  ];
+}
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs20.existsSync(worktree) && !fs20.existsSync(path21.join(worktree, ".git"));
+  const linkless = fs18.existsSync(worktree) && !fs18.existsSync(path20.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -6359,7 +6321,11 @@ function isPartial(runGit, top, worker, status) {
   return heldBackup(runGit, top, name, head) !== undefined;
 }
 function worktreeCheck(runGit, places, worker, opts) {
-  const status = statusBesideReport(runGit, places);
+  const status = statusBesideReport(runGit, {
+    mainTop: places.mainTop,
+    worktree: places.worktree,
+    report: places.brief?.report
+  });
   const partial = isPartial(runGit, places.mainTop, worker, status);
   const onBranch = onBranchIssues(runGit, places.worktree, places.branch, opts.mode.kind, discardCommandFor(opts), worker.id);
   const dirty = dirtyIssues(places.worktree, status, partial, opts.mode.kind);
@@ -6379,9 +6345,201 @@ function headMovedIssues(runGit, ready) {
   ];
 }
 
+// bin/helpers/worker-finish-gone.ts
+function whenNotFound(tried, at, opts) {
+  const { linked, ...job } = at;
+  if (opts.worktree !== undefined) {
+    return { issues: operatorIssues(at.name, tried, linked) };
+  }
+  if (opts.mode.kind === "landed") {
+    return { issues: notFoundIssues(at.name, tried) };
+  }
+  return { ...job, rerun: rerunCommand(opts), tried };
+}
+var sayNotFound = (gone, _wenv, out) => {
+  out(`finish cannot find the worktree of ${gone.name}, so it removes only its session and record. It tried:`);
+  for (const tried of gone.tried)
+    out(triedLine(tried));
+  return [];
+};
+var stop = (gone, wenv) => stopJob({ ...gone, worktree: undefined }, wenv);
+function keptIssues(gone, result) {
+  const hand = `claude rm ${shellArg(gone.id)}`;
+  const offer = DISCARD_LINE.exec(printedStreams(result).join(`
+`));
+  if (offer !== null) {
+    return [
+      ...withText(`${hand} offers to discard ${offer[1]}, but finish found no worktree, so it has no verified head to check that against and did not run it`, result),
+      "check what the discard would lose before you run it by hand, or name the worktree with --worktree <path> so that finish verifies its head first"
+    ];
+  }
+  const what = ranClean(result) ? "did not say removed, and finish does not know its answer" : failure(result);
+  return [
+    ...withText(`${hand} ${what}, so finish removed nothing more`, result),
+    `run finish again with ${gone.rerun}, or complete the removal by hand with ${hand}`
+  ];
+}
+var removeSession2 = (gone, wenv, out) => {
+  const cwd = gone.mainTop;
+  const result = wenv.runClaude(["rm", gone.id], { cwd, timeoutMs: NO_LIMIT });
+  if (!saidRemoved(result))
+    return keptIssues(gone, result);
+  out(`session ${gone.id} removed`);
+  return [];
+};
+var forgetRecord2 = (gone) => {
+  removeRecord(gone.commonDir, gone.name);
+  return [];
+};
+var sayByHand = (gone, _wenv, out) => {
+  out(`the worktree of ${gone.name} was not found, so finish deleted no branch: clear any worktree or branch the worker left by hand`);
+  return [];
+};
+var GONE_STEPS = [
+  sayNotFound,
+  stop,
+  removeSession2,
+  forgetRecord2,
+  sayByHand
+];
+function clearGone(gone, wenv, out) {
+  for (const step of GONE_STEPS) {
+    const issues = step(gone, wenv, out);
+    if (issues.length > 0)
+      return issues;
+  }
+  return [];
+}
+
+// bin/helpers/worker-finish-report.ts
+import * as fs19 from "node:fs";
+import * as path21 from "node:path";
+var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+function readIfPresent(file) {
+  try {
+    return { data: fs19.readFileSync(file) };
+  } catch (e) {
+    if (isMissing5(e))
+      return { data: undefined };
+    const why = e instanceof Error ? e.message : String(e);
+    return { issue: `cannot read ${file}: ${why}` };
+  }
+}
+function reportStep(brief, noReport, partial) {
+  if (brief === undefined)
+    return { kind: "no brief" };
+  const { reportFrom: from, reportTo: to } = brief;
+  const worker = readIfPresent(from);
+  if ("issue" in worker)
+    return { issues: [worker.issue] };
+  if (worker.data === undefined) {
+    return missingReportStep(brief, noReport, partial);
+  }
+  if (to === undefined)
+    return { issues: [nowhereIssue(brief)] };
+  const saved = readIfPresent(to);
+  if ("issue" in saved)
+    return { issues: [saved.issue] };
+  if (saved.data === undefined)
+    return { kind: "copy", from, to };
+  if (saved.data.equals(worker.data))
+    return { kind: "in place", from, to };
+  return {
+    issues: [
+      `${to} already exists and differs from the worker's report at ${from}: move one aside, then run finish again`
+    ]
+  };
+}
+var nowhereIssue = (brief) => `the brief's folder ${brief.folder} is in no git checkout, so finish has nowhere to save the run report at ${brief.reportFrom}: move the brief into a checkout of the repo, then run finish again`;
+function missingReportStep(brief, noReport, partial) {
+  const { reportFrom: from, reportTo: to } = brief;
+  if (partial && to !== undefined) {
+    const saved = readIfPresent(to);
+    if ("issue" in saved)
+      return { issues: [saved.issue] };
+    if (saved.data !== undefined)
+      return { kind: "saved earlier", from, to };
+  }
+  if (noReport)
+    return { kind: "none", from };
+  return {
+    issues: [
+      `the worktree has no run report at ${from}: ask the worker for it, or pass --no-report to finish without one`
+    ]
+  };
+}
+function copyReport(from, to, out) {
+  try {
+    fs19.mkdirSync(path21.dirname(to), { recursive: true });
+    fs19.copyFileSync(from, to, fs19.constants.COPYFILE_EXCL);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return [`cannot save the report to ${to}: ${why}`];
+  }
+  out(`report saved to ${to}`);
+  return [];
+}
+var saveReport = (ready, _wenv, out) => {
+  const step = ready.reportStep;
+  switch (step.kind) {
+    case "copy":
+      return copyReport(step.from, step.to, out);
+    case "in place":
+    case "saved earlier":
+      out(`report already at ${step.to}`);
+      return [];
+    case "none":
+      out("no report to save: the worktree holds none");
+      return [];
+    case "no brief":
+      out("no report saved: --name reads no brief, so finish does not know where the report is");
+      return [];
+    default: {
+      const unhandled = step;
+      throw new Error(`unhandled report step: ${JSON.stringify(unhandled)}`);
+    }
+  }
+};
+function reportChangedIssues(ready) {
+  const step = ready.reportStep;
+  if (step.kind === "no brief")
+    return [];
+  const now = readIfPresent(step.from);
+  if ("issue" in now)
+    return [now.issue];
+  switch (step.kind) {
+    case "none":
+    case "saved earlier":
+      if (now.data === undefined)
+        return [];
+      return [`a run report appeared at ${step.from}`];
+    case "copy":
+    case "in place":
+      return copyChangedIssues(step.from, step.to, now.data);
+    default: {
+      const unhandled = step;
+      throw new Error(`unhandled report step: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function copyChangedIssues(from, to, now) {
+  const saved = readIfPresent(to);
+  if ("issue" in saved)
+    return [saved.issue];
+  const same = now !== undefined && saved.data !== undefined && now.equals(saved.data);
+  if (same)
+    return [];
+  return [`the worker's report at ${from} no longer matches the copy at ${to}`];
+}
+
 // bin/helpers/worker-finish.ts
 var SHORT_SHA = 7;
-function findJob(wenv, top, name) {
+var NAME_FROM = {
+  brief: "the name in the brief",
+  name: "the name given to --name"
+};
+function findJob(wenv, top, subject) {
+  const { name } = subject;
   const listed = listJobs(wenv.runClaude, top);
   if ("issues" in listed)
     return listed;
@@ -6389,7 +6547,7 @@ function findJob(wenv, top, name) {
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief`
+        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check ${NAME_FROM[subject.from]}`
       ]
     };
   }
@@ -6415,43 +6573,65 @@ function briefTopOf(wenv, folder) {
   const found = checkoutOf(wenv.runGit, folder);
   return "top" in found ? found.top : undefined;
 }
-function worktreeOf(wenv, name, tops, job) {
+function readSubject(subject, wenv) {
+  switch (subject.kind) {
+    case "brief": {
+      const read = readBrief(subject.brief);
+      if ("issues" in read)
+        return read;
+      const folder = path22.dirname(subject.brief);
+      const top = briefTopOf(wenv, folder);
+      const { brief } = read;
+      return { name: brief.name, from: "brief", read: { brief, folder, top } };
+    }
+    case "name":
+      return { name: subject.name, from: "name", read: undefined };
+    default: {
+      const unhandled = subject;
+      throw new Error(`unhandled subject: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function worktreeOf(wenv, subject, mainTop, job, operatorPath) {
+  const { name } = subject;
   const found = locateWorktree({
     runGit: wenv.runGit,
     configDir: configDirOf(wenv.env, wenv.home),
     name,
-    ...tops,
+    mainTop,
+    briefTop: subject.read?.top,
     sessionId: job.sessionId,
     listingCwd: job.cwd,
-    operatorPath: undefined
+    operatorPath
   });
-  if ("issue" in found) {
-    return {
-      issues: [
-        `git worktree list failed, so finish cannot find the worktree of ${name}: ${found.issue}`
-      ]
-    };
-  }
-  if (found.kind === "not found") {
-    return { issues: notFoundIssues(name, found.tried) };
-  }
-  return found;
+  if (!("issue" in found))
+    return found;
+  return {
+    issues: [
+      `git worktree list failed, so finish cannot find the worktree of ${name}: ${found.issue}`
+    ]
+  };
 }
-function locate2(brief, opts, wenv) {
+function locate2(subject, opts, wenv) {
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   if ("issues" in facts)
     return facts;
   const { mainTop, launchTop, commonDir } = facts;
-  const job = findJob(wenv, mainTop, brief.name);
+  const job = findJob(wenv, mainTop, subject);
   if ("issues" in job)
     return job;
-  const briefFolder = path22.dirname(opts.brief);
-  const briefTop = briefTopOf(wenv, briefFolder);
-  const found = worktreeOf(wenv, brief.name, { mainTop, briefTop }, job);
+  const found = worktreeOf(wenv, subject, mainTop, job, opts.worktree);
   if ("issues" in found)
     return found;
-  const tops = { mainTop, launchTop, briefTop, briefFolder };
-  return { places: placesFor(tops, found, brief), job, commonDir };
+  if (found.kind === "not found") {
+    const { id, state } = job;
+    const linked = facts.worktrees.slice(1);
+    const at = { id, state, name: subject.name, mainTop, commonDir, linked };
+    const gone = whenNotFound(found.tried, at, opts);
+    return "issues" in gone ? gone : { kind: "gone", gone };
+  }
+  const places = placesFor({ mainTop, launchTop }, found, subject.read);
+  return { kind: "found", places, job, commonDir };
 }
 function allIssues(landed, worktreeIssues, step) {
   return [
@@ -6460,10 +6640,7 @@ function allIssues(landed, worktreeIssues, step) {
     ..."issues" in step ? step.issues : []
   ];
 }
-function checkFinish(brief, opts, wenv) {
-  const located = locate2(brief, opts, wenv);
-  if ("issues" in located)
-    return located;
+function checkFinish(name, located, opts, wenv) {
   const { places, job } = located;
   const { mainTop, worktree } = places;
   const unlinked = unlinkedIssues(wenv.runGit, mainTop, worktree, job.id);
@@ -6471,29 +6648,26 @@ function checkFinish(brief, opts, wenv) {
     return { issues: unlinked };
   const head = commitOf(wenv.runGit, mainTop, `refs/heads/${places.branch}`);
   const branch = { name: places.branch, head };
-  const ctx = { ...places, briefTarget: brief.target };
-  const landed = branchVerdict(wenv.runGit, ctx, branch, opts, job.id);
-  const worker = { name: brief.name, id: job.id, head };
+  const landed = branchVerdict(wenv.runGit, places, branch, opts, job.id);
+  const worker = { name, id: job.id, head };
   const tree = worktreeCheck(wenv.runGit, places, worker, opts);
-  const step = reportStep(places, opts.noReport, tree.partial);
+  const step = reportStep(places.brief, opts.noReport, tree.partial);
   if ("issues" in landed || tree.issues.length > 0 || "issues" in step) {
     return { issues: allIssues(landed, tree.issues, step) };
   }
   return {
     id: job.id,
     state: job.state,
-    name: brief.name,
+    name,
     mainTop,
-    briefTop: places.briefTop,
+    briefTop: places.brief?.top,
     commonDir: located.commonDir,
     worktree,
     branch: places.branch,
     head: landed.head,
-    report: places.report,
-    reportFrom: places.reportFrom,
+    report: places.brief?.report,
     reportStep: step,
     verdict: landed.verdict,
-    brief: opts.brief,
     rerun: rerunCommand(opts),
     discardCommand: discardCommandFor(opts),
     partial: tree.partial
@@ -6548,10 +6722,15 @@ var STEPS = [
   sayBackup
 ];
 function finishIssues(opts, wenv, out) {
-  const read = readBrief(opts.brief);
-  if ("issues" in read)
-    return read.issues;
-  const ready = checkFinish(read.brief, opts, wenv);
+  const subject = readSubject(opts.subject, wenv);
+  if ("issues" in subject)
+    return subject.issues;
+  const located = locate2(subject, opts, wenv);
+  if ("issues" in located)
+    return located.issues;
+  if (located.kind === "gone")
+    return clearGone(located.gone, wenv, out);
+  const ready = checkFinish(subject.name, located, opts, wenv);
   if ("issues" in ready)
     return ready.issues;
   for (const step of STEPS) {
@@ -6569,9 +6748,14 @@ function finish(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker.ts
-var WORKER_USAGE_LINE = "sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report] [--into <rev> | --discard]";
+var WORKER_USAGE_LINE = "sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]";
 var usage2 = (err) => {
   err(`usage: ${WORKER_USAGE_LINE}`);
+  return 1;
+};
+var refuse5 = (err, lines) => {
+  for (const line of lines)
+    err(line);
   return 1;
 };
 var dispatchVerb = (rest2, wenv, out, err) => {
@@ -6579,8 +6763,12 @@ var dispatchVerb = (rest2, wenv, out, err) => {
   return opts === undefined ? usage2(err) : dispatch(opts, wenv, out, err);
 };
 var finishVerb = (rest2, wenv, out, err) => {
-  const opts = parseFinishArgs(rest2, wenv.cwd);
-  return opts === undefined ? usage2(err) : finish(opts, wenv, out, err);
+  const args = parseFinishArgs(rest2, wenv.cwd);
+  if (args === undefined)
+    return usage2(err);
+  if ("usageErrors" in args)
+    return refuse5(err, args.usageErrors);
+  return finish(args, wenv, out, err);
 };
 var VERBS4 = {
   dispatch: dispatchVerb,
@@ -6612,7 +6800,7 @@ function resolvePluginDir(entryFileUrl) {
     path23.resolve(here, "..", "plugin")
   ];
   for (const c of candidates2) {
-    if (fs21.existsSync(path23.join(c, "rules")))
+    if (fs20.existsSync(path23.join(c, "rules")))
       return c;
   }
   return candidates2[0];
@@ -6621,7 +6809,7 @@ var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
   const manifest = path23.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs21.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs20.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -6648,7 +6836,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs21.writeSync(1, buffer, offset);
+      offset += fs20.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -6666,7 +6854,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs21.readFileSync(0, "utf-8");
+    return fs20.readFileSync(0, "utf-8");
   } catch {
     return "";
   }

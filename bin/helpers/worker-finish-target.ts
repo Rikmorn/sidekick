@@ -2,7 +2,8 @@
  * Where a worker's work must have landed, and the verdict on its branch. It
  * picks the target from `--into`, the brief's `target`, or the `HEAD` of the
  * brief's checkout, walks history through `landedIn`, and words each
- * refusal's way out for the mode `finish` runs in.
+ * refusal's way out for the mode `finish` runs in. Under `--name` there is no
+ * brief, so only `--into` names the target.
  */
 
 import type { Runner } from './pm-data.js';
@@ -16,16 +17,23 @@ import { DEFAULT_CAP, landedIn } from './worker-landed.js';
 import { commitOf } from './worker-repo.js';
 import type { Verdict } from './worker-teardown.js';
 
-/** The checkouts a target resolves in, and the brief's own `target`. */
+/** Where the brief sits, and the target it names. */
+export interface BriefAt {
+  /** The brief's folder, which a refusal names when no checkout holds it. */
+  folder: string;
+  /** The checkout holding the brief, whose `HEAD` is the fallback target; undefined when its folder is in none. */
+  top: string | undefined;
+  /** The brief's `target`, a branch's short name. */
+  target: string | undefined;
+}
+
+/** The checkouts a target resolves in, and the brief. */
 export interface TargetContext {
   /** The checkout finish runs in, where `--into` resolves. */
   launchTop: string;
   mainTop: string;
-  /** The checkout holding the brief, whose `HEAD` is the fallback target. */
-  briefTop: string | undefined;
-  briefFolder: string;
-  /** The brief's `target`, a branch's short name. */
-  briefTarget: string | undefined;
+  /** Undefined under `--name`, which reads no brief. */
+  brief: BriefAt | undefined;
 }
 
 // The target's name: the full ref name git gives it, `HEAD` when detached, else
@@ -60,34 +68,42 @@ const briefLookup = (ctx: TargetContext, target: string, branch: string) => ({
 });
 
 function headLookup(
-  ctx: TargetContext,
+  brief: BriefAt,
   branch: string,
 ): Lookup | { issue: string } {
-  const { briefTop } = ctx;
-  if (briefTop === undefined) {
+  const { top } = brief;
+  if (top === undefined) {
     return {
-      issue: `the brief's folder ${ctx.briefFolder} is in no git checkout, so finish has no HEAD to check that ${branch} landed in: name the target with --into <rev>`,
+      issue: `the brief's folder ${brief.folder} is in no git checkout, so finish has no HEAD to check that ${branch} landed in: name the target with --into <rev>`,
     };
   }
   return {
     rev: 'HEAD',
-    top: briefTop,
-    why: `the HEAD of ${briefTop}, since the brief names no target`,
-    missing: `the HEAD of ${briefTop} names no commit, so finish cannot check that ${branch} landed there: name the target with --into <rev>`,
+    top,
+    why: `the HEAD of ${top}, since the brief names no target`,
+    missing: `the HEAD of ${top} names no commit, so finish cannot check that ${branch} landed there: name the target with --into <rev>`,
   };
 }
 
 // `--into`, else the brief's target, else the HEAD of the brief's checkout.
+// parseFinishArgs gives --name an --into in landed mode, so a context with no
+// brief reaches here only from a caller that skipped it.
 function lookupFor(
   ctx: TargetContext,
   into: string | undefined,
   branch: string,
 ): Lookup | { issue: string } {
   if (into !== undefined) return intoLookup(ctx, into, branch);
-  if (ctx.briefTarget !== undefined) {
-    return briefLookup(ctx, ctx.briefTarget, branch);
+  const { brief } = ctx;
+  if (brief === undefined) {
+    return {
+      issue: `--name reads no brief, so finish has no target to check that ${branch} landed in: name the target with --into <rev>`,
+    };
   }
-  return headLookup(ctx, branch);
+  if (brief.target !== undefined) {
+    return briefLookup(ctx, brief.target, branch);
+  }
+  return headLookup(brief, branch);
 }
 
 // The commit the work must have landed in. The worker's own branch is no

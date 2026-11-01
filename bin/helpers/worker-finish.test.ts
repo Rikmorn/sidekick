@@ -25,6 +25,7 @@ import {
 import { git, removeTemps, tmp } from './fixtures/worker/repo.js';
 import { execRunner, type Runner } from './pm-data.js';
 import { SHORT_SHA } from './worker-finish.js';
+import { branchVerdict } from './worker-finish-target.js';
 import {
   readRecords,
   type WorkerRecord,
@@ -1403,6 +1404,28 @@ describe('finish prints commands that survive a space', () => {
       ),
     );
   });
+
+  test('a --worktree path with a space, in the re-run and discard commands', () => {
+    const fx = fixture({ worktree: (top) => beside(top, ' w1') });
+    expect(fx.worktree).toContain(' ');
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--worktree', fx.worktree)).toBe(1);
+    expect(h.err[0]).toEndWith(
+      `discarding it is your call, with sidekick worker finish ${fx.brief} --discard --worktree '${fx.worktree}'`,
+    );
+    fx.integrate();
+    const again = harness(fx);
+    again.claude.state.rm = [
+      { result: ok({ stdout: `kept ${ID}\n` }), removes: 'nothing' },
+    ];
+    expect(again.finish(fx.brief, '--worktree', fx.worktree)).toBe(1);
+    expect(again.err.at(-1)).toBe(
+      wayOut(
+        `sidekick worker finish ${fx.brief} --worktree '${fx.worktree}'`,
+        `claude rm ${ID}`,
+      ),
+    );
+  });
 });
 
 // worktrunk's shape: a worktree beside the main checkout, on a branch named
@@ -1414,6 +1437,20 @@ const worktrunk = {
 
 const targetLines = (h: Harness): string[] =>
   h.out.filter((line) => line.startsWith('target: '));
+
+// Hides a worktrunk-shaped worktree from every reader: the transcript starts
+// in a folder no worktree holds, the listing names the main checkout, and no
+// worktree is on worktree-w1. Gives the lines that say what the finder tried.
+function lose(fx: Fixture, h: Harness): string[] {
+  const elsewhere = tmp();
+  writeTranscript(fx.configDir, { cwd: elsewhere, gitBranch: 'w1' });
+  h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: fx.top })]);
+  return [
+    `the transcript's first cwd ${elsewhere} is in no worktree git lists`,
+    `the job listing's cwd ${fx.top} is the main checkout`,
+    'by name, no worktree has worktree-w1 checked out',
+  ];
+}
 
 describe('finish finds the worktree wherever it was made', () => {
   test("in worktrunk's shape, ../<repo>.w1 on w1, through the transcript alone, landing and tearing it down", () => {
@@ -1530,24 +1567,13 @@ describe('finish finds the worktree wherever it was made', () => {
     expect(h.slept).toHaveLength(2);
   });
 
-  test.each([
-    ['landed', []],
-    ['discard', ['--discard']],
-  ])('refusing in %s mode when nothing finds it, naming each place it tried', (_label, args) => {
+  test('refusing in landed mode when nothing finds it, naming each place it tried', () => {
     const fx = fixture(worktrunk);
     fx.integrate();
-    const elsewhere = tmp();
-    writeTranscript(fx.configDir, { cwd: elsewhere, gitBranch: 'w1' });
     const h = harness(fx);
-    h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: fx.top })]);
-    expect(h.finish(fx.brief, ...args)).toBe(1);
-    expect(h.err).toEqual(
-      notFound([
-        `the transcript's first cwd ${elsewhere} is in no worktree git lists`,
-        `the job listing's cwd ${fx.top} is the main checkout`,
-        'by name, no worktree has worktree-w1 checked out',
-      ]),
-    );
+    const tried = lose(fx, h);
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toEqual(notFound(tried));
     expect(h.out).toEqual([]);
     expect(h.claude.named('stop')).toEqual([]);
     expect(h.claude.named('rm')).toEqual([]);
@@ -1704,5 +1730,421 @@ describe('finish with a brief in no checkout', () => {
     expect(h.out[0]).toBe(`target: refs/heads/${main} (from --into)`);
     expect(h.out).toContain('no report to save: the worktree holds none');
     expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+});
+
+// The worker's dispatch record, as dispatch writes it.
+const recordFor = (fx: Fixture): WorkerRecord => ({
+  version: 2,
+  name: 'w1',
+  main: null,
+  job: ID,
+  brief: fx.brief,
+  dispatchedAt: '2026-11-01T10:00:00.000Z',
+});
+
+// Every ref in the fixture's repo with the commit it names.
+const allRefs = (fx: Fixture): string =>
+  git(fx.top, 'for-each-ref', '--format=%(refname) %(objectname)');
+
+const mainBranch = (fx: Fixture): string =>
+  git(fx.top, 'symbolic-ref', '--short', 'HEAD');
+
+// The refusal when --worktree names no worktree finish can clear: why, then
+// each linked worktree git lists.
+const operatorRefusal = (tried: string, listed: string[]): string[] => [
+  'finish cannot find the worktree of w1, so it removed nothing. It tried:',
+  tried,
+  ...(listed.length === 0
+    ? ['git lists no linked worktree']
+    : ['git lists these linked worktrees:', ...listed]),
+  "name the worker's worktree with --worktree <path>, or run finish without --worktree",
+];
+
+describe('finish --worktree', () => {
+  test("names the worker's worktree when no reader finds it, resolving a path relative to where finish runs", () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    const h = harness(fx);
+    lose(fx, h);
+    const relative = path.relative(fx.top, fx.worktree);
+    expect(relative).toStartWith('..');
+    expect(h.finish(fx.brief, '--worktree', relative)).toBe(0);
+    expect(h.err).toEqual([]);
+    const ref = `refs/sidekick/landed/w1/${fx.head}`;
+    expect(h.out).toEqual([
+      headTarget(fx.top),
+      `w1 landed in ${git(fx.top, 'symbolic-ref', 'HEAD')} at ${fx.head.slice(0, SHORT_SHA)}`,
+      `report saved to ${path.join(fx.top, REPORT)}`,
+      `session ${ID} removed`,
+      `worktree ${fx.worktree} removed`,
+      'branch w1 removed',
+      `w1 is kept as ${ref}: restore it with git branch w1 ${ref}`,
+    ]);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    expect(branchRemains(fx)).toBe(false);
+  });
+
+  test('takes a subfolder of the worktree as the worktree', () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    const h = harness(fx);
+    lose(fx, h);
+    expect(
+      h.finish(fx.brief, '--worktree', path.join(fx.worktree, 'docs')),
+    ).toBe(0);
+    expect(h.out).toContain(`worktree ${fx.worktree} removed`);
+  });
+
+  test('refuses the main checkout, quoting what git lists', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--worktree', fx.top)).toBe(1);
+    expect(h.err).toEqual(
+      operatorRefusal(`the --worktree path ${fx.top} is the main checkout`, [
+        `${fx.worktree}: worktree-w1`,
+      ]),
+    );
+    expect(h.out).toEqual([]);
+    expect(h.claude.named('stop')).toEqual([]);
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+
+  test.each([
+    ['landed', []],
+    ['discard', ['--discard']],
+  ])('refuses in %s mode a path git does not list, quoting each linked worktree with its branch or detached', (_label, args) => {
+    const fx = fixture();
+    fx.integrate();
+    // git lists linked worktrees sorted by path (git 2.50.1, 2026-11-01),
+    // and `<top>.loose` sorts before `<top>/.claude`.
+    const loose = beside(fx.top, '.loose');
+    git(fx.top, 'worktree', 'add', '-q', '--detach', loose);
+    const commonDir = path.join(fx.top, '.git');
+    writeRecord(commonDir, recordFor(fx));
+    const nowhere = tmp();
+    const refs = allRefs(fx);
+    const h = harness(fx);
+    expect(h.finish(fx.brief, ...args, '--worktree', nowhere)).toBe(1);
+    expect(h.err).toEqual(
+      operatorRefusal(
+        `the --worktree path ${nowhere} is in no worktree git lists`,
+        [`${loose}: detached`, `${fx.worktree}: worktree-w1`],
+      ),
+    );
+    expect(h.out).toEqual([]);
+    expect(h.claude.named('stop')).toEqual([]);
+    expect(h.claude.named('rm')).toEqual([]);
+    expect(readRecords(commonDir).records).toHaveLength(1);
+    expect(allRefs(fx)).toBe(refs);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+
+  test('refuses a detached worktree, which holds no branch to land', () => {
+    const fx = fixture();
+    fx.integrate();
+    const loose = beside(fx.top, '.loose');
+    git(fx.top, 'worktree', 'add', '-q', '--detach', loose);
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--worktree', loose)).toBe(1);
+    expect(h.err).toEqual(
+      operatorRefusal(`the --worktree path ${loose} is detached`, [
+        `${loose}: detached`,
+        `${fx.worktree}: worktree-w1`,
+      ]),
+    );
+  });
+
+  test('says git lists no linked worktree when it lists none', () => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.top, 'worktree', 'remove', '--force', fx.worktree);
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--worktree', fx.worktree)).toBe(1);
+    expect(h.err).toEqual(
+      operatorRefusal(
+        `the --worktree path ${fx.worktree} is the main checkout`,
+        [],
+      ),
+    );
+  });
+
+  test("refuses the brief's checkout", () => {
+    const fx = fixture();
+    fx.integrate();
+    const side = sibling(fx);
+    fs.mkdirSync(path.join(side, 'docs'));
+    const brief = path.join(side, 'docs', 'x-brief.md');
+    fs.copyFileSync(fx.brief, brief);
+    const h = harness(fx);
+    expect(h.finish(brief, '--worktree', side)).toBe(1);
+    expect(h.err[1]).toBe(
+      `the --worktree path ${side} is the brief's checkout ${side}`,
+    );
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+
+  test('accepts a prunable entry, whose missing folder the checks then refuse', () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.rmSync(fx.worktree, { recursive: true, force: true });
+    expect(git(fx.top, 'worktree', 'list', '--porcelain')).toContain(
+      'prunable',
+    );
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--worktree', fx.worktree)).toBe(1);
+    expect(h.err).toHaveLength(3);
+    expect(h.err[0]).toStartWith(
+      `the worktree ${fx.worktree} has an unreadable HEAD (`,
+    );
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+
+  test('carries --worktree into the discard command a refusal offers', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    expect(h.finish(fx.brief, '--worktree', fx.worktree)).toBe(1);
+    expect(h.err[0]).toEndWith(
+      `discarding it is your call, with sidekick worker finish ${fx.brief} --discard --worktree ${fx.worktree}`,
+    );
+  });
+});
+
+const NO_REPORT_READ =
+  'no report saved: --name reads no brief, so finish does not know where the report is';
+
+describe('finish --name', () => {
+  test('lands a worker whose brief was deleted, with --no-report and --into', () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.rmSync(fx.brief);
+    fs.rmSync(path.join(fx.worktree, REPORT));
+    const commonDir = path.join(fx.top, '.git');
+    writeRecord(commonDir, recordFor(fx));
+    const main = mainBranch(fx);
+    const h = harness(fx);
+    expect(h.finish('--name', 'w1', '--no-report', '--into', main)).toBe(0);
+    expect(h.err).toEqual([]);
+    const ref = `refs/sidekick/landed/w1/${fx.head}`;
+    expect(h.out).toEqual([
+      `target: refs/heads/${main} (from --into)`,
+      `worktree-w1 landed in refs/heads/${main} at ${fx.head.slice(0, SHORT_SHA)}`,
+      NO_REPORT_READ,
+      `session ${ID} removed`,
+      `worktree ${fx.worktree} removed`,
+      'branch worktree-w1 removed',
+      `worktree-w1 is kept as ${ref}: restore it with git branch worktree-w1 ${ref}`,
+    ]);
+    expect(readRecords(commonDir)).toEqual({ records: [], warnings: [] });
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    expect(branchRemains(fx)).toBe(false);
+  });
+
+  test('refuses a report left in the worktree, which with no brief is uncommitted work', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish('--name', 'w1', '--no-report', '--into', mainBranch(fx)),
+      `the worktree ${fx.worktree} holds uncommitted work besides the report, which its removal would destroy: ${REPORT}. Commit and integrate it, or remove it, then run finish again`,
+    );
+  });
+
+  test('refuses work that has not landed, offering the discard with --name', () => {
+    const fx = fixture();
+    fs.rmSync(path.join(fx.worktree, REPORT));
+    const main = mainBranch(fx);
+    const sha = git(fx.top, 'rev-parse', 'HEAD');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish('--name', 'w1', '--no-report', '--into', main),
+      `worktree-w1 has not landed in refs/heads/${main} (${sha}): its head ${fx.head} is not there, and the history walk tried 0 commits and found no match. Land it and run finish again; name the target with --into <rev>; discarding it is your call, with sidekick worker finish --name w1 --no-report --discard`,
+    );
+  });
+
+  test('discards with --discard alone, repeating --name in its re-run command', () => {
+    const fx = fixture();
+    fs.rmSync(path.join(fx.worktree, REPORT));
+    const h = harness(fx);
+    h.claude.state.rm = [
+      { result: ok({ stdout: `kept ${ID}\n` }), removes: 'nothing' },
+    ];
+    expect(h.finish('--name', 'w1', '--discard')).toBe(1);
+    expect(h.out.slice(0, 2)).toEqual([
+      'worktree-w1 is discarded on your word',
+      NO_REPORT_READ,
+    ]);
+    expect(h.err.at(-1)).toBe(
+      wayOut('sidekick worker finish --name w1 --discard', `claude rm ${ID}`),
+    );
+  });
+
+  test('names --name, not the brief, when no session has the name', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.agents = JSON.stringify([]);
+    expect(h.finish('--name', 'w1', '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      'no session in claude agents --json --all is named "w1". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name given to --name',
+    ]);
+  });
+});
+
+const GONE_HEAD =
+  'finish cannot find the worktree of w1, so it removes only its session and record. It tried:';
+const GONE_TAIL =
+  'the worktree of w1 was not found, so finish deleted no branch: clear any worktree or branch the worker left by hand';
+
+describe('finish --discard with no worktree found', () => {
+  test('removes the session and the record, and leaves every branch and worktree in place', () => {
+    const fx = fixture(worktrunk);
+    const commonDir = path.join(fx.top, '.git');
+    writeRecord(commonDir, recordFor(fx));
+    const h = harness(fx);
+    const tried = lose(fx, h);
+    h.claude.state.rm = [removed('nothing')];
+    const refs = allRefs(fx);
+    expect(h.finish(fx.brief, '--discard')).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out).toEqual([
+      GONE_HEAD,
+      ...tried,
+      `session ${ID} removed`,
+      GONE_TAIL,
+    ]);
+    expect(h.claude.named('stop')).toEqual([['stop', ID]]);
+    expect(h.claude.named('rm')).toEqual([['rm', ID]]);
+    expect(readRecords(commonDir)).toEqual({ records: [], warnings: [] });
+    expect(allRefs(fx)).toBe(refs);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+    expect(savedReport(fx)).toBeUndefined();
+  });
+
+  test('runs claude from the main checkout, claude rm without a limit', () => {
+    const fx = fixture(worktrunk);
+    const h = harness(fx);
+    lose(fx, h);
+    h.claude.state.rm = [removed('nothing')];
+    expect(h.finish(fx.brief, '--discard')).toBe(0);
+    const rm = h.claude.calls.filter((c) => c.args[0] === 'rm');
+    expect(rm).toEqual([{ args: ['rm', ID], cwd: fx.top, timeoutMs: 0 }]);
+  });
+
+  test('skips claude stop for a job listed as done', () => {
+    const fx = fixture(worktrunk);
+    const h = harness(fx);
+    lose(fx, h);
+    h.claude.state.agents = JSON.stringify([
+      agentRow(fx, { cwd: fx.top, state: 'done' }),
+    ]);
+    h.claude.state.rm = [removed('nothing')];
+    expect(h.finish(fx.brief, '--discard')).toBe(0);
+    expect(h.claude.named('stop')).toEqual([]);
+    expect(h.claude.named('rm')).toEqual([['rm', ID]]);
+  });
+
+  test('clears a worker named with --name whose brief is gone', () => {
+    const fx = fixture(worktrunk);
+    fs.rmSync(fx.brief);
+    const h = harness(fx);
+    const tried = lose(fx, h);
+    h.claude.state.rm = [removed('nothing')];
+    const refs = allRefs(fx);
+    expect(h.finish('--name', 'w1', '--discard')).toBe(0);
+    expect(h.out).toEqual([
+      GONE_HEAD,
+      ...tried,
+      `session ${ID} removed`,
+      GONE_TAIL,
+    ]);
+    expect(allRefs(fx)).toBe(refs);
+  });
+
+  test("refuses claude rm's offer to discard, printing claude's text, and keeps the record", () => {
+    const fx = fixture(worktrunk);
+    const commonDir = path.join(fx.top, '.git');
+    writeRecord(commonDir, recordFor(fx));
+    const h = harness(fx);
+    lose(fx, h);
+    const offer = kept(fx, fx.head);
+    h.claude.state.rm = [offer];
+    const refs = allRefs(fx);
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm ${ID} offers to discard ${fx.head}, but finish found no worktree, so it has no verified head to check that against and did not run it:`,
+      offer.result.stdout.trim(),
+      'check what the discard would lose before you run it by hand, or name the worktree with --worktree <path> so that finish verifies its head first',
+    ]);
+    expect(h.claude.named('rm')).toEqual([['rm', ID]]);
+    expect(readRecords(commonDir).records).toHaveLength(1);
+    expect(allRefs(fx)).toBe(refs);
+    expect(h.out).not.toContain(GONE_TAIL);
+  });
+
+  test('refuses a claude rm answer it does not know, printing it', () => {
+    const fx = fixture(worktrunk);
+    const h = harness(fx);
+    lose(fx, h);
+    h.claude.state.rm = [
+      { result: ok({ stdout: `kept ${ID}\n` }), removes: 'nothing' },
+    ];
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm ${ID} did not say removed, and finish does not know its answer, so finish removed nothing more:`,
+      `kept ${ID}`,
+      `run finish again with sidekick worker finish ${fx.brief} --discard, or complete the removal by hand with claude rm ${ID}`,
+    ]);
+  });
+
+  test('refuses a claude rm that fails, naming its exit code', () => {
+    const fx = fixture(worktrunk);
+    const h = harness(fx);
+    lose(fx, h);
+    h.claude.state.rm = [{ result: ok({ code: 2 }), removes: 'nothing' }];
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm ${ID} failed with exit code 2, so finish removed nothing more`,
+      `run finish again with sidekick worker finish ${fx.brief} --discard, or complete the removal by hand with claude rm ${ID}`,
+    ]);
+  });
+
+  test('refuses a claude stop that fails, before claude rm runs', () => {
+    const fx = fixture(worktrunk);
+    const h = harness(fx);
+    lose(fx, h);
+    h.claude.state.stop = ok({ code: 1, stderr: 'No running job 213245a1\n' });
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      `claude stop ${ID} failed with exit code 1, so finish stopped before claude rm:`,
+      'No running job 213245a1',
+    ]);
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+});
+
+describe('the target with no brief', () => {
+  test('refuses without --into, which the arguments already require', () => {
+    const verdict = branchVerdict(
+      execRunner,
+      { launchTop: '/r', mainTop: '/r', brief: undefined },
+      { name: 'worktree-w1', head: 'a'.repeat(40) },
+      {
+        subject: { kind: 'name', name: 'w1' },
+        noReport: true,
+        mode: { kind: 'landed', into: undefined },
+        worktree: undefined,
+      },
+      ID,
+    );
+    expect(verdict).toEqual({
+      issues: [
+        '--name reads no brief, so finish has no target to check that worktree-w1 landed in: name the target with --into <rev>',
+      ],
+    });
   });
 });

@@ -271,6 +271,19 @@ describe('findWorktree', () => {
     });
   });
 
+  test('a detached match at the operator path is not found, with no word of a transcript', () => {
+    const found = findWorktree(
+      input({
+        worktrees: [entry(MAIN, 'master'), entry('/r/w1')],
+        candidates: [{ via: 'operator', cwd: '/r/w1' }],
+      }),
+    );
+    expect(found).toEqual({
+      kind: 'not found',
+      tried: [{ via: 'operator', cwd: '/r/w1', why: 'is detached' }],
+    });
+  });
+
   test('a detached match with a transcript branch is found under that branch', () => {
     const found = findWorktree(
       input({

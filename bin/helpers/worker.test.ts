@@ -57,6 +57,20 @@ describe('runWorkerCli', () => {
     ['finish with two briefs', ['finish', 'a.md', 'b.md']],
     ['finish with an unknown flag', ['finish', 'a.md', '--force']],
     ['finish with a value on --no-report', ['finish', 'a.md', '--no-report=x']],
+    [
+      'finish with both a brief and --name',
+      ['finish', 'a.md', '--name', 'w1', '--discard'],
+    ],
+    ['finish with --name missing its value', ['finish', '--name']],
+    [
+      'finish with --into and --discard under --name',
+      ['finish', '--name', 'w1', '--into', 'main', '--discard'],
+    ],
+    ['finish with an empty --worktree', ['finish', 'a.md', '--worktree', '']],
+    [
+      'finish with --worktree missing its value',
+      ['finish', 'a.md', '--worktree'],
+    ],
   ])('%s prints the worker usage and returns 1', (_label, args) => {
     const h = harness();
     expect(h.run(...args)).toBe(1);
@@ -64,10 +78,45 @@ describe('runWorkerCli', () => {
     expect(h.out).toEqual([]);
   });
 
-  test('the usage line names both verbs and every dispatch flag', () => {
+  test('the usage line names both verbs and every flag of each', () => {
     expect(WORKER_USAGE_LINE).toBe(
-      'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish <brief> [--no-report] [--into <rev> | --discard]',
+      'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]',
     );
+  });
+});
+
+const NEEDS_REPORT =
+  '--name needs --no-report or --discard, since there is no brief to say where the run report goes';
+const NEEDS_INTO =
+  '--name needs --into <rev> or --discard, since there is no brief to name the target';
+
+describe('runWorkerCli finish --name', () => {
+  test.each([
+    ['without --no-report', ['--into', 'main'], [NEEDS_REPORT]],
+    ['in landed mode without --into', ['--no-report'], [NEEDS_INTO]],
+    ['with neither', [], [NEEDS_REPORT, NEEDS_INTO]],
+  ])('%s names the flags it needs and returns 1', (_label, flags, lines) => {
+    const h = harness();
+    expect(h.run('finish', '--name', 'w1', ...flags)).toBe(1);
+    expect(h.err).toEqual(lines);
+    expect(h.out).toEqual([]);
+  });
+
+  test("refuses a name the brief's rule refuses, before the flags it needs", () => {
+    const h = harness();
+    expect(h.run('finish', '--name', 'W 1')).toBe(1);
+    expect(h.err).toEqual([
+      `--name "W 1" is not a worker's name: it must match ^[a-z0-9][a-z0-9-]{0,39}$`,
+    ]);
+    expect(h.out).toEqual([]);
+  });
+
+  test('takes --discard alone, which needs no report and no target', () => {
+    const h = harness();
+    expect(h.run('finish', '--name', 'w1', '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      'not inside a git work tree: run sidekick worker from a checkout of the repo',
+    ]);
   });
 });
 

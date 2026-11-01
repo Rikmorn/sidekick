@@ -2,11 +2,14 @@
  * `sidekick worker finish`: once a worker's branch has landed, saves its run
  * report in the checkout that holds the brief and removes its session, desk
  * record, worktree, and branch. It runs from any checkout of the repo, and
- * finds the worktree wherever its creator made it.
+ * finds the worktree wherever its creator made it, or at the operator's
+ * `--worktree`. `--name` stands in for a brief that is gone.
  * It refuses whenever a step would lose work. The steps run in order, and the
  * first that fails stops the rest. It prints the target and why, where the work
  * landed, what became of the report, any files it restored, then each removal:
  * the session, the worktree, and the branch. Its last line names the backup ref.
+ * In discard mode with no worktree found, it removes the session and the record
+ * alone, through `worker-finish-gone.ts`.
  * The arguments, the target, the worktree checks, and the report each live in
  * a `worker-finish-*` module of their own.
  */
@@ -15,23 +18,25 @@ import * as path from 'node:path';
 import { configDirOf } from './main-session.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
-import { type Brief, readBrief } from './worker-brief.js';
+import { readBrief } from './worker-brief.js';
 import {
   discardCommandFor,
   type FinishOptions,
+  type FinishSubject,
   rerunCommand,
 } from './worker-finish-args.js';
+import { clearGone, type Gone, whenNotFound } from './worker-finish-gone.js';
 import {
+  type ReportStep,
   reportChangedIssues,
   reportStep,
   saveReport,
 } from './worker-finish-report.js';
 import { branchVerdict } from './worker-finish-target.js';
 import {
+  type BriefRead,
   dirtyIssues,
-  type FoundWorktree,
   headMovedIssues,
-  notFoundIssues,
   onBranchIssues,
   type Places,
   placesFor,
@@ -46,7 +51,6 @@ import {
   keepBackup,
   type Out,
   type Ready,
-  type ReportStep,
   readyBackup,
   removeLeftovers,
   removeSession,
@@ -57,7 +61,7 @@ import {
   type WorkerJob,
   waitForLock,
 } from './worker-teardown.js';
-import { locateWorktree } from './worker-worktree.js';
+import { type Found, locateWorktree } from './worker-worktree.js';
 
 /** The length `finish` shortens a sha to in the landing line. */
 export const SHORT_SHA = 7;
@@ -68,19 +72,33 @@ type ListedWorker = WorkerJob & {
   sessionId: string | undefined;
 };
 
-// The one listed session by the brief's name, which must be a background job.
+// Where the worker's name came from, which a refusal says to check.
+const NAME_FROM = {
+  brief: 'the name in the brief',
+  name: 'the name given to --name',
+} satisfies Record<FinishSubject['kind'], string>;
+
+// The worker's name, where it came from, and the brief as read; undefined under --name.
+interface Subject {
+  name: string;
+  from: FinishSubject['kind'];
+  read: BriefRead | undefined;
+}
+
+// The one listed session by the worker's name, which must be a background job.
 function findJob(
   wenv: WorkerEnv,
   top: string,
-  name: string,
+  subject: Subject,
 ): ListedWorker | { issues: string[] } {
+  const { name } = subject;
   const listed = listJobs(wenv.runClaude, top);
   if ('issues' in listed) return listed;
   const matches = listed.jobs.filter((job) => job.name === name);
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief`,
+        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check ${NAME_FROM[subject.from]}`,
       ],
     };
   }
@@ -109,55 +127,85 @@ function briefTopOf(wenv: WorkerEnv, folder: string): string | undefined {
   return 'top' in found ? found.top : undefined;
 }
 
-// The worker's worktree, from its transcript, its listing's cwd, or Claude
-// Code's own branch name.
+// The worker's name, and under a brief, the brief with where it sits.
+function readSubject(
+  subject: FinishSubject,
+  wenv: WorkerEnv,
+): Subject | { issues: string[] } {
+  switch (subject.kind) {
+    case 'brief': {
+      const read = readBrief(subject.brief);
+      if ('issues' in read) return read;
+      const folder = path.dirname(subject.brief);
+      const top = briefTopOf(wenv, folder);
+      const { brief } = read;
+      return { name: brief.name, from: 'brief', read: { brief, folder, top } };
+    }
+    case 'name':
+      return { name: subject.name, from: 'name', read: undefined };
+    default: {
+      const unhandled: never = subject;
+      throw new Error(`unhandled subject: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+// The worker's worktree, from the operator's --worktree alone when given,
+// else its transcript, its listing's cwd, or Claude Code's own branch name.
 function worktreeOf(
   wenv: WorkerEnv,
-  name: string,
-  tops: { mainTop: string; briefTop: string | undefined },
+  subject: Subject,
+  mainTop: string,
   job: ListedWorker,
-): FoundWorktree | { issues: string[] } {
+  operatorPath: string | undefined,
+): Found | { issues: string[] } {
+  const { name } = subject;
   const found = locateWorktree({
     runGit: wenv.runGit,
     configDir: configDirOf(wenv.env, wenv.home),
     name,
-    ...tops,
+    mainTop,
+    briefTop: subject.read?.top,
     sessionId: job.sessionId,
     listingCwd: job.cwd,
-    operatorPath: undefined,
+    operatorPath,
   });
-  if ('issue' in found) {
-    return {
-      issues: [
-        `git worktree list failed, so finish cannot find the worktree of ${name}: ${found.issue}`,
-      ],
-    };
-  }
-  if (found.kind === 'not found') {
-    return { issues: notFoundIssues(name, found.tried) };
-  }
-  return found;
+  if (!('issue' in found)) return found;
+  return {
+    issues: [
+      `git worktree list failed, so finish cannot find the worktree of ${name}: ${found.issue}`,
+    ],
+  };
 }
 
-// The checkouts, the listed job, and where its worktree, branch, and report sit.
+// Where the worker's worktree, branch, and report sit; or in discard mode with
+// no worktree found, what is left to clear.
+type Located =
+  | { kind: 'found'; places: Places; job: ListedWorker; commonDir: string }
+  | { kind: 'gone'; gone: Gone };
+
+// The checkouts, the listed job, and what the finder says of its worktree.
 function locate(
-  brief: Brief,
+  subject: Subject,
   opts: FinishOptions,
   wenv: WorkerEnv,
-):
-  | { places: Places; job: ListedWorker; commonDir: string }
-  | { issues: string[] } {
+): Located | { issues: string[] } {
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   if ('issues' in facts) return facts;
   const { mainTop, launchTop, commonDir } = facts;
-  const job = findJob(wenv, mainTop, brief.name);
+  const job = findJob(wenv, mainTop, subject);
   if ('issues' in job) return job;
-  const briefFolder = path.dirname(opts.brief);
-  const briefTop = briefTopOf(wenv, briefFolder);
-  const found = worktreeOf(wenv, brief.name, { mainTop, briefTop }, job);
+  const found = worktreeOf(wenv, subject, mainTop, job, opts.worktree);
   if ('issues' in found) return found;
-  const tops = { mainTop, launchTop, briefTop, briefFolder };
-  return { places: placesFor(tops, found, brief), job, commonDir };
+  if (found.kind === 'not found') {
+    const { id, state } = job;
+    const linked = facts.worktrees.slice(1);
+    const at = { id, state, name: subject.name, mainTop, commonDir, linked };
+    const gone = whenNotFound(found.tried, at, opts);
+    return 'issues' in gone ? gone : { kind: 'gone', gone };
+  }
+  const places = placesFor({ mainTop, launchTop }, found, subject.read);
+  return { kind: 'found', places, job, commonDir };
 }
 
 // Every refusal the checks found, in the order they ran.
@@ -175,12 +223,11 @@ function allIssues(
 
 // Every check of the worktree needs the job's id, so those run once it is found.
 function checkFinish(
-  brief: Brief,
+  name: string,
+  located: Extract<Located, { kind: 'found' }>,
   opts: FinishOptions,
   wenv: WorkerEnv,
 ): Ready | { issues: string[] } {
-  const located = locate(brief, opts, wenv);
-  if ('issues' in located) return located;
   const { places, job } = located;
   const { mainTop, worktree } = places;
   const unlinked = unlinkedIssues(wenv.runGit, mainTop, worktree, job.id);
@@ -189,29 +236,26 @@ function checkFinish(
   // a refusal runs no step and so restores nothing.
   const head = commitOf(wenv.runGit, mainTop, `refs/heads/${places.branch}`);
   const branch = { name: places.branch, head };
-  const ctx = { ...places, briefTarget: brief.target };
-  const landed = branchVerdict(wenv.runGit, ctx, branch, opts, job.id);
-  const worker = { name: brief.name, id: job.id, head };
+  const landed = branchVerdict(wenv.runGit, places, branch, opts, job.id);
+  const worker = { name, id: job.id, head };
   const tree = worktreeCheck(wenv.runGit, places, worker, opts);
-  const step = reportStep(places, opts.noReport, tree.partial);
+  const step = reportStep(places.brief, opts.noReport, tree.partial);
   if ('issues' in landed || tree.issues.length > 0 || 'issues' in step) {
     return { issues: allIssues(landed, tree.issues, step) };
   }
   return {
     id: job.id,
     state: job.state,
-    name: brief.name,
+    name,
     mainTop,
-    briefTop: places.briefTop,
+    briefTop: places.brief?.top,
     commonDir: located.commonDir,
     worktree,
     branch: places.branch,
     head: landed.head,
-    report: places.report,
-    reportFrom: places.reportFrom,
+    report: places.brief?.report,
     reportStep: step,
     verdict: landed.verdict,
-    brief: opts.brief,
     rerun: rerunCommand(opts),
     discardCommand: discardCommandFor(opts),
     partial: tree.partial,
@@ -299,9 +343,12 @@ function finishIssues(
   wenv: WorkerEnv,
   out: Out,
 ): string[] {
-  const read = readBrief(opts.brief);
-  if ('issues' in read) return read.issues;
-  const ready = checkFinish(read.brief, opts, wenv);
+  const subject = readSubject(opts.subject, wenv);
+  if ('issues' in subject) return subject.issues;
+  const located = locate(subject, opts, wenv);
+  if ('issues' in located) return located.issues;
+  if (located.kind === 'gone') return clearGone(located.gone, wenv, out);
+  const ready = checkFinish(subject.name, located, opts, wenv);
   if ('issues' in ready) return ready.issues;
   for (const step of STEPS) {
     const issues = step(ready, wenv, out);
