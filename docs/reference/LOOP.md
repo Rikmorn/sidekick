@@ -19,7 +19,7 @@ What each skill in the loop does when it runs. For each: what it reads, what it 
 | 7 Close the milestone | `sk-milestone` | The model or you, at the end of a milestone |
 | A pull request exists | `code-review:code-review` | You or the model, on a PR |
 
-`sidekick pm` is not a skill. It is the read side every sidekick skill calls, and `USAGE.md` §The commands says what each of its verbs prints. The CLI's other verbs serve the control centre. `sidekick profile` makes and launches profiles, and `sidekick worker` dispatches and finishes a worker. `sidekick desk` and `sidekick session` give the mods their snapshots.
+`sidekick pm` is not a skill. It is the read side every sidekick skill calls, and `USAGE.md` §The commands says what each of its verbs prints. The CLI's other verbs serve the control centre. `sidekick profile` makes and launches profiles, and `sidekick worker` dispatches and finishes a worker. `sidekick desk` and `sidekick session` give the mods their snapshots. `sidekick memory link` moves a repo's auto-memory into the memory store; `README.md` §Memory covers it.
 
 ## sidekick's skills
 

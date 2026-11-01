@@ -69,6 +69,8 @@ Every issue entry carries `item_id`, the board item's node id, so a write by id 
 
 `sidekick rules install` and `sidekick rules check` deliver and audit the rules; the repo's `README.md` §The rules covers both.
 
+`sidekick memory link <repo>` moves a repo's auto-memory into the memory store; the repo's `README.md` §Memory covers it.
+
 ## Working with a worker session
 
 `sk-execute` holds the handoff and `sk-worker` holds the worker's rules. Both ship in the plugin, so every repo running sidekick has them. The `sidekick` skill's `references/workers.md` says what `sidekick worker dispatch` and `sidekick worker finish` check, and what they leave unguarded.
