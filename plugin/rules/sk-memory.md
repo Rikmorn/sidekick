@@ -45,7 +45,9 @@ A fact kept in two places goes stale in one of them, and the next session trusts
 
 ## Scopes
 
-The operator's own facts stay in the user-level rules, which load in every repo, while a copy in the store reaches one folder. Family and repo facts go in the store.
+The operator's own facts stay in the user-level rules, which load in every repo. A folder in the store reaches only the repos it serves. Family and repo facts go in the store.
+
+A new fact about the operator goes in the repo folder like any other, with its date and origin. Claude Code's prompt already saves `user` and `feedback` memories there. The user-level rules change only on the operator's review, so tell the operator when the fact may belong there.
 
 ## Writing
 
