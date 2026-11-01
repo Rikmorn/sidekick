@@ -22,7 +22,7 @@ The brief opens with `key: value` lines between two `---` lines. Its body holds 
 | `baseline` | The commit the run starts from |
 | `skill` | `subagent-driven-development`, or `executing-plans` |
 | `place` | `worktree`, `in-place`, or `branch <name>` |
-| `target` | Optional: the branch the work lands in. The orchestrator uses it at `finish` |
+| `target` | The branch the work lands in, which `finish` checks. Required when the launching checkout holds a branch; refused on a detached `HEAD` |
 | `workstream` | Optional: the memory workstream the run belongs to |
 | `setup` | Optional: the command that prepares where you work |
 | `report` | The run report's path, relative to the repo top |

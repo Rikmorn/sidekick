@@ -21,7 +21,7 @@ sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | -
 - `--into <rev>` names the commit the work must have landed in, in place of the brief's `target`. It takes a branch, a tag, or a commit. It refuses the worker's own branch, which holds its head whether or not the work landed.
 - `--discard` clears a worker that did not land, on the operator's word. It excludes `--into`.
 - `--name <name>` stands in for a brief that is gone. There is then no brief to say where the report goes or what the target is, so it needs `--no-report` or `--discard`, and `--into <rev>` in landed mode.
-- `--worktree <path>` names the worker's worktree, and replaces every way `finish` would look for it. "How `finish` finds the worktree" says what that is. It also confirms a branch other than `worktree-<name>`, as "What it checks" says.
+- `--worktree <path>` names the worker's worktree, and replaces every way `finish` would look for it. "How `finish` finds the worktree" says what that is. It also confirms a branch other than `worktree-<name>`, as "How `finish` finds the worktree" says.
 
 `dispatch` exits 1 on a refusal, and otherwise with `claude`'s exit code. `finish` exits 0 only when every step succeeded.
 
@@ -40,7 +40,7 @@ The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI par
 | `skill` | yes | `subagent-driven-development` or `executing-plans` |
 | `place` | yes | `worktree`, `in-place`, or `branch <name>`. `dispatch` starts a worker only for `worktree` |
 | `target` | on a branch | The branch the launching checkout holds, where the work lands. `finish` checks the landing against it. `dispatch` refuses a brief without it when the checkout holds a branch, and a brief with it on a detached `HEAD` |
-| `workstream` | no | The memory workstream the worker belongs to: `^[a-z0-9][a-z0-9-]{0,63}$`. The brief keeps it |
+| `workstream` | no | The memory workstream the worker belongs to: `^[a-z0-9][a-z0-9-]{0,63}$`. It names the memory workstream, and `sidekick` reads it nowhere else |
 | `setup` | no | A shell command the worker runs where it works, before its scan |
 | `report` | yes | A path relative to the repo top, with no `..` segment |
 | `orchestrator` | yes | The orchestrating session's name, as `ListAgents` prints it |
@@ -160,11 +160,11 @@ Pass the orchestrating session's own mode. A message from a session in another p
 2. The `cwd` in the job listing.
 3. Failing both, the worktree git lists on the branch `worktree-<name>`.
 
-`--worktree <path>` replaces all three as the only place it tries. A match counts only when it is a linked worktree, and neither the main checkout nor the brief's checkout. Under `--name`, the second is the checkout that dispatched the worker. A worktree that git marks prunable is found, and the checks in "What it checks" run on it.
+A place that is detached, with no branch in the transcript, is skipped. `--worktree <path>` replaces all three as the only place it tries. A match counts only when it is a linked worktree, and neither the main checkout nor the brief's checkout. Under `--name`, the second is the checkout that holds the brief folder the worker's dispatch record names. Failing that, it is the linked checkout `finish` runs in. A worktree that git marks prunable is found, and the checks in "What it checks" run on it.
 
 `finish` acts on a branch only with evidence that it is the worker's. The evidence is the transcript's `gitBranch`, Claude Code's own name `worktree-<name>`, or `--worktree`. A branch other than `worktree-<name>` refuses, in landed and discard mode, when `finish` found the worktree through the listing or through a transcript entry with no branch. The refusal names the worktree, its branch, and how `finish` found it, and gives `--worktree <path>` as the confirmation.
 
-When no place yields a worktree, landed mode refuses. The refusal lists each place it tried, and names `--worktree <path>` and `--discard`. Discard mode instead removes the worker's session and record, deletes no branch, and says to clear any worktree or branch the worker left by hand.
+A `--worktree <path>` that matches nothing refuses in both modes. The refusal lists the linked worktrees git lists. When no place yields a worktree otherwise, landed mode refuses. The refusal lists each place it tried, and names `--worktree <path>` and `--discard`. Discard mode instead removes the worker's session and record, deletes no branch, and says to clear any worktree or branch the worker left by hand.
 
 ### What it checks
 
@@ -182,7 +182,7 @@ With `--discard`, the landed check is skipped on the operator's word. The job, t
 
 ### Its steps
 
-The steps run in order, and the first that fails stops the rest. `finish` prints the landing line first, `<branch> landed in <target> at <short sha>`, or `<branch> is discarded on your word`. It then prints what became of the report, then each removal: the session, the worktree, and the branch. On a re-run that restores deleted files, a `restored N deleted files` line comes between the report line and the session line. Its last line names the backup ref, as "The backup refs" says.
+The steps run in order, and the first that fails stops the rest. In landed mode `finish` prints `target: <name> (<why>)` first, then the landing line, `<branch> landed in <name> at <short sha>`. In discard mode it prints `<branch> is discarded on your word`. It then prints what became of the report, then each removal: the session, the worktree, and the branch. On a re-run that restores deleted files, a `restored N deleted files` line comes between the report line and the session line. Its last line names the backup ref, as "The backup refs" says.
 
 1. It copies the report to `<the brief's checkout>/<report>`, creating its folders. That puts it beside the plan when the plan sits in that checkout too.
 2. It stops the job with `claude stop <id>`. A worker whose turn has ended lists as `done` while its process idles and holds the worktree's lock (the dispatch bench). So `finish` skips the stop only when the listing says `stopped` or `done` and the process the lock names has exited. A failing `stop` refuses before anything is removed. `claude stop` keeps a 30-second limit.
