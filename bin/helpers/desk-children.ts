@@ -23,7 +23,12 @@ import {
   physical,
   type WorktreeEntry,
 } from './worker-repo.js';
-import { type Candidate, type Found, findWorktree } from './worker-worktree.js';
+import {
+  type Candidate,
+  type Found,
+  findWorktree,
+  type Launcher,
+} from './worker-worktree.js';
 
 /** The repository's main checkout top and its common git dir. */
 export interface Repo {
@@ -125,12 +130,25 @@ function candidatesOf(
 
 type Read = ReturnType<typeof readBrief>;
 
-// The top of the checkout holding the brief's folder; undefined when the
-// brief was not read or sits in no checkout.
-function briefTopOf(runGit: Runner, read: Read): string | undefined {
-  if ('issues' in read) return undefined;
-  const found = checkoutOf(runGit, path.dirname(read.path));
+// The top of the checkout holding the brief folder the record names, whether
+// or not the brief is still there; undefined when the folder is in no checkout.
+function briefTopOf(runGit: Runner, record: WorkerRecord): string | undefined {
+  const found = checkoutOf(runGit, path.dirname(record.brief));
   return 'top' in found ? found.top : undefined;
+}
+
+// The checkout the worker's worktree cannot be, in finish's words: the brief's
+// when it parses, else the one its dispatch record names, as under --name.
+function launcherFor(
+  top: string | undefined,
+  read: Read,
+): Launcher | undefined {
+  if (top === undefined) return undefined;
+  const role =
+    'issues' in read
+      ? 'the checkout that dispatched the worker'
+      : "the brief's checkout";
+  return { top: physical(top), role };
 }
 
 interface Base {
@@ -264,14 +282,11 @@ export function childFacts(
   const { runGit, repo, find } = sources;
   const { name } = record;
   const read = readBrief(record.brief);
-  const briefTop = briefTopOf(runGit, read);
+  const briefTop = briefTopOf(runGit, record);
   const found = findWorktree({
     name,
     mainTop: physical(repo.top),
-    launcher:
-      briefTop === undefined
-        ? undefined
-        : { top: physical(briefTop), role: "the brief's checkout" },
+    launcher: launcherFor(briefTop, read),
     worktrees: repo.worktrees,
     candidates: candidatesOf(find, row),
   });

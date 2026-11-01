@@ -1787,11 +1787,15 @@ function candidatesOf(find, row) {
   const fromListing = row?.cwd === undefined ? [] : [{ via: "listing", cwd: physical(row.cwd) }];
   return [...fromTranscript, ...fromListing];
 }
-function briefTopOf(runGit, read) {
-  if ("issues" in read)
-    return;
-  const found = checkoutOf(runGit, path6.dirname(read.path));
+function briefTopOf(runGit, record2) {
+  const found = checkoutOf(runGit, path6.dirname(record2.brief));
   return "top" in found ? found.top : undefined;
+}
+function launcherFor(top, read) {
+  if (top === undefined)
+    return;
+  const role = "issues" in read ? "the checkout that dispatched the worker" : "the brief's checkout";
+  return { top: physical(top), role };
 }
 function countBase(runGit, name, read, briefTop) {
   const fallback = (why) => ({
@@ -1869,11 +1873,11 @@ function childFacts(sources, record2, row) {
   const { runGit, repo, find } = sources;
   const { name } = record2;
   const read = readBrief(record2.brief);
-  const briefTop = briefTopOf(runGit, read);
+  const briefTop = briefTopOf(runGit, record2);
   const found = findWorktree({
     name,
     mainTop: physical(repo.top),
-    launcher: briefTop === undefined ? undefined : { top: physical(briefTop), role: "the brief's checkout" },
+    launcher: launcherFor(briefTop, read),
     worktrees: repo.worktrees,
     candidates: candidatesOf(find, row)
   });

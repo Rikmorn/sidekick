@@ -586,6 +586,25 @@ describe('runDeskCli: finding the worktree', () => {
     expect(s.children.find((c) => c.name === 'w5')?.unintegrated).toBe(1);
   });
 
+  test('a worker whose brief is gone never takes the checkout that dispatched it as its worktree', () => {
+    const fx = repoFixture();
+    const feature = sibling(fx.top, 'feature', 'feature');
+    const docs = path.join(feature, 'docs');
+    fs.mkdirSync(docs);
+    // The record names a brief in the feature checkout that was never written.
+    fx.addWorker('w5', 'bbbb0005', {
+      worktree: false,
+      brief: path.join(docs, 'w5-brief.md'),
+    });
+    const s = snapshotOf(
+      harness(fx.top, listing([childRow(), w5Row({ cwd: feature })])),
+    );
+    const w5 = s.children.find((c) => c.name === 'w5');
+    expect(w5).toMatchObject({ unintegrated: 0, uncommitted: false });
+    expect(w5?.lastCommit).toBeUndefined();
+    expect(s.warnings).toContain('w5: no worktree was found for it');
+  });
+
   test("a brief that cannot be read counts against the main checkout's HEAD, with a warning", () => {
     const fx = repoFixture();
     const missing = path.join(fx.docs, 'missing-brief.md');
