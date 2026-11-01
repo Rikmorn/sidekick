@@ -2597,12 +2597,14 @@ var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an 
   id: OptionalText,
   kind: OptionalText,
   name: OptionalText,
+  cwd: OptionalText,
   sessionId: OptionalText,
   state: OptionalText
 }), transform((row) => ({
   id: row.id ?? undefined,
   kind: row.kind ?? undefined,
   name: row.name ?? undefined,
+  cwd: row.cwd ?? undefined,
   sessionId: row.sessionId ?? undefined,
   state: row.state ?? undefined
 })));

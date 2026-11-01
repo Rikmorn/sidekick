@@ -182,3 +182,60 @@ export function askedOf(
     return undefined;
   }
 }
+
+/** Where a session started: the first transcript entry that records a `cwd`. */
+export interface StartPlace {
+  cwd: string;
+  gitBranch: string | undefined;
+}
+
+const NEWLINE = 0x0a;
+
+// The whole lines in the first `maxBytes` of a file. A buffer that filled may
+// end mid-line, so it is cut at its last newline; a shorter one is the whole
+// file. A newline byte never occurs inside a multi-byte UTF-8 sequence, so the
+// cut is safe before decoding.
+function wholeLinesFrom(file: string, maxBytes: number): string[] {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const read = fs.readSync(fd, buffer, 0, maxBytes, 0);
+    const bytes = buffer.subarray(0, read);
+    const end = read < maxBytes ? read : bytes.lastIndexOf(NEWLINE) + 1;
+    return bytes.subarray(0, end).toString('utf-8').split('\n');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// The entry's place when it records a non-empty `cwd`.
+function placeOf(entry: unknown): StartPlace | undefined {
+  if (!isRecord(entry)) return undefined;
+  const { cwd, gitBranch } = entry;
+  if (typeof cwd !== 'string' || cwd === '') return undefined;
+  // git forbids a branch named HEAD; Claude Code writes it for a detached HEAD.
+  const branch =
+    typeof gitBranch === 'string' && gitBranch !== 'HEAD'
+      ? gitBranch
+      : undefined;
+  return { cwd, gitBranch: branch };
+}
+
+/**
+ * Where the session started, from the first entry in the transcript's first
+ * `maxBytes` that carries a `cwd`: the opening entries are queue operations
+ * with none. Only whole lines count. None when the file is missing or
+ * unreadable, or holds no such entry within the bound.
+ */
+export function firstPlace(
+  file: string,
+  maxBytes = 256 * 1024,
+): StartPlace | undefined {
+  try {
+    return wholeLinesFrom(file, maxBytes)
+      .map((line) => placeOf(parsedLine(line)))
+      .find((place) => place !== undefined);
+  } catch {
+    return undefined;
+  }
+}
