@@ -1368,6 +1368,12 @@ function listWorktrees(runGit, dir) {
   }
   return { worktrees };
 }
+function checkoutOf(runGit, folder) {
+  const result = runGit("git", ["rev-parse", "--path-format=absolute", "--show-toplevel"], folder);
+  if (result.code !== 0)
+    return { issue: result.stderr.trim() };
+  return { top: result.stdout.replace(/\n$/, "") };
+}
 function physical(p) {
   const abs = path3.resolve(p);
   const rest = [];
@@ -1472,6 +1478,7 @@ function parseFrontmatter(text) {
 var AbsolutePath = pipe(string(), check((s) => path4.isAbsolute(s), "must be an absolute path"));
 var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) => !path4.isAbsolute(s), "must be relative to the repo top"), check((s) => !s.split(/[\\/]/).includes(".."), 'must not have a ".." segment'));
 var WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+var WORKSTREAM = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var WorkerNameSchema = pipe(string(), regex(WORKER_NAME, `must match ${WORKER_NAME.source}`));
 var BriefSchema = strictObject({
   name: WorkerNameSchema,
@@ -1485,6 +1492,8 @@ var BriefSchema = strictObject({
     literal("in-place"),
     pipe(string(), regex(/^branch \S+$/))
   ], 'must be "worktree", "in-place", or "branch <name>"'),
+  target: optional(pipe(string(), regex(/^\S+$/, "must be a non-empty branch name with no whitespace"))),
+  workstream: optional(pipe(string(), regex(WORKSTREAM, `must match ${WORKSTREAM.source}`))),
   setup: optional(pipe(string(), minLength(1))),
   report: RelativePath,
   orchestrator: pipe(string(), minLength(1, "must not be empty"))
@@ -1513,14 +1522,22 @@ function readBrief(file) {
   }
   return { brief: result.output, path: abs };
 }
-var isInside = (top, p) => {
-  const rel = path4.relative(top, p);
-  const leaves = rel === ".." || rel.startsWith(`..${path4.sep}`);
-  return rel !== "" && !leaves && !path4.isAbsolute(rel);
-};
-function briefFileIssues(brief, top) {
+function checkoutIssue(runGit, field, file, allowed) {
+  const folder = path4.dirname(file);
+  if (!fs4.existsSync(folder))
+    return [];
+  const found = checkoutOf(runGit, folder);
+  const held = "top" in found ? physical(found.top) : undefined;
+  if (held !== undefined && allowed.some((a) => physical(a.top) === held)) {
+    return [];
+  }
+  const where = allowed.map((a) => `the ${a.label} ${a.top}`).join(" or ");
+  const is2 = held === undefined ? "in no git checkout" : `in the checkout ${held}`;
+  return [`${field}: ${file} is ${is2}; it must be in ${where}`];
+}
+function briefFileIssues(brief, bounds) {
+  const { briefPath, launchTop, mainTop, runGit } = bounds;
   const issues = [];
-  const realTop = physical(top);
   if (!fs4.existsSync(brief.plan)) {
     issues.push(`plan: ${brief.plan} does not exist`);
   }
@@ -1531,15 +1548,16 @@ function briefFileIssues(brief, top) {
   if (!fs4.existsSync(rulingsDir)) {
     issues.push(`rulings: the folder ${rulingsDir} does not exist`);
   }
+  const launching = { label: "launching checkout", top: launchTop };
+  const either = physical(launchTop) === physical(mainTop) ? [launching] : [launching, { label: "main checkout", top: mainTop }];
   const named = [
-    ["plan", brief.plan],
-    ["spec", brief.spec],
-    ["rulings", brief.rulings]
+    ["brief", briefPath, [launching]],
+    ["plan", brief.plan, either],
+    ["spec", brief.spec, either],
+    ["rulings", brief.rulings, [launching]]
   ];
-  for (const [field, file] of named) {
-    if (!isInside(realTop, physical(file))) {
-      issues.push(`${field}: ${file} is outside ${top}`);
-    }
+  for (const [field, file, allowed] of named) {
+    issues.push(...checkoutIssue(runGit, field, file, allowed));
   }
   return issues;
 }
@@ -5302,9 +5320,14 @@ function listedNameIssues(listed, name) {
   ] : [];
 }
 var pushUrlIssues = (runGit, top) => remotesWithPushUrl(runGit, top).map((remote) => `remote "${remote}" sets pushurl, and git ignores the push rewrite for such a remote: remove the pushurl, or pass --allow-push on the operator's word`);
-function checkoutIssues(brief, opts, runGit, top) {
+function checkoutIssues(brief, briefPath, opts, runGit, top) {
   return [
-    ...briefFileIssues(brief, top),
+    ...briefFileIssues(brief, {
+      briefPath,
+      launchTop: top,
+      mainTop: top,
+      runGit
+    }),
     ...baselineIssues(runGit, top, brief.baseline),
     ...cleanIssues(runGit, top),
     ...treeNameIssues(runGit, top, brief.name),
@@ -5359,7 +5382,7 @@ function checkDispatch(brief, briefPath, opts, wenv) {
   const main = resolveMain(wenv.env, "jobs" in listed ? listed.jobs : undefined);
   const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at }, main?.value);
   const issues = [
-    ..."issues" in checkout ? checkout.issues : checkoutIssues(brief, opts, wenv.runGit, checkout.top),
+    ..."issues" in checkout ? checkout.issues : checkoutIssues(brief, briefPath, opts, wenv.runGit, checkout.top),
     ...placeIssues(brief),
     ...listedNameIssues(listed, brief.name),
     ...modeIssues(opts.mode),

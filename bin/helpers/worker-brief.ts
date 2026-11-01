@@ -8,7 +8,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
-import { physical } from './worker-repo.js';
+import type { Runner } from './pm-data.js';
+import { checkoutOf, physical } from './worker-repo.js';
 
 const FENCE = '---';
 const KEY_LINE = /^([a-z]+):(?: (.*))?$/;
@@ -59,11 +60,12 @@ const RelativePath = v.pipe(
 );
 
 const WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const WORKSTREAM = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /**
  * A worker's name, the one rule for the brief and the worker record. It names
- * the session, the worktree `.claude/worktrees/<name>`, the branch
- * `worktree-<name>`, and the record's file, so it cannot reach outside them.
+ * the session and the record's file. Claude Code's own creation names the
+ * worktree folder and the branch from it, so it cannot reach outside them.
  */
 export const WorkerNameSchema = v.pipe(
   v.string(),
@@ -87,6 +89,15 @@ export const BriefSchema = v.strictObject({
       v.pipe(v.string(), v.regex(/^branch \S+$/)),
     ],
     'must be "worktree", "in-place", or "branch <name>"',
+  ),
+  target: v.optional(
+    v.pipe(
+      v.string(),
+      v.regex(/^\S+$/, 'must be a non-empty branch name with no whitespace'),
+    ),
+  ),
+  workstream: v.optional(
+    v.pipe(v.string(), v.regex(WORKSTREAM, `must match ${WORKSTREAM.source}`)),
   ),
   setup: v.optional(v.pipe(v.string(), v.minLength(1))),
   report: RelativePath,
@@ -125,17 +136,48 @@ export function readBrief(
   return { brief: result.output, path: abs };
 }
 
-// A top-level entry may be named `..docs`, so only a whole `..` segment leaves top.
-const isInside = (top: string, p: string): boolean => {
-  const rel = path.relative(top, p);
-  const leaves = rel === '..' || rel.startsWith(`..${path.sep}`);
-  return rel !== '' && !leaves && !path.isAbsolute(rel);
-};
+/** What `briefFileIssues` reads: the brief's path, and the checkouts its paths may sit in. */
+export interface BriefBounds {
+  briefPath: string;
+  launchTop: string;
+  mainTop: string;
+  runGit: Runner;
+}
 
-/** Checks the brief's paths against the tree. `top` is the main checkout's top. */
-export function briefFileIssues(brief: Brief, top: string): string[] {
+interface Allowed {
+  label: string;
+  top: string;
+}
+
+// A path sits in `allowed` when git's checkout for its folder is one of them.
+// A folder that does not exist gets no check: its existence issue stands alone.
+function checkoutIssue(
+  runGit: Runner,
+  field: string,
+  file: string,
+  allowed: Allowed[],
+): string[] {
+  const folder = path.dirname(file);
+  if (!fs.existsSync(folder)) return [];
+  const found = checkoutOf(runGit, folder);
+  const held = 'top' in found ? physical(found.top) : undefined;
+  if (held !== undefined && allowed.some((a) => physical(a.top) === held)) {
+    return [];
+  }
+  const where = allowed.map((a) => `the ${a.label} ${a.top}`).join(' or ');
+  const is =
+    held === undefined ? 'in no git checkout' : `in the checkout ${held}`;
+  return [`${field}: ${file} is ${is}; it must be in ${where}`];
+}
+
+/**
+ * Checks the brief's paths against the tree. The brief and the rulings' folder
+ * sit in the launching checkout; the plan and the spec sit in it or in the main
+ * checkout. Each is judged by the checkout git says holds it, never by prefix.
+ */
+export function briefFileIssues(brief: Brief, bounds: BriefBounds): string[] {
+  const { briefPath, launchTop, mainTop, runGit } = bounds;
   const issues: string[] = [];
-  const realTop = physical(top);
   if (!fs.existsSync(brief.plan)) {
     issues.push(`plan: ${brief.plan} does not exist`);
   }
@@ -146,15 +188,19 @@ export function briefFileIssues(brief: Brief, top: string): string[] {
   if (!fs.existsSync(rulingsDir)) {
     issues.push(`rulings: the folder ${rulingsDir} does not exist`);
   }
-  const named: [string, string][] = [
-    ['plan', brief.plan],
-    ['spec', brief.spec],
-    ['rulings', brief.rulings],
+  const launching: Allowed = { label: 'launching checkout', top: launchTop };
+  const either: Allowed[] =
+    physical(launchTop) === physical(mainTop)
+      ? [launching]
+      : [launching, { label: 'main checkout', top: mainTop }];
+  const named: [string, string, Allowed[]][] = [
+    ['brief', briefPath, [launching]],
+    ['plan', brief.plan, either],
+    ['spec', brief.spec, either],
+    ['rulings', brief.rulings, [launching]],
   ];
-  for (const [field, file] of named) {
-    if (!isInside(realTop, physical(file))) {
-      issues.push(`${field}: ${file} is outside ${top}`);
-    }
+  for (const [field, file, allowed] of named) {
+    issues.push(...checkoutIssue(runGit, field, file, allowed));
   }
   return issues;
 }

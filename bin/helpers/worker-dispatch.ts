@@ -191,12 +191,18 @@ const pushUrlIssues = (runGit: Runner, top: string): string[] =>
 
 function checkoutIssues(
   brief: Brief,
+  briefPath: string,
   opts: DispatchOptions,
   runGit: Runner,
   top: string,
 ): string[] {
   return [
-    ...briefFileIssues(brief, top),
+    ...briefFileIssues(brief, {
+      briefPath,
+      launchTop: top,
+      mainTop: top,
+      runGit,
+    }),
     ...baselineIssues(runGit, top, brief.baseline),
     ...cleanIssues(runGit, top),
     ...treeNameIssues(runGit, top, brief.name),
@@ -301,7 +307,7 @@ function checkDispatch(
   const issues = [
     ...('issues' in checkout
       ? checkout.issues
-      : checkoutIssues(brief, opts, wenv.runGit, checkout.top)),
+      : checkoutIssues(brief, briefPath, opts, wenv.runGit, checkout.top)),
     ...placeIssues(brief),
     ...listedNameIssues(listed, brief.name),
     ...modeIssues(opts.mode),
