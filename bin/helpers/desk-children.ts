@@ -25,8 +25,11 @@ import {
 } from './worker-repo.js';
 import {
   type Candidate,
+  candidatesFrom,
   type Found,
+  type FoundWorktree,
   findWorktree,
+  isBranchProven,
   type Launcher,
 } from './worker-worktree.js';
 
@@ -103,8 +106,7 @@ const COUNT = /^\d+$/;
 
 type GitFacts = Omit<ChildFacts, 'tokens' | 'plan'> & { warnings: string[] };
 
-// The place `find` knows the session started, then the listing's cwd, as the
-// finder wants them: physical paths, in order.
+// The candidates, with the place `find` knows the session started.
 function candidatesOf(
   find: TranscriptFinder,
   row: ListingRow | undefined,
@@ -113,19 +115,11 @@ function candidatesOf(
     row?.sessionId === undefined ? undefined : find(row.sessionId);
   const place =
     transcript === undefined ? undefined : firstPlace(transcript.file);
-  const fromTranscript: Candidate[] =
-    place === undefined
-      ? []
-      : [
-          {
-            via: 'transcript',
-            cwd: physical(place.cwd),
-            gitBranch: place.gitBranch,
-          },
-        ];
-  const fromListing: Candidate[] =
-    row?.cwd === undefined ? [] : [{ via: 'listing', cwd: physical(row.cwd) }];
-  return [...fromTranscript, ...fromListing];
+  return candidatesFrom({
+    place,
+    listingCwd: row?.cwd,
+    operatorPath: undefined,
+  });
 }
 
 type Read = ReturnType<typeof readBrief>;
@@ -184,6 +178,47 @@ function countBase(
     : { rev: head, warnings: [] };
 }
 
+interface Count {
+  unintegrated: number;
+  /** The count's own: a failed call, or why nothing was counted. */
+  warnings: string[];
+  /** The base's, which a missing worktree lists before the count's. */
+  baseWarnings: string[];
+}
+
+// The worker's commits past the base. Nothing is counted when nothing shows
+// the branch is the worker's, since its commits may be another branch's, and
+// the base then goes unsaid.
+function countOf(
+  runGit: Runner,
+  repo: Repo,
+  name: string,
+  found: FoundWorktree,
+  base: Base,
+): Count {
+  if (!isBranchProven(found, name)) {
+    return {
+      unintegrated: 0,
+      warnings: [
+        `${name}: its worktree ${found.path} is on ${found.branch}, which nothing shows is its branch, so no commits are counted`,
+      ],
+      baseWarnings: [],
+    };
+  }
+  const rev = gitIn(
+    runGit,
+    repo.top,
+    ['rev-list', '--count', `${base.rev}..refs/heads/${found.branch}`, '--'],
+    name,
+  );
+  const count = 'stdout' in rev ? rev.stdout.trim() : '';
+  return {
+    unintegrated: COUNT.test(count) ? Number(count) : 0,
+    warnings: 'warning' in rev ? [rev.warning] : [],
+    baseWarnings: base.warnings,
+  };
+}
+
 // A prunable worktree is missing as far as the desk goes: one warning, and
 // the git calls in it are skipped. The count is tried still, since the branch remains.
 function gitFacts(
@@ -201,24 +236,16 @@ function gitFacts(
       warnings: [...base.warnings, `${name}: no worktree was found for it`],
     };
   }
-  const rev = gitIn(
-    runGit,
-    repo.top,
-    ['rev-list', '--count', `${base.rev}..refs/heads/${found.branch}`, '--'],
-    name,
-  );
-  const count = 'stdout' in rev ? rev.stdout.trim() : '';
-  const unintegrated = COUNT.test(count) ? Number(count) : 0;
-  const countWarnings = 'warning' in rev ? [rev.warning] : [];
+  const count = countOf(runGit, repo, name, found, base);
   if (found.prunable !== undefined) {
     return {
       worktreeExists: false,
-      unintegrated,
+      unintegrated: count.unintegrated,
       uncommitted: false,
       warnings: [
         `${name}: its worktree ${found.path} is missing`,
-        ...base.warnings,
-        ...countWarnings,
+        ...count.baseWarnings,
+        ...count.warnings,
       ],
     };
   }
@@ -228,12 +255,12 @@ function gitFacts(
   return {
     worktreeExists: true,
     ...(subject === '' ? {} : { lastCommit: subject }),
-    unintegrated,
+    unintegrated: count.unintegrated,
     uncommitted: 'stdout' in status && status.stdout.trim() !== '',
     warnings: [
       ...[log, status].flatMap((r) => ('warning' in r ? [r.warning] : [])),
-      ...countWarnings,
-      ...base.warnings,
+      ...count.warnings,
+      ...count.baseWarnings,
     ],
   };
 }

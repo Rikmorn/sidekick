@@ -3,11 +3,17 @@
  * --worktree`, the desk, and dispatch's clash check: it matches the places a
  * session is known to have started (its transcript, its job listing, or a path
  * the operator names) against the worktrees git lists, and falls back to the
- * branch Claude Code names after the worker.
+ * branch Claude Code names after the worker. The candidates and the rule for
+ * whether a found branch is the worker's live here, so `finish` and the desk
+ * read them the same way.
  */
 
 import * as path from 'node:path';
-import { firstPlace, transcriptFinder } from './desk-transcripts.js';
+import {
+  firstPlace,
+  type StartPlace,
+  transcriptFinder,
+} from './desk-transcripts.js';
 import type { Runner } from './pm-data.js';
 import { listWorktrees, physical, type WorktreeEntry } from './worker-repo.js';
 
@@ -58,10 +64,24 @@ export type Found =
       }[];
     };
 
+/** The finder's answer when it found the worktree. */
+export type FoundWorktree = Extract<Found, { kind: 'found' }>;
+
 type Tried = Extract<Found, { kind: 'not found' }>['tried'][number];
 
 /** The branch Claude Code gives the worktree it makes for `--worktree <name>`. */
 export const nativeBranch = (name: string): string => `worktree-${name}`;
+
+/**
+ * Whether anything shows the found worktree's branch is the worker's: the
+ * operator named the worktree, the transcript names the branch, or it is the
+ * branch Claude Code gives the worker. The branch git lists at a worktree
+ * found any other way may be another branch checked out there since.
+ */
+export const isBranchProven = (found: FoundWorktree, name: string): boolean =>
+  found.via === 'operator' ||
+  found.branchFrom === 'transcript' ||
+  found.branch === nativeBranch(name);
 
 const HEADS = 'refs/heads/';
 
@@ -103,7 +123,7 @@ function refusal(input: FindInput, match: WorktreeEntry): string | undefined {
   return undefined;
 }
 
-type Branch = Pick<Extract<Found, { kind: 'found' }>, 'branch' | 'branchFrom'>;
+type Branch = Pick<FoundWorktree, 'branch' | 'branchFrom'>;
 
 function foundOf(
   match: WorktreeEntry,
@@ -191,22 +211,20 @@ export function findWorktree(input: FindInput): Found {
   return { kind: 'not found', tried: [...tried, result] };
 }
 
-// The places the session is known to have started, in order.
-function candidatesFor(opts: {
-  configDir: string;
-  sessionId: string | undefined;
+/**
+ * The places a session is known to have started, as `findWorktree` takes
+ * them: physical paths, in order. The operator's path is the only one when
+ * given; else the transcript's first place, then the job listing's cwd.
+ */
+export function candidatesFrom(known: {
+  place: StartPlace | undefined;
   listingCwd: string | undefined;
   operatorPath: string | undefined;
 }): Candidate[] {
-  if (opts.operatorPath !== undefined) {
-    return [{ via: 'operator', cwd: physical(opts.operatorPath) }];
+  const { place, listingCwd, operatorPath } = known;
+  if (operatorPath !== undefined) {
+    return [{ via: 'operator', cwd: physical(operatorPath) }];
   }
-  const transcript =
-    opts.sessionId === undefined
-      ? undefined
-      : transcriptFinder(opts.configDir).find(opts.sessionId);
-  const place =
-    transcript === undefined ? undefined : firstPlace(transcript.file);
   const fromTranscript: Candidate[] =
     place === undefined
       ? []
@@ -218,10 +236,28 @@ function candidatesFor(opts: {
           },
         ];
   const fromListing: Candidate[] =
-    opts.listingCwd === undefined
+    listingCwd === undefined
       ? []
-      : [{ via: 'listing', cwd: physical(opts.listingCwd) }];
+      : [{ via: 'listing', cwd: physical(listingCwd) }];
   return [...fromTranscript, ...fromListing];
+}
+
+// The candidates, with the session's start place read from its transcript. The
+// operator's path stands alone, so no transcript is read for it.
+function candidatesFor(opts: {
+  configDir: string;
+  sessionId: string | undefined;
+  listingCwd: string | undefined;
+  operatorPath: string | undefined;
+}): Candidate[] {
+  const { sessionId, listingCwd, operatorPath } = opts;
+  const transcript =
+    operatorPath !== undefined || sessionId === undefined
+      ? undefined
+      : transcriptFinder(opts.configDir).find(sessionId);
+  const place =
+    transcript === undefined ? undefined : firstPlace(transcript.file);
+  return candidatesFrom({ place, listingCwd, operatorPath });
 }
 
 /**

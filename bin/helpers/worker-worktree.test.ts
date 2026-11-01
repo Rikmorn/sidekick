@@ -6,8 +6,11 @@ import { execRunner } from './pm-data.js';
 import type { WorktreeEntry } from './worker-repo.js';
 import {
   type Candidate,
+  candidatesFrom,
   type FindInput,
+  type FoundWorktree,
   findWorktree,
+  isBranchProven,
   locateWorktree,
   nativeBranch,
 } from './worker-worktree.js';
@@ -399,6 +402,102 @@ describe('findWorktree', () => {
         NO_NAME,
       ],
     });
+  });
+});
+
+describe('candidatesFrom', () => {
+  const nothing = {
+    place: undefined,
+    listingCwd: undefined,
+    operatorPath: undefined,
+  };
+
+  test("the transcript's place first, with its branch, then the listing's cwd", () => {
+    expect(
+      candidatesFrom({
+        place: { cwd: '/r/w1', gitBranch: 'w1' },
+        listingCwd: '/r/w1/src',
+        operatorPath: undefined,
+      }),
+    ).toEqual([
+      { via: 'transcript', cwd: '/r/w1', gitBranch: 'w1' },
+      { via: 'listing', cwd: '/r/w1/src' },
+    ]);
+  });
+
+  test("the operator's path alone, whatever else is known", () => {
+    expect(
+      candidatesFrom({
+        place: { cwd: '/r/w1', gitBranch: 'w1' },
+        listingCwd: '/r/w1',
+        operatorPath: '/r/x',
+      }),
+    ).toEqual([{ via: 'operator', cwd: '/r/x' }]);
+  });
+
+  test('none when nothing is known', () => {
+    expect(candidatesFrom(nothing)).toEqual([]);
+  });
+
+  test('each path as a physical one, read through a symlink', () => {
+    const real = tmp();
+    const link = path.join(tmp(), 'link');
+    fs.symlinkSync(real, link);
+    const sub = path.join(link, 'sub');
+    expect(
+      candidatesFrom({
+        place: { cwd: link, gitBranch: undefined },
+        listingCwd: sub,
+        operatorPath: undefined,
+      }),
+    ).toEqual([
+      { via: 'transcript', cwd: real, gitBranch: undefined },
+      { via: 'listing', cwd: path.join(real, 'sub') },
+    ]);
+    expect(candidatesFrom({ ...nothing, operatorPath: sub })).toEqual([
+      { via: 'operator', cwd: path.join(real, 'sub') },
+    ]);
+  });
+});
+
+describe('isBranchProven', () => {
+  const found = (over: Partial<FoundWorktree>): FoundWorktree => ({
+    kind: 'found',
+    path: '/r/w1',
+    branch: 'w1',
+    branchFrom: 'git',
+    locked: undefined,
+    prunable: undefined,
+    via: 'listing',
+    ...over,
+  });
+
+  test.each([
+    ['the operator named the worktree', found({ via: 'operator' })],
+    [
+      'the transcript names the branch',
+      found({ via: 'transcript', branchFrom: 'transcript' }),
+    ],
+    [
+      "the listing found it on Claude Code's own branch",
+      found({ branch: 'worktree-w1' }),
+    ],
+    [
+      "the name found it, on Claude Code's own branch",
+      found({ via: 'name', branch: 'worktree-w1' }),
+    ],
+  ])('holds when %s', (_label, at) => {
+    expect(isBranchProven(at, 'w1')).toBe(true);
+  });
+
+  test.each([
+    ['the listing found it on another branch', found({})],
+    [
+      'the transcript found it but names no branch',
+      found({ via: 'transcript' }),
+    ],
+  ])('fails when %s', (_label, at) => {
+    expect(isBranchProven(at, 'w1')).toBe(false);
   });
 });
 

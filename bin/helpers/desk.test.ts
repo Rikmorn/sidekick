@@ -510,13 +510,63 @@ describe('runDeskCli: finding the worktree', () => {
   test("a worker's row cwd finds its worktree when no transcript does", () => {
     const fx = repoFixture();
     fx.addWorker('w5', 'bbbb0005', { worktree: false });
-    const folder = sibling(fx.top, 'w5', 'w5');
+    const folder = sibling(fx.top, 'w5', 'worktree-w5');
     const rows = [childRow(), w5Row({ cwd: folder })];
     const s = snapshotOf(harness(fx.top, listing(rows)));
     expect(s.children.find((c) => c.name === 'w5')).toMatchObject({
       lastCommit: 'w5 work',
       unintegrated: 1,
     });
+    expect(s.warnings).toEqual([]);
+  });
+
+  test("a worktree the row cwd finds on a branch nothing shows is the worker's keeps its row and facts, with a warning, and counts no commits", () => {
+    const fx = repoFixture();
+    fx.addWorker('w5', 'bbbb0005', { worktree: false });
+    const folder = sibling(fx.top, 'w5', 'w5');
+    fs.writeFileSync(path.join(folder, 'dirty.txt'), 'x\n');
+    const calls: string[][] = [];
+    const recording: Runner = (cmd, args, cwd) => {
+      calls.push(args);
+      return execRunner(cmd, args, cwd);
+    };
+    const rows = [childRow(), w5Row({ cwd: folder })];
+    const s = snapshotOf(harness(fx.top, listing(rows), tmp(), recording));
+    expect(s.children.find((c) => c.name === 'w5')).toEqual({
+      hasPid: true,
+      kind: 'background',
+      status: 'busy',
+      name: 'w5',
+      state: 'working',
+      plan: 'The plan title',
+      lastCommit: 'w5 work',
+      unintegrated: 0,
+      uncommitted: true,
+    });
+    expect(s.warnings).toEqual([
+      `w5: its worktree ${folder} is on w5, which nothing shows is its branch, so no commits are counted`,
+    ]);
+    const counts = calls.filter((args) => args.includes('rev-list'));
+    expect(counts.map((args) => args[2])).toEqual([
+      expect.stringMatching(/\.\.refs\/heads\/worktree-w1$/),
+    ]);
+  });
+
+  test("a missing worktree the row cwd finds on a branch nothing shows is the worker's says both, and counts no commits", () => {
+    const fx = repoFixture();
+    fx.addWorker('w5', 'bbbb0005', { worktree: false });
+    const folder = sibling(fx.top, 'w5', 'w5');
+    fs.rmSync(folder, { recursive: true, force: true });
+    const rows = [childRow(), w5Row({ cwd: folder })];
+    const s = snapshotOf(harness(fx.top, listing(rows)));
+    expect(s.children.find((c) => c.name === 'w5')).toMatchObject({
+      unintegrated: 0,
+      uncommitted: false,
+    });
+    expect(s.warnings).toEqual([
+      `w5: its worktree ${folder} is missing`,
+      `w5: its worktree ${folder} is on w5, which nothing shows is its branch, so no commits are counted`,
+    ]);
   });
 
   test("the commits count against the brief's target branch, not the main checkout's HEAD", () => {
@@ -529,11 +579,11 @@ describe('runDeskCli: finding the worktree', () => {
         .readFileSync(brief, 'utf-8')
         .replace('orchestrator: orch', 'target: dev\norchestrator: orch'),
     );
-    const folder = sibling(fx.top, 'w5', 'w5');
+    const folder = sibling(fx.top, 'w5', 'worktree-w5');
     fs.writeFileSync(path.join(folder, 'more.txt'), 'm\n');
     git(folder, 'add', 'more.txt');
     git(folder, 'commit', '-q', '-m', 'more');
-    git(fx.top, 'branch', 'dev', 'w5~1');
+    git(fx.top, 'branch', 'dev', 'worktree-w5~1');
     const s = snapshotOf(
       harness(fx.top, listing([childRow(), w5Row({ cwd: folder })])),
     );
@@ -578,7 +628,7 @@ describe('runDeskCli: finding the worktree', () => {
         git(fx.top, 'rev-parse', 'HEAD'),
       ),
     );
-    const folder = sibling(feature, 'w5', 'w5', 'feature');
+    const folder = sibling(feature, 'w5', 'worktree-w5', 'feature');
     const s = snapshotOf(
       harness(fx.top, listing([childRow(), w5Row({ cwd: folder })])),
     );

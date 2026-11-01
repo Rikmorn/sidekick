@@ -1623,6 +1623,7 @@ function briefFileIssues(brief, bounds) {
 // bin/helpers/worker-worktree.ts
 import * as path5 from "node:path";
 var nativeBranch = (name) => `worktree-${name}`;
+var isBranchProven = (found, name) => found.via === "operator" || found.branchFrom === "transcript" || found.branch === nativeBranch(name);
 var HEADS2 = "refs/heads/";
 var shortBranch = (ref) => ref.startsWith(HEADS2) ? ref.slice(HEADS2.length) : ref;
 function contains(parent, child) {
@@ -1707,12 +1708,11 @@ function findWorktree(input) {
     return result;
   return { kind: "not found", tried: [...tried, result] };
 }
-function candidatesFor(opts) {
-  if (opts.operatorPath !== undefined) {
-    return [{ via: "operator", cwd: physical(opts.operatorPath) }];
+function candidatesFrom(known) {
+  const { place, listingCwd, operatorPath } = known;
+  if (operatorPath !== undefined) {
+    return [{ via: "operator", cwd: physical(operatorPath) }];
   }
-  const transcript = opts.sessionId === undefined ? undefined : transcriptFinder(opts.configDir).find(opts.sessionId);
-  const place = transcript === undefined ? undefined : firstPlace(transcript.file);
   const fromTranscript = place === undefined ? [] : [
     {
       via: "transcript",
@@ -1720,8 +1720,14 @@ function candidatesFor(opts) {
       gitBranch: place.gitBranch
     }
   ];
-  const fromListing = opts.listingCwd === undefined ? [] : [{ via: "listing", cwd: physical(opts.listingCwd) }];
+  const fromListing = listingCwd === undefined ? [] : [{ via: "listing", cwd: physical(listingCwd) }];
   return [...fromTranscript, ...fromListing];
+}
+function candidatesFor(opts) {
+  const { sessionId, listingCwd, operatorPath } = opts;
+  const transcript = operatorPath !== undefined || sessionId === undefined ? undefined : transcriptFinder(opts.configDir).find(sessionId);
+  const place = transcript === undefined ? undefined : firstPlace(transcript.file);
+  return candidatesFrom({ place, listingCwd, operatorPath });
 }
 function locateWorktree(opts) {
   const mainTop = physical(opts.mainTop);
@@ -1777,15 +1783,11 @@ var COUNT = /^\d+$/;
 function candidatesOf(find, row) {
   const transcript = row?.sessionId === undefined ? undefined : find(row.sessionId);
   const place = transcript === undefined ? undefined : firstPlace(transcript.file);
-  const fromTranscript = place === undefined ? [] : [
-    {
-      via: "transcript",
-      cwd: physical(place.cwd),
-      gitBranch: place.gitBranch
-    }
-  ];
-  const fromListing = row?.cwd === undefined ? [] : [{ via: "listing", cwd: physical(row.cwd) }];
-  return [...fromTranscript, ...fromListing];
+  return candidatesFrom({
+    place,
+    listingCwd: row?.cwd,
+    operatorPath: undefined
+  });
 }
 function briefTopOf(runGit, record2) {
   const found = checkoutOf(runGit, path6.dirname(record2.brief));
@@ -1813,6 +1815,24 @@ function countBase(runGit, name, read, briefTop) {
   const head = briefTop === undefined ? undefined : headCommit(runGit, briefTop);
   return head === undefined ? fallback("its brief's checkout has no readable HEAD") : { rev: head, warnings: [] };
 }
+function countOf(runGit, repo, name, found, base) {
+  if (!isBranchProven(found, name)) {
+    return {
+      unintegrated: 0,
+      warnings: [
+        `${name}: its worktree ${found.path} is on ${found.branch}, which nothing shows is its branch, so no commits are counted`
+      ],
+      baseWarnings: []
+    };
+  }
+  const rev = gitIn(runGit, repo.top, ["rev-list", "--count", `${base.rev}..refs/heads/${found.branch}`, "--"], name);
+  const count = "stdout" in rev ? rev.stdout.trim() : "";
+  return {
+    unintegrated: COUNT.test(count) ? Number(count) : 0,
+    warnings: "warning" in rev ? [rev.warning] : [],
+    baseWarnings: base.warnings
+  };
+}
 function gitFacts(runGit, repo, name, found, base) {
   if (found.kind === "not found") {
     return {
@@ -1822,19 +1842,16 @@ function gitFacts(runGit, repo, name, found, base) {
       warnings: [...base.warnings, `${name}: no worktree was found for it`]
     };
   }
-  const rev = gitIn(runGit, repo.top, ["rev-list", "--count", `${base.rev}..refs/heads/${found.branch}`, "--"], name);
-  const count = "stdout" in rev ? rev.stdout.trim() : "";
-  const unintegrated = COUNT.test(count) ? Number(count) : 0;
-  const countWarnings = "warning" in rev ? [rev.warning] : [];
+  const count = countOf(runGit, repo, name, found, base);
   if (found.prunable !== undefined) {
     return {
       worktreeExists: false,
-      unintegrated,
+      unintegrated: count.unintegrated,
       uncommitted: false,
       warnings: [
         `${name}: its worktree ${found.path} is missing`,
-        ...base.warnings,
-        ...countWarnings
+        ...count.baseWarnings,
+        ...count.warnings
       ]
     };
   }
@@ -1844,12 +1861,12 @@ function gitFacts(runGit, repo, name, found, base) {
   return {
     worktreeExists: true,
     ...subject === "" ? {} : { lastCommit: subject },
-    unintegrated,
+    unintegrated: count.unintegrated,
     uncommitted: "stdout" in status && status.stdout.trim() !== "",
     warnings: [
       ...[log, status].flatMap((r) => ("warning" in r) ? [r.warning] : []),
-      ...countWarnings,
-      ...base.warnings
+      ...count.warnings,
+      ...count.baseWarnings
     ]
   };
 }
@@ -6365,10 +6382,9 @@ function notFoundIssues(name, tried) {
   ];
 }
 function unprovenIssues(found, name, confirm) {
-  const native = nativeBranch(name);
-  const shown = found.via === "operator" || found.branchFrom === "transcript" || found.branch === native;
-  if (shown)
+  if (isBranchProven(found, name))
     return [];
+  const native = nativeBranch(name);
   const how = found.via === "listing" ? "the job listing's cwd" : "the transcript's first cwd, which names no branch";
   return [
     `finish found the worktree ${found.path} through ${how}, but it is on ${found.branch}, not ${native}, so nothing shows the branch is the worker's: if it is, confirm with ${confirm}`

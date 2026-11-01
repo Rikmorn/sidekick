@@ -32,7 +32,13 @@ import {
   worktreeListed,
 } from './worker-repo.js';
 import { heldBackup, type Ready } from './worker-teardown.js';
-import { type Found, nativeBranch, shortBranch } from './worker-worktree.js';
+import {
+  type Found,
+  type FoundWorktree,
+  isBranchProven,
+  nativeBranch,
+  shortBranch,
+} from './worker-worktree.js';
 
 // branchVerdict checks only the branch, so the worktree must have that branch
 // checked out: the branch it started on, when its transcript names one.
@@ -92,9 +98,6 @@ export interface BriefRead {
   top: string | undefined;
 }
 
-/** The finder's answer when it found the worktree. */
-export type FoundWorktree = Extract<Found, { kind: 'found' }>;
-
 function briefPlaces(read: BriefRead, worktree: string): BriefPlaces {
   // git status prints paths in this form.
   const report = path.posix.normalize(read.brief.report);
@@ -147,22 +150,17 @@ export function notFoundIssues(name: string, tried: Tried[]): string[] {
 }
 
 /**
- * finish acts on a branch only with evidence it is the worker's: the
- * transcript's `gitBranch`, Claude Code's own name, or the operator's
- * `--worktree`. The branch git lists at a worktree found any other way
- * refuses, with `confirm`, the command that names the worktree.
+ * finish acts on a branch only with evidence it is the worker's, as
+ * `isBranchProven` decides. The branch git lists at a worktree found any other
+ * way refuses, with `confirm`, the command that names the worktree.
  */
 export function unprovenIssues(
   found: FoundWorktree,
   name: string,
   confirm: string,
 ): string[] {
+  if (isBranchProven(found, name)) return [];
   const native = nativeBranch(name);
-  const shown =
-    found.via === 'operator' ||
-    found.branchFrom === 'transcript' ||
-    found.branch === native;
-  if (shown) return [];
   const how =
     found.via === 'listing'
       ? "the job listing's cwd"
