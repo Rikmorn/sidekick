@@ -54,7 +54,7 @@ export function workTreeRootOf(cwd: string): string | undefined {
  */
 export const repoRootOf = (cwd: string): string => workTreeRootOf(cwd) ?? cwd;
 
-/** Rules a project install delivers only where the repo enables the plugin: each governs how the operator works through it, which a team repo has not agreed. */
+/** Rules a project install delivers only where the repo enables the plugin: each carries a personal way of working with sidekick, which a team repo has not agreed. */
 export const PLUGIN_ONLY_RULES: readonly string[] = [
   'sk-pm-conventions.md',
   'sk-parallel-sessions.md',

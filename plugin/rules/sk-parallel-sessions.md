@@ -31,4 +31,4 @@ Claude Code refuses any command in a worktree, a subagent's too, whose text cann
 
 - Land only in the target branch's owner checkout. From a worktree, hand the tested commit to its session or the operator; never move a branch another checkout holds.
 - In a worktree, at superpowers' `finishing-a-development-branch`, offer only a pull request or keep, since merging locally changes into the main checkout. At its `using-git-worktrees` Project Setup, run the repo's setup, not `npm install`.
-- `ExitWorktree` removes only a worktree this session made with `EnterWorktree`. Any other goes at the session's exit prompt.
+- `ExitWorktree` removes only a worktree this session made with `EnterWorktree`. Any other goes at the session's exit prompt, or, for a dispatched worker, through `sidekick worker finish`.

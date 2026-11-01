@@ -66,7 +66,7 @@ The command writes and removes only files named `sk-*.md`. That prefix is sideki
 Each scope delivers a different set:
 
 - `--user` delivers every rule.
-- `--project` delivers every rule except `sk-pm-conventions.md` and `sk-parallel-sessions.md`, unless the repo's committed `.claude/settings.json` enables a `sidekick@` plugin. Project copies serve colleagues who may not have the plugin. Those two rules govern how the operator works through it, which colleagues have not agreed. Without that key the install prints `not delivered to this repo`. It also removes an existing copy: a rule a scope does not deliver is removed from that scope. If the settings file exists but cannot be read, the install leaves existing copies as they are and says so.
+- `--project` delivers every rule except `sk-pm-conventions.md` and `sk-parallel-sessions.md`, unless the repo's committed `.claude/settings.json` enables a `sidekick@` plugin. Project copies serve colleagues who may not have the plugin. Those two rules carry your own way of working with sidekick, which colleagues have not agreed. Without that key the install prints `not delivered to this repo`. It also removes an existing copy: a rule a scope does not deliver is removed from that scope. If the settings file exists but cannot be read, the install leaves existing copies as they are and says so.
 
 `check --project` checks the repo's `sk-*` copies. When the repo holds none, it checks the user-level copies instead and names that directory. Where the two directories share a rule, Claude Code loads both copies, and the check says so. That is expected where the repo keeps copies for colleagues without sidekick.
 

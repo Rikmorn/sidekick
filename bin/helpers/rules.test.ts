@@ -597,7 +597,7 @@ describe('installRules and checkRules with a scope set', () => {
     expect(checkRules(src, dest, leaveAsIs)).toEqual([]);
   });
 
-  test('the CLI does not throw when the source omits the plugin-only rule', () => {
+  test('the CLI does not throw when the source omits a plugin-only rule', () => {
     const src = tmp();
     const cwd = tmp();
     gitInit(cwd);
@@ -813,7 +813,7 @@ describe('runRulesCli --project check with no sk-* copies in the repo', () => {
     expect(r.text).not.toContain('match the shipped copies');
   });
 
-  test('user mode checks every shipped rule, including the plugin-only one', () => {
+  test('user mode checks every shipped rule, including the plugin-only ones', () => {
     const e = setup();
     write(e.src, PM, RULE_B);
     write(e.user, 'sk-a.md', RULE_A);
