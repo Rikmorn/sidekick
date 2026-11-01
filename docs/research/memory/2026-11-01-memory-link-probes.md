@@ -1,5 +1,7 @@
 > Research for #271, `sidekick memory link`. Run 2026-11-01 by Claude for the operator, on Claude Code 2.1.316, in interactive sessions driven through tmux. The CLI under test was `plugin/bin/sidekick` as built at commit `3919395`. #274, #276, and #278 rest on these results. A record: it takes only the edits `sk-pm-conventions.md` §Placement test (tense) lists.
 
+> **Amended 2026-11-01 (#272):** §The paired replay of `sk-memory.md` adds a replay of that rule on five of the memory trial's scenarios. It ran in headless `claude -p` sessions at commit `3112d95`, so the first line's interactive sessions and commit describe the link probes alone.
+
 # What Claude Code does with a linked repo (2026-11-01)
 
 `sidekick memory link` moves a repo's auto-memory into a store folder and sets `autoMemoryDirectory` in the main checkout's gitignored `.claude/settings.local.json`. Unit tests cover `link` itself. These probes check what Claude Code does with the result, in interactive sessions. The design for #271 rested on four assumptions about that:
@@ -809,4 +811,374 @@ done
 P="$1"; shift
 source "$(dirname "$0")/lib.sh"
 "$@"
+```
+
+## The paired replay of `sk-memory.md`
+
+The rule changed where saves landed and how many files they made, but not what a later session found. Both arms passed all five reads. With the rule, each kind of fact joined one file: a workstream, a family support file, a family script catalogue, or a reference file. Alpha's index ended at four lines. Without the rule, each fact took its own file and index line, six by the end. The rule cost 31% more, most of it on S8, where it sent the session after a skill it had no permission to write.
+
+### Setup
+
+The replay ran on 2026-11-01 on Claude Code 2.1.316, with the rule and the built CLI as of commit `3112d95`. Every run used the default model, `claude-opus-5-5`.
+
+- **Root.** `/private/tmp/sk-memreplay.eINU45`, made with `mktemp -d /tmp/sk-memreplay.XXXXXX`, held `armA/` and `armB/`. Each arm ran the script in [`2026-10-30-trial-method.md` §Fixture](./2026-10-30-trial-method.md#fixture), unchanged, into its own folder.
+- **Store.** Each arm had its own store at `<arm>/store`, built by `sidekick memory link <repo> --family acme` with `SIDEKICK_MEMORY_STORE` set. `link` wrote the store's `README.md`, each repo's marker, and the key in alpha's and beta's `.claude/settings.local.json`. Alpha's folder was `<arm>/store/acme/alpha/`, and `alpha-wt-retry` took it from the main checkout.
+- **Arms.** Arm A had `plugin/rules/sk-memory.md` copied, untracked, into `.claude/rules/` in `alpha`, `alpha-wt-retry`, and `beta`. Arm B had no copy. Both arms ignored `.claude/settings.local.json` and `.claude/rules/` through `.git/info/exclude`, so `git status` read the same in each.
+- **Runs.** Each run was `claude -p "<prompt>" --permission-mode acceptEdits --max-turns 20 --output-format json --add-dir <arm>/store`. It started from an emptied environment, so the launching session's variables stayed out.
+- **One plugin off.** `--settings` turned off episodic-memory, the one memory tool the user scope enables. Its search reads the operator's real conversations, which discuss these very scenarios. Every other plugin and setting loaded as usual.
+- **Order.** S1, S2, S4, S7, then S8, each with arm A's write and read, then arm B's. The prompts and checkouts are the method's §Scenarios. S1's read said "Carry on. What did we decide, and what's next?"
+
+What the transcripts and the runs' output show:
+
+- **Measured:** every arm A transcript lists `.claude/rules/sk-memory.md` among its loaded instruction files, and no arm B transcript does.
+- **Measured:** every run's system prompt named its arm's `store/acme/alpha/` as the memory folder. No run created a default `memory/` folder, and no run changed a fixture checkout.
+- **Measured:** all 20 runs ended in success, so none was retried.
+- **Measured:** both stores hold `link`'s `README.md`, which names `sk-memory.md`. No arm B session read it.
+- **Measured:** a Haiku session in a folder of its own checked the setup first. It named its store folder as its memory folder, listed the rule among its loaded files, and had no episodic-memory tool, skill, or agent.
+
+### Arm A: the rule loaded
+
+Paths are under `<arm>/store/acme/`. Placement names each file the run wrote or edited.
+
+| Run | Answer | Placement | Index | USD, turns |
+|---|---|---|---|---|
+| S1w | Saved | New workstream file `alpha/webhook-retries.md`, with a status line, the branch `main`, and a state section. A session record in `alpha/sessions/` | One line, for the workstream | 0.61, 12 |
+| S1r | Pass: "Retry 3 times with exponential backoff starting at 30s, then dead-letter". The 410 question stays open, and the next step is "writing the dead-letter handler" | Added `feat/retry` to the workstream's branches | None | 0.52, 10 |
+| S2w | Saved | New family support file `support.md`, and one sentence linking it from the workstream | A new family index of one line, and one line in alpha's | 0.48, 9 |
+| S2r | Pass: "The refund call timed out", "The caller retried it", and "The refund call sends no idempotency key" | None | None | 0.34, 4 |
+| S4w | Captured, unasked | The 410 item moved from Open to Decided in the workstream. A session record | The workstream's line edited | 0.48, 11 |
+| S4r | Pass: "No, 410s don't get retried." | None | None | 0.35, 4 |
+| S7w | Saved | New family script catalogue `scripts.md`. A session record | One line in the family index, one in alpha's | 0.55, 17 |
+| S7r | Pass: `--merchant <slug>` for the dry run, then `--live --merchant <slug>`. It says the worktree lacks the script | Added the worktree finding to the catalogue | None | 0.36, 7 |
+| S8w | Saved | Tried `.claude/skills/release/SKILL.md` in alpha, and the write was refused. Then a new reference file `alpha/reference.md`, and a session record | One line | 0.96, 25 |
+| S8r | Pass: steps 1 to 4 in order, with two missing steps it proposes between them | Added a finding to the reference file | None | 0.59, 10 |
+
+### Arm B: no rule
+
+| Run | Answer | Placement | Index | USD, turns |
+|---|---|---|---|---|
+| S1w | Saved | Three new files in `alpha/`, one per fact: the policy, the 410 question, and the dead-letter step | Three lines | 0.47, 9 |
+| S1r | Pass: "Retry 3 times with exponential backoff starting at 30s, then send the event to dead-letter". The 410 question is open, and the handler is "the next piece of work" | None | None | 0.43, 9 |
+| S2w | Saved | New file `alpha/refund-duplicate-no-idempotency-key.md` | One line | 0.47, 10 |
+| S2r | Pass: "A refund call timed out and was retried", and "The call sends no idempotency key" | None | None | 0.36, 5 |
+| S4w | Captured, unasked | Rewrote `alpha/webhook-410-skip-retries.md` whole, and edited two other files | That file's line edited | 0.45, 12 |
+| S4r | Pass: "No, 410s are not retried." | None | None | 0.33, 4 |
+| S7w | Saved | New file `alpha/bulk-close-stale-returns.md` | One line | 0.47, 13 |
+| S7r | Pass: `--merchant <slug>` for the dry run, then `--live --merchant <slug>`. It says the worktree lacks the script | None | None | 0.32, 7 |
+| S8w | Saved | New file `alpha/release-procedure.md` | One line | 0.35, 5 |
+| S8r | Pass: a table of the four steps in order | None | None | 0.35, 8 |
+
+### Placement against the rule
+
+| The rule asks for | Arm A | Arm B |
+|---|---|---|
+| One file per workstream, with a status line, its branches, and a state section | `alpha/webhook-retries.md` held S1's and S4's facts, and the worktree's read added its branch | S1's facts went to three files, and S4 changed all three |
+| The support file in the family folder | `support.md` | `alpha/refund-duplicate-no-idempotency-key.md` |
+| The script catalogue in the family folder | `scripts.md` | `alpha/bulk-close-stale-returns.md` |
+| A skill for a procedure that repeats, else the reference file | The skill write was refused, then `alpha/reference.md` | `alpha/release-procedure.md` |
+| A pointer to each family file from the family's index and the repo's | Both indexes, for both family files | No family file |
+| A session record at `sessions/<date>-<session id>.md`, with no pointer | Four of the five writes, all but S2w, each named by topic and never pointed to | None |
+| Targeted edits to shared files | Every change to an existing file was an Edit | S4w rewrote one file with Write |
+| Each item's date, scope, and origin | All three, in the body of every file | Date and origin in each file; scope only as alpha's name in the text |
+| The index at the end | Alpha's: 4 lines, 669 bytes. The family's: 2 lines | Alpha's: 6 lines, 860 bytes |
+
+### Comparison
+
+**The answers tie at 5 of 5, and arm A answered worse on no scenario.** Every read ran in an alpha checkout, which reads alpha's folder. A fact in the repo folder was therefore as easy to find as one in the family folder. The replay leaves out the scenarios where placement decides the answer: S5 reads a sibling repo's fact, and in S3 two sessions write at once.
+
+**Arm A's index grew by kind of file, and arm B's by fact.** Arm A's later facts joined files it already had, so its lines name the workstream, the reference file, the support file, and the catalogue. Arm B added a line for each fact. Inferred, not measured: the gap widens with each fact, since arm A's index grows only with new workstreams.
+
+Where arm A did worse than arm B:
+
+- **Cost.** Arm A cost 5.24 USD over 109 turns, and arm B 4.01 USD over 82, so arm A cost 31% more. S8 accounts for 0.86 USD of the 1.23 USD gap.
+- **S8w's skill.** The rule's preference for a skill sent the session to `.claude/skills/release/SKILL.md`, a write that needed a permission the headless run could not grant. The session also loaded `superpowers:writing-skills`, whose list of what not to make a skill includes project-specific conventions. The session named that clash. Inferred, not tested: an interactive session would have asked the operator instead.
+- **A skill the worktree cannot see.** Inferred, not tested: a skill written in alpha's main checkout is untracked, so the worktree would not see it, as S7 showed for `playground/`. The S8w session also offered to delete the memory copy once the skill existed, which would leave the worktree with nothing.
+- **Session record names.** The S1w session tried to read its id with `env`, which needed approval, so it named its record by topic. Later records were named the same way, and S2w wrote no record. Claude Code still added `originSessionId` to each record's front matter.
+
+Also measured:
+
+- **Family files lack Claude Code's front matter.** Every file written in the repo folder but the index carries `originSessionId` and `modified`. Only arm B's S4w rewrite wrote them itself, copied from the file it replaced. `support.md` and `scripts.md` carry only the `type` the session wrote, so their origin is in the body, as the rule asks.
+- **Arm A's reads wrote.** S1r, S7r, and S8r each made one targeted edit to a shared file, and each edit was correct. No arm B read wrote anything.
+- **A turn count over the cap.** Arm A's S8w reported 25 turns under `--max-turns 20` and still ended in success. This record does not explain the count.
+
+### Replay cost
+
+Each figure is the sum of a scenario's write and read, from each run's `total_cost_usd`. The totals sum the unrounded figures.
+
+| Scenario | Arm A (USD) | Arm B (USD) |
+|---|---|---|
+| S1 | 1.13 | 0.91 |
+| S2 | 0.82 | 0.83 |
+| S4 | 0.83 | 0.78 |
+| S7 | 0.91 | 0.79 |
+| S8 | 1.55 | 0.69 |
+| Total | 5.24 | 4.01 |
+
+The setup check cost 0.0072 USD on Haiku. With it, the 21 headless runs total 9.25 USD. The runs' own durations sum to 641 seconds in arm A and 433 in arm B.
+
+### Replay sources
+
+- The replay sessions' transcripts under `~/.claude/projects/-private-tmp-sk-memreplay-eINU45-*`, read on 2026-11-01. They live only on the machine that ran the replay, until Claude Code's transcript cleanup deletes them.
+- Each run's JSON result, error stream, and store snapshot under `<root>/out/`, in the same temporary folder.
+- [`2026-10-30-trial-method.md`](./2026-10-30-trial-method.md) §Scenarios and §Fixture, for the prompts, the pass conditions, and the fixture.
+
+### Replay scripts
+
+Each script takes the replay root first and sits beside `fixture.sh`, the method's §Fixture script. `probe.sh` ran first, then `setup.sh` once per arm, then `replay.sh <root> S1` and `replay.sh <root> S2 S4 S7 S8`. `score.sh` gathered each run's evidence, and `final.sh` the end state. Two helpers that only watched the run are left out.
+
+`probe.sh` reached its last line only by hand. `run.sh` ended on the failed `git status` of checkouts the probe folder lacks, so the answer came from `out/probe-00.json`.
+
+#### `setup.sh`
+
+```bash
+#!/bin/bash
+# Builds one arm of the sk-memory replay: the memory trial's fixture, a store
+# holding one family, alpha and beta linked into it with the built CLI, and for
+# arm A the rule copied into each checkout's .claude/rules/.
+#   SK_BIN=<built sidekick> RULE=<sk-memory.md> bash setup.sh <replay root> <armA|armB>
+set -euo pipefail
+R="$1"
+ARM="$2"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+: "${SK_BIN:?SK_BIN names the built sidekick CLI}"
+: "${RULE:?RULE names the sk-memory.md under test}"
+A="$R/$ARM"
+FAMILY=acme
+
+bash "$HERE/fixture.sh" "$A"
+
+# Both arms ignore the same paths, so git status reads alike in each: the local
+# settings link writes, and the rules folder only arm A fills.
+for repo in alpha beta; do
+  printf '.claude/settings.local.json\n.claude/rules/\n' >> "$A/family/$repo/.git/info/exclude"
+done
+
+for repo in alpha beta; do
+  SIDEKICK_MEMORY_STORE="$A/store" node "$SK_BIN" memory link "$A/family/$repo" --family "$FAMILY"
+done
+
+if [ "$ARM" = armA ]; then
+  # Untracked copies, one per checkout: the worktree has its own working tree.
+  for co in alpha alpha-wt-retry beta; do
+    mkdir -p "$A/family/$co/.claude/rules"
+    cp "$RULE" "$A/family/$co/.claude/rules/sk-memory.md"
+  done
+fi
+
+mkdir -p "$R/out/snap"
+rsync -a --exclude .git "$A/store/" "$R/out/snap/$ARM-00-setup/store/"
+echo "=== $ARM store"
+find "$A/store" -path "$A/store/.git" -prune -o -type f -print | sed "s|$A/||" | sort
+echo "=== $ARM local settings"
+for repo in alpha beta; do echo "$repo: $(cat "$A/family/$repo/.claude/settings.local.json")"; done
+echo "=== $ARM rules"
+find "$A/family" -path '*/.claude/rules/*' -type f | sed "s|$A/||" | sort
+```
+
+#### `probe.sh`
+
+```bash
+#!/bin/bash
+# Setup check before the replay, in its own folder so no arm's project folder
+# gains a transcript: does a headless child honour the local key, load a rule
+# from .claude/rules/, and run without episodic-memory?
+#   RULE=<sk-memory.md> bash probe.sh <replay root>
+set -euo pipefail
+R="$1"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+: "${RULE:?RULE names the sk-memory.md under test}"
+P="$R/probe"
+mkdir -p "$P/family" "$P/store/p"
+git init -q -b main "$P/family/p"
+git -C "$P/family/p" config user.email probe@example.invalid
+git -C "$P/family/p" config user.name probe
+echo "# p" >"$P/family/p/README.md"
+git -C "$P/family/p" add -A
+git -C "$P/family/p" commit -q -m init
+printf '.claude/settings.local.json\n.claude/rules/\n' >>"$P/family/p/.git/info/exclude"
+mkdir -p "$P/family/p/.claude/rules"
+cp "$RULE" "$P/family/p/.claude/rules/sk-memory.md"
+printf '{ "autoMemoryDirectory": "%s" }\n' "$P/store/p" >"$P/family/p/.claude/settings.local.json"
+
+bash "$HERE/run.sh" "$R" probe 00 p \
+  'Answer from your context only, without calling any tool. 1) State the absolute path of your auto-memory directory exactly as your instructions give it, or say none is given. 2) List the first heading of every CLAUDE.md or rules file loaded into your context. 3) Say whether any tool, skill, or agent whose name contains "episodic" is available to you.' \
+  --model haiku
+jq -r .result "$R/out/probe-00.json"
+```
+
+#### `run.sh`
+
+```bash
+#!/bin/bash
+# One headless replay run in one arm's checkout, then a snapshot of that arm's
+# store and of each checkout's git status.
+#   bash run.sh <replay root> <armA|armB> <run id> <checkout> <prompt> [claude args...]
+set -uo pipefail
+R="$1"
+ARM="$2"
+ID="$3"
+CO="$4"
+PROMPT="$5"
+shift 5
+A="$R/$ARM"
+OUT="$R/out"
+mkdir -p "$OUT/snap"
+
+# Only these variables reach the child, so the launching session's id, effort,
+# and sidekick's role markers stay out of it.
+ENVARGS=()
+for v in HOME PATH USER LOGNAME SHELL TERM LANG TMPDIR __CF_USER_TEXT_ENCODING; do
+  [ -n "${!v-}" ] && ENVARGS+=("$v=${!v}")
+done
+# episodic-memory is the one memory tool the user scope enables. Its search
+# reads the operator's real conversations, which discuss these very scenarios.
+SETTINGS='{"enabledPlugins":{"episodic-memory@superpowers-marketplace":false}}'
+
+start=$(date +%s)
+(
+  cd "$A/family/$CO" &&
+    env -i "${ENVARGS[@]}" claude -p "$PROMPT" --permission-mode acceptEdits --max-turns 20 \
+      --output-format json --add-dir "$A/store" --settings "$SETTINGS" "$@" \
+      >"$OUT/$ARM-$ID.json" 2>"$OUT/$ARM-$ID.err" </dev/null
+)
+code=$?
+secs=$(($(date +%s) - start))
+summary=$(jq -r '"cost=\(.total_cost_usd) turns=\(.num_turns) error=\(.is_error) subtype=\(.subtype) session=\(.session_id) models=\(.modelUsage | keys | join(","))"' "$OUT/$ARM-$ID.json" 2>/dev/null || echo "no JSON")
+echo "$ARM $ID $CO exit=$code secs=$secs $summary" | tee -a "$OUT/runs.log"
+
+S="$OUT/snap/$ARM-$ID"
+mkdir -p "$S"
+rsync -a --exclude .git "$A/store/" "$S/store/"
+for c in alpha alpha-wt-retry beta; do
+  echo "--- $c"
+  git -C "$A/family/$c" status --porcelain --untracked-files=all
+done >"$S/checkouts.txt"
+```
+
+#### `replay.sh`
+
+```bash
+#!/bin/bash
+# The paired replay: for each scenario named, arm A's write then its read, then
+# arm B's, so drift in the service over the run reaches both arms alike. The
+# prompts and checkouts are the memory trial's (2026-10-30-trial-method.md
+# §Scenarios); S1's read says "carry on" in place of the topic.
+#   bash replay.sh <replay root> S1 S2 S4 S7 S8
+set -uo pipefail
+R="$1"
+shift
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+prompt() {
+  case "$1" in
+  S1w) echo "We're designing webhook retries for alpha. Decision: retry 3 times with exponential backoff starting at 30 seconds, then dead-letter. Open question: should a 410 response skip retries? Next step: write the dead-letter handler. Save context before you finish." ;;
+  S1r) echo "Carry on. What did we decide, and what's next?" ;;
+  S2w) echo "Prod support, unrelated to this branch: a merchant reports duplicate refunds. We found the refund call retried after a timeout although the first call had succeeded; the refund call sends no idempotency key. Save what we found." ;;
+  S2r) echo "Have we seen duplicate refunds before? What was the cause?" ;;
+  S4w) echo "For the webhook retry work, decision: a 410 response is permanent, so it skips retries entirely." ;;
+  S4r) echo "For the webhook retries, do 410 responses get retried?" ;;
+  S7w) echo "I just used playground/bulk-close/run.ts to close stale returns for a merchant: dry run first with no flag, then --live, with --merchant <slug>. Save how to use it." ;;
+  S7r) echo "How do I run the bulk-close script again?" ;;
+  S8w) echo "Here's how we release alpha: bump the version in package.json, run make check, tag vX.Y.Z, then write release notes. Save it as our release procedure." ;;
+  S8r) echo "Walk me through releasing alpha. Don't run anything." ;;
+  esac
+}
+
+checkout() {
+  case "$1" in
+  S1w | S2r | S4w | S7w | S8w) echo alpha ;;
+  S1r | S2w | S4r | S7r | S8r) echo alpha-wt-retry ;;
+  esac
+}
+
+# A run that left no result, or ended in an error other than the turn cap,
+# is retried once under its own id, and both are kept.
+run_once() {
+  local arm=$1 id=$2
+  bash "$HERE/run.sh" "$R" "$arm" "$id" "$(checkout "$id")" "$(prompt "$id")"
+  local sub
+  sub=$(jq -r .subtype "$R/out/$arm-$id.json" 2>/dev/null)
+  if [ "$sub" != success ] && [ "$sub" != error_max_turns ]; then
+    echo "$arm $id ended as '$sub'; retrying once" | tee -a "$R/out/runs.log"
+    bash "$HERE/run.sh" "$R" "$arm" "$id-retry" "$(checkout "$id")" "$(prompt "$id")"
+  fi
+}
+
+for s in "$@"; do
+  for arm in armA armB; do
+    run_once "$arm" "${s}w"
+    run_once "$arm" "${s}r"
+  done
+done
+```
+
+#### `score.sh`
+
+```bash
+#!/bin/bash
+# The evidence for scoring one run: its answer, its tool calls from its own
+# transcript, the denied or failed calls, what changed in the store since the
+# previous snapshot, and each checkout's git status.
+#   bash score.sh <replay root> <arm> <run id> <previous snapshot id>
+R="$1"
+ARM="$2"
+ID="$3"
+PREV="$4"
+OUT="$R/out"
+J="$OUT/$ARM-$ID.json"
+sid=$(jq -r .session_id "$J")
+co=$(awk -v a="$ARM" -v i="$ID" '$1==a && $2==i {print $3}' "$OUT/runs.log" | tail -1)
+key=$(echo "$R/$ARM/family/$co" | sed 's|[^A-Za-z0-9]|-|g')
+T="$HOME/.claude/projects/$key/$sid.jsonl"
+
+echo "=== $ARM $ID in $co: $(jq -r '"cost=\(.total_cost_usd) turns=\(.num_turns) subtype=\(.subtype)"' "$J")"
+echo "=== answer"
+jq -r .result "$J"
+echo "=== tool calls"
+jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="tool_use") |
+  "\(.name) \(.input.file_path // .input.path // .input.command // .input.pattern // .input.skill // (.input | tostring | .[0:160]))"' "$T" |
+  sed "s|$R/$ARM/||g"
+echo "=== failed or denied calls"
+jq -r 'select(.type=="user") | .message.content[]? | select(.type=="tool_result" and .is_error==true) |
+  (.content | if type=="array" then map(.text? // "") | join(" ") else tostring end) | .[0:200]' "$T" 2>/dev/null |
+  sed "s|$R/$ARM/||g"
+echo "=== store changes since $PREV"
+diff -ruN "$OUT/snap/$ARM-$PREV/store" "$OUT/snap/$ARM-$ID/store" | sed "s|$OUT/snap/||g"
+echo "=== checkouts"
+cat "$OUT/snap/$ARM-$ID/checkouts.txt"
+```
+
+#### `final.sh`
+
+```bash
+#!/bin/bash
+# The state the replay left: each arm's store and indexes, Claude Code's
+# project folders for the replay root, whether episodic-memory's skill reached
+# any replay session, and the baseline of the paths the replay must not write.
+#   bash final.sh <replay root>
+R="$1"
+KEY=$(echo "$R" | sed 's|[^A-Za-z0-9]|-|g')
+for a in armA armB; do
+  echo "=== $a store"
+  find "$R/$a/store" -path "$R/$a/store/.git" -prune -o -type f -print | sed "s|$R/$a/store/|  |" | sort
+  for idx in acme/MEMORY.md acme/alpha/MEMORY.md acme/beta/MEMORY.md; do
+    f="$R/$a/store/$idx"
+    [ -e "$f" ] && echo "--- $idx: $(wc -l <"$f" | tr -d ' ') lines, $(wc -c <"$f" | tr -d ' ') bytes" && cat "$f"
+  done
+  echo "--- $a checkouts"
+  for c in alpha alpha-wt-retry beta; do
+    echo "$c: [$(git -C "$R/$a/family/$c" status --porcelain --untracked-files=all | tr '\n' ' ')]"
+  done
+done
+echo "=== project folders for the replay root"
+for d in "$HOME/.claude/projects/$KEY"-*; do
+  echo "$(basename "$d" | sed "s/^$KEY-//"): $(ls "$d" | grep -c '\.jsonl$') transcripts, memory/ $([ -e "$d/memory" ] && echo present || echo absent)"
+done
+echo "=== replay transcripts naming episodic-memory's skill"
+grep -l 'remembering-conversations' "$HOME/.claude/projects/$KEY"-arm*/*.jsonl 2>/dev/null | wc -l
+echo "=== baseline"
+stat -f '%Sm %z %N' "$HOME/.claude/settings.json" "$HOME/.claude/plugins/installed_plugins.json" "$HOME/.claude/CLAUDE.md"
+shasum "$HOME/.claude/settings.json" "$HOME/.claude/CLAUDE.md" | cut -c1-12
+ls "$HOME/.claude/rules/"
+ls -ld "$HOME/AI-Memory-Store" 2>&1
 ```
