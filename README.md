@@ -102,6 +102,14 @@ sidekick profile switch <name>                 # print the lines that resume thi
 
 `sidekick` is on `PATH` only inside a session, so run these from one, or call the installed `bin/sidekick` directly. `skp <name>` then starts an interactive session. Profiles live in two stores, searched in order. The repo store is `.claude/profiles/` at the top of the git work tree, and wins on a shared name. The user store is `profiles/` under `CLAUDE_CONFIG_DIR` or `~/.claude`. `SIDEKICK_PROFILES_DIR`, when set and non-empty, is the only store. The skill reference `plugin/skills/sidekick/references/profiles.md` covers the rest.
 
+## Memory
+
+The memory store is one git repo that holds the auto-memory of several repos, at `~/AI-Memory-Store` unless `SIDEKICK_MEMORY_STORE` names another folder. `sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run]` moves a repo's auto-memory into it. It copies Claude Code's default memory folder into a repo folder in the store and writes a marker there. Then it sets `autoMemoryDirectory` in the main checkout's `.claude/settings.local.json`, archives the default folder, and commits. `--dry-run` prints those steps and writes nothing. A re-run skips each step already done.
+
+`link` refuses rather than overwrites, and names each refusal. It leaves alone a store path that is not a sidekick store, a settings key it did not write, and a folder another repo owns. It also stops while another session is open in the repo, since that session keeps writing to the old folder. `--force` passes only that check. ADR-0013 records why `link` may write the one settings key it owns, and why no other.
+
+A family folder groups related repos, and `--family` places the repo in one. The store's own `README.md`, written when the store is created, describes the layout, the marker, the reserved names, and the changes you make by hand. `link` does not deliver `sk-memory.md`, the rule for sessions that write the store: a release does, through `sidekick rules install`.
+
 ## What is in the bundle
 
 | Path | What |

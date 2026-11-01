@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * sidekick — the plugin's executable, with the command families `rules`,
- * `pm`, `hook`, `profile`, `worker`, `desk`, and `session`.
+ * `pm`, `hook`, `profile`, `worker`, `desk`, `session`, and `memory`.
  * Shipped as plugin/bin/sidekick (a Node bundle built from this file) and run
  * from source as `bun bin/cli.ts`; both resolve the shipped rules relative to
  * this file.
@@ -15,6 +15,7 @@ import * as v from 'valibot';
 import { DESK_USAGE_LINE, runDeskCli } from './helpers/desk.js';
 import { HOOK_USAGE_LINE, runHookCli } from './helpers/hook.js';
 import { configDirOf } from './helpers/main-session.js';
+import { MEMORY_USAGE_LINE, runMemoryCli } from './helpers/memory.js';
 import { PM_USAGE_LINE, runPmCli } from './helpers/pm.js';
 import { execRunner } from './helpers/pm-data.js';
 import {
@@ -75,7 +76,7 @@ export function isMainEntrypoint(
   }
 }
 
-export const USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       ${PROFILE_USAGE_LINE}\n       ${WORKER_USAGE_LINE}\n       ${DESK_USAGE_LINE}\n       ${SESSION_USAGE_LINE}\n       sidekick --version`;
+export const USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       ${PROFILE_USAGE_LINE}\n       ${WORKER_USAGE_LINE}\n       ${DESK_USAGE_LINE}\n       ${SESSION_USAGE_LINE}\n       ${MEMORY_USAGE_LINE}\n       sidekick --version`;
 
 export interface MainContext {
   env: NodeJS.ProcessEnv;
@@ -85,7 +86,7 @@ export interface MainContext {
   readStdin?: () => string;
   /** Where the context monitor keeps its latch files and the profile check its temp file; defaults to the OS temp folder. */
   tmpdir?: string;
-  /** Runs `claude` for the `profile`, `worker`, `desk`, and `session` families; defaults to the real one. */
+  /** Runs `claude` for the `profile`, `worker`, `desk`, `session`, and `memory` families; defaults to the real one. */
   runClaude?: ClaudeRunner;
   /** Raw stdout for `profile argv`; defaults to a synchronous write to fd 1. */
   write?: (chunk: string) => void;
@@ -182,6 +183,19 @@ export function main(
       {
         cwd: ctx.cwd,
         configDir: configDirOf(ctx.env),
+        runClaude: ctx.runClaude ?? execClaude,
+      },
+      out,
+      err,
+    );
+  }
+  if (sub === 'memory') {
+    return runMemoryCli(
+      rest,
+      {
+        env: ctx.env,
+        cwd: ctx.cwd,
+        home: ctx.env.HOME || os.homedir(),
         runClaude: ctx.runClaude ?? execClaude,
       },
       out,
