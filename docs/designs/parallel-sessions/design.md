@@ -4,6 +4,8 @@ Status: planned (#266, #267, #282, #283, #284, #285, #286, #287) · Scale: explo
 
 Amended 2026-10-31 (#266): piece 3's landed check became a simulated merge over the target's history. A review found that the two patch-id checks missed a landing after the target edited near the landed lines, and matched a change of meaning. The merge caught every landing that kept the content. Every `finish` now keeps its branch in a backup ref. The options, the decision, and the review record the design as it stood.
 
+Amended 2026-11-01 (#286): piece 7's base became a per-repo `worktree.baseRef` setting, since sidekick's main checkout holds its integration branch. L-d's setup hook was probed and left to #287's trial, and the rule carries the guard's passing spellings. The probes are in [`2026-10-31-worktree-probes-for-the-rule.md`](../../research/parallel-sessions/2026-10-31-worktree-probes-for-the-rule.md).
+
 The design became #282 to #291, and took #266 and #267 as one of its pieces. #266, #267, and #282 to #287 joined R10 beside the memory design's #270 to #278, and #288 to #291 stay in backlog (operator, 2026-10-31). Gate 1 approved by the operator on 2026-10-31, with the assumed A3 replaced by the stated K18, and P3's missing case answered (§Constraints, §Cases). Gate 2: T1 and T2 ruled on 2026-10-31, and T4 settled after a survey (§Rulings at gate 2). Gate 3 approved on 2026-10-31 (§Decision).
 
 Research: [`docs/research/parallel-sessions/`](../../research/parallel-sessions/README.md).

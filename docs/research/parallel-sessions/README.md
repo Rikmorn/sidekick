@@ -9,6 +9,7 @@ How should one operator run worktrees and parallel sessions day to day? The case
 - [2026-10-31-worktree-from-a-worktree-probe.md](./2026-10-31-worktree-from-a-worktree-probe.md): where `claude --bg --worktree` puts a worktree when launched from a linked worktree, what it starts from, and what that means for `sidekick worker dispatch`.
 - [2026-10-31-overlap-and-merge-coordination.md](./2026-10-31-overlap-and-merge-coordination.md): how tools and research surface and resolve overlap between parallel changes, at planning, during work, at merge, and after merge. It gives the evidence on how often agent work conflicts and how hard the conflicts are.
 - [2026-10-31-parallel-agent-tools-survey.md](./2026-10-31-parallel-agent-tools-survey.md): community tools for parallel agent sessions, compared on setup, integration, collisions, awareness, and several repos. It says what each writes to Claude Code's config, and lists the failure modes practitioners report.
+- [2026-10-31-worktree-probes-for-the-rule.md](./2026-10-31-worktree-probes-for-the-rule.md): #286's probes. It gives the command shapes the isolation guard refuses, counted over every transcript. It says what hooks see when a worktree is made and when the guard refuses. It also covers which spelling gives each base, and how sidekick's and the work repo's gates behave in a worktree.
 
 ## Served
 
