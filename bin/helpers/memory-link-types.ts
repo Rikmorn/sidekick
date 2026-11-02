@@ -80,6 +80,8 @@ export interface LinkFacts {
   /** The store's absolute path. */
   store: string;
   storeState: StoreState;
+  /** The store's own files its first commit never took, or why git could not list them. */
+  storePending: { paths: string[] } | { issue: string };
   overrideIssue: string | undefined;
   nameIssues: string[];
   repo: RepoFacts | { kind: 'refused'; issue: string };
@@ -113,6 +115,8 @@ export interface OwnedPaths {
 /** One step of a link, in the order it runs. */
 export type LinkAction =
   | { kind: 'createStore'; store: string }
+  /** Commits the store's own files after its first commit failed. */
+  | { kind: 'finishStore'; store: string; paths: string[] }
   | { kind: 'createFolder'; folder: string }
   | { kind: 'writeMarker'; folder: string; root: string }
   | { kind: 'copyFile'; from: string; to: string }

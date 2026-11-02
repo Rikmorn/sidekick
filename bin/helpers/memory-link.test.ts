@@ -450,6 +450,46 @@ describe('runLink: re-runs', () => {
     expect(git(w.store, 'status', '--porcelain')).toBe(`?? ${name}/session.md`);
   });
 
+  test("a re-run after the store's first commit failed commits the store's own files, then links", () => {
+    // A failed add leaves the files untracked; a failed commit leaves them staged.
+    for (const step of ['add', 'commit']) {
+      const w = world();
+      const failing: LinkDeps['runGit'] = (cmd, args, cwd) =>
+        args.includes(step) && args.includes('README.md')
+          ? { code: 1, stdout: '', stderr: 'gpg failed to sign the data' }
+          : execRunner(cmd, args, cwd);
+      const first = link(w, opts(w.top), { ...w.deps, runGit: failing });
+      expect(first.code).toBe(1);
+      expect(first.err[0]).toContain('create the store');
+      const again = link(w, opts(w.top));
+      expect(again.err).toEqual([]);
+      expect(again.code).toBe(0);
+      const name = path.basename(w.top);
+      expect(git(w.store, 'log', '--format=%s')).toBe(
+        `link ${name}\nchore: create the memory store`,
+      );
+      expect(
+        git(w.store, 'show', '--name-only', '--format=', 'HEAD~1')
+          .split('\n')
+          .sort(),
+      ).toEqual(['README.md', 'archive/.gitkeep', 'sources/.gitkeep']);
+      expect(committed(w.store)).toEqual(linkPaths(w));
+      expect(git(w.store, 'status', '--porcelain')).toBe('');
+    }
+  });
+
+  test("a committed store README edited by hand stays the operator's, uncommitted", () => {
+    const w = world();
+    expect(link(w, opts(w.top)).code).toBe(0);
+    const head = git(w.store, 'rev-parse', 'HEAD');
+    fs.appendFileSync(path.join(w.store, 'README.md'), 'my own note\n');
+    const again = link(w, opts(w.top));
+    expect(again.code).toBe(0);
+    expect(again.out.join('\n')).toContain('already linked');
+    expect(git(w.store, 'rev-parse', 'HEAD')).toBe(head);
+    expect(git(w.store, 'status', '--porcelain')).toBe('M README.md');
+  });
+
   test('a re-run after a failed archive commits the untracked copies with the archive', () => {
     const w = world();
     expect(createStore(w.store, execRunner).ok).toBe(true);

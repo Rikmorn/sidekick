@@ -2494,6 +2494,11 @@ var RESERVED_NAMES = ["sources", "archive"];
 var MARKER_FILE = ".sidekick.json";
 var README_FILE = "README.md";
 var KEEP_FILE = ".gitkeep";
+var CREATION_PATHS = [
+  README_FILE,
+  ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`)
+];
+var CREATION_MESSAGE = "chore: create the memory store";
 function storeRoot(env, home) {
   const override = env.SIDEKICK_MEMORY_STORE;
   return override !== undefined && override !== "" ? override : path10.join(home, "AI-Memory-Store");
@@ -2610,16 +2615,13 @@ function createStore(store, runGit) {
   const init = runGit("git", ["init"], store);
   if (init.code !== 0)
     return { ok: false, issue: gitIssue(["init"], init) };
-  const paths = [
-    README_FILE,
-    ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`)
-  ];
+  const paths = [...CREATION_PATHS];
   fs9.writeFileSync(path10.join(store, README_FILE), STORE_README);
   for (const name of RESERVED_NAMES) {
     fs9.mkdirSync(path10.join(store, name), { recursive: true });
     fs9.writeFileSync(path10.join(store, name, KEEP_FILE), "");
   }
-  const committed = commitPaths(store, paths, "chore: create the memory store", runGit);
+  const committed = commitPaths(store, paths, CREATION_MESSAGE, runGit);
   return committed.ok ? { ok: true, paths } : committed;
 }
 var STORE_README = `# Memory store
@@ -4861,16 +4863,22 @@ function planLink(facts, opts) {
   };
 }
 function readyOf(facts) {
-  const { repo } = facts;
+  const { repo, storePending } = facts;
   if (facts.storeState.kind === "foreign" || repo.kind === "refused") {
     return;
   }
   const { settings, target } = repo;
   if (settings.kind !== "ready" || target === undefined)
     return;
-  if ("issue" in target.pending)
+  if ("issue" in target.pending || "issue" in storePending)
     return;
-  return { repo, settings, target, pending: target.pending.paths };
+  return {
+    repo,
+    settings,
+    target,
+    pending: target.pending.paths,
+    storePending: storePending.paths
+  };
 }
 function linkCommand(root, names, extra = "") {
   const flags = [
@@ -4890,13 +4898,16 @@ function strands(repo) {
 }
 function refusalsOf(facts, opts) {
   const { repo } = facts;
-  return [
+  const all = [
     ...storeRefusals(facts.storeState),
+    ..."issue" in facts.storePending ? [pendingRefusal(facts.storePending.issue)] : [],
     ...facts.overrideIssue === undefined ? [] : [`${facts.overrideIssue}. Unset it and run link again.`],
     ...facts.nameIssues.map((issue) => `${issue}; choose another with --family or --name.`),
     ...repo.kind === "refused" ? [repo.issue] : repoRefusals(repo, opts)
   ];
+  return [...new Set(all)];
 }
+var pendingRefusal = (issue) => `${issue}. Fix the store's git repo, then run link again.`;
 function storeRefusals(state) {
   if (state.kind !== "foreign")
     return [];
@@ -4984,9 +4995,7 @@ function targetRefusals(target, root) {
     ...targetStateRefusals(target, root),
     ...familyRefusals(target),
     ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path19.basename(found.folder) })}`),
-    ..."issue" in target.pending ? [
-      `${target.pending.issue}. Fix the store's git repo, then run link again.`
-    ] : []
+    ..."issue" in target.pending ? [pendingRefusal(target.pending.issue)] : []
   ];
 }
 function targetStateRefusals(target, root) {
@@ -5038,7 +5047,7 @@ var COMMITTED_KINDS = new Set([
 function actionsOf(ready, facts) {
   const first = isFirstLink(ready.repo);
   const steps = [
-    ...storeActions(facts),
+    ...storeActions(ready, facts),
     ...folderActions(ready),
     ...first ? copyActions(ready) : [],
     ...first ? [mergeAction(ready)] : [],
@@ -5047,10 +5056,12 @@ function actionsOf(ready, facts) {
   const writesStore = steps.some((step) => COMMITTED_KINDS.has(step.kind)) || ready.pending.length > 0;
   return writesStore ? [...steps, commitAction(ready, facts.store)] : steps;
 }
-function storeActions(facts) {
+function storeActions(ready, facts) {
   const { kind } = facts.storeState;
-  const creates = kind === "absent" || kind === "empty";
-  return creates ? [{ kind: "createStore", store: facts.store }] : [];
+  if (kind === "absent" || kind === "empty") {
+    return [{ kind: "createStore", store: facts.store }];
+  }
+  return ready.storePending.length > 0 ? [{ kind: "finishStore", store: facts.store, paths: ready.storePending }] : [];
 }
 function folderActions(ready) {
   const { folder, state } = ready.target;
@@ -5198,6 +5209,7 @@ function gatherFacts(opts, deps) {
   return {
     store,
     storeState: state,
+    storePending: state.kind === "store" ? uncommittedCreation(store, deps.runGit) : { paths: [] },
     overrideIssue: overrideIssue(deps.env),
     nameIssues,
     repo,
@@ -5352,6 +5364,26 @@ function copyState(from, to) {
   return fs18.readFileSync(from).equals(fs18.readFileSync(to)) ? "same" : "differs";
 }
 function ownedChanges(store, owned, runGit) {
+  const listed = statusIn(store, [owned.folderRel, ARCHIVE_DIR], runGit);
+  if ("issue" in listed)
+    return listed;
+  const sources = [
+    owned.defaultFolder,
+    ...ownArchives(store, owned.projectKey)
+  ];
+  const isOwned = (p) => fs18.existsSync(path21.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
+  return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
+}
+var UNTRACKED = "??";
+var ADDED = "A";
+function uncommittedCreation(store, runGit) {
+  const listed = statusIn(store, [...CREATION_PATHS], runGit);
+  if ("issue" in listed)
+    return listed;
+  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs18.existsSync(path21.join(store, e.path));
+  return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
+}
+function statusIn(store, pathspecs, runGit) {
   const args = [
     "--no-optional-locks",
     "--literal-pathspecs",
@@ -5360,19 +5392,13 @@ function ownedChanges(store, owned, runGit) {
     "-z",
     "--untracked-files=all",
     "--",
-    owned.folderRel,
-    ARCHIVE_DIR
+    ...pathspecs
   ];
   const r = runGit("git", args, store);
   if (r.code !== 0) {
     return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
   }
-  const sources = [
-    owned.defaultFolder,
-    ...ownArchives(store, owned.projectKey)
-  ];
-  const isOwned = (p) => fs18.existsSync(path21.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
-  return { paths: porcelainPaths(r.stdout).filter(isOwned) };
+  return { entries: porcelainEntries(r.stdout) };
 }
 function isOwnCopy(store, folderRel, sources, p) {
   const prefix = `${folderRel}/`;
@@ -5396,16 +5422,16 @@ function ownArchives(store, key) {
   const parent = path21.join(store, ...ARCHIVE_DIR.split("/"));
   return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path21.join(parent, name));
 }
-function porcelainPaths(output) {
+function porcelainEntries(output) {
   const fields = output.split("\x00").filter((field) => field !== "");
-  const paths = [];
+  const entries = [];
   for (let i = 0;i < fields.length; i++) {
     const status = fields[i].slice(0, 2);
-    paths.push(fields[i].slice(3));
+    entries.push({ status, path: fields[i].slice(3) });
     if (status.includes("R") || status.includes("C"))
       i++;
   }
-  return paths;
+  return entries;
 }
 var ARCHIVE_DATE = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
 var isOwnArchiveName = (entry, key) => entry.startsWith(`${key}-`) && ARCHIVE_DATE.test(entry.slice(key.length + 1));
@@ -5506,6 +5532,10 @@ function runAction(action, runGit) {
       const created = createStore(action.store, runGit);
       return created.ok ? done : created;
     }
+    case "finishStore": {
+      const finished = commitPaths(action.store, action.paths, CREATION_MESSAGE, runGit);
+      return finished.ok ? done : finished;
+    }
     case "createFolder":
       fs19.mkdirSync(action.folder, { recursive: true });
       return done;
@@ -5579,6 +5609,8 @@ function phrase(action) {
   switch (action.kind) {
     case "createStore":
       return forms("Created", "create", `the store at ${action.store}`);
+    case "finishStore":
+      return forms("Committed", "commit", `the store's own files, which its first commit missed, as "${CREATION_MESSAGE}": ${action.paths.join(", ")}`);
     case "createFolder":
       return forms("Created", "create", action.folder);
     case "writeMarker":

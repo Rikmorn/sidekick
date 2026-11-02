@@ -34,6 +34,7 @@ interface Ready {
   settings: ReadySettings;
   target: TargetFacts;
   pending: string[];
+  storePending: string[];
 }
 
 /** Turns the facts into every refusal that applies, or the actions to take. */
@@ -54,16 +55,22 @@ export function planLink(facts: LinkFacts, opts: PlanOptions): LinkPlan {
 }
 
 // Undefined exactly when `refusalsOf` reports the store, the checkout, the
-// settings, a name, or the pending paths.
+// settings, a name, or either list of pending paths.
 function readyOf(facts: LinkFacts): Ready | undefined {
-  const { repo } = facts;
+  const { repo, storePending } = facts;
   if (facts.storeState.kind === 'foreign' || repo.kind === 'refused') {
     return undefined;
   }
   const { settings, target } = repo;
   if (settings.kind !== 'ready' || target === undefined) return undefined;
-  if ('issue' in target.pending) return undefined;
-  return { repo, settings, target, pending: target.pending.paths };
+  if ('issue' in target.pending || 'issue' in storePending) return undefined;
+  return {
+    repo,
+    settings,
+    target,
+    pending: target.pending.paths,
+    storePending: storePending.paths,
+  };
 }
 
 /** A command that runs `link` again on `root` with these names and extra flags, safe to paste. */
@@ -100,10 +107,15 @@ function strands(repo: RepoFacts): boolean {
   return isFirstLink(repo) || repo.defaultFolder.kind === 'present';
 }
 
+// Each refusal once: both pending lists come from one store, so a failed
+// `git status` reads the same for each.
 function refusalsOf(facts: LinkFacts, opts: PlanOptions): string[] {
   const { repo } = facts;
-  return [
+  const all = [
     ...storeRefusals(facts.storeState),
+    ...('issue' in facts.storePending
+      ? [pendingRefusal(facts.storePending.issue)]
+      : []),
     ...(facts.overrideIssue === undefined
       ? []
       : [`${facts.overrideIssue}. Unset it and run link again.`]),
@@ -112,7 +124,11 @@ function refusalsOf(facts: LinkFacts, opts: PlanOptions): string[] {
     ),
     ...(repo.kind === 'refused' ? [repo.issue] : repoRefusals(repo, opts)),
   ];
+  return [...new Set(all)];
 }
+
+const pendingRefusal = (issue: string): string =>
+  `${issue}. Fix the store's git repo, then run link again.`;
 
 function storeRefusals(state: StoreState): string[] {
   if (state.kind !== 'foreign') return [];
@@ -215,9 +231,7 @@ function targetRefusals(target: TargetFacts, root: string): string[] {
         `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path.basename(found.folder) })}`,
     ),
     ...('issue' in target.pending
-      ? [
-          `${target.pending.issue}. Fix the store's git repo, then run link again.`,
-        ]
+      ? [pendingRefusal(target.pending.issue)]
       : []),
   ];
 }
@@ -268,7 +282,8 @@ function familyRefusals(target: TargetFacts): string[] {
   return [];
 }
 
-// Store writes that the closing commit takes. `createStore` commits its own.
+// Store writes that the closing commit takes. `createStore` and `finishStore`
+// commit their own.
 const COMMITTED_KINDS: ReadonlySet<LinkAction['kind']> = new Set([
   'writeMarker',
   'copyFile',
@@ -278,7 +293,7 @@ const COMMITTED_KINDS: ReadonlySet<LinkAction['kind']> = new Set([
 function actionsOf(ready: Ready, facts: LinkFacts): LinkAction[] {
   const first = isFirstLink(ready.repo);
   const steps: LinkAction[] = [
-    ...storeActions(facts),
+    ...storeActions(ready, facts),
     ...folderActions(ready),
     ...(first ? copyActions(ready) : []),
     ...(first ? [mergeAction(ready)] : []),
@@ -290,10 +305,15 @@ function actionsOf(ready: Ready, facts: LinkFacts): LinkAction[] {
   return writesStore ? [...steps, commitAction(ready, facts.store)] : steps;
 }
 
-function storeActions(facts: LinkFacts): LinkAction[] {
+// The store's own commit comes first, as the store's first commit would have.
+function storeActions(ready: Ready, facts: LinkFacts): LinkAction[] {
   const { kind } = facts.storeState;
-  const creates = kind === 'absent' || kind === 'empty';
-  return creates ? [{ kind: 'createStore', store: facts.store }] : [];
+  if (kind === 'absent' || kind === 'empty') {
+    return [{ kind: 'createStore', store: facts.store }];
+  }
+  return ready.storePending.length > 0
+    ? [{ kind: 'finishStore', store: facts.store, paths: ready.storePending }]
+    : [];
 }
 
 function folderActions(ready: Ready): LinkAction[] {

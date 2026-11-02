@@ -29,6 +29,7 @@ import type {
 import { sessionsInRepo } from './memory-sessions.js';
 import { mainCheckout, settingsState } from './memory-settings.js';
 import {
+  CREATION_PATHS,
   findMarkers,
   folderNameIssue,
   MARKER_FILE,
@@ -87,6 +88,10 @@ export function gatherFacts(opts: LinkOptions, deps: LinkDeps): LinkFacts {
   return {
     store,
     storeState: state,
+    storePending:
+      state.kind === 'store'
+        ? uncommittedCreation(store, deps.runGit)
+        : { paths: [] },
     overrideIssue: overrideIssue(deps.env),
     nameIssues,
     repo,
@@ -319,21 +324,8 @@ export function ownedChanges(
   owned: OwnedPaths,
   runGit: Runner,
 ): { paths: string[] } | { issue: string } {
-  const args = [
-    '--no-optional-locks',
-    '--literal-pathspecs',
-    'status',
-    '--porcelain=v1',
-    '-z',
-    '--untracked-files=all',
-    '--',
-    owned.folderRel,
-    ARCHIVE_DIR,
-  ];
-  const r = runGit('git', args, store);
-  if (r.code !== 0) {
-    return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
-  }
+  const listed = statusIn(store, [owned.folderRel, ARCHIVE_DIR], runGit);
+  if ('issue' in listed) return listed;
   const sources = [
     owned.defaultFolder,
     ...ownArchives(store, owned.projectKey),
@@ -342,7 +334,56 @@ export function ownedChanges(
     fs.existsSync(path.join(store, p)) &&
     (isOwnArchivePath(p, owned.projectKey) ||
       isOwnCopy(store, owned.folderRel, sources, p));
-  return { paths: porcelainPaths(r.stdout).filter(isOwned) };
+  return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
+}
+
+// `git status --porcelain` codes: untracked, and added to the index (its first column).
+const UNTRACKED = '??';
+const ADDED = 'A';
+
+interface StatusEntry {
+  status: string;
+  path: string;
+}
+
+/**
+ * The store's own files that its first commit never took, when that commit
+ * failed: each of `CREATION_PATHS` on disk that git lists as untracked or
+ * added. A committed file edited since is the operator's, so it never counts.
+ */
+export function uncommittedCreation(
+  store: string,
+  runGit: Runner,
+): { paths: string[] } | { issue: string } {
+  const listed = statusIn(store, [...CREATION_PATHS], runGit);
+  if ('issue' in listed) return listed;
+  const neverCommitted = (e: StatusEntry): boolean =>
+    (e.status === UNTRACKED || e.status.startsWith(ADDED)) &&
+    fs.existsSync(path.join(store, e.path));
+  return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
+}
+
+// The status of each path under `pathspecs`, read literally and without the index lock.
+function statusIn(
+  store: string,
+  pathspecs: string[],
+  runGit: Runner,
+): { entries: StatusEntry[] } | { issue: string } {
+  const args = [
+    '--no-optional-locks',
+    '--literal-pathspecs',
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+    '--',
+    ...pathspecs,
+  ];
+  const r = runGit('git', args, store);
+  if (r.code !== 0) {
+    return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
+  }
+  return { entries: porcelainEntries(r.stdout) };
 }
 
 // The marker, or a file equal byte for byte to its counterpart in a source.
@@ -378,15 +419,15 @@ function ownArchives(store: string, key: string): string[] {
 }
 
 // `git status -z` gives `XY path` per entry, and a rename's old path as the next entry.
-function porcelainPaths(output: string): string[] {
+function porcelainEntries(output: string): StatusEntry[] {
   const fields = output.split('\0').filter((field) => field !== '');
-  const paths: string[] = [];
+  const entries: StatusEntry[] = [];
   for (let i = 0; i < fields.length; i++) {
     const status = fields[i].slice(0, 2);
-    paths.push(fields[i].slice(3));
+    entries.push({ status, path: fields[i].slice(3) });
     if (status.includes('R') || status.includes('C')) i++;
   }
-  return paths;
+  return entries;
 }
 
 const ARCHIVE_DATE = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;

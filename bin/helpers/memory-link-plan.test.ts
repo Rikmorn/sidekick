@@ -91,6 +91,7 @@ function facts(over: Partial<LinkFacts> = {}): LinkFacts {
   return {
     store: STORE,
     storeState: { kind: 'store' },
+    storePending: { paths: [] },
     overrideIssue: undefined,
     nameIssues: [],
     repo: repo(),
@@ -269,6 +270,33 @@ describe('planLink: a re-run after each action', () => {
     const actions = actionsOf(planLink(facts(), NO_FLAGS));
     expect(actions[0]).toEqual({ kind: 'createFolder', folder: TARGET });
     expect(actions.some((a) => a.kind === 'createStore')).toBe(false);
+  });
+
+  test("after the store's failed first commit: commits its own files first, then the same plan", () => {
+    const paths = ['README.md', 'sources/.gitkeep', 'archive/.gitkeep'];
+    const actions = actionsOf(
+      planLink(facts({ storePending: { paths } }), NO_FLAGS),
+    );
+    expect(actions[0]).toEqual({ kind: 'finishStore', store: STORE, paths });
+    expect(actions.slice(1)).toEqual(actionsOf(planLink(facts(), NO_FLAGS)));
+  });
+
+  test("after the store's failed first commit, on a linked repo: that commit is the one step", () => {
+    const paths = ['README.md'];
+    const plan = planLink(
+      facts({
+        storePending: { paths },
+        repo: repo({
+          settings: settings(TARGET),
+          defaultFolder: ABSENT_DEFAULT,
+          target: MARKED,
+        }),
+      }),
+      NO_FLAGS,
+    );
+    expect(actionsOf(plan)).toEqual([
+      { kind: 'finishStore', store: STORE, paths },
+    ]);
   });
 
   test('after the folder: writes the marker into the empty folder', () => {
@@ -697,6 +725,19 @@ describe('planLink: refusals', () => {
       }),
     });
     expect(refusal).toContain('git status failed');
+  });
+
+  test("a store git cannot read for the store's own files, reported once when both lists fail alike", () => {
+    const issue = 'git status failed in /s/store: broken';
+    const alone = refusals({ storePending: { issue } });
+    expect(alone).toEqual([
+      `${issue}. Fix the store's git repo, then run link again.`,
+    ]);
+    const both = refusals({
+      storePending: { issue },
+      repo: repo({ target: target({ pending: { issue } }) }),
+    });
+    expect(both).toEqual(alone);
   });
 
   test('reports every refusal that applies, not only the first', () => {

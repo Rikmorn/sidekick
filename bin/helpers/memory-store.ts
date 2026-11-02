@@ -19,6 +19,15 @@ export const MARKER_FILE = '.sidekick.json';
 const README_FILE = 'README.md';
 const KEEP_FILE = '.gitkeep';
 
+/** The store's own files, which its first commit takes. */
+export const CREATION_PATHS: readonly string[] = [
+  README_FILE,
+  ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`),
+];
+
+/** The message of the store's first commit. */
+export const CREATION_MESSAGE = 'chore: create the memory store';
+
 /** The store folder: `SIDEKICK_MEMORY_STORE` when set and non-empty, else `<home>/AI-Memory-Store`. */
 export function storeRoot(env: NodeJS.ProcessEnv, home: string): string {
   const override = env.SIDEKICK_MEMORY_STORE;
@@ -210,21 +219,13 @@ export function createStore(
   fs.mkdirSync(store, { recursive: true });
   const init = runGit('git', ['init'], store);
   if (init.code !== 0) return { ok: false, issue: gitIssue(['init'], init) };
-  const paths = [
-    README_FILE,
-    ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`),
-  ];
+  const paths = [...CREATION_PATHS];
   fs.writeFileSync(path.join(store, README_FILE), STORE_README);
   for (const name of RESERVED_NAMES) {
     fs.mkdirSync(path.join(store, name), { recursive: true });
     fs.writeFileSync(path.join(store, name, KEEP_FILE), '');
   }
-  const committed = commitPaths(
-    store,
-    paths,
-    'chore: create the memory store',
-    runGit,
-  );
+  const committed = commitPaths(store, paths, CREATION_MESSAGE, runGit);
   return committed.ok ? { ok: true, paths } : committed;
 }
 

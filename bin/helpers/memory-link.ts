@@ -20,6 +20,7 @@ import { planLink } from './memory-link-plan.js';
 import type { LinkAction, LinkFacts, LinkPlan } from './memory-link-types.js';
 import { mergeKey, SETTINGS_KEY } from './memory-settings.js';
 import {
+  CREATION_MESSAGE,
   commitPaths,
   createStore,
   MARKER_FILE,
@@ -144,6 +145,15 @@ function runAction(action: LinkAction, runGit: Runner): Applied {
       const created = createStore(action.store, runGit);
       return created.ok ? done : created;
     }
+    case 'finishStore': {
+      const finished = commitPaths(
+        action.store,
+        action.paths,
+        CREATION_MESSAGE,
+        runGit,
+      );
+      return finished.ok ? done : finished;
+    }
     case 'createFolder':
       fs.mkdirSync(action.folder, { recursive: true });
       return done;
@@ -251,6 +261,12 @@ function phrase(action: LinkAction): Phrase {
   switch (action.kind) {
     case 'createStore':
       return forms('Created', 'create', `the store at ${action.store}`);
+    case 'finishStore':
+      return forms(
+        'Committed',
+        'commit',
+        `the store's own files, which its first commit missed, as "${CREATION_MESSAGE}": ${action.paths.join(', ')}`,
+      );
     case 'createFolder':
       return forms('Created', 'create', action.folder);
     case 'writeMarker':
