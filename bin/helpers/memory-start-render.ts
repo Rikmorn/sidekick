@@ -64,7 +64,8 @@ type Matcher = (text: string) => string[];
 
 const unchecked: Gate = () => undefined;
 
-function storeFolder(store: string, dir: string): string {
+/** The store-relative folder, with `/` separators, that `sidekick memory lint --folder` takes and its findings name. */
+export function storeFolder(store: string, dir: string): string {
   return path.relative(store, dir).split(path.sep).join('/');
 }
 
@@ -84,6 +85,9 @@ const fileSource = (file: string, text: string): Source => ({
   dir: path.dirname(file),
   text,
 });
+
+const shownName = (gate: Gate, stream: Workstream): string =>
+  shown(gate, fileSource(stream.path, stream.name));
 
 // A record belongs to its repo folder, the parent of `sessions/`.
 const recordSource = (record: SessionRecord, text: string): Source => ({
@@ -152,9 +156,8 @@ function othersLines(others: Workstream[], gate: Gate): string[] {
 function matchLines(match: Match, repoFolder: string, gate: Gate): string[] {
   if (match.kind === 'menu') return [menuText(match.open, repoFolder, gate)];
   const { workstream, label, others } = match;
-  const line = `Workstream: ${workstream.name}, matched by ${label}. File: ${workstream.path}.`;
   return [
-    shown(gate, fileSource(workstream.path, line)),
+    `Workstream: ${shownName(gate, workstream)}, matched by ${label}. File: ${workstream.path}.`,
     ...othersLines(others, gate),
   ];
 }
@@ -246,17 +249,11 @@ function recordsBlock(parts: StartParts, gate: Gate): Block[] {
   const { match, records } = parts;
   const [newest] = records;
   if (match?.kind !== 'matched' || newest === undefined) return [];
-  const { workstream } = match;
-  const lead = shown(
-    gate,
-    fileSource(workstream.path, `Recent records on ${workstream.name}:`),
+  const lines = records.map(
+    (record) =>
+      `- ${record.date} ${shown(gate, recordSource(record, record.title))}: ${record.path}`,
   );
-  const lines = records.map((record) =>
-    shown(
-      gate,
-      recordSource(record, `- ${record.date} ${record.title}: ${record.path}`),
-    ),
-  );
+  const lead = `Recent records on ${shownName(gate, match.workstream)}:`;
   const text = [lead, ...lines].join('\n');
   const fitted = fitSection(text, RECORDS_BUDGET, path.dirname(newest.path));
   return [{ text: fitted, drop: Drop.Records }];
@@ -274,21 +271,19 @@ function familyBlock(parts: StartParts, gate: Gate): Block[] {
   return [{ text: fitted, drop: Drop.Family }];
 }
 
-function warningBlock(texts: string[]): Block[] {
-  if (texts.length === 0) return [];
-  const text = texts.map((warning) => `Warning: ${warning}`).join('\n');
-  return [{ text, drop: Drop.Warnings }];
-}
+const warningLine = (warning: string): string => `Warning: ${warning}`;
 
 function warningsBlock(parts: StartParts): Block[] {
   const compactUnsaved =
     parts.match !== undefined &&
     parts.source === 'compact' &&
     !parts.recordExists;
-  return warningBlock([
+  const texts = [
     ...parts.warnings,
     ...(compactUnsaved ? [COMPACT_WARNING] : []),
-  ]);
+  ];
+  if (texts.length === 0) return [];
+  return [{ text: texts.map(warningLine).join('\n'), drop: Drop.Warnings }];
 }
 
 function blocksOf(parts: StartParts, gate: Gate): Block[] {
@@ -301,12 +296,14 @@ function blocksOf(parts: StartParts, gate: Gate): Block[] {
   ];
 }
 
-// The gate fails open: a matcher that throws leaves every source unchecked, and a warning says so.
+// The gate fails open: a matcher that throws leaves every source unchecked, and a
+// warning says so. The warning ranks with the header, so the total budget never drops it.
 function checkedBlocks(parts: StartParts, matcher: Matcher): Block[] {
   try {
     return blocksOf(parts, withholding(parts.store, matcher));
   } catch {
-    return [...blocksOf(parts, unchecked), ...warningBlock([GATE_FAILED])];
+    const warning = { text: warningLine(GATE_FAILED), drop: Drop.Header };
+    return [...blocksOf(parts, unchecked), warning];
   }
 }
 
@@ -328,7 +325,7 @@ function withinTotal(blocks: Block[]): string {
  * each section to its budget, drops whole blocks past 9,000 characters in all
  * (warnings first, Next steps last, never the first line), and on `resume`
  * keeps only the first two lines. A matcher that throws leaves the text
- * unchecked and adds a warning.
+ * unchecked and adds a warning that the total budget never drops.
  */
 export function renderStart(
   parts: StartParts,

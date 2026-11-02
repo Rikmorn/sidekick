@@ -330,18 +330,30 @@ describe('the memory gate', () => {
     expect(out).toContain(withheld(FILE, 'proj', `${POISON_ID}, inst-marker`));
   });
 
-  test('a poisoned record title is withheld under its repo folder and the other record lines print', () => {
+  test('a poisoned record title is withheld in its line under its repo folder, and the other record lines print', () => {
     const records = [
       famRecord('2026-10-31', 'x', POISON),
       famRecord('2026-10-30', 'y', 'Spike'),
     ];
+    const poisoned = `${FAM_REPO}/sessions/2026-10-31-x.md`;
     const out = renderStart(parts({ records }));
     expect(blockStarting(out, 'Recent records')).toBe(
       [
         'Recent records on alpha:',
-        withheld(`${FAM_REPO}/sessions/2026-10-31-x.md`, 'fam/proj'),
+        `- 2026-10-31 ${withheld(poisoned, 'fam/proj')}: ${poisoned}`,
         `- 2026-10-30 Spike: ${FAM_REPO}/sessions/2026-10-30-y.md`,
       ].join('\n'),
+    );
+  });
+
+  test("a record is gated on its title, not its file's name", () => {
+    const named = {
+      ...famRecord('2026-10-31', 'x', 'Spike'),
+      path: `${FAM_REPO}/sessions/2026-10-31-${POISON}.md`,
+    };
+    const out = renderStart(parts({ records: [named] }));
+    expect(blockStarting(out, 'Recent records')).toBe(
+      `Recent records on alpha:\n- 2026-10-31 Spike: ${named.path}`,
     );
   });
 
@@ -403,7 +415,7 @@ describe('the memory gate', () => {
     );
   });
 
-  test('a poisoned matched workstream name is withheld in the header and the records lead', () => {
+  test('a poisoned matched workstream name is withheld in the workstream line and the records lead', () => {
     const spike = famRecord('2026-10-30', 'y', 'Spike');
     const out = renderStart(
       parts({
@@ -417,8 +429,12 @@ describe('the memory gate', () => {
       }),
     );
     const line = withheld(FILE, 'proj');
-    expect(out.split('\n\n')[0]).toBe(`${FIRST}\n${line}`);
-    expect(out).toContain(`\n\n${line}\n- 2026-10-30 Spike: ${spike.path}`);
+    expect(out.split('\n\n')[0]).toBe(
+      `${FIRST}\nWorkstream: ${line}, matched by branch feat. File: ${FILE}.`,
+    );
+    expect(blockStarting(out, 'Recent records')).toBe(
+      `Recent records on ${line}:\n- 2026-10-30 Spike: ${spike.path}`,
+    );
     expect(out).not.toContain(POISON);
   });
 
@@ -445,7 +461,7 @@ describe('the memory gate', () => {
     );
     const line = withheld(FILE, 'proj', 'x');
     expect(out.split('\n\n')).toEqual([
-      `${FIRST}\n${line}`,
+      `${FIRST}\nWorkstream: ${line}, matched by branch feat. File: ${FILE}.`,
       line,
       line,
       `Family index (fam):\n${withheld(FAMILY_INDEX, 'fam', 'x')}`,
@@ -460,6 +476,32 @@ describe('the memory gate', () => {
     });
     expect(out).toBe(`${renderStart(poisoned, () => [])}\n\n${GATE_FAILED}`);
     expect(out).toContain(POISON);
+  });
+
+  test('the gate-failed warning survives past the 9,000 total', () => {
+    const others = Array.from({ length: 375 }, (_, i) =>
+      ws(`other-${String(i).padStart(5, '0')}`),
+    );
+    const full = parts({
+      match: {
+        kind: 'matched',
+        workstream: ws('alpha', { path: FILE }),
+        label: 'branch feat',
+        others,
+      },
+      state: `## State\n${longText(300, 60)}`,
+      nextSteps: `## Next steps\n${longText(300, 60)}`,
+      records: [record('2026-10-01')],
+      family: { name: 'fam', path: FAMILY_INDEX, lines: ['# Fam'] },
+      warnings: ['w'],
+    });
+    const out = renderStart(full, () => {
+      throw new Error('boom');
+    });
+    expect(out.length).toBeLessThanOrEqual(9000);
+    expect(out.endsWith(`\n\n${GATE_FAILED}`)).toBe(true);
+    expect(out.split('\n\n')).not.toContain('Warning: w');
+    expect(out).not.toContain('Family index');
   });
 
   test('a withheld block keeps its drop rank under the 9,000 total', () => {

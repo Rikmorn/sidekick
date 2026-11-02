@@ -5332,6 +5332,7 @@ var fileSource = (file, text) => ({
   dir: path20.dirname(file),
   text
 });
+var shownName = (gate, stream) => shown(gate, fileSource(stream.path, stream.name));
 var recordSource = (record2, text) => ({
   file: record2.path,
   dir: path20.dirname(path20.dirname(record2.path)),
@@ -5383,9 +5384,8 @@ function matchLines(match, repoFolder, gate) {
   if (match.kind === "menu")
     return [menuText(match.open, repoFolder, gate)];
   const { workstream, label, others } = match;
-  const line = `Workstream: ${workstream.name}, matched by ${label}. File: ${workstream.path}.`;
   return [
-    shown(gate, fileSource(workstream.path, line)),
+    `Workstream: ${shownName(gate, workstream)}, matched by ${label}. File: ${workstream.path}.`,
     ...othersLines(others, gate)
   ];
 }
@@ -5441,9 +5441,8 @@ function recordsBlock(parts, gate) {
   const [newest] = records;
   if (match?.kind !== "matched" || newest === undefined)
     return [];
-  const { workstream } = match;
-  const lead = shown(gate, fileSource(workstream.path, `Recent records on ${workstream.name}:`));
-  const lines = records.map((record2) => shown(gate, recordSource(record2, `- ${record2.date} ${record2.title}: ${record2.path}`)));
+  const lines = records.map((record2) => `- ${record2.date} ${shown(gate, recordSource(record2, record2.title))}: ${record2.path}`);
+  const lead = `Recent records on ${shownName(gate, match.workstream)}:`;
   const text = [lead, ...lines].join(`
 `);
   const fitted = fitSection(text, RECORDS_BUDGET, path20.dirname(newest.path));
@@ -5461,19 +5460,17 @@ function familyBlock(parts, gate) {
   const fitted = fitSection(text, FAMILY_BUDGET, family.path);
   return [{ text: fitted, drop: Drop.Family }];
 }
-function warningBlock(texts) {
-  if (texts.length === 0)
-    return [];
-  const text = texts.map((warning) => `Warning: ${warning}`).join(`
-`);
-  return [{ text, drop: Drop.Warnings }];
-}
+var warningLine = (warning) => `Warning: ${warning}`;
 function warningsBlock(parts) {
   const compactUnsaved = parts.match !== undefined && parts.source === "compact" && !parts.recordExists;
-  return warningBlock([
+  const texts = [
     ...parts.warnings,
     ...compactUnsaved ? [COMPACT_WARNING] : []
-  ]);
+  ];
+  if (texts.length === 0)
+    return [];
+  return [{ text: texts.map(warningLine).join(`
+`), drop: Drop.Warnings }];
 }
 function blocksOf(parts, gate) {
   return [
@@ -5488,7 +5485,8 @@ function checkedBlocks(parts, matcher) {
   try {
     return blocksOf(parts, withholding(parts.store, matcher));
   } catch {
-    return [...blocksOf(parts, unchecked), ...warningBlock([GATE_FAILED])];
+    const warning = { text: warningLine(GATE_FAILED), drop: Drop.Header };
+    return [...blocksOf(parts, unchecked), warning];
   }
 }
 function joined(blocks) {
@@ -6867,14 +6865,11 @@ var LOAD_LIMIT_BYTES = 25 * 1024;
 var DEADLINE_EXIT = 124;
 var STALE_LOCK_MS2 = 10 * 60 * 1000;
 var MINUTE_MS = 60 * 1000;
-function storeRelative(store, dir) {
-  return path31.relative(store, dir).split(path31.sep).join("/");
-}
 function lintFolders(store) {
   const markers = findMarkers(store);
   const repos = markers.map((found) => ({
     kind: "repo",
-    folder: storeRelative(store, found.folder),
+    folder: storeFolder(store, found.folder),
     dir: found.folder,
     root: found.root,
     family: found.family
@@ -7113,7 +7108,8 @@ function workstreamInjection(stream, readSection2) {
     ["its name", stream.name],
     ["its description", stream.description],
     ["its State section", state ?? ""],
-    ["its Next steps section", next ?? ""]
+    ["its Next steps section", next ?? ""],
+    ["its heading list", otherHeadings(stream.path).join(", ")]
   ];
   return places.flatMap(([place, text]) => injectionAt(stream.path, place, text));
 }

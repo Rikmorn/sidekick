@@ -712,6 +712,19 @@ describe('injection-shaped', () => {
     ]);
   });
 
+  test('a heading the hook lists under Also in the file is checked', () => {
+    const body = `${SECTIONS}\n## Key files\n\n- a\n\n## ${INJECTION_TEXT}\n\n- b\n`;
+    const file = write('proj/alpha.md', workstream('alpha', 'open', body));
+    expect(lint().findings).toEqual([
+      {
+        id: 'injection-shaped',
+        folder: 'proj',
+        file,
+        message: `its heading list holds injection-shaped text ${INJECTION_IDS}`,
+      },
+    ]);
+  });
+
   test('a section the hook does not print is not checked', () => {
     const body = `${SECTIONS}\n## Context\n\n${INJECTION_TEXT}\n`;
     write('proj/alpha.md', workstream('alpha', 'open', body));

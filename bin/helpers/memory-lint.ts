@@ -22,9 +22,14 @@ import {
   rootFact,
 } from './memory-lint-repos.js';
 import { INJECTION, injectionHits, KEYS, keyHits } from './memory-patterns.js';
-import { headingAs, NEXT_HEADING, STATE_HEADING } from './memory-sections.js';
+import {
+  headingAs,
+  NEXT_HEADING,
+  otherHeadings,
+  STATE_HEADING,
+} from './memory-sections.js';
 import { SETTINGS_KEY } from './memory-settings.js';
-import { fitWorkstream } from './memory-start-render.js';
+import { fitWorkstream, storeFolder } from './memory-start-render.js';
 import { findMarkers, MARKER_FILE } from './memory-store.js';
 import {
   readStoreSettings,
@@ -163,17 +168,13 @@ type FolderScan = LintFolder & {
 
 type RepoScan = Extract<FolderScan, { kind: 'repo' }>;
 
-function storeRelative(store: string, dir: string): string {
-  return path.relative(store, dir).split(path.sep).join('/');
-}
-
 // Repo folders from their markers; a family folder is the parent of a two-level marker.
 function lintFolders(store: string): LintFolder[] {
   const markers = findMarkers(store);
   const repos = markers.map(
     (found): LintFolder => ({
       kind: 'repo',
-      folder: storeRelative(store, found.folder),
+      folder: storeFolder(store, found.folder),
       dir: found.folder,
       root: found.root,
       family: found.family,
@@ -554,6 +555,8 @@ function workstreamInjection(
     ['its description', stream.description],
     ['its State section', state ?? ''],
     ['its Next steps section', next ?? ''],
+    // Joined as the hook's Also in the file line joins them, so the lint tests the text the gate tests.
+    ['its heading list', otherHeadings(stream.path).join(', ')],
   ];
   return places.flatMap(([place, text]) =>
     injectionAt(stream.path, place, text),
@@ -564,7 +567,7 @@ function recordInjection(record: SessionRecord): Hit[] {
   return injectionAt(record.path, 'its title', record.title);
 }
 
-// The texts the hook or Claude Code prints: the index, kept workstreams' names, descriptions, and two sections, and record titles.
+// The texts the hook or Claude Code prints: the index, kept workstreams' names, descriptions, two sections, and heading lists, and record titles.
 function injectionShaped(scan: FolderScan, input: LintInput): Hit[] {
   const index = indexOf(scan);
   const streams = listWorkstreams(scan.dir, undefined);
