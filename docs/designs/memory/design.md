@@ -397,7 +397,7 @@ Assumptions, and what changes if each is wrong:
 
 | Lens | Load-bearing | Where it bites |
 |---|---|---|
-| Data model | Yes | The store's layout is the contract. Sessions write workstream files, the index, and their records; hooks write commits and records |
+| Data model | Yes | The store's layout is the contract. Sessions write workstream files, the index, and their records; the session-start snapshot commits them, and hook-written records are deferred to #273 |
 | Boundaries | Yes | sidekick ships tooling only; content stays on this machine and never enters this repo (K2) |
 | Extension points | Yes | A new repo is a registration; a new ingest tool writes to `sources/`; a new capture source writes the same record |
 | Contracts | Yes | The settings key, the layout README, the workstream front matter, and the rule's text, which the model reads every session |
@@ -448,7 +448,7 @@ Each piece is a self-contained brief for an issue. Piece 1 is configuration and 
 5. **The memory session-start hook** (#274). A hook script of its own, matching `startup|resume|clear|compact`.
    - Resolves it:
      - It prints the session id, the matched workstream or the menu, the family index within a set character budget, the registration check, and the lint's cached count.
-     - It runs the sweep, and writes stub records for missed sessions.
+     - It runs the sweep. Stub records for missed sessions are deferred to #273.
    - Verified:
      - A fact saved from one family repo reaches another's session without the question naming the first (S5), and again after `/compact`.
      - Two sessions in two family repos update one cross-repo workstream, and each sees the other's state at its next start.
@@ -503,7 +503,7 @@ Order:
 The parallel-sessions design inherits these from the store:
 
 - **Every write is attributable**, once #273's per-write commits land. Each commit then names its session, so "who changed this workstream, and when" is a `git log` query. Until then, a session-start snapshot names the session that started, not the writer.
-- **Per-session records** in `sessions/`, one writer each, holding receipts, compaction summaries, and stubs.
+- **Per-session records** in `sessions/`, one writer each, holding receipts. Hook-written compaction summaries and stubs are deferred to #273.
 - **Workstream files as the coordination surface.** A workstream's state section is the handoff point between sessions, and a cross-repo workstream in the family folder is the one place sessions in several repos share.
 - **A workstream key** that a session's title or a worker's brief can carry.
 
