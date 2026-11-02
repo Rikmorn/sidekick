@@ -8,6 +8,7 @@ import { linkCommand } from './memory-link-plan.js';
 import {
   GitDeadlineError,
   type LintDeps,
+  LintTimeLimitError,
   lintStore,
   MEMORY_LINT_IDS,
   type MemoryFinding,
@@ -1045,6 +1046,36 @@ describe('a git call past its deadline', () => {
     expect(
       lintStore(store, { ...deps(), runGit: worktreeFails }).findings,
     ).toEqual([]);
+  });
+});
+
+describe('the time limit', () => {
+  test('a run that starts past its end stops', () => {
+    expect(() =>
+      lintStore(store, { ...deps(), now: () => 2 }, { endsAt: 1 }),
+    ).toThrow(LintTimeLimitError);
+  });
+
+  test('a run that ends in time gives its findings', () => {
+    expect(
+      lintStore(store, deps(), { endsAt: Date.now() + 60_000 }).findings,
+    ).toEqual([]);
+  });
+
+  test('a run that passes its end partway stops at the next check', () => {
+    // Only the first reading is in time, so the run must look again to stop.
+    const clock = { reads: 0 };
+    const now = () => {
+      clock.reads += 1;
+      return clock.reads === 1 ? 0 : 10;
+    };
+    expect(() => lintStore(store, { ...deps(), now }, { endsAt: 5 })).toThrow(
+      LintTimeLimitError,
+    );
+  });
+
+  test('a run with no end has no limit', () => {
+    expect(lintStore(store, { ...deps(), now: () => 10 }).findings).toEqual([]);
   });
 });
 

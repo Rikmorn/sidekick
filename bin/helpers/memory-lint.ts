@@ -29,6 +29,7 @@ import {
   STATE_HEADING,
 } from './memory-sections.js';
 import { SETTINGS_KEY } from './memory-settings.js';
+import { DEADLINE_EXIT } from './memory-snapshot.js';
 import { fitWorkstream, storeFolder } from './memory-start-render.js';
 import { findMarkers, MARKER_FILE } from './memory-store.js';
 import {
@@ -101,6 +102,17 @@ export class GitDeadlineError extends Error {
   }
 }
 
+/**
+ * The run reached the end time `lintStore` was given. Thrown between units
+ * of work, so the caller drops the whole run.
+ */
+export class LintTimeLimitError extends Error {
+  constructor() {
+    super('the lint passed its time limit');
+    this.name = 'LintTimeLimitError';
+  }
+}
+
 /** What the lint reads beyond the store's files. */
 export interface LintDeps {
   /** Reads a `## ` section, heading included; injected so the lint stays clear of hook.ts. */
@@ -109,7 +121,16 @@ export interface LintDeps {
   runGit: Runner;
   home: string;
   env: NodeJS.ProcessEnv;
+  /** The clock for lock ages and for `LintOptions.endsAt`. */
   now: () => number;
+}
+
+/** A run's scope and time limit. */
+export interface LintOptions {
+  /** Keep only these folders' findings, as `MemoryFinding.folder` names them, and the store-wide ids. */
+  folders?: readonly string[];
+  /** On `deps.now`'s clock, the time past which the run throws `LintTimeLimitError`; unset, no limit. */
+  endsAt?: number;
 }
 
 /** The findings, and how many there are of each id that has any. */
@@ -124,8 +145,6 @@ const SESSIONS_DIR = 'sessions';
 // comes first (docs/research/memory/2026-10-30-claude-code-mechanisms.md:58).
 const LOAD_LIMIT_LINES = 200;
 const LOAD_LIMIT_BYTES = 25 * 1024;
-// The exit code deadlineRunner (memory-snapshot.ts) gives a call made after its deadline.
-const DEADLINE_EXIT = 124;
 // The age at which the memory hook calls the store's git lock stale (STALE_LOCK_MS, memory-start.ts).
 const STALE_LOCK_MS = 10 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
@@ -316,6 +335,8 @@ interface LintInput {
   settings: StoreSettings;
   settingsIssue: string | undefined;
   deps: LintDeps;
+  /** Throws `LintTimeLimitError` once the run's end time has come. */
+  inTime: () => void;
 }
 
 // Each predicate receives its own id, so the table names each id once.
@@ -332,9 +353,14 @@ type FolderCheck = (scan: FolderScan, input: LintInput) => Hit[];
 
 function perFolder(check: FolderCheck): Predicate {
   return (input, id) =>
-    input.folders.flatMap((scan) =>
-      check(scan, input).map((hit) => ({ id, folder: scan.folder, ...hit })),
-    );
+    input.folders.flatMap((scan) => {
+      input.inTime();
+      return check(scan, input).map((hit) => ({
+        id,
+        folder: scan.folder,
+        ...hit,
+      }));
+    });
 }
 
 const count = (n: number) => n.toLocaleString('en-US');
@@ -739,6 +765,15 @@ function countById(
   );
 }
 
+// The time check: it throws once `now` reaches `endsAt`, and never without one.
+function timeCheck(now: () => number, endsAt: number | undefined) {
+  return (): void => {
+    if (endsAt !== undefined && now() >= endsAt) {
+      throw new LintTimeLimitError();
+    }
+  };
+}
+
 /**
  * Lints the whole store: every repo folder and family folder, the store's
  * settings and git lock, and each linked repo's checkout, key, and default
@@ -747,17 +782,23 @@ function countById(
  * ids. The store resolves to its real path, so `file` matches the paths the
  * memory hook prints. Throws `GitDeadlineError` when a git call returns exit
  * code 124, so no finding rests on a call the deadline cut. A call that fails
- * any other way is read as its result.
+ * any other way is read as its result. With `endsAt`, throws
+ * `LintTimeLimitError` at the first check past it: before each folder's scan,
+ * each predicate, and each folder a folder predicate visits.
  */
 export function lintStore(
   store: string,
   deps: LintDeps,
-  opts: { folders?: readonly string[] } = {},
+  opts: LintOptions = {},
 ): MemoryLintResult {
+  const inTime = timeCheck(deps.now, opts.endsAt);
   const root = resolvedPath(store);
   const runGit = stopAtDeadline(deps.runGit);
   const { settings, issue } = readStoreSettings(root);
-  const scans = lintFolders(root).map(scanFolder);
+  const scans = lintFolders(root).map((place) => {
+    inTime();
+    return scanFolder(place);
+  });
   const input: LintInput = {
     store: root,
     folders: scans,
@@ -765,8 +806,12 @@ export function lintStore(
     settings,
     settingsIssue: issue,
     deps: { ...deps, runGit },
+    inTime,
   };
-  const all = MEMORY_LINT_IDS.flatMap((id) => PREDICATES[id](input, id));
+  const all = MEMORY_LINT_IDS.flatMap((id) => {
+    inTime();
+    return PREDICATES[id](input, id);
+  });
   const { folders } = opts;
   const findings =
     folders === undefined

@@ -42,13 +42,15 @@ function newStore(name = 'store'): string {
   return store;
 }
 
+// The verb also lints the store, so home and the config folder are temporary.
 function runVerb(argv: string[]) {
   const out: string[] = [];
   const err: string[] = [];
+  const home = tmp();
   const code = main(
     ['memory', 'snapshot', ...argv],
     {
-      env: {},
+      env: { HOME: home, CLAUDE_CONFIG_DIR: path.join(home, '.claude') },
       cwd: process.cwd(),
       entryFileUrl: pathToFileURL(path.join(__dirname, '..', 'cli.ts')).href,
     },
@@ -199,6 +201,24 @@ describe('deadlineRunner', () => {
   test('runs a call made before the deadline', () => {
     const run = deadlineRunner(5000, () => 0);
     expect(run('git', ['--version'], tmp()).code).toBe(0);
+  });
+
+  test('a call the deadline cuts mid-flight gets exit code 124, as one made after it does', () => {
+    const run = deadlineRunner(200, Date.now);
+    // The alias outlives the deadline; its output goes nowhere, so the kill returns at once.
+    const nap = ['-c', 'alias.nap=!sleep 2 </dev/null >/dev/null 2>&1', 'nap'];
+    expect(run('git', nap, tmp()).code).toBe(124);
+  });
+
+  test('a call that cannot start keeps exit code 127', () => {
+    const run = deadlineRunner(5000, () => 0);
+    expect(run('git', ['--version'], path.join(tmp(), 'absent')).code).toBe(
+      127,
+    );
+  });
+
+  test('carries the end time its calls share', () => {
+    expect(deadlineRunner(5000, () => 1000).endsAt).toBe(6000);
   });
 });
 

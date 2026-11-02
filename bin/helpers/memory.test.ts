@@ -4,9 +4,19 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { main, USAGE } from '../cli.js';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
-import { MEMORY_USAGE_LINE } from './memory.js';
+import { readSection } from './hook.js';
+import {
+  MEMORY_USAGE_LINE,
+  type MemoryContext,
+  runSnapshot,
+  type SnapshotDeps,
+} from './memory.js';
 import { defaultMemoryFolder } from './memory-default.js';
-import { writeMarker } from './memory-store.js';
+import { lintStore } from './memory-lint.js';
+import { readCache } from './memory-lint-cache.js';
+import { SNAPSHOT_DEADLINE_MS } from './memory-snapshot.js';
+import { createStore, writeMarker } from './memory-store.js';
+import { execRunner } from './pm-data.js';
 
 const IDENTITY = {
   GIT_AUTHOR_NAME: 'test',
@@ -296,5 +306,173 @@ describe('memory lint through main()', () => {
 
   test('the usage line names the lint verb', () => {
     expect(MEMORY_USAGE_LINE).toContain('sidekick memory lint');
+  });
+});
+
+describe('memory snapshot caches a lint of the whole store', () => {
+  const SNAPSHOT_SUBJECT = 'memory: snapshot at startup of session s-1';
+
+  const snapshotArgs = (store: string, session = 's-1') => [
+    '--store',
+    store,
+    '--session',
+    session,
+    '--source',
+    'startup',
+  ];
+
+  // A temporary home and config folder, so the lint never reads the real ones.
+  function contextIn(cwd: string): MemoryContext {
+    const home = tmp();
+    return {
+      env: { HOME: home, CLAUDE_CONFIG_DIR: path.join(home, '.claude') },
+      cwd,
+      home,
+      runClaude: () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
+    };
+  }
+
+  // A store with one linked repo folder whose index links a missing file: one dead-link finding.
+  function snapshotWorld() {
+    const base = tmp();
+    const store = path.join(base, 'store');
+    expect(createStore(store, execRunner).ok).toBe(true);
+    const folder = path.join(store, 'proj');
+    const checkout = repo();
+    fs.mkdirSync(folder);
+    writeMarker(folder, checkout);
+    fs.mkdirSync(path.join(checkout, '.claude'));
+    fs.writeFileSync(
+      path.join(checkout, SETTINGS_REL),
+      JSON.stringify({ autoMemoryDirectory: folder }),
+    );
+    fs.writeFileSync(
+      path.join(folder, 'MEMORY.md'),
+      '# Memory Index\n\n- [gone](gone.md)\n',
+    );
+    const ctx = contextIn(base);
+    const cache = path.join(store, '.git', 'sidekick-lint.json');
+    return { base, store, folder, ctx, cache };
+  }
+
+  const throughMain = (w: ReturnType<typeof snapshotWorld>, session = 's-1') =>
+    run(['snapshot', ...snapshotArgs(w.store, session)], w.ctx.env, w.base);
+
+  test('commits, then caches the whole store, prints nothing, and exits 0', () => {
+    const w = snapshotWorld();
+    expect(throughMain(w)).toEqual({ code: 0, out: [], err: [] });
+    expect(git(w.store, 'log', '-1', '--format=%s')).toBe(SNAPSHOT_SUBJECT);
+    const cache = readCache(w.cache);
+    expect(cache?.counts).toEqual({ 'dead-link': 1 });
+    const direct = lintStore(w.store, {
+      readSection,
+      runGit: execRunner,
+      home: w.ctx.home,
+      env: w.ctx.env,
+      now: Date.now,
+    });
+    expect(cache?.findings).toEqual(direct.findings);
+    const committedAt = Number(git(w.store, 'log', '-1', '--format=%ct'));
+    expect(Date.parse(cache?.ranAt ?? '')).toBeGreaterThanOrEqual(
+      committedAt * 1000,
+    );
+  });
+
+  test('the lint runs after the commit', () => {
+    const w = snapshotWorld();
+    const headAtLint: string[] = [];
+    const code = runSnapshot(snapshotArgs(w.store), w.ctx, {
+      now: Date.now,
+      lint: (store, deps, opts) => {
+        headAtLint.push(git(w.store, 'log', '-1', '--format=%s'));
+        return lintStore(store, deps, opts);
+      },
+    });
+    expect(code).toBe(0);
+    expect(headAtLint).toEqual([SNAPSHOT_SUBJECT]);
+    expect(readCache(w.cache)).toBeDefined();
+  });
+
+  test("the lint's time limit ends at the snapshot's deadline", () => {
+    const w = snapshotWorld();
+    const start = Date.parse('2026-11-02T14:10:00.000Z');
+    const ends: Array<number | undefined> = [];
+    runSnapshot(snapshotArgs(w.store), w.ctx, {
+      now: () => start,
+      lint: (store, deps, opts) => {
+        ends.push(opts?.endsAt);
+        return lintStore(store, deps, opts);
+      },
+    });
+    expect(ends).toEqual([start + SNAPSHOT_DEADLINE_MS]);
+    expect(readCache(w.cache)?.ranAt).toBe('2026-11-02T14:10:00.000Z');
+  });
+
+  const failures: Array<[string, SnapshotDeps['lint']]> = [
+    [
+      'throws',
+      () => {
+        throw new Error('boom');
+      },
+    ],
+    [
+      'passes its time limit',
+      (store, deps, opts) =>
+        lintStore(
+          store,
+          { ...deps, now: () => Number.POSITIVE_INFINITY },
+          opts,
+        ),
+    ],
+  ];
+
+  test.each(
+    failures,
+  )('a lint that %s leaves the old cache as it was, and exits 0', (_label, lint) => {
+    const w = snapshotWorld();
+    expect(throughMain(w).code).toBe(0);
+    const before = fs.readFileSync(w.cache, 'utf8');
+    // An unindexed file, so a lint that ran would change the cache.
+    fs.writeFileSync(path.join(w.folder, 'note.md'), 'note\n');
+    const code = runSnapshot(snapshotArgs(w.store, 's-2'), w.ctx, {
+      now: Date.now,
+      lint,
+    });
+    expect(code).toBe(0);
+    expect(git(w.store, 'show', '--name-only', '--format=', 'HEAD')).toBe(
+      'proj/note.md',
+    );
+    expect(fs.readFileSync(w.cache, 'utf8')).toBe(before);
+  });
+
+  test('the cache is never staged', () => {
+    const w = snapshotWorld();
+    expect(throughMain(w).code).toBe(0);
+    expect(fs.existsSync(w.cache)).toBe(true);
+    expect(git(w.store, 'status', '--porcelain')).toBe('');
+    const head = git(w.store, 'rev-parse', 'HEAD');
+    expect(throughMain(w, 's-2').code).toBe(0);
+    expect(git(w.store, 'rev-parse', 'HEAD')).toBe(head);
+  });
+
+  test("a store that is not a work tree's top gets no lint and no cache", () => {
+    const outer = repo();
+    const inner = path.join(outer, 'store');
+    fs.mkdirSync(inner);
+    fs.writeFileSync(path.join(inner, 'MEMORY.md'), '- [gone](gone.md)\n');
+    const linted: string[] = [];
+    const code = runSnapshot(snapshotArgs(inner), contextIn(outer), {
+      now: Date.now,
+      lint: (store, deps, opts) => {
+        linted.push(store);
+        return lintStore(store, deps, opts);
+      },
+    });
+    expect(code).toBe(0);
+    expect(linted).toEqual([]);
+    expect(fs.existsSync(path.join(outer, '.git', 'sidekick-lint.json'))).toBe(
+      false,
+    );
+    expect(git(outer, 'status', '--porcelain')).toBe('?? store/');
   });
 });

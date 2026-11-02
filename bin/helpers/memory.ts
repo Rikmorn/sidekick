@@ -14,7 +14,9 @@ import {
   type MemoryFinding,
   type MemoryLintResult,
 } from './memory-lint.js';
+import { cachePath, writeCache } from './memory-lint-cache.js';
 import {
+  type DeadlineRunner,
   deadlineRunner,
   SNAPSHOT_DEADLINE_MS,
   snapshotStore,
@@ -76,8 +78,13 @@ function envWithAbsoluteStore(
   return { ...env, SIDEKICK_MEMORY_STORE: path.resolve(cwd, store) };
 }
 
-// A hook starts this verb and no one reads its output, so every outcome exits 0 silently.
-function runSnapshot(rest: string[]): number {
+interface SnapshotArgs {
+  store: string;
+  session: string;
+  source: string;
+}
+
+function parseSnapshotArgs(rest: string[]): SnapshotArgs | undefined {
   const parsed = parseFlags(rest, {
     store: { type: 'string' },
     session: { type: 'string' },
@@ -91,15 +98,57 @@ function runSnapshot(rest: string[]): number {
     typeof session === 'string' &&
     typeof source === 'string'
   ) {
-    try {
-      snapshotStore(
-        store,
-        session,
-        source,
-        deadlineRunner(SNAPSHOT_DEADLINE_MS, Date.now),
-      );
-    } catch {}
+    return { store, session, source };
   }
+  return undefined;
+}
+
+/** What the snapshot verb uses beyond git; a test replaces the lint or the clock. */
+export interface SnapshotDeps {
+  lint: typeof lintStore;
+  now: () => number;
+}
+
+const SNAPSHOT_DEPS: SnapshotDeps = { lint: lintStore, now: Date.now };
+
+// Writes the cache only when the lint returns, so a lint that throws leaves the old one.
+function cacheLint(
+  store: string,
+  runGit: DeadlineRunner,
+  ctx: MemoryContext,
+  deps: SnapshotDeps,
+): void {
+  const file = cachePath(store, runGit);
+  if (file === undefined) return;
+  const ranAt = new Date(deps.now());
+  const result = deps.lint(
+    store,
+    { readSection, runGit, home: ctx.home, env: ctx.env, now: deps.now },
+    { endsAt: runGit.endsAt },
+  );
+  writeCache(file, result, ranAt);
+}
+
+/**
+ * `sidekick memory snapshot`: commits the store, then lints the whole store
+ * and caches the result. The commit and the lint share one deadline. A hook
+ * starts this verb and no one reads its output, so every outcome exits 0
+ * silently.
+ */
+export function runSnapshot(
+  rest: string[],
+  ctx: MemoryContext,
+  deps: SnapshotDeps = SNAPSHOT_DEPS,
+): number {
+  const args = parseSnapshotArgs(rest);
+  if (args === undefined) return 0;
+  const runGit = deadlineRunner(SNAPSHOT_DEADLINE_MS, deps.now);
+  try {
+    snapshotStore(args.store, args.session, args.source, runGit);
+  } catch {}
+  try {
+    cacheLint(args.store, runGit, ctx, deps);
+  } catch {}
   return 0;
 }
 
@@ -187,7 +236,7 @@ export function runMemoryCli(
   err: Out,
 ): number {
   const [verb, ...rest] = argv;
-  if (verb === 'snapshot') return runSnapshot(rest);
+  if (verb === 'snapshot') return runSnapshot(rest, ctx);
   if (verb === 'lint') return runLint(rest, ctx, out, err);
   const parsed = verb === 'link' ? parseLinkArgs(rest) : undefined;
   if (parsed === undefined) {
