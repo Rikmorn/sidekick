@@ -80,9 +80,9 @@ export interface MemoryFinding {
 }
 
 /**
- * A git call that returned the deadline exit code. `lintStore` throws it
- * rather than read a timeout as a fact about a repo, so the caller can drop
- * the whole run.
+ * A git call that returned exit code 124, the deadline's. `lintStore` throws
+ * it rather than read that result as a fact about a repo, so the caller can
+ * drop the whole run.
  */
 export class GitDeadlineError extends Error {
   readonly args: readonly string[];
@@ -288,7 +288,7 @@ interface LinkedRepo {
   fact: RootFact;
 }
 
-// Every git call the lint makes goes through this, so a timeout never becomes a finding.
+// Every git call the lint makes goes through this, so a call the deadline cut never becomes a finding.
 function stopAtDeadline(runGit: Runner): Runner {
   return (cmd, args, cwd) => {
     const result = runGit(cmd, args, cwd);
@@ -742,8 +742,9 @@ function countById(
  * memory folder. With `folders`, the findings keep only those folders
  * (store-relative, as `MemoryFinding.folder` names them) and the store-wide
  * ids. The store resolves to its real path, so `file` matches the paths the
- * memory hook prints. Throws `GitDeadlineError` when a git call returns the
- * deadline exit code, so no finding rests on a timeout.
+ * memory hook prints. Throws `GitDeadlineError` when a git call returns exit
+ * code 124, so no finding rests on a call the deadline cut. A call that fails
+ * any other way is read as its result.
  */
 export function lintStore(
   store: string,

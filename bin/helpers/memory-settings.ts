@@ -320,7 +320,16 @@ function replaceIfUnchanged(
 export function readKey(target: string, runGit: Runner): string | undefined {
   const found = findRepo(runGit, target);
   if (found.repo === undefined) return undefined;
-  const read = readText(path.join(found.repo.top, SETTINGS_REL));
+  return readKeyAt(found.repo.top);
+}
+
+/**
+ * The key in the settings file under `top`, a main checkout's root, read
+ * without git. Undefined for a missing or unreadable file, invalid JSON, or a
+ * non-string key.
+ */
+export function readKeyAt(top: string): string | undefined {
+  const read = readText(path.join(top, SETTINGS_REL));
   if ('issue' in read) return undefined;
   const parsed = parseSettings(read.text, SETTINGS_REL);
   return parsed.ok ? parsed.key : undefined;

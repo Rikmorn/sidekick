@@ -2518,7 +2518,10 @@ function readKey(target, runGit) {
   const found = findRepo(runGit, target);
   if (found.repo === undefined)
     return;
-  const read = readText(path9.join(found.repo.top, SETTINGS_REL));
+  return readKeyAt(found.repo.top);
+}
+function readKeyAt(top) {
+  const read = readText(path9.join(top, SETTINGS_REL));
   if ("issue" in read)
     return;
   const parsed = parseSettings(read.text, SETTINGS_REL);

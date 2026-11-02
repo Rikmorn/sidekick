@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import { findRepo } from './desk-children.js';
 import { expandHome } from './home-path.js';
 import { walkFolder } from './memory-link-facts.js';
-import { readKey } from './memory-settings.js';
+import { readKeyAt } from './memory-settings.js';
 import { folderNameIssue, MARKER_FILE, readMarker } from './memory-store.js';
 import type { Runner } from './pm-data.js';
 
@@ -54,7 +54,8 @@ export function rootFact(root: string, runGit: Runner): RootFact {
   }
   const top = resolvedPath(found.repo.top);
   if (top !== resolvedPath(root)) return { kind: 'not-main', top };
-  return { kind: 'checkout', key: readKey(root, runGit) };
+  // The key is read at the top this lookup found: a second lookup could fail alone and fake a missing key.
+  return { kind: 'checkout', key: readKeyAt(found.repo.top) };
 }
 
 /** Whether a raw key names a folder inside `store`, which is already a real path. */

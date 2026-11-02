@@ -6,6 +6,7 @@ import {
   mainCheckout,
   mergeKey,
   readKey,
+  readKeyAt,
   SETTINGS_KEY,
   settingsState,
 } from './memory-settings.js';
@@ -423,6 +424,29 @@ describe('mergeKey', () => {
   });
 });
 
+// Settings text that holds no usable key; undefined means no file.
+const NO_KEY: Array<[string, string | undefined]> = [
+  ['a missing file', undefined],
+  ['invalid JSON', '{nope'],
+  ['a non-string key', '{"autoMemoryDirectory":3}'],
+  ['an empty file', ''],
+  ['an array', '[]'],
+];
+
+describe('readKeyAt', () => {
+  test('reads the key under a folder that is not a repo, so it needs no git', () => {
+    const top = tmp();
+    writeSettings(top, '{"autoMemoryDirectory":"/s/r"}');
+    expect(readKeyAt(top)).toBe('/s/r');
+  });
+
+  test.each(NO_KEY)('gives undefined for %s', (_name, text) => {
+    const top = tmp();
+    if (text !== undefined) writeSettings(top, text);
+    expect(readKeyAt(top)).toBeUndefined();
+  });
+});
+
 describe('readKey', () => {
   test('gives the key from the main checkout, from a linked worktree too', () => {
     const top = ignoringRepo();
@@ -437,13 +461,7 @@ describe('readKey', () => {
     expect(readKey(tmp(), execRunner)).toBeUndefined();
   });
 
-  test.each([
-    ['a missing file', undefined],
-    ['invalid JSON', '{nope'],
-    ['a non-string key', '{"autoMemoryDirectory":3}'],
-    ['an empty file', ''],
-    ['an array', '[]'],
-  ])('gives undefined for %s', (_name, text) => {
+  test.each(NO_KEY)('gives undefined for %s', (_name, text) => {
     const top = ignoringRepo();
     if (text !== undefined) writeSettings(top, text);
     expect(readKey(top, execRunner)).toBeUndefined();

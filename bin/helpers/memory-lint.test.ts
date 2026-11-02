@@ -972,27 +972,56 @@ describe('stale-lock', () => {
 });
 
 describe('a git call past its deadline', () => {
-  // Exit code 124 is what deadlineRunner gives a call made after its deadline.
-  function deadlineFrom(call: number): Runner {
+  // Only call `cut` (1-based) gets exit code 124, what deadlineRunner gives a
+  // call made after its deadline. Every other call answers, so a helper that
+  // swallowed the cut call would let the run finish.
+  function deadlineAt(cut: number): Runner {
     const seen = { calls: 0 };
     return (cmd, args, cwd) => {
       seen.calls += 1;
-      if (seen.calls < call) return execRunner(cmd, args, cwd);
+      if (seen.calls !== cut) return execRunner(cmd, args, cwd);
       return { code: 124, stdout: '', stderr: 'deadline passed' };
     };
   }
 
+  // How many git calls a clean run makes, counted rather than assumed.
+  function callsInARun(): number {
+    const seen = { calls: 0 };
+    const counting: Runner = (cmd, args, cwd) => {
+      seen.calls += 1;
+      return execRunner(cmd, args, cwd);
+    };
+    lintStore(store, { ...deps(), runGit: counting });
+    return seen.calls;
+  }
+
   test('stops the lint instead of becoming a finding', () => {
     expect(() =>
-      lintStore(store, { ...deps(), runGit: deadlineFrom(1) }),
+      lintStore(store, { ...deps(), runGit: deadlineAt(1) }),
     ).toThrow(GitDeadlineError);
   });
 
-  test('stops it during the key read too', () => {
-    // The first marker's checkout test takes two calls; the key read starts with the third.
-    expect(() =>
-      lintStore(store, { ...deps(), runGit: deadlineFrom(3) }),
-    ).toThrow(GitDeadlineError);
+  test('stops it whichever single call the deadline cuts', () => {
+    const calls = callsInARun();
+    expect(calls).toBeGreaterThan(0);
+    for (let cut = 1; cut <= calls; cut += 1) {
+      expect(() =>
+        lintStore(store, { ...deps(), runGit: deadlineAt(cut) }),
+      ).toThrow(GitDeadlineError);
+    }
+  });
+
+  test('each root is looked up once, so a failed repeat cannot fake a missing setting', () => {
+    const asked = new Set<string>();
+    const answersOnce: Runner = (cmd, args, cwd) => {
+      const call = `${cwd}\n${args.join(' ')}`;
+      if (asked.has(call)) return { code: 1, stdout: '', stderr: 'flaky' };
+      asked.add(call);
+      return execRunner(cmd, args, cwd);
+    };
+    expect(
+      lintStore(store, { ...deps(), runGit: answersOnce }).findings,
+    ).toEqual([]);
   });
 
   test('another git failure inside a repository decides nothing', () => {
