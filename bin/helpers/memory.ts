@@ -128,9 +128,12 @@ function lintLines(result: MemoryLintResult): string[] {
   return [...lines, ...counts];
 }
 
-function isDirectory(dir: string): boolean {
+// A folder that exists and lists: `statSync` alone passes a mode-000 folder, which the lint would read as empty.
+function isReadableDirectory(dir: string): boolean {
   try {
-    return fs.statSync(dir).isDirectory();
+    if (!fs.statSync(dir).isDirectory()) return false;
+    fs.readdirSync(dir);
+    return true;
   } catch {
     return false;
   }
@@ -153,7 +156,7 @@ function runLint(
   }
   const env = envWithAbsoluteStore(ctx.env, ctx.cwd);
   const store = storeRoot(env, ctx.home);
-  if (!isDirectory(store)) {
+  if (!isReadableDirectory(store)) {
     err(`the memory store is not a readable folder: ${store}`);
     return 1;
   }

@@ -7280,9 +7280,12 @@ function lintLines(result) {
   const counts = Object.entries(result.counts).map(([id, count2]) => `${id}  ${count2}`);
   return [...lines, ...counts];
 }
-function isDirectory2(dir) {
+function isReadableDirectory(dir) {
   try {
-    return fs26.statSync(dir).isDirectory();
+    if (!fs26.statSync(dir).isDirectory())
+      return false;
+    fs26.readdirSync(dir);
+    return true;
   } catch {
     return false;
   }
@@ -7298,7 +7301,7 @@ function runLint(rest2, ctx, out, err) {
   }
   const env = envWithAbsoluteStore(ctx.env, ctx.cwd);
   const store = storeRoot(env, ctx.home);
-  if (!isDirectory2(store)) {
+  if (!isReadableDirectory(store)) {
     err(`the memory store is not a readable folder: ${store}`);
     return 1;
   }

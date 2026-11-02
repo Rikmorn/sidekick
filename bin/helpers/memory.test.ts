@@ -251,6 +251,49 @@ describe('memory lint through main()', () => {
     expect(r.err.join('\n')).toContain(store);
   });
 
+  test('a store path that is a file exits 1', () => {
+    const base = tmp();
+    const store = path.join(base, 'file');
+    fs.writeFileSync(store, 'x');
+    const r = run(
+      ['lint'],
+      { HOME: tmp(), SIDEKICK_MEMORY_STORE: store },
+      base,
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toEqual([]);
+    expect(r.err.join('\n')).toContain(store);
+  });
+
+  test('a positional argument prints the usage line and exits 1', () => {
+    const w = lintWorld();
+    const r = run(['lint', 'foo'], w.env, w.base);
+    expect(r.code).toBe(1);
+    expect(r.err).toEqual([`usage: ${MEMORY_USAGE_LINE}`]);
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    'an unreadable store names the path and exits 1',
+    () => {
+      const base = tmp();
+      const store = path.join(base, 'locked');
+      fs.mkdirSync(store);
+      fs.chmodSync(store, 0o000);
+      try {
+        const r = run(
+          ['lint'],
+          { HOME: tmp(), SIDEKICK_MEMORY_STORE: store },
+          base,
+        );
+        expect(r.code).toBe(1);
+        expect(r.out).toEqual([]);
+        expect(r.err.join('\n')).toContain(store);
+      } finally {
+        fs.chmodSync(store, 0o755);
+      }
+    },
+  );
+
   test('the usage line names the lint verb', () => {
     expect(MEMORY_USAGE_LINE).toContain('sidekick memory lint');
   });
