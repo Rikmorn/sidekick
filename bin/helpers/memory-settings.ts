@@ -199,6 +199,34 @@ function writeTemp(file: string, text: string): string {
   return temp;
 }
 
+type Resolved = { real: string } | { issue: string };
+
+// A symlinked file is written through: the temporary file and the rename use
+// the link's target, so the link survives. A dangling link is refused, since
+// creating its target would write outside the repo on a guess.
+function resolveFile(file: string): Resolved {
+  try {
+    return { real: fs.realpathSync(file) };
+  } catch (error) {
+    if (
+      !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
+    ) {
+      return { issue: `${file} cannot be resolved: ${messageOf(error)}` };
+    }
+  }
+  const isLink = (() => {
+    try {
+      return fs.lstatSync(file).isSymbolicLink();
+    } catch {
+      return false;
+    }
+  })();
+  if (!isLink) return { real: file };
+  return {
+    issue: `${file} is a dangling symlink: its target does not exist, so sidekick does not guess where to create it; fix or remove the link and run the command again`,
+  };
+}
+
 /**
  * Sets `SETTINGS_KEY` to `value` in `file`, keeping every other entry. A file
  * that no longer reads as `expected` is parsed again once; a second change
@@ -211,6 +239,9 @@ export function mergeKey(
   expected: string,
   afterWrite: () => void = () => {},
 ): { ok: true } | { ok: false; issue: string } {
+  const resolved = resolveFile(file);
+  if ('issue' in resolved) return { ok: false, issue: resolved.issue };
+  const { real } = resolved;
   let base = expected;
   let changes = 0;
   const changed = (): { ok: false; issue: string } => ({
@@ -218,7 +249,7 @@ export function mergeKey(
     issue: `${file} changed while sidekick was writing it, twice; run the command again`,
   });
   for (;;) {
-    const read = readText(file);
+    const read = readText(real);
     if ('issue' in read) return { ok: false, issue: read.issue };
     if (read.text !== base) {
       changes += 1;
@@ -231,7 +262,7 @@ export function mergeKey(
     if (conflict !== undefined) return { ok: false, issue: conflict };
     if (parsed.key === value) return { ok: true };
     const outcome = replaceIfUnchanged(
-      file,
+      real,
       mergedText(parsed, value),
       base,
       afterWrite,
@@ -240,7 +271,7 @@ export function mergeKey(
     if (typeof outcome === 'object') return outcome;
     changes += 1;
     if (changes > 1) return changed();
-    base = outcome === 'changed' ? readNow(file) : base;
+    base = outcome === 'changed' ? readNow(real) : base;
   }
 }
 

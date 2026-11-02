@@ -2411,7 +2411,32 @@ function writeTemp(file, text) {
   }
   return temp;
 }
+function resolveFile(file) {
+  try {
+    return { real: fs8.realpathSync(file) };
+  } catch (error) {
+    if (!(error instanceof Error && ("code" in error) && error.code === "ENOENT")) {
+      return { issue: `${file} cannot be resolved: ${messageOf(error)}` };
+    }
+  }
+  const isLink = (() => {
+    try {
+      return fs8.lstatSync(file).isSymbolicLink();
+    } catch {
+      return false;
+    }
+  })();
+  if (!isLink)
+    return { real: file };
+  return {
+    issue: `${file} is a dangling symlink: its target does not exist, so sidekick does not guess where to create it; fix or remove the link and run the command again`
+  };
+}
 function mergeKey(file, value, expected, afterWrite = () => {}) {
+  const resolved = resolveFile(file);
+  if ("issue" in resolved)
+    return { ok: false, issue: resolved.issue };
+  const { real } = resolved;
   let base = expected;
   let changes = 0;
   const changed = () => ({
@@ -2419,7 +2444,7 @@ function mergeKey(file, value, expected, afterWrite = () => {}) {
     issue: `${file} changed while sidekick was writing it, twice; run the command again`
   });
   for (;; ) {
-    const read = readText(file);
+    const read = readText(real);
     if ("issue" in read)
       return { ok: false, issue: read.issue };
     if (read.text !== base) {
@@ -2436,7 +2461,7 @@ function mergeKey(file, value, expected, afterWrite = () => {}) {
       return { ok: false, issue: conflict };
     if (parsed.key === value)
       return { ok: true };
-    const outcome = replaceIfUnchanged(file, mergedText(parsed, value), base, afterWrite);
+    const outcome = replaceIfUnchanged(real, mergedText(parsed, value), base, afterWrite);
     if (outcome === "written")
       return { ok: true };
     if (typeof outcome === "object")
@@ -2444,7 +2469,7 @@ function mergeKey(file, value, expected, afterWrite = () => {}) {
     changes += 1;
     if (changes > 1)
       return changed();
-    base = outcome === "changed" ? readNow(file) : base;
+    base = outcome === "changed" ? readNow(real) : base;
   }
 }
 function readNow(file) {

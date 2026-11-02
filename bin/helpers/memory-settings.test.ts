@@ -357,6 +357,70 @@ describe('mergeKey', () => {
     if (!result.ok) expect(result.issue).toContain('cannot be written');
     expect(fs.readdirSync(folder)).toEqual(['settings.local.json']);
   });
+
+  describe('a symlinked settings file', () => {
+    function link(top: string, targetText?: string) {
+      const store = tmp('store-');
+      const target = path.join(store, 'settings.json');
+      if (targetText !== undefined) fs.writeFileSync(target, targetText);
+      const file = path.join(top, REL);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.symlinkSync(target, file);
+      return { file, target, store };
+    }
+
+    test('keeps the link and writes the key and every other entry to its target', () => {
+      const top = ignoringRepo();
+      const original = { permissions: { allow: ['Bash(ls)'] }, model: 'x' };
+      const { file, target } = link(top, JSON.stringify(original));
+      const expected = fs.readFileSync(file, 'utf-8');
+      expect(mergeKey(file, '/s/r', expected)).toEqual({ ok: true });
+      expect(fs.lstatSync(file).isSymbolicLink()).toBe(true);
+      expect(fs.readlinkSync(file)).toBe(target);
+      expect(JSON.parse(fs.readFileSync(target, 'utf-8'))).toEqual({
+        ...original,
+        autoMemoryDirectory: '/s/r',
+      });
+    });
+
+    test('puts its temporary file in the target folder and leaves nothing behind', () => {
+      const top = ignoringRepo();
+      const { file, target, store } = link(top, '{"a":1}');
+      let linkFolder: string[] = [];
+      let storeFolder: string[] = [];
+      const result = mergeKey(file, '/s/r', '{"a":1}', () => {
+        linkFolder = fs.readdirSync(path.dirname(file));
+        storeFolder = fs.readdirSync(store);
+      });
+      expect(result).toEqual({ ok: true });
+      expect(linkFolder).toEqual(['settings.local.json']);
+      expect(storeFolder.some((name) => name.endsWith('.tmp'))).toBe(true);
+      expect(fs.readdirSync(store)).toEqual([path.basename(target)]);
+      expect(fs.readdirSync(path.dirname(file))).toEqual([
+        'settings.local.json',
+      ]);
+    });
+
+    test('keeps the target file permission bits', () => {
+      const top = ignoringRepo();
+      const { file, target } = link(top, '{}');
+      fs.chmodSync(target, 0o600);
+      expect(mergeKey(file, '/s/r', '{}')).toEqual({ ok: true });
+      expect(fs.statSync(target).mode & 0o777).toBe(0o600);
+    });
+
+    test('refuses a dangling link, naming it, and creates nothing', () => {
+      const top = ignoringRepo();
+      const { file, target, store } = link(top);
+      const result = mergeKey(file, '/s/r', '');
+      expect(result.ok).toBe(false);
+      expect(issueOf(result)).toContain(file);
+      expect(issueOf(result)).toContain('dangling');
+      expect(fs.existsSync(target)).toBe(false);
+      expect(fs.readdirSync(store)).toEqual([]);
+      expect(fs.lstatSync(file).isSymbolicLink()).toBe(true);
+    });
+  });
 });
 
 describe('readKey', () => {
