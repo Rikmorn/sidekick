@@ -178,6 +178,19 @@ var ABORT_EARLY_CONFIG = { abortEarly: true };
 function getFallback(schema, dataset, config$1) {
   return typeof schema.fallback === "function" ? schema.fallback(dataset, config$1) : schema.fallback;
 }
+function fallback(schema, fallback$1) {
+  return _standardSchema({
+    ...schema,
+    fallback: fallback$1,
+    "~run"(dataset, config$1) {
+      const outputDataset = schema["~run"](dataset, config$1);
+      return outputDataset.issues ? {
+        typed: true,
+        value: /* @__PURE__ */ getFallback(this, outputDataset, config$1)
+      } : outputDataset;
+    }
+  });
+}
 function getDefault(schema, dataset, config$1) {
   return typeof schema.default === "function" ? schema.default(dataset, config$1) : schema.default;
 }
@@ -1799,20 +1812,20 @@ function launcherFor(top, read) {
   return { top: physical(top), role };
 }
 function countBase(runGit, name, read, briefTop) {
-  const fallback = (why) => ({
+  const fallback2 = (why) => ({
     rev: "HEAD",
     warnings: [
       `${name}: ${why}, so its commits count from the main checkout's HEAD`
     ]
   });
   if ("issues" in read)
-    return fallback("its brief cannot be read");
+    return fallback2("its brief cannot be read");
   const { target } = read.brief;
   if (target !== undefined) {
     return { rev: `refs/heads/${target}`, warnings: [] };
   }
   const head = briefTop === undefined ? undefined : headCommit(runGit, briefTop);
-  return head === undefined ? fallback("its brief's checkout has no readable HEAD") : { rev: head, warnings: [] };
+  return head === undefined ? fallback2("its brief's checkout has no readable HEAD") : { rev: head, warnings: [] };
 }
 function countOf(runGit, repo, name, found, base) {
   if (!isBranchProven(found, name)) {
@@ -4555,923 +4568,23 @@ function runDeskCli(rest2, denv, out, err) {
 }
 
 // bin/helpers/hook.ts
-import * as fs22 from "node:fs";
-import * as os2 from "node:os";
-import * as path26 from "node:path";
-
-// bin/helpers/memory.ts
-import * as path22 from "node:path";
-
-// bin/helpers/memory-link.ts
 import * as fs18 from "node:fs";
-import * as path21 from "node:path";
-
-// bin/helpers/memory-link-facts.ts
-import * as fs17 from "node:fs";
+import * as os2 from "node:os";
 import * as path20 from "node:path";
 
-// bin/helpers/memory-default.ts
-import * as fs15 from "node:fs";
-import * as path17 from "node:path";
-var MAX_KEY_LENGTH = 200;
-var WRITE_BITS = 146;
-function hashOf(text) {
-  let h = 0;
-  for (let i = 0;i < text.length; i++) {
-    h = (h << 5) - h + text.charCodeAt(i) | 0;
-  }
-  return h;
-}
-function projectKey(p) {
-  const key = p.replace(/[^a-zA-Z0-9]/g, "-");
-  if (key.length <= MAX_KEY_LENGTH)
-    return key;
-  return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
-}
-function defaultMemoryFolder(root, configDir) {
-  return path17.join(configDir, "projects", projectKey(root), "memory");
-}
-function overrideIssue(env) {
-  if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
-    return "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere";
-  }
-  if (env.CLAUDE_CODE_REMOTE_MEMORY_DIR !== undefined) {
-    return "CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere";
-  }
-  if (env.CLAUDE_CODE_PROJECT_DIR_NAME !== undefined && env.CLAUDE_CONFIG_DIR !== undefined) {
-    return "CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently";
-  }
-  return;
-}
-var ClaudeJson = object({ projects: record(string(), unknown()) });
-function knownRoot(root, claudeJson) {
-  try {
-    const parsed = safeParse(ClaudeJson, JSON.parse(fs15.readFileSync(claudeJson, "utf-8")));
-    return parsed.success && Object.hasOwn(parsed.output.projects, root);
-  } catch {
-    return false;
-  }
-}
-function legacyPreferred(legacy, current) {
-  try {
-    const stat = fs15.statSync(legacy);
-    if (!stat.isFile())
-      return false;
-    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs15.existsSync(current);
-  } catch {
-    return false;
-  }
-}
-function claudeJsonPath(env, home) {
-  const current = path17.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
-  const legacy = path17.join(configDirOf(env, home), ".config.json");
-  return legacyPreferred(legacy, current) ? legacy : current;
-}
-
-// bin/helpers/memory-link-plan.ts
-import * as path18 from "node:path";
-var ARCHIVE_DIR = "archive/default-folders";
-function planLink(facts, opts) {
-  const refusals = refusalsOf(facts, opts);
-  const ready = readyOf(facts);
-  if (refusals.length > 0 || ready === undefined) {
-    return { kind: "refused", refusals };
-  }
-  const actions = actionsOf(ready, facts);
-  return {
-    kind: "ready",
-    root: ready.repo.root,
-    target: ready.target.folder,
-    actions,
-    notes: notesOf(ready, facts, actions)
-  };
-}
-function readyOf(facts) {
-  const { repo, storePending } = facts;
-  if (facts.storeState.kind === "foreign" || repo.kind === "refused") {
-    return;
-  }
-  const { settings, target } = repo;
-  if (settings.kind !== "ready" || target === undefined)
-    return;
-  if ("issue" in target.pending || "issue" in storePending)
-    return;
-  return {
-    repo,
-    settings,
-    target,
-    pending: target.pending.paths,
-    storePending: storePending.paths
-  };
-}
-function linkCommand(root, names, extra = "") {
-  const flags = [
-    names.family === undefined ? "" : ` --family ${shellArg(names.family)}`,
-    names.name === undefined ? "" : ` --name ${shellArg(names.name)}`,
-    extra === "" ? "" : ` ${extra}`
-  ];
-  return `sidekick memory link ${shellArg(root)}${flags.join("")}`;
-}
-function isFirstLink(repo) {
-  const { settings, target } = repo;
-  const keyInPlace = settings.kind === "ready" && target !== undefined && settings.key === target.folder && target.state.kind === "marked" && target.state.root === repo.root;
-  return !keyInPlace;
-}
-function strands(repo) {
-  return isFirstLink(repo) || repo.defaultFolder.kind === "present";
-}
-function refusalsOf(facts, opts) {
-  const { repo } = facts;
-  const all = [
-    ...storeRefusals(facts.storeState),
-    ..."issue" in facts.storePending ? [pendingRefusal(facts.storePending.issue)] : [],
-    ...facts.overrideIssue === undefined ? [] : [`${facts.overrideIssue}. Unset it and run link again.`],
-    ...facts.nameIssues.map((issue) => `${issue}; choose another with --family or --name.`),
-    ...repo.kind === "refused" ? [repo.issue] : repoRefusals(repo, opts)
-  ];
-  return [...new Set(all)];
-}
-var pendingRefusal = (issue) => `${issue}. Fix the store's git repo, then run link again.`;
-function storeRefusals(state) {
-  if (state.kind !== "foreign")
-    return [];
-  return [
-    `${state.issue}. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`
-  ];
-}
-function repoRefusals(repo, opts) {
-  return [
-    ...settingsRefusals(repo),
-    ...keyMissedRefusals(repo),
-    ...defaultFolderRefusals(repo),
-    ...sessionRefusals(repo, opts),
-    ...repo.target === undefined ? [] : targetRefusals(repo.target, repo.root)
-  ];
-}
-function settingsRefusals(repo) {
-  const { settings, target } = repo;
-  if (settings.kind === "refused")
-    return [settings.issue];
-  const ownOrAbsent = settings.key === undefined || settings.key === target?.folder;
-  if (ownOrAbsent || target === undefined)
-    return [];
-  return [
-    `${settings.file} already sets ${SETTINGS_KEY} to ${settings.key}, not ${target.folder}, and sidekick changes only a key it wrote. If that folder is in the store, run link with the --family and --name that name it. Otherwise remove the entry by hand, as the store's README says under Changes by hand.`
-  ];
-}
-function keyMissedRefusals(repo) {
-  if (repo.keyMissed === undefined)
-    return [];
-  const { claudeJson, projectFolder } = repo.keyMissed;
-  return [
-    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path18.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`
-  ];
-}
-function defaultFolderRefusals(repo) {
-  const { defaultFolder } = repo;
-  if (defaultFolder.kind === "absent")
-    return [];
-  if (!isFirstLink(repo))
-    return defaultFolder.issues;
-  const forged = defaultFolder.files.some((f) => f.rel === MARKER_FILE) ? [
-    `${path18.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
-  ] : [];
-  const into = repo.target?.folder;
-  const conflicts = into === undefined ? [] : defaultFolder.files.flatMap((f) => copyRefusals(defaultFolder.folder, into, f));
-  return [...defaultFolder.issues, ...forged, ...conflicts];
-}
-function copyRefusals(from, into, file) {
-  if (file.rel === MARKER_FILE)
-    return [];
-  const source = path18.join(from, file.rel);
-  const copy = path18.join(into, file.rel);
-  if (file.copy === "differs") {
-    return [
-      `${source} differs from ${copy}, which is already in the store. Merge the two by hand into the store copy, then run link again.`
-    ];
-  }
-  if (file.copy === "notFile") {
-    return [
-      `${copy} is in the way of ${source}, since it is not a file. Move it by hand and run link again.`
-    ];
-  }
-  return [];
-}
-var describeJob = (job) => `${job.name ?? job.sessionId ?? job.id ?? "a session"} in ${job.cwd ?? "an unknown folder"}`;
-function sessionRefusals(repo, opts) {
-  if (opts.force || !strands(repo))
-    return [];
-  const retry = linkCommand(repo.root, opts, "--force");
-  const { sessions } = repo;
-  if (sessions.kind === "failed") {
-    return [
-      `link cannot tell whether another session is open in the repo: ${sessions.issues.join(" ")} Fix the listing, or run again with --force: ${retry}`
-    ];
-  }
-  if (sessions.others.length === 0)
-    return [];
-  return [
-    `Other sessions are open in the repo: ${sessions.others.map(describeJob).join("; ")}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`
-  ];
-}
-function targetRefusals(target, root) {
-  return [
-    ...targetStateRefusals(target, root),
-    ...familyRefusals(target),
-    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path18.basename(found.folder) })}`),
-    ..."issue" in target.pending ? [pendingRefusal(target.pending.issue)] : []
-  ];
-}
-function targetStateRefusals(target, root) {
-  const { folder, state } = target;
-  switch (state.kind) {
-    case "absent":
-    case "empty":
-      return [];
-    case "notFolder":
-      return [
-        `${folder} is a file, not a folder. Choose another folder name with --name.`
-      ];
-    case "unmarked":
-      return [
-        `${folder} holds files but no ${MARKER_FILE}, so link did not make it for this repo, and it may be a family folder. Choose another folder name with --name.`
-      ];
-    case "invalidMarker":
-      return [`${state.issue}. Fix or remove it by hand, then run link again.`];
-    case "marked":
-      return state.root === root ? [] : [
-        `${folder} belongs to ${state.root}, as its ${MARKER_FILE} says. Choose another folder name with --name.`
-      ];
-    default: {
-      const unhandled = state;
-      throw new Error(`Unhandled target state: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function familyRefusals(target) {
-  const { family } = target;
-  const folder = path18.dirname(target.folder);
-  if (family === "marked") {
-    return [
-      `${folder} holds a ${MARKER_FILE}, so it is a repo folder, not a family. Choose another family with --family.`
-    ];
-  }
-  if (family === "notFolder") {
-    return [
-      `${folder} is a file, not a family folder. Choose another family with --family.`
-    ];
-  }
-  return [];
-}
-var COMMITTED_KINDS = new Set([
-  "writeMarker",
-  "copyFile",
-  "archiveDefault"
-]);
-function actionsOf(ready, facts) {
-  const first = isFirstLink(ready.repo);
-  const steps = [
-    ...storeActions(ready, facts),
-    ...folderActions(ready),
-    ...first ? copyActions(ready) : [],
-    ...first ? [mergeAction(ready)] : [],
-    ...archiveActions(ready, facts, first)
-  ];
-  const writesStore = steps.some((step) => COMMITTED_KINDS.has(step.kind)) || ready.pending.length > 0;
-  return writesStore ? [...steps, commitAction(ready, facts.store)] : steps;
-}
-function storeActions(ready, facts) {
-  const { kind } = facts.storeState;
-  if (kind === "absent" || kind === "empty") {
-    return [{ kind: "createStore", store: facts.store }];
-  }
-  return ready.storePending.length > 0 ? [{ kind: "finishStore", store: facts.store, paths: ready.storePending }] : [];
-}
-function folderActions(ready) {
-  const { folder, state } = ready.target;
-  const marker = {
-    kind: "writeMarker",
-    folder,
-    root: ready.repo.root
-  };
-  if (state.kind === "absent") {
-    return [{ kind: "createFolder", folder }, marker];
-  }
-  return state.kind === "empty" ? [marker] : [];
-}
-function copyActions(ready) {
-  const { defaultFolder } = ready.repo;
-  if (defaultFolder.kind === "absent")
-    return [];
-  return defaultFolder.files.filter((f) => f.copy === "absent" && f.rel !== MARKER_FILE).map((f) => ({
-    kind: "copyFile",
-    from: path18.join(defaultFolder.folder, f.rel),
-    to: path18.join(ready.target.folder, f.rel)
-  }));
-}
-function mergeAction(ready) {
-  return {
-    kind: "mergeKey",
-    file: ready.settings.file,
-    value: ready.target.folder,
-    expected: ready.settings.text
-  };
-}
-function archiveActions(ready, facts, first) {
-  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
-  if (defaultFolder.kind === "absent")
-    return [];
-  const name = archiveName(projectKey2, facts.today, ready.target.archives);
-  return [
-    {
-      kind: "archiveDefault",
-      from: defaultFolder.folder,
-      to: path18.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
-      copies: ready.target.folder,
-      reappeared: !first
-    }
-  ];
-}
-function archiveName(key, today, taken) {
-  const base = `${key}-${today}`;
-  if (!taken.includes(base))
-    return base;
-  let n = 2;
-  while (taken.includes(`${base}-${n}`))
-    n += 1;
-  return `${base}-${n}`;
-}
-function commitAction(ready, store) {
-  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
-  const owned = {
-    folderRel: ready.target.rel,
-    projectKey: projectKey2,
-    defaultFolder: defaultFolder.folder
-  };
-  return {
-    kind: "commit",
-    store,
-    message: `link ${ready.target.rel}`,
-    owned
-  };
-}
-function notesOf(ready, facts, actions) {
-  const { defaultFolder } = ready.repo;
-  const moves = actions.some((a) => a.kind === "mergeKey" || a.kind === "archiveDefault");
-  const noDefault = isFirstLink(ready.repo) && defaultFolder.kind === "absent" ? [
-    `No default memory folder at ${defaultFolder.folder}: nothing to copy or archive.`
-  ] : [];
-  return [
-    ...noDefault,
-    ...moves ? sessionNotes(ready.repo.sessions, defaultFolder.folder) : [],
-    ...userSettingsNotes(facts)
-  ];
-}
-function sessionNotes(sessions, folder) {
-  if (sessions.kind === "failed") {
-    return [
-      `The check for other open sessions did not run: ${sessions.issues.join(" ")} Any session open in the repo keeps writing to ${folder} until it restarts.`
-    ];
-  }
-  const forced = sessions.others.map((job) => `Passed over with --force: ${describeJob(job)}. It keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`);
-  const self = sessions.self === undefined ? [] : [
-    `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`
-  ];
-  return [...forced, ...self];
-}
-function userSettingsNotes(facts) {
-  const { file, covered } = facts.userSettings;
-  if (covered)
-    return [];
-  return [
-    `No permissions.additionalDirectories entry in ${file} covers the store. link never writes that file, so add this entry to that list by hand: ${JSON.stringify(facts.store)}`
-  ];
-}
-
-// bin/helpers/memory-sessions.ts
-import * as fs16 from "node:fs";
-import * as path19 from "node:path";
-function realOrResolved(p) {
-  try {
-    return fs16.realpathSync(p);
-  } catch {
-    return path19.resolve(p);
-  }
-}
-var STOPPED_STATE = "stopped";
-function isInside(dir, checkout) {
-  const rel = path19.relative(checkout, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path19.sep}`) || path19.isAbsolute(rel));
-}
-function sessionsInRepo(jobs, checkouts, selfId) {
-  const roots = checkouts.map(realOrResolved);
-  const inRepo = jobs.filter((j) => j.state !== STOPPED_STATE && j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
-  const hasSelf = selfId !== undefined && selfId !== "";
-  const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
-  return { self, others: inRepo.filter((j) => j !== self) };
-}
-
-// bin/helpers/memory-link-facts.ts
-function gatherFacts(opts, deps) {
-  const store = path20.resolve(storeRoot(deps.env, deps.home));
-  const state = storeState(store, deps.runGit);
-  const found = mainCheckout(path20.resolve(opts.repo), deps.runGit, deps.home);
-  const name = opts.name ?? ("root" in found ? path20.basename(found.root) : undefined);
-  const nameIssues = [opts.family, name].flatMap((n) => {
-    const issue = n === undefined ? undefined : folderNameIssue(n);
-    return issue === undefined ? [] : [issue];
-  });
-  const repo = "issue" in found ? { kind: "refused", issue: found.issue } : repoFacts({
-    ...found,
-    store,
-    state,
-    family: opts.family,
-    name: name ?? path20.basename(found.root),
-    namesOk: nameIssues.length === 0,
-    deps
-  });
-  return {
-    store,
-    storeState: state,
-    storePending: state.kind === "store" ? uncommittedCreation(store, deps.runGit) : { paths: [] },
-    overrideIssue: overrideIssue(deps.env),
-    nameIssues,
-    repo,
-    userSettings: userSettingsFacts(deps.configDir, store, deps.home),
-    today: deps.today()
-  };
-}
-function repoFacts(input) {
-  const { root, deps } = input;
-  const settings = settingsState(root, deps.runGit);
-  const key = projectKey(root);
-  const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
-  const folder = path20.join(input.store, ...rel.split("/"));
-  const knowsFolder = input.namesOk && input.state.kind !== "foreign";
-  const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
-  const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
-  return {
-    kind: "found",
-    root,
-    settings,
-    projectKey: key,
-    keyMissed: keyMissed(root, key, deps),
-    defaultFolder,
-    sessions: sessionFacts(input),
-    target
-  };
-}
-function keyMissed(root, key, deps) {
-  const claudeJson = claudeJsonPath(deps.env, deps.home);
-  const projectFolder = path20.join(deps.configDir, "projects", key);
-  const missed = knownRoot(root, claudeJson) && !fs17.existsSync(projectFolder);
-  return missed ? { claudeJson, projectFolder } : undefined;
-}
-function sessionFacts(input) {
-  const listed = listJobs(input.deps.runClaude, input.root);
-  if ("issues" in listed)
-    return { kind: "failed", issues: listed.issues };
-  const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
-  return {
-    kind: "listed",
-    ...sessionsInRepo(listed.jobs, input.checkouts, selfId)
-  };
-}
-function targetFacts(input) {
-  const { store, folder, rel, key, defaultFolder } = input;
-  const owned = {
-    folderRel: rel,
-    projectKey: key,
-    defaultFolder: defaultFolder.folder
-  };
-  return {
-    folder,
-    rel,
-    state: targetState(folder),
-    family: input.family === undefined ? "none" : familyState(path20.join(store, input.family)),
-    elsewhere: findMarkers(store).filter((m) => m.root === input.root && m.folder !== folder).map((m) => ({ folder: m.folder, family: m.family })),
-    archives: archiveNames(store),
-    pending: input.state.kind === "store" ? ownedChanges(store, owned, input.deps.runGit) : { paths: [] }
-  };
-}
-function targetState(folder) {
-  const stat = fs17.statSync(folder, { throwIfNoEntry: false });
-  if (stat === undefined)
-    return { kind: "absent" };
-  if (!stat.isDirectory())
-    return { kind: "notFolder" };
-  const marker = readMarker(folder);
-  if (marker.kind === "marker")
-    return { kind: "marked", root: marker.root };
-  if (marker.kind === "invalid") {
-    return { kind: "invalidMarker", issue: marker.issue };
-  }
-  return fs17.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
-}
-function familyState(folder) {
-  const stat = fs17.statSync(folder, { throwIfNoEntry: false });
-  if (stat === undefined)
-    return "absent";
-  if (!stat.isDirectory())
-    return "notFolder";
-  return readMarker(folder).kind === "none" ? "folder" : "marked";
-}
-function archiveNames(store) {
-  const folder = path20.join(store, ...ARCHIVE_DIR.split("/"));
-  return fs17.existsSync(folder) ? fs17.readdirSync(folder) : [];
-}
-function isInside2(dir, parent) {
-  const rel = path20.relative(parent, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path20.sep}`) || path20.isAbsolute(rel));
-}
-function walkFolder(root) {
-  const entries = entriesOf2(fs17.realpathSync(root), root, "");
-  return {
-    files: entries.flatMap((e) => ("file" in e) ? [e.file] : []),
-    issues: entries.flatMap((e) => ("issue" in e) ? [e.issue] : [])
-  };
-}
-function entriesOf2(real, root, rel) {
-  return fs17.readdirSync(path20.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
-    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
-    if (entry.isDirectory())
-      return entriesOf2(real, root, child);
-    if (entry.isFile())
-      return [{ file: child }];
-    if (entry.isSymbolicLink())
-      return [linkEntry(real, root, child)];
-    return [
-      {
-        issue: `${path20.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
-      }
-    ];
-  });
-}
-function linkEntry(real, root, child) {
-  const full = path20.join(root, child);
-  const way = "Replace it with the file itself, or remove it, then run link again.";
-  try {
-    const named = fs17.realpathSync(full);
-    if (isInside2(named, real) && fs17.statSync(named).isFile()) {
-      return { file: child };
-    }
-    return {
-      issue: `${full} is a link to ${named}, which is not a file inside the default folder. ${way}`
-    };
-  } catch {
-    return { issue: `${full} is a broken link. ${way}` };
-  }
-}
-function readDefaultFolder(folder, target) {
-  const stat = fs17.lstatSync(folder, { throwIfNoEntry: false });
-  if (stat === undefined)
-    return { kind: "absent", folder };
-  if (!stat.isDirectory()) {
-    const issue = `${folder} is not a folder, so link cannot copy it. Move it aside by hand, then run link again.`;
-    return { kind: "present", folder, files: [], issues: [issue] };
-  }
-  const walked = walkFolder(folder);
-  const files = walked.files.map((rel) => ({
-    rel,
-    copy: target === undefined ? "absent" : copyState(path20.join(folder, rel), path20.join(target, rel))
-  }));
-  return { kind: "present", folder, files, issues: walked.issues };
-}
-function copyState(from, to) {
-  try {
-    if (!fs17.statSync(to).isFile())
-      return "notFile";
-  } catch (error) {
-    const absent = error instanceof Error && "code" in error && error.code === "ENOENT";
-    return absent ? "absent" : "notFile";
-  }
-  return fs17.readFileSync(from).equals(fs17.readFileSync(to)) ? "same" : "differs";
-}
-function ownedChanges(store, owned, runGit) {
-  const listed = statusIn(store, [owned.folderRel, ARCHIVE_DIR], runGit);
-  if ("issue" in listed)
-    return listed;
-  const sources = [
-    owned.defaultFolder,
-    ...ownArchives(store, owned.projectKey)
-  ];
-  const isOwned = (p) => fs17.existsSync(path20.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
-  return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
-}
-var UNTRACKED = "??";
-var ADDED = "A";
-function uncommittedCreation(store, runGit) {
-  const listed = statusIn(store, [...CREATION_PATHS], runGit);
-  if ("issue" in listed)
-    return listed;
-  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs17.existsSync(path20.join(store, e.path));
-  return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
-}
-function statusIn(store, pathspecs, runGit) {
-  const args = [
-    "--no-optional-locks",
-    "--literal-pathspecs",
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-    "--",
-    ...pathspecs
-  ];
-  const r = runGit("git", args, store);
-  if (r.code !== 0) {
-    return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
-  }
-  return { entries: porcelainEntries(r.stdout) };
-}
-function isOwnCopy(store, folderRel, sources, p) {
-  const prefix = `${folderRel}/`;
-  if (!p.startsWith(prefix))
-    return false;
-  const rel = p.slice(prefix.length);
-  if (rel === MARKER_FILE)
-    return true;
-  const file = path20.join(store, p);
-  return sources.some((source) => sameBytes(path20.join(source, rel), file));
-}
-function sameBytes(a, b) {
-  try {
-    const bothFiles = fs17.statSync(a).isFile() && fs17.statSync(b).isFile();
-    return bothFiles && fs17.readFileSync(a).equals(fs17.readFileSync(b));
-  } catch {
-    return false;
-  }
-}
-function ownArchives(store, key) {
-  const parent = path20.join(store, ...ARCHIVE_DIR.split("/"));
-  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path20.join(parent, name));
-}
-function porcelainEntries(output) {
-  const fields = output.split("\x00").filter((field) => field !== "");
-  const entries = [];
-  for (let i = 0;i < fields.length; i++) {
-    const status = fields[i].slice(0, 2);
-    entries.push({ status, path: fields[i].slice(3) });
-    if (status.includes("R") || status.includes("C"))
-      i++;
-  }
-  return entries;
-}
-var ARCHIVE_DATE = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
-var isOwnArchiveName = (entry, key) => entry.startsWith(`${key}-`) && ARCHIVE_DATE.test(entry.slice(key.length + 1));
-function isOwnArchivePath(p, key) {
-  const prefix = `${ARCHIVE_DIR}/`;
-  if (!p.startsWith(prefix))
-    return false;
-  const [entry] = p.slice(prefix.length).split("/");
-  return isOwnArchiveName(entry, key);
-}
-var UserSettingsSchema = object({
-  permissions: optional(object({
-    additionalDirectories: optional(array(string()), [])
-  }), { additionalDirectories: [] })
-});
-function additionalDirectories(file) {
-  try {
-    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs17.readFileSync(file, "utf-8")));
-    return parsed.success ? parsed.output.permissions.additionalDirectories : [];
-  } catch {
-    return [];
-  }
-}
-var expandHome = (entry, home) => entry === "~" || entry.startsWith("~/") ? path20.join(home, entry.slice(1)) : entry;
-function userSettingsFacts(configDir, store, home) {
-  const file = path20.join(configDir, "settings.json");
-  const covered = additionalDirectories(file).some((entry) => {
-    const dir = path20.resolve(expandHome(entry, home));
-    return isInside2(store, dir) || isInside2(physical(store), physical(dir));
-  });
-  return { file, covered };
-}
-
-// bin/helpers/memory-link.ts
-var messageOf3 = (error) => error instanceof Error ? error.message : String(error);
-function runLink(opts, deps, out, err) {
-  const gathered = gather(opts, deps);
-  if ("issue" in gathered) {
-    err(`link could not read what it needs, and wrote nothing: ${gathered.issue}`);
-    return 1;
-  }
-  const plan = planLink(gathered.facts, opts);
-  if (plan.kind === "refused") {
-    err("link refused, and wrote nothing:");
-    for (const refusal2 of plan.refusals)
-      err(`- ${refusal2}`);
-    return 1;
-  }
-  const finished = report(plan, opts.dryRun, deps.runGit, { out, err });
-  for (const note of plan.notes)
-    out(note);
-  return finished ? 0 : 1;
-}
-function report(plan, dryRun, runGit, { out, err }) {
-  if (plan.actions.length === 0) {
-    out(`${plan.root} is already linked to ${plan.target}.`);
-    return true;
-  }
-  if (dryRun) {
-    out("Dry run: link writes nothing. These are the steps it would take:");
-    for (const action of plan.actions)
-      out(phrase(action).todo);
-    return true;
-  }
-  return applyAll(plan.actions, runGit, out, err);
-}
-function gather(opts, deps) {
-  try {
-    return { facts: gatherFacts(opts, deps) };
-  } catch (error) {
-    return { issue: messageOf3(error) };
-  }
-}
-function applyAll(actions, runGit, out, err) {
-  for (const action of actions) {
-    const applied = applyAction(action, runGit);
-    if (!applied.ok) {
-      err(`link stopped before it could ${phrase(action).step}: ${applied.issue}`);
-      err("Fix that, then run the same command again; it skips each step already done.");
-      return false;
-    }
-    for (const line of applied.lines)
-      out(line);
-  }
-  return true;
-}
-function applyAction(action, runGit) {
-  try {
-    return runAction(action, runGit);
-  } catch (error) {
-    return { ok: false, issue: messageOf3(error) };
-  }
-}
-function runAction(action, runGit) {
-  const done = { ok: true, lines: [phrase(action).done] };
-  switch (action.kind) {
-    case "createStore": {
-      const created = createStore(action.store, runGit);
-      return created.ok ? done : created;
-    }
-    case "finishStore": {
-      const finished = commitPaths(action.store, action.paths, CREATION_MESSAGE, runGit);
-      return finished.ok ? done : finished;
-    }
-    case "createFolder":
-      fs18.mkdirSync(action.folder, { recursive: true });
-      return done;
-    case "writeMarker":
-      writeMarker(action.folder, action.root);
-      return done;
-    case "copyFile":
-      fs18.mkdirSync(path21.dirname(action.to), { recursive: true });
-      fs18.copyFileSync(action.from, action.to, fs18.constants.COPYFILE_EXCL);
-      return done;
-    case "mergeKey": {
-      const merged = mergeKey(action.file, action.value, action.expected);
-      return merged.ok ? done : merged;
-    }
-    case "archiveDefault":
-      return archive(action);
-    case "commit":
-      return commit(action, runGit);
-    default: {
-      const unhandled = action;
-      throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function archive(action) {
-  const kept = walkFolder(action.from).files.filter((rel) => copyState(path21.join(action.from, rel), path21.join(action.copies, rel)) !== "same");
-  moveFolder(action.from, action.to);
-  const listed = kept.map((rel) => `  ${path21.join(action.to, rel)}`);
-  if (kept.length === 0)
-    return { ok: true, lines: [phrase(action).done] };
-  const why = action.reappeared ? `The default folder came back after the link. These files in it differ from ${action.copies} or are missing there, so merge what is new by hand:` : `These files changed after the copy, so their latest version is kept in the archive only:`;
-  return { ok: true, lines: [phrase(action).done, why, ...listed] };
-}
-function moveFolder(from, to, rename = fs18.renameSync) {
-  fs18.mkdirSync(path21.dirname(to), { recursive: true });
-  try {
-    rename(from, to);
-  } catch (error) {
-    const crossDevice = error instanceof Error && "code" in error && error.code === "EXDEV";
-    if (!crossDevice)
-      throw error;
-    fs18.cpSync(from, to, {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-      verbatimSymlinks: true,
-      preserveTimestamps: true
-    });
-    fs18.rmSync(from, { recursive: true });
-  }
-}
-function commit(action, runGit) {
-  const changes = ownedChanges(action.store, action.owned, runGit);
-  if ("issue" in changes)
-    return { ok: false, issue: changes.issue };
-  if (changes.paths.length === 0) {
-    return {
-      ok: true,
-      lines: ["The store holds nothing of link's left to commit."]
-    };
-  }
-  const committed = commitPaths(action.store, changes.paths, action.message, runGit);
-  return committed.ok ? { ok: true, lines: [phrase(action).done] } : committed;
-}
-function phrase(action) {
-  const forms = (done, todo, rest2) => ({
-    done: `${done} ${rest2}`,
-    todo: `Would ${todo} ${rest2}`,
-    step: `${todo} ${rest2}`
-  });
-  switch (action.kind) {
-    case "createStore":
-      return forms("Created", "create", `the store at ${action.store}`);
-    case "finishStore":
-      return forms("Committed", "commit", `the store's own files, which its first commit missed, as "${CREATION_MESSAGE}": ${action.paths.join(", ")}`);
-    case "createFolder":
-      return forms("Created", "create", action.folder);
-    case "writeMarker":
-      return forms("Wrote", "write", `${path21.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
-    case "copyFile":
-      return forms("Copied", "copy", `${action.from} to ${action.to}`);
-    case "mergeKey":
-      return forms("Set", "set", `${SETTINGS_KEY} to ${action.value} in ${action.file}`);
-    case "archiveDefault":
-      return forms("Moved", "move", `${action.from} to ${action.to}`);
-    case "commit":
-      return forms("Committed", "commit", `link's paths in the store as "${action.message}"`);
-    default: {
-      const unhandled = action;
-      throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-
-// bin/helpers/memory.ts
-var MEMORY_USAGE_LINE = "sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run]";
-function parseLinkArgs(rest2) {
-  const parsed = parseFlags(rest2, {
-    family: { type: "string" },
-    name: { type: "string" },
-    force: { type: "boolean" },
-    "dry-run": { type: "boolean" }
-  });
-  if (parsed === undefined || parsed.positionals.length !== 1)
-    return;
-  const [repo] = parsed.positionals;
-  if (repo === undefined)
-    return;
-  const { family, name, force, "dry-run": dryRun } = parsed.values;
-  return {
-    repo,
-    family: typeof family === "string" ? family : undefined,
-    name: typeof name === "string" ? name : undefined,
-    force: force === true,
-    dryRun: dryRun === true
-  };
-}
+// bin/helpers/local-date.ts
 function localToday() {
   const now = new Date;
   const pad = (n) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
-function envWithAbsoluteStore(env, cwd) {
-  const store = env.SIDEKICK_MEMORY_STORE;
-  if (store === undefined || store === "")
-    return env;
-  return { ...env, SIDEKICK_MEMORY_STORE: path22.resolve(cwd, store) };
-}
-function runMemoryCli(argv2, ctx, out, err) {
-  const [verb, ...rest2] = argv2;
-  const parsed = verb === "link" ? parseLinkArgs(rest2) : undefined;
-  if (parsed === undefined) {
-    err(`usage: ${MEMORY_USAGE_LINE}`);
-    return 1;
-  }
-  const env = envWithAbsoluteStore(ctx.env, ctx.cwd);
-  return runLink({ ...parsed, repo: path22.resolve(ctx.cwd, parsed.repo) }, {
-    env,
-    home: ctx.home,
-    configDir: configDirOf(env, ctx.home),
-    runGit: execRunner,
-    runClaude: ctx.runClaude,
-    today: localToday
-  }, out, err);
-}
 
 // bin/helpers/memory-start.ts
-import * as fs21 from "node:fs";
-import * as path25 from "node:path";
+import * as fs17 from "node:fs";
+import * as path19 from "node:path";
 
 // bin/helpers/memory-files.ts
-import * as fs19 from "node:fs";
+import * as fs15 from "node:fs";
 var FENCE2 = "---";
 var TOP_LINE = /^([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
 var NESTED_LINE = /^ {2}([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
@@ -5531,7 +4644,7 @@ function parseMemoryText(text) {
 }
 function readMemoryFile(file) {
   try {
-    return parseMemoryText(fs19.readFileSync(file, "utf8"));
+    return parseMemoryText(fs15.readFileSync(file, "utf8"));
   } catch {
     return;
   }
@@ -5600,7 +4713,7 @@ function matchWorkstream(all, facts) {
 }
 
 // bin/helpers/memory-start-render.ts
-import * as path23 from "node:path";
+import * as path17 from "node:path";
 var TOTAL_BUDGET = 9000;
 var NEXT_STEPS_BUDGET = 3000;
 var STATE_AND_NEXT_BUDGET = 5000;
@@ -5614,6 +4727,15 @@ var BLOCK_SEPARATOR = `
 var MENU_LEAD = "No workstream matched. Open workstreams, from the repo and its family:";
 var MENU_ASK = "Ask the operator which one this session serves, or let sk-save start a new one.";
 var COMPACT_WARNING = "This session has not saved. Save with sk-save at the next pause.";
+var Drop = {
+  Header: 0,
+  NextSteps: 1,
+  State: 2,
+  Also: 3,
+  Records: 4,
+  Family: 5,
+  Warnings: 6
+};
 function cutMarker(readPath) {
   return `… (cut; Read ${readPath})`;
 }
@@ -5631,11 +4753,11 @@ ${marker}`;
 }
 function menuText(open, repoFolder) {
   const list2 = open.map((stream) => `- ${stream.name}: ${stream.description} (${stream.path})`);
-  const listing = [MENU_LEAD, ...list2.length > 0 ? list2 : ["- none"]];
-  const cut2 = fitSection(listing.join(`
-`), MENU_BUDGET - MENU_ASK.length - 1, repoFolder);
-  return `${cut2}
-${MENU_ASK}`;
+  const items = list2.length > 0 ? list2 : ["- none"];
+  const cut2 = fitSection(items.join(`
+`), MENU_BUDGET, repoFolder);
+  return [MENU_LEAD, cut2, MENU_ASK].join(`
+`);
 }
 function matchLines(match, repoFolder) {
   if (match.kind === "menu")
@@ -5654,9 +4776,10 @@ function headerBlock(parts) {
   if (match === undefined)
     return [];
   const first = `sidekick memory: session ${parts.sessionId}. Your record is ${parts.recordPath}; save to it with the sk-save skill.`;
-  const repoFolder = path23.dirname(path23.dirname(parts.recordPath));
-  return [[first, ...matchLines(match, repoFolder)].join(`
-`)];
+  const repoFolder = path17.dirname(path17.dirname(parts.recordPath));
+  const text = [first, ...matchLines(match, repoFolder)].join(`
+`);
+  return [{ text, drop: Drop.Header }];
 }
 function workstreamBlocks(parts) {
   const { match, statePath, nextSteps, state } = parts;
@@ -5666,7 +4789,11 @@ function workstreamBlocks(parts) {
   const stateBudget = STATE_AND_NEXT_BUDGET - (next?.length ?? 0);
   const shownState = state === undefined ? undefined : fitSection(state, stateBudget, statePath);
   const also = parts.otherHeadings.length > 0 ? `Also in the file: ${parts.otherHeadings.join(", ")}. Read the file for them.` : undefined;
-  return [shownState, next, also].filter((block) => block !== undefined);
+  return [
+    { text: shownState, drop: Drop.State },
+    { text: next, drop: Drop.NextSteps },
+    { text: also, drop: Drop.Also }
+  ].flatMap(({ text, drop }) => text === undefined ? [] : [{ text, drop }]);
 }
 function recordsBlock(parts) {
   const { match, records } = parts;
@@ -5676,15 +4803,18 @@ function recordsBlock(parts) {
   const lines = records.map((record2) => `- ${record2.date} ${record2.title}: ${record2.path}`);
   const text = [`Recent records on ${match.workstream.name}:`, ...lines].join(`
 `);
-  return [fitSection(text, RECORDS_BUDGET, path23.dirname(newest.path))];
+  const fitted = fitSection(text, RECORDS_BUDGET, path17.dirname(newest.path));
+  return [{ text: fitted, drop: Drop.Records }];
 }
 function familyBlock(parts) {
   const { family } = parts;
-  if (family === undefined)
+  if (family === undefined || family.lines.every((l) => l.trim() === "")) {
     return [];
+  }
   const text = [`Family index (${family.name}):`, ...family.lines].join(`
 `);
-  return [fitSection(text, FAMILY_BUDGET, family.path)];
+  const fitted = fitSection(text, FAMILY_BUDGET, family.path);
+  return [{ text: fitted, drop: Drop.Family }];
 }
 function warningsBlock(parts) {
   const compactUnsaved = parts.match !== undefined && parts.source === "compact" && !parts.recordExists;
@@ -5692,15 +4822,22 @@ function warningsBlock(parts) {
     ...parts.warnings,
     ...compactUnsaved ? [COMPACT_WARNING] : []
   ];
-  return texts.length === 0 ? [] : [texts.map((text) => `Warning: ${text}`).join(`
-`)];
+  if (texts.length === 0)
+    return [];
+  const text = texts.map((warning) => `Warning: ${warning}`).join(`
+`);
+  return [{ text, drop: Drop.Warnings }];
+}
+function joined(blocks) {
+  return blocks.map((block) => block.text).join(BLOCK_SEPARATOR);
 }
 function withinTotal(blocks) {
-  const fitted = blocks.reduceRight((kept, _block, index) => {
-    const joined = kept.join(BLOCK_SEPARATOR);
-    return joined.length > TOTAL_BUDGET && index > 0 ? kept.slice(0, index) : kept;
-  }, blocks);
-  return fitted.join(BLOCK_SEPARATOR).slice(0, TOTAL_BUDGET);
+  if (joined(blocks).length <= TOTAL_BUDGET)
+    return joined(blocks);
+  const worst = Math.max(...blocks.map((block) => block.drop));
+  if (worst === Drop.Header)
+    return joined(blocks).slice(0, TOTAL_BUDGET);
+  return withinTotal(blocks.filter((block) => block.drop !== worst));
 }
 function renderStart(parts) {
   const blocks = [
@@ -5719,33 +4856,33 @@ function renderStart(parts) {
 }
 
 // bin/helpers/memory-view.ts
-import * as fs20 from "node:fs";
-import * as path24 from "node:path";
+import * as fs16 from "node:fs";
+import * as path18 from "node:path";
 var INDEX_FILE = "MEMORY.md";
 var SESSIONS_DIR = "sessions";
 var RECORD_NAME = /^(\d{4}-\d{2}-\d{2})-(.+)\.md$/;
 var TITLE_LINE = /^# +(.+?)\s*$/m;
 function resolved(target) {
-  const lexical = path24.resolve(target);
+  const lexical = path18.resolve(target);
   try {
-    return fs20.realpathSync(lexical);
+    return fs16.realpathSync(lexical);
   } catch {
     return lexical;
   }
 }
-function isInside3(folder, parent) {
-  const relative5 = path24.relative(parent, folder);
-  return relative5 !== "" && !relative5.startsWith("..") && !path24.isAbsolute(relative5);
+function isInside(folder, parent) {
+  const relative3 = path18.relative(parent, folder);
+  return relative3 !== "" && !relative3.startsWith("..") && !path18.isAbsolute(relative3);
 }
 function linkedView(root, store, key) {
   const repoFolder = resolved(key);
-  const parent = path24.dirname(repoFolder);
+  const parent = path18.dirname(repoFolder);
   return {
     kind: "linked",
     root,
     store,
     repoFolder,
-    repoName: path24.basename(repoFolder),
+    repoName: path18.basename(repoFolder),
     familyFolder: parent === store ? undefined : parent
   };
 }
@@ -5755,7 +4892,7 @@ function repoView(cwd, deps) {
     return { kind: "none" };
   const store = resolved(storeRoot(deps.env, deps.home));
   const key = readKey(cwd, deps.runGit);
-  if (key !== undefined && isInside3(resolved(key), store)) {
+  if (key !== undefined && isInside(resolved(key), store)) {
     return linkedView(main.root, store, key);
   }
   const marker = findMarkers(store).find((found) => resolved(found.root) === main.root);
@@ -5763,7 +4900,7 @@ function repoView(cwd, deps) {
 }
 function listDir(folder, suffix) {
   try {
-    return fs20.readdirSync(folder).filter((entry) => entry.endsWith(suffix)).sort();
+    return fs16.readdirSync(folder).filter((entry) => entry.endsWith(suffix)).sort();
   } catch {
     return [];
   }
@@ -5794,7 +4931,7 @@ function toWorkstream(file, memory) {
 }
 function workstreamsIn(folder) {
   return listDir(folder, ".md").filter((entry) => entry !== INDEX_FILE).flatMap((entry) => {
-    const file = path24.join(folder, entry);
+    const file = path18.join(folder, entry);
     const memory = readMemoryFile(file);
     const found = memory && toWorkstream(file, memory);
     return found ? [found] : [];
@@ -5808,13 +4945,13 @@ function listWorkstreams(repoFolder, familyFolder) {
 }
 function modifiedAt2(file) {
   try {
-    return fs20.statSync(file).mtimeMs;
+    return fs16.statSync(file).mtimeMs;
   } catch {
     return 0;
   }
 }
 function toRecord(file) {
-  const named = RECORD_NAME.exec(path24.basename(file));
+  const named = RECORD_NAME.exec(path18.basename(file));
   const memory = readMemoryFile(file);
   if (!named || !memory || memory.metadata.kind !== "session")
     return;
@@ -5828,19 +4965,19 @@ function toRecord(file) {
   };
 }
 function listRecords(repoFolder) {
-  const dir = path24.join(repoFolder, SESSIONS_DIR);
+  const dir = path18.join(repoFolder, SESSIONS_DIR);
   return listDir(dir, ".md").flatMap((entry) => {
-    const record2 = toRecord(path24.join(dir, entry));
+    const record2 = toRecord(path18.join(dir, entry));
     return record2 ? [{ record: record2, mtime: modifiedAt2(record2.path) }] : [];
   }).sort((a, b) => b.record.date.localeCompare(a.record.date) || b.mtime - a.mtime).map((entry) => entry.record);
 }
 function recordPath(repoFolder, sessionId, today) {
-  const dir = path24.join(repoFolder, SESSIONS_DIR);
+  const dir = path18.join(repoFolder, SESSIONS_DIR);
   const existing = listDir(dir, `-${sessionId}.md`).find((entry) => RECORD_NAME.test(entry));
   if (existing !== undefined) {
-    return { path: path24.join(dir, existing), exists: true };
+    return { path: path18.join(dir, existing), exists: true };
   }
-  return { path: path24.join(dir, `${today}-${sessionId}.md`), exists: false };
+  return { path: path18.join(dir, `${today}-${sessionId}.md`), exists: false };
 }
 
 // bin/helpers/memory-start.ts
@@ -5854,7 +4991,7 @@ var EventSchema = object({
   session_id: pipe(string(), regex(SESSION_ID3)),
   cwd: pipe(string(), minLength(1)),
   source: picklist(["startup", "resume", "clear", "compact", "fork"]),
-  session_title: optional(string())
+  session_title: fallback(optional(string()), undefined)
 });
 function startSnapshot(_pluginDir, _store, _sessionId, _source) {}
 function parseEvent(stdin) {
@@ -5887,9 +5024,9 @@ function briefWorkstream(env) {
   return "brief" in read ? read.brief.workstream : undefined;
 }
 function staleLockWarning(store, now) {
-  const lock = path25.join(store, ".git", "index.lock");
+  const lock = path19.join(store, ".git", "index.lock");
   try {
-    if (now - fs21.statSync(lock).mtimeMs <= STALE_LOCK_MS)
+    if (now - fs17.statSync(lock).mtimeMs <= STALE_LOCK_MS)
       return [];
     return [
       `The memory store has a stale git lock at ${lock}; snapshots stop until it is removed.`
@@ -5901,11 +5038,13 @@ function staleLockWarning(store, now) {
 function familyOf(familyFolder) {
   if (familyFolder === undefined)
     return;
-  const file = path25.join(familyFolder, INDEX_FILE2);
+  const file = path19.join(familyFolder, INDEX_FILE2);
   try {
-    const lines = fs21.readFileSync(file, "utf8").trimEnd().split(`
+    const lines = fs17.readFileSync(file, "utf8").trimEnd().split(`
 `);
-    return { name: path25.basename(familyFolder), path: file, lines };
+    if (lines.every((line) => line.trim() === ""))
+      return;
+    return { name: path19.basename(familyFolder), path: file, lines };
   } catch {
     return;
   }
@@ -5943,10 +5082,13 @@ function recentRecords(match, records, own) {
     return [];
   return records.filter((record2) => record2.path !== own && record2.workstream === match.workstream.name).slice(0, RECENT_RECORDS);
 }
-function missingSettingText(root) {
-  return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: sidekick memory link ${root}`;
+function shellQuoted(arg) {
+  return `'${arg.replaceAll("'", "'\\''")}'`;
 }
-function gather2(stdin, deps) {
+function missingSettingText(root) {
+  return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: sidekick memory link ${shellQuoted(root)}`;
+}
+function gather(stdin, deps) {
   const event = parseEvent(stdin);
   if (event === undefined)
     return {};
@@ -6001,7 +5143,7 @@ function gather2(stdin, deps) {
 }
 function memoryStartContext(stdin, deps) {
   try {
-    return gather2(stdin, deps);
+    return gather(stdin, deps);
   } catch {
     return {};
   }
@@ -6015,14 +5157,14 @@ function readContent(event) {
     return "";
   return typeof response.file.content === "string" ? response.file.content : "";
 }
-var DESIGN_SKILL = path26.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path26.join("skills", "sk-execute", "SKILL.md");
+var DESIGN_SKILL = path20.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path20.join("skills", "sk-execute", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
   "## Before the plan goes out",
   "## Choose the mode"
 ];
-var CLEAN_CODE_RULE = path26.join("rules", "sk-clean-code.md");
+var CLEAN_CODE_RULE = path20.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
@@ -6049,7 +5191,7 @@ function parseJson5(raw) {
 }
 function readText2(file) {
   try {
-    return fs22.readFileSync(file, "utf-8");
+    return fs18.readFileSync(file, "utf-8");
   } catch {
     return;
   }
@@ -6138,7 +5280,7 @@ function ruleCoversPackage(rulePaths, content) {
   return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
 }
 function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path26.join(pluginDir, DESIGN_SKILL));
+  const description = readSkillDescription(path20.join(pluginDir, DESIGN_SKILL));
   if (description === undefined)
     return;
   return [
@@ -6150,7 +5292,7 @@ function brainstormNudge(pluginDir) {
 }
 var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
-  const file = path26.join(pluginDir, EXECUTE_SKILL);
+  const file = path20.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
   const found = sections.flatMap((s) => s === undefined ? [] : [s]);
   if (found.length < PLAN_SECTIONS.length)
@@ -6169,7 +5311,7 @@ var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. W
 var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
 var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function commentsLines(pluginDir, packageText) {
-  const rule = path26.join(pluginDir, CLEAN_CODE_RULE);
+  const rule = path20.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
   if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
     return [];
@@ -6270,6 +5412,908 @@ function runHookCli(args, env, out, err) {
     ...notice === undefined ? {} : { systemMessage: notice }
   }));
   return 0;
+}
+
+// bin/helpers/memory.ts
+import * as path26 from "node:path";
+
+// bin/helpers/memory-link.ts
+import * as fs22 from "node:fs";
+import * as path25 from "node:path";
+
+// bin/helpers/memory-link-facts.ts
+import * as fs21 from "node:fs";
+import * as path24 from "node:path";
+
+// bin/helpers/memory-default.ts
+import * as fs19 from "node:fs";
+import * as path21 from "node:path";
+var MAX_KEY_LENGTH = 200;
+var WRITE_BITS = 146;
+function hashOf(text) {
+  let h = 0;
+  for (let i = 0;i < text.length; i++) {
+    h = (h << 5) - h + text.charCodeAt(i) | 0;
+  }
+  return h;
+}
+function projectKey(p) {
+  const key = p.replace(/[^a-zA-Z0-9]/g, "-");
+  if (key.length <= MAX_KEY_LENGTH)
+    return key;
+  return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
+}
+function defaultMemoryFolder(root, configDir) {
+  return path21.join(configDir, "projects", projectKey(root), "memory");
+}
+function overrideIssue(env) {
+  if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
+    return "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere";
+  }
+  if (env.CLAUDE_CODE_REMOTE_MEMORY_DIR !== undefined) {
+    return "CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere";
+  }
+  if (env.CLAUDE_CODE_PROJECT_DIR_NAME !== undefined && env.CLAUDE_CONFIG_DIR !== undefined) {
+    return "CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently";
+  }
+  return;
+}
+var ClaudeJson = object({ projects: record(string(), unknown()) });
+function knownRoot(root, claudeJson) {
+  try {
+    const parsed = safeParse(ClaudeJson, JSON.parse(fs19.readFileSync(claudeJson, "utf-8")));
+    return parsed.success && Object.hasOwn(parsed.output.projects, root);
+  } catch {
+    return false;
+  }
+}
+function legacyPreferred(legacy, current) {
+  try {
+    const stat = fs19.statSync(legacy);
+    if (!stat.isFile())
+      return false;
+    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs19.existsSync(current);
+  } catch {
+    return false;
+  }
+}
+function claudeJsonPath(env, home) {
+  const current = path21.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
+  const legacy = path21.join(configDirOf(env, home), ".config.json");
+  return legacyPreferred(legacy, current) ? legacy : current;
+}
+
+// bin/helpers/memory-link-plan.ts
+import * as path22 from "node:path";
+var ARCHIVE_DIR = "archive/default-folders";
+function planLink(facts, opts) {
+  const refusals = refusalsOf(facts, opts);
+  const ready = readyOf(facts);
+  if (refusals.length > 0 || ready === undefined) {
+    return { kind: "refused", refusals };
+  }
+  const actions = actionsOf(ready, facts);
+  return {
+    kind: "ready",
+    root: ready.repo.root,
+    target: ready.target.folder,
+    actions,
+    notes: notesOf(ready, facts, actions)
+  };
+}
+function readyOf(facts) {
+  const { repo, storePending } = facts;
+  if (facts.storeState.kind === "foreign" || repo.kind === "refused") {
+    return;
+  }
+  const { settings, target } = repo;
+  if (settings.kind !== "ready" || target === undefined)
+    return;
+  if ("issue" in target.pending || "issue" in storePending)
+    return;
+  return {
+    repo,
+    settings,
+    target,
+    pending: target.pending.paths,
+    storePending: storePending.paths
+  };
+}
+function linkCommand(root, names, extra = "") {
+  const flags = [
+    names.family === undefined ? "" : ` --family ${shellArg(names.family)}`,
+    names.name === undefined ? "" : ` --name ${shellArg(names.name)}`,
+    extra === "" ? "" : ` ${extra}`
+  ];
+  return `sidekick memory link ${shellArg(root)}${flags.join("")}`;
+}
+function isFirstLink(repo) {
+  const { settings, target } = repo;
+  const keyInPlace = settings.kind === "ready" && target !== undefined && settings.key === target.folder && target.state.kind === "marked" && target.state.root === repo.root;
+  return !keyInPlace;
+}
+function strands(repo) {
+  return isFirstLink(repo) || repo.defaultFolder.kind === "present";
+}
+function refusalsOf(facts, opts) {
+  const { repo } = facts;
+  const all = [
+    ...storeRefusals(facts.storeState),
+    ..."issue" in facts.storePending ? [pendingRefusal(facts.storePending.issue)] : [],
+    ...facts.overrideIssue === undefined ? [] : [`${facts.overrideIssue}. Unset it and run link again.`],
+    ...facts.nameIssues.map((issue) => `${issue}; choose another with --family or --name.`),
+    ...repo.kind === "refused" ? [repo.issue] : repoRefusals(repo, opts)
+  ];
+  return [...new Set(all)];
+}
+var pendingRefusal = (issue) => `${issue}. Fix the store's git repo, then run link again.`;
+function storeRefusals(state) {
+  if (state.kind !== "foreign")
+    return [];
+  return [
+    `${state.issue}. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`
+  ];
+}
+function repoRefusals(repo, opts) {
+  return [
+    ...settingsRefusals(repo),
+    ...keyMissedRefusals(repo),
+    ...defaultFolderRefusals(repo),
+    ...sessionRefusals(repo, opts),
+    ...repo.target === undefined ? [] : targetRefusals(repo.target, repo.root)
+  ];
+}
+function settingsRefusals(repo) {
+  const { settings, target } = repo;
+  if (settings.kind === "refused")
+    return [settings.issue];
+  const ownOrAbsent = settings.key === undefined || settings.key === target?.folder;
+  if (ownOrAbsent || target === undefined)
+    return [];
+  return [
+    `${settings.file} already sets ${SETTINGS_KEY} to ${settings.key}, not ${target.folder}, and sidekick changes only a key it wrote. If that folder is in the store, run link with the --family and --name that name it. Otherwise remove the entry by hand, as the store's README says under Changes by hand.`
+  ];
+}
+function keyMissedRefusals(repo) {
+  if (repo.keyMissed === undefined)
+    return [];
+  const { claudeJson, projectFolder } = repo.keyMissed;
+  return [
+    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path22.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`
+  ];
+}
+function defaultFolderRefusals(repo) {
+  const { defaultFolder } = repo;
+  if (defaultFolder.kind === "absent")
+    return [];
+  if (!isFirstLink(repo))
+    return defaultFolder.issues;
+  const forged = defaultFolder.files.some((f) => f.rel === MARKER_FILE) ? [
+    `${path22.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
+  ] : [];
+  const into = repo.target?.folder;
+  const conflicts = into === undefined ? [] : defaultFolder.files.flatMap((f) => copyRefusals(defaultFolder.folder, into, f));
+  return [...defaultFolder.issues, ...forged, ...conflicts];
+}
+function copyRefusals(from, into, file) {
+  if (file.rel === MARKER_FILE)
+    return [];
+  const source = path22.join(from, file.rel);
+  const copy = path22.join(into, file.rel);
+  if (file.copy === "differs") {
+    return [
+      `${source} differs from ${copy}, which is already in the store. Merge the two by hand into the store copy, then run link again.`
+    ];
+  }
+  if (file.copy === "notFile") {
+    return [
+      `${copy} is in the way of ${source}, since it is not a file. Move it by hand and run link again.`
+    ];
+  }
+  return [];
+}
+var describeJob = (job) => `${job.name ?? job.sessionId ?? job.id ?? "a session"} in ${job.cwd ?? "an unknown folder"}`;
+function sessionRefusals(repo, opts) {
+  if (opts.force || !strands(repo))
+    return [];
+  const retry = linkCommand(repo.root, opts, "--force");
+  const { sessions } = repo;
+  if (sessions.kind === "failed") {
+    return [
+      `link cannot tell whether another session is open in the repo: ${sessions.issues.join(" ")} Fix the listing, or run again with --force: ${retry}`
+    ];
+  }
+  if (sessions.others.length === 0)
+    return [];
+  return [
+    `Other sessions are open in the repo: ${sessions.others.map(describeJob).join("; ")}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`
+  ];
+}
+function targetRefusals(target, root) {
+  return [
+    ...targetStateRefusals(target, root),
+    ...familyRefusals(target),
+    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path22.basename(found.folder) })}`),
+    ..."issue" in target.pending ? [pendingRefusal(target.pending.issue)] : []
+  ];
+}
+function targetStateRefusals(target, root) {
+  const { folder, state } = target;
+  switch (state.kind) {
+    case "absent":
+    case "empty":
+      return [];
+    case "notFolder":
+      return [
+        `${folder} is a file, not a folder. Choose another folder name with --name.`
+      ];
+    case "unmarked":
+      return [
+        `${folder} holds files but no ${MARKER_FILE}, so link did not make it for this repo, and it may be a family folder. Choose another folder name with --name.`
+      ];
+    case "invalidMarker":
+      return [`${state.issue}. Fix or remove it by hand, then run link again.`];
+    case "marked":
+      return state.root === root ? [] : [
+        `${folder} belongs to ${state.root}, as its ${MARKER_FILE} says. Choose another folder name with --name.`
+      ];
+    default: {
+      const unhandled = state;
+      throw new Error(`Unhandled target state: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function familyRefusals(target) {
+  const { family } = target;
+  const folder = path22.dirname(target.folder);
+  if (family === "marked") {
+    return [
+      `${folder} holds a ${MARKER_FILE}, so it is a repo folder, not a family. Choose another family with --family.`
+    ];
+  }
+  if (family === "notFolder") {
+    return [
+      `${folder} is a file, not a family folder. Choose another family with --family.`
+    ];
+  }
+  return [];
+}
+var COMMITTED_KINDS = new Set([
+  "writeMarker",
+  "copyFile",
+  "archiveDefault"
+]);
+function actionsOf(ready, facts) {
+  const first = isFirstLink(ready.repo);
+  const steps = [
+    ...storeActions(ready, facts),
+    ...folderActions(ready),
+    ...first ? copyActions(ready) : [],
+    ...first ? [mergeAction(ready)] : [],
+    ...archiveActions(ready, facts, first)
+  ];
+  const writesStore = steps.some((step) => COMMITTED_KINDS.has(step.kind)) || ready.pending.length > 0;
+  return writesStore ? [...steps, commitAction(ready, facts.store)] : steps;
+}
+function storeActions(ready, facts) {
+  const { kind } = facts.storeState;
+  if (kind === "absent" || kind === "empty") {
+    return [{ kind: "createStore", store: facts.store }];
+  }
+  return ready.storePending.length > 0 ? [{ kind: "finishStore", store: facts.store, paths: ready.storePending }] : [];
+}
+function folderActions(ready) {
+  const { folder, state } = ready.target;
+  const marker = {
+    kind: "writeMarker",
+    folder,
+    root: ready.repo.root
+  };
+  if (state.kind === "absent") {
+    return [{ kind: "createFolder", folder }, marker];
+  }
+  return state.kind === "empty" ? [marker] : [];
+}
+function copyActions(ready) {
+  const { defaultFolder } = ready.repo;
+  if (defaultFolder.kind === "absent")
+    return [];
+  return defaultFolder.files.filter((f) => f.copy === "absent" && f.rel !== MARKER_FILE).map((f) => ({
+    kind: "copyFile",
+    from: path22.join(defaultFolder.folder, f.rel),
+    to: path22.join(ready.target.folder, f.rel)
+  }));
+}
+function mergeAction(ready) {
+  return {
+    kind: "mergeKey",
+    file: ready.settings.file,
+    value: ready.target.folder,
+    expected: ready.settings.text
+  };
+}
+function archiveActions(ready, facts, first) {
+  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
+  if (defaultFolder.kind === "absent")
+    return [];
+  const name = archiveName(projectKey2, facts.today, ready.target.archives);
+  return [
+    {
+      kind: "archiveDefault",
+      from: defaultFolder.folder,
+      to: path22.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
+      copies: ready.target.folder,
+      reappeared: !first
+    }
+  ];
+}
+function archiveName(key, today, taken) {
+  const base = `${key}-${today}`;
+  if (!taken.includes(base))
+    return base;
+  let n = 2;
+  while (taken.includes(`${base}-${n}`))
+    n += 1;
+  return `${base}-${n}`;
+}
+function commitAction(ready, store) {
+  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
+  const owned = {
+    folderRel: ready.target.rel,
+    projectKey: projectKey2,
+    defaultFolder: defaultFolder.folder
+  };
+  return {
+    kind: "commit",
+    store,
+    message: `link ${ready.target.rel}`,
+    owned
+  };
+}
+function notesOf(ready, facts, actions) {
+  const { defaultFolder } = ready.repo;
+  const moves = actions.some((a) => a.kind === "mergeKey" || a.kind === "archiveDefault");
+  const noDefault = isFirstLink(ready.repo) && defaultFolder.kind === "absent" ? [
+    `No default memory folder at ${defaultFolder.folder}: nothing to copy or archive.`
+  ] : [];
+  return [
+    ...noDefault,
+    ...moves ? sessionNotes(ready.repo.sessions, defaultFolder.folder) : [],
+    ...userSettingsNotes(facts)
+  ];
+}
+function sessionNotes(sessions, folder) {
+  if (sessions.kind === "failed") {
+    return [
+      `The check for other open sessions did not run: ${sessions.issues.join(" ")} Any session open in the repo keeps writing to ${folder} until it restarts.`
+    ];
+  }
+  const forced = sessions.others.map((job) => `Passed over with --force: ${describeJob(job)}. It keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`);
+  const self = sessions.self === undefined ? [] : [
+    `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`
+  ];
+  return [...forced, ...self];
+}
+function userSettingsNotes(facts) {
+  const { file, covered } = facts.userSettings;
+  if (covered)
+    return [];
+  return [
+    `No permissions.additionalDirectories entry in ${file} covers the store. link never writes that file, so add this entry to that list by hand: ${JSON.stringify(facts.store)}`
+  ];
+}
+
+// bin/helpers/memory-sessions.ts
+import * as fs20 from "node:fs";
+import * as path23 from "node:path";
+function realOrResolved(p) {
+  try {
+    return fs20.realpathSync(p);
+  } catch {
+    return path23.resolve(p);
+  }
+}
+var STOPPED_STATE = "stopped";
+function isInside2(dir, checkout) {
+  const rel = path23.relative(checkout, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path23.sep}`) || path23.isAbsolute(rel));
+}
+function sessionsInRepo(jobs, checkouts, selfId) {
+  const roots = checkouts.map(realOrResolved);
+  const inRepo = jobs.filter((j) => j.state !== STOPPED_STATE && j.cwd !== undefined && roots.some((root) => isInside2(realOrResolved(j.cwd ?? ""), root)));
+  const hasSelf = selfId !== undefined && selfId !== "";
+  const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
+  return { self, others: inRepo.filter((j) => j !== self) };
+}
+
+// bin/helpers/memory-link-facts.ts
+function gatherFacts(opts, deps) {
+  const store = path24.resolve(storeRoot(deps.env, deps.home));
+  const state = storeState(store, deps.runGit);
+  const found = mainCheckout(path24.resolve(opts.repo), deps.runGit, deps.home);
+  const name = opts.name ?? ("root" in found ? path24.basename(found.root) : undefined);
+  const nameIssues = [opts.family, name].flatMap((n) => {
+    const issue = n === undefined ? undefined : folderNameIssue(n);
+    return issue === undefined ? [] : [issue];
+  });
+  const repo = "issue" in found ? { kind: "refused", issue: found.issue } : repoFacts({
+    ...found,
+    store,
+    state,
+    family: opts.family,
+    name: name ?? path24.basename(found.root),
+    namesOk: nameIssues.length === 0,
+    deps
+  });
+  return {
+    store,
+    storeState: state,
+    storePending: state.kind === "store" ? uncommittedCreation(store, deps.runGit) : { paths: [] },
+    overrideIssue: overrideIssue(deps.env),
+    nameIssues,
+    repo,
+    userSettings: userSettingsFacts(deps.configDir, store, deps.home),
+    today: deps.today()
+  };
+}
+function repoFacts(input) {
+  const { root, deps } = input;
+  const settings = settingsState(root, deps.runGit);
+  const key = projectKey(root);
+  const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
+  const folder = path24.join(input.store, ...rel.split("/"));
+  const knowsFolder = input.namesOk && input.state.kind !== "foreign";
+  const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
+  const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
+  return {
+    kind: "found",
+    root,
+    settings,
+    projectKey: key,
+    keyMissed: keyMissed(root, key, deps),
+    defaultFolder,
+    sessions: sessionFacts(input),
+    target
+  };
+}
+function keyMissed(root, key, deps) {
+  const claudeJson = claudeJsonPath(deps.env, deps.home);
+  const projectFolder = path24.join(deps.configDir, "projects", key);
+  const missed = knownRoot(root, claudeJson) && !fs21.existsSync(projectFolder);
+  return missed ? { claudeJson, projectFolder } : undefined;
+}
+function sessionFacts(input) {
+  const listed = listJobs(input.deps.runClaude, input.root);
+  if ("issues" in listed)
+    return { kind: "failed", issues: listed.issues };
+  const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
+  return {
+    kind: "listed",
+    ...sessionsInRepo(listed.jobs, input.checkouts, selfId)
+  };
+}
+function targetFacts(input) {
+  const { store, folder, rel, key, defaultFolder } = input;
+  const owned = {
+    folderRel: rel,
+    projectKey: key,
+    defaultFolder: defaultFolder.folder
+  };
+  return {
+    folder,
+    rel,
+    state: targetState(folder),
+    family: input.family === undefined ? "none" : familyState(path24.join(store, input.family)),
+    elsewhere: findMarkers(store).filter((m) => m.root === input.root && m.folder !== folder).map((m) => ({ folder: m.folder, family: m.family })),
+    archives: archiveNames(store),
+    pending: input.state.kind === "store" ? ownedChanges(store, owned, input.deps.runGit) : { paths: [] }
+  };
+}
+function targetState(folder) {
+  const stat = fs21.statSync(folder, { throwIfNoEntry: false });
+  if (stat === undefined)
+    return { kind: "absent" };
+  if (!stat.isDirectory())
+    return { kind: "notFolder" };
+  const marker = readMarker(folder);
+  if (marker.kind === "marker")
+    return { kind: "marked", root: marker.root };
+  if (marker.kind === "invalid") {
+    return { kind: "invalidMarker", issue: marker.issue };
+  }
+  return fs21.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
+}
+function familyState(folder) {
+  const stat = fs21.statSync(folder, { throwIfNoEntry: false });
+  if (stat === undefined)
+    return "absent";
+  if (!stat.isDirectory())
+    return "notFolder";
+  return readMarker(folder).kind === "none" ? "folder" : "marked";
+}
+function archiveNames(store) {
+  const folder = path24.join(store, ...ARCHIVE_DIR.split("/"));
+  return fs21.existsSync(folder) ? fs21.readdirSync(folder) : [];
+}
+function isInside3(dir, parent) {
+  const rel = path24.relative(parent, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path24.sep}`) || path24.isAbsolute(rel));
+}
+function walkFolder(root) {
+  const entries = entriesOf2(fs21.realpathSync(root), root, "");
+  return {
+    files: entries.flatMap((e) => ("file" in e) ? [e.file] : []),
+    issues: entries.flatMap((e) => ("issue" in e) ? [e.issue] : [])
+  };
+}
+function entriesOf2(real, root, rel) {
+  return fs21.readdirSync(path24.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
+    if (entry.isDirectory())
+      return entriesOf2(real, root, child);
+    if (entry.isFile())
+      return [{ file: child }];
+    if (entry.isSymbolicLink())
+      return [linkEntry(real, root, child)];
+    return [
+      {
+        issue: `${path24.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
+      }
+    ];
+  });
+}
+function linkEntry(real, root, child) {
+  const full = path24.join(root, child);
+  const way = "Replace it with the file itself, or remove it, then run link again.";
+  try {
+    const named = fs21.realpathSync(full);
+    if (isInside3(named, real) && fs21.statSync(named).isFile()) {
+      return { file: child };
+    }
+    return {
+      issue: `${full} is a link to ${named}, which is not a file inside the default folder. ${way}`
+    };
+  } catch {
+    return { issue: `${full} is a broken link. ${way}` };
+  }
+}
+function readDefaultFolder(folder, target) {
+  const stat = fs21.lstatSync(folder, { throwIfNoEntry: false });
+  if (stat === undefined)
+    return { kind: "absent", folder };
+  if (!stat.isDirectory()) {
+    const issue = `${folder} is not a folder, so link cannot copy it. Move it aside by hand, then run link again.`;
+    return { kind: "present", folder, files: [], issues: [issue] };
+  }
+  const walked = walkFolder(folder);
+  const files = walked.files.map((rel) => ({
+    rel,
+    copy: target === undefined ? "absent" : copyState(path24.join(folder, rel), path24.join(target, rel))
+  }));
+  return { kind: "present", folder, files, issues: walked.issues };
+}
+function copyState(from, to) {
+  try {
+    if (!fs21.statSync(to).isFile())
+      return "notFile";
+  } catch (error) {
+    const absent = error instanceof Error && "code" in error && error.code === "ENOENT";
+    return absent ? "absent" : "notFile";
+  }
+  return fs21.readFileSync(from).equals(fs21.readFileSync(to)) ? "same" : "differs";
+}
+function ownedChanges(store, owned, runGit) {
+  const listed = statusIn(store, [owned.folderRel, ARCHIVE_DIR], runGit);
+  if ("issue" in listed)
+    return listed;
+  const sources = [
+    owned.defaultFolder,
+    ...ownArchives(store, owned.projectKey)
+  ];
+  const isOwned = (p) => fs21.existsSync(path24.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
+  return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
+}
+var UNTRACKED = "??";
+var ADDED = "A";
+function uncommittedCreation(store, runGit) {
+  const listed = statusIn(store, [...CREATION_PATHS], runGit);
+  if ("issue" in listed)
+    return listed;
+  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs21.existsSync(path24.join(store, e.path));
+  return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
+}
+function statusIn(store, pathspecs, runGit) {
+  const args = [
+    "--no-optional-locks",
+    "--literal-pathspecs",
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--",
+    ...pathspecs
+  ];
+  const r = runGit("git", args, store);
+  if (r.code !== 0) {
+    return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
+  }
+  return { entries: porcelainEntries(r.stdout) };
+}
+function isOwnCopy(store, folderRel, sources, p) {
+  const prefix = `${folderRel}/`;
+  if (!p.startsWith(prefix))
+    return false;
+  const rel = p.slice(prefix.length);
+  if (rel === MARKER_FILE)
+    return true;
+  const file = path24.join(store, p);
+  return sources.some((source) => sameBytes(path24.join(source, rel), file));
+}
+function sameBytes(a, b) {
+  try {
+    const bothFiles = fs21.statSync(a).isFile() && fs21.statSync(b).isFile();
+    return bothFiles && fs21.readFileSync(a).equals(fs21.readFileSync(b));
+  } catch {
+    return false;
+  }
+}
+function ownArchives(store, key) {
+  const parent = path24.join(store, ...ARCHIVE_DIR.split("/"));
+  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path24.join(parent, name));
+}
+function porcelainEntries(output) {
+  const fields = output.split("\x00").filter((field) => field !== "");
+  const entries = [];
+  for (let i = 0;i < fields.length; i++) {
+    const status = fields[i].slice(0, 2);
+    entries.push({ status, path: fields[i].slice(3) });
+    if (status.includes("R") || status.includes("C"))
+      i++;
+  }
+  return entries;
+}
+var ARCHIVE_DATE = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
+var isOwnArchiveName = (entry, key) => entry.startsWith(`${key}-`) && ARCHIVE_DATE.test(entry.slice(key.length + 1));
+function isOwnArchivePath(p, key) {
+  const prefix = `${ARCHIVE_DIR}/`;
+  if (!p.startsWith(prefix))
+    return false;
+  const [entry] = p.slice(prefix.length).split("/");
+  return isOwnArchiveName(entry, key);
+}
+var UserSettingsSchema = object({
+  permissions: optional(object({
+    additionalDirectories: optional(array(string()), [])
+  }), { additionalDirectories: [] })
+});
+function additionalDirectories(file) {
+  try {
+    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs21.readFileSync(file, "utf-8")));
+    return parsed.success ? parsed.output.permissions.additionalDirectories : [];
+  } catch {
+    return [];
+  }
+}
+var expandHome = (entry, home) => entry === "~" || entry.startsWith("~/") ? path24.join(home, entry.slice(1)) : entry;
+function userSettingsFacts(configDir, store, home) {
+  const file = path24.join(configDir, "settings.json");
+  const covered = additionalDirectories(file).some((entry) => {
+    const dir = path24.resolve(expandHome(entry, home));
+    return isInside3(store, dir) || isInside3(physical(store), physical(dir));
+  });
+  return { file, covered };
+}
+
+// bin/helpers/memory-link.ts
+var messageOf3 = (error) => error instanceof Error ? error.message : String(error);
+function runLink(opts, deps, out, err) {
+  const gathered = gather2(opts, deps);
+  if ("issue" in gathered) {
+    err(`link could not read what it needs, and wrote nothing: ${gathered.issue}`);
+    return 1;
+  }
+  const plan = planLink(gathered.facts, opts);
+  if (plan.kind === "refused") {
+    err("link refused, and wrote nothing:");
+    for (const refusal2 of plan.refusals)
+      err(`- ${refusal2}`);
+    return 1;
+  }
+  const finished = report(plan, opts.dryRun, deps.runGit, { out, err });
+  for (const note of plan.notes)
+    out(note);
+  return finished ? 0 : 1;
+}
+function report(plan, dryRun, runGit, { out, err }) {
+  if (plan.actions.length === 0) {
+    out(`${plan.root} is already linked to ${plan.target}.`);
+    return true;
+  }
+  if (dryRun) {
+    out("Dry run: link writes nothing. These are the steps it would take:");
+    for (const action of plan.actions)
+      out(phrase(action).todo);
+    return true;
+  }
+  return applyAll(plan.actions, runGit, out, err);
+}
+function gather2(opts, deps) {
+  try {
+    return { facts: gatherFacts(opts, deps) };
+  } catch (error) {
+    return { issue: messageOf3(error) };
+  }
+}
+function applyAll(actions, runGit, out, err) {
+  for (const action of actions) {
+    const applied = applyAction(action, runGit);
+    if (!applied.ok) {
+      err(`link stopped before it could ${phrase(action).step}: ${applied.issue}`);
+      err("Fix that, then run the same command again; it skips each step already done.");
+      return false;
+    }
+    for (const line of applied.lines)
+      out(line);
+  }
+  return true;
+}
+function applyAction(action, runGit) {
+  try {
+    return runAction(action, runGit);
+  } catch (error) {
+    return { ok: false, issue: messageOf3(error) };
+  }
+}
+function runAction(action, runGit) {
+  const done = { ok: true, lines: [phrase(action).done] };
+  switch (action.kind) {
+    case "createStore": {
+      const created = createStore(action.store, runGit);
+      return created.ok ? done : created;
+    }
+    case "finishStore": {
+      const finished = commitPaths(action.store, action.paths, CREATION_MESSAGE, runGit);
+      return finished.ok ? done : finished;
+    }
+    case "createFolder":
+      fs22.mkdirSync(action.folder, { recursive: true });
+      return done;
+    case "writeMarker":
+      writeMarker(action.folder, action.root);
+      return done;
+    case "copyFile":
+      fs22.mkdirSync(path25.dirname(action.to), { recursive: true });
+      fs22.copyFileSync(action.from, action.to, fs22.constants.COPYFILE_EXCL);
+      return done;
+    case "mergeKey": {
+      const merged = mergeKey(action.file, action.value, action.expected);
+      return merged.ok ? done : merged;
+    }
+    case "archiveDefault":
+      return archive(action);
+    case "commit":
+      return commit(action, runGit);
+    default: {
+      const unhandled = action;
+      throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function archive(action) {
+  const kept = walkFolder(action.from).files.filter((rel) => copyState(path25.join(action.from, rel), path25.join(action.copies, rel)) !== "same");
+  moveFolder(action.from, action.to);
+  const listed = kept.map((rel) => `  ${path25.join(action.to, rel)}`);
+  if (kept.length === 0)
+    return { ok: true, lines: [phrase(action).done] };
+  const why = action.reappeared ? `The default folder came back after the link. These files in it differ from ${action.copies} or are missing there, so merge what is new by hand:` : `These files changed after the copy, so their latest version is kept in the archive only:`;
+  return { ok: true, lines: [phrase(action).done, why, ...listed] };
+}
+function moveFolder(from, to, rename = fs22.renameSync) {
+  fs22.mkdirSync(path25.dirname(to), { recursive: true });
+  try {
+    rename(from, to);
+  } catch (error) {
+    const crossDevice = error instanceof Error && "code" in error && error.code === "EXDEV";
+    if (!crossDevice)
+      throw error;
+    fs22.cpSync(from, to, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      verbatimSymlinks: true,
+      preserveTimestamps: true
+    });
+    fs22.rmSync(from, { recursive: true });
+  }
+}
+function commit(action, runGit) {
+  const changes = ownedChanges(action.store, action.owned, runGit);
+  if ("issue" in changes)
+    return { ok: false, issue: changes.issue };
+  if (changes.paths.length === 0) {
+    return {
+      ok: true,
+      lines: ["The store holds nothing of link's left to commit."]
+    };
+  }
+  const committed = commitPaths(action.store, changes.paths, action.message, runGit);
+  return committed.ok ? { ok: true, lines: [phrase(action).done] } : committed;
+}
+function phrase(action) {
+  const forms = (done, todo, rest2) => ({
+    done: `${done} ${rest2}`,
+    todo: `Would ${todo} ${rest2}`,
+    step: `${todo} ${rest2}`
+  });
+  switch (action.kind) {
+    case "createStore":
+      return forms("Created", "create", `the store at ${action.store}`);
+    case "finishStore":
+      return forms("Committed", "commit", `the store's own files, which its first commit missed, as "${CREATION_MESSAGE}": ${action.paths.join(", ")}`);
+    case "createFolder":
+      return forms("Created", "create", action.folder);
+    case "writeMarker":
+      return forms("Wrote", "write", `${path25.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
+    case "copyFile":
+      return forms("Copied", "copy", `${action.from} to ${action.to}`);
+    case "mergeKey":
+      return forms("Set", "set", `${SETTINGS_KEY} to ${action.value} in ${action.file}`);
+    case "archiveDefault":
+      return forms("Moved", "move", `${action.from} to ${action.to}`);
+    case "commit":
+      return forms("Committed", "commit", `link's paths in the store as "${action.message}"`);
+    default: {
+      const unhandled = action;
+      throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+// bin/helpers/memory.ts
+var MEMORY_USAGE_LINE = "sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run]";
+function parseLinkArgs(rest2) {
+  const parsed = parseFlags(rest2, {
+    family: { type: "string" },
+    name: { type: "string" },
+    force: { type: "boolean" },
+    "dry-run": { type: "boolean" }
+  });
+  if (parsed === undefined || parsed.positionals.length !== 1)
+    return;
+  const [repo] = parsed.positionals;
+  if (repo === undefined)
+    return;
+  const { family, name, force, "dry-run": dryRun } = parsed.values;
+  return {
+    repo,
+    family: typeof family === "string" ? family : undefined,
+    name: typeof name === "string" ? name : undefined,
+    force: force === true,
+    dryRun: dryRun === true
+  };
+}
+function envWithAbsoluteStore(env, cwd) {
+  const store = env.SIDEKICK_MEMORY_STORE;
+  if (store === undefined || store === "")
+    return env;
+  return { ...env, SIDEKICK_MEMORY_STORE: path26.resolve(cwd, store) };
+}
+function runMemoryCli(argv2, ctx, out, err) {
+  const [verb, ...rest2] = argv2;
+  const parsed = verb === "link" ? parseLinkArgs(rest2) : undefined;
+  if (parsed === undefined) {
+    err(`usage: ${MEMORY_USAGE_LINE}`);
+    return 1;
+  }
+  const env = envWithAbsoluteStore(ctx.env, ctx.cwd);
+  return runLink({ ...parsed, repo: path26.resolve(ctx.cwd, parsed.repo) }, {
+    env,
+    home: ctx.home,
+    configDir: configDirOf(env, ctx.home),
+    runGit: execRunner,
+    runClaude: ctx.runClaude,
+    today: localToday
+  }, out, err);
 }
 
 // bin/helpers/pm-brief.ts

@@ -39,6 +39,22 @@ const MENU_ASK =
 const COMPACT_WARNING =
   'This session has not saved. Save with sk-save at the next pause.';
 
+// A block prints in array order; past the total budget, the highest `drop` goes first.
+interface Block {
+  text: string;
+  drop: number;
+}
+
+const Drop = {
+  Header: 0,
+  NextSteps: 1,
+  State: 2,
+  Also: 3,
+  Records: 4,
+  Family: 5,
+  Warnings: 6,
+} as const;
+
 function cutMarker(readPath: string): string {
   return `… (cut; Read ${readPath})`;
 }
@@ -58,13 +74,9 @@ function menuText(open: Workstream[], repoFolder: string): string {
   const list = open.map(
     (stream) => `- ${stream.name}: ${stream.description} (${stream.path})`,
   );
-  const listing = [MENU_LEAD, ...(list.length > 0 ? list : ['- none'])];
-  const cut = fitSection(
-    listing.join('\n'),
-    MENU_BUDGET - MENU_ASK.length - 1,
-    repoFolder,
-  );
-  return `${cut}\n${MENU_ASK}`;
+  const items = list.length > 0 ? list : ['- none'];
+  const cut = fitSection(items.join('\n'), MENU_BUDGET, repoFolder);
+  return [MENU_LEAD, cut, MENU_ASK].join('\n');
 }
 
 function matchLines(match: Match, repoFolder: string): string[] {
@@ -81,15 +93,16 @@ function matchLines(match: Match, repoFolder: string): string[] {
   return lines;
 }
 
-function headerBlock(parts: StartParts): string[] {
+function headerBlock(parts: StartParts): Block[] {
   const { match } = parts;
   if (match === undefined) return [];
   const first = `sidekick memory: session ${parts.sessionId}. Your record is ${parts.recordPath}; save to it with the sk-save skill.`;
   const repoFolder = path.dirname(path.dirname(parts.recordPath));
-  return [[first, ...matchLines(match, repoFolder)].join('\n')];
+  const text = [first, ...matchLines(match, repoFolder)].join('\n');
+  return [{ text, drop: Drop.Header }];
 }
 
-function workstreamBlocks(parts: StartParts): string[] {
+function workstreamBlocks(parts: StartParts): Block[] {
   const { match, statePath, nextSteps, state } = parts;
   if (match?.kind !== 'matched' || statePath === undefined) return [];
   const next =
@@ -103,10 +116,14 @@ function workstreamBlocks(parts: StartParts): string[] {
     parts.otherHeadings.length > 0
       ? `Also in the file: ${parts.otherHeadings.join(', ')}. Read the file for them.`
       : undefined;
-  return [shownState, next, also].filter((block) => block !== undefined);
+  return [
+    { text: shownState, drop: Drop.State },
+    { text: next, drop: Drop.NextSteps },
+    { text: also, drop: Drop.Also },
+  ].flatMap(({ text, drop }) => (text === undefined ? [] : [{ text, drop }]));
 }
 
-function recordsBlock(parts: StartParts): string[] {
+function recordsBlock(parts: StartParts): Block[] {
   const { match, records } = parts;
   const [newest] = records;
   if (match?.kind !== 'matched' || newest === undefined) return [];
@@ -116,17 +133,21 @@ function recordsBlock(parts: StartParts): string[] {
   const text = [`Recent records on ${match.workstream.name}:`, ...lines].join(
     '\n',
   );
-  return [fitSection(text, RECORDS_BUDGET, path.dirname(newest.path))];
+  const fitted = fitSection(text, RECORDS_BUDGET, path.dirname(newest.path));
+  return [{ text: fitted, drop: Drop.Records }];
 }
 
-function familyBlock(parts: StartParts): string[] {
+function familyBlock(parts: StartParts): Block[] {
   const { family } = parts;
-  if (family === undefined) return [];
+  if (family === undefined || family.lines.every((l) => l.trim() === '')) {
+    return [];
+  }
   const text = [`Family index (${family.name}):`, ...family.lines].join('\n');
-  return [fitSection(text, FAMILY_BUDGET, family.path)];
+  const fitted = fitSection(text, FAMILY_BUDGET, family.path);
+  return [{ text: fitted, drop: Drop.Family }];
 }
 
-function warningsBlock(parts: StartParts): string[] {
+function warningsBlock(parts: StartParts): Block[] {
   const compactUnsaved =
     parts.match !== undefined &&
     parts.source === 'compact' &&
@@ -135,25 +156,27 @@ function warningsBlock(parts: StartParts): string[] {
     ...parts.warnings,
     ...(compactUnsaved ? [COMPACT_WARNING] : []),
   ];
-  return texts.length === 0
-    ? []
-    : [texts.map((text) => `Warning: ${text}`).join('\n')];
+  if (texts.length === 0) return [];
+  const text = texts.map((warning) => `Warning: ${warning}`).join('\n');
+  return [{ text, drop: Drop.Warnings }];
 }
 
-// Drops whole blocks from the end until the text fits; the first block stays.
-function withinTotal(blocks: string[]): string {
-  const fitted = blocks.reduceRight((kept, _block, index) => {
-    const joined = kept.join(BLOCK_SEPARATOR);
-    return joined.length > TOTAL_BUDGET && index > 0
-      ? kept.slice(0, index)
-      : kept;
-  }, blocks);
-  return fitted.join(BLOCK_SEPARATOR).slice(0, TOTAL_BUDGET);
+function joined(blocks: Block[]): string {
+  return blocks.map((block) => block.text).join(BLOCK_SEPARATOR);
+}
+
+// Past the total budget, whole blocks go in reverse priority; the header never does.
+function withinTotal(blocks: Block[]): string {
+  if (joined(blocks).length <= TOTAL_BUDGET) return joined(blocks);
+  const worst = Math.max(...blocks.map((block) => block.drop));
+  if (worst === Drop.Header) return joined(blocks).slice(0, TOTAL_BUDGET);
+  return withinTotal(blocks.filter((block) => block.drop !== worst));
 }
 
 /**
  * The hook's `additionalContext` for one session. Pure: it cuts each section
- * to its budget, drops trailing blocks past 9,000 characters in all, and on
+ * to its budget, drops whole blocks past 9,000 characters in all (warnings
+ * first, Next steps last, never the first line), and on
  * `resume` keeps only the first two lines.
  */
 export function renderStart(parts: StartParts): string {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -930,8 +930,20 @@ describe('runHookCli memory-start', () => {
     return { code, out, err };
   }
 
+  const made: string[] = [];
+
+  afterEach(() => {
+    for (const dir of made.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   function tempDir(): string {
-    return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ms-')));
+    const dir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ms-')),
+    );
+    made.push(dir);
+    return dir;
   }
 
   test('a folder outside any linked repo prints nothing', () => {

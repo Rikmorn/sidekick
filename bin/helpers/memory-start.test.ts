@@ -144,6 +144,45 @@ describe('renderStart', () => {
     expect(out.startsWith(FIRST)).toBe(true);
   });
 
+  test('past 9,000 characters whole blocks go in reverse priority and Next steps stays', () => {
+    // The Other open workstreams line takes no budget, so it can push the total over.
+    const others = Array.from({ length: 375 }, (_, i) =>
+      ws(`other-${String(i).padStart(5, '0')}`),
+    );
+    const full = parts({
+      match: {
+        kind: 'matched',
+        workstream: ws('alpha', { path: FILE }),
+        label: 'branch feat',
+        others,
+      },
+      state: `## State\n${longText(300, 60)}`,
+      nextSteps: `## Next steps\n${longText(300, 60)}`,
+      otherHeadings: ['## Key files'],
+      records: [record('2026-10-01')],
+      family: { name: 'fam', path: FAMILY_INDEX, lines: ['# Fam'] },
+      warnings: ['w'],
+    });
+    const out = renderStart(full);
+    expect(out.length).toBeLessThanOrEqual(9000);
+    expect(out.startsWith(FIRST)).toBe(true);
+    expect(out).toContain('## Next steps');
+    for (const gone of [
+      'Warning:',
+      'Family index',
+      'Recent records',
+      'Also in the file',
+      '## State',
+    ]) {
+      expect(out).not.toContain(gone);
+    }
+  });
+
+  test('an empty family index prints nothing', () => {
+    const family = { name: 'fam', path: FAMILY_INDEX, lines: ['', '  '] };
+    expect(renderStart(parts({ family }))).not.toContain('Family index');
+  });
+
   test('each cut section ends with its own marker and fits its budget', () => {
     const out = renderStart(
       parts({
@@ -218,10 +257,18 @@ describe('renderStart', () => {
       ws(`w${i}`, { description: 'd'.repeat(60) }),
     );
     const out = renderStart(parts({ match: { kind: 'menu', open } }));
-    const menu = out.slice(FIRST.length + 1);
-    expect(menu.length).toBeLessThanOrEqual(1500);
-    expect(menu).toContain(cutMarker(REPO));
-    expect(menu.endsWith('let sk-save start a new one.')).toBe(true);
+    const lead =
+      'No workstream matched. Open workstreams, from the repo and its family:';
+    const ask =
+      'Ask the operator which one this session serves, or let sk-save start a new one.';
+    const lines = out.split('\n');
+    expect(lines[1]).toBe(lead);
+    expect(lines.at(-1)).toBe(ask);
+    // The list and its cut marker take the 1,500; the lead and ask lines do not.
+    const list = lines.slice(2, -1).join('\n');
+    expect(list.length).toBeLessThanOrEqual(1500);
+    expect(list.length).toBeGreaterThan(1400);
+    expect(list.endsWith(cutMarker(REPO))).toBe(true);
   });
 
   test('is silent with no match and nothing else', () => {
@@ -353,7 +400,7 @@ describe('memoryStartContext', () => {
     expect(result.snapshot).toBeUndefined();
     expect(result.context?.split('\n')).toHaveLength(1);
     expect(result.context?.startsWith('Warning: ')).toBe(true);
-    expect(result.context).toContain(`sidekick memory link ${repo}`);
+    expect(result.context).toContain(`sidekick memory link '${repo}'`);
   });
 
   test('a linked repo with a branch match prints the workstream and starts a snapshot', () => {
@@ -421,15 +468,60 @@ describe('memoryStartContext', () => {
     expect(result.context).toContain("matched by the worker's brief");
   });
 
-  test('a worker path that does not exist skips tier 1', () => {
+  test('a worker path that does not exist skips tier 1 and a lower tier still matches', () => {
     const { store, repo, folder } = linked();
-    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:nope');
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:main');
     const env = {
       SIDEKICK_MEMORY_STORE: store,
       SIDEKICK_WORKER: path.join(tmp, 'missing.md'),
     };
     const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
+    expect(result.context).toContain('matched by branch main');
+  });
+
+  test('a worker brief that fails its schema skips tier 1 and a lower tier still matches', () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:main');
+    const brief = path.join(tmp, 'bad-brief.md');
+    fs.writeFileSync(brief, '---\nworkstream: beta\n---\n');
+    const env = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: brief };
+    const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
+    expect(result.context).toContain('matched by branch main');
+  });
+
+  test('a detached HEAD skips the branch tier without throwing', () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:main');
+    execRunner('git', ['checkout', '-q', '--detach'], repo);
+    const result = memoryStartContext(eventFor(repo), depsFor(store));
     expect(result.context).toContain('No workstream matched');
+    expect(result.snapshot?.sessionId).toBe('sess-1');
+  });
+
+  test('a null or non-string session_title degrades to no title', () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:main');
+    for (const title of [null, 7]) {
+      const event = eventFor(repo, { session_title: title });
+      const result = memoryStartContext(event, depsFor(store));
+      expect(result.context).toContain('matched by branch main');
+    }
+  });
+
+  test('a title naming a workstream still matches', () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:nope');
+    const event = eventFor(repo, { session_title: 'Alpha: tidy up' });
+    const result = memoryStartContext(event, depsFor(store));
+    expect(result.context).toContain('matched by the title');
+  });
+
+  test('a repo path with a space is printed whole and quoted in the fix command', () => {
+    const store = mkdir('store');
+    const repo = makeRepo('my proj');
+    writeMarker(mkdir('store', 'proj'), repo);
+    const result = memoryStartContext(eventFor(repo), depsFor(store));
+    expect(result.context).toContain(`sidekick memory link '${repo}'`);
   });
 
   test("this session's own record picks the workstream and recent records list the others", () => {
@@ -485,6 +577,17 @@ describe('memoryStartContext', () => {
       memoryStartContext(eventFor(repo), depsFor(store)).context ?? '';
     expect(context).toContain('Family index (fam):\n# Fam\n\n- item');
     expect(context.endsWith('- item')).toBe(true);
+  });
+
+  test('an empty family MEMORY.md prints no family section', () => {
+    const store = mkdir('store');
+    const repo = makeRepo('proj');
+    const folder = mkdir('store', 'fam', 'proj');
+    writeMarker(folder, repo);
+    setKey(repo, folder);
+    fs.writeFileSync(path.join(store, 'fam', 'MEMORY.md'), '\n\n');
+    const result = memoryStartContext(eventFor(repo), depsFor(store));
+    expect(result.context).not.toContain('Family index');
   });
 
   test('a store path with a space prints whole', () => {

@@ -39,7 +39,8 @@ const EventSchema = v.object({
   session_id: v.pipe(v.string(), v.regex(SESSION_ID)),
   cwd: v.pipe(v.string(), v.minLength(1)),
   source: v.picklist(['startup', 'resume', 'clear', 'compact', 'fork']),
-  session_title: v.optional(v.string()),
+  // A bad title degrades to no title; it must not silence the hook.
+  session_title: v.fallback(v.optional(v.string()), undefined),
 });
 
 export interface StartDeps extends ViewDeps {
@@ -117,6 +118,7 @@ function familyOf(familyFolder: string | undefined): StartParts['family'] {
   const file = path.join(familyFolder, INDEX_FILE);
   try {
     const lines = fs.readFileSync(file, 'utf8').trimEnd().split('\n');
+    if (lines.every((line) => line.trim() === '')) return undefined;
     return { name: path.basename(familyFolder), path: file, lines };
   } catch {
     return undefined;
@@ -174,8 +176,13 @@ function recentRecords(
     .slice(0, RECENT_RECORDS);
 }
 
+// Single quotes keep a path with a space or a shell character whole when run literally.
+function shellQuoted(arg: string): string {
+  return `'${arg.replaceAll("'", "'\\''")}'`;
+}
+
 function missingSettingText(root: string): string {
-  return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: sidekick memory link ${root}`;
+  return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: sidekick memory link ${shellQuoted(root)}`;
 }
 
 function gather(stdin: string, deps: StartDeps): StartResult {

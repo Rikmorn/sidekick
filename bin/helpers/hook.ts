@@ -1,11 +1,13 @@
 /**
- * `sidekick hook post-skill`, `post-read`, and `post-tool-batch`: the context
- * sidekick's hooks add. The two PostToolUse verbs fire when a skill it extends
- * loads, or when a review package is read: superpowers' own, or the one
- * sk-milestone's release check builds, which gets lines of its own. The
- * PostToolBatch verb warns the model as its context fills, and tells the
- * operator once, through a `systemMessage`, when sidekick's mods are not
- * running. Every other input prints nothing and returns 0, because a hook
+ * `sidekick hook post-skill`, `post-read`, `post-tool-batch`, and
+ * `memory-start`: the context sidekick's hooks add. The two PostToolUse verbs
+ * fire when a skill it extends loads, or when a review package is read:
+ * superpowers' own, or the one sk-milestone's release check builds, which gets
+ * lines of its own. The PostToolBatch verb warns the model as its context
+ * fills, and tells the operator once, through a `systemMessage`, when
+ * sidekick's mods are not running. The SessionStart verb `memory-start` prints
+ * the memory store's workstream and record for the session. Every other input
+ * prints nothing and returns 0, because a hook
  * never blocks or fails the call it watches (ADR-0010, ADR-0011).
  */
 import * as fs from 'node:fs';
@@ -16,7 +18,7 @@ import {
   type MonitorOutput,
   postToolBatchContext,
 } from './context-monitor.js';
-import { localToday } from './memory.js';
+import { localToday } from './local-date.js';
 import { memoryStartContext, startSnapshot } from './memory-start.js';
 import { execRunner } from './pm-data.js';
 

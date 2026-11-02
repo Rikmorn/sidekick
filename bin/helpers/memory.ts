@@ -4,6 +4,7 @@
  */
 
 import * as path from 'node:path';
+import { localToday } from './local-date.js';
 import { configDirOf } from './main-session.js';
 import { runLink } from './memory-link.js';
 import { execRunner } from './pm-data.js';
@@ -50,13 +51,6 @@ function parseLinkArgs(rest: string[]): Parsed | undefined {
     force: force === true,
     dryRun: dryRun === true,
   };
-}
-
-/** The local date as YYYY-MM-DD. */
-export function localToday(): string {
-  const now = new Date();
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 // A relative store path means relative to the caller's folder, not the process's.
