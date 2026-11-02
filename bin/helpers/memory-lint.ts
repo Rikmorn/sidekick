@@ -6,17 +6,37 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { configDirOf } from './main-session.js';
+import { defaultMemoryFolder } from './memory-default.js';
 import { type MemoryFile, parseMemoryText } from './memory-files.js';
+import { linkCommand } from './memory-link-plan.js';
 import { linksIn, reachFrom } from './memory-links.js';
+import {
+  compareDefaultFolder,
+  type DefaultFolderDiff,
+  errorCode,
+  invalidMarkers,
+  keyInStore,
+  type RootFact,
+  resolvedPath,
+  rootFact,
+} from './memory-lint-repos.js';
+import { INJECTION, injectionHits, KEYS, keyHits } from './memory-patterns.js';
 import { headingAs, NEXT_HEADING, STATE_HEADING } from './memory-sections.js';
+import { SETTINGS_KEY } from './memory-settings.js';
 import { fitWorkstream } from './memory-start-render.js';
-import { findMarkers } from './memory-store.js';
+import { findMarkers, MARKER_FILE } from './memory-store.js';
 import {
   readStoreSettings,
   STORE_SETTINGS_FILE,
   type StoreSettings,
 } from './memory-store-settings.js';
-import { listWorkstreams } from './memory-view.js';
+import {
+  listRecords,
+  listWorkstreams,
+  type SessionRecord,
+  type Workstream,
+} from './memory-view.js';
 import type { Runner } from './pm-data.js';
 
 /** The single source of check ids; `lintStore` runs one predicate per id, in this order. */
@@ -27,18 +47,29 @@ export const MEMORY_LINT_IDS = [
   'index-line-long',
   'workstream-cut',
   'workstream-dropped',
+  'key-shaped',
+  'injection-shaped',
   'settings-invalid',
   'unreadable',
+  'dangling-marker',
+  'default-folder-left',
+  'stale-lock',
+  'setting-missing',
 ] as const;
 export type MemoryLintId = (typeof MEMORY_LINT_IDS)[number];
 
 /** Ids whose findings belong to no folder: their `folder` is `''`, and every `folders` run keeps them. */
-export const STORE_WIDE_IDS: readonly MemoryLintId[] = ['settings-invalid'];
+export const STORE_WIDE_IDS: readonly MemoryLintId[] = [
+  'settings-invalid',
+  'dangling-marker',
+  'stale-lock',
+];
 
 /**
  * One defect. `folder` is the store-relative folder with `/` separators
  * (`sidekick`, `family/repo`, `family`), or `''` for a store-wide finding.
- * `file` is absolute, under the store's real path.
+ * `file` is absolute, under the store's real path, except for
+ * `default-folder-left`, whose `file` is Claude Code's default memory folder.
  */
 export interface MemoryFinding {
   id: MemoryLintId;
@@ -48,10 +79,28 @@ export interface MemoryFinding {
   message: string;
 }
 
+/**
+ * A git call that returned the deadline exit code. `lintStore` throws it
+ * rather than read a timeout as a fact about a repo, so the caller can drop
+ * the whole run.
+ */
+export class GitDeadlineError extends Error {
+  readonly args: readonly string[];
+  readonly cwd: string;
+
+  constructor(args: readonly string[], cwd: string) {
+    super(`git ${args.join(' ')} in ${cwd} passed its deadline`);
+    this.name = 'GitDeadlineError';
+    this.args = args;
+    this.cwd = cwd;
+  }
+}
+
 /** What the lint reads beyond the store's files. */
 export interface LintDeps {
   /** Reads a `## ` section, heading included; injected so the lint stays clear of hook.ts. */
   readSection: (file: string, heading: string) => string | undefined;
+  /** A call that returns exit code 124 stops the run with `GitDeadlineError`. */
   runGit: Runner;
   home: string;
   env: NodeJS.ProcessEnv;
@@ -65,15 +114,27 @@ export interface MemoryLintResult {
 }
 
 const INDEX_FILE = 'MEMORY.md';
+const SESSIONS_DIR = 'sessions';
 // Claude Code loads the first 200 lines or 25 KB of a MEMORY.md, whichever
 // comes first (docs/research/memory/2026-10-30-claude-code-mechanisms.md:58).
 const LOAD_LIMIT_LINES = 200;
 const LOAD_LIMIT_BYTES = 25 * 1024;
+// The exit code deadlineRunner (memory-snapshot.ts) gives a call made after its deadline.
+const DEADLINE_EXIT = 124;
+// The age at which the memory hook calls the store's git lock stale (STALE_LOCK_MS, memory-start.ts).
+const STALE_LOCK_MS = 10 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
 
 // --- Folders and their own files ---
 
 type LintFolder =
-  | { kind: 'repo'; folder: string; dir: string; root: string }
+  | {
+      kind: 'repo';
+      folder: string;
+      dir: string;
+      root: string;
+      family: string | undefined;
+    }
   | { kind: 'family'; folder: string; dir: string };
 
 interface OwnFile {
@@ -82,26 +143,25 @@ interface OwnFile {
   text: string;
 }
 
-// A folder with its own `.md` files read. `reached` holds the names links
-// reach from MEMORY.md; `reachComplete` is false when an unreadable file
-// stood on the way, so what lies past it is unknown.
+interface Unreadable {
+  file: string;
+  why: string;
+}
+
+// A folder with its own `.md` files read, and a repo folder's session
+// records. `reached` holds the names links reach from MEMORY.md;
+// `reachComplete` is false when an unreadable file stood on the way, so what
+// lies past it is unknown.
 type FolderScan = LintFolder & {
   names: readonly string[];
   files: readonly OwnFile[];
-  unreadable: ReadonlyArray<{ file: string; why: string }>;
+  sessions: readonly OwnFile[];
+  unreadable: readonly Unreadable[];
   reached: ReadonlySet<string>;
   reachComplete: boolean;
 };
 
-// Realpath where the store exists, else lexical, as repoView resolves it.
-function realStore(store: string): string {
-  const lexical = path.resolve(store);
-  try {
-    return fs.realpathSync(lexical);
-  } catch {
-    return lexical;
-  }
-}
+type RepoScan = Extract<FolderScan, { kind: 'repo' }>;
 
 function storeRelative(store: string, dir: string): string {
   return path.relative(store, dir).split(path.sep).join('/');
@@ -116,6 +176,7 @@ function lintFolders(store: string): LintFolder[] {
       folder: storeRelative(store, found.folder),
       dir: found.folder,
       root: found.root,
+      family: found.family,
     }),
   );
   const familyNames = new Set(
@@ -133,11 +194,6 @@ function lintFolders(store: string): LintFolder[] {
   return [...repos, ...families].sort((a, b) =>
     a.folder.localeCompare(b.folder),
   );
-}
-
-function errorCode(error: unknown): string {
-  if (error instanceof Error && 'code' in error) return String(error.code);
-  return error instanceof Error ? error.message : String(error);
 }
 
 type Listing = { names: string[] } | { why: string };
@@ -171,30 +227,83 @@ function readOwn(dir: string, name: string): FileRead {
   }
 }
 
-function scanFolder(place: LintFolder): FolderScan {
-  const listing = ownNames(place.dir);
+// The `.md` files directly in `dir`: `unlisted` holds the folder when it cannot be listed.
+interface FolderRead {
+  names: string[];
+  files: OwnFile[];
+  failed: Unreadable[];
+  unlisted: Unreadable[];
+}
+
+function readFolder(dir: string): FolderRead {
+  const listing = ownNames(dir);
   const names = 'names' in listing ? listing.names : [];
-  const reads = names.map((name) => readOwn(place.dir, name));
-  const files = reads.flatMap((read) =>
-    read.kind === 'read' ? [read.own] : [],
-  );
-  const failed = reads.flatMap((read) =>
-    read.kind === 'unreadable' ? [read] : [],
-  );
-  const blocked = new Set(failed.map((read) => path.basename(read.file)));
-  const starts = names.includes(INDEX_FILE) ? [INDEX_FILE] : [];
-  const reached = reachFrom(place.dir, files, starts);
+  const reads = names.map((name) => readOwn(dir, name));
+  return {
+    names,
+    files: reads.flatMap((read) => (read.kind === 'read' ? [read.own] : [])),
+    failed: reads.flatMap((read) =>
+      read.kind === 'unreadable' ? [{ file: read.file, why: read.why }] : [],
+    ),
+    unlisted: 'why' in listing ? [{ file: dir, why: listing.why }] : [],
+  };
+}
+
+const NO_FILES: FolderRead = { names: [], files: [], failed: [], unlisted: [] };
+
+// A repo folder's session records; a folder with no sessions/ has none.
+function readSessions(place: LintFolder): FolderRead {
+  const dir = path.join(place.dir, SESSIONS_DIR);
+  if (place.kind !== 'repo' || !fs.existsSync(dir)) return NO_FILES;
+  return readFolder(dir);
+}
+
+function scanFolder(place: LintFolder): FolderScan {
+  const own = readFolder(place.dir);
+  const sessions = readSessions(place);
+  const blocked = new Set(own.failed.map((read) => path.basename(read.file)));
+  const starts = own.names.includes(INDEX_FILE) ? [INDEX_FILE] : [];
+  const reached = reachFrom(place.dir, own.files, starts);
   return {
     ...place,
-    names,
-    files,
+    names: own.names,
+    files: own.files,
+    sessions: sessions.files,
     unreadable: [
-      ...('why' in listing ? [{ file: place.dir, why: listing.why }] : []),
-      ...failed,
+      ...own.unlisted,
+      ...own.failed,
+      ...sessions.unlisted,
+      ...sessions.failed,
     ],
     reached,
     reachComplete: [...reached].every((name) => !blocked.has(name)),
   };
+}
+
+// --- Linked repos ---
+
+// A repo folder with what git says about its marker's root.
+interface LinkedRepo {
+  scan: RepoScan;
+  fact: RootFact;
+}
+
+// Every git call the lint makes goes through this, so a timeout never becomes a finding.
+function stopAtDeadline(runGit: Runner): Runner {
+  return (cmd, args, cwd) => {
+    const result = runGit(cmd, args, cwd);
+    if (result.code === DEADLINE_EXIT) throw new GitDeadlineError(args, cwd);
+    return result;
+  };
+}
+
+function linkedRepos(
+  folders: readonly FolderScan[],
+  runGit: Runner,
+): LinkedRepo[] {
+  return folders.flatMap((scan) =>
+    scan.kind === 'repo' ? [{ scan, fact: rootFact(scan.root, runGit) }] : [],
+  );
 }
 
 // --- Predicates ---
@@ -202,6 +311,7 @@ function scanFolder(place: LintFolder): FolderScan {
 interface LintInput {
   store: string;
   folders: readonly FolderScan[];
+  repos: readonly LinkedRepo[];
   settings: StoreSettings;
   settingsIssue: string | undefined;
   deps: LintDeps;
@@ -307,13 +417,21 @@ function cutClauses(fit: ReturnType<typeof fitWorkstream>): string[] {
   ];
 }
 
-// Reads the sections as the hook does, so the cut decision is the hook's own.
+// The two sections as the hook reads them, so what the lint checks is what the hook prints.
+function hookSections(
+  file: string,
+  readSection: LintDeps['readSection'],
+): { state: string | undefined; next: string | undefined } {
+  return {
+    state: readSection(file, headingAs(file, STATE_HEADING).trimEnd()),
+    next: readSection(file, headingAs(file, NEXT_HEADING).trimEnd()),
+  };
+}
+
 function cutWorkstreams(scan: FolderScan, input: LintInput): Hit[] {
-  const { readSection } = input.deps;
   return listWorkstreams(scan.dir, undefined).flatMap((stream) => {
     const file = stream.path;
-    const state = readSection(file, headingAs(file, STATE_HEADING).trimEnd());
-    const next = readSection(file, headingAs(file, NEXT_HEADING).trimEnd());
+    const { state, next } = hookSections(file, input.deps.readSection);
     const clauses = cutClauses(fitWorkstream(state, next, file));
     return clauses.length === 0 ? [] : [{ file, message: clauses.join('; ') }];
   });
@@ -360,6 +478,106 @@ function droppedWorkstreams(scan: FolderScan): Hit[] {
     });
 }
 
+type Pattern = (typeof KEYS)[number];
+
+// The shared deciders and the lists they read, so a finding names the same ids the gate would.
+const SHAPES = {
+  key: { hits: keyHits, patterns: KEYS },
+  injection: { hits: injectionHits, patterns: INJECTION },
+} satisfies Record<
+  string,
+  { hits: (text: string) => string[]; patterns: readonly Pattern[] }
+>;
+type Shape = keyof typeof SHAPES;
+
+// Names the patterns and never quotes the text, since findings are printed and cached.
+const shapedText = (shape: Shape, ids: readonly string[]): string =>
+  `holds ${shape}-shaped text (${ids.join(', ')})`;
+
+function lineOf(text: string, index: number): number {
+  return text.slice(0, index).split('\n').length;
+}
+
+// The lines matches start on, each with the ids that match there in list order; a match may span lines.
+function matchLines(
+  patterns: readonly Pattern[],
+  text: string,
+): Array<{ line: number; ids: string[] }> {
+  const hits = patterns.flatMap(({ id, re }) => {
+    const flags = re.flags.includes('g') ? re.flags : `${re.flags}g`;
+    const every = new RegExp(re.source, flags);
+    return [...text.matchAll(every)].map((match) => ({
+      line: lineOf(text, match.index ?? 0),
+      id,
+    }));
+  });
+  const lines = [...new Set(hits.map((hit) => hit.line))].sort((a, b) => a - b);
+  return lines.map((line) => ({
+    line,
+    ids: [
+      ...new Set(hits.filter((hit) => hit.line === line).map((hit) => hit.id)),
+    ],
+  }));
+}
+
+function shapedLines(own: OwnFile, shape: Shape): Hit[] {
+  const { hits, patterns } = SHAPES[shape];
+  if (hits(own.text).length === 0) return [];
+  return matchLines(patterns, own.text).map(({ line, ids }) => ({
+    file: own.file,
+    line,
+    message: shapedText(shape, ids),
+  }));
+}
+
+// A repo folder's own files and session records, or a family folder's own files.
+function keyShaped(scan: FolderScan): Hit[] {
+  return [...scan.files, ...scan.sessions].flatMap((own) =>
+    shapedLines(own, 'key'),
+  );
+}
+
+// One text the hook prints, named by `place` (`its name`, `its title`).
+function injectionAt(file: string, place: string, text: string): Hit[] {
+  const ids = injectionHits(text);
+  if (ids.length === 0) return [];
+  return [{ file, message: `${place} ${shapedText('injection', ids)}` }];
+}
+
+function workstreamInjection(
+  stream: Workstream,
+  readSection: LintDeps['readSection'],
+): Hit[] {
+  const { state, next } = hookSections(stream.path, readSection);
+  const places: Array<[string, string]> = [
+    ['its name', stream.name],
+    ['its description', stream.description],
+    ['its State section', state ?? ''],
+    ['its Next steps section', next ?? ''],
+  ];
+  return places.flatMap(([place, text]) =>
+    injectionAt(stream.path, place, text),
+  );
+}
+
+function recordInjection(record: SessionRecord): Hit[] {
+  return injectionAt(record.path, 'its title', record.title);
+}
+
+// The texts the hook or Claude Code prints: the index, kept workstreams' names, descriptions, and two sections, and record titles.
+function injectionShaped(scan: FolderScan, input: LintInput): Hit[] {
+  const index = indexOf(scan);
+  const streams = listWorkstreams(scan.dir, undefined);
+  const records = scan.kind === 'repo' ? listRecords(scan.dir) : [];
+  return [
+    ...(index === undefined ? [] : shapedLines(index, 'injection')),
+    ...streams.flatMap((stream) =>
+      workstreamInjection(stream, input.deps.readSection),
+    ),
+    ...records.flatMap(recordInjection),
+  ];
+}
+
 function settingsInvalid(input: LintInput, id: MemoryLintId): MemoryFinding[] {
   if (input.settingsIssue === undefined) return [];
   return [
@@ -379,6 +597,114 @@ function unreadableFiles(scan: FolderScan): Hit[] {
   }));
 }
 
+const markerOf = (scan: RepoScan): string => path.join(scan.dir, MARKER_FILE);
+
+// Why a root leaves its folder orphaned, or undefined when it does not.
+function rootFault(fact: RootFact): string | undefined {
+  switch (fact.kind) {
+    case 'missing':
+      return 'which does not exist';
+    case 'outside-git':
+      return 'which is not inside a git repository';
+    case 'not-main':
+      return `but the repository there has its main checkout at ${fact.top}`;
+    case 'undecided':
+    case 'checkout':
+      return undefined;
+    default: {
+      const unhandled: never = fact;
+      throw new Error(`Unhandled root fact: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+// Store-wide: a marker whose root is not a checkout, and one the store skips as invalid.
+function danglingMarkers(input: LintInput, id: MemoryLintId): MemoryFinding[] {
+  const roots = input.repos.flatMap(({ scan, fact }) => {
+    const fault = rootFault(fact);
+    if (fault === undefined) return [];
+    const message = `${scan.folder}'s marker names ${scan.root}, ${fault}`;
+    return [{ folder: scan.folder, file: markerOf(scan), message }];
+  });
+  const invalid = invalidMarkers(input.store).map((marker) => ({
+    folder: marker.folder,
+    file: marker.file,
+    message: `${marker.issue}, so the store does not count ${marker.folder} as a repo folder`,
+  }));
+  return [...roots, ...invalid]
+    .sort((a, b) => a.folder.localeCompare(b.folder))
+    .map(({ file, message }) => ({ id, folder: '', file, message }));
+}
+
+const STILL_EXISTS = "Claude Code's default memory folder still exists";
+
+function leftMessage(diff: Exclude<DefaultFolderDiff, { kind: 'absent' }>) {
+  if (diff.kind === 'unlisted') {
+    return `${STILL_EXISTS}, but cannot be listed (${diff.why})`;
+  }
+  const clauses: Array<[string, readonly string[]]> = [
+    ['differs from the store copy', diff.differs],
+    ['only there', diff.onlyThere],
+    ['only in the store', diff.onlyInStore],
+  ];
+  const named = clauses
+    .filter(([, names]) => names.length > 0)
+    .map(([label, names]) => `${label}: ${names.join(', ')}`);
+  return named.length === 0
+    ? `${STILL_EXISTS}, and its files match the store copies`
+    : `${STILL_EXISTS}; ${named.join('; ')}`;
+}
+
+function defaultFolderLeft(scan: FolderScan, input: LintInput): Hit[] {
+  if (scan.kind !== 'repo') return [];
+  const configDir = configDirOf(input.deps.env, input.deps.home);
+  const dir = defaultMemoryFolder(scan.root, configDir);
+  const diff = compareDefaultFolder(dir, scan.dir, scan.names);
+  return diff.kind === 'absent'
+    ? []
+    : [{ file: dir, message: leftMessage(diff) }];
+}
+
+function lockAge(lock: string, now: number): number | undefined {
+  try {
+    return now - fs.statSync(lock).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+// Store-wide, at the age staleLockWarning (memory-start.ts) warns at.
+function staleLock(input: LintInput, id: MemoryLintId): MemoryFinding[] {
+  const lock = path.join(input.store, '.git', 'index.lock');
+  const age = lockAge(lock, input.deps.now());
+  if (age === undefined || age <= STALE_LOCK_MS) return [];
+  const minutes = count(Math.floor(age / MINUTE_MS));
+  const limit = count(STALE_LOCK_MS / MINUTE_MS);
+  const message = `${minutes} minutes old (stale past ${limit}); snapshots stop until it is removed`;
+  return [{ id, folder: '', file: lock, message }];
+}
+
+// The hook's own command for relinking, with --name only when the folder's name differs from the root's.
+function relinkCommand(scan: RepoScan): string {
+  const folderName = path.basename(scan.dir);
+  const name = folderName === path.basename(scan.root) ? undefined : folderName;
+  return linkCommand(scan.root, { family: scan.family, name });
+}
+
+function settingMissing(input: LintInput, id: MemoryLintId): MemoryFinding[] {
+  const { store, deps } = input;
+  return input.repos.flatMap(({ scan, fact }) => {
+    if (fact.kind !== 'checkout') return [];
+    if (keyInStore(fact.key, store, deps.home)) return [];
+    const where =
+      fact.key === undefined
+        ? `${scan.root} has no ${SETTINGS_KEY} setting`
+        : `${scan.root}'s ${SETTINGS_KEY} setting names ${fact.key}, outside the store`;
+    const message = `${where}, so Claude Code keeps its memory elsewhere. Run: ${relinkCommand(scan)}`;
+    return [{ id, folder: scan.folder, file: markerOf(scan), message }];
+  });
+}
+
 // Typed by the id union, so a new id without a predicate fails the type check.
 const PREDICATES: Record<MemoryLintId, Predicate> = {
   'dead-link': perFolder(deadLinks),
@@ -387,8 +713,14 @@ const PREDICATES: Record<MemoryLintId, Predicate> = {
   'index-line-long': perFolder(longIndexLines),
   'workstream-cut': perFolder(cutWorkstreams),
   'workstream-dropped': perFolder(droppedWorkstreams),
+  'key-shaped': perFolder(keyShaped),
+  'injection-shaped': perFolder(injectionShaped),
   'settings-invalid': settingsInvalid,
   unreadable: perFolder(unreadableFiles),
+  'dangling-marker': danglingMarkers,
+  'default-folder-left': perFolder(defaultFolderLeft),
+  'stale-lock': staleLock,
+  'setting-missing': settingMissing,
 };
 
 // --- The run ---
@@ -405,25 +737,30 @@ function countById(
 }
 
 /**
- * Lints the whole store: every repo folder and family folder, and the
- * store's settings. With `folders`, the findings keep only those folders
+ * Lints the whole store: every repo folder and family folder, the store's
+ * settings and git lock, and each linked repo's checkout, key, and default
+ * memory folder. With `folders`, the findings keep only those folders
  * (store-relative, as `MemoryFinding.folder` names them) and the store-wide
  * ids. The store resolves to its real path, so `file` matches the paths the
- * memory hook prints.
+ * memory hook prints. Throws `GitDeadlineError` when a git call returns the
+ * deadline exit code, so no finding rests on a timeout.
  */
 export function lintStore(
   store: string,
   deps: LintDeps,
   opts: { folders?: readonly string[] } = {},
 ): MemoryLintResult {
-  const root = realStore(store);
+  const root = resolvedPath(store);
+  const runGit = stopAtDeadline(deps.runGit);
   const { settings, issue } = readStoreSettings(root);
+  const scans = lintFolders(root).map(scanFolder);
   const input: LintInput = {
     store: root,
-    folders: lintFolders(root).map(scanFolder),
+    folders: scans,
+    repos: linkedRepos(scans, runGit),
     settings,
     settingsIssue: issue,
-    deps,
+    deps: { ...deps, runGit },
   };
   const all = MEMORY_LINT_IDS.flatMap((id) => PREDICATES[id](input, id));
   const { folders } = opts;
