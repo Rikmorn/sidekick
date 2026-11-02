@@ -245,7 +245,7 @@ No measurement found a lost write in auto-memory. Two writers on one folder lost
 |---|---|---|
 | A save rewrites a whole shared file and drops another session's lines | The work repo's save skill rewrites its whole branch file (#269) | Shared files change only through targeted edits; a session's own record has one writer |
 | A handoff goes stale: a fact lands in one note while another keeps the old claim | The 2026-10-12 audit's "handoffs through shared notes, not races" | One home per fact, with a workstream's state section as the handoff point. Consolidation finds the rest |
-| Nobody can tell which session wrote what | #269's "no history" row | Every write through Edit or Write is a commit naming its session |
+| Nobody can tell which session wrote what | #269's "no history" row | A commit per write through Edit or Write, naming its session, is deferred to #273. Until then, each session-start snapshot names the session that started, not the writer |
 | A write skips the tools, through Bash | Bash skips Edit's and Write's checks (K13); sessions appended with `cat >>` (`2026-10-12-probes.md`) | Not blocked: the session-start snapshot commits such a change with the rest, unlabelled. #280 holds a guard |
 | The index is a hot spot | Auto-memory's own index file (K6) | The index lists workstreams, never session records |
 
@@ -259,8 +259,8 @@ No measurement found a lost write in auto-memory. Two writers on one folder lost
 
 **W-b. One writer per session record, targeted edits to shared state, and history made by hooks.** Agreed by the operator on 2026-10-31.
 
-1. Single writer by construction, plus an interceptor at the tool-call boundary for the commits.
-2. A session's record has one writer, so it cannot collide. Shared files change only through small edits under Edit's check. A hook makes every write a commit carrying its session id.
+1. Single writer by construction, plus an interceptor at the tool-call boundary for the commits, deferred to #273.
+2. A session's record has one writer, so it cannot collide. Shared files change only through small edits under Edit's check. A hook would make every write a commit carrying its session id; #273 holds it in backlog.
 3. sidekick's `hooks.json` already registers PostToolUse hooks.
 4. Costs: a hook on every Edit and Write that touches the store, a commit per write, and a record file per session.
 5. A new kind of shared file needs a line in the rule; the hook doesn't change.
@@ -269,8 +269,8 @@ Its parts:
 
 - **Session records.** `sessions/<date>-<session>.md` in the repo's folder, one per session. Auto-dream's own prompt reviews a `sessions/` subfolder when one exists (2.1.316 binary, `strings`, 2026-10-31), so the name follows the platform.
 - **Targeted edits.** A workstream's state section and the index change only through Edit on the lines that changed, never a whole-file rewrite.
-- **Per-write history.** A PostToolUse hook on Edit and Write commits the one path written, with the session id. It retries briefly on a locked index, then leaves the path for the sweep. Hooks run git outside the model's permission prompts.
-- **The sweep.** The memory session-start hook commits whatever is still uncommitted, and labels changes no hook committed as made outside the tools.
+- **Per-write history**, deferred to #273. A PostToolUse hook on Edit and Write would commit the one path written, with the session id. It would retry briefly on a locked index, then leave the path for the sweep. Hooks run git outside the model's permission prompts.
+- **The sweep.** The memory session-start hook starts a snapshot that commits whatever is still uncommitted, in one commit naming the session that started. It does not label changes as made outside the tools: #301 dropped that on 2026-11-02.
 
 A guard that denies Bash writes into the store is not part of W-b. It would block the store's own upkeep, since Edit and Write cannot delete or rename a file, and `python3 -c` writes get past a check on command text (`2026-10-12-probes.md`). #72 rejected that shape: "a hook keyed on tool name is one inconvenience away from being bypassed". The guard is registered as backlog (#280), to revisit if a lost or wrong write turns up in the store's snapshot history or in a session.
 
@@ -364,7 +364,7 @@ R2 is registered as backlog (#279), which holds its revisit condition.
 
 Adopt A, W-b, F2, R1 with R3, and the selection order in §Which workstream a session is on. Auto-memory is the store, moved into `~/AI-Memory-Store` by one gitignored setting per repo. A thin sidekick layer adds:
 
-- per-write history and per-session records (W-b);
+- per-session records, and per-write history once #273 lands (W-b);
 - the family index and the workstream match at session start (F2);
 - a save skill whose receipt becomes the session's record, and records made without a model (R1, R3);
 - a rule that tells auto-memory how to organise itself;
@@ -382,7 +382,7 @@ The other threads:
 - **Consolidation.** Claude Code 2.1.316 ships auto-dream, a background consolidation pass over this folder, off for this account by a server flag and switchable with `autoDreamEnabled`. It is trialled before anything is built. A review skill on the 2026-10-12 audit's classes is the fallback.
 - **Sources.** The store's `sources/` area is the output contract for a future ingest tool: Markdown with front matter naming the date, the scope, and the original's path.
 - **Transcripts.** `cleanupPeriodDays` is raised as its own step, so episodic-memory is judged on its search alone.
-- **#7's principle.** "Never silently agent-edited" becomes "visible after the fact": every write is a commit with its session, and the receipt lists what a save changed. That is weaker than approval before the write. The operator chose it by asking for a store that Claude owns (gate 1).
+- **#7's principle.** "Never silently agent-edited" becomes "visible after the fact": every write lands in a commit, and the receipt lists what a save changed. A commit per write, naming its session, is deferred to #273; until then, the session-start snapshot commits each write. That is weaker than approval before the write. The operator chose it by asking for a store that Claude owns (gate 1).
 - **The loop design's memory mod.** Its write guard is covered here by Edit's check and the commits; its review pane stays the loop's.
 
 Assumptions, and what changes if each is wrong:
@@ -391,7 +391,7 @@ Assumptions, and what changes if each is wrong:
 2. **sidekick resolves the same settings file as Claude Code.** That is the main checkout's root, per the settings docs, with their exceptions. Piece 2 resolves the root through git's common directory, never the working directory, and refuses the documented exceptions.
 3. **Interactive sessions, nested `.claude/worktrees/` worktrees, and profile launches honour the setting.** The probes ran headless only. A profile's `--setting-sources` can leave out `local` (`bin/helpers/profile-launch.ts:96-107`). Piece 2 verifies all three before anything migrates.
 4. **sidekick's key survives Claude Code's own writes to the file.** Claude Code saves permission approvals there, from any worktree. Piece 2 merges its key and verifies it survives an approval.
-5. **Auto-dream, once on, works with W-b.** It deletes notes with shell commands, which no Edit or Write hook sees, so the sweep commits its changes as made outside the tools. Its trial checks that its edits are attributable and revertible.
+5. **Auto-dream, once on, works with W-b.** It deletes notes with shell commands, which no Edit or Write hook sees, so the sweep commits its changes with the rest, unlabelled. Its trial checks that its edits are attributable and revertible.
 
 ## Lenses
 
@@ -401,11 +401,11 @@ Assumptions, and what changes if each is wrong:
 | Boundaries | Yes | sidekick ships tooling only; content stays on this machine and never enters this repo (K2) |
 | Extension points | Yes | A new repo is a registration; a new ingest tool writes to `sources/`; a new capture source writes the same record |
 | Contracts | Yes | The settings key, the layout README, the workstream front matter, and the rule's text, which the model reads every session |
-| Concurrency and failure | Yes | W-b: one writer per record, Edit's check on shared files, per-write commits that retry and defer to the sweep |
+| Concurrency and failure | Yes | W-b: one writer per record, Edit's check on shared files, and the sweep. Per-write commits that retry and defer to the sweep wait on #273 |
 | Operability | Yes | The registration check, the workstream match, and the lint count at start; the receipt at the end |
 | Testability | Yes | CLI and hook tests over temporary folders; the trial's scenarios replayed as acceptance |
 | Security | Yes | Work data stays local, and the store holds no secrets. The hook prints index lines and the matched workstream's State and Next steps, gated against injection patterns. Memory poisoning is a known attack class (`2026-10-12-memory-and-context.md`). episodic-memory keeps prod support transcripts for good, on this machine only |
-| Performance | Yes | One hook per store write, and a session-start hook that prints the lint's cached count rather than running it |
+| Performance | Yes | A session-start hook that prints the lint's cached count rather than running it, and one hook per store write once #273 lands |
 | Reversibility | Yes | Removing the settings key returns a repo to the default folder. Migration moves the old default folder into the store's archive, so a lost setting starts empty and the hook says so |
 
 ## Breakdown
@@ -443,8 +443,8 @@ Each piece is a self-contained brief for an issue. Piece 1 is configuration and 
      It goes in `plugin/rules/`, per `sk-guidance-authoring.md`.
    - Out of scope: per-repo conventions.
    - Verified: the trial's S1, S2, S4, S7, and S8 replayed with the rule loaded, with "carry on" in place of the topic in S1's read.
-4. **Per-write history** (#273). The PostToolUse commit per Edit or Write in the store.
-   - Verified: two parallel sessions on one workstream both land, each commit names its session, and a Bash append into the store is committed as made outside the tools.
+4. **Per-write history** (#273, in backlog since #301). The PostToolUse commit per Edit or Write in the store.
+   - Verified: two parallel sessions on one workstream both land, each commit names its session, and the sweep commits a Bash append into the store.
 5. **The memory session-start hook** (#274). A hook script of its own, matching `startup|resume|clear|compact`.
    - Resolves it:
      - It prints the session id, the matched workstream or the menu, the family index within a set character budget, the registration check, and the lint's cached count.
@@ -502,7 +502,7 @@ Order:
 
 The parallel-sessions design inherits these from the store:
 
-- **Every write is attributable.** Each commit names its session, so "who changed this workstream, and when" is a `git log` query.
+- **Every write is attributable**, once #273's per-write commits land. Each commit then names its session, so "who changed this workstream, and when" is a `git log` query. Until then, a session-start snapshot names the session that started, not the writer.
 - **Per-session records** in `sessions/`, one writer each, holding receipts, compaction summaries, and stubs.
 - **Workstream files as the coordination surface.** A workstream's state section is the handoff point between sessions, and a cross-repo workstream in the family folder is the one place sessions in several repos share.
 - **A workstream key** that a session's title or a worker's brief can carry.
