@@ -5,13 +5,13 @@ import * as path from 'node:path';
 import { sessionsInRepo } from './memory-sessions.js';
 import type { Job } from './worker-jobs.js';
 
-const job = (sessionId: string, cwd?: string): Job => ({
+const job = (sessionId: string, cwd?: string, state?: string): Job => ({
   id: undefined,
   kind: 'interactive',
   name: undefined,
   cwd,
   sessionId,
-  state: undefined,
+  state,
 });
 
 describe('sessionsInRepo', () => {
@@ -81,6 +81,18 @@ describe('sessionsInRepo', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test('a stopped row has no process left, so it is not open; a done row still is', () => {
+    const stopped = job('s', '/x/odin', 'stopped');
+    const done = job('d', '/x/odin', 'done');
+    const working = job('w', '/x/odin', 'working');
+    const result = sessionsInRepo(
+      [stopped, done, working],
+      ['/x/odin'],
+      undefined,
+    );
+    expect(result.others).toEqual([done, working]);
   });
 
   test('a cwd whose folder is gone compares by its literal path', () => {

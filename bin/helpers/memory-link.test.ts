@@ -45,6 +45,7 @@ const BINARY = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x0a]);
 interface Row {
   sessionId: string;
   cwd: string;
+  state?: string;
 }
 
 const listing =
@@ -519,6 +520,21 @@ describe('runLink: refusals write nothing', () => {
     const forced = link(w, opts(w.top, { force: true }), deps);
     expect(forced.code).toBe(0);
     expect(forced.out.join('\n')).toContain('other');
+  });
+
+  test('a stopped session in the repo does not refuse, and a done one still does', () => {
+    const w = world();
+    const withRow = (state: string): LinkDeps => ({
+      ...w.deps,
+      runClaude: listing([{ sessionId: 'bg', cwd: w.top, state }]),
+    });
+    const done = link(w, opts(w.top), withRow('done'));
+    expect(done.code).toBe(1);
+    expect(done.err.join('\n')).toContain('Other sessions are open');
+    const stopped = link(w, opts(w.top), withRow('stopped'));
+    expect(stopped.err).toEqual([]);
+    expect(stopped.code).toBe(0);
+    expect(stopped.out.join('\n')).not.toContain('bg in');
   });
 
   test('the session running link is told to restart', () => {

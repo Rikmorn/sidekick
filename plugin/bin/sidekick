@@ -5163,13 +5163,14 @@ function realOrResolved(p) {
     return path20.resolve(p);
   }
 }
+var STOPPED_STATE = "stopped";
 function isInside(dir, checkout) {
   const rel = path20.relative(checkout, dir);
   return rel === "" || !(rel === ".." || rel.startsWith(`..${path20.sep}`) || path20.isAbsolute(rel));
 }
 function sessionsInRepo(jobs, checkouts, selfId) {
   const roots = checkouts.map(realOrResolved);
-  const inRepo = jobs.filter((j) => j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
+  const inRepo = jobs.filter((j) => j.state !== STOPPED_STATE && j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
   const hasSelf = selfId !== undefined && selfId !== "";
   const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
   return { self, others: inRepo.filter((j) => j !== self) };
