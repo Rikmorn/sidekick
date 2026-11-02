@@ -201,6 +201,24 @@ describe('createStore', () => {
     );
   });
 
+  test("the README states the spec's keys and sections exactly", () => {
+    const lines = STORE_README.split('\n');
+    const line = (needle: string): string =>
+      lines.find((l) => l.includes(needle)) ?? '';
+    const record = line('session record');
+    expect(record).toContain('metadata.kind');
+    expect(record).toContain('metadata.session');
+    expect(record).toContain('metadata.workstream');
+    expect(record).not.toContain('metadata.status');
+    expect(record).not.toContain('metadata.branches');
+    expect(line('## Key files')).toContain(
+      '## State, ## Next steps, ## Key files, ## Context',
+    );
+    expect(line('## Where each item went')).toContain(
+      '## Done, ## Decisions, ## Findings, ## Next steps, ## Where each item went',
+    );
+  });
+
   test('works on an empty existing folder', () => {
     expect(createStore(tmp, execRunner).ok).toBe(true);
   });

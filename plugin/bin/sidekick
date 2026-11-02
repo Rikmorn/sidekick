@@ -2676,9 +2676,11 @@ This folder is a git repo that holds the auto-memory of several repos. A repo's 
 - A family folder groups related repos. It holds the repo folders and the family's own files: \`MEMORY.md\` (the family index), the workstreams that span repos, the support file, and the script catalogue.
 - A repo folder holds one repo's memory. A repo with no family sits at the top level.
 - \`sessions/\` inside a repo folder holds one record per session. Claude Code's auto-dream reviews that folder.
-- A record's front matter keeps \`metadata.kind\` (\`session\`), \`metadata.status\` (\`open\` or \`closed\`), \`metadata.branches\`, \`metadata.session\`, and \`metadata.workstream\`.
-- A workstream file keeps \`metadata.kind\` (\`workstream\`), \`metadata.status\`, and \`metadata.branches\`, with the sections \`## State\` and \`## Next steps\`.
-- \`metadata.branches\` is one string of \`<repo>:<branch>\` pairs joined by \`, \`.
+- A session record is \`sessions/<YYYY-MM-DD>-<session id>.md\`. Its front matter keeps \`metadata.kind\` (\`session\`), \`metadata.session\` (the session id), and \`metadata.workstream\` (the workstream's name, absent when the session served none).
+- A session record's sections are \`## Done, ## Decisions, ## Findings, ## Next steps, ## Where each item went\`.
+- A workstream file is \`<name>.md\` in a repo folder, or in the family folder when it spans repos. Its front matter keeps \`metadata.kind\` (\`workstream\`), \`metadata.status\` (\`open\` or \`closed\`), and \`metadata.branches\`.
+- A workstream file's sections are \`## State, ## Next steps, ## Key files, ## Context\`.
+- \`metadata.branches\` is one string of \`<repo>:<branch>\` pairs joined by \`, \`, with the repo folder's name as \`<repo>\`.
 - Each session start commits the store's changes as "memory: snapshot at <source> of session <id>", with a \`Session:\` trailer.
 - \`.gitignore\` keeps \`.DS_Store\` out of those commits.
 - \`sources/\` holds reference material that is not memory.
@@ -4613,6 +4615,21 @@ function snapshotStore(store, sessionId, source, runGit) {
   ]);
   return commit.code === 0 ? "committed" : "failed";
 }
+var REPO_LOCATING_VARS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_NAMESPACE"
+];
+function envWithoutRepoVars(env) {
+  const kept = { ...env };
+  for (const name of REPO_LOCATING_VARS)
+    delete kept[name];
+  return kept;
+}
 function deadlineRunner(ms, now) {
   const end = now() + ms;
   return (cmd, args, cwd) => {
@@ -4623,7 +4640,8 @@ function deadlineRunner(ms, now) {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
-      timeout: left
+      timeout: left,
+      env: envWithoutRepoVars(process.env)
     });
     if (r.error)
       return { code: 127, stdout: "", stderr: r.error.message };
@@ -6377,9 +6395,9 @@ function runSnapshot(rest2) {
     source: { type: "string" }
   });
   const { store, session, source } = parsed?.values ?? {};
-  if (typeof store === "string" && typeof session === "string" && typeof source === "string") {
+  if (typeof store === "string" && path27.isAbsolute(store) && typeof session === "string" && typeof source === "string") {
     try {
-      snapshotStore(path27.resolve(store), session, source, deadlineRunner(SNAPSHOT_DEADLINE_MS, Date.now));
+      snapshotStore(store, session, source, deadlineRunner(SNAPSHOT_DEADLINE_MS, Date.now));
     } catch {}
   }
   return 0;

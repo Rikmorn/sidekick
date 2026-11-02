@@ -76,14 +76,16 @@ function runSnapshot(rest: string[]): number {
     source: { type: 'string' },
   });
   const { store, session, source } = parsed?.values ?? {};
+  // A relative or empty store would resolve against the caller's folder, and could commit the caller's repo.
   if (
     typeof store === 'string' &&
+    path.isAbsolute(store) &&
     typeof session === 'string' &&
     typeof source === 'string'
   ) {
     try {
       snapshotStore(
-        path.resolve(store),
+        store,
         session,
         source,
         deadlineRunner(SNAPSHOT_DEADLINE_MS, Date.now),

@@ -243,9 +243,11 @@ This folder is a git repo that holds the auto-memory of several repos. A repo's 
 - A family folder groups related repos. It holds the repo folders and the family's own files: \`MEMORY.md\` (the family index), the workstreams that span repos, the support file, and the script catalogue.
 - A repo folder holds one repo's memory. A repo with no family sits at the top level.
 - \`sessions/\` inside a repo folder holds one record per session. Claude Code's auto-dream reviews that folder.
-- A record's front matter keeps \`metadata.kind\` (\`session\`), \`metadata.status\` (\`open\` or \`closed\`), \`metadata.branches\`, \`metadata.session\`, and \`metadata.workstream\`.
-- A workstream file keeps \`metadata.kind\` (\`workstream\`), \`metadata.status\`, and \`metadata.branches\`, with the sections \`## State\` and \`## Next steps\`.
-- \`metadata.branches\` is one string of \`<repo>:<branch>\` pairs joined by \`, \`.
+- A session record is \`sessions/<YYYY-MM-DD>-<session id>.md\`. Its front matter keeps \`metadata.kind\` (\`session\`), \`metadata.session\` (the session id), and \`metadata.workstream\` (the workstream's name, absent when the session served none).
+- A session record's sections are \`## Done, ## Decisions, ## Findings, ## Next steps, ## Where each item went\`.
+- A workstream file is \`<name>.md\` in a repo folder, or in the family folder when it spans repos. Its front matter keeps \`metadata.kind\` (\`workstream\`), \`metadata.status\` (\`open\` or \`closed\`), and \`metadata.branches\`.
+- A workstream file's sections are \`## State, ## Next steps, ## Key files, ## Context\`.
+- \`metadata.branches\` is one string of \`<repo>:<branch>\` pairs joined by \`, \`, with the repo folder's name as \`<repo>\`.
 - Each session start commits the store's changes as "memory: snapshot at <source> of session <id>", with a \`Session:\` trailer.
 - \`.gitignore\` keeps \`.DS_Store\` out of those commits.
 - \`sources/\` holds reference material that is not memory.

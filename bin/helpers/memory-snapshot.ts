@@ -42,6 +42,23 @@ export function snapshotStore(
   return commit.code === 0 ? 'committed' : 'failed';
 }
 
+// Variables that point git at a repo other than the one in the working folder.
+const REPO_LOCATING_VARS = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_NAMESPACE',
+];
+
+function envWithoutRepoVars(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const kept = { ...env };
+  for (const name of REPO_LOCATING_VARS) delete kept[name];
+  return kept;
+}
+
 /** A runner whose calls share one deadline; a call that outlives it fails. */
 export function deadlineRunner(ms: number, now: () => number): Runner {
   const end = now() + ms;
@@ -53,6 +70,7 @@ export function deadlineRunner(ms: number, now: () => number): Runner {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: left,
+      env: envWithoutRepoVars(process.env),
     });
     if (r.error) return { code: 127, stdout: '', stderr: r.error.message };
     return {

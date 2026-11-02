@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { main } from '../cli.js';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
-import { deadlineRunner, snapshotStore } from './memory-snapshot.js';
+import {
+  deadlineRunner,
+  snapshotStore,
+  startSnapshot,
+} from './memory-snapshot.js';
 import { createStore } from './memory-store.js';
 import { execRunner } from './pm-data.js';
 
@@ -121,6 +126,68 @@ describe('snapshotStore', () => {
   });
 });
 
+describe('startSnapshot', () => {
+  test('a caller-set GIT_DIR does not redirect the bundle to another repo', () => {
+    const other = repo();
+    const head = git(other, 'rev-parse', 'HEAD');
+    const store = newStore();
+    fs.writeFileSync(path.join(store, 'note.md'), 'hello\n');
+    const bundle = path.join(
+      __dirname,
+      '..',
+      '..',
+      'plugin',
+      'bin',
+      'sidekick',
+    );
+    const r = spawnSync(
+      process.execPath,
+      [
+        bundle,
+        'memory',
+        'snapshot',
+        '--store',
+        store,
+        '--session',
+        's-1',
+        '--source',
+        'startup',
+      ],
+      {
+        env: { ...process.env, GIT_DIR: path.join(other, '.git') },
+        encoding: 'utf-8',
+      },
+    );
+    expect(r.status).toBe(0);
+    expect(git(other, 'rev-parse', 'HEAD')).toBe(head);
+    expect(git(store, 'log', '-1', '--format=%s')).toBe(
+      'memory: snapshot at startup of session s-1',
+    );
+  });
+
+  test('the detached bundle commits a store whose path has a space', async () => {
+    const store = newStore('my store');
+    fs.writeFileSync(path.join(store, 'note.md'), 'hello\n');
+    const pluginDir = path.join(__dirname, '..', '..', 'plugin');
+    startSnapshot(pluginDir, store, 'spawn-1', 'startup');
+    const deadline = Date.now() + 8000;
+    let trailer = '';
+    while (trailer === '' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      trailer = git(
+        store,
+        'log',
+        '-1',
+        '--format=%(trailers:key=Session,valueonly)',
+      );
+    }
+    expect(trailer).toBe('spawn-1');
+    expect(git(store, 'log', '-1', '--format=%s')).toBe(
+      'memory: snapshot at startup of session spawn-1',
+    );
+  });
+});
+
 describe('deadlineRunner', () => {
   test('fails a call made after the deadline without running it', () => {
     let now = 0;
@@ -159,6 +226,32 @@ describe('sidekick memory snapshot', () => {
     fs.writeFileSync(path.join(store, '.git', 'index.lock'), '');
     const r = runVerb(['--store', store, '--session', 's', '--source', 'x']);
     expect(r).toEqual({ code: 0, out: [], err: [] });
+  });
+
+  test.each([
+    ['an empty store', ''],
+    ['a relative store', '.'],
+  ])("%s never commits the caller's repo", (_label, storeArg) => {
+    const outer = repo();
+    fs.writeFileSync(path.join(outer, 'new.txt'), 'x\n');
+    const head = git(outer, 'rev-parse', 'HEAD');
+    const before = process.cwd();
+    process.chdir(outer);
+    try {
+      const r = runVerb([
+        '--store',
+        storeArg,
+        '--session',
+        's',
+        '--source',
+        'x',
+      ]);
+      expect(r).toEqual({ code: 0, out: [], err: [] });
+    } finally {
+      process.chdir(before);
+    }
+    expect(git(outer, 'rev-parse', 'HEAD')).toBe(head);
+    expect(git(outer, 'status', '--porcelain')).toBe('?? new.txt');
   });
 
   test.each([
