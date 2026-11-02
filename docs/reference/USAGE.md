@@ -69,7 +69,7 @@ Every issue entry carries `item_id`, the board item's node id, so a write by id 
 
 `sidekick rules install` and `sidekick rules check` deliver and audit the rules; the repo's `README.md` §The rules covers both.
 
-`sidekick memory link <repo>` moves a repo's auto-memory into the memory store; the repo's `README.md` §Memory covers it.
+`sidekick memory link <repo>` moves a repo's auto-memory into the memory store; the repo's `README.md` §Memory covers it. In a linked repo, a hook prints the matched workstream's state at session start and snapshots the store. Ask Claude to run `sk-save` before a `/clear` or at the end of a session, and it writes the session's record and the workstream's state.
 
 ## Working with a worker session
 
