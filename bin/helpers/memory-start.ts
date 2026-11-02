@@ -16,6 +16,7 @@ import {
 } from './memory-lint.js';
 import { cachePath, readCache } from './memory-lint-cache.js';
 import { type Match, matchWorkstream } from './memory-match.js';
+import { withheldNames } from './memory-patterns.js';
 import {
   headingAs,
   NEXT_HEADING,
@@ -210,12 +211,19 @@ function lintCountOf(
   }
 }
 
+const shownName = (name: string | undefined): string | undefined =>
+  name === undefined ? undefined : withheldNames(name);
+
+// A withheld name leaves a command that names no folder; the operator finds that folder with ls.
 function missingSettingText(
   view: Extract<RepoView, { kind: 'setting-missing' }>,
 ): string {
   const folderName = path.basename(view.folder);
   const name = folderName === path.basename(view.root) ? undefined : folderName;
-  const command = linkCommand(view.root, { family: view.family, name });
+  const command = linkCommand(withheldNames(view.root, path.sep), {
+    family: shownName(view.family),
+    name: shownName(name),
+  });
   return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: ${command}`;
 }
 

@@ -29,6 +29,7 @@ import {
   KEY_CHECKS,
   keyHits,
   printedHits,
+  withheldPath,
 } from './memory-patterns.js';
 import {
   headingAs,
@@ -476,7 +477,9 @@ function cutWorkstreams(scan: FolderScan, input: LintInput): Hit[] {
   return listWorkstreams(scan.dir, undefined).flatMap((stream) => {
     const file = stream.path;
     const { state, next } = hookSections(file, input.deps.readSection);
-    const clauses = cutClauses(fitWorkstream(state, next, file));
+    // The hook's cut marker withholds a matching name, and its length moves State's budget.
+    const readPath = withheldPath(file, input.store);
+    const clauses = cutClauses(fitWorkstream(state, next, readPath));
     return clauses.length === 0 ? [] : [{ file, message: clauses.join('; ') }];
   });
 }

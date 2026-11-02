@@ -5898,8 +5898,8 @@ var recordSource = (record2, text) => ({
   text,
   tested: [text]
 });
-var menuSource = (stream) => ({
-  ...fileSource(stream.path, `- ${stream.name}: ${stream.description} (${stream.path})`),
+var menuSource = (stream, store) => ({
+  ...fileSource(stream.path, `- ${stream.name}: ${stream.description} (${withheldPath(stream.path, store)})`),
   tested: [stream.name, stream.description]
 });
 var Drop = {
@@ -5927,11 +5927,12 @@ function fitSection(text, budget, readPath) {
   return `${kept}
 ${marker}`;
 }
-function menuText(open, repoFolder, gate) {
-  const list2 = open.map((stream) => shown(gate, menuSource(stream)));
+function menuText(open, store, repoFolder, gate) {
+  const list2 = open.map((stream) => shown(gate, menuSource(stream, store)));
   const items = list2.length > 0 ? list2 : ["- none"];
+  const readPath = withheldPath(repoFolder, store);
   const cut2 = fitSection(items.join(`
-`), MENU_BUDGET, repoFolder);
+`), MENU_BUDGET, readPath);
   return [MENU_LEAD, cut2, MENU_ASK].join(`
 `);
 }
@@ -5945,22 +5946,26 @@ function othersLines(others, gate) {
   const list2 = clean.length > 0 ? [`Other open workstreams: ${clean.join(", ")}`] : [];
   return [...list2, ...held];
 }
-function matchLines(match, repoFolder, gate) {
-  if (match.kind === "menu")
-    return [menuText(match.open, repoFolder, gate)];
+function matchLines(match, store, repoFolder, gate) {
+  if (match.kind === "menu") {
+    return [menuText(match.open, store, repoFolder, gate)];
+  }
   const { workstream, label, others } = match;
+  const file = withheldPath(workstream.path, store);
   return [
-    `Workstream: ${shownName(gate, workstream)}, matched by ${label}. File: ${workstream.path}.`,
+    `Workstream: ${shownName(gate, workstream)}, matched by ${label}. File: ${file}.`,
     ...othersLines(others, gate)
   ];
 }
 function headerBlock(parts, gate) {
-  const { match } = parts;
+  const { match, store } = parts;
   if (match === undefined)
     return [];
-  const first = `sidekick memory: session ${parts.sessionId}. Your record is ${parts.recordPath}; save to it with the sk-save skill.`;
+  const record2 = withheldPath(parts.recordPath, store);
+  const first = `sidekick memory: session ${parts.sessionId}. Your record is ${record2}; save to it with the sk-save skill.`;
   const repoFolder = path26.dirname(path26.dirname(parts.recordPath));
-  const text = [first, ...matchLines(match, repoFolder, gate)].join(`
+  const lines = matchLines(match, store, repoFolder, gate);
+  const text = [first, ...lines].join(`
 `);
   return [{ text, drop: Drop.Header }];
 }
@@ -6017,7 +6022,7 @@ function workstreamBlocks(parts, gate) {
   if (match?.kind !== "matched" || statePath === undefined)
     return [];
   const gated = (text) => text === undefined ? undefined : shown(gate, fileSource(statePath, text));
-  const fit = fitWorkstream(gated(parts.state), gated(parts.nextSteps), statePath);
+  const fit = fitWorkstream(gated(parts.state), gated(parts.nextSteps), withheldPath(statePath, parts.store));
   return [
     { text: fit.state, drop: Drop.State },
     { text: fit.nextSteps, drop: Drop.NextSteps },
@@ -6025,15 +6030,16 @@ function workstreamBlocks(parts, gate) {
   ].flatMap(({ text, drop }) => text === undefined ? [] : [{ text, drop }]);
 }
 function recordsBlock(parts, gate) {
-  const { match, records } = parts;
+  const { match, records, store } = parts;
   const [newest] = records;
   if (match?.kind !== "matched" || newest === undefined)
     return [];
-  const lines = records.map((record2) => `- ${record2.date} ${shown(gate, recordSource(record2, record2.title))}: ${record2.path}`);
+  const lines = records.map((record2) => `- ${record2.date} ${shown(gate, recordSource(record2, record2.title))}: ${withheldPath(record2.path, store)}`);
   const lead = `Recent records on ${shownName(gate, match.workstream)}:`;
   const text = [lead, ...lines].join(`
 `);
-  const fitted = fitSection(text, RECORDS_BUDGET, path26.dirname(newest.path));
+  const readPath = withheldPath(path26.dirname(newest.path), store);
+  const fitted = fitSection(text, RECORDS_BUDGET, readPath);
   return [{ text: fitted, drop: Drop.Records }];
 }
 function familyBlock(parts, gate) {
@@ -6043,9 +6049,11 @@ function familyBlock(parts, gate) {
   }
   const index = shown(gate, fileSource(family.path, family.lines.join(`
 `)));
-  const text = [`Family index (${family.name}):`, index].join(`
+  const name = withheldNames(family.name);
+  const text = [`Family index (${name}):`, index].join(`
 `);
-  const fitted = fitSection(text, FAMILY_BUDGET, family.path);
+  const readPath = withheldPath(family.path, parts.store);
+  const fitted = fitSection(text, FAMILY_BUDGET, readPath);
   return [{ text: fitted, drop: Drop.Family }];
 }
 var warningLine = (warning) => `Warning: ${warning}`;
@@ -6063,7 +6071,8 @@ function warningsBlock(parts) {
 function countBlock(lintCount) {
   if (lintCount === undefined || lintCount.count === 0)
     return [];
-  const { count, folders, ranAt } = lintCount;
+  const { count, ranAt } = lintCount;
+  const folders = lintCount.folders.map((folder) => withheldNames(folder));
   const where = folders.map((folder) => `${folder}/`).join(" and ");
   const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
   const text = `Memory lint: ${counted(count, "finding")} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(" ")}`;
@@ -6518,7 +6527,8 @@ function cutWorkstreams(scan, input) {
   return listWorkstreams(scan.dir, undefined).flatMap((stream) => {
     const file = stream.path;
     const { state, next } = hookSections(file, input.deps.readSection);
-    const clauses = cutClauses(fitWorkstream(state, next, file));
+    const readPath = withheldPath(file, input.store);
+    const clauses = cutClauses(fitWorkstream(state, next, readPath));
     return clauses.length === 0 ? [] : [{ file, message: clauses.join("; ") }];
   });
 }
@@ -7037,10 +7047,14 @@ function lintCountOf(view, source, deps) {
     return;
   }
 }
+var shownName2 = (name) => name === undefined ? undefined : withheldNames(name);
 function missingSettingText(view) {
   const folderName = path31.basename(view.folder);
   const name = folderName === path31.basename(view.root) ? undefined : folderName;
-  const command = linkCommand(view.root, { family: view.family, name });
+  const command = linkCommand(withheldNames(view.root, path31.sep), {
+    family: shownName2(view.family),
+    name: shownName2(name)
+  });
   return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: ${command}`;
 }
 function gather(stdin, deps) {

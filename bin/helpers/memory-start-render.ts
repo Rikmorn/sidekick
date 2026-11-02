@@ -119,11 +119,11 @@ const recordSource = (record: SessionRecord, text: string): Source => ({
   tested: [text],
 });
 
-// A match in the name or the description withholds the whole line; the generated path is not tested.
-const menuSource = (stream: Workstream): Source => ({
+// A match in the name or the description withholds the whole line; the path's names are checked apart.
+const menuSource = (stream: Workstream, store: string): Source => ({
   ...fileSource(
     stream.path,
-    `- ${stream.name}: ${stream.description} (${stream.path})`,
+    `- ${stream.name}: ${stream.description} (${withheldPath(stream.path, store)})`,
   ),
   tested: [stream.name, stream.description],
 });
@@ -155,10 +155,16 @@ function fitSection(text: string, budget: number, readPath: string): string {
   return `${kept}\n${marker}`;
 }
 
-function menuText(open: Workstream[], repoFolder: string, gate: Gate): string {
-  const list = open.map((stream) => shown(gate, menuSource(stream)));
+function menuText(
+  open: Workstream[],
+  store: string,
+  repoFolder: string,
+  gate: Gate,
+): string {
+  const list = open.map((stream) => shown(gate, menuSource(stream, store)));
   const items = list.length > 0 ? list : ['- none'];
-  const cut = fitSection(items.join('\n'), MENU_BUDGET, repoFolder);
+  const readPath = withheldPath(repoFolder, store);
+  const cut = fitSection(items.join('\n'), MENU_BUDGET, readPath);
   return [MENU_LEAD, cut, MENU_ASK].join('\n');
 }
 
@@ -179,21 +185,32 @@ function othersLines(others: Workstream[], gate: Gate): string[] {
   return [...list, ...held];
 }
 
-function matchLines(match: Match, repoFolder: string, gate: Gate): string[] {
-  if (match.kind === 'menu') return [menuText(match.open, repoFolder, gate)];
+function matchLines(
+  match: Match,
+  store: string,
+  repoFolder: string,
+  gate: Gate,
+): string[] {
+  if (match.kind === 'menu') {
+    return [menuText(match.open, store, repoFolder, gate)];
+  }
   const { workstream, label, others } = match;
+  const file = withheldPath(workstream.path, store);
   return [
-    `Workstream: ${shownName(gate, workstream)}, matched by ${label}. File: ${workstream.path}.`,
+    `Workstream: ${shownName(gate, workstream)}, matched by ${label}. File: ${file}.`,
     ...othersLines(others, gate),
   ];
 }
 
+// The session's own record path is checked like any other, though sk-save then cannot find a withheld one.
 function headerBlock(parts: StartParts, gate: Gate): Block[] {
-  const { match } = parts;
+  const { match, store } = parts;
   if (match === undefined) return [];
-  const first = `sidekick memory: session ${parts.sessionId}. Your record is ${parts.recordPath}; save to it with the sk-save skill.`;
+  const record = withheldPath(parts.recordPath, store);
+  const first = `sidekick memory: session ${parts.sessionId}. Your record is ${record}; save to it with the sk-save skill.`;
   const repoFolder = path.dirname(path.dirname(parts.recordPath));
-  const text = [first, ...matchLines(match, repoFolder, gate)].join('\n');
+  const lines = matchLines(match, store, repoFolder, gate);
+  const text = [first, ...lines].join('\n');
   return [{ text, drop: Drop.Header }];
 }
 
@@ -289,7 +306,7 @@ function workstreamBlocks(parts: StartParts, gate: Gate): Block[] {
   const fit = fitWorkstream(
     gated(parts.state),
     gated(parts.nextSteps),
-    statePath,
+    withheldPath(statePath, parts.store),
   );
   return [
     { text: fit.state, drop: Drop.State },
@@ -299,16 +316,17 @@ function workstreamBlocks(parts: StartParts, gate: Gate): Block[] {
 }
 
 function recordsBlock(parts: StartParts, gate: Gate): Block[] {
-  const { match, records } = parts;
+  const { match, records, store } = parts;
   const [newest] = records;
   if (match?.kind !== 'matched' || newest === undefined) return [];
   const lines = records.map(
     (record) =>
-      `- ${record.date} ${shown(gate, recordSource(record, record.title))}: ${record.path}`,
+      `- ${record.date} ${shown(gate, recordSource(record, record.title))}: ${withheldPath(record.path, store)}`,
   );
   const lead = `Recent records on ${shownName(gate, match.workstream)}:`;
   const text = [lead, ...lines].join('\n');
-  const fitted = fitSection(text, RECORDS_BUDGET, path.dirname(newest.path));
+  const readPath = withheldPath(path.dirname(newest.path), store);
+  const fitted = fitSection(text, RECORDS_BUDGET, readPath);
   return [{ text: fitted, drop: Drop.Records }];
 }
 
@@ -319,8 +337,10 @@ function familyBlock(parts: StartParts, gate: Gate): Block[] {
   }
   // The index is one source, so a match on any line withholds all of it.
   const index = shown(gate, fileSource(family.path, family.lines.join('\n')));
-  const text = [`Family index (${family.name}):`, index].join('\n');
-  const fitted = fitSection(text, FAMILY_BUDGET, family.path);
+  const name = withheldNames(family.name);
+  const text = [`Family index (${name}):`, index].join('\n');
+  const readPath = withheldPath(family.path, parts.store);
+  const fitted = fitSection(text, FAMILY_BUDGET, readPath);
   return [{ text: fitted, drop: Drop.Family }];
 }
 
@@ -339,9 +359,11 @@ function warningsBlock(parts: StartParts): Block[] {
   return [{ text: texts.map(warningLine).join('\n'), drop: Drop.Warnings }];
 }
 
+// A withheld folder's --folder argument names no folder; the operator finds that folder with ls.
 function countBlock(lintCount: LintCount | undefined): Block[] {
   if (lintCount === undefined || lintCount.count === 0) return [];
-  const { count, folders, ranAt } = lintCount;
+  const { count, ranAt } = lintCount;
+  const folders = lintCount.folders.map((folder) => withheldNames(folder));
   const where = folders.map((folder) => `${folder}/`).join(' and ');
   const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
   const text = `Memory lint: ${counted(count, 'finding')} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(' ')}`;
@@ -384,14 +406,15 @@ function withinTotal(blocks: Block[]): string {
 
 /**
  * The hook's `additionalContext` for one session. Pure: it replaces each text
- * from a store file that `matcher` matches with a line withholding it. That
- * line names the file and its folder, with each name that `printedHits`
- * matches withheld. It cuts each section to its budget, drops whole blocks
- * past 9,000 characters in all (warnings first, Next steps last, never the
- * first line), and on `resume` keeps only the first two lines. A matcher that
- * throws leaves the text unchecked and adds a warning that the total budget
- * never drops. A `lintCount` above zero prints one line after the warnings,
- * which the total budget drops after the family index and before the records.
+ * from a store file that `matcher` matches with a line withholding it. In
+ * every store path and name it prints, that line's included, each name that
+ * `printedHits` matches is withheld, whatever `matcher` does. It cuts each
+ * section to its budget, drops whole blocks past 9,000 characters in all
+ * (warnings first, Next steps last, never the first line), and on `resume`
+ * keeps only the first two lines. A matcher that throws leaves the text
+ * unchecked and adds a warning that the total budget never drops. A
+ * `lintCount` above zero prints one line after the warnings, which the total
+ * budget drops after the family index and before the records.
  */
 export function renderStart(
   parts: StartParts,
