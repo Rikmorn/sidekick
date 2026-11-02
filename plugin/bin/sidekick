@@ -7687,9 +7687,15 @@ function runLint(rest2, ctx, out, err) {
     }
     return 0;
   } catch (e) {
-    err(`memory lint failed: ${e instanceof Error ? e.message : String(e)}`);
+    err(lintFailureLine(e));
     return 1;
   }
+}
+function lintFailureLine(e) {
+  const message = e instanceof Error ? e.message : String(e);
+  const hits2 = printedHits(message);
+  const shown2 = hits2.length === 0 ? message : `(withheld: ${hits2.join(", ")})`;
+  return `memory lint failed: ${shown2}`;
 }
 function runMemoryCli(argv2, ctx, out, err) {
   const [verb, ...rest2] = argv2;

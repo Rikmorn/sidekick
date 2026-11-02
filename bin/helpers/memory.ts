@@ -17,7 +17,7 @@ import {
 } from './memory-lint.js';
 import { cachePath, writeCache } from './memory-lint-cache.js';
 import { resolvedPath } from './memory-lint-repos.js';
-import { withheldNames, withheldPath } from './memory-patterns.js';
+import { printedHits, withheldNames, withheldPath } from './memory-patterns.js';
 import {
   type DeadlineRunner,
   deadlineRunner,
@@ -246,9 +246,17 @@ function runLint(
     }
     return 0;
   } catch (e) {
-    err(`memory lint failed: ${e instanceof Error ? e.message : String(e)}`);
+    err(lintFailureLine(e));
     return 1;
   }
+}
+
+/** The hand run's failure line; an error message can carry a marker root, so a matching one is withheld. */
+export function lintFailureLine(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e);
+  const hits = printedHits(message);
+  const shown = hits.length === 0 ? message : `(withheld: ${hits.join(', ')})`;
+  return `memory lint failed: ${shown}`;
 }
 
 /** Runs the `memory` family; returns the exit code. */
