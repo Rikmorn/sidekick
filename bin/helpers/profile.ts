@@ -72,13 +72,18 @@ const withoutTrailingNewline = (text: string): string =>
 // Flags and positionals as `parseFlags` returns them.
 interface Parsed {
   values: Record<string, string | boolean | undefined>;
+  /** The values of each option declared `multiple`, in the order given; empty when it never appeared. */
+  lists: Record<string, string[]>;
   positionals: string[];
 }
 
 /** Parses flags strictly: an unknown flag or a missing value is a usage error, returned as undefined. */
 export function parseFlags(
   rest: string[],
-  options: Record<string, { type: 'string' | 'boolean'; short?: string }>,
+  options: Record<
+    string,
+    { type: 'string' | 'boolean'; short?: string; multiple?: boolean }
+  >,
 ): Parsed | undefined {
   try {
     const { values, positionals } = parseArgs({
@@ -87,7 +92,14 @@ export function parseFlags(
       allowPositionals: true,
       strict: true,
     });
-    return { values, positionals };
+    const single: Parsed['values'] = {};
+    const lists: Parsed['lists'] = {};
+    for (const [name, value] of Object.entries(values)) {
+      if (Array.isArray(value)) {
+        lists[name] = value.filter((v): v is string => typeof v === 'string');
+      } else single[name] = value;
+    }
+    return { values: single, lists, positionals };
   } catch {
     return undefined;
   }
