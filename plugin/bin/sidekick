@@ -5224,6 +5224,13 @@ var INLINE_LINK = /\[[^\]\n]*\]\(([^)\n]*)\)/g;
 var CODE_SPAN = /`[^`\n]*`/g;
 var URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 var FENCE3 = "```";
+function percentDecoded(target) {
+  try {
+    return decodeURIComponent(target);
+  } catch {
+    return target;
+  }
+}
 function fileTarget(destination) {
   const trimmed = destination.trim();
   const close = trimmed.indexOf(">");
@@ -5231,7 +5238,7 @@ function fileTarget(destination) {
   if (URL_SCHEME.test(bare))
     return;
   const target = bare.split("#")[0] ?? "";
-  return target === "" ? undefined : target;
+  return target === "" ? undefined : percentDecoded(target);
 }
 function linksIn(text) {
   const fence = { open: false };

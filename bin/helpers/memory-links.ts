@@ -11,10 +11,19 @@ const CODE_SPAN = /`[^`\n]*`/g;
 const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const FENCE = '```';
 
-/** A link's file target, without its `#fragment` or `"title"`, and the 1-based line it sits on. */
+/** A link's file target, percent-decoded, without its `#fragment` or `"title"`, and the 1-based line it sits on. */
 export interface Link {
   line: number;
   target: string;
+}
+
+// A percent-encoded path names the decoded file; a malformed sequence names itself.
+function percentDecoded(target: string): string {
+  try {
+    return decodeURIComponent(target);
+  } catch {
+    return target;
+  }
 }
 
 // The path a destination names, without its `#fragment` or `"title"`; undefined for a URL or a bare anchor.
@@ -26,7 +35,7 @@ function fileTarget(destination: string): string | undefined {
     : (trimmed.split(/\s/)[0] ?? '');
   if (URL_SCHEME.test(bare)) return undefined;
   const target = bare.split('#')[0] ?? '';
-  return target === '' ? undefined : target;
+  return target === '' ? undefined : percentDecoded(target);
 }
 
 /** File links outside fenced code and code spans; a line starting with ``` toggles a fence, as `otherHeadings` reads it. */

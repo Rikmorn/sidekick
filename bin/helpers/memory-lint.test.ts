@@ -223,6 +223,25 @@ describe('dead-link', () => {
     expect(lint().findings).toEqual([]);
   });
 
+  test('a percent-encoded target names the decoded file, which the index then reaches', () => {
+    write('proj/a b.md', reference('spaced'));
+    append('proj/MEMORY.md', '- [spaced](a%20b.md)\n');
+    expect(lint().findings).toEqual([]);
+  });
+
+  test('a malformed percent sequence names the target as written', () => {
+    write('proj/100%.md', reference('percent'));
+    append('proj/MEMORY.md', '- [percent](100%.md)\n');
+    expect(lint().findings).toEqual([]);
+  });
+
+  test('a percent-encoded target that does not exist is named decoded', () => {
+    append('proj/MEMORY.md', '- [gone](gone%20file.md)\n');
+    expect(lint().findings.map((finding) => finding.message)).toEqual([
+      'links to gone file.md, which does not exist',
+    ]);
+  });
+
   test('a link inside fenced code is not checked, and the fence closes', () => {
     append(
       'proj/MEMORY.md',
