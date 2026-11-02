@@ -70,8 +70,14 @@ jobs:
       - name: Install zsh for the shell function's tests
         run: command -v zsh || (sudo apt-get update && sudo apt-get install -y zsh)
 
+      # The runner has no git identity, and the memory tests commit.
       - name: Run tests (bun test)
         run: bun run test
+        env:
+          GIT_AUTHOR_NAME: sidekick tests
+          GIT_AUTHOR_EMAIL: tests@sidekick.invalid
+          GIT_COMMITTER_NAME: sidekick tests
+          GIT_COMMITTER_EMAIL: tests@sidekick.invalid
 
       - name: Check Markdown links, permalinks, and the docs layout
         run: bun run check:docs
