@@ -14,10 +14,10 @@ Never write another repo's folder, whose own sessions keep its index and its sta
 
 A workstream is one objective, across however many sessions, branches, and repos it takes. Each has one file, so every session on it reads the same state:
 
-- `metadata.status` says whether it is `open` or `closed`.
+- `metadata.kind` is `workstream`, and `metadata.status` is `open` or `closed`.
 - `metadata.branches` lists its branches as one string of `<repo>:<branch>` pairs joined by `, `, so a session on one of those branches finds it.
 - Its sections are State, Next steps, Key files, and Context. State and Next steps are the handoff between sessions, so keep them current. Move what happened into session records.
-- A session record's `metadata.kind` is `session`, and `metadata.workstream` names the workstream it served.
+- A session record's `metadata.kind` is `session`, `metadata.session` is its session id, and `metadata.workstream` names the workstream it served.
 - A worker writes only its own record. The session that lands the worker's work folds the record into the workstream.
 
 The memory hook prints the record's path and the matched workstream at session start. Save with `sk-save`.
