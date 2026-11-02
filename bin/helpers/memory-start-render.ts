@@ -8,8 +8,18 @@ import * as path from 'node:path';
 import type { Match } from './memory-match.js';
 import { injectionHits } from './memory-patterns.js';
 import type { SessionRecord, Workstream } from './memory-view.js';
+import { shellArg } from './shell.js';
 
 export type StartSource = 'startup' | 'resume' | 'clear' | 'compact' | 'fork';
+
+/** The cached lint's count for the session's folders. */
+export interface LintCount {
+  count: number;
+  /** Store-relative, the repo folder first, as `sidekick memory lint --folder` takes them. */
+  folders: string[];
+  /** When the lint ran, in local time as YYYY-MM-DD HH:MM. */
+  ranAt: string;
+}
 
 export interface StartParts {
   sessionId: string;
@@ -26,6 +36,7 @@ export interface StartParts {
   records: SessionRecord[];
   family: { name: string; path: string; lines: string[] } | undefined;
   warnings: string[];
+  lintCount?: LintCount;
 }
 
 const TOTAL_BUDGET = 9000;
@@ -34,6 +45,8 @@ const STATE_AND_NEXT_BUDGET = 5000;
 const RECORDS_BUDGET = 600;
 const MENU_BUDGET = 1500;
 const FAMILY_BUDGET = 2000;
+// Leaves room for a usual header and the warnings, the lint's count among them, beside every other full section.
+const ALSO_BUDGET = 500;
 const RESUME_LINES = 2;
 const BLOCK_SEPARATOR = '\n\n';
 const MENU_LEAD =
@@ -43,6 +56,9 @@ const MENU_ASK =
 const COMPACT_WARNING =
   'This session has not saved. Save with sk-save at the next pause.';
 const GATE_FAILED = 'The memory gate failed, so this text is unchecked.';
+const ALSO_LEAD = 'Also in the file: ';
+const ALSO_TAIL = '. Read the file for them.';
+const LIST_SEPARATOR = ', ';
 
 // A block prints in array order; past the total budget, the highest `drop` goes first.
 interface Block {
@@ -213,18 +229,45 @@ export function fitWorkstream(
   };
 }
 
-// A withheld heading list takes the whole line, since the line tells the session to read the file.
+const counted = (n: number, noun: string): string =>
+  `${n} ${noun}${n === 1 ? '' : 's'}`;
+
+// The longest leading run of headings whose joined list fits `room`.
+function leadingHeadings(headings: string[], room: number): string[] {
+  const kept: string[] = [];
+  let used = -LIST_SEPARATOR.length;
+  for (const heading of headings) {
+    used += LIST_SEPARATOR.length + heading.length;
+    if (used > room) break;
+    kept.push(heading);
+  }
+  return kept;
+}
+
+// Headings past the budget fold into a count, since the line already sends the session to the file.
+function alsoText(headings: string[], budget: number): string {
+  const whole = `${ALSO_LEAD}${headings.join(LIST_SEPARATOR)}${ALSO_TAIL}`;
+  if (whole.length <= budget) return whole;
+  const fold = `${LIST_SEPARATOR}and ${headings.length} more`;
+  const room = budget - ALSO_LEAD.length - ALSO_TAIL.length - fold.length;
+  const kept = leadingHeadings(headings, room);
+  const rest = headings.length - kept.length;
+  const list =
+    kept.length === 0
+      ? counted(rest, 'heading')
+      : `${kept.join(LIST_SEPARATOR)}${LIST_SEPARATOR}and ${rest} more`;
+  return `${ALSO_LEAD}${list}${ALSO_TAIL}`;
+}
+
+// The gate tests every heading, as the lint does; a withheld list takes the whole line.
 function alsoLine(
   headings: string[],
   file: string,
   gate: Gate,
 ): string | undefined {
   if (headings.length === 0) return undefined;
-  const list = headings.join(', ');
-  return (
-    gate(fileSource(file, list)) ??
-    `Also in the file: ${list}. Read the file for them.`
-  );
+  const list = headings.join(LIST_SEPARATOR);
+  return gate(fileSource(file, list)) ?? alsoText(headings, ALSO_BUDGET);
 }
 
 function workstreamBlocks(parts: StartParts, gate: Gate): Block[] {
@@ -273,6 +316,16 @@ function familyBlock(parts: StartParts, gate: Gate): Block[] {
 
 const warningLine = (warning: string): string => `Warning: ${warning}`;
 
+function countLines(lintCount: LintCount | undefined): string[] {
+  if (lintCount === undefined || lintCount.count === 0) return [];
+  const { count, folders, ranAt } = lintCount;
+  const where = folders.map((folder) => `${folder}/`).join(' and ');
+  const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
+  return [
+    `Memory lint: ${counted(count, 'finding')} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(' ')}`,
+  ];
+}
+
 function warningsBlock(parts: StartParts): Block[] {
   const compactUnsaved =
     parts.match !== undefined &&
@@ -282,8 +335,9 @@ function warningsBlock(parts: StartParts): Block[] {
     ...parts.warnings,
     ...(compactUnsaved ? [COMPACT_WARNING] : []),
   ];
-  if (texts.length === 0) return [];
-  return [{ text: texts.map(warningLine).join('\n'), drop: Drop.Warnings }];
+  const lines = [...texts.map(warningLine), ...countLines(parts.lintCount)];
+  if (lines.length === 0) return [];
+  return [{ text: lines.join('\n'), drop: Drop.Warnings }];
 }
 
 function blocksOf(parts: StartParts, gate: Gate): Block[] {
@@ -325,7 +379,8 @@ function withinTotal(blocks: Block[]): string {
  * each section to its budget, drops whole blocks past 9,000 characters in all
  * (warnings first, Next steps last, never the first line), and on `resume`
  * keeps only the first two lines. A matcher that throws leaves the text
- * unchecked and adds a warning that the total budget never drops.
+ * unchecked and adds a warning that the total budget never drops. A
+ * `lintCount` above zero prints one line after the warnings, ranked with them.
  */
 export function renderStart(
   parts: StartParts,

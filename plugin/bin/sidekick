@@ -4653,15 +4653,18 @@ function runDeskCli(rest2, denv, out, err) {
 }
 
 // bin/helpers/hook.ts
-import * as fs18 from "node:fs";
+import * as fs25 from "node:fs";
 import * as os2 from "node:os";
-import * as path23 from "node:path";
+import * as path31 from "node:path";
 
 // bin/helpers/local-date.ts
+var pad = (n) => String(n).padStart(2, "0");
+var dateOf = (at) => `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
 function localToday() {
-  const now = new Date;
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return dateOf(new Date);
+}
+function localMinute(at) {
+  return `${dateOf(at)} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
 // bin/helpers/memory-snapshot.ts
@@ -4752,8 +4755,8 @@ function startSnapshot(pluginDir, store, sessionId, source) {
 }
 
 // bin/helpers/memory-start.ts
-import * as fs17 from "node:fs";
-import * as path22 from "node:path";
+import * as fs24 from "node:fs";
+import * as path30 from "node:path";
 
 // bin/helpers/memory-link-plan.ts
 import * as path19 from "node:path";
@@ -5085,70 +5088,70 @@ function userSettingsNotes(facts) {
   ];
 }
 
-// bin/helpers/memory-match.ts
-function byName2(a, b) {
-  if (a.name < b.name)
-    return -1;
-  return a.name > b.name ? 1 : 0;
+// bin/helpers/memory-lint.ts
+import * as fs22 from "node:fs";
+import * as path28 from "node:path";
+
+// bin/helpers/memory-default.ts
+import * as fs15 from "node:fs";
+import * as path20 from "node:path";
+var MAX_KEY_LENGTH = 200;
+var WRITE_BITS = 146;
+function hashOf(text) {
+  let h = 0;
+  for (let i = 0;i < text.length; i++) {
+    h = (h << 5) - h + text.charCodeAt(i) | 0;
+  }
+  return h;
 }
-function namedHit(all, name, label) {
-  if (name === undefined)
-    return;
-  const workstream = all.find((candidate) => candidate.name === name);
-  return workstream === undefined ? undefined : { workstream, label };
+function projectKey(p) {
+  const key = p.replace(/[^a-zA-Z0-9]/g, "-");
+  if (key.length <= MAX_KEY_LENGTH)
+    return key;
+  return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
 }
-function onlyOne(found, label) {
-  const [workstream, second] = found;
-  return workstream !== undefined && second === undefined ? { workstream, label } : undefined;
+function defaultMemoryFolder(root, configDir) {
+  return path20.join(configDir, "projects", projectKey(root), "memory");
 }
-function startsWithName(title, name) {
-  const lowerTitle = title.toLowerCase();
-  const lowerName = name.toLowerCase();
-  if (lowerTitle === lowerName)
-    return true;
-  if (!lowerTitle.startsWith(lowerName))
+function overrideIssue(env) {
+  if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
+    return "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere";
+  }
+  if (env.CLAUDE_CODE_REMOTE_MEMORY_DIR !== undefined) {
+    return "CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere";
+  }
+  if (env.CLAUDE_CODE_PROJECT_DIR_NAME !== undefined && env.CLAUDE_CONFIG_DIR !== undefined) {
+    return "CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently";
+  }
+  return;
+}
+var ClaudeJson = object({ projects: record(string(), unknown()) });
+function knownRoot(root, claudeJson) {
+  try {
+    const parsed = safeParse(ClaudeJson, JSON.parse(fs15.readFileSync(claudeJson, "utf-8")));
+    return parsed.success && Object.hasOwn(parsed.output.projects, root);
+  } catch {
     return false;
-  const next = lowerTitle.charAt(lowerName.length);
-  return next === ":" || next === " ";
+  }
 }
-var tiers = [
-  (all, facts) => namedHit(all, facts.ownRecordWorkstream, "this session's record"),
-  (all, facts) => namedHit(all, facts.briefWorkstream, "the worker's brief"),
-  (all, facts) => {
-    const { title } = facts;
-    if (title === undefined)
-      return;
-    const open = all.filter((candidate) => candidate.status === "open");
-    return onlyOne(open.filter((candidate) => startsWithName(title, candidate.name)), "the title");
-  },
-  (all, facts) => {
-    const { branch } = facts;
-    if (branch === undefined || branch === facts.defaultBranch)
-      return;
-    const open = all.filter((candidate) => candidate.status === "open");
-    const onBranch = open.filter((candidate) => candidate.branches.some((pair) => pair.repo === facts.repoName && pair.branch === branch));
-    return onlyOne(onBranch, `branch ${branch}`);
+function legacyPreferred(legacy, current) {
+  try {
+    const stat = fs15.statSync(legacy);
+    if (!stat.isFile())
+      return false;
+    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs15.existsSync(current);
+  } catch {
+    return false;
   }
-];
-function matchWorkstream(all, facts) {
-  const open = all.filter((candidate) => candidate.status === "open").sort(byName2);
-  for (const tier of tiers) {
-    const hit = tier(all, facts);
-    if (hit !== undefined) {
-      const others = open.filter((candidate) => candidate !== hit.workstream);
-      return {
-        kind: "matched",
-        workstream: hit.workstream,
-        label: hit.label,
-        others
-      };
-    }
-  }
-  return { kind: "menu", open };
+}
+function claudeJsonPath(env, home) {
+  const current = path20.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
+  const legacy = path20.join(configDirOf(env, home), ".config.json");
+  return legacyPreferred(legacy, current) ? legacy : current;
 }
 
 // bin/helpers/memory-files.ts
-import * as fs15 from "node:fs";
+import * as fs16 from "node:fs";
 var FENCE2 = "---";
 var TOP_LINE = /^([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
 var NESTED_LINE = /^ {2}([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
@@ -5208,37 +5211,479 @@ function parseMemoryText(text) {
 }
 function readMemoryFile(file) {
   try {
-    return parseMemoryText(fs15.readFileSync(file, "utf8"));
+    return parseMemoryText(fs16.readFileSync(file, "utf8"));
   } catch {
     return;
   }
 }
 
-// bin/helpers/memory-sections.ts
-var STATE_HEADING = "## State";
-var NEXT_HEADING = "## Next steps";
-function isHeading(line, heading) {
-  return line.trimEnd().toLowerCase() === heading.toLowerCase();
+// bin/helpers/memory-links.ts
+import * as path21 from "node:path";
+var INLINE_LINK = /\[[^\]\n]*\]\(([^)\n]*)\)/g;
+var CODE_SPAN = /`[^`\n]*`/g;
+var URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+var FENCE3 = "```";
+function fileTarget(destination) {
+  const trimmed = destination.trim();
+  const close = trimmed.indexOf(">");
+  const bare = trimmed.startsWith("<") ? trimmed.slice(1, close === -1 ? undefined : close) : trimmed.split(/\s/)[0] ?? "";
+  if (URL_SCHEME.test(bare))
+    return;
+  const target = bare.split("#")[0] ?? "";
+  return target === "" ? undefined : target;
 }
-function headingAs(file, heading) {
-  const body = readMemoryFile(file)?.body ?? "";
-  return body.split(`
-`).find((line) => isHeading(line, heading)) ?? heading;
-}
-function otherHeadings(file) {
-  const body = readMemoryFile(file)?.body ?? "";
+function linksIn(text) {
   const fence = { open: false };
-  return body.split(`
-`).filter((line) => {
-    if (line.trimStart().startsWith("```"))
+  return text.split(`
+`).flatMap((raw, index) => {
+    if (raw.trimStart().startsWith(FENCE3)) {
       fence.open = !fence.open;
-    const heading = line.trimEnd();
-    return !fence.open && line.startsWith("## ") && !isHeading(heading, STATE_HEADING) && !isHeading(heading, NEXT_HEADING);
+      return [];
+    }
+    if (fence.open)
+      return [];
+    const matches = raw.replace(CODE_SPAN, "").matchAll(INLINE_LINK);
+    return [...matches].flatMap((match) => {
+      const target = fileTarget(match[1] ?? "");
+      return target === undefined ? [] : [{ line: index + 1, target }];
+    });
   });
 }
+function ownTargets(dir, text) {
+  return linksIn(text).map((link) => path21.resolve(dir, link.target)).filter((target) => path21.dirname(target) === dir).map((target) => path21.basename(target));
+}
+function reachFrom(dir, files, starts) {
+  const byName2 = new Map(files.map((own) => [own.name, own]));
+  const reached = new Set(starts);
+  const queue = [...reached];
+  for (let name = queue.shift();name !== undefined; name = queue.shift()) {
+    const text = byName2.get(name)?.text ?? "";
+    for (const target of ownTargets(dir, text)) {
+      if (reached.has(target))
+        continue;
+      reached.add(target);
+      queue.push(target);
+    }
+  }
+  return reached;
+}
 
-// bin/helpers/memory-start-render.ts
-import * as path20 from "node:path";
+// bin/helpers/memory-lint-repos.ts
+import * as fs19 from "node:fs";
+import * as path24 from "node:path";
+
+// bin/helpers/memory-link-facts.ts
+import * as fs18 from "node:fs";
+import * as path23 from "node:path";
+
+// bin/helpers/memory-sessions.ts
+import * as fs17 from "node:fs";
+import * as path22 from "node:path";
+function realOrResolved(p) {
+  try {
+    return fs17.realpathSync(p);
+  } catch {
+    return path22.resolve(p);
+  }
+}
+var STOPPED_STATE = "stopped";
+function isInside(dir, checkout) {
+  const rel = path22.relative(checkout, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path22.sep}`) || path22.isAbsolute(rel));
+}
+function sessionsInRepo(jobs, checkouts, selfId) {
+  const roots = checkouts.map(realOrResolved);
+  const inRepo = jobs.filter((j) => j.state !== STOPPED_STATE && j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
+  const hasSelf = selfId !== undefined && selfId !== "";
+  const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
+  return { self, others: inRepo.filter((j) => j !== self) };
+}
+
+// bin/helpers/memory-link-facts.ts
+function gatherFacts(opts, deps) {
+  const store = path23.resolve(storeRoot(deps.env, deps.home));
+  const state = storeState(store, deps.runGit);
+  const found = mainCheckout(path23.resolve(opts.repo), deps.runGit, deps.home);
+  const name = opts.name ?? ("root" in found ? path23.basename(found.root) : undefined);
+  const nameIssues = [opts.family, name].flatMap((n) => {
+    const issue = n === undefined ? undefined : folderNameIssue(n);
+    return issue === undefined ? [] : [issue];
+  });
+  const repo = "issue" in found ? { kind: "refused", issue: found.issue } : repoFacts({
+    ...found,
+    store,
+    state,
+    family: opts.family,
+    name: name ?? path23.basename(found.root),
+    namesOk: nameIssues.length === 0,
+    deps
+  });
+  return {
+    store,
+    storeState: state,
+    storePending: state.kind === "store" ? uncommittedCreation(store, deps.runGit) : { paths: [] },
+    overrideIssue: overrideIssue(deps.env),
+    nameIssues,
+    repo,
+    userSettings: userSettingsFacts(deps.configDir, store, deps.home),
+    today: deps.today()
+  };
+}
+function repoFacts(input) {
+  const { root, deps } = input;
+  const settings = settingsState(root, deps.runGit);
+  const key = projectKey(root);
+  const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
+  const folder = path23.join(input.store, ...rel.split("/"));
+  const knowsFolder = input.namesOk && input.state.kind !== "foreign";
+  const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
+  const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
+  return {
+    kind: "found",
+    root,
+    settings,
+    home: deps.home,
+    projectKey: key,
+    keyMissed: keyMissed(root, key, deps),
+    defaultFolder,
+    sessions: sessionFacts(input),
+    target
+  };
+}
+function keyMissed(root, key, deps) {
+  const claudeJson = claudeJsonPath(deps.env, deps.home);
+  const projectFolder = path23.join(deps.configDir, "projects", key);
+  const missed = knownRoot(root, claudeJson) && !fs18.existsSync(projectFolder);
+  return missed ? { claudeJson, projectFolder } : undefined;
+}
+function sessionFacts(input) {
+  const listed = listJobs(input.deps.runClaude, input.root);
+  if ("issues" in listed)
+    return { kind: "failed", issues: listed.issues };
+  const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
+  return {
+    kind: "listed",
+    ...sessionsInRepo(listed.jobs, input.checkouts, selfId)
+  };
+}
+function targetFacts(input) {
+  const { store, folder, rel, key, defaultFolder } = input;
+  const owned = {
+    folderRel: rel,
+    projectKey: key,
+    defaultFolder: defaultFolder.folder
+  };
+  return {
+    folder,
+    rel,
+    state: targetState(folder),
+    family: input.family === undefined ? "none" : familyState(path23.join(store, input.family)),
+    elsewhere: findMarkers(store).filter((m) => m.root === input.root && m.folder !== folder).map((m) => ({ folder: m.folder, family: m.family })),
+    archives: archiveNames(store),
+    pending: input.state.kind === "store" ? ownedChanges(store, owned, input.deps.runGit) : { paths: [] }
+  };
+}
+function targetState(folder) {
+  const stat = fs18.statSync(folder, { throwIfNoEntry: false });
+  if (stat === undefined)
+    return { kind: "absent" };
+  if (!stat.isDirectory())
+    return { kind: "notFolder" };
+  const marker = readMarker(folder);
+  if (marker.kind === "marker")
+    return { kind: "marked", root: marker.root };
+  if (marker.kind === "invalid") {
+    return { kind: "invalidMarker", issue: marker.issue };
+  }
+  return fs18.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
+}
+function familyState(folder) {
+  const stat = fs18.statSync(folder, { throwIfNoEntry: false });
+  if (stat === undefined)
+    return "absent";
+  if (!stat.isDirectory())
+    return "notFolder";
+  return readMarker(folder).kind === "none" ? "folder" : "marked";
+}
+function archiveNames(store) {
+  const folder = path23.join(store, ...ARCHIVE_DIR.split("/"));
+  return fs18.existsSync(folder) ? fs18.readdirSync(folder) : [];
+}
+function isInside2(dir, parent) {
+  const rel = path23.relative(parent, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path23.sep}`) || path23.isAbsolute(rel));
+}
+function walkFolder(root) {
+  const entries = entriesOf2(fs18.realpathSync(root), root, "");
+  return {
+    files: entries.flatMap((e) => ("file" in e) ? [e.file] : []),
+    issues: entries.flatMap((e) => ("issue" in e) ? [e.issue] : [])
+  };
+}
+function entriesOf2(real, root, rel) {
+  return fs18.readdirSync(path23.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
+    if (entry.isDirectory())
+      return entriesOf2(real, root, child);
+    if (entry.isFile())
+      return [{ file: child }];
+    if (entry.isSymbolicLink())
+      return [linkEntry(real, root, child)];
+    return [
+      {
+        issue: `${path23.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
+      }
+    ];
+  });
+}
+function linkEntry(real, root, child) {
+  const full = path23.join(root, child);
+  const way = "Replace it with the file itself, or remove it, then run link again.";
+  try {
+    const named = fs18.realpathSync(full);
+    if (isInside2(named, real) && fs18.statSync(named).isFile()) {
+      return { file: child };
+    }
+    return {
+      issue: `${full} is a link to ${named}, which is not a file inside the default folder. ${way}`
+    };
+  } catch {
+    return { issue: `${full} is a broken link. ${way}` };
+  }
+}
+function readDefaultFolder(folder, target) {
+  const stat = fs18.lstatSync(folder, { throwIfNoEntry: false });
+  if (stat === undefined)
+    return { kind: "absent", folder };
+  if (!stat.isDirectory()) {
+    const issue = `${folder} is not a folder, so link cannot copy it. Move it aside by hand, then run link again.`;
+    return { kind: "present", folder, files: [], issues: [issue] };
+  }
+  const walked = walkFolder(folder);
+  const files = walked.files.map((rel) => ({
+    rel,
+    copy: target === undefined ? "absent" : copyState(path23.join(folder, rel), path23.join(target, rel))
+  }));
+  return { kind: "present", folder, files, issues: walked.issues };
+}
+function copyState(from, to) {
+  try {
+    if (!fs18.statSync(to).isFile())
+      return "notFile";
+  } catch (error) {
+    const absent = error instanceof Error && "code" in error && error.code === "ENOENT";
+    return absent ? "absent" : "notFile";
+  }
+  return fs18.readFileSync(from).equals(fs18.readFileSync(to)) ? "same" : "differs";
+}
+function ownedChanges(store, owned, runGit) {
+  const listed = statusIn(store, [owned.folderRel, ARCHIVE_DIR], runGit);
+  if ("issue" in listed)
+    return listed;
+  const sources = [
+    owned.defaultFolder,
+    ...ownArchives(store, owned.projectKey)
+  ];
+  const isOwned = (p) => fs18.existsSync(path23.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
+  return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
+}
+var UNTRACKED = "??";
+var ADDED = "A";
+function uncommittedCreation(store, runGit) {
+  const listed = statusIn(store, [...CREATION_PATHS], runGit);
+  if ("issue" in listed)
+    return listed;
+  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs18.existsSync(path23.join(store, e.path));
+  return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
+}
+function statusIn(store, pathspecs, runGit) {
+  const args = [
+    "--no-optional-locks",
+    "--literal-pathspecs",
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+    "--",
+    ...pathspecs
+  ];
+  const r = runGit("git", args, store);
+  if (r.code !== 0) {
+    return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
+  }
+  return { entries: porcelainEntries(r.stdout) };
+}
+function isOwnCopy(store, folderRel, sources, p) {
+  const prefix = `${folderRel}/`;
+  if (!p.startsWith(prefix))
+    return false;
+  const rel = p.slice(prefix.length);
+  if (rel === MARKER_FILE)
+    return true;
+  const file = path23.join(store, p);
+  return sources.some((source) => sameBytes(path23.join(source, rel), file));
+}
+function sameBytes(a, b) {
+  try {
+    const bothFiles = fs18.statSync(a).isFile() && fs18.statSync(b).isFile();
+    return bothFiles && fs18.readFileSync(a).equals(fs18.readFileSync(b));
+  } catch {
+    return false;
+  }
+}
+function ownArchives(store, key) {
+  const parent = path23.join(store, ...ARCHIVE_DIR.split("/"));
+  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path23.join(parent, name));
+}
+function porcelainEntries(output) {
+  const fields = output.split("\x00").filter((field) => field !== "");
+  const entries = [];
+  for (let i = 0;i < fields.length; i++) {
+    const status = fields[i].slice(0, 2);
+    entries.push({ status, path: fields[i].slice(3) });
+    if (status.includes("R") || status.includes("C"))
+      i++;
+  }
+  return entries;
+}
+var ARCHIVE_DATE = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
+var isOwnArchiveName = (entry, key) => entry.startsWith(`${key}-`) && ARCHIVE_DATE.test(entry.slice(key.length + 1));
+function isOwnArchivePath(p, key) {
+  const prefix = `${ARCHIVE_DIR}/`;
+  if (!p.startsWith(prefix))
+    return false;
+  const [entry] = p.slice(prefix.length).split("/");
+  return isOwnArchiveName(entry, key);
+}
+var UserSettingsSchema = object({
+  permissions: optional(object({
+    additionalDirectories: optional(array(string()), [])
+  }), { additionalDirectories: [] })
+});
+function additionalDirectories(file) {
+  try {
+    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs18.readFileSync(file, "utf-8")));
+    return parsed.success ? parsed.output.permissions.additionalDirectories : [];
+  } catch {
+    return [];
+  }
+}
+function userSettingsFacts(configDir, store, home) {
+  const file = path23.join(configDir, "settings.json");
+  const covered = additionalDirectories(file).some((entry) => {
+    const dir = path23.resolve(expandHome(entry, home));
+    return isInside2(store, dir) || isInside2(physical(store), physical(dir));
+  });
+  return { file, covered };
+}
+
+// bin/helpers/memory-lint-repos.ts
+function resolvedPath(target) {
+  const lexical = path24.resolve(target);
+  try {
+    return fs19.realpathSync(lexical);
+  } catch {
+    return lexical;
+  }
+}
+function isInside3(folder, parent) {
+  const relative5 = path24.relative(parent, folder);
+  return relative5 !== "" && !relative5.startsWith("..") && !path24.isAbsolute(relative5);
+}
+function rootFact(root, runGit) {
+  if (!fs19.existsSync(root))
+    return { kind: "missing" };
+  const found = findRepo(runGit, root);
+  if (found.repo === undefined) {
+    return found.warnings.length > 0 ? { kind: "undecided" } : { kind: "outside-git" };
+  }
+  const top = resolvedPath(found.repo.top);
+  if (top !== resolvedPath(root))
+    return { kind: "not-main", top };
+  return { kind: "checkout", key: readKeyAt(found.repo.top) };
+}
+function keyInStore(rawKey, store, home) {
+  if (rawKey === undefined)
+    return false;
+  const key = expandHome(rawKey, home);
+  return path24.isAbsolute(key) && isInside3(resolvedPath(key), store);
+}
+function candidates(dir) {
+  try {
+    return fs19.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name).sort();
+  } catch {
+    return [];
+  }
+}
+function invalidAt(dir, folder) {
+  const read = readMarker(dir);
+  if (read.kind !== "invalid")
+    return [];
+  return [{ folder, file: path24.join(dir, MARKER_FILE), issue: read.issue }];
+}
+function invalidMarkers(store) {
+  return candidates(store).flatMap((first) => {
+    const dir = path24.join(store, first);
+    if (readMarker(dir).kind === "marker")
+      return [];
+    const nested = candidates(dir).flatMap((second) => invalidAt(path24.join(dir, second), `${first}/${second}`));
+    return [...invalidAt(dir, first), ...nested];
+  });
+}
+var FENCE4 = "---";
+var STAMP_LINE = /^\s*modified:/;
+function withoutStamp(text) {
+  const lines = text.split(`
+`);
+  if (lines[0]?.trimEnd() !== FENCE4)
+    return text;
+  const end = lines.findIndex((line, i) => i > 0 && line.trimEnd() === FENCE4);
+  if (end === -1)
+    return text;
+  return lines.filter((line, i) => i === 0 || i >= end || !STAMP_LINE.test(line)).join(`
+`);
+}
+function compareCopy(from, to) {
+  if (!fs19.existsSync(to))
+    return "absent";
+  try {
+    const [a, b] = [fs19.readFileSync(from), fs19.readFileSync(to)];
+    const same = a.equals(b) || withoutStamp(a.toString("utf8")) === withoutStamp(b.toString("utf8"));
+    return same ? "same" : "differs";
+  } catch {
+    return "differs";
+  }
+}
+function errorCode(error) {
+  if (error instanceof Error && "code" in error)
+    return String(error.code);
+  return error instanceof Error ? error.message : String(error);
+}
+function filesUnder(dir) {
+  try {
+    return { files: walkFolder(dir).files };
+  } catch (error) {
+    return { why: errorCode(error) };
+  }
+}
+function compareDefaultFolder(defaultDir, storeDir, storeNames) {
+  if (!fs19.existsSync(defaultDir))
+    return { kind: "absent" };
+  const listed = filesUnder(defaultDir);
+  if ("why" in listed)
+    return { kind: "unlisted", why: listed.why };
+  const compared = listed.files.map((rel) => ({
+    rel,
+    state: compareCopy(path24.join(defaultDir, rel), path24.join(storeDir, rel))
+  }));
+  const named = (state) => compared.filter((entry) => entry.state === state).map((entry) => entry.rel);
+  return {
+    kind: "present",
+    differs: named("differs"),
+    onlyThere: named("absent"),
+    onlyInStore: storeNames.filter((name) => !listed.files.includes(name))
+  };
+}
 
 // bin/helpers/memory-patterns.ts
 var INJECTION = [
@@ -5322,13 +5767,38 @@ var hits = (patterns, text) => patterns.filter(({ re }) => re.test(text)).map(({
 var injectionHits = (text) => hits(INJECTION, text);
 var keyHits = (text) => hits(KEYS, text);
 
+// bin/helpers/memory-sections.ts
+var STATE_HEADING = "## State";
+var NEXT_HEADING = "## Next steps";
+function isHeading(line, heading) {
+  return line.trimEnd().toLowerCase() === heading.toLowerCase();
+}
+function headingAs(file, heading) {
+  const body = readMemoryFile(file)?.body ?? "";
+  return body.split(`
+`).find((line) => isHeading(line, heading)) ?? heading;
+}
+function otherHeadings(file) {
+  const body = readMemoryFile(file)?.body ?? "";
+  const fence = { open: false };
+  return body.split(`
+`).filter((line) => {
+    if (line.trimStart().startsWith("```"))
+      fence.open = !fence.open;
+    const heading = line.trimEnd();
+    return !fence.open && line.startsWith("## ") && !isHeading(heading, STATE_HEADING) && !isHeading(heading, NEXT_HEADING);
+  });
+}
+
 // bin/helpers/memory-start-render.ts
+import * as path25 from "node:path";
 var TOTAL_BUDGET = 9000;
 var NEXT_STEPS_BUDGET = 3000;
 var STATE_AND_NEXT_BUDGET = 5000;
 var RECORDS_BUDGET = 600;
 var MENU_BUDGET = 1500;
 var FAMILY_BUDGET = 2000;
+var ALSO_BUDGET = 500;
 var RESUME_LINES = 2;
 var BLOCK_SEPARATOR = `
 
@@ -5337,11 +5807,14 @@ var MENU_LEAD = "No workstream matched. Open workstreams, from the repo and its 
 var MENU_ASK = "Ask the operator which one this session serves, or let sk-save start a new one.";
 var COMPACT_WARNING = "This session has not saved. Save with sk-save at the next pause.";
 var GATE_FAILED = "The memory gate failed, so this text is unchecked.";
+var ALSO_LEAD = "Also in the file: ";
+var ALSO_TAIL = ". Read the file for them.";
+var LIST_SEPARATOR = ", ";
 var unchecked = () => {
   return;
 };
 function storeFolder(store, dir) {
-  return path20.relative(store, dir).split(path20.sep).join("/");
+  return path25.relative(store, dir).split(path25.sep).join("/");
 }
 function withholding(store, matcher) {
   return ({ file, dir, text }) => {
@@ -5354,13 +5827,13 @@ function withholding(store, matcher) {
 var shown = (gate, source) => gate(source) ?? source.text;
 var fileSource = (file, text) => ({
   file,
-  dir: path20.dirname(file),
+  dir: path25.dirname(file),
   text
 });
 var shownName = (gate, stream) => shown(gate, fileSource(stream.path, stream.name));
 var recordSource = (record2, text) => ({
   file: record2.path,
-  dir: path20.dirname(path20.dirname(record2.path)),
+  dir: path25.dirname(path25.dirname(record2.path)),
   text
 });
 var Drop = {
@@ -5419,7 +5892,7 @@ function headerBlock(parts, gate) {
   if (match === undefined)
     return [];
   const first = `sidekick memory: session ${parts.sessionId}. Your record is ${parts.recordPath}; save to it with the sk-save skill.`;
-  const repoFolder = path20.dirname(path20.dirname(parts.recordPath));
+  const repoFolder = path25.dirname(path25.dirname(parts.recordPath));
   const text = [first, ...matchLines(match, repoFolder, gate)].join(`
 `);
   return [{ text, drop: Drop.Header }];
@@ -5443,11 +5916,34 @@ function fitWorkstream(state, nextSteps, readPath) {
     }
   };
 }
+var counted = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+function leadingHeadings(headings, room) {
+  const kept = [];
+  let used = -LIST_SEPARATOR.length;
+  for (const heading of headings) {
+    used += LIST_SEPARATOR.length + heading.length;
+    if (used > room)
+      break;
+    kept.push(heading);
+  }
+  return kept;
+}
+function alsoText(headings, budget) {
+  const whole = `${ALSO_LEAD}${headings.join(LIST_SEPARATOR)}${ALSO_TAIL}`;
+  if (whole.length <= budget)
+    return whole;
+  const fold = `${LIST_SEPARATOR}and ${headings.length} more`;
+  const room = budget - ALSO_LEAD.length - ALSO_TAIL.length - fold.length;
+  const kept = leadingHeadings(headings, room);
+  const rest2 = headings.length - kept.length;
+  const list2 = kept.length === 0 ? counted(rest2, "heading") : `${kept.join(LIST_SEPARATOR)}${LIST_SEPARATOR}and ${rest2} more`;
+  return `${ALSO_LEAD}${list2}${ALSO_TAIL}`;
+}
 function alsoLine(headings, file, gate) {
   if (headings.length === 0)
     return;
-  const list2 = headings.join(", ");
-  return gate(fileSource(file, list2)) ?? `Also in the file: ${list2}. Read the file for them.`;
+  const list2 = headings.join(LIST_SEPARATOR);
+  return gate(fileSource(file, list2)) ?? alsoText(headings, ALSO_BUDGET);
 }
 function workstreamBlocks(parts, gate) {
   const { match, statePath } = parts;
@@ -5470,7 +5966,7 @@ function recordsBlock(parts, gate) {
   const lead = `Recent records on ${shownName(gate, match.workstream)}:`;
   const text = [lead, ...lines].join(`
 `);
-  const fitted = fitSection(text, RECORDS_BUDGET, path20.dirname(newest.path));
+  const fitted = fitSection(text, RECORDS_BUDGET, path25.dirname(newest.path));
   return [{ text: fitted, drop: Drop.Records }];
 }
 function familyBlock(parts, gate) {
@@ -5486,15 +5982,26 @@ function familyBlock(parts, gate) {
   return [{ text: fitted, drop: Drop.Family }];
 }
 var warningLine = (warning) => `Warning: ${warning}`;
+function countLines(lintCount) {
+  if (lintCount === undefined || lintCount.count === 0)
+    return [];
+  const { count, folders, ranAt } = lintCount;
+  const where = folders.map((folder) => `${folder}/`).join(" and ");
+  const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
+  return [
+    `Memory lint: ${counted(count, "finding")} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(" ")}`
+  ];
+}
 function warningsBlock(parts) {
   const compactUnsaved = parts.match !== undefined && parts.source === "compact" && !parts.recordExists;
   const texts = [
     ...parts.warnings,
     ...compactUnsaved ? [COMPACT_WARNING] : []
   ];
-  if (texts.length === 0)
+  const lines = [...texts.map(warningLine), ...countLines(parts.lintCount)];
+  if (lines.length === 0)
     return [];
-  return [{ text: texts.map(warningLine).join(`
+  return [{ text: lines.join(`
 `), drop: Drop.Warnings }];
 }
 function blocksOf(parts, gate) {
@@ -5535,34 +6042,95 @@ function renderStart(parts, matcher = injectionHits) {
 `);
 }
 
+// bin/helpers/memory-store-settings.ts
+import * as fs20 from "node:fs";
+import * as path26 from "node:path";
+var STORE_SETTINGS_FILE = "settings.json";
+var POSITIVE_INTEGER2 = "must be a positive integer";
+var NOT_AN_OBJECT = "the file must hold a JSON object";
+var positiveInteger2 = pipe(number(POSITIVE_INTEGER2), integer(POSITIVE_INTEGER2), minValue(1, POSITIVE_INTEGER2));
+var StoreSettingsSchema = object({
+  indexLineCap: optional(positiveInteger2),
+  indexLineLength: optional(positiveInteger2, 300)
+}, NOT_AN_OBJECT);
+function defaults() {
+  return parse(StoreSettingsSchema, {});
+}
+function readRaw(file) {
+  const read = (() => {
+    try {
+      return { text: fs20.readFileSync(file, "utf8") };
+    } catch (error) {
+      return { error };
+    }
+  })();
+  if ("error" in read) {
+    const code = errorCode2(read.error);
+    if (code === "ENOENT")
+      return { kind: "missing" };
+    return { kind: "failed", issue: `cannot be read (${code})` };
+  }
+  try {
+    return { kind: "raw", value: JSON.parse(read.text) };
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    return { kind: "failed", issue: `not valid JSON: ${why}` };
+  }
+}
+function errorCode2(error) {
+  if (error instanceof Error && "code" in error)
+    return String(error.code);
+  return error instanceof Error ? error.message : String(error);
+}
+function readStoreSettings(store) {
+  const raw = readRaw(path26.join(store, STORE_SETTINGS_FILE));
+  if (raw.kind === "missing")
+    return { settings: defaults() };
+  if (raw.kind === "failed")
+    return { settings: defaults(), issue: raw.issue };
+  if (Array.isArray(raw.value)) {
+    return { settings: defaults(), issue: NOT_AN_OBJECT };
+  }
+  const parsed = safeParse(StoreSettingsSchema, raw.value, {
+    abortPipeEarly: true
+  });
+  if (parsed.success)
+    return { settings: parsed.output };
+  const issue = parsed.issues.map((i) => {
+    const key = getDotPath(i);
+    return key === null ? i.message : `${key} ${i.message}`;
+  }).join("; ");
+  return { settings: defaults(), issue };
+}
+
 // bin/helpers/memory-view.ts
-import * as fs16 from "node:fs";
-import * as path21 from "node:path";
+import * as fs21 from "node:fs";
+import * as path27 from "node:path";
 var INDEX_FILE = "MEMORY.md";
 var SESSIONS_DIR = "sessions";
 var RECORD_NAME = /^(\d{4}-\d{2}-\d{2})-(.+)\.md$/;
 var TITLE_LINE = /^# +(.+?)\s*$/m;
 function resolved(target) {
-  const lexical = path21.resolve(target);
+  const lexical = path27.resolve(target);
   try {
-    return fs16.realpathSync(lexical);
+    return fs21.realpathSync(lexical);
   } catch {
     return lexical;
   }
 }
-function isInside(folder, parent) {
-  const relative4 = path21.relative(parent, folder);
-  return relative4 !== "" && !relative4.startsWith("..") && !path21.isAbsolute(relative4);
+function isInside4(folder, parent) {
+  const relative7 = path27.relative(parent, folder);
+  return relative7 !== "" && !relative7.startsWith("..") && !path27.isAbsolute(relative7);
 }
 function linkedView(root, store, key) {
   const repoFolder = resolved(key);
-  const parent = path21.dirname(repoFolder);
+  const parent = path27.dirname(repoFolder);
   return {
     kind: "linked",
     root,
     store,
     repoFolder,
-    repoName: path21.basename(repoFolder),
+    repoName: path27.basename(repoFolder),
     familyFolder: parent === store ? undefined : parent
   };
 }
@@ -5573,7 +6141,7 @@ function repoView(cwd, deps) {
   const store = resolved(storeRoot(deps.env, deps.home));
   const rawKey = readKey(cwd, deps.runGit);
   const key = rawKey === undefined ? undefined : expandHome(rawKey, deps.home);
-  if (key !== undefined && path21.isAbsolute(key) && isInside(resolved(key), store)) {
+  if (key !== undefined && path27.isAbsolute(key) && isInside4(resolved(key), store)) {
     return linkedView(main.root, store, key);
   }
   const marker = findMarkers(store).find((found) => resolved(found.root) === main.root);
@@ -5586,7 +6154,7 @@ function repoView(cwd, deps) {
 }
 function listDir(folder, suffix) {
   try {
-    return fs16.readdirSync(folder).filter((entry) => entry.endsWith(suffix)).sort();
+    return fs21.readdirSync(folder).filter((entry) => entry.endsWith(suffix)).sort();
   } catch {
     return [];
   }
@@ -5617,7 +6185,7 @@ function toWorkstream(file, memory) {
 }
 function workstreamsIn(folder) {
   return listDir(folder, ".md").filter((entry) => entry !== INDEX_FILE).flatMap((entry) => {
-    const file = path21.join(folder, entry);
+    const file = path27.join(folder, entry);
     const memory = readMemoryFile(file);
     const found = memory && toWorkstream(file, memory);
     return found ? [found] : [];
@@ -5631,13 +6199,13 @@ function listWorkstreams(repoFolder, familyFolder) {
 }
 function modifiedAt2(file) {
   try {
-    return fs16.statSync(file).mtimeMs;
+    return fs21.statSync(file).mtimeMs;
   } catch {
     return 0;
   }
 }
 function toRecord(file) {
-  const named = RECORD_NAME.exec(path21.basename(file));
+  const named = RECORD_NAME.exec(path27.basename(file));
   const memory = readMemoryFile(file);
   if (!named || !memory || memory.metadata.kind !== "session")
     return;
@@ -5651,26 +6219,625 @@ function toRecord(file) {
   };
 }
 function listRecords(repoFolder) {
-  const dir = path21.join(repoFolder, SESSIONS_DIR);
+  const dir = path27.join(repoFolder, SESSIONS_DIR);
   return listDir(dir, ".md").flatMap((entry) => {
-    const record2 = toRecord(path21.join(dir, entry));
+    const record2 = toRecord(path27.join(dir, entry));
     return record2 ? [{ record: record2, mtime: modifiedAt2(record2.path) }] : [];
   }).sort((a, b) => b.record.date.localeCompare(a.record.date) || b.mtime - a.mtime).map((entry) => entry.record);
 }
 function recordPath(repoFolder, sessionId, today) {
-  const dir = path21.join(repoFolder, SESSIONS_DIR);
+  const dir = path27.join(repoFolder, SESSIONS_DIR);
   const existing = listDir(dir, `-${sessionId}.md`).find((entry) => RECORD_NAME.test(entry));
   if (existing !== undefined) {
-    return { path: path21.join(dir, existing), exists: true };
+    return { path: path27.join(dir, existing), exists: true };
   }
-  return { path: path21.join(dir, `${today}-${sessionId}.md`), exists: false };
+  return { path: path27.join(dir, `${today}-${sessionId}.md`), exists: false };
+}
+
+// bin/helpers/memory-lint.ts
+var MEMORY_LINT_IDS = [
+  "dead-link",
+  "unindexed",
+  "index-over-cap",
+  "index-line-long",
+  "workstream-cut",
+  "workstream-dropped",
+  "key-shaped",
+  "injection-shaped",
+  "settings-invalid",
+  "unreadable",
+  "dangling-marker",
+  "default-folder-left",
+  "stale-lock",
+  "setting-missing"
+];
+var STORE_WIDE_IDS = [
+  "settings-invalid",
+  "dangling-marker",
+  "stale-lock"
+];
+
+class GitDeadlineError extends Error {
+  args;
+  cwd;
+  constructor(args, cwd) {
+    super(`git ${args.join(" ")} in ${cwd} passed its deadline`);
+    this.name = "GitDeadlineError";
+    this.args = args;
+    this.cwd = cwd;
+  }
+}
+
+class LintTimeLimitError extends Error {
+  constructor() {
+    super("the lint passed its time limit");
+    this.name = "LintTimeLimitError";
+  }
+}
+var INDEX_FILE2 = "MEMORY.md";
+var SESSIONS_DIR2 = "sessions";
+var LOAD_LIMIT_LINES = 200;
+var LOAD_LIMIT_BYTES = 25 * 1024;
+var STALE_LOCK_MS = 10 * 60 * 1000;
+var MINUTE_MS = 60 * 1000;
+function lintFolders(store) {
+  const markers = findMarkers(store);
+  const repos = markers.map((found) => ({
+    kind: "repo",
+    folder: storeFolder(store, found.folder),
+    dir: found.folder,
+    root: found.root,
+    family: found.family
+  }));
+  const familyNames = new Set(markers.flatMap((found) => found.family === undefined ? [] : [found.family]));
+  const families = [...familyNames].map((name) => ({
+    kind: "family",
+    folder: name,
+    dir: path28.join(store, name)
+  }));
+  return [...repos, ...families].sort((a, b) => a.folder.localeCompare(b.folder));
+}
+function ownNames(dir) {
+  try {
+    const names = fs22.readdirSync(dir, { withFileTypes: true }).filter((entry) => !entry.isDirectory() && entry.name.endsWith(".md")).map((entry) => entry.name).sort();
+    return { names };
+  } catch (error) {
+    return { why: errorCode(error) };
+  }
+}
+function readOwn(dir, name) {
+  const file = path28.join(dir, name);
+  try {
+    return {
+      kind: "read",
+      own: { name, file, text: fs22.readFileSync(file, "utf8") }
+    };
+  } catch (error) {
+    return { kind: "unreadable", file, why: errorCode(error) };
+  }
+}
+function readFolder2(dir) {
+  const listing = ownNames(dir);
+  const names = "names" in listing ? listing.names : [];
+  const reads = names.map((name) => readOwn(dir, name));
+  return {
+    names,
+    files: reads.flatMap((read) => read.kind === "read" ? [read.own] : []),
+    failed: reads.flatMap((read) => read.kind === "unreadable" ? [{ file: read.file, why: read.why }] : []),
+    unlisted: "why" in listing ? [{ file: dir, why: listing.why }] : []
+  };
+}
+var NO_FILES = { names: [], files: [], failed: [], unlisted: [] };
+function readSessions(place) {
+  const dir = path28.join(place.dir, SESSIONS_DIR2);
+  if (place.kind !== "repo" || !fs22.existsSync(dir))
+    return NO_FILES;
+  return readFolder2(dir);
+}
+function scanFolder(place) {
+  const own = readFolder2(place.dir);
+  const sessions = readSessions(place);
+  const blocked = new Set(own.failed.map((read) => path28.basename(read.file)));
+  const starts = own.names.includes(INDEX_FILE2) ? [INDEX_FILE2] : [];
+  const reached = reachFrom(place.dir, own.files, starts);
+  return {
+    ...place,
+    names: own.names,
+    files: own.files,
+    sessions: sessions.files,
+    unreadable: [
+      ...own.unlisted,
+      ...own.failed,
+      ...sessions.unlisted,
+      ...sessions.failed
+    ],
+    reached,
+    reachComplete: [...reached].every((name) => !blocked.has(name))
+  };
+}
+function stopAtDeadline(runGit) {
+  return (cmd, args, cwd) => {
+    const result = runGit(cmd, args, cwd);
+    if (result.code === DEADLINE_EXIT)
+      throw new GitDeadlineError(args, cwd);
+    return result;
+  };
+}
+function linkedRepos(folders, runGit) {
+  return folders.flatMap((scan) => scan.kind === "repo" ? [{ scan, fact: rootFact(scan.root, runGit) }] : []);
+}
+function perFolder(check2) {
+  return (input, id) => input.folders.flatMap((scan) => {
+    input.inTime();
+    return check2(scan, input).map((hit) => ({
+      id,
+      folder: scan.folder,
+      ...hit
+    }));
+  });
+}
+var count = (n) => n.toLocaleString("en-US");
+function indexOf(scan) {
+  return scan.files.find((own) => own.name === INDEX_FILE2);
+}
+function deadLinks(scan) {
+  return scan.files.filter((own) => scan.reached.has(own.name)).flatMap((own) => linksIn(own.text).filter((link) => !fs22.existsSync(path28.resolve(scan.dir, link.target))).map((link) => ({
+    file: own.file,
+    line: link.line,
+    message: `links to ${link.target}, which does not exist`
+  })));
+}
+function unindexedFiles(scan) {
+  if (!scan.reachComplete)
+    return [];
+  const message = scan.names.includes(INDEX_FILE2) ? "no link from MEMORY.md reaches it, directly or through other files" : "the folder has no MEMORY.md to link it";
+  return scan.names.filter((name) => name !== INDEX_FILE2 && !scan.reached.has(name)).map((name) => ({ file: path28.join(scan.dir, name), message }));
+}
+function lineCount(text) {
+  return text === "" ? 0 : text.replace(/\n$/, "").split(`
+`).length;
+}
+function indexOverCap(scan, input) {
+  const index = indexOf(scan);
+  if (index === undefined)
+    return [];
+  const lines = lineCount(index.text);
+  const bytes = Buffer.byteLength(index.text, "utf8");
+  const cap = input.settings.indexLineCap;
+  const loadLimit = "(Claude Code's load limit)";
+  const clauses = [
+    ...cap !== undefined && lines > cap ? [`${count(lines)} of ${count(cap)} lines (indexLineCap)`] : [],
+    ...lines > LOAD_LIMIT_LINES ? [`${count(lines)} of ${count(LOAD_LIMIT_LINES)} lines ${loadLimit}`] : [],
+    ...bytes > LOAD_LIMIT_BYTES ? [`${count(bytes)} of ${count(LOAD_LIMIT_BYTES)} bytes ${loadLimit}`] : []
+  ];
+  if (clauses.length === 0)
+    return [];
+  return [{ file: index.file, message: clauses.join("; ") }];
+}
+function longIndexLines(scan, input) {
+  const index = indexOf(scan);
+  if (index === undefined)
+    return [];
+  const limit = input.settings.indexLineLength;
+  return index.text.split(`
+`).flatMap((raw, i) => {
+    const length = raw.replace(/\r$/, "").length;
+    if (length <= limit)
+      return [];
+    const message = `${count(length)} of ${count(limit)} characters`;
+    return [{ file: index.file, line: i + 1, message }];
+  });
+}
+function cutClauses(fit) {
+  const { cut: cut2, sizes } = fit;
+  const shownNext = fit.nextSteps?.length ?? 0;
+  const together = `${count(sizes.state + shownNext)} of ${count(sizes.stateBudget + shownNext)}`;
+  const next = `${count(sizes.nextSteps)} of ${count(sizes.nextBudget)}`;
+  return [
+    ...cut2.state ? [`State and Next steps: ${together}`] : [],
+    ...cut2.nextSteps ? [`Next steps: ${next}`] : []
+  ];
+}
+function hookSections(file, readSection) {
+  return {
+    state: readSection(file, headingAs(file, STATE_HEADING).trimEnd()),
+    next: readSection(file, headingAs(file, NEXT_HEADING).trimEnd())
+  };
+}
+function cutWorkstreams(scan, input) {
+  return listWorkstreams(scan.dir, undefined).flatMap((stream) => {
+    const file = stream.path;
+    const { state, next } = hookSections(file, input.deps.readSection);
+    const clauses = cutClauses(fitWorkstream(state, next, file));
+    return clauses.length === 0 ? [] : [{ file, message: clauses.join("; ") }];
+  });
+}
+function workstreamFaults(memory) {
+  const { status } = memory.metadata;
+  const nameless = memory.name === undefined || memory.name === "";
+  const statusFault = status === undefined ? "it has no status" : `its status is "${status}", not open or closed`;
+  const faults = [
+    ...nameless ? ["it has no name"] : [],
+    ...status !== "open" && status !== "closed" ? [statusFault] : []
+  ];
+  const why = faults.length > 0 ? faults.join(", and ") : "its reader refuses it";
+  return `the hook drops this workstream: ${why}`;
+}
+function dropReason(own, kept) {
+  const memory = parseMemoryText(own.text);
+  if (memory === undefined) {
+    return "its front matter does not parse: it needs a --- line at the top and another closing it";
+  }
+  const isDropped = memory.metadata.kind === "workstream" && !kept.has(own.file);
+  return isDropped ? workstreamFaults(memory) : undefined;
+}
+function droppedWorkstreams(scan) {
+  const listed = listWorkstreams(scan.dir, undefined);
+  const kept = new Set(listed.map((stream) => stream.path));
+  return scan.files.filter((own) => own.name !== INDEX_FILE2).flatMap((own) => {
+    const message = dropReason(own, kept);
+    return message === undefined ? [] : [{ file: own.file, message }];
+  });
+}
+var SHAPES = {
+  key: { hits: keyHits, patterns: KEYS },
+  injection: { hits: injectionHits, patterns: INJECTION }
+};
+var shapedText = (shape, ids) => `holds ${shape}-shaped text (${ids.join(", ")})`;
+function lineOf(text, index) {
+  return text.slice(0, index).split(`
+`).length;
+}
+function matchLines2(patterns, text) {
+  const hits2 = patterns.flatMap(({ id, re }) => {
+    const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
+    const every = new RegExp(re.source, flags);
+    return [...text.matchAll(every)].map((match) => ({
+      line: lineOf(text, match.index ?? 0),
+      id
+    }));
+  });
+  const lines = [...new Set(hits2.map((hit) => hit.line))].sort((a, b) => a - b);
+  return lines.map((line) => ({
+    line,
+    ids: [
+      ...new Set(hits2.filter((hit) => hit.line === line).map((hit) => hit.id))
+    ]
+  }));
+}
+function shapedLines(own, shape) {
+  const { hits: hits2, patterns } = SHAPES[shape];
+  if (hits2(own.text).length === 0)
+    return [];
+  return matchLines2(patterns, own.text).map(({ line, ids }) => ({
+    file: own.file,
+    line,
+    message: shapedText(shape, ids)
+  }));
+}
+function keyShaped(scan) {
+  return [...scan.files, ...scan.sessions].flatMap((own) => shapedLines(own, "key"));
+}
+function injectionAt(file, place, text) {
+  const ids = injectionHits(text);
+  if (ids.length === 0)
+    return [];
+  return [{ file, message: `${place} ${shapedText("injection", ids)}` }];
+}
+function workstreamInjection(stream, readSection) {
+  const { state, next } = hookSections(stream.path, readSection);
+  const places = [
+    ["its name", stream.name],
+    ["its description", stream.description],
+    ["its State section", state ?? ""],
+    ["its Next steps section", next ?? ""],
+    ["its heading list", otherHeadings(stream.path).join(", ")]
+  ];
+  return places.flatMap(([place, text]) => injectionAt(stream.path, place, text));
+}
+function recordInjection(record2) {
+  return injectionAt(record2.path, "its title", record2.title);
+}
+function injectionShaped(scan, input) {
+  const index = indexOf(scan);
+  const streams = listWorkstreams(scan.dir, undefined);
+  const records = scan.kind === "repo" ? listRecords(scan.dir) : [];
+  return [
+    ...index === undefined ? [] : shapedLines(index, "injection"),
+    ...streams.flatMap((stream) => workstreamInjection(stream, input.deps.readSection)),
+    ...records.flatMap(recordInjection)
+  ];
+}
+function settingsInvalid(input, id) {
+  if (input.settingsIssue === undefined)
+    return [];
+  return [
+    {
+      id,
+      folder: "",
+      file: path28.join(input.store, STORE_SETTINGS_FILE),
+      message: `${input.settingsIssue}; defaults apply`
+    }
+  ];
+}
+function unreadableFiles(scan) {
+  return scan.unreadable.map((entry) => ({
+    file: entry.file,
+    message: `cannot be read (${entry.why}), so the lint skipped it`
+  }));
+}
+var markerOf = (scan) => path28.join(scan.dir, MARKER_FILE);
+function rootFault(fact) {
+  switch (fact.kind) {
+    case "missing":
+      return "which does not exist";
+    case "outside-git":
+      return "which is not inside a git repository";
+    case "not-main":
+      return `but the repository there has its main checkout at ${fact.top}`;
+    case "undecided":
+    case "checkout":
+      return;
+    default: {
+      const unhandled = fact;
+      throw new Error(`Unhandled root fact: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function danglingMarkers(input, id) {
+  const roots = input.repos.flatMap(({ scan, fact }) => {
+    const fault = rootFault(fact);
+    if (fault === undefined)
+      return [];
+    const message = `${scan.folder}'s marker names ${scan.root}, ${fault}`;
+    return [{ folder: scan.folder, file: markerOf(scan), message }];
+  });
+  const invalid = invalidMarkers(input.store).map((marker) => ({
+    folder: marker.folder,
+    file: marker.file,
+    message: `${marker.issue}, so the store does not count ${marker.folder} as a repo folder`
+  }));
+  return [...roots, ...invalid].sort((a, b) => a.folder.localeCompare(b.folder)).map(({ file, message }) => ({ id, folder: "", file, message }));
+}
+var STILL_EXISTS = "Claude Code's default memory folder still exists";
+function leftMessage(diff) {
+  if (diff.kind === "unlisted") {
+    return `${STILL_EXISTS}, but cannot be listed (${diff.why})`;
+  }
+  const clauses = [
+    ["differs from the store copy", diff.differs],
+    ["only there", diff.onlyThere],
+    ["only in the store", diff.onlyInStore]
+  ];
+  const named = clauses.filter(([, names]) => names.length > 0).map(([label, names]) => `${label}: ${names.join(", ")}`);
+  return named.length === 0 ? `${STILL_EXISTS}, and its files match the store copies` : `${STILL_EXISTS}; ${named.join("; ")}`;
+}
+function defaultFolderLeft(scan, input) {
+  if (scan.kind !== "repo")
+    return [];
+  const configDir = configDirOf(input.deps.env, input.deps.home);
+  const dir = defaultMemoryFolder(scan.root, configDir);
+  const diff = compareDefaultFolder(dir, scan.dir, scan.names);
+  return diff.kind === "absent" ? [] : [{ file: dir, message: leftMessage(diff) }];
+}
+function lockAge(lock, now) {
+  try {
+    return now - fs22.statSync(lock).mtimeMs;
+  } catch {
+    return;
+  }
+}
+function staleLock(input, id) {
+  const lock = path28.join(input.store, ".git", "index.lock");
+  const age = lockAge(lock, input.deps.now());
+  if (age === undefined || age <= STALE_LOCK_MS)
+    return [];
+  const minutes = count(Math.floor(age / MINUTE_MS));
+  const limit = count(STALE_LOCK_MS / MINUTE_MS);
+  const message = `${minutes} minutes old (stale past ${limit}); snapshots stop until it is removed`;
+  return [{ id, folder: "", file: lock, message }];
+}
+function relinkCommand(scan) {
+  const folderName = path28.basename(scan.dir);
+  const name = folderName === path28.basename(scan.root) ? undefined : folderName;
+  return linkCommand(scan.root, { family: scan.family, name });
+}
+function settingMissing(input, id) {
+  const { store, deps } = input;
+  return input.repos.flatMap(({ scan, fact }) => {
+    if (fact.kind !== "checkout")
+      return [];
+    if (keyInStore(fact.key, store, deps.home))
+      return [];
+    const where = fact.key === undefined ? `${scan.root} has no ${SETTINGS_KEY} setting` : `${scan.root}'s ${SETTINGS_KEY} setting names ${fact.key}, outside the store`;
+    const message = `${where}, so Claude Code keeps its memory elsewhere. Run: ${relinkCommand(scan)}`;
+    return [{ id, folder: scan.folder, file: markerOf(scan), message }];
+  });
+}
+var PREDICATES = {
+  "dead-link": perFolder(deadLinks),
+  unindexed: perFolder(unindexedFiles),
+  "index-over-cap": perFolder(indexOverCap),
+  "index-line-long": perFolder(longIndexLines),
+  "workstream-cut": perFolder(cutWorkstreams),
+  "workstream-dropped": perFolder(droppedWorkstreams),
+  "key-shaped": perFolder(keyShaped),
+  "injection-shaped": perFolder(injectionShaped),
+  "settings-invalid": settingsInvalid,
+  unreadable: perFolder(unreadableFiles),
+  "dangling-marker": danglingMarkers,
+  "default-folder-left": perFolder(defaultFolderLeft),
+  "stale-lock": staleLock,
+  "setting-missing": settingMissing
+};
+function countById(findings) {
+  return Object.fromEntries(MEMORY_LINT_IDS.flatMap((id) => {
+    const found = findings.filter((finding) => finding.id === id).length;
+    return found === 0 ? [] : [[id, found]];
+  }));
+}
+function timeCheck(now, endsAt) {
+  return () => {
+    if (endsAt !== undefined && now() >= endsAt) {
+      throw new LintTimeLimitError;
+    }
+  };
+}
+function lintStore(store, deps, opts = {}) {
+  const inTime = timeCheck(deps.now, opts.endsAt);
+  const root = resolvedPath(store);
+  const runGit = stopAtDeadline(deps.runGit);
+  const { settings, issue } = readStoreSettings(root);
+  const scans = lintFolders(root).map((place) => {
+    inTime();
+    return scanFolder(place);
+  });
+  const input = {
+    store: root,
+    folders: scans,
+    repos: linkedRepos(scans, runGit),
+    settings,
+    settingsIssue: issue,
+    deps: { ...deps, runGit },
+    inTime
+  };
+  const all = MEMORY_LINT_IDS.flatMap((id) => {
+    inTime();
+    return PREDICATES[id](input, id);
+  });
+  const { folders } = opts;
+  const findings = folders === undefined ? all : all.filter((finding) => STORE_WIDE_IDS.includes(finding.id) || folders.includes(finding.folder));
+  return { findings, counts: countById(findings) };
+}
+
+// bin/helpers/memory-lint-cache.ts
+import { randomBytes } from "node:crypto";
+import * as fs23 from "node:fs";
+import * as path29 from "node:path";
+var CACHE_FILE = "sidekick-lint.json";
+var CACHE_VERSION = 1;
+var lintId = picklist(MEMORY_LINT_IDS);
+var FindingSchema = object({
+  id: lintId,
+  folder: string(),
+  file: string(),
+  line: optional(number()),
+  message: string()
+});
+var LintCacheSchema = object({
+  version: literal(CACHE_VERSION),
+  ranAt: pipe(string(), isoTimestamp()),
+  findings: array(FindingSchema),
+  counts: record(lintId, pipe(number(), integer(), minValue(0)))
+});
+function cachePath(store, runGit) {
+  if (!isWorkTreeTop(store, runGit))
+    return;
+  const r = runGit("git", ["rev-parse", "--git-path", CACHE_FILE], store);
+  const found = r.stdout.trim();
+  if (r.code !== 0 || found === "")
+    return;
+  return path29.resolve(store, found);
+}
+function writeCache(file, result, ranAt) {
+  const cache = {
+    version: CACHE_VERSION,
+    ranAt: ranAt.toISOString(),
+    findings: result.findings,
+    counts: result.counts
+  };
+  const temp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  try {
+    fs23.writeFileSync(temp, `${JSON.stringify(cache)}
+`);
+    fs23.renameSync(temp, file);
+  } catch (error) {
+    removeQuietly(temp);
+    throw error;
+  }
+}
+function removeQuietly(file) {
+  try {
+    fs23.rmSync(file, { force: true });
+  } catch {}
+}
+function readCache(file) {
+  try {
+    const parsed = safeParse(LintCacheSchema, JSON.parse(fs23.readFileSync(file, "utf8")));
+    return parsed.success ? parsed.output : undefined;
+  } catch {
+    return;
+  }
+}
+
+// bin/helpers/memory-match.ts
+function byName2(a, b) {
+  if (a.name < b.name)
+    return -1;
+  return a.name > b.name ? 1 : 0;
+}
+function namedHit(all, name, label) {
+  if (name === undefined)
+    return;
+  const workstream = all.find((candidate) => candidate.name === name);
+  return workstream === undefined ? undefined : { workstream, label };
+}
+function onlyOne(found, label) {
+  const [workstream, second] = found;
+  return workstream !== undefined && second === undefined ? { workstream, label } : undefined;
+}
+function startsWithName(title, name) {
+  const lowerTitle = title.toLowerCase();
+  const lowerName = name.toLowerCase();
+  if (lowerTitle === lowerName)
+    return true;
+  if (!lowerTitle.startsWith(lowerName))
+    return false;
+  const next = lowerTitle.charAt(lowerName.length);
+  return next === ":" || next === " ";
+}
+var tiers = [
+  (all, facts) => namedHit(all, facts.ownRecordWorkstream, "this session's record"),
+  (all, facts) => namedHit(all, facts.briefWorkstream, "the worker's brief"),
+  (all, facts) => {
+    const { title } = facts;
+    if (title === undefined)
+      return;
+    const open = all.filter((candidate) => candidate.status === "open");
+    return onlyOne(open.filter((candidate) => startsWithName(title, candidate.name)), "the title");
+  },
+  (all, facts) => {
+    const { branch } = facts;
+    if (branch === undefined || branch === facts.defaultBranch)
+      return;
+    const open = all.filter((candidate) => candidate.status === "open");
+    const onBranch = open.filter((candidate) => candidate.branches.some((pair) => pair.repo === facts.repoName && pair.branch === branch));
+    return onlyOne(onBranch, `branch ${branch}`);
+  }
+];
+function matchWorkstream(all, facts) {
+  const open = all.filter((candidate) => candidate.status === "open").sort(byName2);
+  for (const tier of tiers) {
+    const hit = tier(all, facts);
+    if (hit !== undefined) {
+      const others = open.filter((candidate) => candidate !== hit.workstream);
+      return {
+        kind: "matched",
+        workstream: hit.workstream,
+        label: hit.label,
+        others
+      };
+    }
+  }
+  return { kind: "menu", open };
 }
 
 // bin/helpers/memory-start.ts
-var STALE_LOCK_MS = 10 * 60 * 1000;
+var STALE_LOCK_MS2 = 10 * 60 * 1000;
 var RECENT_RECORDS = 3;
-var INDEX_FILE2 = "MEMORY.md";
+var INDEX_FILE3 = "MEMORY.md";
 var SESSION_ID3 = /^[A-Za-z0-9-]{1,128}$/;
+var LIVE_WARNED = ["stale-lock", "setting-missing"];
 var EventSchema = object({
   session_id: pipe(string(), regex(SESSION_ID3)),
   cwd: pipe(string(), minLength(1)),
@@ -5699,17 +6866,21 @@ function defaultBranchOf(runGit, cwd) {
   ]);
   return ref?.replace(/^origin\//, "");
 }
-function briefWorkstream(env) {
+function workerBrief(env) {
   const file = env.SIDEKICK_WORKER;
-  if (file === undefined || file === "")
+  return file === undefined || file === "" ? undefined : file;
+}
+function briefWorkstream(env) {
+  const file = workerBrief(env);
+  if (file === undefined)
     return;
   const read = readBrief(file);
   return "brief" in read ? read.brief.workstream : undefined;
 }
 function staleLockWarning(store, now) {
-  const lock = path22.join(store, ".git", "index.lock");
+  const lock = path30.join(store, ".git", "index.lock");
   try {
-    if (now - fs17.statSync(lock).mtimeMs <= STALE_LOCK_MS)
+    if (now - fs24.statSync(lock).mtimeMs <= STALE_LOCK_MS2)
       return [];
     return [
       `The memory store has a stale git lock at ${lock}; snapshots stop until it is removed.`
@@ -5721,13 +6892,13 @@ function staleLockWarning(store, now) {
 function familyOf(familyFolder) {
   if (familyFolder === undefined)
     return;
-  const file = path22.join(familyFolder, INDEX_FILE2);
+  const file = path30.join(familyFolder, INDEX_FILE3);
   try {
-    const lines = fs17.readFileSync(file, "utf8").trimEnd().split(`
+    const lines = fs24.readFileSync(file, "utf8").trimEnd().split(`
 `);
     if (lines.every((line) => line.trim() === ""))
       return;
-    return { name: path22.basename(familyFolder), path: file, lines };
+    return { name: path30.basename(familyFolder), path: file, lines };
   } catch {
     return;
   }
@@ -5754,9 +6925,30 @@ function recentRecords(match, records, own) {
     return [];
   return records.filter((record2) => record2.path !== own && record2.workstream === match.workstream.name).slice(0, RECENT_RECORDS);
 }
+function sessionFolders(view) {
+  const dirs = view.familyFolder === undefined ? [view.repoFolder] : [view.repoFolder, view.familyFolder];
+  return dirs.map((dir) => storeFolder(view.store, dir));
+}
+var countsHere = (finding, folders) => !LIVE_WARNED.includes(finding.id) && (STORE_WIDE_IDS.includes(finding.id) || folders.includes(finding.folder));
+function lintCountOf(view, source, deps) {
+  if (source === "resume" || workerBrief(deps.env) !== undefined) {
+    return;
+  }
+  try {
+    const file = cachePath(view.store, deps.runGit);
+    const cache = file === undefined ? undefined : readCache(file);
+    if (cache === undefined)
+      return;
+    const folders = sessionFolders(view);
+    const count2 = cache.findings.filter((f) => countsHere(f, folders)).length;
+    return { count: count2, folders, ranAt: localMinute(new Date(cache.ranAt)) };
+  } catch {
+    return;
+  }
+}
 function missingSettingText(view) {
-  const folderName = path22.basename(view.folder);
-  const name = folderName === path22.basename(view.root) ? undefined : folderName;
+  const folderName = path30.basename(view.folder);
+  const name = folderName === path30.basename(view.root) ? undefined : folderName;
   const command = linkCommand(view.root, { family: view.family, name });
   return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: ${command}`;
 }
@@ -5804,7 +6996,8 @@ function gather(stdin, deps) {
     ...workstreamParts(match, deps),
     records: recentRecords(match, records, own.path),
     family: familyOf(view.familyFolder),
-    warnings: staleLockWarning(view.store, deps.now())
+    warnings: staleLockWarning(view.store, deps.now()),
+    lintCount: lintCountOf(view, event.source, deps)
   });
   return {
     context,
@@ -5831,14 +7024,14 @@ function readContent(event) {
     return "";
   return typeof response.file.content === "string" ? response.file.content : "";
 }
-var DESIGN_SKILL = path23.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path23.join("skills", "sk-execute", "SKILL.md");
+var DESIGN_SKILL = path31.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path31.join("skills", "sk-execute", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
   "## Before the plan goes out",
   "## Choose the mode"
 ];
-var CLEAN_CODE_RULE = path23.join("rules", "sk-clean-code.md");
+var CLEAN_CODE_RULE = path31.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
@@ -5865,7 +7058,7 @@ function parseJson5(raw) {
 }
 function readText2(file) {
   try {
-    return fs18.readFileSync(file, "utf-8");
+    return fs25.readFileSync(file, "utf-8");
   } catch {
     return;
   }
@@ -5954,7 +7147,7 @@ function ruleCoversPackage(rulePaths, content) {
   return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
 }
 function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path23.join(pluginDir, DESIGN_SKILL));
+  const description = readSkillDescription(path31.join(pluginDir, DESIGN_SKILL));
   if (description === undefined)
     return;
   return [
@@ -5966,7 +7159,7 @@ function brainstormNudge(pluginDir) {
 }
 var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
-  const file = path23.join(pluginDir, EXECUTE_SKILL);
+  const file = path31.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
   const found = sections.flatMap((s) => s === undefined ? [] : [s]);
   if (found.length < PLAN_SECTIONS.length)
@@ -5985,7 +7178,7 @@ var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. W
 var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
 var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function commentsLines(pluginDir, packageText) {
-  const rule = path23.join(pluginDir, CLEAN_CODE_RULE);
+  const rule = path31.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
   if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
     return [];
@@ -6093,373 +7286,8 @@ import * as fs27 from "node:fs";
 import * as path33 from "node:path";
 
 // bin/helpers/memory-link.ts
-import * as fs22 from "node:fs";
-import * as path27 from "node:path";
-
-// bin/helpers/memory-link-facts.ts
-import * as fs21 from "node:fs";
-import * as path26 from "node:path";
-
-// bin/helpers/memory-default.ts
-import * as fs19 from "node:fs";
-import * as path24 from "node:path";
-var MAX_KEY_LENGTH = 200;
-var WRITE_BITS = 146;
-function hashOf(text) {
-  let h = 0;
-  for (let i = 0;i < text.length; i++) {
-    h = (h << 5) - h + text.charCodeAt(i) | 0;
-  }
-  return h;
-}
-function projectKey(p) {
-  const key = p.replace(/[^a-zA-Z0-9]/g, "-");
-  if (key.length <= MAX_KEY_LENGTH)
-    return key;
-  return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
-}
-function defaultMemoryFolder(root, configDir) {
-  return path24.join(configDir, "projects", projectKey(root), "memory");
-}
-function overrideIssue(env) {
-  if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
-    return "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere";
-  }
-  if (env.CLAUDE_CODE_REMOTE_MEMORY_DIR !== undefined) {
-    return "CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere";
-  }
-  if (env.CLAUDE_CODE_PROJECT_DIR_NAME !== undefined && env.CLAUDE_CONFIG_DIR !== undefined) {
-    return "CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently";
-  }
-  return;
-}
-var ClaudeJson = object({ projects: record(string(), unknown()) });
-function knownRoot(root, claudeJson) {
-  try {
-    const parsed = safeParse(ClaudeJson, JSON.parse(fs19.readFileSync(claudeJson, "utf-8")));
-    return parsed.success && Object.hasOwn(parsed.output.projects, root);
-  } catch {
-    return false;
-  }
-}
-function legacyPreferred(legacy, current) {
-  try {
-    const stat = fs19.statSync(legacy);
-    if (!stat.isFile())
-      return false;
-    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs19.existsSync(current);
-  } catch {
-    return false;
-  }
-}
-function claudeJsonPath(env, home) {
-  const current = path24.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
-  const legacy = path24.join(configDirOf(env, home), ".config.json");
-  return legacyPreferred(legacy, current) ? legacy : current;
-}
-
-// bin/helpers/memory-sessions.ts
-import * as fs20 from "node:fs";
-import * as path25 from "node:path";
-function realOrResolved(p) {
-  try {
-    return fs20.realpathSync(p);
-  } catch {
-    return path25.resolve(p);
-  }
-}
-var STOPPED_STATE = "stopped";
-function isInside2(dir, checkout) {
-  const rel = path25.relative(checkout, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path25.sep}`) || path25.isAbsolute(rel));
-}
-function sessionsInRepo(jobs, checkouts, selfId) {
-  const roots = checkouts.map(realOrResolved);
-  const inRepo = jobs.filter((j) => j.state !== STOPPED_STATE && j.cwd !== undefined && roots.some((root) => isInside2(realOrResolved(j.cwd ?? ""), root)));
-  const hasSelf = selfId !== undefined && selfId !== "";
-  const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
-  return { self, others: inRepo.filter((j) => j !== self) };
-}
-
-// bin/helpers/memory-link-facts.ts
-function gatherFacts(opts, deps) {
-  const store = path26.resolve(storeRoot(deps.env, deps.home));
-  const state = storeState(store, deps.runGit);
-  const found = mainCheckout(path26.resolve(opts.repo), deps.runGit, deps.home);
-  const name = opts.name ?? ("root" in found ? path26.basename(found.root) : undefined);
-  const nameIssues = [opts.family, name].flatMap((n) => {
-    const issue = n === undefined ? undefined : folderNameIssue(n);
-    return issue === undefined ? [] : [issue];
-  });
-  const repo = "issue" in found ? { kind: "refused", issue: found.issue } : repoFacts({
-    ...found,
-    store,
-    state,
-    family: opts.family,
-    name: name ?? path26.basename(found.root),
-    namesOk: nameIssues.length === 0,
-    deps
-  });
-  return {
-    store,
-    storeState: state,
-    storePending: state.kind === "store" ? uncommittedCreation(store, deps.runGit) : { paths: [] },
-    overrideIssue: overrideIssue(deps.env),
-    nameIssues,
-    repo,
-    userSettings: userSettingsFacts(deps.configDir, store, deps.home),
-    today: deps.today()
-  };
-}
-function repoFacts(input) {
-  const { root, deps } = input;
-  const settings = settingsState(root, deps.runGit);
-  const key = projectKey(root);
-  const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
-  const folder = path26.join(input.store, ...rel.split("/"));
-  const knowsFolder = input.namesOk && input.state.kind !== "foreign";
-  const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
-  const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
-  return {
-    kind: "found",
-    root,
-    settings,
-    home: deps.home,
-    projectKey: key,
-    keyMissed: keyMissed(root, key, deps),
-    defaultFolder,
-    sessions: sessionFacts(input),
-    target
-  };
-}
-function keyMissed(root, key, deps) {
-  const claudeJson = claudeJsonPath(deps.env, deps.home);
-  const projectFolder = path26.join(deps.configDir, "projects", key);
-  const missed = knownRoot(root, claudeJson) && !fs21.existsSync(projectFolder);
-  return missed ? { claudeJson, projectFolder } : undefined;
-}
-function sessionFacts(input) {
-  const listed = listJobs(input.deps.runClaude, input.root);
-  if ("issues" in listed)
-    return { kind: "failed", issues: listed.issues };
-  const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
-  return {
-    kind: "listed",
-    ...sessionsInRepo(listed.jobs, input.checkouts, selfId)
-  };
-}
-function targetFacts(input) {
-  const { store, folder, rel, key, defaultFolder } = input;
-  const owned = {
-    folderRel: rel,
-    projectKey: key,
-    defaultFolder: defaultFolder.folder
-  };
-  return {
-    folder,
-    rel,
-    state: targetState(folder),
-    family: input.family === undefined ? "none" : familyState(path26.join(store, input.family)),
-    elsewhere: findMarkers(store).filter((m) => m.root === input.root && m.folder !== folder).map((m) => ({ folder: m.folder, family: m.family })),
-    archives: archiveNames(store),
-    pending: input.state.kind === "store" ? ownedChanges(store, owned, input.deps.runGit) : { paths: [] }
-  };
-}
-function targetState(folder) {
-  const stat = fs21.statSync(folder, { throwIfNoEntry: false });
-  if (stat === undefined)
-    return { kind: "absent" };
-  if (!stat.isDirectory())
-    return { kind: "notFolder" };
-  const marker = readMarker(folder);
-  if (marker.kind === "marker")
-    return { kind: "marked", root: marker.root };
-  if (marker.kind === "invalid") {
-    return { kind: "invalidMarker", issue: marker.issue };
-  }
-  return fs21.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
-}
-function familyState(folder) {
-  const stat = fs21.statSync(folder, { throwIfNoEntry: false });
-  if (stat === undefined)
-    return "absent";
-  if (!stat.isDirectory())
-    return "notFolder";
-  return readMarker(folder).kind === "none" ? "folder" : "marked";
-}
-function archiveNames(store) {
-  const folder = path26.join(store, ...ARCHIVE_DIR.split("/"));
-  return fs21.existsSync(folder) ? fs21.readdirSync(folder) : [];
-}
-function isInside3(dir, parent) {
-  const rel = path26.relative(parent, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path26.sep}`) || path26.isAbsolute(rel));
-}
-function walkFolder(root) {
-  const entries = entriesOf2(fs21.realpathSync(root), root, "");
-  return {
-    files: entries.flatMap((e) => ("file" in e) ? [e.file] : []),
-    issues: entries.flatMap((e) => ("issue" in e) ? [e.issue] : [])
-  };
-}
-function entriesOf2(real, root, rel) {
-  return fs21.readdirSync(path26.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
-    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
-    if (entry.isDirectory())
-      return entriesOf2(real, root, child);
-    if (entry.isFile())
-      return [{ file: child }];
-    if (entry.isSymbolicLink())
-      return [linkEntry(real, root, child)];
-    return [
-      {
-        issue: `${path26.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
-      }
-    ];
-  });
-}
-function linkEntry(real, root, child) {
-  const full = path26.join(root, child);
-  const way = "Replace it with the file itself, or remove it, then run link again.";
-  try {
-    const named = fs21.realpathSync(full);
-    if (isInside3(named, real) && fs21.statSync(named).isFile()) {
-      return { file: child };
-    }
-    return {
-      issue: `${full} is a link to ${named}, which is not a file inside the default folder. ${way}`
-    };
-  } catch {
-    return { issue: `${full} is a broken link. ${way}` };
-  }
-}
-function readDefaultFolder(folder, target) {
-  const stat = fs21.lstatSync(folder, { throwIfNoEntry: false });
-  if (stat === undefined)
-    return { kind: "absent", folder };
-  if (!stat.isDirectory()) {
-    const issue = `${folder} is not a folder, so link cannot copy it. Move it aside by hand, then run link again.`;
-    return { kind: "present", folder, files: [], issues: [issue] };
-  }
-  const walked = walkFolder(folder);
-  const files = walked.files.map((rel) => ({
-    rel,
-    copy: target === undefined ? "absent" : copyState(path26.join(folder, rel), path26.join(target, rel))
-  }));
-  return { kind: "present", folder, files, issues: walked.issues };
-}
-function copyState(from, to) {
-  try {
-    if (!fs21.statSync(to).isFile())
-      return "notFile";
-  } catch (error) {
-    const absent = error instanceof Error && "code" in error && error.code === "ENOENT";
-    return absent ? "absent" : "notFile";
-  }
-  return fs21.readFileSync(from).equals(fs21.readFileSync(to)) ? "same" : "differs";
-}
-function ownedChanges(store, owned, runGit) {
-  const listed = statusIn(store, [owned.folderRel, ARCHIVE_DIR], runGit);
-  if ("issue" in listed)
-    return listed;
-  const sources = [
-    owned.defaultFolder,
-    ...ownArchives(store, owned.projectKey)
-  ];
-  const isOwned = (p) => fs21.existsSync(path26.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
-  return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
-}
-var UNTRACKED = "??";
-var ADDED = "A";
-function uncommittedCreation(store, runGit) {
-  const listed = statusIn(store, [...CREATION_PATHS], runGit);
-  if ("issue" in listed)
-    return listed;
-  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs21.existsSync(path26.join(store, e.path));
-  return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
-}
-function statusIn(store, pathspecs, runGit) {
-  const args = [
-    "--no-optional-locks",
-    "--literal-pathspecs",
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-    "--",
-    ...pathspecs
-  ];
-  const r = runGit("git", args, store);
-  if (r.code !== 0) {
-    return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
-  }
-  return { entries: porcelainEntries(r.stdout) };
-}
-function isOwnCopy(store, folderRel, sources, p) {
-  const prefix = `${folderRel}/`;
-  if (!p.startsWith(prefix))
-    return false;
-  const rel = p.slice(prefix.length);
-  if (rel === MARKER_FILE)
-    return true;
-  const file = path26.join(store, p);
-  return sources.some((source) => sameBytes(path26.join(source, rel), file));
-}
-function sameBytes(a, b) {
-  try {
-    const bothFiles = fs21.statSync(a).isFile() && fs21.statSync(b).isFile();
-    return bothFiles && fs21.readFileSync(a).equals(fs21.readFileSync(b));
-  } catch {
-    return false;
-  }
-}
-function ownArchives(store, key) {
-  const parent = path26.join(store, ...ARCHIVE_DIR.split("/"));
-  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path26.join(parent, name));
-}
-function porcelainEntries(output) {
-  const fields = output.split("\x00").filter((field) => field !== "");
-  const entries = [];
-  for (let i = 0;i < fields.length; i++) {
-    const status = fields[i].slice(0, 2);
-    entries.push({ status, path: fields[i].slice(3) });
-    if (status.includes("R") || status.includes("C"))
-      i++;
-  }
-  return entries;
-}
-var ARCHIVE_DATE = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
-var isOwnArchiveName = (entry, key) => entry.startsWith(`${key}-`) && ARCHIVE_DATE.test(entry.slice(key.length + 1));
-function isOwnArchivePath(p, key) {
-  const prefix = `${ARCHIVE_DIR}/`;
-  if (!p.startsWith(prefix))
-    return false;
-  const [entry] = p.slice(prefix.length).split("/");
-  return isOwnArchiveName(entry, key);
-}
-var UserSettingsSchema = object({
-  permissions: optional(object({
-    additionalDirectories: optional(array(string()), [])
-  }), { additionalDirectories: [] })
-});
-function additionalDirectories(file) {
-  try {
-    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs21.readFileSync(file, "utf-8")));
-    return parsed.success ? parsed.output.permissions.additionalDirectories : [];
-  } catch {
-    return [];
-  }
-}
-function userSettingsFacts(configDir, store, home) {
-  const file = path26.join(configDir, "settings.json");
-  const covered = additionalDirectories(file).some((entry) => {
-    const dir = path26.resolve(expandHome(entry, home));
-    return isInside3(store, dir) || isInside3(physical(store), physical(dir));
-  });
-  return { file, covered };
-}
-
-// bin/helpers/memory-link.ts
+import * as fs26 from "node:fs";
+import * as path32 from "node:path";
 var messageOf3 = (error) => error instanceof Error ? error.message : String(error);
 function runLink(opts, deps, out, err) {
   const gathered = gather2(opts, deps);
@@ -6531,14 +7359,14 @@ function runAction(action, runGit) {
       return finished.ok ? done : finished;
     }
     case "createFolder":
-      fs22.mkdirSync(action.folder, { recursive: true });
+      fs26.mkdirSync(action.folder, { recursive: true });
       return done;
     case "writeMarker":
       writeMarker(action.folder, action.root);
       return done;
     case "copyFile":
-      fs22.mkdirSync(path27.dirname(action.to), { recursive: true });
-      fs22.copyFileSync(action.from, action.to, fs22.constants.COPYFILE_EXCL);
+      fs26.mkdirSync(path32.dirname(action.to), { recursive: true });
+      fs26.copyFileSync(action.from, action.to, fs26.constants.COPYFILE_EXCL);
       return done;
     case "mergeKey": {
       const merged = mergeKey(action.file, action.value, action.expected);
@@ -6555,30 +7383,30 @@ function runAction(action, runGit) {
   }
 }
 function archive(action) {
-  const kept = walkFolder(action.from).files.filter((rel) => copyState(path27.join(action.from, rel), path27.join(action.copies, rel)) !== "same");
+  const kept = walkFolder(action.from).files.filter((rel) => copyState(path32.join(action.from, rel), path32.join(action.copies, rel)) !== "same");
   moveFolder(action.from, action.to);
-  const listed = kept.map((rel) => `  ${path27.join(action.to, rel)}`);
+  const listed = kept.map((rel) => `  ${path32.join(action.to, rel)}`);
   if (kept.length === 0)
     return { ok: true, lines: [phrase(action).done] };
   const why = action.reappeared ? `The default folder came back after the link. These files in it differ from ${action.copies} or are missing there, so merge what is new by hand:` : `These files changed after the copy, so their latest version is kept in the archive only:`;
   return { ok: true, lines: [phrase(action).done, why, ...listed] };
 }
-function moveFolder(from, to, rename = fs22.renameSync) {
-  fs22.mkdirSync(path27.dirname(to), { recursive: true });
+function moveFolder(from, to, rename = fs26.renameSync) {
+  fs26.mkdirSync(path32.dirname(to), { recursive: true });
   try {
     rename(from, to);
   } catch (error) {
     const crossDevice = error instanceof Error && "code" in error && error.code === "EXDEV";
     if (!crossDevice)
       throw error;
-    fs22.cpSync(from, to, {
+    fs26.cpSync(from, to, {
       recursive: true,
       errorOnExist: true,
       force: false,
       verbatimSymlinks: true,
       preserveTimestamps: true
     });
-    fs22.rmSync(from, { recursive: true });
+    fs26.rmSync(from, { recursive: true });
   }
 }
 function commit(action, runGit) {
@@ -6608,7 +7436,7 @@ function phrase(action) {
     case "createFolder":
       return forms("Created", "create", action.folder);
     case "writeMarker":
-      return forms("Wrote", "write", `${path27.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
+      return forms("Wrote", "write", `${path32.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
     case "copyFile":
       return forms("Copied", "copy", `${action.from} to ${action.to}`);
     case "mergeKey":
@@ -6622,760 +7450,6 @@ function phrase(action) {
       throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
     }
   }
-}
-
-// bin/helpers/memory-lint.ts
-import * as fs25 from "node:fs";
-import * as path31 from "node:path";
-
-// bin/helpers/memory-links.ts
-import * as path28 from "node:path";
-var INLINE_LINK = /\[[^\]\n]*\]\(([^)\n]*)\)/g;
-var CODE_SPAN = /`[^`\n]*`/g;
-var URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
-var FENCE3 = "```";
-function fileTarget(destination) {
-  const trimmed = destination.trim();
-  const close = trimmed.indexOf(">");
-  const bare = trimmed.startsWith("<") ? trimmed.slice(1, close === -1 ? undefined : close) : trimmed.split(/\s/)[0] ?? "";
-  if (URL_SCHEME.test(bare))
-    return;
-  const target = bare.split("#")[0] ?? "";
-  return target === "" ? undefined : target;
-}
-function linksIn(text) {
-  const fence = { open: false };
-  return text.split(`
-`).flatMap((raw, index) => {
-    if (raw.trimStart().startsWith(FENCE3)) {
-      fence.open = !fence.open;
-      return [];
-    }
-    if (fence.open)
-      return [];
-    const matches = raw.replace(CODE_SPAN, "").matchAll(INLINE_LINK);
-    return [...matches].flatMap((match) => {
-      const target = fileTarget(match[1] ?? "");
-      return target === undefined ? [] : [{ line: index + 1, target }];
-    });
-  });
-}
-function ownTargets(dir, text) {
-  return linksIn(text).map((link) => path28.resolve(dir, link.target)).filter((target) => path28.dirname(target) === dir).map((target) => path28.basename(target));
-}
-function reachFrom(dir, files, starts) {
-  const byName3 = new Map(files.map((own) => [own.name, own]));
-  const reached = new Set(starts);
-  const queue = [...reached];
-  for (let name = queue.shift();name !== undefined; name = queue.shift()) {
-    const text = byName3.get(name)?.text ?? "";
-    for (const target of ownTargets(dir, text)) {
-      if (reached.has(target))
-        continue;
-      reached.add(target);
-      queue.push(target);
-    }
-  }
-  return reached;
-}
-
-// bin/helpers/memory-lint-repos.ts
-import * as fs23 from "node:fs";
-import * as path29 from "node:path";
-function resolvedPath(target) {
-  const lexical = path29.resolve(target);
-  try {
-    return fs23.realpathSync(lexical);
-  } catch {
-    return lexical;
-  }
-}
-function isInside4(folder, parent) {
-  const relative7 = path29.relative(parent, folder);
-  return relative7 !== "" && !relative7.startsWith("..") && !path29.isAbsolute(relative7);
-}
-function rootFact(root, runGit) {
-  if (!fs23.existsSync(root))
-    return { kind: "missing" };
-  const found = findRepo(runGit, root);
-  if (found.repo === undefined) {
-    return found.warnings.length > 0 ? { kind: "undecided" } : { kind: "outside-git" };
-  }
-  const top = resolvedPath(found.repo.top);
-  if (top !== resolvedPath(root))
-    return { kind: "not-main", top };
-  return { kind: "checkout", key: readKeyAt(found.repo.top) };
-}
-function keyInStore(rawKey, store, home) {
-  if (rawKey === undefined)
-    return false;
-  const key = expandHome(rawKey, home);
-  return path29.isAbsolute(key) && isInside4(resolvedPath(key), store);
-}
-function candidates(dir) {
-  try {
-    return fs23.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name).sort();
-  } catch {
-    return [];
-  }
-}
-function invalidAt(dir, folder) {
-  const read = readMarker(dir);
-  if (read.kind !== "invalid")
-    return [];
-  return [{ folder, file: path29.join(dir, MARKER_FILE), issue: read.issue }];
-}
-function invalidMarkers(store) {
-  return candidates(store).flatMap((first) => {
-    const dir = path29.join(store, first);
-    if (readMarker(dir).kind === "marker")
-      return [];
-    const nested = candidates(dir).flatMap((second) => invalidAt(path29.join(dir, second), `${first}/${second}`));
-    return [...invalidAt(dir, first), ...nested];
-  });
-}
-var FENCE4 = "---";
-var STAMP_LINE = /^\s*modified:/;
-function withoutStamp(text) {
-  const lines = text.split(`
-`);
-  if (lines[0]?.trimEnd() !== FENCE4)
-    return text;
-  const end = lines.findIndex((line, i) => i > 0 && line.trimEnd() === FENCE4);
-  if (end === -1)
-    return text;
-  return lines.filter((line, i) => i === 0 || i >= end || !STAMP_LINE.test(line)).join(`
-`);
-}
-function compareCopy(from, to) {
-  if (!fs23.existsSync(to))
-    return "absent";
-  try {
-    const [a, b] = [fs23.readFileSync(from), fs23.readFileSync(to)];
-    const same = a.equals(b) || withoutStamp(a.toString("utf8")) === withoutStamp(b.toString("utf8"));
-    return same ? "same" : "differs";
-  } catch {
-    return "differs";
-  }
-}
-function errorCode(error) {
-  if (error instanceof Error && "code" in error)
-    return String(error.code);
-  return error instanceof Error ? error.message : String(error);
-}
-function filesUnder(dir) {
-  try {
-    return { files: walkFolder(dir).files };
-  } catch (error) {
-    return { why: errorCode(error) };
-  }
-}
-function compareDefaultFolder(defaultDir, storeDir, storeNames) {
-  if (!fs23.existsSync(defaultDir))
-    return { kind: "absent" };
-  const listed = filesUnder(defaultDir);
-  if ("why" in listed)
-    return { kind: "unlisted", why: listed.why };
-  const compared = listed.files.map((rel) => ({
-    rel,
-    state: compareCopy(path29.join(defaultDir, rel), path29.join(storeDir, rel))
-  }));
-  const named = (state) => compared.filter((entry) => entry.state === state).map((entry) => entry.rel);
-  return {
-    kind: "present",
-    differs: named("differs"),
-    onlyThere: named("absent"),
-    onlyInStore: storeNames.filter((name) => !listed.files.includes(name))
-  };
-}
-
-// bin/helpers/memory-store-settings.ts
-import * as fs24 from "node:fs";
-import * as path30 from "node:path";
-var STORE_SETTINGS_FILE = "settings.json";
-var POSITIVE_INTEGER2 = "must be a positive integer";
-var NOT_AN_OBJECT = "the file must hold a JSON object";
-var positiveInteger2 = pipe(number(POSITIVE_INTEGER2), integer(POSITIVE_INTEGER2), minValue(1, POSITIVE_INTEGER2));
-var StoreSettingsSchema = object({
-  indexLineCap: optional(positiveInteger2),
-  indexLineLength: optional(positiveInteger2, 300)
-}, NOT_AN_OBJECT);
-function defaults() {
-  return parse(StoreSettingsSchema, {});
-}
-function readRaw(file) {
-  const read = (() => {
-    try {
-      return { text: fs24.readFileSync(file, "utf8") };
-    } catch (error) {
-      return { error };
-    }
-  })();
-  if ("error" in read) {
-    const code = errorCode2(read.error);
-    if (code === "ENOENT")
-      return { kind: "missing" };
-    return { kind: "failed", issue: `cannot be read (${code})` };
-  }
-  try {
-    return { kind: "raw", value: JSON.parse(read.text) };
-  } catch (error) {
-    const why = error instanceof Error ? error.message : String(error);
-    return { kind: "failed", issue: `not valid JSON: ${why}` };
-  }
-}
-function errorCode2(error) {
-  if (error instanceof Error && "code" in error)
-    return String(error.code);
-  return error instanceof Error ? error.message : String(error);
-}
-function readStoreSettings(store) {
-  const raw = readRaw(path30.join(store, STORE_SETTINGS_FILE));
-  if (raw.kind === "missing")
-    return { settings: defaults() };
-  if (raw.kind === "failed")
-    return { settings: defaults(), issue: raw.issue };
-  if (Array.isArray(raw.value)) {
-    return { settings: defaults(), issue: NOT_AN_OBJECT };
-  }
-  const parsed = safeParse(StoreSettingsSchema, raw.value, {
-    abortPipeEarly: true
-  });
-  if (parsed.success)
-    return { settings: parsed.output };
-  const issue = parsed.issues.map((i) => {
-    const key = getDotPath(i);
-    return key === null ? i.message : `${key} ${i.message}`;
-  }).join("; ");
-  return { settings: defaults(), issue };
-}
-
-// bin/helpers/memory-lint.ts
-var MEMORY_LINT_IDS = [
-  "dead-link",
-  "unindexed",
-  "index-over-cap",
-  "index-line-long",
-  "workstream-cut",
-  "workstream-dropped",
-  "key-shaped",
-  "injection-shaped",
-  "settings-invalid",
-  "unreadable",
-  "dangling-marker",
-  "default-folder-left",
-  "stale-lock",
-  "setting-missing"
-];
-var STORE_WIDE_IDS = [
-  "settings-invalid",
-  "dangling-marker",
-  "stale-lock"
-];
-
-class GitDeadlineError extends Error {
-  args;
-  cwd;
-  constructor(args, cwd) {
-    super(`git ${args.join(" ")} in ${cwd} passed its deadline`);
-    this.name = "GitDeadlineError";
-    this.args = args;
-    this.cwd = cwd;
-  }
-}
-
-class LintTimeLimitError extends Error {
-  constructor() {
-    super("the lint passed its time limit");
-    this.name = "LintTimeLimitError";
-  }
-}
-var INDEX_FILE3 = "MEMORY.md";
-var SESSIONS_DIR2 = "sessions";
-var LOAD_LIMIT_LINES = 200;
-var LOAD_LIMIT_BYTES = 25 * 1024;
-var STALE_LOCK_MS2 = 10 * 60 * 1000;
-var MINUTE_MS = 60 * 1000;
-function lintFolders(store) {
-  const markers = findMarkers(store);
-  const repos = markers.map((found) => ({
-    kind: "repo",
-    folder: storeFolder(store, found.folder),
-    dir: found.folder,
-    root: found.root,
-    family: found.family
-  }));
-  const familyNames = new Set(markers.flatMap((found) => found.family === undefined ? [] : [found.family]));
-  const families = [...familyNames].map((name) => ({
-    kind: "family",
-    folder: name,
-    dir: path31.join(store, name)
-  }));
-  return [...repos, ...families].sort((a, b) => a.folder.localeCompare(b.folder));
-}
-function ownNames(dir) {
-  try {
-    const names = fs25.readdirSync(dir, { withFileTypes: true }).filter((entry) => !entry.isDirectory() && entry.name.endsWith(".md")).map((entry) => entry.name).sort();
-    return { names };
-  } catch (error) {
-    return { why: errorCode(error) };
-  }
-}
-function readOwn(dir, name) {
-  const file = path31.join(dir, name);
-  try {
-    return {
-      kind: "read",
-      own: { name, file, text: fs25.readFileSync(file, "utf8") }
-    };
-  } catch (error) {
-    return { kind: "unreadable", file, why: errorCode(error) };
-  }
-}
-function readFolder2(dir) {
-  const listing = ownNames(dir);
-  const names = "names" in listing ? listing.names : [];
-  const reads = names.map((name) => readOwn(dir, name));
-  return {
-    names,
-    files: reads.flatMap((read) => read.kind === "read" ? [read.own] : []),
-    failed: reads.flatMap((read) => read.kind === "unreadable" ? [{ file: read.file, why: read.why }] : []),
-    unlisted: "why" in listing ? [{ file: dir, why: listing.why }] : []
-  };
-}
-var NO_FILES = { names: [], files: [], failed: [], unlisted: [] };
-function readSessions(place) {
-  const dir = path31.join(place.dir, SESSIONS_DIR2);
-  if (place.kind !== "repo" || !fs25.existsSync(dir))
-    return NO_FILES;
-  return readFolder2(dir);
-}
-function scanFolder(place) {
-  const own = readFolder2(place.dir);
-  const sessions = readSessions(place);
-  const blocked = new Set(own.failed.map((read) => path31.basename(read.file)));
-  const starts = own.names.includes(INDEX_FILE3) ? [INDEX_FILE3] : [];
-  const reached = reachFrom(place.dir, own.files, starts);
-  return {
-    ...place,
-    names: own.names,
-    files: own.files,
-    sessions: sessions.files,
-    unreadable: [
-      ...own.unlisted,
-      ...own.failed,
-      ...sessions.unlisted,
-      ...sessions.failed
-    ],
-    reached,
-    reachComplete: [...reached].every((name) => !blocked.has(name))
-  };
-}
-function stopAtDeadline(runGit) {
-  return (cmd, args, cwd) => {
-    const result = runGit(cmd, args, cwd);
-    if (result.code === DEADLINE_EXIT)
-      throw new GitDeadlineError(args, cwd);
-    return result;
-  };
-}
-function linkedRepos(folders, runGit) {
-  return folders.flatMap((scan) => scan.kind === "repo" ? [{ scan, fact: rootFact(scan.root, runGit) }] : []);
-}
-function perFolder(check2) {
-  return (input, id) => input.folders.flatMap((scan) => {
-    input.inTime();
-    return check2(scan, input).map((hit) => ({
-      id,
-      folder: scan.folder,
-      ...hit
-    }));
-  });
-}
-var count = (n) => n.toLocaleString("en-US");
-function indexOf(scan) {
-  return scan.files.find((own) => own.name === INDEX_FILE3);
-}
-function deadLinks(scan) {
-  return scan.files.filter((own) => scan.reached.has(own.name)).flatMap((own) => linksIn(own.text).filter((link) => !fs25.existsSync(path31.resolve(scan.dir, link.target))).map((link) => ({
-    file: own.file,
-    line: link.line,
-    message: `links to ${link.target}, which does not exist`
-  })));
-}
-function unindexedFiles(scan) {
-  if (!scan.reachComplete)
-    return [];
-  const message = scan.names.includes(INDEX_FILE3) ? "no link from MEMORY.md reaches it, directly or through other files" : "the folder has no MEMORY.md to link it";
-  return scan.names.filter((name) => name !== INDEX_FILE3 && !scan.reached.has(name)).map((name) => ({ file: path31.join(scan.dir, name), message }));
-}
-function lineCount(text) {
-  return text === "" ? 0 : text.replace(/\n$/, "").split(`
-`).length;
-}
-function indexOverCap(scan, input) {
-  const index = indexOf(scan);
-  if (index === undefined)
-    return [];
-  const lines = lineCount(index.text);
-  const bytes = Buffer.byteLength(index.text, "utf8");
-  const cap = input.settings.indexLineCap;
-  const loadLimit = "(Claude Code's load limit)";
-  const clauses = [
-    ...cap !== undefined && lines > cap ? [`${count(lines)} of ${count(cap)} lines (indexLineCap)`] : [],
-    ...lines > LOAD_LIMIT_LINES ? [`${count(lines)} of ${count(LOAD_LIMIT_LINES)} lines ${loadLimit}`] : [],
-    ...bytes > LOAD_LIMIT_BYTES ? [`${count(bytes)} of ${count(LOAD_LIMIT_BYTES)} bytes ${loadLimit}`] : []
-  ];
-  if (clauses.length === 0)
-    return [];
-  return [{ file: index.file, message: clauses.join("; ") }];
-}
-function longIndexLines(scan, input) {
-  const index = indexOf(scan);
-  if (index === undefined)
-    return [];
-  const limit = input.settings.indexLineLength;
-  return index.text.split(`
-`).flatMap((raw, i) => {
-    const length = raw.replace(/\r$/, "").length;
-    if (length <= limit)
-      return [];
-    const message = `${count(length)} of ${count(limit)} characters`;
-    return [{ file: index.file, line: i + 1, message }];
-  });
-}
-function cutClauses(fit) {
-  const { cut: cut2, sizes } = fit;
-  const shownNext = fit.nextSteps?.length ?? 0;
-  const together = `${count(sizes.state + shownNext)} of ${count(sizes.stateBudget + shownNext)}`;
-  const next = `${count(sizes.nextSteps)} of ${count(sizes.nextBudget)}`;
-  return [
-    ...cut2.state ? [`State and Next steps: ${together}`] : [],
-    ...cut2.nextSteps ? [`Next steps: ${next}`] : []
-  ];
-}
-function hookSections(file, readSection2) {
-  return {
-    state: readSection2(file, headingAs(file, STATE_HEADING).trimEnd()),
-    next: readSection2(file, headingAs(file, NEXT_HEADING).trimEnd())
-  };
-}
-function cutWorkstreams(scan, input) {
-  return listWorkstreams(scan.dir, undefined).flatMap((stream) => {
-    const file = stream.path;
-    const { state, next } = hookSections(file, input.deps.readSection);
-    const clauses = cutClauses(fitWorkstream(state, next, file));
-    return clauses.length === 0 ? [] : [{ file, message: clauses.join("; ") }];
-  });
-}
-function workstreamFaults(memory) {
-  const { status } = memory.metadata;
-  const nameless = memory.name === undefined || memory.name === "";
-  const statusFault = status === undefined ? "it has no status" : `its status is "${status}", not open or closed`;
-  const faults = [
-    ...nameless ? ["it has no name"] : [],
-    ...status !== "open" && status !== "closed" ? [statusFault] : []
-  ];
-  const why = faults.length > 0 ? faults.join(", and ") : "its reader refuses it";
-  return `the hook drops this workstream: ${why}`;
-}
-function dropReason(own, kept) {
-  const memory = parseMemoryText(own.text);
-  if (memory === undefined) {
-    return "its front matter does not parse: it needs a --- line at the top and another closing it";
-  }
-  const isDropped = memory.metadata.kind === "workstream" && !kept.has(own.file);
-  return isDropped ? workstreamFaults(memory) : undefined;
-}
-function droppedWorkstreams(scan) {
-  const listed = listWorkstreams(scan.dir, undefined);
-  const kept = new Set(listed.map((stream) => stream.path));
-  return scan.files.filter((own) => own.name !== INDEX_FILE3).flatMap((own) => {
-    const message = dropReason(own, kept);
-    return message === undefined ? [] : [{ file: own.file, message }];
-  });
-}
-var SHAPES = {
-  key: { hits: keyHits, patterns: KEYS },
-  injection: { hits: injectionHits, patterns: INJECTION }
-};
-var shapedText = (shape, ids) => `holds ${shape}-shaped text (${ids.join(", ")})`;
-function lineOf(text, index) {
-  return text.slice(0, index).split(`
-`).length;
-}
-function matchLines2(patterns, text) {
-  const hits2 = patterns.flatMap(({ id, re }) => {
-    const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
-    const every = new RegExp(re.source, flags);
-    return [...text.matchAll(every)].map((match) => ({
-      line: lineOf(text, match.index ?? 0),
-      id
-    }));
-  });
-  const lines = [...new Set(hits2.map((hit) => hit.line))].sort((a, b) => a - b);
-  return lines.map((line) => ({
-    line,
-    ids: [
-      ...new Set(hits2.filter((hit) => hit.line === line).map((hit) => hit.id))
-    ]
-  }));
-}
-function shapedLines(own, shape) {
-  const { hits: hits2, patterns } = SHAPES[shape];
-  if (hits2(own.text).length === 0)
-    return [];
-  return matchLines2(patterns, own.text).map(({ line, ids }) => ({
-    file: own.file,
-    line,
-    message: shapedText(shape, ids)
-  }));
-}
-function keyShaped(scan) {
-  return [...scan.files, ...scan.sessions].flatMap((own) => shapedLines(own, "key"));
-}
-function injectionAt(file, place, text) {
-  const ids = injectionHits(text);
-  if (ids.length === 0)
-    return [];
-  return [{ file, message: `${place} ${shapedText("injection", ids)}` }];
-}
-function workstreamInjection(stream, readSection2) {
-  const { state, next } = hookSections(stream.path, readSection2);
-  const places = [
-    ["its name", stream.name],
-    ["its description", stream.description],
-    ["its State section", state ?? ""],
-    ["its Next steps section", next ?? ""],
-    ["its heading list", otherHeadings(stream.path).join(", ")]
-  ];
-  return places.flatMap(([place, text]) => injectionAt(stream.path, place, text));
-}
-function recordInjection(record2) {
-  return injectionAt(record2.path, "its title", record2.title);
-}
-function injectionShaped(scan, input) {
-  const index = indexOf(scan);
-  const streams = listWorkstreams(scan.dir, undefined);
-  const records = scan.kind === "repo" ? listRecords(scan.dir) : [];
-  return [
-    ...index === undefined ? [] : shapedLines(index, "injection"),
-    ...streams.flatMap((stream) => workstreamInjection(stream, input.deps.readSection)),
-    ...records.flatMap(recordInjection)
-  ];
-}
-function settingsInvalid(input, id) {
-  if (input.settingsIssue === undefined)
-    return [];
-  return [
-    {
-      id,
-      folder: "",
-      file: path31.join(input.store, STORE_SETTINGS_FILE),
-      message: `${input.settingsIssue}; defaults apply`
-    }
-  ];
-}
-function unreadableFiles(scan) {
-  return scan.unreadable.map((entry) => ({
-    file: entry.file,
-    message: `cannot be read (${entry.why}), so the lint skipped it`
-  }));
-}
-var markerOf = (scan) => path31.join(scan.dir, MARKER_FILE);
-function rootFault(fact) {
-  switch (fact.kind) {
-    case "missing":
-      return "which does not exist";
-    case "outside-git":
-      return "which is not inside a git repository";
-    case "not-main":
-      return `but the repository there has its main checkout at ${fact.top}`;
-    case "undecided":
-    case "checkout":
-      return;
-    default: {
-      const unhandled = fact;
-      throw new Error(`Unhandled root fact: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function danglingMarkers(input, id) {
-  const roots = input.repos.flatMap(({ scan, fact }) => {
-    const fault = rootFault(fact);
-    if (fault === undefined)
-      return [];
-    const message = `${scan.folder}'s marker names ${scan.root}, ${fault}`;
-    return [{ folder: scan.folder, file: markerOf(scan), message }];
-  });
-  const invalid = invalidMarkers(input.store).map((marker) => ({
-    folder: marker.folder,
-    file: marker.file,
-    message: `${marker.issue}, so the store does not count ${marker.folder} as a repo folder`
-  }));
-  return [...roots, ...invalid].sort((a, b) => a.folder.localeCompare(b.folder)).map(({ file, message }) => ({ id, folder: "", file, message }));
-}
-var STILL_EXISTS = "Claude Code's default memory folder still exists";
-function leftMessage(diff) {
-  if (diff.kind === "unlisted") {
-    return `${STILL_EXISTS}, but cannot be listed (${diff.why})`;
-  }
-  const clauses = [
-    ["differs from the store copy", diff.differs],
-    ["only there", diff.onlyThere],
-    ["only in the store", diff.onlyInStore]
-  ];
-  const named = clauses.filter(([, names]) => names.length > 0).map(([label, names]) => `${label}: ${names.join(", ")}`);
-  return named.length === 0 ? `${STILL_EXISTS}, and its files match the store copies` : `${STILL_EXISTS}; ${named.join("; ")}`;
-}
-function defaultFolderLeft(scan, input) {
-  if (scan.kind !== "repo")
-    return [];
-  const configDir = configDirOf(input.deps.env, input.deps.home);
-  const dir = defaultMemoryFolder(scan.root, configDir);
-  const diff = compareDefaultFolder(dir, scan.dir, scan.names);
-  return diff.kind === "absent" ? [] : [{ file: dir, message: leftMessage(diff) }];
-}
-function lockAge(lock, now) {
-  try {
-    return now - fs25.statSync(lock).mtimeMs;
-  } catch {
-    return;
-  }
-}
-function staleLock(input, id) {
-  const lock = path31.join(input.store, ".git", "index.lock");
-  const age = lockAge(lock, input.deps.now());
-  if (age === undefined || age <= STALE_LOCK_MS2)
-    return [];
-  const minutes = count(Math.floor(age / MINUTE_MS));
-  const limit = count(STALE_LOCK_MS2 / MINUTE_MS);
-  const message = `${minutes} minutes old (stale past ${limit}); snapshots stop until it is removed`;
-  return [{ id, folder: "", file: lock, message }];
-}
-function relinkCommand(scan) {
-  const folderName = path31.basename(scan.dir);
-  const name = folderName === path31.basename(scan.root) ? undefined : folderName;
-  return linkCommand(scan.root, { family: scan.family, name });
-}
-function settingMissing(input, id) {
-  const { store, deps } = input;
-  return input.repos.flatMap(({ scan, fact }) => {
-    if (fact.kind !== "checkout")
-      return [];
-    if (keyInStore(fact.key, store, deps.home))
-      return [];
-    const where = fact.key === undefined ? `${scan.root} has no ${SETTINGS_KEY} setting` : `${scan.root}'s ${SETTINGS_KEY} setting names ${fact.key}, outside the store`;
-    const message = `${where}, so Claude Code keeps its memory elsewhere. Run: ${relinkCommand(scan)}`;
-    return [{ id, folder: scan.folder, file: markerOf(scan), message }];
-  });
-}
-var PREDICATES = {
-  "dead-link": perFolder(deadLinks),
-  unindexed: perFolder(unindexedFiles),
-  "index-over-cap": perFolder(indexOverCap),
-  "index-line-long": perFolder(longIndexLines),
-  "workstream-cut": perFolder(cutWorkstreams),
-  "workstream-dropped": perFolder(droppedWorkstreams),
-  "key-shaped": perFolder(keyShaped),
-  "injection-shaped": perFolder(injectionShaped),
-  "settings-invalid": settingsInvalid,
-  unreadable: perFolder(unreadableFiles),
-  "dangling-marker": danglingMarkers,
-  "default-folder-left": perFolder(defaultFolderLeft),
-  "stale-lock": staleLock,
-  "setting-missing": settingMissing
-};
-function countById(findings) {
-  return Object.fromEntries(MEMORY_LINT_IDS.flatMap((id) => {
-    const found = findings.filter((finding) => finding.id === id).length;
-    return found === 0 ? [] : [[id, found]];
-  }));
-}
-function timeCheck(now, endsAt) {
-  return () => {
-    if (endsAt !== undefined && now() >= endsAt) {
-      throw new LintTimeLimitError;
-    }
-  };
-}
-function lintStore(store, deps, opts = {}) {
-  const inTime = timeCheck(deps.now, opts.endsAt);
-  const root = resolvedPath(store);
-  const runGit = stopAtDeadline(deps.runGit);
-  const { settings, issue } = readStoreSettings(root);
-  const scans = lintFolders(root).map((place) => {
-    inTime();
-    return scanFolder(place);
-  });
-  const input = {
-    store: root,
-    folders: scans,
-    repos: linkedRepos(scans, runGit),
-    settings,
-    settingsIssue: issue,
-    deps: { ...deps, runGit },
-    inTime
-  };
-  const all = MEMORY_LINT_IDS.flatMap((id) => {
-    inTime();
-    return PREDICATES[id](input, id);
-  });
-  const { folders } = opts;
-  const findings = folders === undefined ? all : all.filter((finding) => STORE_WIDE_IDS.includes(finding.id) || folders.includes(finding.folder));
-  return { findings, counts: countById(findings) };
-}
-
-// bin/helpers/memory-lint-cache.ts
-import { randomBytes } from "node:crypto";
-import * as fs26 from "node:fs";
-import * as path32 from "node:path";
-var CACHE_FILE = "sidekick-lint.json";
-var CACHE_VERSION = 1;
-var lintId = picklist(MEMORY_LINT_IDS);
-var FindingSchema = object({
-  id: lintId,
-  folder: string(),
-  file: string(),
-  line: optional(number()),
-  message: string()
-});
-var LintCacheSchema = object({
-  version: literal(CACHE_VERSION),
-  ranAt: pipe(string(), isoTimestamp()),
-  findings: array(FindingSchema),
-  counts: record(lintId, pipe(number(), integer(), minValue(0)))
-});
-function cachePath(store, runGit) {
-  if (!isWorkTreeTop(store, runGit))
-    return;
-  const r = runGit("git", ["rev-parse", "--git-path", CACHE_FILE], store);
-  const found = r.stdout.trim();
-  if (r.code !== 0 || found === "")
-    return;
-  return path32.resolve(store, found);
-}
-function writeCache(file, result, ranAt) {
-  const cache = {
-    version: CACHE_VERSION,
-    ranAt: ranAt.toISOString(),
-    findings: result.findings,
-    counts: result.counts
-  };
-  const temp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
-  try {
-    fs26.writeFileSync(temp, `${JSON.stringify(cache)}
-`);
-    fs26.renameSync(temp, file);
-  } catch (error) {
-    removeQuietly(temp);
-    throw error;
-  }
-}
-function removeQuietly(file) {
-  try {
-    fs26.rmSync(file, { force: true });
-  } catch {}
 }
 
 // bin/helpers/memory.ts

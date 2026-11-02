@@ -1,12 +1,20 @@
 /**
  * `sidekick hook memory-start`: gathers what the memory store knows about the
- * session's repo, matches a workstream, and renders the start-of-session text.
+ * session's repo, matches a workstream, reads the lint's cached count, and
+ * renders the start-of-session text.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
+import { localMinute } from './local-date.js';
 import { linkCommand } from './memory-link-plan.js';
+import {
+  type MemoryFinding,
+  type MemoryLintId,
+  STORE_WIDE_IDS,
+} from './memory-lint.js';
+import { cachePath, readCache } from './memory-lint-cache.js';
 import { type Match, matchWorkstream } from './memory-match.js';
 import {
   headingAs,
@@ -15,9 +23,11 @@ import {
   STATE_HEADING,
 } from './memory-sections.js';
 import {
+  type LintCount,
   renderStart,
   type StartParts,
   type StartSource,
+  storeFolder,
 } from './memory-start-render.js';
 import {
   listRecords,
@@ -39,6 +49,10 @@ const RECENT_RECORDS = 3;
 const INDEX_FILE = 'MEMORY.md';
 // The session id becomes part of a file name in the store.
 const SESSION_ID = /^[A-Za-z0-9-]{1,128}$/;
+// The hook warns on these live, so the lint's count leaves them out.
+const LIVE_WARNED: readonly MemoryLintId[] = ['stale-lock', 'setting-missing'];
+
+type LinkedView = Extract<RepoView, { kind: 'linked' }>;
 
 const EventSchema = v.object({
   session_id: v.pipe(v.string(), v.regex(SESSION_ID)),
@@ -91,9 +105,14 @@ function defaultBranchOf(runGit: Runner, cwd: string): string | undefined {
   return ref?.replace(/^origin\//, '');
 }
 
-function briefWorkstream(env: NodeJS.ProcessEnv): string | undefined {
+function workerBrief(env: NodeJS.ProcessEnv): string | undefined {
   const file = env.SIDEKICK_WORKER;
-  if (file === undefined || file === '') return undefined;
+  return file === undefined || file === '' ? undefined : file;
+}
+
+function briefWorkstream(env: NodeJS.ProcessEnv): string | undefined {
+  const file = workerBrief(env);
+  if (file === undefined) return undefined;
   const read = readBrief(file);
   return 'brief' in read ? read.brief.workstream : undefined;
 }
@@ -157,6 +176,40 @@ function recentRecords(
     .slice(0, RECENT_RECORDS);
 }
 
+// The session's folders as the lint keys its findings: store-relative, the repo's first.
+function sessionFolders(view: LinkedView): string[] {
+  const dirs =
+    view.familyFolder === undefined
+      ? [view.repoFolder]
+      : [view.repoFolder, view.familyFolder];
+  return dirs.map((dir) => storeFolder(view.store, dir));
+}
+
+const countsHere = (finding: MemoryFinding, folders: string[]): boolean =>
+  !LIVE_WARNED.includes(finding.id) &&
+  (STORE_WIDE_IDS.includes(finding.id) || folders.includes(finding.folder));
+
+// Resume prints two lines and a worker gets no count, so neither reads the cache; any failure gives no count.
+function lintCountOf(
+  view: LinkedView,
+  source: StartSource,
+  deps: StartDeps,
+): LintCount | undefined {
+  if (source === 'resume' || workerBrief(deps.env) !== undefined) {
+    return undefined;
+  }
+  try {
+    const file = cachePath(view.store, deps.runGit);
+    const cache = file === undefined ? undefined : readCache(file);
+    if (cache === undefined) return undefined;
+    const folders = sessionFolders(view);
+    const count = cache.findings.filter((f) => countsHere(f, folders)).length;
+    return { count, folders, ranAt: localMinute(new Date(cache.ranAt)) };
+  } catch {
+    return undefined;
+  }
+}
+
 function missingSettingText(
   view: Extract<RepoView, { kind: 'setting-missing' }>,
 ): string {
@@ -214,6 +267,7 @@ function gather(stdin: string, deps: StartDeps): StartResult {
     records: recentRecords(match, records, own.path),
     family: familyOf(view.familyFolder),
     warnings: staleLockWarning(view.store, deps.now()),
+    lintCount: lintCountOf(view, event.source, deps),
   });
   return {
     context,

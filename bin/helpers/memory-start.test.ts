@@ -4,6 +4,14 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { readSection } from './hook.js';
 import {
+  lintStore,
+  MEMORY_LINT_IDS,
+  type MemoryFinding,
+  type MemoryLintId,
+  type MemoryLintResult,
+} from './memory-lint.js';
+import { cachePath, writeCache } from './memory-lint-cache.js';
+import {
   memoryStartContext,
   renderStart,
   type StartDeps,
@@ -11,7 +19,7 @@ import {
 } from './memory-start.js';
 import { writeMarker } from './memory-store.js';
 import type { Workstream } from './memory-view.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 import { shellArg } from './shell.js';
 
 const REPO = '/store/proj';
@@ -536,6 +544,127 @@ describe('the memory gate', () => {
   });
 });
 
+const SPEC_COUNT_LINE =
+  'Memory lint: 3 findings in sidekick/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder sidekick';
+const lintCount = (count: number, folders = ['sidekick']) => ({
+  count,
+  folders,
+  ranAt: '2026-11-02 14:10',
+});
+const headingsOf = (n: number) =>
+  Array.from(
+    { length: n },
+    (_, i) => `## heading-${String(i).padStart(3, '0')}`,
+  );
+const ALSO_FOLDED =
+  /^Also in the file: ((?:## heading-\d{3}, )+)and (\d+) more\. Read the file for them\.$/;
+
+describe('the lint count line', () => {
+  test('prints after the warnings, as the spec gives it', () => {
+    const out = renderStart(
+      parts({ warnings: ['w1'], lintCount: lintCount(3) }),
+    );
+    expect(out.split('\n\n').at(-1)).toBe(`Warning: w1\n${SPEC_COUNT_LINE}`);
+  });
+
+  test('prints as its own block when there are no warnings', () => {
+    const out = renderStart(parts({ lintCount: lintCount(3) }));
+    expect(out.split('\n\n')).toEqual([
+      `${FIRST}\n${WORKSTREAM_LINE}`,
+      '## State\nIn flight.',
+      NEXT,
+      SPEC_COUNT_LINE,
+    ]);
+  });
+
+  test('one finding is singular, and a family names both folders and both --folder arguments', () => {
+    const out = renderStart(
+      parts({ lintCount: lintCount(1, ['fam/proj', 'fam']) }),
+    );
+    expect(out.split('\n\n').at(-1)).toBe(
+      'Memory lint: 1 finding in fam/proj/ and fam/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder fam/proj --folder fam',
+    );
+  });
+
+  test('a folder name holding a space is quoted in the command', () => {
+    const out = renderStart(parts({ lintCount: lintCount(2, ['my proj']) }));
+    expect(out.split('\n\n').at(-1)).toBe(
+      "Memory lint: 2 findings in my proj/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder 'my proj'",
+    );
+  });
+
+  test('a count of zero prints no line', () => {
+    const out = renderStart(parts({ lintCount: lintCount(0) }));
+    expect(out).toBe(renderStart(parts()));
+  });
+
+  test('with many headings and every section full, the count line survives the 9,000 total', () => {
+    const out = renderStart(
+      parts({
+        state: `## State\n${longText(300, 60)}`,
+        nextSteps: `## Next steps\n${longText(300, 60)}`,
+        otherHeadings: headingsOf(300),
+        records: [
+          record('2026-10-01'),
+          record('2026-10-02'),
+          record('2026-10-03'),
+        ],
+        family: {
+          name: 'fam',
+          path: FAMILY_INDEX,
+          lines: longText(200, 50).split('\n'),
+        },
+        warnings: ['w'],
+        lintCount: lintCount(3),
+      }),
+    );
+    expect(out.length).toBeLessThanOrEqual(9000);
+    expect(out.endsWith(`\n\nWarning: w\n${SPEC_COUNT_LINE}`)).toBe(true);
+    for (const kept of [
+      '## State',
+      '## Next steps',
+      'Also in the file',
+      'Recent records',
+      'Family index',
+    ]) {
+      expect(out).toContain(kept);
+    }
+  });
+});
+
+describe('the Also in the file line', () => {
+  test('headings past its budget fold into a count, in order', () => {
+    const headings = headingsOf(100);
+    const out = renderStart(parts({ otherHeadings: headings }));
+    const line = blockStarting(out, 'Also in the file');
+    expect(line.length).toBeLessThanOrEqual(500);
+    const folded = ALSO_FOLDED.exec(line);
+    const kept = (folded?.[1] ?? '').split(', ').filter((h) => h !== '');
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept).toEqual(headings.slice(0, kept.length));
+    expect(kept.length + Number(folded?.[2])).toBe(headings.length);
+  });
+
+  test('a first heading longer than the budget leaves only the count', () => {
+    const headings = [`## ${'x'.repeat(600)}`, '## Key files'];
+    const out = renderStart(parts({ otherHeadings: headings }));
+    expect(blockStarting(out, 'Also in the file')).toBe(
+      'Also in the file: 2 headings. Read the file for them.',
+    );
+  });
+
+  test('a poisoned heading past the budget still withholds the line', () => {
+    const headings = [...headingsOf(100), `## ${POISON}`];
+    const out = renderStart(parts({ otherHeadings: headings }));
+    expect(out.split('\n\n')).toEqual([
+      `${FIRST}\n${WORKSTREAM_LINE}`,
+      '## State\nIn flight.',
+      NEXT,
+      withheld(FILE, 'proj'),
+    ]);
+  });
+});
+
 const IDENTITY = {
   GIT_AUTHOR_NAME: 'T',
   GIT_AUTHOR_EMAIL: 't@e.com',
@@ -913,5 +1042,311 @@ describe('memoryStartContext', () => {
     expect(context).toContain(`Family index (fam):\n${withheld(index, 'fam')}`);
     expect(context).toContain('## Next steps\n\nThen.');
     expect(context).not.toContain(POISON);
+  });
+});
+
+describe("the lint's cached count at session start", () => {
+  const RAN_AT = new Date('2026-11-02T14:10:00.000Z');
+  const DEAD_INDEX = '# Memory Index\n\n- [gone](gone.md)\n';
+  let savedTz: string | undefined;
+
+  // The run time prints in local time; UTC pins it, and a test moves it.
+  // Bun 1.3 ignores every TZ write after a delete, so the zone is restored by
+  // assignment; with TZ unset, bun test runs in UTC.
+  beforeEach(() => {
+    savedTz = process.env.TZ;
+    process.env.TZ = 'UTC';
+  });
+
+  afterEach(() => {
+    process.env.TZ = savedTz ?? 'UTC';
+  });
+
+  const finding = (id: MemoryLintId, folder: string): MemoryFinding => ({
+    id,
+    folder,
+    file: path.join(tmp, 'store', folder, `${id}.md`),
+    message: `a ${id} finding`,
+  });
+
+  function countsOf(findings: MemoryFinding[]): MemoryLintResult['counts'] {
+    return Object.fromEntries(
+      MEMORY_LINT_IDS.flatMap((id) => {
+        const n = findings.filter((f) => f.id === id).length;
+        return n === 0 ? [] : [[id, n]];
+      }),
+    );
+  }
+
+  function gitInit(dir: string): void {
+    execRunner('git', ['init', '-q', '-b', 'main'], dir);
+  }
+
+  function writeLint(store: string, result: MemoryLintResult): void {
+    const file = cachePath(store, execRunner);
+    if (file === undefined) throw new Error(`${store} has no cache path`);
+    writeCache(file, result, RAN_AT);
+  }
+
+  const cacheFindings = (store: string, findings: MemoryFinding[]) =>
+    writeLint(store, { findings, counts: countsOf(findings) });
+
+  // The real lint over `store`, cached as the snapshot child caches it.
+  function cacheRealLint(store: string, now = Date.now): MemoryLintResult {
+    const result = lintStore(store, {
+      readSection,
+      runGit: execRunner,
+      home: path.join(tmp, 'home'),
+      env: { SIDEKICK_MEMORY_STORE: store },
+      now,
+    });
+    writeLint(store, result);
+    return result;
+  }
+
+  function cachedLinked(storeName = 'store') {
+    const world = linked(storeName);
+    gitInit(world.store);
+    return world;
+  }
+
+  function familyLinked() {
+    const store = mkdir('store');
+    gitInit(store);
+    const repo = makeRepo('proj');
+    const folder = mkdir('store', 'fam', 'proj');
+    writeMarker(folder, repo);
+    setKey(repo, folder);
+    return { store, repo, folder };
+  }
+
+  const contextOf = (
+    store: string,
+    repo: string,
+    over: Partial<StartDeps> = {},
+    event: Record<string, unknown> = {},
+  ) =>
+    memoryStartContext(eventFor(repo, event), depsFor(store, over)).context ??
+    '';
+
+  const lastLine = (context: string) => context.split('\n').at(-1);
+
+  function gitSpy(): { runGit: Runner; calls: string[][] } {
+    const calls: string[][] = [];
+    const runGit: Runner = (cmd, args, cwd) => {
+      calls.push(args);
+      return execRunner(cmd, args, cwd);
+    };
+    return { runGit, calls };
+  }
+
+  const readsCache = (calls: string[][]) =>
+    calls.some((args) => args.includes('--git-path'));
+
+  test("counts the repo folder, store-wide findings, and the repo's own default-folder-left, and leaves out live warnings and other folders", () => {
+    const { store, repo } = cachedLinked();
+    cacheFindings(store, [
+      finding('dead-link', 'proj'),
+      finding('dead-link', 'proj'),
+      finding('unindexed', 'proj'),
+      finding('default-folder-left', 'proj'),
+      finding('settings-invalid', ''),
+      finding('dangling-marker', ''),
+      finding('stale-lock', ''),
+      finding('setting-missing', 'proj'),
+      finding('dead-link', 'other'),
+      finding('dead-link', 'proj-2'),
+      finding('default-folder-left', 'other'),
+      finding('setting-missing', 'other'),
+      finding('index-line-long', 'fam'),
+    ]);
+    expect(lastLine(contextOf(store, repo))).toBe(
+      'Memory lint: 6 findings in proj/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder proj',
+    );
+  });
+
+  test('a repo in a family counts its repo folder and its family folder, and names both', () => {
+    const { store, repo } = familyLinked();
+    cacheFindings(store, [
+      finding('dead-link', 'fam/proj'),
+      finding('index-line-long', 'fam'),
+      finding('settings-invalid', ''),
+      finding('dead-link', 'fam/sib'),
+      finding('dead-link', 'proj'),
+    ]);
+    expect(lastLine(contextOf(store, repo))).toBe(
+      'Memory lint: 3 findings in fam/proj/ and fam/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder fam/proj --folder fam',
+    );
+  });
+
+  test('the run time prints in local time', () => {
+    const { store, repo } = cachedLinked();
+    cacheFindings(store, [finding('dead-link', 'proj')]);
+    process.env.TZ = 'Asia/Tokyo';
+    expect(lastLine(contextOf(store, repo))).toBe(
+      'Memory lint: 1 finding in proj/ (run 2026-11-02 23:10). List them: sidekick memory lint --folder proj',
+    );
+  });
+
+  test('a count of zero prints no line', () => {
+    const { store, repo } = cachedLinked();
+    cacheFindings(store, [
+      finding('dead-link', 'other'),
+      finding('stale-lock', ''),
+      finding('setting-missing', 'proj'),
+    ]);
+    const context = contextOf(store, repo);
+    expect(context).toContain('Your record is');
+    expect(context).not.toContain('Memory lint:');
+  });
+
+  test('no cache, or a store that is not its own git work tree, prints no line', () => {
+    const cached = cachedLinked();
+    expect(contextOf(cached.store, cached.repo)).not.toContain('Memory lint:');
+    const { store, repo } = linked('plain store');
+    expect(contextOf(store, repo)).not.toContain('Memory lint:');
+  });
+
+  test('a corrupt cache or one of another version prints no line', () => {
+    const { store, repo } = cachedLinked();
+    const file = cachePath(store, execRunner) ?? '';
+    for (const text of [
+      'not json',
+      JSON.stringify({
+        version: 2,
+        ranAt: RAN_AT.toISOString(),
+        findings: [finding('dead-link', 'proj')],
+        counts: { 'dead-link': 1 },
+      }),
+    ]) {
+      fs.writeFileSync(file, text);
+      const context = contextOf(store, repo);
+      expect(context).toContain('Your record is');
+      expect(context).not.toContain('Memory lint:');
+    }
+  });
+
+  test('a cache read that throws prints no line and the rest still prints', () => {
+    const { store, repo } = cachedLinked();
+    cacheFindings(store, [finding('dead-link', 'proj')]);
+    const runGit: Runner = (cmd, args, cwd) => {
+      if (args.includes('--git-path')) throw new Error('boom');
+      return execRunner(cmd, args, cwd);
+    };
+    const context = contextOf(store, repo, { runGit });
+    expect(context).toContain('Your record is');
+    expect(context).not.toContain('Memory lint:');
+  });
+
+  test('a worker reads no cache and prints no line; an empty SIDEKICK_WORKER is no worker', () => {
+    const { store, repo } = cachedLinked();
+    cacheFindings(store, [finding('dead-link', 'proj')]);
+    const worker = gitSpy();
+    const env = {
+      SIDEKICK_MEMORY_STORE: store,
+      SIDEKICK_WORKER: path.join(tmp, 'brief.md'),
+    };
+    const context = contextOf(store, repo, { env, runGit: worker.runGit });
+    expect(context).toContain('Your record is');
+    expect(context).not.toContain('Memory lint:');
+    expect(readsCache(worker.calls)).toBe(false);
+    const empty = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: '' };
+    expect(contextOf(store, repo, { env: empty })).toContain('Memory lint:');
+  });
+
+  test('resume reads no cache and prints no line', () => {
+    const { store, repo } = cachedLinked();
+    cacheFindings(store, [finding('dead-link', 'proj')]);
+    const spy = gitSpy();
+    const context = contextOf(
+      store,
+      repo,
+      { runGit: spy.runGit },
+      { source: 'resume' },
+    );
+    expect(context.split('\n')).toHaveLength(2);
+    expect(context).not.toContain('Memory lint:');
+    expect(readsCache(spy.calls)).toBe(false);
+  });
+
+  test('a missing setting reads no cache and prints only its warning', () => {
+    const store = mkdir('store');
+    gitInit(store);
+    const repo = makeRepo('proj');
+    writeMarker(mkdir('store', 'proj'), repo);
+    cacheFindings(store, [finding('dead-link', 'proj')]);
+    const spy = gitSpy();
+    const context = contextOf(store, repo, { runGit: spy.runGit });
+    expect(context.split('\n')).toHaveLength(1);
+    expect(context.startsWith('Warning: ')).toBe(true);
+    expect(readsCache(spy.calls)).toBe(false);
+  });
+
+  test('the named --folder run lists the counted set, plus the live-warned store-wide ids', () => {
+    const { store, repo, folder } = familyLinked();
+    fs.writeFileSync(path.join(folder, 'MEMORY.md'), DEAD_INDEX);
+    fs.writeFileSync(path.join(store, 'fam', 'MEMORY.md'), DEAD_INDEX);
+    const other = makeRepo('other-repo');
+    const otherFolder = mkdir('store', 'other');
+    writeMarker(otherFolder, other);
+    setKey(other, otherFolder);
+    fs.writeFileSync(path.join(otherFolder, 'MEMORY.md'), DEAD_INDEX);
+    fs.writeFileSync(
+      path.join(store, 'settings.json'),
+      '{ "indexLineCap": "x" }',
+    );
+    fs.writeFileSync(path.join(store, '.git', 'index.lock'), '');
+    const lockAged = () => Date.now() + 11 * 60 * 1000;
+    expect(cacheRealLint(store, lockAged).counts).toEqual({
+      'dead-link': 3,
+      'settings-invalid': 1,
+      'stale-lock': 1,
+    });
+    const line = lastLine(contextOf(store, repo)) ?? '';
+    expect(line).toBe(
+      'Memory lint: 3 findings in fam/proj/ and fam/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder fam/proj --folder fam',
+    );
+    const named = [...line.matchAll(/--folder (\S+)/g)].map((m) => m[1] ?? '');
+    const listed = lintStore(
+      store,
+      {
+        readSection,
+        runGit: execRunner,
+        home: path.join(tmp, 'home'),
+        env: { SIDEKICK_MEMORY_STORE: store },
+        now: lockAged,
+      },
+      { folders: named },
+    ).findings;
+    const liveWarned = (f: MemoryFinding) =>
+      f.id === 'stale-lock' || f.id === 'setting-missing';
+    expect(listed.filter((f) => !liveWarned(f))).toHaveLength(3);
+    expect(listed.filter(liveWarned).map((f) => f.id)).toEqual(['stale-lock']);
+  });
+
+  test('a store whose path holds a space still matches the repo folder', () => {
+    const { store, repo, folder } = cachedLinked('my store');
+    fs.writeFileSync(path.join(folder, 'MEMORY.md'), DEAD_INDEX);
+    expect(cacheRealLint(store).counts).toEqual({ 'dead-link': 1 });
+    expect(lastLine(contextOf(store, repo))).toBe(
+      'Memory lint: 1 finding in proj/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder proj',
+    );
+  });
+
+  test('a store reached through a symlink still matches the repo folder', () => {
+    const real = mkdir('real-store');
+    gitInit(real);
+    const store = path.join(tmp, 'store-link');
+    fs.symlinkSync(real, store);
+    const repo = makeRepo('proj');
+    const folder = path.join(store, 'proj');
+    fs.mkdirSync(folder);
+    writeMarker(folder, repo);
+    setKey(repo, folder);
+    fs.writeFileSync(path.join(folder, 'MEMORY.md'), DEAD_INDEX);
+    expect(cacheRealLint(store).counts).toEqual({ 'dead-link': 1 });
+    expect(lastLine(contextOf(store, repo))).toBe(
+      'Memory lint: 1 finding in proj/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder proj',
+    );
   });
 });
