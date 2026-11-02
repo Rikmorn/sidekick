@@ -10,7 +10,7 @@ import {
   moveFolder,
   runLink,
 } from './memory-link.js';
-import { createStore, writeMarker } from './memory-store.js';
+import { CREATION_PATHS, createStore, writeMarker } from './memory-store.js';
 import { execRunner } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
 
@@ -472,10 +472,35 @@ describe('runLink: re-runs', () => {
         git(w.store, 'show', '--name-only', '--format=', 'HEAD~1')
           .split('\n')
           .sort(),
-      ).toEqual(['README.md', 'archive/.gitkeep', 'sources/.gitkeep']);
+      ).toEqual([...CREATION_PATHS].sort());
       expect(committed(w.store)).toEqual(linkPaths(w));
       expect(git(w.store, 'status', '--porcelain')).toBe('');
     }
+  });
+
+  test('an existing store with no .gitignore is unaffected by a link', () => {
+    const w = world();
+    expect(createStore(w.store, execRunner).ok).toBe(true);
+    git(w.store, 'rm', '-q', '.gitignore');
+    git(w.store, 'commit', '-q', '-m', 'drop the ignore file');
+    expect(link(w, opts(w.top)).code).toBe(0);
+    expect(committed(w.store)).toEqual(linkPaths(w));
+    expect(fs.existsSync(path.join(w.store, '.gitignore'))).toBe(false);
+    expect(git(w.store, 'status', '--porcelain')).toBe('');
+  });
+
+  test("a hand-added, uncommitted .gitignore in an existing store is committed by a link as the store's own file", () => {
+    const w = world();
+    expect(createStore(w.store, execRunner).ok).toBe(true);
+    git(w.store, 'rm', '-q', '.gitignore');
+    git(w.store, 'commit', '-q', '-m', 'drop the ignore file');
+    fs.writeFileSync(path.join(w.store, '.gitignore'), '.DS_Store\n*.tmp\n');
+    expect(link(w, opts(w.top)).code).toBe(0);
+    expect(git(w.store, 'status', '--porcelain')).toBe('');
+    expect(
+      git(w.store, 'show', '--name-only', '--format=', 'HEAD~1').trim(),
+    ).toBe('.gitignore');
+    expect(committed(w.store)).toEqual(linkPaths(w));
   });
 
   test("a committed store README edited by hand stays the operator's, uncommitted", () => {

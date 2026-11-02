@@ -7,12 +7,17 @@ import * as path from 'node:path';
 import { localToday } from './local-date.js';
 import { configDirOf } from './main-session.js';
 import { runLink } from './memory-link.js';
+import {
+  deadlineRunner,
+  SNAPSHOT_DEADLINE_MS,
+  snapshotStore,
+} from './memory-snapshot.js';
 import { execRunner } from './pm-data.js';
 import { parseFlags } from './profile.js';
 import type { ClaudeRunner } from './profile-launch.js';
 
 export const MEMORY_USAGE_LINE =
-  'sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run]';
+  'sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run] | sidekick memory snapshot --store <path> --session <id> --source <source>';
 
 export interface MemoryContext {
   env: NodeJS.ProcessEnv;
@@ -63,6 +68,31 @@ function envWithAbsoluteStore(
   return { ...env, SIDEKICK_MEMORY_STORE: path.resolve(cwd, store) };
 }
 
+// A hook starts this verb and no one reads its output, so every outcome exits 0 silently.
+function runSnapshot(rest: string[]): number {
+  const parsed = parseFlags(rest, {
+    store: { type: 'string' },
+    session: { type: 'string' },
+    source: { type: 'string' },
+  });
+  const { store, session, source } = parsed?.values ?? {};
+  if (
+    typeof store === 'string' &&
+    typeof session === 'string' &&
+    typeof source === 'string'
+  ) {
+    try {
+      snapshotStore(
+        path.resolve(store),
+        session,
+        source,
+        deadlineRunner(SNAPSHOT_DEADLINE_MS, Date.now),
+      );
+    } catch {}
+  }
+  return 0;
+}
+
 /** Runs the `memory` family; returns the exit code. */
 export function runMemoryCli(
   argv: string[],
@@ -71,6 +101,7 @@ export function runMemoryCli(
   err: Out,
 ): number {
   const [verb, ...rest] = argv;
+  if (verb === 'snapshot') return runSnapshot(rest);
   const parsed = verb === 'link' ? parseLinkArgs(rest) : undefined;
   if (parsed === undefined) {
     err(`usage: ${MEMORY_USAGE_LINE}`);

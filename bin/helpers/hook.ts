@@ -19,7 +19,8 @@ import {
   postToolBatchContext,
 } from './context-monitor.js';
 import { localToday } from './local-date.js';
-import { memoryStartContext, startSnapshot } from './memory-start.js';
+import { startSnapshot } from './memory-snapshot.js';
+import { memoryStartContext } from './memory-start.js';
 import { execRunner } from './pm-data.js';
 
 export const HOOK_USAGE_LINE =

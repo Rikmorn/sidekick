@@ -55,14 +55,6 @@ export interface StartResult {
   snapshot?: { store: string; sessionId: string; source: StartSource };
 }
 
-/** Starts the detached snapshot commit; a no-op until the snapshot task supplies it. */
-export function startSnapshot(
-  _pluginDir: string,
-  _store: string,
-  _sessionId: string,
-  _source: string,
-): void {}
-
 function parseEvent(
   stdin: string,
 ): v.InferOutput<typeof EventSchema> | undefined {

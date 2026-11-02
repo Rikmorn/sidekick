@@ -18,10 +18,13 @@ export const MARKER_FILE = '.sidekick.json';
 
 const README_FILE = 'README.md';
 const KEEP_FILE = '.gitkeep';
+const IGNORE_FILE = '.gitignore';
+const IGNORE_CONTENT = '.DS_Store\n';
 
 /** The store's own files, which its first commit takes. */
 export const CREATION_PATHS: readonly string[] = [
   README_FILE,
+  IGNORE_FILE,
   ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`),
 ];
 
@@ -142,7 +145,7 @@ function realPath(p: string): string {
 }
 
 // True when `store` is itself a git work tree's top.
-function isWorkTreeTop(store: string, runGit: Runner): boolean {
+export function isWorkTreeTop(store: string, runGit: Runner): boolean {
   const top = runGit('git', ['rev-parse', '--show-toplevel'], store);
   return top.code === 0 && realPath(top.stdout.trim()) === realPath(store);
 }
@@ -204,7 +207,7 @@ export function commitPaths(
 
 /**
  * Creates the store in an absent or empty folder: `git init`, the README,
- * `sources/.gitkeep`, `archive/.gitkeep`, then one commit of exactly those
+ * `.gitignore`, `sources/.gitkeep`, `archive/.gitkeep`, then one commit of exactly those
  * paths. Any other folder, or a file, refuses and is left as it was.
  */
 export function createStore(
@@ -221,6 +224,7 @@ export function createStore(
   if (init.code !== 0) return { ok: false, issue: gitIssue(['init'], init) };
   const paths = [...CREATION_PATHS];
   fs.writeFileSync(path.join(store, README_FILE), STORE_README);
+  fs.writeFileSync(path.join(store, IGNORE_FILE), IGNORE_CONTENT);
   for (const name of RESERVED_NAMES) {
     fs.mkdirSync(path.join(store, name), { recursive: true });
     fs.writeFileSync(path.join(store, name, KEEP_FILE), '');
@@ -236,9 +240,14 @@ This folder is a git repo that holds the auto-memory of several repos. A repo's 
 
 ## Layout
 
-- A family folder groups related repos. It holds the repo folders and the family's own files: a family index, the workstreams that span repos, the support file, and the script catalogue.
+- A family folder groups related repos. It holds the repo folders and the family's own files: \`MEMORY.md\` (the family index), the workstreams that span repos, the support file, and the script catalogue.
 - A repo folder holds one repo's memory. A repo with no family sits at the top level.
 - \`sessions/\` inside a repo folder holds one record per session. Claude Code's auto-dream reviews that folder.
+- A record's front matter keeps \`metadata.kind\` (\`session\`), \`metadata.status\` (\`open\` or \`closed\`), \`metadata.branches\`, \`metadata.session\`, and \`metadata.workstream\`.
+- A workstream file keeps \`metadata.kind\` (\`workstream\`), \`metadata.status\`, and \`metadata.branches\`, with the sections \`## State\` and \`## Next steps\`.
+- \`metadata.branches\` is one string of \`<repo>:<branch>\` pairs joined by \`, \`.
+- Each session start commits the store's changes as "memory: snapshot at <source> of session <id>", with a \`Session:\` trailer.
+- \`.gitignore\` keeps \`.DS_Store\` out of those commits.
 - \`sources/\` holds reference material that is not memory.
 - \`archive/\` holds retired memory, such as a repo's old default memory folder after it moved here.
 

@@ -920,7 +920,8 @@ describe('runHookCli memory-start', () => {
       ['memory-start'],
       {
         readStdin: () => stdin,
-        pluginDir: PLUGIN_DIR,
+        // No built CLI lives here, so the detached snapshot a linked repo starts exits at once.
+        pluginDir: path.join(os.tmpdir(), 'sk-no-plugin'),
         env,
         tmpdir: os.tmpdir(),
       },

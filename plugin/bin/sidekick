@@ -6,7 +6,7 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 import * as fs30 from "node:fs";
 import { realpathSync as realpathSync9 } from "node:fs";
 import * as os3 from "node:os";
-import * as path35 from "node:path";
+import * as path36 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -2532,8 +2532,12 @@ var RESERVED_NAMES = ["sources", "archive"];
 var MARKER_FILE = ".sidekick.json";
 var README_FILE = "README.md";
 var KEEP_FILE = ".gitkeep";
+var IGNORE_FILE = ".gitignore";
+var IGNORE_CONTENT = `.DS_Store
+`;
 var CREATION_PATHS = [
   README_FILE,
+  IGNORE_FILE,
   ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`)
 ];
 var CREATION_MESSAGE = "chore: create the memory store";
@@ -2655,6 +2659,7 @@ function createStore(store, runGit) {
     return { ok: false, issue: gitIssue(["init"], init) };
   const paths = [...CREATION_PATHS];
   fs9.writeFileSync(path10.join(store, README_FILE), STORE_README);
+  fs9.writeFileSync(path10.join(store, IGNORE_FILE), IGNORE_CONTENT);
   for (const name of RESERVED_NAMES) {
     fs9.mkdirSync(path10.join(store, name), { recursive: true });
     fs9.writeFileSync(path10.join(store, name, KEEP_FILE), "");
@@ -2668,9 +2673,14 @@ This folder is a git repo that holds the auto-memory of several repos. A repo's 
 
 ## Layout
 
-- A family folder groups related repos. It holds the repo folders and the family's own files: a family index, the workstreams that span repos, the support file, and the script catalogue.
+- A family folder groups related repos. It holds the repo folders and the family's own files: \`MEMORY.md\` (the family index), the workstreams that span repos, the support file, and the script catalogue.
 - A repo folder holds one repo's memory. A repo with no family sits at the top level.
 - \`sessions/\` inside a repo folder holds one record per session. Claude Code's auto-dream reviews that folder.
+- A record's front matter keeps \`metadata.kind\` (\`session\`), \`metadata.status\` (\`open\` or \`closed\`), \`metadata.branches\`, \`metadata.session\`, and \`metadata.workstream\`.
+- A workstream file keeps \`metadata.kind\` (\`workstream\`), \`metadata.status\`, and \`metadata.branches\`, with the sections \`## State\` and \`## Next steps\`.
+- \`metadata.branches\` is one string of \`<repo>:<branch>\` pairs joined by \`, \`.
+- Each session start commits the store's changes as "memory: snapshot at <source> of session <id>", with a \`Session:\` trailer.
+- \`.gitignore\` keeps \`.DS_Store\` out of those commits.
 - \`sources/\` holds reference material that is not memory.
 - \`archive/\` holds retired memory, such as a repo's old default memory folder after it moved here.
 
@@ -4570,7 +4580,7 @@ function runDeskCli(rest2, denv, out, err) {
 // bin/helpers/hook.ts
 import * as fs18 from "node:fs";
 import * as os2 from "node:os";
-import * as path20 from "node:path";
+import * as path21 from "node:path";
 
 // bin/helpers/local-date.ts
 function localToday() {
@@ -4579,9 +4589,72 @@ function localToday() {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+// bin/helpers/memory-snapshot.ts
+import { spawn, spawnSync as spawnSync3 } from "node:child_process";
+import * as path17 from "node:path";
+var SNAPSHOT_DEADLINE_MS = 5000;
+function snapshotStore(store, sessionId, source, runGit) {
+  if (!isWorkTreeTop(store, runGit))
+    return "failed";
+  const run = (args) => runGit("git", args, store);
+  if (run(["add", "-A"]).code !== 0)
+    return "failed";
+  const staged = run(["diff", "--cached", "--quiet"]);
+  if (staged.code === 0)
+    return "clean";
+  if (staged.code !== 1)
+    return "failed";
+  const commit = run([
+    "commit",
+    "-m",
+    `memory: snapshot at ${source} of session ${sessionId}`,
+    "--trailer",
+    `Session: ${sessionId}`
+  ]);
+  return commit.code === 0 ? "committed" : "failed";
+}
+function deadlineRunner(ms, now) {
+  const end = now() + ms;
+  return (cmd, args, cwd) => {
+    const left = end - now();
+    if (left <= 0)
+      return { code: 124, stdout: "", stderr: "deadline passed" };
+    const r = spawnSync3(cmd, args, {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: left
+    });
+    if (r.error)
+      return { code: 127, stdout: "", stderr: r.error.message };
+    return {
+      code: r.status ?? 1,
+      stdout: r.stdout ?? "",
+      stderr: r.stderr ?? ""
+    };
+  };
+}
+function startSnapshot(pluginDir, store, sessionId, source) {
+  try {
+    const child = spawn(process.execPath, [
+      path17.join(pluginDir, "bin", "sidekick"),
+      "memory",
+      "snapshot",
+      "--store",
+      store,
+      "--session",
+      sessionId,
+      "--source",
+      source
+    ], { detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+  } catch {}
+}
+
 // bin/helpers/memory-start.ts
 import * as fs17 from "node:fs";
-import * as path19 from "node:path";
+import * as path20 from "node:path";
 
 // bin/helpers/memory-files.ts
 import * as fs15 from "node:fs";
@@ -4713,7 +4786,7 @@ function matchWorkstream(all, facts) {
 }
 
 // bin/helpers/memory-start-render.ts
-import * as path17 from "node:path";
+import * as path18 from "node:path";
 var TOTAL_BUDGET = 9000;
 var NEXT_STEPS_BUDGET = 3000;
 var STATE_AND_NEXT_BUDGET = 5000;
@@ -4776,7 +4849,7 @@ function headerBlock(parts) {
   if (match === undefined)
     return [];
   const first = `sidekick memory: session ${parts.sessionId}. Your record is ${parts.recordPath}; save to it with the sk-save skill.`;
-  const repoFolder = path17.dirname(path17.dirname(parts.recordPath));
+  const repoFolder = path18.dirname(path18.dirname(parts.recordPath));
   const text = [first, ...matchLines(match, repoFolder)].join(`
 `);
   return [{ text, drop: Drop.Header }];
@@ -4803,7 +4876,7 @@ function recordsBlock(parts) {
   const lines = records.map((record2) => `- ${record2.date} ${record2.title}: ${record2.path}`);
   const text = [`Recent records on ${match.workstream.name}:`, ...lines].join(`
 `);
-  const fitted = fitSection(text, RECORDS_BUDGET, path17.dirname(newest.path));
+  const fitted = fitSection(text, RECORDS_BUDGET, path18.dirname(newest.path));
   return [{ text: fitted, drop: Drop.Records }];
 }
 function familyBlock(parts) {
@@ -4857,13 +4930,13 @@ function renderStart(parts) {
 
 // bin/helpers/memory-view.ts
 import * as fs16 from "node:fs";
-import * as path18 from "node:path";
+import * as path19 from "node:path";
 var INDEX_FILE = "MEMORY.md";
 var SESSIONS_DIR = "sessions";
 var RECORD_NAME = /^(\d{4}-\d{2}-\d{2})-(.+)\.md$/;
 var TITLE_LINE = /^# +(.+?)\s*$/m;
 function resolved(target) {
-  const lexical = path18.resolve(target);
+  const lexical = path19.resolve(target);
   try {
     return fs16.realpathSync(lexical);
   } catch {
@@ -4871,18 +4944,18 @@ function resolved(target) {
   }
 }
 function isInside(folder, parent) {
-  const relative3 = path18.relative(parent, folder);
-  return relative3 !== "" && !relative3.startsWith("..") && !path18.isAbsolute(relative3);
+  const relative3 = path19.relative(parent, folder);
+  return relative3 !== "" && !relative3.startsWith("..") && !path19.isAbsolute(relative3);
 }
 function linkedView(root, store, key) {
   const repoFolder = resolved(key);
-  const parent = path18.dirname(repoFolder);
+  const parent = path19.dirname(repoFolder);
   return {
     kind: "linked",
     root,
     store,
     repoFolder,
-    repoName: path18.basename(repoFolder),
+    repoName: path19.basename(repoFolder),
     familyFolder: parent === store ? undefined : parent
   };
 }
@@ -4931,7 +5004,7 @@ function toWorkstream(file, memory) {
 }
 function workstreamsIn(folder) {
   return listDir(folder, ".md").filter((entry) => entry !== INDEX_FILE).flatMap((entry) => {
-    const file = path18.join(folder, entry);
+    const file = path19.join(folder, entry);
     const memory = readMemoryFile(file);
     const found = memory && toWorkstream(file, memory);
     return found ? [found] : [];
@@ -4951,7 +5024,7 @@ function modifiedAt2(file) {
   }
 }
 function toRecord(file) {
-  const named = RECORD_NAME.exec(path18.basename(file));
+  const named = RECORD_NAME.exec(path19.basename(file));
   const memory = readMemoryFile(file);
   if (!named || !memory || memory.metadata.kind !== "session")
     return;
@@ -4965,19 +5038,19 @@ function toRecord(file) {
   };
 }
 function listRecords(repoFolder) {
-  const dir = path18.join(repoFolder, SESSIONS_DIR);
+  const dir = path19.join(repoFolder, SESSIONS_DIR);
   return listDir(dir, ".md").flatMap((entry) => {
-    const record2 = toRecord(path18.join(dir, entry));
+    const record2 = toRecord(path19.join(dir, entry));
     return record2 ? [{ record: record2, mtime: modifiedAt2(record2.path) }] : [];
   }).sort((a, b) => b.record.date.localeCompare(a.record.date) || b.mtime - a.mtime).map((entry) => entry.record);
 }
 function recordPath(repoFolder, sessionId, today) {
-  const dir = path18.join(repoFolder, SESSIONS_DIR);
+  const dir = path19.join(repoFolder, SESSIONS_DIR);
   const existing = listDir(dir, `-${sessionId}.md`).find((entry) => RECORD_NAME.test(entry));
   if (existing !== undefined) {
-    return { path: path18.join(dir, existing), exists: true };
+    return { path: path19.join(dir, existing), exists: true };
   }
-  return { path: path18.join(dir, `${today}-${sessionId}.md`), exists: false };
+  return { path: path19.join(dir, `${today}-${sessionId}.md`), exists: false };
 }
 
 // bin/helpers/memory-start.ts
@@ -4993,7 +5066,6 @@ var EventSchema = object({
   source: picklist(["startup", "resume", "clear", "compact", "fork"]),
   session_title: fallback(optional(string()), undefined)
 });
-function startSnapshot(_pluginDir, _store, _sessionId, _source) {}
 function parseEvent(stdin) {
   try {
     const result = safeParse(EventSchema, JSON.parse(stdin));
@@ -5024,7 +5096,7 @@ function briefWorkstream(env) {
   return "brief" in read ? read.brief.workstream : undefined;
 }
 function staleLockWarning(store, now) {
-  const lock = path19.join(store, ".git", "index.lock");
+  const lock = path20.join(store, ".git", "index.lock");
   try {
     if (now - fs17.statSync(lock).mtimeMs <= STALE_LOCK_MS)
       return [];
@@ -5038,13 +5110,13 @@ function staleLockWarning(store, now) {
 function familyOf(familyFolder) {
   if (familyFolder === undefined)
     return;
-  const file = path19.join(familyFolder, INDEX_FILE2);
+  const file = path20.join(familyFolder, INDEX_FILE2);
   try {
     const lines = fs17.readFileSync(file, "utf8").trimEnd().split(`
 `);
     if (lines.every((line) => line.trim() === ""))
       return;
-    return { name: path19.basename(familyFolder), path: file, lines };
+    return { name: path20.basename(familyFolder), path: file, lines };
   } catch {
     return;
   }
@@ -5157,14 +5229,14 @@ function readContent(event) {
     return "";
   return typeof response.file.content === "string" ? response.file.content : "";
 }
-var DESIGN_SKILL = path20.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path20.join("skills", "sk-execute", "SKILL.md");
+var DESIGN_SKILL = path21.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path21.join("skills", "sk-execute", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
   "## Before the plan goes out",
   "## Choose the mode"
 ];
-var CLEAN_CODE_RULE = path20.join("rules", "sk-clean-code.md");
+var CLEAN_CODE_RULE = path21.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
@@ -5280,7 +5352,7 @@ function ruleCoversPackage(rulePaths, content) {
   return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
 }
 function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path20.join(pluginDir, DESIGN_SKILL));
+  const description = readSkillDescription(path21.join(pluginDir, DESIGN_SKILL));
   if (description === undefined)
     return;
   return [
@@ -5292,7 +5364,7 @@ function brainstormNudge(pluginDir) {
 }
 var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
-  const file = path20.join(pluginDir, EXECUTE_SKILL);
+  const file = path21.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
   const found = sections.flatMap((s) => s === undefined ? [] : [s]);
   if (found.length < PLAN_SECTIONS.length)
@@ -5311,7 +5383,7 @@ var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. W
 var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
 var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function commentsLines(pluginDir, packageText) {
-  const rule = path20.join(pluginDir, CLEAN_CODE_RULE);
+  const rule = path21.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
   if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
     return [];
@@ -5415,19 +5487,19 @@ function runHookCli(args, env, out, err) {
 }
 
 // bin/helpers/memory.ts
-import * as path26 from "node:path";
+import * as path27 from "node:path";
 
 // bin/helpers/memory-link.ts
 import * as fs22 from "node:fs";
-import * as path25 from "node:path";
+import * as path26 from "node:path";
 
 // bin/helpers/memory-link-facts.ts
 import * as fs21 from "node:fs";
-import * as path24 from "node:path";
+import * as path25 from "node:path";
 
 // bin/helpers/memory-default.ts
 import * as fs19 from "node:fs";
-import * as path21 from "node:path";
+import * as path22 from "node:path";
 var MAX_KEY_LENGTH = 200;
 var WRITE_BITS = 146;
 function hashOf(text) {
@@ -5444,7 +5516,7 @@ function projectKey(p) {
   return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
 }
 function defaultMemoryFolder(root, configDir) {
-  return path21.join(configDir, "projects", projectKey(root), "memory");
+  return path22.join(configDir, "projects", projectKey(root), "memory");
 }
 function overrideIssue(env) {
   if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
@@ -5478,13 +5550,13 @@ function legacyPreferred(legacy, current) {
   }
 }
 function claudeJsonPath(env, home) {
-  const current = path21.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
-  const legacy = path21.join(configDirOf(env, home), ".config.json");
+  const current = path22.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
+  const legacy = path22.join(configDirOf(env, home), ".config.json");
   return legacyPreferred(legacy, current) ? legacy : current;
 }
 
 // bin/helpers/memory-link-plan.ts
-import * as path22 from "node:path";
+import * as path23 from "node:path";
 var ARCHIVE_DIR = "archive/default-folders";
 function planLink(facts, opts) {
   const refusals = refusalsOf(facts, opts);
@@ -5579,7 +5651,7 @@ function keyMissedRefusals(repo) {
     return [];
   const { claudeJson, projectFolder } = repo.keyMissed;
   return [
-    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path22.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`
+    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path23.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`
   ];
 }
 function defaultFolderRefusals(repo) {
@@ -5589,7 +5661,7 @@ function defaultFolderRefusals(repo) {
   if (!isFirstLink(repo))
     return defaultFolder.issues;
   const forged = defaultFolder.files.some((f) => f.rel === MARKER_FILE) ? [
-    `${path22.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
+    `${path23.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
   ] : [];
   const into = repo.target?.folder;
   const conflicts = into === undefined ? [] : defaultFolder.files.flatMap((f) => copyRefusals(defaultFolder.folder, into, f));
@@ -5598,8 +5670,8 @@ function defaultFolderRefusals(repo) {
 function copyRefusals(from, into, file) {
   if (file.rel === MARKER_FILE)
     return [];
-  const source = path22.join(from, file.rel);
-  const copy = path22.join(into, file.rel);
+  const source = path23.join(from, file.rel);
+  const copy = path23.join(into, file.rel);
   if (file.copy === "differs") {
     return [
       `${source} differs from ${copy}, which is already in the store. Merge the two by hand into the store copy, then run link again.`
@@ -5633,7 +5705,7 @@ function targetRefusals(target, root) {
   return [
     ...targetStateRefusals(target, root),
     ...familyRefusals(target),
-    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path22.basename(found.folder) })}`),
+    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path23.basename(found.folder) })}`),
     ..."issue" in target.pending ? [pendingRefusal(target.pending.issue)] : []
   ];
 }
@@ -5665,7 +5737,7 @@ function targetStateRefusals(target, root) {
 }
 function familyRefusals(target) {
   const { family } = target;
-  const folder = path22.dirname(target.folder);
+  const folder = path23.dirname(target.folder);
   if (family === "marked") {
     return [
       `${folder} holds a ${MARKER_FILE}, so it is a repo folder, not a family. Choose another family with --family.`
@@ -5720,8 +5792,8 @@ function copyActions(ready) {
     return [];
   return defaultFolder.files.filter((f) => f.copy === "absent" && f.rel !== MARKER_FILE).map((f) => ({
     kind: "copyFile",
-    from: path22.join(defaultFolder.folder, f.rel),
-    to: path22.join(ready.target.folder, f.rel)
+    from: path23.join(defaultFolder.folder, f.rel),
+    to: path23.join(ready.target.folder, f.rel)
   }));
 }
 function mergeAction(ready) {
@@ -5741,7 +5813,7 @@ function archiveActions(ready, facts, first) {
     {
       kind: "archiveDefault",
       from: defaultFolder.folder,
-      to: path22.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
+      to: path23.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
       copies: ready.target.folder,
       reappeared: !first
     }
@@ -5805,18 +5877,18 @@ function userSettingsNotes(facts) {
 
 // bin/helpers/memory-sessions.ts
 import * as fs20 from "node:fs";
-import * as path23 from "node:path";
+import * as path24 from "node:path";
 function realOrResolved(p) {
   try {
     return fs20.realpathSync(p);
   } catch {
-    return path23.resolve(p);
+    return path24.resolve(p);
   }
 }
 var STOPPED_STATE = "stopped";
 function isInside2(dir, checkout) {
-  const rel = path23.relative(checkout, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path23.sep}`) || path23.isAbsolute(rel));
+  const rel = path24.relative(checkout, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path24.sep}`) || path24.isAbsolute(rel));
 }
 function sessionsInRepo(jobs, checkouts, selfId) {
   const roots = checkouts.map(realOrResolved);
@@ -5828,10 +5900,10 @@ function sessionsInRepo(jobs, checkouts, selfId) {
 
 // bin/helpers/memory-link-facts.ts
 function gatherFacts(opts, deps) {
-  const store = path24.resolve(storeRoot(deps.env, deps.home));
+  const store = path25.resolve(storeRoot(deps.env, deps.home));
   const state = storeState(store, deps.runGit);
-  const found = mainCheckout(path24.resolve(opts.repo), deps.runGit, deps.home);
-  const name = opts.name ?? ("root" in found ? path24.basename(found.root) : undefined);
+  const found = mainCheckout(path25.resolve(opts.repo), deps.runGit, deps.home);
+  const name = opts.name ?? ("root" in found ? path25.basename(found.root) : undefined);
   const nameIssues = [opts.family, name].flatMap((n) => {
     const issue = n === undefined ? undefined : folderNameIssue(n);
     return issue === undefined ? [] : [issue];
@@ -5841,7 +5913,7 @@ function gatherFacts(opts, deps) {
     store,
     state,
     family: opts.family,
-    name: name ?? path24.basename(found.root),
+    name: name ?? path25.basename(found.root),
     namesOk: nameIssues.length === 0,
     deps
   });
@@ -5861,7 +5933,7 @@ function repoFacts(input) {
   const settings = settingsState(root, deps.runGit);
   const key = projectKey(root);
   const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
-  const folder = path24.join(input.store, ...rel.split("/"));
+  const folder = path25.join(input.store, ...rel.split("/"));
   const knowsFolder = input.namesOk && input.state.kind !== "foreign";
   const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
   const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
@@ -5878,7 +5950,7 @@ function repoFacts(input) {
 }
 function keyMissed(root, key, deps) {
   const claudeJson = claudeJsonPath(deps.env, deps.home);
-  const projectFolder = path24.join(deps.configDir, "projects", key);
+  const projectFolder = path25.join(deps.configDir, "projects", key);
   const missed = knownRoot(root, claudeJson) && !fs21.existsSync(projectFolder);
   return missed ? { claudeJson, projectFolder } : undefined;
 }
@@ -5903,7 +5975,7 @@ function targetFacts(input) {
     folder,
     rel,
     state: targetState(folder),
-    family: input.family === undefined ? "none" : familyState(path24.join(store, input.family)),
+    family: input.family === undefined ? "none" : familyState(path25.join(store, input.family)),
     elsewhere: findMarkers(store).filter((m) => m.root === input.root && m.folder !== folder).map((m) => ({ folder: m.folder, family: m.family })),
     archives: archiveNames(store),
     pending: input.state.kind === "store" ? ownedChanges(store, owned, input.deps.runGit) : { paths: [] }
@@ -5932,12 +6004,12 @@ function familyState(folder) {
   return readMarker(folder).kind === "none" ? "folder" : "marked";
 }
 function archiveNames(store) {
-  const folder = path24.join(store, ...ARCHIVE_DIR.split("/"));
+  const folder = path25.join(store, ...ARCHIVE_DIR.split("/"));
   return fs21.existsSync(folder) ? fs21.readdirSync(folder) : [];
 }
 function isInside3(dir, parent) {
-  const rel = path24.relative(parent, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path24.sep}`) || path24.isAbsolute(rel));
+  const rel = path25.relative(parent, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path25.sep}`) || path25.isAbsolute(rel));
 }
 function walkFolder(root) {
   const entries = entriesOf2(fs21.realpathSync(root), root, "");
@@ -5947,7 +6019,7 @@ function walkFolder(root) {
   };
 }
 function entriesOf2(real, root, rel) {
-  return fs21.readdirSync(path24.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+  return fs21.readdirSync(path25.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
     const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
     if (entry.isDirectory())
       return entriesOf2(real, root, child);
@@ -5957,13 +6029,13 @@ function entriesOf2(real, root, rel) {
       return [linkEntry(real, root, child)];
     return [
       {
-        issue: `${path24.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
+        issue: `${path25.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
       }
     ];
   });
 }
 function linkEntry(real, root, child) {
-  const full = path24.join(root, child);
+  const full = path25.join(root, child);
   const way = "Replace it with the file itself, or remove it, then run link again.";
   try {
     const named = fs21.realpathSync(full);
@@ -5988,7 +6060,7 @@ function readDefaultFolder(folder, target) {
   const walked = walkFolder(folder);
   const files = walked.files.map((rel) => ({
     rel,
-    copy: target === undefined ? "absent" : copyState(path24.join(folder, rel), path24.join(target, rel))
+    copy: target === undefined ? "absent" : copyState(path25.join(folder, rel), path25.join(target, rel))
   }));
   return { kind: "present", folder, files, issues: walked.issues };
 }
@@ -6010,7 +6082,7 @@ function ownedChanges(store, owned, runGit) {
     owned.defaultFolder,
     ...ownArchives(store, owned.projectKey)
   ];
-  const isOwned = (p) => fs21.existsSync(path24.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
+  const isOwned = (p) => fs21.existsSync(path25.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
   return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
 }
 var UNTRACKED = "??";
@@ -6019,7 +6091,7 @@ function uncommittedCreation(store, runGit) {
   const listed = statusIn(store, [...CREATION_PATHS], runGit);
   if ("issue" in listed)
     return listed;
-  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs21.existsSync(path24.join(store, e.path));
+  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs21.existsSync(path25.join(store, e.path));
   return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
 }
 function statusIn(store, pathspecs, runGit) {
@@ -6046,8 +6118,8 @@ function isOwnCopy(store, folderRel, sources, p) {
   const rel = p.slice(prefix.length);
   if (rel === MARKER_FILE)
     return true;
-  const file = path24.join(store, p);
-  return sources.some((source) => sameBytes(path24.join(source, rel), file));
+  const file = path25.join(store, p);
+  return sources.some((source) => sameBytes(path25.join(source, rel), file));
 }
 function sameBytes(a, b) {
   try {
@@ -6058,8 +6130,8 @@ function sameBytes(a, b) {
   }
 }
 function ownArchives(store, key) {
-  const parent = path24.join(store, ...ARCHIVE_DIR.split("/"));
-  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path24.join(parent, name));
+  const parent = path25.join(store, ...ARCHIVE_DIR.split("/"));
+  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path25.join(parent, name));
 }
 function porcelainEntries(output) {
   const fields = output.split("\x00").filter((field) => field !== "");
@@ -6094,11 +6166,11 @@ function additionalDirectories(file) {
     return [];
   }
 }
-var expandHome = (entry, home) => entry === "~" || entry.startsWith("~/") ? path24.join(home, entry.slice(1)) : entry;
+var expandHome = (entry, home) => entry === "~" || entry.startsWith("~/") ? path25.join(home, entry.slice(1)) : entry;
 function userSettingsFacts(configDir, store, home) {
-  const file = path24.join(configDir, "settings.json");
+  const file = path25.join(configDir, "settings.json");
   const covered = additionalDirectories(file).some((entry) => {
-    const dir = path24.resolve(expandHome(entry, home));
+    const dir = path25.resolve(expandHome(entry, home));
     return isInside3(store, dir) || isInside3(physical(store), physical(dir));
   });
   return { file, covered };
@@ -6182,7 +6254,7 @@ function runAction(action, runGit) {
       writeMarker(action.folder, action.root);
       return done;
     case "copyFile":
-      fs22.mkdirSync(path25.dirname(action.to), { recursive: true });
+      fs22.mkdirSync(path26.dirname(action.to), { recursive: true });
       fs22.copyFileSync(action.from, action.to, fs22.constants.COPYFILE_EXCL);
       return done;
     case "mergeKey": {
@@ -6200,16 +6272,16 @@ function runAction(action, runGit) {
   }
 }
 function archive(action) {
-  const kept = walkFolder(action.from).files.filter((rel) => copyState(path25.join(action.from, rel), path25.join(action.copies, rel)) !== "same");
+  const kept = walkFolder(action.from).files.filter((rel) => copyState(path26.join(action.from, rel), path26.join(action.copies, rel)) !== "same");
   moveFolder(action.from, action.to);
-  const listed = kept.map((rel) => `  ${path25.join(action.to, rel)}`);
+  const listed = kept.map((rel) => `  ${path26.join(action.to, rel)}`);
   if (kept.length === 0)
     return { ok: true, lines: [phrase(action).done] };
   const why = action.reappeared ? `The default folder came back after the link. These files in it differ from ${action.copies} or are missing there, so merge what is new by hand:` : `These files changed after the copy, so their latest version is kept in the archive only:`;
   return { ok: true, lines: [phrase(action).done, why, ...listed] };
 }
 function moveFolder(from, to, rename = fs22.renameSync) {
-  fs22.mkdirSync(path25.dirname(to), { recursive: true });
+  fs22.mkdirSync(path26.dirname(to), { recursive: true });
   try {
     rename(from, to);
   } catch (error) {
@@ -6253,7 +6325,7 @@ function phrase(action) {
     case "createFolder":
       return forms("Created", "create", action.folder);
     case "writeMarker":
-      return forms("Wrote", "write", `${path25.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
+      return forms("Wrote", "write", `${path26.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
     case "copyFile":
       return forms("Copied", "copy", `${action.from} to ${action.to}`);
     case "mergeKey":
@@ -6270,7 +6342,7 @@ function phrase(action) {
 }
 
 // bin/helpers/memory.ts
-var MEMORY_USAGE_LINE = "sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run]";
+var MEMORY_USAGE_LINE = "sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run] | sidekick memory snapshot --store <path> --session <id> --source <source>";
 function parseLinkArgs(rest2) {
   const parsed = parseFlags(rest2, {
     family: { type: "string" },
@@ -6296,17 +6368,33 @@ function envWithAbsoluteStore(env, cwd) {
   const store = env.SIDEKICK_MEMORY_STORE;
   if (store === undefined || store === "")
     return env;
-  return { ...env, SIDEKICK_MEMORY_STORE: path26.resolve(cwd, store) };
+  return { ...env, SIDEKICK_MEMORY_STORE: path27.resolve(cwd, store) };
+}
+function runSnapshot(rest2) {
+  const parsed = parseFlags(rest2, {
+    store: { type: "string" },
+    session: { type: "string" },
+    source: { type: "string" }
+  });
+  const { store, session, source } = parsed?.values ?? {};
+  if (typeof store === "string" && typeof session === "string" && typeof source === "string") {
+    try {
+      snapshotStore(path27.resolve(store), session, source, deadlineRunner(SNAPSHOT_DEADLINE_MS, Date.now));
+    } catch {}
+  }
+  return 0;
 }
 function runMemoryCli(argv2, ctx, out, err) {
   const [verb, ...rest2] = argv2;
+  if (verb === "snapshot")
+    return runSnapshot(rest2);
   const parsed = verb === "link" ? parseLinkArgs(rest2) : undefined;
   if (parsed === undefined) {
     err(`usage: ${MEMORY_USAGE_LINE}`);
     return 1;
   }
   const env = envWithAbsoluteStore(ctx.env, ctx.cwd);
-  return runLink({ ...parsed, repo: path26.resolve(ctx.cwd, parsed.repo) }, {
+  return runLink({ ...parsed, repo: path27.resolve(ctx.cwd, parsed.repo) }, {
     env,
     home: ctx.home,
     configDir: configDirOf(env, ctx.home),
@@ -6655,14 +6743,14 @@ function renderReport(r) {
 // bin/helpers/rules.ts
 import { execFileSync } from "node:child_process";
 import * as fs25 from "node:fs";
-import * as path29 from "node:path";
+import * as path30 from "node:path";
 
 // bin/helpers/rules-fs.ts
 import * as fs23 from "node:fs";
-import * as path27 from "node:path";
+import * as path28 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
 function statusOf(dir, name) {
-  const st = fs23.lstatSync(path27.join(dir, name), { throwIfNoEntry: false });
+  const st = fs23.lstatSync(path28.join(dir, name), { throwIfNoEntry: false });
   if (!st)
     return "absent";
   return st.isFile() ? "file" : "other";
@@ -6679,7 +6767,7 @@ function ownedRulesIn(dir) {
 
 // bin/helpers/rules-overlap.ts
 import * as fs24 from "node:fs";
-import * as path28 from "node:path";
+import * as path29 from "node:path";
 var MIN_SHARED_HEADINGS = 2;
 var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
 function headingsOf(body) {
@@ -6719,7 +6807,7 @@ function findOverlap(src, dest) {
   if (!destStat?.isDirectory())
     return report2;
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs24.readFileSync(path28.join(src, name), "utf-8");
+    const body = fs24.readFileSync(path29.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
@@ -6728,7 +6816,7 @@ function findOverlap(src, dest) {
   });
   const others = fs24.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   for (const file of others) {
-    const body = fs24.readFileSync(path28.join(dest, file), "utf-8");
+    const body = fs24.readFileSync(path29.join(dest, file), "utf-8");
     for (const rule of rules) {
       const signals = signalsFor(file, body, rule);
       if (signals.length === 0)
@@ -6767,7 +6855,7 @@ function formatOverlap(report2) {
 
 // bin/helpers/rules.ts
 function resolveDest(scope, cwd, claudeHome) {
-  return scope === "project" ? path29.join(cwd, ".claude", "rules") : path29.join(claudeHome, "rules");
+  return scope === "project" ? path30.join(cwd, ".claude", "rules") : path30.join(claudeHome, "rules");
 }
 function workTreeRootOf(cwd) {
   try {
@@ -6789,7 +6877,7 @@ var PLUGIN_ONLY_RULES = [
 var isRecord7 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
-  const file = path29.join(root, ".claude", "settings.json");
+  const file = path30.join(root, ".claude", "settings.json");
   let text;
   try {
     text = fs25.readFileSync(file, "utf-8");
@@ -6857,7 +6945,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
       skipped.push({ name, why: "not-a-regular-file" });
       continue;
     }
-    fs25.copyFileSync(path29.join(src, name), path29.join(dest, name));
+    fs25.copyFileSync(path30.join(src, name), path30.join(dest, name));
     installed.push(name);
   }
   const keep = new Set(shipped);
@@ -6865,7 +6953,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
   const removed = owned.filter((n) => !keep.has(n));
   const leftOut = owned.filter((n) => set.leaveOut.includes(n));
   for (const name of [...removed, ...leftOut]) {
-    fs25.rmSync(path29.join(dest, name));
+    fs25.rmSync(path30.join(dest, name));
   }
   return { installed, removed, leftOut, skipped };
 }
@@ -6876,12 +6964,12 @@ function checkRules(src, dest, scope = EVERY_RULE) {
   const installed = ownedRulesIn(dest);
   const drift = [];
   for (const name of expected) {
-    const there = path29.join(dest, name);
+    const there = path30.join(dest, name);
     if (!fs25.existsSync(there)) {
       drift.push({ kind: "missing", name });
       continue;
     }
-    const same = fs25.readFileSync(path29.join(src, name)).equals(fs25.readFileSync(there));
+    const same = fs25.readFileSync(path30.join(src, name)).equals(fs25.readFileSync(there));
     if (!same)
       drift.push({ kind: "stale", name });
   }
@@ -6936,7 +7024,7 @@ var realOrSelf = (p) => {
   try {
     return fs25.realpathSync(p);
   } catch {
-    return path29.resolve(p);
+    return path30.resolve(p);
   }
 };
 var sameDir = (a, b) => realOrSelf(a) === realOrSelf(b);
@@ -7423,7 +7511,7 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 
 // bin/helpers/worker-dispatch.ts
 import * as fs26 from "node:fs";
-import * as path30 from "node:path";
+import * as path31 from "node:path";
 
 // bin/helpers/worker-overlay.ts
 var markers = (opts) => ({
@@ -7508,10 +7596,10 @@ function parseDispatchArgs(rest2, cwd) {
   if (pluginDir === "")
     return;
   return {
-    brief: path30.resolve(cwd, parsed.positionals[0]),
+    brief: path31.resolve(cwd, parsed.positionals[0]),
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path30.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path31.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
 }
@@ -7548,7 +7636,7 @@ var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
   "tracked files have uncommitted changes, which the worker's worktree would not carry: commit them first"
 ];
 function treeNameIssues(runGit, top, name) {
-  const folder = path30.join(top, WORKTREES_FOLDER, name);
+  const folder = path31.join(top, WORKTREES_FOLDER, name);
   const branch = nativeBranch(name);
   return [
     ...fs26.existsSync(folder) ? [`name: ${folder} already exists`] : [],
@@ -7600,7 +7688,7 @@ function bypassIssues(profile, mode) {
 }
 function missingProfileHint(name, penv) {
   const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder(path30.join(root.dir, name)));
+  const held = roots.some((root) => isFolder(path31.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv, main, reads) {
@@ -7750,7 +7838,7 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-finish-args.ts
-import * as path31 from "node:path";
+import * as path32 from "node:path";
 var NEEDS_REPORT = "--name needs --no-report or --discard, since there is no brief to say where the run report goes";
 var NEEDS_INTO = "--name needs --into <rev> or --discard, since there is no brief to name the target";
 var stringFlag2 = (values, key) => {
@@ -7776,7 +7864,7 @@ function parseFinishArgs(rest2, cwd) {
   const shared = {
     noReport: values["no-report"] === true,
     mode: discard ? { kind: "discard" } : { kind: "landed", into },
-    worktree: worktree === undefined ? undefined : path31.resolve(cwd, worktree)
+    worktree: worktree === undefined ? undefined : path32.resolve(cwd, worktree)
   };
   const name = stringFlag2(values, "name");
   if (name !== undefined) {
@@ -7784,7 +7872,7 @@ function parseFinishArgs(rest2, cwd) {
   }
   if (positionals.length !== 1)
     return;
-  const brief = path31.resolve(cwd, positionals[0]);
+  const brief = path32.resolve(cwd, positionals[0]);
   return { subject: { kind: "brief", brief }, ...shared };
 }
 function byName3(name, shared) {
@@ -7847,7 +7935,7 @@ var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
 import * as fs27 from "node:fs";
-import * as path32 from "node:path";
+import * as path33 from "node:path";
 
 // bin/helpers/worker-landed.ts
 var DEFAULT_CAP = 200;
@@ -8305,15 +8393,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report2 = path32.posix.normalize(read.brief.report);
+  const report2 = path33.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: read.brief.target,
     report: report2,
-    reportFrom: path32.join(worktree, report2),
-    reportTo: top === undefined ? undefined : path32.join(top, report2)
+    reportFrom: path33.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path33.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -8358,7 +8446,7 @@ function operatorIssues(name, tried, linked) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs27.existsSync(worktree) && !fs27.existsSync(path32.join(worktree, ".git"));
+  const linkless = fs27.existsSync(worktree) && !fs27.existsSync(path33.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -8511,7 +8599,7 @@ function clearGone(gone, wenv, out) {
 
 // bin/helpers/worker-finish-report.ts
 import * as fs28 from "node:fs";
-import * as path33 from "node:path";
+import * as path34 from "node:path";
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
@@ -8568,7 +8656,7 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs28.mkdirSync(path33.dirname(to), { recursive: true });
+    fs28.mkdirSync(path34.dirname(to), { recursive: true });
     fs28.copyFileSync(from, to, fs28.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
@@ -8632,7 +8720,7 @@ function copyChangedIssues(from, to, now) {
 
 // bin/helpers/worker-finish-subject.ts
 import * as fs29 from "node:fs";
-import * as path34 from "node:path";
+import * as path35 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -8643,7 +8731,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path34.dirname(subject.brief);
+      const folder = path35.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -8661,7 +8749,7 @@ function recordedTop(runGit, commonDir, name) {
   const record2 = records.find((r) => r.name === name);
   if (record2 === undefined)
     return;
-  const folder = path34.dirname(record2.brief);
+  const folder = path35.dirname(record2.brief);
   return fs29.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
@@ -8940,20 +9028,20 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path35.dirname(fileURLToPath(entryFileUrl));
+  const here = path36.dirname(fileURLToPath(entryFileUrl));
   const candidates2 = [
-    path35.resolve(here, ".."),
-    path35.resolve(here, "..", "plugin")
+    path36.resolve(here, ".."),
+    path36.resolve(here, "..", "plugin")
   ];
   for (const c of candidates2) {
-    if (fs30.existsSync(path35.join(c, "rules")))
+    if (fs30.existsSync(path36.join(c, "rules")))
       return c;
   }
   return candidates2[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path35.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path36.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
     const parsed = safeParse(ManifestVersion, JSON.parse(fs30.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
@@ -9059,7 +9147,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path35.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path36.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

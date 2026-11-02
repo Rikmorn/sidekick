@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  CREATION_PATHS,
   commitPaths,
   createStore,
   findMarkers,
@@ -183,17 +184,17 @@ describe('createStore', () => {
     const result = createStore(store, execRunner);
     expect(result).toEqual({
       ok: true,
-      paths: ['README.md', 'sources/.gitkeep', 'archive/.gitkeep'],
+      paths: [...CREATION_PATHS],
     });
     const files = git(store, 'show', '--name-only', '--format=', 'HEAD')
       .trim()
       .split('\n')
       .sort();
-    expect(files).toEqual([
-      'README.md',
-      'archive/.gitkeep',
-      'sources/.gitkeep',
-    ]);
+    expect(files).toEqual([...CREATION_PATHS].sort());
+    expect(files).toContain('.gitignore');
+    expect(fs.readFileSync(path.join(store, '.gitignore'), 'utf-8')).toBe(
+      '.DS_Store\n',
+    );
     expect(git(store, 'rev-list', '--count', 'HEAD').trim()).toBe('1');
     expect(fs.readFileSync(path.join(store, 'README.md'), 'utf-8')).toBe(
       STORE_README,
