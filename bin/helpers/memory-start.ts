@@ -6,9 +6,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
-import { readMemoryFile } from './memory-files.js';
 import { linkCommand } from './memory-link-plan.js';
 import { type Match, matchWorkstream } from './memory-match.js';
+import {
+  headingAs,
+  NEXT_HEADING,
+  otherHeadings,
+  STATE_HEADING,
+} from './memory-sections.js';
 import {
   renderStart,
   type StartParts,
@@ -32,8 +37,6 @@ export { renderStart } from './memory-start-render.js';
 const STALE_LOCK_MS = 10 * 60 * 1000;
 const RECENT_RECORDS = 3;
 const INDEX_FILE = 'MEMORY.md';
-const STATE_HEADING = '## State';
-const NEXT_HEADING = '## Next steps';
 // The session id becomes part of a file name in the store.
 const SESSION_ID = /^[A-Za-z0-9-]{1,128}$/;
 
@@ -117,32 +120,6 @@ function familyOf(familyFolder: string | undefined): StartParts['family'] {
   } catch {
     return undefined;
   }
-}
-
-function isHeading(line: string, heading: string): boolean {
-  return line.trimEnd().toLowerCase() === heading.toLowerCase();
-}
-
-// The heading as the file spells it, so `readSection` finds a differently capitalised one.
-function headingAs(file: string, heading: string): string {
-  const body = readMemoryFile(file)?.body ?? '';
-  return body.split('\n').find((line) => isHeading(line, heading)) ?? heading;
-}
-
-// `## ` headings outside fenced code, other than the two sections the hook prints.
-function otherHeadings(file: string): string[] {
-  const body = readMemoryFile(file)?.body ?? '';
-  const fence = { open: false };
-  return body.split('\n').filter((line) => {
-    if (line.trimStart().startsWith('```')) fence.open = !fence.open;
-    const heading = line.trimEnd();
-    return (
-      !fence.open &&
-      line.startsWith('## ') &&
-      !isHeading(heading, STATE_HEADING) &&
-      !isHeading(heading, NEXT_HEADING)
-    );
-  });
 }
 
 function workstreamParts(

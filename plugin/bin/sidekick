@@ -4674,73 +4674,6 @@ function startSnapshot(pluginDir, store, sessionId, source) {
 import * as fs17 from "node:fs";
 import * as path22 from "node:path";
 
-// bin/helpers/memory-files.ts
-import * as fs15 from "node:fs";
-var FENCE2 = "---";
-var TOP_LINE = /^([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
-var NESTED_LINE = /^ {2}([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
-var METADATA_KEY = "metadata";
-function unquote(raw) {
-  const value = raw.trim();
-  if (value.length < 2)
-    return value;
-  const first = value[0];
-  if (first !== value[value.length - 1])
-    return value;
-  const inner = value.slice(1, -1);
-  if (first === "'")
-    return inner;
-  if (first === '"')
-    return inner.replace(/\\(["\\])/g, "$1");
-  return value;
-}
-function scanLine(scan, line) {
-  const nested = NESTED_LINE.exec(line);
-  if (nested?.[1] !== undefined) {
-    if (scan.inMetadata)
-      scan.metadata[nested[1]] = unquote(nested[2] ?? "");
-    return scan;
-  }
-  const top = TOP_LINE.exec(line);
-  const key = top?.[1];
-  if (key === undefined)
-    return scan;
-  const value = top?.[2] ?? "";
-  if (key === METADATA_KEY && value.trim() === "") {
-    return { ...scan, inMetadata: true };
-  }
-  scan.top[key] = unquote(value);
-  return { ...scan, inMetadata: false };
-}
-function parseMemoryText(text) {
-  const lines = text.split(`
-`);
-  const isFence = (l) => l?.trimEnd() === FENCE2;
-  if (!isFence(lines[0]))
-    return;
-  const end = lines.findIndex((l, i) => i > 0 && isFence(l));
-  if (end === -1)
-    return;
-  const initial = { top: {}, metadata: {}, inMetadata: false };
-  const scan = lines.slice(1, end).map((l) => l.trimEnd()).reduce(scanLine, initial);
-  const rest2 = lines.slice(end + 1);
-  const firstContent = rest2.findIndex((l) => l.trim() !== "");
-  return {
-    name: scan.top.name,
-    description: scan.top.description,
-    metadata: scan.metadata,
-    body: firstContent === -1 ? "" : rest2.slice(firstContent).join(`
-`)
-  };
-}
-function readMemoryFile(file) {
-  try {
-    return parseMemoryText(fs15.readFileSync(file, "utf8"));
-  } catch {
-    return;
-  }
-}
-
 // bin/helpers/memory-link-plan.ts
 import * as path19 from "node:path";
 
@@ -5133,6 +5066,96 @@ function matchWorkstream(all, facts) {
   return { kind: "menu", open };
 }
 
+// bin/helpers/memory-files.ts
+import * as fs15 from "node:fs";
+var FENCE2 = "---";
+var TOP_LINE = /^([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
+var NESTED_LINE = /^ {2}([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
+var METADATA_KEY = "metadata";
+function unquote(raw) {
+  const value = raw.trim();
+  if (value.length < 2)
+    return value;
+  const first = value[0];
+  if (first !== value[value.length - 1])
+    return value;
+  const inner = value.slice(1, -1);
+  if (first === "'")
+    return inner;
+  if (first === '"')
+    return inner.replace(/\\(["\\])/g, "$1");
+  return value;
+}
+function scanLine(scan, line) {
+  const nested = NESTED_LINE.exec(line);
+  if (nested?.[1] !== undefined) {
+    if (scan.inMetadata)
+      scan.metadata[nested[1]] = unquote(nested[2] ?? "");
+    return scan;
+  }
+  const top = TOP_LINE.exec(line);
+  const key = top?.[1];
+  if (key === undefined)
+    return scan;
+  const value = top?.[2] ?? "";
+  if (key === METADATA_KEY && value.trim() === "") {
+    return { ...scan, inMetadata: true };
+  }
+  scan.top[key] = unquote(value);
+  return { ...scan, inMetadata: false };
+}
+function parseMemoryText(text) {
+  const lines = text.split(`
+`);
+  const isFence = (l) => l?.trimEnd() === FENCE2;
+  if (!isFence(lines[0]))
+    return;
+  const end = lines.findIndex((l, i) => i > 0 && isFence(l));
+  if (end === -1)
+    return;
+  const initial = { top: {}, metadata: {}, inMetadata: false };
+  const scan = lines.slice(1, end).map((l) => l.trimEnd()).reduce(scanLine, initial);
+  const rest2 = lines.slice(end + 1);
+  const firstContent = rest2.findIndex((l) => l.trim() !== "");
+  return {
+    name: scan.top.name,
+    description: scan.top.description,
+    metadata: scan.metadata,
+    body: firstContent === -1 ? "" : rest2.slice(firstContent).join(`
+`)
+  };
+}
+function readMemoryFile(file) {
+  try {
+    return parseMemoryText(fs15.readFileSync(file, "utf8"));
+  } catch {
+    return;
+  }
+}
+
+// bin/helpers/memory-sections.ts
+var STATE_HEADING = "## State";
+var NEXT_HEADING = "## Next steps";
+function isHeading(line, heading) {
+  return line.trimEnd().toLowerCase() === heading.toLowerCase();
+}
+function headingAs(file, heading) {
+  const body = readMemoryFile(file)?.body ?? "";
+  return body.split(`
+`).find((line) => isHeading(line, heading)) ?? heading;
+}
+function otherHeadings(file) {
+  const body = readMemoryFile(file)?.body ?? "";
+  const fence = { open: false };
+  return body.split(`
+`).filter((line) => {
+    if (line.trimStart().startsWith("```"))
+      fence.open = !fence.open;
+    const heading = line.trimEnd();
+    return !fence.open && line.startsWith("## ") && !isHeading(heading, STATE_HEADING) && !isHeading(heading, NEXT_HEADING);
+  });
+}
+
 // bin/helpers/memory-start-render.ts
 import * as path20 from "node:path";
 var TOTAL_BUDGET = 9000;
@@ -5202,17 +5225,34 @@ function headerBlock(parts) {
 `);
   return [{ text, drop: Drop.Header }];
 }
+function fitWorkstream(state, nextSteps, readPath) {
+  const next = nextSteps === undefined ? undefined : fitSection(nextSteps, NEXT_STEPS_BUDGET, readPath);
+  const stateBudget = STATE_AND_NEXT_BUDGET - (next?.length ?? 0);
+  const shownState = state === undefined ? undefined : fitSection(state, stateBudget, readPath);
+  return {
+    state: shownState,
+    nextSteps: next,
+    cut: {
+      state: (state?.length ?? 0) > stateBudget,
+      nextSteps: (nextSteps?.length ?? 0) > NEXT_STEPS_BUDGET
+    },
+    sizes: {
+      state: state?.length ?? 0,
+      nextSteps: nextSteps?.length ?? 0,
+      stateBudget,
+      nextBudget: NEXT_STEPS_BUDGET
+    }
+  };
+}
 function workstreamBlocks(parts) {
   const { match, statePath, nextSteps, state } = parts;
   if (match?.kind !== "matched" || statePath === undefined)
     return [];
-  const next = nextSteps === undefined ? undefined : fitSection(nextSteps, NEXT_STEPS_BUDGET, statePath);
-  const stateBudget = STATE_AND_NEXT_BUDGET - (next?.length ?? 0);
-  const shownState = state === undefined ? undefined : fitSection(state, stateBudget, statePath);
+  const fit = fitWorkstream(state, nextSteps, statePath);
   const also = parts.otherHeadings.length > 0 ? `Also in the file: ${parts.otherHeadings.join(", ")}. Read the file for them.` : undefined;
   return [
-    { text: shownState, drop: Drop.State },
-    { text: next, drop: Drop.NextSteps },
+    { text: fit.state, drop: Drop.State },
+    { text: fit.nextSteps, drop: Drop.NextSteps },
     { text: also, drop: Drop.Also }
   ].flatMap(({ text, drop }) => text === undefined ? [] : [{ text, drop }]);
 }
@@ -5411,8 +5451,6 @@ function recordPath(repoFolder, sessionId, today) {
 var STALE_LOCK_MS = 10 * 60 * 1000;
 var RECENT_RECORDS = 3;
 var INDEX_FILE2 = "MEMORY.md";
-var STATE_HEADING = "## State";
-var NEXT_HEADING = "## Next steps";
 var SESSION_ID3 = /^[A-Za-z0-9-]{1,128}$/;
 var EventSchema = object({
   session_id: pipe(string(), regex(SESSION_ID3)),
@@ -5474,25 +5512,6 @@ function familyOf(familyFolder) {
   } catch {
     return;
   }
-}
-function isHeading(line, heading) {
-  return line.trimEnd().toLowerCase() === heading.toLowerCase();
-}
-function headingAs(file, heading) {
-  const body = readMemoryFile(file)?.body ?? "";
-  return body.split(`
-`).find((line) => isHeading(line, heading)) ?? heading;
-}
-function otherHeadings(file) {
-  const body = readMemoryFile(file)?.body ?? "";
-  const fence = { open: false };
-  return body.split(`
-`).filter((line) => {
-    if (line.trimStart().startsWith("```"))
-      fence.open = !fence.open;
-    const heading = line.trimEnd();
-    return !fence.open && line.startsWith("## ") && !isHeading(heading, STATE_HEADING) && !isHeading(heading, NEXT_HEADING);
-  });
 }
 function workstreamParts(match, deps) {
   if (match.kind !== "matched") {

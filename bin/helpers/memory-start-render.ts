@@ -102,23 +102,59 @@ function headerBlock(parts: StartParts): Block[] {
   return [{ text, drop: Drop.Header }];
 }
 
-function workstreamBlocks(parts: StartParts): Block[] {
-  const { match, statePath, nextSteps, state } = parts;
-  if (match?.kind !== 'matched' || statePath === undefined) return [];
+/**
+ * The hook's fitting of the two workstream sections: Next steps to its budget,
+ * then State to what that leaves. `cut` says which section ran over.
+ */
+export function fitWorkstream(
+  state: string | undefined,
+  nextSteps: string | undefined,
+  readPath: string,
+): {
+  state?: string;
+  nextSteps?: string;
+  cut: { state: boolean; nextSteps: boolean };
+  sizes: {
+    state: number;
+    nextSteps: number;
+    stateBudget: number;
+    nextBudget: number;
+  };
+} {
   const next =
     nextSteps === undefined
       ? undefined
-      : fitSection(nextSteps, NEXT_STEPS_BUDGET, statePath);
+      : fitSection(nextSteps, NEXT_STEPS_BUDGET, readPath);
   const stateBudget = STATE_AND_NEXT_BUDGET - (next?.length ?? 0);
   const shownState =
-    state === undefined ? undefined : fitSection(state, stateBudget, statePath);
+    state === undefined ? undefined : fitSection(state, stateBudget, readPath);
+  return {
+    state: shownState,
+    nextSteps: next,
+    cut: {
+      state: (state?.length ?? 0) > stateBudget,
+      nextSteps: (nextSteps?.length ?? 0) > NEXT_STEPS_BUDGET,
+    },
+    sizes: {
+      state: state?.length ?? 0,
+      nextSteps: nextSteps?.length ?? 0,
+      stateBudget,
+      nextBudget: NEXT_STEPS_BUDGET,
+    },
+  };
+}
+
+function workstreamBlocks(parts: StartParts): Block[] {
+  const { match, statePath, nextSteps, state } = parts;
+  if (match?.kind !== 'matched' || statePath === undefined) return [];
+  const fit = fitWorkstream(state, nextSteps, statePath);
   const also =
     parts.otherHeadings.length > 0
       ? `Also in the file: ${parts.otherHeadings.join(', ')}. Read the file for them.`
       : undefined;
   return [
-    { text: shownState, drop: Drop.State },
-    { text: next, drop: Drop.NextSteps },
+    { text: fit.state, drop: Drop.State },
+    { text: fit.nextSteps, drop: Drop.NextSteps },
     { text: also, drop: Drop.Also },
   ].flatMap(({ text, drop }) => (text === undefined ? [] : [{ text, drop }]));
 }
