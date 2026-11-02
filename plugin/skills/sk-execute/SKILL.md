@@ -104,7 +104,7 @@ When the operator chooses the worker mode, this session dispatches the worker as
   3. Run `finish`.
   4. Dispatch a new brief with a new name, this checkout's `HEAD` as `baseline`, the same plan, and the same `workstream`.
 
-  The memory hook lists the earlier worker's record, which says which task comes next. If its commits cannot land, `finish --discard` on the operator's word keeps them in a backup ref. This route is unprobed. Whether a `/clear` message clears a running worker is not settled, so replace the worker until a probe says otherwise.
+  The memory hook lists the earlier worker's record, which says which task comes next. If its commits cannot land, `finish --discard` on the operator's word keeps them in a backup ref. A message cannot clear a worker: a `/clear` sent by message reaches its model as text, and the session keeps its id.
 
 Finish or discard each worker before you remove the checkout that dispatched it, since `finish` reads the brief there.
 
