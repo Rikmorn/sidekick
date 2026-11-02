@@ -481,12 +481,17 @@ describe('memoryStartContext', () => {
 
   test('a worker brief that fails its schema skips tier 1 and a lower tier still matches', () => {
     const { store, repo, folder } = linked();
-    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:main');
+    // alpha is named by the brief only; gamma matches by branch. A bypassed schema check would pick alpha.
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:nope');
+    workstreamFile(path.join(folder, 'gamma.md'), 'gamma', 'proj:main');
     const brief = path.join(tmp, 'bad-brief.md');
-    fs.writeFileSync(brief, '---\nworkstream: beta\n---\n');
+    fs.writeFileSync(brief, '---\nworkstream: alpha\n---\n');
     const env = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: brief };
     const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
-    expect(result.context).toContain('matched by branch main');
+    expect(result.context).toContain(
+      'Workstream: gamma, matched by branch main',
+    );
+    expect(result.context).not.toContain("the worker's brief");
   });
 
   test('a detached HEAD skips the branch tier without throwing', () => {
