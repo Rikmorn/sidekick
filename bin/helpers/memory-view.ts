@@ -5,6 +5,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { expandHome } from './home-path.js';
 import { type MemoryFile, readMemoryFile } from './memory-files.js';
 import { mainCheckout, readKey } from './memory-settings.js';
 import { findMarkers, storeRoot } from './memory-store.js';
@@ -48,11 +49,6 @@ function resolved(target: string): string {
   }
 }
 
-// Claude Code takes an absolute or `~/` path; a relative key never counts as inside the store.
-function expandHome(key: string, home: string): string {
-  return key.startsWith('~/') ? path.join(home, key.slice(2)) : key;
-}
-
 function isInside(folder: string, parent: string): boolean {
   const relative = path.relative(parent, folder);
   return (
@@ -83,6 +79,7 @@ export function repoView(cwd: string, deps: ViewDeps): RepoView {
   if ('issue' in main) return { kind: 'none' };
   const store = resolved(storeRoot(deps.env, deps.home));
   const rawKey = readKey(cwd, deps.runGit);
+  // Claude Code takes an absolute or `~/` path; a relative key never counts as inside the store.
   const key = rawKey === undefined ? undefined : expandHome(rawKey, deps.home);
   if (
     key !== undefined &&

@@ -66,6 +66,8 @@ export interface RepoFacts {
   kind: 'found';
   root: string;
   settings: SettingsState;
+  /** The home folder a key written as `~/…` expands against. */
+  home: string;
   projectKey: string;
   /** Set when `.claude.json` lists the root but its project folder is absent. */
   keyMissed: { claudeJson: string; projectFolder: string } | undefined;

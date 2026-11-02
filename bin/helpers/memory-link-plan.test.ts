@@ -16,6 +16,7 @@ import type { Job } from './worker-jobs.js';
 const ROOT = '/x/odin';
 const STORE = '/s/store';
 const TARGET = '/s/store/odin';
+const HOME = '/s';
 const KEY = '-x-odin';
 const DEFAULT = `/c/projects/${KEY}/memory`;
 const SETTINGS_FILE = '/x/odin/.claude/settings.local.json';
@@ -75,6 +76,7 @@ function repo(over: Partial<RepoFacts> = {}): RepoFacts {
     kind: 'found',
     root: ROOT,
     settings: settings(),
+    home: HOME,
     projectKey: KEY,
     keyMissed: undefined,
     defaultFolder: present([
@@ -588,6 +590,22 @@ describe('planLink: refusals', () => {
     });
     expect(refusal).toContain('/elsewhere/odin');
     expect(refusal).toContain('README');
+  });
+
+  test('a key written as ~/ that names the folder is its own, as the absolute key is', () => {
+    for (const state of [MARKED.state, { kind: 'absent' } as const]) {
+      const plan = (key: string): LinkPlan =>
+        planLink(
+          facts({
+            repo: repo({ settings: settings(key), target: target({ state }) }),
+          }),
+          NO_FLAGS,
+        );
+      const tilde = actionsOf(plan('~/store/odin'));
+      expect(tilde).toEqual(actionsOf(plan(TARGET)));
+      // mergeKey compares the key's text, so it would refuse to replace `~/…` after the copies.
+      expect(tilde.some((action) => action.kind === 'mergeKey')).toBe(false);
+    }
   });
 
   test('a project folder that is absent though .claude.json lists the root', () => {

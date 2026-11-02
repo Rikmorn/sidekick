@@ -7,6 +7,7 @@
  */
 
 import * as path from 'node:path';
+import { expandHome } from './home-path.js';
 import type {
   DefaultFile,
   LinkAction,
@@ -87,6 +88,13 @@ export function linkCommand(
   return `sidekick memory link ${shellArg(root)}${flags.join('')}`;
 }
 
+// The folder a key names; Claude Code also takes a key written as `~/…`.
+const keyFolder = (
+  key: string | undefined,
+  home: string,
+): string | undefined =>
+  key === undefined ? undefined : expandHome(key, home);
+
 // A key in place means the first link is done: copies are over. The key is in
 // place only when it names the folder and the folder's marker names this root,
 // since only the marker proves link set the key. An unknown folder counts as a
@@ -96,7 +104,7 @@ function isFirstLink(repo: RepoFacts): boolean {
   const keyInPlace =
     settings.kind === 'ready' &&
     target !== undefined &&
-    settings.key === target.folder &&
+    keyFolder(settings.key, repo.home) === target.folder &&
     target.state.kind === 'marked' &&
     target.state.root === repo.root;
   return !keyInPlace;
@@ -153,7 +161,8 @@ function settingsRefusals(repo: RepoFacts): string[] {
   const { settings, target } = repo;
   if (settings.kind === 'refused') return [settings.issue];
   const ownOrAbsent =
-    settings.key === undefined || settings.key === target?.folder;
+    settings.key === undefined ||
+    keyFolder(settings.key, repo.home) === target?.folder;
   if (ownOrAbsent || target === undefined) return [];
   return [
     `${settings.file} already sets ${SETTINGS_KEY} to ${settings.key}, not ${target.folder}, and sidekick changes only a key it wrote. If that folder is in the store, run link with the --family and --name that name it. Otherwise remove the entry by hand, as the store's README says under Changes by hand.`,
@@ -296,7 +305,7 @@ function actionsOf(ready: Ready, facts: LinkFacts): LinkAction[] {
     ...storeActions(ready, facts),
     ...folderActions(ready),
     ...(first ? copyActions(ready) : []),
-    ...(first ? [mergeAction(ready)] : []),
+    ...(first && !keyNamesTarget(ready) ? [mergeAction(ready)] : []),
     ...archiveActions(ready, facts, first),
   ];
   const writesStore =
@@ -340,6 +349,10 @@ function copyActions(ready: Ready): LinkAction[] {
       to: path.join(ready.target.folder, f.rel),
     }));
 }
+
+// A key that already names the folder, `~/` form included, needs no write: `mergeKey` compares text.
+const keyNamesTarget = (ready: Ready): boolean =>
+  keyFolder(ready.settings.key, ready.repo.home) === ready.target.folder;
 
 function mergeAction(ready: Ready): LinkAction {
   return {

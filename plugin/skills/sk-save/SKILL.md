@@ -1,7 +1,7 @@
 ---
 name: sk-save
 description: Save a session's context to the memory store, as its own record and, in a main session, the state of its workstream. Use when the operator asks to save context or progress, before a /clear, at the end of a session, when the context monitor asks, or, for a worker, before its run report.
-allowed-tools: Read(~/sk-memory-store/**), Edit(~/sk-memory-store/**), Glob, Grep
+allowed-tools: Read(~/sk-memory-store/**), Edit(~/sk-memory-store/**), Glob, Grep, Bash(git branch --show-current), Bash(git symbolic-ref --short refs/remotes/origin/HEAD)
 ---
 
 # sk-save

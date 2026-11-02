@@ -7,6 +7,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
+import { expandHome } from './home-path.js';
 import {
   claudeJsonPath,
   defaultMemoryFolder,
@@ -130,6 +131,7 @@ function repoFacts(input: RepoInput): RepoFacts {
     kind: 'found',
     root,
     settings,
+    home: deps.home,
     projectKey: key,
     keyMissed: keyMissed(root, key, deps),
     defaultFolder,
@@ -464,11 +466,6 @@ function additionalDirectories(file: string): string[] {
     return [];
   }
 }
-
-const expandHome = (entry: string, home: string): string =>
-  entry === '~' || entry.startsWith('~/')
-    ? path.join(home, entry.slice(1))
-    : entry;
 
 // A missing or unreadable file covers nothing, so the report asks for the entry.
 function userSettingsFacts(
