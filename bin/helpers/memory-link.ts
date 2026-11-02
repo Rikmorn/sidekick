@@ -17,7 +17,7 @@ import {
   walkFolder,
 } from './memory-link-facts.js';
 import { planLink } from './memory-link-plan.js';
-import type { LinkAction, LinkFacts } from './memory-link-types.js';
+import type { LinkAction, LinkFacts, LinkPlan } from './memory-link-types.js';
 import { mergeKey, SETTINGS_KEY } from './memory-settings.js';
 import {
   commitPaths,
@@ -56,16 +56,37 @@ export function runLink(
     for (const refusal of plan.refusals) err(`- ${refusal}`);
     return 1;
   }
+  const finished = report(plan, opts.dryRun, deps.runGit, { out, err });
+  // A failed step may already have set the key, so its notes still apply.
+  for (const note of plan.notes) out(note);
+  return finished ? 0 : 1;
+}
+
+type ReadyPlan = Extract<LinkPlan, { kind: 'ready' }>;
+
+interface Streams {
+  out: (line: string) => void;
+  err: (line: string) => void;
+}
+
+// Says the repo is already linked, prints a dry run's steps, or applies them.
+// False when a step failed.
+function report(
+  plan: ReadyPlan,
+  dryRun: boolean,
+  runGit: Runner,
+  { out, err }: Streams,
+): boolean {
   if (plan.actions.length === 0) {
     out(`${plan.root} is already linked to ${plan.target}.`);
-  } else if (opts.dryRun) {
+    return true;
+  }
+  if (dryRun) {
     out('Dry run: link writes nothing. These are the steps it would take:');
     for (const action of plan.actions) out(phrase(action).todo);
-  } else if (!applyAll(plan.actions, deps.runGit, out, err)) {
-    return 1;
+    return true;
   }
-  for (const note of plan.notes) out(note);
-  return 0;
+  return applyAll(plan.actions, runGit, out, err);
 }
 
 function gather(

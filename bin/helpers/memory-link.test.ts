@@ -571,6 +571,39 @@ describe('runLink: a failed step', () => {
     expect(run.err[1]).toContain('run the same command again');
     expect(fs.existsSync(path.join(w.top, SETTINGS_REL))).toBe(false);
   });
+
+  test('still prints the session notes, after the failure lines', () => {
+    const w = world();
+    const lines: string[] = [];
+    const code = runLink(
+      opts(w.top, { force: true }),
+      {
+        ...w.deps,
+        env: { ...w.deps.env, CLAUDE_CODE_SESSION_ID: 'me' },
+        runClaude: listing([
+          { sessionId: 'me', cwd: w.top },
+          { sessionId: 'other', cwd: w.top },
+        ]),
+        runGit: (cmd, args, cwd) =>
+          args.includes('commit') && args.some((a) => a.startsWith('link '))
+            ? { code: 1, stdout: '', stderr: 'gpg failed to sign the data' }
+            : execRunner(cmd, args, cwd),
+      },
+      (l) => lines.push(`out: ${l}`),
+      (l) => lines.push(`err: ${l}`),
+    );
+    expect(code).toBe(1);
+    const failed = lines.findIndex((l) => l.includes('gpg failed'));
+    const forced = lines.findIndex((l) =>
+      l.startsWith('out: Passed over with --force: other'),
+    );
+    const self = lines.findIndex(
+      (l) => l.startsWith('out: This session (me') && l.includes('Restart it'),
+    );
+    expect(failed).toBeGreaterThanOrEqual(0);
+    expect(forced).toBeGreaterThan(failed);
+    expect(self).toBeGreaterThan(failed);
+  });
 });
 
 describe('moveFolder', () => {

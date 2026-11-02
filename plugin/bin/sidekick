@@ -5453,18 +5453,23 @@ function runLink(opts, deps, out, err) {
       err(`- ${refusal2}`);
     return 1;
   }
+  const finished = report(plan, opts.dryRun, deps.runGit, { out, err });
+  for (const note of plan.notes)
+    out(note);
+  return finished ? 0 : 1;
+}
+function report(plan, dryRun, runGit, { out, err }) {
   if (plan.actions.length === 0) {
     out(`${plan.root} is already linked to ${plan.target}.`);
-  } else if (opts.dryRun) {
+    return true;
+  }
+  if (dryRun) {
     out("Dry run: link writes nothing. These are the steps it would take:");
     for (const action of plan.actions)
       out(phrase(action).todo);
-  } else if (!applyAll(plan.actions, deps.runGit, out, err)) {
-    return 1;
+    return true;
   }
-  for (const note of plan.notes)
-    out(note);
-  return 0;
+  return applyAll(plan.actions, runGit, out, err);
 }
 function gather(opts, deps) {
   try {
@@ -6042,10 +6047,10 @@ function signalsFor(file, body, rule) {
   return signals;
 }
 function findOverlap(src, dest) {
-  const report = { pairs: [], extensions: [] };
+  const report2 = { pairs: [], extensions: [] };
   const destStat = fs21.statSync(dest, { throwIfNoEntry: false });
   if (!destStat?.isDirectory())
-    return report;
+    return report2;
   const rules = ownedRulesIn(src).map((name) => {
     const body = fs21.readFileSync(path25.join(src, name), "utf-8");
     return {
@@ -6062,13 +6067,13 @@ function findOverlap(src, dest) {
       if (signals.length === 0)
         continue;
       if (body.includes(rule.name)) {
-        report.extensions.push({ file, rule: rule.name });
+        report2.extensions.push({ file, rule: rule.name });
       } else {
-        report.pairs.push({ file, rule: rule.name, signals });
+        report2.pairs.push({ file, rule: rule.name, signals });
       }
     }
   }
-  return report;
+  return report2;
 }
 function describeSignal(signal) {
   if (signal === "name")
@@ -6077,18 +6082,18 @@ function describeSignal(signal) {
     return `${signal.headings} headings`;
   return "opening";
 }
-function formatOverlap(report) {
+function formatOverlap(report2) {
   const lines = [];
-  if (report.pairs.length === 0) {
+  if (report2.pairs.length === 0) {
     lines.push("no overlap found (checked file names, two or more shared H2 headings, and the opening sentence against non-sk-*.md files)");
   } else {
-    for (const p of report.pairs) {
+    for (const p of report2.pairs) {
       lines.push(`${p.file} overlaps ${p.rule} on ${p.signals.map(describeSignal).join(", ")}`);
     }
     lines.push("overlap is reported only; sidekick never edits files it does not own. If a repo file extends or departs from its pair on purpose, name the sk rule in it and the pair moves to the stated extensions");
   }
-  if (report.extensions.length > 0) {
-    lines.push(`stated extensions, not reported: ${report.extensions.map((e) => `${e.file} → ${e.rule}`).join(", ")}`);
+  if (report2.extensions.length > 0) {
+    lines.push(`stated extensions, not reported: ${report2.extensions.map((e) => `${e.file} → ${e.rule}`).join(", ")}`);
   }
   return lines;
 }
@@ -6459,12 +6464,12 @@ function runPmCli(args, env, out, err) {
   }
   const run = env.run ?? execRunner;
   const brief = rest2.includes("--brief");
-  const report = rest2.includes("--report");
+  const report2 = rest2.includes("--report");
   const glance = rest2.includes("--glance");
   const quiet2 = rest2.includes("--quiet") || brief || glance;
   const ms = milestoneFlag(rest2);
   const msTitle = ms.title;
-  if (verb === "gate" && msTitle === undefined || ms.invalid || brief && report || glance && (brief || report)) {
+  if (verb === "gate" && msTitle === undefined || ms.invalid || brief && report2 || glance && (brief || report2)) {
     err(PM_USAGE);
     return 1;
   }
@@ -6473,7 +6478,7 @@ function runPmCli(args, env, out, err) {
     const info = discover(run, env.cwd);
     const { root: _root, ...shown } = info;
     if (!info.tracked) {
-      if (report) {
+      if (report2) {
         err(`not tracked: ${info.reason}`);
         return 1;
       }
@@ -6498,7 +6503,7 @@ function runPmCli(args, env, out, err) {
       const active = msTitle === undefined ? activeMilestone(open2, items) : namedMilestone(open2, msTitle);
       const plans = active ? planView(active, items) : null;
       const issueCounts = active ? milestoneCounts(repoIssues, active.title) : null;
-      if (report) {
+      if (report2) {
         return emitReport({
           board: { owner, repo },
           open: open2,
@@ -7160,12 +7165,12 @@ function modeFlags(mode) {
   }
 }
 function commandFor(opts, mode) {
-  const report = opts.noReport ? ["--no-report"] : [];
+  const report2 = opts.noReport ? ["--no-report"] : [];
   const worktree = opts.worktree === undefined ? [] : ["--worktree", shellArg(opts.worktree)];
   return [
     "sidekick worker finish",
     ...subjectArgs(opts.subject),
-    ...report,
+    ...report2,
     ...modeFlags(mode),
     ...worktree
   ].join(" ");
@@ -7633,15 +7638,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report = path29.posix.normalize(read.brief.report);
+  const report2 = path29.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: read.brief.target,
-    report,
-    reportFrom: path29.join(worktree, report),
-    reportTo: top === undefined ? undefined : path29.join(top, report)
+    report: report2,
+    reportFrom: path29.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path29.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -7727,12 +7732,12 @@ function dirtyAdvice(mode) {
 function dirtyIssues(worktree, status, partial, mode) {
   if ("issue" in status)
     return [status.issue];
-  const { entries, report } = status;
+  const { entries, report: report2 } = status;
   const allowed = entries.length === 0 || partial && onlyDeleted(entries);
   if (allowed)
     return [];
   const paths = entries.map((entry) => entry.path).join(", ");
-  const besides = report === undefined ? "" : " besides the report";
+  const besides = report2 === undefined ? "" : " besides the report";
   return [
     `the worktree ${worktree} holds uncommitted work${besides}, which its removal would destroy: ${paths}. ${dirtyAdvice(mode)}`
   ];
