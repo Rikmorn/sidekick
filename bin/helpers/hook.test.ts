@@ -909,3 +909,80 @@ describe('plugin/hooks/post-tool-batch', () => {
     expect(r.stdout).toBe('');
   });
 });
+
+describe('runHookCli memory-start', () => {
+  const MEMORY_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'memory-start');
+
+  function runStart(stdin: string, env: Record<string, string>) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = runHookCli(
+      ['memory-start'],
+      {
+        readStdin: () => stdin,
+        pluginDir: PLUGIN_DIR,
+        env,
+        tmpdir: os.tmpdir(),
+      },
+      (l) => out.push(l),
+      (l) => err.push(l),
+    );
+    return { code, out, err };
+  }
+
+  function tempDir(): string {
+    return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ms-')));
+  }
+
+  test('a folder outside any linked repo prints nothing', () => {
+    const dir = tempDir();
+    const stdin = JSON.stringify({
+      session_id: 's1',
+      cwd: dir,
+      source: 'startup',
+    });
+    const env = { HOME: dir, SIDEKICK_MEMORY_STORE: path.join(dir, 'store') };
+    expect(runStart(stdin, env)).toEqual({ code: 0, out: [], err: [] });
+  });
+
+  test('invalid stdin prints nothing and returns 0', () => {
+    expect(runStart('nonsense', {})).toEqual({ code: 0, out: [], err: [] });
+  });
+
+  test('a linked repo prints SessionStart JSON', () => {
+    const dir = tempDir();
+    const store = path.join(dir, 'store');
+    const folder = path.join(store, 'proj');
+    const repo = path.join(dir, 'proj');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.mkdirSync(path.join(repo, '.claude'), { recursive: true });
+    spawnSync('git', ['init', '-q'], { cwd: repo });
+    fs.writeFileSync(
+      path.join(repo, '.claude', 'settings.local.json'),
+      JSON.stringify({ autoMemoryDirectory: folder }),
+    );
+    const stdin = JSON.stringify({
+      session_id: 's1',
+      cwd: repo,
+      source: 'resume',
+    });
+    const env = { HOME: path.join(dir, 'home'), SIDEKICK_MEMORY_STORE: store };
+    const { code, out } = runStart(stdin, env);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(out[0] ?? '{}');
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('SessionStart');
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      'sidekick memory: session s1.',
+    );
+  });
+
+  test('the wrapper exits 0 silently when node is not on PATH', () => {
+    const r = spawnSync('/bin/bash', [MEMORY_WRAPPER], {
+      input: '{}',
+      encoding: 'utf-8',
+      env: { PATH: '/nonexistent' },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+  });
+});

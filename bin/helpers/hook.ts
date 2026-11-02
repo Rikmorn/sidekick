@@ -9,15 +9,19 @@
  * never blocks or fails the call it watches (ADR-0010, ADR-0011).
  */
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   type MonitorEnv,
   type MonitorOutput,
   postToolBatchContext,
 } from './context-monitor.js';
+import { localToday } from './memory.js';
+import { memoryStartContext, startSnapshot } from './memory-start.js';
+import { execRunner } from './pm-data.js';
 
 export const HOOK_USAGE_LINE =
-  'sidekick hook post-skill|post-read|post-tool-batch   (reads the hook event on stdin)';
+  'sidekick hook post-skill|post-read|post-tool-batch|memory-start   (reads the hook event on stdin)';
 
 export interface HookEnv {
   /** Reads the hook event; called only once the verb is known. */
@@ -279,6 +283,28 @@ function postReadContext(stdin: string, env: HookEnv): MonitorOutput {
   return { context: reviewerLines(pluginDir, readContent(event)) };
 }
 
+/** The memory-start verb: prints the session's workstream and starts the snapshot. */
+function memoryStartHook(stdin: string, env: HookEnv): MonitorOutput {
+  try {
+    const result = memoryStartContext(stdin, {
+      env: env.env,
+      home: env.env.HOME ?? os.homedir(),
+      runGit: execRunner,
+      readSection,
+      today: localToday,
+      now: Date.now,
+    });
+    const { snapshot } = result;
+    if (snapshot !== undefined) {
+      const { store, sessionId, source } = snapshot;
+      startSnapshot(env.pluginDir, store, sessionId, source);
+    }
+    return result.context === undefined ? {} : { context: result.context };
+  } catch {
+    return {};
+  }
+}
+
 interface Verb {
   eventName: string;
   contextFor: ContextFor;
@@ -287,6 +313,7 @@ interface Verb {
 const VERBS = new Map<string, Verb>([
   ['post-skill', { eventName: 'PostToolUse', contextFor: postSkillContext }],
   ['post-read', { eventName: 'PostToolUse', contextFor: postReadContext }],
+  ['memory-start', { eventName: 'SessionStart', contextFor: memoryStartHook }],
   [
     'post-tool-batch',
     {

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SessionStart hook: print the memory store's workstream and session record for
+# this session. Silent, with exit 0, when node is missing or anything fails. A
+# hook never fails a session.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+command -v node >/dev/null 2>&1 || exit 0
+node "$ROOT/bin/sidekick" hook memory-start 2>/dev/null
+exit 0

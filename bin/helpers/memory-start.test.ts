@@ -1,0 +1,508 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { readSection } from './hook.js';
+import {
+  memoryStartContext,
+  renderStart,
+  type StartDeps,
+  type StartParts,
+} from './memory-start.js';
+import { writeMarker } from './memory-store.js';
+import type { Workstream } from './memory-view.js';
+import { execRunner } from './pm-data.js';
+
+const REPO = '/store/proj';
+const RECORD = `${REPO}/sessions/2026-11-02-abc.md`;
+const FILE = `${REPO}/alpha.md`;
+const FAMILY_INDEX = '/store/fam/MEMORY.md';
+const NEXT = '## Next steps\nDo the thing.';
+
+function ws(name: string, extra: Partial<Workstream> = {}): Workstream {
+  return {
+    name,
+    description: `about ${name}`,
+    status: 'open',
+    branches: [],
+    path: `${REPO}/${name}.md`,
+    ...extra,
+  };
+}
+
+function parts(extra: Partial<StartParts> = {}): StartParts {
+  return {
+    sessionId: 'abc',
+    source: 'startup',
+    recordPath: RECORD,
+    recordExists: false,
+    match: {
+      kind: 'matched',
+      workstream: ws('alpha', { path: FILE }),
+      label: 'branch feat',
+      others: [],
+    },
+    statePath: FILE,
+    state: '## State\nIn flight.',
+    nextSteps: NEXT,
+    otherHeadings: [],
+    records: [],
+    family: undefined,
+    warnings: [],
+    ...extra,
+  };
+}
+
+function record(date: string, title = 'T') {
+  return {
+    path: `${REPO}/sessions/${date}-${'y'.repeat(150)}.md`,
+    date,
+    session: 's',
+    workstream: 'alpha',
+    title,
+  };
+}
+
+const FIRST = `sidekick memory: session abc. Your record is ${RECORD}; save to it with the sk-save skill.`;
+const WORKSTREAM_LINE = `Workstream: alpha, matched by branch feat. File: ${FILE}.`;
+const cutMarker = (p: string) => `… (cut; Read ${p})`;
+const longText = (lines: number, width: number) =>
+  Array.from({ length: lines }, () => 'x'.repeat(width)).join('\n');
+
+function blockStarting(out: string, prefix: string): string {
+  return out.split('\n\n').find((b) => b.startsWith(prefix)) ?? '';
+}
+
+describe('renderStart', () => {
+  test('line shapes for a match', () => {
+    const out = renderStart(
+      parts({
+        match: {
+          kind: 'matched',
+          workstream: ws('alpha', { path: FILE }),
+          label: 'branch feat',
+          others: [ws('beta'), ws('gamma')],
+        },
+        otherHeadings: ['## Key files', '## Context'],
+        records: [
+          {
+            path: `${REPO}/sessions/2026-10-30-x.md`,
+            date: '2026-10-30',
+            session: 'x',
+            workstream: 'alpha',
+            title: 'Spike',
+          },
+        ],
+        family: { name: 'fam', path: FAMILY_INDEX, lines: ['# Fam', '- one'] },
+        warnings: ['w1'],
+      }),
+    );
+    expect(out.split('\n\n')).toEqual([
+      `${FIRST}\n${WORKSTREAM_LINE}\nOther open workstreams: beta, gamma`,
+      '## State\nIn flight.',
+      NEXT,
+      'Also in the file: ## Key files, ## Context. Read the file for them.',
+      `Recent records on alpha:\n- 2026-10-30 Spike: ${REPO}/sessions/2026-10-30-x.md`,
+      'Family index (fam):\n# Fam\n- one',
+      'Warning: w1',
+    ]);
+  });
+
+  test('skips empty sections', () => {
+    expect(renderStart(parts({ state: undefined, nextSteps: undefined }))).toBe(
+      `${FIRST}\n${WORKSTREAM_LINE}`,
+    );
+  });
+
+  test('Next steps survives when State alone exceeds 5,000 characters', () => {
+    const out = renderStart(parts({ state: `## State\n${longText(200, 80)}` }));
+    expect(out).toContain(NEXT);
+    const state = blockStarting(out, '## State');
+    expect(state.endsWith(cutMarker(FILE))).toBe(true);
+    expect(state.length).toBeLessThanOrEqual(5000 - NEXT.length);
+  });
+
+  test('every section full stays within 9,000 characters and keeps the first line', () => {
+    const out = renderStart(
+      parts({
+        state: `## State\n${longText(300, 60)}`,
+        nextSteps: `## Next steps\n${longText(300, 60)}`,
+        records: [
+          record('2026-10-01'),
+          record('2026-10-02'),
+          record('2026-10-03'),
+        ],
+        family: {
+          name: 'fam',
+          path: FAMILY_INDEX,
+          lines: longText(200, 50).split('\n'),
+        },
+        warnings: ['w'],
+      }),
+    );
+    expect(out.length).toBeLessThanOrEqual(9000);
+    expect(out.startsWith(FIRST)).toBe(true);
+  });
+
+  test('each cut section ends with its own marker and fits its budget', () => {
+    const out = renderStart(
+      parts({
+        nextSteps: `## Next steps\n${longText(200, 40)}`,
+        state: `## State\n${longText(200, 40)}`,
+        records: [
+          record('2026-10-01'),
+          record('2026-10-02'),
+          record('2026-10-03'),
+        ],
+        family: {
+          name: 'fam',
+          path: FAMILY_INDEX,
+          lines: longText(200, 40).split('\n'),
+        },
+      }),
+    );
+    const next = blockStarting(out, '## Next steps');
+    expect(next.endsWith(cutMarker(FILE))).toBe(true);
+    expect(next.length).toBeLessThanOrEqual(3000);
+    expect(blockStarting(out, '## State').endsWith(cutMarker(FILE))).toBe(true);
+    const records = blockStarting(out, 'Recent records');
+    expect(records.endsWith(cutMarker(`${REPO}/sessions`))).toBe(true);
+    expect(records.length).toBeLessThanOrEqual(600);
+    const family = blockStarting(out, 'Family index');
+    expect(family.endsWith(cutMarker(FAMILY_INDEX))).toBe(true);
+    expect(family.length).toBeLessThanOrEqual(2000);
+  });
+
+  test('resume keeps the first two lines', () => {
+    expect(renderStart(parts({ source: 'resume' }))).toBe(
+      `${FIRST}\n${WORKSTREAM_LINE}`,
+    );
+  });
+
+  test('compact warns only while the session has no record', () => {
+    const text =
+      'Warning: This session has not saved. Save with sk-save at the next pause.';
+    expect(renderStart(parts({ source: 'compact' }))).toContain(text);
+    expect(
+      renderStart(parts({ source: 'compact', recordExists: true })),
+    ).not.toContain(text);
+    expect(renderStart(parts({ source: 'startup' }))).not.toContain(text);
+  });
+
+  test('the menu lists open workstreams and ends with its ask line', () => {
+    const out = renderStart(
+      parts({
+        match: { kind: 'menu', open: [ws('alpha'), ws('beta')] },
+        state: undefined,
+        nextSteps: undefined,
+      }),
+    );
+    expect(out).toBe(
+      [
+        FIRST,
+        'No workstream matched. Open workstreams, from the repo and its family:',
+        `- alpha: about alpha (${REPO}/alpha.md)`,
+        `- beta: about beta (${REPO}/beta.md)`,
+        'Ask the operator which one this session serves, or let sk-save start a new one.',
+      ].join('\n'),
+    );
+  });
+
+  test('an empty menu lists none', () => {
+    const out = renderStart(parts({ match: { kind: 'menu', open: [] } }));
+    expect(out).toContain('\n- none\nAsk the operator');
+  });
+
+  test('a long menu is cut and keeps its last line', () => {
+    const open = Array.from({ length: 60 }, (_, i) =>
+      ws(`w${i}`, { description: 'd'.repeat(60) }),
+    );
+    const out = renderStart(parts({ match: { kind: 'menu', open } }));
+    const menu = out.slice(FIRST.length + 1);
+    expect(menu.length).toBeLessThanOrEqual(1500);
+    expect(menu).toContain(cutMarker(REPO));
+    expect(menu.endsWith('let sk-save start a new one.')).toBe(true);
+  });
+
+  test('is silent with no match and nothing else', () => {
+    const bare = { match: undefined, state: undefined, nextSteps: undefined };
+    expect(renderStart(parts(bare))).toBe('');
+  });
+
+  test('a warning alone prints without a header when nothing matched', () => {
+    const bare = { match: undefined, state: undefined, nextSteps: undefined };
+    expect(renderStart(parts({ ...bare, warnings: ['careful'] }))).toBe(
+      'Warning: careful',
+    );
+  });
+});
+
+const IDENTITY = {
+  GIT_AUTHOR_NAME: 'T',
+  GIT_AUTHOR_EMAIL: 't@e.com',
+  GIT_COMMITTER_NAME: 'T',
+  GIT_COMMITTER_EMAIL: 't@e.com',
+};
+let tmp = '';
+let saved: Record<string, string | undefined> = {};
+
+beforeEach(() => {
+  tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mem-start-')));
+  saved = {};
+  for (const [k, v] of Object.entries(IDENTITY)) {
+    saved[k] = process.env[k];
+    process.env[k] = v;
+  }
+});
+
+afterEach(() => {
+  for (const [k, v] of Object.entries(saved)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+function mkdir(...segments: string[]): string {
+  const dir = path.join(tmp, ...segments);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function makeRepo(...segments: string[]): string {
+  const dir = mkdir(...segments);
+  execRunner('git', ['init', '-q', '-b', 'main'], dir);
+  execRunner('git', ['commit', '-q', '--allow-empty', '-m', 'init'], dir);
+  return fs.realpathSync(dir);
+}
+
+function setKey(repo: string, key: string): void {
+  fs.mkdirSync(path.join(repo, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(repo, '.claude', 'settings.local.json'),
+    JSON.stringify({ autoMemoryDirectory: key }),
+  );
+}
+
+const DEFAULT_BODY =
+  '## State\n\nNow.\n\n## Next steps\n\nThen.\n\n## Key files\n\n- a\n';
+
+function workstreamFile(file: string, name: string, branches: string): void {
+  fs.writeFileSync(
+    file,
+    `---\nname: ${name}\ndescription: about ${name}\nmetadata:\n  kind: workstream\n  status: open\n  branches: ${branches}\n---\n\n${DEFAULT_BODY}`,
+  );
+}
+
+function depsFor(store: string, over: Partial<StartDeps> = {}): StartDeps {
+  return {
+    env: { SIDEKICK_MEMORY_STORE: store },
+    home: path.join(tmp, 'home'),
+    runGit: execRunner,
+    readSection,
+    today: () => '2026-11-02',
+    now: () => Date.now(),
+    ...over,
+  };
+}
+
+function eventFor(cwd: string, extra: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    session_id: 'sess-1',
+    cwd,
+    source: 'startup',
+    hook_event_name: 'SessionStart',
+    ...extra,
+  });
+}
+
+function linked(storeName = 'store'): {
+  store: string;
+  repo: string;
+  folder: string;
+} {
+  const store = mkdir(storeName);
+  const repo = makeRepo('proj');
+  const folder = mkdir(storeName, 'proj');
+  writeMarker(folder, repo);
+  setKey(repo, folder);
+  return { store, repo, folder };
+}
+
+describe('memoryStartContext', () => {
+  test('an unlinked repo and invalid stdin give nothing', () => {
+    const store = mkdir('store');
+    const repo = makeRepo('plain');
+    const deps = depsFor(store);
+    expect(memoryStartContext(eventFor(repo), deps)).toEqual({});
+    expect(memoryStartContext('not json', deps)).toEqual({});
+    expect(
+      memoryStartContext(eventFor(repo, { source: 'weird' }), deps),
+    ).toEqual({});
+    expect(
+      memoryStartContext(eventFor(repo, { session_id: '../x' }), deps),
+    ).toEqual({});
+    expect(memoryStartContext(eventFor(''), deps)).toEqual({});
+  });
+
+  test('a missing setting prints one warning naming the fix, with no snapshot', () => {
+    const store = mkdir('store');
+    const repo = makeRepo('proj');
+    writeMarker(mkdir('store', 'proj'), repo);
+    const result = memoryStartContext(eventFor(repo), depsFor(store));
+    expect(result.snapshot).toBeUndefined();
+    expect(result.context?.split('\n')).toHaveLength(1);
+    expect(result.context?.startsWith('Warning: ')).toBe(true);
+    expect(result.context).toContain(`sidekick memory link ${repo}`);
+  });
+
+  test('a linked repo with a branch match prints the workstream and starts a snapshot', () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:feat');
+    workstreamFile(path.join(folder, 'beta.md'), 'beta', 'proj:other');
+    execRunner('git', ['switch', '-q', '-c', 'feat'], repo);
+    const result = memoryStartContext(eventFor(repo), depsFor(store));
+    expect(result.snapshot).toEqual({
+      store,
+      sessionId: 'sess-1',
+      source: 'startup',
+    });
+    const context = result.context ?? '';
+    const recordFile = path.join(folder, 'sessions', '2026-11-02-sess-1.md');
+    expect(context).toContain(`Your record is ${recordFile}`);
+    expect(context).toContain(
+      `Workstream: alpha, matched by branch feat. File: ${path.join(folder, 'alpha.md')}.`,
+    );
+    expect(context).toContain('Other open workstreams: beta');
+    expect(context).toContain('## State\n\nNow.');
+    expect(context).toContain('## Next steps\n\nThen.');
+    expect(context).toContain(
+      'Also in the file: ## Key files. Read the file for them.',
+    );
+  });
+
+  test('without origin/HEAD no branch is excluded; a known default branch is', () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:main');
+    const without = memoryStartContext(eventFor(repo), depsFor(store));
+    expect(without.context).toContain('matched by branch main');
+    const remote = makeRepo('remote');
+    execRunner('git', ['remote', 'add', 'origin', remote], repo);
+    execRunner('git', ['fetch', '-q', 'origin'], repo);
+    execRunner('git', ['remote', 'set-head', 'origin', 'main'], repo);
+    const known = memoryStartContext(eventFor(repo), depsFor(store));
+    expect(known.context).toContain('No workstream matched');
+  });
+
+  test("a worker brief's workstream wins over the menu", () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:nope');
+    const brief = path.join(tmp, 'brief.md');
+    fs.writeFileSync(
+      brief,
+      [
+        '---',
+        'name: w1',
+        `plan: ${tmp}/plan.md`,
+        `spec: ${tmp}/spec.md`,
+        `rulings: ${tmp}/rulings.md`,
+        'baseline: abc1234',
+        'skill: executing-plans',
+        'place: worktree',
+        'workstream: alpha',
+        'report: report.md',
+        'orchestrator: main-1',
+        '---',
+        '',
+      ].join('\n'),
+    );
+    const env = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: brief };
+    const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
+    expect(result.context).toContain("matched by the worker's brief");
+  });
+
+  test('a worker path that does not exist skips tier 1', () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:nope');
+    const env = {
+      SIDEKICK_MEMORY_STORE: store,
+      SIDEKICK_WORKER: path.join(tmp, 'missing.md'),
+    };
+    const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
+    expect(result.context).toContain('No workstream matched');
+  });
+
+  test("this session's own record picks the workstream and recent records list the others", () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', '');
+    mkdir('store', 'proj', 'sessions');
+    const write = (date: string, id: string, stream: string, title: string) =>
+      fs.writeFileSync(
+        path.join(folder, 'sessions', `${date}-${id}.md`),
+        `---\nname: ${id}\nmetadata:\n  kind: session\n  session: ${id}\n  workstream: ${stream}\n---\n\n# ${title}\n`,
+      );
+    write('2026-11-02', 'sess-1', 'alpha', 'Mine');
+    write('2026-10-30', 'older', 'alpha', 'Older work');
+    write('2026-10-31', 'other', 'beta', 'Not alpha');
+    const result = memoryStartContext(
+      eventFor(repo, { source: 'compact' }),
+      depsFor(store),
+    );
+    const context = result.context ?? '';
+    expect(context).toContain("matched by this session's record");
+    expect(context).toContain(
+      `- 2026-10-30 Older work: ${path.join(folder, 'sessions', '2026-10-30-older.md')}`,
+    );
+    expect(context).not.toContain('Not alpha');
+    expect(context).not.toContain('Mine');
+    expect(context).not.toContain('has not saved');
+  });
+
+  test('a lock older than ten minutes warns; a fresh one does not', () => {
+    const { store, repo } = linked();
+    const lock = path.join(store, '.git', 'index.lock');
+    fs.mkdirSync(path.dirname(lock), { recursive: true });
+    fs.writeFileSync(lock, '');
+    const fresh = memoryStartContext(eventFor(repo), depsFor(store));
+    expect(fresh.context).not.toContain('stale git lock');
+    const later = depsFor(store, { now: () => Date.now() + 11 * 60 * 1000 });
+    expect(memoryStartContext(eventFor(repo), later).context).toContain(
+      `Warning: The memory store has a stale git lock at ${lock}; snapshots stop until it is removed.`,
+    );
+  });
+
+  test('the family index prints for a repo in a family', () => {
+    const store = mkdir('store');
+    const repo = makeRepo('proj');
+    const folder = mkdir('store', 'fam', 'proj');
+    writeMarker(folder, repo);
+    setKey(repo, folder);
+    fs.writeFileSync(
+      path.join(store, 'fam', 'MEMORY.md'),
+      '# Fam\n\n- item\n\n\n',
+    );
+    const context =
+      memoryStartContext(eventFor(repo), depsFor(store)).context ?? '';
+    expect(context).toContain('Family index (fam):\n# Fam\n\n- item');
+    expect(context.endsWith('- item')).toBe(true);
+  });
+
+  test('a store path with a space prints whole', () => {
+    const { store, repo } = linked('my store');
+    const context =
+      memoryStartContext(eventFor(repo), depsFor(store)).context ?? '';
+    const recordFile = path.join(
+      store,
+      'proj',
+      'sessions',
+      '2026-11-02-sess-1.md',
+    );
+    expect(context).toContain(`Your record is ${recordFile};`);
+  });
+
+  test('a cwd that does not exist gives nothing', () => {
+    const { store } = linked();
+    const gone = path.join(tmp, 'gone');
+    expect(memoryStartContext(eventFor(gone), depsFor(store))).toEqual({});
+  });
+});
