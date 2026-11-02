@@ -5821,7 +5821,7 @@ function withholding(store, matcher) {
     const ids = matcher(text);
     if (ids.length === 0)
       return;
-    return `Withheld: ${file} matched ${ids.join(", ")}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${storeFolder(store, dir)}`;
+    return `Withheld: ${file} matched ${ids.join(", ")}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${shellArg(storeFolder(store, dir))}`;
   };
 }
 var shown = (gate, source) => gate(source) ?? source.text;
@@ -5842,8 +5842,9 @@ var Drop = {
   State: 2,
   Also: 3,
   Records: 4,
-  Family: 5,
-  Warnings: 6
+  Count: 5,
+  Family: 6,
+  Warnings: 7
 };
 function cutMarker(readPath) {
   return `… (cut; Read ${readPath})`;
@@ -5982,27 +5983,25 @@ function familyBlock(parts, gate) {
   return [{ text: fitted, drop: Drop.Family }];
 }
 var warningLine = (warning) => `Warning: ${warning}`;
-function countLines(lintCount) {
-  if (lintCount === undefined || lintCount.count === 0)
-    return [];
-  const { count, folders, ranAt } = lintCount;
-  const where = folders.map((folder) => `${folder}/`).join(" and ");
-  const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
-  return [
-    `Memory lint: ${counted(count, "finding")} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(" ")}`
-  ];
-}
 function warningsBlock(parts) {
   const compactUnsaved = parts.match !== undefined && parts.source === "compact" && !parts.recordExists;
   const texts = [
     ...parts.warnings,
     ...compactUnsaved ? [COMPACT_WARNING] : []
   ];
-  const lines = [...texts.map(warningLine), ...countLines(parts.lintCount)];
-  if (lines.length === 0)
+  if (texts.length === 0)
     return [];
-  return [{ text: lines.join(`
+  return [{ text: texts.map(warningLine).join(`
 `), drop: Drop.Warnings }];
+}
+function countBlock(lintCount) {
+  if (lintCount === undefined || lintCount.count === 0)
+    return [];
+  const { count, folders, ranAt } = lintCount;
+  const where = folders.map((folder) => `${folder}/`).join(" and ");
+  const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
+  const text = `Memory lint: ${counted(count, "finding")} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(" ")}`;
+  return [{ text, drop: Drop.Count }];
 }
 function blocksOf(parts, gate) {
   return [
@@ -6010,7 +6009,8 @@ function blocksOf(parts, gate) {
     ...workstreamBlocks(parts, gate),
     ...recordsBlock(parts, gate),
     ...familyBlock(parts, gate),
-    ...warningsBlock(parts)
+    ...warningsBlock(parts),
+    ...countBlock(parts.lintCount)
   ];
 }
 function checkedBlocks(parts, matcher) {

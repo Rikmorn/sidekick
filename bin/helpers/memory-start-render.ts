@@ -45,7 +45,7 @@ const STATE_AND_NEXT_BUDGET = 5000;
 const RECORDS_BUDGET = 600;
 const MENU_BUDGET = 1500;
 const FAMILY_BUDGET = 2000;
-// Leaves room for a usual header and the warnings, the lint's count among them, beside every other full section.
+// Leaves room for a usual header, the warnings, and the lint's count beside every other full section.
 const ALSO_BUDGET = 500;
 const RESUME_LINES = 2;
 const BLOCK_SEPARATOR = '\n\n';
@@ -89,7 +89,7 @@ function withholding(store: string, matcher: Matcher): Gate {
   return ({ file, dir, text }) => {
     const ids = matcher(text);
     if (ids.length === 0) return undefined;
-    return `Withheld: ${file} matched ${ids.join(', ')}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${storeFolder(store, dir)}`;
+    return `Withheld: ${file} matched ${ids.join(', ')}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${shellArg(storeFolder(store, dir))}`;
   };
 }
 
@@ -112,14 +112,16 @@ const recordSource = (record: SessionRecord, text: string): Source => ({
   text,
 });
 
+// The lint's count outlasts the family index, the largest block, so it survives a long header.
 const Drop = {
   Header: 0,
   NextSteps: 1,
   State: 2,
   Also: 3,
   Records: 4,
-  Family: 5,
-  Warnings: 6,
+  Count: 5,
+  Family: 6,
+  Warnings: 7,
 } as const;
 
 function cutMarker(readPath: string): string {
@@ -316,16 +318,6 @@ function familyBlock(parts: StartParts, gate: Gate): Block[] {
 
 const warningLine = (warning: string): string => `Warning: ${warning}`;
 
-function countLines(lintCount: LintCount | undefined): string[] {
-  if (lintCount === undefined || lintCount.count === 0) return [];
-  const { count, folders, ranAt } = lintCount;
-  const where = folders.map((folder) => `${folder}/`).join(' and ');
-  const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
-  return [
-    `Memory lint: ${counted(count, 'finding')} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(' ')}`,
-  ];
-}
-
 function warningsBlock(parts: StartParts): Block[] {
   const compactUnsaved =
     parts.match !== undefined &&
@@ -335,9 +327,17 @@ function warningsBlock(parts: StartParts): Block[] {
     ...parts.warnings,
     ...(compactUnsaved ? [COMPACT_WARNING] : []),
   ];
-  const lines = [...texts.map(warningLine), ...countLines(parts.lintCount)];
-  if (lines.length === 0) return [];
-  return [{ text: lines.join('\n'), drop: Drop.Warnings }];
+  if (texts.length === 0) return [];
+  return [{ text: texts.map(warningLine).join('\n'), drop: Drop.Warnings }];
+}
+
+function countBlock(lintCount: LintCount | undefined): Block[] {
+  if (lintCount === undefined || lintCount.count === 0) return [];
+  const { count, folders, ranAt } = lintCount;
+  const where = folders.map((folder) => `${folder}/`).join(' and ');
+  const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
+  const text = `Memory lint: ${counted(count, 'finding')} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(' ')}`;
+  return [{ text, drop: Drop.Count }];
 }
 
 function blocksOf(parts: StartParts, gate: Gate): Block[] {
@@ -347,6 +347,7 @@ function blocksOf(parts: StartParts, gate: Gate): Block[] {
     ...recordsBlock(parts, gate),
     ...familyBlock(parts, gate),
     ...warningsBlock(parts),
+    ...countBlock(parts.lintCount),
   ];
 }
 
@@ -380,7 +381,8 @@ function withinTotal(blocks: Block[]): string {
  * (warnings first, Next steps last, never the first line), and on `resume`
  * keeps only the first two lines. A matcher that throws leaves the text
  * unchecked and adds a warning that the total budget never drops. A
- * `lintCount` above zero prints one line after the warnings, ranked with them.
+ * `lintCount` above zero prints one line after the warnings, which the total
+ * budget drops after the family index and before the records.
  */
 export function renderStart(
   parts: StartParts,

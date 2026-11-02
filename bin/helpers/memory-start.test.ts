@@ -388,6 +388,15 @@ describe('the memory gate', () => {
     );
   });
 
+  test('a withheld source in a folder whose name holds a space quotes its --folder', () => {
+    const index = '/store/my fam/MEMORY.md';
+    const family = { name: 'my fam', path: index, lines: [`- ${POISON}`] };
+    const out = renderStart(parts({ family }));
+    expect(blockStarting(out, 'Family index')).toBe(
+      `Family index (my fam):\n${withheld(index, "'my fam'")}`,
+    );
+  });
+
   test('a poisoned family index line withholds the whole index', () => {
     const family = {
       name: 'fam',
@@ -560,11 +569,14 @@ const ALSO_FOLDED =
   /^Also in the file: ((?:## heading-\d{3}, )+)and (\d+) more\. Read the file for them\.$/;
 
 describe('the lint count line', () => {
-  test('prints after the warnings, as the spec gives it', () => {
+  test('prints as its own block after the warnings, as the spec gives it', () => {
     const out = renderStart(
       parts({ warnings: ['w1'], lintCount: lintCount(3) }),
     );
-    expect(out.split('\n\n').at(-1)).toBe(`Warning: w1\n${SPEC_COUNT_LINE}`);
+    expect(out.split('\n\n').slice(-2)).toEqual([
+      'Warning: w1',
+      SPEC_COUNT_LINE,
+    ]);
   });
 
   test('prints as its own block when there are no warnings', () => {
@@ -619,13 +631,57 @@ describe('the lint count line', () => {
       }),
     );
     expect(out.length).toBeLessThanOrEqual(9000);
-    expect(out.endsWith(`\n\nWarning: w\n${SPEC_COUNT_LINE}`)).toBe(true);
+    expect(out.endsWith(`\n\nWarning: w\n\n${SPEC_COUNT_LINE}`)).toBe(true);
     for (const kept of [
       '## State',
       '## Next steps',
       'Also in the file',
       'Recent records',
       'Family index',
+    ]) {
+      expect(out).toContain(kept);
+    }
+  });
+
+  test('past 9,000 the family index goes before the count, through a long header and every section full', () => {
+    const others = Array.from({ length: 60 }, (_, i) =>
+      ws(`other-${String(i).padStart(5, '0')}`),
+    );
+    const out = renderStart(
+      parts({
+        match: {
+          kind: 'matched',
+          workstream: ws('alpha', { path: FILE }),
+          label: 'branch feat',
+          others,
+        },
+        state: `## State\n${longText(300, 60)}`,
+        nextSteps: `## Next steps\n${longText(300, 60)}`,
+        otherHeadings: headingsOf(300),
+        records: [
+          record('2026-10-01'),
+          record('2026-10-02'),
+          record('2026-10-03'),
+        ],
+        family: {
+          name: 'fam',
+          path: FAMILY_INDEX,
+          lines: longText(200, 50).split('\n'),
+        },
+        warnings: ['w'],
+        lintCount: lintCount(3),
+      }),
+    );
+    expect(out.split('\n\n')[0]?.length).toBeGreaterThan(775);
+    expect(out.length).toBeLessThanOrEqual(9000);
+    expect(out.endsWith(`\n\n${SPEC_COUNT_LINE}`)).toBe(true);
+    expect(out).not.toContain('Family index');
+    expect(out).not.toContain('Warning: w');
+    for (const kept of [
+      '## State',
+      '## Next steps',
+      'Also in the file',
+      'Recent records',
     ]) {
       expect(out).toContain(kept);
     }
