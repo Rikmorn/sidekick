@@ -38,7 +38,7 @@ A fact kept in two places goes stale in one of them, and the next session trusts
 
 ## Procedures, scripts, and support
 
-- Prefer a skill for a procedure that repeats. Claude Code loads a skill when its task comes up, and a procedure kept in memory can go unfound.
+- A procedure that repeats belongs in a skill, which Claude Code loads when its task comes up. A skill is a repo file, which the store does not own. Suggest one to the operator rather than writing it, and keep the procedure in memory until it exists.
 - The script catalogue says what each one-off script does, how it runs, and when it last ran. A later session can then run it again, and judge whether it still fits.
 - Production issues and support work go in the support file, so the next incident starts from what the last one found.
 - When the repo has a family, the support file and script catalogue live in the family folder, since support and scripts span its repos. Otherwise they live in the repo folder.
