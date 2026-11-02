@@ -55,14 +55,14 @@ metadata:
 ## Where each item went
 ```
 
-Omit `workstream` when the session served none. The title line is what the hook shows when it lists recent records, so make it say what the session did.
+Set `workstream` to the name from the hook's `Workstream:` line, exactly, since the hook matches records to workstreams by that name. Omit it when the session served none. The title line is what the hook shows when it lists recent records, so make it say what the session did.
 
 ## 5. Update the workstream (main session)
 
 A session counts as a worker when it is running a plan from a brief under `sk-worker`. Any other session is a main and does this step. The workstream is shared by every session on it, so rewriting it whole drops what others added. Use targeted Edits to State, Next steps, Key files, and Context.
 
 1. **Read first.** Read the newer records the hook listed under `Recent records on <name>:`. Other sessions' next steps sit there, and reading them before editing Next steps keeps those items.
-2. **Add the branch** as `<repo>:<branch>` to `metadata.branches`, joined to existing pairs with `, `. Do this on the first save from a branch. Skip it when the branch is the repo's default, or when another open workstream lists it. Find the current branch with `git branch --show-current`.
+2. **Add the branch** as `<repo>:<branch>` to `metadata.branches`, joined to existing pairs with `, `. Do this on the first save from a branch. Skip it when the branch is the repo's default, or when another open workstream lists it. To check, Grep the repo folder and the family folder for `<repo>:<branch>`. Find the current branch with `git branch --show-current`.
    The default branch is the target of this command, minus `origin/`; when it is unknown, exclude no branch:
    `git symbolic-ref --short refs/remotes/origin/HEAD`
 3. **Keep it current, not historical.** State and Next steps describe now. Moves in time belong in records.

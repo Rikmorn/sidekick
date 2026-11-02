@@ -30,7 +30,7 @@ Claude Code's memory prompt gives each memory file one pointer line in `MEMORY.m
 
 - A fact joins the file it belongs to: its workstream, the reference file for what outlasts any workstream, the support file, or the script catalogue. Prefer a new file only for a new workstream, because each file adds a line every session loads.
 - So the index lists the open workstreams, and points to those three files and to one archive file.
-- When a workstream closes, its pointer moves to the archive file. Its file stays put, since searches leave the store's `archive/` folder out.
+- When a workstream closes, set `metadata.status: closed`, since an `open` one keeps appearing in the menu and in the title and branch matches. Its pointer moves to the archive file. Its file stays put, since searches leave the store's `archive/` folder out.
 - A session that writes a family file points to it from the family's `MEMORY.md` and from its own repo's index.
 - Session records take no pointer, since a line per session would outgrow any cap.
 

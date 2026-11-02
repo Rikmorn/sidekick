@@ -32,6 +32,8 @@ The brief, the plan, the spec, and the rulings file stay in the launching checko
 
 When the brief names a `workstream`, start from the State and Next steps that the memory hook printed for it. The run belongs to that workstream, and its state is the handoff from earlier sessions.
 
+When the hook printed a menu rather than the brief's workstream, read that workstream's file yourself. This happens for a worker the operator started, which has no `SIDEKICK_WORKER` for the hook to read the brief from.
+
 Check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Then check where you work. There, `HEAD` is `baseline`, and no tracked file has uncommitted changes.
 
 - `worktree`: a linked worktree with `HEAD` at `baseline` and clean tracked files. A dispatched worker starts there. A worker started by the operator calls `EnterWorktree` with the brief's `name` first. `EnterWorktree` branches from the `worktree.baseRef` setting. Its default, `"fresh"`, branches from the remote's default branch, and only `"head"` branches from `HEAD`. `sidekick worker dispatch` sets `"head"`; a session started by the operator may not.
@@ -63,7 +65,7 @@ Message the orchestrator one report: the baseline confirmation, then every quest
 
 ## Rulings
 
-The orchestrator writes its rulings in the rulings file, and its message only points at the file. Read the file and act on what it says, not on the message's text. The file can be checked, it outlives a compaction, and it records each ruling for the run report. After a compaction, re-read the brief and the rulings file.
+The orchestrator writes its rulings in the rulings file, and its message only points at the file. Read the file and act on what it says, not on the message's text. The file can be checked, it outlives a compaction, and it records each ruling for the run report. After a compaction, re-read the brief and the rulings file, and your own record at the path the hook printed. A worker never edits the workstream, so its State is stale for your own progress and your record is the only place it lives.
 
 ## The run
 
@@ -84,7 +86,7 @@ Run git plainly from where you work. In a worktree session, Claude Code refuses 
 
 ## At the end
 
-Run `sk-save` before the run report. In a worker it writes only this session's record, since the workstream is shared and the session that lands your work folds the record in. Commit nothing from it: the store sits outside the repo.
+Run `sk-save` before the run report. In a worker it writes only this session's record, since the workstream is shared and the session that lands your work folds the record in. Commit nothing from it: the store sits outside the repo. Name your record's path in the run report, so the landing session finds the right record when several workers share a workstream.
 
 Write the run report when superpowers collects its "Rulings I made", before it deletes its workspace. The ledger the report draws on goes with that workspace. Write the report in the shape of `references/run-report.md`, at the brief's `report` path, relative to where you work. Create the folders it needs, since a git-ignored folder such as `docs/superpowers/` is absent from a fresh worktree.
 
