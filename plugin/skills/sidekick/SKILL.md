@@ -53,7 +53,7 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 
 ## Memory
 
-`sidekick memory link <repo>` moves a repo's auto-memory into the memory store, one git repo at `~/AI-Memory-Store` or the folder `SIDEKICK_MEMORY_STORE` names. It copies the default memory folder, sets the repo's `autoMemoryDirectory` key, archives the default folder, and commits. It refuses rather than overwrites, and `--dry-run` shows its steps first. `--family <name>` places the repo in a family folder. The store's own `README.md` describes the layout. `README.md` §Memory covers the flags, and ADR-0013 records the settings key `link` owns. A release delivers `sk-memory.md`, the rule for sessions that write the store, through `sidekick rules install`; `link` does not.
+`sidekick memory link <repo>` moves a repo's auto-memory into the memory store, one git repo at `~/sk-memory-store` or the folder `SIDEKICK_MEMORY_STORE` names. It copies the default memory folder, sets the repo's `autoMemoryDirectory` key, archives the default folder, and commits. It refuses rather than overwrites, and `--dry-run` shows its steps first. `--family <name>` places the repo in a family folder. The store's own `README.md` describes the layout. `README.md` §Memory covers the flags, and ADR-0013 records the settings key `link` owns. A release delivers `sk-memory.md`, the rule for sessions that write the store, through `sidekick rules install`; `link` does not.
 
 ## The docs layout
 

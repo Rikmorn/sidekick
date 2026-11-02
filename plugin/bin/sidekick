@@ -2526,7 +2526,7 @@ var CREATION_PATHS = [
 var CREATION_MESSAGE = "chore: create the memory store";
 function storeRoot(env, home) {
   const override = env.SIDEKICK_MEMORY_STORE;
-  return override !== undefined && override !== "" ? override : path10.join(home, "AI-Memory-Store");
+  return override !== undefined && override !== "" ? override : path10.join(home, "sk-memory-store");
 }
 function folderNameIssue(name) {
   if (name === "")
@@ -2673,7 +2673,7 @@ A repo folder holds \`.sidekick.json\`, which names the repo's main checkout as 
 
 - **Unlink a repo.** Remove the \`autoMemoryDirectory\` entry from the repo's \`.claude/settings.local.json\`, in its main checkout. Claude Code then uses its default memory folder again. The repo folder here stays until you delete it.
 - **Move a repo between families.** Move its folder to the new family folder with \`mv\`, then set \`autoMemoryDirectory\` in the repo's \`.claude/settings.local.json\` to the new path. Close the repo's sessions first, since a running session keeps writing to the old path.
-- **Move the store.** Move this folder, then update \`autoMemoryDirectory\` in every linked repo's \`.claude/settings.local.json\`. Each marker holds the repo's root rather than the store's path, so markers stay as they are. Set \`SIDEKICK_MEMORY_STORE\` to the new path if you keep the store anywhere other than \`~/AI-Memory-Store\`.
+- **Move the store.** Move this folder, then update \`autoMemoryDirectory\` in every linked repo's \`.claude/settings.local.json\`. Each marker holds the repo's root rather than the store's path, so markers stay as they are. Set \`SIDEKICK_MEMORY_STORE\` to the new path if you keep the store anywhere other than \`~/sk-memory-store\`.
 
 ## Settings that affect auto-memory
 

@@ -54,10 +54,10 @@ describe('storeRoot', () => {
     );
   });
 
-  test('falls back to AI-Memory-Store under home', () => {
-    expect(storeRoot({}, '/home/me')).toBe('/home/me/AI-Memory-Store');
+  test('falls back to sk-memory-store under home', () => {
+    expect(storeRoot({}, '/home/me')).toBe('/home/me/sk-memory-store');
     expect(storeRoot({ SIDEKICK_MEMORY_STORE: '' }, '/home/me')).toBe(
-      '/home/me/AI-Memory-Store',
+      '/home/me/sk-memory-store',
     );
   });
 });

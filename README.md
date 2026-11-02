@@ -104,7 +104,7 @@ sidekick profile switch <name>                 # print the lines that resume thi
 
 ## Memory
 
-The memory store is one git repo that holds the auto-memory of several repos, at `~/AI-Memory-Store` unless `SIDEKICK_MEMORY_STORE` names another folder. `sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run]` moves a repo's auto-memory into it. It copies Claude Code's default memory folder into a repo folder in the store and writes a marker there. Then it sets `autoMemoryDirectory` in the main checkout's `.claude/settings.local.json`, archives the default folder, and commits. `--dry-run` prints those steps and writes nothing. A re-run skips each step already done.
+The memory store is one git repo that holds the auto-memory of several repos, at `~/sk-memory-store` unless `SIDEKICK_MEMORY_STORE` names another folder. `sidekick memory link <repo> [--family <name>] [--name <folder>] [--force] [--dry-run]` moves a repo's auto-memory into it. It copies Claude Code's default memory folder into a repo folder in the store and writes a marker there. Then it sets `autoMemoryDirectory` in the main checkout's `.claude/settings.local.json`, archives the default folder, and commits. `--dry-run` prints those steps and writes nothing. A re-run skips each step already done.
 
 `link` refuses rather than overwrites, and names each refusal. It leaves alone a store path that is not a sidekick store, a settings key it did not write, and a folder another repo owns. It also stops while another session is open in the repo, since that session keeps writing to the old folder. `--force` passes only that check. ADR-0013 records why `link` may write the one settings key it owns, and why no other.
 
