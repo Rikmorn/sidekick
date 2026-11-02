@@ -163,6 +163,29 @@ describe('planLink: a first link', () => {
     ]);
   });
 
+  test('a key equal to the folder but no marker naming the root is not yet in place, so it copies', () => {
+    for (const state of [
+      { kind: 'absent' } as const,
+      { kind: 'empty' } as const,
+    ]) {
+      const plan = planLink(
+        facts({
+          repo: repo({ settings: settings(TARGET), target: target({ state }) }),
+        }),
+        NO_FLAGS,
+      );
+      const actions = actionsOf(plan);
+      expect(actions).toContainEqual(copy('MEMORY.md'));
+      expect(actions).toContainEqual(copy('notes.md'));
+      expect(actions).toContainEqual(archive(ARCHIVED, false));
+      expect(actions).toContainEqual({
+        kind: 'writeMarker',
+        folder: TARGET,
+        root: ROOT,
+      });
+    }
+  });
+
   test('an empty store folder becomes the store', () => {
     const plan = planLink(facts({ storeState: { kind: 'empty' } }), NO_FLAGS);
     expect(actionsOf(plan)[0]).toEqual({ kind: 'createStore', store: STORE });

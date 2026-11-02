@@ -274,6 +274,34 @@ describe('runLink: a first link', () => {
   });
 });
 
+describe('runLink: a key set by hand', () => {
+  test('a key equal to the folder, with no store and no marker, links as a first link', () => {
+    const w = world();
+    const folder = path.join(w.store, path.basename(w.top));
+    fs.mkdirSync(path.join(w.top, '.claude'));
+    fs.writeFileSync(
+      path.join(w.top, SETTINGS_REL),
+      JSON.stringify({ autoMemoryDirectory: folder }),
+    );
+    const run = link(w, opts(w.top));
+    expect(run.err).toEqual([]);
+    expect(run.code).toBe(0);
+    expect(run.out.join('\n')).not.toContain('came back');
+    expect(fs.readFileSync(path.join(folder, 'notes.md'), 'utf-8')).toBe(
+      'a note\n',
+    );
+    expect(fs.readFileSync(path.join(folder, 'MEMORY.md'), 'utf-8')).toBe(
+      '- [notes](notes.md)\n',
+    );
+    expect(fs.existsSync(w.memory)).toBe(false);
+    expect(fs.readFileSync(path.join(archived(w), 'notes.md'), 'utf-8')).toBe(
+      'a note\n',
+    );
+    expect(settingsOf(w.top)).toEqual({ autoMemoryDirectory: folder });
+    expect(committed(w.store)).toEqual(linkPaths(w));
+  });
+});
+
 describe('runLink: paths', () => {
   test('a repo path and a store path with spaces stay whole in the key, the marker, and the commands', () => {
     const top = path.join(tmp(), 'my repo');

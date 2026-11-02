@@ -80,14 +80,18 @@ export function linkCommand(
   return `sidekick memory link ${shellArg(root)}${flags.join('')}`;
 }
 
-// A key already in place means the first link is done: copies are over. An
-// unknown folder counts as a first link, so its refusals are all reported.
+// A key in place means the first link is done: copies are over. The key is in
+// place only when it names the folder and the folder's marker names this root,
+// since only the marker proves link set the key. An unknown folder counts as a
+// first link, so its refusals are all reported.
 function isFirstLink(repo: RepoFacts): boolean {
   const { settings, target } = repo;
   const keyInPlace =
     settings.kind === 'ready' &&
     target !== undefined &&
-    settings.key === target.folder;
+    settings.key === target.folder &&
+    target.state.kind === 'marked' &&
+    target.state.root === repo.root;
   return !keyInPlace;
 }
 

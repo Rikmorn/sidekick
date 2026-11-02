@@ -4882,7 +4882,7 @@ function linkCommand(root, names, extra = "") {
 }
 function isFirstLink(repo) {
   const { settings, target } = repo;
-  const keyInPlace = settings.kind === "ready" && target !== undefined && settings.key === target.folder;
+  const keyInPlace = settings.kind === "ready" && target !== undefined && settings.key === target.folder && target.state.kind === "marked" && target.state.root === repo.root;
   return !keyInPlace;
 }
 function strands(repo) {
