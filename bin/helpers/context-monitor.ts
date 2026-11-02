@@ -151,7 +151,7 @@ export function nextLatch(
 
 // A dispatched worker has no one to tell, and compaction can drop its brief.
 function workerTail(brief: string): string {
-  return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`. Run sk-save now, so a compaction or a dispatch with the same brief continues from your record.`;
+  return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`. Run sk-save now, so a compaction, or a later worker on the same workstream, continues from your record.`;
 }
 
 /**

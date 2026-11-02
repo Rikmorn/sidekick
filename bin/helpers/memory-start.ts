@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
 import { readMemoryFile } from './memory-files.js';
+import { linkCommand } from './memory-link-plan.js';
 import { type Match, matchWorkstream } from './memory-match.js';
 import {
   renderStart,
@@ -16,6 +17,7 @@ import {
 import {
   listRecords,
   listWorkstreams,
+  type RepoView,
   recordPath,
   repoView,
   type SessionRecord,
@@ -117,6 +119,16 @@ function familyOf(familyFolder: string | undefined): StartParts['family'] {
   }
 }
 
+function isHeading(line: string, heading: string): boolean {
+  return line.trimEnd().toLowerCase() === heading.toLowerCase();
+}
+
+// The heading as the file spells it, so `readSection` finds a differently capitalised one.
+function headingAs(file: string, heading: string): string {
+  const body = readMemoryFile(file)?.body ?? '';
+  return body.split('\n').find((line) => isHeading(line, heading)) ?? heading;
+}
+
 // `## ` headings outside fenced code, other than the two sections the hook prints.
 function otherHeadings(file: string): string[] {
   const body = readMemoryFile(file)?.body ?? '';
@@ -127,8 +139,8 @@ function otherHeadings(file: string): string[] {
     return (
       !fence.open &&
       line.startsWith('## ') &&
-      heading !== STATE_HEADING &&
-      heading !== NEXT_HEADING
+      !isHeading(heading, STATE_HEADING) &&
+      !isHeading(heading, NEXT_HEADING)
     );
   });
 }
@@ -148,8 +160,8 @@ function workstreamParts(
   const file = match.workstream.path;
   return {
     statePath: file,
-    state: deps.readSection(file, STATE_HEADING),
-    nextSteps: deps.readSection(file, NEXT_HEADING),
+    state: deps.readSection(file, headingAs(file, STATE_HEADING).trimEnd()),
+    nextSteps: deps.readSection(file, headingAs(file, NEXT_HEADING).trimEnd()),
     otherHeadings: otherHeadings(file),
   };
 }
@@ -168,13 +180,13 @@ function recentRecords(
     .slice(0, RECENT_RECORDS);
 }
 
-// Single quotes keep a path with a space or a shell character whole when run literally.
-function shellQuoted(arg: string): string {
-  return `'${arg.replaceAll("'", "'\\''")}'`;
-}
-
-function missingSettingText(root: string): string {
-  return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: sidekick memory link ${shellQuoted(root)}`;
+function missingSettingText(
+  view: Extract<RepoView, { kind: 'setting-missing' }>,
+): string {
+  const folderName = path.basename(view.folder);
+  const name = folderName === path.basename(view.root) ? undefined : folderName;
+  const command = linkCommand(view.root, { family: view.family, name });
+  return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: ${command}`;
 }
 
 function gather(stdin: string, deps: StartDeps): StartResult {
@@ -195,7 +207,7 @@ function gather(stdin: string, deps: StartDeps): StartResult {
   };
   if (view.kind === 'none') return {};
   if (view.kind === 'setting-missing') {
-    const warnings = [missingSettingText(view.root)];
+    const warnings = [missingSettingText(view)];
     return { context: renderStart({ ...base, ...empty, warnings }) };
   }
   const own = recordPath(view.repoFolder, event.session_id, deps.today());

@@ -12,6 +12,7 @@ import {
 import { writeMarker } from './memory-store.js';
 import type { Workstream } from './memory-view.js';
 import { execRunner } from './pm-data.js';
+import { shellArg } from './shell.js';
 
 const REPO = '/store/proj';
 const RECORD = `${REPO}/sessions/2026-11-02-abc.md`;
@@ -400,7 +401,7 @@ describe('memoryStartContext', () => {
     expect(result.snapshot).toBeUndefined();
     expect(result.context?.split('\n')).toHaveLength(1);
     expect(result.context?.startsWith('Warning: ')).toBe(true);
-    expect(result.context).toContain(`sidekick memory link '${repo}'`);
+    expect(result.context).toContain(`sidekick memory link ${shellArg(repo)}`);
   });
 
   test('a linked repo with a branch match prints the workstream and starts a snapshot', () => {
@@ -521,12 +522,39 @@ describe('memoryStartContext', () => {
     expect(result.context).toContain('matched by the title');
   });
 
+  test('the fix command keeps the family and a custom folder name', () => {
+    const store = mkdir('store');
+    const repo = makeRepo('proj');
+    writeMarker(mkdir('store', 'fam', 'custom'), repo);
+    const result = memoryStartContext(eventFor(repo), depsFor(store));
+    expect(result.context).toContain(
+      `sidekick memory link ${shellArg(repo)} --family fam --name custom`,
+    );
+  });
+
+  test('headings match case-insensitively and do not repeat under Also in the file', () => {
+    const { store, repo, folder } = linked();
+    fs.writeFileSync(
+      path.join(folder, 'ws.md'),
+      '---\nname: ws\ndescription: d\nmetadata:\n  kind: workstream\n  status: open\n  branches: proj:main\n---\n\n## STATE\n\nNow.\n\n## Next Steps\n\nThen.\n\n## Key files\n\n- a\n',
+    );
+    const context = memoryStartContext(
+      eventFor(repo, { session_title: 'ws' }),
+      depsFor(store),
+    ).context;
+    expect(context).toContain('Then.');
+    expect(context).toContain('Now.');
+    expect(context).toContain('## Key files');
+    expect(context?.match(/## Next Steps/g)).toHaveLength(1);
+    expect(context?.match(/## STATE/g)).toHaveLength(1);
+  });
+
   test('a repo path with a space is printed whole and quoted in the fix command', () => {
     const store = mkdir('store');
     const repo = makeRepo('my proj');
     writeMarker(mkdir('store', 'proj'), repo);
     const result = memoryStartContext(eventFor(repo), depsFor(store));
-    expect(result.context).toContain(`sidekick memory link '${repo}'`);
+    expect(result.context).toContain(`sidekick memory link ${shellArg(repo)}`);
   });
 
   test("this session's own record picks the workstream and recent records list the others", () => {

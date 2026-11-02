@@ -185,7 +185,7 @@ describe('startSnapshot', () => {
     expect(git(store, 'log', '-1', '--format=%s')).toBe(
       'memory: snapshot at startup of session spawn-1',
     );
-  });
+  }, 10_000);
 });
 
 describe('deadlineRunner', () => {

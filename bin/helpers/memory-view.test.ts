@@ -124,7 +124,27 @@ describe('repoView', () => {
       kind: 'setting-missing',
       root: repo,
       folder,
+      family: undefined,
     });
+  });
+
+  test('a ~/ key resolves against the home folder', () => {
+    const store = mkdir('home', 'store');
+    const repo = makeRepo('proj');
+    const folder = mkdir('home', 'store', 'proj');
+    setKey(repo, '~/store/proj');
+    const view = repoView(repo, depsFor(store));
+    expect(view.kind).toBe('linked');
+    if (view.kind === 'linked')
+      expect(view.repoFolder).toBe(fs.realpathSync(folder));
+  });
+
+  test('a relative key is none without a marker', () => {
+    const store = mkdir('store');
+    const repo = makeRepo('proj');
+    mkdir('store', 'proj');
+    setKey(repo, 'store/proj');
+    expect(repoView(repo, depsFor(store))).toEqual({ kind: 'none' });
   });
 
   test('a marker names the repo but the key points elsewhere', () => {

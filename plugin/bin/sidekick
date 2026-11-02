@@ -1014,7 +1014,7 @@ function nextLatch(latched, tokens, limit) {
   return { speak: reached, latch: reached };
 }
 function workerTail(brief) {
-  return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`. Run sk-save now, so a compaction or a dispatch with the same brief continues from your record.`;
+  return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`. Run sk-save now, so a compaction, or a later worker on the same workstream, continues from your record.`;
 }
 function warningText(level, tokens, limit, workerBrief) {
   const percent = Math.floor(tokens * 100 / limit.tokens);
@@ -4582,7 +4582,7 @@ function runDeskCli(rest2, denv, out, err) {
 // bin/helpers/hook.ts
 import * as fs18 from "node:fs";
 import * as os2 from "node:os";
-import * as path21 from "node:path";
+import * as path22 from "node:path";
 
 // bin/helpers/local-date.ts
 function localToday() {
@@ -4672,7 +4672,7 @@ function startSnapshot(pluginDir, store, sessionId, source) {
 
 // bin/helpers/memory-start.ts
 import * as fs17 from "node:fs";
-import * as path20 from "node:path";
+import * as path21 from "node:path";
 
 // bin/helpers/memory-files.ts
 import * as fs15 from "node:fs";
@@ -4741,6 +4741,326 @@ function readMemoryFile(file) {
   }
 }
 
+// bin/helpers/memory-link-plan.ts
+import * as path18 from "node:path";
+var ARCHIVE_DIR = "archive/default-folders";
+function planLink(facts, opts) {
+  const refusals = refusalsOf(facts, opts);
+  const ready = readyOf(facts);
+  if (refusals.length > 0 || ready === undefined) {
+    return { kind: "refused", refusals };
+  }
+  const actions = actionsOf(ready, facts);
+  return {
+    kind: "ready",
+    root: ready.repo.root,
+    target: ready.target.folder,
+    actions,
+    notes: notesOf(ready, facts, actions)
+  };
+}
+function readyOf(facts) {
+  const { repo, storePending } = facts;
+  if (facts.storeState.kind === "foreign" || repo.kind === "refused") {
+    return;
+  }
+  const { settings, target } = repo;
+  if (settings.kind !== "ready" || target === undefined)
+    return;
+  if ("issue" in target.pending || "issue" in storePending)
+    return;
+  return {
+    repo,
+    settings,
+    target,
+    pending: target.pending.paths,
+    storePending: storePending.paths
+  };
+}
+function linkCommand(root, names, extra = "") {
+  const flags = [
+    names.family === undefined ? "" : ` --family ${shellArg(names.family)}`,
+    names.name === undefined ? "" : ` --name ${shellArg(names.name)}`,
+    extra === "" ? "" : ` ${extra}`
+  ];
+  return `sidekick memory link ${shellArg(root)}${flags.join("")}`;
+}
+function isFirstLink(repo) {
+  const { settings, target } = repo;
+  const keyInPlace = settings.kind === "ready" && target !== undefined && settings.key === target.folder && target.state.kind === "marked" && target.state.root === repo.root;
+  return !keyInPlace;
+}
+function strands(repo) {
+  return isFirstLink(repo) || repo.defaultFolder.kind === "present";
+}
+function refusalsOf(facts, opts) {
+  const { repo } = facts;
+  const all = [
+    ...storeRefusals(facts.storeState),
+    ..."issue" in facts.storePending ? [pendingRefusal(facts.storePending.issue)] : [],
+    ...facts.overrideIssue === undefined ? [] : [`${facts.overrideIssue}. Unset it and run link again.`],
+    ...facts.nameIssues.map((issue) => `${issue}; choose another with --family or --name.`),
+    ...repo.kind === "refused" ? [repo.issue] : repoRefusals(repo, opts)
+  ];
+  return [...new Set(all)];
+}
+var pendingRefusal = (issue) => `${issue}. Fix the store's git repo, then run link again.`;
+function storeRefusals(state) {
+  if (state.kind !== "foreign")
+    return [];
+  return [
+    `${state.issue}. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`
+  ];
+}
+function repoRefusals(repo, opts) {
+  return [
+    ...settingsRefusals(repo),
+    ...keyMissedRefusals(repo),
+    ...defaultFolderRefusals(repo),
+    ...sessionRefusals(repo, opts),
+    ...repo.target === undefined ? [] : targetRefusals(repo.target, repo.root)
+  ];
+}
+function settingsRefusals(repo) {
+  const { settings, target } = repo;
+  if (settings.kind === "refused")
+    return [settings.issue];
+  const ownOrAbsent = settings.key === undefined || settings.key === target?.folder;
+  if (ownOrAbsent || target === undefined)
+    return [];
+  return [
+    `${settings.file} already sets ${SETTINGS_KEY} to ${settings.key}, not ${target.folder}, and sidekick changes only a key it wrote. If that folder is in the store, run link with the --family and --name that name it. Otherwise remove the entry by hand, as the store's README says under Changes by hand.`
+  ];
+}
+function keyMissedRefusals(repo) {
+  if (repo.keyMissed === undefined)
+    return [];
+  const { claudeJson, projectFolder } = repo.keyMissed;
+  return [
+    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path18.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`
+  ];
+}
+function defaultFolderRefusals(repo) {
+  const { defaultFolder } = repo;
+  if (defaultFolder.kind === "absent")
+    return [];
+  if (!isFirstLink(repo))
+    return defaultFolder.issues;
+  const forged = defaultFolder.files.some((f) => f.rel === MARKER_FILE) ? [
+    `${path18.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
+  ] : [];
+  const into = repo.target?.folder;
+  const conflicts = into === undefined ? [] : defaultFolder.files.flatMap((f) => copyRefusals(defaultFolder.folder, into, f));
+  return [...defaultFolder.issues, ...forged, ...conflicts];
+}
+function copyRefusals(from, into, file) {
+  if (file.rel === MARKER_FILE)
+    return [];
+  const source = path18.join(from, file.rel);
+  const copy = path18.join(into, file.rel);
+  if (file.copy === "differs") {
+    return [
+      `${source} differs from ${copy}, which is already in the store. Merge the two by hand into the store copy, then run link again.`
+    ];
+  }
+  if (file.copy === "notFile") {
+    return [
+      `${copy} is in the way of ${source}, since it is not a file. Move it by hand and run link again.`
+    ];
+  }
+  return [];
+}
+var describeJob = (job) => `${job.name ?? job.sessionId ?? job.id ?? "a session"} in ${job.cwd ?? "an unknown folder"}`;
+function sessionRefusals(repo, opts) {
+  if (opts.force || !strands(repo))
+    return [];
+  const retry = linkCommand(repo.root, opts, "--force");
+  const { sessions } = repo;
+  if (sessions.kind === "failed") {
+    return [
+      `link cannot tell whether another session is open in the repo: ${sessions.issues.join(" ")} Fix the listing, or run again with --force: ${retry}`
+    ];
+  }
+  if (sessions.others.length === 0)
+    return [];
+  return [
+    `Other sessions are open in the repo: ${sessions.others.map(describeJob).join("; ")}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`
+  ];
+}
+function targetRefusals(target, root) {
+  return [
+    ...targetStateRefusals(target, root),
+    ...familyRefusals(target),
+    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path18.basename(found.folder) })}`),
+    ..."issue" in target.pending ? [pendingRefusal(target.pending.issue)] : []
+  ];
+}
+function targetStateRefusals(target, root) {
+  const { folder, state } = target;
+  switch (state.kind) {
+    case "absent":
+    case "empty":
+      return [];
+    case "notFolder":
+      return [
+        `${folder} is a file, not a folder. Choose another folder name with --name.`
+      ];
+    case "unmarked":
+      return [
+        `${folder} holds files but no ${MARKER_FILE}, so link did not make it for this repo, and it may be a family folder. Choose another folder name with --name.`
+      ];
+    case "invalidMarker":
+      return [`${state.issue}. Fix or remove it by hand, then run link again.`];
+    case "marked":
+      return state.root === root ? [] : [
+        `${folder} belongs to ${state.root}, as its ${MARKER_FILE} says. Choose another folder name with --name.`
+      ];
+    default: {
+      const unhandled = state;
+      throw new Error(`Unhandled target state: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function familyRefusals(target) {
+  const { family } = target;
+  const folder = path18.dirname(target.folder);
+  if (family === "marked") {
+    return [
+      `${folder} holds a ${MARKER_FILE}, so it is a repo folder, not a family. Choose another family with --family.`
+    ];
+  }
+  if (family === "notFolder") {
+    return [
+      `${folder} is a file, not a family folder. Choose another family with --family.`
+    ];
+  }
+  return [];
+}
+var COMMITTED_KINDS = new Set([
+  "writeMarker",
+  "copyFile",
+  "archiveDefault"
+]);
+function actionsOf(ready, facts) {
+  const first = isFirstLink(ready.repo);
+  const steps = [
+    ...storeActions(ready, facts),
+    ...folderActions(ready),
+    ...first ? copyActions(ready) : [],
+    ...first ? [mergeAction(ready)] : [],
+    ...archiveActions(ready, facts, first)
+  ];
+  const writesStore = steps.some((step) => COMMITTED_KINDS.has(step.kind)) || ready.pending.length > 0;
+  return writesStore ? [...steps, commitAction(ready, facts.store)] : steps;
+}
+function storeActions(ready, facts) {
+  const { kind } = facts.storeState;
+  if (kind === "absent" || kind === "empty") {
+    return [{ kind: "createStore", store: facts.store }];
+  }
+  return ready.storePending.length > 0 ? [{ kind: "finishStore", store: facts.store, paths: ready.storePending }] : [];
+}
+function folderActions(ready) {
+  const { folder, state } = ready.target;
+  const marker = {
+    kind: "writeMarker",
+    folder,
+    root: ready.repo.root
+  };
+  if (state.kind === "absent") {
+    return [{ kind: "createFolder", folder }, marker];
+  }
+  return state.kind === "empty" ? [marker] : [];
+}
+function copyActions(ready) {
+  const { defaultFolder } = ready.repo;
+  if (defaultFolder.kind === "absent")
+    return [];
+  return defaultFolder.files.filter((f) => f.copy === "absent" && f.rel !== MARKER_FILE).map((f) => ({
+    kind: "copyFile",
+    from: path18.join(defaultFolder.folder, f.rel),
+    to: path18.join(ready.target.folder, f.rel)
+  }));
+}
+function mergeAction(ready) {
+  return {
+    kind: "mergeKey",
+    file: ready.settings.file,
+    value: ready.target.folder,
+    expected: ready.settings.text
+  };
+}
+function archiveActions(ready, facts, first) {
+  const { defaultFolder, projectKey } = ready.repo;
+  if (defaultFolder.kind === "absent")
+    return [];
+  const name = archiveName(projectKey, facts.today, ready.target.archives);
+  return [
+    {
+      kind: "archiveDefault",
+      from: defaultFolder.folder,
+      to: path18.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
+      copies: ready.target.folder,
+      reappeared: !first
+    }
+  ];
+}
+function archiveName(key, today, taken) {
+  const base = `${key}-${today}`;
+  if (!taken.includes(base))
+    return base;
+  let n = 2;
+  while (taken.includes(`${base}-${n}`))
+    n += 1;
+  return `${base}-${n}`;
+}
+function commitAction(ready, store) {
+  const { defaultFolder, projectKey } = ready.repo;
+  const owned = {
+    folderRel: ready.target.rel,
+    projectKey,
+    defaultFolder: defaultFolder.folder
+  };
+  return {
+    kind: "commit",
+    store,
+    message: `link ${ready.target.rel}`,
+    owned
+  };
+}
+function notesOf(ready, facts, actions) {
+  const { defaultFolder } = ready.repo;
+  const moves = actions.some((a) => a.kind === "mergeKey" || a.kind === "archiveDefault");
+  const noDefault = isFirstLink(ready.repo) && defaultFolder.kind === "absent" ? [
+    `No default memory folder at ${defaultFolder.folder}: nothing to copy or archive.`
+  ] : [];
+  return [
+    ...noDefault,
+    ...moves ? sessionNotes(ready.repo.sessions, defaultFolder.folder) : [],
+    ...userSettingsNotes(facts)
+  ];
+}
+function sessionNotes(sessions, folder) {
+  if (sessions.kind === "failed") {
+    return [
+      `The check for other open sessions did not run: ${sessions.issues.join(" ")} Any session open in the repo keeps writing to ${folder} until it restarts.`
+    ];
+  }
+  const forced = sessions.others.map((job) => `Passed over with --force: ${describeJob(job)}. It keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`);
+  const self = sessions.self === undefined ? [] : [
+    `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`
+  ];
+  return [...forced, ...self];
+}
+function userSettingsNotes(facts) {
+  const { file, covered } = facts.userSettings;
+  if (covered)
+    return [];
+  return [
+    `No permissions.additionalDirectories entry in ${file} covers the store. link never writes that file, so add this entry to that list by hand: ${JSON.stringify(facts.store)}`
+  ];
+}
+
 // bin/helpers/memory-match.ts
 function byName2(a, b) {
   if (a.name < b.name)
@@ -4804,7 +5124,7 @@ function matchWorkstream(all, facts) {
 }
 
 // bin/helpers/memory-start-render.ts
-import * as path18 from "node:path";
+import * as path19 from "node:path";
 var TOTAL_BUDGET = 9000;
 var NEXT_STEPS_BUDGET = 3000;
 var STATE_AND_NEXT_BUDGET = 5000;
@@ -4867,7 +5187,7 @@ function headerBlock(parts) {
   if (match === undefined)
     return [];
   const first = `sidekick memory: session ${parts.sessionId}. Your record is ${parts.recordPath}; save to it with the sk-save skill.`;
-  const repoFolder = path18.dirname(path18.dirname(parts.recordPath));
+  const repoFolder = path19.dirname(path19.dirname(parts.recordPath));
   const text = [first, ...matchLines(match, repoFolder)].join(`
 `);
   return [{ text, drop: Drop.Header }];
@@ -4894,7 +5214,7 @@ function recordsBlock(parts) {
   const lines = records.map((record2) => `- ${record2.date} ${record2.title}: ${record2.path}`);
   const text = [`Recent records on ${match.workstream.name}:`, ...lines].join(`
 `);
-  const fitted = fitSection(text, RECORDS_BUDGET, path18.dirname(newest.path));
+  const fitted = fitSection(text, RECORDS_BUDGET, path19.dirname(newest.path));
   return [{ text: fitted, drop: Drop.Records }];
 }
 function familyBlock(parts) {
@@ -4948,32 +5268,35 @@ function renderStart(parts) {
 
 // bin/helpers/memory-view.ts
 import * as fs16 from "node:fs";
-import * as path19 from "node:path";
+import * as path20 from "node:path";
 var INDEX_FILE = "MEMORY.md";
 var SESSIONS_DIR = "sessions";
 var RECORD_NAME = /^(\d{4}-\d{2}-\d{2})-(.+)\.md$/;
 var TITLE_LINE = /^# +(.+?)\s*$/m;
 function resolved(target) {
-  const lexical = path19.resolve(target);
+  const lexical = path20.resolve(target);
   try {
     return fs16.realpathSync(lexical);
   } catch {
     return lexical;
   }
 }
+function expandHome(key, home) {
+  return key.startsWith("~/") ? path20.join(home, key.slice(2)) : key;
+}
 function isInside(folder, parent) {
-  const relative3 = path19.relative(parent, folder);
-  return relative3 !== "" && !relative3.startsWith("..") && !path19.isAbsolute(relative3);
+  const relative3 = path20.relative(parent, folder);
+  return relative3 !== "" && !relative3.startsWith("..") && !path20.isAbsolute(relative3);
 }
 function linkedView(root, store, key) {
   const repoFolder = resolved(key);
-  const parent = path19.dirname(repoFolder);
+  const parent = path20.dirname(repoFolder);
   return {
     kind: "linked",
     root,
     store,
     repoFolder,
-    repoName: path19.basename(repoFolder),
+    repoName: path20.basename(repoFolder),
     familyFolder: parent === store ? undefined : parent
   };
 }
@@ -4982,12 +5305,18 @@ function repoView(cwd, deps) {
   if ("issue" in main)
     return { kind: "none" };
   const store = resolved(storeRoot(deps.env, deps.home));
-  const key = readKey(cwd, deps.runGit);
-  if (key !== undefined && isInside(resolved(key), store)) {
+  const rawKey = readKey(cwd, deps.runGit);
+  const key = rawKey === undefined ? undefined : expandHome(rawKey, deps.home);
+  if (key !== undefined && path20.isAbsolute(key) && isInside(resolved(key), store)) {
     return linkedView(main.root, store, key);
   }
   const marker = findMarkers(store).find((found) => resolved(found.root) === main.root);
-  return marker === undefined ? { kind: "none" } : { kind: "setting-missing", root: main.root, folder: marker.folder };
+  return marker === undefined ? { kind: "none" } : {
+    kind: "setting-missing",
+    root: main.root,
+    folder: marker.folder,
+    family: marker.family
+  };
 }
 function listDir(folder, suffix) {
   try {
@@ -5022,7 +5351,7 @@ function toWorkstream(file, memory) {
 }
 function workstreamsIn(folder) {
   return listDir(folder, ".md").filter((entry) => entry !== INDEX_FILE).flatMap((entry) => {
-    const file = path19.join(folder, entry);
+    const file = path20.join(folder, entry);
     const memory = readMemoryFile(file);
     const found = memory && toWorkstream(file, memory);
     return found ? [found] : [];
@@ -5042,7 +5371,7 @@ function modifiedAt2(file) {
   }
 }
 function toRecord(file) {
-  const named = RECORD_NAME.exec(path19.basename(file));
+  const named = RECORD_NAME.exec(path20.basename(file));
   const memory = readMemoryFile(file);
   if (!named || !memory || memory.metadata.kind !== "session")
     return;
@@ -5056,19 +5385,19 @@ function toRecord(file) {
   };
 }
 function listRecords(repoFolder) {
-  const dir = path19.join(repoFolder, SESSIONS_DIR);
+  const dir = path20.join(repoFolder, SESSIONS_DIR);
   return listDir(dir, ".md").flatMap((entry) => {
-    const record2 = toRecord(path19.join(dir, entry));
+    const record2 = toRecord(path20.join(dir, entry));
     return record2 ? [{ record: record2, mtime: modifiedAt2(record2.path) }] : [];
   }).sort((a, b) => b.record.date.localeCompare(a.record.date) || b.mtime - a.mtime).map((entry) => entry.record);
 }
 function recordPath(repoFolder, sessionId, today) {
-  const dir = path19.join(repoFolder, SESSIONS_DIR);
+  const dir = path20.join(repoFolder, SESSIONS_DIR);
   const existing = listDir(dir, `-${sessionId}.md`).find((entry) => RECORD_NAME.test(entry));
   if (existing !== undefined) {
-    return { path: path19.join(dir, existing), exists: true };
+    return { path: path20.join(dir, existing), exists: true };
   }
-  return { path: path19.join(dir, `${today}-${sessionId}.md`), exists: false };
+  return { path: path20.join(dir, `${today}-${sessionId}.md`), exists: false };
 }
 
 // bin/helpers/memory-start.ts
@@ -5114,7 +5443,7 @@ function briefWorkstream(env) {
   return "brief" in read ? read.brief.workstream : undefined;
 }
 function staleLockWarning(store, now) {
-  const lock = path20.join(store, ".git", "index.lock");
+  const lock = path21.join(store, ".git", "index.lock");
   try {
     if (now - fs17.statSync(lock).mtimeMs <= STALE_LOCK_MS)
       return [];
@@ -5128,16 +5457,24 @@ function staleLockWarning(store, now) {
 function familyOf(familyFolder) {
   if (familyFolder === undefined)
     return;
-  const file = path20.join(familyFolder, INDEX_FILE2);
+  const file = path21.join(familyFolder, INDEX_FILE2);
   try {
     const lines = fs17.readFileSync(file, "utf8").trimEnd().split(`
 `);
     if (lines.every((line) => line.trim() === ""))
       return;
-    return { name: path20.basename(familyFolder), path: file, lines };
+    return { name: path21.basename(familyFolder), path: file, lines };
   } catch {
     return;
   }
+}
+function isHeading(line, heading) {
+  return line.trimEnd().toLowerCase() === heading.toLowerCase();
+}
+function headingAs(file, heading) {
+  const body = readMemoryFile(file)?.body ?? "";
+  return body.split(`
+`).find((line) => isHeading(line, heading)) ?? heading;
 }
 function otherHeadings(file) {
   const body = readMemoryFile(file)?.body ?? "";
@@ -5147,7 +5484,7 @@ function otherHeadings(file) {
     if (line.trimStart().startsWith("```"))
       fence.open = !fence.open;
     const heading = line.trimEnd();
-    return !fence.open && line.startsWith("## ") && heading !== STATE_HEADING && heading !== NEXT_HEADING;
+    return !fence.open && line.startsWith("## ") && !isHeading(heading, STATE_HEADING) && !isHeading(heading, NEXT_HEADING);
   });
 }
 function workstreamParts(match, deps) {
@@ -5162,8 +5499,8 @@ function workstreamParts(match, deps) {
   const file = match.workstream.path;
   return {
     statePath: file,
-    state: deps.readSection(file, STATE_HEADING),
-    nextSteps: deps.readSection(file, NEXT_HEADING),
+    state: deps.readSection(file, headingAs(file, STATE_HEADING).trimEnd()),
+    nextSteps: deps.readSection(file, headingAs(file, NEXT_HEADING).trimEnd()),
     otherHeadings: otherHeadings(file)
   };
 }
@@ -5172,11 +5509,11 @@ function recentRecords(match, records, own) {
     return [];
   return records.filter((record2) => record2.path !== own && record2.workstream === match.workstream.name).slice(0, RECENT_RECORDS);
 }
-function shellQuoted(arg) {
-  return `'${arg.replaceAll("'", "'\\''")}'`;
-}
-function missingSettingText(root) {
-  return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: sidekick memory link ${shellQuoted(root)}`;
+function missingSettingText(view) {
+  const folderName = path21.basename(view.folder);
+  const name = folderName === path21.basename(view.root) ? undefined : folderName;
+  const command = linkCommand(view.root, { family: view.family, name });
+  return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: ${command}`;
 }
 function gather(stdin, deps) {
   const event = parseEvent(stdin);
@@ -5198,7 +5535,7 @@ function gather(stdin, deps) {
   if (view.kind === "none")
     return {};
   if (view.kind === "setting-missing") {
-    const warnings = [missingSettingText(view.root)];
+    const warnings = [missingSettingText(view)];
     return { context: renderStart({ ...base, ...empty, warnings }) };
   }
   const own = recordPath(view.repoFolder, event.session_id, deps.today());
@@ -5247,14 +5584,14 @@ function readContent(event) {
     return "";
   return typeof response.file.content === "string" ? response.file.content : "";
 }
-var DESIGN_SKILL = path21.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path21.join("skills", "sk-execute", "SKILL.md");
+var DESIGN_SKILL = path22.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path22.join("skills", "sk-execute", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
   "## Before the plan goes out",
   "## Choose the mode"
 ];
-var CLEAN_CODE_RULE = path21.join("rules", "sk-clean-code.md");
+var CLEAN_CODE_RULE = path22.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
@@ -5370,7 +5707,7 @@ function ruleCoversPackage(rulePaths, content) {
   return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
 }
 function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path21.join(pluginDir, DESIGN_SKILL));
+  const description = readSkillDescription(path22.join(pluginDir, DESIGN_SKILL));
   if (description === undefined)
     return;
   return [
@@ -5382,7 +5719,7 @@ function brainstormNudge(pluginDir) {
 }
 var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch, so the complete-code rule and the placeholder scan give way where they conflict. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
-  const file = path21.join(pluginDir, EXECUTE_SKILL);
+  const file = path22.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
   const found = sections.flatMap((s) => s === undefined ? [] : [s]);
   if (found.length < PLAN_SECTIONS.length)
@@ -5401,7 +5738,7 @@ var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. W
 var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
 var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function commentsLines(pluginDir, packageText) {
-  const rule = path21.join(pluginDir, CLEAN_CODE_RULE);
+  const rule = path22.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
   if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
     return [];
@@ -5517,7 +5854,7 @@ import * as path25 from "node:path";
 
 // bin/helpers/memory-default.ts
 import * as fs19 from "node:fs";
-import * as path22 from "node:path";
+import * as path23 from "node:path";
 var MAX_KEY_LENGTH = 200;
 var WRITE_BITS = 146;
 function hashOf(text) {
@@ -5534,7 +5871,7 @@ function projectKey(p) {
   return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
 }
 function defaultMemoryFolder(root, configDir) {
-  return path22.join(configDir, "projects", projectKey(root), "memory");
+  return path23.join(configDir, "projects", projectKey(root), "memory");
 }
 function overrideIssue(env) {
   if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
@@ -5568,329 +5905,9 @@ function legacyPreferred(legacy, current) {
   }
 }
 function claudeJsonPath(env, home) {
-  const current = path22.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
-  const legacy = path22.join(configDirOf(env, home), ".config.json");
+  const current = path23.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
+  const legacy = path23.join(configDirOf(env, home), ".config.json");
   return legacyPreferred(legacy, current) ? legacy : current;
-}
-
-// bin/helpers/memory-link-plan.ts
-import * as path23 from "node:path";
-var ARCHIVE_DIR = "archive/default-folders";
-function planLink(facts, opts) {
-  const refusals = refusalsOf(facts, opts);
-  const ready = readyOf(facts);
-  if (refusals.length > 0 || ready === undefined) {
-    return { kind: "refused", refusals };
-  }
-  const actions = actionsOf(ready, facts);
-  return {
-    kind: "ready",
-    root: ready.repo.root,
-    target: ready.target.folder,
-    actions,
-    notes: notesOf(ready, facts, actions)
-  };
-}
-function readyOf(facts) {
-  const { repo, storePending } = facts;
-  if (facts.storeState.kind === "foreign" || repo.kind === "refused") {
-    return;
-  }
-  const { settings, target } = repo;
-  if (settings.kind !== "ready" || target === undefined)
-    return;
-  if ("issue" in target.pending || "issue" in storePending)
-    return;
-  return {
-    repo,
-    settings,
-    target,
-    pending: target.pending.paths,
-    storePending: storePending.paths
-  };
-}
-function linkCommand(root, names, extra = "") {
-  const flags = [
-    names.family === undefined ? "" : ` --family ${shellArg(names.family)}`,
-    names.name === undefined ? "" : ` --name ${shellArg(names.name)}`,
-    extra === "" ? "" : ` ${extra}`
-  ];
-  return `sidekick memory link ${shellArg(root)}${flags.join("")}`;
-}
-function isFirstLink(repo) {
-  const { settings, target } = repo;
-  const keyInPlace = settings.kind === "ready" && target !== undefined && settings.key === target.folder && target.state.kind === "marked" && target.state.root === repo.root;
-  return !keyInPlace;
-}
-function strands(repo) {
-  return isFirstLink(repo) || repo.defaultFolder.kind === "present";
-}
-function refusalsOf(facts, opts) {
-  const { repo } = facts;
-  const all = [
-    ...storeRefusals(facts.storeState),
-    ..."issue" in facts.storePending ? [pendingRefusal(facts.storePending.issue)] : [],
-    ...facts.overrideIssue === undefined ? [] : [`${facts.overrideIssue}. Unset it and run link again.`],
-    ...facts.nameIssues.map((issue) => `${issue}; choose another with --family or --name.`),
-    ...repo.kind === "refused" ? [repo.issue] : repoRefusals(repo, opts)
-  ];
-  return [...new Set(all)];
-}
-var pendingRefusal = (issue) => `${issue}. Fix the store's git repo, then run link again.`;
-function storeRefusals(state) {
-  if (state.kind !== "foreign")
-    return [];
-  return [
-    `${state.issue}. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`
-  ];
-}
-function repoRefusals(repo, opts) {
-  return [
-    ...settingsRefusals(repo),
-    ...keyMissedRefusals(repo),
-    ...defaultFolderRefusals(repo),
-    ...sessionRefusals(repo, opts),
-    ...repo.target === undefined ? [] : targetRefusals(repo.target, repo.root)
-  ];
-}
-function settingsRefusals(repo) {
-  const { settings, target } = repo;
-  if (settings.kind === "refused")
-    return [settings.issue];
-  const ownOrAbsent = settings.key === undefined || settings.key === target?.folder;
-  if (ownOrAbsent || target === undefined)
-    return [];
-  return [
-    `${settings.file} already sets ${SETTINGS_KEY} to ${settings.key}, not ${target.folder}, and sidekick changes only a key it wrote. If that folder is in the store, run link with the --family and --name that name it. Otherwise remove the entry by hand, as the store's README says under Changes by hand.`
-  ];
-}
-function keyMissedRefusals(repo) {
-  if (repo.keyMissed === undefined)
-    return [];
-  const { claudeJson, projectFolder } = repo.keyMissed;
-  return [
-    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path23.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`
-  ];
-}
-function defaultFolderRefusals(repo) {
-  const { defaultFolder } = repo;
-  if (defaultFolder.kind === "absent")
-    return [];
-  if (!isFirstLink(repo))
-    return defaultFolder.issues;
-  const forged = defaultFolder.files.some((f) => f.rel === MARKER_FILE) ? [
-    `${path23.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
-  ] : [];
-  const into = repo.target?.folder;
-  const conflicts = into === undefined ? [] : defaultFolder.files.flatMap((f) => copyRefusals(defaultFolder.folder, into, f));
-  return [...defaultFolder.issues, ...forged, ...conflicts];
-}
-function copyRefusals(from, into, file) {
-  if (file.rel === MARKER_FILE)
-    return [];
-  const source = path23.join(from, file.rel);
-  const copy = path23.join(into, file.rel);
-  if (file.copy === "differs") {
-    return [
-      `${source} differs from ${copy}, which is already in the store. Merge the two by hand into the store copy, then run link again.`
-    ];
-  }
-  if (file.copy === "notFile") {
-    return [
-      `${copy} is in the way of ${source}, since it is not a file. Move it by hand and run link again.`
-    ];
-  }
-  return [];
-}
-var describeJob = (job) => `${job.name ?? job.sessionId ?? job.id ?? "a session"} in ${job.cwd ?? "an unknown folder"}`;
-function sessionRefusals(repo, opts) {
-  if (opts.force || !strands(repo))
-    return [];
-  const retry = linkCommand(repo.root, opts, "--force");
-  const { sessions } = repo;
-  if (sessions.kind === "failed") {
-    return [
-      `link cannot tell whether another session is open in the repo: ${sessions.issues.join(" ")} Fix the listing, or run again with --force: ${retry}`
-    ];
-  }
-  if (sessions.others.length === 0)
-    return [];
-  return [
-    `Other sessions are open in the repo: ${sessions.others.map(describeJob).join("; ")}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`
-  ];
-}
-function targetRefusals(target, root) {
-  return [
-    ...targetStateRefusals(target, root),
-    ...familyRefusals(target),
-    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path23.basename(found.folder) })}`),
-    ..."issue" in target.pending ? [pendingRefusal(target.pending.issue)] : []
-  ];
-}
-function targetStateRefusals(target, root) {
-  const { folder, state } = target;
-  switch (state.kind) {
-    case "absent":
-    case "empty":
-      return [];
-    case "notFolder":
-      return [
-        `${folder} is a file, not a folder. Choose another folder name with --name.`
-      ];
-    case "unmarked":
-      return [
-        `${folder} holds files but no ${MARKER_FILE}, so link did not make it for this repo, and it may be a family folder. Choose another folder name with --name.`
-      ];
-    case "invalidMarker":
-      return [`${state.issue}. Fix or remove it by hand, then run link again.`];
-    case "marked":
-      return state.root === root ? [] : [
-        `${folder} belongs to ${state.root}, as its ${MARKER_FILE} says. Choose another folder name with --name.`
-      ];
-    default: {
-      const unhandled = state;
-      throw new Error(`Unhandled target state: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function familyRefusals(target) {
-  const { family } = target;
-  const folder = path23.dirname(target.folder);
-  if (family === "marked") {
-    return [
-      `${folder} holds a ${MARKER_FILE}, so it is a repo folder, not a family. Choose another family with --family.`
-    ];
-  }
-  if (family === "notFolder") {
-    return [
-      `${folder} is a file, not a family folder. Choose another family with --family.`
-    ];
-  }
-  return [];
-}
-var COMMITTED_KINDS = new Set([
-  "writeMarker",
-  "copyFile",
-  "archiveDefault"
-]);
-function actionsOf(ready, facts) {
-  const first = isFirstLink(ready.repo);
-  const steps = [
-    ...storeActions(ready, facts),
-    ...folderActions(ready),
-    ...first ? copyActions(ready) : [],
-    ...first ? [mergeAction(ready)] : [],
-    ...archiveActions(ready, facts, first)
-  ];
-  const writesStore = steps.some((step) => COMMITTED_KINDS.has(step.kind)) || ready.pending.length > 0;
-  return writesStore ? [...steps, commitAction(ready, facts.store)] : steps;
-}
-function storeActions(ready, facts) {
-  const { kind } = facts.storeState;
-  if (kind === "absent" || kind === "empty") {
-    return [{ kind: "createStore", store: facts.store }];
-  }
-  return ready.storePending.length > 0 ? [{ kind: "finishStore", store: facts.store, paths: ready.storePending }] : [];
-}
-function folderActions(ready) {
-  const { folder, state } = ready.target;
-  const marker = {
-    kind: "writeMarker",
-    folder,
-    root: ready.repo.root
-  };
-  if (state.kind === "absent") {
-    return [{ kind: "createFolder", folder }, marker];
-  }
-  return state.kind === "empty" ? [marker] : [];
-}
-function copyActions(ready) {
-  const { defaultFolder } = ready.repo;
-  if (defaultFolder.kind === "absent")
-    return [];
-  return defaultFolder.files.filter((f) => f.copy === "absent" && f.rel !== MARKER_FILE).map((f) => ({
-    kind: "copyFile",
-    from: path23.join(defaultFolder.folder, f.rel),
-    to: path23.join(ready.target.folder, f.rel)
-  }));
-}
-function mergeAction(ready) {
-  return {
-    kind: "mergeKey",
-    file: ready.settings.file,
-    value: ready.target.folder,
-    expected: ready.settings.text
-  };
-}
-function archiveActions(ready, facts, first) {
-  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
-  if (defaultFolder.kind === "absent")
-    return [];
-  const name = archiveName(projectKey2, facts.today, ready.target.archives);
-  return [
-    {
-      kind: "archiveDefault",
-      from: defaultFolder.folder,
-      to: path23.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
-      copies: ready.target.folder,
-      reappeared: !first
-    }
-  ];
-}
-function archiveName(key, today, taken) {
-  const base = `${key}-${today}`;
-  if (!taken.includes(base))
-    return base;
-  let n = 2;
-  while (taken.includes(`${base}-${n}`))
-    n += 1;
-  return `${base}-${n}`;
-}
-function commitAction(ready, store) {
-  const { defaultFolder, projectKey: projectKey2 } = ready.repo;
-  const owned = {
-    folderRel: ready.target.rel,
-    projectKey: projectKey2,
-    defaultFolder: defaultFolder.folder
-  };
-  return {
-    kind: "commit",
-    store,
-    message: `link ${ready.target.rel}`,
-    owned
-  };
-}
-function notesOf(ready, facts, actions) {
-  const { defaultFolder } = ready.repo;
-  const moves = actions.some((a) => a.kind === "mergeKey" || a.kind === "archiveDefault");
-  const noDefault = isFirstLink(ready.repo) && defaultFolder.kind === "absent" ? [
-    `No default memory folder at ${defaultFolder.folder}: nothing to copy or archive.`
-  ] : [];
-  return [
-    ...noDefault,
-    ...moves ? sessionNotes(ready.repo.sessions, defaultFolder.folder) : [],
-    ...userSettingsNotes(facts)
-  ];
-}
-function sessionNotes(sessions, folder) {
-  if (sessions.kind === "failed") {
-    return [
-      `The check for other open sessions did not run: ${sessions.issues.join(" ")} Any session open in the repo keeps writing to ${folder} until it restarts.`
-    ];
-  }
-  const forced = sessions.others.map((job) => `Passed over with --force: ${describeJob(job)}. It keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`);
-  const self = sessions.self === undefined ? [] : [
-    `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`
-  ];
-  return [...forced, ...self];
-}
-function userSettingsNotes(facts) {
-  const { file, covered } = facts.userSettings;
-  if (covered)
-    return [];
-  return [
-    `No permissions.additionalDirectories entry in ${file} covers the store. link never writes that file, so add this entry to that list by hand: ${JSON.stringify(facts.store)}`
-  ];
 }
 
 // bin/helpers/memory-sessions.ts
@@ -6184,11 +6201,11 @@ function additionalDirectories(file) {
     return [];
   }
 }
-var expandHome = (entry, home) => entry === "~" || entry.startsWith("~/") ? path25.join(home, entry.slice(1)) : entry;
+var expandHome2 = (entry, home) => entry === "~" || entry.startsWith("~/") ? path25.join(home, entry.slice(1)) : entry;
 function userSettingsFacts(configDir, store, home) {
   const file = path25.join(configDir, "settings.json");
   const covered = additionalDirectories(file).some((entry) => {
-    const dir = path25.resolve(expandHome(entry, home));
+    const dir = path25.resolve(expandHome2(entry, home));
     return isInside3(store, dir) || isInside3(physical(store), physical(dir));
   });
   return { file, covered };

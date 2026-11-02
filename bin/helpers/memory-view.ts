@@ -23,7 +23,12 @@ export interface ViewDeps {
 
 export type RepoView =
   | { kind: 'none' }
-  | { kind: 'setting-missing'; root: string; folder: string }
+  | {
+      kind: 'setting-missing';
+      root: string;
+      folder: string;
+      family: string | undefined;
+    }
   | {
       kind: 'linked';
       root: string;
@@ -41,6 +46,11 @@ function resolved(target: string): string {
   } catch {
     return lexical;
   }
+}
+
+// Claude Code takes an absolute or `~/` path; a relative key never counts as inside the store.
+function expandHome(key: string, home: string): string {
+  return key.startsWith('~/') ? path.join(home, key.slice(2)) : key;
 }
 
 function isInside(folder: string, parent: string): boolean {
@@ -72,8 +82,13 @@ export function repoView(cwd: string, deps: ViewDeps): RepoView {
   const main = mainCheckout(cwd, deps.runGit, deps.home);
   if ('issue' in main) return { kind: 'none' };
   const store = resolved(storeRoot(deps.env, deps.home));
-  const key = readKey(cwd, deps.runGit);
-  if (key !== undefined && isInside(resolved(key), store)) {
+  const rawKey = readKey(cwd, deps.runGit);
+  const key = rawKey === undefined ? undefined : expandHome(rawKey, deps.home);
+  if (
+    key !== undefined &&
+    path.isAbsolute(key) &&
+    isInside(resolved(key), store)
+  ) {
     return linkedView(main.root, store, key);
   }
   const marker = findMarkers(store).find(
@@ -81,7 +96,12 @@ export function repoView(cwd: string, deps: ViewDeps): RepoView {
   );
   return marker === undefined
     ? { kind: 'none' }
-    : { kind: 'setting-missing', root: main.root, folder: marker.folder };
+    : {
+        kind: 'setting-missing',
+        root: main.root,
+        folder: marker.folder,
+        family: marker.family,
+      };
 }
 
 export interface Workstream {
