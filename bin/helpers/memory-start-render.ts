@@ -1,10 +1,12 @@
 /**
- * The text the memory-start hook prints: line shapes, section order, and the
- * budgets that keep the whole under 9,000 characters.
+ * The text the memory-start hook prints: line shapes, section order, the
+ * budgets that keep the whole under 9,000 characters, and the gate that
+ * withholds injection-shaped text from the store.
  */
 
 import * as path from 'node:path';
 import type { Match } from './memory-match.js';
+import { injectionHits } from './memory-patterns.js';
 import type { SessionRecord, Workstream } from './memory-view.js';
 
 export type StartSource = 'startup' | 'resume' | 'clear' | 'compact' | 'fork';
@@ -12,6 +14,8 @@ export type StartSource = 'startup' | 'resume' | 'clear' | 'compact' | 'fork';
 export interface StartParts {
   sessionId: string;
   source: StartSource;
+  /** The store's real path; a withheld line names its folder relative to it. */
+  store: string;
   recordPath: string;
   recordExists: boolean;
   match: Match | undefined;
@@ -38,12 +42,55 @@ const MENU_ASK =
   'Ask the operator which one this session serves, or let sk-save start a new one.';
 const COMPACT_WARNING =
   'This session has not saved. Save with sk-save at the next pause.';
+const GATE_FAILED = 'The memory gate failed, so this text is unchecked.';
 
 // A block prints in array order; past the total budget, the highest `drop` goes first.
 interface Block {
   text: string;
   drop: number;
 }
+
+// Text the hook prints from one store file; `dir` is the store folder the lint lists that file under.
+interface Source {
+  file: string;
+  dir: string;
+  text: string;
+}
+
+// The withheld line for a source, or undefined when the source prints as it is.
+type Gate = (source: Source) => string | undefined;
+
+type Matcher = (text: string) => string[];
+
+const unchecked: Gate = () => undefined;
+
+function storeFolder(store: string, dir: string): string {
+  return path.relative(store, dir).split(path.sep).join('/');
+}
+
+function withholding(store: string, matcher: Matcher): Gate {
+  return ({ file, dir, text }) => {
+    const ids = matcher(text);
+    if (ids.length === 0) return undefined;
+    return `Withheld: ${file} matched ${ids.join(', ')}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${storeFolder(store, dir)}`;
+  };
+}
+
+const shown = (gate: Gate, source: Source): string =>
+  gate(source) ?? source.text;
+
+const fileSource = (file: string, text: string): Source => ({
+  file,
+  dir: path.dirname(file),
+  text,
+});
+
+// A record belongs to its repo folder, the parent of `sessions/`.
+const recordSource = (record: SessionRecord, text: string): Source => ({
+  file: record.path,
+  dir: path.dirname(path.dirname(record.path)),
+  text,
+});
 
 const Drop = {
   Header: 0,
@@ -70,35 +117,54 @@ function fitSection(text: string, budget: number, readPath: string): string {
   return `${kept}\n${marker}`;
 }
 
-function menuText(open: Workstream[], repoFolder: string): string {
-  const list = open.map(
-    (stream) => `- ${stream.name}: ${stream.description} (${stream.path})`,
+function menuText(open: Workstream[], repoFolder: string, gate: Gate): string {
+  const list = open.map((stream) =>
+    shown(
+      gate,
+      fileSource(
+        stream.path,
+        `- ${stream.name}: ${stream.description} (${stream.path})`,
+      ),
+    ),
   );
   const items = list.length > 0 ? list : ['- none'];
   const cut = fitSection(items.join('\n'), MENU_BUDGET, repoFolder);
   return [MENU_LEAD, cut, MENU_ASK].join('\n');
 }
 
-function matchLines(match: Match, repoFolder: string): string[] {
-  if (match.kind === 'menu') return [menuText(match.open, repoFolder)];
-  const { workstream, label, others } = match;
-  const lines = [
-    `Workstream: ${workstream.name}, matched by ${label}. File: ${workstream.path}.`,
-  ];
-  if (others.length > 0) {
-    lines.push(
-      `Other open workstreams: ${others.map((other) => other.name).join(', ')}`,
-    );
-  }
-  return lines;
+// A withheld name leaves the comma list and its line follows, so the line's command ends its line.
+function othersLines(others: Workstream[], gate: Gate): string[] {
+  const verdicts = others.map((other) => ({
+    name: other.name,
+    withheld: gate(fileSource(other.path, other.name)),
+  }));
+  const clean = verdicts.flatMap(({ name, withheld }) =>
+    withheld === undefined ? [name] : [],
+  );
+  const held = verdicts.flatMap(({ withheld }) =>
+    withheld === undefined ? [] : [withheld],
+  );
+  const list =
+    clean.length > 0 ? [`Other open workstreams: ${clean.join(', ')}`] : [];
+  return [...list, ...held];
 }
 
-function headerBlock(parts: StartParts): Block[] {
+function matchLines(match: Match, repoFolder: string, gate: Gate): string[] {
+  if (match.kind === 'menu') return [menuText(match.open, repoFolder, gate)];
+  const { workstream, label, others } = match;
+  const line = `Workstream: ${workstream.name}, matched by ${label}. File: ${workstream.path}.`;
+  return [
+    shown(gate, fileSource(workstream.path, line)),
+    ...othersLines(others, gate),
+  ];
+}
+
+function headerBlock(parts: StartParts, gate: Gate): Block[] {
   const { match } = parts;
   if (match === undefined) return [];
   const first = `sidekick memory: session ${parts.sessionId}. Your record is ${parts.recordPath}; save to it with the sk-save skill.`;
   const repoFolder = path.dirname(path.dirname(parts.recordPath));
-  const text = [first, ...matchLines(match, repoFolder)].join('\n');
+  const text = [first, ...matchLines(match, repoFolder, gate)].join('\n');
   return [{ text, drop: Drop.Header }];
 }
 
@@ -144,43 +210,74 @@ export function fitWorkstream(
   };
 }
 
-function workstreamBlocks(parts: StartParts): Block[] {
-  const { match, statePath, nextSteps, state } = parts;
+// A withheld heading list takes the whole line, since the line tells the session to read the file.
+function alsoLine(
+  headings: string[],
+  file: string,
+  gate: Gate,
+): string | undefined {
+  if (headings.length === 0) return undefined;
+  const list = headings.join(', ');
+  return (
+    gate(fileSource(file, list)) ??
+    `Also in the file: ${list}. Read the file for them.`
+  );
+}
+
+function workstreamBlocks(parts: StartParts, gate: Gate): Block[] {
+  const { match, statePath } = parts;
   if (match?.kind !== 'matched' || statePath === undefined) return [];
-  const fit = fitWorkstream(state, nextSteps, statePath);
-  const also =
-    parts.otherHeadings.length > 0
-      ? `Also in the file: ${parts.otherHeadings.join(', ')}. Read the file for them.`
-      : undefined;
+  // Gated before fitting: State's budget is what Next steps leaves.
+  const gated = (text: string | undefined) =>
+    text === undefined ? undefined : shown(gate, fileSource(statePath, text));
+  const fit = fitWorkstream(
+    gated(parts.state),
+    gated(parts.nextSteps),
+    statePath,
+  );
   return [
     { text: fit.state, drop: Drop.State },
     { text: fit.nextSteps, drop: Drop.NextSteps },
-    { text: also, drop: Drop.Also },
+    { text: alsoLine(parts.otherHeadings, statePath, gate), drop: Drop.Also },
   ].flatMap(({ text, drop }) => (text === undefined ? [] : [{ text, drop }]));
 }
 
-function recordsBlock(parts: StartParts): Block[] {
+function recordsBlock(parts: StartParts, gate: Gate): Block[] {
   const { match, records } = parts;
   const [newest] = records;
   if (match?.kind !== 'matched' || newest === undefined) return [];
-  const lines = records.map(
-    (record) => `- ${record.date} ${record.title}: ${record.path}`,
+  const { workstream } = match;
+  const lead = shown(
+    gate,
+    fileSource(workstream.path, `Recent records on ${workstream.name}:`),
   );
-  const text = [`Recent records on ${match.workstream.name}:`, ...lines].join(
-    '\n',
+  const lines = records.map((record) =>
+    shown(
+      gate,
+      recordSource(record, `- ${record.date} ${record.title}: ${record.path}`),
+    ),
   );
+  const text = [lead, ...lines].join('\n');
   const fitted = fitSection(text, RECORDS_BUDGET, path.dirname(newest.path));
   return [{ text: fitted, drop: Drop.Records }];
 }
 
-function familyBlock(parts: StartParts): Block[] {
+function familyBlock(parts: StartParts, gate: Gate): Block[] {
   const { family } = parts;
   if (family === undefined || family.lines.every((l) => l.trim() === '')) {
     return [];
   }
-  const text = [`Family index (${family.name}):`, ...family.lines].join('\n');
+  // The index is one source, so a match on any line withholds all of it.
+  const index = shown(gate, fileSource(family.path, family.lines.join('\n')));
+  const text = [`Family index (${family.name}):`, index].join('\n');
   const fitted = fitSection(text, FAMILY_BUDGET, family.path);
   return [{ text: fitted, drop: Drop.Family }];
+}
+
+function warningBlock(texts: string[]): Block[] {
+  if (texts.length === 0) return [];
+  const text = texts.map((warning) => `Warning: ${warning}`).join('\n');
+  return [{ text, drop: Drop.Warnings }];
 }
 
 function warningsBlock(parts: StartParts): Block[] {
@@ -188,13 +285,29 @@ function warningsBlock(parts: StartParts): Block[] {
     parts.match !== undefined &&
     parts.source === 'compact' &&
     !parts.recordExists;
-  const texts = [
+  return warningBlock([
     ...parts.warnings,
     ...(compactUnsaved ? [COMPACT_WARNING] : []),
+  ]);
+}
+
+function blocksOf(parts: StartParts, gate: Gate): Block[] {
+  return [
+    ...headerBlock(parts, gate),
+    ...workstreamBlocks(parts, gate),
+    ...recordsBlock(parts, gate),
+    ...familyBlock(parts, gate),
+    ...warningsBlock(parts),
   ];
-  if (texts.length === 0) return [];
-  const text = texts.map((warning) => `Warning: ${warning}`).join('\n');
-  return [{ text, drop: Drop.Warnings }];
+}
+
+// The gate fails open: a matcher that throws leaves every source unchecked, and a warning says so.
+function checkedBlocks(parts: StartParts, matcher: Matcher): Block[] {
+  try {
+    return blocksOf(parts, withholding(parts.store, matcher));
+  } catch {
+    return [...blocksOf(parts, unchecked), ...warningBlock([GATE_FAILED])];
+  }
 }
 
 function joined(blocks: Block[]): string {
@@ -210,19 +323,18 @@ function withinTotal(blocks: Block[]): string {
 }
 
 /**
- * The hook's `additionalContext` for one session. Pure: it cuts each section
- * to its budget, drops whole blocks past 9,000 characters in all (warnings
- * first, Next steps last, never the first line), and on
- * `resume` keeps only the first two lines.
+ * The hook's `additionalContext` for one session. Pure: it replaces each text
+ * from a store file that `matcher` matches with a line withholding it, cuts
+ * each section to its budget, drops whole blocks past 9,000 characters in all
+ * (warnings first, Next steps last, never the first line), and on `resume`
+ * keeps only the first two lines. A matcher that throws leaves the text
+ * unchecked and adds a warning.
  */
-export function renderStart(parts: StartParts): string {
-  const blocks = [
-    ...headerBlock(parts),
-    ...workstreamBlocks(parts),
-    ...recordsBlock(parts),
-    ...familyBlock(parts),
-    ...warningsBlock(parts),
-  ];
+export function renderStart(
+  parts: StartParts,
+  matcher: Matcher = injectionHits,
+): string {
+  const blocks = checkedBlocks(parts, matcher);
   const text = withinTotal(blocks);
   if (parts.source !== 'resume') return text;
   return text.split('\n').slice(0, RESUME_LINES).join('\n');

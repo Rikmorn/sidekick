@@ -5214,6 +5214,90 @@ function otherHeadings(file) {
 
 // bin/helpers/memory-start-render.ts
 import * as path20 from "node:path";
+
+// bin/helpers/memory-patterns.ts
+var INJECTION = [
+  {
+    id: "ignore-previous-instructions",
+    re: /ignore\s+(all\s+)?previous\s+instructions/i
+  },
+  {
+    id: "ignore-above-instructions",
+    re: /ignore\s+(all\s+)?above\s+instructions/i
+  },
+  { id: "disregard-previous", re: /disregard\s+(all\s+)?previous/i },
+  {
+    id: "forget-instructions",
+    re: /forget\s+(all\s+)?(your\s+)?instructions/i
+  },
+  {
+    id: "override-system-prompt",
+    re: /override\s+(system|previous)\s+(prompt|instructions)/i
+  },
+  { id: "you-are-now", re: /you\s+are\s+now\s+(?:a|an|the)\s+/i },
+  { id: "act-as", re: /act\s+as\s+(?:a|an|the)\s+(?!plan|phase|wave)/i },
+  { id: "pretend-to-be", re: /pretend\s+(?:you(?:'re| are)\s+|to\s+be\s+)/i },
+  {
+    id: "from-now-on",
+    re: /from\s+now\s+on,?\s+you\s+(?:are|will|should|must)/i
+  },
+  {
+    id: "reveal-prompt",
+    re: /(?:print|output|reveal|show|display|repeat)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions)/i
+  },
+  { id: "role-tag", re: /<\/?(?:system|assistant|human)>/i },
+  { id: "system-marker", re: /\[SYSTEM\]/i },
+  { id: "inst-marker", re: /\[INST\]/i },
+  { id: "sys-marker", re: /<<\s*SYS\s*>>/i },
+  {
+    id: "when-summarising-retain",
+    re: /when\s+(?:summari[sz]ing|compressing|compacting),?\s+(?:retain|preserve|keep)\s+(?:this|these)/i
+  },
+  {
+    id: "instruction-is-permanent",
+    re: /this\s+(?:instruction|directive|rule)\s+is\s+(?:permanent|persistent|immutable)/i
+  },
+  {
+    id: "preserve-rules-through",
+    re: /preserve\s+(?:these|this)\s+(?:rules?|instructions?|directives?)\s+(?:in|through|after|during)/i
+  },
+  {
+    id: "retain-through-summary",
+    re: /(?:retain|keep)\s+(?:this|these)\s+(?:in|through|after)\s+(?:summar|compress|compact)/i
+  },
+  {
+    id: "invisible-unicode",
+    re: /[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060-\u2069]/
+  },
+  { id: "unicode-tag-block", re: /[\u{E0000}-\u{E007F}]/u }
+];
+var privateKeyBodyMax = 8192;
+var KEYS = [
+  {
+    id: "aws-access-key",
+    re: /\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b/
+  },
+  { id: "github-classic-pat", re: /ghp_[0-9a-zA-Z]{36}/ },
+  { id: "github-fine-grained-pat", re: /github_pat_\w{82}/ },
+  {
+    id: "anthropic-api-key",
+    re: /\b(sk-ant-api03-[a-zA-Z0-9_-]{93}AA)(?:[`'"\s;]|\\[nr]|$)/
+  },
+  {
+    id: "openai-api-key",
+    re: /\b(sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})(?:[`'"\s;]|\\[nr]|$)/
+  },
+  { id: "slack-bot-token", re: /xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/ },
+  {
+    id: "private-key-block",
+    re: new RegExp(`-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\\s\\S-]{64,${privateKeyBodyMax}}?KEY(?: BLOCK)?-----`, "i")
+  }
+];
+var hits = (patterns, text) => patterns.filter(({ re }) => re.test(text)).map(({ id }) => id);
+var injectionHits = (text) => hits(INJECTION, text);
+var keyHits = (text) => hits(KEYS, text);
+
+// bin/helpers/memory-start-render.ts
 var TOTAL_BUDGET = 9000;
 var NEXT_STEPS_BUDGET = 3000;
 var STATE_AND_NEXT_BUDGET = 5000;
@@ -5227,6 +5311,32 @@ var BLOCK_SEPARATOR = `
 var MENU_LEAD = "No workstream matched. Open workstreams, from the repo and its family:";
 var MENU_ASK = "Ask the operator which one this session serves, or let sk-save start a new one.";
 var COMPACT_WARNING = "This session has not saved. Save with sk-save at the next pause.";
+var GATE_FAILED = "The memory gate failed, so this text is unchecked.";
+var unchecked = () => {
+  return;
+};
+function storeFolder(store, dir) {
+  return path20.relative(store, dir).split(path20.sep).join("/");
+}
+function withholding(store, matcher) {
+  return ({ file, dir, text }) => {
+    const ids = matcher(text);
+    if (ids.length === 0)
+      return;
+    return `Withheld: ${file} matched ${ids.join(", ")}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${storeFolder(store, dir)}`;
+  };
+}
+var shown = (gate, source) => gate(source) ?? source.text;
+var fileSource = (file, text) => ({
+  file,
+  dir: path20.dirname(file),
+  text
+});
+var recordSource = (record2, text) => ({
+  file: record2.path,
+  dir: path20.dirname(path20.dirname(record2.path)),
+  text
+});
 var Drop = {
   Header: 0,
   NextSteps: 1,
@@ -5251,33 +5361,41 @@ function fitSection(text, budget, readPath) {
   return `${kept}
 ${marker}`;
 }
-function menuText(open, repoFolder) {
-  const list2 = open.map((stream) => `- ${stream.name}: ${stream.description} (${stream.path})`);
+function menuText(open, repoFolder, gate) {
+  const list2 = open.map((stream) => shown(gate, fileSource(stream.path, `- ${stream.name}: ${stream.description} (${stream.path})`)));
   const items = list2.length > 0 ? list2 : ["- none"];
   const cut2 = fitSection(items.join(`
 `), MENU_BUDGET, repoFolder);
   return [MENU_LEAD, cut2, MENU_ASK].join(`
 `);
 }
-function matchLines(match, repoFolder) {
-  if (match.kind === "menu")
-    return [menuText(match.open, repoFolder)];
-  const { workstream, label, others } = match;
-  const lines = [
-    `Workstream: ${workstream.name}, matched by ${label}. File: ${workstream.path}.`
-  ];
-  if (others.length > 0) {
-    lines.push(`Other open workstreams: ${others.map((other) => other.name).join(", ")}`);
-  }
-  return lines;
+function othersLines(others, gate) {
+  const verdicts = others.map((other) => ({
+    name: other.name,
+    withheld: gate(fileSource(other.path, other.name))
+  }));
+  const clean = verdicts.flatMap(({ name, withheld }) => withheld === undefined ? [name] : []);
+  const held = verdicts.flatMap(({ withheld }) => withheld === undefined ? [] : [withheld]);
+  const list2 = clean.length > 0 ? [`Other open workstreams: ${clean.join(", ")}`] : [];
+  return [...list2, ...held];
 }
-function headerBlock(parts) {
+function matchLines(match, repoFolder, gate) {
+  if (match.kind === "menu")
+    return [menuText(match.open, repoFolder, gate)];
+  const { workstream, label, others } = match;
+  const line = `Workstream: ${workstream.name}, matched by ${label}. File: ${workstream.path}.`;
+  return [
+    shown(gate, fileSource(workstream.path, line)),
+    ...othersLines(others, gate)
+  ];
+}
+function headerBlock(parts, gate) {
   const { match } = parts;
   if (match === undefined)
     return [];
   const first = `sidekick memory: session ${parts.sessionId}. Your record is ${parts.recordPath}; save to it with the sk-save skill.`;
   const repoFolder = path20.dirname(path20.dirname(parts.recordPath));
-  const text = [first, ...matchLines(match, repoFolder)].join(`
+  const text = [first, ...matchLines(match, repoFolder, gate)].join(`
 `);
   return [{ text, drop: Drop.Header }];
 }
@@ -5300,50 +5418,78 @@ function fitWorkstream(state, nextSteps, readPath) {
     }
   };
 }
-function workstreamBlocks(parts) {
-  const { match, statePath, nextSteps, state } = parts;
+function alsoLine(headings, file, gate) {
+  if (headings.length === 0)
+    return;
+  const list2 = headings.join(", ");
+  return gate(fileSource(file, list2)) ?? `Also in the file: ${list2}. Read the file for them.`;
+}
+function workstreamBlocks(parts, gate) {
+  const { match, statePath } = parts;
   if (match?.kind !== "matched" || statePath === undefined)
     return [];
-  const fit = fitWorkstream(state, nextSteps, statePath);
-  const also = parts.otherHeadings.length > 0 ? `Also in the file: ${parts.otherHeadings.join(", ")}. Read the file for them.` : undefined;
+  const gated = (text) => text === undefined ? undefined : shown(gate, fileSource(statePath, text));
+  const fit = fitWorkstream(gated(parts.state), gated(parts.nextSteps), statePath);
   return [
     { text: fit.state, drop: Drop.State },
     { text: fit.nextSteps, drop: Drop.NextSteps },
-    { text: also, drop: Drop.Also }
+    { text: alsoLine(parts.otherHeadings, statePath, gate), drop: Drop.Also }
   ].flatMap(({ text, drop }) => text === undefined ? [] : [{ text, drop }]);
 }
-function recordsBlock(parts) {
+function recordsBlock(parts, gate) {
   const { match, records } = parts;
   const [newest] = records;
   if (match?.kind !== "matched" || newest === undefined)
     return [];
-  const lines = records.map((record2) => `- ${record2.date} ${record2.title}: ${record2.path}`);
-  const text = [`Recent records on ${match.workstream.name}:`, ...lines].join(`
+  const { workstream } = match;
+  const lead = shown(gate, fileSource(workstream.path, `Recent records on ${workstream.name}:`));
+  const lines = records.map((record2) => shown(gate, recordSource(record2, `- ${record2.date} ${record2.title}: ${record2.path}`)));
+  const text = [lead, ...lines].join(`
 `);
   const fitted = fitSection(text, RECORDS_BUDGET, path20.dirname(newest.path));
   return [{ text: fitted, drop: Drop.Records }];
 }
-function familyBlock(parts) {
+function familyBlock(parts, gate) {
   const { family } = parts;
   if (family === undefined || family.lines.every((l) => l.trim() === "")) {
     return [];
   }
-  const text = [`Family index (${family.name}):`, ...family.lines].join(`
+  const index = shown(gate, fileSource(family.path, family.lines.join(`
+`)));
+  const text = [`Family index (${family.name}):`, index].join(`
 `);
   const fitted = fitSection(text, FAMILY_BUDGET, family.path);
   return [{ text: fitted, drop: Drop.Family }];
 }
-function warningsBlock(parts) {
-  const compactUnsaved = parts.match !== undefined && parts.source === "compact" && !parts.recordExists;
-  const texts = [
-    ...parts.warnings,
-    ...compactUnsaved ? [COMPACT_WARNING] : []
-  ];
+function warningBlock(texts) {
   if (texts.length === 0)
     return [];
   const text = texts.map((warning) => `Warning: ${warning}`).join(`
 `);
   return [{ text, drop: Drop.Warnings }];
+}
+function warningsBlock(parts) {
+  const compactUnsaved = parts.match !== undefined && parts.source === "compact" && !parts.recordExists;
+  return warningBlock([
+    ...parts.warnings,
+    ...compactUnsaved ? [COMPACT_WARNING] : []
+  ]);
+}
+function blocksOf(parts, gate) {
+  return [
+    ...headerBlock(parts, gate),
+    ...workstreamBlocks(parts, gate),
+    ...recordsBlock(parts, gate),
+    ...familyBlock(parts, gate),
+    ...warningsBlock(parts)
+  ];
+}
+function checkedBlocks(parts, matcher) {
+  try {
+    return blocksOf(parts, withholding(parts.store, matcher));
+  } catch {
+    return [...blocksOf(parts, unchecked), ...warningBlock([GATE_FAILED])];
+  }
 }
 function joined(blocks) {
   return blocks.map((block) => block.text).join(BLOCK_SEPARATOR);
@@ -5356,14 +5502,8 @@ function withinTotal(blocks) {
     return joined(blocks).slice(0, TOTAL_BUDGET);
   return withinTotal(blocks.filter((block) => block.drop !== worst));
 }
-function renderStart(parts) {
-  const blocks = [
-    ...headerBlock(parts),
-    ...workstreamBlocks(parts),
-    ...recordsBlock(parts),
-    ...familyBlock(parts),
-    ...warningsBlock(parts)
-  ];
+function renderStart(parts, matcher = injectionHits) {
+  const blocks = checkedBlocks(parts, matcher);
   const text = withinTotal(blocks);
   if (parts.source !== "resume")
     return text;
@@ -5388,8 +5528,8 @@ function resolved(target) {
   }
 }
 function isInside(folder, parent) {
-  const relative3 = path21.relative(parent, folder);
-  return relative3 !== "" && !relative3.startsWith("..") && !path21.isAbsolute(relative3);
+  const relative4 = path21.relative(parent, folder);
+  return relative4 !== "" && !relative4.startsWith("..") && !path21.isAbsolute(relative4);
 }
 function linkedView(root, store, key) {
   const repoFolder = resolved(key);
@@ -5604,6 +5744,7 @@ function gather(stdin, deps) {
   const view = repoView(event.cwd, deps);
   const base = { sessionId: event.session_id, source: event.source };
   const empty = {
+    store: "",
     recordPath: "",
     recordExists: false,
     match: undefined,
@@ -5633,6 +5774,7 @@ function gather(stdin, deps) {
   });
   const context = renderStart({
     ...base,
+    store: view.store,
     recordPath: own.path,
     recordExists: own.exists,
     match,
@@ -6526,8 +6668,8 @@ function resolvedPath(target) {
   }
 }
 function isInside4(folder, parent) {
-  const relative6 = path29.relative(parent, folder);
-  return relative6 !== "" && !relative6.startsWith("..") && !path29.isAbsolute(relative6);
+  const relative7 = path29.relative(parent, folder);
+  return relative7 !== "" && !relative7.startsWith("..") && !path29.isAbsolute(relative7);
 }
 function rootFact(root, runGit) {
   if (!fs23.existsSync(root))
@@ -6623,88 +6765,6 @@ function compareDefaultFolder(defaultDir, storeDir, storeNames) {
     onlyInStore: storeNames.filter((name) => !listed.files.includes(name))
   };
 }
-
-// bin/helpers/memory-patterns.ts
-var INJECTION = [
-  {
-    id: "ignore-previous-instructions",
-    re: /ignore\s+(all\s+)?previous\s+instructions/i
-  },
-  {
-    id: "ignore-above-instructions",
-    re: /ignore\s+(all\s+)?above\s+instructions/i
-  },
-  { id: "disregard-previous", re: /disregard\s+(all\s+)?previous/i },
-  {
-    id: "forget-instructions",
-    re: /forget\s+(all\s+)?(your\s+)?instructions/i
-  },
-  {
-    id: "override-system-prompt",
-    re: /override\s+(system|previous)\s+(prompt|instructions)/i
-  },
-  { id: "you-are-now", re: /you\s+are\s+now\s+(?:a|an|the)\s+/i },
-  { id: "act-as", re: /act\s+as\s+(?:a|an|the)\s+(?!plan|phase|wave)/i },
-  { id: "pretend-to-be", re: /pretend\s+(?:you(?:'re| are)\s+|to\s+be\s+)/i },
-  {
-    id: "from-now-on",
-    re: /from\s+now\s+on,?\s+you\s+(?:are|will|should|must)/i
-  },
-  {
-    id: "reveal-prompt",
-    re: /(?:print|output|reveal|show|display|repeat)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions)/i
-  },
-  { id: "role-tag", re: /<\/?(?:system|assistant|human)>/i },
-  { id: "system-marker", re: /\[SYSTEM\]/i },
-  { id: "inst-marker", re: /\[INST\]/i },
-  { id: "sys-marker", re: /<<\s*SYS\s*>>/i },
-  {
-    id: "when-summarising-retain",
-    re: /when\s+(?:summari[sz]ing|compressing|compacting),?\s+(?:retain|preserve|keep)\s+(?:this|these)/i
-  },
-  {
-    id: "instruction-is-permanent",
-    re: /this\s+(?:instruction|directive|rule)\s+is\s+(?:permanent|persistent|immutable)/i
-  },
-  {
-    id: "preserve-rules-through",
-    re: /preserve\s+(?:these|this)\s+(?:rules?|instructions?|directives?)\s+(?:in|through|after|during)/i
-  },
-  {
-    id: "retain-through-summary",
-    re: /(?:retain|keep)\s+(?:this|these)\s+(?:in|through|after)\s+(?:summar|compress|compact)/i
-  },
-  {
-    id: "invisible-unicode",
-    re: /[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060-\u2069]/
-  },
-  { id: "unicode-tag-block", re: /[\u{E0000}-\u{E007F}]/u }
-];
-var privateKeyBodyMax = 8192;
-var KEYS = [
-  {
-    id: "aws-access-key",
-    re: /\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b/
-  },
-  { id: "github-classic-pat", re: /ghp_[0-9a-zA-Z]{36}/ },
-  { id: "github-fine-grained-pat", re: /github_pat_\w{82}/ },
-  {
-    id: "anthropic-api-key",
-    re: /\b(sk-ant-api03-[a-zA-Z0-9_-]{93}AA)(?:[`'"\s;]|\\[nr]|$)/
-  },
-  {
-    id: "openai-api-key",
-    re: /\b(sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})(?:[`'"\s;]|\\[nr]|$)/
-  },
-  { id: "slack-bot-token", re: /xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/ },
-  {
-    id: "private-key-block",
-    re: new RegExp(`-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\\s\\S-]{64,${privateKeyBodyMax}}?KEY(?: BLOCK)?-----`, "i")
-  }
-];
-var hits = (patterns, text) => patterns.filter(({ re }) => re.test(text)).map(({ id }) => id);
-var injectionHits = (text) => hits(INJECTION, text);
-var keyHits = (text) => hits(KEYS, text);
 
 // bin/helpers/memory-store-settings.ts
 import * as fs24 from "node:fs";
@@ -7350,9 +7410,9 @@ function ref(i) {
 function tierBody(candidates2) {
   if (candidates2.length === 0)
     return null;
-  const shown = candidates2.slice(0, PER_TIER_MAX).map(ref).join("; ");
+  const shown2 = candidates2.slice(0, PER_TIER_MAX).map(ref).join("; ");
   const more = candidates2.length > PER_TIER_MAX ? ` +${candidates2.length - PER_TIER_MAX} more` : "";
-  return `${shown}${more}`;
+  return `${shown2}${more}`;
 }
 function tierLine(tier, candidates2) {
   const body = tierBody(candidates2);
@@ -7592,10 +7652,10 @@ function planNodes(view) {
 function capped(name, issues) {
   if (issues.length === 0)
     return [];
-  const shown = issues.slice(0, PER_TIER_MAX).map((i) => titledNode(i, "later", null));
-  const hidden = issues.length - shown.length;
+  const shown2 = issues.slice(0, PER_TIER_MAX).map((i) => titledNode(i, "later", null));
+  const hidden = issues.length - shown2.length;
   const tail = hidden > 0 ? [quiet("more", `+${hidden} more`)] : [];
-  return [quiet("group", name, [...shown, ...tail])];
+  return [quiet("group", name, [...shown2, ...tail])];
 }
 function milestoneNodes(titles2) {
   return titles2.map((title) => leaf("later", null, title, null));
@@ -8169,18 +8229,18 @@ function runPmCli(args, env, out, err) {
   const emit = (o) => out(JSON.stringify(o, null, 2));
   try {
     const info = discover(run, env.cwd);
-    const { root: _root, ...shown } = info;
+    const { root: _root, ...shown2 } = info;
     if (!info.tracked) {
       if (report2) {
         err(`not tracked: ${info.reason}`);
         return 1;
       }
       if (!quiet2)
-        emit(shown);
+        emit(shown2);
       return 0;
     }
     if (verb === "board") {
-      emit(shown);
+      emit(shown2);
       return 0;
     }
     const now = env.now ?? new Date;
@@ -8209,7 +8269,7 @@ function runPmCli(args, env, out, err) {
       const working = inProgressMilestones(open2, items);
       const split = working.length > 1 ? working.map((m) => m.title) : [];
       const pickup = {
-        board: shown,
+        board: shown2,
         milestone: active,
         issue_counts: issueCounts,
         open_milestones: open2.map((m) => ({
@@ -8260,7 +8320,7 @@ function runPmCli(args, env, out, err) {
         now
       });
       emit({
-        board: shown,
+        board: shown2,
         findings: r.findings,
         counts: r.counts
       });
@@ -8275,7 +8335,7 @@ function runPmCli(args, env, out, err) {
       const issues = fetchOpenIssues(run, info.root, owner, repo);
       const items = cardedItems(fetchRepoIssues(run, info.root, owner, repo, project.id), fullName);
       const v = gateVerdict(found, issues, items);
-      emit({ board: shown, milestone: found, ready: v.ready, open: v.open });
+      emit({ board: shown2, milestone: found, ready: v.ready, open: v.open });
       return 0;
     }
     err(PM_USAGE);

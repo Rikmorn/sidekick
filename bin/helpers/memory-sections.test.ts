@@ -100,6 +100,7 @@ describe('fitWorkstream agrees with renderStart on real section reads', () => {
     return {
       sessionId: 'abc',
       source: 'startup',
+      store: '/store',
       recordPath: '/store/proj/sessions/2026-11-02-abc.md',
       recordExists: false,
       match: {

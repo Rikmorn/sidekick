@@ -172,6 +172,7 @@ function gather(stdin: string, deps: StartDeps): StartResult {
   const view = repoView(event.cwd, deps);
   const base = { sessionId: event.session_id, source: event.source };
   const empty = {
+    store: '',
     recordPath: '',
     recordExists: false,
     match: undefined,
@@ -205,6 +206,7 @@ function gather(stdin: string, deps: StartDeps): StartResult {
   );
   const context = renderStart({
     ...base,
+    store: view.store,
     recordPath: own.path,
     recordExists: own.exists,
     match,
