@@ -658,7 +658,7 @@ function danglingMarkers(input: LintInput, id: MemoryLintId): MemoryFinding[] {
   const roots = input.repos.flatMap(({ scan, fact }) => {
     const fault = rootFault(fact);
     if (fault === undefined) return [];
-    const message = `${scan.folder}'s marker names ${scan.root}, ${fault}`;
+    const message = `${scan.folder}'s marker names ${quoteOrWithhold(scan.root)}, ${fault}`;
     return [{ folder: scan.folder, file: markerOf(scan), message }];
   });
   const invalid = invalidMarkers(input.store).map((marker) => ({
