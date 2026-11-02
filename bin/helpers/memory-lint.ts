@@ -327,9 +327,12 @@ function stopAtDeadline(runGit: Runner): Runner {
 function linkedRepos(
   folders: readonly FolderScan[],
   runGit: Runner,
+  home: string,
 ): LinkedRepo[] {
   return folders.flatMap((scan) =>
-    scan.kind === 'repo' ? [{ scan, fact: rootFact(scan.root, runGit) }] : [],
+    scan.kind === 'repo'
+      ? [{ scan, fact: rootFact(scan.root, runGit, home) }]
+      : [],
   );
 }
 
@@ -681,6 +684,7 @@ function rootFault(fact: RootFact): string | undefined {
     case 'not-main':
       return `but the repository there has its main checkout at ${quoteOrWithhold(fact.top)}`;
     case 'undecided':
+    case 'refused':
     case 'checkout':
       return undefined;
     default: {
@@ -849,7 +853,7 @@ export function lintStore(
   const input: LintInput = {
     store: root,
     folders: scans,
-    repos: linkedRepos(scans, runGit),
+    repos: linkedRepos(scans, runGit, deps.home),
     settings,
     settingsIssue: issue,
     deps: { ...deps, runGit },

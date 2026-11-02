@@ -2366,6 +2366,20 @@ var KeySchema = optional(string());
 var isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var messageOf = (error) => error instanceof Error ? error.message : String(error);
 var defaultOwned = (target) => fs8.statSync(target).uid === process.getuid?.();
+function checkoutIssue2(target, repo, home, owned = defaultOwned) {
+  if (path9.basename(repo.commonDir) !== ".git") {
+    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout`;
+  }
+  const root = fs8.realpathSync(repo.top);
+  if (root === physical(home)) {
+    return `${root} is the home folder, which Claude Code does not treat as a repo root`;
+  }
+  const unowned = [root, path9.join(root, ".git"), path9.join(root, ".claude")].filter((entry) => entry !== path9.join(root, ".claude") || fs8.existsSync(entry)).find((entry) => !owned(entry));
+  if (unowned !== undefined) {
+    return `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}`;
+  }
+  return;
+}
 function mainCheckout(target, runGit, home, owned = defaultOwned) {
   const found = findRepo(runGit, target);
   if (found.repo === undefined) {
@@ -2373,25 +2387,11 @@ function mainCheckout(target, runGit, home, owned = defaultOwned) {
     return { issue: `${target} has no main checkout: ${why}` };
   }
   const { repo } = found;
-  if (path9.basename(repo.commonDir) !== ".git") {
-    return {
-      issue: `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout`
-    };
-  }
-  const root = fs8.realpathSync(repo.top);
-  if (root === physical(home)) {
-    return {
-      issue: `${root} is the home folder, which Claude Code does not treat as a repo root`
-    };
-  }
-  const unowned = [root, path9.join(root, ".git"), path9.join(root, ".claude")].filter((entry) => entry !== path9.join(root, ".claude") || fs8.existsSync(entry)).find((entry) => !owned(entry));
-  if (unowned !== undefined) {
-    return {
-      issue: `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}`
-    };
-  }
+  const issue = checkoutIssue2(target, repo, home, owned);
+  if (issue !== undefined)
+    return { issue };
   return {
-    root,
+    root: fs8.realpathSync(repo.top),
     checkouts: repo.worktrees.map((worktree) => physical(worktree.path))
   };
 }
@@ -5598,12 +5598,15 @@ function isInside3(folder, parent) {
   const relative5 = path24.relative(parent, folder);
   return relative5 !== "" && !relative5.startsWith("..") && !path24.isAbsolute(relative5);
 }
-function rootFact(root, runGit) {
+function rootFact(root, runGit, home) {
   if (!fs19.existsSync(root))
     return { kind: "missing" };
   const found = findRepo(runGit, root);
   if (found.repo === undefined) {
     return found.warnings.length > 0 ? { kind: "undecided" } : { kind: "outside-git" };
+  }
+  if (checkoutIssue2(root, found.repo, home) !== undefined) {
+    return { kind: "refused" };
   }
   const top = resolvedPath(found.repo.top);
   if (top !== resolvedPath(root))
@@ -6402,8 +6405,8 @@ function stopAtDeadline(runGit) {
     return result;
   };
 }
-function linkedRepos(folders, runGit) {
-  return folders.flatMap((scan) => scan.kind === "repo" ? [{ scan, fact: rootFact(scan.root, runGit) }] : []);
+function linkedRepos(folders, runGit, home) {
+  return folders.flatMap((scan) => scan.kind === "repo" ? [{ scan, fact: rootFact(scan.root, runGit, home) }] : []);
 }
 function perFolder(check2) {
   return (input, id) => input.folders.flatMap((scan) => {
@@ -6638,6 +6641,7 @@ function rootFault(fact) {
     case "not-main":
       return `but the repository there has its main checkout at ${quoteOrWithhold(fact.top)}`;
     case "undecided":
+    case "refused":
     case "checkout":
       return;
     default: {
@@ -6758,7 +6762,7 @@ function lintStore(store, deps, opts = {}) {
   const input = {
     store: root,
     folders: scans,
-    repos: linkedRepos(scans, runGit),
+    repos: linkedRepos(scans, runGit, deps.home),
     settings,
     settingsIssue: issue,
     deps: { ...deps, runGit },

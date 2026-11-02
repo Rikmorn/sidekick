@@ -899,6 +899,18 @@ describe('dangling-marker', () => {
     ]);
   });
 
+  test('a checkout whose git dir lies outside it is no finding, since the hook ignores it', () => {
+    const gitDir = path.join(tmp, 'gitdirs', 'proj.git');
+    fs.mkdirSync(path.dirname(gitDir), { recursive: true });
+    fs.rmSync(path.join(rootOf('proj'), '.git'), { recursive: true });
+    execRunner(
+      'git',
+      ['init', '-q', '-b', 'main', `--separate-git-dir=${gitDir}`],
+      rootOf('proj'),
+    );
+    expect(lint().findings).toEqual([]);
+  });
+
   test('a marker that does not parse, one level down and two', () => {
     write('proj/.sidekick.json', '{ "rooot": "/x" }');
     write('fam/other/.sidekick.json', 'not json');
@@ -952,6 +964,20 @@ describe('setting-missing', () => {
         message: `${rootOf('repo')}'s autoMemoryDirectory setting names ${elsewhere}, outside the store, so Claude Code keeps its memory elsewhere. Run: ${command}`,
       },
     ]);
+  });
+
+  test('a root that is the home folder is no finding, since the hook ignores it', () => {
+    fs.rmSync(path.join(rootOf('proj'), '.claude'), { recursive: true });
+    const home = rootOf('proj');
+    expect(lintStore(store, { ...deps(), home }).findings).toEqual([]);
+  });
+
+  test('a root whose git dir is not named .git is no finding, since the hook ignores it', () => {
+    const bare = path.join(tmp, 'repos', 'proj.git');
+    fs.mkdirSync(bare, { recursive: true });
+    execRunner('git', ['init', '-q', '--bare', '-b', 'main'], bare);
+    writeMarker(at('proj'), bare);
+    expect(lint().findings).toEqual([]);
   });
 
   test('a ~/ key into the store is no finding', () => {

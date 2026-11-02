@@ -9,7 +9,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
-import { findRepo } from './desk-children.js';
+import { findRepo, type Repo } from './desk-children.js';
 import type { Runner } from './pm-data.js';
 import { shellQuote } from './shell.js';
 import { physical } from './worker-repo.js';
@@ -32,6 +32,34 @@ const messageOf = (error: unknown): string =>
 const defaultOwned = (target: string): boolean =>
   fs.statSync(target).uid === process.getuid?.();
 
+/**
+ * Why Claude Code does not read the settings under `repo`'s main checkout, or
+ * undefined when it does. `target` is the path the caller asked about.
+ */
+export function checkoutIssue(
+  target: string,
+  repo: Repo,
+  home: string,
+  owned: (target: string) => boolean = defaultOwned,
+): string | undefined {
+  if (path.basename(repo.commonDir) !== '.git') {
+    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout`;
+  }
+  const root = fs.realpathSync(repo.top);
+  if (root === physical(home)) {
+    return `${root} is the home folder, which Claude Code does not treat as a repo root`;
+  }
+  const unowned = [root, path.join(root, '.git'), path.join(root, '.claude')]
+    .filter(
+      (entry) => entry !== path.join(root, '.claude') || fs.existsSync(entry),
+    )
+    .find((entry) => !owned(entry));
+  if (unowned !== undefined) {
+    return `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}`;
+  }
+  return undefined;
+}
+
 /** The main checkout's real root and every checkout of the repo, or why `path` has none. */
 export function mainCheckout(
   target: string,
@@ -45,29 +73,10 @@ export function mainCheckout(
     return { issue: `${target} has no main checkout: ${why}` };
   }
   const { repo } = found;
-  if (path.basename(repo.commonDir) !== '.git') {
-    return {
-      issue: `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout`,
-    };
-  }
-  const root = fs.realpathSync(repo.top);
-  if (root === physical(home)) {
-    return {
-      issue: `${root} is the home folder, which Claude Code does not treat as a repo root`,
-    };
-  }
-  const unowned = [root, path.join(root, '.git'), path.join(root, '.claude')]
-    .filter(
-      (entry) => entry !== path.join(root, '.claude') || fs.existsSync(entry),
-    )
-    .find((entry) => !owned(entry));
-  if (unowned !== undefined) {
-    return {
-      issue: `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}`,
-    };
-  }
+  const issue = checkoutIssue(target, repo, home, owned);
+  if (issue !== undefined) return { issue };
   return {
-    root,
+    root: fs.realpathSync(repo.top),
     checkouts: repo.worktrees.map((worktree) => physical(worktree.path)),
   };
 }

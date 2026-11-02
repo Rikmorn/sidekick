@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import { findRepo } from './desk-children.js';
 import { expandHome } from './home-path.js';
 import { walkFolder } from './memory-link-facts.js';
-import { readKeyAt } from './memory-settings.js';
+import { checkoutIssue, readKeyAt } from './memory-settings.js';
 import { folderNameIssue, MARKER_FILE, readMarker } from './memory-store.js';
 import type { Runner } from './pm-data.js';
 
@@ -33,17 +33,20 @@ function isInside(folder: string, parent: string): boolean {
 
 /**
  * What a marker's root is. `undecided` means git failed inside a repository,
- * which says nothing about the root, so no check reports on it.
+ * which says nothing about the root, so no check reports on it. `refused` is
+ * a repository whose settings Claude Code does not read, for `checkoutIssue`'s
+ * reasons; the memory hook prints nothing there, so no check reports on it.
  */
 export type RootFact =
   | { kind: 'missing' }
   | { kind: 'outside-git' }
+  | { kind: 'refused' }
   | { kind: 'not-main'; top: string }
   | { kind: 'undecided' }
   | { kind: 'checkout'; key: string | undefined };
 
 /** Whether `root` is the main checkout of a repository, and if so, the raw key in its local settings. */
-export function rootFact(root: string, runGit: Runner): RootFact {
+export function rootFact(root: string, runGit: Runner, home: string): RootFact {
   if (!fs.existsSync(root)) return { kind: 'missing' };
   const found = findRepo(runGit, root);
   if (found.repo === undefined) {
@@ -51,6 +54,10 @@ export function rootFact(root: string, runGit: Runner): RootFact {
     return found.warnings.length > 0
       ? { kind: 'undecided' }
       : { kind: 'outside-git' };
+  }
+  // Before the top: git names a repo's git dir as its main worktree when that dir is not named .git.
+  if (checkoutIssue(root, found.repo, home) !== undefined) {
+    return { kind: 'refused' };
   }
   const top = resolvedPath(found.repo.top);
   if (top !== resolvedPath(root)) return { kind: 'not-main', top };
