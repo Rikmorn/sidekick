@@ -151,7 +151,7 @@ export function nextLatch(
 
 // A dispatched worker has no one to tell, and compaction can drop its brief.
 function workerTail(brief: string): string {
-  return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`.`;
+  return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`. Run sk-save now, so a compaction or a dispatch with the same brief continues from your record.`;
 }
 
 /**
@@ -172,7 +172,7 @@ export function warningText(
   const lead = `sidekick: context is ${percent}% ${where} (${format(tokens)} of ${format(limit.tokens)} tokens). There is no need to stop. Where it fits, finish the current step before starting a new one.`;
   if (level !== 'critical') return lead;
   return workerBrief === undefined
-    ? `${lead} At the next natural pause, tell the user that context is running low.`
+    ? `${lead} At the next natural pause, tell the user that context is running low, and offer to save it with sk-save.`
     : `${lead} ${workerTail(workerBrief)}`;
 }
 

@@ -306,7 +306,7 @@ describe('nextLatch', () => {
 const W = (tokens: number) => ({ tokens, kind: 'window' as const });
 const BRIEF = '/repo/docs/superpowers/plans/x-brief.md';
 const WORKER_CRITICAL =
-  "sidekick: context is 76% full (760,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one. This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at `/repo/docs/superpowers/plans/x-brief.md`.";
+  "sidekick: context is 76% full (760,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one. This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at `/repo/docs/superpowers/plans/x-brief.md`. Run sk-save now, so a compaction or a dispatch with the same brief continues from your record.";
 
 describe('warningText', () => {
   test('pins the warning', () => {
@@ -317,7 +317,7 @@ describe('warningText', () => {
 
   test('pins critical', () => {
     expect(warningText('critical', 760000, W(1000000))).toBe(
-      'sidekick: context is 76% full (760,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one. At the next natural pause, tell the user that context is running low.',
+      'sidekick: context is 76% full (760,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one. At the next natural pause, tell the user that context is running low, and offer to save it with sk-save.',
     );
   });
 
