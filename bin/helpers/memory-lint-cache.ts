@@ -30,10 +30,14 @@ const FindingSchema: v.GenericSchema<MemoryFinding> = v.object({
   message: v.string(),
 });
 
-// A file that fails this schema reads as no cache.
+// A file that fails this schema reads as no cache. `isoTimestamp` takes forms Date cannot parse, such as a two-digit offset.
 const LintCacheSchema = v.object({
   version: v.literal(CACHE_VERSION),
-  ranAt: v.pipe(v.string(), v.isoTimestamp()),
+  ranAt: v.pipe(
+    v.string(),
+    v.isoTimestamp(),
+    v.check((ranAt) => Number.isFinite(Date.parse(ranAt))),
+  ),
   findings: v.array(FindingSchema),
   counts: v.record(lintId, v.pipe(v.number(), v.integer(), v.minValue(0))),
 });

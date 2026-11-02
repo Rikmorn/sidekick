@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { type ProfileEnv, runProfileCli } from './profile.js';
+import { type ProfileEnv, parseFlags, runProfileCli } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 
 const made: string[] = [];
@@ -89,6 +89,22 @@ function harness(over: Partial<ProfileEnv> = {}) {
     );
   return { store, runner, out, err, written, penv, run };
 }
+
+describe('parseFlags', () => {
+  const options = {
+    folder: { type: 'string', multiple: true },
+    json: { type: 'boolean' },
+  } as const;
+
+  test('a multiple option that never appears is an empty list', () => {
+    expect(parseFlags(['--json'], options)?.lists).toEqual({ folder: [] });
+  });
+
+  test('a multiple option keeps its values in the order given', () => {
+    const args = ['--folder', 'b', '--folder', 'a'];
+    expect(parseFlags(args, options)?.lists).toEqual({ folder: ['b', 'a'] });
+  });
+});
 
 describe('profile list', () => {
   test('prints nothing and returns 0 on a missing store', () => {

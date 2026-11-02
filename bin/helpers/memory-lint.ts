@@ -365,6 +365,12 @@ function perFolder(check: FolderCheck): Predicate {
 
 const count = (n: number) => n.toLocaleString('en-US');
 
+// A message fragment from store text or a parse error, kept only when no pattern matches it, since `memory lint` prints its findings to a session.
+function quoteOrWithhold(text: string): string {
+  const ids = [...keyHits(text), ...injectionHits(text)];
+  return ids.length === 0 ? text : `(withheld: ${ids.join(', ')})`;
+}
+
 function indexOf(scan: FolderScan): OwnFile | undefined {
   return scan.files.find((own) => own.name === INDEX_FILE);
 }
@@ -378,7 +384,7 @@ function deadLinks(scan: FolderScan): Hit[] {
         .map((link) => ({
           file: own.file,
           line: link.line,
-          message: `links to ${link.target}, which does not exist`,
+          message: `links to ${quoteOrWithhold(link.target)}, which does not exist`,
         })),
     );
 }
@@ -471,7 +477,7 @@ function workstreamFaults(memory: MemoryFile): string {
   const statusFault =
     status === undefined
       ? 'it has no status'
-      : `its status is "${status}", not open or closed`;
+      : `its status is ${quoteOrWithhold(`"${status}"`)}, not open or closed`;
   const faults = [
     ...(nameless ? ['it has no name'] : []),
     ...(status !== 'open' && status !== 'closed' ? [statusFault] : []),
@@ -614,7 +620,7 @@ function settingsInvalid(input: LintInput, id: MemoryLintId): MemoryFinding[] {
       id,
       folder: '',
       file: path.join(input.store, STORE_SETTINGS_FILE),
-      message: `${input.settingsIssue}; defaults apply`,
+      message: `${quoteOrWithhold(input.settingsIssue)}; defaults apply`,
     },
   ];
 }
@@ -658,7 +664,7 @@ function danglingMarkers(input: LintInput, id: MemoryLintId): MemoryFinding[] {
   const invalid = invalidMarkers(input.store).map((marker) => ({
     folder: marker.folder,
     file: marker.file,
-    message: `${marker.issue}, so the store does not count ${marker.folder} as a repo folder`,
+    message: `${quoteOrWithhold(marker.issue)}, so the store does not count ${marker.folder} as a repo folder`,
   }));
   return [...roots, ...invalid]
     .sort((a, b) => a.folder.localeCompare(b.folder))

@@ -77,13 +77,15 @@ interface Parsed {
   positionals: string[];
 }
 
+/** A flag `parseFlags` takes; only a string flag can be `multiple`, so every list holds strings. */
+export type FlagOption =
+  | { type: 'string'; short?: string; multiple?: boolean }
+  | { type: 'boolean'; short?: string; multiple?: never };
+
 /** Parses flags strictly: an unknown flag or a missing value is a usage error, returned as undefined. */
 export function parseFlags(
   rest: string[],
-  options: Record<
-    string,
-    { type: 'string' | 'boolean'; short?: string; multiple?: boolean }
-  >,
+  options: Record<string, FlagOption>,
 ): Parsed | undefined {
   try {
     const { values, positionals } = parseArgs({
@@ -93,7 +95,11 @@ export function parseFlags(
       strict: true,
     });
     const single: Parsed['values'] = {};
-    const lists: Parsed['lists'] = {};
+    const lists: Parsed['lists'] = Object.fromEntries(
+      Object.entries(options)
+        .filter(([, option]) => option.multiple === true)
+        .map(([name]): [string, string[]] => [name, []]),
+    );
     for (const [name, value] of Object.entries(values)) {
       if (Array.isArray(value)) {
         lists[name] = value.filter((v): v is string => typeof v === 'string');

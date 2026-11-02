@@ -178,7 +178,7 @@ function lintLines(result: MemoryLintResult): string[] {
   return [...lines, ...counts];
 }
 
-// A folder that exists and lists: `statSync` alone passes a mode-000 folder, which the lint would read as empty.
+// A folder that exists and lists: `statSync` alone passes a mode-000 folder, where the lint finds no folders and reports only that settings.json cannot be read.
 function isReadableDirectory(dir: string): boolean {
   try {
     if (!fs.statSync(dir).isDirectory()) return false;

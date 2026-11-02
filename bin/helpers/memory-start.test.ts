@@ -388,6 +388,50 @@ describe('the memory gate', () => {
     );
   });
 
+  const menuOf = (...open: Workstream[]) =>
+    renderStart(
+      parts({
+        match: { kind: 'menu', open },
+        state: undefined,
+        nextSteps: undefined,
+      }),
+    );
+
+  test('a menu item is gated on its name and its description apart, so a match the line composes prints', () => {
+    const split = ws('alpha', { description: 'helps you act as a' });
+    expect(menuOf(split)).toBe(
+      [
+        FIRST,
+        MENU_LEAD,
+        `- alpha: helps you act as a (${REPO}/alpha.md)`,
+        MENU_ASK,
+      ].join('\n'),
+    );
+  });
+
+  test('a poisoned menu name withholds its whole line', () => {
+    const evil = ws(POISON, { path: '/store/fam/evil.md' });
+    expect(menuOf(ws('alpha'), evil)).toBe(
+      [
+        FIRST,
+        MENU_LEAD,
+        `- alpha: about alpha (${REPO}/alpha.md)`,
+        withheld('/store/fam/evil.md', 'fam'),
+        MENU_ASK,
+      ].join('\n'),
+    );
+  });
+
+  test("a withheld menu line names its name's ids, then those its description adds", () => {
+    const both = ws('[INST]', {
+      description: `${POISON} [INST]`,
+      path: '/store/fam/both.md',
+    });
+    expect(menuOf(both)).toContain(
+      withheld('/store/fam/both.md', 'fam', `inst-marker, ${POISON_ID}`),
+    );
+  });
+
   test('a withheld source in a folder whose name holds a space quotes its --folder', () => {
     const index = '/store/my fam/MEMORY.md';
     const family = { name: 'my fam', path: index, lines: [`- ${POISON}`] };
@@ -1107,8 +1151,9 @@ describe("the lint's cached count at session start", () => {
   let savedTz: string | undefined;
 
   // The run time prints in local time; UTC pins it, and a test moves it.
-  // Bun 1.3 ignores every TZ write after a delete, so the zone is restored by
-  // assignment; with TZ unset, bun test runs in UTC.
+  // With TZ unset, bun test runs in UTC and TZ reads undefined. Bun 1.3
+  // ignores every TZ write after a delete, but assigning undefined unsets TZ
+  // and leaves the zone, so an unset TZ is restored as UTC, then undefined.
   beforeEach(() => {
     savedTz = process.env.TZ;
     process.env.TZ = 'UTC';
@@ -1116,6 +1161,7 @@ describe("the lint's cached count at session start", () => {
 
   afterEach(() => {
     process.env.TZ = savedTz ?? 'UTC';
+    if (savedTz === undefined) process.env.TZ = undefined;
   });
 
   const finding = (id: MemoryLintId, folder: string): MemoryFinding => ({
@@ -1263,17 +1309,20 @@ describe("the lint's cached count at session start", () => {
     expect(contextOf(store, repo)).not.toContain('Memory lint:');
   });
 
-  test('a corrupt cache or one of another version prints no line', () => {
+  test('a corrupt cache, one of another version, or one whose run time Date cannot parse prints no line', () => {
     const { store, repo } = cachedLinked();
     const file = cachePath(store, execRunner) ?? '';
-    for (const text of [
-      'not json',
+    const cache = (version: number, ranAt: string) =>
       JSON.stringify({
-        version: 2,
-        ranAt: RAN_AT.toISOString(),
+        version,
+        ranAt,
         findings: [finding('dead-link', 'proj')],
         counts: { 'dead-link': 1 },
-      }),
+      });
+    for (const text of [
+      'not json',
+      cache(2, RAN_AT.toISOString()),
+      cache(1, '2026-11-02T14:10:00+01'),
     ]) {
       fs.writeFileSync(file, text);
       const context = contextOf(store, repo);

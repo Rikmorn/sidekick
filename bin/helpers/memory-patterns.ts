@@ -66,9 +66,6 @@ export const INJECTION: readonly Pattern[] = [
   { id: 'unicode-tag-block', re: /[\u{E0000}-\u{E007F}]/u },
 ];
 
-// The private key body is bounded: gitleaks' unbounded lazy quantifier is quadratic on repeated headers.
-const privateKeyBodyMax = 8192;
-
 export const KEYS: readonly Pattern[] = [
   {
     id: 'aws-access-key',
@@ -85,12 +82,10 @@ export const KEYS: readonly Pattern[] = [
     re: /\b(sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})(?:[`'"\s;]|\\[nr]|$)/,
   },
   { id: 'slack-bot-token', re: /xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/ },
+  // gitleaks' header alone: its lazy body quantifier is quadratic on repeated headers, and any bound on it misses a longer key.
   {
     id: 'private-key-block',
-    re: new RegExp(
-      `-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\\s\\S-]{64,${privateKeyBodyMax}}?KEY(?: BLOCK)?-----`,
-      'i',
-    ),
+    re: /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i,
   },
 ];
 

@@ -94,6 +94,10 @@ describe('writeCache and readCache', () => {
       }),
     ],
     ['a ranAt that is not a time', JSON.stringify({ ...VALID, ranAt: 'soon' })],
+    [
+      'a ranAt the schema takes and Date cannot parse',
+      JSON.stringify({ ...VALID, ranAt: '2026-11-02T14:10:00+01' }),
+    ],
     ['an array', '[]'],
   ])('%s reads as undefined', (_label, text) => {
     const file = path.join(tmp(), CACHE_NAME);

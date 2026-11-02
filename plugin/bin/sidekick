@@ -4137,7 +4137,7 @@ function parseFlags(rest2, options) {
       strict: true
     });
     const single = {};
-    const lists = {};
+    const lists = Object.fromEntries(Object.entries(options).filter(([, option]) => option.multiple === true).map(([name]) => [name, []]));
     for (const [name, value] of Object.entries(values)) {
       if (Array.isArray(value)) {
         lists[name] = value.filter((v) => typeof v === "string");
@@ -5742,7 +5742,6 @@ var INJECTION = [
   },
   { id: "unicode-tag-block", re: /[\u{E0000}-\u{E007F}]/u }
 ];
-var privateKeyBodyMax = 8192;
 var KEYS = [
   {
     id: "aws-access-key",
@@ -5761,7 +5760,7 @@ var KEYS = [
   { id: "slack-bot-token", re: /xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/ },
   {
     id: "private-key-block",
-    re: new RegExp(`-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\\s\\S-]{64,${privateKeyBodyMax}}?KEY(?: BLOCK)?-----`, "i")
+    re: /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i
   }
 ];
 var hits = (patterns, text) => patterns.filter(({ re }) => re.test(text)).map(({ id }) => id);
@@ -5818,8 +5817,8 @@ function storeFolder(store, dir) {
   return path25.relative(store, dir).split(path25.sep).join("/");
 }
 function withholding(store, matcher) {
-  return ({ file, dir, text }) => {
-    const ids = matcher(text);
+  return ({ file, dir, tested }) => {
+    const ids = [...new Set(tested.flatMap((text) => matcher(text)))];
     if (ids.length === 0)
       return;
     return `Withheld: ${file} matched ${ids.join(", ")}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${shellArg(storeFolder(store, dir))}`;
@@ -5829,13 +5828,19 @@ var shown = (gate, source) => gate(source) ?? source.text;
 var fileSource = (file, text) => ({
   file,
   dir: path25.dirname(file),
-  text
+  text,
+  tested: [text]
 });
 var shownName = (gate, stream) => shown(gate, fileSource(stream.path, stream.name));
 var recordSource = (record2, text) => ({
   file: record2.path,
   dir: path25.dirname(path25.dirname(record2.path)),
-  text
+  text,
+  tested: [text]
+});
+var menuSource = (stream) => ({
+  ...fileSource(stream.path, `- ${stream.name}: ${stream.description} (${stream.path})`),
+  tested: [stream.name, stream.description]
 });
 var Drop = {
   Header: 0,
@@ -5863,7 +5868,7 @@ function fitSection(text, budget, readPath) {
 ${marker}`;
 }
 function menuText(open, repoFolder, gate) {
-  const list2 = open.map((stream) => shown(gate, fileSource(stream.path, `- ${stream.name}: ${stream.description} (${stream.path})`)));
+  const list2 = open.map((stream) => shown(gate, menuSource(stream)));
   const items = list2.length > 0 ? list2 : ["- none"];
   const cut2 = fitSection(items.join(`
 `), MENU_BUDGET, repoFolder);
@@ -6378,6 +6383,10 @@ function perFolder(check2) {
   });
 }
 var count = (n) => n.toLocaleString("en-US");
+function quoteOrWithhold(text) {
+  const ids = [...keyHits(text), ...injectionHits(text)];
+  return ids.length === 0 ? text : `(withheld: ${ids.join(", ")})`;
+}
 function indexOf(scan) {
   return scan.files.find((own) => own.name === INDEX_FILE2);
 }
@@ -6385,7 +6394,7 @@ function deadLinks(scan) {
   return scan.files.filter((own) => scan.reached.has(own.name)).flatMap((own) => linksIn(own.text).filter((link) => !fs22.existsSync(path28.resolve(scan.dir, link.target))).map((link) => ({
     file: own.file,
     line: link.line,
-    message: `links to ${link.target}, which does not exist`
+    message: `links to ${quoteOrWithhold(link.target)}, which does not exist`
   })));
 }
 function unindexedFiles(scan) {
@@ -6456,7 +6465,7 @@ function cutWorkstreams(scan, input) {
 function workstreamFaults(memory) {
   const { status } = memory.metadata;
   const nameless = memory.name === undefined || memory.name === "";
-  const statusFault = status === undefined ? "it has no status" : `its status is "${status}", not open or closed`;
+  const statusFault = status === undefined ? "it has no status" : `its status is ${quoteOrWithhold(`"${status}"`)}, not open or closed`;
   const faults = [
     ...nameless ? ["it has no name"] : [],
     ...status !== "open" && status !== "closed" ? [statusFault] : []
@@ -6557,7 +6566,7 @@ function settingsInvalid(input, id) {
       id,
       folder: "",
       file: path28.join(input.store, STORE_SETTINGS_FILE),
-      message: `${input.settingsIssue}; defaults apply`
+      message: `${quoteOrWithhold(input.settingsIssue)}; defaults apply`
     }
   ];
 }
@@ -6596,7 +6605,7 @@ function danglingMarkers(input, id) {
   const invalid = invalidMarkers(input.store).map((marker) => ({
     folder: marker.folder,
     file: marker.file,
-    message: `${marker.issue}, so the store does not count ${marker.folder} as a repo folder`
+    message: `${quoteOrWithhold(marker.issue)}, so the store does not count ${marker.folder} as a repo folder`
   }));
   return [...roots, ...invalid].sort((a, b) => a.folder.localeCompare(b.folder)).map(({ file, message }) => ({ id, folder: "", file, message }));
 }
@@ -6727,7 +6736,7 @@ var FindingSchema = object({
 });
 var LintCacheSchema = object({
   version: literal(CACHE_VERSION),
-  ranAt: pipe(string(), isoTimestamp()),
+  ranAt: pipe(string(), isoTimestamp(), check((ranAt) => Number.isFinite(Date.parse(ranAt)))),
   findings: array(FindingSchema),
   counts: record(lintId, pipe(number(), integer(), minValue(0)))
 });

@@ -123,6 +123,16 @@ describe('keyHits', () => {
     );
   });
 
+  test.each([
+    [
+      'a header with a 9,000-character body',
+      `-----BEGIN RSA PRIVATE KEY-----\n${'A'.repeat(9000)}\n-----END RSA PRIVATE KEY-----`,
+    ],
+    ['a header line alone', '-----BEGIN OPENSSH PRIVATE KEY-----'],
+  ])('private-key-block matches %s', (_label, text) => {
+    expect(keyHits(text)).toEqual(['private-key-block']);
+  });
+
   test.each(sidekickNames)('does not match the sidekick name %s', (name) => {
     expect(keyHits(`see ${name} for details`)).toEqual([]);
   });

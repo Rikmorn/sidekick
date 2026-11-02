@@ -67,10 +67,12 @@ interface Block {
 }
 
 // Text the hook prints from one store file; `dir` is the store folder the lint lists that file under.
+// `tested` lists the store texts in `text`; the gate tests each on its own, as the lint checks it.
 interface Source {
   file: string;
   dir: string;
   text: string;
+  tested: readonly string[];
 }
 
 // The withheld line for a source, or undefined when the source prints as it is.
@@ -86,8 +88,8 @@ export function storeFolder(store: string, dir: string): string {
 }
 
 function withholding(store: string, matcher: Matcher): Gate {
-  return ({ file, dir, text }) => {
-    const ids = matcher(text);
+  return ({ file, dir, tested }) => {
+    const ids = [...new Set(tested.flatMap((text) => matcher(text)))];
     if (ids.length === 0) return undefined;
     return `Withheld: ${file} matched ${ids.join(', ')}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${shellArg(storeFolder(store, dir))}`;
   };
@@ -100,6 +102,7 @@ const fileSource = (file: string, text: string): Source => ({
   file,
   dir: path.dirname(file),
   text,
+  tested: [text],
 });
 
 const shownName = (gate: Gate, stream: Workstream): string =>
@@ -110,6 +113,16 @@ const recordSource = (record: SessionRecord, text: string): Source => ({
   file: record.path,
   dir: path.dirname(path.dirname(record.path)),
   text,
+  tested: [text],
+});
+
+// A match in the name or the description withholds the whole line; the generated path is not tested.
+const menuSource = (stream: Workstream): Source => ({
+  ...fileSource(
+    stream.path,
+    `- ${stream.name}: ${stream.description} (${stream.path})`,
+  ),
+  tested: [stream.name, stream.description],
 });
 
 // The lint's count outlasts the family index, the largest block, so it survives a long header.
@@ -140,15 +153,7 @@ function fitSection(text: string, budget: number, readPath: string): string {
 }
 
 function menuText(open: Workstream[], repoFolder: string, gate: Gate): string {
-  const list = open.map((stream) =>
-    shown(
-      gate,
-      fileSource(
-        stream.path,
-        `- ${stream.name}: ${stream.description} (${stream.path})`,
-      ),
-    ),
-  );
+  const list = open.map((stream) => shown(gate, menuSource(stream)));
   const items = list.length > 0 ? list : ['- none'];
   const cut = fitSection(items.join('\n'), MENU_BUDGET, repoFolder);
   return [MENU_LEAD, cut, MENU_ASK].join('\n');
