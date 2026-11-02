@@ -219,6 +219,14 @@ describe('createStore', () => {
     );
   });
 
+  test('the README names the settings file and its two keys on one line', () => {
+    const settings = STORE_README.split('\n').find((l) =>
+      l.includes('settings.json'),
+    );
+    expect(settings).toContain('indexLineCap');
+    expect(settings).toContain('indexLineLength');
+  });
+
   test('works on an empty existing folder', () => {
     expect(createStore(tmp, execRunner).ok).toBe(true);
   });

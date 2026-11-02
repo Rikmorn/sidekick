@@ -31,9 +31,9 @@ Fires on `startup` and `clear`, from `plugin/hooks/hooks.json`. It runs `node <p
 
 ### The memory start hook
 
-Fires on `startup`, `resume`, `clear`, `compact`, and `fork`, from `plugin/hooks/hooks.json`, beside the session-start hook. The wrapper `plugin/hooks/memory-start` runs `node <plugin>/bin/sidekick hook memory-start` and exits 0 whatever happens. In a repo linked to the memory store it prints one `additionalContext` string of at most 9,000 characters. It holds the session's record path. Next comes the workstream matched by the session's record, the worker's brief, the title, or the branch, with its State and Next steps. With no match it holds a menu of open workstreams. After that come the newest records on the workstream, the family index, and any warnings. On `resume` it prints only the first two lines. Outside git, and in an unlinked repo, it prints nothing.
+Fires on `startup`, `resume`, `clear`, `compact`, and `fork`, from `plugin/hooks/hooks.json`, beside the session-start hook. The wrapper `plugin/hooks/memory-start` runs `node <plugin>/bin/sidekick hook memory-start` and exits 0 whatever happens. In a repo linked to the memory store it prints one `additionalContext` string of at most 9,000 characters. It holds the session's record path. Next comes the workstream matched by the session's record, the worker's brief, the title, or the branch, with its State and Next steps. With no match it holds a menu of open workstreams. After that come the newest records on the workstream, the family index, any warnings, and a `Memory lint:` count line when the cached lint found something. The hook withholds any piece that matches an injection pattern, and prints a `Withheld:` line in its place. On `resume` it prints only the first two lines. Outside git, and in an unlinked repo, it prints nothing.
 
-It then starts `sidekick memory snapshot` detached. The verb commits the store with `git add -A` and a `Session:` trailer, does nothing when the store is clean, and exits 0 on any failure.
+It then starts `sidekick memory snapshot` detached. The verb commits the store with `git add -A` and a `Session:` trailer, does nothing when the store is clean, and exits 0 on any failure. After the commit it lints the whole store and caches the result, which the next session's count line reads.
 
 ### The Skill-tool hook
 

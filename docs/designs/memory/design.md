@@ -246,7 +246,7 @@ No measurement found a lost write in auto-memory. Two writers on one folder lost
 | A save rewrites a whole shared file and drops another session's lines | The work repo's save skill rewrites its whole branch file (#269) | Shared files change only through targeted edits; a session's own record has one writer |
 | A handoff goes stale: a fact lands in one note while another keeps the old claim | The 2026-10-12 audit's "handoffs through shared notes, not races" | One home per fact, with a workstream's state section as the handoff point. Consolidation finds the rest |
 | Nobody can tell which session wrote what | #269's "no history" row | Every write through Edit or Write is a commit naming its session |
-| A write skips the tools, through Bash | Bash skips Edit's and Write's checks (K13); sessions appended with `cat >>` (`2026-10-12-probes.md`) | Made visible, not blocked: the sweep commits such changes as made outside the tools, and the lint counts them |
+| A write skips the tools, through Bash | Bash skips Edit's and Write's checks (K13); sessions appended with `cat >>` (`2026-10-12-probes.md`) | Not blocked: the session-start snapshot commits such a change with the rest, unlabelled. #280 holds a guard |
 | The index is a hot spot | Auto-memory's own index file (K6) | The index lists workstreams, never session records |
 
 **W-a. Auto-memory as it is: shared files, guarded by Edit's check alone.**
@@ -272,7 +272,7 @@ Its parts:
 - **Per-write history.** A PostToolUse hook on Edit and Write commits the one path written, with the session id. It retries briefly on a locked index, then leaves the path for the sweep. Hooks run git outside the model's permission prompts.
 - **The sweep.** The memory session-start hook commits whatever is still uncommitted, and labels changes no hook committed as made outside the tools.
 
-A guard that denies Bash writes into the store is not part of W-b. It would block the store's own upkeep, since Edit and Write cannot delete or rename a file, and `python3 -c` writes get past a check on command text (`2026-10-12-probes.md`). #72 rejected that shape: "a hook keyed on tool name is one inconvenience away from being bypassed". The guard is registered as backlog, to revisit if the lint's count of outside-the-tools changes ever shows a lost write.
+A guard that denies Bash writes into the store is not part of W-b. It would block the store's own upkeep, since Edit and Write cannot delete or rename a file, and `python3 -c` writes get past a check on command text (`2026-10-12-probes.md`). #72 rejected that shape: "a hook keyed on tool name is one inconvenience away from being bypassed". The guard is registered as backlog (#280), to revisit if a lost or wrong write turns up in the store's snapshot history or in a session.
 
 **W-c. #269's capture inbox with a single filer.**
 
@@ -301,7 +301,7 @@ No base has a family scope (C3). The operator's third parallel pattern adds a cr
 1. Observer at one boundary: a SessionStart hook.
 2. The family's index reaches every family session at the start and after each compaction. A SessionStart hook that matches `compact` runs again and adds its output (K21). Each repo keeps its own index, and a cross-repo workstream file lives in the family folder.
 3. Partly. sidekick's existing hook prints only the board's pickup, exits silently without one, and matches only `startup|clear` (`plugin/hooks/session-start:13-14`; `plugin/hooks/hooks.json`). Memory gets a hook script of its own, which also keeps it out of the pickup's timeout (#176).
-4. Costs: characters at every session start, within the 10,000-character cap (K9). The hook prints index lines only, never note bodies, so a note's body reaches context only through Read, which the injection scanner watches (#219). One poisoned index line can still reach every family repo, so the lint bounds line length and flags instruction-shaped lines.
+4. Costs: characters at every session start, within the 10,000-character cap (K9). The hook prints the family index, and the matched workstream's State and Next steps, but no other note body, so the rest reaches context only through Read, which the injection scanner watches (#219). One poisoned line can still reach every family repo. The hook therefore checks each piece it prints against injection patterns and withholds a match, and the lint bounds line length and flags instruction-shaped lines.
 5. A new family repo is a `--family` flag on `sidekick memory link`.
 
 **F3. A pointer line in each repo's index, and nothing printed.**
@@ -358,7 +358,7 @@ Forced capture adds noise when its output is loaded. Capture that nothing loads,
 4. Costs: disk, and a stub is a pointer, not a summary.
 5. A new source of capture is another hook writing the same record.
 
-R2 is registered as backlog. Its revisit condition is measurable: the lint counts long sessions with only a stub record.
+R2 is registered as backlog (#279), which holds its revisit condition.
 
 ## Recommendation
 
@@ -387,7 +387,7 @@ The other threads:
 
 Assumptions, and what changes if each is wrong:
 
-1. **Auto-memory saves when asked, and sometimes unprompted.** One unprompted run is thin evidence. R3 keeps a record either way, and the lint's count of stub-only sessions says when R2 is needed.
+1. **Auto-memory saves when asked, and sometimes unprompted.** One unprompted run is thin evidence. R3 keeps a record either way, and #279 holds R2 until a long session with no record shows it is needed.
 2. **sidekick resolves the same settings file as Claude Code.** That is the main checkout's root, per the settings docs, with their exceptions. Piece 2 resolves the root through git's common directory, never the working directory, and refuses the documented exceptions.
 3. **Interactive sessions, nested `.claude/worktrees/` worktrees, and profile launches honour the setting.** The probes ran headless only. A profile's `--setting-sources` can leave out `local` (`bin/helpers/profile-launch.ts:96-107`). Piece 2 verifies all three before anything migrates.
 4. **sidekick's key survives Claude Code's own writes to the file.** Claude Code saves permission approvals there, from any worktree. Piece 2 merges its key and verifies it survives an approval.
@@ -404,7 +404,7 @@ Assumptions, and what changes if each is wrong:
 | Concurrency and failure | Yes | W-b: one writer per record, Edit's check on shared files, per-write commits that retry and defer to the sweep |
 | Operability | Yes | The registration check, the workstream match, and the lint count at start; the receipt at the end |
 | Testability | Yes | CLI and hook tests over temporary folders; the trial's scenarios replayed as acceptance |
-| Security | Yes | Work data stays local, and the store holds no secrets. The hook prints index lines, never bodies. Memory poisoning is a known attack class (`2026-10-12-memory-and-context.md`). episodic-memory keeps prod support transcripts for good, on this machine only |
+| Security | Yes | Work data stays local, and the store holds no secrets. The hook prints index lines and the matched workstream's State and Next steps, gated against injection patterns. Memory poisoning is a known attack class (`2026-10-12-memory-and-context.md`). episodic-memory keeps prod support transcripts for good, on this machine only |
 | Performance | Yes | One hook per store write, and a session-start hook that prints the lint's cached count rather than running it |
 | Reversibility | Yes | Removing the settings key returns a repo to the default folder. Migration moves the old default folder into the store's archive, so a lost setting starts empty and the hook says so |
 
@@ -459,10 +459,10 @@ Each piece is a self-contained brief for an issue. Piece 1 is configuration and 
 7. **`sidekick memory lint`** (#276).
    - Resolves it: a read-only check, run in the background, whose count the hook prints. It covers:
      - dead index links, and files the index doesn't list, with `sessions/` exempt;
-     - an index past the operator's line cap, oversized files, and missing status lines;
-     - untouched stubs, key-shaped strings, and instruction-shaped index lines;
-     - changes made outside the tools, stale locks, and unregistered repos;
-     - long sessions with only a stub record.
+     - an index past the store's line cap, and index lines past its length limit;
+     - workstreams the hook cuts or drops, key-shaped strings, and instruction-shaped text;
+     - an invalid settings file, unreadable files, and dangling markers;
+     - a default memory folder left behind, stale locks, and repos with no setting.
    - Verified: a fixture with each defect reports each one.
 8. **Consolidation** (#277). Trial auto-dream with `autoDreamEnabled` on, at user level.
    - Verified: after two weeks, its passes are attributable in the history, revertible, and judged against the 2026-10-12 audit's classes.
@@ -487,8 +487,8 @@ Order:
 
 **Registered as backlog with this design:**
 
-- R2's Stop hook, #279. Revisit when: the lint counts long sessions with only a stub record across two weeks of R1 and R3.
-- The guard on Bash writes into the store, #280. Revisit when: the lint's count of changes made outside the tools shows a lost or wrong write.
+- R2's Stop hook, #279. Its issue holds the revisit condition: a long session with no record.
+- The guard on Bash writes into the store, #280. Its issue holds the revisit condition: a lost or wrong write in the store.
 - The ingest tool for PDFs and docs, #281. Revisit when: the operator starts the separate exploration they named on 2026-10-31.
 
 **Could ride along, named and not widened:**
@@ -557,7 +557,7 @@ Round 2's minor findings, as they came:
 - "One settings line" was two keys. Acted on: one key per repo, plus one user-level entry.
 - The lint's unindexed check contradicted session records. Acted on: `sessions/` is exempt.
 - Every probe ran headless, which skips the trust check, and the 2.1.316 schema ignores the key in project settings. Acted on in K7.
-- The hook-printed index bypasses the Read-only injection scanner. Acted on in F2: index lines only, bounded, and linted.
+- The hook-printed index bypasses the Read-only injection scanner. Acted on in F2: the hook gates what it prints, and the lint bounds and checks it.
 - The lint and sweep on every start would grow the hook's run time. Acted on: the lint runs in the background and the hook prints its cached count.
 - A team-memory `team/` folder may ship inside the memory folder. Acted on under Watch.
 - episodic-memory keeps prod support transcripts forever. Acted on in the Security lens.

@@ -1,6 +1,7 @@
 /**
- * `sidekick memory link <repo>`: parses the arguments and hands them to
- * `runLink`, which moves a repo's auto-memory into the memory store.
+ * `sidekick memory <verb>`: parses the arguments and hands them to the verb.
+ * `link` moves a repo's auto-memory into the memory store, `snapshot` commits
+ * the store and caches a lint of it, and `lint` lists the store's defects.
  */
 
 import * as fs from 'node:fs';

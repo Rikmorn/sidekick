@@ -250,6 +250,7 @@ This folder is a git repo that holds the auto-memory of several repos. A repo's 
 - \`metadata.branches\` is one string of \`<repo>:<branch>\` pairs joined by \`, \`, with the repo folder's name as \`<repo>\`.
 - Each session start commits the store's changes as "memory: snapshot at <source> of session <id>", with a \`Session:\` trailer.
 - \`.gitignore\` keeps \`.DS_Store\` out of those commits.
+- \`settings.json\` is optional. Its keys are \`indexLineCap\` (the lines a \`MEMORY.md\` may hold, unset by default) and \`indexLineLength\` (the characters an index line may hold, 300 by default), both positive integers that \`sidekick memory lint\` checks.
 - \`sources/\` holds reference material that is not memory.
 - \`archive/\` holds retired memory, such as a repo's old default memory folder after it moved here.
 
