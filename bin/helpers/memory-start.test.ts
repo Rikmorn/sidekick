@@ -432,6 +432,65 @@ describe('the memory gate', () => {
     );
   });
 
+  // `ignore previous instructions` as the tag characters that mirror it.
+  const TAGGED = [...POISON]
+    .map((char) => String.fromCodePoint((char.codePointAt(0) ?? 0) + 0xe0000))
+    .join('');
+  const NAME_HELD =
+    '(withheld name: ignore-previous-instructions, unicode-tag-block)';
+  const TAG_CHAR = /[\u{E0000}-\u{E007F}]/u;
+
+  test("a withheld source's file name holding tag characters is withheld in its line, which matched on its text alone", () => {
+    const beta = ws('beta', {
+      description: POISON,
+      path: `/store/fam/${TAGGED}.md`,
+    });
+    const out = menuOf(ws('alpha'), beta);
+    expect(out).toBe(
+      [
+        FIRST,
+        MENU_LEAD,
+        `- alpha: about alpha (${REPO}/alpha.md)`,
+        withheld(`/store/fam/${NAME_HELD}`, 'fam'),
+        MENU_ASK,
+      ].join('\n'),
+    );
+    expect(out).not.toMatch(TAG_CHAR);
+  });
+
+  test("a withheld source's folder name holding tag characters is withheld alone, so the line still names the folder", () => {
+    const beta = ws('beta', {
+      description: POISON,
+      path: `/store/${TAGGED}/proj/beta.md`,
+    });
+    const out = menuOf(beta);
+    expect(out).toBe(
+      [
+        FIRST,
+        MENU_LEAD,
+        withheld(
+          `/store/${NAME_HELD}/proj/beta.md`,
+          shellArg(`${NAME_HELD}/proj`),
+        ),
+        MENU_ASK,
+      ].join('\n'),
+    );
+    expect(out).not.toMatch(TAG_CHAR);
+  });
+
+  test('a record whose file name holds tag characters is gated on its title alone', () => {
+    const named = {
+      ...famRecord('2026-10-31', 'x', 'Spike'),
+      path: `${FAM_REPO}/sessions/2026-10-31-${TAGGED}.md`,
+    };
+    const block = blockStarting(
+      renderStart(parts({ records: [named] })),
+      'Recent records',
+    );
+    expect(block).toContain('\n- 2026-10-31 Spike: ');
+    expect(block).not.toContain('Withheld');
+  });
+
   test('a withheld source in a folder whose name holds a space quotes its --folder', () => {
     const index = '/store/my fam/MEMORY.md';
     const family = { name: 'my fam', path: index, lines: [`- ${POISON}`] };

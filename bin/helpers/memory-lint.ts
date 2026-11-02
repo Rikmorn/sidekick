@@ -28,6 +28,7 @@ import {
   invisibleCharacters,
   KEY_CHECKS,
   keyHits,
+  printedHits,
 } from './memory-patterns.js';
 import {
   headingAs,
@@ -377,7 +378,7 @@ const count = (n: number) => n.toLocaleString('en-US');
 
 // A message fragment from store text or a parse error, kept only when no pattern matches it, since `memory lint` prints its findings to a session.
 function quoteOrWithhold(text: string): string {
-  const ids = [...keyHits(text), ...gateHits(text)];
+  const ids = printedHits(text);
   return ids.length === 0 ? text : `(withheld: ${ids.join(', ')})`;
 }
 

@@ -1,7 +1,9 @@
-// The patterns the memory lint and the memory start hook's gate both read.
+// The patterns the memory lint and the memory start hook's gate both read, and how both withhold a store name that matches one.
 // Injection patterns are copied from get-shit-done-cc 1.42.3, hooks/gsd-read-injection-scanner.js.
 // Key patterns are translated from gitleaks at commit 5f6ec56cfa6f8c67648d863582c7ae2f206d5c1c, config/gitleaks.toml.
 // Both are credited in plugin/THIRD-PARTY-NOTICES.txt.
+
+import * as path from 'node:path';
 
 /** A check id and the regex that decides it. */
 export interface Pattern {
@@ -155,6 +157,49 @@ export const gateHits = (text: string): string[] => hits(GATE_CHECKS, text);
 
 /** Ids of the key patterns that match `text`, in list order. Empty means clean. */
 export const keyHits = (text: string): string[] => hits(KEY_CHECKS, text);
+
+/**
+ * Ids of the key patterns, then the gate's, that match `text`. The lint
+ * withholds a store text it quotes for any of them, and the lint and the gate
+ * both withhold a store name they print.
+ */
+export const printedHits = (text: string): string[] => [
+  ...keyHits(text),
+  ...gateHits(text),
+];
+
+const withheldName = (ids: readonly string[]): string =>
+  `(withheld name: ${ids.join(', ')})`;
+
+/**
+ * `names` with each segment between `separator`s that `printedHits` matches
+ * read as `(withheld name: <ids>)`. A match that only the joined segments
+ * make, such as a role tag split by a `/`, withholds them all.
+ */
+export function withheldNames(names: string, separator = '/'): string {
+  const joined = names
+    .split(separator)
+    .map((name) => {
+      const ids = printedHits(name);
+      return ids.length === 0 ? name : withheldName(ids);
+    })
+    .join(separator);
+  const across = printedHits(joined);
+  return across.length === 0 ? joined : withheldName(across);
+}
+
+/**
+ * `file` with its names below `base` checked as `withheldNames` checks them,
+ * and `base` kept as written. A file outside `base` has every name checked.
+ * A file with no match comes back unchanged.
+ */
+export function withheldPath(file: string, base: string): string {
+  const relative = path.relative(base, file);
+  const inside = !relative.startsWith('..') && !path.isAbsolute(relative);
+  if (!inside) return withheldNames(file, path.sep);
+  const checked = withheldNames(relative, path.sep);
+  return checked === relative ? file : path.join(base, checked);
+}
 
 // Unicode's notation: at least four hex digits.
 const codePointName = (char: string): string =>

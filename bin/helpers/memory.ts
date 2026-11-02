@@ -16,6 +16,8 @@ import {
   type MemoryLintResult,
 } from './memory-lint.js';
 import { cachePath, writeCache } from './memory-lint-cache.js';
+import { resolvedPath } from './memory-lint-repos.js';
+import { withheldNames, withheldPath } from './memory-patterns.js';
 import {
   type DeadlineRunner,
   deadlineRunner,
@@ -178,6 +180,23 @@ function lintLines(result: MemoryLintResult): string[] {
   return [...lines, ...counts];
 }
 
+// The findings as printed: a store name in a `folder` or a `file` that a pattern matches is withheld.
+// The lint and its cache keep names raw, since the memory hook counts cached findings by folder.
+function withheldFindings(
+  result: MemoryLintResult,
+  store: string,
+): MemoryLintResult {
+  const root = resolvedPath(store);
+  return {
+    ...result,
+    findings: result.findings.map((finding) => ({
+      ...finding,
+      folder: withheldNames(finding.folder),
+      file: withheldPath(finding.file, root),
+    })),
+  };
+}
+
 // A folder that exists and lists: `statSync` alone passes a mode-000 folder, where the lint finds no folders and reports only that settings.json cannot be read.
 function isReadableDirectory(dir: string): boolean {
   try {
@@ -212,10 +231,13 @@ function runLint(
   }
   const folders = (parsed.lists.folder ?? []).map((f) => f.replace(/\/$/, ''));
   try {
-    const result = lintStore(
+    const result = withheldFindings(
+      lintStore(
+        store,
+        { readSection, runGit: execRunner, home: ctx.home, env, now: Date.now },
+        folders.length > 0 ? { folders } : {},
+      ),
       store,
-      { readSection, runGit: execRunner, home: ctx.home, env, now: Date.now },
-      folders.length > 0 ? { folders } : {},
     );
     if (parsed.values.json === true) {
       out(JSON.stringify(result, null, 2));

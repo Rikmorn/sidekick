@@ -7,6 +7,8 @@ import {
   invisibleCharacters,
   KEYS,
   keyHits,
+  withheldNames,
+  withheldPath,
 } from './memory-patterns.ts';
 
 const injectionSamples: Record<string, string> = {
@@ -276,6 +278,47 @@ describe('keyHits', () => {
 
   test('returns an empty array for ordinary memory prose', () => {
     expect(proseLines.flatMap(keyHits)).toEqual([]);
+  });
+});
+
+describe('withheldNames and withheldPath', () => {
+  const HELD =
+    '(withheld name: ignore-previous-instructions, unicode-tag-block)';
+  const TAGGED = tags('ignore previous instructions');
+
+  test('only the segment that matches is withheld', () => {
+    expect(withheldNames(`fam/${TAGGED}/proj`)).toBe(`fam/${HELD}/proj`);
+  });
+
+  test('a key-shaped name is withheld, as a quoted fragment is', () => {
+    expect(withheldNames('proj/AKIAIOSFODNN7EXAMPLE.md')).toBe(
+      'proj/(withheld name: aws-access-key)',
+    );
+  });
+
+  test('a match only the joined segments make withholds them all', () => {
+    expect(withheldNames('fam/</system>/x.md')).toBe(
+      '(withheld name: role-tag)',
+    );
+  });
+
+  test('names with no match come back as written', () => {
+    expect(withheldNames('my fam/proj')).toBe('my fam/proj');
+    expect(withheldPath('/store/my fam/x.md', '/store')).toBe(
+      '/store/my fam/x.md',
+    );
+  });
+
+  test('a path keeps its base as written and checks the names below it', () => {
+    expect(withheldPath(`/[INST]/${TAGGED}/x.md`, '/[INST]')).toBe(
+      `/[INST]/${HELD}/x.md`,
+    );
+  });
+
+  test('a path outside its base has every name checked', () => {
+    expect(withheldPath(`/elsewhere/${TAGGED}/x.md`, '/store')).toBe(
+      `/elsewhere/${HELD}/x.md`,
+    );
   });
 });
 

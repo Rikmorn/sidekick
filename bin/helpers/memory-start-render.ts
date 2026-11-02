@@ -6,7 +6,7 @@
 
 import * as path from 'node:path';
 import type { Match } from './memory-match.js';
-import { gateHits } from './memory-patterns.js';
+import { gateHits, withheldNames, withheldPath } from './memory-patterns.js';
 import type { SessionRecord, Workstream } from './memory-view.js';
 import { shellArg } from './shell.js';
 
@@ -87,11 +87,14 @@ export function storeFolder(store: string, dir: string): string {
   return path.relative(store, dir).split(path.sep).join('/');
 }
 
+// The file's and folder's names are checked apart from the source's text, so a name that matches withholds only itself.
 function withholding(store: string, matcher: Matcher): Gate {
   return ({ file, dir, tested }) => {
     const ids = [...new Set(tested.flatMap((text) => matcher(text)))];
     if (ids.length === 0) return undefined;
-    return `Withheld: ${file} matched ${ids.join(', ')}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${shellArg(storeFolder(store, dir))}`;
+    const name = withheldPath(file, store);
+    const folder = withheldNames(storeFolder(store, dir));
+    return `Withheld: ${name} matched ${ids.join(', ')}. Ask the operator to review it before you read that file. List it: sidekick memory lint --folder ${shellArg(folder)}`;
   };
 }
 
@@ -381,13 +384,14 @@ function withinTotal(blocks: Block[]): string {
 
 /**
  * The hook's `additionalContext` for one session. Pure: it replaces each text
- * from a store file that `matcher` matches with a line withholding it, cuts
- * each section to its budget, drops whole blocks past 9,000 characters in all
- * (warnings first, Next steps last, never the first line), and on `resume`
- * keeps only the first two lines. A matcher that throws leaves the text
- * unchecked and adds a warning that the total budget never drops. A
- * `lintCount` above zero prints one line after the warnings, which the total
- * budget drops after the family index and before the records.
+ * from a store file that `matcher` matches with a line withholding it. That
+ * line names the file and its folder, with each name that `printedHits`
+ * matches withheld. It cuts each section to its budget, drops whole blocks
+ * past 9,000 characters in all (warnings first, Next steps last, never the
+ * first line), and on `resume` keeps only the first two lines. A matcher that
+ * throws leaves the text unchecked and adds a warning that the total budget
+ * never drops. A `lintCount` above zero prints one line after the warnings,
+ * which the total budget drops after the family index and before the records.
  */
 export function renderStart(
   parts: StartParts,
