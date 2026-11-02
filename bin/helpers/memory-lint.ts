@@ -679,7 +679,7 @@ function rootFault(fact: RootFact): string | undefined {
     case 'outside-git':
       return 'which is not inside a git repository';
     case 'not-main':
-      return `but the repository there has its main checkout at ${fact.top}`;
+      return `but the repository there has its main checkout at ${quoteOrWithhold(fact.top)}`;
     case 'undecided':
     case 'checkout':
       return undefined;
@@ -695,13 +695,13 @@ function danglingMarkers(input: LintInput, id: MemoryLintId): MemoryFinding[] {
   const roots = input.repos.flatMap(({ scan, fact }) => {
     const fault = rootFault(fact);
     if (fault === undefined) return [];
-    const message = `${scan.folder}'s marker names ${quoteOrWithhold(scan.root)}, ${fault}`;
+    const message = `${quoteOrWithhold(scan.folder)}'s marker names ${quoteOrWithhold(scan.root)}, ${fault}`;
     return [{ folder: scan.folder, file: markerOf(scan), message }];
   });
   const invalid = invalidMarkers(input.store).map((marker) => ({
     folder: marker.folder,
     file: marker.file,
-    message: `${quoteOrWithhold(marker.issue)}, so the store does not count ${marker.folder} as a repo folder`,
+    message: `${quoteOrWithhold(marker.issue)}, so the store does not count ${quoteOrWithhold(marker.folder)} as a repo folder`,
   }));
   return [...roots, ...invalid]
     .sort((a, b) => a.folder.localeCompare(b.folder))
@@ -721,7 +721,9 @@ function leftMessage(diff: Exclude<DefaultFolderDiff, { kind: 'absent' }>) {
   ];
   const named = clauses
     .filter(([, names]) => names.length > 0)
-    .map(([label, names]) => `${label}: ${names.join(', ')}`);
+    .map(
+      ([label, names]) => `${label}: ${names.map(quoteOrWithhold).join(', ')}`,
+    );
   return named.length === 0
     ? `${STILL_EXISTS}, and its files match the store copies`
     : `${STILL_EXISTS}; ${named.join('; ')}`;
@@ -768,11 +770,13 @@ function settingMissing(input: LintInput, id: MemoryLintId): MemoryFinding[] {
   return input.repos.flatMap(({ scan, fact }) => {
     if (fact.kind !== 'checkout') return [];
     if (keyInStore(fact.key, store, deps.home)) return [];
+    const root = quoteOrWithhold(scan.root);
     const where =
       fact.key === undefined
-        ? `${scan.root} has no ${SETTINGS_KEY} setting`
-        : `${scan.root}'s ${SETTINGS_KEY} setting names ${fact.key}, outside the store`;
-    const message = `${where}, so Claude Code keeps its memory elsewhere. Run: ${relinkCommand(scan)}`;
+        ? `${root} has no ${SETTINGS_KEY} setting`
+        : `${root}'s ${SETTINGS_KEY} setting names ${quoteOrWithhold(fact.key)}, outside the store`;
+    // The command quotes the root, the family, and the folder's name, so a match in any withholds it whole.
+    const message = `${where}, so Claude Code keeps its memory elsewhere. Run: ${quoteOrWithhold(relinkCommand(scan))}`;
     return [{ id, folder: scan.folder, file: markerOf(scan), message }];
   });
 }

@@ -1166,7 +1166,18 @@ describe('a message never quotes text the patterns match', () => {
     'workstream-dropped',
     'settings-invalid',
     'dangling-marker',
+    'default-folder-left',
+    'setting-missing',
   ];
+
+  // A checkout whose path holds the poison, its key outside the store and holding a key.
+  function poisonedCheckout(): string {
+    const root = rootOf(POISON);
+    fs.mkdirSync(path.join(root, 'sub'), { recursive: true });
+    execRunner('git', ['init', '-q', '-b', 'main'], root);
+    setKey(root, path.join(tmp, 'elsewhere', AWS_KEY));
+    return root;
+  }
 
   // Bun's JSON.parse error quotes a bare token whole, so each key reaches its parse error's text.
   function poisoned(): MemoryFinding[] {
@@ -1175,6 +1186,18 @@ describe('a message never quotes text the patterns match', () => {
     write('proj/odd.md', workstream('odd', POISON));
     write('settings.json', GITHUB_PAT);
     write('fam/other/.sidekick.json', AWS_KEY);
+    write(`${POISON}/.sidekick.json`, '{ "rooot": "/x" }');
+    const root = poisonedCheckout();
+    fs.mkdirSync(at('evil'));
+    writeMarker(at('evil'), root);
+    fs.mkdirSync(at(GITHUB_PAT));
+    writeMarker(at(GITHUB_PAT), path.join(root, 'sub'));
+    const defaultDir = defaultMemoryFolder(
+      rootOf('proj'),
+      path.join(tmp, 'config'),
+    );
+    fs.mkdirSync(defaultDir, { recursive: true });
+    fs.writeFileSync(path.join(defaultDir, `${POISON}.md`), '# Left\n');
     return lint().findings.filter((finding) => QUOTING.includes(finding.id));
   }
 
@@ -1197,12 +1220,38 @@ describe('a message never quotes text the patterns match', () => {
         'dangling-marker',
         '(withheld: aws-access-key), so the store does not count fam/other as a repo folder',
       ],
+      [
+        'dangling-marker',
+        "(withheld: github-classic-pat)'s marker names (withheld: ignore-previous-instructions), but the repository there has its main checkout at (withheld: ignore-previous-instructions)",
+      ],
+      [
+        'dangling-marker',
+        '(withheld: ignore-previous-instructions), so the store does not count (withheld: ignore-previous-instructions) as a repo folder',
+      ],
+      [
+        'default-folder-left',
+        "Claude Code's default memory folder still exists; only there: (withheld: ignore-previous-instructions); only in the store: MEMORY.md, alpha.md, archive.md, beta.md, odd.md, reference.md",
+      ],
+      [
+        'setting-missing',
+        "(withheld: ignore-previous-instructions)'s autoMemoryDirectory setting names (withheld: aws-access-key), outside the store, so Claude Code keeps its memory elsewhere. Run: (withheld: ignore-previous-instructions)",
+      ],
+    ]);
+  });
+
+  test('a root with no key is withheld in the setting-missing message', () => {
+    const root = poisonedCheckout();
+    fs.rmSync(path.join(root, '.claude'), { recursive: true });
+    fs.mkdirSync(at('evil'));
+    writeMarker(at('evil'), root);
+    expect(lint().findings.map((finding) => finding.message)).toEqual([
+      '(withheld: ignore-previous-instructions) has no autoMemoryDirectory setting, so Claude Code keeps its memory elsewhere. Run: (withheld: ignore-previous-instructions)',
     ]);
   });
 
   test('no message matches an injection or a key pattern', () => {
     const findings = poisoned();
-    expect(findings).toHaveLength(QUOTING.length + 1);
+    expect(new Set(ids(findings))).toEqual(new Set(QUOTING));
     for (const finding of findings) {
       expect(gateHits(finding.message)).toEqual([]);
       expect(keyHits(finding.message)).toEqual([]);
