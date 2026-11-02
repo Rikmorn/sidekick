@@ -30,6 +30,8 @@ The brief opens with `key: value` lines between two `---` lines. Its body holds 
 
 The brief, the plan, the spec, and the rulings file stay in the launching checkout or the main checkout, and you read them there. They usually sit in a git-ignored folder, which a worktree does not contain. A worktree session can read those checkouts but cannot edit them. Where the plan and the brief disagree on where the work lands, follow the brief: the plan was written before the mode was chosen.
 
+When the brief names a `workstream`, start from the State and Next steps that the memory hook printed for it. The run belongs to that workstream, and its state is the handoff from earlier sessions.
+
 Check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Then check where you work. There, `HEAD` is `baseline`, and no tracked file has uncommitted changes.
 
 - `worktree`: a linked worktree with `HEAD` at `baseline` and clean tracked files. A dispatched worker starts there. A worker started by the operator calls `EnterWorktree` with the brief's `name` first. `EnterWorktree` branches from the `worktree.baseRef` setting. Its default, `"fresh"`, branches from the remote's default branch, and only `"head"` branches from `HEAD`. `sidekick worker dispatch` sets `"head"`; a session started by the operator may not.
@@ -81,6 +83,8 @@ Run git plainly from where you work. In a worktree session, Claude Code refuses 
 - **Never push, and open no pull request.** The orchestrator integrates. A background session's default is to push its branch and open a pull request; this rule overrides that default.
 
 ## At the end
+
+Run `sk-save` before the run report. In a worker it writes only this session's record, since the workstream is shared and the session that lands your work folds the record in. Commit nothing from it: the store sits outside the repo.
 
 Write the run report when superpowers collects its "Rulings I made", before it deletes its workspace. The ledger the report draws on goes with that workspace. Write the report in the shape of `references/run-report.md`, at the brief's `report` path, relative to where you work. Create the folders it needs, since a git-ignored folder such as `docs/superpowers/` is absent from a fresh worktree.
 

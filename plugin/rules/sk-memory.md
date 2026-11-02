@@ -14,9 +14,13 @@ Never write another repo's folder, whose own sessions keep its index and its sta
 
 A workstream is one objective, across however many sessions, branches, and repos it takes. Each has one file, so every session on it reads the same state:
 
-- A status line says whether it is open or closed.
-- Its front matter lists its branches in each repo, so a session on one of those branches finds it.
-- Its state section is the handoff between sessions. Keep it current, since the next session on the workstream starts from it.
+- `metadata.status` says whether it is `open` or `closed`.
+- `metadata.branches` lists its branches as one string of `<repo>:<branch>` pairs joined by `, `, so a session on one of those branches finds it.
+- Its sections are State, Next steps, Key files, and Context. State and Next steps are the handoff between sessions, so keep them current. Move what happened into session records.
+- A session record's `metadata.kind` is `session`, and `metadata.workstream` names the workstream it served.
+- A worker writes only its own record. The session that lands the worker's work folds the record into the workstream.
+
+The memory hook prints the record's path and the matched workstream at session start. Save with `sk-save`.
 
 A workstream that spans repos lives in the family folder.
 
@@ -27,7 +31,7 @@ Claude Code's memory prompt gives each memory file one pointer line in `MEMORY.m
 - A fact joins the file it belongs to: its workstream, the reference file for what outlasts any workstream, the support file, or the script catalogue. Prefer a new file only for a new workstream, because each file adds a line every session loads.
 - So the index lists the open workstreams, and points to those three files and to one archive file.
 - When a workstream closes, its pointer moves to the archive file. Its file stays put, since searches leave the store's `archive/` folder out.
-- A session that writes a family file points to it from the family's index and from its own repo's index.
+- A session that writes a family file points to it from the family's `MEMORY.md` and from its own repo's index.
 - Session records take no pointer, since a line per session would outgrow any cap.
 
 Keep the index under the line cap the user's instructions set, and within the lines Claude Code's prompt says it loads.

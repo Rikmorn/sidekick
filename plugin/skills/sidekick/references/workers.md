@@ -40,7 +40,7 @@ The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI par
 | `skill` | yes | `subagent-driven-development` or `executing-plans` |
 | `place` | yes | `worktree`, `in-place`, or `branch <name>`. `dispatch` starts a worker only for `worktree` |
 | `target` | on a branch | The branch the launching checkout holds, where the work lands. `finish` checks the landing against it. `dispatch` refuses a brief without it when the checkout holds a branch, and a brief with it on a detached `HEAD` |
-| `workstream` | no | `^[a-z0-9][a-z0-9-]{0,63}$`. The memory workstream the worker belongs to. `sidekick` only checks its form |
+| `workstream` | no | `^[a-z0-9][a-z0-9-]{0,63}$`. The memory workstream the worker belongs to. `sidekick` only checks its form. The memory hook and `sk-save` read it |
 | `setup` | no | A shell command the worker runs where it works, before its scan |
 | `report` | yes | A path relative to the repo top, with no `..` segment |
 | `orchestrator` | yes | The orchestrating session's name, as `ListAgents` prints it |
