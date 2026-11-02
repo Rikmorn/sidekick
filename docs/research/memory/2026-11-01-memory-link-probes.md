@@ -9,7 +9,11 @@
 - **A3.** `--settings` carries the key into an interactive session, so a profile that leaves out `local` still finds the store.
 - **A4.** A running session keeps the folder it started with, and recreates the default folder on its next memory write.
 
-All four held. The design also read Claude Code's binary as honouring the local key only in a trusted workspace. An interactive session in an untrusted folder never started, so no session could run without trust.
+All four held. The design also rested on one constraint, which it read in Claude Code's 2.1.316 binary:
+
+- **C12.** An interactive session reads a repo's local and project `autoMemoryDirectory` only in a trusted workspace.
+
+An interactive session in an untrusted folder never started, so no session could run without trust.
 
 A paired replay then ran five of the memory trial's scenarios headless, once with `sk-memory.md` loaded and once without it. Both arms passed every read, and the rule changed where saves landed. §The paired replay of `sk-memory.md` holds its results, and §Results covers the link probes.
 
@@ -28,7 +32,8 @@ A paired replay then ran five of the memory trial's scenarios headless, once wit
 | Profile whose `settingSources` leaves out `local` | A3 holds: the prompt names the store, and the writes land there |
 | Clean-room profile, leaving out `user` and `local` | A3 holds, and its writes to the store ask no permission |
 
-- **Measured:** every session that reached a prompt was trusted. Both worktrees started without a trust dialog once the main checkout was trusted. `~/.claude.json` lists `a1` but neither worktree, so the worktrees took its trust without an entry of their own.
+- **Measured:** the main checkout's session showed the trust dialog, and both worktrees' sessions then started without one. After the sessions, `a1.sh` read `~/.claude.json`'s project list with `jq`: it listed `a1` but neither worktree.
+- **Inferred, not measured:** the worktrees took the main checkout's trust without an entry of their own, so every session that reached a prompt was trusted. That rests on the missing dialog, which an untrusted folder shows (§C12: an untrusted folder), and on the missing entries. No probe read the trust check itself.
 - **Measured:** no session that had the key created a default `memory/` folder. Each session without it created one at start. The exploratory session and the control that left out `local` left theirs empty.
 - **Measured:** after `link --force`, the running session went on writing to the default folder, recreating it. It wrote the new memory, found its earlier files gone, and rewrote them from its context. So the folder that came back held copies of files already in the store.
 - **Measured:** Claude Code adds `node_type`, `originSessionId`, and `modified` to a memory file's front matter when a session writes it. The Write calls carried none of those fields, and the Read results show all three. A rewritten file therefore never matches its earlier copy byte for byte, and `link`'s re-run lists such copies as differing.
@@ -890,7 +895,7 @@ Paths are under `<arm>/store/acme/`. Placement names each file the run wrote or 
 
 Where arm A did worse than arm B:
 
-- **Cost.** In this single pass, arm A cost 5.24 USD over 109 turns, and arm B 4.01 USD over 82: 31% more. Each cell ran once, so run-to-run spread is unknown, and the gap is not shown to come from the rule. S8 accounts for 0.86 USD of the 1.23 USD gap, and its write run held the refused skill write.
+- **Cost.** In this single pass, arm A cost 5.24 USD over 109 turns, and arm B 4.01 USD over 82: 31% more. S8 accounts for 0.86 USD of the 1.23 USD gap. That part traces to the rule's preference for a skill: S8's write run held the refused skill write. Each cell ran once, so run-to-run spread is unknown. This single pass does not show that the rest of the gap comes from the rule.
 - **S8w's skill.** The rule's preference for a skill sent the session to `.claude/skills/release/SKILL.md`, a write that needed a permission the headless run could not grant. The session also loaded `superpowers:writing-skills`, whose list of what not to make a skill includes project-specific conventions. The session named that clash. Inferred, not tested: an interactive session would have asked the operator instead.
 - **A skill the worktree cannot see.** Inferred, not tested: a skill written in alpha's main checkout is untracked, so the worktree would not see it, as S7 showed for `playground/`. The S8w session also offered to delete the memory copy once the skill existed, which would leave the worktree with nothing.
 - **Session record names.** The S1w session tried to read its id with `env`, which needed approval, so it named its record by topic. Later records were named the same way, and S2w wrote no record. Claude Code still added `originSessionId` to each record's front matter.
