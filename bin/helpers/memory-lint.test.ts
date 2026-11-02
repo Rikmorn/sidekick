@@ -1022,6 +1022,35 @@ describe('default-folder-left', () => {
     ]);
   });
 
+  test('a file that differs only in the keys Claude Code stamps on a write matches', () => {
+    const dir = defaultFolder();
+    copyOwn(dir, OWN);
+    fs.writeFileSync(
+      path.join(dir, 'alpha.md'),
+      workstream('alpha', 'open')
+        .replace(
+          '  kind: workstream\n',
+          '  node_type: memory\n  kind: workstream\n',
+        )
+        .replace(
+          '  status: open\n',
+          '  status: open\n  originSessionId: 0477913e-d18b-4e0a-ba46-b98ebd19d051\n  modified: 2026-11-02T11:45:07.493Z\n',
+        ),
+    );
+    expect(lint().findings.map((finding) => finding.message)).toEqual([
+      "Claude Code's default memory folder still exists, and its files match the store copies",
+    ]);
+  });
+
+  test('a stamped key outside the front matter still counts', () => {
+    const dir = defaultFolder();
+    copyOwn(dir, OWN);
+    fs.appendFileSync(path.join(dir, 'alpha.md'), 'node_type: memory\n');
+    expect(lint().findings.map((finding) => finding.message)).toEqual([
+      "Claude Code's default memory folder still exists; differs from the store copy: alpha.md",
+    ]);
+  });
+
   test('a modified line outside the front matter still counts', () => {
     const dir = defaultFolder();
     copyOwn(dir, OWN);

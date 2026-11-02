@@ -121,10 +121,12 @@ export type DefaultFolderDiff =
     };
 
 const FENCE = '---';
-const STAMP_LINE = /^\s*modified:/;
+// The keys Claude Code adds to a memory file's front matter on each write
+// (docs/research/memory/2026-11-01-memory-link-probes.md, §Results).
+const STAMP_LINE = /^\s*(?:node_type|originSessionId|modified):/;
 
-// Claude Code rewrites the front matter's `modified` stamp on each write, so it is no difference.
-function withoutStamp(text: string): string {
+// Claude Code adds or rewrites its stamps on each write, so they are no difference.
+function withoutStamps(text: string): string {
   const lines = text.split('\n');
   if (lines[0]?.trimEnd() !== FENCE) return text;
   const end = lines.findIndex((line, i) => i > 0 && line.trimEnd() === FENCE);
@@ -143,7 +145,7 @@ function compareCopy(from: string, to: string): CopyCompare {
     const [a, b] = [fs.readFileSync(from), fs.readFileSync(to)];
     const same =
       a.equals(b) ||
-      withoutStamp(a.toString('utf8')) === withoutStamp(b.toString('utf8'));
+      withoutStamps(a.toString('utf8')) === withoutStamps(b.toString('utf8'));
     return same ? 'same' : 'differs';
   } catch {
     return 'differs';

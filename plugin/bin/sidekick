@@ -5639,8 +5639,8 @@ function invalidMarkers(store) {
   });
 }
 var FENCE4 = "---";
-var STAMP_LINE = /^\s*modified:/;
-function withoutStamp(text) {
+var STAMP_LINE = /^\s*(?:node_type|originSessionId|modified):/;
+function withoutStamps(text) {
   const lines = text.split(`
 `);
   if (lines[0]?.trimEnd() !== FENCE4)
@@ -5656,7 +5656,7 @@ function compareCopy(from, to) {
     return "absent";
   try {
     const [a, b] = [fs19.readFileSync(from), fs19.readFileSync(to)];
-    const same = a.equals(b) || withoutStamp(a.toString("utf8")) === withoutStamp(b.toString("utf8"));
+    const same = a.equals(b) || withoutStamps(a.toString("utf8")) === withoutStamps(b.toString("utf8"));
     return same ? "same" : "differs";
   } catch {
     return "differs";
