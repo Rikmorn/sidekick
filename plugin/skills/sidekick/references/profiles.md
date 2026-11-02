@@ -36,6 +36,8 @@ Launch composes the settings from the profile's `settings` object, then adds its
 - `sidekick.hide`, a copy of the manifest's `hide`, when the manifest has one. Hiding is a filter that fails open, so nothing that must stay out relies on it. A profile hides a tool through `settings.permissions.deny` instead.
 - `env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1"` when `.claude/rules/` holds a `.md` file at any depth. Claude Code loads rules from an `--add-dir` folder only with that variable set, and a settings `env` block sets it (probes report, "The profile folder as `--add-dir`").
 - `claudeMdExcludes` for the user's `~/.claude/CLAUDE.md` and `~/.claude/rules/**`, when `settingSources` is present and leaves out `user`. The clean-room table in "What each mode drops" explains why.
+- `autoMemoryDirectory`, copied from the key of the repo the session starts in, when that repo has one and `settingSources` is present and leaves out `local`. `sidekick memory link` sets that key in the main checkout's `.claude/settings.local.json`, the file only `local` loads.
+- `permissions.additionalDirectories` holding the memory store's absolute path, when that repo has the key and `settingSources` is present and leaves out `user`. `link` asks for that entry in the user settings, where it opens the whole store, family folders included, to every session.
 
 The folder holds only rules. The layout check refuses everything else under `.claude/`, so agents, skills, and commands go in a plugin the profile enables. From an `--add-dir` folder, Claude Code loads them only under the `project` setting source. With `--setting-sources local`, a folder's rule loaded but its agent and skill did not. That was measured on 2026-10-13 on Claude Code 2.1.296, and the docs say the same of commands (probes report, "The profile folder as `--add-dir`"). So a profile whose `settingSources` left out `project` would lose them without a word.
 
@@ -163,6 +165,7 @@ A `settingSources` that leaves out `user` makes a clean room. The grade of each 
 | User `CLAUDE.md` and rules | dropped by the excludes launch adds. The flag alone leaves them under `$HOME` | measured. The cause, that Claude Code reads `~/.claude/` as a parent folder's `.claude/`, is inferred |
 | claude.ai connectors | kept | measured |
 | Auto memory (`MEMORY.md`) | kept. The docs name `autoMemoryEnabled: false` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` to turn it off (memory page, §Enable or disable auto memory, read 2026-10-13) | kept: measured. Neither setting was tried through a profile |
+| A linked repo's memory store | kept when the repo has the key. Launch adds the store to `permissions.additionalDirectories`, and the key itself when `settingSources` also leaves out `local` | measured with `local` left out too, on Claude Code 2.1.316, 2026-11-01: `docs/research/memory/2026-11-01-memory-link-probes.md` in that repo, "A3: profile launches" |
 | The repo's `AGENTS.md` and rules | kept | measured |
 | The repo's own plugins | kept in the sidekick repo. In odin, three of seven loaded. The other four never loaded with the user layer kept (`bench`) either, so keeping it does not bring them back | measured. The cause, a `-p` session not installing a marketplace the repo declares, is inferred and not tested |
 
