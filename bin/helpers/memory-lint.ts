@@ -21,7 +21,14 @@ import {
   resolvedPath,
   rootFact,
 } from './memory-lint-repos.js';
-import { INJECTION, injectionHits, KEYS, keyHits } from './memory-patterns.js';
+import {
+  type Check,
+  GATE_CHECKS,
+  gateHits,
+  invisibleCharacters,
+  KEY_CHECKS,
+  keyHits,
+} from './memory-patterns.js';
 import {
   headingAs,
   NEXT_HEADING,
@@ -367,7 +374,7 @@ const count = (n: number) => n.toLocaleString('en-US');
 
 // A message fragment from store text or a parse error, kept only when no pattern matches it, since `memory lint` prints its findings to a session.
 function quoteOrWithhold(text: string): string {
-  const ids = [...keyHits(text), ...injectionHits(text)];
+  const ids = [...keyHits(text), ...gateHits(text)];
   return ids.length === 0 ? text : `(withheld: ${ids.join(', ')})`;
 }
 
@@ -511,15 +518,13 @@ function droppedWorkstreams(scan: FolderScan): Hit[] {
     });
 }
 
-type Pattern = (typeof KEYS)[number];
-
-// The shared deciders and the lists they read, so a finding names the same ids the gate would.
+// The shared deciders and the checks they run, so a finding names the same ids the gate would.
 const SHAPES = {
-  key: { hits: keyHits, patterns: KEYS },
-  injection: { hits: injectionHits, patterns: INJECTION },
+  key: { hits: keyHits, checks: KEY_CHECKS },
+  injection: { hits: gateHits, checks: GATE_CHECKS },
 } satisfies Record<
   string,
-  { hits: (text: string) => string[]; patterns: readonly Pattern[] }
+  { hits: (text: string) => string[]; checks: readonly Check[] }
 >;
 type Shape = keyof typeof SHAPES;
 
@@ -527,22 +532,31 @@ type Shape = keyof typeof SHAPES;
 const shapedText = (shape: Shape, ids: readonly string[]): string =>
   `holds ${shape}-shaped text (${ids.join(', ')})`;
 
+const invisibleText = (points: readonly string[]): string =>
+  `holds invisible characters (${points.join(', ')})`;
+
 function lineOf(text: string, index: number): number {
   return text.slice(0, index).split('\n').length;
 }
 
 // The lines matches start on, each with the ids that match there in list order; a match may span lines.
+// Every reading keeps the text's line breaks, so a line in a reading is the same line in the file.
 function matchLines(
-  patterns: readonly Pattern[],
+  checks: readonly Check[],
   text: string,
 ): Array<{ line: number; ids: string[] }> {
-  const hits = patterns.flatMap(({ id, re }) => {
-    const flags = re.flags.includes('g') ? re.flags : `${re.flags}g`;
-    const every = new RegExp(re.source, flags);
-    return [...text.matchAll(every)].map((match) => ({
-      line: lineOf(text, match.index ?? 0),
-      id,
-    }));
+  const hits = checks.flatMap(({ patterns, readings }) => {
+    const read = readings.map((reading) => reading(text));
+    return patterns.flatMap(({ id, re }) => {
+      const flags = re.flags.includes('g') ? re.flags : `${re.flags}g`;
+      const every = new RegExp(re.source, flags);
+      return read.flatMap((reading) =>
+        [...reading.matchAll(every)].map((match) => ({
+          line: lineOf(reading, match.index ?? 0),
+          id,
+        })),
+      );
+    });
   });
   const lines = [...new Set(hits.map((hit) => hit.line))].sort((a, b) => a - b);
   return lines.map((line) => ({
@@ -554,9 +568,9 @@ function matchLines(
 }
 
 function shapedLines(own: OwnFile, shape: Shape): Hit[] {
-  const { hits, patterns } = SHAPES[shape];
+  const { hits, checks } = SHAPES[shape];
   if (hits(own.text).length === 0) return [];
-  return matchLines(patterns, own.text).map(({ line, ids }) => ({
+  return matchLines(checks, own.text).map(({ line, ids }) => ({
     file: own.file,
     line,
     message: shapedText(shape, ids),
@@ -570,11 +584,27 @@ function keyShaped(scan: FolderScan): Hit[] {
   );
 }
 
+// Each line's invisible characters, named by code point so the operator can find them.
+function invisibleLines(own: OwnFile): Hit[] {
+  return own.text.split('\n').flatMap((raw, i) => {
+    const points = invisibleCharacters(raw);
+    if (points.length === 0) return [];
+    return [{ file: own.file, line: i + 1, message: invisibleText(points) }];
+  });
+}
+
 // One text the hook prints, named by `place` (`its name`, `its title`).
 function injectionAt(file: string, place: string, text: string): Hit[] {
-  const ids = injectionHits(text);
-  if (ids.length === 0) return [];
-  return [{ file, message: `${place} ${shapedText('injection', ids)}` }];
+  const ids = gateHits(text);
+  const points = invisibleCharacters(text);
+  return [
+    ...(ids.length === 0
+      ? []
+      : [{ file, message: `${place} ${shapedText('injection', ids)}` }]),
+    ...(points.length === 0
+      ? []
+      : [{ file, message: `${place} ${invisibleText(points)}` }]),
+  ];
 }
 
 function workstreamInjection(
@@ -599,13 +629,20 @@ function recordInjection(record: SessionRecord): Hit[] {
   return injectionAt(record.path, 'its title', record.title);
 }
 
+// The index's lines, in line order: a line with both kinds names its injection ids first.
+function indexInjection(index: OwnFile | undefined): Hit[] {
+  if (index === undefined) return [];
+  return [...shapedLines(index, 'injection'), ...invisibleLines(index)].sort(
+    (a, b) => (a.line ?? 0) - (b.line ?? 0),
+  );
+}
+
 // The texts the hook or Claude Code prints: the index, kept workstreams' names, descriptions, two sections, and heading lists, and record titles.
 function injectionShaped(scan: FolderScan, input: LintInput): Hit[] {
-  const index = indexOf(scan);
   const streams = listWorkstreams(scan.dir, undefined);
   const records = scan.kind === 'repo' ? listRecords(scan.dir) : [];
   return [
-    ...(index === undefined ? [] : shapedLines(index, 'injection')),
+    ...indexInjection(indexOf(scan)),
     ...streams.flatMap((stream) =>
       workstreamInjection(stream, input.deps.readSection),
     ),

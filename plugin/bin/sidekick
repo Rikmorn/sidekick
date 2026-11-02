@@ -5735,12 +5735,26 @@ var INJECTION = [
   {
     id: "retain-through-summary",
     re: /(?:retain|keep)\s+(?:this|these)\s+(?:in|through|after)\s+(?:summar|compress|compact)/i
-  },
-  {
-    id: "invisible-unicode",
-    re: /[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060-\u2069]/
-  },
-  { id: "unicode-tag-block", re: /[\u{E0000}-\u{E007F}]/u }
+  }
+];
+var INVISIBLE = /[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060-\u2069]/gu;
+var TAG = /[\u{E0000}-\u{E007F}]/gu;
+var ASCII_TAG = /[\u{E0020}-\u{E007E}]/gu;
+var TAG_OFFSET = 917504;
+var TAG_FLAG = /\u{1F3F4}(?:[\u{E0061}-\u{E007A}]{2}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{1,4}|[\u{E0030}-\u{E0039}]{3}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{0,4})\u{E007F}/gu;
+var EMOJI_JOINER = /(\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}])?)\u200D(?=\p{Extended_Pictographic})/gu;
+var codePointOf = (char) => char.codePointAt(0) ?? 0;
+var tagsDecoded = (text) => text.replace(ASCII_TAG, (tag) => String.fromCodePoint(codePointOf(tag) - TAG_OFFSET));
+var invisibleStripped = (text) => tagsDecoded(text.replace(INVISIBLE, "")).replace(TAG, "");
+var withoutFlags = (text) => text.replace(TAG_FLAG, "");
+var asWritten = (text) => text;
+var STRAY_TAG = {
+  id: "unicode-tag-block",
+  re: /[\u{E0000}-\u{E007F}]/u
+};
+var GATE_CHECKS = [
+  { patterns: INJECTION, readings: [tagsDecoded, invisibleStripped] },
+  { patterns: [STRAY_TAG], readings: [withoutFlags] }
 ];
 var KEYS = [
   {
@@ -5763,9 +5777,21 @@ var KEYS = [
     re: /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i
   }
 ];
-var hits = (patterns, text) => patterns.filter(({ re }) => re.test(text)).map(({ id }) => id);
-var injectionHits = (text) => hits(INJECTION, text);
-var keyHits = (text) => hits(KEYS, text);
+var KEY_CHECKS = [
+  { patterns: KEYS, readings: [asWritten] }
+];
+var hits = (checks, text) => checks.flatMap(({ patterns, readings }) => {
+  const read = readings.map((reading) => reading(text));
+  return patterns.filter(({ re }) => read.some((reading) => re.test(reading))).map(({ id }) => id);
+});
+var gateHits = (text) => hits(GATE_CHECKS, text);
+var keyHits = (text) => hits(KEY_CHECKS, text);
+var codePointName = (char) => `U+${codePointOf(char).toString(16).toUpperCase().padStart(4, "0")}`;
+function invisibleCharacters(text) {
+  const loose = text.replace(EMOJI_JOINER, "$1");
+  const names = [...loose.matchAll(INVISIBLE)].map(([char]) => codePointName(char));
+  return [...new Set(names)];
+}
 
 // bin/helpers/memory-sections.ts
 var STATE_HEADING = "## State";
@@ -6038,7 +6064,7 @@ function withinTotal(blocks) {
     return joined(blocks).slice(0, TOTAL_BUDGET);
   return withinTotal(blocks.filter((block) => block.drop !== worst));
 }
-function renderStart(parts, matcher = injectionHits) {
+function renderStart(parts, matcher = gateHits) {
   const blocks = checkedBlocks(parts, matcher);
   const text = withinTotal(blocks);
   if (parts.source !== "resume")
@@ -6384,7 +6410,7 @@ function perFolder(check2) {
 }
 var count = (n) => n.toLocaleString("en-US");
 function quoteOrWithhold(text) {
-  const ids = [...keyHits(text), ...injectionHits(text)];
+  const ids = [...keyHits(text), ...gateHits(text)];
   return ids.length === 0 ? text : `(withheld: ${ids.join(", ")})`;
 }
 function indexOf(scan) {
@@ -6490,22 +6516,26 @@ function droppedWorkstreams(scan) {
   });
 }
 var SHAPES = {
-  key: { hits: keyHits, patterns: KEYS },
-  injection: { hits: injectionHits, patterns: INJECTION }
+  key: { hits: keyHits, checks: KEY_CHECKS },
+  injection: { hits: gateHits, checks: GATE_CHECKS }
 };
 var shapedText = (shape, ids) => `holds ${shape}-shaped text (${ids.join(", ")})`;
+var invisibleText = (points) => `holds invisible characters (${points.join(", ")})`;
 function lineOf(text, index) {
   return text.slice(0, index).split(`
 `).length;
 }
-function matchLines2(patterns, text) {
-  const hits2 = patterns.flatMap(({ id, re }) => {
-    const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
-    const every = new RegExp(re.source, flags);
-    return [...text.matchAll(every)].map((match) => ({
-      line: lineOf(text, match.index ?? 0),
-      id
-    }));
+function matchLines2(checks, text) {
+  const hits2 = checks.flatMap(({ patterns, readings }) => {
+    const read = readings.map((reading) => reading(text));
+    return patterns.flatMap(({ id, re }) => {
+      const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
+      const every = new RegExp(re.source, flags);
+      return read.flatMap((reading) => [...reading.matchAll(every)].map((match) => ({
+        line: lineOf(reading, match.index ?? 0),
+        id
+      })));
+    });
   });
   const lines = [...new Set(hits2.map((hit) => hit.line))].sort((a, b) => a - b);
   return lines.map((line) => ({
@@ -6516,10 +6546,10 @@ function matchLines2(patterns, text) {
   }));
 }
 function shapedLines(own, shape) {
-  const { hits: hits2, patterns } = SHAPES[shape];
+  const { hits: hits2, checks } = SHAPES[shape];
   if (hits2(own.text).length === 0)
     return [];
-  return matchLines2(patterns, own.text).map(({ line, ids }) => ({
+  return matchLines2(checks, own.text).map(({ line, ids }) => ({
     file: own.file,
     line,
     message: shapedText(shape, ids)
@@ -6528,11 +6558,22 @@ function shapedLines(own, shape) {
 function keyShaped(scan) {
   return [...scan.files, ...scan.sessions].flatMap((own) => shapedLines(own, "key"));
 }
+function invisibleLines(own) {
+  return own.text.split(`
+`).flatMap((raw, i) => {
+    const points = invisibleCharacters(raw);
+    if (points.length === 0)
+      return [];
+    return [{ file: own.file, line: i + 1, message: invisibleText(points) }];
+  });
+}
 function injectionAt(file, place, text) {
-  const ids = injectionHits(text);
-  if (ids.length === 0)
-    return [];
-  return [{ file, message: `${place} ${shapedText("injection", ids)}` }];
+  const ids = gateHits(text);
+  const points = invisibleCharacters(text);
+  return [
+    ...ids.length === 0 ? [] : [{ file, message: `${place} ${shapedText("injection", ids)}` }],
+    ...points.length === 0 ? [] : [{ file, message: `${place} ${invisibleText(points)}` }]
+  ];
 }
 function workstreamInjection(stream, readSection) {
   const { state, next } = hookSections(stream.path, readSection);
@@ -6548,12 +6589,16 @@ function workstreamInjection(stream, readSection) {
 function recordInjection(record2) {
   return injectionAt(record2.path, "its title", record2.title);
 }
+function indexInjection(index) {
+  if (index === undefined)
+    return [];
+  return [...shapedLines(index, "injection"), ...invisibleLines(index)].sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
+}
 function injectionShaped(scan, input) {
-  const index = indexOf(scan);
   const streams = listWorkstreams(scan.dir, undefined);
   const records = scan.kind === "repo" ? listRecords(scan.dir) : [];
   return [
-    ...index === undefined ? [] : shapedLines(index, "injection"),
+    ...indexInjection(indexOf(scan)),
     ...streams.flatMap((stream) => workstreamInjection(stream, input.deps.readSection)),
     ...records.flatMap(recordInjection)
   ];

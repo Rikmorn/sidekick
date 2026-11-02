@@ -3,9 +3,16 @@
 // Key patterns are translated from gitleaks at commit 5f6ec56cfa6f8c67648d863582c7ae2f206d5c1c, config/gitleaks.toml.
 // Both are credited in plugin/THIRD-PARTY-NOTICES.txt.
 
-interface Pattern {
+/** A check id and the regex that decides it. */
+export interface Pattern {
   readonly id: string;
   readonly re: RegExp;
+}
+
+/** A pattern list and the readings of a text it is tested against; each reading keeps every line break in place. */
+export interface Check {
+  readonly patterns: readonly Pattern[];
+  readonly readings: ReadonlyArray<(text: string) => string>;
 }
 
 export const INJECTION: readonly Pattern[] = [
@@ -57,13 +64,54 @@ export const INJECTION: readonly Pattern[] = [
     id: 'retain-through-summary',
     re: /(?:retain|keep)\s+(?:this|these)\s+(?:in|through|after)\s+(?:summar|compress|compact)/i,
   },
-  // zero-width, RTL override, soft hyphen, BOM
-  {
-    id: 'invisible-unicode',
-    re: /[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060-\u2069]/,
-  },
-  // U+E0000 to U+E007F: an invisible instruction vector
-  { id: 'unicode-tag-block', re: /[\u{E0000}-\u{E007F}]/u },
+];
+
+// Zero-width characters, word joiners, bidi controls, line and paragraph separators, the narrow no-break space, soft hyphen, BOM.
+const INVISIBLE = /[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060-\u2069]/gu;
+// U+E0000 to U+E007F: an invisible instruction vector. U+E0020 to U+E007E mirror printable ASCII.
+const TAG = /[\u{E0000}-\u{E007F}]/gu;
+const ASCII_TAG = /[\u{E0020}-\u{E007E}]/gu;
+const TAG_OFFSET = 0xe0000;
+// UTS #51 Annex C: U+1F3F4, then a CLDR subdivision id or three-digit region in tag
+// digits and small letters (UTS #35: a region of two letters or three digits, then
+// one to four letters or digits), then CANCEL TAG.
+const TAG_FLAG =
+  /\u{1F3F4}(?:[\u{E0061}-\u{E007A}]{2}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{1,4}|[\u{E0030}-\u{E0039}]{3}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{0,4})\u{E007F}/gu;
+// A joiner inside an emoji sequence: after a pictograph and an optional
+// variation selector or skin tone, before a pictograph.
+const EMOJI_JOINER =
+  /(\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}])?)\u200D(?=\p{Extended_Pictographic})/gu;
+
+const codePointOf = (char: string): number => char.codePointAt(0) ?? 0;
+
+const tagsDecoded = (text: string): string =>
+  text.replace(ASCII_TAG, (tag) =>
+    String.fromCodePoint(codePointOf(tag) - TAG_OFFSET),
+  );
+
+// Decoded, with every invisible character and every other tag character gone, so a split word joins again.
+const invisibleStripped = (text: string): string =>
+  tagsDecoded(text.replace(INVISIBLE, '')).replace(TAG, '');
+
+const withoutFlags = (text: string): string => text.replace(TAG_FLAG, '');
+
+const asWritten = (text: string): string => text;
+
+const STRAY_TAG: Pattern = {
+  id: 'unicode-tag-block',
+  re: /[\u{E0000}-\u{E007F}]/u,
+};
+
+/**
+ * What the memory gate tests. The injection patterns read the text with its
+ * tag characters decoded, both as written and with invisible characters
+ * stripped: `\s` matches U+2028, U+2029, U+202F, and U+FEFF, which stripping
+ * would delete from between two words. A tag character outside an emoji flag
+ * matches `unicode-tag-block`. An invisible character alone matches nothing.
+ */
+export const GATE_CHECKS: readonly Check[] = [
+  { patterns: INJECTION, readings: [tagsDecoded, invisibleStripped] },
+  { patterns: [STRAY_TAG], readings: [withoutFlags] },
 ];
 
 export const KEYS: readonly Pattern[] = [
@@ -89,11 +137,38 @@ export const KEYS: readonly Pattern[] = [
   },
 ];
 
-const hits = (patterns: readonly Pattern[], text: string): string[] =>
-  patterns.filter(({ re }) => re.test(text)).map(({ id }) => id);
+/** What the key check tests: the key patterns, on the text as written. */
+export const KEY_CHECKS: readonly Check[] = [
+  { patterns: KEYS, readings: [asWritten] },
+];
 
-/** Ids of the injection patterns that match `text`, in list order. Empty means clean. */
-export const injectionHits = (text: string): string[] => hits(INJECTION, text);
+const hits = (checks: readonly Check[], text: string): string[] =>
+  checks.flatMap(({ patterns, readings }) => {
+    const read = readings.map((reading) => reading(text));
+    return patterns
+      .filter(({ re }) => read.some((reading) => re.test(reading)))
+      .map(({ id }) => id);
+  });
+
+/** Ids the memory gate withholds `text` for, in list order. Empty means it prints. */
+export const gateHits = (text: string): string[] => hits(GATE_CHECKS, text);
 
 /** Ids of the key patterns that match `text`, in list order. Empty means clean. */
-export const keyHits = (text: string): string[] => hits(KEYS, text);
+export const keyHits = (text: string): string[] => hits(KEY_CHECKS, text);
+
+// Unicode's notation: at least four hex digits.
+const codePointName = (char: string): string =>
+  `U+${codePointOf(char).toString(16).toUpperCase().padStart(4, '0')}`;
+
+/**
+ * The invisible characters in `text` that no emoji sequence uses, as
+ * `U+00AD`, each once, in order of first appearance. Tag characters are the
+ * gate's: `GATE_CHECKS` names a stray one.
+ */
+export function invisibleCharacters(text: string): string[] {
+  const loose = text.replace(EMOJI_JOINER, '$1');
+  const names = [...loose.matchAll(INVISIBLE)].map(([char]) =>
+    codePointName(char),
+  );
+  return [...new Set(names)];
+}

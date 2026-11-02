@@ -6,7 +6,7 @@
 
 import * as path from 'node:path';
 import type { Match } from './memory-match.js';
-import { injectionHits } from './memory-patterns.js';
+import { gateHits } from './memory-patterns.js';
 import type { SessionRecord, Workstream } from './memory-view.js';
 import { shellArg } from './shell.js';
 
@@ -391,7 +391,7 @@ function withinTotal(blocks: Block[]): string {
  */
 export function renderStart(
   parts: StartParts,
-  matcher: Matcher = injectionHits,
+  matcher: Matcher = gateHits,
 ): string {
   const blocks = checkedBlocks(parts, matcher);
   const text = withinTotal(blocks);
