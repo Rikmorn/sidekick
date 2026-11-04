@@ -1,12 +1,14 @@
 # Worktrees and parallel sessions
 
-Status: planned (#266, #267, #282, #283, #284, #285, #286, #287) · Scale: explore · 2026-10-31
+Status: planned (#266, #267, #282, #283, #284, #285, #286, #287, #312) · Scale: explore · 2026-10-31
 
 Amended 2026-10-31 (#266): piece 3's landed check became a simulated merge over the target's history. A review found that the two patch-id checks missed a landing after the target edited near the landed lines, and matched a change of meaning. The merge caught every landing that kept the content. Every `finish` now keeps its branch in a backup ref. The options, the decision, and the review record the design as it stood.
 
 Amended 2026-11-01 (#286): piece 7's base became a per-repo `worktree.baseRef` setting, since sidekick's main checkout holds its integration branch. L-d's setup hook was probed and left to #287's trial, and the rule carries the guard's passing spellings. The probes are in [`2026-10-31-worktree-probes-for-the-rule.md`](../../research/parallel-sessions/2026-10-31-worktree-probes-for-the-rule.md).
 
 Amended 2026-11-02 (#301): R10 dropped the desk and landing pieces. #283 and #239 closed not planned, and #284 and #285 moved to backlog. #237 stays in R10. Landing parallel workers stays by hand, in the target's owner checkout.
+
+Amended 2026-11-04 (#308): R10's outcome widened to worktrees that run end to end. #284 split: its tidying half rejoined R10, and piece 5's overlap half became #312, in backlog. #309 extends this design with the cases a week of use found, before more is built.
 
 The design became #282 to #291, and took #266 and #267 as one of its pieces. #266, #267, and #282 to #287 joined R10 beside the memory design's #270 to #278, and #288 to #291 stay in backlog (operator, 2026-10-31). Gate 1 approved by the operator on 2026-10-31, with the assumed A3 replaced by the stated K18, and P3's missing case answered (§Constraints, §Cases). Gate 2: T1 and T2 ruled on 2026-10-31, and T4 settled after a survey (§Rulings at gate 2). Gate 3 approved on 2026-10-31 (§Decision).
 
