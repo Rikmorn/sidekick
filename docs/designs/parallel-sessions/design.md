@@ -1,6 +1,6 @@
 # Worktrees and parallel sessions
 
-Status: planned (#266, #267, #282, #283, #284, #285, #286, #287, #312) · Scale: explore · 2026-10-31
+Status: planned (#266, #267, #282, #283, #284, #285, #286, #287, #295, #296, #303, #309, #310, #311, #312, #313) · Scale: explore · 2026-10-31
 
 Amended 2026-10-31 (#266): piece 3's landed check became a simulated merge over the target's history. A review found that the two patch-id checks missed a landing after the target edited near the landed lines, and matched a change of meaning. The merge caught every landing that kept the content. Every `finish` now keeps its branch in a backup ref. The options, the decision, and the review record the design as it stood.
 
@@ -9,6 +9,8 @@ Amended 2026-11-01 (#286): piece 7's base became a per-repo `worktree.baseRef` s
 Amended 2026-11-02 (#301): R10 dropped the desk and landing pieces. #283 and #239 closed not planned, and #284 and #285 moved to backlog. #237 stays in R10. Landing parallel workers stays by hand, in the target's owner checkout.
 
 Amended 2026-11-04 (#308): R10's outcome widened to worktrees that run end to end. #284 split: its tidying half rejoined R10, and piece 5's overlap half became #312, in backlog. #309 extends this design with the cases a week of use found, before more is built.
+
+Amended 2026-11-04 (#309): §Cases adds C5 to C13. [`use-cases.md`](use-cases.md) checks every case against the milestone branch, and gives #287's verdict and #309's breakdown.
 
 The design became #282 to #291, and took #266 and #267 as one of its pieces. #266, #267, and #282 to #287 joined R10 beside the memory design's #270 to #278, and #288 to #291 stay in backlog (operator, 2026-10-31). Gate 1 approved by the operator on 2026-10-31, with the assumed A3 replaced by the stated K18, and P3's missing case answered (§Constraints, §Cases). Gate 2: T1 and T2 ruled on 2026-10-31, and T4 settled after a survey (§Rulings at gate 2). Gate 3 approved on 2026-10-31 (§Decision).
 
@@ -36,6 +38,17 @@ The operator gave C1 to C3 on 2026-10-31; C4 turned up the same day. Each was tr
 | C2 | A parallel session on the same branch "had to worktree to main" to run a cleanup script. Harmless because it touched only gitignored files, "but it's not always like that". The context save at exit, "who knows what it removed and kept" | Three sessions shared the main checkout on one feature branch. The support session hand-built a sibling worktree with `git worktree add ../<repo>-x origin/main` and hand-made symlinks to `node_modules` and `.env`. It then ran the script in the shared checkout, importing tracked code, while another main fast-forwarded that checkout 13 commits. The save removed the morning session's entry, as the save skill's "replace the previous one" requires | P2 |
 | C3 | "Bad worktree usage that needed manual cleanup or workarounds" | Two worker runs needed hand steps. One integrated into a feature branch that the main checkout did not have checked out, with `git update-ref`. That bypassed `finish`, so the report, the stop, and the removal were done by hand. The other is #267: `claude rm` outlasted `finish`'s 30-second limit, and the re-run refused `finish`'s own partial delete | P1 |
 | C4 | Found on 2026-10-31, not given by the operator | A sibling repo holds a locked agent worktree from 2026-04-23. Its folder is gone, its branch never merged, and its lock stops `git worktree prune` | P1 |
+| C5 | A feature worktree used over several days | The work repo keeps each branch's context in an ignored file in the main checkout. The guard refused writes there from the worktree, through a symlink too, so context was copied back by hand after sessions | P1 |
+| C6 | Moving a branch from a worktree back to the main checkout | The guard refused `git -C` into the main checkout, for the operator's `!` commands too. A fresh session in the main checkout did it | P1 |
+| C7 | Dispatching a worker from a feature worktree | 0.6.0 refused. A worker started by hand launched without its brief path | P1 |
+| C8 | Dispatching while a `WorktreeCreate` hook is installed | The worker started at the default branch, not its baseline, at a sibling path on an unprefixed branch. `dispatch` printed success | P1 |
+| C9 | Recovering a worker under the repo's deny rules | The repo's `settings.local.json` denied `git reset --hard` inside the worker, so the operator ran it by hand | P1 |
+| C10 | A session drifting out of its worktree | It left to make a second worktree, and went back only when the operator noticed | P1 |
+| C11 | A worktree inside the repo | The linter's ignore pattern skipped `.claude/worktrees/`, so it checked nothing inside a worktree. The container build picked worktrees up | P1, P2 |
+| C12 | End of day: keep this worktree or remove it? | Nothing could answer, and nothing removed it. `claude rm` ran no `WorktreeRemove` hook | P1, P2 |
+| C13 | A support worktree for a pull-request review | It worked: a detached worktree entered with `EnterWorktree` by path, removed after `ExitWorktree keep`. A pattern to keep | P2 |
+
+C5 to C13 came from a week of daily use in the work repo, 2026-10-27 to 2026-11-04. Two read-only agents traced them through its transcripts on 2026-11-04 (#309). [`use-cases.md`](use-cases.md) puts every case on one matrix, checked against the milestone branch.
 
 C2's context-file half is the memory design's C7 and C8, which #270 to #281 answer; this design takes its checkout half. C3's first run corrects #266: `finish` was never run there, and what defeated it was the integration target, not the rebase. The correction is on #266, posted 2026-10-31 with the operator's approval.
 

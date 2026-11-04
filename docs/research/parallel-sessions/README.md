@@ -13,4 +13,4 @@ How should one operator run worktrees and parallel sessions day to day? The case
 
 ## Served
 
-The `parallel-sessions` design, planned as #282 to #291, with #266, #267, and #312.
+The `parallel-sessions` design, planned as #282 to #291, with #266, #267, and #312. Its use-case analysis, #309, added #295, #296, #303, #310, #311, and #313.
