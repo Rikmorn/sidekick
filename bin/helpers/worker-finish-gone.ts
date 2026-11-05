@@ -16,8 +16,8 @@ import {
   type Tried,
   triedLine,
 } from './worker-finish-tree.js';
+import type { WorktreeEntry } from './worker-listing.js';
 import { removeRecord } from './worker-record.js';
-import type { WorktreeEntry } from './worker-repo.js';
 import {
   DISCARD_LINE,
   failure,

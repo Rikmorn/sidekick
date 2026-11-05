@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs35 from "node:fs";
+import * as fs36 from "node:fs";
 import { realpathSync as realpathSync10 } from "node:fs";
 import * as os3 from "node:os";
-import * as path43 from "node:path";
+import * as path44 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -1340,7 +1340,6 @@ import * as path4 from "node:path";
 import * as fs3 from "node:fs";
 import * as path3 from "node:path";
 var WORKTREES_FOLDER = ".claude/worktrees";
-var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 function commitOf(runGit, top, rev) {
   const result = runGit("git", ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`], top);
   return result.code === 0 ? result.stdout.trim() : undefined;
@@ -1351,156 +1350,7 @@ function isTrackedClean(runGit, top) {
   return result.code === 0 && result.stdout.trim() === "";
 }
 var branchExists = (runGit, top, branch) => runGit("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], top).code === 0;
-function checkedOut(runGit, dir) {
-  const result = runGit("git", ["symbolic-ref", "-q", "HEAD"], dir);
-  if (result.code === 0)
-    return result.stdout.trim();
-  if (result.code === 1)
-    return "a detached HEAD";
-  return `an unreadable HEAD (${result.stderr.trim()})`;
-}
-var RENAMED = /^(?:[RC].|.[RC]) /;
-var STATUS_CODE_LENGTH = "XY".length;
-var STATUS_PREFIX = "XY ".length;
-var DELETED = " D";
-function statusEntries(stdout) {
-  const fields = stdout.split("\x00").filter((field) => field !== "");
-  const entries = [];
-  let i = 0;
-  while (i < fields.length) {
-    const entry = fields[i];
-    const code = entry.slice(0, STATUS_CODE_LENGTH);
-    const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
-    entries.push({ code, path: entry.slice(STATUS_PREFIX) });
-    if (source !== undefined)
-      entries.push({ code, path: source });
-    i += source === undefined ? 1 : 2;
-  }
-  return entries;
-}
-function statusEntriesIn(runGit, top, dir) {
-  const status = runGit("git", ["-C", dir, "status", "--porcelain", "-z", "--untracked-files=all"], top);
-  if (status.code !== 0)
-    return { issue: status.stderr.trim() };
-  return { entries: statusEntries(status.stdout) };
-}
-function worktreeListed(runGit, top, worktree) {
-  const list = listWorktrees(runGit, top);
-  if ("issue" in list)
-    return list;
-  const wanted = physical(worktree);
-  return {
-    listed: list.worktrees.some((entry) => physical(entry.path) === wanted)
-  };
-}
-function fieldOf(field) {
-  const space = field.indexOf(" ");
-  if (space === -1)
-    return { key: field, value: "" };
-  return { key: field.slice(0, space), value: field.slice(space + 1) };
-}
-function entryOf(fields) {
-  const entry = {
-    path: "",
-    head: undefined,
-    branch: undefined,
-    locked: undefined,
-    prunable: undefined
-  };
-  let named = false;
-  for (const { key, value } of fields.map(fieldOf)) {
-    if (key === "worktree") {
-      entry.path = value;
-      named = true;
-    } else if (key === "HEAD")
-      entry.head = value;
-    else if (key === "branch")
-      entry.branch = value;
-    else if (key === "locked")
-      entry.locked = value;
-    else if (key === "prunable")
-      entry.prunable = value;
-  }
-  return named ? entry : undefined;
-}
-function parseWorktrees(porcelainZ) {
-  const records = [[]];
-  for (const field of porcelainZ.split("\x00")) {
-    if (field === "")
-      records.push([]);
-    else
-      records[records.length - 1].push(field);
-  }
-  return records.flatMap((fields) => entryOf(fields) ?? []);
-}
-function listWorktrees(runGit, dir) {
-  const list = runGit("git", ["worktree", "list", "--porcelain", "-z"], dir);
-  if (list.code !== 0)
-    return { issue: list.stderr.trim() };
-  const worktrees = parseWorktrees(list.stdout);
-  if (worktrees.length === 0) {
-    return { issue: "git worktree list printed no worktrees" };
-  }
-  return { worktrees };
-}
-function lockReasonOf(runGit, top, worktree) {
-  const list = listWorktrees(runGit, top);
-  if ("issue" in list)
-    return;
-  const wanted = physical(worktree);
-  const entry = list.worktrees.find((w) => physical(w.path) === wanted);
-  return entry === undefined ? undefined : entry.locked;
-}
-function checkoutFacts(runGit, cwd) {
-  const result = runGit("git", [
-    "rev-parse",
-    "--path-format=absolute",
-    "--show-toplevel",
-    "--git-common-dir"
-  ], cwd);
-  if (result.code !== 0) {
-    return {
-      issues: [
-        "not inside a git work tree: run sidekick worker from a checkout of the repo"
-      ]
-    };
-  }
-  const [launchTop, commonDir] = result.stdout.replace(/\n$/, "").split(`
-`);
-  if (launchTop === undefined || commonDir === undefined) {
-    return {
-      issues: [`git rev-parse printed an unexpected answer: ${result.stdout}`]
-    };
-  }
-  const listing = listWorktrees(runGit, cwd);
-  if ("issue" in listing)
-    return { issues: [listing.issue] };
-  const held = heldBranch(runGit, cwd);
-  if ("issue" in held)
-    return { issues: [held.issue] };
-  return {
-    launchTop,
-    mainTop: listing.worktrees[0].path,
-    commonDir,
-    branch: held.branch,
-    worktrees: listing.worktrees
-  };
-}
 var HEADS = "refs/heads/";
-function heldBranch(runGit, cwd) {
-  const result = runGit("git", ["symbolic-ref", "-q", "HEAD"], cwd);
-  if (result.code === 1)
-    return { branch: undefined };
-  if (result.code !== 0) {
-    const why = result.stderr.trim();
-    const lead = `git symbolic-ref HEAD failed with exit code ${result.code}`;
-    return { issue: why === "" ? lead : `${lead}: ${why}` };
-  }
-  const ref = result.stdout.trim();
-  return {
-    branch: ref.startsWith(HEADS) ? ref.slice(HEADS.length) : undefined
-  };
-}
 function checkoutOf(runGit, folder) {
   const result = runGit("git", ["rev-parse", "--path-format=absolute", "--show-toplevel"], folder);
   if (result.code !== 0)
@@ -1531,52 +1381,6 @@ function remotesWithPushUrl(runGit, top) {
   const names = result.stdout.split(`
 `).map((line) => PUSH_URL_KEY.exec(line.split(" ")[0])?.[1]).filter((name) => name !== undefined);
   return [...new Set(names)];
-}
-var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
-var reason2 = (e) => e instanceof Error ? e.message : String(e);
-var isMissing2 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
-function readExclude(file) {
-  try {
-    return { text: fs3.readFileSync(file, "utf-8") };
-  } catch (e) {
-    if (isMissing2(e))
-      return { text: "" };
-    return {
-      issues: [
-        `cannot read ${file}, where dispatch adds ${EXCLUDE_ENTRY}: ${reason2(e)}. Fix the file, then run dispatch again`
-      ]
-    };
-  }
-}
-function appendExclude(file, text) {
-  const separator = text === "" || text.endsWith(`
-`) ? "" : `
-`;
-  try {
-    fs3.mkdirSync(path3.dirname(file), { recursive: true });
-    fs3.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
-`);
-    return [];
-  } catch (e) {
-    return [
-      `cannot add ${EXCLUDE_ENTRY} to ${file}: ${reason2(e)}. Fix the file, then run dispatch again`
-    ];
-  }
-}
-function ensureWorktreesExcluded(runGit, top, commonDir) {
-  if (isIgnored(runGit, top))
-    return { line: undefined };
-  const file = path3.join(commonDir, "info", "exclude");
-  const read = readExclude(file);
-  if ("issues" in read)
-    return read;
-  if (read.text.split(/\r?\n/).includes(EXCLUDE_ENTRY)) {
-    return { line: undefined };
-  }
-  const issues = appendExclude(file, read.text);
-  if (issues.length > 0)
-    return { issues };
-  return { line: `added ${EXCLUDE_ENTRY} to ${file}` };
 }
 
 // bin/helpers/worker-brief.ts
@@ -1693,6 +1497,108 @@ function briefFileIssues(brief, bounds) {
     issues.push(...checkoutIssue(runGit, field, file, allowed));
   }
   return issues;
+}
+
+// bin/helpers/worker-listing.ts
+function checkedOut(runGit, dir) {
+  const result = runGit("git", ["symbolic-ref", "-q", "HEAD"], dir);
+  if (result.code === 0)
+    return result.stdout.trim();
+  if (result.code === 1)
+    return "a detached HEAD";
+  return `an unreadable HEAD (${result.stderr.trim()})`;
+}
+var RENAMED = /^(?:[RC].|.[RC]) /;
+var STATUS_CODE_LENGTH = "XY".length;
+var STATUS_PREFIX = "XY ".length;
+var DELETED = " D";
+function statusEntries(stdout) {
+  const fields = stdout.split("\x00").filter((field) => field !== "");
+  const entries = [];
+  let i = 0;
+  while (i < fields.length) {
+    const entry = fields[i];
+    const code = entry.slice(0, STATUS_CODE_LENGTH);
+    const source = RENAMED.test(entry) ? fields.at(i + 1) : undefined;
+    entries.push({ code, path: entry.slice(STATUS_PREFIX) });
+    if (source !== undefined)
+      entries.push({ code, path: source });
+    i += source === undefined ? 1 : 2;
+  }
+  return entries;
+}
+function statusEntriesIn(runGit, top, dir) {
+  const status = runGit("git", ["-C", dir, "status", "--porcelain", "-z", "--untracked-files=all"], top);
+  if (status.code !== 0)
+    return { issue: status.stderr.trim() };
+  return { entries: statusEntries(status.stdout) };
+}
+function worktreeListed(runGit, top, worktree) {
+  const list = listWorktrees(runGit, top);
+  if ("issue" in list)
+    return list;
+  const wanted = physical(worktree);
+  return {
+    listed: list.worktrees.some((entry) => physical(entry.path) === wanted)
+  };
+}
+function fieldOf(field) {
+  const space = field.indexOf(" ");
+  if (space === -1)
+    return { key: field, value: "" };
+  return { key: field.slice(0, space), value: field.slice(space + 1) };
+}
+function entryOf(fields) {
+  const entry = {
+    path: "",
+    head: undefined,
+    branch: undefined,
+    locked: undefined,
+    prunable: undefined
+  };
+  let named = false;
+  for (const { key, value } of fields.map(fieldOf)) {
+    if (key === "worktree") {
+      entry.path = value;
+      named = true;
+    } else if (key === "HEAD")
+      entry.head = value;
+    else if (key === "branch")
+      entry.branch = value;
+    else if (key === "locked")
+      entry.locked = value;
+    else if (key === "prunable")
+      entry.prunable = value;
+  }
+  return named ? entry : undefined;
+}
+function parseWorktrees(porcelainZ) {
+  const records = [[]];
+  for (const field of porcelainZ.split("\x00")) {
+    if (field === "")
+      records.push([]);
+    else
+      records[records.length - 1].push(field);
+  }
+  return records.flatMap((fields) => entryOf(fields) ?? []);
+}
+function listWorktrees(runGit, dir) {
+  const list = runGit("git", ["worktree", "list", "--porcelain", "-z"], dir);
+  if (list.code !== 0)
+    return { issue: list.stderr.trim() };
+  const worktrees = parseWorktrees(list.stdout);
+  if (worktrees.length === 0) {
+    return { issue: "git worktree list printed no worktrees" };
+  }
+  return { worktrees };
+}
+function lockReasonOf(runGit, top, worktree) {
+  const list = listWorktrees(runGit, top);
+  if ("issue" in list)
+    return;
+  const wanted = physical(worktree);
+  const entry = list.worktrees.find((w) => physical(w.path) === wanted);
+  return entry === undefined ? undefined : entry.locked;
 }
 
 // bin/helpers/worker-worktree.ts
@@ -1945,7 +1851,7 @@ function gitFacts(runGit, repo, name, found, base) {
   };
 }
 var H1 = /^# (.+)$/m;
-var reason3 = (e) => e instanceof Error ? e.message : String(e);
+var reason2 = (e) => e instanceof Error ? e.message : String(e);
 function planTitle(name, read) {
   const noTitle = (why) => ({
     warnings: [`${name}: no plan title: ${why}`]
@@ -1957,7 +1863,7 @@ function planTitle(name, read) {
     const title = H1.exec(fs5.readFileSync(plan, "utf-8"))?.[1].trim();
     return title === undefined ? { warnings: [] } : { plan: title, warnings: [] };
   } catch (e) {
-    return noTitle(`cannot read ${plan}: ${reason3(e)}`);
+    return noTitle(`cannot read ${plan}: ${reason2(e)}`);
   }
 }
 function childFacts(sources, record2, row) {
@@ -1985,8 +1891,8 @@ function childFacts(sources, record2, row) {
 // bin/helpers/desk-jobs.ts
 import * as fs6 from "node:fs";
 import * as path7 from "node:path";
-var reason4 = (e) => e instanceof Error ? e.message : String(e);
-var isMissing3 = (e) => e instanceof Error && ("code" in e) && (e.code === "ENOENT" || e.code === "ENOTDIR");
+var reason3 = (e) => e instanceof Error ? e.message : String(e);
+var isMissing2 = (e) => e instanceof Error && ("code" in e) && (e.code === "ENOENT" || e.code === "ENOTDIR");
 var isFolderName = (id) => id !== "" && id !== "." && id !== ".." && path7.basename(id) === id;
 function parseJson(text) {
   try {
@@ -2018,7 +1924,7 @@ function readOne(file, who, blocked) {
     try {
       return fs6.readFileSync(file, "utf8");
     } catch (e) {
-      return isMissing3(e) ? undefined : { failed: `${who}: its job state was not read: ${reason4(e)}` };
+      return isMissing2(e) ? undefined : { failed: `${who}: its job state was not read: ${reason3(e)}` };
     }
   })();
   if (text === undefined)
@@ -2170,14 +2076,14 @@ var RANK_WORKING = 1;
 var RANK_REST = 2;
 function joinChild(record2, row, facts, fresh, known, repoNames) {
   const classified = row ? classify(row, fresh) : { class: "neither" };
-  const { reason: reason5 } = classified;
+  const { reason: reason4 } = classified;
   const isWorking = row !== undefined && isCurrent(row) && (row.state === "working" || row.status === "busy");
   const session = sessionOf(row, known);
   const child = {
     ...session,
     name: record2.name,
     state: row ? row.state ?? row.status ?? "unknown" : "gone",
-    ...reason5 === undefined ? {} : { reason: reason5 },
+    ...reason4 === undefined ? {} : { reason: reason4 },
     ...facts?.tokens === undefined ? {} : { tokens: facts.tokens },
     ...facts?.plan === undefined ? {} : { plan: facts.plan },
     ...facts?.lastCommit === undefined ? {} : { lastCommit: facts.lastCommit },
@@ -2189,7 +2095,7 @@ function joinChild(record2, row, facts, fresh, known, repoNames) {
       ...session,
       name: record2.name,
       repo: repoNameOf(repoNames, row?.cwd),
-      reason: reason5 ?? "waiting",
+      reason: reason4 ?? "waiting",
       child: true
     };
     return { child, row, rank: RANK_WAITING, waiting };
@@ -2222,14 +2128,14 @@ function joinChildren(own, input, known) {
   return orderChildren(own.map(({ record: record2, row }) => joinChild(record2, row, input.facts.get(record2.name), input.freshInteractive, known, input.repoNames)));
 }
 function otherOf(row, classified, known, repoNames) {
-  const reason5 = classified.reason ?? row.waitingFor;
+  const reason4 = classified.reason ?? row.waitingFor;
   return {
     ...sessionOf(row, known),
     name: displayName(row),
     repo: repoNameOf(repoNames, row.cwd),
     kind: row.kind ?? "unknown",
     state: row.state ?? row.status ?? "unknown",
-    ...reason5 === undefined ? {} : { reason: reason5 }
+    ...reason4 === undefined ? {} : { reason: reason4 }
   };
 }
 function askedRows(input) {
@@ -2811,9 +2717,9 @@ function locate(description) {
     prose: lines.slice(close + 1)
   };
 }
-var malformed = (reason5) => ({
+var malformed = (reason4) => ({
   parse: "malformed",
-  reason: oneLine(reason5)
+  reason: oneLine(reason4)
 });
 function duplicate(plans) {
   const names = plans.map((p) => p.name);
@@ -2851,8 +2757,8 @@ function parsePlansHeader(description) {
   }
   if (plans.length === 0)
     return malformed("the plans header lists no plans");
-  const reason5 = duplicate(plans);
-  return reason5 === null ? { parse: "ok", plans } : malformed(reason5);
+  const reason4 = duplicate(plans);
+  return reason4 === null ? { parse: "ok", plans } : malformed(reason4);
 }
 function descriptionProse(description) {
   const found = locate(description);
@@ -3752,13 +3658,13 @@ function parseManifest(raw) {
     issues: result.issues.map((i) => `${getDotPath(i) ?? "(root)"}: ${i.message}`)
   };
 }
-var isMissing4 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
+var isMissing3 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
 function readManifest(file) {
   let text;
   try {
     text = fs12.readFileSync(file, "utf8");
   } catch (err) {
-    const why = isMissing4(err) ? "missing" : err instanceof Error ? err.message : String(err);
+    const why = isMissing3(err) ? "missing" : err instanceof Error ? err.message : String(err);
     return { ok: false, issues: [`${file}: ${why}`] };
   }
   let raw;
@@ -4462,7 +4368,7 @@ function jobIdFrom(stdout, name) {
     return null;
   return /^backgrounded (\S+)$/.exec(lines[0])?.[1] ?? null;
 }
-var reason5 = (e) => e instanceof Error ? e.message : String(e);
+var reason4 = (e) => e instanceof Error ? e.message : String(e);
 function writeRecord(commonDir, record2) {
   if (!isWorkerName(record2.name)) {
     return { issue: `worker record not written: bad name "${record2.name}"` };
@@ -4474,7 +4380,7 @@ function writeRecord(commonDir, record2) {
 `);
     return { ok: true };
   } catch (e) {
-    return { issue: `worker record ${file} not written: ${reason5(e)}` };
+    return { issue: `worker record ${file} not written: ${reason4(e)}` };
   }
 }
 function parseRecord(file) {
@@ -4489,7 +4395,7 @@ function parseRecord(file) {
     }
     return parsed.output;
   } catch (e) {
-    return `${file} cannot be read as a worker record: ${reason5(e)}`;
+    return `${file} cannot be read as a worker record: ${reason4(e)}`;
   }
 }
 function readRecords(commonDir) {
@@ -4503,7 +4409,7 @@ function readRecords(commonDir) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { records, warnings };
     }
-    return { records, warnings: [`${dir} cannot be listed: ${reason5(e)}`] };
+    return { records, warnings: [`${dir} cannot be listed: ${reason4(e)}`] };
   }
   for (const f of files) {
     const read = parseRecord(path15.join(dir, f));
@@ -4562,14 +4468,14 @@ function readListing(run, cwd, timeoutMs = 5000) {
   }
   return parseListingRows(json.value);
 }
-var reason6 = (e) => e instanceof Error ? e.message : String(e);
+var reason5 = (e) => e instanceof Error ? e.message : String(e);
 function pruneRecords(commonDir, names) {
   return names.flatMap((name) => {
     try {
       removeRecord(commonDir, name);
       return [];
     } catch (e) {
-      return [`${name}: its stale record was not deleted: ${reason6(e)}`];
+      return [`${name}: its stale record was not deleted: ${reason5(e)}`];
     }
   });
 }
@@ -8451,9 +8357,9 @@ function discover(run, cwd) {
     throw new PmError(2, "gh not found on PATH");
   const root = repoRootOf(cwd);
   const preflight = preflightOf(gh.version);
-  const untracked = (reason7, fields = {}) => ({
+  const untracked = (reason6, fields = {}) => ({
     tracked: false,
-    reason: reason7,
+    reason: reason6,
     owner: fields.owner ?? null,
     repo: fields.repo ?? null,
     project: null,
@@ -8825,8 +8731,110 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 }
 
 // bin/helpers/worker-dispatch.ts
+import * as fs32 from "node:fs";
+import * as path39 from "node:path";
+
+// bin/helpers/worker-exclude.ts
 import * as fs31 from "node:fs";
 import * as path38 from "node:path";
+var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
+var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
+var reason6 = (e) => e instanceof Error ? e.message : String(e);
+var isMissing4 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+function readExclude(file) {
+  try {
+    return { text: fs31.readFileSync(file, "utf-8") };
+  } catch (e) {
+    if (isMissing4(e))
+      return { text: "" };
+    return {
+      issues: [
+        `cannot read ${file}, where dispatch adds ${EXCLUDE_ENTRY}: ${reason6(e)}. Fix the file, then run dispatch again`
+      ]
+    };
+  }
+}
+function appendExclude(file, text) {
+  const separator = text === "" || text.endsWith(`
+`) ? "" : `
+`;
+  try {
+    fs31.mkdirSync(path38.dirname(file), { recursive: true });
+    fs31.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+`);
+    return [];
+  } catch (e) {
+    return [
+      `cannot add ${EXCLUDE_ENTRY} to ${file}: ${reason6(e)}. Fix the file, then run dispatch again`
+    ];
+  }
+}
+function ensureWorktreesExcluded(runGit, top, commonDir) {
+  if (isIgnored(runGit, top))
+    return { line: undefined };
+  const file = path38.join(commonDir, "info", "exclude");
+  const read = readExclude(file);
+  if ("issues" in read)
+    return read;
+  if (read.text.split(/\r?\n/).includes(EXCLUDE_ENTRY)) {
+    return { line: undefined };
+  }
+  const issues = appendExclude(file, read.text);
+  if (issues.length > 0)
+    return { issues };
+  return { line: `added ${EXCLUDE_ENTRY} to ${file}` };
+}
+
+// bin/helpers/worker-facts.ts
+function checkoutFacts(runGit, cwd) {
+  const result = runGit("git", [
+    "rev-parse",
+    "--path-format=absolute",
+    "--show-toplevel",
+    "--git-common-dir"
+  ], cwd);
+  if (result.code !== 0) {
+    return {
+      issues: [
+        "not inside a git work tree: run sidekick worker from a checkout of the repo"
+      ]
+    };
+  }
+  const [launchTop, commonDir] = result.stdout.replace(/\n$/, "").split(`
+`);
+  if (launchTop === undefined || commonDir === undefined) {
+    return {
+      issues: [`git rev-parse printed an unexpected answer: ${result.stdout}`]
+    };
+  }
+  const listing = listWorktrees(runGit, cwd);
+  if ("issue" in listing)
+    return { issues: [listing.issue] };
+  const held = heldBranch(runGit, cwd);
+  if ("issue" in held)
+    return { issues: [held.issue] };
+  return {
+    launchTop,
+    mainTop: listing.worktrees[0].path,
+    commonDir,
+    branch: held.branch,
+    worktrees: listing.worktrees
+  };
+}
+function heldBranch(runGit, cwd) {
+  const result = runGit("git", ["symbolic-ref", "-q", "HEAD"], cwd);
+  if (result.code === 1)
+    return { branch: undefined };
+  if (result.code !== 0) {
+    const why = result.stderr.trim();
+    const lead = `git symbolic-ref HEAD failed with exit code ${result.code}`;
+    return { issue: why === "" ? lead : `${lead}: ${why}` };
+  }
+  const ref2 = result.stdout.trim();
+  return {
+    branch: ref2.startsWith(HEADS) ? ref2.slice(HEADS.length) : undefined
+  };
+}
 
 // bin/helpers/worker-overlay.ts
 var markers = (opts) => ({
@@ -8911,16 +8919,16 @@ function parseDispatchArgs(rest2, cwd) {
   if (pluginDir === "")
     return;
   return {
-    brief: path38.resolve(cwd, parsed.positionals[0]),
+    brief: path39.resolve(cwd, parsed.positionals[0]),
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path38.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path39.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
 }
 var isFolder = (dir) => {
   try {
-    return fs31.statSync(dir).isDirectory();
+    return fs32.statSync(dir).isDirectory();
   } catch {
     return false;
   }
@@ -8951,10 +8959,10 @@ var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
   "tracked files have uncommitted changes, which the worker's worktree would not carry: commit them first"
 ];
 function treeNameIssues(runGit, top, name) {
-  const folder = path38.join(top, WORKTREES_FOLDER, name);
+  const folder = path39.join(top, WORKTREES_FOLDER, name);
   const branch = nativeBranch(name);
   return [
-    ...fs31.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...fs32.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [`name: the branch ${branch} already exists`] : []
   ];
 }
@@ -9003,7 +9011,7 @@ function bypassIssues(profile, mode) {
 }
 function missingProfileHint(name, penv) {
   const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder(path38.join(root.dir, name)));
+  const held = roots.some((root) => isFolder(path39.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv, main, reads) {
@@ -9153,7 +9161,7 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-finish-args.ts
-import * as path39 from "node:path";
+import * as path40 from "node:path";
 var NEEDS_REPORT = "--name needs --no-report or --discard, since there is no brief to say where the run report goes";
 var NEEDS_INTO = "--name needs --into <rev> or --discard, since there is no brief to name the target";
 var stringFlag2 = (values, key) => {
@@ -9179,7 +9187,7 @@ function parseFinishArgs(rest2, cwd) {
   const shared = {
     noReport: values["no-report"] === true,
     mode: discard ? { kind: "discard" } : { kind: "landed", into },
-    worktree: worktree === undefined ? undefined : path39.resolve(cwd, worktree)
+    worktree: worktree === undefined ? undefined : path40.resolve(cwd, worktree)
   };
   const name = stringFlag2(values, "name");
   if (name !== undefined) {
@@ -9187,7 +9195,7 @@ function parseFinishArgs(rest2, cwd) {
   }
   if (positionals.length !== 1)
     return;
-  const brief = path39.resolve(cwd, positionals[0]);
+  const brief = path40.resolve(cwd, positionals[0]);
   return { subject: { kind: "brief", brief }, ...shared };
 }
 function byName3(name, shared) {
@@ -9249,8 +9257,8 @@ var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
-import * as fs32 from "node:fs";
-import * as path40 from "node:path";
+import * as fs33 from "node:fs";
+import * as path41 from "node:path";
 
 // bin/helpers/worker-landed.ts
 var DEFAULT_CAP = 200;
@@ -9708,15 +9716,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report2 = path40.posix.normalize(read.brief.report);
+  const report2 = path41.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: read.brief.target,
     report: report2,
-    reportFrom: path40.join(worktree, report2),
-    reportTo: top === undefined ? undefined : path40.join(top, report2)
+    reportFrom: path41.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path41.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -9761,7 +9769,7 @@ function operatorIssues(name, tried, linked) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs32.existsSync(worktree) && !fs32.existsSync(path40.join(worktree, ".git"));
+  const linkless = fs33.existsSync(worktree) && !fs33.existsSync(path41.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -9913,12 +9921,12 @@ function clearGone(gone, wenv, out) {
 }
 
 // bin/helpers/worker-finish-report.ts
-import * as fs33 from "node:fs";
-import * as path41 from "node:path";
+import * as fs34 from "node:fs";
+import * as path42 from "node:path";
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs33.readFileSync(file) };
+    return { data: fs34.readFileSync(file) };
   } catch (e) {
     if (isMissing5(e))
       return { data: undefined };
@@ -9971,8 +9979,8 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs33.mkdirSync(path41.dirname(to), { recursive: true });
-    fs33.copyFileSync(from, to, fs33.constants.COPYFILE_EXCL);
+    fs34.mkdirSync(path42.dirname(to), { recursive: true });
+    fs34.copyFileSync(from, to, fs34.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${to}: ${why}`];
@@ -10034,8 +10042,8 @@ function copyChangedIssues(from, to, now) {
 }
 
 // bin/helpers/worker-finish-subject.ts
-import * as fs34 from "node:fs";
-import * as path42 from "node:path";
+import * as fs35 from "node:fs";
+import * as path43 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -10046,7 +10054,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path42.dirname(subject.brief);
+      const folder = path43.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -10064,8 +10072,8 @@ function recordedTop(runGit, commonDir, name) {
   const record2 = records.find((r) => r.name === name);
   if (record2 === undefined)
     return;
-  const folder = path42.dirname(record2.brief);
-  return fs34.existsSync(folder) ? topOf(runGit, folder) : undefined;
+  const folder = path43.dirname(record2.brief);
+  return fs35.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
   const { read } = subject;
@@ -10343,22 +10351,22 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path43.dirname(fileURLToPath(entryFileUrl));
+  const here = path44.dirname(fileURLToPath(entryFileUrl));
   const candidates3 = [
-    path43.resolve(here, ".."),
-    path43.resolve(here, "..", "plugin")
+    path44.resolve(here, ".."),
+    path44.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs35.existsSync(path43.join(c, "rules")))
+    if (fs36.existsSync(path44.join(c, "rules")))
       return c;
   }
   return candidates3[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path43.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path44.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs35.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs36.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -10386,7 +10394,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs35.writeSync(1, buffer, offset);
+      offset += fs36.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -10404,7 +10412,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs35.readFileSync(0, "utf-8");
+    return fs36.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -10462,7 +10470,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path43.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path44.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

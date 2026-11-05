@@ -20,6 +20,7 @@
 import { configDirOf } from './main-session.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
+import { checkoutFacts } from './worker-facts.js';
 import {
   discardCommandFor,
   type FinishOptions,
@@ -51,7 +52,7 @@ import {
   worktreeCheck,
 } from './worker-finish-tree.js';
 import { LISTING, listJobs } from './worker-jobs.js';
-import { checkoutFacts, commitOf } from './worker-repo.js';
+import { commitOf } from './worker-repo.js';
 import {
   forgetRecord,
   keepBackup,

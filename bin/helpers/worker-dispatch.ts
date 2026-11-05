@@ -23,15 +23,14 @@ import { type Profile, storeRoots } from './profile-store.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
 import { type Brief, briefFileIssues, readBrief } from './worker-brief.js';
+import { ensureWorktreesExcluded } from './worker-exclude.js';
+import { type CheckoutFacts, checkoutFacts } from './worker-facts.js';
 import { listJobs } from './worker-jobs.js';
 import { workerOverlay } from './worker-overlay.js';
 import { jobIdFrom, writeRecord } from './worker-record.js';
 import {
   branchExists,
-  type CheckoutFacts,
-  checkoutFacts,
   commitOf,
-  ensureWorktreesExcluded,
   headCommit,
   isTrackedClean,
   remotesWithPushUrl,

@@ -13,15 +13,14 @@ import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
 import type { ReportStep } from './worker-finish-report.js';
-import { removeRecord } from './worker-record.js';
 import {
-  branchExists,
-  commitOf,
   DELETED,
   lockReasonOf,
   statusEntriesIn,
   worktreeListed,
-} from './worker-repo.js';
+} from './worker-listing.js';
+import { removeRecord } from './worker-record.js';
+import { branchExists, commitOf } from './worker-repo.js';
 
 export type Out = (line: string) => void;
 

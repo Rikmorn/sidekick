@@ -15,12 +15,8 @@ import {
   transcriptFinder,
 } from './desk-transcripts.js';
 import type { Runner } from './pm-data.js';
-import {
-  HEADS,
-  listWorktrees,
-  physical,
-  type WorktreeEntry,
-} from './worker-repo.js';
+import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
+import { HEADS, physical } from './worker-repo.js';
 
 /** A place the worker's worktree may be, as a physical path. */
 export type Candidate =

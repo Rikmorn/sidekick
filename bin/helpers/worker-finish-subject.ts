@@ -9,10 +9,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 import { readBrief } from './worker-brief.js';
+import type { CheckoutFacts } from './worker-facts.js';
 import type { FinishSubject } from './worker-finish-args.js';
 import type { BriefRead } from './worker-finish-tree.js';
 import { readRecords } from './worker-record.js';
-import { type CheckoutFacts, checkoutOf, physical } from './worker-repo.js';
+import { checkoutOf, physical } from './worker-repo.js';
 import type { Launcher } from './worker-worktree.js';
 
 /** The worker's name, where it came from, and its brief as read, which is undefined under `--name`. */

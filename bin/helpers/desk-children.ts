@@ -15,14 +15,9 @@ import {
 } from './desk-transcripts.js';
 import type { Runner } from './pm-data.js';
 import { readBrief } from './worker-brief.js';
+import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
 import type { WorkerRecord } from './worker-record.js';
-import {
-  checkoutOf,
-  headCommit,
-  listWorktrees,
-  physical,
-  type WorktreeEntry,
-} from './worker-repo.js';
+import { checkoutOf, headCommit, physical } from './worker-repo.js';
 import {
   type Candidate,
   candidatesFrom,

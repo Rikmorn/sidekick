@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
-import type { WorktreeEntry } from './worker-repo.js';
+import type { WorktreeEntry } from './worker-listing.js';
 import {
   type Candidate,
   candidatesFrom,

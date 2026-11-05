@@ -36,12 +36,12 @@ import {
   printedStreams,
 } from './profile-launch.js';
 import { LISTING, LISTING_ARGS } from './worker-jobs.js';
+import { listWorktrees } from './worker-listing.js';
 import {
   readRecords,
   removeRecord,
   type WorkerRecord,
 } from './worker-record.js';
-import { listWorktrees } from './worker-repo.js';
 
 export const DESK_USAGE_LINE = 'sidekick desk --json [--self <session id>]';
 

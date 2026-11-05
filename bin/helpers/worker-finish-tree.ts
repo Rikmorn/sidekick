@@ -24,13 +24,13 @@ import {
 } from './worker-finish-target.js';
 import {
   checkedOut,
-  commitOf,
   DELETED,
   type StatusEntry,
   statusEntriesIn,
   type WorktreeEntry,
   worktreeListed,
-} from './worker-repo.js';
+} from './worker-listing.js';
+import { commitOf } from './worker-repo.js';
 import { heldBackup, type Ready } from './worker-teardown.js';
 import {
   type Found,
