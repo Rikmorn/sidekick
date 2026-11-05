@@ -63,7 +63,7 @@ A skipped folder is unguarded: the check never looks inside it, so a new file th
 
 ### What it refuses
 
-Each refusal names what it found and changes nothing. The checks run in this order:
+Each refusal names what it found and deletes nothing. The checks run in this order. The last row's check runs after the backup ref is written, as "The steps" says.
 
 | Refusal | Why |
 |---|---|
@@ -76,7 +76,9 @@ Each refusal names what it found and changes nothing. The checks run in this ord
 | `held` | A live session is in it, a lock names no pid, or a check failed. The refusal names which. |
 | `a worker's` | `sidekick worker finish` clears a worker, with its session and record. |
 | `dirty` | Removal would lose the files it names. It also names the skip list's path, for an ignored folder that is safe to lose. |
+| A `HEAD` that git cannot resolve to a commit | No backup ref could keep it. |
 | `only here` or `commits unknown`, without `--discard` | The backup ref would be the only place the commits remain. The refusal counts them. |
+| A `HEAD` that moved since the checks | A new commit is in no backup ref, and a detached one would go with the worktree. The refusal names both heads. Run `remove` again. |
 
 `--discard` is the operator's word that commits found nowhere else may go. Landed or pushed work needs none. With it, the backup ref's kind is `discarded`.
 
@@ -85,9 +87,10 @@ Each refusal names what it found and changes nothing. The checks run in this ord
 Once the checks pass, `remove` runs these in order, and the first that fails stops the rest:
 
 1. It writes the backup ref `refs/sidekick/<kind>/<name>/<head>`, create-only, before it deletes anything. The kind is `landed`, `pushed`, or `discarded`, from where the commits live. A ref already holding the head counts as written, so a re-run passes.
-2. It reads the session rows, the worker records, and the lock again. Anything that now holds the worktree refuses, and the backup ref stays.
+2. It reads the session rows, the worker records, the lock, and the `HEAD` again. Anything that now holds the worktree refuses, as does a moved `HEAD`, and the backup ref stays.
 3. An exited background session whose `cwd` is inside the worktree goes first, by `claude rm <id>` with no time limit. When `claude rm` does not say `removed`, its text prints as a note, and git's removal follows.
-4. If git still lists the worktree, `remove` reads its lock once more. It unlocks a lock whose pid is dead, then runs `git worktree remove <path>`. A `folder gone` worktree goes the same way.
+   When another linked worktree holds this one, `remove` skips `claude rm`, since the session may belong to the enclosing worktree, which nothing checked. A note names the session, which stays listed in `claude agents`.
+4. If git still lists the worktree, `remove` reads its lock and its `HEAD` once more. It unlocks a lock whose pid is dead, then runs `git worktree remove <path>`. A `folder gone` worktree goes the same way.
 5. It deletes the branch with `git update-ref -d` at the verified head, which refuses a branch that moved. Then it removes the branch's `branch.<name>` config section. A detached worktree has no branch to delete.
 
 It prints `worktree <path> removed`, then `branch <branch> removed`, and last the way back:
@@ -100,4 +103,4 @@ For a detached worktree, the restore line names the worktree's name as the branc
 
 ### It never forces
 
-`remove` never runs `git worktree remove --force`, `git worktree prune`, or `git clean`. So git itself refuses a worktree with tracked or untracked changes, even changes made after the checks ran. When git refuses, fix what it names, then run `remove` again. The backup ref already written counts, so the re-run goes on.
+`remove` never runs `git worktree remove --force`, `git worktree prune`, or `git clean`. So git itself refuses a worktree with tracked or untracked changes, including changes made after the checks ran. An ignored file written after the checks is unguarded: git deletes it without a word. When git refuses, fix what it names, then run `remove` again. The backup ref already written counts, so the re-run goes on.

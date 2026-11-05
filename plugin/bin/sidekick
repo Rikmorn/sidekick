@@ -11092,6 +11092,13 @@ function checkTarget(args, env, repo, out) {
     return refuse6(...kept);
   return backupPlan(env, repo, row2, args.discard);
 }
+function movedLines(entry, head) {
+  if (entry.head === head)
+    return [];
+  return [
+    `the HEAD of ${entry.path} moved from ${head} to ${entry.head ?? "no commit"} since the checks, so remove deleted nothing: run remove again`
+  ];
+}
 function recheck(env, repo, checked2) {
   const { src, listing, recordWarnings } = readSources(env, repo);
   if ("error" in listing) {
@@ -11108,6 +11115,9 @@ function recheck(env, repo, checked2) {
   if (entry === undefined) {
     return refuse6(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
   }
+  const moved = movedLines(entry, checked2.head);
+  if (moved.length > 0)
+    return refuse6(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
   const state = cheapState({ ...src, repo: alone(repo, entry) }, entry, lock);
   const skipList = skipListPath(repo.commonDir);
@@ -11131,13 +11141,30 @@ function removeSessions(env, top, ids, out) {
       out(line);
   }
 }
-function removeListed(env, top, worktree) {
+function enclosingWorktree(repo, worktree) {
+  return repo.worktrees.slice(1).find((other) => !samePath(other.path, worktree) && insideOf(worktree, other.path));
+}
+function endSessions(env, repo, worktree, rows, out) {
+  const ids = exitedSessions(rows, worktree);
+  const enclosing2 = enclosingWorktree(repo, worktree);
+  if (enclosing2 === undefined) {
+    removeSessions(env, repo.top, ids, out);
+    return;
+  }
+  for (const id of ids) {
+    out(`claude rm ${id} skipped: ${worktree} sits inside the worktree ${enclosing2.path}, which claude rm might remove too, so session ${id} stays listed in claude agents`);
+  }
+}
+function removeListed(env, top, checked2) {
   const now = listWorktrees(env.runGit, top);
   if ("issue" in now)
     return [`git worktree list failed: ${now.issue}`];
-  const entry = now.worktrees.find((e) => samePath(e.path, worktree));
+  const entry = now.worktrees.find((e) => samePath(e.path, checked2.entry.path));
   if (entry === undefined)
     return [];
+  const moved = movedLines(entry, checked2.head);
+  if (moved.length > 0)
+    return moved;
   const lock = lockStateOf(entry.locked, env.isAlive);
   const issues = removeGitWorktree(env.runGit, top, entry.path, lock);
   if (issues.length === 0)
@@ -11149,8 +11176,8 @@ function removeChecked(env, repo, checked2, out) {
   if ("refused" in rows)
     return rows.refused;
   const { entry, branch, head } = checked2;
-  removeSessions(env, repo.top, exitedSessions(rows, entry.path), out);
-  const worktree = removeListed(env, repo.top, entry.path);
+  endSessions(env, repo, entry.path, rows, out);
+  const worktree = removeListed(env, repo.top, checked2);
   if (worktree.length > 0)
     return worktree;
   out(`worktree ${entry.path} removed`);

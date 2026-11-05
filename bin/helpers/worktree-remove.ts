@@ -78,7 +78,7 @@ const alone = (repo: Repo, entry: WorktreeEntry): Repo => ({
   worktrees: [repo.worktrees[0], entry],
 });
 
-// Step 1: the one entry the argument names, by its last segment or its path.
+// The one entry the argument names, by its last segment or its path.
 function resolveTarget(
   repo: Repo,
   cwd: string,
@@ -114,7 +114,7 @@ function resolveTarget(
   return entry;
 }
 
-// Step 2: removing a folder deletes every worktree under it.
+// Removing a folder deletes every worktree under it.
 function nestedLines(repo: Repo, entry: WorktreeEntry): string[] {
   const nested = repo.worktrees.filter(
     (other) => other !== entry && insideOf(other.path, entry.path),
@@ -126,7 +126,7 @@ function nestedLines(repo: Repo, entry: WorktreeEntry): string[] {
   ];
 }
 
-// Steps 3 and 6: the states that keep a worktree; none for the rest.
+// The states that keep a worktree, at the checks and at the re-check; none for the rest.
 function stateLines(
   state: WorktreeState,
   entry: WorktreeEntry,
@@ -161,7 +161,7 @@ const commitCount = (count: number): string =>
 
 const DISCARD_WAY = `run remove again with ${DISCARD} to remove it anyway, keeping them in a backup ref only`;
 
-// Step 4: the backup ref's kind; commits held nowhere else need --discard.
+// The backup ref's kind; commits held nowhere else need --discard.
 function backupKind(
   commits: CommitsAt,
   discard: boolean,
@@ -191,7 +191,7 @@ function backupKind(
   }
 }
 
-// Steps 4 and 5's input: the verified head and the ref that will keep it.
+// The verified head and the ref that will keep it.
 function backupPlan(
   env: WorktreeEnv,
   repo: Repo,
@@ -226,7 +226,7 @@ function unreadRecordLines(warnings: string[], entry: WorktreeEntry): string[] {
   ];
 }
 
-// Steps 1 to 4, which change nothing.
+// The checks before the backup ref, which change nothing.
 function checkTarget(
   args: RemoveArgs,
   env: WorktreeEnv,
@@ -255,7 +255,16 @@ function checkTarget(
   return backupPlan(env, repo, row, args.discard);
 }
 
-// Step 6: the lock and the session rows, read again once the backup ref is written.
+// A commit made since the checks is in no backup ref, and a detached one would
+// go with the worktree.
+function movedLines(entry: WorktreeEntry, head: string): string[] {
+  if (entry.head === head) return [];
+  return [
+    `the HEAD of ${entry.path} moved from ${head} to ${entry.head ?? 'no commit'} since the checks, so remove deleted nothing: run remove again`,
+  ];
+}
+
+// The session rows, records, lock, and HEAD, read again once the backup ref is written.
 function recheck(
   env: WorktreeEnv,
   repo: Repo,
@@ -281,6 +290,8 @@ function recheck(
       `git no longer lists ${checked.entry.path}, so remove deleted nothing`,
     );
   }
+  const moved = movedLines(entry, checked.head);
+  if (moved.length > 0) return refuse(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
   const state = cheapState({ ...src, repo: alone(repo, entry) }, entry, lock);
   const skipList = skipListPath(repo.commonDir);
@@ -318,23 +329,60 @@ function removeSessions(
   }
 }
 
-// Step 7's git half, with the lock read once more: claude rm may have taken the worktree.
+// A linked worktree, not the main checkout, that holds `worktree`.
+function enclosingWorktree(
+  repo: Repo,
+  worktree: string,
+): WorktreeEntry | undefined {
+  return repo.worktrees
+    .slice(1)
+    .find(
+      (other) =>
+        !samePath(other.path, worktree) && insideOf(worktree, other.path),
+    );
+}
+
+// A session in a nested worktree may belong to the enclosing one, which claude
+// rm could remove and nothing checked, so git's removal goes alone there.
+function endSessions(
+  env: WorktreeEnv,
+  repo: Repo,
+  worktree: string,
+  rows: ListingRow[],
+  out: Out,
+): void {
+  const ids = exitedSessions(rows, worktree);
+  const enclosing = enclosingWorktree(repo, worktree);
+  if (enclosing === undefined) {
+    removeSessions(env, repo.top, ids, out);
+    return;
+  }
+  for (const id of ids) {
+    out(
+      `claude rm ${id} skipped: ${worktree} sits inside the worktree ${enclosing.path}, which claude rm might remove too, so session ${id} stays listed in claude agents`,
+    );
+  }
+}
+
+// git's removal, with the lock and HEAD read once more: claude rm may have taken the worktree.
 function removeListed(
   env: WorktreeEnv,
   top: string,
-  worktree: string,
+  checked: Pick<Checked, 'entry' | 'head'>,
 ): string[] {
   const now = listWorktrees(env.runGit, top);
   if ('issue' in now) return [`git worktree list failed: ${now.issue}`];
-  const entry = now.worktrees.find((e) => samePath(e.path, worktree));
+  const entry = now.worktrees.find((e) => samePath(e.path, checked.entry.path));
   if (entry === undefined) return [];
+  const moved = movedLines(entry, checked.head);
+  if (moved.length > 0) return moved;
   const lock = lockStateOf(entry.locked, env.isAlive);
   const issues = removeGitWorktree(env.runGit, top, entry.path, lock);
   if (issues.length === 0) return [];
   return [...issues, 'fix what git names, then run remove again'];
 }
 
-// Steps 6 to 8, run once the backup ref holds the head.
+// The re-check and the deletions, run once the backup ref holds the head.
 function removeChecked(
   env: WorktreeEnv,
   repo: Repo,
@@ -344,8 +392,8 @@ function removeChecked(
   const rows = recheck(env, repo, checked);
   if ('refused' in rows) return rows.refused;
   const { entry, branch, head } = checked;
-  removeSessions(env, repo.top, exitedSessions(rows, entry.path), out);
-  const worktree = removeListed(env, repo.top, entry.path);
+  endSessions(env, repo, entry.path, rows, out);
+  const worktree = removeListed(env, repo.top, checked);
   if (worktree.length > 0) return worktree;
   out(`worktree ${entry.path} removed`);
   if (branch === undefined) return [];

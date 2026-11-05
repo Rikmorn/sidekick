@@ -23,7 +23,8 @@ const SESSION_LOCK = 'claude session s (pid 4242 start 2026-11-05)';
 interface Fakes {
   /** What `claude agents` prints, per call. */
   listing?: (call: number) => ClaudeResult;
-  rm?: ClaudeResult;
+  /** What `claude rm` prints; it may change the repo first. */
+  rm?: () => ClaudeResult;
   isAlive?: (pid: number) => boolean;
   /** Answers a git call in place of git, or runs a side effect first. */
   git?: (args: string[]) => RunResult | undefined;
@@ -37,7 +38,7 @@ function run(cwd: string, args: string[], fakes: Fakes = {}) {
     events.push(`claude ${claudeArgs.join(' ')}`);
     if (claudeArgs[0] === 'rm') {
       rmTimeouts.push(opts.timeoutMs);
-      return fakes.rm ?? claudeSays('removed');
+      return fakes.rm?.() ?? claudeSays('removed');
     }
     listings += 1;
     return fakes.listing?.(listings) ?? NO_SESSIONS;
@@ -447,6 +448,68 @@ describe('worktree remove: re-runs and sessions', () => {
     expect(branchExists(main, 'worktree-again')).toBe(false);
   });
 
+  test('a detached HEAD that moves after the checks refuses, keeping the new commit', () => {
+    const main = repo();
+    const dir = path.join(tmp(), 'det');
+    git(main, 'worktree', 'add', '-q', '--detach', dir);
+    const checked = git(dir, 'rev-parse', 'HEAD');
+    let late = '';
+    const { code, err } = run(main, ['det'], {
+      git: (args) => {
+        if (args[0] === 'update-ref' && args[1].startsWith('refs/sidekick/')) {
+          const wrote = execRunner('git', args, main);
+          late = commit(dir, 'late.txt');
+          return wrote;
+        }
+        return undefined;
+      },
+    });
+    expect(code).toBe(1);
+    expect(joined(err)).toContain(checked);
+    expect(joined(err)).toContain(late);
+    expect(joined(err)).toContain('run remove again');
+    expect(listed(main, dir)).toBe(true);
+    expect(git(dir, 'rev-parse', 'HEAD')).toBe(late);
+  });
+
+  test('a HEAD that moves while claude rm runs refuses before git removes', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'bg');
+    const row = { id: 'job1', kind: 'background', state: 'done', cwd: dir };
+    let late = '';
+    const { code, err, events } = run(main, ['bg'], {
+      listing: () => claudeSays(JSON.stringify([row])),
+      rm: () => {
+        late = commit(dir, 'late.txt');
+        return claudeSays('kept job1');
+      },
+    });
+    expect(code).toBe(1);
+    expect(joined(err)).toContain(late);
+    expect(events.some((e) => e.startsWith('git worktree remove'))).toBe(false);
+    expect(listed(main, dir)).toBe(true);
+    expect(git(main, 'rev-parse', 'worktree-bg')).toBe(late);
+  });
+
+  test('a session in a worktree nested inside another linked worktree is left to git', () => {
+    const main = repo();
+    const outer = addWorktree(main, 'outer-w');
+    const inner = path.join(outer, 'inner');
+    git(main, 'worktree', 'add', '-q', '-b', 'inner', inner);
+    const row = { id: 'job1', kind: 'background', state: 'done', cwd: inner };
+    const { code, out, events } = run(main, [inner], {
+      listing: () => claudeSays(JSON.stringify([row])),
+    });
+    expect(code).toBe(0);
+    expect(events.filter((e) => e.startsWith('claude rm'))).toEqual([]);
+    expect(listed(main, inner)).toBe(false);
+    expect(listed(main, outer)).toBe(true);
+    expect(fs.existsSync(path.join(outer, 'a.txt'))).toBe(true);
+    const note = out.find((l) => l.startsWith('claude rm job1 skipped'));
+    expect(note).toContain(outer);
+    expect(note).toContain('stays listed in claude agents');
+  });
+
   test('an exited background session in the worktree goes first, by claude rm with no limit', () => {
     const main = repo();
     const dir = addWorktree(main, 'bg');
@@ -473,7 +536,7 @@ describe('worktree remove: re-runs and sessions', () => {
     const row = { id: 'job1', kind: 'background', state: 'stopped', cwd: dir };
     const { code, out } = run(main, ['bg'], {
       listing: () => claudeSays(JSON.stringify([row])),
-      rm: claudeSays('kept job1: something odd'),
+      rm: () => claudeSays('kept job1: something odd'),
     });
     expect(code).toBe(0);
     expect(joined(out)).toContain('kept job1: something odd');
