@@ -8796,6 +8796,7 @@ var markers = (opts) => ({
   ...opts.main === undefined ? {} : { SIDEKICK_MAIN: opts.main }
 });
 var PUSH_REWRITE_KEY = "url.sidekick-push-blocked::.pushInsteadOf";
+var SAVE_SKILL_RULE = "Skill(sidekick:sk-save)";
 var PUSH_DENY_RULE = "Bash(git push:*)";
 function pushEnv(count2) {
   return {
@@ -8814,14 +8815,15 @@ function readRules(reads) {
 }
 function workerOverlay(profileSettings, opts) {
   const base = { worktree: { baseRef: "head" } };
-  const allow = readRules(opts.reads ?? []);
-  const allowRules = allow.length === 0 ? {} : { allow };
+  const allowRules = {
+    allow: [...readRules(opts.reads ?? []), SAVE_SKILL_RULE]
+  };
   if (opts.allowPush) {
     return {
       overlay: {
         ...base,
         env: markers(opts),
-        ...allow.length === 0 ? {} : { permissions: allowRules }
+        permissions: allowRules
       }
     };
   }
@@ -9536,7 +9538,7 @@ function launch2(ready, wenv, out, err) {
     permissionMode: ready.mode,
     worktree: ready.brief.name,
     sessionName: ready.brief.name,
-    prompt: `/sidekick:sk-worker ${ready.briefPath}`
+    prompt: `/sidekick:sk-worker --dispatched ${ready.briefPath}`
   });
   const result = wenv.runClaude(args, {
     cwd: ready.launchTop,

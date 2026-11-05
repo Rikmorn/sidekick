@@ -8,6 +8,7 @@ import {
   PUSH_DENY_RULE,
   PUSH_REWRITE_KEY,
   readRule,
+  SAVE_SKILL_RULE,
   workerOverlay,
 } from './worker-overlay.js';
 
@@ -32,7 +33,7 @@ describe('workerOverlay', () => {
         GIT_CONFIG_KEY_0: PUSH_REWRITE_KEY,
         GIT_CONFIG_VALUE_0: '',
       },
-      permissions: { deny: [PUSH_DENY_RULE] },
+      permissions: { allow: [SAVE_SKILL_RULE], deny: [PUSH_DENY_RULE] },
     });
   });
 
@@ -67,6 +68,7 @@ describe('workerOverlay', () => {
     ).toEqual({
       worktree: { baseRef: 'head' },
       env: { SIDEKICK_WORKER: '/abs/brief.md' },
+      permissions: { allow: [SAVE_SKILL_RULE] },
     });
   });
 
@@ -86,6 +88,7 @@ describe('workerOverlay', () => {
     const overlay = overlayOf(profile.manifest.settings);
     const composed = composeSettings(profile, { home: '/h', overlay });
     expect(composed.permissions).toEqual({
+      allow: [SAVE_SKILL_RULE],
       deny: ['Bash(rm:*)', PUSH_DENY_RULE],
     });
   });
@@ -100,6 +103,7 @@ describe('workerOverlay', () => {
     expect(overlayOf(undefined, { ...opts, allowPush: true, main })).toEqual({
       worktree: { baseRef: 'head' },
       env: { SIDEKICK_WORKER: '/abs/brief.md', SIDEKICK_MAIN: main },
+      permissions: { allow: [SAVE_SKILL_RULE] },
     });
   });
   test('no main leaves SIDEKICK_MAIN out', () => {
@@ -134,7 +138,7 @@ describe('workerOverlay reads', () => {
       reads: ['/zz-nope/a.md', '/zz-nope/b.md', '/zz-nope/a.md'],
     });
     expect(overlay.permissions).toEqual({
-      allow: ['Read(//zz-nope/a.md)', 'Read(//zz-nope/b.md)'],
+      allow: ['Read(//zz-nope/a.md)', 'Read(//zz-nope/b.md)', SAVE_SKILL_RULE],
       deny: [PUSH_DENY_RULE],
     });
   });
@@ -149,6 +153,7 @@ describe('workerOverlay reads', () => {
       allow: [
         readRule(written),
         readRule(path.join(real, 'real', 'rulings.md')),
+        SAVE_SKILL_RULE,
       ],
       deny: [PUSH_DENY_RULE],
     });
@@ -160,15 +165,23 @@ describe('workerOverlay reads', () => {
       allowPush: true,
       reads: ['/zz-nope/a.md'],
     });
-    expect(overlay.permissions).toEqual({ allow: ['Read(//zz-nope/a.md)'] });
+    expect(overlay.permissions).toEqual({
+      allow: ['Read(//zz-nope/a.md)', SAVE_SKILL_RULE],
+    });
   });
 
-  test('no reads and allowPush leaves out permissions', () => {
-    const overlay = overlayOf(undefined, {
-      ...opts,
-      allowPush: true,
-      reads: [],
+  test.each([
+    true,
+    false,
+  ])('no reads still allows the Skill rule, with allowPush %p', (allowPush) => {
+    const overlay = overlayOf(undefined, { ...opts, allowPush, reads: [] });
+    expect(overlay.permissions).toEqual({
+      allow: [SAVE_SKILL_RULE],
+      ...(allowPush ? {} : { deny: [PUSH_DENY_RULE] }),
     });
-    expect('permissions' in overlay).toBe(false);
+  });
+
+  test('the Skill rule names sk-save alone', () => {
+    expect(SAVE_SKILL_RULE).toBe('Skill(sidekick:sk-save)');
   });
 });

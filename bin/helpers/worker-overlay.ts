@@ -1,8 +1,9 @@
 /**
  * The settings overlay a dispatched worker launches with: the worktree base,
  * the brief marker and the recorded main in its environment, the `Read` allow
- * rules that let it read the files dispatch names with no prompt, and, unless
- * the brief allows a push, the two blocks on `git push`.
+ * rules that let it read the files dispatch names with no prompt, the `Skill`
+ * allow rule that lets it run `sk-save` with no prompt, and, unless the brief
+ * allows a push, the two blocks on `git push`.
  */
 
 import { isPlainObject, type Settings } from './profile-launch.js';
@@ -16,6 +17,9 @@ const markers = (opts: { briefPath: string; main?: string }) => ({
 
 /** The git config key that prefixes every push URL with `sidekick-push-blocked::`, a remote helper that does not exist. */
 export const PUSH_REWRITE_KEY = 'url.sidekick-push-blocked::.pushInsteadOf';
+
+/** The permission rule that lets the worker run `sk-save` with no prompt. It names no other skill. */
+export const SAVE_SKILL_RULE = 'Skill(sidekick:sk-save)';
 
 /** The permission rule that denies the worker's `git push` commands. */
 export const PUSH_DENY_RULE = 'Bash(git push:*)';
@@ -65,14 +69,15 @@ export function workerOverlay(
   },
 ): { overlay: Settings } | { issues: string[] } {
   const base = { worktree: { baseRef: 'head' } };
-  const allow = readRules(opts.reads ?? []);
-  const allowRules = allow.length === 0 ? {} : { allow };
+  const allowRules = {
+    allow: [...readRules(opts.reads ?? []), SAVE_SKILL_RULE],
+  };
   if (opts.allowPush) {
     return {
       overlay: {
         ...base,
         env: markers(opts),
-        ...(allow.length === 0 ? {} : { permissions: allowRules }),
+        permissions: allowRules,
       },
     };
   }

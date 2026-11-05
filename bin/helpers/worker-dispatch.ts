@@ -192,7 +192,7 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
     permissionMode: ready.mode,
     worktree: ready.brief.name,
     sessionName: ready.brief.name,
-    prompt: `/sidekick:sk-worker ${ready.briefPath}`,
+    prompt: `/sidekick:sk-worker --dispatched ${ready.briefPath}`,
   });
   const result = wenv.runClaude(args, {
     cwd: ready.launchTop,

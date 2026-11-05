@@ -29,7 +29,7 @@ sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | -
 
 ## The brief
 
-The brief is a Markdown file in the launching checkout, named `<plan>-brief.md`. The orchestrator writes it, `dispatch` checks it, and the worker checks it again, as `sk-worker` §On start describes. It opens with a frontmatter between two `---` lines. The body follows, carrying the gate commands and their results at the baseline, and nothing parses it.
+The brief is a Markdown file in the launching checkout, named `<plan>-brief.md`. The orchestrator writes it, `dispatch` checks it, and a dispatched worker relies on those checks and checks only its own worktree, as `sk-worker` §On start describes. A worker the operator starts checks the brief itself. It opens with a frontmatter between two `---` lines. The body follows, carrying the gate commands and their results at the baseline, and nothing parses it.
 
 The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI parses it itself, since it ships no YAML parser. A key is lower-case letters, and the value is the rest of the line after the first `: `, trimmed. Blank lines are skipped, and Windows line endings and trailing spaces parse the same. Any other line, a repeated key, or an unknown key refuses the brief.
 
@@ -97,7 +97,7 @@ Once the checks pass, `dispatch` acts in this order:
    ```
    claude --add-dir <profile folder> --settings <json> [--setting-sources <list>]
      [--plugin-dir <dir>] --permission-mode <mode> --worktree <name> --bg -n <name>
-     -- /sidekick:sk-worker <absolute brief path>
+     -- /sidekick:sk-worker --dispatched <absolute brief path>
    ```
 
 3. It relays `claude`'s output, which names the job's id. Once `claude` exits 0, it writes the worker's record, with that id, as "The record" says. Every outcome of the check in step 4 keeps the record, so it comes first. A write that fails prints why and leaves the exit code alone. The worker runs, and only the desk loses sight of it.
@@ -144,14 +144,14 @@ Once the checks pass, `dispatch` acts in this order:
     "GIT_CONFIG_VALUE_<n>": ""
   },
   "permissions": {
-    "allow": ["Read(//<brief>)", "Read(//<plan>)", "Read(//<spec>)", "Read(//<rulings>)"],
+    "allow": ["Read(//<brief>)", "Read(//<plan>)", "Read(//<spec>)", "Read(//<rulings>)", "Skill(sidekick:sk-save)"],
     "deny": ["Bash(git push:*)"]
   }
 }
 ```
 
 - `n` is the profile's own `settings.env.GIT_CONFIG_COUNT`, or 0 when it sets none. So the block's entry follows the profile's own entries. `--allow-push` leaves out the three `GIT_CONFIG_*` keys and the deny rule.
-- The `allow` rules let the worker read the brief, the plan, the spec, and the rulings file with no prompt. Each has a rule for its absolute path, and a second for its physical path when that differs. No other allow rule exists.
+- The `allow` rules let the worker read the brief, the plan, the spec, and the rulings file with no prompt. Each has a rule for its absolute path, and a second for its physical path when that differs. The rule `Skill(sidekick:sk-save)` lets the worker run `sk-save` at the end with no prompt. It is in `allow` with or without `--allow-push`. No other allow rule exists.
 - `worktree.baseRef: "head"` branches the worktree from the launching checkout's `HEAD`. The default, `"fresh"`, would branch from the remote's default branch.
 - `SIDEKICK_WORKER` marks the session as a worker, for the mods' role and for the context monitor. At the critical warning, the context monitor then tells it to carry on rather than stop to tell the user, since no one watches it. It also says to keep superpowers' ledger current and to re-read the brief after a compaction.
 - `SIDEKICK_MAIN` names the worker's main: the dispatching session's name as `claude agents --json --all` lists it, or its session id's first 8 characters without one. A worker that dispatches passes its own main on. `dispatch` adds the key only when it runs inside a session. It spawns `claude` without either marker in its environment, so the overlay is their only way in. The worker's identity row names the main from it, as `docs/reference/USAGE.md` §Mains and workers in the `Rikmorn/sidekick` repo says.

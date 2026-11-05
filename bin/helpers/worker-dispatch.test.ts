@@ -6,7 +6,11 @@ import { execRunner } from './pm-data.js';
 import { LAUNCH_TIMEOUT_MS } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { runWorkerCli, type WorkerEnv } from './worker.js';
-import { PUSH_DENY_RULE, PUSH_REWRITE_KEY } from './worker-overlay.js';
+import {
+  PUSH_DENY_RULE,
+  PUSH_REWRITE_KEY,
+  SAVE_SKILL_RULE,
+} from './worker-overlay.js';
 
 afterEach(removeTemps);
 
@@ -53,10 +57,12 @@ function fixture(manifest: object = { description: 'Worker' }) {
 
 type Fixture = ReturnType<typeof fixture>;
 
-const readRulesOf = (fx: Fixture): string[] =>
-  [fx.brief, fx.fields.plan, fx.fields.spec, fx.fields.rulings].map(
+const readRulesOf = (fx: Fixture): string[] => [
+  ...[fx.brief, fx.fields.plan, fx.fields.spec, fx.fields.rulings].map(
     (p) => `Read(/${p})`,
-  );
+  ),
+  SAVE_SKILL_RULE,
+];
 
 const ok = (over: Partial<ClaudeResult> = {}): ClaudeResult => ({
   code: 0,
@@ -518,7 +524,7 @@ describe('dispatch launches', () => {
       '-n',
       'w1',
       '--',
-      `/sidekick:sk-worker ${fx.brief}`,
+      `/sidekick:sk-worker --dispatched ${fx.brief}`,
     ]);
     expect(launch.opts).toEqual({
       cwd: fx.top,
@@ -588,7 +594,9 @@ describe('dispatch launches', () => {
     expect(h.dispatch('x-brief.md', '--permission-mode', 'auto')).toBe(0);
     const launch = onlyLaunch(h);
     expect(launch.opts.cwd).toBe(fx.top);
-    expect(launch.args.at(-1)).toBe(`/sidekick:sk-worker ${fx.brief}`);
+    expect(launch.args.at(-1)).toBe(
+      `/sidekick:sk-worker --dispatched ${fx.brief}`,
+    );
     const env = settingsOf(launch).env;
     expect(env).toMatchObject({ SIDEKICK_WORKER: fx.brief });
     expect(h.out).toContain(`finish: sidekick worker finish ${fx.brief}`);
@@ -718,6 +726,7 @@ describe('dispatch from another checkout', () => {
       `Read(/${fx.fields.plan})`,
       `Read(/${fx.fields.spec})`,
       `Read(/${path.join(sib.top, 'docs', 'rulings.md')})`,
+      SAVE_SKILL_RULE,
     ]);
     const record = path.join(fx.top, '.git', 'sidekick', 'workers', 'w1.json');
     expect(JSON.parse(fs.readFileSync(record, 'utf-8')).version).toBe(2);
@@ -760,7 +769,7 @@ describe('dispatch from another checkout', () => {
     expect(h.out).toContain(`lands in: ${branch}`);
   });
 
-  test('the main checkout gets the four read rules too, and no launched-from text', () => {
+  test('the main checkout gets the four read rules and the Skill rule too, and no launched-from text', () => {
     const fx = fixture();
     const h = harness(fx);
     expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);

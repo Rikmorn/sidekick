@@ -10,7 +10,7 @@ This session runs a plan from a brief. Superpowers does the executing; this skil
 
 ## On start
 
-The brief's path is this skill's argument. With none, reply `BLOCKED` asking for it, and wait.
+The brief's path is this skill's argument. With none, reply `BLOCKED` asking for it, and wait. `sidekick worker dispatch` launches with `--dispatched` before the path, as `/sidekick:sk-worker --dispatched <absolute brief path>`. The marker comes first so a path with spaces stays whole. Drop the marker and take the rest as the path. A session the operator starts has no marker.
 
 The brief opens with `key: value` lines between two `---` lines. Its body holds the gate commands and their results at the baseline.
 
@@ -34,7 +34,9 @@ When the brief names a `workstream`, start from the State and Next steps that th
 
 When the hook printed a menu rather than the brief's workstream, read that workstream's file yourself. This happens for a worker the operator started, which has no `SIDEKICK_WORKER` for the hook to read the brief from.
 
-Check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Then check where you work. There, `HEAD` is `baseline`, and no tracked file has uncommitted changes.
+Without the marker, check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Every worktree shares the repo's branches, so `git rev-parse --verify <target>` answers from any of them, with no `git -C`. Then check where you work. There, `HEAD` is `baseline`, and no tracked file has uncommitted changes.
+
+With the marker, `dispatch` already checked the fields, the files, the rulings folder, and `target`, and checked the worktree after launch. Read the brief, the plan, and the spec; a missing file fails that read. Then check only where you work, with literal git that the isolation guard passes: `git rev-parse HEAD` against `baseline`, `git status --porcelain --untracked-files=no` empty, and `git branch --show-current` equal to `worktree-<name>`.
 
 - `worktree`: a linked worktree with `HEAD` at `baseline` and clean tracked files. A dispatched worker starts there. A worker started by the operator calls `EnterWorktree` with the brief's `name` first. `EnterWorktree` branches from the `worktree.baseRef` setting. Its default, `"fresh"`, branches from the remote's default branch, and only `"head"` branches from `HEAD`. `sidekick worker dispatch` sets `"head"`; a session started by the operator may not.
 - `in-place`: the main checkout, on its current branch.
