@@ -572,6 +572,63 @@ describe('worktree remove: re-runs and sessions', () => {
     expect(git(main, 'rev-parse', 'worktree-bg')).toBe(late);
   });
 
+  // A tracked `.gitignore` that ignores `*.sh`, then the worktree `bg` with an
+  // exited background session in it, so claude rm runs.
+  function ignoringWorktree(): { main: string; dir: string; row: object } {
+    const main = repo();
+    fs.writeFileSync(path.join(main, '.gitignore'), '*.sh\n');
+    git(main, 'add', '.gitignore');
+    git(main, 'commit', '-q', '-m', 'ignore');
+    const dir = addWorktree(main, 'bg');
+    const row = { id: 'job1', kind: 'background', state: 'done', cwd: dir };
+    return { main, dir, row };
+  }
+
+  test('an ignored file written after the checks refuses before claude rm runs', () => {
+    const { main, dir, row } = ignoringWorktree();
+    const head = git(dir, 'rev-parse', 'HEAD');
+    const late = path.join(dir, 'late.sh');
+    const { code, err, events } = run(main, ['bg'], {
+      listing: () => claudeSays(JSON.stringify([row])),
+      git: (args) => {
+        if (args[0] === 'update-ref' && args[1].startsWith('refs/sidekick/')) {
+          const wrote = execRunner('git', args, main);
+          fs.writeFileSync(late, 'echo\n');
+          return wrote;
+        }
+        return undefined;
+      },
+    });
+    expect(code).toBe(1);
+    expect(err[0]).toBe(`${dir} holds files its removal would lose: late.sh`);
+    expect(joined(err)).toContain(skipListPath(path.join(main, '.git')));
+    expect(events).not.toContain('claude rm job1');
+    expect(fs.existsSync(late)).toBe(true);
+    expect(listed(main, dir)).toBe(true);
+    expect(branchExists(main, 'worktree-bg')).toBe(true);
+    expect(backupRefs(main)).toEqual([`refs/sidekick/landed/bg/${head}`]);
+  });
+
+  test('an ignored file written while claude rm runs refuses before git removes', () => {
+    const { main, dir, row } = ignoringWorktree();
+    const late = path.join(dir, 'late.sh');
+    const { code, err, events } = run(main, ['bg'], {
+      listing: () => claudeSays(JSON.stringify([row])),
+      rm: () => {
+        fs.writeFileSync(late, 'echo\n');
+        return claudeSays('removed job1');
+      },
+    });
+    expect(code).toBe(1);
+    expect(err[0]).toBe(`${dir} holds files its removal would lose: late.sh`);
+    expect(joined(err)).toContain(skipListPath(path.join(main, '.git')));
+    expect(events).toContain('claude rm job1');
+    expect(events.some((e) => e.startsWith('git worktree remove'))).toBe(false);
+    expect(fs.existsSync(late)).toBe(true);
+    expect(listed(main, dir)).toBe(true);
+    expect(branchExists(main, 'worktree-bg')).toBe(true);
+  });
+
   test('a session in a worktree nested inside another linked worktree is left to git', () => {
     const main = repo();
     const outer = addWorktree(main, 'outer-w');

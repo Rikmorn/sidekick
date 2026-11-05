@@ -11165,9 +11165,9 @@ function recheck(env, repo, checked2) {
   if (moved.length > 0)
     return refuse6(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
-  const state = cheapState({ ...src, repo: alone(repo, entry) }, entry, lock);
-  const skipList = skipListPath(repo.commonDir);
-  const kept = state === undefined ? [] : stateLines(state, entry, skipList);
+  const one = { ...src, repo: alone(repo, entry) };
+  const state = stateOf3(one, env.runGit, entry, lock);
+  const kept = stateLines(state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
     return refuse6(...kept);
   return listing.rows;
@@ -11201,7 +11201,8 @@ function endSessions(env, repo, worktree, rows, out) {
     out(`claude rm ${id} skipped: ${worktree} sits inside the worktree ${enclosing2.path}, which claude rm might remove too, so session ${id} stays listed in claude agents`);
   }
 }
-function removeListed(env, top, checked2) {
+function removeListed(env, repo, checked2) {
+  const { top } = repo;
   const now = listWorktrees(env.runGit, top);
   if ("issue" in now)
     return [`git worktree list failed: ${now.issue}`];
@@ -11211,6 +11212,10 @@ function removeListed(env, top, checked2) {
   const moved = movedLines(entry, checked2.head);
   if (moved.length > 0)
     return moved;
+  const disk = diskState(env.runGit, repo, entry);
+  const dirty = stateLines(disk, entry, skipListPath(repo.commonDir));
+  if (dirty.length > 0)
+    return dirty;
   const lock = lockStateOf(entry.locked, env.isAlive);
   const issues = removeGitWorktree(env.runGit, top, entry.path, lock);
   if (issues.length === 0)
@@ -11248,7 +11253,7 @@ function removeChecked(env, repo, checked2, out) {
     return rows.refused;
   const { entry } = checked2;
   endSessions(env, repo, entry.path, rows, out);
-  const worktree = removeListed(env, repo.top, checked2);
+  const worktree = removeListed(env, repo, checked2);
   if (worktree.length > 0)
     return worktree;
   out(`worktree ${entry.path} removed`);

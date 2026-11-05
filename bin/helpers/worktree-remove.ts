@@ -34,9 +34,10 @@ import {
 } from './worktree-read.js';
 import {
   type CommitsAt,
-  cheapState,
   commitsAt,
+  diskState,
   insideOf,
+  stateOf,
   type WorktreeRow,
   type WorktreeState,
   worktreeRows,
@@ -134,7 +135,7 @@ function nestedLines(repo: Repo, entry: WorktreeEntry): string[] {
   ];
 }
 
-// The states that keep a worktree, at the checks and at the re-check; none for the rest.
+// The states that keep a worktree, at the checks and at each re-check; none for the rest.
 function stateLines(
   state: WorktreeState,
   entry: WorktreeEntry,
@@ -271,7 +272,7 @@ function movedLines(entry: WorktreeEntry, head: string): string[] {
   ];
 }
 
-// The session rows, records, lock, and HEAD, read again once the backup ref is written.
+// The session rows, records, lock, HEAD, and files, read again once any backup ref is written.
 function recheck(
   env: WorktreeEnv,
   repo: Repo,
@@ -298,9 +299,9 @@ function recheck(
   const moved = movedLines(entry, checked.head);
   if (moved.length > 0) return refuse(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
-  const state = cheapState({ ...src, repo: alone(repo, entry) }, entry, lock);
-  const skipList = skipListPath(repo.commonDir);
-  const kept = state === undefined ? [] : stateLines(state, entry, skipList);
+  const one = { ...src, repo: alone(repo, entry) };
+  const state = stateOf(one, env.runGit, entry, lock);
+  const kept = stateLines(state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0) return refuse(...kept);
   return listing.rows;
 }
@@ -369,18 +370,23 @@ function endSessions(
   }
 }
 
-// git's removal, with the lock and HEAD read once more: claude rm may have taken the worktree.
+// git's removal, with the lock, HEAD, and files read once more: claude rm may
+// have taken the worktree, and git deletes an ignored file written meanwhile.
 function removeListed(
   env: WorktreeEnv,
-  top: string,
+  repo: Repo,
   checked: Pick<Checked, 'entry' | 'head'>,
 ): string[] {
+  const { top } = repo;
   const now = listWorktrees(env.runGit, top);
   if ('issue' in now) return [`git worktree list failed: ${now.issue}`];
   const entry = now.worktrees.find((e) => samePath(e.path, checked.entry.path));
   if (entry === undefined) return [];
   const moved = movedLines(entry, checked.head);
   if (moved.length > 0) return moved;
+  const disk = diskState(env.runGit, repo, entry);
+  const dirty = stateLines(disk, entry, skipListPath(repo.commonDir));
+  if (dirty.length > 0) return dirty;
   const lock = lockStateOf(entry.locked, env.isAlive);
   const issues = removeGitWorktree(env.runGit, top, entry.path, lock);
   if (issues.length === 0) return [];
@@ -432,7 +438,7 @@ function removeChecked(
   if ('refused' in rows) return rows.refused;
   const { entry } = checked;
   endSessions(env, repo, entry.path, rows, out);
-  const worktree = removeListed(env, repo.top, checked);
+  const worktree = removeListed(env, repo, checked);
   if (worktree.length > 0) return worktree;
   out(`worktree ${entry.path} removed`);
   return settleBranch(env, repo.top, checked, out);
