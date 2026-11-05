@@ -56,3 +56,21 @@ export function repo(): string {
   git(top, 'commit', '-q', '-m', 'init');
   return top;
 }
+
+/**
+ * A repo whose second commit tracks `.gitignore` with the given lines, plus a
+ * linked worktree on a new branch `side`. `commonDir` is the repo's `.git`.
+ */
+export function repoWithWorktree(gitignore: string): {
+  main: string;
+  worktree: string;
+  commonDir: string;
+} {
+  const main = repo();
+  fs.writeFileSync(path.join(main, '.gitignore'), gitignore);
+  git(main, 'add', '.gitignore');
+  git(main, 'commit', '-q', '-m', 'ignore');
+  const worktree = path.join(tmp(), 'side');
+  git(main, 'worktree', 'add', '-q', '-b', 'side', worktree);
+  return { main, worktree, commonDir: path.join(main, '.git') };
+}
