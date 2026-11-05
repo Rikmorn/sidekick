@@ -261,7 +261,8 @@ const forgottenWayOut = (worktree: string): string =>
   `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
 
 // A worktree claude rm reported removed but git still lists is removed here when
-// no live session holds it. Every refusal ends with the way out by its path.
+// no live session or other lock holds it. Every refusal ends with the way out by
+// its path.
 function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
   const { runGit, isAlive } = wenv;
   const { mainTop: top, worktree } = ready;
