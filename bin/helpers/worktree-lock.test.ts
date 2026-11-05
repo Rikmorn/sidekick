@@ -27,6 +27,17 @@ describe('lockStateOf', () => {
     });
   });
 
+  test('a lock naming a pid without the claude session prefix is other, live or dead', () => {
+    for (const reason of [
+      'held (pid 4242 start 2026-11-05)',
+      'my claude session w1 (pid 4242 start x)',
+      'Claude session w1 (pid 4242 start x)',
+    ]) {
+      expect(lockStateOf(reason, dead)).toEqual({ kind: 'other', reason });
+      expect(lockStateOf(reason, alive)).toEqual({ kind: 'other', reason });
+    }
+  });
+
   test('a lock naming no pid is other, the empty reason included', () => {
     expect(lockStateOf('', alive)).toEqual({ kind: 'other', reason: '' });
     expect(lockStateOf('manual hold', alive)).toEqual({

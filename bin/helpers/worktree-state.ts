@@ -74,12 +74,26 @@ const DIRTY_CAP = 20;
 const REMOTES = 'refs/remotes/';
 const UNSEEN_SESSIONS = 'unknown: claude agents failed';
 
+const under = (at: string, root: string): boolean =>
+  at === root || at.startsWith(`${root}${path.sep}`);
+
 /** Whether `cwd` is `folder` or under it, compared physically. */
-export const insideOf = (cwd: string, folder: string): boolean => {
-  const at = physical(cwd);
-  const root = physical(folder);
-  return at === root || at.startsWith(`${root}${path.sep}`);
-};
+export const insideOf = (cwd: string, folder: string): boolean =>
+  under(physical(cwd), physical(folder));
+
+/**
+ * Whether a session's `cwd` is `folder` or under it, compared physically, and
+ * on darwin with letter case aside: its default file system ignores case, and
+ * Node's realpath keeps the case it is given. The fold errs toward held.
+ */
+export function sessionInside(
+  cwd: string,
+  folder: string,
+  platform: typeof process.platform = process.platform,
+): boolean {
+  if (platform !== 'darwin') return insideOf(cwd, folder);
+  return under(physical(cwd).toLowerCase(), physical(folder).toLowerCase());
+}
 
 function lockHold(lock: LockState): string | undefined {
   if (lock.kind === 'live') return `pid ${lock.pid}`;
@@ -98,7 +112,7 @@ function sessionHold(
     (candidate) =>
       isCurrent(candidate) &&
       candidate.cwd !== undefined &&
-      insideOf(candidate.cwd, entry.path),
+      sessionInside(candidate.cwd, entry.path),
   );
   if (row === undefined) return undefined;
   return `session ${rowName(row)}`;

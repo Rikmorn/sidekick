@@ -166,7 +166,8 @@ function waitForExit(
   return [];
 }
 
-// claude rm keeps a worktree whose lock names a process still running.
+// claude rm keeps a worktree whose lock names a process still running. Any lock
+// naming a pid is waited on, a claude session's or not: a wait unlocks nothing.
 export const waitForLock: Step = (ready, wenv) => {
   const pid = lockPidNow(ready, wenv);
   return pid === undefined ? [] : waitForExit(pid, wenv);

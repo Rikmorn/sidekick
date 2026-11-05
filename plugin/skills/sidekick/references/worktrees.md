@@ -33,9 +33,9 @@ The first match wins, in this order.
 
 | State | Meaning |
 |---|---|
-| `held by pid N` | The worktree's lock names a process that is alive. |
-| `held by lock: <reason>` | The lock names no pid, so nothing says it is stale. |
-| `held by session <id>` | A current row of `claude agents --json --all` has its `cwd` inside the worktree. This covers a worktree Claude Code did not lock. |
+| `held by pid N` | The worktree's lock is Claude Code's, `claude session <name> (pid N …)`, and that process is alive. |
+| `held by lock: <reason>` | Any other lock, one that names a pid included. Only Claude Code's own lock says what its pid means, so nothing says another is stale. |
+| `held by session <id>` | A current row of `claude agents --json --all` has its `cwd` inside the worktree. This covers a worktree Claude Code did not lock. On macOS the paths compare with letter case aside, since its file system ignores case by default. That errs toward held. |
 | `a worker's: sidekick worker finish` | A worker record names this worktree. The folder is the one Claude Code makes for that worker, or carries its name. Or the branch is `worktree-<name>`, or the worker's name itself. Clear it away with `sidekick worker finish`. |
 | `held, unknown: claude agents failed` | Without the session rows, nothing says no session is in the worktree. |
 | `held, unknown: claude agents gave a partial listing: …` | An entry of the listing would not parse, and may be a session in the worktree. |
@@ -47,7 +47,7 @@ The first match wins, in this order.
 | `dirty: <files>` | Tracked or untracked changes exist, or an ignored file that removal would lose. The line names the first 20 files, then `and N more`. When the ignored-file scan stopped at its cap, the count is a lower bound and reads `and at least N more`, since the scan never walks further to count. |
 | `removable` | No other state applies. |
 
-A lock whose pid is dead does not hold the worktree.
+A Claude Code session's lock whose pid is dead does not hold the worktree.
 
 ## Where the commits live
 
@@ -81,7 +81,7 @@ Each refusal names what it found and deletes nothing. The checks run in this ord
 | The worktree that holds the command's own directory | Leave it first: in a Claude Code session, `ExitWorktree` with `keep`; in a shell, `cd` out. Then run `remove` from the main checkout. |
 | A worktree with another worktree inside its folder | Removing the outer folder would delete the inner worktree's files. Remove the inner one first. |
 | `claude agents` failed | Without the session rows, a worktree Claude Code did not lock looks free. The refusal gives the reason. |
-| `held` or `a worker's`, in the order "The states" gives | A live session is in it or locks it, or a lock names no pid. Or a worker owns it, a worker record would not read, or a check failed. The refusal names which, and names an unreadable record's file. `sidekick worker finish` clears a worker, with its session and record. |
+| `held` or `a worker's`, in the order "The states" gives | A live session is in it or locks it, or a lock other than a Claude Code session's holds it. Or a worker owns it, a worker record would not read, or a check failed. The refusal names which, and names an unreadable record's file. `sidekick worker finish` clears a worker, with its session and record. |
 | `dirty` | Removal would lose the files it names. It also names the skip list's path, for an ignored folder that is safe to lose. |
 | A `HEAD` that git cannot resolve to a commit | No backup ref could keep it. |
 | `only here` or `commits unknown`, without `--discard`, on `worktree-<name>` or a detached `HEAD` | The backup ref would be the only place the commits remain. The refusal counts them. A worktree on any other branch needs no `--discard`, since that branch stays and keeps them. |
@@ -98,7 +98,7 @@ Once the checks pass, `remove` runs these in order, and the first that fails sto
 2. It reads the session rows, the worker records, the lock, the `HEAD`, and the worktree's files again. Anything that now holds the worktree refuses, as do a moved `HEAD` and a new or changed file, and the backup ref stays.
 3. An exited background session whose `cwd` is the worktree's top, compared physically, goes first, by `claude rm <id>` with no time limit. When `claude rm` does not say `removed`, its text prints as a note, and git's removal follows. A session whose `cwd` is only inside the worktree stays, since it may belong to another worktree.
    When another linked worktree holds this one, `remove` skips `claude rm`, since the session may belong to the enclosing worktree, which nothing checked. A note names the session, which stays listed in `claude agents`.
-4. If git still lists the worktree, `remove` reads its `HEAD` and its files once more, and a moved `HEAD` or a new or changed file refuses. Then it reads the lock, unlocks a lock whose pid is dead, and runs `git worktree remove <path>`. A `folder gone` worktree goes the same way.
+4. If git still lists the worktree, `remove` reads its `HEAD` and its files once more, and a moved `HEAD` or a new or changed file refuses. Then it reads the lock, unlocks a Claude Code session's lock whose pid is dead, and runs `git worktree remove <path>`. A `folder gone` worktree goes the same way.
 5. When the worktree was on `worktree-<name>`, it deletes that branch with `git update-ref -d` at the verified head, which refuses a branch that moved. Then it removes the branch's `branch.<name>` config section. Any other branch stays, and a detached worktree has no branch to delete.
 
 It prints `worktree <path> removed`, then `branch <branch> removed` for the branch it deleted. For a kept branch it prints `branch <b> kept: remove deletes only worktree-<name>, the branch made for this worktree`. The last line is the way back:

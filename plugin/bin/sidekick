@@ -7130,10 +7130,11 @@ function lockPid(reason5) {
   const pid = Number(LOCK_PID.exec(reason5)?.[1]);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
 }
+var SESSION_LOCK = "claude session ";
 function lockStateOf(locked, isAlive) {
   if (locked === undefined)
     return { kind: "none" };
-  const pid = lockPid(locked);
+  const pid = locked.startsWith(SESSION_LOCK) ? lockPid(locked) : undefined;
   if (pid === undefined)
     return { kind: "other", reason: locked };
   return isAlive(pid) ? { kind: "live", pid } : { kind: "dead", pid };
@@ -7159,11 +7160,13 @@ function removeGitWorktree(runGit, top, path32, lock) {
 var DIRTY_CAP = 20;
 var REMOTES = "refs/remotes/";
 var UNSEEN_SESSIONS = "unknown: claude agents failed";
-var insideOf = (cwd, folder) => {
-  const at = physical(cwd);
-  const root = physical(folder);
-  return at === root || at.startsWith(`${root}${path32.sep}`);
-};
+var under = (at, root) => at === root || at.startsWith(`${root}${path32.sep}`);
+var insideOf = (cwd, folder) => under(physical(cwd), physical(folder));
+function sessionInside(cwd, folder, platform = process.platform) {
+  if (platform !== "darwin")
+    return insideOf(cwd, folder);
+  return under(physical(cwd).toLowerCase(), physical(folder).toLowerCase());
+}
 function lockHold(lock) {
   if (lock.kind === "live")
     return `pid ${lock.pid}`;
@@ -7173,7 +7176,7 @@ function lockHold(lock) {
 }
 var rowName = (row) => row.sessionId ?? row.id ?? row.name ?? "unknown";
 function sessionHold(rows, entry) {
-  const row = rows.find((candidate) => isCurrent(candidate) && candidate.cwd !== undefined && insideOf(candidate.cwd, entry.path));
+  const row = rows.find((candidate) => isCurrent(candidate) && candidate.cwd !== undefined && sessionInside(candidate.cwd, entry.path));
   if (row === undefined)
     return;
   return `session ${rowName(row)}`;

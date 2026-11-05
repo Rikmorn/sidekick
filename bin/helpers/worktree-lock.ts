@@ -1,8 +1,9 @@
 /**
  * A worktree's lock, read as a state, and the removal that honours it. Claude
  * Code locks each worktree it makes with a reason naming the session's pid, so
- * a dead pid marks a lock nobody holds. `finish`, `worktree list`, and
- * `worktree remove` all read the lock through here.
+ * a dead pid in that lock marks a lock nobody holds; any other lock holds.
+ * `finish`, `worktree list`, and `worktree remove` all read the lock through
+ * here.
  */
 
 import type { Runner } from './pm-data.js';
@@ -22,19 +23,26 @@ export function lockPid(reason: string | undefined): number | undefined {
 
 export type LockState =
   | { kind: 'none' }
-  /** A `(pid N` lock whose process has exited. */
+  /** A Claude Code session's lock whose process has exited. */
   | { kind: 'dead'; pid: number }
   | { kind: 'live'; pid: number }
-  /** Any lock naming no pid, `''` included. */
+  /** Any other lock, one naming a pid or `''` included. */
   | { kind: 'other'; reason: string };
 
-/** Reads the `locked` field of a `git worktree list` entry. */
+// Only Claude Code's own lock says what its pid means; another tool's may name
+// a pid that is not its holder.
+const SESSION_LOCK = 'claude session ';
+
+/**
+ * Reads the `locked` field of a `git worktree list` entry. Only a lock whose
+ * reason starts `claude session ` and names a pid reads as live or dead.
+ */
 export function lockStateOf(
   locked: string | undefined,
   isAlive: (pid: number) => boolean,
 ): LockState {
   if (locked === undefined) return { kind: 'none' };
-  const pid = lockPid(locked);
+  const pid = locked.startsWith(SESSION_LOCK) ? lockPid(locked) : undefined;
   if (pid === undefined) return { kind: 'other', reason: locked };
   return isAlive(pid) ? { kind: 'live', pid } : { kind: 'dead', pid };
 }

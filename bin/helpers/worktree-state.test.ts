@@ -16,6 +16,7 @@ import {
   type CheapSources,
   commitsAt,
   leftBehind,
+  sessionInside,
   worktreeRows,
 } from './worktree-state.js';
 
@@ -319,6 +320,43 @@ describe('worktreeRows: each state', () => {
       w1: { kind: 'worker', name: 'w1' },
     });
   });
+});
+
+// Paths that do not exist, since Bun's realpath gives an existing path the
+// case on disk, which Node's does not.
+describe('sessionInside', () => {
+  const folder = '/no-such-sk-root/Repo/.claude/worktrees/W1';
+  const lower = '/no-such-sk-root/repo/.claude/worktrees/w1';
+
+  test('on darwin, letter case aside, which errs toward held', () => {
+    expect(sessionInside(`${lower}/sub`, folder, 'darwin')).toBe(true);
+    expect(sessionInside(lower, folder, 'darwin')).toBe(true);
+    expect(sessionInside(`${lower}0`, folder, 'darwin')).toBe(false);
+  });
+
+  test('elsewhere, letter case counts', () => {
+    expect(sessionInside(`${lower}/sub`, folder, 'linux')).toBe(false);
+    expect(sessionInside(`${folder}/sub`, folder, 'linux')).toBe(true);
+  });
+});
+
+describe('worktreeRows: letter case on darwin', () => {
+  test.if(process.platform === 'darwin')(
+    'a current row whose cwd names the worktree in other letters holds it',
+    () => {
+      const r = repoWithWorktree('');
+      fs.rmSync(r.worktree, { recursive: true, force: true });
+      const row: ListingRow = {
+        sessionId: 'abc123',
+        kind: 'interactive',
+        pid: 99,
+        cwd: path.join(path.dirname(r.worktree), 'SIDE', 'sub'),
+      };
+      const src = sources(r.main, { rows: [row] });
+      expect(stateOf(src)).toEqual([{ kind: 'held', by: 'session abc123' }]);
+      expect(leftBehind(src)).toEqual([]);
+    },
+  );
 });
 
 describe('worktreeRows: commits', () => {

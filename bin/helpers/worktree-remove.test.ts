@@ -307,6 +307,18 @@ describe('worktree remove: refuses', () => {
     expectUntouched(main, dir, 'worktree-s');
   });
 
+  test('a worktree locked by something other than a claude session, though its pid is dead', () => {
+    const main = repo();
+    const dir = addWorktree(main, 's');
+    const reason = 'backup job (pid 4242 start 2026-11-05)';
+    git(main, 'worktree', 'lock', '--reason', reason, dir);
+    const { code, err, events } = run(main, ['s']);
+    expect(code).toBe(1);
+    expect(joined(err)).toContain(`held by lock: ${reason}`);
+    expect(events.some((e) => e.startsWith('git worktree unlock'))).toBe(false);
+    expectUntouched(main, dir, 'worktree-s');
+  });
+
   test('a worktree a current session sits in, with no lock', () => {
     const main = repo();
     const dir = addWorktree(main, 'hand');

@@ -1156,6 +1156,32 @@ describe('finish clears the worker', () => {
     expect(fs.existsSync(fx.worktree)).toBe(true);
   });
 
+  test('refusing a leftover locked by something other than a claude session, though its pid is dead', () => {
+    const fx = fixture();
+    fx.integrate();
+    const reason = 'backup job (pid 4242 start Tue Oct 14 2026 10:00:00)';
+    lockWorktree(fx, reason);
+    const h = harness(fx);
+    h.claude.state.rm = [removed('nothing')];
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
+      `${fx.worktree} is locked: ${reason}`,
+      forgottenWayOut(fx),
+    ]);
+    expect(branchRemains(fx)).toBe(true);
+  });
+
+  test('still waiting on a lock naming a running pid without the claude session prefix', () => {
+    const fx = fixture();
+    fx.integrate();
+    lockWorktree(fx, 'backup job (pid 4242 start Tue Oct 14 2026 10:00:00)');
+    const h = harness(fx, { isAlive: () => true });
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.slept.reduce((sum, ms) => sum + ms, 0)).toBe(15_000);
+    expect(h.claude.named('rm')).toEqual([]);
+  });
+
   test('refusing a leftover with a lock that names no pid, naming worktree remove', () => {
     const fx = fixture();
     fx.integrate();
