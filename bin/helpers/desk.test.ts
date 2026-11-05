@@ -718,6 +718,15 @@ describe('runDeskCli: worktrees left behind', () => {
     expect(s.leftBehind).toBe(1);
   });
 
+  test("a worker record that would not read leaves the field out, since the worktree may be its worker's", () => {
+    const fx = repoFixture();
+    git(fx.top, 'worktree', 'add', '-q', fx.worktreeOf('stray'), '-b', 'stray');
+    fs.writeFileSync(path.join(recordsDir(fx.commonDir), 'broken.json'), '{');
+    const s = snapshotOf(harness(fx.top, listing([childRow()])));
+    expect('leftBehind' in s).toBe(false);
+    expect(s.warnings.some((w) => w.includes('broken.json'))).toBe(true);
+  });
+
   test("a worker's worktree alone leaves the field out", () => {
     const fx = repoFixture();
     const s = snapshotOf(harness(fx.top, listing([childRow()])));

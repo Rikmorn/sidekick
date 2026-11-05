@@ -42,10 +42,13 @@ function sources(
     repo,
     rows: [],
     records: [],
+    unreadRecords: [],
     isAlive: (pid) => pid === 4242,
     ...over,
   };
 }
+
+const UNREAD = '/repo/.git/sidekick/workers/broken.json cannot be read';
 
 const stateOf = (src: CheapSources) => {
   const rows = worktreeRows(src, execRunner);
@@ -167,6 +170,58 @@ describe('worktreeRows: each state', () => {
     ]);
     expect(rows[0].commits).toBeUndefined();
     expect(leftBehind(src)).toEqual([]);
+  });
+
+  test('rows undefined makes a folder gone held too', () => {
+    const r = repoWithWorktree('');
+    fs.rmSync(r.worktree, { recursive: true, force: true });
+    const src = sources(r.main, { rows: undefined });
+    expect(stateOf(src)).toEqual([
+      { kind: 'held', by: 'unknown: claude agents failed' },
+    ]);
+    expect(leftBehind(src)).toEqual([]);
+  });
+
+  test('an unread record makes the clean worktree held, naming the record', () => {
+    const r = repoWithWorktree('');
+    const src = sources(r.main, { unreadRecords: [UNREAD] });
+    const rows = worktreeRows(src, execRunner);
+    expect(rows.map((row) => row.state)).toEqual([
+      {
+        kind: 'held',
+        by: `unknown: a worker record would not read: ${UNREAD}`,
+      },
+    ]);
+    expect(rows[0].commits).toBeUndefined();
+    expect(leftBehind(src)).toEqual([]);
+  });
+
+  test('an unread record makes a folder gone held too', () => {
+    const r = repoWithWorktree('');
+    fs.rmSync(r.worktree, { recursive: true, force: true });
+    const src = sources(r.main, { unreadRecords: [UNREAD] });
+    expect(stateOf(src)).toEqual([
+      {
+        kind: 'held',
+        by: `unknown: a worker record would not read: ${UNREAD}`,
+      },
+    ]);
+  });
+
+  test("an unread record leaves a live lock's hold and a worker's row as they were", () => {
+    const r = repoWithWorktree('');
+    git(r.main, 'worktree', 'lock', '--reason', SESSION_LOCK, r.worktree);
+    const native = nativeFolder(r.main, 'w1');
+    fs.mkdirSync(path.dirname(native), { recursive: true });
+    git(r.main, 'worktree', 'add', '-q', '-b', 'worktree-w1', native);
+    const src = sources(r.main, {
+      records: [recordNamed('w1')],
+      unreadRecords: [UNREAD],
+    });
+    expect(stateOf(src)).toEqual([
+      { kind: 'held', by: 'pid 4242' },
+      { kind: 'worker', name: 'w1' },
+    ]);
   });
 });
 

@@ -7177,18 +7177,26 @@ function sessionHold(rows, entry) {
     return;
   return `session ${row.sessionId ?? row.id ?? row.name ?? "unknown"}`;
 }
+function unseenHold(src) {
+  if (src.rows === undefined)
+    return UNSEEN_SESSIONS;
+  if (src.unreadRecords.length === 0)
+    return;
+  return `unknown: a worker record would not read: ${src.unreadRecords.join("; ")}`;
+}
 function cheapState(src, entry, lock) {
   const by = lockHold(lock) ?? (src.rows === undefined ? undefined : sessionHold(src.rows, entry));
   if (by !== undefined)
     return { kind: "held", by };
   const wanted = physical(entry.path);
   const record2 = src.records.find((candidate) => physical(nativeFolder(src.repo.top, candidate.name)) === wanted);
-  return record2 === undefined ? undefined : { kind: "worker", name: record2.name };
+  if (record2 !== undefined)
+    return { kind: "worker", name: record2.name };
+  const unseen = unseenHold(src);
+  return unseen === undefined ? undefined : { kind: "held", by: unseen };
 }
 var linked = (repo) => repo.worktrees.slice(1);
 function leftBehind(src) {
-  if (src.rows === undefined)
-    return [];
   return linked(src.repo).filter((entry) => cheapState(src, entry, lockStateOf(entry.locked, src.isAlive)) === undefined);
 }
 function dirtyState(runGit, repo, entry) {
@@ -7211,20 +7219,19 @@ function dirtyState(runGit, repo, entry) {
     omitted: { kind: ignored.truncated ? "at least" : "exact", count: count2 }
   };
 }
-function gitState(src, runGit, entry) {
+function diskState(runGit, repo, entry) {
   if (entry.prunable !== undefined || !fs26.existsSync(entry.path)) {
     return { kind: "folder gone" };
   }
-  const state = dirtyState(runGit, src.repo, entry);
-  if (state.kind === "removable" && src.rows === undefined) {
-    return { kind: "held", by: UNSEEN_SESSIONS };
-  }
-  return state;
+  return dirtyState(runGit, repo, entry);
+}
+function stateOf3(src, runGit, entry, lock) {
+  return cheapState(src, entry, lock) ?? diskState(runGit, src.repo, entry);
 }
 function worktreeRows(src, runGit) {
   return linked(src.repo).map((entry) => {
     const lock = lockStateOf(entry.locked, src.isAlive);
-    const state = cheapState(src, entry, lock) ?? gitState(src, runGit, entry);
+    const state = stateOf3(src, runGit, entry, lock);
     const base = { entry, name: path32.basename(entry.path), lock, state };
     if (state.kind === "held" || state.kind === "worker")
       return base;
@@ -7376,6 +7383,7 @@ function readAndPruneChildren(denv, rows, find) {
       repo,
       rows,
       records,
+      unreadRecords: read.warnings,
       isAlive: denv.isAlive
     }).length,
     warnings: [
@@ -10988,11 +10996,11 @@ function readSources(env, repo) {
       repo,
       rows: "error" in listing ? undefined : listing.rows,
       records: stored.records,
+      unreadRecords: stored.warnings,
       isAlive: env.isAlive
     },
     listing,
-    skipWarnings: skips.warnings,
-    recordWarnings: stored.warnings
+    skipWarnings: skips.warnings
   };
 }
 var heldWords = (by) => by.startsWith("unknown") ? `held, ${by}` : `held by ${by}`;
@@ -11108,14 +11116,6 @@ function backupPlan(env, repo, row2, discard2) {
     return kind;
   return { entry, name, branch, head, ref: backupRef(kind, name, head) };
 }
-function unreadRecordLines(warnings, entry) {
-  if (warnings.length === 0)
-    return [];
-  return [
-    `a worker record would not read, so remove cannot tell whether ${entry.path} is a worker's, and took nothing:`,
-    ...warnings
-  ];
-}
 function checkTarget(args, env, repo, out) {
   const entry = resolveTarget3(repo, env.cwd, args.target);
   if ("refused" in entry)
@@ -11123,15 +11123,11 @@ function checkTarget(args, env, repo, out) {
   const nested = nestedLines(repo, entry);
   if (nested.length > 0)
     return refuse6(...nested);
-  const sources = readSources(env, alone(repo, entry));
-  const { src, listing } = sources;
+  const { src, listing, skipWarnings } = readSources(env, alone(repo, entry));
   if ("error" in listing) {
     return refuse6(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
   }
-  const unread = unreadRecordLines(sources.recordWarnings, entry);
-  if (unread.length > 0)
-    return refuse6(...unread);
-  for (const warning of [...listing.warnings, ...sources.skipWarnings]) {
+  for (const warning of [...listing.warnings, ...skipWarnings]) {
     out(warning);
   }
   const [row2] = worktreeRows(src, env.runGit);
@@ -11148,13 +11144,10 @@ function movedLines(entry, head) {
   ];
 }
 function recheck(env, repo, checked2) {
-  const { src, listing, recordWarnings } = readSources(env, repo);
+  const { src, listing } = readSources(env, repo);
   if ("error" in listing) {
     return refuse6(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
   }
-  const unread = unreadRecordLines(recordWarnings, checked2.entry);
-  if (unread.length > 0)
-    return refuse6(...unread);
   const now = listWorktrees(env.runGit, repo.top);
   if ("issue" in now) {
     return refuse6(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
@@ -11337,11 +11330,11 @@ var listVerb = (rest2, env, out, err) => {
   const repo = repoOf2(env, err);
   if (repo === undefined)
     return 1;
-  const { src, listing, skipWarnings, recordWarnings } = readSources(env, repo);
+  const { src, listing, skipWarnings } = readSources(env, repo);
   const listingWarnings = "error" in listing ? [
     `claude agents failed, so held states may be missing: ${listing.error}`
   ] : listing.warnings;
-  const warnings = [...listingWarnings, ...skipWarnings, ...recordWarnings];
+  const warnings = [...listingWarnings, ...skipWarnings, ...src.unreadRecords];
   for (const warning of warnings)
     out(warning);
   const rows = worktreeRows(src, env.runGit);

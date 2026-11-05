@@ -49,6 +49,8 @@ export interface CheapSources {
   /** Undefined when `claude agents` failed. */
   rows: ListingRow[] | undefined;
   records: WorkerRecord[];
+  /** One warning per worker record that would not read; empty when every record read. */
+  unreadRecords: string[];
   isAlive: (pid: number) => boolean;
 }
 
@@ -94,7 +96,19 @@ function sessionHold(
   return `session ${row.sessionId ?? row.id ?? row.name ?? 'unknown'}`;
 }
 
-/** The state the checks that need no git give: held by a lock or a session, or a worker's; else undefined. */
+// Without the session rows, or with a record unread, nothing says a worktree is
+// free: an unseen session may sit in it, or the record may be its worker's.
+function unseenHold(src: CheapSources): string | undefined {
+  if (src.rows === undefined) return UNSEEN_SESSIONS;
+  if (src.unreadRecords.length === 0) return undefined;
+  return `unknown: a worker record would not read: ${src.unreadRecords.join('; ')}`;
+}
+
+/**
+ * The state the checks that need no git give: held by a lock or a session, a
+ * worker's, or held when the session rows or a worker record would not read;
+ * else undefined.
+ */
 export function cheapState(
   src: CheapSources,
   entry: WorktreeEntry,
@@ -109,19 +123,19 @@ export function cheapState(
     (candidate) =>
       physical(nativeFolder(src.repo.top, candidate.name)) === wanted,
   );
-  return record === undefined
-    ? undefined
-    : { kind: 'worker', name: record.name };
+  if (record !== undefined) return { kind: 'worker', name: record.name };
+  const unseen = unseenHold(src);
+  return unseen === undefined ? undefined : { kind: 'held', by: unseen };
 }
 
 const linked = (repo: Repo): WorktreeEntry[] => repo.worktrees.slice(1);
 
 /**
  * The linked worktrees neither held nor a worker's, from the cheap checks
- * alone. With no session rows nothing is known to be free, so it names none.
+ * alone. With no session rows, or a worker record unread, nothing is known to
+ * be free, so it names none.
  */
 export function leftBehind(src: CheapSources): WorktreeEntry[] {
-  if (src.rows === undefined) return [];
   return linked(src.repo).filter(
     (entry) =>
       cheapState(src, entry, lockStateOf(entry.locked, src.isAlive)) ===
@@ -158,26 +172,36 @@ function dirtyState(
   };
 }
 
-function gitState(
-  src: CheapSources,
+/**
+ * What the worktree's folder holds, by git status and the ignored-file check:
+ * gone, dirty, or removable; held when git cannot tell.
+ */
+export function diskState(
   runGit: Runner,
+  repo: Repo,
   entry: WorktreeEntry,
 ): WorktreeState {
   if (entry.prunable !== undefined || !fs.existsSync(entry.path)) {
     return { kind: 'folder gone' };
   }
-  const state = dirtyState(runGit, src.repo, entry);
-  if (state.kind === 'removable' && src.rows === undefined) {
-    return { kind: 'held', by: UNSEEN_SESSIONS };
-  }
-  return state;
+  return dirtyState(runGit, repo, entry);
+}
+
+/** One worktree's state, as `list` shows it, without the landed check. */
+export function stateOf(
+  src: CheapSources,
+  runGit: Runner,
+  entry: WorktreeEntry,
+  lock: LockState,
+): WorktreeState {
+  return cheapState(src, entry, lock) ?? diskState(runGit, src.repo, entry);
 }
 
 /** Every linked worktree's row; runs status, the ignored check, and the landed check. */
 export function worktreeRows(src: CheapSources, runGit: Runner): WorktreeRow[] {
   return linked(src.repo).map((entry) => {
     const lock = lockStateOf(entry.locked, src.isAlive);
-    const state = cheapState(src, entry, lock) ?? gitState(src, runGit, entry);
+    const state = stateOf(src, runGit, entry, lock);
     const base = { entry, name: path.basename(entry.path), lock, state };
     if (state.kind === 'held' || state.kind === 'worker') return base;
     return { ...base, commits: commitsAt(runGit, src.repo, entry.head ?? '') };

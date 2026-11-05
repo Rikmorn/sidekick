@@ -169,6 +169,7 @@ function readAndPruneChildren(
       repo,
       rows,
       records,
+      unreadRecords: read.warnings,
       isAlive: denv.isAlive,
     }).length,
     warnings: [

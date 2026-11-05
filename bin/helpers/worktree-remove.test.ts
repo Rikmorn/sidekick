@@ -334,6 +334,21 @@ describe('worktree remove: refuses', () => {
     expectUntouched(main, dir, 'worktree-r10-x');
   });
 
+  test('a worker record that does not parse, beside a folder gone', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'old-y');
+    fs.rmSync(dir, { recursive: true, force: true });
+    const records = recordsDir(path.join(main, '.git'));
+    fs.mkdirSync(records, { recursive: true });
+    const broken = path.join(records, 'broken.json');
+    fs.writeFileSync(broken, '{not json');
+    const { code, err } = run(main, ['old-y', '--discard']);
+    expect(code).toBe(1);
+    expect(joined(err)).toContain('a worker record would not read');
+    expect(joined(err)).toContain(broken);
+    expectUntouched(main, dir, 'worktree-old-y');
+  });
+
   test('a worker record that stops parsing after the checks', () => {
     const main = repo();
     const dir = addWorktree(main, 'r10-x');

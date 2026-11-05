@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
-import { writeRecord } from './worker-record.js';
+import { recordsDir, writeRecord } from './worker-record.js';
 import { runWorktreeCli, WORKTREE_USAGE_LINE } from './worktree.js';
 import { skipListPath } from './worktree-ignored.js';
 
@@ -232,6 +232,40 @@ describe('worktree list: the frame', () => {
     expect(lineFor(out, 'one')).toContain(
       'held, unknown: claude agents failed',
     );
+  });
+
+  test('a failing claude agents holds a folder gone too, and prints no hint', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'old-y');
+    fs.rmSync(dir, { recursive: true, force: true });
+    const failed: ClaudeResult = {
+      code: 1,
+      stdout: '',
+      stderr: 'boom',
+      timedOut: false,
+    };
+    const { out } = run(main, ['list'], failed);
+    expect(lineFor(out, 'old-y')).toBe(
+      `old-y · held, unknown: claude agents failed · worktree-old-y · ${dir}`,
+    );
+    expect(out.some((l) => l.startsWith('remove one with'))).toBe(false);
+  });
+
+  test('an unreadable worker record holds a clean worktree, naming the record, and prints no hint', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'one');
+    const records = recordsDir(path.join(main, '.git'));
+    fs.mkdirSync(records, { recursive: true });
+    const broken = path.join(records, 'broken.json');
+    fs.writeFileSync(broken, '{not json');
+    const { out } = run(main, ['list']);
+    expect(out[0]).toStartWith(broken);
+    const line = lineFor(out, 'one');
+    expect(line).toStartWith(
+      `one · held, unknown: a worker record would not read: ${broken}`,
+    );
+    expect(line).toEndWith(` · worktree-one · ${dir}`);
+    expect(out.some((l) => l.startsWith('remove one with'))).toBe(false);
   });
 
   test('the listing runs with a time limit', () => {

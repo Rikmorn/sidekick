@@ -32,13 +32,12 @@ export function repoOf(env: WorktreeEnv, err: Out): Repo | undefined {
 }
 
 export interface Sources {
+  /** `src.unreadRecords` holds one warning per worker record that would not read. */
   src: CheapSources;
   /** What `claude agents` gave; `src.rows` is undefined when it failed. */
   listing: ReturnType<typeof readListing>;
   /** The skip list's warnings. */
   skipWarnings: string[];
-  /** One per worker record that would not read, which `src.records` then lacks. */
-  recordWarnings: string[];
 }
 
 /** The shared checks' sources for `repo`, read now. */
@@ -51,11 +50,11 @@ export function readSources(env: WorktreeEnv, repo: Repo): Sources {
       repo,
       rows: 'error' in listing ? undefined : listing.rows,
       records: stored.records,
+      unreadRecords: stored.warnings,
       isAlive: env.isAlive,
     },
     listing,
     skipWarnings: skips.warnings,
-    recordWarnings: stored.warnings,
   };
 }
 

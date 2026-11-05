@@ -216,17 +216,9 @@ function backupPlan(
   return { entry, name, branch, head, ref: backupRef(kind, name, head) };
 }
 
-// A record that would not read may be this worktree's worker, so it refuses,
-// as a failed listing does.
-function unreadRecordLines(warnings: string[], entry: WorktreeEntry): string[] {
-  if (warnings.length === 0) return [];
-  return [
-    `a worker record would not read, so remove cannot tell whether ${entry.path} is a worker's, and took nothing:`,
-    ...warnings,
-  ];
-}
-
-// The checks before the backup ref, which change nothing.
+// The checks before the backup ref, which change nothing. A failed listing
+// refuses with its reason; a record that would not read holds the worktree in
+// the shared state, which names the record.
 function checkTarget(
   args: RemoveArgs,
   env: WorktreeEnv,
@@ -237,16 +229,13 @@ function checkTarget(
   if ('refused' in entry) return entry;
   const nested = nestedLines(repo, entry);
   if (nested.length > 0) return refuse(...nested);
-  const sources = readSources(env, alone(repo, entry));
-  const { src, listing } = sources;
+  const { src, listing, skipWarnings } = readSources(env, alone(repo, entry));
   if ('error' in listing) {
     return refuse(
       `claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`,
     );
   }
-  const unread = unreadRecordLines(sources.recordWarnings, entry);
-  if (unread.length > 0) return refuse(...unread);
-  for (const warning of [...listing.warnings, ...sources.skipWarnings]) {
+  for (const warning of [...listing.warnings, ...skipWarnings]) {
     out(warning);
   }
   const [row] = worktreeRows(src, env.runGit);
@@ -270,14 +259,12 @@ function recheck(
   repo: Repo,
   checked: Checked,
 ): ListingRow[] | Refused {
-  const { src, listing, recordWarnings } = readSources(env, repo);
+  const { src, listing } = readSources(env, repo);
   if ('error' in listing) {
     return refuse(
       `claude agents failed on the second look, so remove deleted nothing: ${listing.error}`,
     );
   }
-  const unread = unreadRecordLines(recordWarnings, checked.entry);
-  if (unread.length > 0) return refuse(...unread);
   const now = listWorktrees(env.runGit, repo.top);
   if ('issue' in now) {
     return refuse(
