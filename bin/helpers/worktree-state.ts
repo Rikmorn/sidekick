@@ -18,12 +18,21 @@ import { nativeFolder } from './worker-worktree.js';
 import { ignoredLosses } from './worktree-ignored.js';
 import { type LockState, lockStateOf } from './worktree-lock.js';
 
+/**
+ * How many dirty paths a state leaves out of `paths`. `exact` when every source
+ * was read in full; `at least` when the ignored-file scan stopped at its cap,
+ * since it never walks further to count.
+ */
+export type Omitted =
+  | { kind: 'exact'; count: number }
+  | { kind: 'at least'; count: number };
+
 export type WorktreeState =
   /** `by` reads `pid 4242`, `session <id>`, or `lock: <reason>`. */
   | { kind: 'held'; by: string }
   | { kind: 'worker'; name: string }
   | { kind: 'folder gone' }
-  | { kind: 'dirty'; paths: string[]; truncated: boolean }
+  | { kind: 'dirty'; paths: string[]; omitted: Omitted }
   | { kind: 'removable' };
 
 export type CommitsAt =
@@ -128,20 +137,23 @@ function dirtyState(
   if ('issue' in status) {
     return { kind: 'held', by: `unknown: git status failed: ${status.issue}` };
   }
-  const ignored = ignoredLosses(runGit, {
-    mainTop: repo.top,
-    worktree: entry.path,
-    commonDir: repo.commonDir,
-  });
+  const ignored = ignoredLosses(
+    runGit,
+    { mainTop: repo.top, worktree: entry.path, commonDir: repo.commonDir },
+    { cap: DIRTY_CAP },
+  );
   if ('issue' in ignored) {
     return { kind: 'held', by: `unknown: ${ignored.issue}` };
   }
   const all = [...status.entries.map((e) => e.path), ...ignored.paths];
   if (all.length === 0) return { kind: 'removable' };
+  // A truncated scan found one path past its cap and dropped it from `paths`.
+  const known = all.length + (ignored.truncated ? 1 : 0);
+  const count = Math.max(0, known - DIRTY_CAP);
   return {
     kind: 'dirty',
     paths: all.slice(0, DIRTY_CAP),
-    truncated: ignored.truncated || all.length > DIRTY_CAP,
+    omitted: { kind: ignored.truncated ? 'at least' : 'exact', count },
   };
 }
 

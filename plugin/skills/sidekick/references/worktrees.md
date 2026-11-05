@@ -35,7 +35,7 @@ The first match wins.
 | `held, unknown: …` | Git status, the ignored-file check, or `claude agents` failed, so nothing says the worktree is free. |
 | `a worker's: sidekick worker finish` | A worker record names this folder. Clear it away with `sidekick worker finish`. |
 | `folder gone` | The folder is missing from disk, or git marks the entry prunable. |
-| `dirty: <files>` | Tracked or untracked changes exist, or an ignored file that removal would lose. The line names the first 20 files, then `and more`. |
+| `dirty: <files>` | Tracked or untracked changes exist, or an ignored file that removal would lose. The line names the first 20 files, then `and N more`. When the ignored-file scan stopped at its cap, the count is a lower bound and reads `and at least N more`, since the scan never walks further to count. |
 | `removable` | No other state applies. |
 
 A lock whose pid is dead does not hold the worktree.

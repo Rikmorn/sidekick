@@ -133,7 +133,11 @@ describe('worktreeRows: each state', () => {
     const r = repoWithWorktree('*.sh\n');
     fs.writeFileSync(path.join(r.worktree, 'scratch.sh'), 'echo\n');
     expect(stateOf(sources(r.main))).toEqual([
-      { kind: 'dirty', paths: ['scratch.sh'], truncated: false },
+      {
+        kind: 'dirty',
+        paths: ['scratch.sh'],
+        omitted: { kind: 'exact', count: 0 },
+      },
     ]);
   });
 
@@ -141,7 +145,11 @@ describe('worktreeRows: each state', () => {
     const r = repoWithWorktree('');
     fs.writeFileSync(path.join(r.worktree, 'new.txt'), 'x\n');
     expect(stateOf(sources(r.main))).toEqual([
-      { kind: 'dirty', paths: ['new.txt'], truncated: false },
+      {
+        kind: 'dirty',
+        paths: ['new.txt'],
+        omitted: { kind: 'exact', count: 0 },
+      },
     ]);
   });
 

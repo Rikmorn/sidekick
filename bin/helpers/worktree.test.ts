@@ -103,6 +103,37 @@ describe('worktree list: one line per state', () => {
     expect(out.some((l) => l.startsWith('remove one with'))).toBe(false);
   });
 
+  test('more than 20 untracked files give an exact count of the rest', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'many');
+    for (let i = 0; i < 25; i++) {
+      fs.writeFileSync(
+        path.join(dir, `f${String(i).padStart(2, '0')}.txt`),
+        'x',
+      );
+    }
+    const line = lineFor(run(main, ['list']).out, 'many');
+    expect(line).toContain(', and 5 more · ');
+    expect(line).not.toContain('at least');
+    expect(line.split(', ').filter((p) => p.endsWith('.txt'))).toHaveLength(20);
+  });
+
+  test('more than 20 new ignored files give a lower bound', () => {
+    const main = repo();
+    fs.writeFileSync(path.join(main, '.gitignore'), '*.sh\n');
+    git(main, 'add', '.gitignore');
+    git(main, 'commit', '-q', '-m', 'ignore');
+    const dir = addWorktree(main, 'many');
+    for (let i = 0; i < 25; i++) {
+      fs.writeFileSync(
+        path.join(dir, `s${String(i).padStart(2, '0')}.sh`),
+        'x',
+      );
+    }
+    const line = lineFor(run(main, ['list']).out, 'many');
+    expect(line).toContain(', and at least 1 more · ');
+  });
+
   test("a worker's worktree points at finish and skips the commits", () => {
     const main = repo();
     const dir = path.join(main, '.claude', 'worktrees', 'w1');

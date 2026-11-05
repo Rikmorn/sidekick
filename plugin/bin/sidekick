@@ -10805,21 +10805,19 @@ function dirtyState(runGit, repo, entry) {
   if ("issue" in status) {
     return { kind: "held", by: `unknown: git status failed: ${status.issue}` };
   }
-  const ignored = ignoredLosses(runGit, {
-    mainTop: repo.top,
-    worktree: entry.path,
-    commonDir: repo.commonDir
-  });
+  const ignored = ignoredLosses(runGit, { mainTop: repo.top, worktree: entry.path, commonDir: repo.commonDir }, { cap: DIRTY_CAP });
   if ("issue" in ignored) {
     return { kind: "held", by: `unknown: ${ignored.issue}` };
   }
   const all = [...status.entries.map((e) => e.path), ...ignored.paths];
   if (all.length === 0)
     return { kind: "removable" };
+  const known = all.length + (ignored.truncated ? 1 : 0);
+  const count2 = Math.max(0, known - DIRTY_CAP);
   return {
     kind: "dirty",
     paths: all.slice(0, DIRTY_CAP),
-    truncated: ignored.truncated || all.length > DIRTY_CAP
+    omitted: { kind: ignored.truncated ? "at least" : "exact", count: count2 }
   };
 }
 function gitState(src, runGit, entry) {
@@ -10914,6 +10912,12 @@ var usage3 = (err) => {
   err(`usage: ${WORKTREE_USAGE_LINE}`);
   return 1;
 };
+function omittedWords(omitted) {
+  if (omitted.count === 0)
+    return "";
+  const count2 = `${omitted.kind === "at least" ? "at least " : ""}${omitted.count}`;
+  return `, and ${count2} more`;
+}
 function stateWords(state) {
   switch (state.kind) {
     case "held":
@@ -10923,7 +10927,7 @@ function stateWords(state) {
     case "folder gone":
       return "folder gone";
     case "dirty":
-      return `dirty: ${state.paths.join(", ")}${state.truncated ? ", and more" : ""}`;
+      return `dirty: ${state.paths.join(", ")}${omittedWords(state.omitted)}`;
     case "removable":
       return "removable";
     default: {

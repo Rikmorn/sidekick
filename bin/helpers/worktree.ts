@@ -13,6 +13,7 @@ import { HEADS } from './worker-repo.js';
 import { readSkips } from './worktree-ignored.js';
 import {
   type CommitsAt,
+  type Omitted,
   type WorktreeRow,
   type WorktreeState,
   worktreeRows,
@@ -40,6 +41,12 @@ const usage = (err: Out): number => {
   return 1;
 };
 
+function omittedWords(omitted: Omitted): string {
+  if (omitted.count === 0) return '';
+  const count = `${omitted.kind === 'at least' ? 'at least ' : ''}${omitted.count}`;
+  return `, and ${count} more`;
+}
+
 function stateWords(state: WorktreeState): string {
   switch (state.kind) {
     case 'held':
@@ -51,7 +58,7 @@ function stateWords(state: WorktreeState): string {
     case 'folder gone':
       return 'folder gone';
     case 'dirty':
-      return `dirty: ${state.paths.join(', ')}${state.truncated ? ', and more' : ''}`;
+      return `dirty: ${state.paths.join(', ')}${omittedWords(state.omitted)}`;
     case 'removable':
       return 'removable';
     default: {
