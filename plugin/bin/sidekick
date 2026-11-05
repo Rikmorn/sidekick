@@ -7123,7 +7123,7 @@ function* filesUnder2(worktree, rel, skipped) {
   for (const name of names)
     yield* filesUnder2(worktree, `${rel}/${name}`, skipped);
 }
-var IGNORED = "!! ";
+var IGNORED = "!!";
 function ignoredEntries(runGit, worktree) {
   const status = runGit("git", [
     "-C",
@@ -7136,7 +7136,7 @@ function ignoredEntries(runGit, worktree) {
   ], worktree);
   if (status.code !== 0)
     return { issue: status.stderr.trim() };
-  return status.stdout.split("\x00").filter((entry) => entry.startsWith(IGNORED)).map((entry) => entry.slice(IGNORED.length).replace(/\/+$/, ""));
+  return statusEntries(status.stdout).filter((entry) => entry.code === IGNORED).map((entry) => entry.path.replace(/\/+$/, ""));
 }
 function ignoredLosses(runGit, places, {
   cap = 20,

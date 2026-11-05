@@ -34,8 +34,8 @@ export interface StatusEntry {
 /** Porcelain's code for a tracked file deleted from the work tree, unstaged. */
 export const DELETED = ' D';
 
-// Every entry `git status --porcelain -z` names, sources of renames included.
-function statusEntries(stdout: string): StatusEntry[] {
+/** Every entry `git status --porcelain -z` names, sources of renames included. */
+export function statusEntries(stdout: string): StatusEntry[] {
   const fields = stdout.split('\0').filter((field) => field !== '');
   const entries: StatusEntry[] = [];
   let i = 0;

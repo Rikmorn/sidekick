@@ -7,6 +7,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
+import { statusEntries } from './worker-listing.js';
 
 /**
  * Names skipped at any depth, whatever the repo declares: `node_modules`, and
@@ -17,12 +18,14 @@ export const BUILT_IN_SKIPS: {
   files: readonly string[];
 } = { folders: ['node_modules'], files: ['.DS_Store'] };
 
-/** `<commonDir>/sidekick/disposable`: one folder per line, relative to the repo top; `#` starts a comment. */
+/**
+ * `<commonDir>/sidekick/disposable`: one folder per line, relative to the repo
+ * top, with or without a leading `./` and trailing `/`; `#` starts a comment.
+ */
 export function skipListPath(commonDir: string): string {
   return path.join(commonDir, 'sidekick', 'disposable');
 }
 
-// A skip line is a folder: drop the comment, a leading `./`, and trailing slashes.
 function skipFolder(line: string): string {
   return line
     .replace(/#.*$/, '')
@@ -171,9 +174,10 @@ function* filesUnder(
     yield* filesUnder(worktree, `${rel}/${name}`, skipped);
 }
 
-const IGNORED = '!! ';
+const IGNORED = '!!';
 
-// The ignored entries `git status` names, collapsed: a wholly ignored folder is one entry.
+// The ignored entries `git status` names, collapsed: a wholly ignored folder
+// is one entry. A rename's source field is a path, never an entry.
 function ignoredEntries(
   runGit: Runner,
   worktree: string,
@@ -192,10 +196,9 @@ function ignoredEntries(
     worktree,
   );
   if (status.code !== 0) return { issue: status.stderr.trim() };
-  return status.stdout
-    .split('\0')
-    .filter((entry) => entry.startsWith(IGNORED))
-    .map((entry) => entry.slice(IGNORED.length).replace(/\/+$/, ''));
+  return statusEntries(status.stdout)
+    .filter((entry) => entry.code === IGNORED)
+    .map((entry) => entry.path.replace(/\/+$/, ''));
 }
 
 /**

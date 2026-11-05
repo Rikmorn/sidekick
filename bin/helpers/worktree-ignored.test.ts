@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { removeTemps, repoWithWorktree } from './fixtures/worker/repo.js';
+import { git, removeTemps, repoWithWorktree } from './fixtures/worker/repo.js';
 import { execRunner, type Runner } from './pm-data.js';
 import {
   BUILT_IN_SKIPS,
@@ -169,6 +169,16 @@ describe('ignoredLosses: ignored files that removal would delete', () => {
       paths: ['out/real'],
       truncated: false,
     });
+  });
+
+  test("a staged rename's source named like an ignored entry is no entry", () => {
+    const r = setup('*.sh\n');
+    write(r.worktree, '!! keep.txt', 'a');
+    write(r.worktree, 'keep.txt', 'b');
+    git(r.worktree, 'add', '--', '!! keep.txt', 'keep.txt');
+    git(r.worktree, 'commit', '-q', '-m', 'two');
+    git(r.worktree, 'mv', '--', '!! keep.txt', 'moved.txt');
+    expect(ignoredLosses(execRunner, r.places)).toEqual(none);
   });
 
   test('a file name with a space is reported exactly', () => {
