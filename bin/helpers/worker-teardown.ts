@@ -10,6 +10,7 @@
  * deletion.
  */
 
+import * as fs from 'node:fs';
 import type { Runner } from './pm-data.js';
 import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import { shellArg } from './shell.js';
@@ -238,16 +239,27 @@ export const removeSession: Step = (ready, wenv, out) => {
   return [];
 };
 
+// git worktree remove refuses an untracked file, and the report's copy in the
+// worktree is untracked. When the saved copy holds the same bytes right now,
+// deleting that one file loses nothing; any other case stays for git to refuse.
+function clearSavedReport(ready: Ready): void {
+  const step = ready.reportStep;
+  if (step.kind !== 'copy' && step.kind !== 'saved earlier') return;
+  if (step.from === step.to) return;
+  try {
+    const saved = fs.readFileSync(step.to);
+    if (fs.readFileSync(step.from).equals(saved)) fs.unlinkSync(step.from);
+  } catch {
+    // A missing or unreadable copy stays, and git refuses on it.
+  }
+}
+
 // A worktree claude rm reported removed but git still lists is removed here when
 // no live session holds it. The record is forgotten by then, so a refusal names
 // the verb that finds the worktree by its name.
-function worktreeGoneIssues(
-  runGit: Runner,
-  top: string,
-  worktree: string,
-  name: string,
-  isAlive: (pid: number) => boolean,
-): string[] {
+function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
+  const { runGit, isAlive } = wenv;
+  const { mainTop: top, worktree, name } = ready;
   const list = worktreeListed(runGit, top, worktree);
   if ('issue' in list) {
     return [
@@ -256,6 +268,7 @@ function worktreeGoneIssues(
   }
   if (!list.listed) return [];
   const lock = lockStateOf(lockReasonOf(runGit, top, worktree), isAlive);
+  if (lock.kind === 'dead' || lock.kind === 'none') clearSavedReport(ready);
   const issues = removeGitWorktree(runGit, top, worktree, lock);
   if (issues.length === 0) return [];
   const lead = `claude rm said removed, but git still lists the worktree ${worktree}`;
@@ -311,13 +324,7 @@ function dropBranchConfig(
 
 /** Confirms the worktree is gone, then deletes a leftover branch only at the verified head. */
 export const removeLeftovers: Step = (ready, wenv, out) => {
-  const worktree = worktreeGoneIssues(
-    wenv.runGit,
-    ready.mainTop,
-    ready.worktree,
-    ready.name,
-    wenv.isAlive,
-  );
+  const worktree = worktreeGoneIssues(ready, wenv);
   if (worktree.length > 0) return worktree;
   out(`worktree ${ready.worktree} removed`);
   const branch = branchGoneIssues(

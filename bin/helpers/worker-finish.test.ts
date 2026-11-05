@@ -1012,19 +1012,13 @@ describe('finish clears the worker', () => {
   };
   const exitedLock =
     'claude session w1 (pid 4242 start Tue Oct 14 2026 10:00:00)';
-  // claude rm says removed and deletes the worker's untracked files, but leaves
-  // the worktree itself; git refuses to remove one that still holds the report.
-  const leftBehind = (fx: Fixture) => ({
-    ...removed('nothing'),
-    during: () => fs.rmSync(path.join(fx.worktree, REPORT)),
-  });
 
   test('removing a leftover that claude rm left locked by an exited session (#316)', () => {
     const fx = fixture();
     fx.integrate();
     lockWorktree(fx, exitedLock);
     const h = harness(fx);
-    h.claude.state.rm = [leftBehind(fx)];
+    h.claude.state.rm = [removed('nothing')];
     const code = h.finish(fx.brief, '--discard');
     expect([code, h.err]).toEqual([0, []]);
     expect(h.out).toContain(`worktree ${fx.worktree} removed`);
@@ -1037,10 +1031,67 @@ describe('finish clears the worker', () => {
     const fx = fixture();
     fx.integrate();
     const h = harness(fx);
-    h.claude.state.rm = [leftBehind(fx)];
+    h.claude.state.rm = [removed('nothing')];
     expect(h.finish(fx.brief)).toBe(0);
     expect(h.out).toContain(`worktree ${fx.worktree} removed`);
     expect(branchRemains(fx)).toBe(false);
+    expect(savedReport(fx)).toBe(REPORT_TEXT);
+  });
+
+  const gitRefusal = (fx: Fixture): RegExp =>
+    new RegExp(`^git worktree remove failed: .*${path.basename(fx.worktree)}`);
+
+  test('keeping a report copy that differs from the saved one, so git refuses', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    h.claude.state.rm = [
+      {
+        ...removed('nothing'),
+        during: () =>
+          fs.writeFileSync(path.join(fx.top, REPORT), 'changed after save\n'),
+      },
+    ];
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err[1]).toMatch(gitRefusal(fx));
+    expect(fs.readFileSync(path.join(fx.worktree, REPORT), 'utf8')).toBe(
+      REPORT_TEXT,
+    );
+    expect(branchRemains(fx)).toBe(true);
+  });
+
+  test('keeping an untracked file under --no-report, so git refuses', () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.rmSync(path.join(fx.worktree, REPORT));
+    const h = harness(fx);
+    h.claude.state.rm = [
+      {
+        ...removed('nothing'),
+        during: () =>
+          fs.writeFileSync(path.join(fx.worktree, 'stray.txt'), 's'),
+      },
+    ];
+    expect(h.finish(fx.brief, '--no-report')).toBe(1);
+    expect(h.err[1]).toMatch(gitRefusal(fx));
+    expect(fs.existsSync(path.join(fx.worktree, 'stray.txt'))).toBe(true);
+  });
+
+  test('keeping an untracked file with no brief, so git refuses', () => {
+    const fx = fixture();
+    fx.integrate();
+    fs.rmSync(path.join(fx.worktree, REPORT));
+    const h = harness(fx);
+    h.claude.state.rm = [
+      {
+        ...removed('nothing'),
+        during: () =>
+          fs.writeFileSync(path.join(fx.worktree, 'stray.txt'), 's'),
+      },
+    ];
+    expect(h.finish('--name', 'w1', '--discard')).toBe(1);
+    expect(h.err.join('\n')).toMatch(/git worktree remove failed/);
+    expect(fs.existsSync(path.join(fx.worktree, 'stray.txt'))).toBe(true);
   });
 
   test('refusing a leftover locked by a live session, naming worktree remove', () => {

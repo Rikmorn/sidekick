@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs38 from "node:fs";
+import * as fs39 from "node:fs";
 import { realpathSync as realpathSync10 } from "node:fs";
 import * as os3 from "node:os";
 import * as path49 from "node:path";
@@ -9246,6 +9246,9 @@ function ensureWorktreesExcluded(runGit, top, commonDir) {
   return { line: `added ${EXCLUDE_ENTRY} to ${file}` };
 }
 
+// bin/helpers/worker-teardown.ts
+import * as fs33 from "node:fs";
+
 // bin/helpers/worktree-lock.ts
 var LOCK_PID = /\(pid (\d+)\b/;
 function lockPid(reason7) {
@@ -9366,7 +9369,21 @@ var removeSession = (ready, wenv, out) => {
   out(`session ${ready.id} removed`);
   return [];
 };
-function worktreeGoneIssues(runGit, top, worktree, name, isAlive) {
+function clearSavedReport(ready) {
+  const step = ready.reportStep;
+  if (step.kind !== "copy" && step.kind !== "saved earlier")
+    return;
+  if (step.from === step.to)
+    return;
+  try {
+    const saved = fs33.readFileSync(step.to);
+    if (fs33.readFileSync(step.from).equals(saved))
+      fs33.unlinkSync(step.from);
+  } catch {}
+}
+function worktreeGoneIssues(ready, wenv) {
+  const { runGit, isAlive } = wenv;
+  const { mainTop: top, worktree, name } = ready;
   const list2 = worktreeListed(runGit, top, worktree);
   if ("issue" in list2) {
     return [
@@ -9376,6 +9393,8 @@ function worktreeGoneIssues(runGit, top, worktree, name, isAlive) {
   if (!list2.listed)
     return [];
   const lock = lockStateOf(lockReasonOf(runGit, top, worktree), isAlive);
+  if (lock.kind === "dead" || lock.kind === "none")
+    clearSavedReport(ready);
   const issues = removeGitWorktree(runGit, top, worktree, lock);
   if (issues.length === 0)
     return [];
@@ -9412,7 +9431,7 @@ function dropBranchConfig(runGit, top, branch) {
   ];
 }
 var removeLeftovers = (ready, wenv, out) => {
-  const worktree = worktreeGoneIssues(wenv.runGit, ready.mainTop, ready.worktree, ready.name, wenv.isAlive);
+  const worktree = worktreeGoneIssues(ready, wenv);
   if (worktree.length > 0)
     return worktree;
   out(`worktree ${ready.worktree} removed`);
@@ -9749,7 +9768,7 @@ var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
-import * as fs34 from "node:fs";
+import * as fs35 from "node:fs";
 import * as path44 from "node:path";
 
 // bin/helpers/worker-landed.ts
@@ -10005,7 +10024,7 @@ function landedVerdict(runGit, ctx, worker, opts) {
 }
 
 // bin/helpers/worktree-ignored.ts
-import * as fs33 from "node:fs";
+import * as fs34 from "node:fs";
 import * as path43 from "node:path";
 var BUILT_IN_SKIPS = ["node_modules"];
 function skipListPath(commonDir) {
@@ -10017,7 +10036,7 @@ function skipFolder(line) {
 function readSkips(commonDir) {
   const file = skipListPath(commonDir);
   try {
-    const folders = fs33.readFileSync(file, "utf-8").split(`
+    const folders = fs34.readFileSync(file, "utf-8").split(`
 `).map(skipFolder).filter((folder) => folder !== "");
     return { folders, warnings: [] };
   } catch (error) {
@@ -10033,21 +10052,21 @@ function skipper(folders) {
 }
 function lstatOf(file) {
   try {
-    return fs33.lstatSync(file);
+    return fs34.lstatSync(file);
   } catch {
     return;
   }
 }
 function sameBytes2(a, b) {
   try {
-    return fs33.readFileSync(a).equals(fs33.readFileSync(b));
+    return fs34.readFileSync(a).equals(fs34.readFileSync(b));
   } catch {
     return false;
   }
 }
 function sameLink(a, b) {
   try {
-    return fs33.readlinkSync(a) === fs33.readlinkSync(b);
+    return fs34.readlinkSync(a) === fs34.readlinkSync(b);
   } catch {
     return false;
   }
@@ -10076,7 +10095,7 @@ function* filesUnder2(worktree, rel, skipped) {
     yield rel;
     return;
   }
-  const names = fs33.readdirSync(path43.join(worktree, rel)).sort();
+  const names = fs34.readdirSync(path43.join(worktree, rel)).sort();
   for (const name of names)
     yield* filesUnder2(worktree, `${rel}/${name}`, skipped);
 }
@@ -10189,7 +10208,7 @@ function operatorIssues(name, tried, linked) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs34.existsSync(worktree) && !fs34.existsSync(path44.join(worktree, ".git"));
+  const linkless = fs35.existsSync(worktree) && !fs35.existsSync(path44.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -10365,12 +10384,12 @@ function clearGone(gone, wenv, out) {
 }
 
 // bin/helpers/worker-finish-report.ts
-import * as fs35 from "node:fs";
+import * as fs36 from "node:fs";
 import * as path45 from "node:path";
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs35.readFileSync(file) };
+    return { data: fs36.readFileSync(file) };
   } catch (e) {
     if (isMissing5(e))
       return { data: undefined };
@@ -10423,8 +10442,8 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs35.mkdirSync(path45.dirname(to), { recursive: true });
-    fs35.copyFileSync(from, to, fs35.constants.COPYFILE_EXCL);
+    fs36.mkdirSync(path45.dirname(to), { recursive: true });
+    fs36.copyFileSync(from, to, fs36.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${to}: ${why}`];
@@ -10486,7 +10505,7 @@ function copyChangedIssues(from, to, now) {
 }
 
 // bin/helpers/worker-finish-subject.ts
-import * as fs36 from "node:fs";
+import * as fs37 from "node:fs";
 import * as path46 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
@@ -10517,7 +10536,7 @@ function recordedTop(runGit, commonDir, name) {
   if (record2 === undefined)
     return;
   const folder = path46.dirname(record2.brief);
-  return fs36.existsSync(folder) ? topOf(runGit, folder) : undefined;
+  return fs37.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
   const { read } = subject;
@@ -10835,7 +10854,7 @@ function omittedWords(omitted) {
 import * as path48 from "node:path";
 
 // bin/helpers/worktree-state.ts
-import * as fs37 from "node:fs";
+import * as fs38 from "node:fs";
 import * as path47 from "node:path";
 var DIRTY_CAP = 20;
 var REMOTES = "refs/remotes/";
@@ -10888,7 +10907,7 @@ function dirtyState(runGit, repo, entry) {
   };
 }
 function gitState(src, runGit, entry) {
-  if (entry.prunable !== undefined || !fs37.existsSync(entry.path)) {
+  if (entry.prunable !== undefined || !fs38.existsSync(entry.path)) {
     return { kind: "folder gone" };
   }
   const state = dirtyState(runGit, src.repo, entry);
@@ -11352,7 +11371,7 @@ function resolvePluginDir(entryFileUrl) {
     path49.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs38.existsSync(path49.join(c, "rules")))
+    if (fs39.existsSync(path49.join(c, "rules")))
       return c;
   }
   return candidates3[0];
@@ -11361,7 +11380,7 @@ var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
   const manifest = path49.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs38.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs39.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -11390,7 +11409,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs38.writeSync(1, buffer, offset);
+      offset += fs39.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -11408,7 +11427,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs38.readFileSync(0, "utf-8");
+    return fs39.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
