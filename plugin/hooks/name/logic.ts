@@ -23,6 +23,7 @@ const EXECUTABLE = /(?:^|\/)sidekick$/;
 // The options end at `--`; the words after it are the prompt.
 const END_OF_OPTIONS = '--';
 const BACKGROUND = '--bg';
+const CHECK = '--check';
 
 function wordsOf(part: string): string[] {
   return (part.match(SHELL_WORD) ?? []).map((word) => word.replace(QUOTES, ''));
@@ -38,11 +39,11 @@ function isBackground(args: readonly string[]): boolean {
 function isLaunchPart(part: string): boolean {
   const [executable, noun, verb, ...args] = wordsOf(part);
   if (executable === undefined || !EXECUTABLE.test(executable)) return false;
-  if (noun === 'worker') return verb === 'dispatch';
+  if (noun === 'worker') return verb === 'dispatch' && !args.includes(CHECK);
   return noun === 'profile' && verb === 'launch' && isBackground(args);
 }
 
-/** Whether a Bash command launches a worker: `sidekick worker dispatch`, or `sidekick profile launch` with `--bg`, by any path to the executable. */
+/** Whether a Bash command launches a worker: `sidekick worker dispatch` without `--check`, which starts nothing, or `sidekick profile launch` with `--bg`, by any path to the executable. */
 export function isLaunch(command: string): boolean {
   return command.split(COMMAND_SEPARATORS).some(isLaunchPart);
 }

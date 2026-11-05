@@ -203,7 +203,6 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   return afterStart(ready, result, wenv, { out, err });
 }
 
-// Prints the profile's warnings, then the one pass line; launches nothing.
 function runCheck(
   opts: CheckOptions,
   wenv: WorkerEnv,

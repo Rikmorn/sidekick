@@ -25,7 +25,7 @@ sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | -
 - `--name <name>` stands in for a brief that is gone. There is then no brief to say where the report goes or what the target is, so it needs `--no-report` or `--discard`, and `--into <rev>` in landed mode.
 - `--worktree <path>` names the worker's worktree, and replaces every way `finish` would look for it. "How `finish` finds the worktree" says what that is. It also confirms a branch other than `worktree-<name>`, as "How `finish` finds the worktree" says.
 
-`dispatch` exits 1 on a refusal, before the launch or after it. After the launch it refuses a worker on the wrong worktree, as "What it does" under `dispatch` says. Otherwise it exits with `claude`'s exit code. `finish` exits 0 only when every step succeeded.
+`dispatch` exits 1 on a refusal, before the launch or after it. After the launch it refuses a worker on the wrong worktree, as "What it does" under `dispatch` says. Otherwise it exits with `claude`'s exit code, except that `dispatch --check` exits 0 on a pass without running `claude`. `finish` exits 0 only when every step succeeded.
 
 ## The brief
 
@@ -69,7 +69,7 @@ A worktree starts with none of the launching checkout's git-ignored files. List 
 
 ### What `--check` runs
 
-`dispatch --check` runs the checks under "What it checks" that read no brief, from the same checkout `dispatch` uses, and reports every reason at once. An orchestrator runs it before it offers a worker. A dirty tree and a missing mode print as two lines, not one.
+`dispatch --check` runs the checks under "What it checks" that read no brief, from the same checkout `dispatch` uses, and reports every reason at once. An orchestrator runs it before it offers a worker.
 
 - It runs outside a worker.
 - `HEAD` has a commit, and no tracked file has uncommitted changes.

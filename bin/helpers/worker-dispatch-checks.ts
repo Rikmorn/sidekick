@@ -249,7 +249,7 @@ export interface Ready {
   main: ResolvedMain | undefined;
 }
 
-// The 7 characters git prints for a short commit by default.
+// The length the pass line shortens a detached commit to.
 const SHORT_SHA = 7;
 
 // The marker's brief path under `--check`, which has no brief.
@@ -313,13 +313,12 @@ export function checkDispatch(
   };
 }
 
-/** What a passing `--check` reports. */
-export interface CheckPass {
+// What a passing `--check` reports.
+interface CheckPass {
   line: string;
   notes: string[];
 }
 
-// The branch the launching checkout holds, or its detached commit.
 const whereLine = (branch: string | undefined, head: string): string =>
   branch ?? `detached HEAD at ${head.slice(0, SHORT_SHA)}`;
 

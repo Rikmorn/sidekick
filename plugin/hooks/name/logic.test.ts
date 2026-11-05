@@ -15,6 +15,7 @@ test('isLaunch is true for a worker dispatch and a background profile launch', (
     '/abs/plugin/bin/sidekick worker dispatch b.md --permission-mode default',
     "'/Users/someone/My Projects/plugin/bin/sidekick' profile launch --bg qa",
     'cd x && "$CLAUDE_PLUGIN_ROOT"/bin/sidekick worker dispatch b.md --permission-mode default',
+    'sidekick worker dispatch --check --permission-mode default && sidekick worker dispatch b.md --permission-mode default',
   ];
   for (const command of launches) {
     expect(isLaunch(command)).toBe(true);
@@ -23,6 +24,10 @@ test('isLaunch is true for a worker dispatch and a background profile launch', (
 
 test('isLaunch is false for other verbs, a foreground launch, and look-alikes', () => {
   const others = [
+    'sidekick worker dispatch --check --permission-mode default',
+    'sidekick worker dispatch --check --permission-mode default --allow-push --plugin-dir p',
+    'sidekick worker dispatch --permission-mode default --check',
+    'cd x && sidekick worker dispatch --check --permission-mode default',
     'sidekick profile launch qa',
     'sidekick profile launch qa -- --bg',
     'sidekick profile list',
