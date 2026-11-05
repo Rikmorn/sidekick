@@ -2503,6 +2503,24 @@ describe('finish and ignored files', () => {
     );
   });
 
+  test('an ignored file beside deleted files is no partial removal, so it refuses and restores nothing', () => {
+    const fx = fixture({ ignore: IGNORE });
+    fx.integrate();
+    git(fx.top, 'update-ref', backup(fx), fx.head);
+    const a = path.join(fx.worktree, 'a.txt');
+    fs.rmSync(a);
+    write(fx, 'scratch/run.sh');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      ignoredLine(fx, 'scratch/run.sh'),
+    );
+    expect(fs.existsSync(a)).toBe(false);
+    expect(h.out.join('\n')).not.toContain('restored');
+  });
+
   test('--discard refuses a new ignored file the same way', () => {
     const fx = fixture({ ignore: IGNORE });
     write(fx, 'scratch/run.sh');
