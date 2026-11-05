@@ -423,11 +423,12 @@ const encodeByte = (byte: number): string => {
 const DOT = percent('.'.charCodeAt(0));
 
 /**
- * `name` as one segment that git check-ref-format accepts, inside a ref and
- * as a branch name. Each UTF-8 byte outside `[A-Za-z0-9._-]` is
- * percent-encoded, and so are a leading `.` or `-`, a `.` before another, a
- * trailing `.`, and the `.` of a `.lock` suffix. A name already in that form,
- * every worker's name among them, stays as it is.
+ * `name` as one segment that git check-ref-format accepts inside a ref. Each
+ * UTF-8 byte outside `[A-Za-z0-9._-]` is percent-encoded, and so are a
+ * leading `.` or `-`, a `.` before another, a trailing `.`, and the `.` of a
+ * `.lock` suffix. A name already in that form, every worker's name among
+ * them, stays as it is. git may still refuse a segment as a branch name, as
+ * it refuses `HEAD`.
  */
 export function refSegment(name: string): string {
   return [...Buffer.from(name, 'utf8')]

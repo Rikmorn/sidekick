@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
@@ -591,9 +592,14 @@ describe('worktree remove: refuses', () => {
 describe('worktree remove: folder names a ref cannot hold as they are', () => {
   const RESTORE = 'restore with: git branch ';
 
-  // Removes a detached worktree in a folder named `name`, then creates the
-  // branch its restore line names, at its ref; returns the line.
-  function removeAndRestore(name: string, segment: string): string {
+  // Removes a detached worktree in a folder named `name`, then runs its
+  // restore line in a shell, which must create `branch` at the head; returns
+  // the line.
+  function removeAndRestore(
+    name: string,
+    segment: string,
+    branch = segment,
+  ): string {
     const main = repo();
     const dir = path.join(tmp(), name);
     git(main, 'worktree', 'add', '-q', '--detach', dir);
@@ -604,9 +610,12 @@ describe('worktree remove: folder names a ref cannot hold as they are', () => {
     const ref = `refs/sidekick/landed/${segment}/${head}`;
     expect(backupRefs(main)).toEqual([ref]);
     expect(listed(main, dir)).toBe(false);
-    git(main, 'branch', segment, ref);
-    expect(git(main, 'rev-parse', segment)).toBe(head);
-    return out.at(-1) ?? '';
+    const line = out.at(-1) ?? '';
+    expect(line).toStartWith(RESTORE);
+    const command = line.slice('restore with: '.length);
+    execFileSync('/bin/sh', ['-c', command], { cwd: main });
+    expect(git(main, 'rev-parse', `refs/heads/${branch}`)).toBe(head);
+    return line;
   }
 
   test('my tree', () => {
@@ -618,6 +627,24 @@ describe('worktree remove: folder names a ref cannot hold as they are', () => {
   test('x.lock', () => {
     expect(removeAndRestore('x.lock', 'x%2Elock')).toStartWith(
       `${RESTORE}x%2Elock refs/sidekick/landed/x%2Elock/`,
+    );
+  });
+
+  test('HEAD, which git refuses as a branch, restores as restored-HEAD', () => {
+    const main = repo();
+    expect(refSegment('HEAD')).toBe('HEAD');
+    expect(() => git(main, 'check-ref-format', '--branch', 'HEAD')).toThrow();
+    const line = removeAndRestore('HEAD', 'HEAD', 'restored-HEAD');
+    expect(line).toStartWith(
+      `${RESTORE}restored-HEAD refs/sidekick/landed/HEAD/`,
+    );
+    const branch = line.slice(RESTORE.length).split(' ')[0];
+    expect(git(main, 'check-ref-format', '--branch', branch)).toBe(branch);
+  });
+
+  test('an ordinary detached name keeps its form', () => {
+    expect(removeAndRestore('det', 'det')).toStartWith(
+      `${RESTORE}det refs/sidekick/landed/det/`,
     );
   });
 
@@ -663,6 +690,15 @@ describe('worktree remove: folder names a ref cannot hold as they are', () => {
       ).not.toThrow();
     }
     expect(new Set(names.map(refSegment)).size).toBe(names.length);
+  });
+
+  test('every encoded name passes as a branch behind the restored- prefix, HEAD included', () => {
+    const main = repo();
+    const names = ['HEAD', 'my tree', '.x', 'x.', 'a..b', '-x', '@', 'ü'];
+    for (const name of names) {
+      const branch = `restored-${refSegment(name)}`;
+      expect(git(main, 'check-ref-format', '--branch', branch)).toBe(branch);
+    }
   });
 
   test("a name already in the safe form stays as it is, as a worker's does", () => {

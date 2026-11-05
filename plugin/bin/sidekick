@@ -11400,8 +11400,15 @@ function endedLines(ids) {
     `claude rm removed ${sessions} before this; remove itself deleted no worktree and no branch`
   ];
 }
-var restoreBranch = (checked2) => checked2.plan.kind === "delete" ? checked2.plan.branch : refSegment(checked2.name);
-var restoreLine = (checked2) => `restore with: git branch ${shellArg(restoreBranch(checked2))} ${shellArg(checked2.plan.ref)}`;
+var RESTORED = "restored-";
+function restoreBranch(env, top, checked2) {
+  if (checked2.plan.kind === "delete")
+    return checked2.plan.branch;
+  const segment = refSegment(checked2.name);
+  const check2 = env.runGit("git", ["check-ref-format", "--branch", segment], top);
+  return check2.code === 0 ? segment : `${RESTORED}${segment}`;
+}
+var restoreLine = (branch, checked2) => `restore with: git branch ${shellArg(branch)} ${shellArg(checked2.plan.ref)}`;
 var fail = (lines, err) => {
   for (const line of lines)
     err(line);
@@ -11423,7 +11430,7 @@ function removeWorktree(args, env, out, err) {
   if (issues.length > 0) {
     return fail([...issues, `the backup ref ${ref2} keeps ${head}`], err);
   }
-  out(restoreLine(checked2));
+  out(restoreLine(restoreBranch(env, repo.top, checked2), checked2));
   return 0;
 }
 

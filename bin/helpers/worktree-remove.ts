@@ -195,15 +195,31 @@ function endedLines(ids: string[]): string[] {
   ];
 }
 
-// refSegment makes a valid branch name of any folder name.
-const restoreBranch = (checked: Checked): string =>
-  checked.plan.kind === 'delete'
-    ? checked.plan.branch
-    : refSegment(checked.name);
+// git accepts any encoded segment behind this prefix: it then starts with a
+// letter, and the encoding leaves no `..`, trailing `.`, or `.lock` suffix.
+const RESTORED = 'restored-';
+
+// With no branch deleted, the line names a branch after the folder, as the
+// ref encodes it. git refuses a few such names as a branch, `HEAD` among them,
+// and only those take the prefix.
+function restoreBranch(
+  env: WorktreeEnv,
+  top: string,
+  checked: Checked,
+): string {
+  if (checked.plan.kind === 'delete') return checked.plan.branch;
+  const segment = refSegment(checked.name);
+  const check = env.runGit(
+    'git',
+    ['check-ref-format', '--branch', segment],
+    top,
+  );
+  return check.code === 0 ? segment : `${RESTORED}${segment}`;
+}
 
 // Quoted for a POSIX shell, as finish's own restore line is.
-const restoreLine = (checked: Checked): string =>
-  `restore with: git branch ${shellArg(restoreBranch(checked))} ${shellArg(checked.plan.ref)}`;
+const restoreLine = (branch: string, checked: Checked): string =>
+  `restore with: git branch ${shellArg(branch)} ${shellArg(checked.plan.ref)}`;
 
 const fail = (lines: string[], err: Out): number => {
   for (const line of lines) err(line);
@@ -233,6 +249,6 @@ export function removeWorktree(
   if (issues.length > 0) {
     return fail([...issues, `the backup ref ${ref} keeps ${head}`], err);
   }
-  out(restoreLine(checked));
+  out(restoreLine(restoreBranch(env, repo.top, checked), checked));
   return 0;
 }

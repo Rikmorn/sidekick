@@ -109,7 +109,7 @@ It prints `worktree <path> removed`, then `branch <branch> removed` for the bran
 restore with: git branch worktree-r10-x refs/sidekick/landed/r10-x/<head>
 ```
 
-For a detached worktree or a kept branch, the restore line names the worktree's name, encoded as in the ref, as the branch to create. A kept branch may still exist under its own name. The line quotes each word a POSIX shell would read otherwise, as `finish`'s does.
+For a detached worktree or a kept branch, the restore line names the worktree's name, encoded as in the ref, as the branch to create. Where git refuses that name as a branch, as it refuses `HEAD`, the line prefixes it with `restored-`. A kept branch may still exist under its own name. The line quotes each word a POSIX shell would read otherwise, as `finish`'s does.
 
 ### It never forces
 
