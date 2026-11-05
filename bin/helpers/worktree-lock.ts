@@ -1,0 +1,68 @@
+/**
+ * A worktree's lock, read as a state, and the removal that honours it. Claude
+ * Code locks each worktree it makes with a reason naming the session's pid, so
+ * a dead pid marks a lock nobody holds. `finish`, `worktree list`, and
+ * `worktree remove` all read the lock through here.
+ */
+
+import type { Runner } from './pm-data.js';
+
+// The lock reads `claude session <name> (pid <n> start <date>)`.
+const LOCK_PID = /\(pid (\d+)\b/;
+
+/**
+ * The lock's pid, when it names one. kill(0, 0) signals the process group, so
+ * only a positive pid counts.
+ */
+export function lockPid(reason: string | undefined): number | undefined {
+  if (reason === undefined) return undefined;
+  const pid = Number(LOCK_PID.exec(reason)?.[1]);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
+
+export type LockState =
+  | { kind: 'none' }
+  /** A `(pid N` lock whose process has exited. */
+  | { kind: 'dead'; pid: number }
+  | { kind: 'live'; pid: number }
+  /** Any lock naming no pid, `''` included. */
+  | { kind: 'other'; reason: string };
+
+/** Reads the `locked` field of a `git worktree list` entry. */
+export function lockStateOf(
+  locked: string | undefined,
+  isAlive: (pid: number) => boolean,
+): LockState {
+  if (locked === undefined) return { kind: 'none' };
+  const pid = lockPid(locked);
+  if (pid === undefined) return { kind: 'other', reason: locked };
+  return isAlive(pid) ? { kind: 'live', pid } : { kind: 'dead', pid };
+}
+
+const gitIssue = (verb: string, stderr: string): string =>
+  `git worktree ${verb} failed: ${stderr.trim()}`;
+
+/**
+ * Unlocks a dead lock, then runs `git worktree remove <path>`, never with
+ * `--force`, so git refuses a worktree holding untracked files. A live or
+ * unreadable lock refuses before anything changes. Returns the issues, else [].
+ */
+export function removeGitWorktree(
+  runGit: Runner,
+  top: string,
+  path: string,
+  lock: LockState,
+): string[] {
+  if (lock.kind === 'live') {
+    return [`${path} is locked by a live session (pid ${lock.pid})`];
+  }
+  if (lock.kind === 'other') {
+    return [`${path} is locked${lock.reason === '' ? '' : `: ${lock.reason}`}`];
+  }
+  if (lock.kind === 'dead') {
+    const unlock = runGit('git', ['worktree', 'unlock', path], top);
+    if (unlock.code !== 0) return [gitIssue('unlock', unlock.stderr)];
+  }
+  const removed = runGit('git', ['worktree', 'remove', path], top);
+  return removed.code === 0 ? [] : [gitIssue('remove', removed.stderr)];
+}

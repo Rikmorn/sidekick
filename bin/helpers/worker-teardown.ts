@@ -22,6 +22,7 @@ import {
 import { removeRecord } from './worker-record.js';
 import { branchExists, commitOf, physical } from './worker-repo.js';
 import { nativeBranch, nativeFolder } from './worker-worktree.js';
+import { lockPid } from './worktree-lock.js';
 
 export type Out = (line: string) => void;
 
@@ -32,9 +33,6 @@ const REMOVED = /^removed\b/;
 
 /** claude rm's offer to discard the commits no remote holds: `<sha>@<worktree id>`. */
 export const DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
-
-// The lock reads `claude session <name> (pid <n> start <date>)`.
-const LOCK_PID = /\(pid (\d+)\b/;
 
 // The listed job by the worker's name.
 export interface WorkerJob {
@@ -131,15 +129,8 @@ export const stopJob = (job: JobAt, wenv: WorkerEnv): string[] => {
   return runStop(job, wenv);
 };
 
-// The lock's pid, when it names one. kill(0, 0) signals the process group, so
-// only a positive pid is waited on. An unreadable lock means no wait: claude rm
-// then keeps the worktree, and finish refuses its answer.
-function lockPid(reason: string | undefined): number | undefined {
-  if (reason === undefined) return undefined;
-  const pid = Number(LOCK_PID.exec(reason)?.[1]);
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
-}
-
+// An unreadable lock means no wait: claude rm then keeps the worktree, and
+// finish refuses its answer.
 // Read at each call, never kept in Ready, since the lock can change while finish runs.
 function lockPidNow(
   at: Pick<JobAt, 'mainTop' | 'worktree'>,

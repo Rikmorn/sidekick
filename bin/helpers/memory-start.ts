@@ -96,7 +96,10 @@ function gitLine(
   return result.code === 0 && line !== '' ? line : undefined;
 }
 
-function defaultBranchOf(runGit: Runner, cwd: string): string | undefined {
+export function defaultBranchOf(
+  runGit: Runner,
+  cwd: string,
+): string | undefined {
   const ref = gitLine(runGit, cwd, [
     'symbolic-ref',
     '-q',

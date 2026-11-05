@@ -9246,11 +9246,19 @@ function ensureWorktreesExcluded(runGit, top, commonDir) {
   return { line: `added ${EXCLUDE_ENTRY} to ${file}` };
 }
 
+// bin/helpers/worktree-lock.ts
+var LOCK_PID = /\(pid (\d+)\b/;
+function lockPid(reason7) {
+  if (reason7 === undefined)
+    return;
+  const pid = Number(LOCK_PID.exec(reason7)?.[1]);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
+
 // bin/helpers/worker-teardown.ts
 var ENDED_STATES = ["stopped", "done"];
 var REMOVED = /^removed\b/;
 var DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
-var LOCK_PID = /\(pid (\d+)\b/;
 var NO_LIMIT = 0;
 var claudeAt = (at, wenv, args, timeoutMs = 30000) => wenv.runClaude(args, { cwd: at.mainTop, timeoutMs });
 function withText(lead, result) {
@@ -9272,12 +9280,6 @@ var stopJob = (job, wenv) => {
     return [];
   return runStop(job, wenv);
 };
-function lockPid(reason7) {
-  if (reason7 === undefined)
-    return;
-  const pid = Number(LOCK_PID.exec(reason7)?.[1]);
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
-}
 function lockPidNow(at, wenv) {
   return lockPid(lockReasonOf(wenv.runGit, at.mainTop, at.worktree));
 }
