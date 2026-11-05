@@ -71,15 +71,42 @@ interface Call {
   opts: { cwd: string; timeoutMs: number };
 }
 
+const JOB = '213245a1';
+
 /**
- * Plays `doctor` with the canary's line, `plugin list --json`, and the agents
- * listing from `state.agents`; any other call is the launch.
+ * What Claude Code's own creation does for `--worktree <name>`: a worktree at
+ * `<main>/.claude/worktrees/<name>` on `worktree-<name>`, from the launching
+ * checkout's HEAD. It returns the folder the job then lists as its cwd.
  */
-function fakeClaude() {
+const nativeLanding =
+  (mainTop: string) =>
+  (launchCwd: string, name: string): string | undefined => {
+    const where = path.join(mainTop, '.claude', 'worktrees', name);
+    git(launchCwd, 'worktree', 'add', '-q', where, '-b', `worktree-${name}`);
+    return where;
+  };
+
+/**
+ * Plays `doctor` with the canary's line, `plugin list --json`, `stop`, and the
+ * agents listing from `state.agents`; any other call is the launch. A launch
+ * that exits 0 runs `state.land`, and the listing then adds the job's row at
+ * the folder it returns, or no row when it returns undefined.
+ */
+function fakeClaude(mainTop: string) {
   const calls: Call[] = [];
   const state = {
     agents: '[]',
-    launch: ok({ stdout: 'backgrounded · 213245a1 · w1\n' }),
+    launch: ok({ stdout: `backgrounded · ${JOB} · w1\n` }),
+    land: nativeLanding(mainTop),
+    stop: ok(),
+  };
+  let launched: string | undefined;
+  const afterLaunch = (opts: Call['opts'], args: string[]): string => {
+    const name = args[args.indexOf('--worktree') + 1];
+    const cwd = state.land(opts.cwd, name);
+    const rows: object[] = JSON.parse(state.agents);
+    const row = { id: JOB, kind: 'background', name, cwd, state: 'working' };
+    return JSON.stringify(cwd === undefined ? rows : [...rows, row]);
   };
   const run: ClaudeRunner = (args, opts) => {
     calls.push({ args, opts });
@@ -95,15 +122,18 @@ function fakeClaude() {
     if (args.at(-3) === 'plugin' && args.at(-2) === 'list') {
       return ok({ stdout: '[]' });
     }
-    if (args[0] === 'agents') return ok({ stdout: state.agents });
+    if (args[0] === 'agents') return ok({ stdout: launched ?? state.agents });
+    if (args[0] === 'stop') return state.stop;
+    if (state.launch.code === 0) launched = afterLaunch(opts, args);
     return state.launch;
   };
   const launches = (): Call[] => calls.filter((c) => c.args.includes('--bg'));
-  return { run, calls, state, launches };
+  const stops = (): Call[] => calls.filter((c) => c.args[0] === 'stop');
+  return { run, calls, state, launches, stops };
 }
 
 function harness(fx: Fixture, over: Partial<WorkerEnv> = {}) {
-  const claude = fakeClaude();
+  const claude = fakeClaude(fx.top);
   const out: string[] = [];
   const err: string[] = [];
   const wenv: WorkerEnv = {
@@ -912,12 +942,122 @@ describe('dispatch records the main', () => {
     expect(h.out.some((line) => line.startsWith('main:'))).toBe(false);
   });
 
-  test('lists the sessions once', () => {
+  test('lists the sessions once before the launch, and once after it for the worktree check', () => {
     const fx = fixture();
     const h = inSession(fx, { CLAUDE_CODE_SESSION_ID: SESSION });
     run(h, fx);
-    expect(h.claude.calls.filter((c) => c.args[0] === 'agents')).toHaveLength(
-      1,
+    const kinds = h.claude.calls
+      .filter((c) => c.args[0] === 'agents' || c.args.includes('--bg'))
+      .map((c) => c.args[0]);
+    expect(kinds).toEqual(['agents', '--add-dir', 'agents']);
+  });
+});
+
+describe("dispatch checks the worker's worktree after the launch", () => {
+  const recordFile = (fx: Fixture): string =>
+    path.join(fx.top, '.git', 'sidekick', 'workers', 'w1.json');
+
+  const dispatched = (h: Harness): boolean =>
+    h.out.some((line) => line.startsWith('worker w1 dispatched'));
+
+  test('a hook-made worktree: stops the job, keeps the record, prints no summary, and exits 1', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    // worktrunk's shape: `../<repo>.<name>` on the branch `<name>`.
+    const hooked = path.join(tmp(), `${path.basename(fx.top)}.w1`);
+    h.claude.state.land = (launchCwd, name) => {
+      git(launchCwd, 'worktree', 'add', '-q', hooked, '-b', name);
+      return hooked;
+    };
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(1);
+    expect(h.claude.stops()).toEqual([
+      { args: ['stop', JOB], opts: { cwd: fx.top, timeoutMs: 30_000 } },
+    ]);
+    expect(JSON.parse(fs.readFileSync(recordFile(fx), 'utf-8')).job).toBe(JOB);
+    expect(dispatched(h)).toBe(false);
+    expect(h.out).toContain(`backgrounded · ${JOB} · w1`);
+    const native = path.join(fx.top, '.claude', 'worktrees', 'w1');
+    expect(h.err).toEqual([
+      `the worker's worktree is ${hooked} on w1, not ${native} on worktree-w1: a WorktreeCreate hook likely made it`,
+      `dispatch stopped the worker with claude stop ${JOB}. Remove its worktree with the hook's own removal, then run: sidekick worker finish ${fx.brief} --discard`,
+    ]);
+  });
+
+  test('from a linked worktree, a worktree under that checkout is refused, and stopped from it', () => {
+    const fx = fixture();
+    const sib = sibling(fx, path.join(tmp(), 'sib'));
+    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    const underSib = path.join(sib.top, '.claude', 'worktrees', 'w1');
+    h.claude.state.land = (launchCwd, name) => {
+      git(
+        launchCwd,
+        'worktree',
+        'add',
+        '-q',
+        underSib,
+        '-b',
+        `worktree-${name}`,
+      );
+      return underSib;
+    };
+    expect(h.dispatch(sib.brief, '--permission-mode', 'auto')).toBe(1);
+    const native = path.join(fx.top, '.claude', 'worktrees', 'w1');
+    expect(h.err[0]).toBe(
+      `the worker's worktree is ${underSib} on worktree-w1, not ${native} on worktree-w1: a WorktreeCreate hook likely made it`,
     );
+    expect(h.claude.stops().map((c) => c.opts.cwd)).toEqual([sib.top]);
+  });
+
+  test('no worktree at all: the way out drops the hook, and quotes the brief path', () => {
+    const fx = fixture();
+    const spaced = path.join(fx.docs, 'my brief.md');
+    fs.copyFileSync(fx.brief, spaced);
+    const h = harness(fx);
+    h.claude.state.land = (launchCwd) => launchCwd;
+    expect(h.dispatch(spaced, '--permission-mode', 'auto')).toBe(1);
+    expect(h.err).toEqual([
+      `the worker runs in the launching checkout ${fx.top}, not in a worktree of its own at ${path.join(fx.top, '.claude', 'worktrees', 'w1')}: claude made no worktree for it`,
+      `dispatch stopped the worker with claude stop ${JOB}. Then run: sidekick worker finish '${spaced}' --discard`,
+    ]);
+  });
+
+  test('a stop that fails says so, and the way out starts with the stop', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.land = (launchCwd) => launchCwd;
+    h.claude.state.stop = ok({ code: 4, stderr: 'no such job\n' });
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(1);
+    expect(h.err.slice(1)).toEqual([
+      `claude stop ${JOB} failed with exit code 4, so the worker may still run:`,
+      'no such job',
+      `Stop the worker with claude stop ${JOB}. Then run: sidekick worker finish ${fx.brief} --discard`,
+    ]);
+    expect(fs.existsSync(recordFile(fx))).toBe(true);
+  });
+
+  test('a check that cannot find the job: the summary, the record, its line, and exit 0', () => {
+    const fx = fixture();
+    const sleeps: number[] = [];
+    const h = harness(fx, { sleep: (ms) => sleeps.push(ms) });
+    h.claude.state.land = () => undefined;
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(dispatched(h)).toBe(true);
+    expect(h.err).toEqual([
+      `the worktree check did not run: after 5 tries, claude agents --json --all lists no job ${JOB}`,
+    ]);
+    expect(sleeps).toEqual([1000, 1000, 1000, 1000]);
+    expect(h.claude.stops()).toEqual([]);
+    expect(JSON.parse(fs.readFileSync(recordFile(fx), 'utf-8')).job).toBe(JOB);
+  });
+
+  test('a launch that names no job: its line, and exit 0', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.launch = ok({ stdout: 'started\n' });
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(dispatched(h)).toBe(true);
+    expect(h.err).toEqual([
+      "the worktree check did not run: claude's output named no job id for w1",
+    ]);
   });
 });

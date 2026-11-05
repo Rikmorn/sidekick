@@ -3,8 +3,10 @@
  * profile, then starts `sk-worker` as a background session in a worktree of
  * its own, with pushes blocked unless the operator allows them. A refusal
  * names every reason it finds, except that a brief that does not parse stops
- * the checks there. This module launches; the checks live in
- * `worker-dispatch-checks.ts`.
+ * the checks there. Once the worker starts, it checks the worktree the worker
+ * runs in, and stops a worker on the wrong one. This module launches; the
+ * checks before the launch live in `worker-dispatch-checks.ts`, and the
+ * worktree check in `worker-dispatch-verify.ts`.
  */
 
 import { mainReport } from './main-session.js';
@@ -15,8 +17,13 @@ import type { WorkerEnv } from './worker.js';
 import { readBrief } from './worker-brief.js';
 import type { DispatchOptions } from './worker-dispatch-args.js';
 import { BYPASS, checkDispatch, type Ready } from './worker-dispatch-checks.js';
+import {
+  verifyWorktree,
+  type WorktreeVerdict,
+} from './worker-dispatch-verify.js';
 import { ensureWorktreesExcluded } from './worker-exclude.js';
 import { jobIdFrom, writeRecord } from './worker-record.js';
+import { failure, ranClean, withText } from './worker-teardown.js';
 
 type Out = (line: string) => void;
 
@@ -67,21 +74,100 @@ const refuse = (err: Out, issues: string[]): number => {
 };
 
 // Leaves the record that `sidekick desk` lists the worker from. A failure only
-// warns: the worker has started, so claude's exit code stands.
-function keepRecord(ready: Ready, result: ClaudeResult, err: Out): void {
+// warns, since the worker has started and the exit code is the launch's.
+function keepRecord(ready: Ready, job: string | null, err: Out): void {
   const written = writeRecord(ready.commonDir, {
     version: 2,
     name: ready.brief.name,
     main: ready.main?.value ?? null,
-    job: jobIdFrom(result.stdout, ready.brief.name),
+    job,
     brief: ready.briefPath,
     dispatchedAt: new Date().toISOString(),
   });
   if ('issue' in written) err(written.issue);
 }
 
+type Mismatch = Extract<WorktreeVerdict, { kind: 'mismatch' }>;
+
+// The last refusal line. Only a hook made the worktree for `creator`, and only
+// the hook's own removal clears what it made.
+function wayOut(ready: Ready, verdict: Mismatch, stopped: string): string {
+  const discard = `sidekick worker finish ${shellArg(ready.briefPath)} --discard`;
+  return verdict.cause === 'creator'
+    ? `${stopped} Remove its worktree with the hook's own removal, then run: ${discard}`
+    : `${stopped} Then run: ${discard}`;
+}
+
+// Runs `claude stop` from the launching checkout, where the job started, with
+// the limit finish's own stop keeps. Returns the lines of a stop that failed.
+function stopStray(
+  ready: Ready,
+  job: string,
+  wenv: WorkerEnv,
+  timeoutMs = 30_000,
+): string[] {
+  const result = wenv.runClaude(['stop', job], {
+    cwd: ready.launchTop,
+    timeoutMs,
+  });
+  if (ranClean(result)) return [];
+  const lead = `claude stop ${shellArg(job)} ${failure(result)}, so the worker may still run`;
+  return withText(lead, result);
+}
+
+// The record stays, so the desk shows the stray and `finish --discard` finds it.
+function refuseStray(
+  ready: Ready,
+  verdict: Mismatch,
+  wenv: WorkerEnv,
+  err: Out,
+): number {
+  keepRecord(ready, verdict.job, err);
+  const stop = `claude stop ${shellArg(verdict.job)}`;
+  const stopFailed = stopStray(ready, verdict.job, wenv);
+  const stopped =
+    stopFailed.length === 0
+      ? `dispatch stopped the worker with ${stop}.`
+      : `Stop the worker with ${stop}.`;
+  return refuse(err, [
+    ...verdict.lines,
+    ...stopFailed,
+    wayOut(ready, verdict, stopped),
+  ]);
+}
+
+// M1 runs before the summary, which prints only for a worktree that matched or
+// one the check could not read.
+function afterStart(
+  ready: Ready,
+  result: ClaudeResult,
+  wenv: WorkerEnv,
+  { out, err }: { out: Out; err: Out },
+): number {
+  const job = jobIdFrom(result.stdout, ready.brief.name);
+  const verdict = verifyWorktree({
+    runGit: wenv.runGit,
+    runClaude: wenv.runClaude,
+    sleep: wenv.sleep,
+    jobId: job,
+    name: ready.brief.name,
+    mainTop: ready.mainTop,
+    launchTop: ready.launchTop,
+    baseline: ready.brief.baseline,
+  });
+  if (verdict.kind === 'mismatch') {
+    return refuseStray(ready, verdict, wenv, err);
+  }
+  for (const line of [...mainLines(ready, wenv), ...summary(ready)]) {
+    out(line);
+  }
+  keepRecord(ready, job, err);
+  if (verdict.kind === 'unchecked') err(verdict.line);
+  return result.code;
+}
+
 // Excludes the worktrees folder, starts the worker from the launching checkout, and relays
-// claude; the summary prints only once claude reports a start.
+// claude; the summary prints only once claude reports a start and M1 passes it.
 function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   for (const note of ready.notes) err(note);
   const excluded = ensureWorktreesExcluded(
@@ -103,16 +189,14 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
     timeoutMs: wenv.launchTimeoutMs ?? LAUNCH_TIMEOUT_MS,
   });
   relay(result, out, err);
-  if (result.code === 0) {
-    for (const line of [...mainLines(ready, wenv), ...summary(ready)]) {
-      out(line);
-    }
-    keepRecord(ready, result, err);
-  }
-  return result.code;
+  if (result.code !== 0) return result.code;
+  return afterStart(ready, result, wenv, { out, err });
 }
 
-/** Runs `dispatch`; returns 1 on a refusal, else `claude`'s exit code. */
+/**
+ * Runs `dispatch`; returns 1 on a refusal, before the launch or after it when
+ * the worker's worktree is not the one expected, else `claude`'s exit code.
+ */
 export function dispatch(
   opts: DispatchOptions,
   wenv: WorkerEnv,
