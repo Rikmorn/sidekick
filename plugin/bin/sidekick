@@ -9907,8 +9907,9 @@ function leftoverIssues(runGit, ready) {
     }
   }
 }
+var lockNow = ({ mainTop, worktree }, { runGit, isAlive }) => lockStateOf(lockReasonOf(runGit, mainTop, worktree), isAlive);
 function worktreeGoneIssues(ready, wenv) {
-  const { runGit, isAlive } = wenv;
+  const { runGit } = wenv;
   const { mainTop: top, worktree } = ready;
   const list2 = worktreeListed(runGit, top, worktree);
   if ("issue" in list2) {
@@ -9919,11 +9920,12 @@ function worktreeGoneIssues(ready, wenv) {
   }
   if (!list2.listed)
     return [];
-  const lock = lockStateOf(lockReasonOf(runGit, top, worktree), isAlive);
-  const unlocked = lock.kind === "dead" || lock.kind === "none";
+  const first = lockNow(ready, wenv);
+  const unlocked = first.kind === "dead" || first.kind === "none";
   if (unlocked)
     clearSavedReport(ready);
   const files = unlocked ? leftoverIssues(runGit, ready) : [];
+  const lock = unlocked && files.length === 0 ? lockNow(ready, wenv) : first;
   const issues = files.length > 0 ? files : removeGitWorktree(runGit, top, worktree, lock);
   if (issues.length === 0)
     return [];

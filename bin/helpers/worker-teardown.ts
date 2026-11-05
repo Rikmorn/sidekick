@@ -26,7 +26,12 @@ import {
 import { removeRecord } from './worker-record.js';
 import { branchExists, commitOf, physical } from './worker-repo.js';
 import { nativeBranch, nativeFolder } from './worker-worktree.js';
-import { lockPid, lockStateOf, removeGitWorktree } from './worktree-lock.js';
+import {
+  type LockState,
+  lockPid,
+  lockStateOf,
+  removeGitWorktree,
+} from './worktree-lock.js';
 import { omittedWords } from './worktree-read.js';
 import { filesState } from './worktree-state.js';
 
@@ -297,11 +302,16 @@ function leftoverIssues(runGit: Runner, ready: Ready): string[] {
   }
 }
 
+const lockNow = (
+  { mainTop, worktree }: Pick<Ready, 'mainTop' | 'worktree'>,
+  { runGit, isAlive }: WorkerEnv,
+): LockState => lockStateOf(lockReasonOf(runGit, mainTop, worktree), isAlive);
+
 // A worktree claude rm reported removed but git still lists is removed here when
 // no live session or other lock holds it and its files lose nothing. Every
 // refusal ends with the way out by its path.
 function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
-  const { runGit, isAlive } = wenv;
+  const { runGit } = wenv;
   const { mainTop: top, worktree } = ready;
   const list = worktreeListed(runGit, top, worktree);
   if ('issue' in list) {
@@ -311,11 +321,13 @@ function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
     ];
   }
   if (!list.listed) return [];
-  const lock = lockStateOf(lockReasonOf(runGit, top, worktree), isAlive);
-  const unlocked = lock.kind === 'dead' || lock.kind === 'none';
+  const first = lockNow(ready, wenv);
+  const unlocked = first.kind === 'dead' || first.kind === 'none';
   if (unlocked) clearSavedReport(ready);
   // A live or other lock refuses in removeGitWorktree, before any file is read.
   const files = unlocked ? leftoverIssues(runGit, ready) : [];
+  // The files check takes seconds, and a session may lock the worktree meanwhile.
+  const lock = unlocked && files.length === 0 ? lockNow(ready, wenv) : first;
   const issues =
     files.length > 0 ? files : removeGitWorktree(runGit, top, worktree, lock);
   if (issues.length === 0) return [];

@@ -1156,6 +1156,41 @@ describe('finish clears the worker', () => {
     expect(fs.existsSync(fx.worktree)).toBe(true);
   });
 
+  test('refusing a leftover a live session locks during the files check, keeping its lock (#316)', () => {
+    const fx = fixture();
+    fx.integrate();
+    lockWorktree(fx, exitedLock);
+    const liveLock =
+      'claude session w2 (pid 5151 start Tue Oct 14 2026 10:05:00)';
+    // The files check runs git status after the first lock reading; a session
+    // locks the worktree at that moment.
+    let relocked = false;
+    const runGit: Runner = (cmd, args, cwd) => {
+      const afterRm = h.claude.named('rm').length > 0;
+      if (afterRm && !relocked && args.includes('status')) {
+        lockWorktree(fx, liveLock);
+        relocked = true;
+      }
+      return execRunner(cmd, args, cwd);
+    };
+    const h = harness(fx, { runGit, isAlive: (pid) => pid === 5151 });
+    h.claude.state.rm = [removed('nothing')];
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(relocked).toBe(true);
+    expect(h.err).toEqual([
+      `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
+      `${fx.worktree} is locked by a live session (pid 5151)`,
+      forgottenWayOut(fx),
+    ]);
+    const lockFile = path.join(fx.top, '.git', 'worktrees', 'w1', 'locked');
+    expect(fs.readFileSync(lockFile, 'utf8')).toBe(liveLock);
+    expect(git(fx.top, 'worktree', 'list', '--porcelain')).toContain(
+      `worktree ${fx.worktree}\n`,
+    );
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+    expect(branchRemains(fx)).toBe(true);
+  });
+
   test('refusing a leftover locked by something other than a claude session, though its pid is dead', () => {
     const fx = fixture();
     fx.integrate();
