@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs36 from "node:fs";
+import * as fs37 from "node:fs";
 import { realpathSync as realpathSync10 } from "node:fs";
 import * as os3 from "node:os";
-import * as path46 from "node:path";
+import * as path47 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -9709,8 +9709,8 @@ var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
-import * as fs33 from "node:fs";
-import * as path43 from "node:path";
+import * as fs34 from "node:fs";
+import * as path44 from "node:path";
 
 // bin/helpers/worker-landed.ts
 var DEFAULT_CAP = 200;
@@ -9964,6 +9964,116 @@ function landedVerdict(runGit, ctx, worker, opts) {
   }
 }
 
+// bin/helpers/worktree-ignored.ts
+import * as fs33 from "node:fs";
+import * as path43 from "node:path";
+var BUILT_IN_SKIPS = ["node_modules"];
+function skipListPath(commonDir) {
+  return path43.join(commonDir, "sidekick", "disposable");
+}
+function skipFolder(line) {
+  return line.replace(/#.*$/, "").trim().replace(/^\.\//, "").replace(/\/+$/, "");
+}
+function readSkips(commonDir) {
+  const file = skipListPath(commonDir);
+  try {
+    const folders = fs33.readFileSync(file, "utf-8").split(`
+`).map(skipFolder).filter((folder) => folder !== "");
+    return { folders, warnings: [] };
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return { folders: [], warnings: [] };
+    }
+    const why = error instanceof Error ? error.message : String(error);
+    return { folders: [], warnings: [`Cannot read ${file}: ${why}`] };
+  }
+}
+function skipper(folders) {
+  return (rel) => rel.split("/").some((segment) => BUILT_IN_SKIPS.includes(segment)) || folders.some((folder) => rel === folder || rel.startsWith(`${folder}/`));
+}
+function lstatOf(file) {
+  try {
+    return fs33.lstatSync(file);
+  } catch {
+    return;
+  }
+}
+function sameBytes2(a, b) {
+  try {
+    return fs33.readFileSync(a).equals(fs33.readFileSync(b));
+  } catch {
+    return false;
+  }
+}
+function sameLink(a, b) {
+  try {
+    return fs33.readlinkSync(a) === fs33.readlinkSync(b);
+  } catch {
+    return false;
+  }
+}
+function isLoss(worktreeFile, mainFile) {
+  const here = lstatOf(worktreeFile);
+  const there = lstatOf(mainFile);
+  if (here === undefined || there === undefined)
+    return here !== undefined;
+  if (here.isSymbolicLink()) {
+    return !(there.isSymbolicLink() && sameLink(worktreeFile, mainFile));
+  }
+  if (!here.isFile())
+    return true;
+  if (!there.isFile() || there.size !== here.size)
+    return true;
+  return !sameBytes2(worktreeFile, mainFile);
+}
+function* filesUnder2(worktree, rel, skipped) {
+  if (skipped(rel))
+    return;
+  const stat = lstatOf(path43.join(worktree, rel));
+  if (stat === undefined)
+    return;
+  if (!stat.isDirectory()) {
+    yield rel;
+    return;
+  }
+  const names = fs33.readdirSync(path43.join(worktree, rel)).sort();
+  for (const name of names)
+    yield* filesUnder2(worktree, `${rel}/${name}`, skipped);
+}
+var IGNORED = "!! ";
+function ignoredEntries(runGit, worktree) {
+  const status = runGit("git", [
+    "-C",
+    worktree,
+    "status",
+    "--porcelain",
+    "-z",
+    "--ignored",
+    "--untracked-files=normal"
+  ], worktree);
+  if (status.code !== 0)
+    return { issue: status.stderr.trim() };
+  return status.stdout.split("\x00").filter((entry) => entry.startsWith(IGNORED)).map((entry) => entry.slice(IGNORED.length).replace(/\/+$/, ""));
+}
+function ignoredLosses(runGit, places, { cap = 20 } = {}) {
+  const entries = ignoredEntries(runGit, places.worktree);
+  if ("issue" in entries)
+    return entries;
+  const skipped = skipper(readSkips(places.commonDir).folders);
+  const paths = [];
+  for (const entry of entries) {
+    for (const rel of filesUnder2(places.worktree, entry, skipped)) {
+      const lost = isLoss(path43.join(places.worktree, rel), path43.join(places.mainTop, rel));
+      if (!lost)
+        continue;
+      paths.push(rel);
+      if (paths.length > cap)
+        return { paths: paths.slice(0, cap), truncated: true };
+    }
+  }
+  return { paths, truncated: false };
+}
+
 // bin/helpers/worker-finish-tree.ts
 function onBranchIssues(runGit, worktree, branch, mode, discardCommand, id) {
   const head = checkedOut(runGit, worktree);
@@ -9986,15 +10096,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report2 = path43.posix.normalize(read.brief.report);
+  const report2 = path44.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: read.brief.target,
     report: report2,
-    reportFrom: path43.join(worktree, report2),
-    reportTo: top === undefined ? undefined : path43.join(top, report2)
+    reportFrom: path44.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path44.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -10039,7 +10149,7 @@ function operatorIssues(name, tried, linked) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs33.existsSync(worktree) && !fs33.existsSync(path43.join(worktree, ".git"));
+  const linkless = fs34.existsSync(worktree) && !fs34.existsSync(path44.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -10054,6 +10164,7 @@ function unlinkedIssues(runGit, top, worktree, id) {
     `the worktree ${worktree} holds no .git entry while git still lists it, so a removal went past git's link to it: claude rm ${shellArg(id)} completes the removal`
   ];
 }
+var IGNORED_LOSS = "!!";
 function statusBesideReport(runGit, places) {
   const status = statusEntriesIn(runGit, places.mainTop, places.worktree);
   if ("issue" in status) {
@@ -10061,8 +10172,23 @@ function statusBesideReport(runGit, places) {
       issue: `git status failed in the worktree ${places.worktree}: ${status.issue}`
     };
   }
-  const entries = status.entries.filter((entry) => entry.path !== places.report);
-  return { entries, report: places.report };
+  const losses = ignoredLosses(runGit, places);
+  if ("issue" in losses) {
+    return {
+      issue: `git status --ignored failed in the worktree ${places.worktree}: ${losses.issue}`
+    };
+  }
+  const ignored = losses.paths.map((lost) => ({
+    code: IGNORED_LOSS,
+    path: lost
+  }));
+  const entries = [...status.entries, ...ignored].filter((entry) => entry.path !== places.report);
+  return {
+    entries,
+    report: places.report,
+    truncated: losses.truncated,
+    skipList: skipListPath(places.commonDir)
+  };
 }
 var onlyDeleted = (entries) => entries.length > 0 && entries.every((entry) => entry.code === DELETED);
 function dirtyAdvice(mode) {
@@ -10080,15 +10206,22 @@ function dirtyAdvice(mode) {
 function dirtyIssues(worktree, status, partial, mode) {
   if ("issue" in status)
     return [status.issue];
-  const { entries, report: report2 } = status;
-  const allowed = entries.length === 0 || partial && onlyDeleted(entries);
-  if (allowed)
+  const { entries, report: report2, truncated, skipList } = status;
+  if (entries.length === 0 || partial && onlyDeleted(entries))
     return [];
-  const paths = entries.map((entry) => entry.path).join(", ");
-  const besides = report2 === undefined ? "" : " besides the report";
-  return [
-    `the worktree ${worktree} holds uncommitted work${besides}, which its removal would destroy: ${paths}. ${dirtyAdvice(mode)}`
-  ];
+  const names = (list2) => list2.map((entry) => entry.path).join(", ");
+  const tracked = entries.filter((entry) => entry.code !== IGNORED_LOSS);
+  const ignored = entries.filter((entry) => entry.code === IGNORED_LOSS);
+  const issues = [];
+  if (tracked.length > 0) {
+    const besides = report2 === undefined ? "" : " besides the report";
+    issues.push(`the worktree ${worktree} holds uncommitted work${besides}, which its removal would destroy: ${names(tracked)}. ${dirtyAdvice(mode)}`);
+  }
+  if (ignored.length > 0) {
+    const more = truncated ? " and more" : "";
+    issues.push(`the worktree ${worktree} holds ignored files that its removal would delete, and the main checkout lacks them or holds other contents: ${names(ignored)}${more}. Move or delete them, or add their folder to ${skipList}, then run finish again`);
+  }
+  return issues;
 }
 function isPartial(runGit, top, worker, status) {
   const { name, head } = worker;
@@ -10098,10 +10231,11 @@ function isPartial(runGit, top, worker, status) {
     return false;
   return heldBackup(runGit, top, name, head) !== undefined;
 }
-function worktreeCheck(runGit, places, worker, opts) {
+function worktreeCheck(runGit, places, worker, opts, commonDir) {
   const status = statusBesideReport(runGit, {
     mainTop: places.mainTop,
     worktree: places.worktree,
+    commonDir,
     report: places.brief?.report
   });
   const partial = isPartial(runGit, places.mainTop, worker, status);
@@ -10191,12 +10325,12 @@ function clearGone(gone, wenv, out) {
 }
 
 // bin/helpers/worker-finish-report.ts
-import * as fs34 from "node:fs";
-import * as path44 from "node:path";
+import * as fs35 from "node:fs";
+import * as path45 from "node:path";
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs34.readFileSync(file) };
+    return { data: fs35.readFileSync(file) };
   } catch (e) {
     if (isMissing5(e))
       return { data: undefined };
@@ -10249,8 +10383,8 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs34.mkdirSync(path44.dirname(to), { recursive: true });
-    fs34.copyFileSync(from, to, fs34.constants.COPYFILE_EXCL);
+    fs35.mkdirSync(path45.dirname(to), { recursive: true });
+    fs35.copyFileSync(from, to, fs35.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${to}: ${why}`];
@@ -10312,8 +10446,8 @@ function copyChangedIssues(from, to, now) {
 }
 
 // bin/helpers/worker-finish-subject.ts
-import * as fs35 from "node:fs";
-import * as path45 from "node:path";
+import * as fs36 from "node:fs";
+import * as path46 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -10324,7 +10458,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path45.dirname(subject.brief);
+      const folder = path46.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -10342,8 +10476,8 @@ function recordedTop(runGit, commonDir, name) {
   const record2 = records.find((r) => r.name === name);
   if (record2 === undefined)
     return;
-  const folder = path45.dirname(record2.brief);
-  return fs35.existsSync(folder) ? topOf(runGit, folder) : undefined;
+  const folder = path46.dirname(record2.brief);
+  return fs36.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
   const { read } = subject;
@@ -10479,7 +10613,7 @@ function checkFinish(name, located, opts, { wenv, out }) {
   const branch = { name: places.branch, head };
   const landed = landedCheck(wenv, places, branch, opts, { id: job.id, out });
   const worker = { name, id: job.id, head };
-  const tree = worktreeCheck(wenv.runGit, places, worker, opts);
+  const tree = worktreeCheck(wenv.runGit, places, worker, opts, located.commonDir);
   const step = reportStep(places.brief, opts.noReport, tree.partial);
   if ("issues" in landed || tree.issues.length > 0 || "issues" in step) {
     return { issues: allIssues(landed, tree.issues, step) };
@@ -10625,22 +10759,22 @@ function processIsAlive(pid) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path46.dirname(fileURLToPath(entryFileUrl));
+  const here = path47.dirname(fileURLToPath(entryFileUrl));
   const candidates3 = [
-    path46.resolve(here, ".."),
-    path46.resolve(here, "..", "plugin")
+    path47.resolve(here, ".."),
+    path47.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs36.existsSync(path46.join(c, "rules")))
+    if (fs37.existsSync(path47.join(c, "rules")))
       return c;
   }
   return candidates3[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path46.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path47.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs36.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs37.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -10668,7 +10802,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs36.writeSync(1, buffer, offset);
+      offset += fs37.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -10686,7 +10820,7 @@ var profileEnvOf = (ctx) => ({
 });
 function readProcessStdin() {
   try {
-    return fs36.readFileSync(0, "utf-8");
+    return fs37.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -10744,7 +10878,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path46.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path47.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

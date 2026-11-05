@@ -252,7 +252,13 @@ function checkFinish(
   const branch = { name: places.branch, head };
   const landed = landedCheck(wenv, places, branch, opts, { id: job.id, out });
   const worker = { name, id: job.id, head };
-  const tree = worktreeCheck(wenv.runGit, places, worker, opts);
+  const tree = worktreeCheck(
+    wenv.runGit,
+    places,
+    worker,
+    opts,
+    located.commonDir,
+  );
   const step = reportStep(places.brief, opts.noReport, tree.partial);
   if ('issues' in landed || tree.issues.length > 0 || 'issues' in step) {
     return { issues: allIssues(landed, tree.issues, step) };

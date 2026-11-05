@@ -208,7 +208,7 @@ A `--worktree <path>` that matches nothing refuses in both modes. The refusal li
 - **Linked.** If the worktree folder exists with no `.git` entry while git still lists it, a removal went past git's link to it. `finish` refuses with that one issue and names `claude rm <id>`.
 - **On its branch.** The worktree has checked out the branch `finish` found for it: the transcript's `gitBranch`, else the branch git lists there. A worker that switched the worktree to another branch refuses.
 - **Landed.** The target is `--into <rev>`, else the brief's `target`, else the `HEAD` of the brief's checkout, detached or not. `finish` prints which one it used, and why, as soon as the target resolves, before it walks the history. Any refusal then follows that line. `finish` accepts the first of three checks that passes. The branch's head is an ancestor of the target. Else a simulated merge of the head into the target's tip adds nothing. Else the same merge adds nothing against a commit in the target's history since the merge base. Only commits that touched a file the branch changed count, newest first, up to 200. So a rebase or squash landing counts, even after the target edited near the landed lines. The simulated merge reads no in-tree attributes. A landing that changed the worker's content refuses, as does a walk that reaches its cap. Nothing is lost: the worktree stays. The refusal names `sidekick worker finish <brief> --discard`, the operator's call. It names `claude rm <id>` instead when the branch does not exist, since `--discard` needs the branch.
-- **Clean.** `git status` in the worktree lists nothing but the report, untracked files included.
+- **Clean.** `git status` in the worktree lists nothing but the report, untracked files included. It also holds no ignored file that the main checkout lacks or holds with other contents, outside `node_modules` and the folders in `<common git dir>/sidekick/disposable`. The report is exempt there too. The refusal names up to 20 such files and that list's path.
 - **Reported.** The report exists at `<worktree>/<report>`, unless `--no-report`.
 - **No other report.** No different file sits at `<the brief's checkout>/<report>`. An identical one is fine, so this check lets a re-run through.
 
@@ -241,7 +241,7 @@ The exit code of `claude rm` does not say whether it removed or kept, so `finish
 
 ### What it does not guard
 
-Git-ignored files in the worktree go with it. `git status` does not list them, so `finish` neither sees nor saves them. They include `node_modules`, and scratch under `docs/superpowers/` or a superpowers workspace where the repo ignores those. Only the commits, once landed, and the run report survive. The branch stays as a backup ref. Anything worth keeping belongs in a commit or in the report, as `sk-worker` §At the end says.
+Git-ignored files in skipped folders go with the worktree: `node_modules` at any depth, and each folder in `<common git dir>/sidekick/disposable`. `finish` neither checks nor saves them. Only the commits, once landed, and the run report survive. Ignored files elsewhere refuse the removal while the main checkout lacks them or holds other contents, as §What it checks says. The branch stays as a backup ref. Anything worth keeping belongs in a commit or in the report, as `sk-worker` §At the end says.
 
 ## The record
 

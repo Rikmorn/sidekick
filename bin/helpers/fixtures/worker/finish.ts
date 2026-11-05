@@ -58,6 +58,8 @@ export interface FixtureOptions {
   worktree?: (top: string) => string;
   /** The worker's branch. */
   branch?: string;
+  /** Lines for a tracked `.gitignore`, committed before the worktree is made. */
+  ignore?: string;
 }
 
 // Claude Code's own place for worker w1's worktree.
@@ -72,8 +74,14 @@ const nativeWorktree = (top: string): string =>
 export function fixture({
   worktree: placeWorktree = nativeWorktree,
   branch = 'worktree-w1',
+  ignore,
 }: FixtureOptions = {}) {
   const top = repo();
+  if (ignore !== undefined) {
+    fs.writeFileSync(path.join(top, '.gitignore'), ignore);
+    git(top, 'add', '.gitignore');
+    git(top, 'commit', '-q', '-m', 'ignore');
+  }
   const docs = path.join(top, 'docs');
   fs.mkdirSync(docs);
   const brief = path.join(docs, 'x-brief.md');

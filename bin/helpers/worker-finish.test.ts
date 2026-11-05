@@ -2477,3 +2477,80 @@ describe('the target with no brief', () => {
     });
   });
 });
+
+describe('finish and ignored files', () => {
+  const IGNORE = 'node_modules/\nscratch/\ndocs/\n';
+  const skipList = (fx: Fixture): string =>
+    path.join(fx.top, '.git', 'sidekick', 'disposable');
+  const write = (fx: Fixture, file: string, text = 'x\n'): void => {
+    const target = path.join(fx.worktree, file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, text);
+  };
+  const ignoredLine = (fx: Fixture, files: string): string =>
+    `the worktree ${fx.worktree} holds ignored files that its removal would delete, and the main checkout lacks them or holds other contents: ${files}. Move or delete them, or add their folder to ${skipList(fx)}, then run finish again`;
+
+  test('landed mode refuses a new ignored file and removes nothing', () => {
+    const fx = fixture({ ignore: IGNORE });
+    fx.integrate();
+    write(fx, 'scratch/run.sh');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      ignoredLine(fx, 'scratch/run.sh'),
+    );
+  });
+
+  test('--discard refuses a new ignored file the same way', () => {
+    const fx = fixture({ ignore: IGNORE });
+    write(fx, 'scratch/run.sh');
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief, '--discard'),
+      ignoredLine(fx, 'scratch/run.sh'),
+    );
+  });
+
+  test('the report under an ignored folder is not a loss', () => {
+    const fx = fixture({ ignore: IGNORE });
+    fx.integrate();
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(savedReport(fx)).toBe(REPORT_TEXT);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test('a file under node_modules is not a loss, and the worktree is removed', () => {
+    const fx = fixture({ ignore: IGNORE });
+    fx.integrate();
+    write(fx, 'node_modules/pkg/index.js');
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test('a folder on the skip list is not a loss', () => {
+    const fx = fixture({ ignore: IGNORE });
+    fx.integrate();
+    write(fx, 'scratch/run.sh');
+    fs.mkdirSync(path.dirname(skipList(fx)), { recursive: true });
+    fs.writeFileSync(skipList(fx), 'scratch\n');
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+  });
+
+  test('an ignored file written after the first check refuses at the re-check', () => {
+    const fx = fixture({ ignore: IGNORE });
+    fx.integrate();
+    const h = harness(fx);
+    h.claude.state.whileStopping = () => write(fx, 'scratch/late.sh');
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toContain(ignoredLine(fx, 'scratch/late.sh'));
+    expect(h.claude.named('rm')).toEqual([]);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+});
