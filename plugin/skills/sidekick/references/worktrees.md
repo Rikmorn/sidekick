@@ -62,9 +62,9 @@ Both checks read local refs, as of the last fetch.
 
 `git worktree remove` deletes ignored files without a word, so `dirty` includes each ignored file that the main checkout lacks, or holds with other contents. The check lists ignored entries collapsed, drops the skipped ones, and expands only the rest.
 
-The skip list is `node_modules` at any depth, built in, plus the repo's own list at `<common git dir>/sidekick/disposable`. That file is one folder per line, relative to the repo's top. A `#` starts a comment, and a leading `./` and trailing `/` are dropped. Nothing is committed, so no team has to agree.
+Two skips are built in, at any depth: the `node_modules` folder, and the file `.DS_Store`, which Finder writes into each folder it opens. A folder named `.DS_Store` is checked as any other. The repo adds its own list at `<common git dir>/sidekick/disposable`. That file names folders only, one per line, relative to the repo's top. A `#` starts a comment, and a leading `./` and trailing `/` are dropped. Nothing is committed, so no team has to agree.
 
-A skipped folder is unguarded: the check never looks inside it, so a new file there goes with the worktree.
+A skipped folder or `.DS_Store` file is unguarded: the check never looks at it, so a new file there goes with the worktree.
 
 ## What `remove` does
 

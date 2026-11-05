@@ -8,8 +8,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 
-/** Folder names skipped at any depth, whatever the repo declares. */
-export const BUILT_IN_SKIPS: readonly string[] = ['node_modules'];
+/**
+ * Names skipped at any depth, whatever the repo declares: `node_modules`, and
+ * `.DS_Store` as a file only, since Finder writes one into each folder it opens.
+ */
+export const BUILT_IN_SKIPS: {
+  folders: readonly string[];
+  files: readonly string[];
+} = { folders: ['node_modules'], files: ['.DS_Store'] };
 
 /** `<commonDir>/sidekick/disposable`: one folder per line, relative to the repo top; `#` starts a comment. */
 export function skipListPath(commonDir: string): string {
@@ -57,9 +63,14 @@ type Skips = (rel: string) => boolean;
 
 function skipper(folders: string[]): Skips {
   return (rel) =>
-    rel.split('/').some((segment) => BUILT_IN_SKIPS.includes(segment)) ||
+    rel
+      .split('/')
+      .some((segment) => BUILT_IN_SKIPS.folders.includes(segment)) ||
     folders.some((folder) => rel === folder || rel.startsWith(`${folder}/`));
 }
+
+const isSkippedFile = (rel: string, stat: fs.Stats): boolean =>
+  stat.isFile() && BUILT_IN_SKIPS.files.includes(path.posix.basename(rel));
 
 function lstatOf(file: string): fs.Stats | undefined {
   try {
@@ -108,7 +119,7 @@ function* filesUnder(
   const stat = lstatOf(path.join(worktree, rel));
   if (stat === undefined) return;
   if (!stat.isDirectory()) {
-    yield rel;
+    if (!isSkippedFile(rel, stat)) yield rel;
     return;
   }
   const names = fs.readdirSync(path.join(worktree, rel)).sort();
@@ -145,7 +156,7 @@ function ignoredEntries(
 
 /**
  * Ignored files removal would lose: absent from the main checkout, or there
- * with other contents, outside skipped folders. Paths are relative to the
+ * with other contents, outside the skips. Paths are relative to the
  * worktree's top. The issue is git's message when its status fails.
  */
 export function ignoredLosses(

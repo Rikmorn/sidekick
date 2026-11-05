@@ -7015,7 +7015,7 @@ function landedIn(runGit, top, refs, { cap = DEFAULT_CAP } = {}) {
 // bin/helpers/worktree-ignored.ts
 import * as fs25 from "node:fs";
 import * as path31 from "node:path";
-var BUILT_IN_SKIPS = ["node_modules"];
+var BUILT_IN_SKIPS = { folders: ["node_modules"], files: [".DS_Store"] };
 function skipListPath(commonDir) {
   return path31.join(commonDir, "sidekick", "disposable");
 }
@@ -7037,8 +7037,9 @@ function readSkips(commonDir) {
   }
 }
 function skipper(folders) {
-  return (rel) => rel.split("/").some((segment) => BUILT_IN_SKIPS.includes(segment)) || folders.some((folder) => rel === folder || rel.startsWith(`${folder}/`));
+  return (rel) => rel.split("/").some((segment) => BUILT_IN_SKIPS.folders.includes(segment)) || folders.some((folder) => rel === folder || rel.startsWith(`${folder}/`));
 }
+var isSkippedFile = (rel, stat) => stat.isFile() && BUILT_IN_SKIPS.files.includes(path31.posix.basename(rel));
 function lstatOf(file) {
   try {
     return fs25.lstatSync(file);
@@ -7081,7 +7082,8 @@ function* filesUnder2(worktree, rel, skipped) {
   if (stat === undefined)
     return;
   if (!stat.isDirectory()) {
-    yield rel;
+    if (!isSkippedFile(rel, stat))
+      yield rel;
     return;
   }
   const names = fs25.readdirSync(path31.join(worktree, rel)).sort();

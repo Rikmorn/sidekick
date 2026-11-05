@@ -87,6 +87,28 @@ describe('ignoredLosses: ignored files that removal would delete', () => {
     });
   });
 
+  test('a .DS_Store file at the top, in a subfolder, or in a wholly ignored folder is no loss', () => {
+    const r = setup('.DS_Store\nout/\n');
+    write(r.worktree, '.DS_Store', 'finder');
+    write(r.worktree, 'docs/deep/.DS_Store', 'finder');
+    write(r.worktree, 'out/.DS_Store', 'finder');
+    write(r.worktree, 'out/keep.txt', 'x');
+    expect(ignoredLosses(execRunner, r.places)).toEqual({
+      paths: ['out/keep.txt'],
+      truncated: false,
+    });
+  });
+
+  test('a file named x.DS_Store, and a folder named .DS_Store, are checked as before', () => {
+    const r = setup('*.DS_Store\n.DS_Store/\n');
+    write(r.worktree, 'x.DS_Store', 'x');
+    write(r.worktree, 'sub/.DS_Store/inner.txt', 'x');
+    expect(ignoredLosses(execRunner, r.places)).toEqual({
+      paths: ['sub/.DS_Store/inner.txt', 'x.DS_Store'],
+      truncated: false,
+    });
+  });
+
   test('a folder named in the per-repo skip list is skipped', () => {
     const r = setup('cache/\nbuild/\n');
     write(r.commonDir, 'sidekick/disposable', '# build output\ncache/\n');
@@ -199,7 +221,10 @@ describe('readSkips: the per-repo skip list', () => {
     });
   });
 
-  test('node_modules is built in', () => {
-    expect(BUILT_IN_SKIPS).toEqual(['node_modules']);
+  test('node_modules folders and .DS_Store files are built in', () => {
+    expect(BUILT_IN_SKIPS).toEqual({
+      folders: ['node_modules'],
+      files: ['.DS_Store'],
+    });
   });
 });
