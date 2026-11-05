@@ -168,7 +168,7 @@ describe('worktree remove: removes', () => {
     ]);
   });
 
-  test('a worktree on master, keeping the branch with its commits only here, with no ref and no --discard', () => {
+  test('a worktree on master, keeping the branch with its commits only here in a kept backup ref, with no --discard', () => {
     const main = repo();
     git(main, 'checkout', '-q', '-b', 'develop');
     git(main, 'branch', '-f', 'master', 'develop');
@@ -181,14 +181,16 @@ describe('worktree remove: removes', () => {
     expect(listed(main, dir)).toBe(false);
     expect(fs.existsSync(dir)).toBe(false);
     expect(git(main, 'rev-parse', 'master')).toBe(head);
-    expect(backupRefs(main)).toEqual([]);
+    const ref = `refs/sidekick/kept/m1/${head}`;
+    expect(backupRefs(main)).toEqual([ref]);
     expect(out).toEqual([
       `worktree ${dir} removed`,
       'branch master kept: remove deletes only worktree-m1, the branch made for this worktree',
+      `restore with: git branch m1 ${ref}`,
     ]);
   });
 
-  test('a worktree on feature-x, keeping the branch with its commits only here', () => {
+  test('a worktree on feature-x, keeping the branch with its commits only here, and deleting no branch', () => {
     const main = repo();
     const dir = path.join(tmp(), 'feat');
     git(main, 'worktree', 'add', '-q', '-b', 'feature-x', dir);
@@ -197,11 +199,45 @@ describe('worktree remove: removes', () => {
     expect(code).toBe(0);
     expect(listed(main, dir)).toBe(false);
     expect(git(main, 'rev-parse', 'feature-x')).toBe(head);
-    expect(backupRefs(main)).toEqual([]);
-    expect(events.some((e) => e.startsWith('git update-ref'))).toBe(false);
-    expect(out.at(-1)).toBe(
+    expect(backupRefs(main)).toEqual([`refs/sidekick/kept/feat/${head}`]);
+    expect(events.some((e) => e.startsWith('git update-ref -d'))).toBe(false);
+    expect(out.at(-2)).toBe(
       'branch feature-x kept: remove deletes only worktree-feat, the branch made for this worktree',
     );
+  });
+
+  test('a worktree on a kept branch whose commits landed gets a landed backup ref', () => {
+    const main = repo();
+    const dir = path.join(tmp(), 'feat');
+    git(main, 'worktree', 'add', '-q', '-b', 'feature-x', dir);
+    const head = git(dir, 'rev-parse', 'HEAD');
+    const { code } = run(main, ['feat']);
+    expect(code).toBe(0);
+    expect(backupRefs(main)).toEqual([`refs/sidekick/landed/feat/${head}`]);
+    expect(git(main, 'rev-parse', 'feature-x')).toBe(head);
+  });
+
+  test('a kept branch claude rm deletes stays in its backup ref, written before claude rm runs', () => {
+    const main = repo();
+    const dir = path.join(tmp(), 'feat');
+    git(main, 'worktree', 'add', '-q', '-b', 'feature-x', dir);
+    const head = commit(dir, 'b.txt');
+    const row = { id: 'job1', kind: 'background', state: 'done', cwd: dir };
+    const { code, events } = run(main, ['feat'], {
+      listing: () => claudeSays(JSON.stringify([row])),
+      rm: () => {
+        git(main, 'worktree', 'remove', dir);
+        git(main, 'update-ref', '-d', 'refs/heads/feature-x');
+        return claudeSays('removed job1');
+      },
+    });
+    expect(code).toBe(0);
+    const ref = `refs/sidekick/kept/feat/${head}`;
+    const backup = events.indexOf(`git update-ref ${ref} ${head} `);
+    expect(backup).toBeGreaterThan(-1);
+    expect(events.indexOf('claude rm job1')).toBeGreaterThan(backup);
+    expect(branchExists(main, 'feature-x')).toBe(false);
+    expect(git(main, 'rev-parse', ref)).toBe(head);
   });
 
   test('a worktree on a kept branch whose commits remove cannot place, with no --discard', () => {
@@ -231,7 +267,7 @@ describe('worktree remove: removes', () => {
     expect(code).toBe(0);
     expect(listed(main, dir)).toBe(false);
     expect(git(main, 'rev-parse', 'feature-x')).toBe(head);
-    expect(backupRefs(main)).toEqual([]);
+    expect(backupRefs(main)).toEqual([`refs/sidekick/kept/feat/${head}`]);
   });
 
   test("the branch's config section goes with the branch", () => {

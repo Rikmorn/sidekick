@@ -378,9 +378,12 @@ export const forgetRecord: Step = (ready) => {
   return [];
 };
 
-const BACKUP_KINDS = ['landed', 'pushed', 'discarded'] as const;
+const BACKUP_KINDS = ['landed', 'pushed', 'discarded', 'kept'] as const;
 
-/** Where the kept commits lived: landed, on a remote-tracking ref, or discarded on the operator's word. */
+/**
+ * Where the kept commits lived: landed, on a remote-tracking ref, discarded on
+ * the operator's word, or only on a branch `worktree remove` keeps.
+ */
 export type BackupKind = (typeof BACKUP_KINDS)[number];
 
 /** The backup ref that keeps `head` under `name`, its kind saying where the commits lived. */

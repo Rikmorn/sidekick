@@ -9916,7 +9916,7 @@ var forgetRecord = (ready) => {
   removeRecord(ready.commonDir, ready.name);
   return [];
 };
-var BACKUP_KINDS = ["landed", "pushed", "discarded"];
+var BACKUP_KINDS = ["landed", "pushed", "discarded", "kept"];
 var backupRef = (kind, name, head) => `refs/sidekick/${kind}/${name}/${head}`;
 function heldBackup(runGit, top, name, head) {
   return BACKUP_KINDS.map((kind) => backupRef(kind, name, head)).find((ref2) => commitOf(runGit, top, ref2) === head);
@@ -11134,17 +11134,22 @@ function stateLines(state, entry, skipList) {
 }
 var commitCount = (count2) => `${count2} ${count2 === 1 ? "commit" : "commits"}`;
 var DISCARD_WAY = `run remove again with ${DISCARD} to remove it anyway, keeping them in a backup ref only`;
-function backupKind(commits, discard2, where) {
+function backupKind(commits, branch, discard2) {
+  const { stays, where } = branch;
   switch (commits.kind) {
     case "landed":
       return "landed";
     case "pushed":
       return "pushed";
     case "only here":
+      if (stays)
+        return "kept";
       if (discard2)
         return "discarded";
       return refuse6(`${where} has ${commitCount(commits.count)} found in no landed branch and no remote-tracking ref, as of the last fetch, so remove took nothing`, DISCARD_WAY);
     case "unknown":
+      if (stays)
+        return "kept";
       if (discard2)
         return "discarded";
       return refuse6(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
@@ -11161,17 +11166,19 @@ function branchPlan(env, repo, row2, discard2) {
     return refuse6(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
   }
   const branch = entry.branch?.replace(HEADS, "");
-  if (branch !== undefined && branch !== nativeBranch(name)) {
-    return { entry, name, head, plan: { kind: "keep", branch } };
-  }
+  const stays = branch !== undefined && branch !== nativeBranch(name);
   const where = branch ?? `the detached HEAD at ${entry.path}`;
   const commits = row2.commits ?? commitsAt(env.runGit, repo, head);
-  const kind = backupKind(commits, discard2, where);
+  const kind = backupKind(commits, { stays, where }, discard2);
   if (typeof kind !== "string")
     return kind;
   const ref2 = backupRef(kind, name, head);
-  const plan = branch === undefined ? { kind: "detached", ref: ref2 } : { kind: "delete", branch, ref: ref2 };
-  return { entry, name, head, plan };
+  return { entry, name, head, plan: planOf(branch, stays, ref2) };
+}
+function planOf(branch, stays, ref2) {
+  if (branch === undefined)
+    return { kind: "detached", ref: ref2 };
+  return stays ? { kind: "keep", branch, ref: ref2 } : { kind: "delete", branch, ref: ref2 };
 }
 function checkTarget(args, env, repo, out) {
   const entry = resolveTarget3(repo, env.cwd, args.target);
@@ -11311,7 +11318,6 @@ function removeChecked(env, repo, checked2, out) {
   out(`worktree ${entry.path} removed`);
   return settleBranch(env, repo.top, checked2, out);
 }
-var backupOf = (plan) => plan.kind === "keep" ? undefined : plan.ref;
 var restoreBranch = (checked2) => checked2.plan.kind === "delete" ? checked2.plan.branch : checked2.name;
 var fail = (lines, err) => {
   for (const line of lines)
@@ -11326,17 +11332,15 @@ function removeWorktree(args, env, out, err) {
   if ("refused" in checked2)
     return fail(checked2.refused, err);
   const { head } = checked2;
-  const ref2 = backupOf(checked2.plan);
-  const kept = ref2 === undefined ? [] : writeBackup(env.runGit, repo.top, ref2, head);
+  const { ref: ref2 } = checked2.plan;
+  const kept = writeBackup(env.runGit, repo.top, ref2, head);
   if (kept.length > 0)
     return fail([...kept, "so remove deleted nothing"], err);
   const issues = removeChecked(env, repo, checked2, out);
-  const keeps = ref2 === undefined ? [] : [`the backup ref ${ref2} keeps ${head}`];
-  if (issues.length > 0)
-    return fail([...issues, ...keeps], err);
-  if (ref2 !== undefined) {
-    out(`restore with: git branch ${restoreBranch(checked2)} ${ref2}`);
+  if (issues.length > 0) {
+    return fail([...issues, `the backup ref ${ref2} keeps ${head}`], err);
   }
+  out(`restore with: git branch ${restoreBranch(checked2)} ${ref2}`);
   return 0;
 }
 

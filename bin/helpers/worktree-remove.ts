@@ -2,8 +2,8 @@
  * `sidekick worktree remove <name|path> [--discard]`: removes one linked
  * worktree that no session holds and no worker owns. It deletes only the
  * branch Claude Code made for that worktree, `worktree-<name>`, and keeps any
- * other. That branch's commits, or a detached HEAD's, go into a backup ref
- * before anything is deleted. It never forces, so git itself refuses a
+ * other. The worktree's head, on any branch or detached, goes into a backup
+ * ref before anything is deleted. It never forces, so git itself refuses a
  * worktree with changes. Each refusal names what it found.
  */
 
@@ -64,11 +64,12 @@ type Refused = { refused: string[] };
 
 const refuse = (...lines: string[]): Refused => ({ refused: lines });
 
-// What remove does with the branch: deletes the one made for this worktree
-// after its backup ref, keeps any other with no ref, or backs up a detached HEAD.
+// What remove does with the branch: deletes the one made for this worktree,
+// keeps any other, or has none for a detached HEAD. Each writes its backup ref
+// first, since claude rm or a hand may yet delete a kept branch.
 type BranchPlan =
   | { kind: 'delete'; branch: string; ref: string }
-  | { kind: 'keep'; branch: string }
+  | { kind: 'keep'; branch: string; ref: string }
   | { kind: 'detached'; ref: string };
 
 // What the checks settled: the entry, its verified head, and the branch's plan.
@@ -170,24 +171,28 @@ const commitCount = (count: number): string =>
 
 const DISCARD_WAY = `run remove again with ${DISCARD} to remove it anyway, keeping them in a backup ref only`;
 
-// The backup ref's kind; commits held nowhere else need --discard.
+// The backup ref's kind. Commits held nowhere else are kept by a branch that
+// stays; where the branch goes or the HEAD is detached, they need --discard.
 function backupKind(
   commits: CommitsAt,
+  branch: { stays: boolean; where: string },
   discard: boolean,
-  where: string,
 ): BackupKind | Refused {
+  const { stays, where } = branch;
   switch (commits.kind) {
     case 'landed':
       return 'landed';
     case 'pushed':
       return 'pushed';
     case 'only here':
+      if (stays) return 'kept';
       if (discard) return 'discarded';
       return refuse(
         `${where} has ${commitCount(commits.count)} found in no landed branch and no remote-tracking ref, as of the last fetch, so remove took nothing`,
         DISCARD_WAY,
       );
     case 'unknown':
+      if (stays) return 'kept';
       if (discard) return 'discarded';
       return refuse(
         `remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`,
@@ -201,8 +206,9 @@ function backupKind(
 }
 
 // The verified head and the branch's plan. Only Claude Code's own branch for
-// this folder is deleted, so only it and a detached HEAD need a backup ref,
-// and --discard when their commits live nowhere else.
+// this folder is deleted. Every plan writes a backup ref, and only one that
+// loses commits held nowhere else, the branch deleted or the HEAD detached,
+// needs --discard.
 function branchPlan(
   env: WorktreeEnv,
   repo: Repo,
@@ -220,19 +226,24 @@ function branchPlan(
     );
   }
   const branch = entry.branch?.replace(HEADS, '');
-  if (branch !== undefined && branch !== nativeBranch(name)) {
-    return { entry, name, head, plan: { kind: 'keep', branch } };
-  }
+  const stays = branch !== undefined && branch !== nativeBranch(name);
   const where = branch ?? `the detached HEAD at ${entry.path}`;
   const commits = row.commits ?? commitsAt(env.runGit, repo, head);
-  const kind = backupKind(commits, discard, where);
+  const kind = backupKind(commits, { stays, where }, discard);
   if (typeof kind !== 'string') return kind;
   const ref = backupRef(kind, name, head);
-  const plan: BranchPlan =
-    branch === undefined
-      ? { kind: 'detached', ref }
-      : { kind: 'delete', branch, ref };
-  return { entry, name, head, plan };
+  return { entry, name, head, plan: planOf(branch, stays, ref) };
+}
+
+function planOf(
+  branch: string | undefined,
+  stays: boolean,
+  ref: string,
+): BranchPlan {
+  if (branch === undefined) return { kind: 'detached', ref };
+  return stays
+    ? { kind: 'keep', branch, ref }
+    : { kind: 'delete', branch, ref };
 }
 
 // The checks before the backup ref, which change nothing. A failed listing
@@ -272,7 +283,7 @@ function movedLines(entry: WorktreeEntry, head: string): string[] {
   ];
 }
 
-// The session rows, records, lock, HEAD, and files, read again once any backup ref is written.
+// The session rows, records, lock, HEAD, and files, read again once the backup ref is written.
 function recheck(
   env: WorktreeEnv,
   repo: Repo,
@@ -430,7 +441,7 @@ function settleBranch(
   }
 }
 
-// The re-check and the deletions, run once any backup ref holds the head.
+// The re-check and the deletions, run once the backup ref holds the head.
 function removeChecked(
   env: WorktreeEnv,
   repo: Repo,
@@ -447,10 +458,6 @@ function removeChecked(
   return settleBranch(env, repo.top, checked, out);
 }
 
-// The backup ref the plan writes; none for a kept branch, which loses nothing.
-const backupOf = (plan: BranchPlan): string | undefined =>
-  plan.kind === 'keep' ? undefined : plan.ref;
-
 // The branch a restore creates: the deleted one, else the worktree's name.
 const restoreBranch = (checked: Checked): string =>
   checked.plan.kind === 'delete' ? checked.plan.branch : checked.name;
@@ -462,8 +469,8 @@ const fail = (lines: string[], err: Out): number => {
 
 /**
  * Removes the worktree `args` names, and deletes its branch only when Claude
- * Code made that branch for it. That branch, or a detached HEAD, is kept in a
- * backup ref first. Returns the exit code.
+ * Code made that branch for it. The head is kept in a backup ref first, the
+ * head of a kept branch included. Returns the exit code.
  */
 export function removeWorktree(
   args: RemoveArgs,
@@ -476,16 +483,13 @@ export function removeWorktree(
   const checked = checkTarget(args, env, repo, out);
   if ('refused' in checked) return fail(checked.refused, err);
   const { head } = checked;
-  const ref = backupOf(checked.plan);
-  const kept =
-    ref === undefined ? [] : writeBackup(env.runGit, repo.top, ref, head);
+  const { ref } = checked.plan;
+  const kept = writeBackup(env.runGit, repo.top, ref, head);
   if (kept.length > 0) return fail([...kept, 'so remove deleted nothing'], err);
   const issues = removeChecked(env, repo, checked, out);
-  const keeps =
-    ref === undefined ? [] : [`the backup ref ${ref} keeps ${head}`];
-  if (issues.length > 0) return fail([...issues, ...keeps], err);
-  if (ref !== undefined) {
-    out(`restore with: git branch ${restoreBranch(checked)} ${ref}`);
+  if (issues.length > 0) {
+    return fail([...issues, `the backup ref ${ref} keeps ${head}`], err);
   }
+  out(`restore with: git branch ${restoreBranch(checked)} ${ref}`);
   return 0;
 }

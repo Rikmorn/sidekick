@@ -68,11 +68,11 @@ A skipped folder is unguarded: the check never looks inside it, so a new file th
 
 ## What `remove` does
 
-`sidekick worktree remove <name|path> [--discard]` removes one linked worktree. The name is the path's last segment, as `list` prints it. Of the branches, it deletes only `worktree-<name>`, the one Claude Code makes for a worktree of that name, and keeps any other. Before it deletes that branch, or removes a worktree on a detached `HEAD`, it keeps the commits in a backup ref. It exits 0 once the worktree is gone, with its own branch, and 1 on a refusal, a usage error, or a git failure.
+`sidekick worktree remove <name|path> [--discard]` removes one linked worktree. The name is the path's last segment, as `list` prints it. Of the branches, it deletes only `worktree-<name>`, the one Claude Code makes for a worktree of that name, and keeps any other. Before it removes any worktree, it keeps the `HEAD` in a backup ref, the head of a branch it keeps included. It exits 0 once the worktree is gone, with its own branch, and 1 on a refusal, a usage error, or a git failure.
 
 ### What it refuses
 
-Each refusal names what it found and deletes nothing. The checks run in this order. The last two rows' checks run after any backup ref is written, as "The steps" says.
+Each refusal names what it found and deletes nothing. The checks run in this order. The last two rows' checks run after the backup ref is written, as "The steps" says.
 
 | Refusal | Why |
 |---|---|
@@ -88,26 +88,26 @@ Each refusal names what it found and deletes nothing. The checks run in this ord
 | A `HEAD` that moved since the checks | A new commit is in no backup ref, and a detached one would go with the worktree. The refusal names both heads. Run `remove` again. |
 | A file written since the checks | `remove` runs the `dirty` check again before `claude rm`, and once more right before git's removal. A new or changed file refuses with the `dirty` refusal. |
 
-`--discard` is the operator's word that commits found nowhere else may go. It applies only when something would be lost: `remove` deletes `worktree-<name>`, or the `HEAD` is detached. Landed or pushed work needs none, and neither does a worktree on a branch `remove` keeps. With it, the backup ref's kind is `discarded`.
+`--discard` is the operator's word that commits found nowhere else may go. It applies only when something would be lost: `remove` deletes `worktree-<name>`, or the `HEAD` is detached. Landed or pushed work needs none, and neither does a worktree on a branch `remove` keeps. With it, the backup ref's kind is `discarded`. On a kept branch, the kind for those commits is `kept`.
 
 ### The steps
 
 Once the checks pass, `remove` runs these in order, and the first that fails stops the rest:
 
-1. When `remove` deletes the branch, or the `HEAD` is detached, it writes the backup ref `refs/sidekick/<kind>/<name>/<head>`, create-only, before it deletes anything. The kind is `landed`, `pushed`, or `discarded`, from where the commits live. A ref already holding the head counts as written, so a re-run passes. A kept branch gets no ref, since nothing of it is deleted.
-2. It reads the session rows, the worker records, the lock, the `HEAD`, and the worktree's files again. Anything that now holds the worktree refuses, as do a moved `HEAD` and a new or changed file, and any backup ref stays.
+1. It writes the backup ref `refs/sidekick/<kind>/<name>/<head>`, create-only, before it deletes anything. A kept branch gets one too, since `claude rm` or a hand may yet delete it. The kind comes from where the commits live: `landed` or `pushed`. Commits held only here, or where `remove` cannot tell, give `kept` when the branch stays, and `discarded` otherwise. A ref already holding the head counts as written, so a re-run passes.
+2. It reads the session rows, the worker records, the lock, the `HEAD`, and the worktree's files again. Anything that now holds the worktree refuses, as do a moved `HEAD` and a new or changed file, and the backup ref stays.
 3. An exited background session whose `cwd` is the worktree's top, compared physically, goes first, by `claude rm <id>` with no time limit. When `claude rm` does not say `removed`, its text prints as a note, and git's removal follows. A session whose `cwd` is only inside the worktree stays, since it may belong to another worktree.
    When another linked worktree holds this one, `remove` skips `claude rm`, since the session may belong to the enclosing worktree, which nothing checked. A note names the session, which stays listed in `claude agents`.
 4. If git still lists the worktree, `remove` reads its `HEAD` and its files once more, and a moved `HEAD` or a new or changed file refuses. Then it reads the lock, unlocks a lock whose pid is dead, and runs `git worktree remove <path>`. A `folder gone` worktree goes the same way.
 5. When the worktree was on `worktree-<name>`, it deletes that branch with `git update-ref -d` at the verified head, which refuses a branch that moved. Then it removes the branch's `branch.<name>` config section. Any other branch stays, and a detached worktree has no branch to delete.
 
-It prints `worktree <path> removed`, then `branch <branch> removed` for the branch it deleted. For a kept branch it prints `branch <b> kept: remove deletes only worktree-<name>, the branch made for this worktree`. When it wrote a backup ref, the last line is the way back:
+It prints `worktree <path> removed`, then `branch <branch> removed` for the branch it deleted. For a kept branch it prints `branch <b> kept: remove deletes only worktree-<name>, the branch made for this worktree`. The last line is the way back:
 
 ```
 restore with: git branch worktree-r10-x refs/sidekick/landed/r10-x/<head>
 ```
 
-For a detached worktree, the restore line names the worktree's name as the branch to create. A kept branch gets no restore line, since it still exists.
+For a detached worktree or a kept branch, the restore line names the worktree's name as the branch to create. A kept branch may still exist under its own name.
 
 ### It never forces
 
