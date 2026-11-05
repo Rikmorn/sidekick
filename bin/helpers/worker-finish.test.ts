@@ -1078,10 +1078,10 @@ describe('finish clears the worker', () => {
     ]);
   });
 
-  const gitRefusal = (fx: Fixture): RegExp =>
-    new RegExp(`^git worktree remove failed: .*${path.basename(fx.worktree)}`);
+  const leftoverLosses = (fx: Fixture, files: string): string =>
+    `the worktree ${fx.worktree} holds files its removal would lose: ${files}`;
 
-  test('keeping a report copy that differs from the saved one, so git refuses', () => {
+  test('keeping a report copy that differs from the saved one, refusing before git removes it', () => {
     const fx = fixture();
     fx.integrate();
     const h = harness(fx);
@@ -1093,7 +1093,7 @@ describe('finish clears the worker', () => {
       },
     ];
     expect(h.finish(fx.brief)).toBe(1);
-    expect(h.err[1]).toMatch(gitRefusal(fx));
+    expect(h.err[1]).toBe(leftoverLosses(fx, REPORT));
     expect(h.err.at(-1)).toBe(forgottenWayOut(fx));
     expect(fs.readFileSync(path.join(fx.worktree, REPORT), 'utf8')).toBe(
       REPORT_TEXT,
@@ -1101,7 +1101,7 @@ describe('finish clears the worker', () => {
     expect(branchRemains(fx)).toBe(true);
   });
 
-  test('keeping an untracked file under --no-report, so git refuses', () => {
+  test('keeping an untracked file under --no-report, refusing before git removes it', () => {
     const fx = fixture();
     fx.integrate();
     fs.rmSync(path.join(fx.worktree, REPORT));
@@ -1114,12 +1114,12 @@ describe('finish clears the worker', () => {
       },
     ];
     expect(h.finish(fx.brief, '--no-report')).toBe(1);
-    expect(h.err[1]).toMatch(gitRefusal(fx));
+    expect(h.err[1]).toBe(leftoverLosses(fx, 'stray.txt'));
     expect(h.err.at(-1)).toBe(forgottenWayOut(fx));
     expect(fs.existsSync(path.join(fx.worktree, 'stray.txt'))).toBe(true);
   });
 
-  test('keeping an untracked file with no brief, so git refuses', () => {
+  test('keeping an untracked file with no brief, refusing before git removes it', () => {
     const fx = fixture();
     fx.integrate();
     fs.rmSync(path.join(fx.worktree, REPORT));
@@ -1132,7 +1132,7 @@ describe('finish clears the worker', () => {
       },
     ];
     expect(h.finish('--name', 'w1', '--discard')).toBe(1);
-    expect(h.err.join('\n')).toMatch(/git worktree remove failed/);
+    expect(h.err[1]).toBe(leftoverLosses(fx, 'stray.txt'));
     expect(h.err.at(-1)).toBe(forgottenWayOut(fx));
     expect(fs.existsSync(path.join(fx.worktree, 'stray.txt'))).toBe(true);
   });
@@ -2728,6 +2728,25 @@ describe('finish and ignored files', () => {
     fs.writeFileSync(skipList(fx), 'scratch\n');
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(0);
+  });
+
+  test('an ignored file written into a leftover while claude rm runs refuses before git removes it (#316)', () => {
+    const fx = fixture({ ignore: IGNORE });
+    fx.integrate();
+    const h = harness(fx);
+    h.claude.state.rm = [
+      { ...removed('nothing'), during: () => write(fx, 'scratch/late.sh') },
+    ];
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
+      `the worktree ${fx.worktree} holds files its removal would lose: scratch/late.sh`,
+      `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${fx.worktree}`,
+    ]);
+    expect(fs.existsSync(path.join(fx.worktree, 'scratch', 'late.sh'))).toBe(
+      true,
+    );
+    expect(branchRemains(fx)).toBe(true);
   });
 
   test('an ignored file written after the first check refuses at the re-check', () => {

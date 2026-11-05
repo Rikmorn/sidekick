@@ -26,6 +26,8 @@ import { removeRecord } from './worker-record.js';
 import { branchExists, commitOf, physical } from './worker-repo.js';
 import { nativeBranch, nativeFolder } from './worker-worktree.js';
 import { lockPid, lockStateOf, removeGitWorktree } from './worktree-lock.js';
+import { omittedWords } from './worktree-read.js';
+import { filesState } from './worktree-state.js';
 
 export type Out = (line: string) => void;
 
@@ -239,10 +241,11 @@ export const removeSession: Step = (ready, wenv, out) => {
   return [];
 };
 
-// git worktree remove refuses an untracked file, and the report's copy in the
-// worktree is untracked. When the saved copy holds the same bytes right now,
-// deleting that one file loses nothing; any other case stays for git to refuse.
-// A re-run finds the report `in place`, saved by the run before it.
+// The report's copy in the worktree is untracked, so the leftover's re-check
+// and git worktree remove both refuse it. When the saved copy holds the same
+// bytes right now, deleting that one file loses nothing; any other case stays
+// for the re-check to refuse. A re-run finds the report `in place`, saved by
+// the run before it.
 function clearSavedReport(ready: Ready): void {
   const step = ready.reportStep;
   if (step.kind === 'none' || step.kind === 'no brief') return;
@@ -251,7 +254,7 @@ function clearSavedReport(ready: Ready): void {
     const saved = fs.readFileSync(step.to);
     if (fs.readFileSync(step.from).equals(saved)) fs.unlinkSync(step.from);
   } catch {
-    // A missing or unreadable copy stays, and git refuses on it.
+    // A missing or unreadable copy stays, and the re-check refuses on it.
   }
 }
 
@@ -260,9 +263,33 @@ function clearSavedReport(ready: Ready): void {
 const forgottenWayOut = (worktree: string): string =>
   `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
 
+// The files git's removal would lose, ignored ones included, read right before
+// it as `remove` reads them; a report copy clearSavedReport left counts too.
+function leftoverIssues(runGit: Runner, ready: Ready): string[] {
+  const { worktree } = ready;
+  const state = filesState(runGit, ready);
+  switch (state.kind) {
+    case 'folder gone':
+    case 'removable':
+      return [];
+    case 'dirty':
+      return [
+        `the worktree ${worktree} holds files its removal would lose: ${state.paths.join(', ')}${omittedWords(state.omitted)}`,
+      ];
+    case 'held':
+      return [
+        `finish cannot tell what the worktree ${worktree} holds, so it removed nothing more: ${state.by}`,
+      ];
+    default: {
+      const _exhaustive: never = state;
+      throw new Error(`Unhandled state: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+
 // A worktree claude rm reported removed but git still lists is removed here when
-// no live session or other lock holds it. Every refusal ends with the way out by
-// its path.
+// no live session or other lock holds it and its files lose nothing. Every
+// refusal ends with the way out by its path.
 function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
   const { runGit, isAlive } = wenv;
   const { mainTop: top, worktree } = ready;
@@ -275,8 +302,12 @@ function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
   }
   if (!list.listed) return [];
   const lock = lockStateOf(lockReasonOf(runGit, top, worktree), isAlive);
-  if (lock.kind === 'dead' || lock.kind === 'none') clearSavedReport(ready);
-  const issues = removeGitWorktree(runGit, top, worktree, lock);
+  const unlocked = lock.kind === 'dead' || lock.kind === 'none';
+  if (unlocked) clearSavedReport(ready);
+  // A live or other lock refuses in removeGitWorktree, before any file is read.
+  const files = unlocked ? leftoverIssues(runGit, ready) : [];
+  const issues =
+    files.length > 0 ? files : removeGitWorktree(runGit, top, worktree, lock);
   if (issues.length === 0) return [];
   return [
     `claude rm said removed, but git still lists the worktree ${worktree}`,

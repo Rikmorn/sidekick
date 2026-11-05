@@ -9696,6 +9696,43 @@ function ensureWorktreesExcluded(runGit, top, commonDir) {
 
 // bin/helpers/worker-teardown.ts
 import * as fs35 from "node:fs";
+
+// bin/helpers/worktree-read.ts
+function repoOf2(env, err) {
+  const found = findRepo(env.runGit, env.cwd);
+  for (const warning of found.warnings)
+    err(warning);
+  if (found.repo === undefined && found.warnings.length === 0) {
+    err(`${env.cwd} is not inside a git repository`);
+  }
+  return found.repo;
+}
+function readSources(env, repo) {
+  const listing = readListing(env.runClaude, env.cwd);
+  const skips = readSkips(repo.commonDir);
+  const stored = readRecords(repo.commonDir);
+  return {
+    src: {
+      repo,
+      rows: "error" in listing ? undefined : listing.rows,
+      listingWarnings: "error" in listing ? [] : listing.warnings,
+      records: stored.records,
+      unreadRecords: stored.warnings,
+      isAlive: env.isAlive
+    },
+    listing,
+    skipWarnings: skips.warnings
+  };
+}
+var heldWords = (by) => by.startsWith("unknown") ? `held, ${by}` : `held by ${by}`;
+function omittedWords(omitted) {
+  if (omitted.count === 0)
+    return "";
+  const count2 = `${omitted.kind === "at least" ? "at least " : ""}${omitted.count}`;
+  return `, and ${count2} more`;
+}
+
+// bin/helpers/worker-teardown.ts
 var ENDED_STATES = ["stopped", "done"];
 var REMOVED = /^removed\b/;
 var DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
@@ -9795,6 +9832,27 @@ function clearSavedReport(ready) {
   } catch {}
 }
 var forgottenWayOut = (worktree) => `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
+function leftoverIssues(runGit, ready) {
+  const { worktree } = ready;
+  const state = filesState(runGit, ready);
+  switch (state.kind) {
+    case "folder gone":
+    case "removable":
+      return [];
+    case "dirty":
+      return [
+        `the worktree ${worktree} holds files its removal would lose: ${state.paths.join(", ")}${omittedWords(state.omitted)}`
+      ];
+    case "held":
+      return [
+        `finish cannot tell what the worktree ${worktree} holds, so it removed nothing more: ${state.by}`
+      ];
+    default: {
+      const _exhaustive = state;
+      throw new Error(`Unhandled state: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
 function worktreeGoneIssues(ready, wenv) {
   const { runGit, isAlive } = wenv;
   const { mainTop: top, worktree } = ready;
@@ -9808,9 +9866,11 @@ function worktreeGoneIssues(ready, wenv) {
   if (!list2.listed)
     return [];
   const lock = lockStateOf(lockReasonOf(runGit, top, worktree), isAlive);
-  if (lock.kind === "dead" || lock.kind === "none")
+  const unlocked = lock.kind === "dead" || lock.kind === "none";
+  if (unlocked)
     clearSavedReport(ready);
-  const issues = removeGitWorktree(runGit, top, worktree, lock);
+  const files = unlocked ? leftoverIssues(runGit, ready) : [];
+  const issues = files.length > 0 ? files : removeGitWorktree(runGit, top, worktree, lock);
   if (issues.length === 0)
     return [];
   return [
@@ -11001,41 +11061,6 @@ function processIsAlive(pid) {
   } catch (e) {
     return !(e instanceof Error && ("code" in e) && e.code === "ESRCH");
   }
-}
-
-// bin/helpers/worktree-read.ts
-function repoOf2(env, err) {
-  const found = findRepo(env.runGit, env.cwd);
-  for (const warning of found.warnings)
-    err(warning);
-  if (found.repo === undefined && found.warnings.length === 0) {
-    err(`${env.cwd} is not inside a git repository`);
-  }
-  return found.repo;
-}
-function readSources(env, repo) {
-  const listing = readListing(env.runClaude, env.cwd);
-  const skips = readSkips(repo.commonDir);
-  const stored = readRecords(repo.commonDir);
-  return {
-    src: {
-      repo,
-      rows: "error" in listing ? undefined : listing.rows,
-      listingWarnings: "error" in listing ? [] : listing.warnings,
-      records: stored.records,
-      unreadRecords: stored.warnings,
-      isAlive: env.isAlive
-    },
-    listing,
-    skipWarnings: skips.warnings
-  };
-}
-var heldWords = (by) => by.startsWith("unknown") ? `held, ${by}` : `held by ${by}`;
-function omittedWords(omitted) {
-  if (omitted.count === 0)
-    return "";
-  const count2 = `${omitted.kind === "at least" ? "at least " : ""}${omitted.count}`;
-  return `, and ${count2} more`;
 }
 
 // bin/helpers/worktree-remove.ts

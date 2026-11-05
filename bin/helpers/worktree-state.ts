@@ -35,6 +35,9 @@ export type WorktreeState =
   | { kind: 'dirty'; paths: string[]; omitted: Omitted }
   | { kind: 'removable' };
 
+/** The states a worktree's folder gives on its own; `worker` comes from the records. */
+export type FilesState = Exclude<WorktreeState, { kind: 'worker' }>;
+
 export type CommitsAt =
   /** `in` is the target ref's short name. */
   | { kind: 'landed'; in: string }
@@ -185,7 +188,7 @@ export interface FilesAt {
   commonDir: string;
 }
 
-function dirtyState(runGit: Runner, at: FilesAt): WorktreeState {
+function dirtyState(runGit: Runner, at: FilesAt): FilesState {
   const status = statusEntriesIn(runGit, at.mainTop, at.worktree);
   if ('issue' in status) {
     return { kind: 'held', by: `unknown: git status failed: ${status.issue}` };
@@ -212,7 +215,7 @@ function dirtyState(runGit: Runner, at: FilesAt): WorktreeState {
  * tell. git marks prunable a folder that lost its `.git` entry too, and git
  * run there reads whatever repository encloses it, so that folder is held.
  */
-export function filesState(runGit: Runner, at: FilesAt): WorktreeState {
+export function filesState(runGit: Runner, at: FilesAt): FilesState {
   if (!fs.existsSync(at.worktree)) return { kind: 'folder gone' };
   if (!fs.existsSync(path.join(at.worktree, '.git'))) {
     return {
@@ -228,7 +231,7 @@ export const diskState = (
   runGit: Runner,
   repo: Repo,
   entry: WorktreeEntry,
-): WorktreeState =>
+): FilesState =>
   filesState(runGit, {
     mainTop: repo.top,
     worktree: entry.path,
