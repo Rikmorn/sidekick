@@ -2699,7 +2699,7 @@ describe('finish and ignored files', () => {
     );
   });
 
-  test('an ignored file beside deleted files is no partial removal, so it refuses and restores nothing', () => {
+  test('an ignored file beside a partial removal refuses on its own line, and a re-run without it restores the deleted files', () => {
     const fx = fixture({ ignore: IGNORE });
     fx.integrate();
     git(fx.top, 'update-ref', backup(fx), fx.head);
@@ -2713,8 +2713,48 @@ describe('finish and ignored files', () => {
       h.finish(fx.brief),
       ignoredLine(fx, 'scratch/run.sh'),
     );
+    expect(h.err).toEqual([ignoredLine(fx, 'scratch/run.sh')]);
     expect(fs.existsSync(a)).toBe(false);
     expect(h.out.join('\n')).not.toContain('restored');
+    fs.rmSync(path.join(fx.worktree, 'scratch'), { recursive: true });
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.out).toContain(
+      `restored 1 deleted file in ${fx.worktree} from its index, so claude rm finds it clean`,
+    );
+  });
+
+  // Ignored files under `cache/`, which sorts before the report's `docs/`.
+  const cacheFiles = (fx: Fixture, count: number): string[] =>
+    Array.from({ length: count }, (_, i) => {
+      const file = `cache/f${String(i).padStart(2, '0')}`;
+      write(fx, file);
+      return file;
+    });
+
+  test('the report takes no place under the cap, so 20 other ignored files say no more', () => {
+    const fx = fixture({ ignore: 'cache/\ndocs/\n' });
+    fx.integrate();
+    const files = cacheFiles(fx, 20);
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      ignoredLine(fx, files.join(', ')),
+    );
+  });
+
+  test('past the cap, the ignored line counts the rest as at least one more, as list and remove do', () => {
+    const fx = fixture({ ignore: 'cache/\ndocs/\n' });
+    fx.integrate();
+    const files = cacheFiles(fx, 21);
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(fx.brief),
+      ignoredLine(fx, `${files.slice(0, 20).join(', ')}, and at least 1 more`),
+    );
   });
 
   test('--discard refuses a new ignored file the same way', () => {

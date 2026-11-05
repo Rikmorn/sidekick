@@ -7140,7 +7140,8 @@ function ignoredEntries(runGit, worktree) {
 }
 function ignoredLosses(runGit, places, {
   cap = 20,
-  chunkBytes = 64 * 1024
+  chunkBytes = 64 * 1024,
+  exempt
 } = {}) {
   const entries = ignoredEntries(runGit, places.worktree);
   if ("issue" in entries)
@@ -7149,6 +7150,8 @@ function ignoredLosses(runGit, places, {
   const paths = [];
   for (const entry of entries) {
     for (const rel of filesUnder2(places.worktree, entry, skipped)) {
+      if (rel === exempt)
+        continue;
       const lost = isLoss(path31.join(places.worktree, rel), path31.join(places.mainTop, rel), chunkBytes);
       if (!lost)
         continue;
@@ -10539,7 +10542,7 @@ function statusBesideReport(runGit, places) {
       issue: `git status failed in the worktree ${places.worktree}: ${status.issue}`
     };
   }
-  const losses = ignoredLosses(runGit, places);
+  const losses = ignoredLosses(runGit, places, { exempt: places.report });
   if ("issue" in losses) {
     return {
       issue: `git status --ignored failed in the worktree ${places.worktree}: ${losses.issue}`
@@ -10558,6 +10561,7 @@ function statusBesideReport(runGit, places) {
   };
 }
 var onlyDeleted = (entries) => entries.length > 0 && entries.every((entry) => entry.code === DELETED);
+var trackedOf = (entries) => entries.filter((entry) => entry.code !== IGNORED_LOSS);
 function dirtyAdvice(mode) {
   switch (mode) {
     case "landed":
@@ -10574,18 +10578,17 @@ function dirtyIssues(worktree, status, partial, mode) {
   if ("issue" in status)
     return [status.issue];
   const { entries, report: report2, truncated, skipList } = status;
-  if (entries.length === 0 || partial && onlyDeleted(entries))
-    return [];
   const names = (list2) => list2.map((entry) => entry.path).join(", ");
-  const tracked = entries.filter((entry) => entry.code !== IGNORED_LOSS);
+  const tracked = trackedOf(entries);
   const ignored = entries.filter((entry) => entry.code === IGNORED_LOSS);
+  const restored = partial && onlyDeleted(tracked);
   const issues = [];
-  if (tracked.length > 0) {
+  if (tracked.length > 0 && !restored) {
     const besides = report2 === undefined ? "" : " besides the report";
     issues.push(`the worktree ${worktree} holds uncommitted work${besides}, which its removal would destroy: ${names(tracked)}. ${dirtyAdvice(mode)}`);
   }
   if (ignored.length > 0) {
-    const more = truncated ? " and more" : "";
+    const more = truncated ? omittedWords({ kind: "at least", count: 1 }) : "";
     issues.push(`the worktree ${worktree} holds ignored files that its removal would delete, and the main checkout lacks them or holds other contents: ${names(ignored)}${more}. Move or delete them, or add their folder to ${skipList}, then run finish again`);
   }
   return issues;
@@ -10594,7 +10597,7 @@ function isPartial(runGit, top, worker, status) {
   const { name, head } = worker;
   if (head === undefined || "issue" in status)
     return false;
-  if (!onlyDeleted(status.entries))
+  if (!onlyDeleted(trackedOf(status.entries)))
     return false;
   return heldBackup(runGit, top, name, head) !== undefined;
 }

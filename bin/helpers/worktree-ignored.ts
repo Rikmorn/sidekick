@@ -206,6 +206,7 @@ function ignoredEntries(
  * with other contents, outside the skips. Paths are relative to the
  * worktree's top. The issue is git's message when its status fails.
  * `chunkBytes` is how much of each file the byte comparison holds at once.
+ * `exempt` is a path never counted, such as the report `finish` saves.
  */
 export function ignoredLosses(
   runGit: Runner,
@@ -213,7 +214,8 @@ export function ignoredLosses(
   {
     cap = 20,
     chunkBytes = 64 * 1024,
-  }: { cap?: number; chunkBytes?: number } = {},
+    exempt,
+  }: { cap?: number; chunkBytes?: number; exempt?: string } = {},
 ): Losses | { issue: string } {
   const entries = ignoredEntries(runGit, places.worktree);
   if ('issue' in entries) return entries;
@@ -221,6 +223,7 @@ export function ignoredLosses(
   const paths: string[] = [];
   for (const entry of entries) {
     for (const rel of filesUnder(places.worktree, entry, skipped)) {
+      if (rel === exempt) continue;
       const lost = isLoss(
         path.join(places.worktree, rel),
         path.join(places.mainTop, rel),
