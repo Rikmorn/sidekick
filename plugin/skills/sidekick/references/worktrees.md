@@ -20,12 +20,14 @@ After the rows, a `backup refs:` line lists each ref under `refs/sidekick/` with
 
 Warnings print before the rows:
 
-- `claude agents failed, so held states may be missing: <reason>`. The listing runs with a 5-second limit. Without it, no session is known to be absent. So each worktree that no lock holds and no worker owns shows as `held, unknown: claude agents failed`, a missing folder included.
-- An entry of the listing that does not parse. A session may hide in it, so each worktree that nothing holds and no worker owns shows as `held, unknown: claude agents gave a partial listing: <warning>`.
+- `claude agents failed, so every worktree not confirmed free reads held, unknown: <reason>`. The listing runs with a 5-second limit. Without it, no session is known to be absent. So each worktree that no lock holds and no worker owns shows as `held, unknown: claude agents failed`, a missing folder included.
+- `claude agents gave a partial listing, so every worktree not confirmed free reads held, unknown: <warning>`, once per entry of the listing that does not parse. A session may hide in it, so each worktree that nothing holds and no worker owns shows as `held, unknown: claude agents gave a partial listing: <warning>`.
 - A worker record that does not parse. Any worktree may be that record's worker's, so each worktree that nothing holds and no worker owns shows as `held, unknown: a worker record would not read: <warning>`.
 - A skip list that cannot be read.
 
-After any of the first three warnings, no row reads `removable` or `folder gone`, so the hint does not print. The same holds when a current session lists no `cwd`. `remove` and the desk's count read the same states, so all three agree.
+After any of the first three warnings, no row reads `removable` or `folder gone`, so the hint does not print. The same holds when a current session lists no `cwd`.
+
+`list` and `remove` read the same states, so they agree. The desk's count reads only the cheap checks: the locks, the session rows, and the worker records. So it can differ from `list` in two cases. It leaves out a worker record that it prunes as stale. It runs no git status, so it counts a worktree whose files git cannot read.
 
 ## The states
 
@@ -98,7 +100,7 @@ Once the checks pass, `remove` runs these in order, and the first that fails sto
 2. It reads the session rows, the worker records, the lock, the `HEAD`, and the worktree's files again. Anything that now holds the worktree refuses, as do a moved `HEAD` and a new or changed file, and the backup ref stays.
 3. An exited background session whose `cwd` is the worktree's top, compared physically, goes first, by `claude rm <id>` with no time limit. When `claude rm` does not say `removed`, its text prints as a note, and git's removal follows. A session whose `cwd` is only inside the worktree stays, since it may belong to another worktree.
    When another linked worktree holds this one, `remove` skips `claude rm`, since the session may belong to the enclosing worktree, which nothing checked. A note names the session, which stays listed in `claude agents`.
-4. If git still lists the worktree, `remove` reads its `HEAD` and its files once more, and a moved `HEAD` or a new or changed file refuses. Then it reads the lock, unlocks a Claude Code session's lock whose pid is dead, and runs `git worktree remove <path>`. A `folder gone` worktree goes the same way.
+4. If git still lists the worktree, `remove` reads its `HEAD` and its files once more, and a moved `HEAD` or a new or changed file refuses. Then it reads the lock, unlocks a Claude Code session's lock whose pid is dead, and runs `git worktree remove <path>`. A `folder gone` worktree goes the same way. When `claude rm` removed a session in step 3, a refusal here names it, and says that `remove` itself deleted no worktree and no branch.
 5. When the worktree was on `worktree-<name>`, it deletes that branch with `git update-ref -d` at the verified head, which refuses a branch that moved. Then it removes the branch's `branch.<name>` config section. Any other branch stays, and a detached worktree has no branch to delete.
 
 It prints `worktree <path> removed`, then `branch <branch> removed` for the branch it deleted. For a kept branch it prints `branch <b> kept: remove deletes only worktree-<name>, the branch made for this worktree`. The last line is the way back:
@@ -111,4 +113,4 @@ For a detached worktree or a kept branch, the restore line names the worktree's 
 
 ### It never forces
 
-`remove` never runs `git worktree remove --force`, `git worktree prune`, or `git clean`. So git itself refuses a worktree with tracked or untracked changes, including changes made after the checks ran. Git deletes an ignored file without a word, so `remove` runs its `dirty` check again right before git's removal. Only an ignored file written between that check and the removal goes unguarded. When git refuses, fix what it names, then run `remove` again. A backup ref already written counts, so the re-run goes on.
+`remove` never runs `git worktree remove --force`, `git worktree prune`, or `git clean`. So git itself refuses a worktree with tracked or untracked changes, including changes made after the checks ran. Git deletes an ignored file without a word, so `remove` runs its `dirty` check again right before git's removal. Two kinds of ignored file go unguarded. The skipped folders and `.DS_Store` files always do, since the check never looks at them. Any other goes unguarded only when written between that check and the removal. When git refuses, fix what it names, then run `remove` again. A backup ref already written counts, so the re-run goes on.

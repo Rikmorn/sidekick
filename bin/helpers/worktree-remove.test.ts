@@ -791,11 +791,51 @@ describe('worktree remove: re-runs and sessions', () => {
     expect(code).toBe(1);
     expect(err[0]).toBe(`${dir} holds files its removal would lose: late.sh`);
     expect(joined(err)).toContain(skipListPath(path.join(main, '.git')));
+    expect(err).toContain(
+      'claude rm removed session job1 before this; remove itself deleted no worktree and no branch',
+    );
     expect(events).toContain('claude rm job1');
     expect(events.some((e) => e.startsWith('git worktree remove'))).toBe(false);
     expect(fs.existsSync(late)).toBe(true);
     expect(listed(main, dir)).toBe(true);
     expect(branchExists(main, 'worktree-bg')).toBe(true);
+  });
+
+  test('a worktree claude rm leaves unreadable says the session went and the worktree stays', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'bg');
+    const head = git(dir, 'rev-parse', 'HEAD');
+    const row = { id: 'job1', kind: 'background', state: 'done', cwd: dir };
+    const { code, err } = run(main, ['bg'], {
+      listing: () => claudeSays(JSON.stringify([row])),
+      rm: () => {
+        fs.rmSync(path.join(dir, '.git'));
+        return claudeSays('removed job1');
+      },
+    });
+    expect(code).toBe(1);
+    expect(err).toEqual([
+      `${dir} is held, unknown: ${dir} holds no .git entry, so git cannot read its files, so remove kept the worktree`,
+      'claude rm removed session job1 before this; remove itself deleted no worktree and no branch',
+      `the backup ref refs/sidekick/landed/bg/${head} keeps ${head}`,
+    ]);
+    expect(listed(main, dir)).toBe(true);
+    expect(branchExists(main, 'worktree-bg')).toBe(true);
+  });
+
+  test('a claude rm that removes nothing leaves the refusal without a sessions line', () => {
+    const { main, dir, row } = ignoringWorktree();
+    const late = path.join(dir, 'late.sh');
+    const { code, err } = run(main, ['bg'], {
+      listing: () => claudeSays(JSON.stringify([row])),
+      rm: () => {
+        fs.writeFileSync(late, 'echo\n');
+        return claudeSays('kept job1');
+      },
+    });
+    expect(code).toBe(1);
+    expect(err[0]).toBe(`${dir} holds files its removal would lose: late.sh`);
+    expect(err.some((l) => l.startsWith('claude rm removed'))).toBe(false);
   });
 
   test('a session in a worktree nested inside another linked worktree is left to git', () => {

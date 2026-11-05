@@ -11170,12 +11170,12 @@ function nestedLines(repo, entry) {
     `${entry.path} holds other worktrees, which its removal would delete: ${paths}. Remove those first`
   ];
 }
-function stateLines(state, entry, skipList) {
+var TOOK_NOTHING = "so remove took nothing";
+var KEPT_WORKTREE = "so remove kept the worktree";
+function stateLines(state, entry, skipList, stopped = TOOK_NOTHING) {
   switch (state.kind) {
     case "held":
-      return [
-        `${entry.path} is ${heldWords(state.by)}, so remove took nothing`
-      ];
+      return [`${entry.path} is ${heldWords(state.by)}, ${stopped}`];
     case "worker":
       return [
         `${entry.path} is the worker ${state.name}'s: clear it with sidekick worker finish, which removes its session too`
@@ -11262,11 +11262,11 @@ function checkTarget(args, env, repo, out) {
     return refuse6(...kept);
   return branchPlan(env, repo, row2, args.discard);
 }
-function movedLines(entry, head) {
+function movedLines(entry, head, stopped) {
   if (entry.head === head)
     return [];
   return [
-    `the HEAD of ${entry.path} moved from ${head} to ${entry.head ?? "no commit"} since the checks, so remove deleted nothing: run remove again`
+    `the HEAD of ${entry.path} moved from ${head} to ${entry.head ?? "no commit"} since the checks, ${stopped}: run remove again`
   ];
 }
 function recheck(env, repo, checked2) {
@@ -11282,7 +11282,7 @@ function recheck(env, repo, checked2) {
   if (entry === undefined) {
     return refuse6(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
   }
-  const moved = movedLines(entry, checked2.head);
+  const moved = movedLines(entry, checked2.head, "so remove deleted nothing");
   if (moved.length > 0)
     return refuse6(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
@@ -11301,12 +11301,17 @@ function exitedSessions(rows, worktree) {
   });
 }
 function removeSessions(env, top, ids, out) {
+  const removed = [];
   for (const id of ids) {
     const result = env.runClaude(["rm", id], { cwd: top, timeoutMs: NO_LIMIT });
-    const lines = saidRemoved(result) ? [`session ${id} removed`] : withText(`claude rm ${id} did not say removed, so remove goes on with git's own removal`, result);
+    const said = saidRemoved(result);
+    if (said)
+      removed.push(id);
+    const lines = said ? [`session ${id} removed`] : withText(`claude rm ${id} did not say removed, so remove goes on with git's own removal`, result);
     for (const line of lines)
       out(line);
   }
+  return removed;
 }
 function enclosingWorktree(repo, worktree) {
   return repo.worktrees.slice(1).find((other) => !samePath(other.path, worktree) && insideOf(worktree, other.path));
@@ -11314,13 +11319,12 @@ function enclosingWorktree(repo, worktree) {
 function endSessions(env, repo, worktree, rows, out) {
   const ids = exitedSessions(rows, worktree);
   const enclosing2 = enclosingWorktree(repo, worktree);
-  if (enclosing2 === undefined) {
-    removeSessions(env, repo.top, ids, out);
-    return;
-  }
+  if (enclosing2 === undefined)
+    return removeSessions(env, repo.top, ids, out);
   for (const id of ids) {
     out(`claude rm ${id} skipped: ${worktree} sits inside the worktree ${enclosing2.path}, which claude rm might remove too, so session ${id} stays listed in claude agents`);
   }
+  return [];
 }
 function removeListed(env, repo, checked2) {
   const { top } = repo;
@@ -11330,11 +11334,12 @@ function removeListed(env, repo, checked2) {
   const entry = now.worktrees.find((e) => samePath(e.path, checked2.entry.path));
   if (entry === undefined)
     return [];
-  const moved = movedLines(entry, checked2.head);
+  const moved = movedLines(entry, checked2.head, KEPT_WORKTREE);
   if (moved.length > 0)
     return moved;
   const disk = diskState(env.runGit, repo, entry);
-  const dirty = stateLines(disk, entry, skipListPath(repo.commonDir));
+  const skipList = skipListPath(repo.commonDir);
+  const dirty = stateLines(disk, entry, skipList, KEPT_WORKTREE);
   if (dirty.length > 0)
     return dirty;
   const lock = lockStateOf(entry.locked, env.isAlive);
@@ -11373,12 +11378,20 @@ function removeChecked(env, repo, checked2, out) {
   if ("refused" in rows)
     return rows.refused;
   const { entry } = checked2;
-  endSessions(env, repo, entry.path, rows, out);
+  const ended = endSessions(env, repo, entry.path, rows, out);
   const worktree = removeListed(env, repo, checked2);
   if (worktree.length > 0)
-    return worktree;
+    return [...worktree, ...endedLines(ended)];
   out(`worktree ${entry.path} removed`);
   return settleBranch(env, repo.top, checked2, out);
+}
+function endedLines(ids) {
+  if (ids.length === 0)
+    return [];
+  const sessions = `${ids.length === 1 ? "session" : "sessions"} ${ids.join(", ")}`;
+  return [
+    `claude rm removed ${sessions} before this; remove itself deleted no worktree and no branch`
+  ];
 }
 var restoreBranch = (checked2) => checked2.plan.kind === "delete" ? checked2.plan.branch : refSegment(checked2.name);
 var restoreLine = (checked2) => `restore with: git branch ${shellArg(restoreBranch(checked2))} ${shellArg(checked2.plan.ref)}`;
@@ -11473,6 +11486,13 @@ function backupRefLines(runGit, top) {
   });
   return ["backup refs:", ...entries];
 }
+var UNCONFIRMED = "so every worktree not confirmed free reads held, unknown";
+function listingWarnings(listing) {
+  if ("error" in listing) {
+    return [`claude agents failed, ${UNCONFIRMED}: ${listing.error}`];
+  }
+  return listing.warnings.map((warning) => `claude agents gave a partial listing, ${UNCONFIRMED}: ${warning}`);
+}
 var listVerb = (rest2, env, out, err) => {
   if (rest2.length > 0)
     return usage3(err);
@@ -11480,10 +11500,11 @@ var listVerb = (rest2, env, out, err) => {
   if (repo === undefined)
     return 1;
   const { src, listing, skipWarnings } = readSources(env, repo);
-  const listingWarnings = "error" in listing ? [
-    `claude agents failed, so held states may be missing: ${listing.error}`
-  ] : listing.warnings;
-  const warnings = [...listingWarnings, ...skipWarnings, ...src.unreadRecords];
+  const warnings = [
+    ...listingWarnings(listing),
+    ...skipWarnings,
+    ...src.unreadRecords
+  ];
   for (const warning of warnings)
     out(warning);
   const rows = worktreeRows(src, env.runGit);

@@ -226,7 +226,7 @@ describe('worktree list: the frame', () => {
     const { code, out } = run(main, ['list'], failed);
     expect(code).toBe(0);
     expect(out[0]).toStartWith(
-      'claude agents failed, so held states may be missing: ',
+      'claude agents failed, so every worktree not confirmed free reads held, unknown: ',
     );
     expect(out[0]).toContain('boom');
     expect(lineFor(out, 'one')).toContain(
@@ -257,7 +257,9 @@ describe('worktree list: the frame', () => {
     const partial: ClaudeResult = { ...NO_SESSIONS, stdout: '[1]' };
     const { out } = run(main, ['list'], partial);
     const warning = "the listing's entry 0 is not an object";
-    expect(out[0]).toBe(warning);
+    expect(out[0]).toBe(
+      `claude agents gave a partial listing, so every worktree not confirmed free reads held, unknown: ${warning}`,
+    );
     expect(lineFor(out, 'one')).toBe(
       `one · held, unknown: claude agents gave a partial listing: ${warning} · worktree-one · ${dir}`,
     );

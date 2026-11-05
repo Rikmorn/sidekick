@@ -32,7 +32,6 @@ export function repoOf(env: WorktreeEnv, err: Out): Repo | undefined {
 }
 
 export interface Sources {
-  /** `src.unreadRecords` holds one warning per worker record that would not read. */
   src: CheapSources;
   /** What `claude agents` gave; `src.rows` is undefined when it failed. */
   listing: ReturnType<typeof readListing>;

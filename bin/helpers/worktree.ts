@@ -13,6 +13,7 @@ import {
   omittedWords,
   readSources,
   repoOf,
+  type Sources,
   type WorktreeEnv,
 } from './worktree-read.js';
 import { parseRemoveArgs, removeWorktree } from './worktree-remove.js';
@@ -105,18 +106,29 @@ function backupRefLines(
   return ['backup refs:', ...entries];
 }
 
+const UNCONFIRMED = 'so every worktree not confirmed free reads held, unknown';
+
+// A listing that failed or was read in part leaves no worktree confirmed free.
+function listingWarnings(listing: Sources['listing']): string[] {
+  if ('error' in listing) {
+    return [`claude agents failed, ${UNCONFIRMED}: ${listing.error}`];
+  }
+  return listing.warnings.map(
+    (warning) =>
+      `claude agents gave a partial listing, ${UNCONFIRMED}: ${warning}`,
+  );
+}
+
 const listVerb: Verb = (rest, env, out, err) => {
   if (rest.length > 0) return usage(err);
   const repo = repoOf(env, err);
   if (repo === undefined) return 1;
   const { src, listing, skipWarnings } = readSources(env, repo);
-  const listingWarnings =
-    'error' in listing
-      ? [
-          `claude agents failed, so held states may be missing: ${listing.error}`,
-        ]
-      : listing.warnings;
-  const warnings = [...listingWarnings, ...skipWarnings, ...src.unreadRecords];
+  const warnings = [
+    ...listingWarnings(listing),
+    ...skipWarnings,
+    ...src.unreadRecords,
+  ];
   for (const warning of warnings) out(warning);
   const rows = worktreeRows(src, env.runGit);
   if (rows.length === 0) out('no linked worktrees');

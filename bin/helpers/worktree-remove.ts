@@ -138,17 +138,21 @@ function nestedLines(repo: Repo, entry: WorktreeEntry): string[] {
   ];
 }
 
-// The states that keep a worktree, at the checks and at each re-check; none for the rest.
+const TOOK_NOTHING = 'so remove took nothing';
+// After claude rm, which may have removed a session, the worktree is what stays.
+const KEPT_WORKTREE = 'so remove kept the worktree';
+
+// The states that keep a worktree, at the checks and at each re-check; none
+// for the rest. `stopped` says what remove left as it stopped.
 function stateLines(
   state: WorktreeState,
   entry: WorktreeEntry,
   skipList: string,
+  stopped = TOOK_NOTHING,
 ): string[] {
   switch (state.kind) {
     case 'held':
-      return [
-        `${entry.path} is ${heldWords(state.by)}, so remove took nothing`,
-      ];
+      return [`${entry.path} is ${heldWords(state.by)}, ${stopped}`];
     case 'worker':
       return [
         `${entry.path} is the worker ${state.name}'s: clear it with sidekick worker finish, which removes its session too`,
@@ -278,10 +282,14 @@ function checkTarget(
 
 // A commit made since the checks is in no backup ref, and a detached one would
 // go with the worktree.
-function movedLines(entry: WorktreeEntry, head: string): string[] {
+function movedLines(
+  entry: WorktreeEntry,
+  head: string,
+  stopped: string,
+): string[] {
   if (entry.head === head) return [];
   return [
-    `the HEAD of ${entry.path} moved from ${head} to ${entry.head ?? 'no commit'} since the checks, so remove deleted nothing: run remove again`,
+    `the HEAD of ${entry.path} moved from ${head} to ${entry.head ?? 'no commit'} since the checks, ${stopped}: run remove again`,
   ];
 }
 
@@ -309,7 +317,7 @@ function recheck(
       `git no longer lists ${checked.entry.path}, so remove deleted nothing`,
     );
   }
-  const moved = movedLines(entry, checked.head);
+  const moved = movedLines(entry, checked.head, 'so remove deleted nothing');
   if (moved.length > 0) return refuse(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
   const one = { ...src, repo: alone(repo, entry) };
@@ -331,16 +339,20 @@ function exitedSessions(rows: ListingRow[], worktree: string): string[] {
 }
 
 // claude rm runs with no limit, since any limit can cut its delete short. An
-// answer other than removed is a note: git's removal follows, and refuses changes.
+// answer other than removed is a note: git's removal follows, and refuses
+// changes. Returns the ids claude rm said it removed.
 function removeSessions(
   env: WorktreeEnv,
   top: string,
   ids: string[],
   out: Out,
-): void {
+): string[] {
+  const removed: string[] = [];
   for (const id of ids) {
     const result = env.runClaude(['rm', id], { cwd: top, timeoutMs: NO_LIMIT });
-    const lines = saidRemoved(result)
+    const said = saidRemoved(result);
+    if (said) removed.push(id);
+    const lines = said
       ? [`session ${id} removed`]
       : withText(
           `claude rm ${id} did not say removed, so remove goes on with git's own removal`,
@@ -348,6 +360,7 @@ function removeSessions(
         );
     for (const line of lines) out(line);
   }
+  return removed;
 }
 
 // A linked worktree, not the main checkout, that holds `worktree`.
@@ -365,25 +378,23 @@ function enclosingWorktree(
 
 // A session at a nested worktree's top may still belong to the enclosing one,
 // which claude rm could remove and nothing checked, so git's removal goes
-// alone there.
+// alone there. Returns the ids claude rm removed.
 function endSessions(
   env: WorktreeEnv,
   repo: Repo,
   worktree: string,
   rows: ListingRow[],
   out: Out,
-): void {
+): string[] {
   const ids = exitedSessions(rows, worktree);
   const enclosing = enclosingWorktree(repo, worktree);
-  if (enclosing === undefined) {
-    removeSessions(env, repo.top, ids, out);
-    return;
-  }
+  if (enclosing === undefined) return removeSessions(env, repo.top, ids, out);
   for (const id of ids) {
     out(
       `claude rm ${id} skipped: ${worktree} sits inside the worktree ${enclosing.path}, which claude rm might remove too, so session ${id} stays listed in claude agents`,
     );
   }
+  return [];
 }
 
 // git's removal, with the lock, HEAD, and files read once more: claude rm may
@@ -398,10 +409,11 @@ function removeListed(
   if ('issue' in now) return [`git worktree list failed: ${now.issue}`];
   const entry = now.worktrees.find((e) => samePath(e.path, checked.entry.path));
   if (entry === undefined) return [];
-  const moved = movedLines(entry, checked.head);
+  const moved = movedLines(entry, checked.head, KEPT_WORKTREE);
   if (moved.length > 0) return moved;
   const disk = diskState(env.runGit, repo, entry);
-  const dirty = stateLines(disk, entry, skipListPath(repo.commonDir));
+  const skipList = skipListPath(repo.commonDir);
+  const dirty = stateLines(disk, entry, skipList, KEPT_WORKTREE);
   if (dirty.length > 0) return dirty;
   const lock = lockStateOf(entry.locked, env.isAlive);
   const issues = removeGitWorktree(env.runGit, top, entry.path, lock);
@@ -453,15 +465,23 @@ function removeChecked(
   const rows = recheck(env, repo, checked);
   if ('refused' in rows) return rows.refused;
   const { entry } = checked;
-  endSessions(env, repo, entry.path, rows, out);
+  const ended = endSessions(env, repo, entry.path, rows, out);
   const worktree = removeListed(env, repo, checked);
-  if (worktree.length > 0) return worktree;
+  if (worktree.length > 0) return [...worktree, ...endedLines(ended)];
   out(`worktree ${entry.path} removed`);
   return settleBranch(env, repo.top, checked, out);
 }
 
-// The branch a restore creates: the deleted one, else the worktree's name as
-// the backup ref encodes it, which is a valid branch name for any folder name.
+// A refusal after claude rm names the sessions it removed, since a re-run finds them gone.
+function endedLines(ids: string[]): string[] {
+  if (ids.length === 0) return [];
+  const sessions = `${ids.length === 1 ? 'session' : 'sessions'} ${ids.join(', ')}`;
+  return [
+    `claude rm removed ${sessions} before this; remove itself deleted no worktree and no branch`,
+  ];
+}
+
+// refSegment makes a valid branch name of any folder name.
 const restoreBranch = (checked: Checked): string =>
   checked.plan.kind === 'delete'
     ? checked.plan.branch

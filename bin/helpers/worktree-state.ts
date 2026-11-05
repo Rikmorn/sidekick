@@ -1,7 +1,8 @@
 /**
  * What a linked worktree is: held by a session, a worker's, gone from disk,
- * dirty, or removable, and where its commits live. `finish`, `worktree list`,
- * `worktree remove`, and the desk's count read it here, so they agree.
+ * dirty, or removable, and where its commits live. `worktree list` and
+ * `worktree remove` read it here, so they agree. The desk's count reads the
+ * cheap checks alone, and `finish` reads the files check for a leftover.
  */
 
 import * as fs from 'node:fs';
