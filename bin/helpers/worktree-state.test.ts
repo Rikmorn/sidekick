@@ -393,7 +393,7 @@ describe('commitsAt', () => {
     expect(commitsFor(r.main, head)).toEqual({ kind: 'landed', in: branch });
   });
 
-  // The environment may block pushes, so tests write the remote-tracking refs git would.
+  // These tests write remote-tracking refs directly.
   test('landed by squash into origin/<default>', () => {
     const r = repoWithWorktree('');
     const branch = git(r.main, 'branch', '--show-current');
