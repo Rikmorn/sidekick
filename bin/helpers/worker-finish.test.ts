@@ -16,6 +16,7 @@ import {
   REPORT,
   REPORT_TEXT,
   type Rm,
+  refused,
   removeBesides,
   removed,
   savedReport,
@@ -1419,11 +1420,9 @@ describe('finish prints commands that survive a space', () => {
       { result: ok({ stdout: `kept ${ID}\n` }), removes: 'nothing' },
     ];
     expect(again.finish(fx.brief, '--worktree', fx.worktree)).toBe(1);
-    expect(again.err.at(-1)).toBe(
-      wayOut(
-        `sidekick worker finish ${fx.brief} --worktree '${fx.worktree}'`,
-        `claude rm ${ID}`,
-      ),
+    // The worktree is beside the main checkout, so it counts as hook-made.
+    expect(again.err.at(-1)).toEndWith(
+      `then run sidekick worker finish ${fx.brief} --discard --worktree '${fx.worktree}'`,
     );
   });
 });
@@ -1456,6 +1455,50 @@ function lose(fx: Fixture, h: Harness): string[] {
     'by name, no worktree has worktree-w1 checked out',
   ];
 }
+
+// What the real claude rm printed for worktrunk's worktrees (#287, 2026-11-02).
+const NO_REMOVE_HOOK =
+  'Worktree not removed. No WorktreeRemove hook is enabled here (hooks are disabled, or the repo defines only WorktreeCreate). The session stays until the directory is gone.';
+const UNCHECKED_FILES =
+  "The worktree has files that weren't checked against a repository (it has none of its own, or a hook manages it). They may be unsaved work.";
+
+describe('finish, when claude rm refuses a worktree a WorktreeCreate hook made', () => {
+  test.each([
+    ['no WorktreeRemove hook', NO_REMOVE_HOOK],
+    ['unchecked files', UNCHECKED_FILES],
+  ])("with --discard, for %s, names the hook's removal then finish --discard", (_label, text) => {
+    const fx = fixture(worktrunk);
+    const h = harness(fx);
+    h.claude.state.rm = [refused(text)];
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err.at(-1)).toBe(
+      `the worktree ${fx.worktree} on w1 is not the one Claude Code makes for w1, so a WorktreeCreate hook made it and claude rm will not remove it: remove it with that hook's own removal, then run sidekick worker finish ${fx.brief} --discard`,
+    );
+    expect(h.err.join('\n')).toContain(text);
+    expect(h.err.join('\n')).not.toContain('run finish again with');
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+
+  test('when landed, names the same way out', () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    const h = harness(fx);
+    h.claude.state.rm = [refused(NO_REMOVE_HOOK)];
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err.at(-1)).toContain(
+      `then run sidekick worker finish ${fx.brief} --discard`,
+    );
+    expect(h.err.join('\n')).not.toContain('run finish again with');
+  });
+
+  test("keeps the generic way out for Claude Code's own worktree", () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.rm = [refused(NO_REMOVE_HOOK)];
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err.at(-1)).toContain('run finish again with');
+  });
+});
 
 describe('finish finds the worktree wherever it was made', () => {
   test("in worktrunk's shape, ../<repo>.w1 on w1, through the transcript alone, landing and tearing it down", () => {

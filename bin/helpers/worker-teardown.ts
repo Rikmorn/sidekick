@@ -20,7 +20,8 @@ import {
   worktreeListed,
 } from './worker-listing.js';
 import { removeRecord } from './worker-record.js';
-import { branchExists, commitOf } from './worker-repo.js';
+import { branchExists, commitOf, physical } from './worker-repo.js';
+import { nativeBranch, nativeFolder } from './worker-worktree.js';
 
 export type Out = (line: string) => void;
 
@@ -179,12 +180,19 @@ export const waitForLock: Step = (ready, wenv) => {
 export const saidRemoved = (result: ClaudeResult): boolean =>
   ranClean(result) && REMOVED.test(printedStreams(result).join('\n'));
 
+// A worktree off Claude Code's own folder or branch came from a WorktreeCreate
+// hook, and claude rm refuses one (#310).
+const isHookMade = (ready: Ready): boolean =>
+  physical(ready.worktree) !==
+    physical(nativeFolder(ready.mainTop, ready.name)) ||
+  ready.branch !== nativeBranch(ready.name);
+
 // The re-run comes first: it restores what a cut-short claude rm deleted, and
 // claude rm keeps a worktree with uncommitted changes. `args` is the claude rm
 // that ran, which also completes the removal by hand: the discard line once it
 // ran, else `rm <id>`.
 function unknownAnswer(
-  rerun: string,
+  ready: Ready,
   args: string[],
   result: ClaudeResult,
 ): string[] {
@@ -192,9 +200,19 @@ function unknownAnswer(
     ? 'did not say removed, and finish does not know its answer'
     : failure(result);
   const command = `claude ${args.map(shellArg).join(' ')}`;
+  const refused = withText(
+    `${command} ${what}, so finish removed nothing more`,
+    result,
+  );
+  if (isHookMade(ready)) {
+    return [
+      ...refused,
+      `the worktree ${ready.worktree} on ${ready.branch} is not the one Claude Code makes for ${ready.name}, so a WorktreeCreate hook made it and claude rm will not remove it: remove it with that hook's own removal, then run ${ready.discardCommand}`,
+    ];
+  }
   return [
-    ...withText(`${command} ${what}, so finish removed nothing more`, result),
-    `run finish again with ${rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`,
+    ...refused,
+    `run finish again with ${ready.rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`,
   ];
 }
 
@@ -205,7 +223,7 @@ function unknownAnswer(
 function discard(ready: Ready, wenv: WorkerEnv, kept: ClaudeResult): string[] {
   const text = printedStreams(kept).join('\n');
   const offer = DISCARD_LINE.exec(text);
-  if (offer === null) return unknownAnswer(ready.rerun, ['rm', ready.id], kept);
+  if (offer === null) return unknownAnswer(ready, ['rm', ready.id], kept);
   const [, sha, worktreeId] = offer;
   if (sha !== ready.head) {
     return withText(
@@ -215,7 +233,7 @@ function discard(ready: Ready, wenv: WorkerEnv, kept: ClaudeResult): string[] {
   }
   const args = ['rm', ready.id, '--discard-unpushed', `${sha}@${worktreeId}`];
   const result = claudeAt(ready, wenv, args, NO_LIMIT);
-  return saidRemoved(result) ? [] : unknownAnswer(ready.rerun, args, result);
+  return saidRemoved(result) ? [] : unknownAnswer(ready, args, result);
 }
 
 // claude rm's exit code does not say whether it removed or kept, so only its

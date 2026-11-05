@@ -195,6 +195,12 @@ export const cutShort = (): Rm => ({
   removes: 'tracked files',
 });
 
+/** A `claude rm` that exits 1 with `stderr` and removes nothing, as it does for a hook-made worktree. */
+export const refused = (stderr: string): Rm => ({
+  result: ok({ code: 1, stderr }),
+  removes: 'nothing',
+});
+
 // The kept message measured on 2026-10-14, offering the discard line for `sha`.
 export const kept = (fx: Fixture, sha: string): Rm => ({
   result: ok({

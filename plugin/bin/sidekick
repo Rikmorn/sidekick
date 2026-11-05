@@ -9266,12 +9266,20 @@ var waitForLock = (ready, wenv) => {
 };
 var saidRemoved = (result) => ranClean(result) && REMOVED.test(printedStreams(result).join(`
 `));
-function unknownAnswer(rerun, args, result) {
+var isHookMade = (ready) => physical(ready.worktree) !== physical(nativeFolder(ready.mainTop, ready.name)) || ready.branch !== nativeBranch(ready.name);
+function unknownAnswer(ready, args, result) {
   const what = ranClean(result) ? "did not say removed, and finish does not know its answer" : failure(result);
   const command = `claude ${args.map(shellArg).join(" ")}`;
+  const refused = withText(`${command} ${what}, so finish removed nothing more`, result);
+  if (isHookMade(ready)) {
+    return [
+      ...refused,
+      `the worktree ${ready.worktree} on ${ready.branch} is not the one Claude Code makes for ${ready.name}, so a WorktreeCreate hook made it and claude rm will not remove it: remove it with that hook's own removal, then run ${ready.discardCommand}`
+    ];
+  }
   return [
-    ...withText(`${command} ${what}, so finish removed nothing more`, result),
-    `run finish again with ${rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`
+    ...refused,
+    `run finish again with ${ready.rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`
   ];
 }
 function discard(ready, wenv, kept) {
@@ -9279,14 +9287,14 @@ function discard(ready, wenv, kept) {
 `);
   const offer = DISCARD_LINE.exec(text);
   if (offer === null)
-    return unknownAnswer(ready.rerun, ["rm", ready.id], kept);
+    return unknownAnswer(ready, ["rm", ready.id], kept);
   const [, sha, worktreeId] = offer;
   if (sha !== ready.head) {
     return withText(`claude rm offers to discard ${sha}, which is not ${ready.branch}'s verified head (${ready.head}), so finish did not run it`, kept);
   }
   const args = ["rm", ready.id, "--discard-unpushed", `${sha}@${worktreeId}`];
   const result = claudeAt(ready, wenv, args, NO_LIMIT);
-  return saidRemoved(result) ? [] : unknownAnswer(ready.rerun, args, result);
+  return saidRemoved(result) ? [] : unknownAnswer(ready, args, result);
 }
 var removeSession = (ready, wenv, out) => {
   const first = claudeAt(ready, wenv, ["rm", ready.id], NO_LIMIT);
