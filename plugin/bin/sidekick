@@ -9917,7 +9917,17 @@ var forgetRecord = (ready) => {
   return [];
 };
 var BACKUP_KINDS = ["landed", "pushed", "discarded", "kept"];
-var backupRef = (kind, name, head) => `refs/sidekick/${kind}/${name}/${head}`;
+var REF_SAFE = /^[A-Za-z0-9._-]$/;
+var percent = (byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+var encodeByte = (byte) => {
+  const char = String.fromCharCode(byte);
+  return REF_SAFE.test(char) ? char : percent(byte);
+};
+var DOT = percent(46);
+function refSegment(name) {
+  return [...Buffer.from(name, "utf8")].map(encodeByte).join("").replace(/^[.-]/, (char) => percent(char.charCodeAt(0))).replace(/\.(?=\.)/g, DOT).replace(/\.$/, DOT).replace(/\.lock$/, `${DOT}lock`);
+}
+var backupRef = (kind, name, head) => `refs/sidekick/${kind}/${refSegment(name)}/${head}`;
 function heldBackup(runGit, top, name, head) {
   return BACKUP_KINDS.map((kind) => backupRef(kind, name, head)).find((ref2) => commitOf(runGit, top, ref2) === head);
 }
@@ -11318,7 +11328,8 @@ function removeChecked(env, repo, checked2, out) {
   out(`worktree ${entry.path} removed`);
   return settleBranch(env, repo.top, checked2, out);
 }
-var restoreBranch = (checked2) => checked2.plan.kind === "delete" ? checked2.plan.branch : checked2.name;
+var restoreBranch = (checked2) => checked2.plan.kind === "delete" ? checked2.plan.branch : refSegment(checked2.name);
+var restoreLine = (checked2) => `restore with: git branch ${shellArg(restoreBranch(checked2))} ${shellArg(checked2.plan.ref)}`;
 var fail = (lines, err) => {
   for (const line of lines)
     err(line);
@@ -11340,7 +11351,7 @@ function removeWorktree(args, env, out, err) {
   if (issues.length > 0) {
     return fail([...issues, `the backup ref ${ref2} keeps ${head}`], err);
   }
-  out(`restore with: git branch ${restoreBranch(checked2)} ${ref2}`);
+  out(restoreLine(checked2));
   return 0;
 }
 

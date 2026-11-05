@@ -10,6 +10,7 @@
 import * as path from 'node:path';
 import type { Repo } from './desk-children.js';
 import { isCurrent, type ListingRow } from './desk-snapshot.js';
+import { shellArg } from './shell.js';
 import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
 import { commitOf, HEADS, physical } from './worker-repo.js';
 import {
@@ -17,6 +18,7 @@ import {
   backupRef,
   branchGoneIssues,
   NO_LIMIT,
+  refSegment,
   saidRemoved,
   withText,
   writeBackup,
@@ -458,9 +460,16 @@ function removeChecked(
   return settleBranch(env, repo.top, checked, out);
 }
 
-// The branch a restore creates: the deleted one, else the worktree's name.
+// The branch a restore creates: the deleted one, else the worktree's name as
+// the backup ref encodes it, which is a valid branch name for any folder name.
 const restoreBranch = (checked: Checked): string =>
-  checked.plan.kind === 'delete' ? checked.plan.branch : checked.name;
+  checked.plan.kind === 'delete'
+    ? checked.plan.branch
+    : refSegment(checked.name);
+
+// Quoted for a POSIX shell, as finish's own restore line is.
+const restoreLine = (checked: Checked): string =>
+  `restore with: git branch ${shellArg(restoreBranch(checked))} ${shellArg(checked.plan.ref)}`;
 
 const fail = (lines: string[], err: Out): number => {
   for (const line of lines) err(line);
@@ -490,6 +499,6 @@ export function removeWorktree(
   if (issues.length > 0) {
     return fail([...issues, `the backup ref ${ref} keeps ${head}`], err);
   }
-  out(`restore with: git branch ${restoreBranch(checked)} ${ref}`);
+  out(restoreLine(checked));
   return 0;
 }

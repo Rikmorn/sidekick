@@ -5,6 +5,7 @@ import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner, type Runner, type RunResult } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { recordsDir, writeRecord } from './worker-record.js';
+import { refSegment } from './worker-teardown.js';
 import { runWorktreeCli } from './worktree.js';
 import { skipListPath } from './worktree-ignored.js';
 
@@ -571,6 +572,90 @@ describe('worktree remove: refuses', () => {
       const { code, err } = run(main, args);
       expect(code).toBe(1);
       expect(err[0]).toStartWith('usage: ');
+    }
+  });
+});
+
+describe('worktree remove: folder names a ref cannot hold as they are', () => {
+  const RESTORE = 'restore with: git branch ';
+
+  // Removes a detached worktree in a folder named `name`, then creates the
+  // branch its restore line names, at its ref; returns the line.
+  function removeAndRestore(name: string, segment: string): string {
+    const main = repo();
+    const dir = path.join(tmp(), name);
+    git(main, 'worktree', 'add', '-q', '--detach', dir);
+    const head = git(dir, 'rev-parse', 'HEAD');
+    const { code, out, err } = run(main, [name]);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    const ref = `refs/sidekick/landed/${segment}/${head}`;
+    expect(backupRefs(main)).toEqual([ref]);
+    expect(listed(main, dir)).toBe(false);
+    git(main, 'branch', segment, ref);
+    expect(git(main, 'rev-parse', segment)).toBe(head);
+    return out.at(-1) ?? '';
+  }
+
+  test('my tree', () => {
+    expect(removeAndRestore('my tree', 'my%20tree')).toStartWith(
+      `${RESTORE}my%20tree refs/sidekick/landed/my%20tree/`,
+    );
+  });
+
+  test('x.lock', () => {
+    expect(removeAndRestore('x.lock', 'x%2Elock')).toStartWith(
+      `${RESTORE}x%2Elock refs/sidekick/landed/x%2Elock/`,
+    );
+  });
+
+  test('a&b, on its own branch, quotes the restore line', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'a&b');
+    const head = git(dir, 'rev-parse', 'HEAD');
+    const { code, out } = run(main, ['a&b']);
+    expect(code).toBe(0);
+    const ref = `refs/sidekick/landed/a%26b/${head}`;
+    expect(backupRefs(main)).toEqual([ref]);
+    expect(branchExists(main, 'worktree-a&b')).toBe(false);
+    expect(out.at(-1)).toBe(`${RESTORE}'worktree-a&b' ${ref}`);
+  });
+
+  test('every encoded name passes git check-ref-format, in a ref and as a branch', () => {
+    const main = repo();
+    const names = [
+      'my tree',
+      'x.lock',
+      'a&b',
+      '.x',
+      'x.',
+      'a..b',
+      '..',
+      '.lock',
+      '-x',
+      '@',
+      'a@{b',
+      'a:b~c^d?e*f[g\\h',
+      'tab\there',
+      'ü',
+      '%41',
+      "it's",
+    ];
+    for (const name of names) {
+      const segment = refSegment(name);
+      expect(() =>
+        git(main, 'check-ref-format', `refs/sidekick/kept/${segment}/x`),
+      ).not.toThrow();
+      expect(() =>
+        git(main, 'check-ref-format', '--branch', segment),
+      ).not.toThrow();
+    }
+    expect(new Set(names.map(refSegment)).size).toBe(names.length);
+  });
+
+  test("a name already in the safe form stays as it is, as a worker's does", () => {
+    for (const name of ['r10-p9-dispatch', 'w1', 'r10-x', 'v1.2_rc-3']) {
+      expect(refSegment(name)).toBe(name);
     }
   });
 });

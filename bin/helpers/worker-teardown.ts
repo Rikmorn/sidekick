@@ -386,12 +386,46 @@ const BACKUP_KINDS = ['landed', 'pushed', 'discarded', 'kept'] as const;
  */
 export type BackupKind = (typeof BACKUP_KINDS)[number];
 
-/** The backup ref that keeps `head` under `name`, its kind saying where the commits lived. */
+// A byte a ref segment keeps as it is; every other is percent-encoded, `%`
+// included, so two names never share a segment.
+const REF_SAFE = /^[A-Za-z0-9._-]$/;
+
+const percent = (byte: number): string =>
+  `%${byte.toString(16).toUpperCase().padStart(2, '0')}`;
+
+const encodeByte = (byte: number): string => {
+  const char = String.fromCharCode(byte);
+  return REF_SAFE.test(char) ? char : percent(byte);
+};
+
+const DOT = percent('.'.charCodeAt(0));
+
+/**
+ * `name` as one segment that git check-ref-format accepts, inside a ref and
+ * as a branch name. Each UTF-8 byte outside `[A-Za-z0-9._-]` is
+ * percent-encoded, and so are a leading `.` or `-`, a `.` before another, a
+ * trailing `.`, and the `.` of a `.lock` suffix. A name already in that form,
+ * every worker's name among them, stays as it is.
+ */
+export function refSegment(name: string): string {
+  return [...Buffer.from(name, 'utf8')]
+    .map(encodeByte)
+    .join('')
+    .replace(/^[.-]/, (char) => percent(char.charCodeAt(0)))
+    .replace(/\.(?=\.)/g, DOT)
+    .replace(/\.$/, DOT)
+    .replace(/\.lock$/, `${DOT}lock`);
+}
+
+/**
+ * The backup ref that keeps `head` under `name`, its kind saying where the
+ * commits lived. `name` goes in as `refSegment` encodes it.
+ */
 export const backupRef = (
   kind: BackupKind,
   name: string,
   head: string,
-): string => `refs/sidekick/${kind}/${name}/${head}`;
+): string => `refs/sidekick/${kind}/${refSegment(name)}/${head}`;
 
 /** The first backup ref of any kind that holds `head`, else undefined. */
 export function heldBackup(

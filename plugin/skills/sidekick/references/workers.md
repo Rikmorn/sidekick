@@ -233,7 +233,7 @@ After a failure, fix what it names and run `finish` again. A re-run works until 
 
 ### The backup refs
 
-Every `finish` writes `refs/sidekick/landed/<name>/<head>`, or `refs/sidekick/discarded/<name>/<head>` under `--discard`, before `claude rm`. `sidekick worktree remove` writes one too, before every removal. It adds two kinds: `refs/sidekick/pushed/<name>/<head>`, for commits a remote-tracking ref holds, and `refs/sidekick/kept/<name>/<head>`, for commits held only on a branch it keeps. The ref keeps the branch's commits after the branch is deleted. `sidekick worktree list` lists every ref under `refs/sidekick/` after its rows, with its commit's date. Restore one with `git branch <branch> <ref>`. Nothing prunes them.
+Every `finish` writes `refs/sidekick/landed/<name>/<head>`, or `refs/sidekick/discarded/<name>/<head>` under `--discard`, before `claude rm`. `sidekick worktree remove` writes one too, before every removal. It adds two kinds: `refs/sidekick/pushed/<name>/<head>`, for commits a remote-tracking ref holds, and `refs/sidekick/kept/<name>/<head>`, for commits held only on a branch it keeps. Its `<name>` is the folder's name, percent-encoded where a ref cannot hold it; a worker's name never needs that. The ref keeps the branch's commits after the branch is deleted. `sidekick worktree list` lists every ref under `refs/sidekick/` after its rows, with its commit's date. Restore one with `git branch <branch> <ref>`. Nothing prunes them.
 
 ### What it reads from `claude rm`
 

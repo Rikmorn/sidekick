@@ -94,7 +94,7 @@ Each refusal names what it found and deletes nothing. The checks run in this ord
 
 Once the checks pass, `remove` runs these in order, and the first that fails stops the rest:
 
-1. It writes the backup ref `refs/sidekick/<kind>/<name>/<head>`, create-only, before it deletes anything. A kept branch gets one too, since `claude rm` or a hand may yet delete it. The kind comes from where the commits live: `landed` or `pushed`. Commits held only here, or where `remove` cannot tell, give `kept` when the branch stays, and `discarded` otherwise. A ref already holding the head counts as written, so a re-run passes.
+1. It writes the backup ref `refs/sidekick/<kind>/<name>/<head>`, create-only, before it deletes anything. A kept branch gets one too, since `claude rm` or a hand may yet delete it. The kind comes from where the commits live: `landed` or `pushed`. Commits held only here, or where `remove` cannot tell, give `kept` when the branch stays, and `discarded` otherwise. A ref already holding the head counts as written, so a re-run passes. `<name>` is the folder's name, encoded so that git accepts any folder name. Each byte outside `[A-Za-z0-9._-]` is percent-encoded, as are the dots git refuses: a leading one, one before another, a trailing one, and the dot of `.lock`. A leading `-` is encoded too. So `my tree` becomes `my%20tree`, and a name already in that form stays as it is.
 2. It reads the session rows, the worker records, the lock, the `HEAD`, and the worktree's files again. Anything that now holds the worktree refuses, as do a moved `HEAD` and a new or changed file, and the backup ref stays.
 3. An exited background session whose `cwd` is the worktree's top, compared physically, goes first, by `claude rm <id>` with no time limit. When `claude rm` does not say `removed`, its text prints as a note, and git's removal follows. A session whose `cwd` is only inside the worktree stays, since it may belong to another worktree.
    When another linked worktree holds this one, `remove` skips `claude rm`, since the session may belong to the enclosing worktree, which nothing checked. A note names the session, which stays listed in `claude agents`.
@@ -107,7 +107,7 @@ It prints `worktree <path> removed`, then `branch <branch> removed` for the bran
 restore with: git branch worktree-r10-x refs/sidekick/landed/r10-x/<head>
 ```
 
-For a detached worktree or a kept branch, the restore line names the worktree's name as the branch to create. A kept branch may still exist under its own name.
+For a detached worktree or a kept branch, the restore line names the worktree's name, encoded as in the ref, as the branch to create. A kept branch may still exist under its own name. The line quotes each word a POSIX shell would read otherwise, as `finish`'s does.
 
 ### It never forces
 
