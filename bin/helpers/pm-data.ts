@@ -6,6 +6,7 @@
 
 import { spawnSync } from 'node:child_process';
 import * as v from 'valibot';
+import { envWithoutRepoVars } from './git-env.js';
 import { type StatusRead, UPDATE_STATUSES } from './pm-glance.js';
 
 export interface RunResult {
@@ -25,6 +26,7 @@ export const execRunner: Runner = (cmd, args, cwd) => {
     cwd,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: envWithoutRepoVars(process.env),
   });
   if (r.error) return { code: 127, stdout: '', stderr: r.error.message };
   return {

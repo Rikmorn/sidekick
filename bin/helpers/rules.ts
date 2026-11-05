@@ -7,6 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { envWithoutRepoVars } from './git-env.js';
 import { ownedRulesIn, statusOf } from './rules-fs.js';
 import { findOverlap, formatOverlap } from './rules-overlap.js';
 
@@ -39,6 +40,7 @@ export function workTreeRootOf(cwd: string): string | undefined {
       cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      env: envWithoutRepoVars(process.env),
     }).trim();
   } catch {
     return undefined;

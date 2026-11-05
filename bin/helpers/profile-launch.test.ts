@@ -590,6 +590,23 @@ describe('makeClaudeRunner', () => {
     }
   });
 
+  test('spawns without the repo-locating variables', () => {
+    const saved = process.env.GIT_DIR;
+    process.env.GIT_DIR = '/elsewhere/.git';
+    try {
+      let seen: NodeJS.ProcessEnv = {};
+      const run = makeClaudeRunner((_cmd, _args, opts) => {
+        seen = opts.env;
+        return { status: 0, stdout: '', stderr: '' };
+      });
+      run([], { cwd: '/w', timeoutMs: 1 });
+      expect(seen).not.toHaveProperty('GIT_DIR');
+    } finally {
+      if (saved === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = saved;
+    }
+  });
+
   test('a timeout error maps to timedOut', () => {
     const err = Object.assign(new Error('spawnSync claude ETIMEDOUT'), {
       code: 'ETIMEDOUT',

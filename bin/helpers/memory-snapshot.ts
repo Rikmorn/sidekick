@@ -5,6 +5,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import * as path from 'node:path';
+import { envWithoutRepoVars } from './git-env.js';
 import type { StartSource } from './memory-start-render.js';
 import { isWorkTreeTop } from './memory-store.js';
 import type { Runner } from './pm-data.js';
@@ -40,23 +41,6 @@ export function snapshotStore(
     `Session: ${sessionId}`,
   ]);
   return commit.code === 0 ? 'committed' : 'failed';
-}
-
-// Variables that point git at a repo other than the one in the working folder.
-const REPO_LOCATING_VARS = [
-  'GIT_DIR',
-  'GIT_WORK_TREE',
-  'GIT_INDEX_FILE',
-  'GIT_COMMON_DIR',
-  'GIT_OBJECT_DIRECTORY',
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_NAMESPACE',
-];
-
-function envWithoutRepoVars(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const kept = { ...env };
-  for (const name of REPO_LOCATING_VARS) delete kept[name];
-  return kept;
 }
 
 /** The exit code `deadlineRunner` gives a call made after its deadline, or cut by it. */

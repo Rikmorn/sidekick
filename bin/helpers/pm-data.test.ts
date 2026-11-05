@@ -1,5 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { fixture, fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
+import { removeTemps, repo } from './fixtures/worker/repo.js';
 import { tiers } from './pm.js';
 import {
   ageDays,
@@ -128,6 +130,7 @@ describe('touchedAt', () => {
 });
 
 describe('execRunner', () => {
+  afterEach(removeTemps);
   test('a missing binary is code 127, not a throw', () => {
     const r = execRunner('gh', ['--version'], '/');
     // Either gh exists (code 0) or not (127); never a throw.
@@ -140,6 +143,19 @@ describe('execRunner', () => {
       '/',
     );
     expect(r.code).not.toBe(0);
+  });
+  test('git acts on the repo in cwd when GIT_DIR names another', () => {
+    const first = repo();
+    const second = repo();
+    // Bun's spawnSync ignores later writes to process.env, so the variable
+    // goes in the child's own environment, as Node's launcher would see it.
+    const script = `import { execRunner } from ${JSON.stringify(`${import.meta.dir}/pm-data.ts`)};
+      process.stdout.write(execRunner('git', ['rev-parse', '--absolute-git-dir'], ${JSON.stringify(first)}).stdout);`;
+    const child = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf-8',
+      env: { ...process.env, GIT_DIR: `${second}/.git` },
+    });
+    expect(child.stdout.trim()).toBe(`${first}/.git`);
   });
 });
 

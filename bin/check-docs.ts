@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fromMarkdown } from 'mdast-util-from-markdown';
+import { envWithoutRepoVars } from './helpers/git-env.js';
 
 // sidekick's own docs check, run in CI; the shipped CLI never imports it.
 
@@ -62,7 +63,10 @@ export const targetOf = (file: string, url: string): string | null => {
 };
 
 const git = (root: string, args: readonly string[]) =>
-  spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+  spawnSync('git', ['-C', root, ...args], {
+    encoding: 'utf8',
+    env: envWithoutRepoVars(process.env),
+  });
 
 export const markdownFiles = (root: string): string[] => {
   const listed = git(root, [

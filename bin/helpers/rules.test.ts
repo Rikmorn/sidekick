@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -39,6 +39,29 @@ describe('workTreeRootOf', () => {
       expect(workTreeRootOf(plain)).toBeUndefined();
     } finally {
       removeAll(repo, plain);
+    }
+  });
+
+  test('ignores a GIT_DIR that names another repo', () => {
+    const mine = tmp();
+    const other = tmp();
+    try {
+      gitInit(mine);
+      gitInit(other);
+      const sub = path.join(mine, 'a');
+      fs.mkdirSync(sub);
+      // Bun's spawnSync ignores later writes to process.env, so the variable
+      // goes in a child's own environment. Under GIT_DIR alone git takes cwd
+      // as the top, so a subfolder tells the two repos apart.
+      const script = `import { workTreeRootOf } from ${JSON.stringify(`${import.meta.dir}/rules.ts`)};
+        process.stdout.write(workTreeRootOf(${JSON.stringify(sub)}) ?? '');`;
+      const child = spawnSync(process.execPath, ['-e', script], {
+        encoding: 'utf-8',
+        env: { ...process.env, GIT_DIR: path.join(other, '.git') },
+      });
+      expect(child.stdout).toBe(fs.realpathSync(mine));
+    } finally {
+      removeAll(mine, other);
     }
   });
 

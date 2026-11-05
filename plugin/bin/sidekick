@@ -2688,6 +2688,23 @@ The user-level rule \`sk-memory.md\` says what a session writes here and what it
 // bin/helpers/pm-data.ts
 import { spawnSync } from "node:child_process";
 
+// bin/helpers/git-env.ts
+var REPO_LOCATING_VARS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_NAMESPACE"
+];
+function envWithoutRepoVars(env) {
+  const kept = { ...env };
+  for (const name of REPO_LOCATING_VARS)
+    delete kept[name];
+  return kept;
+}
+
 // plugin/hooks/board/contract.ts
 var GLANCE_VERSION = 2;
 var GLANCE_COMPLETE_WORD = "complete";
@@ -3007,7 +3024,8 @@ var execRunner = (cmd, args, cwd) => {
   const r = spawnSync(cmd, args, {
     cwd,
     encoding: "utf-8",
-    stdio: ["ignore", "pipe", "pipe"]
+    stdio: ["ignore", "pipe", "pipe"],
+    env: envWithoutRepoVars(process.env)
   });
   if (r.error)
     return { code: 127, stdout: "", stderr: r.error.message };
@@ -3449,7 +3467,7 @@ var makeClaudeRunner = (spawn = spawnClaude) => (args, { cwd, timeoutMs }) => {
     cwd,
     timeout: timeoutMs,
     shell: false,
-    env: withoutMarkers(process.env)
+    env: envWithoutRepoVars(withoutMarkers(process.env))
   });
   const stdout = out.stdout ?? "";
   const stderr = out.stderr ?? "";
@@ -4597,21 +4615,6 @@ function snapshotStore(store, sessionId, source, runGit) {
     `Session: ${sessionId}`
   ]);
   return commit.code === 0 ? "committed" : "failed";
-}
-var REPO_LOCATING_VARS = [
-  "GIT_DIR",
-  "GIT_WORK_TREE",
-  "GIT_INDEX_FILE",
-  "GIT_COMMON_DIR",
-  "GIT_OBJECT_DIRECTORY",
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  "GIT_NAMESPACE"
-];
-function envWithoutRepoVars(env) {
-  const kept = { ...env };
-  for (const name of REPO_LOCATING_VARS)
-    delete kept[name];
-  return kept;
 }
 var DEADLINE_EXIT = 124;
 var TIMED_OUT = "ETIMEDOUT";
@@ -8083,7 +8086,8 @@ function workTreeRootOf(cwd) {
     return execFileSync("git", ["rev-parse", "--show-toplevel"], {
       cwd,
       encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"]
+      stdio: ["ignore", "pipe", "ignore"],
+      env: envWithoutRepoVars(process.env)
     }).trim();
   } catch {
     return;
