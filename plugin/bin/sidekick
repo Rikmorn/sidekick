@@ -11102,19 +11102,24 @@ function backupKind(commits, discard2, where) {
     }
   }
 }
-function backupPlan(env, repo, row2, discard2) {
+function branchPlan(env, repo, row2, discard2) {
   const { entry, name } = row2;
   const head = entry.head === undefined ? undefined : commitOf(env.runGit, repo.top, entry.head);
   if (head === undefined) {
     return refuse6(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
   }
   const branch = entry.branch?.replace(HEADS, "");
+  if (branch !== undefined && branch !== nativeBranch(name)) {
+    return { entry, name, head, plan: { kind: "keep", branch } };
+  }
   const where = branch ?? `the detached HEAD at ${entry.path}`;
   const commits = row2.commits ?? commitsAt(env.runGit, repo, head);
   const kind = backupKind(commits, discard2, where);
   if (typeof kind !== "string")
     return kind;
-  return { entry, name, branch, head, ref: backupRef(kind, name, head) };
+  const ref2 = backupRef(kind, name, head);
+  const plan = branch === undefined ? { kind: "detached", ref: ref2 } : { kind: "delete", branch, ref: ref2 };
+  return { entry, name, head, plan };
 }
 function checkTarget(args, env, repo, out) {
   const entry = resolveTarget3(repo, env.cwd, args.target);
@@ -11134,7 +11139,7 @@ function checkTarget(args, env, repo, out) {
   const kept = stateLines(row2.state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
     return refuse6(...kept);
-  return backupPlan(env, repo, row2, args.discard);
+  return branchPlan(env, repo, row2, args.discard);
 }
 function movedLines(entry, head) {
   if (entry.head === head)
@@ -11212,28 +11217,45 @@ function removeListed(env, top, checked2) {
     return [];
   return [...issues, "fix what git names, then run remove again"];
 }
+function settleBranch(env, top, checked2, out) {
+  const { plan, name, head } = checked2;
+  switch (plan.kind) {
+    case "detached":
+      return [];
+    case "keep":
+      out(`branch ${plan.branch} kept: remove deletes only ${nativeBranch(name)}, the branch made for this worktree`);
+      return [];
+    case "delete": {
+      const issues = branchGoneIssues(env.runGit, top, plan.branch, head);
+      if (issues.length > 0) {
+        return [
+          ...issues,
+          `the worktree is gone, and the branch ${plan.branch} stays as it is`
+        ];
+      }
+      out(`branch ${plan.branch} removed`);
+      return [];
+    }
+    default: {
+      const _exhaustive = plan;
+      throw new Error(`Unhandled plan: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
 function removeChecked(env, repo, checked2, out) {
   const rows = recheck(env, repo, checked2);
   if ("refused" in rows)
     return rows.refused;
-  const { entry, branch, head } = checked2;
+  const { entry } = checked2;
   endSessions(env, repo, entry.path, rows, out);
   const worktree = removeListed(env, repo.top, checked2);
   if (worktree.length > 0)
     return worktree;
   out(`worktree ${entry.path} removed`);
-  if (branch === undefined)
-    return [];
-  const issues = branchGoneIssues(env.runGit, repo.top, branch, head);
-  if (issues.length > 0) {
-    return [
-      ...issues,
-      `the worktree is gone, and the branch ${branch} stays as it is`
-    ];
-  }
-  out(`branch ${branch} removed`);
-  return [];
+  return settleBranch(env, repo.top, checked2, out);
 }
+var backupOf = (plan) => plan.kind === "keep" ? undefined : plan.ref;
+var restoreBranch = (checked2) => checked2.plan.kind === "delete" ? checked2.plan.branch : checked2.name;
 var fail = (lines, err) => {
   for (const line of lines)
     err(line);
@@ -11246,15 +11268,18 @@ function removeWorktree(args, env, out, err) {
   const checked2 = checkTarget(args, env, repo, out);
   if ("refused" in checked2)
     return fail(checked2.refused, err);
-  const { ref: ref2, head } = checked2;
-  const kept = writeBackup(env.runGit, repo.top, ref2, head);
+  const { head } = checked2;
+  const ref2 = backupOf(checked2.plan);
+  const kept = ref2 === undefined ? [] : writeBackup(env.runGit, repo.top, ref2, head);
   if (kept.length > 0)
     return fail([...kept, "so remove deleted nothing"], err);
   const issues = removeChecked(env, repo, checked2, out);
-  if (issues.length > 0) {
-    return fail([...issues, `the backup ref ${ref2} keeps ${head}`], err);
+  const keeps = ref2 === undefined ? [] : [`the backup ref ${ref2} keeps ${head}`];
+  if (issues.length > 0)
+    return fail([...issues, ...keeps], err);
+  if (ref2 !== undefined) {
+    out(`restore with: git branch ${restoreBranch(checked2)} ${ref2}`);
   }
-  out(`restore with: git branch ${checked2.branch ?? checked2.name} ${ref2}`);
   return 0;
 }
 

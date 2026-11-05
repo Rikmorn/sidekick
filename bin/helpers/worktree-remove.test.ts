@@ -168,6 +168,72 @@ describe('worktree remove: removes', () => {
     ]);
   });
 
+  test('a worktree on master, keeping the branch with its commits only here, with no ref and no --discard', () => {
+    const main = repo();
+    git(main, 'checkout', '-q', '-b', 'develop');
+    git(main, 'branch', '-f', 'master', 'develop');
+    const dir = path.join(tmp(), 'm1');
+    git(main, 'worktree', 'add', '-q', dir, 'master');
+    const head = commit(dir, 'b.txt');
+    const { code, out, err } = run(main, ['m1']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(listed(main, dir)).toBe(false);
+    expect(fs.existsSync(dir)).toBe(false);
+    expect(git(main, 'rev-parse', 'master')).toBe(head);
+    expect(backupRefs(main)).toEqual([]);
+    expect(out).toEqual([
+      `worktree ${dir} removed`,
+      'branch master kept: remove deletes only worktree-m1, the branch made for this worktree',
+    ]);
+  });
+
+  test('a worktree on feature-x, keeping the branch with its commits only here', () => {
+    const main = repo();
+    const dir = path.join(tmp(), 'feat');
+    git(main, 'worktree', 'add', '-q', '-b', 'feature-x', dir);
+    const head = commit(dir, 'b.txt');
+    const { code, out, events } = run(main, ['feat']);
+    expect(code).toBe(0);
+    expect(listed(main, dir)).toBe(false);
+    expect(git(main, 'rev-parse', 'feature-x')).toBe(head);
+    expect(backupRefs(main)).toEqual([]);
+    expect(events.some((e) => e.startsWith('git update-ref'))).toBe(false);
+    expect(out.at(-1)).toBe(
+      'branch feature-x kept: remove deletes only worktree-feat, the branch made for this worktree',
+    );
+  });
+
+  test('a worktree on a kept branch whose commits remove cannot place, with no --discard', () => {
+    const main = repo();
+    git(main, 'checkout', '-q', '--detach');
+    const dir = path.join(tmp(), 'feat');
+    git(main, 'worktree', 'add', '-q', '-b', 'feature-x', dir);
+    const head = commit(dir, 'b.txt');
+    const rows: string[] = [];
+    const env = {
+      cwd: main,
+      runGit: execRunner,
+      runClaude: () => NO_SESSIONS,
+      isAlive: () => false,
+    };
+    runWorktreeCli(
+      ['list'],
+      env,
+      (l) => rows.push(l),
+      () => {},
+    );
+    expect(rows.find((l) => l.startsWith('feat · '))).toContain(
+      'commits unknown',
+    );
+    const { code, err } = run(main, ['feat']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(listed(main, dir)).toBe(false);
+    expect(git(main, 'rev-parse', 'feature-x')).toBe(head);
+    expect(backupRefs(main)).toEqual([]);
+  });
+
   test("the branch's config section goes with the branch", () => {
     const main = repo();
     addWorktree(main, 'cfg');
