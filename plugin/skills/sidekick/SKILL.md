@@ -53,7 +53,7 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 
 ## Worktrees
 
-`sidekick worktree list` prints one line per linked worktree: its state (`held`, a worker's, `folder gone`, `dirty`, or `removable`), where its commits live, its branch, and its path. Then it lists the backup refs under `refs/sidekick/`. It is read-only. `sidekick worktree remove <name|path>` removes one worktree that `list` shows as `removable` or `folder gone`, keeping its commits in a backup ref. It needs `--discard` when the commits exist only in that worktree, or when it cannot tell where they live. `references/worktrees.md` covers each state, the checks behind it, and the skip list at `<git common dir>/sidekick/disposable` with the folders it leaves unguarded.
+`sidekick worktree list` prints one line per linked worktree: its name, its state (`held`, a worker's, `folder gone`, `dirty`, or `removable`), where its commits live, its branch, and its path. Then it lists the backup refs under `refs/sidekick/`. It is read-only. `sidekick worktree remove <name|path>` removes one worktree that `list` shows as `removable` or `folder gone`. Of the branches, it deletes only `worktree-<name>`, the one Claude Code makes for that worktree, and keeps any other. Before it deletes that branch, or removes a detached `HEAD`, it keeps the commits in a backup ref. Then it needs `--discard` when the commits exist only in that worktree, or when it cannot tell where they live. `references/worktrees.md` covers each state, the checks behind it, and the skip list at `<common git dir>/sidekick/disposable` with the folders it leaves unguarded.
 
 ## Memory
 
