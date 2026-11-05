@@ -6,7 +6,7 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 import * as fs38 from "node:fs";
 import { realpathSync as realpathSync10 } from "node:fs";
 import * as os3 from "node:os";
-import * as path48 from "node:path";
+import * as path49 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -9262,6 +9262,22 @@ function lockStateOf(locked, isAlive) {
     return { kind: "other", reason: locked };
   return isAlive(pid) ? { kind: "live", pid } : { kind: "dead", pid };
 }
+var gitIssue2 = (verb, stderr) => `git worktree ${verb} failed: ${stderr.trim()}`;
+function removeGitWorktree(runGit, top, path41, lock) {
+  if (lock.kind === "live") {
+    return [`${path41} is locked by a live session (pid ${lock.pid})`];
+  }
+  if (lock.kind === "other") {
+    return [`${path41} is locked${lock.reason === "" ? "" : `: ${lock.reason}`}`];
+  }
+  if (lock.kind === "dead") {
+    const unlock = runGit("git", ["worktree", "unlock", path41], top);
+    if (unlock.code !== 0)
+      return [gitIssue2("unlock", unlock.stderr)];
+  }
+  const removed = runGit("git", ["worktree", "remove", path41], top);
+  return removed.code === 0 ? [] : [gitIssue2("remove", removed.stderr)];
+}
 
 // bin/helpers/worker-teardown.ts
 var ENDED_STATES = ["stopped", "done"];
@@ -9396,8 +9412,8 @@ var forgetRecord = (ready) => {
   removeRecord(ready.commonDir, ready.name);
   return [];
 };
+var BACKUP_KINDS = ["landed", "pushed", "discarded"];
 var backupRef = (kind, name, head) => `refs/sidekick/${kind}/${name}/${head}`;
-var BACKUP_KINDS = ["landed", "discarded"];
 function heldBackup(runGit, top, name, head) {
   return BACKUP_KINDS.map((kind) => backupRef(kind, name, head)).find((ref2) => commitOf(runGit, top, ref2) === head);
 }
@@ -9414,15 +9430,15 @@ function readyBackup(ready) {
     }
   }
 }
-var keepBackup = (ready, wenv) => {
-  const ref2 = readyBackup(ready);
-  if (commitOf(wenv.runGit, ready.mainTop, ref2) === ready.head)
+function writeBackup(runGit, top, ref2, head) {
+  if (commitOf(runGit, top, ref2) === head)
     return [];
-  const result = wenv.runGit("git", ["update-ref", ref2, ready.head, ""], ready.mainTop);
+  const result = runGit("git", ["update-ref", ref2, head, ""], top);
   if (result.code === 0)
     return [];
   return [`cannot keep ${ref2}: ${result.stderr.trim()}`];
-};
+}
+var keepBackup = (ready, wenv) => writeBackup(wenv.runGit, ready.mainTop, readyBackup(ready), ready.head);
 var restorePartial = (ready, wenv, out) => {
   if (!ready.partial)
     return [];
@@ -10767,6 +10783,42 @@ function processIsAlive(pid) {
   }
 }
 
+// bin/helpers/worktree-read.ts
+function repoOf2(env, err) {
+  const found = findRepo(env.runGit, env.cwd);
+  for (const warning of found.warnings)
+    err(warning);
+  if (found.repo === undefined && found.warnings.length === 0) {
+    err(`${env.cwd} is not inside a git repository`);
+  }
+  return found.repo;
+}
+function readSources(env, repo) {
+  const listing = readListing(env.runClaude, env.cwd);
+  const skips = readSkips(repo.commonDir);
+  const stored = readRecords(repo.commonDir);
+  return {
+    src: {
+      repo,
+      rows: "error" in listing ? undefined : listing.rows,
+      records: stored.records,
+      isAlive: env.isAlive
+    },
+    listing,
+    warnings: [...skips.warnings, ...stored.warnings]
+  };
+}
+var heldWords = (by) => by.startsWith("unknown") ? `held, ${by}` : `held by ${by}`;
+function omittedWords(omitted) {
+  if (omitted.count === 0)
+    return "";
+  const count2 = `${omitted.kind === "at least" ? "at least " : ""}${omitted.count}`;
+  return `, and ${count2} more`;
+}
+
+// bin/helpers/worktree-remove.ts
+import * as path48 from "node:path";
+
 // bin/helpers/worktree-state.ts
 import * as fs37 from "node:fs";
 import * as path47 from "node:path";
@@ -10903,6 +10955,224 @@ function commitsAt(runGit, repo, head) {
   return countOnlyHere(runGit, repo.top, sha, checked2);
 }
 
+// bin/helpers/worktree-remove.ts
+var DISCARD = "--discard";
+function parseRemoveArgs(rest2) {
+  const flags = rest2.filter((arg) => arg.startsWith("-"));
+  const targets = rest2.filter((arg) => !arg.startsWith("-"));
+  const fits = targets.length === 1 && flags.every((flag) => flag === DISCARD);
+  if (!fits)
+    return;
+  return { target: targets[0], discard: flags.includes(DISCARD) };
+}
+var refuse6 = (...lines) => ({ refused: lines });
+var samePath = (a, b) => physical(a) === physical(b);
+var alone = (repo, entry) => ({
+  ...repo,
+  worktrees: [repo.worktrees[0], entry]
+});
+function resolveTarget3(repo, cwd, target) {
+  const asPath = path48.resolve(cwd, target);
+  const matches = repo.worktrees.filter((entry2) => path48.basename(entry2.path) === target || samePath(entry2.path, asPath));
+  if (matches.length === 0) {
+    return refuse6(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
+  }
+  if (matches.length > 1) {
+    const paths = matches.map((entry2) => entry2.path).join(", ");
+    return refuse6(`${matches.length} worktrees match ${target}: ${paths}. Name one by its path`);
+  }
+  const [entry] = matches;
+  if (entry === repo.worktrees[0]) {
+    return refuse6(`${entry.path} is the main checkout, which remove never takes`);
+  }
+  if (insideOf(cwd, entry.path)) {
+    return refuse6(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep; in a shell, cd out. Then run remove from the main checkout`);
+  }
+  return entry;
+}
+function nestedLines(repo, entry) {
+  const nested = repo.worktrees.filter((other) => other !== entry && insideOf(other.path, entry.path));
+  if (nested.length === 0)
+    return [];
+  const paths = nested.map((other) => other.path).join(", ");
+  return [
+    `${entry.path} holds other worktrees, which its removal would delete: ${paths}. Remove those first`
+  ];
+}
+function stateLines(state, entry, skipList) {
+  switch (state.kind) {
+    case "held":
+      return [
+        `${entry.path} is ${heldWords(state.by)}, so remove took nothing`
+      ];
+    case "worker":
+      return [
+        `${entry.path} is the worker ${state.name}'s: clear it with sidekick worker finish, which removes its session too`
+      ];
+    case "dirty":
+      return [
+        `${entry.path} holds files its removal would lose: ${state.paths.join(", ")}${omittedWords(state.omitted)}`,
+        `commit, move, or delete them, then run remove again. An ignored file goes with the worktree once its folder is listed in ${skipList}`
+      ];
+    case "folder gone":
+    case "removable":
+      return [];
+    default: {
+      const _exhaustive = state;
+      throw new Error(`Unhandled state: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+var commitCount = (count2) => `${count2} ${count2 === 1 ? "commit" : "commits"}`;
+var DISCARD_WAY = `run remove again with ${DISCARD} to remove it anyway, keeping them in a backup ref only`;
+function backupKind(commits, discard2, where) {
+  switch (commits.kind) {
+    case "landed":
+      return "landed";
+    case "pushed":
+      return "pushed";
+    case "only here":
+      if (discard2)
+        return "discarded";
+      return refuse6(`${where} has ${commitCount(commits.count)} found in no landed branch and no remote-tracking ref, as of the last fetch, so remove took nothing`, DISCARD_WAY);
+    case "unknown":
+      if (discard2)
+        return "discarded";
+      return refuse6(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
+    default: {
+      const _exhaustive = commits;
+      throw new Error(`Unhandled commits: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+function backupPlan(env, repo, row2, discard2) {
+  const { entry, name } = row2;
+  const head = entry.head === undefined ? undefined : commitOf(env.runGit, repo.top, entry.head);
+  if (head === undefined) {
+    return refuse6(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
+  }
+  const branch = entry.branch?.replace(HEADS, "");
+  const where = branch ?? `the detached HEAD at ${entry.path}`;
+  const commits = row2.commits ?? commitsAt(env.runGit, repo, head);
+  const kind = backupKind(commits, discard2, where);
+  if (typeof kind !== "string")
+    return kind;
+  return { entry, name, branch, head, ref: backupRef(kind, name, head) };
+}
+function checkTarget(args, env, repo, out) {
+  const entry = resolveTarget3(repo, env.cwd, args.target);
+  if ("refused" in entry)
+    return entry;
+  const nested = nestedLines(repo, entry);
+  if (nested.length > 0)
+    return refuse6(...nested);
+  const { src, listing, warnings } = readSources(env, alone(repo, entry));
+  if ("error" in listing) {
+    return refuse6(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
+  }
+  for (const warning of [...listing.warnings, ...warnings])
+    out(warning);
+  const [row2] = worktreeRows(src, env.runGit);
+  const kept = stateLines(row2.state, entry, skipListPath(repo.commonDir));
+  if (kept.length > 0)
+    return refuse6(...kept);
+  return backupPlan(env, repo, row2, args.discard);
+}
+function recheck(env, repo, checked2) {
+  const { src, listing } = readSources(env, repo);
+  if ("error" in listing) {
+    return refuse6(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
+  }
+  const now = listWorktrees(env.runGit, repo.top);
+  if ("issue" in now) {
+    return refuse6(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
+  }
+  const entry = now.worktrees.find((e) => samePath(e.path, checked2.entry.path));
+  if (entry === undefined) {
+    return refuse6(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
+  }
+  const lock = lockStateOf(entry.locked, env.isAlive);
+  const state = cheapState({ ...src, repo: alone(repo, entry) }, entry, lock);
+  const skipList = skipListPath(repo.commonDir);
+  const kept = state === undefined ? [] : stateLines(state, entry, skipList);
+  if (kept.length > 0)
+    return refuse6(...kept);
+  return listing.rows;
+}
+function exitedSessions(rows, worktree) {
+  return rows.flatMap((row2) => {
+    const exited = row2.kind === "background" && !isCurrent(row2);
+    const inside = row2.cwd !== undefined && insideOf(row2.cwd, worktree);
+    return exited && inside && row2.id !== undefined ? [row2.id] : [];
+  });
+}
+function removeSessions(env, top, ids, out) {
+  for (const id of ids) {
+    const result = env.runClaude(["rm", id], { cwd: top, timeoutMs: NO_LIMIT });
+    const lines = saidRemoved(result) ? [`session ${id} removed`] : withText(`claude rm ${id} did not say removed, so remove goes on with git's own removal`, result);
+    for (const line of lines)
+      out(line);
+  }
+}
+function removeListed(env, top, worktree) {
+  const now = listWorktrees(env.runGit, top);
+  if ("issue" in now)
+    return [`git worktree list failed: ${now.issue}`];
+  const entry = now.worktrees.find((e) => samePath(e.path, worktree));
+  if (entry === undefined)
+    return [];
+  const lock = lockStateOf(entry.locked, env.isAlive);
+  const issues = removeGitWorktree(env.runGit, top, entry.path, lock);
+  if (issues.length === 0)
+    return [];
+  return [...issues, "fix what git names, then run remove again"];
+}
+function removeChecked(env, repo, checked2, out) {
+  const rows = recheck(env, repo, checked2);
+  if ("refused" in rows)
+    return rows.refused;
+  const { entry, branch, head } = checked2;
+  removeSessions(env, repo.top, exitedSessions(rows, entry.path), out);
+  const worktree = removeListed(env, repo.top, entry.path);
+  if (worktree.length > 0)
+    return worktree;
+  out(`worktree ${entry.path} removed`);
+  if (branch === undefined)
+    return [];
+  const issues = branchGoneIssues(env.runGit, repo.top, branch, head);
+  if (issues.length > 0) {
+    return [
+      ...issues,
+      `the worktree is gone, and the branch ${branch} stays as it is`
+    ];
+  }
+  out(`branch ${branch} removed`);
+  return [];
+}
+var fail = (lines, err) => {
+  for (const line of lines)
+    err(line);
+  return 1;
+};
+function removeWorktree(args, env, out, err) {
+  const repo = repoOf2(env, err);
+  if (repo === undefined)
+    return 1;
+  const checked2 = checkTarget(args, env, repo, out);
+  if ("refused" in checked2)
+    return fail(checked2.refused, err);
+  const { ref: ref2, head } = checked2;
+  const kept = writeBackup(env.runGit, repo.top, ref2, head);
+  if (kept.length > 0)
+    return fail([...kept, "so remove deleted nothing"], err);
+  const issues = removeChecked(env, repo, checked2, out);
+  if (issues.length > 0) {
+    return fail([...issues, `the backup ref ${ref2} keeps ${head}`], err);
+  }
+  out(`restore with: git branch ${checked2.branch ?? checked2.name} ${ref2}`);
+  return 0;
+}
+
 // bin/helpers/worktree.ts
 var WORKTREE_USAGE_LINE = "sidekick worktree list | remove <name|path> [--discard]";
 var SEPARATOR = " · ";
@@ -10912,16 +11182,10 @@ var usage3 = (err) => {
   err(`usage: ${WORKTREE_USAGE_LINE}`);
   return 1;
 };
-function omittedWords(omitted) {
-  if (omitted.count === 0)
-    return "";
-  const count2 = `${omitted.kind === "at least" ? "at least " : ""}${omitted.count}`;
-  return `, and ${count2} more`;
-}
 function stateWords(state) {
   switch (state.kind) {
     case "held":
-      return state.by.startsWith("unknown") ? `held, ${state.by}` : `held by ${state.by}`;
+      return heldWords(state.by);
     case "worker":
       return "a worker's: sidekick worker finish";
     case "folder gone":
@@ -10978,34 +11242,16 @@ function backupRefLines(runGit, top) {
 var listVerb = (rest2, env, out, err) => {
   if (rest2.length > 0)
     return usage3(err);
-  const found = findRepo(env.runGit, env.cwd);
-  for (const warning of found.warnings)
-    err(warning);
-  const { repo } = found;
-  if (repo === undefined) {
-    if (found.warnings.length === 0) {
-      err(`${env.cwd} is not inside a git repository`);
-    }
+  const repo = repoOf2(env, err);
+  if (repo === undefined)
     return 1;
-  }
-  const listing = readListing(env.runClaude, env.cwd);
-  const skips = readSkips(repo.commonDir);
-  const stored = readRecords(repo.commonDir);
-  const warnings = [
-    ..."error" in listing ? [
-      `claude agents failed, so held states may be missing: ${listing.error}`
-    ] : listing.warnings,
-    ...skips.warnings,
-    ...stored.warnings
-  ];
-  for (const warning of warnings)
+  const { src, listing, warnings } = readSources(env, repo);
+  const listingWarnings = "error" in listing ? [
+    `claude agents failed, so held states may be missing: ${listing.error}`
+  ] : listing.warnings;
+  for (const warning of [...listingWarnings, ...warnings])
     out(warning);
-  const rows = worktreeRows({
-    repo,
-    rows: "error" in listing ? undefined : listing.rows,
-    records: stored.records,
-    isAlive: env.isAlive
-  }, env.runGit);
+  const rows = worktreeRows(src, env.runGit);
   if (rows.length === 0)
     out("no linked worktrees");
   for (const row2 of rows)
@@ -11022,8 +11268,15 @@ var listVerb = (rest2, env, out, err) => {
     out(REMOVE_HINT);
   return 0;
 };
+var removeVerb = (rest2, env, out, err) => {
+  const args = parseRemoveArgs(rest2);
+  if (args === undefined)
+    return usage3(err);
+  return removeWorktree(args, env, out, err);
+};
 var VERBS5 = {
-  list: listVerb
+  list: listVerb,
+  remove: removeVerb
 };
 function runWorktreeCli(rest2, env, out, err) {
   const [name, ...args] = rest2;
@@ -11034,20 +11287,20 @@ function runWorktreeCli(rest2, env, out, err) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path48.dirname(fileURLToPath(entryFileUrl));
+  const here = path49.dirname(fileURLToPath(entryFileUrl));
   const candidates3 = [
-    path48.resolve(here, ".."),
-    path48.resolve(here, "..", "plugin")
+    path49.resolve(here, ".."),
+    path49.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs38.existsSync(path48.join(c, "rules")))
+    if (fs38.existsSync(path49.join(c, "rules")))
       return c;
   }
   return candidates3[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path48.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path49.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
     const parsed = safeParse(ManifestVersion, JSON.parse(fs38.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
@@ -11162,7 +11415,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path48.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path49.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

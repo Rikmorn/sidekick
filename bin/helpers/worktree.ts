@@ -1,35 +1,33 @@
 /**
- * `sidekick worktree list`: one line per linked worktree saying whether to keep
- * or remove it, then the backup refs earlier removals left. Read-only. Usage
- * errors and git failures print to stderr and return 1.
+ * `sidekick worktree`: `list` prints one line per linked worktree saying
+ * whether to keep or remove it, then the backup refs earlier removals left, and
+ * changes nothing. `remove` lives in `worktree-remove.ts`. Usage errors and git
+ * failures print to stderr and return 1.
  */
 
-import { readListing } from './desk.js';
-import { findRepo } from './desk-children.js';
 import type { Runner } from './pm-data.js';
-import type { ClaudeRunner } from './profile-launch.js';
-import { readRecords } from './worker-record.js';
 import { HEADS } from './worker-repo.js';
-import { readSkips } from './worktree-ignored.js';
+import {
+  heldWords,
+  type Out,
+  omittedWords,
+  readSources,
+  repoOf,
+  type WorktreeEnv,
+} from './worktree-read.js';
+import { parseRemoveArgs, removeWorktree } from './worktree-remove.js';
 import {
   type CommitsAt,
-  type Omitted,
   type WorktreeRow,
   type WorktreeState,
   worktreeRows,
 } from './worktree-state.js';
 
+export type { WorktreeEnv } from './worktree-read.js';
+
 export const WORKTREE_USAGE_LINE =
   'sidekick worktree list | remove <name|path> [--discard]';
 
-export interface WorktreeEnv {
-  cwd: string;
-  runGit: Runner;
-  runClaude: ClaudeRunner;
-  isAlive: (pid: number) => boolean;
-}
-
-type Out = (line: string) => void;
 type Verb = (rest: string[], env: WorktreeEnv, out: Out, err: Out) => number;
 
 const SEPARATOR = ' · ';
@@ -41,18 +39,10 @@ const usage = (err: Out): number => {
   return 1;
 };
 
-function omittedWords(omitted: Omitted): string {
-  if (omitted.count === 0) return '';
-  const count = `${omitted.kind === 'at least' ? 'at least ' : ''}${omitted.count}`;
-  return `, and ${count} more`;
-}
-
 function stateWords(state: WorktreeState): string {
   switch (state.kind) {
     case 'held':
-      return state.by.startsWith('unknown')
-        ? `held, ${state.by}`
-        : `held by ${state.by}`;
+      return heldWords(state.by);
     case 'worker':
       return "a worker's: sidekick worker finish";
     case 'folder gone':
@@ -117,37 +107,17 @@ function backupRefLines(
 
 const listVerb: Verb = (rest, env, out, err) => {
   if (rest.length > 0) return usage(err);
-  const found = findRepo(env.runGit, env.cwd);
-  for (const warning of found.warnings) err(warning);
-  const { repo } = found;
-  if (repo === undefined) {
-    if (found.warnings.length === 0) {
-      err(`${env.cwd} is not inside a git repository`);
-    }
-    return 1;
-  }
-  const listing = readListing(env.runClaude, env.cwd);
-  const skips = readSkips(repo.commonDir);
-  const stored = readRecords(repo.commonDir);
-  const warnings = [
-    ...('error' in listing
+  const repo = repoOf(env, err);
+  if (repo === undefined) return 1;
+  const { src, listing, warnings } = readSources(env, repo);
+  const listingWarnings =
+    'error' in listing
       ? [
           `claude agents failed, so held states may be missing: ${listing.error}`,
         ]
-      : listing.warnings),
-    ...skips.warnings,
-    ...stored.warnings,
-  ];
-  for (const warning of warnings) out(warning);
-  const rows = worktreeRows(
-    {
-      repo,
-      rows: 'error' in listing ? undefined : listing.rows,
-      records: stored.records,
-      isAlive: env.isAlive,
-    },
-    env.runGit,
-  );
+      : listing.warnings;
+  for (const warning of [...listingWarnings, ...warnings]) out(warning);
+  const rows = worktreeRows(src, env.runGit);
   if (rows.length === 0) out('no linked worktrees');
   for (const row of rows) out(rowLine(row));
   const backups = backupRefLines(env.runGit, repo.top);
@@ -163,8 +133,15 @@ const listVerb: Verb = (rest, env, out, err) => {
   return 0;
 };
 
+const removeVerb: Verb = (rest, env, out, err) => {
+  const args = parseRemoveArgs(rest);
+  if (args === undefined) return usage(err);
+  return removeWorktree(args, env, out, err);
+};
+
 const VERBS: Record<string, Verb> = {
   list: listVerb,
+  remove: removeVerb,
 };
 
 /** Dispatch one `worktree` verb; returns the process exit code. */

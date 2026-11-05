@@ -67,7 +67,8 @@ const DIRTY_CAP = 20;
 const REMOTES = 'refs/remotes/';
 const UNSEEN_SESSIONS = 'unknown: claude agents failed';
 
-const insideOf = (cwd: string, folder: string): boolean => {
+/** Whether `cwd` is `folder` or under it, compared physically. */
+export const insideOf = (cwd: string, folder: string): boolean => {
   const at = physical(cwd);
   const root = physical(folder);
   return at === root || at.startsWith(`${root}${path.sep}`);
@@ -93,8 +94,8 @@ function sessionHold(
   return `session ${row.sessionId ?? row.id ?? row.name ?? 'unknown'}`;
 }
 
-// The checks that need no git: a lock, a session in the folder, a worker's record.
-function cheapState(
+/** The state the checks that need no git give: held by a lock or a session, or a worker's; else undefined. */
+export function cheapState(
   src: CheapSources,
   entry: WorktreeEntry,
   lock: LockState,

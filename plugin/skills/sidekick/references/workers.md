@@ -233,7 +233,7 @@ After a failure, fix what it names and run `finish` again. A re-run works until 
 
 ### The backup refs
 
-Every `finish` writes `refs/sidekick/landed/<name>/<head>`, or `refs/sidekick/discarded/<name>/<head>` under `--discard`, before `claude rm`. The ref keeps the branch's commits after the branch is deleted. List the refs with `git for-each-ref refs/sidekick/`, and restore one with `git branch <branch> <ref>`. Nothing removes them yet, and #284 is filed to tidy them.
+Every `finish` writes `refs/sidekick/landed/<name>/<head>`, or `refs/sidekick/discarded/<name>/<head>` under `--discard`, before `claude rm`. `sidekick worktree remove` writes them too, plus a third kind, `refs/sidekick/pushed/<name>/<head>`, for commits a remote-tracking ref holds. The ref keeps the branch's commits after the branch is deleted. `sidekick worktree list` lists every ref under `refs/sidekick/` after its rows, with its commit's date. Restore one with `git branch <branch> <ref>`. Nothing prunes them.
 
 ### What it reads from `claude rm`
 

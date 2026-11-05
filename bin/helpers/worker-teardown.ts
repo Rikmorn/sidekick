@@ -6,6 +6,8 @@
  * leftover branch at its verified head.
  * Each step returns the issues that stop the run, none on success. The stop
  * and the readings of claude's answers also serve `worker-finish-gone.ts`.
+ * `worktree-remove.ts` reuses those readings, the backup ref, and the branch
+ * deletion.
  */
 
 import type { Runner } from './pm-data.js';
@@ -252,8 +254,11 @@ function worktreeGoneIssues(
     : [];
 }
 
-// update-ref -d with the verified head refuses a branch that moved.
-function branchGoneIssues(
+/**
+ * Deletes `branch` only at the verified `head`, since update-ref -d refuses a
+ * branch that moved, then its config section. A missing branch is fine.
+ */
+export function branchGoneIssues(
   runGit: Runner,
   top: string,
   branch: string,
@@ -315,16 +320,19 @@ export const forgetRecord: Step = (ready) => {
   return [];
 };
 
-/** The backup ref that keeps `head` under `name`: one kind for landed work, one for discarded. */
+const BACKUP_KINDS = ['landed', 'pushed', 'discarded'] as const;
+
+/** Where the kept commits lived: landed, on a remote-tracking ref, or discarded on the operator's word. */
+export type BackupKind = (typeof BACKUP_KINDS)[number];
+
+/** The backup ref that keeps `head` under `name`, its kind saying where the commits lived. */
 export const backupRef = (
-  kind: 'landed' | 'discarded',
+  kind: BackupKind,
   name: string,
   head: string,
 ): string => `refs/sidekick/${kind}/${name}/${head}`;
 
-const BACKUP_KINDS = ['landed', 'discarded'] as const;
-
-/** The first backup ref of either kind that holds `head`, else undefined. */
+/** The first backup ref of any kind that holds `head`, else undefined. */
 export function heldBackup(
   runGit: Runner,
   top: string,
@@ -351,19 +359,26 @@ export function readyBackup(ready: Ready): string {
   }
 }
 
-/** Writes the backup ref at the verified head; update-ref's empty old value refuses an existing ref. */
-export const keepBackup: Step = (ready, wenv) => {
-  const ref = readyBackup(ready);
-  // A ref already holding the head counts as written, so a re-run passes.
-  if (commitOf(wenv.runGit, ready.mainTop, ref) === ready.head) return [];
-  const result = wenv.runGit(
-    'git',
-    ['update-ref', ref, ready.head, ''],
-    ready.mainTop,
-  );
+/**
+ * Writes `ref` at `head`, create-only: update-ref's empty old value refuses an
+ * existing ref. A ref already holding `head` counts as written, so a re-run
+ * passes. Returns the issues, else [].
+ */
+export function writeBackup(
+  runGit: Runner,
+  top: string,
+  ref: string,
+  head: string,
+): string[] {
+  if (commitOf(runGit, top, ref) === head) return [];
+  const result = runGit('git', ['update-ref', ref, head, ''], top);
   if (result.code === 0) return [];
   return [`cannot keep ${ref}: ${result.stderr.trim()}`];
-};
+}
+
+/** Writes the backup ref at the verified head. */
+export const keepBackup: Step = (ready, wenv) =>
+  writeBackup(wenv.runGit, ready.mainTop, readyBackup(ready), ready.head);
 
 /** In a partial removal, writes the deleted files back from the index, so claude rm meets a clean worktree. */
 export const restorePartial: Step = (ready, wenv, out) => {
