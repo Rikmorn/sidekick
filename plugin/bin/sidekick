@@ -6,7 +6,7 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 import * as fs39 from "node:fs";
 import { realpathSync as realpathSync10 } from "node:fs";
 import * as os3 from "node:os";
-import * as path49 from "node:path";
+import * as path50 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -9737,6 +9737,7 @@ function ensureWorktreesExcluded(runGit, top, commonDir) {
 
 // bin/helpers/worker-teardown.ts
 import * as fs35 from "node:fs";
+import * as path43 from "node:path";
 
 // bin/helpers/worktree-read.ts
 function repoOf2(env, err) {
@@ -9872,7 +9873,16 @@ function clearSavedReport(ready) {
       fs35.unlinkSync(step.from);
   } catch {}
 }
-var forgottenWayOut = (worktree) => `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
+function forgottenWayOut({
+  worktree,
+  branch
+}) {
+  const route = `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
+  const removable = nativeBranch(path43.basename(worktree));
+  if (branch === removable)
+    return route;
+  return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable}, and writes a backup ref for its head first`;
+}
 function leftoverIssues(runGit, ready) {
   const { worktree } = ready;
   const state = filesState(runGit, ready);
@@ -9901,7 +9911,7 @@ function worktreeGoneIssues(ready, wenv) {
   if ("issue" in list2) {
     return [
       `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.issue}`,
-      forgottenWayOut(worktree)
+      forgottenWayOut(ready)
     ];
   }
   if (!list2.listed)
@@ -9917,7 +9927,7 @@ function worktreeGoneIssues(ready, wenv) {
   return [
     `claude rm said removed, but git still lists the worktree ${worktree}`,
     ...issues,
-    forgottenWayOut(worktree)
+    forgottenWayOut(ready)
   ];
 }
 function branchGoneIssues(runGit, top, branch, head) {
@@ -10155,7 +10165,7 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-dispatch-args.ts
-import * as path43 from "node:path";
+import * as path44 from "node:path";
 var DEFAULT_WORKER_PROFILE = "worker";
 var stringFlag = (values, key) => {
   const value = values[key];
@@ -10183,18 +10193,18 @@ function parseDispatchArgs(rest2, cwd) {
   const shared = {
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path43.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path44.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
   return check2 ? { ...shared, check: true } : {
     ...shared,
     check: false,
-    brief: path43.resolve(cwd, parsed.positionals[0])
+    brief: path44.resolve(cwd, parsed.positionals[0])
   };
 }
 
 // bin/helpers/worker-finish-args.ts
-import * as path44 from "node:path";
+import * as path45 from "node:path";
 var NEEDS_REPORT = "--name needs --no-report or --discard, since there is no brief to say where the run report goes";
 var NEEDS_INTO = "--name needs --into <rev> or --discard, since there is no brief to name the target";
 var stringFlag2 = (values, key) => {
@@ -10220,7 +10230,7 @@ function parseFinishArgs(rest2, cwd) {
   const shared = {
     noReport: values["no-report"] === true,
     mode: discard2 ? { kind: "discard" } : { kind: "landed", into },
-    worktree: worktree === undefined ? undefined : path44.resolve(cwd, worktree)
+    worktree: worktree === undefined ? undefined : path45.resolve(cwd, worktree)
   };
   const name = stringFlag2(values, "name");
   if (name !== undefined) {
@@ -10228,7 +10238,7 @@ function parseFinishArgs(rest2, cwd) {
   }
   if (positionals.length !== 1)
     return;
-  const brief = path44.resolve(cwd, positionals[0]);
+  const brief = path45.resolve(cwd, positionals[0]);
   return { subject: { kind: "brief", brief }, ...shared };
 }
 function byName3(name, shared) {
@@ -10291,7 +10301,7 @@ var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
 import * as fs36 from "node:fs";
-import * as path45 from "node:path";
+import * as path46 from "node:path";
 
 // bin/helpers/worker-finish-target.ts
 function targetName(runGit, top, rev) {
@@ -10453,15 +10463,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report2 = path45.posix.normalize(read.brief.report);
+  const report2 = path46.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: read.brief.target,
     report: report2,
-    reportFrom: path45.join(worktree, report2),
-    reportTo: top === undefined ? undefined : path45.join(top, report2)
+    reportFrom: path46.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path46.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -10506,7 +10516,7 @@ function operatorIssues(name, tried, linked2) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs36.existsSync(worktree) && !fs36.existsSync(path45.join(worktree, ".git"));
+  const linkless = fs36.existsSync(worktree) && !fs36.existsSync(path46.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -10661,8 +10671,9 @@ var forgetRecord2 = (gone) => {
   removeRecord(gone.commonDir, gone.name);
   return [];
 };
+var leftoverRoute = (name) => `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks only a new dispatch named ${name}`;
 var sayByHand = (gone, _wenv, out) => {
-  out(`the worktree of ${gone.name} was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch the worker left`);
+  out(`the worktree of ${gone.name} was not found, so finish deleted no branch: ${leftoverRoute(gone.name)}`);
   return [];
 };
 var GONE_STEPS = [
@@ -10683,7 +10694,7 @@ function clearGone(gone, wenv, out) {
 
 // bin/helpers/worker-finish-report.ts
 import * as fs37 from "node:fs";
-import * as path46 from "node:path";
+import * as path47 from "node:path";
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
@@ -10740,7 +10751,7 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs37.mkdirSync(path46.dirname(to), { recursive: true });
+    fs37.mkdirSync(path47.dirname(to), { recursive: true });
     fs37.copyFileSync(from, to, fs37.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
@@ -10804,7 +10815,7 @@ function copyChangedIssues(from, to, now) {
 
 // bin/helpers/worker-finish-subject.ts
 import * as fs38 from "node:fs";
-import * as path47 from "node:path";
+import * as path48 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -10815,7 +10826,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path47.dirname(subject.brief);
+      const folder = path48.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -10833,7 +10844,7 @@ function recordedTop(runGit, commonDir, name) {
   const record2 = records.find((r) => r.name === name);
   if (record2 === undefined)
     return;
-  const folder = path47.dirname(record2.brief);
+  const folder = path48.dirname(record2.brief);
   return fs38.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
@@ -10867,7 +10878,7 @@ function findJob(wenv, top, subject) {
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check ${NAME_FROM[subject.from]}`
+        `no session in ${LISTING} is named "${name}". If finish already removed it, ${leftoverRoute(name)}. Otherwise check ${NAME_FROM[subject.from]}`
       ]
     };
   }
@@ -11115,7 +11126,7 @@ function processIsAlive(pid) {
 }
 
 // bin/helpers/worktree-remove.ts
-import * as path48 from "node:path";
+import * as path49 from "node:path";
 var DISCARD = "--discard";
 function parseRemoveArgs(rest2) {
   const flags = rest2.filter((arg) => arg.startsWith("-"));
@@ -11132,8 +11143,8 @@ var alone = (repo, entry) => ({
   worktrees: [repo.worktrees[0], entry]
 });
 function resolveTarget3(repo, cwd, target) {
-  const asPath = path48.resolve(cwd, target);
-  const matches = repo.worktrees.filter((entry2) => path48.basename(entry2.path) === target || samePath(entry2.path, asPath));
+  const asPath = path49.resolve(cwd, target);
+  const matches = repo.worktrees.filter((entry2) => path49.basename(entry2.path) === target || samePath(entry2.path, asPath));
   if (matches.length === 0) {
     return refuse6(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
   }
@@ -11511,20 +11522,20 @@ function runWorktreeCli(rest2, env, out, err) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path49.dirname(fileURLToPath(entryFileUrl));
+  const here = path50.dirname(fileURLToPath(entryFileUrl));
   const candidates3 = [
-    path49.resolve(here, ".."),
-    path49.resolve(here, "..", "plugin")
+    path50.resolve(here, ".."),
+    path50.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs39.existsSync(path49.join(c, "rules")))
+    if (fs39.existsSync(path50.join(c, "rules")))
       return c;
   }
   return candidates3[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path49.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path50.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
     const parsed = safeParse(ManifestVersion, JSON.parse(fs39.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
@@ -11640,7 +11651,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path49.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path50.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

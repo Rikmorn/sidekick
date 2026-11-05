@@ -11,6 +11,7 @@
  */
 
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 import { type ClaudeResult, printedStreams } from './profile-launch.js';
 import { shellArg } from './shell.js';
@@ -260,9 +261,17 @@ function clearSavedReport(ready: Ready): void {
 }
 
 // The record is forgotten by now, so a re-run of finish finds nothing. The
-// path resolves where the worker's name may not, as under --worktree.
-const forgottenWayOut = (worktree: string): string =>
-  `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
+// path resolves where the worker's name may not, as under --worktree. remove
+// deletes only the branch named for the worktree's folder.
+function forgottenWayOut({
+  worktree,
+  branch,
+}: Pick<Ready, 'worktree' | 'branch'>): string {
+  const route = `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
+  const removable = nativeBranch(path.basename(worktree));
+  if (branch === removable) return route;
+  return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable}, and writes a backup ref for its head first`;
+}
 
 // The files git's removal would lose, ignored ones included, read right before
 // it as `remove` reads them; a report copy clearSavedReport left counts too.
@@ -298,7 +307,7 @@ function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
   if ('issue' in list) {
     return [
       `git worktree list failed, so finish cannot confirm the worktree is gone: ${list.issue}`,
-      forgottenWayOut(worktree),
+      forgottenWayOut(ready),
     ];
   }
   if (!list.listed) return [];
@@ -313,7 +322,7 @@ function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
   return [
     `claude rm said removed, but git still lists the worktree ${worktree}`,
     ...issues,
-    forgottenWayOut(worktree),
+    forgottenWayOut(ready),
   ];
 }
 

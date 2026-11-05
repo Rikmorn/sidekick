@@ -99,7 +99,7 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief),
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks only a new dispatch named w1. Otherwise check the name in the brief',
     );
   });
 
@@ -111,7 +111,7 @@ describe('finish refuses', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks only a new dispatch named w1. Otherwise check the name in the brief',
     ]);
   });
 
@@ -2168,12 +2168,13 @@ describe('finish --worktree', () => {
     git(fx.top, 'worktree', 'lock', '--reason', 'locked by hand', fx.worktree);
     h.claude.state.rm = [removed('nothing')];
     expect(h.finish(fx.brief, '--worktree', fx.worktree)).toBe(1);
+    const folder = path.basename(fx.worktree);
     expect(h.err).toEqual([
       `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
       `${fx.worktree} is locked: locked by hand`,
-      forgottenWayOut(fx),
+      `${forgottenWayOut(fx)}. remove leaves the branch w1 in place, since it deletes only worktree-${folder}, and writes a backup ref for its head first`,
     ]);
-    expect(path.basename(fx.worktree)).not.toBe('w1');
+    expect(folder).not.toBe('w1');
   });
 
   test('takes a subfolder of the worktree as the worktree', () => {
@@ -2397,7 +2398,7 @@ describe('finish --name', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish('--name', 'w1', '--discard')).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check the name given to --name',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks only a new dispatch named w1. Otherwise check the name given to --name',
     ]);
   });
 });
@@ -2493,7 +2494,7 @@ describe('finish --name keeps the checkout that dispatched the worker', () => {
 const GONE_HEAD =
   'finish cannot find the worktree of w1, so it removes only its session and record. It tried:';
 const GONE_TAIL =
-  'the worktree of w1 was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch the worker left';
+  "the worktree of w1 was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks only a new dispatch named w1";
 
 describe('finish --discard with no worktree found', () => {
   test('removes the session and the record, and leaves every branch and worktree in place', () => {

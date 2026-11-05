@@ -121,9 +121,16 @@ const forgetRecord: GoneStep = (gone) => {
   return [];
 };
 
+/**
+ * The way on once the worker's session is gone. A leftover `worktree-<name>`
+ * blocks a new dispatch of that name, which checks that the branch is free.
+ */
+export const leftoverRoute = (name: string): string =>
+  `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks only a new dispatch named ${name}`;
+
 const sayByHand: GoneStep = (gone, _wenv, out) => {
   out(
-    `the worktree of ${gone.name} was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch the worker left`,
+    `the worktree of ${gone.name} was not found, so finish deleted no branch: ${leftoverRoute(gone.name)}`,
   );
   return [];
 };

@@ -27,7 +27,12 @@ import {
   type FinishSubject,
   rerunCommand,
 } from './worker-finish-args.js';
-import { clearGone, type Gone, whenNotFound } from './worker-finish-gone.js';
+import {
+  clearGone,
+  type Gone,
+  leftoverRoute,
+  whenNotFound,
+} from './worker-finish-gone.js';
 import {
   type ReportStep,
   reportChangedIssues,
@@ -102,7 +107,7 @@ function findJob(
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check ${NAME_FROM[subject.from]}`,
+        `no session in ${LISTING} is named "${name}". If finish already removed it, ${leftoverRoute(name)}. Otherwise check ${NAME_FROM[subject.from]}`,
       ],
     };
   }
