@@ -55,6 +55,13 @@ const stateOf = (src: CheapSources) => {
   return rows.map((row) => row.state);
 };
 
+// The order of linked worktrees follows .git/worktrees/, so a test with two or
+// more pairs each state with its worktree's name instead of a position.
+const statesByName = (src: CheapSources) =>
+  Object.fromEntries(
+    worktreeRows(src, execRunner).map((row) => [row.name, row.state]),
+  );
+
 describe('worktreeRows: each state', () => {
   test('the main checkout never gets a row', () => {
     const r = repoWithWorktree('');
@@ -218,10 +225,10 @@ describe('worktreeRows: each state', () => {
       records: [recordNamed('w1')],
       unreadRecords: [UNREAD],
     });
-    expect(stateOf(src)).toEqual([
-      { kind: 'held', by: 'pid 4242' },
-      { kind: 'worker', name: 'w1' },
-    ]);
+    expect(statesByName(src)).toEqual({
+      side: { kind: 'held', by: 'pid 4242' },
+      w1: { kind: 'worker', name: 'w1' },
+    });
   });
 });
 
