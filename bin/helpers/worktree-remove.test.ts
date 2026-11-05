@@ -346,6 +346,25 @@ describe('worktree remove: refuses', () => {
     expectUntouched(main, dir, 'worktree-hand');
   });
 
+  test('a listing row whose pid is not a number, since its session may sit in the worktree', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'hand');
+    const row = {
+      sessionId: 'abc123',
+      pid: '99',
+      kind: 'interactive',
+      cwd: dir,
+    };
+    const { code, err } = run(main, ['hand'], {
+      listing: () => claudeSays(JSON.stringify([row])),
+    });
+    expect(code).toBe(1);
+    expect(joined(err)).toContain(
+      `held, unknown: claude agents gave a partial listing: the listing's entry 0 has a pid that is not a number: "99"`,
+    );
+    expectUntouched(main, dir, 'worktree-hand');
+  });
+
   test("a worker's worktree, naming finish", () => {
     const main = repo();
     const dir = path.join(main, '.claude', 'worktrees', 'w1');

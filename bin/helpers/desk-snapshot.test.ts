@@ -83,10 +83,29 @@ const build = (over: Partial<SnapshotInput>) => {
 describe('parseListingRows', () => {
   test('keeps known fields and drops a field of the wrong type', () => {
     const { rows, warnings } = parseListingRows([
-      { id: 'a', pid: 'x', name: 'n', state: 'done', extra: 1 },
+      { id: 'a', kind: 7, name: 'n', state: 'done', extra: 1 },
     ]);
     expect(rows).toEqual([{ id: 'a', name: 'n', state: 'done' }]);
     expect(warnings).toEqual([]);
+  });
+
+  test('warns on a pid that is present but not a number, and drops it', () => {
+    const { rows, warnings } = parseListingRows([
+      { id: 'live', pid: 7 },
+      { id: 'exited' },
+      { id: 'a', pid: '123', cwd: '/w' },
+      { id: 'b', pid: null },
+    ]);
+    expect(rows).toEqual([
+      { id: 'live', pid: 7 },
+      { id: 'exited' },
+      { id: 'a', cwd: '/w' },
+      { id: 'b' },
+    ]);
+    expect(warnings).toEqual([
+      `the listing's entry 2 has a pid that is not a number: "123"`,
+      "the listing's entry 3 has a pid that is not a number: null",
+    ]);
   });
 
   test('skips an entry that is not an object, with a warning', () => {

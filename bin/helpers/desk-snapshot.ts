@@ -102,6 +102,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// A row's pid says whether its process runs, so a pid that will not parse
+// warns, though parseRow drops any other field of the wrong type in silence.
+function entryWarnings(entry: unknown, index: number): string[] {
+  if (!isRecord(entry)) {
+    return [`the listing's entry ${index} is not an object`];
+  }
+  if (!('pid' in entry) || typeof entry.pid === 'number') return [];
+  return [
+    `the listing's entry ${index} has a pid that is not a number: ${JSON.stringify(entry.pid)}`,
+  ];
+}
+
 /** The listing's JSON array as rows, and a warning per shape change (spec §2, the last two rows of Classification). */
 export function parseListingRows(value: unknown): {
   rows: ListingRow[];
@@ -113,10 +125,7 @@ export function parseListingRows(value: unknown): {
   const entries: unknown[] = value;
   return {
     rows: entries.filter(isRecord).map(parseRow),
-    warnings: entries
-      .map((entry, index) => ({ entry, index }))
-      .filter(({ entry }) => !isRecord(entry))
-      .map(({ index }) => `the listing's entry ${index} is not an object`),
+    warnings: entries.flatMap(entryWarnings),
   };
 }
 

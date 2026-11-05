@@ -266,6 +266,30 @@ describe('worktree list: the frame', () => {
     expect(out.some((l) => l.startsWith('remove one with'))).toBe(false);
   });
 
+  test('a listing row whose pid is not a number holds a clean worktree and prints no hint', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'one');
+    const row = {
+      sessionId: 'abc123',
+      pid: '99',
+      kind: 'interactive',
+      cwd: dir,
+    };
+    const partial: ClaudeResult = {
+      ...NO_SESSIONS,
+      stdout: JSON.stringify([row]),
+    };
+    const { out } = run(main, ['list'], partial);
+    const warning = `the listing's entry 0 has a pid that is not a number: "99"`;
+    expect(out[0]).toBe(
+      `claude agents gave a partial listing, so every worktree not confirmed free reads held, unknown: ${warning}`,
+    );
+    expect(lineFor(out, 'one')).toBe(
+      `one · held, unknown: claude agents gave a partial listing: ${warning} · worktree-one · ${dir}`,
+    );
+    expect(out.some((l) => l.startsWith('remove one with'))).toBe(false);
+  });
+
   test('an unreadable worker record holds a clean worktree, naming the record, and prints no hint', () => {
     const main = repo();
     const dir = addWorktree(main, 'one');

@@ -21,7 +21,7 @@ After the rows, a `backup refs:` line lists each ref under `refs/sidekick/` with
 Warnings print before the rows:
 
 - `claude agents failed, so every worktree not confirmed free reads held, unknown: <reason>`. The listing runs with a 5-second limit. Without it, no session is known to be absent. So each worktree that no lock holds and no worker owns shows as `held, unknown: claude agents failed`, a missing folder included.
-- `claude agents gave a partial listing, so every worktree not confirmed free reads held, unknown: <warning>`, once per entry of the listing that does not parse. A session may hide in it, so each worktree that nothing holds and no worker owns shows as `held, unknown: claude agents gave a partial listing: <warning>`.
+- `claude agents gave a partial listing, so every worktree not confirmed free reads held, unknown: <warning>`, once per entry of the listing that does not parse or whose `pid` is not a number. A session may hide in it, so each worktree that nothing holds and no worker owns shows as `held, unknown: claude agents gave a partial listing: <warning>`.
 - A worker record that does not parse. Any worktree may be that record's worker's, so each worktree that nothing holds and no worker owns shows as `held, unknown: a worker record would not read: <warning>`.
 - A skip list that cannot be read.
 
@@ -40,7 +40,7 @@ The first match wins, in this order.
 | `held by session <id>` | A current row of `claude agents --json --all` has its `cwd` inside the worktree. This covers a worktree Claude Code did not lock. On macOS the paths compare with letter case aside, since its file system ignores case by default. That errs toward held. |
 | `a worker's: sidekick worker finish` | A worker record names this worktree. The folder is the one Claude Code makes for that worker, or carries its name. Or the branch is `worktree-<name>`, or the worker's name itself. Clear it away with `sidekick worker finish`. |
 | `held, unknown: claude agents failed` | Without the session rows, nothing says no session is in the worktree. |
-| `held, unknown: claude agents gave a partial listing: …` | An entry of the listing would not parse, and may be a session in the worktree. |
+| `held, unknown: claude agents gave a partial listing: …` | An entry of the listing would not parse, or its `pid` is not a number, so nothing says whether its process runs. Either entry may be a session in the worktree. |
 | `held, unknown: a current session lists no cwd: <id>` | Nothing says where that session is, so it may be in the worktree. |
 | `held, unknown: a worker record would not read: …` | The record may be this worktree's worker's. The state names the record. |
 | `folder gone` | The folder is missing from disk. git also marks prunable a folder that lost its `.git` entry, and that folder reads `held, unknown` instead. |

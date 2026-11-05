@@ -1993,6 +1993,16 @@ function parseRow(entry) {
 function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+function entryWarnings(entry, index) {
+  if (!isRecord5(entry)) {
+    return [`the listing's entry ${index} is not an object`];
+  }
+  if (!("pid" in entry) || typeof entry.pid === "number")
+    return [];
+  return [
+    `the listing's entry ${index} has a pid that is not a number: ${JSON.stringify(entry.pid)}`
+  ];
+}
 function parseListingRows(value) {
   if (!Array.isArray(value)) {
     return { rows: [], warnings: ["the listing is not an array"] };
@@ -2000,7 +2010,7 @@ function parseListingRows(value) {
   const entries = value;
   return {
     rows: entries.filter(isRecord5).map(parseRow),
-    warnings: entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => !isRecord5(entry)).map(({ index }) => `the listing's entry ${index} is not an object`)
+    warnings: entries.flatMap(entryWarnings)
   };
 }
 var hasProcess = (row) => row.pid !== undefined;
