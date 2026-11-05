@@ -9366,14 +9366,28 @@ var removeSession = (ready, wenv, out) => {
   out(`session ${ready.id} removed`);
   return [];
 };
-function worktreeGoneIssues(runGit, top, worktree) {
+function worktreeGoneIssues(runGit, top, worktree, name, isAlive) {
   const list2 = worktreeListed(runGit, top, worktree);
   if ("issue" in list2) {
     return [
       `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.issue}`
     ];
   }
-  return list2.listed ? [`claude rm said removed, but git still lists the worktree ${worktree}`] : [];
+  if (!list2.listed)
+    return [];
+  const lock = lockStateOf(lockReasonOf(runGit, top, worktree), isAlive);
+  const issues = removeGitWorktree(runGit, top, worktree, lock);
+  if (issues.length === 0)
+    return [];
+  const lead = `claude rm said removed, but git still lists the worktree ${worktree}`;
+  if (lock.kind === "live" || lock.kind === "other") {
+    return [
+      lead,
+      ...issues,
+      `finish has forgotten the worker, so once the lock is gone run sidekick worktree remove ${name}`
+    ];
+  }
+  return [lead, ...issues];
 }
 function branchGoneIssues(runGit, top, branch, head) {
   if (!branchExists(runGit, top, branch))
@@ -9398,7 +9412,7 @@ function dropBranchConfig(runGit, top, branch) {
   ];
 }
 var removeLeftovers = (ready, wenv, out) => {
-  const worktree = worktreeGoneIssues(wenv.runGit, ready.mainTop, ready.worktree);
+  const worktree = worktreeGoneIssues(wenv.runGit, ready.mainTop, ready.worktree, ready.name, wenv.isAlive);
   if (worktree.length > 0)
     return worktree;
   out(`worktree ${ready.worktree} removed`);
@@ -10331,7 +10345,7 @@ var forgetRecord2 = (gone) => {
   return [];
 };
 var sayByHand = (gone, _wenv, out) => {
-  out(`the worktree of ${gone.name} was not found, so finish deleted no branch: clear any worktree or branch the worker left by hand`);
+  out(`the worktree of ${gone.name} was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch the worker left`);
   return [];
 };
 var GONE_STEPS = [
@@ -10536,7 +10550,7 @@ function findJob(wenv, top, subject) {
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check ${NAME_FROM[subject.from]}`
+        `no session in ${LISTING} is named "${name}". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check ${NAME_FROM[subject.from]}`
       ]
     };
   }

@@ -24,7 +24,7 @@ import {
 import { removeRecord } from './worker-record.js';
 import { branchExists, commitOf, physical } from './worker-repo.js';
 import { nativeBranch, nativeFolder } from './worker-worktree.js';
-import { lockPid } from './worktree-lock.js';
+import { lockPid, lockStateOf, removeGitWorktree } from './worktree-lock.js';
 
 export type Out = (line: string) => void;
 
@@ -238,10 +238,15 @@ export const removeSession: Step = (ready, wenv, out) => {
   return [];
 };
 
+// A worktree claude rm reported removed but git still lists is removed here when
+// no live session holds it. The record is forgotten by then, so a refusal names
+// the verb that finds the worktree by its name.
 function worktreeGoneIssues(
   runGit: Runner,
   top: string,
   worktree: string,
+  name: string,
+  isAlive: (pid: number) => boolean,
 ): string[] {
   const list = worktreeListed(runGit, top, worktree);
   if ('issue' in list) {
@@ -249,9 +254,19 @@ function worktreeGoneIssues(
       `git worktree list failed, so finish cannot confirm the worktree is gone: ${list.issue}`,
     ];
   }
-  return list.listed
-    ? [`claude rm said removed, but git still lists the worktree ${worktree}`]
-    : [];
+  if (!list.listed) return [];
+  const lock = lockStateOf(lockReasonOf(runGit, top, worktree), isAlive);
+  const issues = removeGitWorktree(runGit, top, worktree, lock);
+  if (issues.length === 0) return [];
+  const lead = `claude rm said removed, but git still lists the worktree ${worktree}`;
+  if (lock.kind === 'live' || lock.kind === 'other') {
+    return [
+      lead,
+      ...issues,
+      `finish has forgotten the worker, so once the lock is gone run sidekick worktree remove ${name}`,
+    ];
+  }
+  return [lead, ...issues];
 }
 
 /**
@@ -300,6 +315,8 @@ export const removeLeftovers: Step = (ready, wenv, out) => {
     wenv.runGit,
     ready.mainTop,
     ready.worktree,
+    ready.name,
+    wenv.isAlive,
   );
   if (worktree.length > 0) return worktree;
   out(`worktree ${ready.worktree} removed`);

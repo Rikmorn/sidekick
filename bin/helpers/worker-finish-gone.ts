@@ -123,7 +123,7 @@ const forgetRecord: GoneStep = (gone) => {
 
 const sayByHand: GoneStep = (gone, _wenv, out) => {
   out(
-    `the worktree of ${gone.name} was not found, so finish deleted no branch: clear any worktree or branch the worker left by hand`,
+    `the worktree of ${gone.name} was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch the worker left`,
   );
   return [];
 };

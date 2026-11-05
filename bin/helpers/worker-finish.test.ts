@@ -95,7 +95,7 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief),
-      'no session in claude agents --json --all is named "w1". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check the name in the brief',
     );
   });
 
@@ -107,7 +107,7 @@ describe('finish refuses', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check the name in the brief',
     ]);
   });
 
@@ -1004,16 +1004,75 @@ describe('finish clears the worker', () => {
     expect(h.out).toContain('branch worktree-w1 removed');
   });
 
-  test('refusing when git still lists the worktree after removed', () => {
+  const lockWorktree = (fx: Fixture, reason: string): void => {
+    fs.writeFileSync(
+      path.join(fx.top, '.git', 'worktrees', 'w1', 'locked'),
+      reason,
+    );
+  };
+  const exitedLock =
+    'claude session w1 (pid 4242 start Tue Oct 14 2026 10:00:00)';
+  // claude rm says removed and deletes the worker's untracked files, but leaves
+  // the worktree itself; git refuses to remove one that still holds the report.
+  const leftBehind = (fx: Fixture) => ({
+    ...removed('nothing'),
+    during: () => fs.rmSync(path.join(fx.worktree, REPORT)),
+  });
+
+  test('removing a leftover that claude rm left locked by an exited session (#316)', () => {
+    const fx = fixture();
+    fx.integrate();
+    lockWorktree(fx, exitedLock);
+    const h = harness(fx);
+    h.claude.state.rm = [leftBehind(fx)];
+    const code = h.finish(fx.brief, '--discard');
+    expect([code, h.err]).toEqual([0, []]);
+    expect(h.out).toContain(`worktree ${fx.worktree} removed`);
+    expect(h.out).toContain('branch worktree-w1 removed');
+    expect(branchRemains(fx)).toBe(false);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test('removing an unlocked leftover with git worktree remove', () => {
     const fx = fixture();
     fx.integrate();
     const h = harness(fx);
-    h.claude.state.rm = [
-      { result: ok({ stdout: `removed ${ID}\n` }), removes: 'nothing' },
-    ];
-    expect(h.finish(fx.brief)).toBe(1);
+    h.claude.state.rm = [leftBehind(fx)];
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.out).toContain(`worktree ${fx.worktree} removed`);
+    expect(branchRemains(fx)).toBe(false);
+  });
+
+  test('refusing a leftover locked by a live session, naming worktree remove', () => {
+    const fx = fixture();
+    fx.integrate();
+    lockWorktree(fx, exitedLock);
+    // The session starts again after finish's wait ended, before claude rm.
+    const h = harness(fx, {
+      isAlive: (pid) => pid === 4242 && h.claude.named('rm').length > 0,
+    });
+    h.claude.state.rm = [removed('nothing')];
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
     expect(h.err).toEqual([
       `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
+      `${fx.worktree} is locked by a live session (pid 4242)`,
+      'finish has forgotten the worker, so once the lock is gone run sidekick worktree remove w1',
+    ]);
+    expect(branchRemains(fx)).toBe(true);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+
+  test('refusing a leftover with a lock that names no pid, naming worktree remove', () => {
+    const fx = fixture();
+    fx.integrate();
+    lockWorktree(fx, 'locked by hand');
+    const h = harness(fx);
+    h.claude.state.rm = [removed('nothing')];
+    expect(h.finish(fx.brief, '--discard')).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
+      `${fx.worktree} is locked: locked by hand`,
+      'finish has forgotten the worker, so once the lock is gone run sidekick worktree remove w1',
     ]);
     expect(branchRemains(fx)).toBe(true);
   });
@@ -2202,7 +2261,7 @@ describe('finish --name', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish('--name', 'w1', '--discard')).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, clear any worktree or branch it left by hand; otherwise check the name given to --name',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check the name given to --name',
     ]);
   });
 });
@@ -2298,7 +2357,7 @@ describe('finish --name keeps the checkout that dispatched the worker', () => {
 const GONE_HEAD =
   'finish cannot find the worktree of w1, so it removes only its session and record. It tried:';
 const GONE_TAIL =
-  'the worktree of w1 was not found, so finish deleted no branch: clear any worktree or branch the worker left by hand';
+  'the worktree of w1 was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch the worker left';
 
 describe('finish --discard with no worktree found', () => {
   test('removes the session and the record, and leaves every branch and worktree in place', () => {

@@ -102,7 +102,7 @@ function findJob(
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, clear any worktree or branch it left by hand; otherwise check ${NAME_FROM[subject.from]}`,
+        `no session in ${LISTING} is named "${name}". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for any worktree or branch it left; otherwise check ${NAME_FROM[subject.from]}`,
       ],
     };
   }
