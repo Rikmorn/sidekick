@@ -7,7 +7,8 @@
 
 import type { Runner } from './pm-data.js';
 import type { ProfileEnv } from './profile.js';
-import { dispatch, parseDispatchArgs } from './worker-dispatch.js';
+import { dispatch } from './worker-dispatch.js';
+import { parseDispatchArgs } from './worker-dispatch-args.js';
 import { finish } from './worker-finish.js';
 import { parseFinishArgs } from './worker-finish-args.js';
 

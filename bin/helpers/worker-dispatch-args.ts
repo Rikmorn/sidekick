@@ -1,0 +1,56 @@
+/**
+ * `sidekick worker dispatch`'s arguments: the options a dispatch is asked for
+ * and the parse that turns the command line into them.
+ */
+
+import * as path from 'node:path';
+import { parseFlags } from './profile.js';
+
+// The profile `dispatch` launches with when `--profile` is not given.
+const DEFAULT_WORKER_PROFILE = 'worker';
+
+/** What `dispatch` was asked for, its paths absolute. */
+export interface DispatchOptions {
+  brief: string;
+  mode: string | undefined;
+  profile: string;
+  pluginDir: string | undefined;
+  allowPush: boolean;
+}
+
+const stringFlag = (
+  values: Record<string, string | boolean | undefined>,
+  key: string,
+): string | undefined => {
+  const value = values[key];
+  return typeof value === 'string' ? value : undefined;
+};
+
+/**
+ * Parses `dispatch`'s arguments, resolving the brief and `--plugin-dir`
+ * against `cwd`, the folder the command was typed in. Undefined is a usage
+ * error. A missing `--permission-mode` is left to the checks, which name it.
+ */
+export function parseDispatchArgs(
+  rest: string[],
+  cwd: string,
+): DispatchOptions | undefined {
+  const parsed = parseFlags(rest, {
+    'permission-mode': { type: 'string' },
+    profile: { type: 'string' },
+    'plugin-dir': { type: 'string' },
+    'allow-push': { type: 'boolean' },
+  });
+  if (parsed === undefined || parsed.positionals.length !== 1) return undefined;
+  const pluginDir = stringFlag(parsed.values, 'plugin-dir');
+  // path.resolve would read an empty value as the current folder.
+  if (pluginDir === '') return undefined;
+  return {
+    brief: path.resolve(cwd, parsed.positionals[0]),
+    mode: stringFlag(parsed.values, 'permission-mode'),
+    profile: stringFlag(parsed.values, 'profile') ?? DEFAULT_WORKER_PROFILE,
+    pluginDir:
+      pluginDir === undefined ? undefined : path.resolve(cwd, pluginDir),
+    allowPush: parsed.values['allow-push'] === true,
+  };
+}
