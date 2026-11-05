@@ -971,7 +971,7 @@ describe("dispatch checks the worker's worktree after the launch", () => {
     };
     expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(1);
     expect(h.claude.stops()).toEqual([
-      { args: ['stop', JOB], opts: { cwd: fx.top, timeoutMs: 30_000 } },
+      { args: ['stop', JOB], opts: { cwd: fx.top, timeoutMs: 10_000 } },
     ]);
     expect(JSON.parse(fs.readFileSync(recordFile(fx), 'utf-8')).job).toBe(JOB);
     expect(dispatched(h)).toBe(false);
@@ -1050,7 +1050,7 @@ describe("dispatch checks the worker's worktree after the launch", () => {
     expect(JSON.parse(fs.readFileSync(recordFile(fx), 'utf-8')).job).toBe(JOB);
   });
 
-  test('a launch that names no job: its line, and exit 0', () => {
+  test('a launch that names no job: its line, the record with no job, and exit 0', () => {
     const fx = fixture();
     const h = harness(fx);
     h.claude.state.launch = ok({ stdout: 'started\n' });
@@ -1059,5 +1059,22 @@ describe("dispatch checks the worker's worktree after the launch", () => {
     expect(h.err).toEqual([
       "the worktree check did not run: claude's output named no job id for w1",
     ]);
+    expect(JSON.parse(fs.readFileSync(recordFile(fx), 'utf-8')).job).toBeNull();
+  });
+
+  test('the record is written before the check reads the listing', () => {
+    const fx = fixture();
+    const recordAtCheck: boolean[] = [];
+    const h = harness(fx, {
+      runClaude: (args, opts) => {
+        const afterLaunch = h.claude.launches().length > 0;
+        if (args[0] === 'agents' && afterLaunch) {
+          recordAtCheck.push(fs.existsSync(recordFile(fx)));
+        }
+        return h.claude.run(args, opts);
+      },
+    });
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(recordAtCheck).toEqual([true]);
   });
 });

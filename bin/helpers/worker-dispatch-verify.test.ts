@@ -30,10 +30,10 @@ const jobRow = (cwd: string | null): object => ({
  * the last repeats. `sleeps` records each wait.
  */
 function fakeListing(...listings: object[][]) {
-  const calls: { args: string[]; cwd: string }[] = [];
+  const calls: { args: string[]; cwd: string; timeoutMs: number }[] = [];
   const sleeps: number[] = [];
   const run: ClaudeRunner = (args, opts) => {
-    calls.push({ args, cwd: opts.cwd });
+    calls.push({ args, cwd: opts.cwd, timeoutMs: opts.timeoutMs });
     const at = Math.min(calls.length, listings.length) - 1;
     return ok(JSON.stringify(listings[at]));
   };
@@ -70,13 +70,13 @@ function verifyAt(
 }
 
 describe('verifyWorktree matches', () => {
-  test("Claude Code's own worktree: the path, the branch, and the baseline", () => {
+  test("Claude Code's own worktree: the path, the branch, and the baseline, in one read of 10 s at most", () => {
     const r = twoCommits();
     git(r.top, 'worktree', 'add', '-q', r.native, '-b', 'worktree-w1');
     const claude = fakeListing([jobRow(r.native)]);
     expect(verifyAt(r, claude)).toEqual({ kind: 'matches' });
     expect(claude.calls).toEqual([
-      { args: ['agents', '--json', '--all'], cwd: r.top },
+      { args: ['agents', '--json', '--all'], cwd: r.top, timeoutMs: 10_000 },
     ]);
     expect(claude.sleeps).toEqual([]);
   });
@@ -118,6 +118,14 @@ describe('verifyWorktree matches', () => {
     const claude = fakeListing([], [jobRow(null)], [jobRow(r.native)]);
     expect(verifyAt(r, claude)).toEqual({ kind: 'matches' });
     expect(claude.sleeps).toEqual([1000, 1000]);
+  });
+
+  test('a cwd at the launching checkout that moves to the worktree on a later read', () => {
+    const r = twoCommits();
+    git(r.top, 'worktree', 'add', '-q', r.native, '-b', 'worktree-w1');
+    const claude = fakeListing([jobRow(r.top)], [jobRow(r.native)]);
+    expect(verifyAt(r, claude)).toEqual({ kind: 'matches' });
+    expect(claude.sleeps).toEqual([1000]);
   });
 
   test('a worker that has committed since: the creation commit, not the head, counts', () => {
@@ -221,7 +229,7 @@ describe('verifyWorktree refuses', () => {
         return link;
       },
     ],
-  ])('a cwd that is the launching checkout, %s', (_label, spell) => {
+  ])('a cwd that stays the launching checkout, %s, through every read', (_label, spell) => {
     const r = twoCommits();
     const claude = fakeListing([jobRow(spell(r.top))]);
     expect(verifyAt(r, claude)).toEqual({
@@ -231,6 +239,41 @@ describe('verifyWorktree refuses', () => {
       lines: [
         `the worker runs in the launching checkout ${r.top}, not in a worktree of its own at ${r.native}: claude made no worktree for it`,
       ],
+    });
+    expect(claude.calls).toHaveLength(5);
+    expect(claude.sleeps).toEqual([1000, 1000, 1000, 1000]);
+  });
+
+  test('a cwd that stays the main checkout, launched from a linked worktree', () => {
+    const r = twoCommits();
+    const sib = path.join(tmp(), 'sib');
+    git(r.top, 'worktree', 'add', '-q', sib, '-b', 'sib');
+    const sibHead = git(sib, 'rev-parse', 'HEAD');
+    const claude = fakeListing([jobRow(r.top)]);
+    const where = { top: r.top, head: sibHead, launchTop: sib };
+    expect(verifyAt(where, claude)).toEqual({
+      kind: 'mismatch',
+      cause: 'no worktree',
+      job: JOB,
+      lines: [
+        `the worker runs in the main checkout ${r.top}, not in a worktree of its own at ${r.native}: claude made no worktree for it`,
+      ],
+    });
+    expect(claude.sleeps).toEqual([1000, 1000, 1000, 1000]);
+  });
+
+  test('a cwd at a checkout that leaves the listing on the last read is unchecked, not refused', () => {
+    const r = twoCommits();
+    const claude = fakeListing(
+      [jobRow(r.top)],
+      [jobRow(r.top)],
+      [jobRow(r.top)],
+      [jobRow(r.top)],
+      [],
+    );
+    expect(verifyAt(r, claude)).toEqual({
+      kind: 'unchecked',
+      line: `the worktree check did not run: after 5 tries, claude agents --json --all lists no job ${JOB}`,
     });
   });
 
@@ -328,7 +371,7 @@ describe('verifyWorktree says the check did not run', () => {
     });
   });
 
-  test('takes its tries and interval from the caller', () => {
+  test('takes its tries, interval, and read limit from the caller', () => {
     const r = twoCommits();
     const claude = fakeListing([]);
     const verdict = verifyWorktree({
@@ -342,9 +385,10 @@ describe('verifyWorktree says the check did not run', () => {
       baseline: r.head,
       tries: 2,
       intervalMs: 50,
+      readTimeoutMs: 3000,
     });
     expect(verdict).toMatchObject({ kind: 'unchecked' });
-    expect(claude.calls).toHaveLength(2);
+    expect(claude.calls.map((c) => c.timeoutMs)).toEqual([3000, 3000]);
     expect(claude.sleeps).toEqual([50]);
   });
 });

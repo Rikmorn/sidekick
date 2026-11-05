@@ -24,9 +24,8 @@ import {
   headCommit,
   isTrackedClean,
   remotesWithPushUrl,
-  WORKTREES_FOLDER,
 } from './worker-repo.js';
-import { nativeBranch } from './worker-worktree.js';
+import { nativeBranch, nativeFolder } from './worker-worktree.js';
 
 type Out = (line: string) => void;
 
@@ -107,7 +106,7 @@ export function treeNameIssues(
   top: string,
   name: string,
 ): string[] {
-  const folder = path.join(top, WORKTREES_FOLDER, name);
+  const folder = nativeFolder(top, name);
   const branch = nativeBranch(name);
   return [
     ...(fs.existsSync(folder) ? [`name: ${folder} already exists`] : []),

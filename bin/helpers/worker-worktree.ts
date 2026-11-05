@@ -16,7 +16,7 @@ import {
 } from './desk-transcripts.js';
 import type { Runner } from './pm-data.js';
 import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
-import { HEADS, physical } from './worker-repo.js';
+import { HEADS, physical, WORKTREES_FOLDER } from './worker-repo.js';
 
 /** A place the worker's worktree may be, as a physical path. */
 export type Candidate =
@@ -72,6 +72,10 @@ type Tried = Extract<Found, { kind: 'not found' }>['tried'][number];
 
 /** The branch Claude Code gives the worktree it makes for `--worktree <name>`. */
 export const nativeBranch = (name: string): string => `worktree-${name}`;
+
+/** The folder Claude Code makes for `--worktree <name>`, under the main checkout's top. */
+export const nativeFolder = (mainTop: string, name: string): string =>
+  path.join(mainTop, WORKTREES_FOLDER, name);
 
 /**
  * Whether anything shows the found worktree's branch is the worker's: the

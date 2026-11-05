@@ -1604,6 +1604,7 @@ function lockReasonOf(runGit, top, worktree) {
 // bin/helpers/worker-worktree.ts
 import * as path5 from "node:path";
 var nativeBranch = (name) => `worktree-${name}`;
+var nativeFolder = (mainTop, name) => path5.join(mainTop, WORKTREES_FOLDER, name);
 var isBranchProven = (found, name) => found.via === "operator" || found.branchFrom === "transcript" || found.branch === nativeBranch(name);
 var shortBranch = (ref) => ref.startsWith(HEADS) ? ref.slice(HEADS.length) : ref;
 function contains(parent, child) {
@@ -8887,7 +8888,7 @@ var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
   "tracked files have uncommitted changes, which the worker's worktree would not carry: commit them first"
 ];
 function treeNameIssues(runGit, top, name) {
-  const folder = path38.join(top, WORKTREES_FOLDER, name);
+  const folder = nativeFolder(top, name);
   const branch = nativeBranch(name);
   return [
     ...fs31.existsSync(folder) ? [`name: ${folder} already exists`] : [],
@@ -9009,8 +9010,17 @@ function checkDispatch(brief, briefPath, opts, wenv) {
 
 // bin/helpers/worker-dispatch-verify.ts
 import * as path39 from "node:path";
-function landingOnce(input, jobId) {
-  const listed = listJobs(input.runClaude, input.launchTop);
+function checkoutAt(input, cwd) {
+  if (cwd === physical(input.launchTop)) {
+    return `the launching checkout ${input.launchTop}`;
+  }
+  if (cwd === physical(input.mainTop)) {
+    return `the main checkout ${input.mainTop}`;
+  }
+  return;
+}
+function landingOnce(input, jobId, readTimeoutMs) {
+  const listed = listJobs(input.runClaude, input.launchTop, readTimeoutMs);
   if ("issues" in listed) {
     return { kind: "failed", saw: listed.issues.join(" ") };
   }
@@ -9022,8 +9032,9 @@ function landingOnce(input, jobId) {
     return { kind: "missing", saw: `the job ${jobId} lists no cwd` };
   }
   const cwd = physical(path39.resolve(input.launchTop, row2.cwd));
-  if (cwd === physical(input.launchTop))
-    return { kind: "launcher" };
+  const checkout = checkoutAt(input, cwd);
+  if (checkout !== undefined)
+    return { kind: "checkout", checkout };
   const listing = listWorktrees(input.runGit, input.launchTop);
   if ("issue" in listing) {
     return {
@@ -9040,15 +9051,16 @@ function landingOnce(input, jobId) {
   }
   return { kind: "found", entry };
 }
-function landing(input, jobId, { tries, intervalMs }) {
+function landing(input, jobId, reads) {
   for (let tried = 1;; tried += 1) {
-    const now = landingOnce(input, jobId);
-    if (now.kind !== "missing")
+    const now = landingOnce(input, jobId, reads.readTimeoutMs);
+    const settled = now.kind === "found" || now.kind === "failed";
+    if (settled)
       return now;
-    if (tried >= tries) {
-      return { kind: "missing", saw: `after ${tries} tries, ${now.saw}` };
+    if (tried >= reads.tries) {
+      return now.kind === "missing" ? { kind: "missing", saw: `after ${reads.tries} tries, ${now.saw}` } : now;
     }
-    input.sleep(intervalMs);
+    input.sleep(reads.intervalMs);
   }
 }
 function creationCommit(runGit, top, ref2) {
@@ -9092,7 +9104,7 @@ function creatorMismatch(entry, expected, created, worker) {
 function judge2(input, entry, job) {
   const { name } = input;
   const expected = {
-    path: path39.join(input.mainTop, WORKTREES_FOLDER, name),
+    path: nativeFolder(input.mainTop, name),
     sha: commitOf(input.runGit, input.launchTop, input.baseline)
   };
   const created = creationCommit(input.runGit, input.launchTop, entry.branch);
@@ -9118,21 +9130,21 @@ function judge2(input, entry, job) {
   };
 }
 function verifyWorktree(input) {
-  const { jobId, tries = 5, intervalMs = 1000 } = input;
+  const { jobId, tries = 5, intervalMs = 1000, readTimeoutMs = 1e4 } = input;
   if (jobId === null) {
     return unchecked2(`claude's output named no job id for ${input.name}`);
   }
-  const found = landing(input, jobId, { tries, intervalMs });
+  const found = landing(input, jobId, { tries, intervalMs, readTimeoutMs });
   switch (found.kind) {
     case "found":
       return judge2(input, found.entry, jobId);
-    case "launcher": {
-      const expected = path39.join(input.mainTop, WORKTREES_FOLDER, input.name);
+    case "checkout": {
+      const expected = nativeFolder(input.mainTop, input.name);
       return {
         kind: "mismatch",
         cause: "no worktree",
         lines: [
-          `the worker runs in the launching checkout ${input.launchTop}, not in a worktree of its own at ${expected}: claude made no worktree for it`
+          `the worker runs in ${found.checkout}, not in a worktree of its own at ${expected}: claude made no worktree for it`
         ],
         job: jobId
       };
@@ -9429,7 +9441,7 @@ function wayOut(ready, verdict, stopped) {
   const discard2 = `sidekick worker finish ${shellArg(ready.briefPath)} --discard`;
   return verdict.cause === "creator" ? `${stopped} Remove its worktree with the hook's own removal, then run: ${discard2}` : `${stopped} Then run: ${discard2}`;
 }
-function stopStray(ready, job, wenv, timeoutMs = 30000) {
+function stopStray(ready, job, wenv, timeoutMs = 1e4) {
   const result = wenv.runClaude(["stop", job], {
     cwd: ready.launchTop,
     timeoutMs
@@ -9440,7 +9452,6 @@ function stopStray(ready, job, wenv, timeoutMs = 30000) {
   return withText(lead, result);
 }
 function refuseStray(ready, verdict, wenv, err) {
-  keepRecord(ready, verdict.job, err);
   const stop = `claude stop ${shellArg(verdict.job)}`;
   const stopFailed = stopStray(ready, verdict.job, wenv);
   const stopped = stopFailed.length === 0 ? `dispatch stopped the worker with ${stop}.` : `Stop the worker with ${stop}.`;
@@ -9452,6 +9463,7 @@ function refuseStray(ready, verdict, wenv, err) {
 }
 function afterStart(ready, result, wenv, { out, err }) {
   const job = jobIdFrom(result.stdout, ready.brief.name);
+  keepRecord(ready, job, err);
   const verdict = verifyWorktree({
     runGit: wenv.runGit,
     runClaude: wenv.runClaude,
@@ -9468,7 +9480,6 @@ function afterStart(ready, result, wenv, { out, err }) {
   for (const line of [...mainLines(ready, wenv), ...summary(ready)]) {
     out(line);
   }
-  keepRecord(ready, job, err);
   if (verdict.kind === "unchecked")
     err(verdict.line);
   return result.code;

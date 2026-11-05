@@ -1,8 +1,8 @@
 /**
- * M1, the check `sidekick worker dispatch` runs once `claude --bg` has started
- * the worker: the worktree the job runs in must be the one Claude Code's own
- * creation makes. That is `<main checkout>/.claude/worktrees/<name>`, on
- * `worktree-<name>`, created at the brief's baseline. The job's `cwd` in the
+ * The worktree check `sidekick worker dispatch` runs once `claude --bg` has
+ * started the worker: the worktree the job runs in must be the one Claude
+ * Code's own creation makes. That is `<main checkout>/.claude/worktrees/<name>`,
+ * on `worktree-<name>`, created at the brief's baseline. The job's `cwd` in the
  * agents listing finds the worktree, since a `WorktreeCreate` hook makes no
  * `worktree-<name>` branch to find it by. What the check cannot read, it
  * reports as not run, and never refuses on.
@@ -13,10 +13,10 @@ import type { Runner } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
 import { LISTING, listJobs } from './worker-jobs.js';
 import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
-import { commitOf, HEADS, physical, WORKTREES_FOLDER } from './worker-repo.js';
-import { nativeBranch, shortBranch } from './worker-worktree.js';
+import { commitOf, HEADS, physical } from './worker-repo.js';
+import { nativeBranch, nativeFolder, shortBranch } from './worker-worktree.js';
 
-/** What M1 found: the right worktree, a wrong one with its likely cause, or a check that did not run. */
+/** What the worktree check found: the right worktree, a wrong one with its likely cause, or a check that did not run. */
 export type WorktreeVerdict =
   | { kind: 'matches' }
   | {
@@ -41,24 +41,49 @@ export interface VerifyInput {
   launchTop: string;
   /** The brief's baseline, which dispatch's checks resolved to the launching checkout's HEAD. */
   baseline: string;
-  /** How many times to read the listing while the job's worktree is missing. */
+  /** How many times to read the listing while the job's worktree is missing, or its `cwd` is a checkout. */
   tries?: number;
-  /** The wait between reads: 5 tries a second apart stay well inside the Bash tool's 120 s. */
+  /** The wait between reads. */
   intervalMs?: number;
+  /**
+   * Each read's limit. Five reads at 10 s, a second apart, take under 55 s.
+   * With the 60 s launch, that stays inside the Bash tool's 120 s.
+   */
+  readTimeoutMs?: number;
 }
 
-// One read of the listing and of git's worktrees. `missing` is worth another
-// read; `failed` is not, since a failing listing would only fail again.
+interface Reads {
+  tries: number;
+  intervalMs: number;
+  readTimeoutMs: number;
+}
+
+// One read of the listing and of git's worktrees. `missing` and `checkout` are
+// worth another read; `failed` is not, since a failing listing would only fail
+// again. `checkout` names the checkout the job's cwd is, with its top.
 type Landing =
   | { kind: 'found'; entry: WorktreeEntry }
-  | { kind: 'launcher' }
+  | { kind: 'checkout'; checkout: string }
   | { kind: 'missing'; saw: string }
   | { kind: 'failed'; saw: string };
 
-// The listing's cwd, read against the launching checkout should a build print
-// it relative.
-function landingOnce(input: VerifyInput, jobId: string): Landing {
-  const listed = listJobs(input.runClaude, input.launchTop);
+// The checkout a physical cwd is, when it is the launching or the main checkout.
+function checkoutAt(input: VerifyInput, cwd: string): string | undefined {
+  if (cwd === physical(input.launchTop)) {
+    return `the launching checkout ${input.launchTop}`;
+  }
+  if (cwd === physical(input.mainTop)) {
+    return `the main checkout ${input.mainTop}`;
+  }
+  return undefined;
+}
+
+function landingOnce(
+  input: VerifyInput,
+  jobId: string,
+  readTimeoutMs: number,
+): Landing {
+  const listed = listJobs(input.runClaude, input.launchTop, readTimeoutMs);
   if ('issues' in listed) {
     return { kind: 'failed', saw: listed.issues.join(' ') };
   }
@@ -69,8 +94,10 @@ function landingOnce(input: VerifyInput, jobId: string): Landing {
   if (row.cwd === undefined) {
     return { kind: 'missing', saw: `the job ${jobId} lists no cwd` };
   }
+  // Read against the launching checkout, should a build print the cwd relative.
   const cwd = physical(path.resolve(input.launchTop, row.cwd));
-  if (cwd === physical(input.launchTop)) return { kind: 'launcher' };
+  const checkout = checkoutAt(input, cwd);
+  if (checkout !== undefined) return { kind: 'checkout', checkout };
   const listing = listWorktrees(input.runGit, input.launchTop);
   if ('issue' in listing) {
     return {
@@ -88,19 +115,19 @@ function landingOnce(input: VerifyInput, jobId: string): Landing {
   return { kind: 'found', entry };
 }
 
-// Reads until the job's worktree is found or the tries run out.
-function landing(
-  input: VerifyInput,
-  jobId: string,
-  { tries, intervalMs }: { tries: number; intervalMs: number },
-): Landing {
+// The last read decides, so a cwd seen at a checkout early on, while the
+// worktree is still being made, refuses only if it stays there.
+function landing(input: VerifyInput, jobId: string, reads: Reads): Landing {
   for (let tried = 1; ; tried += 1) {
-    const now = landingOnce(input, jobId);
-    if (now.kind !== 'missing') return now;
-    if (tried >= tries) {
-      return { kind: 'missing', saw: `after ${tries} tries, ${now.saw}` };
+    const now = landingOnce(input, jobId, reads.readTimeoutMs);
+    const settled = now.kind === 'found' || now.kind === 'failed';
+    if (settled) return now;
+    if (tried >= reads.tries) {
+      return now.kind === 'missing'
+        ? { kind: 'missing', saw: `after ${reads.tries} tries, ${now.saw}` }
+        : now;
     }
-    input.sleep(intervalMs);
+    input.sleep(reads.intervalMs);
   }
 }
 
@@ -178,7 +205,7 @@ function judge(
 ): WorktreeVerdict {
   const { name } = input;
   const expected: Expected = {
-    path: path.join(input.mainTop, WORKTREES_FOLDER, name),
+    path: nativeFolder(input.mainTop, name),
     sha: commitOf(input.runGit, input.launchTop, input.baseline),
   };
   const created = creationCommit(input.runGit, input.launchTop, entry.branch);
@@ -205,25 +232,26 @@ function judge(
 /**
  * Judges the worktree the job `jobId` runs in. It reads the job's row from
  * the launching checkout, retrying while the row, its `cwd`, or a worktree git
- * lists at that `cwd` is missing. A `cwd` that is the launching checkout means
+ * lists at that `cwd` is missing. It also retries while the `cwd` is the
+ * launching or the main checkout. A `cwd` still there on the last read means
  * no worktree was made.
  */
 export function verifyWorktree(input: VerifyInput): WorktreeVerdict {
-  const { jobId, tries = 5, intervalMs = 1000 } = input;
+  const { jobId, tries = 5, intervalMs = 1000, readTimeoutMs = 10_000 } = input;
   if (jobId === null) {
     return unchecked(`claude's output named no job id for ${input.name}`);
   }
-  const found = landing(input, jobId, { tries, intervalMs });
+  const found = landing(input, jobId, { tries, intervalMs, readTimeoutMs });
   switch (found.kind) {
     case 'found':
       return judge(input, found.entry, jobId);
-    case 'launcher': {
-      const expected = path.join(input.mainTop, WORKTREES_FOLDER, input.name);
+    case 'checkout': {
+      const expected = nativeFolder(input.mainTop, input.name);
       return {
         kind: 'mismatch',
         cause: 'no worktree',
         lines: [
-          `the worker runs in the launching checkout ${input.launchTop}, not in a worktree of its own at ${expected}: claude made no worktree for it`,
+          `the worker runs in ${found.checkout}, not in a worktree of its own at ${expected}: claude made no worktree for it`,
         ],
         job: jobId,
       };

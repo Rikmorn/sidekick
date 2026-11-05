@@ -78,15 +78,17 @@ Once the checks pass, `dispatch` acts in this order:
      -- /sidekick:sk-worker <absolute brief path>
    ```
 
-3. It relays `claude`'s output, which names the job's id. Once `claude` exits 0, it checks the worktree the worker runs in. It reads the job's row in `claude agents --json --all` by that id, from the launching checkout. It then reads the entry `git worktree list` gives at the row's `cwd`. Three things must hold, with paths compared in their physical form:
+3. It relays `claude`'s output, which names the job's id. Once `claude` exits 0, it writes the worker's record, with that id, as "The record" says. Every outcome of the check in step 4 keeps the record, so it comes first. A write that fails prints why and leaves the exit code alone. The worker runs, and only the desk loses sight of it.
+
+4. It then checks the worktree the worker runs in. It reads the job's row in `claude agents --json --all` by that id, from the launching checkout. It then reads the entry `git worktree list` gives at the row's `cwd`. Three things must hold, with paths compared in their physical form:
 
    - the path is `<main checkout>/.claude/worktrees/<name>`, even for a launch from a linked worktree;
    - the branch is `worktree-<name>`;
    - the branch was created at `baseline`, as the oldest entry of its reflog says.
 
-   The row's `cwd` finds the worktree, since a `WorktreeCreate` hook makes no `worktree-<name>` branch to find it by. A `cwd` that is the launching checkout means no worktree was made, which refuses as a mismatch.
+   The row's `cwd` finds the worktree, since a `WorktreeCreate` hook makes no `worktree-<name>` branch to find it by. The check reads up to 5 times, a second apart, each read limited to 10 seconds. It reads again while the row, its `cwd`, or a listed worktree there is missing. It also reads again while the `cwd` is the launching checkout or the main checkout. A `cwd` still at either on the last read means no worktree was made, which refuses as a mismatch.
 
-   When the check cannot run, it prints one line saying why, then goes on as for a match. That happens when the output names no job id, or when a failing listing ends the reads. It also happens when the row, its `cwd`, or a listed worktree there is still missing after 5 reads a second apart. So does a branch with no reflog.
+   When the check cannot run, it prints one line saying why, then goes on as for a match. That happens when the output names no job id, or when a failing listing ends the reads. It also happens when the last read still misses the row, its `cwd`, or a listed worktree there. So does a branch with no reflog.
 
    On a match, or when the check did not run, it prints a summary:
 
@@ -101,9 +103,7 @@ Once the checks pass, `dispatch` acts in this order:
 
    The `main:` line appears only when `dispatch` records a main, as "The overlay" says. The `lands in:` line names the brief's `target`, or says the `HEAD` is detached and the operator lands the work. It adds `launched from` only when the launching checkout is not the main checkout. When an interactive session dispatches under a listed name that does not hold yet, the line ends ` · sidekick holds this name once this session is idle; ← before then loses it`. The `every tool call` line appears only under `bypassPermissions`. With `--allow-push`, the `dispatched` line ends `pushes ALLOWED on the operator's word`.
 
-4. Once `claude` exits 0, it writes the worker's record, with the job's id from that output, as "The record" says. A write that fails prints why and leaves the exit code as `claude`'s. The worker runs, and only the desk loses sight of it.
-
-   On a mismatch it still writes the record, so the desk shows the stray worker and `finish --discard` finds it. It then runs `claude stop <id>` from the launching checkout. It prints what it found against what it expected, with the likely cause, prints no summary, and exits 1. A wrong path or branch points at a `WorktreeCreate` hook, and a wrong creation commit at `worktree.baseRef`. The last line gives the way out: `sidekick worker finish <brief> --discard`, after the hook's own removal for a hook-made worktree. A `claude stop` that fails says so, and the way out then starts with that stop.
+   On a mismatch it runs `claude stop <id>` from the launching checkout, with a 10-second limit. The record stays, so the desk shows the stray worker and `finish --discard` finds it. It prints what it found against what it expected, with the likely cause, prints no summary, and exits 1. A wrong path or branch points at a `WorktreeCreate` hook. A wrong creation commit on the right path and branch points at `worktree.baseRef`. The last line gives the way out: `sidekick worker finish <brief> --discard`, after the hook's own removal for a hook-made worktree. A `claude stop` that fails says so, and the way out then starts with that stop.
 
 `--worktree <name>` starts the session in its worktree from its first command (the dispatch probes, "Second round, after the design review"). Claude Code's own creation makes the worktree at `<main checkout>/.claude/worktrees/<name>`, on the branch `worktree-<name>`.
 

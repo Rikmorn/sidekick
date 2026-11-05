@@ -74,7 +74,7 @@ const refuse = (err: Out, issues: string[]): number => {
 };
 
 // Leaves the record that `sidekick desk` lists the worker from. A failure only
-// warns, since the worker has started and the exit code is the launch's.
+// warns, since the worker has started either way.
 function keepRecord(ready: Ready, job: string | null, err: Out): void {
   const written = writeRecord(ready.commonDir, {
     version: 2,
@@ -98,13 +98,15 @@ function wayOut(ready: Ready, verdict: Mismatch, stopped: string): string {
     : `${stopped} Then run: ${discard}`;
 }
 
-// Runs `claude stop` from the launching checkout, where the job started, with
-// the limit finish's own stop keeps. Returns the lines of a stop that failed.
+// Runs `claude stop` from the launching checkout, where the job started.
+// Returns the lines of a stop that failed. The stop shares one Bash call with
+// the launch and the check's reads, so it keeps a read's short limit. A stop
+// that runs out says so, and `finish --discard` stops the job again.
 function stopStray(
   ready: Ready,
   job: string,
   wenv: WorkerEnv,
-  timeoutMs = 30_000,
+  timeoutMs = 10_000,
 ): string[] {
   const result = wenv.runClaude(['stop', job], {
     cwd: ready.launchTop,
@@ -115,14 +117,14 @@ function stopStray(
   return withText(lead, result);
 }
 
-// The record stays, so the desk shows the stray and `finish --discard` finds it.
+// The record written before the check stays, so the desk shows the stray and
+// `finish --discard` finds it.
 function refuseStray(
   ready: Ready,
   verdict: Mismatch,
   wenv: WorkerEnv,
   err: Out,
 ): number {
-  keepRecord(ready, verdict.job, err);
   const stop = `claude stop ${shellArg(verdict.job)}`;
   const stopFailed = stopStray(ready, verdict.job, wenv);
   const stopped =
@@ -136,8 +138,9 @@ function refuseStray(
   ]);
 }
 
-// M1 runs before the summary, which prints only for a worktree that matched or
-// one the check could not read.
+// The record comes first, since every verdict keeps it and the Bash tool can
+// end dispatch during the check. The worktree check runs before the summary,
+// which prints only for a worktree that matched or one the check could not read.
 function afterStart(
   ready: Ready,
   result: ClaudeResult,
@@ -145,6 +148,7 @@ function afterStart(
   { out, err }: { out: Out; err: Out },
 ): number {
   const job = jobIdFrom(result.stdout, ready.brief.name);
+  keepRecord(ready, job, err);
   const verdict = verifyWorktree({
     runGit: wenv.runGit,
     runClaude: wenv.runClaude,
@@ -161,13 +165,13 @@ function afterStart(
   for (const line of [...mainLines(ready, wenv), ...summary(ready)]) {
     out(line);
   }
-  keepRecord(ready, job, err);
   if (verdict.kind === 'unchecked') err(verdict.line);
   return result.code;
 }
 
 // Excludes the worktrees folder, starts the worker from the launching checkout, and relays
-// claude; the summary prints only once claude reports a start and M1 passes it.
+// claude; the summary prints only once claude reports a start and the worktree
+// check does not refuse it.
 function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   for (const note of ready.notes) err(note);
   const excluded = ensureWorktreesExcluded(

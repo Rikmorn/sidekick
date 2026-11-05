@@ -13,6 +13,7 @@ import {
   isBranchProven,
   locateWorktree,
   nativeBranch,
+  nativeFolder,
 } from './worker-worktree.js';
 
 afterEach(removeTemps);
@@ -44,6 +45,12 @@ const input = (over: Partial<FindInput>): FindInput => ({
 describe('nativeBranch', () => {
   test('is the branch Claude Code gives a --worktree folder', () => {
     expect(nativeBranch('w1')).toBe('worktree-w1');
+  });
+});
+
+describe('nativeFolder', () => {
+  test('is the folder Claude Code makes for --worktree, under the main checkout', () => {
+    expect(nativeFolder(MAIN, 'w1')).toBe('/r/main/.claude/worktrees/w1');
   });
 });
 
