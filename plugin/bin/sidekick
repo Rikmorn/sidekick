@@ -9756,7 +9756,7 @@ var removeSession = (ready, wenv, out) => {
 };
 function clearSavedReport(ready) {
   const step = ready.reportStep;
-  if (step.kind !== "copy" && step.kind !== "saved earlier")
+  if (step.kind === "none" || step.kind === "no brief")
     return;
   if (step.from === step.to)
     return;
@@ -9766,13 +9766,15 @@ function clearSavedReport(ready) {
       fs35.unlinkSync(step.from);
   } catch {}
 }
+var forgottenWayOut = (worktree) => `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
 function worktreeGoneIssues(ready, wenv) {
   const { runGit, isAlive } = wenv;
-  const { mainTop: top, worktree, name } = ready;
+  const { mainTop: top, worktree } = ready;
   const list2 = worktreeListed(runGit, top, worktree);
   if ("issue" in list2) {
     return [
-      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.issue}`
+      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.issue}`,
+      forgottenWayOut(worktree)
     ];
   }
   if (!list2.listed)
@@ -9783,15 +9785,11 @@ function worktreeGoneIssues(ready, wenv) {
   const issues = removeGitWorktree(runGit, top, worktree, lock);
   if (issues.length === 0)
     return [];
-  const lead = `claude rm said removed, but git still lists the worktree ${worktree}`;
-  if (lock.kind === "live" || lock.kind === "other") {
-    return [
-      lead,
-      ...issues,
-      `finish has forgotten the worker, so once the lock is gone run sidekick worktree remove ${name}`
-    ];
-  }
-  return [lead, ...issues];
+  return [
+    `claude rm said removed, but git still lists the worktree ${worktree}`,
+    ...issues,
+    forgottenWayOut(worktree)
+  ];
 }
 function branchGoneIssues(runGit, top, branch, head) {
   if (!branchExists(runGit, top, branch))

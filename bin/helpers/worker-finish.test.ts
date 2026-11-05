@@ -83,6 +83,10 @@ const notFound = (tried: string[]): string[] => [
 const wayOut = (rerun: string, hand: string): string =>
   `run finish again with ${rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${hand}`;
 
+// The last line of a refusal over a worktree claude rm left, once the record is forgotten.
+const forgottenWayOut = (fx: Fixture): string =>
+  `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${fx.worktree}`;
+
 describe('finish refuses', () => {
   test('when no session has the name', () => {
     const fx = fixture();
@@ -1038,6 +1042,42 @@ describe('finish clears the worker', () => {
     expect(savedReport(fx)).toBe(REPORT_TEXT);
   });
 
+  test('a re-run that finds the report in place clears its copy from a leftover (#316)', () => {
+    const fx = fixture();
+    // An earlier run saved the report, then stopped before claude rm.
+    fs.writeFileSync(path.join(fx.top, REPORT), REPORT_TEXT);
+    lockWorktree(fx, exitedLock);
+    const h = harness(fx);
+    h.claude.state.rm = [removed('nothing')];
+    const code = h.finish(fx.brief, '--discard');
+    expect([code, h.err]).toEqual([0, []]);
+    expect(h.out).toContain(`report already at ${path.join(fx.top, REPORT)}`);
+    expect(h.out).toContain(`worktree ${fx.worktree} removed`);
+    expect(h.out).toContain('branch worktree-w1 removed');
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    expect(branchRemains(fx)).toBe(false);
+    expect(savedReport(fx)).toBe(REPORT_TEXT);
+  });
+
+  test('refusing when git worktree list fails after claude rm, naming worktree remove', () => {
+    const fx = fixture();
+    fx.integrate();
+    const runGit: Runner = (cmd, args, cwd) => {
+      const listing = args[0] === 'worktree' && args[1] === 'list';
+      if (listing && h.claude.named('rm').length > 0) {
+        return { code: 128, stdout: '', stderr: 'fatal: cannot list\n' };
+      }
+      return execRunner(cmd, args, cwd);
+    };
+    const h = harness(fx, { runGit });
+    h.claude.state.rm = [removed('nothing')];
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toEqual([
+      'git worktree list failed, so finish cannot confirm the worktree is gone: fatal: cannot list',
+      forgottenWayOut(fx),
+    ]);
+  });
+
   const gitRefusal = (fx: Fixture): RegExp =>
     new RegExp(`^git worktree remove failed: .*${path.basename(fx.worktree)}`);
 
@@ -1054,6 +1094,7 @@ describe('finish clears the worker', () => {
     ];
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err[1]).toMatch(gitRefusal(fx));
+    expect(h.err.at(-1)).toBe(forgottenWayOut(fx));
     expect(fs.readFileSync(path.join(fx.worktree, REPORT), 'utf8')).toBe(
       REPORT_TEXT,
     );
@@ -1074,6 +1115,7 @@ describe('finish clears the worker', () => {
     ];
     expect(h.finish(fx.brief, '--no-report')).toBe(1);
     expect(h.err[1]).toMatch(gitRefusal(fx));
+    expect(h.err.at(-1)).toBe(forgottenWayOut(fx));
     expect(fs.existsSync(path.join(fx.worktree, 'stray.txt'))).toBe(true);
   });
 
@@ -1091,6 +1133,7 @@ describe('finish clears the worker', () => {
     ];
     expect(h.finish('--name', 'w1', '--discard')).toBe(1);
     expect(h.err.join('\n')).toMatch(/git worktree remove failed/);
+    expect(h.err.at(-1)).toBe(forgottenWayOut(fx));
     expect(fs.existsSync(path.join(fx.worktree, 'stray.txt'))).toBe(true);
   });
 
@@ -1107,7 +1150,7 @@ describe('finish clears the worker', () => {
     expect(h.err).toEqual([
       `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
       `${fx.worktree} is locked by a live session (pid 4242)`,
-      'finish has forgotten the worker, so once the lock is gone run sidekick worktree remove w1',
+      forgottenWayOut(fx),
     ]);
     expect(branchRemains(fx)).toBe(true);
     expect(fs.existsSync(fx.worktree)).toBe(true);
@@ -1123,7 +1166,7 @@ describe('finish clears the worker', () => {
     expect(h.err).toEqual([
       `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
       `${fx.worktree} is locked: locked by hand`,
-      'finish has forgotten the worker, so once the lock is gone run sidekick worktree remove w1',
+      forgottenWayOut(fx),
     ]);
     expect(branchRemains(fx)).toBe(true);
   });
@@ -2089,6 +2132,22 @@ describe('finish --worktree', () => {
     ]);
     expect(fs.existsSync(fx.worktree)).toBe(false);
     expect(branchRemains(fx)).toBe(false);
+  });
+
+  test('names a leftover it cannot remove by its path, which resolves where the name does not', () => {
+    const fx = fixture(worktrunk);
+    fx.integrate();
+    const h = harness(fx);
+    lose(fx, h);
+    git(fx.top, 'worktree', 'lock', '--reason', 'locked by hand', fx.worktree);
+    h.claude.state.rm = [removed('nothing')];
+    expect(h.finish(fx.brief, '--worktree', fx.worktree)).toBe(1);
+    expect(h.err).toEqual([
+      `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
+      `${fx.worktree} is locked: locked by hand`,
+      forgottenWayOut(fx),
+    ]);
+    expect(path.basename(fx.worktree)).not.toBe('w1');
   });
 
   test('takes a subfolder of the worktree as the worktree', () => {

@@ -2,8 +2,8 @@
  * The steps `sidekick worker finish` runs once its checks pass: stopping the
  * worker's job, waiting out its lock, keeping the branch in a backup ref,
  * restoring the files a cut-short removal deleted, removing the session,
- * forgetting the desk record, confirming the worktree is gone, and deleting a
- * leftover branch at its verified head.
+ * forgetting the desk record, removing a worktree claude rm left behind, and
+ * deleting a leftover branch at its verified head.
  * Each step returns the issues that stop the run, none on success. The stop
  * and the readings of claude's answers also serve `worker-finish-gone.ts`.
  * `worktree-remove.ts` reuses those readings, the backup ref, and the branch
@@ -242,9 +242,10 @@ export const removeSession: Step = (ready, wenv, out) => {
 // git worktree remove refuses an untracked file, and the report's copy in the
 // worktree is untracked. When the saved copy holds the same bytes right now,
 // deleting that one file loses nothing; any other case stays for git to refuse.
+// A re-run finds the report `in place`, saved by the run before it.
 function clearSavedReport(ready: Ready): void {
   const step = ready.reportStep;
-  if (step.kind !== 'copy' && step.kind !== 'saved earlier') return;
+  if (step.kind === 'none' || step.kind === 'no brief') return;
   if (step.from === step.to) return;
   try {
     const saved = fs.readFileSync(step.to);
@@ -254,16 +255,21 @@ function clearSavedReport(ready: Ready): void {
   }
 }
 
+// The record is forgotten by now, so a re-run of finish finds nothing. The
+// path resolves where the worker's name may not, as under --worktree.
+const forgottenWayOut = (worktree: string): string =>
+  `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
+
 // A worktree claude rm reported removed but git still lists is removed here when
-// no live session holds it. The record is forgotten by then, so a refusal names
-// the verb that finds the worktree by its name.
+// no live session holds it. Every refusal ends with the way out by its path.
 function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
   const { runGit, isAlive } = wenv;
-  const { mainTop: top, worktree, name } = ready;
+  const { mainTop: top, worktree } = ready;
   const list = worktreeListed(runGit, top, worktree);
   if ('issue' in list) {
     return [
       `git worktree list failed, so finish cannot confirm the worktree is gone: ${list.issue}`,
+      forgottenWayOut(worktree),
     ];
   }
   if (!list.listed) return [];
@@ -271,15 +277,11 @@ function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
   if (lock.kind === 'dead' || lock.kind === 'none') clearSavedReport(ready);
   const issues = removeGitWorktree(runGit, top, worktree, lock);
   if (issues.length === 0) return [];
-  const lead = `claude rm said removed, but git still lists the worktree ${worktree}`;
-  if (lock.kind === 'live' || lock.kind === 'other') {
-    return [
-      lead,
-      ...issues,
-      `finish has forgotten the worker, so once the lock is gone run sidekick worktree remove ${name}`,
-    ];
-  }
-  return [lead, ...issues];
+  return [
+    `claude rm said removed, but git still lists the worktree ${worktree}`,
+    ...issues,
+    forgottenWayOut(worktree),
+  ];
 }
 
 /**
@@ -322,7 +324,7 @@ function dropBranchConfig(
   ];
 }
 
-/** Confirms the worktree is gone, then deletes a leftover branch only at the verified head. */
+/** Removes a worktree claude rm left behind when no live session or other lock holds it, then deletes a leftover branch only at the verified head. */
 export const removeLeftovers: Step = (ready, wenv, out) => {
   const worktree = worktreeGoneIssues(ready, wenv);
   if (worktree.length > 0) return worktree;
