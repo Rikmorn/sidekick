@@ -21,7 +21,7 @@ export type WorktreeVerdict =
   | { kind: 'matches' }
   | {
       kind: 'mismatch';
-      /** `creator`: a wrong path or branch; `base`: a wrong creation commit on the right ones. */
+      /** `creator`: a wrong path or branch; `base`: a wrong creation commit on the right ones; `no worktree`: the job's `cwd` stayed at a checkout. */
       cause: 'creator' | 'base' | 'no worktree';
       /** What was found against what was expected. */
       lines: string[];
@@ -45,10 +45,7 @@ export interface VerifyInput {
   tries?: number;
   /** The wait between reads. */
   intervalMs?: number;
-  /**
-   * Each read's limit. Five reads at 10 s, a second apart, take under 55 s.
-   * With the 60 s launch, that stays inside the Bash tool's 120 s.
-   */
+  /** Each read's limit. Five reads at 10 s, a second apart, take under 55 s. */
   readTimeoutMs?: number;
 }
 

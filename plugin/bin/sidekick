@@ -9307,7 +9307,7 @@ function unknownAnswer(ready, args, result) {
   if (isHookMade(ready)) {
     return [
       ...refused,
-      `the worktree ${ready.worktree} on ${ready.branch} is not the one Claude Code makes for ${ready.name}, so a WorktreeCreate hook made it and claude rm will not remove it: remove it with that hook's own removal, then run ${ready.discardCommand}`
+      `the worktree ${ready.worktree} on ${ready.branch} is not the one Claude Code makes for ${ready.name}, so a WorktreeCreate hook likely made it and claude rm will not remove it: remove it with that hook's own removal, then run ${ready.discardCommand}`
     ];
   }
   return [

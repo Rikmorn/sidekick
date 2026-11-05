@@ -180,8 +180,7 @@ export const waitForLock: Step = (ready, wenv) => {
 export const saidRemoved = (result: ClaudeResult): boolean =>
   ranClean(result) && REMOVED.test(printedStreams(result).join('\n'));
 
-// A worktree off Claude Code's own folder or branch came from a WorktreeCreate
-// hook, and claude rm refuses one (#310).
+// claude rm refuses a worktree a WorktreeCreate hook made.
 const isHookMade = (ready: Ready): boolean =>
   physical(ready.worktree) !==
     physical(nativeFolder(ready.mainTop, ready.name)) ||
@@ -207,7 +206,7 @@ function unknownAnswer(
   if (isHookMade(ready)) {
     return [
       ...refused,
-      `the worktree ${ready.worktree} on ${ready.branch} is not the one Claude Code makes for ${ready.name}, so a WorktreeCreate hook made it and claude rm will not remove it: remove it with that hook's own removal, then run ${ready.discardCommand}`,
+      `the worktree ${ready.worktree} on ${ready.branch} is not the one Claude Code makes for ${ready.name}, so a WorktreeCreate hook likely made it and claude rm will not remove it: remove it with that hook's own removal, then run ${ready.discardCommand}`,
     ];
   }
   return [

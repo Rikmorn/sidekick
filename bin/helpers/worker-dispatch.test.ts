@@ -1136,6 +1136,27 @@ describe('dispatch --check', () => {
     expect(h.claude.calls).toEqual([]);
   });
 
+  test('refuses a checkout whose HEAD has no commit yet', () => {
+    const fx = fixture();
+    const empty = tmp();
+    git(empty, 'init', '-q');
+    const h = harness(fx, { cwd: empty, workTree: empty });
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(1);
+    expect(refusals(h)).toContain("this checkout's HEAD has no commit yet");
+    expect(h.out).toEqual([]);
+  });
+
+  test('refuses a folder outside any work tree', () => {
+    const fx = fixture();
+    const outside = tmp();
+    const h = harness(fx, { cwd: outside, workTree: outside });
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(1);
+    expect(h.err).toContain(
+      'not inside a git work tree: run sidekick worker from a checkout of the repo',
+    );
+    expect(h.out).toEqual([]);
+  });
+
   test('refuses a brief, naming it', () => {
     const fx = fixture();
     const h = harness(fx);

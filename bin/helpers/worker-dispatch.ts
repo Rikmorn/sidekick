@@ -175,9 +175,9 @@ function afterStart(
   return result.code;
 }
 
-// Excludes the worktrees folder, starts the worker from the launching checkout, and relays
-// claude; the summary prints only once claude reports a start and the worktree
-// check does not refuse it.
+// Excludes the worktrees folder, starts the worker from the launching checkout,
+// and relays claude; the summary prints only once claude reports a start and
+// the worktree check does not refuse it.
 function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   for (const note of ready.notes) err(note);
   const excluded = ensureWorktreesExcluded(

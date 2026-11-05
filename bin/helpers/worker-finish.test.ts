@@ -1472,7 +1472,7 @@ describe('finish, when claude rm refuses a worktree a WorktreeCreate hook made',
     h.claude.state.rm = [refused(text)];
     expect(h.finish(fx.brief, '--discard')).toBe(1);
     expect(h.err.at(-1)).toBe(
-      `the worktree ${fx.worktree} on w1 is not the one Claude Code makes for w1, so a WorktreeCreate hook made it and claude rm will not remove it: remove it with that hook's own removal, then run sidekick worker finish ${fx.brief} --discard`,
+      `the worktree ${fx.worktree} on w1 is not the one Claude Code makes for w1, so a WorktreeCreate hook likely made it and claude rm will not remove it: remove it with that hook's own removal, then run sidekick worker finish ${fx.brief} --discard`,
     );
     expect(h.err.join('\n')).toContain(text);
     expect(h.err.join('\n')).not.toContain('run finish again with');

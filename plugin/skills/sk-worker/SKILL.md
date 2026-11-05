@@ -42,7 +42,7 @@ Without the marker, check every field, that `plan` and `spec` exist, and that th
 - `in-place`: the main checkout, on its current branch.
 - `branch <name>`: the branch it names, in the main checkout. Check before you switch, so a failed check moves nothing. The main checkout's tracked files are clean, and the branch points at `baseline` or does not exist yet. Then switch to it, making it at `baseline` if needed.
 
-If any check fails, reply `BLOCKED` with every failure, send the same to the orchestrator, and wait. When `HEAD` is off the baseline after `EnterWorktree`, name the likely cause. Two are common: `worktree.baseRef` is not `"head"` in this session's settings, or a `WorktreeCreate` hook made the worktree and ignored the base.
+If any check fails, reply `BLOCKED` with every failure, send the same to the orchestrator, and wait. When `HEAD` is off the baseline, or the branch is not `worktree-<name>`, name the likely cause. Two are common: `worktree.baseRef` is not `"head"` in this session's settings, or a `WorktreeCreate` hook made the worktree and ignored the base.
 
 ## Setup
 
