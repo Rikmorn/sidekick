@@ -41,7 +41,8 @@ The first match wins, in this order.
 | `held, unknown: claude agents gave a partial listing: …` | An entry of the listing would not parse, and may be a session in the worktree. |
 | `held, unknown: a current session lists no cwd: <id>` | Nothing says where that session is, so it may be in the worktree. |
 | `held, unknown: a worker record would not read: …` | The record may be this worktree's worker's. The state names the record. |
-| `folder gone` | The folder is missing from disk, or git marks the entry prunable. |
+| `folder gone` | The folder is missing from disk. git also marks prunable a folder that lost its `.git` entry, and that folder reads `held, unknown` instead. |
+| `held, unknown: <path> holds no .git entry, …` | Git run in that folder reads whatever repository encloses it, such as the main checkout, so nothing says the worktree is clean. |
 | `held, unknown: …` | Git status or the ignored-file check failed, so nothing says the worktree is clean. |
 | `dirty: <files>` | Tracked or untracked changes exist, or an ignored file that removal would lose. The line names the first 20 files, then `and N more`. When the ignored-file scan stopped at its cap, the count is a lower bound and reads `and at least N more`, since the scan never walks further to count. |
 | `removable` | No other state applies. |

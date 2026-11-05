@@ -387,6 +387,28 @@ describe('worktree remove: refuses', () => {
     expect(listed(main, inner)).toBe(true);
   });
 
+  // git status in a folder with no .git entry reads the main checkout, which
+  // ignores .claude/, so nothing there looks dirty.
+  test('a worktree whose folder holds no .git entry, before any ref or unlock, even with --discard', () => {
+    const main = repo();
+    fs.writeFileSync(path.join(main, '.gitignore'), '.claude/\n');
+    git(main, 'add', '.gitignore');
+    git(main, 'commit', '-q', '-m', 'ignore');
+    const dir = path.join(main, '.claude', 'worktrees', 'p1');
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    git(main, 'worktree', 'add', '-q', '-b', 'worktree-p1', dir);
+    commit(dir, 'b.txt');
+    git(main, 'worktree', 'lock', '--reason', SESSION_LOCK, dir);
+    fs.rmSync(path.join(dir, '.git'));
+    const { code, err } = run(main, ['p1', '--discard']);
+    expect(code).toBe(1);
+    expect(joined(err)).toContain(`${dir} holds no .git entry`);
+    expectUntouched(main, dir, 'worktree-p1');
+    expect(git(main, 'worktree', 'list', '--porcelain')).toContain(
+      `locked ${SESSION_LOCK}`,
+    );
+  });
+
   test('when claude agents fails, even for a folder gone', () => {
     const main = repo();
     const dir = addWorktree(main, 'old-y');

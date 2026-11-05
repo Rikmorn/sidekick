@@ -7215,12 +7215,12 @@ var linked = (repo) => repo.worktrees.slice(1);
 function leftBehind(src) {
   return linked(src.repo).filter((entry) => cheapState(src, entry, lockStateOf(entry.locked, src.isAlive)) === undefined);
 }
-function dirtyState(runGit, repo, entry) {
-  const status = statusEntriesIn(runGit, repo.top, entry.path);
+function dirtyState(runGit, at) {
+  const status = statusEntriesIn(runGit, at.mainTop, at.worktree);
   if ("issue" in status) {
     return { kind: "held", by: `unknown: git status failed: ${status.issue}` };
   }
-  const ignored = ignoredLosses(runGit, { mainTop: repo.top, worktree: entry.path, commonDir: repo.commonDir }, { cap: DIRTY_CAP });
+  const ignored = ignoredLosses(runGit, at, { cap: DIRTY_CAP });
   if ("issue" in ignored) {
     return { kind: "held", by: `unknown: ${ignored.issue}` };
   }
@@ -7235,12 +7235,22 @@ function dirtyState(runGit, repo, entry) {
     omitted: { kind: ignored.truncated ? "at least" : "exact", count: count2 }
   };
 }
-function diskState(runGit, repo, entry) {
-  if (entry.prunable !== undefined || !fs26.existsSync(entry.path)) {
+function filesState(runGit, at) {
+  if (!fs26.existsSync(at.worktree))
     return { kind: "folder gone" };
+  if (!fs26.existsSync(path32.join(at.worktree, ".git"))) {
+    return {
+      kind: "held",
+      by: `unknown: ${at.worktree} holds no .git entry, so git cannot read its files`
+    };
   }
-  return dirtyState(runGit, repo, entry);
+  return dirtyState(runGit, at);
 }
+var diskState = (runGit, repo, entry) => filesState(runGit, {
+  mainTop: repo.top,
+  worktree: entry.path,
+  commonDir: repo.commonDir
+});
 function stateOf3(src, runGit, entry, lock) {
   return cheapState(src, entry, lock) ?? diskState(runGit, src.repo, entry);
 }

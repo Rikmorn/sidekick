@@ -178,20 +178,19 @@ export function leftBehind(src: CheapSources): WorktreeEntry[] {
   );
 }
 
-function dirtyState(
-  runGit: Runner,
-  repo: Repo,
-  entry: WorktreeEntry,
-): WorktreeState {
-  const status = statusEntriesIn(runGit, repo.top, entry.path);
+/** Where a worktree's files are read: the main checkout's top, the worktree, and the common git dir. */
+export interface FilesAt {
+  mainTop: string;
+  worktree: string;
+  commonDir: string;
+}
+
+function dirtyState(runGit: Runner, at: FilesAt): WorktreeState {
+  const status = statusEntriesIn(runGit, at.mainTop, at.worktree);
   if ('issue' in status) {
     return { kind: 'held', by: `unknown: git status failed: ${status.issue}` };
   }
-  const ignored = ignoredLosses(
-    runGit,
-    { mainTop: repo.top, worktree: entry.path, commonDir: repo.commonDir },
-    { cap: DIRTY_CAP },
-  );
+  const ignored = ignoredLosses(runGit, at, { cap: DIRTY_CAP });
   if ('issue' in ignored) {
     return { kind: 'held', by: `unknown: ${ignored.issue}` };
   }
@@ -208,19 +207,33 @@ function dirtyState(
 }
 
 /**
- * What the worktree's folder holds, by git status and the ignored-file check:
- * gone, dirty, or removable; held when git cannot tell.
+ * What a worktree's folder holds, by git status and the ignored-file check:
+ * gone when the folder is missing, dirty, or removable; held when git cannot
+ * tell. git marks prunable a folder that lost its `.git` entry too, and git
+ * run there reads whatever repository encloses it, so that folder is held.
  */
-export function diskState(
+export function filesState(runGit: Runner, at: FilesAt): WorktreeState {
+  if (!fs.existsSync(at.worktree)) return { kind: 'folder gone' };
+  if (!fs.existsSync(path.join(at.worktree, '.git'))) {
+    return {
+      kind: 'held',
+      by: `unknown: ${at.worktree} holds no .git entry, so git cannot read its files`,
+    };
+  }
+  return dirtyState(runGit, at);
+}
+
+/** `filesState` for a listed entry of `repo`. */
+export const diskState = (
   runGit: Runner,
   repo: Repo,
   entry: WorktreeEntry,
-): WorktreeState {
-  if (entry.prunable !== undefined || !fs.existsSync(entry.path)) {
-    return { kind: 'folder gone' };
-  }
-  return dirtyState(runGit, repo, entry);
-}
+): WorktreeState =>
+  filesState(runGit, {
+    mainTop: repo.top,
+    worktree: entry.path,
+    commonDir: repo.commonDir,
+  });
 
 /** One worktree's state, as `list` shows it, without the landed check. */
 export function stateOf(

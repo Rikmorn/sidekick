@@ -171,6 +171,26 @@ describe('worktreeRows: each state', () => {
     expect(stateOf(sources(r.main))).toEqual([{ kind: 'folder gone' }]);
   });
 
+  test('a prunable entry whose folder still exists is held, unknown, inside the main checkout or outside it', () => {
+    const r = repoWithWorktree('.claude/\n');
+    const native = nativeFolder(r.main, 'p1');
+    fs.mkdirSync(path.dirname(native), { recursive: true });
+    git(r.main, 'worktree', 'add', '-q', '-b', 'worktree-p1', native);
+    fs.rmSync(path.join(native, '.git'));
+    fs.rmSync(path.join(r.worktree, '.git'));
+    const src = sources(r.main);
+    const rows = worktreeRows(src, execRunner);
+    expect(rows.every((row) => row.entry.prunable !== undefined)).toBe(true);
+    const unlinked = (dir: string) => ({
+      kind: 'held',
+      by: `unknown: ${dir} holds no .git entry, so git cannot read its files`,
+    });
+    expect(statesByName(src)).toEqual({
+      side: unlinked(r.worktree),
+      p1: unlinked(native),
+    });
+  });
+
   test('a new ignored file gives dirty', () => {
     const r = repoWithWorktree('*.sh\n');
     fs.writeFileSync(path.join(r.worktree, 'scratch.sh'), 'echo\n');
