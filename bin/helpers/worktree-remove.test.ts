@@ -682,6 +682,20 @@ describe('worktree remove: re-runs and sessions', () => {
     expect(listed(main, dir)).toBe(false);
   });
 
+  test('an exited background session whose cwd is a subfolder of the worktree is left alone, and git removes the worktree', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'bg');
+    const sub = path.join(dir, 'sub');
+    fs.mkdirSync(sub);
+    const row = { id: 'job1', kind: 'background', state: 'done', cwd: sub };
+    const { code, events } = run(main, ['bg'], {
+      listing: () => claudeSays(JSON.stringify([row])),
+    });
+    expect(code).toBe(0);
+    expect(events.filter((e) => e.startsWith('claude rm'))).toEqual([]);
+    expect(listed(main, dir)).toBe(false);
+  });
+
   test('a claude rm that does not say removed is a note, and git removes the worktree', () => {
     const main = repo();
     const dir = addWorktree(main, 'bg');

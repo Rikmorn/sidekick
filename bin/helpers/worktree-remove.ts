@@ -306,12 +306,14 @@ function recheck(
   return listing.rows;
 }
 
-// Background sessions that have exited with their cwd in the worktree.
+// Background sessions that have exited with their cwd at the worktree's top.
+// One whose cwd is only inside it may belong to another worktree, which claude
+// rm could remove and nothing checked, so it stays.
 function exitedSessions(rows: ListingRow[], worktree: string): string[] {
   return rows.flatMap((row) => {
     const exited = row.kind === 'background' && !isCurrent(row);
-    const inside = row.cwd !== undefined && insideOf(row.cwd, worktree);
-    return exited && inside && row.id !== undefined ? [row.id] : [];
+    const atTop = row.cwd !== undefined && samePath(row.cwd, worktree);
+    return exited && atTop && row.id !== undefined ? [row.id] : [];
   });
 }
 
@@ -348,8 +350,9 @@ function enclosingWorktree(
     );
 }
 
-// A session in a nested worktree may belong to the enclosing one, which claude
-// rm could remove and nothing checked, so git's removal goes alone there.
+// A session at a nested worktree's top may still belong to the enclosing one,
+// which claude rm could remove and nothing checked, so git's removal goes
+// alone there.
 function endSessions(
   env: WorktreeEnv,
   repo: Repo,

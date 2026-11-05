@@ -11189,8 +11189,8 @@ function recheck(env, repo, checked2) {
 function exitedSessions(rows, worktree) {
   return rows.flatMap((row2) => {
     const exited = row2.kind === "background" && !isCurrent(row2);
-    const inside = row2.cwd !== undefined && insideOf(row2.cwd, worktree);
-    return exited && inside && row2.id !== undefined ? [row2.id] : [];
+    const atTop = row2.cwd !== undefined && samePath(row2.cwd, worktree);
+    return exited && atTop && row2.id !== undefined ? [row2.id] : [];
   });
 }
 function removeSessions(env, top, ids, out) {
