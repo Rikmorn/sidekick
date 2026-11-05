@@ -6,7 +6,8 @@
  * the checks there. Once the worker starts, it checks the worktree the worker
  * runs in, and stops a worker on the wrong one. This module launches; the
  * checks before the launch live in `worker-dispatch-checks.ts`, and the
- * worktree check in `worker-dispatch-verify.ts`.
+ * worktree check in `worker-dispatch-verify.ts`. With `--check`, it runs the
+ * checks that need no brief and launches nothing.
  */
 
 import { mainReport } from './main-session.js';
@@ -15,8 +16,13 @@ import { bgArgs, type ClaudeResult } from './profile-launch.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
 import { readBrief } from './worker-brief.js';
-import type { DispatchOptions } from './worker-dispatch-args.js';
-import { BYPASS, checkDispatch, type Ready } from './worker-dispatch-checks.js';
+import type { CheckOptions, DispatchOptions } from './worker-dispatch-args.js';
+import {
+  BYPASS,
+  checkDispatch,
+  checkOnly,
+  type Ready,
+} from './worker-dispatch-checks.js';
 import {
   verifyWorktree,
   type WorktreeVerdict,
@@ -197,9 +203,24 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   return afterStart(ready, result, wenv, { out, err });
 }
 
+// Prints the profile's warnings, then the one pass line; launches nothing.
+function runCheck(
+  opts: CheckOptions,
+  wenv: WorkerEnv,
+  out: Out,
+  err: Out,
+): number {
+  const checked = checkOnly(opts, wenv);
+  if ('issues' in checked) return refuse(err, checked.issues);
+  for (const note of checked.notes) err(note);
+  out(checked.line);
+  return 0;
+}
+
 /**
- * Runs `dispatch`; returns 1 on a refusal, before the launch or after it when
- * the worker's worktree is not the one expected, else `claude`'s exit code.
+ * Runs `dispatch`, or `dispatch --check`, which launches nothing; returns 1 on
+ * a refusal, before the launch or after it when the worker's worktree is not
+ * the one expected, else `claude`'s exit code.
  */
 export function dispatch(
   opts: DispatchOptions,
@@ -207,6 +228,7 @@ export function dispatch(
   out: Out,
   err: Out,
 ): number {
+  if (opts.check) return runCheck(opts, wenv, out, err);
   const read = readBrief(opts.brief);
   if ('issues' in read) return refuse(err, read.issues);
   const checked = checkDispatch(read.brief, read.path, opts, wenv);

@@ -80,7 +80,7 @@ describe('runWorkerCli', () => {
 
   test('the usage line names both verbs and every flag of each', () => {
     expect(WORKER_USAGE_LINE).toBe(
-      'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]',
+      'sidekick worker dispatch (<brief> | --check) --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]',
     );
   });
 });

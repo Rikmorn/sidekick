@@ -9,6 +9,8 @@ A written plan runs under superpowers: `subagent-driven-development`, or `execut
 
 ## Choose the mode
 
+Before laying out the modes, run `sidekick worker dispatch --check --permission-mode <mode>`. It needs no brief. Pass this session's own mode, found as §Hand off to a worker step 2 says, and `--plugin-dir <dir>` where that step would. The check tells you whether a worker can run from this checkout at all. When it refuses, the worker row says the worker cannot run here and quotes each refusal line, and the recommendation leaves the worker out. A dirty tracked file is the likely refusal. Name it before the choice, with its fix: commit the change, since the worker's worktree is made from `HEAD`. A pass leaves the brief's own checks to `dispatch`.
+
 Lay out three modes and recommend one. The operator decides; there is no default.
 
 | Mode | Fits | Costs |

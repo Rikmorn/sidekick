@@ -1078,3 +1078,164 @@ describe("dispatch checks the worker's worktree after the launch", () => {
     expect(recordAtCheck).toEqual([true]);
   });
 });
+
+describe('dispatch --check', () => {
+  const refusals = (h: Harness): string => h.err.join('\n');
+
+  test('a pass prints the one line and launches nothing', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    const branch = git(fx.top, 'symbolic-ref', '--short', 'HEAD');
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(0);
+    expect(h.out).toEqual([
+      `dispatch can run here: ${branch}, profile worker, mode auto`,
+    ]);
+    expect(h.err).toEqual([]);
+    expect(h.claude.launches()).toEqual([]);
+  });
+
+  test('names a detached HEAD by its short commit', () => {
+    const fx = fixture();
+    git(fx.top, 'checkout', '-q', '--detach');
+    const h = harness(fx);
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(0);
+    expect(h.out).toEqual([
+      `dispatch can run here: detached HEAD at ${fx.head.slice(0, 7)}, profile worker, mode auto`,
+    ]);
+  });
+
+  test('reports every reason at once: a dirty tracked file and a missing mode', () => {
+    const fx = fixture();
+    fs.writeFileSync(path.join(fx.top, 'a.txt'), 'changed\n');
+    const h = harness(fx);
+    expect(h.dispatch('--check')).toBe(1);
+    expect(h.err).toHaveLength(2);
+    expect(refusals(h)).toContain('uncommitted changes');
+    expect(refusals(h)).toContain('--permission-mode is required');
+    expect(h.out).toEqual([]);
+  });
+
+  test('refuses inside a worker', () => {
+    const fx = fixture();
+    const h = harness(fx, {
+      env: { SIDEKICK_PROFILES_DIR: fx.store, SIDEKICK_WORKER: '/x/brief.md' },
+    });
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(1);
+    expect(h.err).toEqual([
+      'SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)',
+    ]);
+    expect(h.claude.calls).toEqual([]);
+  });
+
+  test('refuses a brief, naming it', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    const code = h.dispatch('--check', fx.brief, '--permission-mode', 'auto');
+    expect(code).toBe(1);
+    expect(h.err).toEqual(['--check takes no brief']);
+    expect(h.out).toEqual([]);
+    expect(h.claude.calls).toEqual([]);
+  });
+
+  test('refuses a pushurl remote, and --allow-push skips that check', () => {
+    const fx = fixture();
+    git(fx.top, 'remote', 'add', 'origin', '/nowhere/a');
+    git(fx.top, 'config', 'remote.origin.pushurl', '/nowhere/b');
+    const h = harness(fx);
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(1);
+    expect(refusals(h)).toContain('remote "origin" sets pushurl');
+    const allowed = harness(fx);
+    const code = allowed.dispatch(
+      '--check',
+      '--permission-mode',
+      'auto',
+      '--allow-push',
+    );
+    expect(code).toBe(0);
+    expect(allowed.err).toEqual([]);
+  });
+
+  test('refuses an unknown mode, a missing plugin folder, and bypass without the user source', () => {
+    const fx = fixture({ description: 'Worker', settingSources: ['project'] });
+    const missing = path.join(fx.top, 'nope');
+    const h = harness(fx);
+    const code = h.dispatch(
+      '--check',
+      '--permission-mode',
+      'bypassPermissions',
+      '--plugin-dir',
+      missing,
+    );
+    expect(code).toBe(1);
+    expect(refusals(h)).toContain(`--plugin-dir: ${missing} is not a folder`);
+    expect(refusals(h)).toContain(
+      'bypassPermissions needs the user setting source',
+    );
+    const bad = harness(fx);
+    expect(bad.dispatch('--check', '--permission-mode', 'nope')).toBe(1);
+    expect(refusals(bad)).toContain('is not one of');
+  });
+
+  test('refuses a missing profile with the hint to create it', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    const code = h.dispatch(
+      '--check',
+      '--permission-mode',
+      'auto',
+      '--profile',
+      'ghost',
+    );
+    expect(code).toBe(1);
+    expect(refusals(h)).toContain(
+      'sidekick profile new ghost --description <text>',
+    );
+  });
+
+  test('runs none of the brief checks and lists no sessions', () => {
+    const fx = fixture();
+    const h = harness(fx);
+    h.claude.state.agents = JSON.stringify([
+      { id: 'abc', kind: 'background', name: 'w1' },
+    ]);
+    git(fx.top, 'branch', 'worktree-w1');
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(0);
+    expect(h.claude.calls.some((c) => c.args[0] === 'agents')).toBe(false);
+  });
+
+  test('prints the profile notes on stderr, then the pass line', () => {
+    const fx = fixture();
+    const h = harness(fx, {
+      env: {
+        SIDEKICK_PROFILES_DIR: fx.store,
+        SIDEKICK_PROFILE_SKIP_CHECK: '1',
+      },
+    });
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(0);
+    expect(h.err).toEqual([
+      'SIDEKICK_PROFILE_SKIP_CHECK=1 is set, so the settings were not checked with claude doctor.',
+    ]);
+    expect(h.out).toHaveLength(1);
+  });
+
+  test('composes the overlay with a placeholder brief path in the checkout and no Read rules', () => {
+    const fx = fixture();
+    const seen: Record<string, unknown>[] = [];
+    const inner = fakeClaude(fx.top);
+    const h = harness(fx, {
+      runClaude: (args, opts) => {
+        const i = args.indexOf('--settings');
+        if (i >= 0 && fs.existsSync(args[i + 1])) {
+          seen.push(JSON.parse(fs.readFileSync(args[i + 1], 'utf-8')));
+        }
+        return inner.run(args, opts);
+      },
+    });
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(0);
+    const overlay = seen.find((s) => 'env' in s);
+    expect(overlay).toBeDefined();
+    const marker = (overlay?.env as Record<string, string>).SIDEKICK_WORKER;
+    expect(path.dirname(marker)).toBe(fs.realpathSync(fx.top));
+    expect(JSON.stringify(overlay)).not.toContain('Read(');
+  });
+});

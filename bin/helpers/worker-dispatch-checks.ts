@@ -14,7 +14,7 @@ import { isProfileName } from './profile-manifest.js';
 import { type Profile, storeRoots } from './profile-store.js';
 import type { WorkerEnv } from './worker.js';
 import { type Brief, briefFileIssues } from './worker-brief.js';
-import type { DispatchOptions } from './worker-dispatch-args.js';
+import type { CheckOptions, SharedOptions } from './worker-dispatch-args.js';
 import { type CheckoutFacts, checkoutFacts } from './worker-facts.js';
 import { listJobs } from './worker-jobs.js';
 import { workerOverlay } from './worker-overlay.js';
@@ -45,7 +45,7 @@ const MODE_LIST = PERMISSION_MODES.join(', ');
 /** The permission mode that pre-approves every tool call. */
 export const BYPASS = 'bypassPermissions';
 
-export const isFolder = (dir: string): boolean => {
+const isFolder = (dir: string): boolean => {
   try {
     return fs.statSync(dir).isDirectory();
   } catch {
@@ -53,7 +53,7 @@ export const isFolder = (dir: string): boolean => {
   }
 };
 
-export function modeIssues(mode: string | undefined): string[] {
+function modeIssues(mode: string | undefined): string[] {
   if (mode === undefined) {
     return [
       `--permission-mode is required: pass the orchestrating session's own mode, one of ${MODE_LIST}`,
@@ -65,27 +65,27 @@ export function modeIssues(mode: string | undefined): string[] {
     : [`--permission-mode "${mode}" is not one of ${MODE_LIST}`];
 }
 
-export const pluginDirIssues = (dir: string | undefined): string[] =>
+const pluginDirIssues = (dir: string | undefined): string[] =>
   dir === undefined || isFolder(dir)
     ? []
     : [`--plugin-dir: ${dir} is not a folder`];
 
-export const placeIssues = (brief: Brief): string[] =>
+const placeIssues = (brief: Brief): string[] =>
   brief.place === 'worktree'
     ? []
     : [
         `place: "${brief.place}" is not "worktree"; dispatch starts a worker only in a worktree of its own`,
       ];
 
-export function baselineIssues(
+const NO_COMMIT = "baseline: this checkout's HEAD has no commit yet";
+
+function baselineIssues(
   runGit: Runner,
   top: string,
   baseline: string,
 ): string[] {
   const head = headCommit(runGit, top);
-  if (head === undefined) {
-    return ["baseline: this checkout's HEAD has no commit yet"];
-  }
+  if (head === undefined) return [NO_COMMIT];
   return commitOf(runGit, top, baseline) === head
     ? []
     : [
@@ -93,7 +93,7 @@ export function baselineIssues(
       ];
 }
 
-export const cleanIssues = (runGit: Runner, top: string): string[] =>
+const cleanIssues = (runGit: Runner, top: string): string[] =>
   isTrackedClean(runGit, top)
     ? []
     : [
@@ -101,11 +101,7 @@ export const cleanIssues = (runGit: Runner, top: string): string[] =>
       ];
 
 /** The worktree folder and branch `claude --worktree <name>` makes must both be free. */
-export function treeNameIssues(
-  runGit: Runner,
-  top: string,
-  name: string,
-): string[] {
+function treeNameIssues(runGit: Runner, top: string, name: string): string[] {
   const folder = nativeFolder(top, name);
   const branch = nativeBranch(name);
   return [
@@ -117,7 +113,7 @@ export function treeNameIssues(
 }
 
 /** Every listed session counts, interactive ones too: a clash breaks addressing by name. */
-export function listedNameIssues(
+function listedNameIssues(
   listed: ReturnType<typeof listJobs>,
   name: string,
 ): string[] {
@@ -130,17 +126,14 @@ export function listedNameIssues(
 }
 
 /** Git ignores a pushInsteadOf rewrite for a remote with an explicit pushurl. */
-export const pushUrlIssues = (runGit: Runner, top: string): string[] =>
+const pushUrlIssues = (runGit: Runner, top: string): string[] =>
   remotesWithPushUrl(runGit, top).map(
     (remote) =>
       `remote "${remote}" sets pushurl, and git ignores the push rewrite for such a remote: remove the pushurl, or pass --allow-push on the operator's word`,
   );
 
 /** Compared here, never passed to git: the schema allows a leading dash. */
-export function targetIssues(
-  brief: Brief,
-  branch: string | undefined,
-): string[] {
+function targetIssues(brief: Brief, branch: string | undefined): string[] {
   if (branch === undefined) {
     return brief.target === undefined
       ? []
@@ -160,10 +153,10 @@ export function targetIssues(
       ];
 }
 
-export function checkoutIssues(
+function checkoutIssues(
   brief: Brief,
   briefPath: string,
-  opts: DispatchOptions,
+  opts: SharedOptions,
   runGit: Runner,
   facts: CheckoutFacts,
 ): string[] {
@@ -179,10 +172,7 @@ export function checkoutIssues(
 }
 
 /** A background session under bypassPermissions needs the acceptance the user source holds. */
-export function bypassIssues(
-  profile: Profile,
-  mode: string | undefined,
-): string[] {
+function bypassIssues(profile: Profile, mode: string | undefined): string[] {
   const sources = profile.manifest.settingSources;
   if (mode !== BYPASS || sources === undefined || sources.includes('user')) {
     return [];
@@ -193,7 +183,7 @@ export function bypassIssues(
 }
 
 /** The `profile new` hint, when no store root holds a folder of that name. */
-export function missingProfileHint(name: string, penv: ProfileEnv): string[] {
+function missingProfileHint(name: string, penv: ProfileEnv): string[] {
   const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
   const held = roots.some((root) => isFolder(path.join(root.dir, name)));
   return isProfileName(name) && !held
@@ -201,7 +191,7 @@ export function missingProfileHint(name: string, penv: ProfileEnv): string[] {
     : [];
 }
 
-export type Prepared =
+type Prepared =
   | { ok: true; args: string[]; notes: string[] }
   | { ok: false; issues: string[] };
 
@@ -209,8 +199,8 @@ export type Prepared =
  * Loads, overlays, and checks the profile. The lines the profile helpers print
  * are collected: issues on a refusal, warnings to print before the launch.
  */
-export function prepareProfile(
-  opts: DispatchOptions,
+function prepareProfile(
+  opts: SharedOptions,
   briefPath: string,
   penv: ProfileEnv,
   main: string | undefined,
@@ -259,6 +249,12 @@ export interface Ready {
   main: ResolvedMain | undefined;
 }
 
+// The 7 characters git prints for a short commit by default.
+const SHORT_SHA = 7;
+
+// The marker's brief path under `--check`, which has no brief.
+const CHECK_BRIEF = 'check-brief.md';
+
 const insideWorkerIssue =
   'SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)';
 
@@ -269,7 +265,7 @@ const insideWorkerIssue =
 export function checkDispatch(
   brief: Brief,
   briefPath: string,
-  opts: DispatchOptions,
+  opts: SharedOptions,
   wenv: WorkerEnv,
 ): Ready | { issues: string[] } {
   if (wenv.env.SIDEKICK_WORKER !== undefined) {
@@ -314,5 +310,59 @@ export function checkDispatch(
     args: prepared.args,
     notes: prepared.notes,
     main,
+  };
+}
+
+/** What a passing `--check` reports. */
+export interface CheckPass {
+  line: string;
+  notes: string[];
+}
+
+// The branch the launching checkout holds, or its detached commit.
+const whereLine = (branch: string | undefined, head: string): string =>
+  branch ?? `detached HEAD at ${head.slice(0, SHORT_SHA)}`;
+
+/**
+ * The checks that need no brief, from the launching checkout as `checkDispatch`
+ * runs them. The overlay's marker needs a brief path, so it gets a placeholder
+ * in that checkout; the profile check never reads it.
+ */
+export function checkOnly(
+  opts: CheckOptions,
+  wenv: WorkerEnv,
+): CheckPass | { issues: string[] } {
+  if (wenv.env.SIDEKICK_WORKER !== undefined) {
+    return { issues: [insideWorkerIssue] };
+  }
+  const facts = checkoutFacts(wenv.runGit, wenv.cwd);
+  const at = 'issues' in facts ? wenv.cwd : facts.launchTop;
+  const head = 'issues' in facts ? undefined : headCommit(wenv.runGit, at);
+  const prepared = prepareProfile(
+    opts,
+    path.join(at, CHECK_BRIEF),
+    { ...wenv, cwd: at },
+    undefined,
+    [],
+  );
+  const issues = [
+    ...('issues' in facts
+      ? facts.issues
+      : [
+          ...(head === undefined ? [NO_COMMIT] : []),
+          ...cleanIssues(wenv.runGit, at),
+          ...(opts.allowPush ? [] : pushUrlIssues(wenv.runGit, at)),
+        ]),
+    ...modeIssues(opts.mode),
+    ...pluginDirIssues(opts.pluginDir),
+    ...(prepared.ok ? [] : prepared.issues),
+  ];
+  if ('issues' in facts || head === undefined) return { issues };
+  if (issues.length > 0 || opts.mode === undefined || !prepared.ok) {
+    return { issues };
+  }
+  return {
+    line: `dispatch can run here: ${whereLine(facts.branch, head)}, profile ${opts.profile}, mode ${opts.mode}`,
+    notes: prepared.notes,
   };
 }

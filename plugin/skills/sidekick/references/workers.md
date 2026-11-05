@@ -8,6 +8,7 @@ Issues #206 and #218 in the `Rikmorn/sidekick` repo decided the shape. Most meas
 
 ```
 sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push]
+sidekick worker dispatch --check --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push]
 sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]
 ```
 
@@ -17,6 +18,7 @@ sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | -
 - `--profile` names the profile the worker launches with, and defaults to `worker`. "A worker profile" suggests one.
 - `--plugin-dir <dir>` loads a plugin folder in the worker, for an orchestrator that tests unreleased plugin content.
 - `--allow-push` leaves out the push block, on the operator's word for that dispatch.
+- `--check` runs the checks that need no brief and starts nothing; "What `--check` runs" says which. It takes no brief, and a brief given with it refuses with `--check takes no brief`.
 - `--no-report` lets `finish` run without a run report, for a worker stopped before it wrote one, on the operator's word.
 - `--into <rev>` names the commit the work must have landed in, in place of the brief's `target`. It takes a branch, a tag, or a commit. It refuses the worker's own branch, which holds its head whether or not the work landed.
 - `--discard` clears a worker that did not land, on the operator's word. It excludes `--into`.
@@ -64,6 +66,26 @@ A worktree starts with none of the launching checkout's git-ignored files. List 
 - The profile loads, composes with the overlay, and passes the checks `profile launch` runs, the settings check and the plugin dependency check among them. `references/profiles.md` describes them. A missing profile refuses with a hint to run `sidekick profile new <name> --description <text>`.
 - Unless `--allow-push`, the profile's own `settings.env.GIT_CONFIG_COUNT`, when set, is a string of digits.
 - `bypassPermissions` refuses a profile whose `settingSources` leaves out `user`. Claude Code refuses bypass in a background session unless user or managed settings record its acceptance. Such a profile drops that record (the dispatch probes, "Steering by message", from the docs).
+
+### What `--check` runs
+
+`dispatch --check` runs the checks under "What it checks" that read no brief, from the same checkout `dispatch` uses, and reports every reason at once. An orchestrator runs it before it offers a worker. A dirty tree and a missing mode print as two lines, not one.
+
+- It runs outside a worker.
+- `HEAD` has a commit, and no tracked file has uncommitted changes.
+- Unless `--allow-push`, no remote sets an explicit `pushurl`.
+- `--permission-mode` is given and known, and `--plugin-dir`, when given, is an existing folder.
+- The profile loads, composes with the overlay, and passes the checks `dispatch` runs, with `bypassPermissions`'s acceptance among them. The overlay's marker names a placeholder brief path in the launching checkout, and the overlay carries no `Read` rules. The profile's warnings print on stderr, as `dispatch` prints them before its launch.
+
+It does not run the brief's checks (the files, `baseline`, `target`, `place`, and the name), the `claude agents` listing, or the `main:` lookup. Those stay at `dispatch`, so a pass does not promise that `dispatch` will pass.
+
+A pass exits 0 and prints one line on stdout, naming the branch the checkout holds, or `detached HEAD at <short commit>`, the profile, and the mode:
+
+```
+dispatch can run here: <branch>, profile <name>, mode <mode>
+```
+
+A refusal prints the same lines `dispatch` prints on stderr and exits 1.
 
 ### What it does
 

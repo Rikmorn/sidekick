@@ -8875,11 +8875,11 @@ var pluginDirIssues = (dir) => dir === undefined || isFolder(dir) ? [] : [`--plu
 var placeIssues = (brief) => brief.place === "worktree" ? [] : [
   `place: "${brief.place}" is not "worktree"; dispatch starts a worker only in a worktree of its own`
 ];
+var NO_COMMIT = "baseline: this checkout's HEAD has no commit yet";
 function baselineIssues(runGit, top, baseline) {
   const head = headCommit(runGit, top);
-  if (head === undefined) {
-    return ["baseline: this checkout's HEAD has no commit yet"];
-  }
+  if (head === undefined)
+    return [NO_COMMIT];
   return commitOf(runGit, top, baseline) === head ? [] : [
     `baseline: ${baseline} does not resolve to this checkout's HEAD (${head})`
   ];
@@ -8971,6 +8971,8 @@ function prepareProfile(opts, briefPath, penv, main, reads) {
   }
   return { ok: true, args, notes: lines };
 }
+var SHORT_SHA = 7;
+var CHECK_BRIEF = "check-brief.md";
 var insideWorkerIssue = "SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)";
 function checkDispatch(brief, briefPath, opts, wenv) {
   if (wenv.env.SIDEKICK_WORKER !== undefined) {
@@ -9005,6 +9007,35 @@ function checkDispatch(brief, briefPath, opts, wenv) {
     args: prepared.args,
     notes: prepared.notes,
     main
+  };
+}
+var whereLine = (branch, head) => branch ?? `detached HEAD at ${head.slice(0, SHORT_SHA)}`;
+function checkOnly(opts, wenv) {
+  if (wenv.env.SIDEKICK_WORKER !== undefined) {
+    return { issues: [insideWorkerIssue] };
+  }
+  const facts = checkoutFacts(wenv.runGit, wenv.cwd);
+  const at = "issues" in facts ? wenv.cwd : facts.launchTop;
+  const head = "issues" in facts ? undefined : headCommit(wenv.runGit, at);
+  const prepared = prepareProfile(opts, path38.join(at, CHECK_BRIEF), { ...wenv, cwd: at }, undefined, []);
+  const issues = [
+    ..."issues" in facts ? facts.issues : [
+      ...head === undefined ? [NO_COMMIT] : [],
+      ...cleanIssues(wenv.runGit, at),
+      ...opts.allowPush ? [] : pushUrlIssues(wenv.runGit, at)
+    ],
+    ...modeIssues(opts.mode),
+    ...pluginDirIssues(opts.pluginDir),
+    ...prepared.ok ? [] : prepared.issues
+  ];
+  if ("issues" in facts || head === undefined)
+    return { issues };
+  if (issues.length > 0 || opts.mode === undefined || !prepared.ok) {
+    return { issues };
+  }
+  return {
+    line: `dispatch can run here: ${whereLine(facts.branch, head)}, profile ${opts.profile}, mode ${opts.mode}`,
+    notes: prepared.notes
   };
 }
 
@@ -9516,7 +9547,18 @@ function launch2(ready, wenv, out, err) {
     return result.code;
   return afterStart(ready, result, wenv, { out, err });
 }
+function runCheck(opts, wenv, out, err) {
+  const checked2 = checkOnly(opts, wenv);
+  if ("issues" in checked2)
+    return refuse4(err, checked2.issues);
+  for (const note of checked2.notes)
+    err(note);
+  out(checked2.line);
+  return 0;
+}
 function dispatch(opts, wenv, out, err) {
+  if (opts.check)
+    return runCheck(opts, wenv, out, err);
   const read = readBrief(opts.brief);
   if ("issues" in read)
     return refuse4(err, read.issues);
@@ -9538,19 +9580,30 @@ function parseDispatchArgs(rest2, cwd) {
     "permission-mode": { type: "string" },
     profile: { type: "string" },
     "plugin-dir": { type: "string" },
-    "allow-push": { type: "boolean" }
+    "allow-push": { type: "boolean" },
+    check: { type: "boolean" }
   });
-  if (parsed === undefined || parsed.positionals.length !== 1)
+  if (parsed === undefined)
+    return;
+  const check2 = parsed.values.check === true;
+  if (check2 && parsed.positionals.length > 0) {
+    return { usageErrors: ["--check takes no brief"] };
+  }
+  if (!check2 && parsed.positionals.length !== 1)
     return;
   const pluginDir = stringFlag(parsed.values, "plugin-dir");
   if (pluginDir === "")
     return;
-  return {
-    brief: path41.resolve(cwd, parsed.positionals[0]),
+  const shared = {
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
     pluginDir: pluginDir === undefined ? undefined : path41.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
+  };
+  return check2 ? { ...shared, check: true } : {
+    ...shared,
+    check: false,
+    brief: path41.resolve(cwd, parsed.positionals[0])
   };
 }
 
@@ -10304,7 +10357,7 @@ function launcherOf(subject, facts, runGit) {
 }
 
 // bin/helpers/worker-finish.ts
-var SHORT_SHA = 7;
+var SHORT_SHA2 = 7;
 var NAME_FROM = {
   brief: "the name in the brief",
   name: "the name given to --name"
@@ -10461,7 +10514,7 @@ var sayVerdict = (ready, _wenv, out) => {
   const { verdict } = ready;
   switch (verdict.kind) {
     case "landed":
-      out(`${ready.branch} landed in ${verdict.target.name} at ${verdict.at.slice(0, SHORT_SHA)}`);
+      out(`${ready.branch} landed in ${verdict.target.name} at ${verdict.at.slice(0, SHORT_SHA2)}`);
       return [];
     case "discard":
       out(`${ready.branch} is discarded on your word`);
@@ -10517,7 +10570,7 @@ function finish(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker.ts
-var WORKER_USAGE_LINE = "sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]";
+var WORKER_USAGE_LINE = "sidekick worker dispatch (<brief> | --check) --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]";
 var usage2 = (err) => {
   err(`usage: ${WORKER_USAGE_LINE}`);
   return 1;
@@ -10529,7 +10582,11 @@ var refuse5 = (err, lines) => {
 };
 var dispatchVerb = (rest2, wenv, out, err) => {
   const opts = parseDispatchArgs(rest2, wenv.cwd);
-  return opts === undefined ? usage2(err) : dispatch(opts, wenv, out, err);
+  if (opts === undefined)
+    return usage2(err);
+  if ("usageErrors" in opts)
+    return refuse5(err, opts.usageErrors);
+  return dispatch(opts, wenv, out, err);
 };
 var finishVerb = (rest2, wenv, out, err) => {
   const args = parseFinishArgs(rest2, wenv.cwd);

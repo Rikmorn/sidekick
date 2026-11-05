@@ -13,7 +13,7 @@ import { finish } from './worker-finish.js';
 import { parseFinishArgs } from './worker-finish-args.js';
 
 export const WORKER_USAGE_LINE =
-  'sidekick worker dispatch <brief> --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]';
+  'sidekick worker dispatch (<brief> | --check) --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]';
 
 /** The profile family's environment, plus git and the seams a lock wait runs through. */
 export interface WorkerEnv extends ProfileEnv {
@@ -39,7 +39,9 @@ const refuse = (err: Out, lines: string[]): number => {
 
 const dispatchVerb: Verb = (rest, wenv, out, err) => {
   const opts = parseDispatchArgs(rest, wenv.cwd);
-  return opts === undefined ? usage(err) : dispatch(opts, wenv, out, err);
+  if (opts === undefined) return usage(err);
+  if ('usageErrors' in opts) return refuse(err, opts.usageErrors);
+  return dispatch(opts, wenv, out, err);
 };
 
 const finishVerb: Verb = (rest, wenv, out, err) => {
