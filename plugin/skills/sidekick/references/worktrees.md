@@ -20,8 +20,8 @@ After the rows, a `backup refs:` line lists each ref under `refs/sidekick/` with
 
 Warnings print before the rows:
 
-- `claude agents failed, so every worktree not confirmed free reads held, unknown: <reason>`. The listing runs with a 5-second limit. Without it, no session is known to be absent. So each worktree that no lock holds and no worker owns shows as `held, unknown: claude agents failed`, a missing folder included.
-- `claude agents gave a partial listing, so every worktree not confirmed free reads held, unknown: <warning>`, once per entry of the listing that does not parse or whose `pid` is not a number. A session may hide in it, so each worktree that nothing holds and no worker owns shows as `held, unknown: claude agents gave a partial listing: <warning>`.
+- `claude agents failed, so every worktree that would otherwise read folder gone, dirty, or removable reads held, unknown: <reason>`. The listing runs with a 5-second limit. Without it, no session is known to be absent. So each worktree that no lock holds and no worker owns shows as `held, unknown: claude agents failed`, a missing folder included.
+- `claude agents gave a partial listing, so every worktree that would otherwise read folder gone, dirty, or removable reads held, unknown: <warning>`, once per entry of the listing that does not parse or whose `pid` is not a number. A session may hide in it, so each worktree that nothing holds and no worker owns shows as `held, unknown: claude agents gave a partial listing: <warning>`.
 - A worker record that does not parse. Any worktree may be that record's worker's, so each worktree that nothing holds and no worker owns shows as `held, unknown: a worker record would not read: <warning>`.
 - A skip list that cannot be read.
 

@@ -404,7 +404,8 @@ const BACKUP_KINDS = ['landed', 'pushed', 'discarded', 'kept'] as const;
 
 /**
  * Where the kept commits lived: landed, on a remote-tracking ref, discarded on
- * the operator's word, or only on a branch `worktree remove` keeps.
+ * the operator's word, or on a branch `worktree remove` keeps, held only there
+ * or where it cannot tell.
  */
 export type BackupKind = (typeof BACKUP_KINDS)[number];
 

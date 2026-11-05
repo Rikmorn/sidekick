@@ -123,10 +123,11 @@ const forgetRecord: GoneStep = (gone) => {
 
 /**
  * The way on once the worker's session is gone. A leftover `worktree-<name>`
- * blocks a new dispatch of that name, which checks that the branch is free.
+ * blocks a new worktree of that name; dispatch refuses it, since it checks
+ * that the branch is free.
  */
 export const leftoverRoute = (name: string): string =>
-  `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks only a new dispatch named ${name}`;
+  `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks a new worktree named ${name}; dispatch refuses it`;
 
 const sayByHand: GoneStep = (gone, _wenv, out) => {
   out(

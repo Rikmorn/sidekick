@@ -52,8 +52,10 @@ const gitIssue = (verb: string, stderr: string): string =>
 
 /**
  * Unlocks a dead lock, then runs `git worktree remove <path>`, never with
- * `--force`, so git refuses a worktree holding untracked files. A live or
- * unreadable lock refuses before anything changes. Returns the issues, else [].
+ * `--force`, so git refuses a worktree holding untracked files. A live lock
+ * refuses before anything changes, and so does an `other` one: any lock but a
+ * Claude Code session's that names a pid, another tool's naming a pid
+ * included. Returns the issues, else [].
  */
 export function removeGitWorktree(
   runGit: Runner,

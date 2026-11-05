@@ -99,7 +99,7 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief),
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks only a new dispatch named w1. Otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1; dispatch refuses it. Otherwise check the name in the brief',
     );
   });
 
@@ -111,7 +111,7 @@ describe('finish refuses', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks only a new dispatch named w1. Otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1; dispatch refuses it. Otherwise check the name in the brief',
     ]);
   });
 
@@ -2433,7 +2433,7 @@ describe('finish --name', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish('--name', 'w1', '--discard')).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks only a new dispatch named w1. Otherwise check the name given to --name',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1; dispatch refuses it. Otherwise check the name given to --name',
     ]);
   });
 });
@@ -2529,7 +2529,7 @@ describe('finish --name keeps the checkout that dispatched the worker', () => {
 const GONE_HEAD =
   'finish cannot find the worktree of w1, so it removes only its session and record. It tried:';
 const GONE_TAIL =
-  "the worktree of w1 was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks only a new dispatch named w1";
+  "the worktree of w1 was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks a new worktree named w1; dispatch refuses it";
 
 describe('finish --discard with no worktree found', () => {
   test('removes the session and the record, and leaves every branch and worktree in place', () => {

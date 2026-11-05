@@ -10686,7 +10686,7 @@ var forgetRecord2 = (gone) => {
   removeRecord(gone.commonDir, gone.name);
   return [];
 };
-var leftoverRoute = (name) => `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks only a new dispatch named ${name}`;
+var leftoverRoute = (name) => `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks a new worktree named ${name}; dispatch refuses it`;
 var sayByHand = (gone, _wenv, out) => {
   out(`the worktree of ${gone.name} was not found, so finish deleted no branch: ${leftoverRoute(gone.name)}`);
   return [];
@@ -11510,7 +11510,7 @@ function backupRefLines(runGit, top) {
   });
   return ["backup refs:", ...entries];
 }
-var UNCONFIRMED = "so every worktree not confirmed free reads held, unknown";
+var UNCONFIRMED = "so every worktree that would otherwise read folder gone, dirty, or removable reads held, unknown";
 function listingWarnings(listing) {
   if ("error" in listing) {
     return [`claude agents failed, ${UNCONFIRMED}: ${listing.error}`];

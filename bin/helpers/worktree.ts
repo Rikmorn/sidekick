@@ -106,7 +106,8 @@ function backupRefLines(
   return ['backup refs:', ...entries];
 }
 
-const UNCONFIRMED = 'so every worktree not confirmed free reads held, unknown';
+const UNCONFIRMED =
+  'so every worktree that would otherwise read folder gone, dirty, or removable reads held, unknown';
 
 // A listing that failed or was read in part leaves no worktree confirmed free.
 function listingWarnings(listing: Sources['listing']): string[] {
