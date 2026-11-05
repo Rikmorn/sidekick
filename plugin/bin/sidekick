@@ -11128,7 +11128,7 @@ function processIsAlive(pid) {
   }
 }
 
-// bin/helpers/worktree-remove.ts
+// bin/helpers/worktree-remove-checks.ts
 import * as path49 from "node:path";
 var DISCARD = "--discard";
 function parseRemoveArgs(rest2) {
@@ -11296,6 +11296,8 @@ function recheck(env, repo, checked2) {
     return refuse6(...kept);
   return listing.rows;
 }
+
+// bin/helpers/worktree-remove.ts
 function exitedSessions(rows, worktree) {
   return rows.flatMap((row2) => {
     const exited = row2.kind === "background" && !isCurrent(row2);
