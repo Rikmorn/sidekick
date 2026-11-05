@@ -80,9 +80,49 @@ function lstatOf(file: string): fs.Stats | undefined {
   }
 }
 
-function sameBytes(a: string, b: string): boolean {
+// Fills `buf` from `fd` unless the file ends first; returns the bytes read.
+// readSync may return fewer bytes than asked before the end.
+function readChunk(fd: number, buf: Buffer): number {
+  let filled = 0;
+  while (filled < buf.length) {
+    const read = fs.readSync(fd, buf, filled, buf.length - filled, null);
+    if (read === 0) return filled;
+    filled += read;
+  }
+  return filled;
+}
+
+function sameChunks(fdA: number, fdB: number, chunkBytes: number): boolean {
+  if (chunkBytes < 1) throw new RangeError(`chunk of ${chunkBytes} bytes`);
+  const bufA = Buffer.alloc(chunkBytes);
+  const bufB = Buffer.alloc(chunkBytes);
+  for (;;) {
+    const readA = readChunk(fdA, bufA);
+    const readB = readChunk(fdB, bufB);
+    const same =
+      readA === readB &&
+      bufA.subarray(0, readA).equals(bufB.subarray(0, readB));
+    if (!same) return false;
+    if (readA < chunkBytes) return true;
+  }
+}
+
+function withOpen<T>(file: string, use: (fd: number) => T): T {
+  const fd = fs.openSync(file, 'r');
   try {
-    return fs.readFileSync(a).equals(fs.readFileSync(b));
+    return use(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// A chunk at a time, so a large file never sits whole in memory. The sizes
+// already match. Any open, read, or close error counts as a difference.
+function sameBytes(a: string, b: string, chunkBytes: number): boolean {
+  try {
+    return withOpen(a, (fdA) =>
+      withOpen(b, (fdB) => sameChunks(fdA, fdB, chunkBytes)),
+    );
   } catch {
     return false;
   }
@@ -97,7 +137,11 @@ function sameLink(a: string, b: string): boolean {
 }
 
 // Whether removing `worktreeFile` would lose it: the main checkout lacks it or holds other contents.
-function isLoss(worktreeFile: string, mainFile: string): boolean {
+function isLoss(
+  worktreeFile: string,
+  mainFile: string,
+  chunkBytes: number,
+): boolean {
   const here = lstatOf(worktreeFile);
   const there = lstatOf(mainFile);
   if (here === undefined || there === undefined) return here !== undefined;
@@ -106,7 +150,7 @@ function isLoss(worktreeFile: string, mainFile: string): boolean {
   }
   if (!here.isFile()) return true;
   if (!there.isFile() || there.size !== here.size) return true;
-  return !sameBytes(worktreeFile, mainFile);
+  return !sameBytes(worktreeFile, mainFile, chunkBytes);
 }
 
 // Every non-skipped file under `rel`, depth first, in name order. Symlinks are not followed.
@@ -158,11 +202,15 @@ function ignoredEntries(
  * Ignored files removal would lose: absent from the main checkout, or there
  * with other contents, outside the skips. Paths are relative to the
  * worktree's top. The issue is git's message when its status fails.
+ * `chunkBytes` is how much of each file the byte comparison holds at once.
  */
 export function ignoredLosses(
   runGit: Runner,
   places: { mainTop: string; worktree: string; commonDir: string },
-  { cap = 20 }: { cap?: number } = {},
+  {
+    cap = 20,
+    chunkBytes = 64 * 1024,
+  }: { cap?: number; chunkBytes?: number } = {},
 ): Losses | { issue: string } {
   const entries = ignoredEntries(runGit, places.worktree);
   if ('issue' in entries) return entries;
@@ -173,6 +221,7 @@ export function ignoredLosses(
       const lost = isLoss(
         path.join(places.worktree, rel),
         path.join(places.mainTop, rel),
+        chunkBytes,
       );
       if (!lost) continue;
       paths.push(rel);

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { removeTemps, repoWithWorktree } from './fixtures/worker/repo.js';
@@ -48,6 +48,46 @@ describe('ignoredLosses: ignored files that removal would delete', () => {
       paths: ['.env'],
       truncated: false,
     });
+  });
+
+  test('same-size files compare a chunk at a time, to the last byte', () => {
+    const r = setup('*.bin\n');
+    // 4-byte chunks: two whole chunks, then a partial one.
+    write(r.main, 'past.bin', 'aaaabbbbcc');
+    write(r.worktree, 'past.bin', 'aaaabbbXcc');
+    write(r.main, 'tail.bin', 'aaaabbbbcc');
+    write(r.worktree, 'tail.bin', 'aaaabbbbcX');
+    write(r.main, 'same.bin', 'aaaabbbbcc');
+    write(r.worktree, 'same.bin', 'aaaabbbbcc');
+    write(r.main, 'whole.bin', 'aaaabbbb');
+    write(r.worktree, 'whole.bin', 'aaaabbbb');
+    expect(ignoredLosses(execRunner, r.places, { chunkBytes: 4 })).toEqual({
+      paths: ['past.bin', 'tail.bin'],
+      truncated: false,
+    });
+  });
+
+  test('a comparison never holds more than one chunk of a file', () => {
+    const r = setup('*.bin\n');
+    write(r.main, 'big.bin', 'aaaabbbbcc');
+    write(r.worktree, 'big.bin', 'aaaabbbbcc');
+    const whole = spyOn(fs, 'readFileSync');
+    const chunk = spyOn(fs, 'readSync');
+    try {
+      expect(ignoredLosses(execRunner, r.places, { chunkBytes: 4 })).toEqual(
+        none,
+      );
+      const wholeReads = whole.mock.calls
+        .map(([file]) => String(file))
+        .filter((file) => file.endsWith('big.bin'));
+      expect(wholeReads).toEqual([]);
+      const lengths = chunk.mock.calls.map((call) => call[3]);
+      expect(lengths.length).toBeGreaterThan(0);
+      expect(lengths.every((n) => typeof n === 'number' && n <= 4)).toBe(true);
+    } finally {
+      whole.mockRestore();
+      chunk.mockRestore();
+    }
   });
 
   test('a new file in an ignored folder the main checkout also has is a loss', () => {

@@ -7047,9 +7047,42 @@ function lstatOf(file) {
     return;
   }
 }
-function sameBytes2(a, b) {
+function readChunk(fd, buf) {
+  let filled = 0;
+  while (filled < buf.length) {
+    const read = fs25.readSync(fd, buf, filled, buf.length - filled, null);
+    if (read === 0)
+      return filled;
+    filled += read;
+  }
+  return filled;
+}
+function sameChunks(fdA, fdB, chunkBytes) {
+  if (chunkBytes < 1)
+    throw new RangeError(`chunk of ${chunkBytes} bytes`);
+  const bufA = Buffer.alloc(chunkBytes);
+  const bufB = Buffer.alloc(chunkBytes);
+  for (;; ) {
+    const readA = readChunk(fdA, bufA);
+    const readB = readChunk(fdB, bufB);
+    const same = readA === readB && bufA.subarray(0, readA).equals(bufB.subarray(0, readB));
+    if (!same)
+      return false;
+    if (readA < chunkBytes)
+      return true;
+  }
+}
+function withOpen(file, use) {
+  const fd = fs25.openSync(file, "r");
   try {
-    return fs25.readFileSync(a).equals(fs25.readFileSync(b));
+    return use(fd);
+  } finally {
+    fs25.closeSync(fd);
+  }
+}
+function sameBytes2(a, b, chunkBytes) {
+  try {
+    return withOpen(a, (fdA) => withOpen(b, (fdB) => sameChunks(fdA, fdB, chunkBytes)));
   } catch {
     return false;
   }
@@ -7061,7 +7094,7 @@ function sameLink(a, b) {
     return false;
   }
 }
-function isLoss(worktreeFile, mainFile) {
+function isLoss(worktreeFile, mainFile, chunkBytes) {
   const here = lstatOf(worktreeFile);
   const there = lstatOf(mainFile);
   if (here === undefined || there === undefined)
@@ -7073,7 +7106,7 @@ function isLoss(worktreeFile, mainFile) {
     return true;
   if (!there.isFile() || there.size !== here.size)
     return true;
-  return !sameBytes2(worktreeFile, mainFile);
+  return !sameBytes2(worktreeFile, mainFile, chunkBytes);
 }
 function* filesUnder2(worktree, rel, skipped) {
   if (skipped(rel))
@@ -7105,7 +7138,10 @@ function ignoredEntries(runGit, worktree) {
     return { issue: status.stderr.trim() };
   return status.stdout.split("\x00").filter((entry) => entry.startsWith(IGNORED)).map((entry) => entry.slice(IGNORED.length).replace(/\/+$/, ""));
 }
-function ignoredLosses(runGit, places, { cap = 20 } = {}) {
+function ignoredLosses(runGit, places, {
+  cap = 20,
+  chunkBytes = 64 * 1024
+} = {}) {
   const entries = ignoredEntries(runGit, places.worktree);
   if ("issue" in entries)
     return entries;
@@ -7113,7 +7149,7 @@ function ignoredLosses(runGit, places, { cap = 20 } = {}) {
   const paths = [];
   for (const entry of entries) {
     for (const rel of filesUnder2(places.worktree, entry, skipped)) {
-      const lost = isLoss(path31.join(places.worktree, rel), path31.join(places.mainTop, rel));
+      const lost = isLoss(path31.join(places.worktree, rel), path31.join(places.mainTop, rel), chunkBytes);
       if (!lost)
         continue;
       paths.push(rel);
