@@ -41,6 +41,7 @@ function sources(
   return {
     repo,
     rows: [],
+    listingWarnings: [],
     records: [],
     unreadRecords: [],
     isAlive: (pid) => pid === 4242,
@@ -187,6 +188,43 @@ describe('worktreeRows: each state', () => {
       { kind: 'held', by: 'unknown: claude agents failed' },
     ]);
     expect(leftBehind(src)).toEqual([]);
+  });
+
+  test('a listing warning makes the clean worktree and a folder gone held, and none left behind', () => {
+    const r = repoWithWorktree('');
+    const gone = path.join(tmp(), 'gone');
+    git(r.main, 'worktree', 'add', '-q', '-b', 'gone', gone);
+    fs.rmSync(gone, { recursive: true, force: true });
+    const warning = "the listing's entry 1 is not an object";
+    const src = sources(r.main, { listingWarnings: [warning] });
+    const held = {
+      kind: 'held',
+      by: `unknown: claude agents gave a partial listing: ${warning}`,
+    };
+    expect(statesByName(src)).toEqual({ side: held, gone: held });
+    expect(leftBehind(src)).toEqual([]);
+  });
+
+  test('a current row with no cwd makes the clean worktree held, and none left behind', () => {
+    const r = repoWithWorktree('');
+    const row: ListingRow = {
+      sessionId: 'abc123',
+      kind: 'interactive',
+      pid: 9,
+    };
+    const src = sources(r.main, { rows: [row] });
+    expect(stateOf(src)).toEqual([
+      { kind: 'held', by: 'unknown: a current session lists no cwd: abc123' },
+    ]);
+    expect(leftBehind(src)).toEqual([]);
+  });
+
+  test('an exited row with no cwd holds nothing', () => {
+    const r = repoWithWorktree('');
+    const row: ListingRow = { id: 'job1', kind: 'background', state: 'done' };
+    const src = sources(r.main, { rows: [row] });
+    expect(stateOf(src)).toEqual([{ kind: 'removable' }]);
+    expect(leftBehind(src)).toHaveLength(1);
   });
 
   test('an unread record makes the clean worktree held, naming the record', () => {

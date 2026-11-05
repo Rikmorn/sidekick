@@ -21,10 +21,11 @@ After the rows, a `backup refs:` line lists each ref under `refs/sidekick/` with
 Warnings print before the rows:
 
 - `claude agents failed, so held states may be missing: <reason>`. The listing runs with a 5-second limit. Without it, no session is known to be absent. So each worktree that no lock holds and no worker owns shows as `held, unknown: claude agents failed`, a missing folder included.
+- An entry of the listing that does not parse. A session may hide in it, so each worktree that nothing holds and no worker owns shows as `held, unknown: claude agents gave a partial listing: <warning>`.
 - A worker record that does not parse. Any worktree may be that record's worker's, so each worktree that nothing holds and no worker owns shows as `held, unknown: a worker record would not read: <warning>`.
 - A skip list that cannot be read.
 
-After either of the first two warnings, no row reads `removable` or `folder gone`, so the hint does not print. `remove` and the desk's count read the same states, so all three agree.
+After any of the first three warnings, no row reads `removable` or `folder gone`, so the hint does not print. The same holds when a current session lists no `cwd`. `remove` and the desk's count read the same states, so all three agree.
 
 ## The states
 
@@ -37,6 +38,8 @@ The first match wins, in this order.
 | `held by session <id>` | A current row of `claude agents --json --all` has its `cwd` inside the worktree. This covers a worktree Claude Code did not lock. |
 | `a worker's: sidekick worker finish` | A worker record names this folder. Clear it away with `sidekick worker finish`. |
 | `held, unknown: claude agents failed` | Without the session rows, nothing says no session is in the worktree. |
+| `held, unknown: claude agents gave a partial listing: …` | An entry of the listing would not parse, and may be a session in the worktree. |
+| `held, unknown: a current session lists no cwd: <id>` | Nothing says where that session is, so it may be in the worktree. |
 | `held, unknown: a worker record would not read: …` | The record may be this worktree's worker's. The state names the record. |
 | `folder gone` | The folder is missing from disk, or git marks the entry prunable. |
 | `held, unknown: …` | Git status or the ignored-file check failed, so nothing says the worktree is clean. |

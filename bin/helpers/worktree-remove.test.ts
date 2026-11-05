@@ -282,6 +282,20 @@ describe('worktree remove: refuses', () => {
     expectUntouched(main, dir, 'worktree-hand');
   });
 
+  test('a current session that lists no cwd, since it may sit in the worktree', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'hand');
+    const row = { sessionId: 'abc123', pid: 99, kind: 'interactive' };
+    const { code, err } = run(main, ['hand'], {
+      listing: () => claudeSays(JSON.stringify([row])),
+    });
+    expect(code).toBe(1);
+    expect(joined(err)).toContain(
+      'held, unknown: a current session lists no cwd: abc123',
+    );
+    expectUntouched(main, dir, 'worktree-hand');
+  });
+
   test("a worker's worktree, naming finish", () => {
     const main = repo();
     const dir = path.join(main, '.claude', 'worktrees', 'w1');

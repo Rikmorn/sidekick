@@ -727,6 +727,24 @@ describe('runDeskCli: worktrees left behind', () => {
     expect(s.warnings.some((w) => w.includes('broken.json'))).toBe(true);
   });
 
+  test('a listing entry that is not an object leaves the field out, since a session may sit in the worktree', () => {
+    const fx = repoFixture();
+    git(fx.top, 'worktree', 'add', '-q', fx.worktreeOf('stray'), '-b', 'stray');
+    const s = snapshotOf(harness(fx.top, listing([childRow(), 7])));
+    expect('leftBehind' in s).toBe(false);
+    expect(s.warnings).toContain("the listing's entry 1 is not an object");
+  });
+
+  test('a current row with no cwd leaves the field out', () => {
+    const fx = repoFixture();
+    git(fx.top, 'worktree', 'add', '-q', fx.worktreeOf('stray'), '-b', 'stray');
+    const placeless = interactiveRow('eeee0001-0000-0000-0000-000000000000', {
+      cwd: undefined,
+    });
+    const s = snapshotOf(harness(fx.top, listing([childRow(), placeless])));
+    expect('leftBehind' in s).toBe(false);
+  });
+
   test("a worker's worktree alone leaves the field out", () => {
     const fx = repoFixture();
     const s = snapshotOf(harness(fx.top, listing([childRow()])));

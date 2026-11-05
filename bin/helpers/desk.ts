@@ -72,7 +72,8 @@ function parseDeskArgs(rest: string[]): { self?: string } | undefined {
   return typeof self === 'string' ? { self } : {};
 }
 
-type Listing = { rows: ListingRow[]; warnings: string[] } | { error: string };
+type ReadListing = { rows: ListingRow[]; warnings: string[] };
+type Listing = ReadListing | { error: string };
 
 function exitError(result: ClaudeResult): string {
   const failed = `${LISTING} failed with exit code ${result.code}`;
@@ -135,12 +136,14 @@ function pruneRecords(commonDir: string, names: string[]): string[] {
 
 // The children of the repository holding `cwd`, with their facts; none
 // outside a repository. Deletes the records that describe nothing, and drops
-// their facts' warnings with them.
+// their facts' warnings with them. A listing read in part counts no worktree
+// left behind, since an unparsed session may sit in any.
 function readAndPruneChildren(
   denv: DeskEnv,
-  rows: ListingRow[],
+  listing: ReadListing,
   find: TranscriptFinder,
 ): Children {
+  const { rows } = listing;
   const found = findRepo(denv.runGit, denv.cwd);
   if (found.repo === undefined) {
     return {
@@ -168,6 +171,7 @@ function readAndPruneChildren(
     leftBehind: leftBehind({
       repo,
       rows,
+      listingWarnings: listing.warnings,
       records,
       unreadRecords: read.warnings,
       isAlive: denv.isAlive,
@@ -221,7 +225,7 @@ function takeSnapshot(denv: DeskEnv, self: string | undefined): DeskSnapshot {
   }
   const { rows } = listing;
   const transcripts = transcriptFinder(denv.configDir);
-  const children = readAndPruneChildren(denv, rows, transcripts.find);
+  const children = readAndPruneChildren(denv, listing, transcripts.find);
   return buildSnapshot({
     rows,
     readJobs: (drawn) => readJobStates(denv.configDir, drawn),

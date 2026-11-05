@@ -7171,15 +7171,28 @@ function lockHold(lock) {
     return `lock: ${lock.reason}`;
   return;
 }
+var rowName = (row) => row.sessionId ?? row.id ?? row.name ?? "unknown";
 function sessionHold(rows, entry) {
   const row = rows.find((candidate) => isCurrent(candidate) && candidate.cwd !== undefined && insideOf(candidate.cwd, entry.path));
   if (row === undefined)
     return;
-  return `session ${row.sessionId ?? row.id ?? row.name ?? "unknown"}`;
+  return `session ${rowName(row)}`;
+}
+function partialListing(rows, warnings) {
+  if (warnings.length > 0) {
+    return `claude agents gave a partial listing: ${warnings.join("; ")}`;
+  }
+  const placeless = rows.filter((row) => isCurrent(row) && row.cwd === undefined);
+  if (placeless.length === 0)
+    return;
+  return `a current session lists no cwd: ${placeless.map(rowName).join(", ")}`;
 }
 function unseenHold(src) {
   if (src.rows === undefined)
     return UNSEEN_SESSIONS;
+  const partial = partialListing(src.rows, src.listingWarnings);
+  if (partial !== undefined)
+    return `unknown: ${partial}`;
   if (src.unreadRecords.length === 0)
     return;
   return `unknown: a worker record would not read: ${src.unreadRecords.join("; ")}`;
@@ -7354,7 +7367,8 @@ function pruneRecords(commonDir, names) {
     }
   });
 }
-function readAndPruneChildren(denv, rows, find) {
+function readAndPruneChildren(denv, listing, find) {
+  const { rows } = listing;
   const found = findRepo(denv.runGit, denv.cwd);
   if (found.repo === undefined) {
     return {
@@ -7382,6 +7396,7 @@ function readAndPruneChildren(denv, rows, find) {
     leftBehind: leftBehind({
       repo,
       rows,
+      listingWarnings: listing.warnings,
       records,
       unreadRecords: read.warnings,
       isAlive: denv.isAlive
@@ -7419,7 +7434,7 @@ function takeSnapshot(denv, self) {
   }
   const { rows } = listing;
   const transcripts = transcriptFinder(denv.configDir);
-  const children2 = readAndPruneChildren(denv, rows, transcripts.find);
+  const children2 = readAndPruneChildren(denv, listing, transcripts.find);
   return buildSnapshot({
     rows,
     readJobs: (drawn) => readJobStates(denv.configDir, drawn),
@@ -10993,6 +11008,7 @@ function readSources(env, repo) {
     src: {
       repo,
       rows: "error" in listing ? undefined : listing.rows,
+      listingWarnings: "error" in listing ? [] : listing.warnings,
       records: stored.records,
       unreadRecords: stored.warnings,
       isAlive: env.isAlive

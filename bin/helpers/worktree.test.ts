@@ -251,6 +251,19 @@ describe('worktree list: the frame', () => {
     expect(out.some((l) => l.startsWith('remove one with'))).toBe(false);
   });
 
+  test('a listing entry that is not an object holds a clean worktree and prints no hint', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'one');
+    const partial: ClaudeResult = { ...NO_SESSIONS, stdout: '[1]' };
+    const { out } = run(main, ['list'], partial);
+    const warning = "the listing's entry 0 is not an object";
+    expect(out[0]).toBe(warning);
+    expect(lineFor(out, 'one')).toBe(
+      `one · held, unknown: claude agents gave a partial listing: ${warning} · worktree-one · ${dir}`,
+    );
+    expect(out.some((l) => l.startsWith('remove one with'))).toBe(false);
+  });
+
   test('an unreadable worker record holds a clean worktree, naming the record, and prints no hint', () => {
     const main = repo();
     const dir = addWorktree(main, 'one');

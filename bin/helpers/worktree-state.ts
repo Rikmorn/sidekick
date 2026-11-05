@@ -48,6 +48,8 @@ export interface CheapSources {
   repo: Repo;
   /** Undefined when `claude agents` failed. */
   rows: ListingRow[] | undefined;
+  /** One warning per listing entry that would not parse; empty when every entry parsed. */
+  listingWarnings: string[];
   records: WorkerRecord[];
   /** One warning per worker record that would not read; empty when every record read. */
   unreadRecords: string[];
@@ -82,6 +84,9 @@ function lockHold(lock: LockState): string | undefined {
   return undefined;
 }
 
+const rowName = (row: ListingRow): string =>
+  row.sessionId ?? row.id ?? row.name ?? 'unknown';
+
 function sessionHold(
   rows: ListingRow[],
   entry: WorktreeEntry,
@@ -93,21 +98,39 @@ function sessionHold(
       insideOf(candidate.cwd, entry.path),
   );
   if (row === undefined) return undefined;
-  return `session ${row.sessionId ?? row.id ?? row.name ?? 'unknown'}`;
+  return `session ${rowName(row)}`;
 }
 
-// Without the session rows, or with a record unread, nothing says a worktree is
-// free: an unseen session may sit in it, or the record may be its worker's.
+// A listing read in part is read as failed: the entry that would not parse, or
+// a current row with no cwd, may be a session in any worktree.
+function partialListing(
+  rows: ListingRow[],
+  warnings: string[],
+): string | undefined {
+  if (warnings.length > 0) {
+    return `claude agents gave a partial listing: ${warnings.join('; ')}`;
+  }
+  const placeless = rows.filter(
+    (row) => isCurrent(row) && row.cwd === undefined,
+  );
+  if (placeless.length === 0) return undefined;
+  return `a current session lists no cwd: ${placeless.map(rowName).join(', ')}`;
+}
+
+// Without every session row, or with a record unread, nothing says a worktree
+// is free: an unseen session may sit in it, or the record may be its worker's.
 function unseenHold(src: CheapSources): string | undefined {
   if (src.rows === undefined) return UNSEEN_SESSIONS;
+  const partial = partialListing(src.rows, src.listingWarnings);
+  if (partial !== undefined) return `unknown: ${partial}`;
   if (src.unreadRecords.length === 0) return undefined;
   return `unknown: a worker record would not read: ${src.unreadRecords.join('; ')}`;
 }
 
 /**
  * The state the checks that need no git give: held by a lock or a session, a
- * worker's, or held when the session rows or a worker record would not read;
- * else undefined.
+ * worker's, or held when the session rows, any of them, or a worker record
+ * would not read; else undefined.
  */
 export function cheapState(
   src: CheapSources,
@@ -132,8 +155,8 @@ const linked = (repo: Repo): WorktreeEntry[] => repo.worktrees.slice(1);
 
 /**
  * The linked worktrees neither held nor a worker's, from the cheap checks
- * alone. With no session rows, or a worker record unread, nothing is known to
- * be free, so it names none.
+ * alone. With the session rows unread or read in part, or a worker record
+ * unread, nothing is known to be free, so it names none.
  */
 export function leftBehind(src: CheapSources): WorktreeEntry[] {
   return linked(src.repo).filter(

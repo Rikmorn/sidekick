@@ -49,6 +49,7 @@ export function readSources(env: WorktreeEnv, repo: Repo): Sources {
     src: {
       repo,
       rows: 'error' in listing ? undefined : listing.rows,
+      listingWarnings: 'error' in listing ? [] : listing.warnings,
       records: stored.records,
       unreadRecords: stored.warnings,
       isAlive: env.isAlive,
