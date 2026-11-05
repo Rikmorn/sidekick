@@ -1396,3 +1396,31 @@ test('sameSnapshot compares by value', () => {
     false,
   );
 });
+
+test('the band names the worktrees left behind on a muted line, singular or plural', () => {
+  expect(bandLines(snapshot({ leftBehind: 1 }), 120)).toEqual([
+    { tone: 'muted', text: '1 worktree left behind' },
+  ]);
+  expect(bandLines(snapshot({ leftBehind: 3 }), 120)).toEqual([
+    { tone: 'muted', text: '3 worktrees left behind' },
+  ]);
+  expect(bandLines(snapshot({ leftBehind: 0 }), 120)).toEqual([]);
+});
+
+test('the left-behind line sits after the workers and before the warnings', () => {
+  const lines = bandLines(
+    snapshot({ finished: 1, leftBehind: 2, warnings: ['w'] }),
+    120,
+  );
+  expect(lines.map(({ text }) => text)).toEqual([
+    '1 finished',
+    '2 worktrees left behind',
+    '⚠ desk: w',
+  ]);
+});
+
+test('a change in the left-behind count is a different snapshot', () => {
+  expect(
+    sameSnapshot(snapshot({ leftBehind: 1 }), snapshot({ leftBehind: 2 })),
+  ).toBe(false);
+});

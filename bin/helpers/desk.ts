@@ -42,6 +42,7 @@ import {
   removeRecord,
   type WorkerRecord,
 } from './worker-record.js';
+import { leftBehind } from './worktree-state.js';
 
 export const DESK_USAGE_LINE = 'sidekick desk --json [--self <session id>]';
 
@@ -51,6 +52,8 @@ export interface DeskEnv {
   configDir: string;
   runClaude: ClaudeRunner;
   runGit: Runner;
+  /** Whether a process id names a live process: a lock's pid decides if its worktree is held. */
+  isAlive: (pid: number) => boolean;
   /** Epoch milliseconds. */
   now: () => number;
 }
@@ -110,6 +113,8 @@ interface Children {
   repo?: string;
   records: WorkerRecord[];
   facts: ReadonlyMap<string, ChildFacts>;
+  /** Linked worktrees left behind in the repository; zero outside one. */
+  leftBehind: number;
   warnings: string[];
 }
 
@@ -138,7 +143,12 @@ function readAndPruneChildren(
 ): Children {
   const found = findRepo(denv.runGit, denv.cwd);
   if (found.repo === undefined) {
-    return { records: [], facts: new Map(), warnings: found.warnings };
+    return {
+      records: [],
+      facts: new Map(),
+      leftBehind: 0,
+      warnings: found.warnings,
+    };
   }
   const { repo } = found;
   const sources: ChildSources = { runGit: denv.runGit, repo, find };
@@ -150,10 +160,17 @@ function readAndPruneChildren(
   const facts = new Map(gathered.map((g) => [g.record.name, g.facts]));
   const stale = staleRecordNames(rows, read.records, facts);
   const kept = gathered.filter((g) => !stale.includes(g.record.name));
+  const records = kept.map((g) => g.record);
   return {
     repo: path.basename(repo.top),
-    records: kept.map((g) => g.record),
+    records,
     facts,
+    leftBehind: leftBehind({
+      repo,
+      rows,
+      records,
+      isAlive: denv.isAlive,
+    }).length,
     warnings: [
       ...read.warnings,
       ...kept.flatMap((g) => g.warnings),
@@ -213,6 +230,7 @@ function takeSnapshot(denv: DeskEnv, self: string | undefined): DeskSnapshot {
     freshInteractive: freshSessions(rows, transcripts.find, denv.now()),
     self,
     repo: children.repo,
+    leftBehind: children.leftBehind,
     repoNames: repoNamesOf(denv.runGit, rows),
     warnings: [
       ...listing.warnings,

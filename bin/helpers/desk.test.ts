@@ -186,6 +186,7 @@ function harness(
     configDir,
     runClaude,
     runGit,
+    isAlive: () => false,
     now: () => NOW,
   };
   const run = (...args: string[]) => {
@@ -706,6 +707,26 @@ describe('runDeskCli: finding the worktree', () => {
       false,
     );
     expect(s.children.map((c) => c.name)).toEqual(['w1']);
+  });
+});
+
+describe('runDeskCli: worktrees left behind', () => {
+  test('a clean linked worktree no session holds and no record names is counted', () => {
+    const fx = repoFixture();
+    git(fx.top, 'worktree', 'add', '-q', fx.worktreeOf('stray'), '-b', 'stray');
+    const s = snapshotOf(harness(fx.top, listing([childRow()])));
+    expect(s.leftBehind).toBe(1);
+  });
+
+  test("a worker's worktree alone leaves the field out", () => {
+    const fx = repoFixture();
+    const s = snapshotOf(harness(fx.top, listing([childRow()])));
+    expect('leftBehind' in s).toBe(false);
+  });
+
+  test('a repository with no linked worktree leaves the field out', () => {
+    const s = snapshotOf(harness(repo(), listing([])));
+    expect('leftBehind' in s).toBe(false);
   });
 });
 

@@ -55,6 +55,8 @@ export interface SnapshotInput {
   repo?: string;
   /** From a session's `cwd` to its repository's name, as git gives it; a `cwd` git could not read is absent. */
   repoNames: ReadonlyMap<string, string>;
+  /** Linked worktrees left behind; the snapshot carries the field only above zero. */
+  leftBehind?: number;
   warnings: string[];
 }
 
@@ -459,6 +461,7 @@ export function buildSnapshot(input: SnapshotInput): DeskSnapshot {
     others: others.map(({ row, classified }) =>
       otherOf(row, classified, known, input.repoNames),
     ),
+    ...((input.leftBehind ?? 0) > 0 ? { leftBehind: input.leftBehind } : {}),
     warnings,
     paneWarnings: read.warnings,
     sessionIds: [

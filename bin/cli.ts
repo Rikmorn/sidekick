@@ -185,6 +185,7 @@ export function main(
         configDir: configDirOf(ctx.env),
         runClaude: ctx.runClaude ?? execClaude,
         runGit: execRunner,
+        isAlive: processIsAlive,
         now: Date.now,
       },
       out,

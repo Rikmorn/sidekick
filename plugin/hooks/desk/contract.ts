@@ -63,6 +63,8 @@ export type DeskSnapshot =
       finished: number;
       others: DeskOther[];
       warnings: string[];
+      /** Linked worktrees left behind in the main's repository; present only above zero. */
+      leftBehind?: number;
       /** Job state's warnings, which only the pane draws. */
       paneWarnings: string[];
       /** Every session id in the `--all` listing, so the mod can prune published keys. */
@@ -267,6 +269,14 @@ function parseSelf(snapshot: Record<string, unknown>): DeskOther | undefined {
   return 'issue' in parsed ? undefined : parsed.value;
 }
 
+// Absent is fine, since the command leaves the field out at zero; a present value must be a number.
+function parseLeftBehind(
+  snapshot: Record<string, unknown>,
+): Parsed<number> | undefined {
+  if (!('leftBehind' in snapshot)) return undefined;
+  return required(snapshot, 'leftBehind', isNumber);
+}
+
 function parseOk(snapshot: Record<string, unknown>): DeskSnapshot {
   const waiting = parseList(snapshot, 'waiting', parseWaiting);
   if ('issue' in waiting) return failure(badSnapshot(waiting.issue));
@@ -282,6 +292,10 @@ function parseOk(snapshot: Record<string, unknown>): DeskSnapshot {
   if ('issue' in sessionIds) return failure(badSnapshot(sessionIds.issue));
   const finished = required(snapshot, 'finished', isNumber);
   if ('issue' in finished) return failure(badSnapshot(finished.issue));
+  const leftBehind = parseLeftBehind(snapshot);
+  if (leftBehind !== undefined && 'issue' in leftBehind) {
+    return failure(badSnapshot(leftBehind.issue));
+  }
   const repo = optional(snapshot, 'repo', isNonEmptyString);
   const self = parseSelf(snapshot);
   return {
@@ -289,6 +303,7 @@ function parseOk(snapshot: Record<string, unknown>): DeskSnapshot {
     ok: true,
     ...(repo === undefined ? {} : { repo }),
     ...(self === undefined ? {} : { self }),
+    ...(leftBehind === undefined ? {} : { leftBehind: leftBehind.value }),
     waiting: waiting.value,
     children: children.value,
     finished: finished.value,

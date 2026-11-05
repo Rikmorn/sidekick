@@ -264,3 +264,15 @@ test('unknown extra fields are ignored', () => {
     sessionIds: [],
   });
 });
+
+test('leftBehind parses when present and its absence is accepted', () => {
+  const present = parseDeskSnapshot(okWith({ leftBehind: 2 }));
+  expect(present.ok && present.leftBehind).toBe(2);
+  const absent = parseDeskSnapshot(JSON.stringify(full));
+  expect(absent.ok && 'leftBehind' in absent).toBe(false);
+});
+
+test('a leftBehind that is not a number reads as a failure naming it', () => {
+  expect(failureOf(okWith({ leftBehind: '2' }))).toContain('leftBehind');
+  expect(failureOf(okWith({ leftBehind: null }))).toContain('leftBehind');
+});

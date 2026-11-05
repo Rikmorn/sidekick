@@ -105,7 +105,16 @@ function workersLines(snapshot: OkSnapshot, columns: number): Line[] {
   return [];
 }
 
-/** The band's lines, each cut to `columns` with "+N more"; empty when nothing waits, finished, or is a child and the snapshot is ok. */
+function leftBehindLines(snapshot: OkSnapshot, columns: number): Line[] {
+  const count = snapshot.leftBehind ?? 0;
+  if (count < 1) return [];
+  const noun = count === 1 ? 'worktree' : 'worktrees';
+  return [
+    { tone: 'muted', text: fit(`${count} ${noun} left behind`, columns) },
+  ];
+}
+
+/** The band's lines, each cut to `columns` with "+N more"; empty when nothing waits, finished, is a child, or is left behind and the snapshot is ok. */
 export function bandLines(snapshot: DeskSnapshot, columns: number): Line[] {
   if (columns < 1) return [];
   if (!snapshot.ok) return [failureLine(snapshot.error, columns)];
@@ -121,6 +130,7 @@ export function bandLines(snapshot: DeskSnapshot, columns: number): Line[] {
   return [
     ...waiting,
     ...workersLines(snapshot, columns),
+    ...leftBehindLines(snapshot, columns),
     ...warningLines(snapshot, columns),
   ];
 }
