@@ -11,7 +11,11 @@
 import type { Repo } from './desk-children.js';
 import { isCurrent, type ListingRow } from './desk-snapshot.js';
 import { shellArg } from './shell.js';
-import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
+import {
+  listWorktrees,
+  lockReasonOf,
+  type WorktreeEntry,
+} from './worker-listing.js';
 import {
   branchGoneIssues,
   NO_LIMIT,
@@ -111,8 +115,9 @@ function endSessions(
   return [];
 }
 
-// git's removal, with the lock, HEAD, and files read once more: claude rm may
-// have taken the worktree, and git deletes an ignored file written meanwhile.
+// git's removal, with HEAD and files read once more, then the lock: claude rm
+// may have taken the worktree, git deletes an ignored file written meanwhile,
+// and a session may lock the worktree during the files check.
 function removeListed(
   env: WorktreeEnv,
   repo: Repo,
@@ -129,7 +134,8 @@ function removeListed(
   const skipList = skipListPath(repo.commonDir);
   const dirty = stateLines(disk, entry, skipList, KEPT_WORKTREE);
   if (dirty.length > 0) return dirty;
-  const lock = lockStateOf(entry.locked, env.isAlive);
+  const reason = lockReasonOf(env.runGit, top, entry.path);
+  const lock = lockStateOf(reason, env.isAlive);
   const issues = removeGitWorktree(env.runGit, top, entry.path, lock);
   if (issues.length === 0) return [];
   return [...issues, 'fix what git names, then run remove again'];

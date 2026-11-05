@@ -564,6 +564,49 @@ describe('worktree remove: refuses', () => {
     expect(backupRefs(main)).toEqual([`refs/sidekick/landed/race/${head}`]);
   });
 
+  test('a live lock written during the last files check, keeping the lock and the backup ref', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'relock');
+    const head = git(dir, 'rev-parse', 'HEAD');
+    git(main, 'worktree', 'lock', '--reason', SESSION_LOCK, dir);
+    const lockFile = path.join(main, '.git', 'worktrees', 'relock', 'locked');
+    const live = 'claude session s2 (pid 5151 start 2026-11-05)';
+    // Each files check runs two git status calls: the checks, the re-check
+    // after the backup ref, and the last one right before git's removal. The
+    // lock turns live at the first status of the last check.
+    const LAST_CHECK_STARTS = 5;
+    let statuses = 0;
+    let writtenAt = 0;
+    const { code, err, events } = run(main, ['relock'], {
+      isAlive: (pid) => pid === 5151,
+      git: (args) => {
+        if (!args.includes('status')) return undefined;
+        statuses += 1;
+        if (statuses === LAST_CHECK_STARTS) {
+          fs.writeFileSync(lockFile, live);
+          writtenAt = statuses;
+        }
+        return undefined;
+      },
+    });
+    // The write fell in the last files check: its second status came after it.
+    expect(writtenAt).toBe(LAST_CHECK_STARTS);
+    expect(statuses).toBe(writtenAt + 1);
+    expect(code).toBe(1);
+    const ref = `refs/sidekick/landed/relock/${head}`;
+    expect(err).toEqual([
+      `${dir} is locked by a live session (pid 5151)`,
+      'fix what git names, then run remove again',
+      `the backup ref ${ref} keeps ${head}`,
+    ]);
+    expect(events.some((e) => e.startsWith('git worktree unlock'))).toBe(false);
+    expect(fs.readFileSync(lockFile, 'utf8')).toBe(live);
+    expect(listed(main, dir)).toBe(true);
+    expect(fs.existsSync(dir)).toBe(true);
+    expect(branchExists(main, 'worktree-relock')).toBe(true);
+    expect(backupRefs(main)).toEqual([ref]);
+  });
+
   test('a session that starts in the worktree after the checks', () => {
     const main = repo();
     const dir = addWorktree(main, 'race');

@@ -11359,7 +11359,8 @@ function removeListed(env, repo, checked2) {
   const dirty = stateLines(disk, entry, skipList, KEPT_WORKTREE);
   if (dirty.length > 0)
     return dirty;
-  const lock = lockStateOf(entry.locked, env.isAlive);
+  const reason7 = lockReasonOf(env.runGit, top, entry.path);
+  const lock = lockStateOf(reason7, env.isAlive);
   const issues = removeGitWorktree(env.runGit, top, entry.path, lock);
   if (issues.length === 0)
     return [];
