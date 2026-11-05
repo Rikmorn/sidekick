@@ -7197,12 +7197,15 @@ function unseenHold(src) {
     return;
   return `unknown: a worker record would not read: ${src.unreadRecords.join("; ")}`;
 }
+function isWorkers(top, name, entry) {
+  const branch = entry.branch === undefined ? undefined : shortBranch(entry.branch);
+  return physical(nativeFolder(top, name)) === physical(entry.path) || path32.basename(entry.path) === name || branch === nativeBranch(name) || branch === name;
+}
 function cheapState(src, entry, lock) {
   const by = lockHold(lock) ?? (src.rows === undefined ? undefined : sessionHold(src.rows, entry));
   if (by !== undefined)
     return { kind: "held", by };
-  const wanted = physical(entry.path);
-  const record2 = src.records.find((candidate) => physical(nativeFolder(src.repo.top, candidate.name)) === wanted);
+  const record2 = src.records.find((candidate) => isWorkers(src.repo.top, candidate.name, entry));
   if (record2 !== undefined)
     return { kind: "worker", name: record2.name };
   const unseen = unseenHold(src);

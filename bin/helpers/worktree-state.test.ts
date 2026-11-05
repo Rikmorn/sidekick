@@ -134,6 +134,37 @@ describe('worktreeRows: each state', () => {
     expect(w1?.commits).toBeUndefined();
   });
 
+  test("a record whose name is the folder's gives worker, wherever the folder sits and whatever its branch", () => {
+    const r = repoWithWorktree('');
+    const dir = path.join(tmp(), 'w1');
+    git(r.main, 'worktree', 'add', '-q', '-b', 'other', dir);
+    const src = sources(r.main, { records: [recordNamed('w1')] });
+    expect(statesByName(src).w1).toEqual({ kind: 'worker', name: 'w1' });
+  });
+
+  test("a record whose native branch, or whose name, is the worktree's branch gives worker", () => {
+    const r = repoWithWorktree('');
+    git(
+      r.main,
+      'worktree',
+      'add',
+      '-q',
+      '-b',
+      'worktree-w1',
+      path.join(tmp(), 'x'),
+    );
+    git(r.main, 'worktree', 'add', '-q', '-b', 'w2', path.join(tmp(), 'y'));
+    const src = sources(r.main, {
+      records: [recordNamed('w1'), recordNamed('w2')],
+    });
+    expect(statesByName(src)).toEqual({
+      side: { kind: 'removable' },
+      x: { kind: 'worker', name: 'w1' },
+      y: { kind: 'worker', name: 'w2' },
+    });
+    expect(leftBehind(src).map((e) => path.basename(e.path))).toEqual(['side']);
+  });
+
   test('a deleted folder gives folder gone', () => {
     const r = repoWithWorktree('');
     fs.rmSync(r.worktree, { recursive: true, force: true });

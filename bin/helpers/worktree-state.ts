@@ -14,7 +14,7 @@ import { landedIn } from './worker-landed.js';
 import { statusEntriesIn, type WorktreeEntry } from './worker-listing.js';
 import type { WorkerRecord } from './worker-record.js';
 import { commitOf, HEADS, physical } from './worker-repo.js';
-import { nativeFolder } from './worker-worktree.js';
+import { nativeBranch, nativeFolder, shortBranch } from './worker-worktree.js';
 import { ignoredLosses } from './worktree-ignored.js';
 import { type LockState, lockStateOf } from './worktree-lock.js';
 
@@ -127,6 +127,20 @@ function unseenHold(src: CheapSources): string | undefined {
   return `unknown: a worker record would not read: ${src.unreadRecords.join('; ')}`;
 }
 
+// The worker `name`'s worktree by Claude Code's folder for it, by the folder's
+// name, or by the branch, Claude Code's or the worker's name. Each match errs
+// toward refusing and naming finish.
+function isWorkers(top: string, name: string, entry: WorktreeEntry): boolean {
+  const branch =
+    entry.branch === undefined ? undefined : shortBranch(entry.branch);
+  return (
+    physical(nativeFolder(top, name)) === physical(entry.path) ||
+    path.basename(entry.path) === name ||
+    branch === nativeBranch(name) ||
+    branch === name
+  );
+}
+
 /**
  * The state the checks that need no git give: held by a lock or a session, a
  * worker's, or held when the session rows, any of them, or a worker record
@@ -141,10 +155,8 @@ export function cheapState(
     lockHold(lock) ??
     (src.rows === undefined ? undefined : sessionHold(src.rows, entry));
   if (by !== undefined) return { kind: 'held', by };
-  const wanted = physical(entry.path);
-  const record = src.records.find(
-    (candidate) =>
-      physical(nativeFolder(src.repo.top, candidate.name)) === wanted,
+  const record = src.records.find((candidate) =>
+    isWorkers(src.repo.top, candidate.name, entry),
   );
   if (record !== undefined) return { kind: 'worker', name: record.name };
   const unseen = unseenHold(src);

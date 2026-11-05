@@ -36,7 +36,7 @@ The first match wins, in this order.
 | `held by pid N` | The worktree's lock names a process that is alive. |
 | `held by lock: <reason>` | The lock names no pid, so nothing says it is stale. |
 | `held by session <id>` | A current row of `claude agents --json --all` has its `cwd` inside the worktree. This covers a worktree Claude Code did not lock. |
-| `a worker's: sidekick worker finish` | A worker record names this folder. Clear it away with `sidekick worker finish`. |
+| `a worker's: sidekick worker finish` | A worker record names this worktree. The folder is the one Claude Code makes for that worker, or carries its name. Or the branch is `worktree-<name>`, or the worker's name itself. Clear it away with `sidekick worker finish`. |
 | `held, unknown: claude agents failed` | Without the session rows, nothing says no session is in the worktree. |
 | `held, unknown: claude agents gave a partial listing: …` | An entry of the listing would not parse, and may be a session in the worktree. |
 | `held, unknown: a current session lists no cwd: <id>` | Nothing says where that session is, so it may be in the worktree. |
