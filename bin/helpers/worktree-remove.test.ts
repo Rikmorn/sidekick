@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner, type Runner, type RunResult } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
-import { writeRecord } from './worker-record.js';
+import { recordsDir, writeRecord } from './worker-record.js';
 import { runWorktreeCli } from './worktree.js';
 import { skipListPath } from './worktree-ignored.js';
 
@@ -316,6 +316,41 @@ describe('worktree remove: refuses', () => {
     expect(code).toBe(1);
     expect(joined(err)).toContain('claude agents failed');
     expectUntouched(main, dir, 'worktree-old-y');
+  });
+
+  test('a worker record that does not parse, beside a removable worktree', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'r10-x');
+    const records = recordsDir(path.join(main, '.git'));
+    fs.mkdirSync(records, { recursive: true });
+    const broken = path.join(records, 'broken.json');
+    fs.writeFileSync(broken, '{not json');
+    const { code, out, err } = run(main, ['r10-x']);
+    expect(code).toBe(1);
+    expect(joined(err)).toContain('a worker record would not read');
+    expect(joined(err)).toContain(broken);
+    expect(out).toEqual([]);
+    expectUntouched(main, dir, 'worktree-r10-x');
+  });
+
+  test('a worker record that stops parsing after the checks', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'r10-x');
+    const records = recordsDir(path.join(main, '.git'));
+    const broken = path.join(records, 'broken.json');
+    const { code, err } = run(main, ['r10-x'], {
+      git: (args) => {
+        if (args[0] === 'update-ref' && args[1].startsWith('refs/sidekick/')) {
+          fs.mkdirSync(records, { recursive: true });
+          fs.writeFileSync(broken, '{not json');
+        }
+        return undefined;
+      },
+    });
+    expect(code).toBe(1);
+    expect(joined(err)).toContain(broken);
+    expect(listed(main, dir)).toBe(true);
+    expect(branchExists(main, 'worktree-r10-x')).toBe(true);
   });
 
   test('a lock written after the checks, before the removal', () => {

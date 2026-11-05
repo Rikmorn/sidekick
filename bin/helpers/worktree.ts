@@ -109,14 +109,15 @@ const listVerb: Verb = (rest, env, out, err) => {
   if (rest.length > 0) return usage(err);
   const repo = repoOf(env, err);
   if (repo === undefined) return 1;
-  const { src, listing, warnings } = readSources(env, repo);
+  const { src, listing, skipWarnings, recordWarnings } = readSources(env, repo);
   const listingWarnings =
     'error' in listing
       ? [
           `claude agents failed, so held states may be missing: ${listing.error}`,
         ]
       : listing.warnings;
-  for (const warning of [...listingWarnings, ...warnings]) out(warning);
+  const warnings = [...listingWarnings, ...skipWarnings, ...recordWarnings];
+  for (const warning of warnings) out(warning);
   const rows = worktreeRows(src, env.runGit);
   if (rows.length === 0) out('no linked worktrees');
   for (const row of rows) out(rowLine(row));

@@ -71,7 +71,7 @@ Every issue entry carries `item_id`, the board item's node id, so a write by id 
 
 `sidekick memory link <repo>` moves a repo's auto-memory into the memory store, and `sidekick memory lint` lists the store's defects; the repo's `README.md` §Memory covers both. In a linked repo, the memory start hook prints the matched workstream's state at session start and snapshots the store. Ask Claude to run `sk-save` before a `/clear` or at the end of a session, and it writes the session's record and the workstream's state.
 
-`sidekick worktree list` answers "keep or remove?" for every linked worktree of the repo, one line each: its state, where its commits live, its branch, and its path. It changes nothing, and lists the backup refs under `refs/sidekick/` after the rows. The skill's `references/worktrees.md` covers the states and the skip list.
+`sidekick worktree list` answers "keep or remove?" for every linked worktree of the repo, one line each: its state, where its commits live, its branch, and its path. It changes nothing, and lists the backup refs under `refs/sidekick/` after the rows. `sidekick worktree remove <name|path>` removes one worktree that `list` shows as `removable` or `folder gone`, keeping its branch in a backup ref. It needs `--discard` when the commits exist only in that worktree. The skill's `references/worktrees.md` covers the states and the skip list.
 
 ## Working with a worker session
 

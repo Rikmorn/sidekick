@@ -72,6 +72,7 @@ Each refusal names what it found and changes nothing. The checks run in this ord
 | The worktree that holds the command's own directory | Leave it first: in a Claude Code session, `ExitWorktree` with `keep`; in a shell, `cd` out. Then run `remove` from the main checkout. |
 | A worktree with another worktree inside its folder | Removing the outer folder would delete the inner worktree's files. Remove the inner one first. |
 | `claude agents` failed | Without the session rows, a worktree Claude Code did not lock looks free. |
+| A worker record that does not parse | It may be this worktree's worker's, so nothing says the worktree is free. The refusal names the record. |
 | `held` | A live session is in it, a lock names no pid, or a check failed. The refusal names which. |
 | `a worker's` | `sidekick worker finish` clears a worker, with its session and record. |
 | `dirty` | Removal would lose the files it names. It also names the skip list's path, for an ignored folder that is safe to lose. |
@@ -84,7 +85,7 @@ Each refusal names what it found and changes nothing. The checks run in this ord
 Once the checks pass, `remove` runs these in order, and the first that fails stops the rest:
 
 1. It writes the backup ref `refs/sidekick/<kind>/<name>/<head>`, create-only, before it deletes anything. The kind is `landed`, `pushed`, or `discarded`, from where the commits live. A ref already holding the head counts as written, so a re-run passes.
-2. It reads the session rows and the lock again. A session or a lock that appeared since the checks refuses, and the backup ref stays.
+2. It reads the session rows, the worker records, and the lock again. Anything that now holds the worktree refuses, and the backup ref stays.
 3. An exited background session whose `cwd` is inside the worktree goes first, by `claude rm <id>` with no time limit. When `claude rm` does not say `removed`, its text prints as a note, and git's removal follows.
 4. If git still lists the worktree, `remove` reads its lock once more. It unlocks a lock whose pid is dead, then runs `git worktree remove <path>`. A `folder gone` worktree goes the same way.
 5. It deletes the branch with `git update-ref -d` at the verified head, which refuses a branch that moved. Then it removes the branch's `branch.<name>` config section. A detached worktree has no branch to delete.

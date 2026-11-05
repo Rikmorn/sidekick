@@ -216,6 +216,16 @@ function backupPlan(
   return { entry, name, branch, head, ref: backupRef(kind, name, head) };
 }
 
+// A record that would not read may be this worktree's worker, so it refuses,
+// as a failed listing does.
+function unreadRecordLines(warnings: string[], entry: WorktreeEntry): string[] {
+  if (warnings.length === 0) return [];
+  return [
+    `a worker record would not read, so remove cannot tell whether ${entry.path} is a worker's, and took nothing:`,
+    ...warnings,
+  ];
+}
+
 // Steps 1 to 4, which change nothing.
 function checkTarget(
   args: RemoveArgs,
@@ -227,13 +237,18 @@ function checkTarget(
   if ('refused' in entry) return entry;
   const nested = nestedLines(repo, entry);
   if (nested.length > 0) return refuse(...nested);
-  const { src, listing, warnings } = readSources(env, alone(repo, entry));
+  const sources = readSources(env, alone(repo, entry));
+  const { src, listing } = sources;
   if ('error' in listing) {
     return refuse(
       `claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`,
     );
   }
-  for (const warning of [...listing.warnings, ...warnings]) out(warning);
+  const unread = unreadRecordLines(sources.recordWarnings, entry);
+  if (unread.length > 0) return refuse(...unread);
+  for (const warning of [...listing.warnings, ...sources.skipWarnings]) {
+    out(warning);
+  }
   const [row] = worktreeRows(src, env.runGit);
   const kept = stateLines(row.state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0) return refuse(...kept);
@@ -246,12 +261,14 @@ function recheck(
   repo: Repo,
   checked: Checked,
 ): ListingRow[] | Refused {
-  const { src, listing } = readSources(env, repo);
+  const { src, listing, recordWarnings } = readSources(env, repo);
   if ('error' in listing) {
     return refuse(
       `claude agents failed on the second look, so remove deleted nothing: ${listing.error}`,
     );
   }
+  const unread = unreadRecordLines(recordWarnings, checked.entry);
+  if (unread.length > 0) return refuse(...unread);
   const now = listWorktrees(env.runGit, repo.top);
   if ('issue' in now) {
     return refuse(

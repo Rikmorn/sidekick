@@ -35,8 +35,10 @@ export interface Sources {
   src: CheapSources;
   /** What `claude agents` gave; `src.rows` is undefined when it failed. */
   listing: ReturnType<typeof readListing>;
-  /** The skip list's and the worker records' warnings. */
-  warnings: string[];
+  /** The skip list's warnings. */
+  skipWarnings: string[];
+  /** One per worker record that would not read, which `src.records` then lacks. */
+  recordWarnings: string[];
 }
 
 /** The shared checks' sources for `repo`, read now. */
@@ -52,7 +54,8 @@ export function readSources(env: WorktreeEnv, repo: Repo): Sources {
       isAlive: env.isAlive,
     },
     listing,
-    warnings: [...skips.warnings, ...stored.warnings],
+    skipWarnings: skips.warnings,
+    recordWarnings: stored.warnings,
   };
 }
 

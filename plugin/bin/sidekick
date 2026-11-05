@@ -10805,7 +10805,8 @@ function readSources(env, repo) {
       isAlive: env.isAlive
     },
     listing,
-    warnings: [...skips.warnings, ...stored.warnings]
+    skipWarnings: skips.warnings,
+    recordWarnings: stored.warnings
   };
 }
 var heldWords = (by) => by.startsWith("unknown") ? `held, ${by}` : `held by ${by}`;
@@ -11059,6 +11060,14 @@ function backupPlan(env, repo, row2, discard2) {
     return kind;
   return { entry, name, branch, head, ref: backupRef(kind, name, head) };
 }
+function unreadRecordLines(warnings, entry) {
+  if (warnings.length === 0)
+    return [];
+  return [
+    `a worker record would not read, so remove cannot tell whether ${entry.path} is a worker's, and took nothing:`,
+    ...warnings
+  ];
+}
 function checkTarget(args, env, repo, out) {
   const entry = resolveTarget3(repo, env.cwd, args.target);
   if ("refused" in entry)
@@ -11066,12 +11075,17 @@ function checkTarget(args, env, repo, out) {
   const nested = nestedLines(repo, entry);
   if (nested.length > 0)
     return refuse6(...nested);
-  const { src, listing, warnings } = readSources(env, alone(repo, entry));
+  const sources = readSources(env, alone(repo, entry));
+  const { src, listing } = sources;
   if ("error" in listing) {
     return refuse6(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
   }
-  for (const warning of [...listing.warnings, ...warnings])
+  const unread = unreadRecordLines(sources.recordWarnings, entry);
+  if (unread.length > 0)
+    return refuse6(...unread);
+  for (const warning of [...listing.warnings, ...sources.skipWarnings]) {
     out(warning);
+  }
   const [row2] = worktreeRows(src, env.runGit);
   const kept = stateLines(row2.state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
@@ -11079,10 +11093,13 @@ function checkTarget(args, env, repo, out) {
   return backupPlan(env, repo, row2, args.discard);
 }
 function recheck(env, repo, checked2) {
-  const { src, listing } = readSources(env, repo);
+  const { src, listing, recordWarnings } = readSources(env, repo);
   if ("error" in listing) {
     return refuse6(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
   }
+  const unread = unreadRecordLines(recordWarnings, checked2.entry);
+  if (unread.length > 0)
+    return refuse6(...unread);
   const now = listWorktrees(env.runGit, repo.top);
   if ("issue" in now) {
     return refuse6(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
@@ -11245,11 +11262,12 @@ var listVerb = (rest2, env, out, err) => {
   const repo = repoOf2(env, err);
   if (repo === undefined)
     return 1;
-  const { src, listing, warnings } = readSources(env, repo);
+  const { src, listing, skipWarnings, recordWarnings } = readSources(env, repo);
   const listingWarnings = "error" in listing ? [
     `claude agents failed, so held states may be missing: ${listing.error}`
   ] : listing.warnings;
-  for (const warning of [...listingWarnings, ...warnings])
+  const warnings = [...listingWarnings, ...skipWarnings, ...recordWarnings];
+  for (const warning of warnings)
     out(warning);
   const rows = worktreeRows(src, env.runGit);
   if (rows.length === 0)
