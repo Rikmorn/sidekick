@@ -34,7 +34,7 @@ When the brief names a `workstream`, start from the State and Next steps that th
 
 When the hook printed a menu rather than the brief's workstream, read that workstream's file yourself. This happens for a worker the operator started, which has no `SIDEKICK_WORKER` for the hook to read the brief from.
 
-With the marker, `dispatch` already checked the fields, the files, the rulings folder, and `target`, and checked the worktree after launch when it could. Its own `HEAD` and branch checks below are the backstop when that check could not run. Read the brief, the plan, and the spec; a missing file fails that read. Then check only where you work, with literal git that the isolation guard passes: `git rev-parse HEAD` against `baseline`, `git status --porcelain --untracked-files=no` empty, and `git branch --show-current` equal to `worktree-<name>`.
+With the marker, `dispatch` already checked the fields, the files, the rulings folder, and `target`, and checked the worktree after launch when it could. Your own checks of `HEAD`, the tracked files, and the branch are the backstop when that check could not run. Read the brief, the plan, and the spec; a missing file fails that read. Then check only where you work, with literal git that the isolation guard passes: `git rev-parse HEAD` against `baseline`, `git status --porcelain --untracked-files=no` empty, and `git branch --show-current` equal to `worktree-<name>`.
 
 Without the marker, check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Every worktree shares the repo's branches, so `git rev-parse --verify <target>` answers from any of them, with no `git -C`. Then check where you work. There, `HEAD` is `baseline`, and no tracked file has uncommitted changes.
 
