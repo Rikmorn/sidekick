@@ -90,7 +90,7 @@ function parseJson(text: string): { value: unknown } | { error: string } {
 
 // The timeout stays under the mod's 8-second run timeout, so a slow listing
 // reports itself as a failure snapshot before the mod kills the run.
-function readListing(
+export function readListing(
   run: ClaudeRunner,
   cwd: string,
   timeoutMs = 5_000,

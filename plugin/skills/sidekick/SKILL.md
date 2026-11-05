@@ -1,6 +1,6 @@
 ---
 name: sidekick
-description: What the sidekick bundle is, what it depends on, how to deliver its rules into a repo, how to bring a repo under tracking on GitHub, and how the docs folders its rules and skills use work. Use when asked what sidekick is, how to install or update it, where the sk-* rules come from, how to set up the board and labels for a repo, how to make, list, or launch a profile, how sidekick memory link moves a repo's auto-memory into the memory store, how sidekick worker dispatches and finishes a plan's worker, or where a reference doc, design, research report, ADR, or learning record goes.
+description: What the sidekick bundle is, what it depends on, how to deliver its rules into a repo, how to bring a repo under tracking on GitHub, and how the docs folders its rules and skills use work. Use when asked what sidekick is, how to install or update it, where the sk-* rules come from, how to set up the board and labels for a repo, how to make, list, or launch a profile, how sidekick memory link moves a repo's auto-memory into the memory store, how sidekick worker dispatches and finishes a plan's worker, how `sidekick worktree` lists and removes worktrees, or where a reference doc, design, research report, ADR, or learning record goes.
 user-invocable: true
 ---
 
@@ -50,6 +50,10 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 ## Workers
 
 `sidekick worker` starts a plan's worker and clears it away. `dispatch <brief> --permission-mode <mode>` checks the brief, the launching checkout, and the `worker` profile. Then it starts `sk-worker` as a background session, in a worktree of its own, with pushes blocked. `finish <brief>` runs once the worker's branch is integrated. It saves the run report to the brief's `report` path and removes the worker's session, desk record, worktree, and branch. `sk-execute` §Hand off to a worker runs both, after the operator chooses the worker mode. `references/workers.md` covers the brief, what each verb checks, the record the desk lists a worker from, and the push block with what it does not guard. It also covers steering and stopping, the fallback when agent view is unavailable, and a suggested `worker` profile.
+
+## Worktrees
+
+`sidekick worktree list` prints one line per linked worktree: its state (`held`, a worker's, `folder gone`, `dirty`, or `removable`), where its commits live, its branch, and its path. Then it lists the backup refs under `refs/sidekick/`. It is read-only. `references/worktrees.md` covers each state, the checks behind it, and the skip list at `<git common dir>/sidekick/disposable` with the folders it leaves unguarded.
 
 ## Memory
 

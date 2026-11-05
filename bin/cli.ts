@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * sidekick — the plugin's executable, with the command families `rules`,
- * `pm`, `hook`, `profile`, `worker`, `desk`, `session`, and `memory`.
+ * `pm`, `hook`, `profile`, `worker`, `worktree`, `desk`, `session`, and `memory`.
  * Shipped as plugin/bin/sidekick (a Node bundle built from this file) and run
  * from source as `bun bin/cli.ts`; both resolve the shipped rules relative to
  * this file.
@@ -32,6 +32,7 @@ import {
   sleepSync,
   WORKER_USAGE_LINE,
 } from './helpers/worker.js';
+import { runWorktreeCli, WORKTREE_USAGE_LINE } from './helpers/worktree.js';
 
 /**
  * The plugin directory holds `rules/` and `.claude-plugin/plugin.json`.
@@ -76,7 +77,7 @@ export function isMainEntrypoint(
   }
 }
 
-export const USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       ${PROFILE_USAGE_LINE}\n       ${WORKER_USAGE_LINE}\n       ${DESK_USAGE_LINE}\n       ${SESSION_USAGE_LINE}\n       ${MEMORY_USAGE_LINE}\n       sidekick --version`;
+export const USAGE = `usage: sidekick rules <install|check> --project|--user [--strict]\n       ${PM_USAGE_LINE}\n       ${HOOK_USAGE_LINE}\n       ${PROFILE_USAGE_LINE}\n       ${WORKER_USAGE_LINE}\n       ${WORKTREE_USAGE_LINE}\n       ${DESK_USAGE_LINE}\n       ${SESSION_USAGE_LINE}\n       ${MEMORY_USAGE_LINE}\n       sidekick --version`;
 
 export interface MainContext {
   env: NodeJS.ProcessEnv;
@@ -86,7 +87,7 @@ export interface MainContext {
   readStdin?: () => string;
   /** Where the context monitor keeps its latch files and the profile check its temp file; defaults to the OS temp folder. */
   tmpdir?: string;
-  /** Runs `claude` for the `profile`, `worker`, `desk`, `session`, and `memory` families; defaults to the real one. */
+  /** Runs `claude` for the `profile`, `worker`, `worktree`, `desk`, `session`, and `memory` families; defaults to the real one. */
   runClaude?: ClaudeRunner;
   /** Raw stdout for `profile argv`; defaults to a synchronous write to fd 1. */
   write?: (chunk: string) => void;
@@ -157,6 +158,19 @@ export function main(
         ...profileEnvOf(ctx),
         runGit: execRunner,
         sleep: sleepSync,
+        isAlive: processIsAlive,
+      },
+      out,
+      err,
+    );
+  }
+  if (sub === 'worktree') {
+    return runWorktreeCli(
+      rest,
+      {
+        cwd: ctx.cwd,
+        runGit: execRunner,
+        runClaude: ctx.runClaude ?? execClaude,
         isAlive: processIsAlive,
       },
       out,

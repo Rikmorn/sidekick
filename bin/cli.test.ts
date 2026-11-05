@@ -17,6 +17,7 @@ import { DESK_USAGE_LINE } from './helpers/desk.js';
 import { PROFILE_USAGE_LINE } from './helpers/profile.js';
 import { SESSION_USAGE_LINE } from './helpers/session.js';
 import { WORKER_USAGE_LINE } from './helpers/worker.js';
+import { WORKTREE_USAGE_LINE } from './helpers/worktree.js';
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sk-cli-'));
@@ -414,6 +415,31 @@ describe('main: worker', () => {
     );
     expect(code).toBe(1);
     expect(err).toEqual([`usage: ${WORKER_USAGE_LINE}`]);
+  });
+});
+
+describe('main: worktree', () => {
+  const entryFileUrl = pathToFileURL(path.join(__dirname, 'cli.ts')).href;
+  test('USAGE names the worktree family', () => {
+    expect(USAGE).toContain(WORKTREE_USAGE_LINE);
+  });
+  test('worktree with no verb prints the worktree usage and returns 1', () => {
+    const err: string[] = [];
+    const code = main(
+      ['worktree'],
+      {
+        env: {},
+        cwd: process.cwd(),
+        entryFileUrl,
+        runClaude: () => {
+          throw new Error('no claude in tests');
+        },
+      },
+      () => {},
+      (l) => err.push(l),
+    );
+    expect(code).toBe(1);
+    expect(err).toEqual([`usage: ${WORKTREE_USAGE_LINE}`]);
   });
 });
 
