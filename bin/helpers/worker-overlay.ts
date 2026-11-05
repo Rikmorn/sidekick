@@ -18,7 +18,7 @@ const markers = (opts: { briefPath: string; main?: string }) => ({
 /** The git config key that prefixes every push URL with `sidekick-push-blocked::`, a remote helper that does not exist. */
 export const PUSH_REWRITE_KEY = 'url.sidekick-push-blocked::.pushInsteadOf';
 
-/** The permission rule that lets the worker run `sk-save` with no prompt. It names no other skill. */
+/** The permission rule that lets the worker run `sk-save` with no prompt. */
 export const SAVE_SKILL_RULE = 'Skill(sidekick:sk-save)';
 
 /** The permission rule that denies the worker's `git push` commands. */

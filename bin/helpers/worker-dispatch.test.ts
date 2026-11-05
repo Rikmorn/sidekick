@@ -57,7 +57,7 @@ function fixture(manifest: object = { description: 'Worker' }) {
 
 type Fixture = ReturnType<typeof fixture>;
 
-const readRulesOf = (fx: Fixture): string[] => [
+const allowRulesOf = (fx: Fixture): string[] => [
   ...[fx.brief, fx.fields.plan, fx.fields.spec, fx.fields.rulings].map(
     (p) => `Read(/${p})`,
   ),
@@ -614,7 +614,7 @@ describe('dispatch launches', () => {
         GIT_CONFIG_KEY_0: PUSH_REWRITE_KEY,
         GIT_CONFIG_VALUE_0: '',
       },
-      permissions: { deny: [PUSH_DENY_RULE], allow: readRulesOf(fx) },
+      permissions: { deny: [PUSH_DENY_RULE], allow: allowRulesOf(fx) },
       sidekick: { profile: 'worker' },
     });
   });
@@ -634,7 +634,7 @@ describe('dispatch launches', () => {
     expect(settingsOf(onlyLaunch(h))).toEqual({
       worktree: { baseRef: 'head' },
       env: { SIDEKICK_WORKER: fx.brief },
-      permissions: { allow: readRulesOf(fx) },
+      permissions: { allow: allowRulesOf(fx) },
       sidekick: { profile: 'worker' },
     });
     expect(h.out).toContain(
@@ -697,7 +697,7 @@ describe('dispatch launches', () => {
 });
 
 describe('dispatch from another checkout', () => {
-  const readRules = (call: Call): unknown => {
+  const allowRulesIn = (call: Call): unknown => {
     const permissions = settingsOf(call).permissions;
     return typeof permissions === 'object' && permissions !== null
       ? Reflect.get(permissions, 'allow')
@@ -721,7 +721,7 @@ describe('dispatch from another checkout', () => {
     const launch = onlyLaunch(h);
     expect(launch.opts.cwd).toBe(sib.top);
     expect(h.out).toContain(`lands in: sib · launched from ${sib.top}`);
-    expect(readRules(launch)).toEqual([
+    expect(allowRulesIn(launch)).toEqual([
       `Read(/${sib.brief})`,
       `Read(/${fx.fields.plan})`,
       `Read(/${fx.fields.spec})`,
@@ -773,7 +773,7 @@ describe('dispatch from another checkout', () => {
     const fx = fixture();
     const h = harness(fx);
     expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
-    expect(readRules(onlyLaunch(h))).toEqual(readRulesOf(fx));
+    expect(allowRulesIn(onlyLaunch(h))).toEqual(allowRulesOf(fx));
     expect(h.out.some((l) => l.includes('launched from'))).toBe(false);
   });
 
