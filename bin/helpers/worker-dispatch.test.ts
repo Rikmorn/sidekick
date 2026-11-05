@@ -92,6 +92,28 @@ const nativeLanding =
     return where;
   };
 
+// A commit beside the baseline, made without moving HEAD.
+const offBaseline = (fx: { top: string; head: string }): string =>
+  git(fx.top, 'commit-tree', `${fx.head}^{tree}`, '-p', fx.head, '-m', 'off');
+
+// Claude Code's own folder and branch, created at a commit other than the baseline.
+const offBaselineLanding =
+  (fx: { top: string }, at: string) =>
+  (launchCwd: string, name: string): string => {
+    const where = path.join(fx.top, '.claude', 'worktrees', name);
+    git(
+      launchCwd,
+      'worktree',
+      'add',
+      '-q',
+      where,
+      '-b',
+      `worktree-${name}`,
+      at,
+    );
+    return where;
+  };
+
 /**
  * Plays `doctor` with the canary's line, `plugin list --json`, `stop`, and the
  * agents listing from `state.agents`; any other call is the launch. A launch
@@ -1017,15 +1039,16 @@ describe("dispatch checks the worker's worktree after the launch", () => {
     expect(h.claude.stops().map((c) => c.opts.cwd)).toEqual([sib.top]);
   });
 
-  test('no worktree at all: the way out drops the hook, and quotes the brief path', () => {
+  test('a worktree off the baseline: the way out drops the hook, and quotes the brief path', () => {
     const fx = fixture();
     const spaced = path.join(fx.docs, 'my brief.md');
     fs.copyFileSync(fx.brief, spaced);
     const h = harness(fx);
-    h.claude.state.land = (launchCwd) => launchCwd;
+    const other = offBaseline(fx);
+    h.claude.state.land = offBaselineLanding(fx, other);
     expect(h.dispatch(spaced, '--permission-mode', 'auto')).toBe(1);
     expect(h.err).toEqual([
-      `the worker runs in the launching checkout ${fx.top}, not in a worktree of its own at ${path.join(fx.top, '.claude', 'worktrees', 'w1')}: claude made no worktree for it`,
+      `the worker's worktree was created at ${other}, not the baseline ${fx.head}: worktree.baseRef is likely not "head" for this launch`,
       `dispatch stopped the worker with claude stop ${JOB}. Then run: sidekick worker finish '${spaced}' --discard`,
     ]);
   });
@@ -1033,7 +1056,7 @@ describe("dispatch checks the worker's worktree after the launch", () => {
   test('a stop that fails says so, and the way out starts with the stop', () => {
     const fx = fixture();
     const h = harness(fx);
-    h.claude.state.land = (launchCwd) => launchCwd;
+    h.claude.state.land = offBaselineLanding(fx, offBaseline(fx));
     h.claude.state.stop = ok({ code: 4, stderr: 'no such job\n' });
     expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(1);
     expect(h.err.slice(1)).toEqual([

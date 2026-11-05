@@ -9087,14 +9087,17 @@ function landingOnce(input, jobId, readTimeoutMs) {
 function landing(input, jobId, reads) {
   for (let tried = 1;; tried += 1) {
     const now = landingOnce(input, jobId, reads.readTimeoutMs);
-    const settled = now.kind === "found" || now.kind === "failed";
-    if (settled)
+    if (now.kind === "found" || now.kind === "failed")
       return now;
-    if (tried >= reads.tries) {
-      return now.kind === "missing" ? { kind: "missing", saw: `after ${reads.tries} tries, ${now.saw}` } : now;
-    }
+    const limit = now.kind === "checkout" ? reads.creationTries : reads.tries;
+    if (tried >= limit)
+      return { kind: "missing", saw: lastSaw(now, tried) };
     input.sleep(reads.intervalMs);
   }
+}
+function lastSaw(now, tried) {
+  const saw = now.kind === "checkout" ? `the job still runs in ${now.checkout}, so a slow WorktreeCreate hook or .worktreeinclude copy may still be making its worktree` : now.saw;
+  return `after ${tried} tries, ${saw}`;
 }
 function creationCommit(runGit, top, ref2) {
   if (ref2 === undefined) {
@@ -9163,25 +9166,25 @@ function judge2(input, entry, job) {
   };
 }
 function verifyWorktree(input) {
-  const { jobId, tries = 5, intervalMs = 1000, readTimeoutMs = 1e4 } = input;
+  const {
+    jobId,
+    tries = 5,
+    creationTries = 30,
+    intervalMs = 1000,
+    readTimeoutMs = 1e4
+  } = input;
   if (jobId === null) {
     return unchecked2(`claude's output named no job id for ${input.name}`);
   }
-  const found = landing(input, jobId, { tries, intervalMs, readTimeoutMs });
+  const found = landing(input, jobId, {
+    tries,
+    creationTries,
+    intervalMs,
+    readTimeoutMs
+  });
   switch (found.kind) {
     case "found":
       return judge2(input, found.entry, jobId);
-    case "checkout": {
-      const expected = nativeFolder(input.mainTop, input.name);
-      return {
-        kind: "mismatch",
-        cause: "no worktree",
-        lines: [
-          `the worker runs in ${found.checkout}, not in a worktree of its own at ${expected}: claude made no worktree for it`
-        ],
-        job: jobId
-      };
-    }
     case "missing":
     case "failed":
       return unchecked2(found.saw);

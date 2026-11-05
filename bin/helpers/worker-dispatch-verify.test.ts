@@ -233,15 +233,11 @@ describe('verifyWorktree refuses', () => {
     const r = twoCommits();
     const claude = fakeListing([jobRow(spell(r.top))]);
     expect(verifyAt(r, claude)).toEqual({
-      kind: 'mismatch',
-      cause: 'no worktree',
-      job: JOB,
-      lines: [
-        `the worker runs in the launching checkout ${r.top}, not in a worktree of its own at ${r.native}: claude made no worktree for it`,
-      ],
+      kind: 'unchecked',
+      line: `the worktree check did not run: after 30 tries, the job still runs in the launching checkout ${r.top}, so a slow WorktreeCreate hook or .worktreeinclude copy may still be making its worktree`,
     });
-    expect(claude.calls).toHaveLength(5);
-    expect(claude.sleeps).toEqual([1000, 1000, 1000, 1000]);
+    expect(claude.calls).toHaveLength(30);
+    expect(claude.sleeps).toEqual(Array(29).fill(1000));
   });
 
   test('a cwd that stays the main checkout, launched from a linked worktree', () => {
@@ -252,14 +248,35 @@ describe('verifyWorktree refuses', () => {
     const claude = fakeListing([jobRow(r.top)]);
     const where = { top: r.top, head: sibHead, launchTop: sib };
     expect(verifyAt(where, claude)).toEqual({
-      kind: 'mismatch',
-      cause: 'no worktree',
-      job: JOB,
-      lines: [
-        `the worker runs in the main checkout ${r.top}, not in a worktree of its own at ${r.native}: claude made no worktree for it`,
-      ],
+      kind: 'unchecked',
+      line: `the worktree check did not run: after 30 tries, the job still runs in the main checkout ${r.top}, so a slow WorktreeCreate hook or .worktreeinclude copy may still be making its worktree`,
     });
-    expect(claude.sleeps).toEqual([1000, 1000, 1000, 1000]);
+    expect(claude.sleeps).toEqual(Array(29).fill(1000));
+  });
+
+  // A slow creator keeps the job's cwd at the launching checkout until it ends:
+  // 8 s under a scratch WorktreeCreate hook (R10 plan 9's after-file, 2026-11-05).
+  test('a slow creator: a cwd at the launching checkout for 8 reads, then the worktree, matches', () => {
+    const r = twoCommits();
+    git(r.top, 'worktree', 'add', '-q', r.native, '-b', 'worktree-w1');
+    const claude = fakeListing(...Array(8).fill([jobRow(r.top)]), [
+      jobRow(r.native),
+    ]);
+    expect(verifyAt(r, claude)).toEqual({ kind: 'matches' });
+    expect(claude.calls).toHaveLength(9);
+  });
+
+  test('a slow hook: a cwd at the launching checkout for 8 reads, then its sibling, refuses as creator', () => {
+    const r = twoCommits();
+    const hooked = path.join(tmp(), 'repo.w1');
+    git(r.top, 'worktree', 'add', '-q', hooked, '-b', 'w1');
+    const claude = fakeListing(...Array(8).fill([jobRow(r.top)]), [
+      jobRow(hooked),
+    ]);
+    expect(verifyAt(r, claude)).toMatchObject({
+      kind: 'mismatch',
+      cause: 'creator',
+    });
   });
 
   test('a cwd at a checkout that leaves the listing on the last read is unchecked, not refused', () => {

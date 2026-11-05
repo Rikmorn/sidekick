@@ -108,9 +108,9 @@ Once the checks pass, `dispatch` acts in this order:
    - the branch is `worktree-<name>`;
    - the branch was created at `baseline`, as the oldest entry of its reflog says.
 
-   The row's `cwd` finds the worktree, since a `WorktreeCreate` hook makes no `worktree-<name>` branch to find it by. The check reads up to 5 times, a second apart, each read limited to 10 seconds. It reads again while the row, its `cwd`, or a listed worktree there is missing. It also reads again while the `cwd` is the launching checkout or the main checkout. A `cwd` still at either on the last read means no worktree was made, which refuses as a mismatch.
+   The row's `cwd` finds the worktree, since a `WorktreeCreate` hook makes no `worktree-<name>` branch to find it by. The check reads up to 5 times, a second apart, each read limited to 10 seconds. It reads again while the row, its `cwd`, or a listed worktree there is missing. While the `cwd` is still the launching checkout or the main checkout, it reads up to 30 times. A slow creator keeps the `cwd` there until the worktree exists: a `WorktreeCreate` hook that slept 8 seconds did.
 
-   When the check cannot run, it goes on as for a match: it prints the summary, then one line on stderr saying why. That happens when the output names no job id, or when a failing `claude agents` or `git worktree list` call ends the reads. It also happens when the last read still misses the row, its `cwd`, or a listed worktree there. So does a branch with no reflog.
+   When the check cannot run, it goes on as for a match: it prints the summary, then one line on stderr saying why. That happens when the output names no job id, or when a failing `claude agents` or `git worktree list` call ends the reads. It also happens when the last read still misses the row, its `cwd`, or a listed worktree there, or still finds the `cwd` at a checkout. So does a branch with no reflog. Then the worker's own start check of `HEAD` and the branch is the backstop.
 
    On a match, or when the check did not run, it prints a summary:
 

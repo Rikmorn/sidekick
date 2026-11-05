@@ -5,7 +5,8 @@
  * on `worktree-<name>`, created at the brief's baseline. The job's `cwd` in the
  * agents listing finds the worktree, since a `WorktreeCreate` hook makes no
  * `worktree-<name>` branch to find it by. What the check cannot read, it
- * reports as not run, and never refuses on.
+ * reports as not run, and never refuses on. A `cwd` still at a checkout is
+ * such a case: a slow creator keeps it there until the worktree exists.
  */
 
 import * as path from 'node:path';
@@ -21,8 +22,8 @@ export type WorktreeVerdict =
   | { kind: 'matches' }
   | {
       kind: 'mismatch';
-      /** `creator`: a wrong path or branch; `base`: a wrong creation commit on the right ones; `no worktree`: the job's `cwd` stayed at a checkout. */
-      cause: 'creator' | 'base' | 'no worktree';
+      /** `creator`: a wrong path or branch; `base`: a wrong creation commit on the right ones. */
+      cause: 'creator' | 'base';
       /** What was found against what was expected. */
       lines: string[];
       /** The job judged, which the caller stops. */
@@ -41,16 +42,19 @@ export interface VerifyInput {
   launchTop: string;
   /** The brief's baseline, which dispatch's checks resolved to the launching checkout's HEAD. */
   baseline: string;
-  /** How many times to read the listing while the job's worktree is missing, or its `cwd` is a checkout. */
+  /** How many times to read the listing while the job's row, its `cwd`, or the worktree there is missing. */
   tries?: number;
+  /** How many times to read while the job's `cwd` is still the launching or the main checkout. A slow `WorktreeCreate` hook or `.worktreeinclude` copy keeps it there; a hook that sleeps 8 s did. */
+  creationTries?: number;
   /** The wait between reads. */
   intervalMs?: number;
-  /** Each read's limit. Five reads at 10 s, a second apart, take under 55 s. */
+  /** Each read's limit. A read that runs out ends the reads. */
   readTimeoutMs?: number;
 }
 
 interface Reads {
   tries: number;
+  creationTries: number;
   intervalMs: number;
   readTimeoutMs: number;
 }
@@ -112,20 +116,29 @@ function landingOnce(
   return { kind: 'found', entry };
 }
 
-// The last read decides, so a cwd seen at a checkout early on, while the
-// worktree is still being made, refuses only if it stays there.
-function landing(input: VerifyInput, jobId: string, reads: Reads): Landing {
+type Settled = Exclude<Landing, { kind: 'checkout' }>;
+
+// Reads until the worktree is found, a read fails, or the reads for what the
+// last one saw run out. A cwd at a checkout gets the longer creation budget.
+function landing(input: VerifyInput, jobId: string, reads: Reads): Settled {
   for (let tried = 1; ; tried += 1) {
     const now = landingOnce(input, jobId, reads.readTimeoutMs);
-    const settled = now.kind === 'found' || now.kind === 'failed';
-    if (settled) return now;
-    if (tried >= reads.tries) {
-      return now.kind === 'missing'
-        ? { kind: 'missing', saw: `after ${reads.tries} tries, ${now.saw}` }
-        : now;
-    }
+    if (now.kind === 'found' || now.kind === 'failed') return now;
+    const limit = now.kind === 'checkout' ? reads.creationTries : reads.tries;
+    if (tried >= limit) return { kind: 'missing', saw: lastSaw(now, tried) };
     input.sleep(reads.intervalMs);
   }
+}
+
+function lastSaw(
+  now: Extract<Landing, { kind: 'missing' | 'checkout' }>,
+  tried: number,
+): string {
+  const saw =
+    now.kind === 'checkout'
+      ? `the job still runs in ${now.checkout}, so a slow WorktreeCreate hook or .worktreeinclude copy may still be making its worktree`
+      : now.saw;
+  return `after ${tried} tries, ${saw}`;
 }
 
 // The commit a branch was created at: the oldest entry of its reflog, the last
@@ -230,29 +243,30 @@ function judge(
  * Judges the worktree the job `jobId` runs in. It reads the job's row from
  * the launching checkout, retrying while the row, its `cwd`, or a worktree git
  * lists at that `cwd` is missing. It also retries while the `cwd` is the
- * launching or the main checkout. A `cwd` still there on the last read means
- * no worktree was made.
+ * launching or the main checkout, for longer, since a slow creator keeps it
+ * there. A `cwd` still there after those reads leaves the check unrun, and the
+ * worker's own start check is the backstop.
  */
 export function verifyWorktree(input: VerifyInput): WorktreeVerdict {
-  const { jobId, tries = 5, intervalMs = 1000, readTimeoutMs = 10_000 } = input;
+  const {
+    jobId,
+    tries = 5,
+    creationTries = 30,
+    intervalMs = 1000,
+    readTimeoutMs = 10_000,
+  } = input;
   if (jobId === null) {
     return unchecked(`claude's output named no job id for ${input.name}`);
   }
-  const found = landing(input, jobId, { tries, intervalMs, readTimeoutMs });
+  const found = landing(input, jobId, {
+    tries,
+    creationTries,
+    intervalMs,
+    readTimeoutMs,
+  });
   switch (found.kind) {
     case 'found':
       return judge(input, found.entry, jobId);
-    case 'checkout': {
-      const expected = nativeFolder(input.mainTop, input.name);
-      return {
-        kind: 'mismatch',
-        cause: 'no worktree',
-        lines: [
-          `the worker runs in ${found.checkout}, not in a worktree of its own at ${expected}: claude made no worktree for it`,
-        ],
-        job: jobId,
-      };
-    }
     case 'missing':
     case 'failed':
       return unchecked(found.saw);
