@@ -492,6 +492,28 @@ describe('checkMove: the move each branch needs', () => {
     });
   });
 
+  test('--from origin/<trunk>~1 is no branch name, so it resolves from the last fetch', () => {
+    const f = fixture();
+    const fetched = commit(f.main, 'c.txt');
+    git(f.main, 'update-ref', `refs/remotes/origin/${f.trunk}`, fetched);
+    const from = `origin/${f.trunk}~1`;
+    const sha = git(f.main, 'rev-parse', `refs/remotes/origin/${f.trunk}~1`);
+    const { result } = check(f.dir, f.main, ['feat', '--from', from]);
+    expect(planOf(result, f)).toEqual({
+      kind: 'new',
+      branch: 'feat',
+      base: { kind: 'local', rev: from, sha },
+    });
+  });
+
+  test("--from 'origin/*' is no branch name and names no commit, refused", () => {
+    const f = fixture();
+    const { result } = check(f.dir, f.main, ['feat', '--from', 'origin/*']);
+    expect(refused(result)).toEqual([
+      "--from origin/* names no commit: give a branch, tag, or commit, or <remote>/<branch> for a remote's branch",
+    ]);
+  });
+
   test('--from naming no commit, refused', () => {
     const f = fixture();
     const { result } = check(f.dir, f.main, ['feat', '--from', 'nope']);

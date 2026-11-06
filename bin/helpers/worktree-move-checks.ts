@@ -298,17 +298,34 @@ function nameRefusal(
   dir: string,
   branch: string,
 ): Refused | undefined {
-  const result = runGit('git', ['check-ref-format', '--branch', branch], dir);
-  if (result.code !== 0) {
+  const verdict = branchNameOf(runGit, dir, branch);
+  if ('issue' in verdict) {
     return refuse(
-      `git check-ref-format refuses ${branch}: ${gitWords(result.stderr)}. Choose another name`,
+      `git check-ref-format refuses ${branch}: ${verdict.issue}. Choose another name`,
     );
   }
-  const read = result.stdout.trim();
-  if (read === branch) return undefined;
+  if (verdict.read === branch) return undefined;
   return refuse(
-    `git reads ${branch} as the branch ${read}: name it as ${read}`,
+    `git reads ${branch} as the branch ${verdict.read}: name it as ${verdict.read}`,
   );
+}
+
+// The name `git check-ref-format --branch` reads `name` as, which differs for
+// `@{-N}`, or git's words when it refuses the name.
+function branchNameOf(
+  runGit: Runner,
+  dir: string,
+  name: string,
+): { read: string } | { issue: string } {
+  const result = runGit('git', ['check-ref-format', '--branch', name], dir);
+  if (result.code !== 0) return { issue: gitWords(result.stderr) };
+  return { read: result.stdout.trim() };
+}
+
+// A name git takes as a branch as typed, so a refspec built from it fetches one branch.
+function isPlainBranchName(runGit: Runner, dir: string, name: string): boolean {
+  const verdict = branchNameOf(runGit, dir, name);
+  return 'read' in verdict && verdict.read === name;
 }
 
 function remotesOf(runGit: Runner, dir: string): string[] | Refused {
@@ -403,7 +420,9 @@ function onOrigin(
   return result.stdout.split('\n').some((line) => line.split('\t')[1] === ref);
 }
 
-// `<remote>/<b>` is a remote's branch unless a local branch has the whole name.
+// `<remote>/<b>` is a remote's branch when `<b>` is a branch name as typed and
+// no local branch has the whole name. Anything else, such as `origin/main~1`,
+// resolves as a commit from the last fetch.
 function baseOf(
   runGit: Runner,
   dir: string,
@@ -414,11 +433,12 @@ function baseOf(
   const remote = remoteOf(from, remotes);
   const remoteBranch =
     remote === undefined ? '' : from.slice(remote.length + 1);
-  if (
+  const isRemoteBranch =
     remote !== undefined &&
     remoteBranch !== '' &&
-    !branchExists(runGit, dir, from)
-  ) {
+    isPlainBranchName(runGit, dir, remoteBranch) &&
+    !branchExists(runGit, dir, from);
+  if (isRemoteBranch) {
     return { kind: 'remote', remote, branch: remoteBranch };
   }
   const sha = commitOf(runGit, dir, from);
