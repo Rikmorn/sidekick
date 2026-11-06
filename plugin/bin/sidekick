@@ -7268,6 +7268,17 @@ function unseenHold(src) {
     return;
   return `unknown: a worker record would not read: ${src.unreadRecords.join("; ")}`;
 }
+function mainCheckoutUse(src) {
+  if (src.rows === undefined)
+    return { kind: "unknown", why: "claude agents failed" };
+  const partial = partialListing(src.rows, src.listingWarnings);
+  if (partial !== undefined)
+    return { kind: "unknown", why: partial };
+  const main = src.repo.worktrees[0].path;
+  const worktrees = linked(src.repo);
+  const by = src.rows.filter((row) => isCurrent(row) && row.cwd !== undefined && sessionInside(row.cwd, main) && !worktrees.some((w) => row.cwd !== undefined && sessionInside(row.cwd, w.path))).map((row) => `session ${rowName(row)}`);
+  return by.length === 0 ? { kind: "free" } : { kind: "in use", by };
+}
 function isWorkers(top, name, entry) {
   const branch = entry.branch === undefined ? undefined : shortBranch(entry.branch);
   return physical(nativeFolder(top, name)) === physical(entry.path) || path32.basename(entry.path) === name || branch === nativeBranch(name) || branch === name;
@@ -12138,6 +12149,28 @@ function rowLine(row2) {
   fields.push(row2.entry.path);
   return fields.join(SEPARATOR3);
 }
+function mainUseWords(use) {
+  switch (use.kind) {
+    case "free":
+      return "free";
+    case "in use":
+      return `in use by ${use.by.join(", ")}`;
+    case "unknown":
+      return `unknown: ${use.why}`;
+    default: {
+      const _exhaustive = use;
+      throw new Error(`Unhandled use: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+function mainCheckoutLine(main, use) {
+  return [
+    "main checkout",
+    mainUseWords(use),
+    main.branch?.replace(HEADS, "") ?? "detached",
+    main.path
+  ].join(SEPARATOR3);
+}
 function backupRefLines(runGit, top) {
   const refs = runGit("git", ["for-each-ref", "--format=%(refname) %(committerdate:short)", BACKUP_REFS], top);
   if (refs.code !== 0) {
@@ -12174,11 +12207,15 @@ var listVerb = (rest2, env, out, err) => {
   ];
   for (const warning of warnings)
     out(warning);
+  out(mainCheckoutLine(repo.worktrees[0], mainCheckoutUse(src)));
   const rows = worktreeRows(src, env.runGit);
   if (rows.length === 0)
     out("no linked worktrees");
   for (const row2 of rows)
     out(rowLine(row2));
+  const goes = rows.some((row2) => row2.state.kind === "removable" || row2.state.kind === "folder gone");
+  if (goes)
+    out(REMOVE_HINT);
   const backups = backupRefLines(env.runGit, repo.top);
   if ("issue" in backups) {
     err(backups.issue);
@@ -12186,9 +12223,6 @@ var listVerb = (rest2, env, out, err) => {
   }
   for (const line of backups)
     out(line);
-  const goes = rows.some((row2) => row2.state.kind === "removable" || row2.state.kind === "folder gone");
-  if (goes)
-    out(REMOVE_HINT);
   return 0;
 };
 var moveVerb = (rest2, env, out, err) => {

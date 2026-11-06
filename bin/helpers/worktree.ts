@@ -1,12 +1,14 @@
 /**
- * `sidekick worktree`: `list` prints one line per linked worktree saying
- * whether to keep or remove it, then the backup refs earlier removals left, and
+ * `sidekick worktree`: `list` prints a row for the main checkout naming who
+ * works there, one line per linked worktree saying whether to keep or remove it,
+ * the hint to remove one, then the backup refs earlier removals left, and
  * changes nothing. `move` lives in `worktree-move.ts`, and `remove` in
  * `worktree-remove.ts`. Usage errors and git failures print to stderr and
  * return 1.
  */
 
 import type { Runner } from './pm-data.js';
+import type { WorktreeEntry } from './worker-listing.js';
 import { HEADS } from './worker-repo.js';
 import { moveWorktree, parseMoveArgs } from './worktree-move.js';
 import {
@@ -21,6 +23,8 @@ import {
 import { parseRemoveArgs, removeWorktree } from './worktree-remove.js';
 import {
   type CommitsAt,
+  type MainUse,
+  mainCheckoutUse,
   type WorktreeRow,
   type WorktreeState,
   worktreeRows,
@@ -86,6 +90,31 @@ function rowLine(row: WorktreeRow): string {
   return fields.join(SEPARATOR);
 }
 
+function mainUseWords(use: MainUse): string {
+  switch (use.kind) {
+    case 'free':
+      return 'free';
+    case 'in use':
+      return `in use by ${use.by.join(', ')}`;
+    case 'unknown':
+      return `unknown: ${use.why}`;
+    default: {
+      const _exhaustive: never = use;
+      throw new Error(`Unhandled use: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+
+// A contract line with plan 11b's skill: the fields and their order.
+function mainCheckoutLine(main: WorktreeEntry, use: MainUse): string {
+  return [
+    'main checkout',
+    mainUseWords(use),
+    main.branch?.replace(HEADS, '') ?? 'detached',
+    main.path,
+  ].join(SEPARATOR);
+}
+
 // The ref holds no creation date, so the date is its commit's.
 function backupRefLines(
   runGit: Runner,
@@ -133,19 +162,20 @@ const listVerb: Verb = (rest, env, out, err) => {
     ...src.unreadRecords,
   ];
   for (const warning of warnings) out(warning);
+  out(mainCheckoutLine(repo.worktrees[0], mainCheckoutUse(src)));
   const rows = worktreeRows(src, env.runGit);
   if (rows.length === 0) out('no linked worktrees');
   for (const row of rows) out(rowLine(row));
+  const goes = rows.some(
+    (row) => row.state.kind === 'removable' || row.state.kind === 'folder gone',
+  );
+  if (goes) out(REMOVE_HINT);
   const backups = backupRefLines(env.runGit, repo.top);
   if ('issue' in backups) {
     err(backups.issue);
     return 1;
   }
   for (const line of backups) out(line);
-  const goes = rows.some(
-    (row) => row.state.kind === 'removable' || row.state.kind === 'folder gone',
-  );
-  if (goes) out(REMOVE_HINT);
   return 0;
 };
 

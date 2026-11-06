@@ -68,7 +68,7 @@ describe('worktree list: one line per state', () => {
     expect(lineFor(out, 'r10-x')).toBe(
       `r10-x · removable · landed in ${branch} · worktree-r10-x · ${dir}`,
     );
-    expect(out.at(-1)).toBe('remove one with: sidekick worktree remove <name>');
+    expect(out).toContain('remove one with: sidekick worktree remove <name>');
   });
 
   test('a folder gone with unlanded commits counts them', () => {
@@ -82,7 +82,7 @@ describe('worktree list: one line per state', () => {
     expect(lineFor(out, 'old-y')).toBe(
       `old-y · folder gone · only here, 3 commits · worktree-old-y · ${dir}`,
     );
-    expect(out.at(-1)).toBe('remove one with: sidekick worktree remove <name>');
+    expect(out).toContain('remove one with: sidekick worktree remove <name>');
   });
 
   test('a dirty worktree names its files and where the commits were pushed', () => {
@@ -181,18 +181,78 @@ describe('worktree list: one line per state', () => {
 });
 
 describe('worktree list: the frame', () => {
-  test('the main checkout gets no row', () => {
+  test('the main checkout is the first line, free with no sessions', () => {
     const main = repo();
     addWorktree(main, 'one');
+    const branch = git(main, 'branch', '--show-current');
     const { out } = run(main, ['list']);
-    expect(out.filter((l) => l.includes(` · ${main}`))).toEqual([]);
+    expect(out[0]).toBe(`main checkout · free · ${branch} · ${main}`);
+    expect(out[1]).toStartWith('one · ');
   });
 
-  test('no linked worktrees prints one line and no hint', () => {
+  test('the main checkout names each session that works in it', () => {
     const main = repo();
+    addWorktree(main, 'one');
+    const branch = git(main, 'branch', '--show-current');
+    const rows = [
+      { sessionId: '3f2a', pid: 1, kind: 'interactive', cwd: main },
+      { sessionId: '9c1d', pid: 2, kind: 'interactive', cwd: main },
+    ];
+    const claude: ClaudeResult = {
+      ...NO_SESSIONS,
+      stdout: JSON.stringify(rows),
+    };
+    const { out } = run(main, ['list'], claude);
+    expect(out[0]).toBe(
+      `main checkout · in use by session 3f2a, session 9c1d · ${branch} · ${main}`,
+    );
+  });
+
+  test('the main checkout row follows a warning and reads unknown when the listing failed', () => {
+    const main = repo();
+    const branch = git(main, 'branch', '--show-current');
+    const failed: ClaudeResult = {
+      code: 1,
+      stdout: '',
+      stderr: 'boom',
+      timedOut: false,
+    };
+    const { out } = run(main, ['list'], failed);
+    expect(out[0]).toStartWith('claude agents failed, ');
+    expect(out[1]).toBe(
+      `main checkout · unknown: claude agents failed · ${branch} · ${main}`,
+    );
+  });
+
+  test('a detached main checkout says detached', () => {
+    const main = repo();
+    git(main, 'switch', '-q', '--detach');
+    const { out } = run(main, ['list']);
+    expect(out[0]).toBe(`main checkout · free · detached · ${main}`);
+  });
+
+  test('the hint follows the worktree rows and precedes the backup refs', () => {
+    const main = repo();
+    addWorktree(main, 'one');
+    const head = git(main, 'rev-parse', 'HEAD');
+    git(main, 'update-ref', `refs/sidekick/landed/gone/${head}`, head);
+    const { out } = run(main, ['list']);
+    const hint = out.indexOf(
+      'remove one with: sidekick worktree remove <name>',
+    );
+    expect(hint).toBe(out.findIndex((l) => l.startsWith('one · ')) + 1);
+    expect(out.indexOf('backup refs:')).toBe(hint + 1);
+  });
+
+  test('no linked worktrees prints the main checkout row, then one line, and no hint', () => {
+    const main = repo();
+    const branch = git(main, 'branch', '--show-current');
     const { code, out } = run(main, ['list']);
     expect(code).toBe(0);
-    expect(out).toEqual(['no linked worktrees']);
+    expect(out).toEqual([
+      `main checkout · free · ${branch} · ${main}`,
+      'no linked worktrees',
+    ]);
   });
 
   test('backup refs follow the rows, with their commit dates', () => {

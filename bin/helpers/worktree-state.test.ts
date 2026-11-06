@@ -16,6 +16,7 @@ import {
   type CheapSources,
   commitsAt,
   leftBehind,
+  mainCheckoutUse,
   sessionInside,
   worktreeRows,
 } from './worktree-state.js';
@@ -439,5 +440,78 @@ describe('commitsAt', () => {
     const head = commitFile(r.worktree, 'b.txt');
     git(r.main, 'checkout', '-q', '--detach');
     expect(commitsFor(r.main, head).kind).toBe('unknown');
+  });
+});
+
+describe('mainCheckoutUse', () => {
+  test('no rows: free', () => {
+    const r = repoWithWorktree('');
+    expect(mainCheckoutUse(sources(r.main))).toEqual({ kind: 'free' });
+  });
+
+  test('current rows at the top and in a subfolder: in use, naming both', () => {
+    const r = repoWithWorktree('');
+    fs.mkdirSync(path.join(r.main, 'sub'));
+    const rows: ListingRow[] = [
+      { sessionId: 'aaa', pid: 1, cwd: r.main },
+      { sessionId: 'bbb', pid: 2, cwd: path.join(r.main, 'sub') },
+    ];
+    expect(mainCheckoutUse(sources(r.main, { rows }))).toEqual({
+      kind: 'in use',
+      by: ['session aaa', 'session bbb'],
+    });
+  });
+
+  test('a current row in a linked worktree under the main checkout: free', () => {
+    const r = repoWithWorktree('');
+    const dir = path.join(r.main, '.claude', 'worktrees', 'inner');
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    git(r.main, 'worktree', 'add', '-q', '-b', 'worktree-inner', dir);
+    const rows: ListingRow[] = [{ sessionId: 'aaa', pid: 1, cwd: dir }];
+    expect(mainCheckoutUse(sources(r.main, { rows }))).toEqual({
+      kind: 'free',
+    });
+  });
+
+  test('an exited background row at the main checkout: free', () => {
+    const r = repoWithWorktree('');
+    const rows: ListingRow[] = [
+      { sessionId: 'aaa', kind: 'background', state: 'done', cwd: r.main },
+    ];
+    expect(mainCheckoutUse(sources(r.main, { rows }))).toEqual({
+      kind: 'free',
+    });
+  });
+
+  test('a failed listing: unknown', () => {
+    const r = repoWithWorktree('');
+    expect(mainCheckoutUse(sources(r.main, { rows: undefined }))).toEqual({
+      kind: 'unknown',
+      why: 'claude agents failed',
+    });
+  });
+
+  test('a listing warning: unknown', () => {
+    const r = repoWithWorktree('');
+    const use = mainCheckoutUse(sources(r.main, { listingWarnings: ['odd'] }));
+    expect(use).toEqual({
+      kind: 'unknown',
+      why: 'claude agents gave a partial listing: odd',
+    });
+  });
+
+  test('a current row with no cwd: unknown', () => {
+    const r = repoWithWorktree('');
+    const rows: ListingRow[] = [{ sessionId: 'aaa', pid: 1 }];
+    expect(mainCheckoutUse(sources(r.main, { rows }))).toEqual({
+      kind: 'unknown',
+      why: 'a current session lists no cwd: aaa',
+    });
+  });
+
+  test('an unreadable worker record does not make it unknown', () => {
+    const r = repoWithWorktree('');
+    const src = sources(r.main, { unreadRecords: [UNREAD] });
+    expect(mainCheckoutUse(src)).toEqual({ kind: 'free' });
   });
 });

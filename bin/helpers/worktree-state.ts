@@ -145,6 +145,40 @@ function unseenHold(src: CheapSources): string | undefined {
   return `unknown: a worker record would not read: ${src.unreadRecords.join('; ')}`;
 }
 
+/** Who works in the main checkout, outside every linked worktree. */
+export type MainUse =
+  | { kind: 'free' }
+  | { kind: 'in use'; by: string[] }
+  | { kind: 'unknown'; why: string };
+
+/**
+ * Who works in the main checkout: the current sessions whose `cwd` is under it
+ * and under no linked worktree, which nests inside it when it sits in
+ * `.claude/worktrees/`. A listing that failed or was read in part may hide a
+ * session there, so it reads unknown; an unreadable worker record does not,
+ * since records name workers' worktrees.
+ */
+export function mainCheckoutUse(src: CheapSources): MainUse {
+  if (src.rows === undefined)
+    return { kind: 'unknown', why: 'claude agents failed' };
+  const partial = partialListing(src.rows, src.listingWarnings);
+  if (partial !== undefined) return { kind: 'unknown', why: partial };
+  const main = src.repo.worktrees[0].path;
+  const worktrees = linked(src.repo);
+  const by = src.rows
+    .filter(
+      (row) =>
+        isCurrent(row) &&
+        row.cwd !== undefined &&
+        sessionInside(row.cwd, main) &&
+        !worktrees.some(
+          (w) => row.cwd !== undefined && sessionInside(row.cwd, w.path),
+        ),
+    )
+    .map((row) => `session ${rowName(row)}`);
+  return by.length === 0 ? { kind: 'free' } : { kind: 'in use', by };
+}
+
 /**
  * Whether `entry` is the worker `name`'s worktree: by Claude Code's folder for
  * it, by the folder's name, or by the branch, Claude Code's or the worker's
