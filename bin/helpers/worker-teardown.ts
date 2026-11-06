@@ -358,6 +358,13 @@ export function branchGoneIssues(
   return dropBranchConfig(runGit, top, branch);
 }
 
+// The characters POSIX ERE reads as special outside a bracket expression; a
+// branch name may hold `.`, `(`, `)`, `+`, `{`, `|`, and `$`.
+const ERE_SPECIAL = /[.[\\()*+?{|^$]/g;
+
+const literalPattern = (text: string): string =>
+  text.replace(ERE_SPECIAL, (char) => `\\${char}`);
+
 // update-ref -d, unlike git branch -d, leaves the [branch "<name>"] section behind.
 function dropBranchConfig(
   runGit: Runner,
@@ -365,10 +372,11 @@ function dropBranchConfig(
   branch: string,
 ): string[] {
   const section = `branch.${branch}`;
+  // --get-regexp reads its pattern as an ERE, so the name goes in escaped.
   // --local: --remove-section writes only the local file.
   const has = runGit(
     'git',
-    ['config', '--local', '--get-regexp', `^branch\\.${branch}\\.`],
+    ['config', '--local', '--get-regexp', `^${literalPattern(section)}\\.`],
     top,
   );
   if (has.code !== 0) return [];

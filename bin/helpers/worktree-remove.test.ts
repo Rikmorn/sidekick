@@ -6,7 +6,7 @@ import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner, type Runner, type RunResult } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { recordsDir, writeRecord } from './worker-record.js';
-import { refSegment } from './worker-teardown.js';
+import { branchGoneIssues, refSegment } from './worker-teardown.js';
 import { runWorktreeCli, WORKTREE_USAGE_LINE } from './worktree.js';
 import { skipListPath } from './worktree-ignored.js';
 import { parseRemoveArgs } from './worktree-remove.js';
@@ -1304,6 +1304,46 @@ describe('worktree remove: --into, and the branch move made', () => {
     expect(() =>
       git(main, 'config', '--local', '--get-regexp', '^branch\\.feat/x\\.y\\.'),
     ).toThrow();
+  });
+
+  // The local config's keys under branch.<branch>., matched as text.
+  const sectionKeys = (main: string, branch: string): string[] =>
+    git(main, 'config', '--local', '--list')
+      .split('\n')
+      .filter((line) => line.startsWith(`branch.${branch}.`));
+
+  test.each([
+    'fix+1',
+    'a(b)',
+    'x$y',
+    'e{2}',
+    'p|q',
+  ])('a marked %s, a name a regex reads as special, goes with its whole config section', (branch) => {
+    const main = repo();
+    addMarked(main, 'w2', branch);
+    git(main, 'config', `branch.${branch}.remote`, 'origin');
+    const { code, out, err } = run(main, ['w2']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(out).toContain(`branch ${branch} removed`);
+    expect(branchExists(main, branch)).toBe(false);
+    expect(sectionKeys(main, branch)).toEqual([]);
+  });
+
+  test('a branch with no config section goes with no issue, and a near name keeps its section', () => {
+    const main = repo();
+    git(main, 'branch', 'fix+1');
+    git(main, 'config', 'branch.fix1.remote', 'origin');
+    const head = git(main, 'rev-parse', 'fix+1');
+    const calls: string[][] = [];
+    const recording: Runner = (cmd, args, dir) => {
+      calls.push(args);
+      return execRunner(cmd, args, dir);
+    };
+    expect(branchGoneIssues(recording, main, 'fix+1', head)).toEqual([]);
+    expect(branchExists(main, 'fix+1')).toBe(false);
+    expect(calls.some((args) => args.includes('--remove-section'))).toBe(false);
+    expect(sectionKeys(main, 'fix1')).toEqual(['branch.fix1.remote=origin']);
   });
 
   test('--into without a value, empty, or twice, and two targets, print the usage line', () => {
