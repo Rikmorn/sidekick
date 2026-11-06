@@ -1068,8 +1068,21 @@ const READS = [
   'check-ref-format',
 ];
 
-// Arguments move never passes.
-const FORBIDDEN = ['--force', '-f', '-D', 'reset', 'clean', 'prune'];
+// Arguments move never passes, after git's own `-C <dir>`. The switch shapes
+// in isSwitchAllowed are the first net; this list is the second.
+const FORBIDDEN = [
+  '--force',
+  '-f',
+  '-D',
+  'reset',
+  'clean',
+  'prune',
+  '--discard-changes',
+  '-C',
+  '--force-create',
+  '--merge',
+  '-m',
+];
 
 // A fetch writes only remote-tracking refs, and names where.
 const REMOTE_REFSPEC = /^\+refs\/[^:]+:refs\/remotes\//;
@@ -1083,9 +1096,40 @@ function isConfigAllowed(rest: string[]): boolean {
   return args.length === 2 && !args[0].startsWith('-');
 }
 
+const isWord = (arg: string | undefined): boolean =>
+  arg !== undefined && !arg.startsWith('-');
+
+// Only the three switches move builds: create at a commit with no upstream,
+// detach at a ref, or switch to a branch. Any other shape may force, as
+// --discard-changes or -C does.
+function isSwitchAllowed(rest: string[]): boolean {
+  const [guard, ...args] = rest;
+  if (guard !== '--no-overwrite-ignore') return false;
+  const [first, second, third, fourth] = args;
+  switch (args.length) {
+    case 4:
+      return (
+        first === '-c' &&
+        isWord(second) &&
+        third === '--no-track' &&
+        isWord(fourth)
+      );
+    case 2:
+      return first === '--detach' && isWord(second);
+    case 1:
+      return isWord(first);
+    default:
+      return false;
+  }
+}
+
+// A call's arguments after git's own `-C <dir>`, which status runs with.
+const argsOf = (call: string[]): string[] =>
+  call[0] === '-C' ? call.slice(2) : call;
+
 // Whether a git call is a read the checks make, or a write move may make.
 function isAllowed(call: string[]): boolean {
-  const [sub, ...rest] = call[0] === '-C' ? call.slice(2) : call;
+  const [sub, ...rest] = argsOf(call);
   switch (sub) {
     case 'worktree':
       return rest[0] === 'list';
@@ -1098,7 +1142,7 @@ function isAllowed(call: string[]): boolean {
     case 'fetch':
       return rest.length === 2 && REMOTE_REFSPEC.test(rest[1]);
     case 'switch':
-      return rest[0] === '--no-overwrite-ignore';
+      return isSwitchAllowed(rest);
     case 'update-ref':
       return rest.length === 3 && rest[0] === '-d';
     default:
@@ -1143,7 +1187,7 @@ describe('move: the git allow list', () => {
     expect(moved.code).toBe(0);
     expect(moved.calls.filter((call) => !isAllowed(call))).toEqual([]);
     const forced = moved.calls.filter((call) =>
-      call.some((arg) => FORBIDDEN.includes(arg)),
+      argsOf(call).some((arg) => FORBIDDEN.includes(arg)),
     );
     expect(forced).toEqual([]);
     const subcommands = moved.calls.map((call) => call[0]);
