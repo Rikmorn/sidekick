@@ -4,10 +4,10 @@
 
 ## What `list` prints
 
-The first line is the main checkout's. Then comes one line per linked worktree. Fields join with ` · `:
+After any warnings, the first line is the main checkout's. Then comes one line per linked worktree. Fields join with ` · `:
 
 ```
-main checkout · in use by session sidekick-e6 · master · /repo
+main checkout · in use by session 3f2a… · master · /repo
 r10-x · removable · landed in milestone/r10-memory-and-parallel-sessions · worktree-r10-x · /repo/.claude/worktrees/r10-x
 old-y · folder gone · only here, 3 commits · worktree-old-y · /repo/.claude/worktrees/old-y
 feat · dirty: scratch.sh, notes.md · pushed to origin/feature-x · worktree-feat · /repo/.claude/worktrees/feat
@@ -20,7 +20,7 @@ A worktree row has these fields in order: the folder's name, the state, where th
 The main checkout's line reads `main checkout · <use> · <branch> · <path>`, with `detached` for a missing branch. `<use>` is one of three:
 
 - `free`: no current session sits in the main checkout.
-- `in use by session <name>`, with more sessions after a comma: a current row of `claude agents --json --all` has its `cwd` in the main checkout and in no linked worktree.
+- `in use by session <id>`, with more sessions after a comma, each as `session <id>`: a current row of `claude agents --json --all` has its `cwd` in the main checkout and in no linked worktree.
 - `unknown: <why>`: `claude agents` failed, or its listing was partial, so nothing says whether a session is there. An unreadable worker record does not make it unknown, since records name workers' worktrees.
 
 After the worktree rows, when any row is `removable` or `folder gone`, the line `remove one with: sidekick worktree remove <name>` prints. Then a `backup refs:` line lists each ref under `refs/sidekick/` with `commit dated <date>`. The ref holds no creation date, so the date is its commit's. With no refs, nothing prints.
@@ -99,7 +99,7 @@ Git checks a branch out in one worktree at a time. So the held row makes a branc
 
 ### The mark
 
-`move` marks each branch it creates for the worktree, which is the `new branch` row's branch and the held row's own-name branch. The mark is `git config --local branch.<branch>.sidekickWorktree <name>`, in the repo's shared config. `remove` deletes a branch only when it is the worktree's own: `worktree-<name>`, or a branch marked for that name. A branch marked for another name stays, as does an unmarked one. When the mark's write fails, `move` prints the `git config` line that sets it, and until then `remove` keeps the branch, the safe side.
+`move` marks the branch it creates from nothing, the `new branch` row's, and the held row's own-name branch. The `tracking branch` row stays unmarked, so `remove` keeps it. The mark is `git config --local branch.<branch>.sidekickWorktree <name>`, in the repo's shared config. `remove` deletes a branch only when it is the worktree's own: `worktree-<name>`, or a branch marked for that name. A branch marked for another name stays, as does an unmarked one. When the mark's write fails, `move` prints the `git config` line that sets it, and until then `remove` keeps the branch, the safe side.
 
 ### The line `move` prints
 
