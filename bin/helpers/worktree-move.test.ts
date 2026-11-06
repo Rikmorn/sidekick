@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
-import { writeRecord } from './worker-record.js';
+import { recordsDir, writeRecord } from './worker-record.js';
 import {
   checkMove,
   type MoveCheck,
@@ -284,6 +284,24 @@ describe('checkMove: the refusals, in order', () => {
     expect(refused(result)).toEqual([
       `${f.dir} is the worker ${NAME}'s worktree: a worker's brief sets its branch, not move`,
     ]);
+  });
+
+  test('1: a worker record that will not read, named, and left as it was', () => {
+    const f = fixture();
+    const dir = recordsDir(path.join(f.main, '.git'));
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'w9.json');
+    fs.writeFileSync(file, 'not json\n');
+    const { result, err } = check(f.dir, f.main, ['feat']);
+    const lines = refused(result);
+    expect(lines[0]).toStartWith(
+      `a worker record would not read, so ${f.dir} may be that worker's worktree: ${file} cannot be read as a worker record: `,
+    );
+    expect(lines.slice(1)).toEqual([
+      'fix or remove the named record, then run move again',
+    ]);
+    expect(err).toEqual([]);
+    expect(fs.readFileSync(file, 'utf-8')).toBe('not json\n');
   });
 
   test('1: an empty SIDEKICK_WORKER is no worker', () => {

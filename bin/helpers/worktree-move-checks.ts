@@ -200,12 +200,9 @@ function rerunLine(
   return [on ?? 'detached', entry.head, 'already moved'].join(SEPARATOR);
 }
 
-// A worker's session, by its environment, or a worker's worktree, by its record.
-function workerRefusal(
-  env: WorktreeEnv,
-  place: Place,
-  err: Out,
-): Refused | undefined {
+// A worker's session, by its environment, or a worker's worktree, by its
+// record. A record that will not read may be this worktree's worker's.
+function workerRefusal(env: WorktreeEnv, place: Place): Refused | undefined {
   const brief = env.env.SIDEKICK_WORKER;
   if (brief !== undefined && brief !== '') {
     return refuse(
@@ -213,13 +210,18 @@ function workerRefusal(
     );
   }
   const stored = readRecords(place.repo.commonDir);
-  for (const warning of stored.warnings) err(warning);
   const record = stored.records.find((candidate) =>
     isWorkers(place.repo.top, candidate.name, place.entry),
   );
-  if (record === undefined) return undefined;
+  if (record !== undefined) {
+    return refuse(
+      `${place.entry.path} is the worker ${record.name}'s worktree: ${BRIEF_WAY}`,
+    );
+  }
+  if (stored.warnings.length === 0) return undefined;
   return refuse(
-    `${place.entry.path} is the worker ${record.name}'s worktree: ${BRIEF_WAY}`,
+    `a worker record would not read, so ${place.entry.path} may be that worker's worktree: ${stored.warnings.join('; ')}`,
+    `fix or remove the named record, ${AGAIN_WAY}`,
   );
 }
 
@@ -497,7 +499,7 @@ export function checkMove(
   const line = rerunLine(runGit, place, args);
   if (line !== undefined) return { kind: 'already', line };
   const unfresh =
-    workerRefusal(env, place, err) ??
+    workerRefusal(env, place) ??
     branchRefusal(place) ??
     changesRefusal(runGit, place);
   if (unfresh !== undefined) return unfresh;
