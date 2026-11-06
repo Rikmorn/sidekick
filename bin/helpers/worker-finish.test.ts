@@ -2207,7 +2207,7 @@ describe('finish --worktree', () => {
     expect(h.err).toEqual([
       `claude rm said removed, but git still lists the worktree ${fx.worktree}`,
       `${fx.worktree} is locked: locked by hand`,
-      `${forgottenWayOut(fx)}. remove leaves the branch w1 in place, since it deletes only worktree-${folder}, and writes a backup ref for its head first`,
+      `${forgottenWayOut(fx)}. remove leaves the branch w1 in place, since it deletes only worktree-${folder} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`,
     ]);
     expect(folder).not.toBe('w1');
   });

@@ -267,7 +267,8 @@ function clearSavedReport(ready: Ready): void {
 
 // The record is forgotten by now, so a re-run of finish finds nothing. The
 // path resolves where the worker's name may not, as under --worktree. remove
-// deletes only the branch named for the worktree's folder.
+// deletes only the branch named for the worktree's folder or one sidekick
+// worktree move marked for it, and move refuses in a worker's worktree.
 function forgottenWayOut({
   worktree,
   branch,
@@ -275,7 +276,7 @@ function forgottenWayOut({
   const route = `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
   const removable = nativeBranch(path.basename(worktree));
   if (branch === removable) return route;
-  return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable}, and writes a backup ref for its head first`;
+  return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`;
 }
 
 // The files git's removal would lose, ignored ones included, read right before

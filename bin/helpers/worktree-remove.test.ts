@@ -7,8 +7,9 @@ import { execRunner, type Runner, type RunResult } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { recordsDir, writeRecord } from './worker-record.js';
 import { refSegment } from './worker-teardown.js';
-import { runWorktreeCli } from './worktree.js';
+import { runWorktreeCli, WORKTREE_USAGE_LINE } from './worktree.js';
 import { skipListPath } from './worktree-ignored.js';
+import { parseRemoveArgs } from './worktree-remove.js';
 
 afterEach(removeTemps);
 
@@ -193,7 +194,7 @@ describe('worktree remove: removes', () => {
     expect(backupRefs(main)).toEqual([ref]);
     expect(out).toEqual([
       `worktree ${dir} removed`,
-      'branch master kept: remove deletes only worktree-m1, the branch made for this worktree',
+      'branch master kept: remove deletes only worktree-m1 or a branch sidekick worktree move made for this worktree',
       `restore with: git branch m1 ${ref}`,
     ]);
   });
@@ -210,7 +211,7 @@ describe('worktree remove: removes', () => {
     expect(backupRefs(main)).toEqual([`refs/sidekick/kept/feat/${head}`]);
     expect(events.some((e) => e.startsWith('git update-ref -d'))).toBe(false);
     expect(out.at(-2)).toBe(
-      'branch feature-x kept: remove deletes only worktree-feat, the branch made for this worktree',
+      'branch feature-x kept: remove deletes only worktree-feat or a branch sidekick worktree move made for this worktree',
     );
   });
 
@@ -1048,5 +1049,279 @@ describe('worktree remove: re-runs and sessions', () => {
     expect(
       gitCalls.filter((e) => /--force|\bprune\b|\bclean\b/.test(e)),
     ).toEqual([]);
+  });
+});
+
+describe('worktree remove: --into, and the branch move made', () => {
+  const KEPT_RULE = 'or a branch sidekick worktree move made for this worktree';
+  const MARK = 'sidekickWorktree';
+
+  // A worktree on a new branch, marked for the worktree `markFor` as
+  // sidekick worktree move marks a branch it makes.
+  function addMarked(
+    main: string,
+    name: string,
+    branch: string,
+    markFor = name,
+  ): string {
+    const dir = path.join(tmp(), name);
+    git(main, 'worktree', 'add', '-q', '-b', branch, dir);
+    git(main, 'config', `branch.${branch}.${MARK}`, markFor);
+    return dir;
+  }
+
+  const markGone = (main: string, branch: string): void => {
+    expect(() =>
+      git(main, 'config', '--get', `branch.${branch}.${MARK}`),
+    ).toThrow();
+  };
+
+  // Squashes `branch` into `target`, a branch no checkout holds, through a
+  // worktree made for it and removed after.
+  function squashInto(main: string, target: string, branch: string): void {
+    const at = path.join(tmp(), 'squash');
+    git(main, 'worktree', 'add', '-q', at, target);
+    git(at, 'merge', '-q', '--squash', branch);
+    git(at, 'commit', '-q', '-m', `squash ${branch}`);
+    git(main, 'worktree', 'remove', at);
+  }
+
+  test('parses --into beside --discard, and without it', () => {
+    expect(parseRemoveArgs(['ff', '--into', 'main', '--discard'])).toEqual({
+      target: 'ff',
+      discard: true,
+      into: 'main',
+    });
+    expect(parseRemoveArgs(['ff'])).toEqual({
+      target: 'ff',
+      discard: false,
+      into: undefined,
+    });
+  });
+
+  test('--into a branch no checkout holds, after a fast-forward, deletes the marked branch behind a landed ref', () => {
+    const main = repo();
+    git(main, 'branch', 'target');
+    const dir = addMarked(main, 'ff', 'feat');
+    const head = commit(dir, 'b.txt');
+    git(main, 'branch', '-f', 'target', 'feat');
+    const before = run(main, ['ff']);
+    expect(before.code).toBe(1);
+    expect(before.err[0]).toBe(
+      'feat has 1 commit found in no landed branch and no remote-tracking ref, as of the last fetch, so remove took nothing',
+    );
+    expectUntouched(main, dir, 'feat');
+    const { code, out, err } = run(main, ['ff', '--into', 'target']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    const ref = `refs/sidekick/landed/ff/${head}`;
+    expect(backupRefs(main)).toEqual([ref]);
+    expect(git(main, 'rev-parse', ref)).toBe(head);
+    expect(listed(main, dir)).toBe(false);
+    expect(branchExists(main, 'feat')).toBe(false);
+    markGone(main, 'feat');
+    expect(out).toEqual([
+      'feat landed in target',
+      `worktree ${dir} removed`,
+      'branch feat removed',
+      `restore with: git branch feat ${ref}`,
+    ]);
+  });
+
+  test('--into a branch no checkout holds, after a squash merge into it, deletes the marked branch behind a landed ref', () => {
+    const main = repo();
+    git(main, 'branch', 'target');
+    const dir = addMarked(main, 'sq', 'feat');
+    commit(dir, 'b.txt');
+    const head = commit(dir, 'c.txt');
+    squashInto(main, 'target', 'feat');
+    const { code, out, err } = run(main, ['sq', '--into', 'target']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    const ref = `refs/sidekick/landed/sq/${head}`;
+    expect(backupRefs(main)).toEqual([ref]);
+    expect(listed(main, dir)).toBe(false);
+    expect(branchExists(main, 'feat')).toBe(false);
+    markGone(main, 'feat');
+    expect(out[0]).toBe('feat landed in target');
+  });
+
+  test('--into, not landed, refuses naming the target and the count, and --discard deletes behind a discarded ref', () => {
+    const main = repo();
+    git(main, 'branch', 'target');
+    const dir = addMarked(main, 'nl', 'feat');
+    commit(dir, 'b.txt');
+    const head = commit(dir, 'c.txt');
+    const refused = run(main, ['nl', '--into', 'target']);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toEqual([
+      'feat has 2 commits found in no landed branch, not in target, and in no remote-tracking ref, as of the last fetch, so remove took nothing',
+      'run remove again with --discard to remove it anyway, keeping them in a backup ref only',
+    ]);
+    expectUntouched(main, dir, 'feat');
+    const { code, out, err } = run(main, [
+      'nl',
+      '--into',
+      'target',
+      '--discard',
+    ]);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    const ref = `refs/sidekick/discarded/nl/${head}`;
+    expect(backupRefs(main)).toEqual([ref]);
+    expect(branchExists(main, 'feat')).toBe(false);
+    markGone(main, 'feat');
+    expect(out).toEqual([
+      `worktree ${dir} removed`,
+      'branch feat removed',
+      `restore with: git branch feat ${ref}`,
+    ]);
+  });
+
+  test('--discard beside --into keeps a landed ref when the work landed', () => {
+    const main = repo();
+    const dir = addMarked(main, 'both', 'feat');
+    const head = commit(dir, 'b.txt');
+    git(main, 'branch', 'target', head);
+    const { code } = run(main, ['both', '--into', 'target', '--discard']);
+    expect(code).toBe(0);
+    expect(backupRefs(main)).toEqual([`refs/sidekick/landed/both/${head}`]);
+  });
+
+  test('--into origin/feat, a remote-tracking ref, landed', () => {
+    const main = repo();
+    const dir = addMarked(main, 'rt', 'work');
+    const head = commit(dir, 'b.txt');
+    git(main, 'update-ref', 'refs/remotes/origin/feat', head);
+    const { code, out, err } = run(main, ['rt', '--into', 'origin/feat']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(backupRefs(main)).toEqual([`refs/sidekick/landed/rt/${head}`]);
+    expect(branchExists(main, 'work')).toBe(false);
+    markGone(main, 'work');
+    expect(out[0]).toBe('work landed in origin/feat');
+  });
+
+  test("an --into target at the main checkout's commit is the one named", () => {
+    const main = repo();
+    git(main, 'branch', 'target');
+    addMarked(main, 'same', 'feat');
+    const { code, out } = run(main, ['same', '--into', 'target']);
+    expect(code).toBe(0);
+    expect(out[0]).toBe('feat landed in target');
+  });
+
+  test('--into a name no local branch or remote-tracking ref has refuses before any check, naming the way on', () => {
+    const main = repo();
+    const dir = addMarked(main, 'np', 'feat');
+    commit(dir, 'b.txt');
+    const trunk = git(main, 'rev-parse', '--abbrev-ref', 'HEAD');
+    for (const into of ['nope', `${trunk}~0`]) {
+      const { code, err, events } = run(main, ['np', '--into', into]);
+      expect(code).toBe(1);
+      expect(err).toEqual([
+        `--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`,
+        'name a local branch, such as main, or a remote-tracking ref, such as origin/main',
+      ]);
+      expect(events.some((e) => e.startsWith('claude '))).toBe(false);
+      expectUntouched(main, dir, 'feat');
+    }
+    expect(git(main, 'config', '--get', `branch.feat.${MARK}`)).toBe('np');
+  });
+
+  test('--into the branch the worktree is on refuses, since that branch holds its head', () => {
+    const main = repo();
+    const dir = addMarked(main, 'own', 'feat');
+    commit(dir, 'b.txt');
+    const { code, err } = run(main, ['own', '--into', 'feat']);
+    expect(code).toBe(1);
+    expect(err).toEqual([
+      `--into feat is the branch ${dir} is on, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in`,
+    ]);
+    expectUntouched(main, dir, 'feat');
+  });
+
+  test('a marked branch whose commits are pushed is deleted behind a pushed ref', () => {
+    const main = repo();
+    const dir = addMarked(main, 'pu', 'feat');
+    const head = commit(dir, 'b.txt');
+    git(main, 'update-ref', 'refs/remotes/origin/feat', head);
+    const { code, out, err } = run(main, ['pu']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    const ref = `refs/sidekick/pushed/pu/${head}`;
+    expect(backupRefs(main)).toEqual([ref]);
+    expect(branchExists(main, 'feat')).toBe(false);
+    markGone(main, 'feat');
+    expect(out).toEqual([
+      `worktree ${dir} removed`,
+      'branch feat removed',
+      `restore with: git branch feat ${ref}`,
+    ]);
+  });
+
+  test('an unmarked branch is kept, with the kept line', () => {
+    const main = repo();
+    const dir = path.join(tmp(), 'plain');
+    git(main, 'worktree', 'add', '-q', '-b', 'plain-b', dir);
+    const head = commit(dir, 'b.txt');
+    const { code, out } = run(main, ['plain']);
+    expect(code).toBe(0);
+    expect(listed(main, dir)).toBe(false);
+    expect(git(main, 'rev-parse', 'plain-b')).toBe(head);
+    expect(backupRefs(main)).toEqual([`refs/sidekick/kept/plain/${head}`]);
+    expect(out).toContain(
+      `branch plain-b kept: remove deletes only worktree-plain ${KEPT_RULE}`,
+    );
+  });
+
+  test('a branch marked for another worktree is kept, with the kept line and its mark', () => {
+    const main = repo();
+    const dir = addMarked(main, 'mine', 'theirs', 'elsewhere');
+    const head = commit(dir, 'b.txt');
+    const { code, out } = run(main, ['mine']);
+    expect(code).toBe(0);
+    expect(listed(main, dir)).toBe(false);
+    expect(git(main, 'rev-parse', 'theirs')).toBe(head);
+    expect(backupRefs(main)).toEqual([`refs/sidekick/kept/mine/${head}`]);
+    expect(out).toContain(
+      `branch theirs kept: remove deletes only worktree-mine ${KEPT_RULE}`,
+    );
+    expect(git(main, 'config', '--get', `branch.theirs.${MARK}`)).toBe(
+      'elsewhere',
+    );
+  });
+
+  test('a marked feat/x.y that landed is deleted with its whole config section', () => {
+    const main = repo();
+    addMarked(main, 'fx', 'feat/x.y');
+    git(main, 'config', 'branch.feat/x.y.remote', 'origin');
+    const { code, out, err } = run(main, ['fx']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(branchExists(main, 'feat/x.y')).toBe(false);
+    expect(out).toContain('branch feat/x.y removed');
+    expect(() =>
+      git(main, 'config', '--local', '--get-regexp', '^branch\\.feat/x\\.y\\.'),
+    ).toThrow();
+  });
+
+  test('--into without a value, empty, or twice, and two targets, print the usage line', () => {
+    expect(WORKTREE_USAGE_LINE).toContain(
+      'remove <name|path> [--into <target>] [--discard]',
+    );
+    const main = repo();
+    const cases = [
+      ['x', '--into'],
+      ['x', '--into='],
+      ['x', '--into', '--discard'],
+      ['x', '--into', 'a', '--into', 'b'],
+      ['a', 'b', '--into', 'main'],
+    ];
+    for (const args of cases) {
+      const { code, err } = run(main, args);
+      expect(code).toBe(1);
+      expect(err).toEqual([`usage: ${WORKTREE_USAGE_LINE}`]);
+    }
   });
 });

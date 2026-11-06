@@ -7325,27 +7325,27 @@ var diskState = (runGit, repo, entry) => filesState(runGit, {
 function stateOf3(src, runGit, entry, lock) {
   return cheapState(src, entry, lock) ?? diskState(runGit, src.repo, entry);
 }
-function worktreeRows(src, runGit) {
+function worktreeRows(src, runGit, extra = []) {
   return linked(src.repo).map((entry) => {
     const lock = lockStateOf(entry.locked, src.isAlive);
     const state = stateOf3(src, runGit, entry, lock);
     const base = { entry, name: path32.basename(entry.path), lock, state };
     if (state.kind === "held" || state.kind === "worker")
       return base;
-    return { ...base, commits: commitsAt(runGit, src.repo, entry.head ?? "") };
+    const commits = commitsAt(runGit, src.repo, entry.head ?? "", extra);
+    return { ...base, commits };
   });
 }
 function resolveTarget(runGit, repo, ref, name) {
   const sha = commitOf(runGit, repo.top, ref);
   return sha === undefined ? [] : [{ name, sha }];
 }
-function targetsOf(runGit, repo) {
+function targetsOf(runGit, repo, extra) {
   const branch = repo.worktrees[0].branch;
   const held = branch === undefined ? [] : resolveTarget(runGit, repo, branch, branch.replace(HEADS, ""));
   const base = defaultBranchOf(runGit, repo.top);
   const remote = base === undefined ? [] : resolveTarget(runGit, repo, `${REMOTES}origin/${base}`, `origin/${base}`);
-  const distinct = remote.filter((r) => held.every((h) => h.sha !== r.sha));
-  return [...held, ...distinct];
+  return [...extra, ...held, ...remote].filter((target, at, all) => all.findIndex((t) => t.sha === target.sha) === at);
 }
 function pushedOn(runGit, top, head) {
   const refs = runGit("git", ["for-each-ref", "--contains", head, "--format=%(refname)", REMOTES], top);
@@ -7372,12 +7372,12 @@ function countOnlyHere(runGit, top, head, targets) {
   }
   return { kind: "only here", count: count2 };
 }
-function commitsAt(runGit, repo, head) {
+function commitsAt(runGit, repo, head, extra = []) {
   const sha = commitOf(runGit, repo.top, head);
   if (sha === undefined) {
     return { kind: "unknown", why: `${head || "HEAD"} names no commit` };
   }
-  const targets = targetsOf(runGit, repo);
+  const targets = targetsOf(runGit, repo, extra);
   const checked2 = [];
   for (const target of targets) {
     const landing = landedIn(runGit, repo.top, {
@@ -9894,7 +9894,7 @@ function forgottenWayOut({
   const removable = nativeBranch(path43.basename(worktree));
   if (branch === removable)
     return route;
-  return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable}, and writes a backup ref for its head first`;
+  return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`;
 }
 function leftoverIssues(runGit, ready) {
   const { worktree } = ready;
@@ -11155,6 +11155,9 @@ function writeMark(runGit, top, branch, name) {
   const result = runGit("git", ["config", "--local", keyOf(branch), name], top);
   return result.code === 0 ? [] : [`git config ${keyOf(branch)} failed: ${result.stderr.trim()}`];
 }
+function isOwnBranch(runGit, top, branch, name) {
+  return branch === nativeBranch(name) || markOf2(runGit, top, branch) === name;
+}
 
 // bin/helpers/worktree-move-checks.ts
 import * as path49 from "node:path";
@@ -11725,15 +11728,46 @@ function moveWorktree(args, env, out, err) {
 // bin/helpers/worktree-remove-checks.ts
 import * as path50 from "node:path";
 var DISCARD = "--discard";
+var REMOTES2 = "refs/remotes/";
 function parseRemoveArgs(rest2) {
-  const flags = rest2.filter((arg) => arg.startsWith("-"));
-  const targets = rest2.filter((arg) => !arg.startsWith("-"));
-  const fits = targets.length === 1 && flags.every((flag) => flag === DISCARD);
+  const parsed = parseFlags(rest2, {
+    discard: { type: "boolean" },
+    into: { type: "string", multiple: true }
+  });
+  if (parsed === undefined)
+    return;
+  const { values, lists, positionals } = parsed;
+  const into = lists.into ?? [];
+  const fits = positionals.length === 1 && into.length <= 1 && into.every((target) => target !== "");
   if (!fits)
     return;
-  return { target: targets[0], discard: flags.includes(DISCARD) };
+  return {
+    target: positionals[0],
+    discard: values.discard === true,
+    into: into.at(0)
+  };
 }
 var refuse7 = (...lines) => ({ refused: lines });
+var INTO_WAY = "name a local branch, such as main, or a remote-tracking ref, such as origin/main";
+function refCommit(runGit, top, ref2) {
+  const shown2 = runGit("git", ["show-ref", "--verify", "--hash", ref2], top);
+  if (shown2.code !== 0)
+    return;
+  return commitOf(runGit, top, shown2.stdout.trim());
+}
+function intoTargets(runGit, top, into) {
+  if (into === undefined)
+    return [];
+  for (const ref2 of [`${HEADS}${into}`, `${REMOTES2}${into}`]) {
+    const sha = refCommit(runGit, top, ref2);
+    if (sha !== undefined)
+      return [{ name: into, sha, ref: ref2 }];
+  }
+  return refuse7(`--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`, INTO_WAY);
+}
+function ownIntoLines(targets, entry) {
+  return targets.filter((target) => target.ref === entry.branch).map((target) => `--into ${target.name} is the branch ${entry.path} is on, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in`);
+}
 var samePath = (a, b) => physical(a) === physical(b);
 var alone = (repo, entry) => ({
   ...repo,
@@ -11793,8 +11827,16 @@ function stateLines(state, entry, skipList, stopped = TOOK_NOTHING) {
 }
 var commitCount2 = (count2) => `${count2} ${count2 === 1 ? "commit" : "commits"}`;
 var DISCARD_WAY = `run remove again with ${DISCARD} to remove it anyway, keeping them in a backup ref only`;
-function backupKind(commits, branch, discard2) {
+function nowhereWords(extra) {
+  if (extra.length === 0) {
+    return "in no landed branch and no remote-tracking ref";
+  }
+  const names = extra.map((target) => target.name).join(", ");
+  return `in no landed branch, not in ${names}, and in no remote-tracking ref`;
+}
+function backupKind(commits, branch, judging) {
   const { stays, where } = branch;
+  const { discard: discard2, extra } = judging;
   switch (commits.kind) {
     case "landed":
       return "landed";
@@ -11805,7 +11847,7 @@ function backupKind(commits, branch, discard2) {
         return "kept";
       if (discard2)
         return "discarded";
-      return refuse7(`${where} has ${commitCount2(commits.count)} found in no landed branch and no remote-tracking ref, as of the last fetch, so remove took nothing`, DISCARD_WAY);
+      return refuse7(`${where} has ${commitCount2(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`, DISCARD_WAY);
     case "unknown":
       if (stays)
         return "kept";
@@ -11818,21 +11860,28 @@ function backupKind(commits, branch, discard2) {
     }
   }
 }
-function branchPlan2(env, repo, row2, discard2) {
+var whereOf = (entry) => entry.branch?.replace(HEADS, "") ?? `the detached HEAD at ${entry.path}`;
+function branchPlan2(env, repo, row2, judging) {
   const { entry, name } = row2;
   const head = entry.head === undefined ? undefined : commitOf(env.runGit, repo.top, entry.head);
   if (head === undefined) {
     return refuse7(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
   }
   const branch = entry.branch?.replace(HEADS, "");
-  const stays = branch !== undefined && branch !== nativeBranch(name);
-  const where = branch ?? `the detached HEAD at ${entry.path}`;
-  const commits = row2.commits ?? commitsAt(env.runGit, repo, head);
-  const kind = backupKind(commits, { stays, where }, discard2);
+  const stays = branch !== undefined && !isOwnBranch(env.runGit, repo.top, branch, name);
+  const where = whereOf(entry);
+  const commits = row2.commits ?? commitsAt(env.runGit, repo, head, judging.extra);
+  const kind = backupKind(commits, { stays, where }, judging);
   if (typeof kind !== "string")
     return kind;
   const ref2 = backupRef(kind, name, head);
-  return { entry, name, head, plan: planOf(branch, stays, ref2) };
+  return { entry, name, head, commits, plan: planOf(branch, stays, ref2) };
+}
+function landedLines(extra, checked2) {
+  const { commits, entry } = checked2;
+  if (extra.length === 0 || commits.kind !== "landed")
+    return [];
+  return [`${whereOf(entry)} landed in ${commits.in}`];
 }
 function planOf(branch, stays, ref2) {
   if (branch === undefined)
@@ -11840,9 +11889,15 @@ function planOf(branch, stays, ref2) {
   return stays ? { kind: "keep", branch, ref: ref2 } : { kind: "delete", branch, ref: ref2 };
 }
 function checkTarget(args, env, repo, out) {
+  const extra = intoTargets(env.runGit, repo.top, args.into);
+  if ("refused" in extra)
+    return extra;
   const entry = resolveTarget3(repo, env.cwd, args.target);
   if ("refused" in entry)
     return entry;
+  const ownInto = ownIntoLines(extra, entry);
+  if (ownInto.length > 0)
+    return refuse7(...ownInto);
   const nested = nestedLines(repo, entry);
   if (nested.length > 0)
     return refuse7(...nested);
@@ -11853,11 +11908,16 @@ function checkTarget(args, env, repo, out) {
   for (const warning of [...listing.warnings, ...skipWarnings]) {
     out(warning);
   }
-  const [row2] = worktreeRows(src, env.runGit);
+  const [row2] = worktreeRows(src, env.runGit, extra);
   const kept = stateLines(row2.state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
     return refuse7(...kept);
-  return branchPlan2(env, repo, row2, args.discard);
+  const checked2 = branchPlan2(env, repo, row2, { discard: args.discard, extra });
+  if ("refused" in checked2)
+    return checked2;
+  for (const line of landedLines(extra, checked2))
+    out(line);
+  return checked2;
 }
 function movedLines(entry, head, stopped) {
   if (entry.head === head)
@@ -11954,7 +12014,7 @@ function settleBranch(env, top, checked2, out) {
     case "detached":
       return [];
     case "keep":
-      out(`branch ${plan.branch} kept: remove deletes only ${nativeBranch(name)}, the branch made for this worktree`);
+      out(`branch ${plan.branch} kept: remove deletes only ${nativeBranch(name)} or a branch sidekick worktree move made for this worktree`);
       return [];
     case "delete": {
       const issues = branchGoneIssues(env.runGit, top, plan.branch, head);
@@ -12028,7 +12088,7 @@ function removeWorktree(args, env, out, err) {
 }
 
 // bin/helpers/worktree.ts
-var WORKTREE_USAGE_LINE = "sidekick worktree list | move <branch> [--from <base>] | move --pr <n> | remove <name|path> [--discard]";
+var WORKTREE_USAGE_LINE = "sidekick worktree list | move <branch> [--from <base>] | move --pr <n> | remove <name|path> [--into <target>] [--discard]";
 var SEPARATOR3 = " · ";
 var BACKUP_REFS = "refs/sidekick";
 var REMOVE_HINT = "remove one with: sidekick worktree remove <name>";

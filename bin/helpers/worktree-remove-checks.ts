@@ -1,19 +1,22 @@
 /**
  * The checks of `sidekick worktree remove`, which change nothing: its
- * arguments, the one worktree they name, the states that keep it, and the
- * branch's plan with its backup ref. `recheck` reads them again once that ref
- * is written. `worktree-remove.ts` runs them, then the deletions.
+ * arguments, the `--into` target, the one worktree they name, the states that
+ * keep it, and the branch's plan with its backup ref. `recheck` reads them
+ * again once that ref is written. `worktree-remove.ts` runs them, then the
+ * deletions.
  */
 
 import * as path from 'node:path';
 import type { Repo } from './desk-children.js';
 import type { ListingRow } from './desk-snapshot.js';
+import type { Runner } from './pm-data.js';
+import { parseFlags } from './profile.js';
 import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
 import { commitOf, HEADS, physical } from './worker-repo.js';
 import { type BackupKind, backupRef } from './worker-teardown.js';
-import { nativeBranch } from './worker-worktree.js';
 import { skipListPath } from './worktree-ignored.js';
 import { lockStateOf } from './worktree-lock.js';
+import { isOwnBranch } from './worktree-mark.js';
 import {
   heldWords,
   type Out,
@@ -26,47 +29,113 @@ import {
   commitsAt,
   insideOf,
   stateOf,
+  type TargetRef,
   type WorktreeRow,
   type WorktreeState,
   worktreeRows,
 } from './worktree-state.js';
 
 const DISCARD = '--discard';
+const REMOTES = 'refs/remotes/';
 
 export interface RemoveArgs {
   /** The worktree's name, its path's last segment, or its path. */
   target: string;
   discard: boolean;
+  /** A local branch or remote-tracking ref the landed check adds. */
+  into: string | undefined;
 }
 
 /** The arguments `remove` takes, or undefined when they fit no usage. */
 export function parseRemoveArgs(rest: string[]): RemoveArgs | undefined {
-  const flags = rest.filter((arg) => arg.startsWith('-'));
-  const targets = rest.filter((arg) => !arg.startsWith('-'));
-  const fits = targets.length === 1 && flags.every((flag) => flag === DISCARD);
+  const parsed = parseFlags(rest, {
+    discard: { type: 'boolean' },
+    into: { type: 'string', multiple: true },
+  });
+  if (parsed === undefined) return undefined;
+  const { values, lists, positionals } = parsed;
+  const into = lists.into ?? [];
+  const fits =
+    positionals.length === 1 &&
+    into.length <= 1 &&
+    into.every((target) => target !== '');
   if (!fits) return undefined;
-  return { target: targets[0], discard: flags.includes(DISCARD) };
+  return {
+    target: positionals[0],
+    discard: values.discard === true,
+    into: into.at(0),
+  };
 }
 
 type Refused = { refused: string[] };
 
 const refuse = (...lines: string[]): Refused => ({ refused: lines });
 
-// What remove does with the branch: deletes the one made for this worktree,
-// keeps any other, or has none for a detached HEAD. Each writes its backup ref
-// first, since claude rm or a hand may yet delete a kept branch.
+// What remove does with the branch: deletes the worktree's own, keeps any
+// other, or has none for a detached HEAD. Each writes its backup ref first,
+// since claude rm or a hand may yet delete a kept branch.
 type BranchPlan =
   | { kind: 'delete'; branch: string; ref: string }
   | { kind: 'keep'; branch: string; ref: string }
   | { kind: 'detached'; ref: string };
 
-/** What the checks settled: the entry, its verified head, and the branch's plan. */
+/** What the checks settled: the entry, its verified head, where its commits live, and the branch's plan. */
 export interface Checked {
   entry: WorktreeEntry;
   name: string;
   head: string;
+  commits: CommitsAt;
   plan: BranchPlan;
 }
+
+// The --into target with the full ref it resolved to.
+type Into = TargetRef & { ref: string };
+
+const INTO_WAY =
+  'name a local branch, such as main, or a remote-tracking ref, such as origin/main';
+
+// The commit `ref` holds, read only when a ref has that exact name: show-ref
+// takes no revision syntax, so `main~1` names no ref.
+function refCommit(
+  runGit: Runner,
+  top: string,
+  ref: string,
+): string | undefined {
+  const shown = runGit('git', ['show-ref', '--verify', '--hash', ref], top);
+  if (shown.code !== 0) return undefined;
+  return commitOf(runGit, top, shown.stdout.trim());
+}
+
+// The --into target as a local branch, else a remote-tracking ref; none
+// without --into.
+function intoTargets(
+  runGit: Runner,
+  top: string,
+  into: string | undefined,
+): Into[] | Refused {
+  if (into === undefined) return [];
+  for (const ref of [`${HEADS}${into}`, `${REMOTES}${into}`]) {
+    const sha = refCommit(runGit, top, ref);
+    if (sha !== undefined) return [{ name: into, sha, ref }];
+  }
+  return refuse(
+    `--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`,
+    INTO_WAY,
+  );
+}
+
+// The branch a worktree is on holds its head, so it shows nothing landed.
+function ownIntoLines(targets: Into[], entry: WorktreeEntry): string[] {
+  return targets
+    .filter((target) => target.ref === entry.branch)
+    .map(
+      (target) =>
+        `--into ${target.name} is the branch ${entry.path} is on, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in`,
+    );
+}
+
+// What the branch's plan weighs beyond the row: --discard, and the --into target.
+type Judging = { discard: boolean; extra: TargetRef[] };
 
 export const samePath = (a: string, b: string): boolean =>
   physical(a) === physical(b);
@@ -166,14 +235,24 @@ const commitCount = (count: number): string =>
 
 const DISCARD_WAY = `run remove again with ${DISCARD} to remove it anyway, keeping them in a backup ref only`;
 
+// Where the landed check looked, as the only-here refusal names it.
+function nowhereWords(extra: TargetRef[]): string {
+  if (extra.length === 0) {
+    return 'in no landed branch and no remote-tracking ref';
+  }
+  const names = extra.map((target) => target.name).join(', ');
+  return `in no landed branch, not in ${names}, and in no remote-tracking ref`;
+}
+
 // The backup ref's kind. Commits held nowhere else are kept by a branch that
 // stays; where the branch goes or the HEAD is detached, they need --discard.
 function backupKind(
   commits: CommitsAt,
   branch: { stays: boolean; where: string },
-  discard: boolean,
+  judging: Judging,
 ): BackupKind | Refused {
   const { stays, where } = branch;
+  const { discard, extra } = judging;
   switch (commits.kind) {
     case 'landed':
       return 'landed';
@@ -183,7 +262,7 @@ function backupKind(
       if (stays) return 'kept';
       if (discard) return 'discarded';
       return refuse(
-        `${where} has ${commitCount(commits.count)} found in no landed branch and no remote-tracking ref, as of the last fetch, so remove took nothing`,
+        `${where} has ${commitCount(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`,
         DISCARD_WAY,
       );
     case 'unknown':
@@ -200,15 +279,19 @@ function backupKind(
   }
 }
 
-// The verified head and the branch's plan. Only Claude Code's own branch for
-// this folder is deleted. Every plan writes a backup ref, and only one that
-// loses commits held nowhere else, the branch deleted or the HEAD detached,
-// needs --discard.
+// The branch a worktree is on, or its detached HEAD, as the lines name it.
+const whereOf = (entry: WorktreeEntry): string =>
+  entry.branch?.replace(HEADS, '') ?? `the detached HEAD at ${entry.path}`;
+
+// The verified head and the branch's plan. Only the worktree's own branch,
+// worktree-<name> or one sidekick worktree move marked for it, is deleted.
+// Every plan writes a backup ref, and only one that loses commits held nowhere
+// else, the branch deleted or the HEAD detached, needs --discard.
 function branchPlan(
   env: WorktreeEnv,
   repo: Repo,
   row: WorktreeRow,
-  discard: boolean,
+  judging: Judging,
 ): Checked | Refused {
   const { entry, name } = row;
   const head =
@@ -221,13 +304,23 @@ function branchPlan(
     );
   }
   const branch = entry.branch?.replace(HEADS, '');
-  const stays = branch !== undefined && branch !== nativeBranch(name);
-  const where = branch ?? `the detached HEAD at ${entry.path}`;
-  const commits = row.commits ?? commitsAt(env.runGit, repo, head);
-  const kind = backupKind(commits, { stays, where }, discard);
+  const stays =
+    branch !== undefined && !isOwnBranch(env.runGit, repo.top, branch, name);
+  const where = whereOf(entry);
+  const commits =
+    row.commits ?? commitsAt(env.runGit, repo, head, judging.extra);
+  const kind = backupKind(commits, { stays, where }, judging);
   if (typeof kind !== 'string') return kind;
   const ref = backupRef(kind, name, head);
-  return { entry, name, head, plan: planOf(branch, stays, ref) };
+  return { entry, name, head, commits, plan: planOf(branch, stays, ref) };
+}
+
+// With --into, the line that answers it: where the work landed, in that target
+// or in one the landed check tried after it.
+function landedLines(extra: TargetRef[], checked: Checked): string[] {
+  const { commits, entry } = checked;
+  if (extra.length === 0 || commits.kind !== 'landed') return [];
+  return [`${whereOf(entry)} landed in ${commits.in}`];
 }
 
 function planOf(
@@ -244,7 +337,8 @@ function planOf(
 /**
  * The checks before the backup ref, which change nothing. A failed listing
  * refuses with its reason; a record that would not read holds the worktree in
- * the shared state, which names the record.
+ * the shared state, which names the record. `--into` resolves before any other
+ * check; once the checks pass, a line says where the work landed.
  */
 export function checkTarget(
   args: RemoveArgs,
@@ -252,8 +346,12 @@ export function checkTarget(
   repo: Repo,
   out: Out,
 ): Checked | Refused {
+  const extra = intoTargets(env.runGit, repo.top, args.into);
+  if ('refused' in extra) return extra;
   const entry = resolveTarget(repo, env.cwd, args.target);
   if ('refused' in entry) return entry;
+  const ownInto = ownIntoLines(extra, entry);
+  if (ownInto.length > 0) return refuse(...ownInto);
   const nested = nestedLines(repo, entry);
   if (nested.length > 0) return refuse(...nested);
   const { src, listing, skipWarnings } = readSources(env, alone(repo, entry));
@@ -265,10 +363,13 @@ export function checkTarget(
   for (const warning of [...listing.warnings, ...skipWarnings]) {
     out(warning);
   }
-  const [row] = worktreeRows(src, env.runGit);
+  const [row] = worktreeRows(src, env.runGit, extra);
   const kept = stateLines(row.state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0) return refuse(...kept);
-  return branchPlan(env, repo, row, args.discard);
+  const checked = branchPlan(env, repo, row, { discard: args.discard, extra });
+  if ('refused' in checked) return checked;
+  for (const line of landedLines(extra, checked)) out(line);
+  return checked;
 }
 
 /**

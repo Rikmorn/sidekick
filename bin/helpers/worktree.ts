@@ -29,7 +29,7 @@ import {
 export type { WorktreeEnv } from './worktree-read.js';
 
 export const WORKTREE_USAGE_LINE =
-  'sidekick worktree list | move <branch> [--from <base>] | move --pr <n> | remove <name|path> [--discard]';
+  'sidekick worktree list | move <branch> [--from <base>] | move --pr <n> | remove <name|path> [--into <target>] [--discard]';
 
 type Verb = (rest: string[], env: WorktreeEnv, out: Out, err: Out) => number;
 

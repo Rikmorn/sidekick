@@ -269,18 +269,27 @@ export function stateOf(
   return cheapState(src, entry, lock) ?? diskState(runGit, src.repo, entry);
 }
 
-/** Every linked worktree's row; runs status, the ignored check, and the landed check. */
-export function worktreeRows(src: CheapSources, runGit: Runner): WorktreeRow[] {
+/**
+ * Every linked worktree's row; runs status, the ignored check, and the landed
+ * check, which tries the `extra` targets first.
+ */
+export function worktreeRows(
+  src: CheapSources,
+  runGit: Runner,
+  extra: TargetRef[] = [],
+): WorktreeRow[] {
   return linked(src.repo).map((entry) => {
     const lock = lockStateOf(entry.locked, src.isAlive);
     const state = stateOf(src, runGit, entry, lock);
     const base = { entry, name: path.basename(entry.path), lock, state };
     if (state.kind === 'held' || state.kind === 'worker') return base;
-    return { ...base, commits: commitsAt(runGit, src.repo, entry.head ?? '') };
+    const commits = commitsAt(runGit, src.repo, entry.head ?? '', extra);
+    return { ...base, commits };
   });
 }
 
-type Target = { name: string; sha: string };
+/** A ref the landed check judges: its short name, and its full sha. */
+export type TargetRef = { name: string; sha: string };
 
 // A target ref resolved to the full sha `landedIn` needs; skipped when it names no commit.
 function resolveTarget(
@@ -288,13 +297,19 @@ function resolveTarget(
   repo: Repo,
   ref: string,
   name: string,
-): Target[] {
+): TargetRef[] {
   const sha = commitOf(runGit, repo.top, ref);
   return sha === undefined ? [] : [{ name, sha }];
 }
 
-// The branch the main checkout holds, then origin's default branch.
-function targetsOf(runGit: Runner, repo: Repo): Target[] {
+// The extra targets, then the branch the main checkout holds, then origin's
+// default branch. A target at a commit already listed is dropped, so
+// `landed in` names the first.
+function targetsOf(
+  runGit: Runner,
+  repo: Repo,
+  extra: TargetRef[],
+): TargetRef[] {
   const branch = repo.worktrees[0].branch;
   const held =
     branch === undefined
@@ -310,8 +325,9 @@ function targetsOf(runGit: Runner, repo: Repo): Target[] {
           `${REMOTES}origin/${base}`,
           `origin/${base}`,
         );
-  const distinct = remote.filter((r) => held.every((h) => h.sha !== r.sha));
-  return [...held, ...distinct];
+  return [...extra, ...held, ...remote].filter(
+    (target, at, all) => all.findIndex((t) => t.sha === target.sha) === at,
+  );
 }
 
 // The first remote-tracking ref holding `head`, not a remote's symbolic HEAD.
@@ -337,7 +353,7 @@ function countOnlyHere(
   runGit: Runner,
   top: string,
   head: string,
-  targets: Target[],
+  targets: TargetRef[],
 ): CommitsAt {
   const result = runGit(
     'git',
@@ -362,18 +378,23 @@ function countOnlyHere(
 }
 
 /**
- * Where `head` lives: landed in the main checkout's branch or origin's default
- * branch, else pushed to a remote-tracking ref, else only here. A target the
- * landed check cannot judge is skipped; with none judged and nothing pushed the
- * answer is `unknown`.
+ * Where `head` lives: landed in an `extra` target, the main checkout's branch,
+ * or origin's default branch, tried in that order, else pushed to a
+ * remote-tracking ref, else only here. A target the landed check cannot judge
+ * is skipped; with none judged and nothing pushed the answer is `unknown`.
  */
-export function commitsAt(runGit: Runner, repo: Repo, head: string): CommitsAt {
+export function commitsAt(
+  runGit: Runner,
+  repo: Repo,
+  head: string,
+  extra: TargetRef[] = [],
+): CommitsAt {
   const sha = commitOf(runGit, repo.top, head);
   if (sha === undefined) {
     return { kind: 'unknown', why: `${head || 'HEAD'} names no commit` };
   }
-  const targets = targetsOf(runGit, repo);
-  const checked: Target[] = [];
+  const targets = targetsOf(runGit, repo, extra);
+  const checked: TargetRef[] = [];
   for (const target of targets) {
     const landing = landedIn(runGit, repo.top, {
       target: target.sha,

@@ -1,11 +1,13 @@
 /**
- * `sidekick worktree remove <name|path> [--discard]`: removes one linked
- * worktree that no session holds and no worker owns. It deletes only the
- * branch Claude Code made for that worktree, `worktree-<name>`, and keeps any
- * other. The worktree's head, on any branch or detached, goes into a backup
- * ref before anything is deleted. It never forces, so git itself refuses a
- * worktree with changes. Each refusal names what it found. The checks live in
- * `worktree-remove-checks.ts`; the deletions live here.
+ * `sidekick worktree remove <name|path> [--into <target>] [--discard]`:
+ * removes one linked worktree that no session holds and no worker owns. It
+ * deletes only the worktree's own branch: `worktree-<name>`, which Claude Code
+ * made for it, or a branch `sidekick worktree move` made for it and marked.
+ * It keeps any other. `--into` adds a local branch or remote-tracking ref to
+ * the landed check. The worktree's head, on any branch or detached, goes into
+ * a backup ref before anything is deleted. It never forces, so git itself
+ * refuses a worktree with changes. Each refusal names what it found. The
+ * checks live in `worktree-remove-checks.ts`; the deletions live here.
  */
 
 import type { Repo } from './desk-children.js';
@@ -154,7 +156,7 @@ function settleBranch(
       return [];
     case 'keep':
       out(
-        `branch ${plan.branch} kept: remove deletes only ${nativeBranch(name)}, the branch made for this worktree`,
+        `branch ${plan.branch} kept: remove deletes only ${nativeBranch(name)} or a branch sidekick worktree move made for this worktree`,
       );
       return [];
     case 'delete': {
@@ -233,9 +235,11 @@ const fail = (lines: string[], err: Out): number => {
 };
 
 /**
- * Removes the worktree `args` names, and deletes its branch only when Claude
- * Code made that branch for it. The head is kept in a backup ref first, the
- * head of a kept branch included. Returns the exit code.
+ * Removes the worktree `args` names, and deletes its branch only when that
+ * branch is the worktree's own: `worktree-<name>`, or one `sidekick worktree
+ * move` marked for it. The landed check tries `args.into` first. The head is
+ * kept in a backup ref first, the head of a kept branch included. Returns the
+ * exit code.
  */
 export function removeWorktree(
   args: RemoveArgs,
