@@ -32,7 +32,7 @@ function run(
   const err: string[] = [];
   const code = runWorktreeCli(
     args,
-    { cwd, runGit: execRunner, runClaude, isAlive },
+    { cwd, runGit: execRunner, runClaude, isAlive, env: {} },
     (l) => out.push(l),
     (l) => err.push(l),
   );

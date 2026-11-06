@@ -14,7 +14,7 @@ import type { Runner } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
 import { LISTING, listJobs } from './worker-jobs.js';
 import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
-import { commitOf, HEADS, physical } from './worker-repo.js';
+import { commitOf, creationCommit, HEADS, physical } from './worker-repo.js';
 import { nativeBranch, nativeFolder, shortBranch } from './worker-worktree.js';
 
 /** What the worktree check found: the right worktree, a wrong one with its likely cause, or a check that did not run. */
@@ -139,29 +139,6 @@ function lastSaw(
       ? `the job still runs in ${now.checkout}, so a slow WorktreeCreate hook or .worktreeinclude copy may still be making its worktree`
       : now.saw;
   return `after ${tried} tries, ${saw}`;
-}
-
-// The commit a branch was created at: the oldest entry of its reflog, the last
-// line git prints.
-function creationCommit(
-  runGit: Runner,
-  top: string,
-  ref: string | undefined,
-): { sha: string } | { issue: string } {
-  if (ref === undefined) {
-    return { issue: 'the worktree has a detached HEAD, so no branch reflog' };
-  }
-  const result = runGit('git', ['reflog', 'show', '--format=%H', ref], top);
-  if (result.code !== 0) {
-    return { issue: `git reflog show ${ref} failed: ${result.stderr.trim()}` };
-  }
-  const oldest = result.stdout.trim().split('\n').at(-1) ?? '';
-  if (oldest === '') {
-    return {
-      issue: `${ref} has no reflog to read its creation commit from`,
-    };
-  }
-  return { sha: oldest };
 }
 
 const unchecked = (why: string): WorktreeVerdict => ({

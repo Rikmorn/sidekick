@@ -17,6 +17,8 @@ export interface WorktreeEnv {
   runGit: Runner;
   runClaude: ClaudeRunner;
   isAlive: (pid: number) => boolean;
+  /** The process environment, injected so a test run inside a worker does not read as one. */
+  env: NodeJS.ProcessEnv;
 }
 
 export type Out = (line: string) => void;

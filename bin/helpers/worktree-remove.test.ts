@@ -53,7 +53,13 @@ function run(cwd: string, args: string[], fakes: Fakes = {}) {
   const err: string[] = [];
   const code = runWorktreeCli(
     ['remove', ...args],
-    { cwd, runGit, runClaude, isAlive: fakes.isAlive ?? (() => false) },
+    {
+      cwd,
+      runGit,
+      runClaude,
+      isAlive: fakes.isAlive ?? (() => false),
+      env: {},
+    },
     (l) => out.push(l),
     (l) => err.push(l),
   );
@@ -254,6 +260,7 @@ describe('worktree remove: removes', () => {
       runGit: execRunner,
       runClaude: () => NO_SESSIONS,
       isAlive: () => false,
+      env: {},
     };
     runWorktreeCli(
       ['list'],

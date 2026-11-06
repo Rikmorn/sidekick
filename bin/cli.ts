@@ -172,6 +172,7 @@ export function main(
         runGit: execRunner,
         runClaude: ctx.runClaude ?? execClaude,
         isAlive: processIsAlive,
+        env: ctx.env,
       },
       out,
       err,

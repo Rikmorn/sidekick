@@ -1,7 +1,7 @@
 /**
  * Facts that `sidekick worker` reads through git about a repo: the full sha of
  * a rev and of `HEAD`, whether the tracked files are clean, whether a branch
- * exists, the checkout that holds a folder, a path's physical form, and the
+ * exists, the creation commit of a branch, the checkout that holds a folder, a path's physical form, and the
  * remotes that set a push URL.
  */
 
@@ -105,4 +105,26 @@ export function remotesWithPushUrl(runGit: Runner, top: string): string[] {
     .map((line) => PUSH_URL_KEY.exec(line.split(' ')[0])?.[1])
     .filter((name) => name !== undefined);
   return [...new Set(names)];
+}
+
+/** The commit a branch was created at: the oldest entry of its reflog, the last line git prints. */
+export function creationCommit(
+  runGit: Runner,
+  top: string,
+  ref: string | undefined,
+): { sha: string } | { issue: string } {
+  if (ref === undefined) {
+    return { issue: 'the worktree has a detached HEAD, so no branch reflog' };
+  }
+  const result = runGit('git', ['reflog', 'show', '--format=%H', ref], top);
+  if (result.code !== 0) {
+    return { issue: `git reflog show ${ref} failed: ${result.stderr.trim()}` };
+  }
+  const oldest = result.stdout.trim().split('\n').at(-1) ?? '';
+  if (oldest === '') {
+    return {
+      issue: `${ref} has no reflog to read its creation commit from`,
+    };
+  }
+  return { sha: oldest };
 }

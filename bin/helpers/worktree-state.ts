@@ -145,10 +145,16 @@ function unseenHold(src: CheapSources): string | undefined {
   return `unknown: a worker record would not read: ${src.unreadRecords.join('; ')}`;
 }
 
-// The worker `name`'s worktree by Claude Code's folder for it, by the folder's
-// name, or by the branch, Claude Code's or the worker's name. Each match errs
-// toward refusing and naming finish.
-function isWorkers(top: string, name: string, entry: WorktreeEntry): boolean {
+/**
+ * Whether `entry` is the worker `name`'s worktree: by Claude Code's folder for
+ * it, by the folder's name, or by the branch, Claude Code's or the worker's
+ * name. Each match errs toward refusing and naming finish.
+ */
+export function isWorkers(
+  top: string,
+  name: string,
+  entry: WorktreeEntry,
+): boolean {
   const branch =
     entry.branch === undefined ? undefined : shortBranch(entry.branch);
   return (

@@ -1382,6 +1382,23 @@ function remotesWithPushUrl(runGit, top) {
 `).map((line) => PUSH_URL_KEY.exec(line.split(" ")[0])?.[1]).filter((name) => name !== undefined);
   return [...new Set(names)];
 }
+function creationCommit(runGit, top, ref) {
+  if (ref === undefined) {
+    return { issue: "the worktree has a detached HEAD, so no branch reflog" };
+  }
+  const result = runGit("git", ["reflog", "show", "--format=%H", ref], top);
+  if (result.code !== 0) {
+    return { issue: `git reflog show ${ref} failed: ${result.stderr.trim()}` };
+  }
+  const oldest = result.stdout.trim().split(`
+`).at(-1) ?? "";
+  if (oldest === "") {
+    return {
+      issue: `${ref} has no reflog to read its creation commit from`
+    };
+  }
+  return { sha: oldest };
+}
 
 // bin/helpers/worker-brief.ts
 var FENCE = "---";
@@ -9601,23 +9618,6 @@ function lastSaw(now, tried) {
   const saw = now.kind === "checkout" ? `the job still runs in ${now.checkout}, so a slow WorktreeCreate hook or .worktreeinclude copy may still be making its worktree` : now.saw;
   return `after ${tried} tries, ${saw}`;
 }
-function creationCommit(runGit, top, ref2) {
-  if (ref2 === undefined) {
-    return { issue: "the worktree has a detached HEAD, so no branch reflog" };
-  }
-  const result = runGit("git", ["reflog", "show", "--format=%H", ref2], top);
-  if (result.code !== 0) {
-    return { issue: `git reflog show ${ref2} failed: ${result.stderr.trim()}` };
-  }
-  const oldest = result.stdout.trim().split(`
-`).at(-1) ?? "";
-  if (oldest === "") {
-    return {
-      issue: `${ref2} has no reflog to read its creation commit from`
-    };
-  }
-  return { sha: oldest };
-}
 var unchecked2 = (why) => ({
   kind: "unchecked",
   line: `the worktree check did not run: ${why}`
@@ -11664,7 +11664,8 @@ function main(argv2, ctx, out, err) {
       cwd: ctx.cwd,
       runGit: execRunner,
       runClaude: ctx.runClaude ?? execClaude,
-      isAlive: processIsAlive
+      isAlive: processIsAlive,
+      env: ctx.env
     }, out, err);
   }
   if (sub === "desk") {
