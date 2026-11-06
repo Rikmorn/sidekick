@@ -1,12 +1,14 @@
 /**
  * `sidekick worktree`: `list` prints one line per linked worktree saying
  * whether to keep or remove it, then the backup refs earlier removals left, and
- * changes nothing. `remove` lives in `worktree-remove.ts`. Usage errors and git
- * failures print to stderr and return 1.
+ * changes nothing. `move` lives in `worktree-move.ts`, and `remove` in
+ * `worktree-remove.ts`. Usage errors and git failures print to stderr and
+ * return 1.
  */
 
 import type { Runner } from './pm-data.js';
 import { HEADS } from './worker-repo.js';
+import { moveWorktree, parseMoveArgs } from './worktree-move.js';
 import {
   heldWords,
   type Out,
@@ -27,7 +29,7 @@ import {
 export type { WorktreeEnv } from './worktree-read.js';
 
 export const WORKTREE_USAGE_LINE =
-  'sidekick worktree list | remove <name|path> [--discard]';
+  'sidekick worktree list | move <branch> [--from <base>] | move --pr <n> | remove <name|path> [--discard]';
 
 type Verb = (rest: string[], env: WorktreeEnv, out: Out, err: Out) => number;
 
@@ -147,6 +149,12 @@ const listVerb: Verb = (rest, env, out, err) => {
   return 0;
 };
 
+const moveVerb: Verb = (rest, env, out, err) => {
+  const args = parseMoveArgs(rest);
+  if (args === undefined) return usage(err);
+  return moveWorktree(args, env, out, err);
+};
+
 const removeVerb: Verb = (rest, env, out, err) => {
   const args = parseRemoveArgs(rest);
   if (args === undefined) return usage(err);
@@ -155,6 +163,7 @@ const removeVerb: Verb = (rest, env, out, err) => {
 
 const VERBS: Record<string, Verb> = {
   list: listVerb,
+  move: moveVerb,
   remove: removeVerb,
 };
 

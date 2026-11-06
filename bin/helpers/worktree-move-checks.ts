@@ -109,8 +109,8 @@ const FRESH_WAY =
 const BRIEF_WAY = "a worker's brief sets its branch, not move";
 const AGAIN_WAY = 'then run move again';
 
-// git's message on one line, since a refusal line holds one finding.
-const gitWords = (stderr: string): string =>
+/** git's message on one line, since each line move prints holds one finding. */
+export const gitWords = (stderr: string): string =>
   stderr
     .split('\n')
     .map((line) => line.trim())

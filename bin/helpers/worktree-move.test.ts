@@ -2,9 +2,11 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
 import { recordsDir, writeRecord } from './worker-record.js';
+import { runWorktreeCli, WORKTREE_USAGE_LINE } from './worktree.js';
+import { markOf } from './worktree-mark.js';
 import {
   checkMove,
   type MoveCheck,
@@ -608,5 +610,544 @@ describe('checkMove: the move each branch needs', () => {
     expect(refused(result)).toEqual([
       '--pr reads pull requests from origin, and this repository has no remote named origin: add the GitHub remote as origin, then run move again',
     ]);
+  });
+});
+
+interface Moved {
+  code: number;
+  out: string[];
+  err: string[];
+  /** Every git call's arguments, in order. */
+  calls: string[][];
+}
+
+// Runs `sidekick worktree move` from `cwd` through the CLI's dispatch,
+// recording each git call and asserting it ran no claude.
+function move(cwd: string, rest: string[], runGit: Runner = execRunner): Moved {
+  const calls: string[][] = [];
+  const recording: Runner = (cmd, args, dir) => {
+    calls.push(args);
+    return runGit(cmd, args, dir);
+  };
+  const claudeCalls: string[][] = [];
+  const runClaude: ClaudeRunner = (claudeArgs) => {
+    claudeCalls.push(claudeArgs);
+    return { code: 0, stdout: '[]', stderr: '', timedOut: false };
+  };
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = runWorktreeCli(
+    ['move', ...rest],
+    { cwd, runGit: recording, runClaude, isAlive: () => false, env: {} },
+    (line) => out.push(line),
+    (line) => err.push(line),
+  );
+  expect(claudeCalls).toEqual([]);
+  return { code, out, err, calls };
+}
+
+function expectLine(moved: Moved, line: string): void {
+  expect(moved.err).toEqual([]);
+  expect(moved.out).toEqual([line]);
+  expect(moved.code).toBe(0);
+}
+
+function expectFailed(moved: Moved): void {
+  expect(moved.out).toEqual([]);
+  expect(moved.code).toBe(1);
+}
+
+// Where the worktree is: its branch, HEAD, changes, and worktree-w1's ref
+// line, which is empty once the branch is gone.
+const where = (f: Fixture) => ({
+  branch: git(f.dir, 'branch', '--show-current'),
+  head: git(f.dir, 'rev-parse', 'HEAD'),
+  status: git(f.dir, 'status', '--porcelain'),
+  own: git(f.main, 'for-each-ref', `refs/heads/${OWN}`),
+});
+
+const ownLine = (f: Fixture): string =>
+  `${f.created} commit\trefs/heads/${OWN}`;
+
+const unmoved = (f: Fixture) => ({
+  branch: OWN,
+  head: f.created,
+  status: '',
+  own: ownLine(f),
+});
+
+const STAYED = (f: Fixture): string =>
+  `nothing changed in ${f.dir}: it is still on ${OWN}`;
+
+// A local config value, or undefined when it is unset.
+function configOf(f: Fixture, key: string): string | undefined {
+  const result = execRunner('git', ['config', '--local', '--get', key], f.main);
+  return result.code === 0 ? result.stdout.trim() : undefined;
+}
+
+// A new commit on the trunk's tree, made on no branch so no checkout moves,
+// and held by refs/scratch/<name> so a fetch can name it.
+function looseCommit(f: Fixture, name: string): string {
+  const sha = git(
+    f.main,
+    'commit-tree',
+    `${f.trunk}^{tree}`,
+    '-p',
+    f.trunk,
+    '-m',
+    name,
+  );
+  git(f.main, 'update-ref', `refs/scratch/${name}`, sha);
+  return sha;
+}
+
+// A new commit only on origin, at `ref`. Tests never push, so the bare repo
+// fetches it.
+function originCommit(f: Fixture, ref: string): string {
+  const sha = looseCommit(f, 'tip');
+  git(f.bare, 'fetch', '-q', f.main, `+refs/scratch/tip:${ref}`);
+  return sha;
+}
+
+// A branch withenv that tracks .env, while the worktree holds its own .env as
+// an ignored file. Returns that file's path.
+function ignoredFileTheTargetTracks(f: Fixture): string {
+  git(f.main, 'switch', '-q', '-c', 'withenv');
+  fs.writeFileSync(path.join(f.main, '.env'), 'TRACKED=1\n');
+  git(f.main, 'add', '.env');
+  git(f.main, 'commit', '-q', '-m', 'env');
+  git(f.main, 'switch', '-q', f.trunk);
+  const info = path.join(f.main, '.git', 'info');
+  fs.mkdirSync(info, { recursive: true });
+  fs.appendFileSync(path.join(info, 'exclude'), '.env\n');
+  const file = path.join(f.dir, '.env');
+  fs.writeFileSync(file, 'LOCAL=1\n');
+  return file;
+}
+
+describe('move: the five moves', () => {
+  test("new, at the worktree's commit: created there, marked, and worktree-w1 dropped", () => {
+    const f = fixture();
+    const moved = move(f.dir, ['feat']);
+    expectLine(
+      moved,
+      `feat · ${f.created} · new branch · from the worktree's commit`,
+    );
+    expect(where(f)).toEqual({
+      branch: 'feat',
+      head: f.created,
+      status: '',
+      own: '',
+    });
+    expect(markOf(execRunner, f.main, 'feat')).toBe(NAME);
+    expect(configOf(f, 'branch.feat.merge')).toBeUndefined();
+  });
+
+  test('new, --from a local branch: created at its commit, marked', () => {
+    const f = fixture();
+    const sha = commit(f.main, 'c.txt');
+    const moved = move(f.dir, ['feat', '--from', f.trunk]);
+    expectLine(moved, `feat · ${sha} · new branch · from ${f.trunk}`);
+    expect(where(f)).toEqual({
+      branch: 'feat',
+      head: sha,
+      status: '',
+      own: '',
+    });
+    expect(markOf(execRunner, f.main, 'feat')).toBe(NAME);
+  });
+
+  test('new, --from origin/<trunk>: fetched first, created at the fetched commit, with no upstream', () => {
+    const f = fixture();
+    const sha = originCommit(f, `refs/heads/${f.trunk}`);
+    const from = `origin/${f.trunk}`;
+    const moved = move(f.dir, ['feat', '--from', from]);
+    expectLine(moved, `feat · ${sha} · new branch · from ${from}`);
+    expect(where(f)).toEqual({
+      branch: 'feat',
+      head: sha,
+      status: '',
+      own: '',
+    });
+    expect(git(f.main, 'rev-parse', `refs/remotes/${from}`)).toBe(sha);
+    expect(markOf(execRunner, f.main, 'feat')).toBe(NAME);
+    expect(configOf(f, 'branch.feat.merge')).toBeUndefined();
+    expect(configOf(f, 'branch.feat.remote')).toBeUndefined();
+  });
+
+  test('switch: a free local branch, switched to, unmarked', () => {
+    const f = fixture();
+    const sha = looseCommit(f, 'free');
+    git(f.main, 'branch', 'free', sha);
+    const moved = move(f.dir, ['free']);
+    expectLine(moved, `free · ${sha} · existing branch · from free`);
+    expect(where(f)).toEqual({
+      branch: 'free',
+      head: sha,
+      status: '',
+      own: '',
+    });
+    expect(markOf(execRunner, f.main, 'free')).toBeUndefined();
+  });
+
+  test("held: a marked branch of the worktree's name at the held one's commit, which stays where it was", () => {
+    const f = fixture();
+    const sha = commit(f.main, 'c.txt');
+    const moved = move(f.dir, [f.trunk]);
+    expectLine(
+      moved,
+      `${NAME} · ${sha} · new branch for a held one · from ${f.trunk} · land onto ${f.trunk}`,
+    );
+    expect(where(f)).toEqual({ branch: NAME, head: sha, status: '', own: '' });
+    expect(git(f.main, 'rev-parse', f.trunk)).toBe(sha);
+    expect(git(f.main, 'branch', '--show-current')).toBe(f.trunk);
+    expect(markOf(execRunner, f.main, NAME)).toBe(NAME);
+    expect(markOf(execRunner, f.main, f.trunk)).toBeUndefined();
+  });
+
+  test('origin: fetched, created at its commit, tracking origin/<branch>, unmarked', () => {
+    const f = fixture();
+    const sha = originCommit(f, 'refs/heads/feat');
+    const moved = move(f.dir, ['feat']);
+    expectLine(moved, `feat · ${sha} · tracking branch · from origin/feat`);
+    expect(where(f)).toEqual({
+      branch: 'feat',
+      head: sha,
+      status: '',
+      own: '',
+    });
+    expect(git(f.dir, 'rev-parse', '--abbrev-ref', 'feat@{u}')).toBe(
+      'origin/feat',
+    );
+    expect(markOf(execRunner, f.main, 'feat')).toBeUndefined();
+  });
+
+  test('origin, under a narrow fetch refspec: the upstream is set by config, and the worktree is clean', () => {
+    const f = fixture();
+    git(
+      f.main,
+      'config',
+      'remote.origin.fetch',
+      `+refs/heads/${f.trunk}:refs/remotes/origin/${f.trunk}`,
+    );
+    const sha = originCommit(f, 'refs/heads/feat');
+    const moved = move(f.dir, ['feat']);
+    expectLine(moved, `feat · ${sha} · tracking branch · from origin/feat`);
+    expect(where(f)).toEqual({
+      branch: 'feat',
+      head: sha,
+      status: '',
+      own: '',
+    });
+    expect(configOf(f, 'branch.feat.remote')).toBe('origin');
+    expect(configOf(f, 'branch.feat.merge')).toBe('refs/heads/feat');
+  });
+
+  test('pr: fetched into refs/remotes/pr/<n>, then detached there', () => {
+    const f = fixture();
+    const sha = originCommit(f, 'refs/pull/7/head');
+    const moved = move(f.dir, ['--pr', '7']);
+    expectLine(
+      moved,
+      `detached · ${sha} · pull request 7, read-only · from pr/7`,
+    );
+    expect(where(f)).toEqual({ branch: '', head: sha, status: '', own: '' });
+    expect(git(f.main, 'rev-parse', 'refs/remotes/pr/7')).toBe(sha);
+  });
+
+  test('an ignored file the target does not track never refuses, and stays', () => {
+    const f = fixture();
+    const info = path.join(f.main, '.git', 'info');
+    fs.mkdirSync(info, { recursive: true });
+    fs.appendFileSync(path.join(info, 'exclude'), '*.env\n');
+    const file = path.join(f.dir, 'local.env');
+    fs.writeFileSync(file, 'SECRET=1\n');
+    expect(move(f.dir, ['feat']).code).toBe(0);
+    expect(fs.readFileSync(file, 'utf-8')).toBe('SECRET=1\n');
+  });
+});
+
+describe('move: a re-run', () => {
+  test('--pr <n> again prints already moved and fetches nothing', () => {
+    const f = fixture();
+    const sha = originCommit(f, 'refs/pull/7/head');
+    expect(move(f.dir, ['--pr', '7']).code).toBe(0);
+    const again = move(f.dir, ['--pr', '7']);
+    expectLine(again, `detached · ${sha} · already moved`);
+    expect(again.calls.filter((args) => args[0] === 'fetch')).toEqual([]);
+  });
+
+  test('<branch> again prints already moved', () => {
+    const f = fixture();
+    expect(move(f.dir, ['feat']).code).toBe(0);
+    expectLine(move(f.dir, ['feat']), `feat · ${f.created} · already moved`);
+  });
+});
+
+describe('move: refusals and failures', () => {
+  test('a refusal prints to stderr, changes nothing, and exits 1', () => {
+    const f = fixture();
+    const before = snapshot(f.main);
+    const moved = move(f.dir, ['bad..name']);
+    expectFailed(moved);
+    expect(moved.err).toEqual([
+      "git check-ref-format refuses bad..name: fatal: 'bad..name' is not a valid branch name. Choose another name",
+    ]);
+    expect(snapshot(f.main)).toEqual(before);
+  });
+
+  test('arguments that fit no usage print the usage, run no git, and exit 1', () => {
+    const f = fixture();
+    expect(move(f.dir, ['--pr', 'x'])).toEqual({
+      code: 1,
+      out: [],
+      err: [`usage: ${WORKTREE_USAGE_LINE}`],
+      calls: [],
+    });
+  });
+
+  test('a failed fetch, with origin at a missing path, leaves the worktree on worktree-w1', () => {
+    const f = fixture();
+    const gone = path.join(tmp(), 'gone.git');
+    git(f.main, 'remote', 'set-url', 'origin', gone);
+    const moved = move(f.dir, ['--pr', '7']);
+    expectFailed(moved);
+    expect(moved.err[0]).toStartWith(
+      'git fetch origin +refs/pull/7/head:refs/remotes/pr/7 failed: ',
+    );
+    expect(moved.err[0]).toContain(gone);
+    expect(moved.err.slice(1)).toEqual([
+      STAYED(f),
+      'check the remote origin, then run move again',
+    ]);
+    expect(where(f)).toEqual(unmoved(f));
+  });
+
+  test('a failed fetch of a remote base leaves the worktree on worktree-w1, with no new branch', () => {
+    const f = fixture();
+    const gone = path.join(tmp(), 'gone.git');
+    git(f.main, 'remote', 'add', 'upstream', gone);
+    const moved = move(f.dir, ['feat', '--from', `upstream/${f.trunk}`]);
+    expectFailed(moved);
+    expect(moved.err[0]).toStartWith(
+      `git fetch upstream +refs/heads/${f.trunk}:refs/remotes/upstream/${f.trunk} failed: `,
+    );
+    expect(moved.err.slice(1)).toEqual([
+      STAYED(f),
+      'check the remote upstream, then run move again',
+    ]);
+    expect(where(f)).toEqual(unmoved(f));
+    expect(git(f.main, 'for-each-ref', 'refs/heads/feat')).toBe('');
+  });
+
+  test('a plain switch that would overwrite an ignored file the target tracks refuses, and keeps the file', () => {
+    const f = fixture();
+    const file = ignoredFileTheTargetTracks(f);
+    const moved = move(f.dir, ['withenv']);
+    expectFailed(moved);
+    expect(moved.err[0]).toStartWith(
+      'git switch --no-overwrite-ignore withenv failed: ',
+    );
+    expect(moved.err[0]).toContain('.env');
+    expect(moved.err.slice(1)).toEqual([
+      STAYED(f),
+      'move or delete the files git names, then run move again',
+    ]);
+    expect(fs.readFileSync(file, 'utf-8')).toBe('LOCAL=1\n');
+    expect(where(f)).toEqual(unmoved(f));
+  });
+
+  test('switch -c refuses the same way, and creates no branch', () => {
+    const f = fixture();
+    const file = ignoredFileTheTargetTracks(f);
+    const sha = git(f.main, 'rev-parse', 'withenv');
+    const moved = move(f.dir, ['feat', '--from', 'withenv']);
+    expectFailed(moved);
+    expect(moved.err[0]).toStartWith(
+      `git switch --no-overwrite-ignore -c feat --no-track ${sha} failed: `,
+    );
+    expect(moved.err[0]).toContain('.env');
+    expect(moved.err.slice(1)).toEqual([
+      STAYED(f),
+      'move or delete the files git names, then run move again',
+    ]);
+    expect(fs.readFileSync(file, 'utf-8')).toBe('LOCAL=1\n');
+    expect(where(f)).toEqual(unmoved(f));
+    expect(git(f.main, 'for-each-ref', 'refs/heads/feat')).toBe('');
+  });
+
+  test('a switch that exits 0 but leaves HEAD on worktree-w1 marks nothing and drops nothing', () => {
+    const f = fixture();
+    const noSwitch: Runner = (cmd, args, dir) =>
+      args[0] === 'switch'
+        ? { code: 0, stdout: '', stderr: '' }
+        : execRunner(cmd, args, dir);
+    const moved = move(f.dir, ['feat'], noSwitch);
+    expectFailed(moved);
+    expect(moved.err).toEqual([
+      `git switch exited 0, but ${f.dir} is on ${OWN}, not feat`,
+      `move marked nothing and kept ${OWN}: check git status in ${f.dir}, then run move again`,
+    ]);
+    expect(where(f)).toEqual(unmoved(f));
+    expect(markOf(execRunner, f.main, 'feat')).toBeUndefined();
+  });
+
+  test('a failed mark: the worktree moved, the branch stays unmarked, and the line that marks it', () => {
+    const f = fixture();
+    fs.writeFileSync(path.join(f.main, '.git', 'config.lock'), '');
+    const moved = move(f.dir, ['feat']);
+    expectFailed(moved);
+    expect(moved.err[0]).toStartWith(
+      'git config branch.feat.sidekickWorktree failed: ',
+    );
+    expect(moved.err.slice(1)).toEqual([
+      `the worktree moved to feat at ${f.created}, and feat stays unmarked, so remove keeps it`,
+      `mark it with: git config --local branch.feat.sidekickWorktree ${NAME}`,
+    ]);
+    expect(where(f)).toEqual({
+      branch: 'feat',
+      head: f.created,
+      status: '',
+      own: '',
+    });
+    expect(markOf(execRunner, f.main, 'feat')).toBeUndefined();
+  });
+
+  test('a failed upstream write: the worktree moved, and the two lines that set it', () => {
+    const f = fixture();
+    const sha = originCommit(f, 'refs/heads/feat');
+    fs.writeFileSync(path.join(f.main, '.git', 'config.lock'), '');
+    const moved = move(f.dir, ['feat']);
+    expectFailed(moved);
+    expect(moved.err[0]).toStartWith(
+      'git config --local branch.feat.remote origin failed: ',
+    );
+    expect(moved.err.slice(1)).toEqual([
+      `the worktree moved to feat at ${sha}, and feat has no upstream`,
+      'set it with: git config --local branch.feat.remote origin',
+      'and: git config --local branch.feat.merge refs/heads/feat',
+    ]);
+    expect(where(f)).toEqual({
+      branch: 'feat',
+      head: sha,
+      status: '',
+      own: '',
+    });
+  });
+
+  test('a failed drop: the worktree moved, and worktree-w1 stays at its creation commit', () => {
+    const f = fixture();
+    const lock = path.join(f.main, '.git', 'refs', 'heads', `${OWN}.lock`);
+    fs.writeFileSync(lock, '');
+    const moved = move(f.dir, ['feat']);
+    expectFailed(moved);
+    expect(moved.err[0]).toStartWith(
+      `git update-ref -d refs/heads/${OWN} failed: `,
+    );
+    expect(moved.err.slice(1)).toEqual([
+      `the worktree moved to feat at ${f.created}, and ${OWN} stays at its creation commit ${f.created}, holding no commits of its own`,
+      `delete it with: git update-ref -d refs/heads/${OWN} ${f.created}`,
+    ]);
+    expect(where(f)).toEqual({
+      branch: 'feat',
+      head: f.created,
+      status: '',
+      own: ownLine(f),
+    });
+    expect(markOf(execRunner, f.main, 'feat')).toBe(NAME);
+  });
+});
+
+// The read-only git the checks and the drop run, by subcommand, beside the
+// reads isAllowed matches by their arguments. rev-list runs on refusal 4 only.
+const READS = [
+  'rev-parse',
+  'status',
+  'rev-list',
+  'ls-remote',
+  'check-ref-format',
+];
+
+// Arguments move never passes.
+const FORBIDDEN = ['--force', '-f', '-D', 'reset', 'clean', 'prune'];
+
+// A fetch writes only remote-tracking refs, and names where.
+const REMOTE_REFSPEC = /^\+refs\/[^:]+:refs\/remotes\//;
+
+// A config read, a set of one key, or the drop's section removal.
+function isConfigAllowed(rest: string[]): boolean {
+  const args = rest.filter((arg) => arg !== '--local');
+  if (['--get', '--get-regexp', '--remove-section'].includes(args[0])) {
+    return true;
+  }
+  return args.length === 2 && !args[0].startsWith('-');
+}
+
+// Whether a git call is a read the checks make, or a write move may make.
+function isAllowed(call: string[]): boolean {
+  const [sub, ...rest] = call[0] === '-C' ? call.slice(2) : call;
+  switch (sub) {
+    case 'worktree':
+      return rest[0] === 'list';
+    case 'reflog':
+      return rest[0] === 'show';
+    case 'remote':
+      return rest.length === 0;
+    case 'config':
+      return isConfigAllowed(rest);
+    case 'fetch':
+      return rest.length === 2 && REMOTE_REFSPEC.test(rest[1]);
+    case 'switch':
+      return rest[0] === '--no-overwrite-ignore';
+    case 'update-ref':
+      return rest.length === 3 && rest[0] === '-d';
+    default:
+      return READS.includes(sub);
+  }
+}
+
+const MOVES: [string, (f: Fixture) => string[]][] = [
+  ['new, here', () => ['feat']],
+  ['new, local', (f) => ['feat', '--from', f.trunk]],
+  ['new, remote', (f) => ['feat', '--from', `origin/${f.trunk}`]],
+  [
+    'switch',
+    (f) => {
+      git(f.main, 'branch', 'free', looseCommit(f, 'free'));
+      return ['free'];
+    },
+  ],
+  ['held', (f) => [f.trunk]],
+  [
+    'origin',
+    (f) => {
+      originCommit(f, 'refs/heads/feat');
+      return ['feat'];
+    },
+  ],
+  [
+    'pr',
+    (f) => {
+      originCommit(f, 'refs/pull/7/head');
+      return ['--pr', '7'];
+    },
+  ],
+];
+
+describe('move: the git allow list', () => {
+  test.each(
+    MOVES,
+  )('%s runs only reads and the allowed writes, never a force or a reset', (_, setup) => {
+    const f = fixture();
+    const moved = move(f.dir, setup(f));
+    expect(moved.code).toBe(0);
+    expect(moved.calls.filter((call) => !isAllowed(call))).toEqual([]);
+    const forced = moved.calls.filter((call) =>
+      call.some((arg) => FORBIDDEN.includes(arg)),
+    );
+    expect(forced).toEqual([]);
+    const subcommands = moved.calls.map((call) => call[0]);
+    expect(subcommands).toContain('switch');
+    expect(subcommands).toContain('update-ref');
   });
 });
