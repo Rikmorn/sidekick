@@ -1,12 +1,13 @@
 # Worktrees
 
-`sidekick worktree list` answers "keep or remove?" for every linked worktree of the repo. It is read-only, and runs from the main checkout or any linked worktree. It exits 0 when it ran and 1 on a usage error or a git failure. `sidekick worktree remove` removes one worktree that `list` shows as `removable` or `folder gone`, as "What `remove` does" says.
+`sidekick worktree list` answers "keep or remove?" for every linked worktree of the repo, and says who works in the main checkout. It is read-only, and runs from the main checkout or any linked worktree. It exits 0 when it ran and 1 on a usage error or a git failure. `sidekick worktree move` puts a fresh worktree on the branch its work belongs on, as "What `move` does" says. `sidekick worktree remove` removes one worktree that `list` shows as `removable` or `folder gone`, as "What `remove` does" says.
 
 ## What `list` prints
 
-One line per linked worktree. The main checkout gets none. Fields join with ` · `:
+The first line is the main checkout's. Then comes one line per linked worktree. Fields join with ` · `:
 
 ```
+main checkout · in use by session sidekick-e6 · master · /repo
 r10-x · removable · landed in milestone/r10-memory-and-parallel-sessions · worktree-r10-x · /repo/.claude/worktrees/r10-x
 old-y · folder gone · only here, 3 commits · worktree-old-y · /repo/.claude/worktrees/old-y
 feat · dirty: scratch.sh, notes.md · pushed to origin/feature-x · worktree-feat · /repo/.claude/worktrees/feat
@@ -14,9 +15,15 @@ w1 · a worker's: sidekick worker finish · worktree-w1 · /repo/.claude/worktre
 s · held by pid 4242 · worktree-s · /repo/.claude/worktrees/s
 ```
 
-The fields run in this order: the folder's name, the state, where the commits live, the branch (`detached` when there is none), and the path. A held or worker row has no commits field, since the check costs seconds and its answer would change nothing. With no linked worktrees, `list` prints `no linked worktrees`.
+A worktree row has these fields in order: the folder's name, the state, where the commits live, the branch (`detached` when none), and the path. A held or worker row has no commits field, since the check costs seconds and its answer would change nothing. With no linked worktrees, `list` prints `no linked worktrees` after the main checkout's line.
 
-After the rows, a `backup refs:` line lists each ref under `refs/sidekick/` with `commit dated <date>`. The ref holds no creation date, so the date is its commit's. With no refs, nothing prints. When any row is `removable` or `folder gone`, the last line is `remove one with: sidekick worktree remove <name>`.
+The main checkout's line reads `main checkout · <use> · <branch> · <path>`, with `detached` for a missing branch. `<use>` is one of three:
+
+- `free`: no current session sits in the main checkout.
+- `in use by session <name>`, with more sessions after a comma: a current row of `claude agents --json --all` has its `cwd` in the main checkout and in no linked worktree.
+- `unknown: <why>`: `claude agents` failed, or its listing was partial, so nothing says whether a session is there. An unreadable worker record does not make it unknown, since records name workers' worktrees.
+
+After the worktree rows, when any row is `removable` or `folder gone`, the line `remove one with: sidekick worktree remove <name>` prints. Then a `backup refs:` line lists each ref under `refs/sidekick/` with `commit dated <date>`. The ref holds no creation date, so the date is its commit's. With no refs, nothing prints.
 
 Warnings print before the rows:
 
@@ -55,7 +62,7 @@ A Claude Code session's lock whose pid is dead does not hold the worktree.
 
 Both checks read local refs, as of the last fetch.
 
-- `landed in <ref>`: the commits reached the branch the main checkout holds, or `origin`'s default branch, by merge, fast-forward, or squash.
+- `landed in <ref>`: the commits reached a target by merge, fast-forward, or squash. The targets are tried in this order: the `--into` ref when `remove` got one, the branch the main checkout holds, then `origin`'s default branch.
 - `pushed to <ref>`: a remote-tracking ref contains the commit, such as `origin/feature-x`.
 - `only here, N commits`: neither holds them. When `remove` deletes the worktree's own branch, or the `HEAD` is detached, a backup ref is then the only place they remain.
 - `commits unknown: <why>`: git could not answer.
@@ -68,9 +75,88 @@ Two skips are built in, at any depth: the `node_modules` folder, and the file `.
 
 A skipped folder or `.DS_Store` file is unguarded: the check never looks at it, so a new file there goes with the worktree.
 
+## What `move` does
+
+`sidekick worktree move <branch> [--from <base>]` and `sidekick worktree move --pr <n>` move the worktree that holds the command's directory onto the branch its work belongs on. Claude Code makes a fresh worktree on `worktree-<name>`, a branch named for the folder. `move` puts the worktree on the branch you name, then deletes `worktree-<name>`, which holds no commits of its own. It never runs `reset`, `clean`, `branch -D`, or `--force`.
+
+`move` runs only inside a linked worktree on `worktree-<name>`, with its `HEAD` still at that branch's creation commit and no tracked or untracked changes. Anything else refuses, so a worktree with work on it is never moved. Each refusal names what it found, exits 1, and changes nothing.
+
+### Which move runs
+
+| Kind | When | What `move` runs | Mark |
+|---|---|---|---|
+| `new branch` | `<branch>` exists neither locally nor on `origin` | `switch -c <branch> --no-track <start>`. The start is the creation commit, or the `--from` base. | `<branch>` |
+| `existing branch` | A local branch no other worktree holds | `switch <branch>` | none |
+| `new branch for a held one` | A local branch another worktree holds | `switch -c <name> --no-track <the branch's commit>`, where `<name>` is the worktree's folder name | `<name>` |
+| `tracking branch` | The branch exists on `origin` only | `fetch origin +refs/heads/<branch>:refs/remotes/origin/<branch>`, then `switch -c <branch> --no-track <fetched commit>`, then two `config` writes for `branch.<branch>.remote` and `branch.<branch>.merge` | none |
+| `pull request <n>, read-only` | `--pr <n>` | `fetch origin +refs/pull/<n>/head:refs/remotes/pr/<n>`, then `switch --detach refs/remotes/pr/<n>` | none |
+
+Every `switch` carries `--no-overwrite-ignore`. The old branch goes last: `update-ref -d` deletes a checked-out branch and leaves `HEAD` unborn, so `move` switches first. Then it runs `update-ref -d refs/heads/worktree-<name> <creation commit>`, which refuses a branch that moved, and removes the branch's config section.
+
+Git checks a branch out in one worktree at a time. So the held row makes a branch of the worktree's own name at the held branch's commit. Its line says `land onto <branch>`: the work belongs on the held branch. The `tracking branch` row sets its upstream by `config`. Under a narrow fetch refspec, `switch --track` exits 128 after it has changed the work tree. `move` never adds a fetch refspec, and `--no-track` means a `--from` base never becomes an upstream.
+
+`--from <base>` always creates a branch, so it refuses a `<branch>` that exists locally or on `origin`: drop `--from` to move onto it. A base is a branch, tag, or commit, read as the commit it names. A base written `<remote>/<b>` is fetched first, as `+refs/heads/<b>:refs/remotes/<remote>/<b>`, when `<b>` is a branch name git accepts as typed and no local branch has the whole name. Any other base, such as `origin/main~1`, resolves as a commit from the last fetch.
+
+### The mark
+
+`move` marks each branch it creates for the worktree, which is the `new branch` row's branch and the held row's own-name branch. The mark is `git config --local branch.<branch>.sidekickWorktree <name>`, in the repo's shared config. `remove` deletes a branch only when it is the worktree's own: `worktree-<name>`, or a branch marked for that name. A branch marked for another name stays, as does an unmarked one. When the mark's write fails, `move` prints the `git config` line that sets it, and until then `remove` keeps the branch, the safe side.
+
+### The line `move` prints
+
+On success `move` prints one line and exits 0. Fields join with ` · `: the branch (`detached` for a pull request), the full commit, then the fields of its kind. The examples shorten the commit to `3f9a1c2…`.
+
+```
+feat-x · 3f9a1c2… · new branch · from the worktree's commit
+feat-x · 3f9a1c2… · new branch · from origin/main
+feat-x · 3f9a1c2… · existing branch · from feat-x
+w1 · 3f9a1c2… · new branch for a held one · from feat-x · land onto feat-x
+feat-x · 3f9a1c2… · tracking branch · from origin/feat-x
+detached · 3f9a1c2… · pull request 42, read-only · from pr/42
+```
+
+The `from` field of a `new branch` line is the `--from` base as typed, or `the worktree's commit` without one. Skills read this line, so its fields and their order stay fixed.
+
+### A re-run
+
+A worktree that already moved prints one `already moved` line, fetches nothing, and exits 0:
+
+```
+feat-x · 3f9a1c2… · already moved
+```
+
+A worktree counts as moved when it is on `<branch>`, other than Claude Code's own. For the held row, it is on its own name's branch, marked for it, while another worktree holds `<branch>`. For `--pr <n>`, it is a detached `HEAD` at `refs/remotes/pr/<n>`. `move` checks this before any refusal that says the worktree is not fresh.
+
+### What it refuses
+
+The checks run in this order, and the first that fails stops `move`:
+
+1. It runs outside a repository, outside a work tree, in the main checkout, or in a folder git lists no worktree for.
+2. A worker owns the worktree: `SIDEKICK_WORKER` is set, a worker record names the worktree, or an unreadable worker record may name it. `remove` holds such a worktree too. A worker's brief sets its branch.
+3. The worktree is on any branch but `worktree-<name>`, or its `HEAD` is detached.
+4. It has tracked or untracked changes. The refusal names the first 20 paths. Ignored files are not read, since `.worktreeinclude` copies some into every new worktree.
+5. Its `HEAD` is not the creation commit of `worktree-<name>`, which is the oldest entry of that branch's reflog. The refusal counts the commits on top of it.
+6. git refuses `<branch>` as a name, or reads it as another, such as `@{-1}`.
+7. `<branch>` is a remote's name, or begins with one and a slash, such as `origin/feat`. It would read as a remote's branch: name it without the remote.
+8. `--from` with a `<branch>` that exists locally.
+9. `<branch>` is `worktree-<name>`, the branch `move` replaces.
+10. Another worktree holds `<branch>`, and a branch named `<name>` exists already.
+11. `git ls-remote origin` fails, so `move` cannot tell whether `origin` has `<branch>`. It matches the full ref `refs/heads/<branch>` exactly, since a bare pattern also matches `foo/<branch>`. A repository with no remote named `origin` skips this check.
+12. `--from` with a `<branch>` that exists on `origin`, or a base that names no commit.
+13. `--pr` with no remote named `origin`.
+
+Arguments that fit neither usage print the usage line and exit 1.
+
+### When a step fails
+
+A failed `fetch` leaves the worktree on `worktree-<name>`, and the output says so. A failed `switch` prints git's words and reads the worktree back. When git changed nothing, the output says to move or delete the files git names, then run `move` again. When git changed the work tree before it failed, the output names the branch `HEAD` is on and the count of changed paths, and asks you to check `git status`.
+
+`move` checks no ignored file beforehand, and refuses a switch that would overwrite one. A plain `git switch` replaces an ignored file that the target branch tracks, and exits 0. With `--no-overwrite-ignore`, git aborts and changes nothing. An ignored file that the target does not track never refuses, and stays where it is.
+
+When a step after the switch fails, `move` exits 1 with no line on stdout. It says the worktree moved, names what is left undone, and prints the git command that finishes it. The steps are the mark, the upstream, and the deletion of `worktree-<name>`.
+
 ## What `remove` does
 
-`sidekick worktree remove <name|path> [--discard]` removes one linked worktree. The name is the path's last segment, as `list` prints it. Of the branches, it deletes only `worktree-<name>`, the one Claude Code makes for a worktree of that name, and keeps any other. Before it removes any worktree, it keeps the `HEAD` in a backup ref, the head of a branch it keeps included. It exits 0 once the worktree is gone, with its own branch, and 1 on a refusal, a usage error, or a git failure.
+`sidekick worktree remove <name|path> [--into <target>] [--discard]` removes one linked worktree. The name is the path's last segment, as `list` prints it. Of the branches, it deletes only the worktree's own: `worktree-<name>`, the one Claude Code makes for a worktree of that name, or a branch that `sidekick worktree move` marked for that name. It keeps any other. Before it removes any worktree, it keeps the `HEAD` in a backup ref, the head of a branch it keeps included. It exits 0 once the worktree is gone, with its own branch, and 1 on a refusal, a usage error, or a git failure.
 
 ### What it refuses
 
@@ -78,6 +164,8 @@ Each refusal names what it found and deletes nothing. The checks run in this ord
 
 | Refusal | Why |
 |---|---|
+| An `--into` target that names no local branch and no remote-tracking ref | `--into` takes an exact ref: a local branch such as `main`, else a remote-tracking ref such as `origin/main`. A revision such as `main~1` names no ref. This check runs before every other. |
+| An `--into` target that is the branch the worktree is on | That branch holds the worktree's head whether or not the work landed, so it shows nothing. Name the branch the work should land in. |
 | A name that matches no worktree, or several | It removes exactly one. When two share a name, give the path. |
 | The main checkout | The repository lives there. |
 | The worktree that holds the command's own directory | Leave it first: in a Claude Code session, `ExitWorktree` with `keep`; in a shell, `cd` out. Then run `remove` from the main checkout. |
@@ -86,11 +174,11 @@ Each refusal names what it found and deletes nothing. The checks run in this ord
 | `held` or `a worker's`, in the order "The states" gives | A live session is in it or locks it, or a lock other than a Claude Code session's holds it. Or a worker owns it, a worker record would not read, or a check failed. The refusal names which, and names an unreadable record's file. `sidekick worker finish` clears a worker, with its session and record. |
 | `dirty` | Removal would lose the files it names. It also names the skip list's path, for an ignored folder that is safe to lose. |
 | A `HEAD` that git cannot resolve to a commit | No backup ref could keep it. |
-| `only here` or `commits unknown`, without `--discard`, on `worktree-<name>` or a detached `HEAD` | The backup ref would be the only place the commits remain. The refusal counts them. A worktree on any other branch needs no `--discard`, since that branch stays and keeps them. |
+| `only here` or `commits unknown`, without `--discard`, on the worktree's own branch or a detached `HEAD` | The backup ref would be the only place the commits remain. The refusal counts them, and names the `--into` target it checked. A worktree on any other branch needs no `--discard`, since that branch stays and keeps them. |
 | A `HEAD` that moved since the checks | A new commit is in no backup ref, and a detached one would go with the worktree. The refusal names both heads. Run `remove` again. |
 | A file written since the checks | `remove` runs the `dirty` check again before `claude rm`, and once more right before git's removal. A new or changed file refuses with the `dirty` refusal. |
 
-`--discard` is the operator's word that commits found nowhere else may go. It applies only when something would be lost: `remove` deletes `worktree-<name>`, or the `HEAD` is detached. Landed or pushed work needs none, and neither does a worktree on a branch `remove` keeps. With it, the backup ref's kind is `discarded`. On a kept branch, the kind for those commits is `kept`.
+`--discard` is the operator's word that commits found nowhere else may go. It applies only when something would be lost: `remove` deletes the worktree's own branch, or the `HEAD` is detached. Landed or pushed work needs none, and neither does a worktree on a branch `remove` keeps. With it, the backup ref's kind is `discarded`. On a kept branch, the kind for those commits is `kept`.
 
 ### The steps
 
@@ -101,15 +189,21 @@ Once the checks pass, `remove` runs these in order, and the first that fails sto
 3. An exited background session whose `cwd` is the worktree's top, compared physically, goes first, by `claude rm <id>` with no time limit. When `claude rm` does not say `removed`, its text prints as a note, and git's removal follows. A session whose `cwd` is only inside the worktree stays, since it may belong to another worktree.
    When another linked worktree holds this one, `remove` skips `claude rm`, since the session may belong to the enclosing worktree, which nothing checked. A note names the session, which stays listed in `claude agents`.
 4. If git still lists the worktree, `remove` reads its `HEAD` and its files once more, and a moved `HEAD` or a new or changed file refuses. Then it reads the lock afresh, since a session may lock the worktree during that check. Any lock but a Claude Code session's whose pid is dead refuses and stays. It unlocks that one, and runs `git worktree remove <path>`. A `folder gone` worktree goes the same way. When `claude rm` removed a session in step 3, a refusal here names it, and says that `remove` itself deleted no worktree and no branch.
-5. When the worktree was on `worktree-<name>`, it deletes that branch with `git update-ref -d` at the verified head, which refuses a branch that moved. Then it removes the branch's `branch.<name>` config section. Any other branch stays, and a detached worktree has no branch to delete.
+5. When the worktree was on its own branch, `worktree-<name>` or one marked for that name, it deletes that branch with `git update-ref -d` at the verified head, which refuses a branch that moved. Then it removes the branch's `branch.<name>` config section, the mark included. Any other branch stays, and a detached worktree has no branch to delete.
 
-It prints `worktree <path> removed`, then `branch <branch> removed` for the branch it deleted. For a kept branch it prints `branch <b> kept: remove deletes only worktree-<name>, the branch made for this worktree`. The last line is the way back:
+It prints `worktree <path> removed`, then `branch <branch> removed` for the branch it deleted. For a kept branch it prints `branch <b> kept: remove deletes only worktree-<name> or a branch sidekick worktree move made for this worktree`. The last line is the way back:
 
 ```
 restore with: git branch worktree-r10-x refs/sidekick/landed/r10-x/<head>
 ```
 
 For a detached worktree or a kept branch, the restore line names the worktree's name, encoded as in the ref, as the branch to create. Where git refuses that name as a branch, as it refuses `HEAD`, the line prefixes it with `restored-`. A kept branch may still exist under its own name. The line quotes each word a POSIX shell would read otherwise, as `finish`'s does.
+
+### What `--into` adds
+
+`--into <target>` adds one ref to the landed check, tried before the main checkout's branch and `origin`'s default branch. It lets a worktree on its own branch, `feat-x` after `move`, show its work landed in a branch that is neither of those, such as a milestone branch.
+
+When the checks pass, `remove` prints `<branch> landed in <target>`, or `the detached HEAD at <path> landed in <target>` for a detached worktree. It prints that line only when `--into` was given and the work landed. The target it names is the first the check found, so it may be the main checkout's branch rather than the one you gave.
 
 ### It never forces
 
