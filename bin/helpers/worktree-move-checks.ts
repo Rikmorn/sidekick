@@ -6,7 +6,7 @@
  */
 
 import * as path from 'node:path';
-import type { Repo } from './desk-children.js';
+import { findRepo, type Repo } from './desk-children.js';
 import type { Runner } from './pm-data.js';
 import { parseFlags } from './profile.js';
 import { shellArg } from './shell.js';
@@ -22,12 +22,7 @@ import {
 } from './worker-repo.js';
 import { nativeBranch, shortBranch } from './worker-worktree.js';
 import { markKeyOf, markOf } from './worktree-mark.js';
-import {
-  type Out,
-  omittedWords,
-  repoOf,
-  type WorktreeEnv,
-} from './worktree-read.js';
+import { type Out, omittedWords, type WorktreeEnv } from './worktree-read.js';
 import { isWorkers, type Omitted } from './worktree-state.js';
 
 export type MoveArgs =
@@ -110,6 +105,9 @@ const FRESH_WAY =
 const BRIEF_WAY = "a worker's brief sets its branch, not move";
 const AGAIN_WAY = 'then run move again';
 
+// git opens a fatal message with this prefix, which a refusal line drops.
+const FATAL = /^fatal: /;
+
 /** git's message on one line, since each line move prints holds one finding. */
 export const gitWords = (stderr: string): string =>
   stderr
@@ -118,9 +116,12 @@ export const gitWords = (stderr: string): string =>
     .filter((line) => line !== '')
     .join(' ');
 
-// The linked worktree holding cwd, from the checkout git says holds it.
+// The linked worktree holding cwd, from the checkout git says holds it. Only
+// findRepo's warnings go to err, since the refusal names a missing repository.
 function whereItRuns(env: WorktreeEnv, err: Out): Place | Refused {
-  const repo = repoOf(env, err);
+  const found = findRepo(env.runGit, env.cwd);
+  for (const warning of found.warnings) err(warning);
+  const repo = found.repo;
   if (repo === undefined) {
     return refuse(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
   }
@@ -226,8 +227,8 @@ function workerRefusal(env: WorktreeEnv, place: Place): Refused | undefined {
   );
 }
 
-// The held row's branch left unmarked when its mark failed: the line that
-// marks it lets a re-run find the move done.
+// The held row's branch left without this worktree's mark when its mark
+// failed: the line that marks it lets a re-run find the move done.
 const markWay = (name: string): string => {
   const mark = ['git', 'config', '--local', markKeyOf(name), name];
   return `if move made ${name} and could not mark it, mark it with: ${mark.map(shellArg).join(' ')}, ${AGAIN_WAY}`;
@@ -244,10 +245,10 @@ function branchRefusal(runGit: Runner, place: Place): Refused | undefined {
     );
   }
   const found = `${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`;
-  const onUnmarkedOwnName =
+  const onOwnNameNotMarkedForIt =
     entry.branch === `${HEADS}${name}` &&
-    markOf(runGit, entry.path, name) === undefined;
-  if (onUnmarkedOwnName) return refuse(found, markWay(name), FRESH_WAY);
+    markOf(runGit, entry.path, name) !== name;
+  if (onOwnNameNotMarkedForIt) return refuse(found, markWay(name), FRESH_WAY);
   return refuse(found, FRESH_WAY);
 }
 
@@ -258,6 +259,7 @@ function changesRefusal(runGit: Runner, place: Place): Refused | undefined {
   if ('issue' in status) {
     return refuse(
       `git status failed in ${entry.path}, so move cannot tell whether it has changes: ${gitWords(status.issue)}`,
+      `check git status in ${entry.path}, ${AGAIN_WAY}`,
     );
   }
   if (status.entries.length === 0) return undefined;
@@ -275,6 +277,7 @@ function changesRefusal(runGit: Runner, place: Place): Refused | undefined {
 const commitCount = (count: number): string =>
   `${count} ${count === 1 ? 'commit' : 'commits'}`;
 
+// The clause counting commits on top of base; empty when head is not ahead of it.
 function onTopWords(runGit: Runner, dir: string, base: string, head: string) {
   const result = runGit(
     'git',
@@ -283,9 +286,10 @@ function onTopWords(runGit: Runner, dir: string, base: string, head: string) {
   );
   const count = Number(result.stdout.trim());
   if (result.code !== 0 || !Number.isSafeInteger(count)) {
-    return `commits git rev-list could not count (${gitWords(result.stderr)})`;
+    return `, with commits git rev-list could not count (${gitWords(result.stderr)}) on top of it`;
   }
-  return commitCount(count);
+  if (count === 0) return '';
+  return `, with ${commitCount(count)} on top of it`;
 }
 
 // The creation commit, when HEAD still sits on it.
@@ -302,7 +306,7 @@ function freshHead(runGit: Runner, place: Place): string | Refused {
   const head = entry.head ?? 'no commit';
   const onTop = onTopWords(runGit, entry.path, created.sha, head);
   return refuse(
-    `the HEAD of ${entry.path} is ${head}, not ${nativeBranch(name)}'s creation commit ${created.sha}, with ${onTop} on top of it`,
+    `the HEAD of ${entry.path} is ${head}, not ${nativeBranch(name)}'s creation commit ${created.sha}${onTop}`,
     FRESH_WAY,
   );
 }
@@ -316,7 +320,8 @@ function nameRefusal(
   const verdict = branchNameOf(runGit, dir, branch);
   if ('issue' in verdict) {
     return refuse(
-      `git check-ref-format refuses ${branch}: ${verdict.issue}. Choose another name`,
+      `git check-ref-format refuses ${branch}: ${verdict.issue.replace(FATAL, '')}`,
+      'choose another name',
     );
   }
   if (verdict.read === branch) return undefined;
@@ -346,7 +351,10 @@ function isPlainBranchName(runGit: Runner, dir: string, name: string): boolean {
 function remotesOf(runGit: Runner, dir: string): string[] | Refused {
   const result = runGit('git', ['remote'], dir);
   if (result.code !== 0) {
-    return refuse(`git remote failed in ${dir}: ${gitWords(result.stderr)}`);
+    return refuse(
+      `git remote failed in ${dir}: ${gitWords(result.stderr)}`,
+      `check git remote in ${dir}, ${AGAIN_WAY}`,
+    );
   }
   return result.stdout
     .split('\n')
@@ -424,7 +432,10 @@ function localPlan(
   if (badName !== undefined) return badName;
   const sha = commitOf(runGit, entry.path, `${HEADS}${branch}`);
   if (sha === undefined) {
-    return refuse(`${branch} names no commit, so move cannot branch from it`);
+    return refuse(
+      `${branch} names no commit, so move cannot branch from it`,
+      `check ${branch} in ${holder.path}, ${AGAIN_WAY}`,
+    );
   }
   if (branchExists(runGit, entry.path, name)) {
     return refuse(

@@ -64,6 +64,7 @@ function check(
   main: string,
   rest: string[],
   env: NodeJS.ProcessEnv = {},
+  runGit: Runner = execRunner,
 ): { result: MoveCheck; err: string[] } {
   const args = parseMoveArgs(rest);
   if (args === undefined) throw new Error(`no usage fits: ${rest.join(' ')}`);
@@ -76,13 +77,21 @@ function check(
   const err: string[] = [];
   const result = checkMove(
     args,
-    { cwd, runGit: execRunner, runClaude, isAlive: () => false, env },
+    { cwd, runGit, runClaude, isAlive: () => false, env },
     (line) => err.push(line),
   );
   expect(snapshot(main)).toEqual(before);
   expect(claudeCalls).toEqual([]);
   return { result, err };
 }
+
+// git, except that each call `fails` picks exits 128 with git's words.
+const failing =
+  (fails: (args: string[]) => boolean): Runner =>
+  (cmd, args, dir) =>
+    fails(args)
+      ? { code: 128, stdout: '', stderr: 'fatal: broken\n' }
+      : execRunner(cmd, args, dir);
 
 function refused(result: MoveCheck): string[] {
   if (result.kind !== 'refused') {
@@ -173,14 +182,14 @@ describe('checkMove: where it runs', () => {
     expect(planOf(result, f).kind).toBe('new');
   });
 
-  test('outside any repository, refused, with the reason on err', () => {
+  test('outside any repository, refused, with the finding once', () => {
     const f = fixture();
     const outside = tmp();
     const { result, err } = check(outside, f.main, ['feat']);
     expect(refused(result)).toEqual([
       `move found no repository at ${outside}: ${INSIDE_WAY}`,
     ]);
-    expect(err).toEqual([`${outside} is not inside a git repository`]);
+    expect(err).toEqual([]);
   });
 });
 
@@ -217,6 +226,29 @@ describe('checkMove: a re-run', () => {
     expect(refused(result)).toEqual([
       `${f.dir} is on ${NAME}, not ${OWN}`,
       MARK_WAY,
+      FRESH_WAY,
+    ]);
+  });
+
+  test('a worktree on its own name, marked for another worktree, is no re-run: refused with the line that marks it', () => {
+    const f = fixture();
+    git(f.dir, 'switch', '-q', '-c', NAME);
+    git(f.main, 'config', '--local', `branch.${NAME}.sidekickWorktree`, 'w9');
+    const { result } = check(f.dir, f.main, [f.trunk]);
+    expect(refused(result)).toEqual([
+      `${f.dir} is on ${NAME}, not ${OWN}`,
+      MARK_WAY,
+      FRESH_WAY,
+    ]);
+  });
+
+  test('a worktree on its own name, marked for it, while <branch> is held nowhere: refused without the line that marks it', () => {
+    const f = fixture();
+    git(f.dir, 'switch', '-q', '-c', NAME);
+    git(f.main, 'config', '--local', `branch.${NAME}.sidekickWorktree`, NAME);
+    const { result } = check(f.dir, f.main, ['feat']);
+    expect(refused(result)).toEqual([
+      `${f.dir} is on ${NAME}, not ${OWN}`,
       FRESH_WAY,
     ]);
   });
@@ -366,6 +398,16 @@ describe('checkMove: the refusals, in order', () => {
     );
   });
 
+  test('3: a failed git status, with git’s words and the way on', () => {
+    const f = fixture();
+    const runGit = failing((args) => args.includes('status'));
+    const { result } = check(f.dir, f.main, ['feat'], {}, runGit);
+    expect(refused(result)).toEqual([
+      `git status failed in ${f.dir}, so move cannot tell whether it has changes: fatal: broken`,
+      `check git status in ${f.dir}, then run move again`,
+    ]);
+  });
+
   test('3: an ignored file is not checked, so the move is ready', () => {
     const f = fixture();
     const info = path.join(f.main, '.git', 'info');
@@ -386,6 +428,19 @@ describe('checkMove: the refusals, in order', () => {
     ]);
   });
 
+  test('4: a HEAD behind the creation commit, naming both with no count', () => {
+    const f = fixture();
+    const later = commit(f.dir, 'b.txt');
+    // The reflog's oldest entry is the creation commit, so dropping it makes `later` the creation commit.
+    git(f.dir, 'reflog', 'delete', `refs/heads/${OWN}@{1}`);
+    git(f.dir, 'reset', '-q', '--hard', f.created);
+    const { result } = check(f.dir, f.main, ['feat']);
+    expect(refused(result)).toEqual([
+      `the HEAD of ${f.dir} is ${f.created}, not ${OWN}'s creation commit ${later}`,
+      FRESH_WAY,
+    ]);
+  });
+
   test('4: a creation commit the reflog cannot give', () => {
     const f = fixture();
     fs.rmSync(path.join(f.main, '.git', 'logs', 'refs', 'heads', OWN));
@@ -396,11 +451,12 @@ describe('checkMove: the refusals, in order', () => {
     ]);
   });
 
-  test('5: a name git check-ref-format refuses, with its words', () => {
+  test('5: a name git check-ref-format refuses, with its words and no fatal: prefix', () => {
     const f = fixture();
     const { result } = check(f.dir, f.main, ['bad..name']);
     expect(refused(result)).toEqual([
-      "git check-ref-format refuses bad..name: fatal: 'bad..name' is not a valid branch name. Choose another name",
+      "git check-ref-format refuses bad..name: 'bad..name' is not a valid branch name",
+      'choose another name',
     ]);
   });
 
@@ -411,6 +467,16 @@ describe('checkMove: the refusals, in order', () => {
     const { result } = check(f.dir, f.main, ['@{-1}']);
     expect(refused(result)).toEqual([
       'git reads @{-1} as the branch prev: name it as prev',
+    ]);
+  });
+
+  test('6: a failed git remote, with git’s words and the way on', () => {
+    const f = fixture();
+    const runGit = failing((args) => args.length === 1 && args[0] === 'remote');
+    const { result } = check(f.dir, f.main, ['feat'], {}, runGit);
+    expect(refused(result)).toEqual([
+      `git remote failed in ${f.dir}: fatal: broken`,
+      `check git remote in ${f.dir}, then run move again`,
     ]);
   });
 
@@ -544,6 +610,17 @@ describe('checkMove: the move each branch needs', () => {
       sha: f.created,
       heldAt: f.main,
     });
+  });
+
+  test('a held branch that names no commit, refused with the way on', () => {
+    const f = fixture();
+    const ref = `refs/heads/${f.trunk}^{commit}`;
+    const runGit = failing((args) => args.includes(ref));
+    const { result } = check(f.dir, f.main, [f.trunk], {}, runGit);
+    expect(refused(result)).toEqual([
+      `${f.trunk} names no commit, so move cannot branch from it`,
+      `check ${f.trunk} in ${f.main}, then run move again`,
+    ]);
   });
 
   test('a held branch, while a branch of the worktree’s name exists, refused', () => {
@@ -992,7 +1069,8 @@ describe('move: refusals and failures', () => {
     const moved = move(f.dir, ['bad..name']);
     expectFailed(moved);
     expect(moved.err).toEqual([
-      "git check-ref-format refuses bad..name: fatal: 'bad..name' is not a valid branch name. Choose another name",
+      "git check-ref-format refuses bad..name: 'bad..name' is not a valid branch name",
+      'choose another name',
     ]);
     expect(snapshot(f.main)).toEqual(before);
   });
