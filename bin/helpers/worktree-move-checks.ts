@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import type { Repo } from './desk-children.js';
 import type { Runner } from './pm-data.js';
 import { parseFlags } from './profile.js';
+import { shellArg } from './shell.js';
 import { statusEntriesIn, type WorktreeEntry } from './worker-listing.js';
 import { readRecords } from './worker-record.js';
 import {
@@ -20,7 +21,7 @@ import {
   physical,
 } from './worker-repo.js';
 import { nativeBranch, shortBranch } from './worker-worktree.js';
-import { markOf } from './worktree-mark.js';
+import { markKeyOf, markOf } from './worktree-mark.js';
 import {
   type Out,
   omittedWords,
@@ -75,7 +76,7 @@ export type Base =
   | { kind: 'local'; rev: string; sha: string }
   | { kind: 'remote'; remote: string; branch: string };
 
-/** One row of the spec's table. */
+/** One kind of move: by where `<branch>` is, or to a pull request's head. */
 export type MovePlan =
   | { kind: 'new'; branch: string; base: Base }
   | { kind: 'switch'; branch: string }
@@ -225,14 +226,28 @@ function workerRefusal(env: WorktreeEnv, place: Place): Refused | undefined {
   );
 }
 
-function branchRefusal(place: Place): Refused | undefined {
+// The held row's branch left unmarked when its mark failed: the line that
+// marks it lets a re-run find the move done.
+const markWay = (name: string): string => {
+  const mark = ['git', 'config', '--local', markKeyOf(name), name];
+  return `if move made ${name} and could not mark it, mark it with: ${mark.map(shellArg).join(' ')}, ${AGAIN_WAY}`;
+};
+
+function branchRefusal(runGit: Runner, place: Place): Refused | undefined {
   const { entry, name } = place;
   const own = nativeBranch(name);
   if (entry.branch === `${HEADS}${own}`) return undefined;
-  const found =
-    entry.branch === undefined
-      ? `${entry.path} has a detached HEAD at ${entry.head ?? 'no commit'}, not ${own}`
-      : `${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`;
+  if (entry.branch === undefined) {
+    return refuse(
+      `${entry.path} has a detached HEAD at ${entry.head ?? 'no commit'}, not ${own}`,
+      FRESH_WAY,
+    );
+  }
+  const found = `${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`;
+  const onUnmarkedOwnName =
+    entry.branch === `${HEADS}${name}` &&
+    markOf(runGit, entry.path, name) === undefined;
+  if (onUnmarkedOwnName) return refuse(found, markWay(name), FRESH_WAY);
   return refuse(found, FRESH_WAY);
 }
 
@@ -367,6 +382,27 @@ const fromRefusal = (branch: string, where: string): Refused =>
     `${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`,
   );
 
+// The held row names its branch after the worktree, and git refuses some
+// folder names as a branch, such as HEAD or one that begins with a dot.
+function ownNameRefusal(
+  runGit: Runner,
+  place: Place,
+  heldAt: string,
+  branch: string,
+): Refused | undefined {
+  const { entry, name } = place;
+  const verdict = branchNameOf(runGit, entry.path, name);
+  if ('read' in verdict && verdict.read === name) return undefined;
+  const why =
+    'issue' in verdict
+      ? `git refuses ${name} as a branch name: ${verdict.issue}`
+      : `git reads ${name} as the branch ${verdict.read}`;
+  return refuse(
+    `${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`,
+    `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`,
+  );
+}
+
 // A local branch: Claude Code's own refuses, one another checkout holds gets a
 // branch of the worktree's name, and a free one is switched to.
 function localPlan(
@@ -384,6 +420,8 @@ function localPlan(
     (other) => other.branch === `${HEADS}${branch}`,
   );
   if (holder === undefined) return { kind: 'switch', branch };
+  const badName = ownNameRefusal(runGit, place, holder.path, branch);
+  if (badName !== undefined) return badName;
   const sha = commitOf(runGit, entry.path, `${HEADS}${branch}`);
   if (sha === undefined) {
     return refuse(`${branch} names no commit, so move cannot branch from it`);
@@ -475,7 +513,8 @@ function branchPlan(
   return { kind: 'new', branch, base };
 }
 
-// Refusals 5 to 7, then the row of the spec's table.
+// git's verdict on the name, a remote's prefix, and --from on a local branch
+// refuse first; then the kind of move `<branch>` needs.
 function branchMove(
   runGit: Runner,
   place: Place,
@@ -520,7 +559,7 @@ export function checkMove(
   if (line !== undefined) return { kind: 'already', line };
   const unfresh =
     workerRefusal(env, place) ??
-    branchRefusal(place) ??
+    branchRefusal(runGit, place) ??
     changesRefusal(runGit, place);
   if (unfresh !== undefined) return unfresh;
   const created = freshHead(runGit, place);

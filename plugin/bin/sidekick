@@ -11275,12 +11275,22 @@ function workerRefusal(env, place) {
     return;
   return refuse6(`a worker record would not read, so ${place.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
 }
-function branchRefusal(place) {
+var markWay = (name) => {
+  const mark = ["git", "config", "--local", markKeyOf(name), name];
+  return `if move made ${name} and could not mark it, mark it with: ${mark.map(shellArg).join(" ")}, ${AGAIN_WAY}`;
+};
+function branchRefusal(runGit, place) {
   const { entry, name } = place;
   const own = nativeBranch(name);
   if (entry.branch === `${HEADS}${own}`)
     return;
-  const found = entry.branch === undefined ? `${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}` : `${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`;
+  if (entry.branch === undefined) {
+    return refuse6(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
+  }
+  const found = `${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`;
+  const onUnmarkedOwnName = entry.branch === `${HEADS}${name}` && markOf2(runGit, entry.path, name) === undefined;
+  if (onUnmarkedOwnName)
+    return refuse6(found, markWay(name), FRESH_WAY);
   return refuse6(found, FRESH_WAY);
 }
 function changesRefusal(runGit, place) {
@@ -11358,6 +11368,14 @@ function ambiguityRefusal(branch, remotes) {
   return refuse6(`${branch} begins with ${remote}/, a remote's name, so it reads as a branch of ${remote}: name it without the remote, as ${rest2}`);
 }
 var fromRefusal = (branch, where) => refuse6(`${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`);
+function ownNameRefusal(runGit, place, heldAt, branch) {
+  const { entry, name } = place;
+  const verdict = branchNameOf(runGit, entry.path, name);
+  if ("read" in verdict && verdict.read === name)
+    return;
+  const why = "issue" in verdict ? `git refuses ${name} as a branch name: ${verdict.issue}` : `git reads ${name} as the branch ${verdict.read}`;
+  return refuse6(`${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`, `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`);
+}
 function localPlan(runGit, place, branch) {
   const { entry, name } = place;
   if (branch === nativeBranch(name)) {
@@ -11366,6 +11384,9 @@ function localPlan(runGit, place, branch) {
   const holder = place.repo.worktrees.find((other) => other.branch === `${HEADS}${branch}`);
   if (holder === undefined)
     return { kind: "switch", branch };
+  const badName = ownNameRefusal(runGit, place, holder.path, branch);
+  if (badName !== undefined)
+    return badName;
   const sha = commitOf(runGit, entry.path, `${HEADS}${branch}`);
   if (sha === undefined) {
     return refuse6(`${branch} names no commit, so move cannot branch from it`);
@@ -11450,7 +11471,7 @@ function checkMove(args, env, err) {
   const line = rerunLine(runGit, place, args);
   if (line !== undefined)
     return { kind: "already", line };
-  const unfresh = workerRefusal(env, place) ?? branchRefusal(place) ?? changesRefusal(runGit, place);
+  const unfresh = workerRefusal(env, place) ?? branchRefusal(runGit, place) ?? changesRefusal(runGit, place);
   if (unfresh !== undefined)
     return unfresh;
   const created = freshHead(runGit, place);

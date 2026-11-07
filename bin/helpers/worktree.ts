@@ -105,7 +105,7 @@ function mainUseWords(use: MainUse): string {
   }
 }
 
-// A contract line with plan 11b's skill: the fields and their order.
+// A contract line: skills read its fields in this order, so the order stays fixed.
 function mainCheckoutLine(main: WorktreeEntry, use: MainUse): string {
   return [
     'main checkout',

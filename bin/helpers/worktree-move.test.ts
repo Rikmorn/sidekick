@@ -22,6 +22,7 @@ const INSIDE_WAY =
   'run move inside the worktree EnterWorktree or claude -w made';
 const FRESH_WAY =
   'move runs only on a fresh worktree: start one with EnterWorktree or claude -w';
+const MARK_WAY = `if move made ${NAME} and could not mark it, mark it with: git config --local branch.${NAME}.sidekickWorktree ${NAME}, then run move again`;
 
 interface Fixture {
   main: string;
@@ -34,8 +35,8 @@ interface Fixture {
 }
 
 // A repo with a bare origin cloned from it, unless `origin` is false, and a
-// fresh linked worktree on worktree-w1.
-function fixture(opts: { origin?: boolean } = {}): Fixture {
+// fresh linked worktree on worktree-<name>, w1 unless `name` says otherwise.
+function fixture(opts: { origin?: boolean; name?: string } = {}): Fixture {
   const main = repo();
   const trunk = git(main, 'branch', '--show-current');
   const bare = path.join(tmp(), 'origin.git');
@@ -43,9 +44,10 @@ function fixture(opts: { origin?: boolean } = {}): Fixture {
     git(main, 'clone', '--bare', '-q', main, bare);
     git(main, 'remote', 'add', 'origin', bare);
   }
-  const dir = path.join(main, '.claude', 'worktrees', NAME);
+  const name = opts.name ?? NAME;
+  const dir = path.join(main, '.claude', 'worktrees', name);
   fs.mkdirSync(path.dirname(dir), { recursive: true });
-  git(main, 'worktree', 'add', '-q', '-b', OWN, dir);
+  git(main, 'worktree', 'add', '-q', '-b', `worktree-${name}`, dir);
   return { main, dir, trunk, bare, created: git(dir, 'rev-parse', 'HEAD') };
 }
 
@@ -208,12 +210,13 @@ describe('checkMove: a re-run', () => {
     });
   });
 
-  test('a worktree on its own name, unmarked, is no re-run: refused as off worktree-w1', () => {
+  test('a worktree on its own name, unmarked, is no re-run: refused as off worktree-w1, with the line that marks it', () => {
     const f = fixture();
     git(f.dir, 'switch', '-q', '-c', NAME);
     const { result } = check(f.dir, f.main, [f.trunk]);
     expect(refused(result)).toEqual([
       `${f.dir} is on ${NAME}, not ${OWN}`,
+      MARK_WAY,
       FRESH_WAY,
     ]);
   });
@@ -550,6 +553,19 @@ describe('checkMove: the move each branch needs', () => {
     expect(refused(result)).toEqual([
       `${f.main} holds ${f.trunk}, so move would create the branch ${NAME} at its commit, but ${NAME} exists`,
       `switch ${f.main} to another branch, or start a worktree under another name, then run move again`,
+    ]);
+  });
+
+  test.each([
+    'HEAD',
+    '.w1',
+    '-w1',
+  ])('a held branch, from a worktree named %s, which git refuses as a branch, refused', (name) => {
+    const f = fixture({ name });
+    const { result } = check(f.dir, f.main, [f.trunk]);
+    expect(refused(result)).toEqual([
+      `${f.main} holds ${f.trunk}, so move would create a branch named for this worktree, ${name}, but git refuses ${name} as a branch name: fatal: '${name}' is not a valid branch name`,
+      `start a worktree under a name git takes as a branch and run move there, or land the work onto ${f.trunk} from another worktree`,
     ]);
   });
 
@@ -1098,6 +1114,43 @@ describe('move: refusals and failures', () => {
     expect(markOf(execRunner, f.main, 'feat')).toBeUndefined();
   });
 
+  test('a held branch from a worktree named HEAD refuses before any write', () => {
+    const f = fixture({ name: 'HEAD' });
+    const before = snapshot(f.main);
+    const moved = move(f.dir, [f.trunk]);
+    expectFailed(moved);
+    expect(moved.err).toEqual([
+      `${f.main} holds ${f.trunk}, so move would create a branch named for this worktree, HEAD, but git refuses HEAD as a branch name: fatal: 'HEAD' is not a valid branch name`,
+      `start a worktree under a name git takes as a branch and run move there, or land the work onto ${f.trunk} from another worktree`,
+    ]);
+    expect(snapshot(f.main)).toEqual(before);
+    expect(git(f.dir, 'branch', '--show-current')).toBe('worktree-HEAD');
+  });
+
+  test('a re-run after a failed held mark gives the line that marks the branch, and runs once it is marked', () => {
+    const f = fixture();
+    const lock = path.join(f.main, '.git', 'config.lock');
+    fs.writeFileSync(lock, '');
+    const first = move(f.dir, [f.trunk]);
+    expectFailed(first);
+    expect(first.err.at(-1)).toBe(
+      `mark it with: git config --local branch.${NAME}.sidekickWorktree ${NAME}`,
+    );
+    fs.rmSync(lock);
+    const again = move(f.dir, [f.trunk]);
+    expectFailed(again);
+    expect(again.err).toEqual([
+      `${f.dir} is on ${NAME}, not ${OWN}`,
+      MARK_WAY,
+      FRESH_WAY,
+    ]);
+    git(f.main, 'config', '--local', `branch.${NAME}.sidekickWorktree`, NAME);
+    expectLine(
+      move(f.dir, [f.trunk]),
+      `${NAME} · ${f.created} · already moved`,
+    );
+  });
+
   test('a failed upstream write: the worktree moved, and the two lines that set it', () => {
     const f = fixture();
     const sha = originCommit(f, 'refs/heads/feat');
@@ -1144,7 +1197,8 @@ describe('move: refusals and failures', () => {
 });
 
 // The read-only git the checks and the drop run, by subcommand, beside the
-// reads isAllowed matches by their arguments. rev-list runs on refusal 4 only.
+// reads isAllowed matches by their arguments. rev-list runs only on a HEAD
+// past the creation commit.
 const READS = [
   'rev-parse',
   'status',
@@ -1172,17 +1226,44 @@ const FORBIDDEN = [
 // A fetch writes only remote-tracking refs, and names where.
 const REMOTE_REFSPEC = /^\+refs\/[^:]+:refs\/remotes\//;
 
-// A config read, a set of one key, the drop's section removal, or a stale
-// mark's removal.
-function isConfigAllowed(rest: string[]): boolean {
+// What a move may write: config on the branch HEAD lands on, undefined for a
+// detached HEAD, and the drop of worktree-w1 at its creation commit.
+interface Writes {
+  target: string | undefined;
+  created: string;
+}
+
+// The keys move sets on its target, each with the one value it sets.
+function settable(target: string | undefined): Map<string, string> {
+  if (target === undefined) return new Map();
+  return new Map([
+    [`branch.${target}.sidekickWorktree`, NAME],
+    [`branch.${target}.remote`, 'origin'],
+    [`branch.${target}.merge`, `refs/heads/${target}`],
+  ]);
+}
+
+// A config read; the mark, upstream, or stale mark's removal on the target;
+// or the drop's section removal. Any other write fails, remote.origin.fetch
+// among them.
+function isConfigAllowed(rest: string[], writes: Writes): boolean {
   const args = rest.filter((arg) => arg !== '--local');
-  if (['--get', '--get-regexp', '--remove-section'].includes(args[0])) {
-    return true;
+  if (args.length !== 2) return false;
+  const [first, second] = args;
+  switch (first) {
+    case '--get':
+    case '--get-regexp':
+      return true;
+    case '--remove-section':
+      return second === `branch.${OWN}`;
+    case '--unset':
+      return (
+        writes.target !== undefined &&
+        second === `branch.${writes.target}.sidekickWorktree`
+      );
+    default:
+      return settable(writes.target).get(first) === second;
   }
-  if (args[0] === '--unset') {
-    return args.length === 2 && args[1].endsWith('.sidekickWorktree');
-  }
-  return args.length === 2 && !args[0].startsWith('-');
 }
 
 const isWord = (arg: string | undefined): boolean =>
@@ -1217,7 +1298,7 @@ const argsOf = (call: string[]): string[] =>
   call[0] === '-C' ? call.slice(2) : call;
 
 // Whether a git call is a read the checks make, or a write move may make.
-function isAllowed(call: string[]): boolean {
+function isAllowed(call: string[], writes: Writes): boolean {
   const [sub, ...rest] = argsOf(call);
   switch (sub) {
     case 'worktree':
@@ -1227,28 +1308,35 @@ function isAllowed(call: string[]): boolean {
     case 'remote':
       return rest.length === 0;
     case 'config':
-      return isConfigAllowed(rest);
+      return isConfigAllowed(rest, writes);
     case 'fetch':
       return rest.length === 2 && REMOTE_REFSPEC.test(rest[1]);
     case 'switch':
       return isSwitchAllowed(rest);
     case 'update-ref':
-      return rest.length === 3 && rest[0] === '-d';
+      return (
+        rest.length === 3 &&
+        rest[0] === '-d' &&
+        rest[1] === `refs/heads/${OWN}` &&
+        rest[2] === writes.created
+      );
     default:
       return READS.includes(sub);
   }
 }
 
-const MOVES: [string, (f: Fixture) => string[]][] = [
-  ['new, here', () => ['feat']],
-  ['new, local', (f) => ['feat', '--from', f.trunk]],
-  ['new, remote', (f) => ['feat', '--from', `origin/${f.trunk}`]],
+// Each move's setup, and the branch HEAD lands on.
+const MOVES: [string, (f: Fixture) => string[], string | undefined][] = [
+  ['new, here', () => ['feat'], 'feat'],
+  ['new, local', (f) => ['feat', '--from', f.trunk], 'feat'],
+  ['new, remote', (f) => ['feat', '--from', `origin/${f.trunk}`], 'feat'],
   [
     'switch',
     (f) => {
       git(f.main, 'branch', 'free', looseCommit(f, 'free'));
       return ['free'];
     },
+    'free',
   ],
   [
     'switch, with a stale mark',
@@ -1257,14 +1345,16 @@ const MOVES: [string, (f: Fixture) => string[]][] = [
       git(f.main, 'config', '--local', 'branch.free.sidekickWorktree', NAME);
       return ['free'];
     },
+    'free',
   ],
-  ['held', (f) => [f.trunk]],
+  ['held', (f) => [f.trunk], NAME],
   [
     'origin',
     (f) => {
       originCommit(f, 'refs/heads/feat');
       return ['feat'];
     },
+    'feat',
   ],
   [
     'pr',
@@ -1272,17 +1362,19 @@ const MOVES: [string, (f: Fixture) => string[]][] = [
       originCommit(f, 'refs/pull/7/head');
       return ['--pr', '7'];
     },
+    undefined,
   ],
 ];
 
 describe('move: the git allow list', () => {
   test.each(
     MOVES,
-  )('%s runs only reads and the allowed writes, never a force or a reset', (_, setup) => {
+  )('%s runs only reads and the allowed writes, never a force or a reset', (_, setup, target) => {
     const f = fixture();
     const moved = move(f.dir, setup(f));
     expect(moved.code).toBe(0);
-    expect(moved.calls.filter((call) => !isAllowed(call))).toEqual([]);
+    const writes = { target, created: f.created };
+    expect(moved.calls.filter((call) => !isAllowed(call, writes))).toEqual([]);
     const forced = moved.calls.filter((call) =>
       argsOf(call).some((arg) => FORBIDDEN.includes(arg)),
     );
