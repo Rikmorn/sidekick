@@ -373,10 +373,16 @@ function dropBranchConfig(
 ): string[] {
   const section = `branch.${branch}`;
   // --get-regexp reads its pattern as an ERE, so the name goes in escaped.
+  // A key's last part holds no dot, so `[^.]+$` leaves out `branch.<b>.x.*`.
   // --local: --remove-section writes only the local file.
   const has = runGit(
     'git',
-    ['config', '--local', '--get-regexp', `^${literalPattern(section)}\\.`],
+    [
+      'config',
+      '--local',
+      '--get-regexp',
+      `^${literalPattern(section)}\\.[^.]+$`,
+    ],
     top,
   );
   if (has.code !== 0) return [];

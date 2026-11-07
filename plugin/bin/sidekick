@@ -9970,7 +9970,12 @@ var ERE_SPECIAL = /[.[\\()*+?{|^$]/g;
 var literalPattern = (text) => text.replace(ERE_SPECIAL, (char) => `\\${char}`);
 function dropBranchConfig(runGit, top, branch) {
   const section = `branch.${branch}`;
-  const has = runGit("git", ["config", "--local", "--get-regexp", `^${literalPattern(section)}\\.`], top);
+  const has = runGit("git", [
+    "config",
+    "--local",
+    "--get-regexp",
+    `^${literalPattern(section)}\\.[^.]+$`
+  ], top);
   if (has.code !== 0)
     return [];
   const result = runGit("git", ["config", "--remove-section", section], top);

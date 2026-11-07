@@ -1346,6 +1346,33 @@ describe('worktree remove: --into, and the branch move made', () => {
     expect(sectionKeys(main, 'fix1')).toEqual(['branch.fix1.remote=origin']);
   });
 
+  // Every local config key under branch., matched as text.
+  const branchKeys = (main: string): string[] =>
+    git(main, 'config', '--local', '--list')
+      .split('\n')
+      .filter((line) => line.startsWith('branch.'));
+
+  test('a branch with no config section goes with no issue, and a longer name that begins with it keeps its section', () => {
+    const main = repo();
+    git(main, 'branch', 'feat');
+    git(main, 'config', 'branch.feat.x.remote', 'origin');
+    const head = git(main, 'rev-parse', 'feat');
+    expect(branchGoneIssues(execRunner, main, 'feat', head)).toEqual([]);
+    expect(branchExists(main, 'feat')).toBe(false);
+    expect(branchKeys(main)).toEqual(['branch.feat.x.remote=origin']);
+  });
+
+  test('a branch takes only its own section, and a longer name that begins with it keeps its own', () => {
+    const main = repo();
+    git(main, 'branch', 'feat');
+    git(main, 'config', 'branch.feat.remote', 'origin');
+    git(main, 'config', 'branch.feat.x.remote', 'origin');
+    const head = git(main, 'rev-parse', 'feat');
+    expect(branchGoneIssues(execRunner, main, 'feat', head)).toEqual([]);
+    expect(branchExists(main, 'feat')).toBe(false);
+    expect(branchKeys(main)).toEqual(['branch.feat.x.remote=origin']);
+  });
+
   test('--into without a value, empty, or twice, and two targets, print the usage line', () => {
     expect(WORKTREE_USAGE_LINE).toContain(
       'remove <name|path> [--into <target>] [--discard]',
