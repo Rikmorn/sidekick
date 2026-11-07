@@ -95,7 +95,7 @@ Every `switch` carries `--no-overwrite-ignore`. The old branch goes last: `updat
 
 Git checks a branch out in one worktree at a time. So the held row makes a branch of the worktree's own name at the held branch's commit. Its line says `land onto <branch>`: the work belongs on the held branch. The `tracking branch` row sets its upstream by `config`. Under a narrow fetch refspec, `switch --track` exits 128 after it has changed the work tree. `move` never adds a fetch refspec, and `--no-track` means a `--from` base never becomes an upstream.
 
-The `pull request` row's `refs/remotes/pr/<n>` stays after `remove`, and `git fetch --prune` never clears it, since no remote's refspec covers `refs/remotes/pr/`. Drop one with `git update-ref -d refs/remotes/pr/<n>`.
+The `pull request` row's `refs/remotes/pr/<n>` stays after `remove`. A fetch with `--prune` leaves it, since a remote's default refspec covers only `refs/remotes/<remote>/`. A remote named `pr` is the exception: `git fetch --prune pr` deletes the ref, and a fetch from `pr` overwrites it with that remote's branch `<n>`. Drop one with `git update-ref -d refs/remotes/pr/<n>`.
 
 `--from <base>` always creates a branch, so it refuses a `<branch>` that exists locally or on `origin`: drop `--from` to move onto it. A base is a branch, tag, or commit, read as the commit it names. A base written `<remote>/<b>` is fetched first, as `+refs/heads/<b>:refs/remotes/<remote>/<b>`, when `<b>` is a branch name git accepts as typed and no local branch has the whole name. Any other base, such as `origin/main~1`, resolves as a commit from the last fetch.
 
@@ -103,7 +103,7 @@ The `pull request` row's `refs/remotes/pr/<n>` stays after `remove`, and `git fe
 
 `move` marks two branches: the `new branch` row's branch, and the held row's own-name branch. The `tracking branch` row stays unmarked, so `remove` keeps it. The mark is `git config --local branch.<branch>.sidekickWorktree <name>`, in the repo's shared config. `remove` deletes a branch only when it is the worktree's own: `worktree-<name>`, or a branch marked for that name. A branch marked for another name stays, as does an unmarked one. When the mark's write fails, `move` prints the `git config` line that sets it, and until then `remove` keeps the branch, the safe side.
 
-A mark names a worktree by its folder's name, so it outlives a worktree that another tool removes. A later worktree of that name on the branch would then have `remove` delete it. So the `existing branch` and `tracking branch` rows read the branch's mark once the switch has run. They clear any mark they find, since a branch `move` did not make is never the worktree's own. One case stays open: after a hand `git switch` onto a marked branch, in a worktree of the name the mark gives, `remove` deletes that branch.
+A mark names a worktree by its folder's name, so it outlives a worktree that another tool removes. A later worktree of that name on the branch would then have `remove` delete it. So the `existing branch` and `tracking branch` rows read the branch's mark once the switch has run. They clear any mark they find. Only the `new branch` and held rows' branches are made for the worktree, while the `tracking branch` row copies a branch from `origin`. One case stays open: after a hand `git switch` onto a marked branch, in a worktree of the name the mark gives, `remove` deletes that branch.
 
 ### The line `move` prints
 
@@ -142,24 +142,25 @@ The checks run in this order, and the first that fails stops `move`. The check f
 
 1. It runs outside a repository, outside a work tree, in the main checkout, or in a folder git lists no worktree for.
 2. A worker owns the worktree: `SIDEKICK_WORKER` is set, a worker record names the worktree, or an unreadable worker record may name it. `remove` refuses such a worktree too. A worker's brief sets its branch.
-3. The worktree is on any branch but `worktree-<name>`, or its `HEAD` is detached. A held move whose mark failed leaves the worktree on an unmarked branch of its own name. There the refusal also gives the `git config` line that marks it. With the mark set, `move` onto the held branch reads as a re-run.
+3. The worktree is on any branch but `worktree-<name>`, or its `HEAD` is detached. A held move whose mark failed leaves the worktree on a branch of its own name, not marked for it. There the refusal also gives the `git config` line that marks it. With the mark set, `move` onto the held branch reads as a re-run.
 4. It has tracked or untracked changes. The refusal names the first 20 paths. Ignored files are not read, since `.worktreeinclude` copies some into every new worktree.
-5. Its `HEAD` is not the creation commit of `worktree-<name>`, which is the oldest entry of that branch's reflog. The refusal counts the commits on top of it.
+5. Its `HEAD` is not the creation commit of `worktree-<name>`, which is the oldest entry of that branch's reflog. The refusal names both commits, and counts the commits on top when `HEAD` is ahead.
 6. git refuses `<branch>` as a name, or reads it as another, such as `@{-1}`.
 7. `<branch>` is a remote's name, or begins with one and a slash, such as `origin/feat`. It would read as a remote's branch: name it without the remote.
 8. `--from` with a `<branch>` that exists locally.
 9. `<branch>` is `worktree-<name>`, the branch `move` replaces.
 10. Another worktree holds `<branch>`, and git refuses `<name>` as a branch, as it refuses `HEAD` or a name that begins with a dot. The held row would name its branch `<name>`. Start a worktree under a name git takes as a branch, or land the work from another worktree.
-11. Another worktree holds `<branch>`, and a branch named `<name>` exists already.
-12. `git ls-remote origin` fails, so `move` cannot tell whether `origin` has `<branch>`. It matches the full ref `refs/heads/<branch>` exactly, since a bare pattern also matches `foo/<branch>`. A repository with no remote named `origin` skips this check.
-13. `--from` with a `<branch>` that exists on `origin`, or a base that names no commit.
-14. `--pr` with no remote named `origin`.
+11. Another worktree holds `<branch>`, and `<branch>` names no commit, so the held row has none to start from.
+12. Another worktree holds `<branch>`, and a branch named `<name>` exists already.
+13. `git ls-remote origin` fails, so `move` cannot tell whether `origin` has `<branch>`. It matches the full ref `refs/heads/<branch>` exactly, since a bare pattern also matches `foo/<branch>`. A repository with no remote named `origin` skips this check.
+14. `--from` with a `<branch>` that exists on `origin`, or a base that names no commit.
+15. `--pr` with no remote named `origin`.
 
 Arguments that fit neither usage print the usage line and exit 1.
 
 ### When a step fails
 
-A failed `fetch` leaves the worktree on `worktree-<name>`, and the output says so. A failed `switch` prints git's words and reads the worktree back. When git changed nothing, the output says to move or delete the files git names, then run `move` again. When git changed the work tree before it failed, the output names the branch `HEAD` is on and the count of changed paths, and asks you to check `git status`.
+A failed `fetch` leaves the worktree on `worktree-<name>`, and the output says so. A failed `switch` prints git's words and reads the worktree back. When git changed nothing, the output says to move or delete the files git names, then run `move` again. When git changed the work tree before it failed, the output names the branch `HEAD` is on and the count of changed paths. It then asks you to check `git status`.
 
 `move` checks no ignored file beforehand, and refuses a switch that would overwrite one. A plain `git switch` replaces an ignored file that the target branch tracks, and exits 0. With `--no-overwrite-ignore`, git aborts and changes nothing. An ignored file that the target does not track never refuses, and stays where it is.
 
@@ -167,7 +168,7 @@ When a step after the switch fails, `move` exits 1 with no line on stdout. It sa
 
 ## What `remove` does
 
-`sidekick worktree remove <name|path> [--into <target>] [--discard]` removes one linked worktree. The name is the path's last segment, as `list` prints it. Of the branches, it deletes only the worktree's own: `worktree-<name>`, the one Claude Code makes for a worktree of that name, or a branch that `sidekick worktree move` marked for that name. It keeps any other. Before it removes any worktree, it keeps the `HEAD` in a backup ref, the head of a branch it keeps included. It exits 0 once the worktree is gone, with its own branch, and 1 on a refusal, a usage error, or a git failure.
+`sidekick worktree remove <name|path> [--into <target>] [--discard]` removes one linked worktree. The name is the path's last segment, as `list` prints it. Of the branches, it deletes only the worktree's own. That is `worktree-<name>`, the one Claude Code makes for a worktree of that name, or a branch that `sidekick worktree move` marked for that name. It keeps any other. Before it removes any worktree, it keeps the `HEAD` in a backup ref, the head of a branch it keeps included. It exits 0 once the worktree is gone, with its own branch, and 1 on a refusal, a usage error, or a git failure.
 
 ### What it refuses
 
@@ -212,7 +213,7 @@ For a detached worktree or a kept branch, the restore line names the worktree's 
 
 ### What `--into` adds
 
-`--into <target>` adds one ref to the landed check, tried before the main checkout's branch and `origin`'s default branch. It lets a worktree on its own branch, `feat-x` after `move`, show its work landed in a branch that is neither of those, such as a milestone branch.
+`--into <target>` adds one ref to the landed check, tried before the main checkout's branch and `origin`'s default branch. It lets a worktree on its own branch, `feat-x` after `move`, show its work landed in a third branch, such as a milestone branch.
 
 When the checks pass, `remove` prints `<branch> landed in <target>`, or `the detached HEAD at <path> landed in <target>` for a detached worktree. It prints that line only when `--into` was given and the work landed. The target it names is the first the check found, so it may be the main checkout's branch rather than the one you gave.
 
