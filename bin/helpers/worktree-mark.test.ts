@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
-import { isOwnBranch, markOf, writeMark } from './worktree-mark.js';
+import { clearMark, isOwnBranch, markOf, writeMark } from './worktree-mark.js';
 
 afterEach(removeTemps);
 
@@ -40,6 +40,24 @@ describe('worktree mark', () => {
     );
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('boom');
+  });
+
+  test('clearMark removes the mark alone, and returns git’s error as an issue when git cannot', () => {
+    const main = repo();
+    git(main, 'branch', 'feat');
+    writeMark(execRunner, main, 'feat', 'w1');
+    git(main, 'config', 'branch.feat.remote', 'origin');
+    expect(clearMark(execRunner, main, 'feat')).toEqual([]);
+    expect(markOf(execRunner, main, 'feat')).toBeUndefined();
+    expect(git(main, 'config', '--get', 'branch.feat.remote')).toBe('origin');
+    const issues = clearMark(
+      () => ({ code: 255, stdout: '', stderr: 'boom\n' }),
+      '/nowhere',
+      'feat',
+    );
+    expect(issues).toEqual([
+      'git config --local --unset branch.feat.sidekickWorktree failed: boom',
+    ]);
   });
 
   test('isOwnBranch: worktree-<name> and a branch marked for <name> are own; a branch marked for another worktree, or unmarked, is not', () => {

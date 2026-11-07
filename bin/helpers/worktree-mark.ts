@@ -9,7 +9,9 @@ import { nativeBranch } from './worker-worktree.js';
 /** The key under `branch.<b>` naming the worktree `sidekick worktree move` made the branch for. */
 export const MARK_KEY = 'sidekickWorktree';
 
-const keyOf = (branch: string): string => `branch.${branch}.${MARK_KEY}`;
+/** The config key that holds `branch`'s mark. */
+export const markKeyOf = (branch: string): string =>
+  `branch.${branch}.${MARK_KEY}`;
 
 /** The worktree name `branch` is marked for; undefined when unmarked or when git cannot read it. */
 export function markOf(
@@ -20,7 +22,7 @@ export function markOf(
   // Any failure reads as unmarked: `remove` then keeps the branch, the safe side.
   const result = runGit(
     'git',
-    ['config', '--local', '--get', keyOf(branch)],
+    ['config', '--local', '--get', markKeyOf(branch)],
     top,
   );
   if (result.code !== 0) {
@@ -38,10 +40,27 @@ export function writeMark(
   name: string,
 ): string[] {
   // In a linked worktree, `--local` writes the common config, so every checkout sees it.
-  const result = runGit('git', ['config', '--local', keyOf(branch), name], top);
+  const result = runGit(
+    'git',
+    ['config', '--local', markKeyOf(branch), name],
+    top,
+  );
   return result.code === 0
     ? []
-    : [`git config ${keyOf(branch)} failed: ${result.stderr.trim()}`];
+    : [`git config ${markKeyOf(branch)} failed: ${result.stderr.trim()}`];
+}
+
+/** Removes `branch`'s mark from the repo's local config. The issues, else []. */
+export function clearMark(
+  runGit: Runner,
+  top: string,
+  branch: string,
+): string[] {
+  const args = ['config', '--local', '--unset', markKeyOf(branch)];
+  const result = runGit('git', args, top);
+  return result.code === 0
+    ? []
+    : [`git ${args.join(' ')} failed: ${result.stderr.trim()}`];
 }
 
 /** Whether `branch` is the worktree `name`'s own: `worktree-<name>`, or marked for `name`. */

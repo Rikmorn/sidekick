@@ -15,7 +15,7 @@ import { statusEntriesIn } from './worker-listing.js';
 import { branchExists, commitOf, HEADS } from './worker-repo.js';
 import { branchGoneIssues } from './worker-teardown.js';
 import { nativeBranch } from './worker-worktree.js';
-import { MARK_KEY, writeMark } from './worktree-mark.js';
+import { clearMark, markKeyOf, markOf, writeMark } from './worktree-mark.js';
 import {
   type Base,
   checkMove,
@@ -40,12 +40,14 @@ interface Start {
 }
 
 // What one plan does: where HEAD lands, the line's fields after the sha, the
-// switch, and the step before the drop.
+// switch, the stale mark it clears, and the step before the drop.
 interface Move {
   // The branch HEAD lands on; undefined for a detached HEAD.
   target: string | undefined;
   fields: string[];
   start: (runGit: Runner, here: Here) => Start | Failed;
+  // Lines for stderr that leave the exit code 0.
+  clear: (runGit: Runner, here: Here, moved: string) => string[];
   settle: (runGit: Runner, here: Here, moved: string) => string[];
 }
 
@@ -164,13 +166,37 @@ const markStep =
   (runGit, here, moved) => {
     const issues = writeMark(runGit, here.entry.path, branch, here.name);
     if (issues.length === 0) return [];
-    const key = `branch.${branch}.${MARK_KEY}`;
+    const key = markKeyOf(branch);
     return [
       ...issues.map(gitWords),
       `${moved}, and ${branch} stays unmarked, so remove keeps it`,
       `mark it with: ${command(['config', '--local', key, here.name])}`,
     ];
   };
+
+// A mark outlives a worktree another tool removes, and a later worktree of
+// that name would then have remove delete a branch move did not make.
+const clearStale =
+  (branch: string): Move['clear'] =>
+  (runGit, here, moved) => {
+    const dir = here.entry.path;
+    const mark = markOf(runGit, dir, branch);
+    if (mark === undefined) return [];
+    const issues = clearMark(runGit, dir, branch);
+    const key = markKeyOf(branch);
+    if (issues.length === 0) {
+      return [
+        `cleared the stale mark ${key}, which named the worktree ${mark}: move leaves an existing or tracking branch unmarked, so remove keeps ${branch}`,
+      ];
+    }
+    return [
+      ...issues.map(gitWords),
+      `${moved}, and ${branch} stays marked for the worktree ${mark}, so remove deletes it from a worktree of that name`,
+      `clear it with: ${command(['config', '--local', '--unset', key])}`,
+    ];
+  };
+
+const nothingToClear: Move['clear'] = () => [];
 
 // switch --track exits 128 under a narrow fetch refspec, after it has changed
 // the work tree, so the upstream is written as config.
@@ -204,6 +230,7 @@ function moveOf(plan: Ready['plan']): Move {
         target: plan.branch,
         fields: ['new branch', `from ${baseWords(plan.base)}`],
         start: newStart(plan.branch, plan.base),
+        clear: nothingToClear,
         settle: markStep(plan.branch),
       };
     case 'switch':
@@ -211,6 +238,7 @@ function moveOf(plan: Ready['plan']): Move {
         target: plan.branch,
         fields: ['existing branch', `from ${plan.branch}`],
         start: () => at([plan.branch]),
+        clear: clearStale(plan.branch),
         settle: settled,
       };
     case 'held':
@@ -222,6 +250,7 @@ function moveOf(plan: Ready['plan']): Move {
           `land onto ${plan.branch}`,
         ],
         start: () => at(create(plan.own, plan.sha)),
+        clear: nothingToClear,
         settle: markStep(plan.own),
       };
     case 'origin': {
@@ -230,6 +259,7 @@ function moveOf(plan: Ready['plan']): Move {
         target: plan.branch,
         fields: ['tracking branch', `from ${ORIGIN}/${plan.branch}`],
         start: (runGit, here) => fromRemote(runGit, here, plan.branch, from),
+        clear: clearStale(plan.branch),
         settle: upstreamStep(plan.branch),
       };
     }
@@ -241,6 +271,7 @@ function moveOf(plan: Ready['plan']): Move {
           `from pr/${plan.number}`,
         ],
         start: (runGit, here) => prStart(runGit, here, plan.number),
+        clear: nothingToClear,
         settle: settled,
       };
     default: {
@@ -361,8 +392,8 @@ const fail = (lines: string[], err: Out): number => {
   return 1;
 };
 
-// The fetch, the switch, then the mark or upstream and the drop, each
-// running in the worktree's folder.
+// The fetch, the switch, a stale mark cleared, then the mark or upstream and
+// the drop, each running in the worktree's folder.
 function makeMove(runGit: Runner, ready: Ready, out: Out, err: Out): number {
   const { here } = ready;
   const move = moveOf(ready.plan);
@@ -373,11 +404,13 @@ function makeMove(runGit: Runner, ready: Ready, out: Out, err: Out): number {
   const sha = landed(runGit, here, move.target);
   if (typeof sha !== 'string') return fail(sha.lines, err);
   const moved = `the worktree moved to ${move.target ?? DETACHED} at ${sha}`;
+  const notes = move.clear(runGit, here, moved);
   const issues = [
     ...move.settle(runGit, here, moved),
     ...dropLines(runGit, here, moved),
   ];
-  if (issues.length > 0) return fail(issues, err);
+  if (issues.length > 0) return fail([...notes, ...issues], err);
+  for (const line of notes) err(line);
   out([move.target ?? 'detached', sha, ...move.fields].join(SEPARATOR));
   return 0;
 }

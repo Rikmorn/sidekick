@@ -884,6 +884,91 @@ describe('move: a re-run', () => {
   });
 });
 
+// Runs `sidekick worktree remove` from `cwd`, with no session listed.
+function remove(cwd: string, rest: string[]) {
+  const runClaude: ClaudeRunner = () => ({
+    code: 0,
+    stdout: '[]',
+    stderr: '',
+    timedOut: false,
+  });
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = runWorktreeCli(
+    ['remove', ...rest],
+    { cwd, runGit: execRunner, runClaude, isAlive: () => false, env: {} },
+    (line) => out.push(line),
+    (line) => err.push(line),
+  );
+  return { code, out, err };
+}
+
+const CLEARED = (branch: string, mark: string): string =>
+  `cleared the stale mark branch.${branch}.sidekickWorktree, which named the worktree ${mark}: move leaves an existing or tracking branch unmarked, so remove keeps ${branch}`;
+
+describe('move: a stale mark', () => {
+  test('a mark a removed worktree of the same name left is cleared, so remove keeps the branch', () => {
+    const f = fixture();
+    expect(move(f.dir, ['feat']).code).toBe(0);
+    expect(markOf(execRunner, f.main, 'feat')).toBe(NAME);
+    git(f.main, 'worktree', 'remove', f.dir);
+    git(f.main, 'worktree', 'add', '-q', '-b', OWN, f.dir);
+    const moved = move(f.dir, ['feat']);
+    expect(moved.out).toEqual([
+      `feat · ${f.created} · existing branch · from feat`,
+    ]);
+    expect(moved.err).toEqual([CLEARED('feat', NAME)]);
+    expect(moved.code).toBe(0);
+    expect(markOf(execRunner, f.main, 'feat')).toBeUndefined();
+    const removed = remove(f.main, [NAME]);
+    expect(removed.err).toEqual([]);
+    expect(removed.code).toBe(0);
+    expect(removed.out).toContain(
+      `branch feat kept: remove deletes only ${OWN} or a branch sidekick worktree move made for this worktree`,
+    );
+    expect(git(f.main, 'rev-parse', 'feat')).toBe(f.created);
+  });
+
+  test('a mark on a branch only on origin, for another worktree, is cleared too', () => {
+    const f = fixture();
+    const sha = originCommit(f, 'refs/heads/feat');
+    git(f.main, 'config', '--local', 'branch.feat.sidekickWorktree', 'w9');
+    const moved = move(f.dir, ['feat']);
+    expect(moved.out).toEqual([
+      `feat · ${sha} · tracking branch · from origin/feat`,
+    ]);
+    expect(moved.err).toEqual([CLEARED('feat', 'w9')]);
+    expect(moved.code).toBe(0);
+    expect(markOf(execRunner, f.main, 'feat')).toBeUndefined();
+    expect(configOf(f, 'branch.feat.merge')).toBe('refs/heads/feat');
+  });
+
+  test('a mark that will not clear: the move still exits 0, with the line that clears it', () => {
+    const f = fixture();
+    const sha = looseCommit(f, 'free');
+    git(f.main, 'branch', 'free', sha);
+    git(f.main, 'config', '--local', 'branch.free.sidekickWorktree', NAME);
+    fs.writeFileSync(path.join(f.main, '.git', 'config.lock'), '');
+    const moved = move(f.dir, ['free']);
+    expect(moved.out).toEqual([`free · ${sha} · existing branch · from free`]);
+    expect(moved.code).toBe(0);
+    expect(moved.err[0]).toStartWith(
+      'git config --local --unset branch.free.sidekickWorktree failed: ',
+    );
+    expect(moved.err.slice(1)).toEqual([
+      `the worktree moved to free at ${sha}, and free stays marked for the worktree ${NAME}, so remove deletes it from a worktree of that name`,
+      'clear it with: git config --local --unset branch.free.sidekickWorktree',
+    ]);
+    expect(where(f)).toEqual({
+      branch: 'free',
+      head: sha,
+      status: '',
+      own: '',
+    });
+    expect(markOf(execRunner, f.main, 'free')).toBe(NAME);
+  });
+});
+
 describe('move: refusals and failures', () => {
   test('a refusal prints to stderr, changes nothing, and exits 1', () => {
     const f = fixture();
@@ -1087,11 +1172,15 @@ const FORBIDDEN = [
 // A fetch writes only remote-tracking refs, and names where.
 const REMOTE_REFSPEC = /^\+refs\/[^:]+:refs\/remotes\//;
 
-// A config read, a set of one key, or the drop's section removal.
+// A config read, a set of one key, the drop's section removal, or a stale
+// mark's removal.
 function isConfigAllowed(rest: string[]): boolean {
   const args = rest.filter((arg) => arg !== '--local');
   if (['--get', '--get-regexp', '--remove-section'].includes(args[0])) {
     return true;
+  }
+  if (args[0] === '--unset') {
+    return args.length === 2 && args[1].endsWith('.sidekickWorktree');
   }
   return args.length === 2 && !args[0].startsWith('-');
 }
@@ -1158,6 +1247,14 @@ const MOVES: [string, (f: Fixture) => string[]][] = [
     'switch',
     (f) => {
       git(f.main, 'branch', 'free', looseCommit(f, 'free'));
+      return ['free'];
+    },
+  ],
+  [
+    'switch, with a stale mark',
+    (f) => {
+      git(f.main, 'branch', 'free', looseCommit(f, 'free'));
+      git(f.main, 'config', '--local', 'branch.free.sidekickWorktree', NAME);
       return ['free'];
     },
   ],
