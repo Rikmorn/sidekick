@@ -3049,13 +3049,24 @@ function glanceState(input) {
 }
 
 // bin/helpers/pm-data.ts
-var execRunner = (cmd, args, cwd) => {
+var TIMED_OUT = 124;
+var ranOut = (error) => error !== undefined && ("code" in error) && error.code === "ETIMEDOUT";
+var execRunner = (cmd, args, cwd, { timeoutMs } = {}) => {
+  const env = envWithoutRepoVars(process.env);
   const r = spawnSync(cmd, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
-    env: envWithoutRepoVars(process.env)
+    env: timeoutMs === undefined ? env : { ...env, GIT_TERMINAL_PROMPT: "0" },
+    timeout: timeoutMs
   });
+  if (timeoutMs !== undefined && ranOut(r.error)) {
+    return {
+      code: TIMED_OUT,
+      stdout: "",
+      stderr: `${cmd} did not finish within ${timeoutMs / 1000} s`
+    };
+  }
   if (r.error)
     return { code: 127, stdout: "", stderr: r.error.message };
   return {
@@ -5605,7 +5616,7 @@ function snapshotStore(store, sessionId, source, runGit) {
   return commit.code === 0 ? "committed" : "failed";
 }
 var DEADLINE_EXIT = 124;
-var TIMED_OUT = "ETIMEDOUT";
+var TIMED_OUT2 = "ETIMEDOUT";
 var SPAWN_FAILED_EXIT = 127;
 function deadlineRunner(ms, now) {
   const endsAt = now() + ms;
@@ -5622,7 +5633,7 @@ function deadlineRunner(ms, now) {
       env: envWithoutRepoVars(process.env)
     });
     if (r.error) {
-      const timedOut = "code" in r.error && r.error.code === TIMED_OUT;
+      const timedOut = "code" in r.error && r.error.code === TIMED_OUT2;
       const code = timedOut ? DEADLINE_EXIT : SPAWN_FAILED_EXIT;
       return { code, stdout: "", stderr: r.error.message };
     }
@@ -9969,21 +9980,23 @@ function branchGoneIssues(runGit, top, branch, head) {
 var ERE_SPECIAL = /[.[\\()*+?{|^$]/g;
 var literalPattern = (text) => text.replace(ERE_SPECIAL, (char) => `\\${char}`);
 function dropBranchConfig(runGit, top, branch) {
-  const section = `branch.${branch}`;
-  const has = runGit("git", [
+  const listed = runGit("git", [
     "config",
     "--local",
+    "--name-only",
     "--get-regexp",
-    `^${literalPattern(section)}\\.[^.]+$`
+    `^${literalPattern(`branch.${branch}`)}\\.[^.]+$`
   ], top);
-  if (has.code !== 0)
+  if (listed.code !== 0)
     return [];
-  const result = runGit("git", ["config", "--remove-section", section], top);
-  if (result.code === 0)
-    return [];
-  return [
-    `git config --remove-section ${section} failed: ${result.stderr.trim()}`
-  ];
+  const keys = new Set(listed.stdout.split(`
+`).filter((key) => key !== ""));
+  return [...keys].flatMap((key) => {
+    const result = runGit("git", ["config", "--local", "--unset-all", key], top);
+    if (result.code === 0)
+      return [];
+    return [`git config --unset-all ${key} failed: ${result.stderr.trim()}`];
+  });
 }
 var removeLeftovers = (ready, wenv, out) => {
   const worktree = worktreeGoneIssues(ready, wenv);
@@ -11212,6 +11225,7 @@ var INSIDE_WAY = "run move inside the worktree EnterWorktree or claude -w made";
 var FRESH_WAY = "move runs only on a fresh worktree: start one with EnterWorktree or claude -w";
 var BRIEF_WAY = "a worker's brief sets its branch, not move";
 var AGAIN_WAY = "then run move again";
+var REMOTE_LIMIT_MS = 60000;
 var FATAL = /^fatal: /;
 var gitWords = (stderr) => stderr.split(`
 `).map((line) => line.trim()).filter((line) => line !== "").join(" ");
@@ -11402,7 +11416,7 @@ function localPlan(runGit, place, branch) {
 }
 function onOrigin(runGit, dir, branch) {
   const ref2 = `${HEADS}${branch}`;
-  const result = runGit("git", ["ls-remote", "--exit-code", "--heads", ORIGIN2, ref2], dir);
+  const result = runGit("git", ["ls-remote", "--exit-code", "--heads", ORIGIN2, ref2], dir, { timeoutMs: REMOTE_LIMIT_MS });
   if (result.code === NO_MATCH)
     return false;
   if (result.code !== 0) {
@@ -11503,7 +11517,9 @@ var at = (args) => ({ args, fetched: undefined });
 var stayedLine = (here) => `nothing changed in ${here.entry.path}: it is still on ${nativeBranch(here.name)}`;
 function fetchInto(runGit, here, remote, refspec) {
   const spec = `+${refspec.src}:${refspec.dst}`;
-  const result = runGit("git", ["fetch", remote, spec], here.entry.path);
+  const result = runGit("git", ["fetch", remote, spec], here.entry.path, {
+    timeoutMs: REMOTE_LIMIT_MS
+  });
   if (result.code === 0)
     return;
   return {

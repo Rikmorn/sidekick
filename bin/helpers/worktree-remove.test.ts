@@ -1318,7 +1318,8 @@ describe('worktree remove: --into, and the branch move made', () => {
     'x$y',
     'e{2}',
     'p|q',
-  ])('a marked %s, a name a regex reads as special, goes with its whole config section', (branch) => {
+    'fix]x',
+  ])('a marked %s, a name a regex or a section name reads as special, goes with its whole config section', (branch) => {
     const main = repo();
     addMarked(main, 'w2', branch);
     git(main, 'config', `branch.${branch}.remote`, 'origin');
@@ -1342,7 +1343,7 @@ describe('worktree remove: --into, and the branch move made', () => {
     };
     expect(branchGoneIssues(recording, main, 'fix+1', head)).toEqual([]);
     expect(branchExists(main, 'fix+1')).toBe(false);
-    expect(calls.some((args) => args.includes('--remove-section'))).toBe(false);
+    expect(calls.some((args) => args.includes('--unset-all'))).toBe(false);
     expect(sectionKeys(main, 'fix1')).toEqual(['branch.fix1.remote=origin']);
   });
 
@@ -1360,6 +1361,17 @@ describe('worktree remove: --into, and the branch move made', () => {
     expect(branchGoneIssues(execRunner, main, 'feat', head)).toEqual([]);
     expect(branchExists(main, 'feat')).toBe(false);
     expect(branchKeys(main)).toEqual(['branch.feat.x.remote=origin']);
+  });
+
+  test('a key with two values goes whole, with no issue', () => {
+    const main = repo();
+    git(main, 'branch', 'feat');
+    git(main, 'config', 'branch.feat.remote', 'origin');
+    git(main, 'config', '--add', 'branch.feat.merge', 'refs/heads/a');
+    git(main, 'config', '--add', 'branch.feat.merge', 'refs/heads/b');
+    const head = git(main, 'rev-parse', 'feat');
+    expect(branchGoneIssues(execRunner, main, 'feat', head)).toEqual([]);
+    expect(branchKeys(main)).toEqual([]);
   });
 
   test('a branch takes only its own section, and a longer name that begins with it keeps its own', () => {

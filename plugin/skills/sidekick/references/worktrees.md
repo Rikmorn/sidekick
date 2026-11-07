@@ -160,7 +160,7 @@ Arguments that fit neither usage print the usage line and exit 1.
 
 ### When a step fails
 
-A failed `fetch` leaves the worktree on `worktree-<name>`, and the output says so. A failed `switch` prints git's words and reads the worktree back. When git changed nothing, the output says to move or delete the files git names, then run `move` again. When git changed the work tree before it failed, the output names the branch `HEAD` is on and the count of changed paths. It then asks you to check `git status`.
+A failed `fetch` leaves the worktree on `worktree-<name>`, and the output says so. `fetch` and `ls-remote` each stop after 60 seconds, with git's terminal prompts off. A call stopped that way fails as `git did not finish within 60 s`. A failed `switch` prints git's words and reads the worktree back. When git changed nothing, the output says to move or delete the files git names, then run `move` again. When git changed the work tree before it failed, the output names the branch `HEAD` is on and the count of changed paths. It then asks you to check `git status`.
 
 `move` checks no ignored file beforehand, and refuses a switch that would overwrite one. A plain `git switch` replaces an ignored file that the target branch tracks, and exits 0. With `--no-overwrite-ignore`, git aborts and changes nothing. An ignored file that the target does not track never refuses, and stays where it is.
 

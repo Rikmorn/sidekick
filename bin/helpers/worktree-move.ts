@@ -23,6 +23,7 @@ import {
   type Here,
   type MoveArgs,
   type MoveCheck,
+  REMOTE_LIMIT_MS,
 } from './worktree-move-checks.js';
 import type { Out, WorktreeEnv } from './worktree-read.js';
 
@@ -88,7 +89,9 @@ function fetchInto(
   refspec: { src: string; dst: string },
 ): Failed | undefined {
   const spec = `+${refspec.src}:${refspec.dst}`;
-  const result = runGit('git', ['fetch', remote, spec], here.entry.path);
+  const result = runGit('git', ['fetch', remote, spec], here.entry.path, {
+    timeoutMs: REMOTE_LIMIT_MS,
+  });
   if (result.code === 0) return undefined;
   return {
     lines: [

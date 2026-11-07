@@ -709,15 +709,21 @@ interface Moved {
   err: string[];
   /** Every git call's arguments, in order. */
   calls: string[][];
+  /** The subcommand and time limit of each git call that carried one, in order. */
+  limited: string[];
 }
 
 // Runs `sidekick worktree move` from `cwd` through the CLI's dispatch,
 // recording each git call and asserting it ran no claude.
 function move(cwd: string, rest: string[], runGit: Runner = execRunner): Moved {
   const calls: string[][] = [];
-  const recording: Runner = (cmd, args, dir) => {
+  const limited: string[] = [];
+  const recording: Runner = (cmd, args, dir, opts) => {
     calls.push(args);
-    return runGit(cmd, args, dir);
+    if (opts?.timeoutMs !== undefined) {
+      limited.push(`${args[0]} ${opts.timeoutMs}`);
+    }
+    return runGit(cmd, args, dir, opts);
   };
   const claudeCalls: string[][] = [];
   const runClaude: ClaudeRunner = (claudeArgs) => {
@@ -733,7 +739,7 @@ function move(cwd: string, rest: string[], runGit: Runner = execRunner): Moved {
     (line) => err.push(line),
   );
   expect(claudeCalls).toEqual([]);
-  return { code, out, err, calls };
+  return { code, out, err, calls, limited };
 }
 
 function expectLine(moved: Moved, line: string): void {
@@ -1079,6 +1085,7 @@ describe('move: refusals and failures', () => {
       out: [],
       err: [`usage: ${WORKTREE_USAGE_LINE}`],
       calls: [],
+      limited: [],
     });
   });
 
@@ -1318,18 +1325,19 @@ function settable(target: string | undefined): Map<string, string> {
 }
 
 // A config read; the mark, upstream, or stale mark's removal on the target;
-// or the drop's section removal. Any other write fails, remote.origin.fetch
+// or the drop's unset of a key in its section. Any other write fails, remote.origin.fetch
 // among them.
 function isConfigAllowed(rest: string[], writes: Writes): boolean {
-  const args = rest.filter((arg) => arg !== '--local');
+  // --name-only shapes a read's output, and changes nothing.
+  const args = rest.filter((arg) => arg !== '--local' && arg !== '--name-only');
   if (args.length !== 2) return false;
   const [first, second] = args;
   switch (first) {
     case '--get':
     case '--get-regexp':
       return true;
-    case '--remove-section':
-      return second === `branch.${OWN}`;
+    case '--unset-all':
+      return second.startsWith(`branch.${OWN}.`);
     case '--unset':
       return (
         writes.target !== undefined &&
@@ -1456,5 +1464,22 @@ describe('move: the git allow list', () => {
     const subcommands = moved.calls.map((call) => call[0]);
     expect(subcommands).toContain('switch');
     expect(subcommands).toContain('update-ref');
+  });
+});
+
+describe('move: calls that reach a remote have a time limit', () => {
+  test('ls-remote and fetch run with a 60 s limit, and no other git call has one', () => {
+    const f = fixture();
+    git(f.bare, 'update-ref', 'refs/heads/feat', f.created);
+    const moved = move(f.dir, ['feat']);
+    expect(moved.code).toBe(0);
+    expect(moved.limited).toEqual(['ls-remote 60000', 'fetch 60000']);
+  });
+
+  test('a fetch for --from gets the same limit', () => {
+    const f = fixture();
+    const moved = move(f.dir, ['feat', '--from', `origin/${f.trunk}`]);
+    expect(moved.code).toBe(0);
+    expect(moved.limited).toEqual(['ls-remote 60000', 'fetch 60000']);
   });
 });

@@ -14,20 +14,44 @@ export interface RunResult {
   stdout: string;
   stderr: string;
 }
+/** What a call may set beyond its arguments. */
+export interface RunOptions {
+  /**
+   * The call fails once it has run this long. A limited call also runs with
+   * `GIT_TERMINAL_PROMPT=0`, since a prompt could only wait out the limit.
+   */
+  timeoutMs?: number;
+}
 export type Runner = (
   cmd: 'gh' | 'git',
   args: string[],
   cwd: string,
+  opts?: RunOptions,
 ) => RunResult;
 
+/** The exit code of a call that ran past its limit, as timeout(1) gives. */
+export const TIMED_OUT = 124;
+
+const ranOut = (error: Error | undefined): boolean =>
+  error !== undefined && 'code' in error && error.code === 'ETIMEDOUT';
+
 /** Never a shell: arguments go straight to the binary. */
-export const execRunner: Runner = (cmd, args, cwd) => {
+export const execRunner: Runner = (cmd, args, cwd, { timeoutMs } = {}) => {
+  const env = envWithoutRepoVars(process.env);
   const r = spawnSync(cmd, args, {
     cwd,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: envWithoutRepoVars(process.env),
+    env: timeoutMs === undefined ? env : { ...env, GIT_TERMINAL_PROMPT: '0' },
+    timeout: timeoutMs,
   });
+  if (timeoutMs !== undefined && ranOut(r.error)) {
+    return {
+      code: TIMED_OUT,
+      stdout: '',
+      stderr: `${cmd} did not finish within ${timeoutMs / 1000} s`,
+    };
+  }
   if (r.error) return { code: 127, stdout: '', stderr: r.error.message };
   return {
     code: r.status ?? 1,

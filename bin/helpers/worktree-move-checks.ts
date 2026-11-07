@@ -104,6 +104,12 @@ const FRESH_WAY =
 const BRIEF_WAY = "a worker's brief sets its branch, not move";
 const AGAIN_WAY = 'then run move again';
 
+/**
+ * The limit on a git call that reaches a remote: below the Bash tool's 120 s
+ * default, so move's own refusal arrives before the tool stops it.
+ */
+export const REMOTE_LIMIT_MS = 60_000;
+
 // git opens a fatal message with this prefix, which a refusal line drops.
 const FATAL = /^fatal: /;
 
@@ -452,6 +458,7 @@ function onOrigin(
     'git',
     ['ls-remote', '--exit-code', '--heads', ORIGIN, ref],
     dir,
+    { timeoutMs: REMOTE_LIMIT_MS },
   );
   if (result.code === NO_MATCH) return false;
   if (result.code !== 0) {

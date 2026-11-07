@@ -365,32 +365,39 @@ const ERE_SPECIAL = /[.[\\()*+?{|^$]/g;
 const literalPattern = (text: string): string =>
   text.replace(ERE_SPECIAL, (char) => `\\${char}`);
 
-// update-ref -d, unlike git branch -d, leaves the [branch "<name>"] section behind.
+// update-ref -d, unlike git branch -d, leaves the [branch "<name>"] section's
+// keys behind. Each goes by --unset-all, since --remove-section cannot read a
+// section name holding `]`; a key with several values lists once per value.
 function dropBranchConfig(
   runGit: Runner,
   top: string,
   branch: string,
 ): string[] {
-  const section = `branch.${branch}`;
   // --get-regexp reads its pattern as an ERE, so the name goes in escaped.
   // A key's last part holds no dot, so `[^.]+$` leaves out `branch.<b>.x.*`.
-  // --local: --remove-section writes only the local file.
-  const has = runGit(
+  const listed = runGit(
     'git',
     [
       'config',
       '--local',
+      '--name-only',
       '--get-regexp',
-      `^${literalPattern(section)}\\.[^.]+$`,
+      `^${literalPattern(`branch.${branch}`)}\\.[^.]+$`,
     ],
     top,
   );
-  if (has.code !== 0) return [];
-  const result = runGit('git', ['config', '--remove-section', section], top);
-  if (result.code === 0) return [];
-  return [
-    `git config --remove-section ${section} failed: ${result.stderr.trim()}`,
-  ];
+  if (listed.code !== 0) return [];
+  const keys = new Set(listed.stdout.split('\n').filter((key) => key !== ''));
+  return [...keys].flatMap((key) => {
+    // --local: --unset-all writes only the local file.
+    const result = runGit(
+      'git',
+      ['config', '--local', '--unset-all', key],
+      top,
+    );
+    if (result.code === 0) return [];
+    return [`git config --unset-all ${key} failed: ${result.stderr.trim()}`];
+  });
 }
 
 /** Removes a worktree claude rm left behind when no live session or other lock holds it, then deletes a leftover branch only at the verified head. */

@@ -136,6 +136,29 @@ describe('execRunner', () => {
     // Either gh exists (code 0) or not (127); never a throw.
     expect([0, 127]).toContain(r.code);
   });
+  test('a call past its time limit fails within it, naming the limit', () => {
+    const top = repo();
+    const started = Date.now();
+    const slow = execRunner('git', ['-c', 'alias.wait=!sleep 3', 'wait'], top, {
+      timeoutMs: 200,
+    });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(slow).toEqual({
+      code: 124,
+      stdout: '',
+      stderr: 'git did not finish within 0.2 s',
+    });
+  });
+  test('a call with a time limit runs with git terminal prompts off', () => {
+    const top = repo();
+    const seen = execRunner(
+      'git',
+      ['-c', 'alias.env=!printenv GIT_TERMINAL_PROMPT', 'env'],
+      top,
+      { timeoutMs: 5_000 },
+    );
+    expect(seen.stdout.trim()).toBe('0');
+  });
   test('git reports a failing command with its exit code', () => {
     const r = execRunner(
       'git',
