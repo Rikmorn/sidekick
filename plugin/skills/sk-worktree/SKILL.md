@@ -7,7 +7,7 @@ description: "Start a session's worktree on any branch, and finish it: land the 
 
 This skill gives a main session a worktree of its own, on the branch its work belongs on. It also finishes one: the work lands on its target, then the worktree goes. The `sidekick worktree` verbs hold the deterministic part. Their contract is `../sidekick/references/worktrees.md`, relative to this skill's base directory. You and the operator settle which branch and which target. Each repo keeps its own flow in its worktree guidance.
 
-In a dispatched worker, the brief answers this skill instead. Its `place` and `setup` say where the work runs, and `sidekick worker finish` removes the worktree once the work is integrated. `move` and `remove` both refuse a worker's worktree.
+In a dispatched worker, the brief answers this skill instead. Its `place` says where the work runs, and its `setup` what runs first. `sidekick worker finish` removes the worktree once the work is integrated. `move` and `remove` both refuse a worker's worktree.
 
 ## Entry
 
@@ -22,7 +22,7 @@ Read the repo's worktree guidance before acting. It may sit in any file every se
 Where the session is decides how it enters. `sidekick worktree list` prints the main checkout's path, then each linked worktree with its branch.
 
 - **In the main checkout**, call `EnterWorktree` with a short name from the branch, with no slash. The name becomes the folder's, and `move` and `remove` know a worktree by its folder's last segment. For a branch another checkout holds, choose a name other than the branch's, since `move` then makes a branch of the worktree's name.
-- **In a fresh worktree from a `claude -w` launch**, stay. It is on `worktree-<name>`, at the commit it was made from, with no changes: the state `move` needs.
+- **In a fresh worktree from a `claude -w` launch**, stay. It is on `worktree-<name>`, at the commit it was made from, with no changes: the state `move` needs. Under `worktree.baseRef` `"fresh"`, that commit is `origin`'s default branch as of the last fetch: Claude Code fetches only once the repo has gone 24 hours unfetched. So a new branch `move` makes there can start up to a day stale, and `move <branch> --from origin/<default>` fetches first.
 - **In a worktree that holds work**, that work stays where it is. Offer the operator a new session with `claude -w <name>`, or stepping out first with `ExitWorktree` `keep` when this session entered with `EnterWorktree`. `EnterWorktree` creates no worktree from inside a worktree session.
 
 Then run `sidekick worktree move <branch>`, and the repo's setup after it. `move` goes first for two reasons. It refuses a worktree with any tracked or untracked change. And setup run before it would install the base's lockfile, not the branch's. So a setup line that says "first" means first once the worktree is on its branch. With no setup declared, say so and run nothing.

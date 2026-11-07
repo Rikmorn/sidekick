@@ -30,4 +30,4 @@ Claude Code refuses any command in a worktree, a subagent's too, whose text cann
 ## Rulings
 
 - Remove an unchanged support worktree without asking, at the operator's standing request.
-- A dispatched worker follows its brief: its `place` and `setup` say where the work runs, and `sidekick worker finish` removes its worktree.
+- A dispatched worker follows its brief: its `place` says where the work runs, and its `setup` what runs first. `sidekick worker finish` removes its worktree.
