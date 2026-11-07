@@ -7573,10 +7573,42 @@ function runDeskCli(rest2, denv, out, err) {
 import * as fs27 from "node:fs";
 import * as os2 from "node:os";
 import * as path34 from "node:path";
-var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read|post-tool-batch|memory-start   (reads the hook event on stdin)";
+
+// bin/helpers/enter-worktree-fetch.ts
+var FETCH_LIMIT_MS = 5000;
+var isRecord6 = (v) => typeof v === "object" && v !== null;
+function isEnterWorktreeEvent(v) {
+  return isRecord6(v) && v.tool_name === "EnterWorktree" && typeof v.cwd === "string" && v.cwd !== "" && isRecord6(v.tool_input);
+}
+function parseEvent2(stdin) {
+  try {
+    const parsed = JSON.parse(stdin);
+    return isEnterWorktreeEvent(parsed) ? parsed : undefined;
+  } catch {
+    return;
+  }
+}
+function enterWorktreeFetch(stdin, runGit) {
+  try {
+    const event = parseEvent2(stdin);
+    if (event === undefined || event.tool_input.path !== undefined)
+      return;
+    const branch = defaultBranchOf(runGit, event.cwd);
+    if (branch === undefined)
+      return;
+    runGit("git", [
+      "fetch",
+      "origin",
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`
+    ], event.cwd, { timeoutMs: FETCH_LIMIT_MS });
+  } catch {}
+}
+
+// bin/helpers/hook.ts
+var HOOK_USAGE_LINE = "sidekick hook post-skill|post-read|post-tool-batch|memory-start|pre-enter-worktree   (reads the hook event on stdin)";
 function readContent(event) {
   const response = event.tool_response;
-  if (!isRecord6(response) || !isRecord6(response.file))
+  if (!isRecord7(response) || !isRecord7(response.file))
     return "";
   return typeof response.file.content === "string" ? response.file.content : "";
 }
@@ -7592,18 +7624,18 @@ var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
 var RELEASE_CHECK_PACKAGE = /(^|\/)\.superpowers\/sdd\/release-check-[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
-var isRecord6 = (v) => typeof v === "object" && v !== null;
+var isRecord7 = (v) => typeof v === "object" && v !== null;
 function isSkillHookInput(v) {
-  if (!isRecord6(v))
+  if (!isRecord7(v))
     return false;
   const input = v.tool_input;
-  return isRecord6(input) && typeof input.skill === "string";
+  return isRecord7(input) && typeof input.skill === "string";
 }
 function isReadHookInput(v) {
-  if (!isRecord6(v) || v.tool_name !== "Read")
+  if (!isRecord7(v) || v.tool_name !== "Read")
     return false;
   const input = v.tool_input;
-  return isRecord6(input) && typeof input.file_path === "string";
+  return isRecord7(input) && typeof input.file_path === "string";
 }
 function parseJson5(raw) {
   try {
@@ -7807,6 +7839,16 @@ var VERBS2 = new Map([
   ["post-skill", { eventName: "PostToolUse", contextFor: postSkillContext }],
   ["post-read", { eventName: "PostToolUse", contextFor: postReadContext }],
   ["memory-start", { eventName: "SessionStart", contextFor: memoryStartHook }],
+  [
+    "pre-enter-worktree",
+    {
+      eventName: "PreToolUse",
+      contextFor: (stdin) => {
+        enterWorktreeFetch(stdin, execRunner);
+        return {};
+      }
+    }
+  ],
   [
     "post-tool-batch",
     {
@@ -8641,7 +8683,7 @@ var PLUGIN_ONLY_RULES = [
   "sk-parallel-sessions.md",
   "sk-memory.md"
 ];
-var isRecord7 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var isRecord8 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
   const file = path39.join(root, ".claude", "settings.json");
@@ -8662,11 +8704,11 @@ function pluginEnablement(root) {
   } catch (e) {
     return { state: "unreadable", path: file, reason: errorText(e) };
   }
-  if (!isRecord7(parsed)) {
+  if (!isRecord8(parsed)) {
     return { state: "unreadable", path: file, reason: "not a JSON object" };
   }
   const plugins = parsed.enabledPlugins;
-  const enabled = isRecord7(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
+  const enabled = isRecord8(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
   return { state: enabled ? "enabled" : "not-enabled" };
 }
 var EVERY_RULE = { leaveOut: [], leaveAsIs: [] };

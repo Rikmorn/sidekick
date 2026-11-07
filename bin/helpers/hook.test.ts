@@ -6,7 +6,14 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONTEXT_LIMIT_VAR } from '../../plugin/hooks/gauge/contract.js';
 import { CANARY_TEXT, warningText } from './context-monitor.js';
-import { readSection, readSkillDescription, runHookCli } from './hook.js';
+import { FETCH_LIMIT_MS } from './enter-worktree-fetch.js';
+import { removeTemps, repo } from './fixtures/worker/repo.js';
+import {
+  HOOK_USAGE_LINE,
+  readSection,
+  readSkillDescription,
+  runHookCli,
+} from './hook.js';
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -24,6 +31,7 @@ const LEAD =
 const CLEAN_CODE = path.join(PLUGIN_DIR, 'rules', 'sk-clean-code.md');
 const READ_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-read');
 const BATCH_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-tool-batch');
+const FETCH_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'pre-enter-worktree');
 // A phrase the claims paragraph keeps.
 const CLAIMS_MARK = 'its other copies are its call sites';
 const READ_LEAD =
@@ -997,5 +1005,86 @@ describe('runHookCli memory-start', () => {
     });
     expect(r.status).toBe(0);
     expect(r.stdout).toBe('');
+  });
+});
+
+describe('runHookCli pre-enter-worktree', () => {
+  afterEach(removeTemps);
+
+  const creating = (cwd: string, toolInput: Record<string, unknown>) =>
+    JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'EnterWorktree',
+      cwd,
+      tool_input: toolInput,
+    });
+
+  // Each event runs in a temp repo with no origin, so the real runner never
+  // reaches a network.
+  test.each([
+    ['a name', { name: 'x' }],
+    ['neither name nor path', {}],
+    ['a path', { path: '/elsewhere' }],
+  ])('a call with %s returns 0 and prints nothing', (_label, toolInput) => {
+    const dir = repo();
+    expect(runVerb('pre-enter-worktree', creating(dir, toolInput))).toEqual({
+      code: 0,
+      out: [],
+      err: [],
+    });
+  });
+
+  test.each([
+    ['malformed JSON', '{nope'],
+    ['no cwd', JSON.stringify({ tool_name: 'EnterWorktree', tool_input: {} })],
+  ])('%s returns 0 and prints nothing', (_label, stdin) => {
+    expect(runVerb('pre-enter-worktree', stdin)).toEqual({
+      code: 0,
+      out: [],
+      err: [],
+    });
+  });
+
+  test('the usage line names the verb', () => {
+    expect(HOOK_USAGE_LINE).toContain('pre-enter-worktree');
+  });
+});
+
+describe('plugin/hooks/pre-enter-worktree', () => {
+  afterEach(removeTemps);
+
+  test('exits 0 with empty stdout on a creating event in a temp repo', () => {
+    const dir = repo();
+    const r = spawnSync('bash', [FETCH_WRAPPER], {
+      input: JSON.stringify({
+        tool_name: 'EnterWorktree',
+        cwd: dir,
+        tool_input: {},
+      }),
+      encoding: 'utf-8',
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+  });
+
+  test('exits 0 silently when node is not on PATH', () => {
+    const r = spawnSync('/bin/bash', [FETCH_WRAPPER], {
+      input: '{}',
+      encoding: 'utf-8',
+      env: { PATH: '/nonexistent' },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+  });
+
+  test('hooks.json has a PreToolUse entry for EnterWorktree that outlasts the fetch', () => {
+    const hooks = JSON.parse(
+      fs.readFileSync(path.join(PLUGIN_DIR, 'hooks', 'hooks.json'), 'utf-8'),
+    );
+    const entry = hooks.hooks.PreToolUse.find(
+      (e: { matcher: string }) => e.matcher === 'EnterWorktree',
+    );
+    expect(entry.hooks[0].command).toContain('hooks/pre-enter-worktree');
+    expect(entry.hooks[0].timeout * 1000).toBeGreaterThan(FETCH_LIMIT_MS);
   });
 });

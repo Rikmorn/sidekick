@@ -6,7 +6,9 @@
  * lines of its own. The PostToolBatch verb warns the model as its context
  * fills, and tells the operator once, through a `systemMessage`, when
  * sidekick's mods are not running. The SessionStart verb `memory-start` prints
- * the memory store's workstream and record for the session. Every other input
+ * the memory store's workstream and record for the session. The PreToolUse
+ * verb `pre-enter-worktree` fetches the default branch before `EnterWorktree`
+ * creates a worktree, and prints nothing. Every other input
  * prints nothing and returns 0, because a hook
  * never blocks or fails the call it watches (ADR-0010, ADR-0011).
  */
@@ -18,13 +20,14 @@ import {
   type MonitorOutput,
   postToolBatchContext,
 } from './context-monitor.js';
+import { enterWorktreeFetch } from './enter-worktree-fetch.js';
 import { localToday } from './local-date.js';
 import { startSnapshot } from './memory-snapshot.js';
 import { memoryStartContext } from './memory-start.js';
 import { execRunner } from './pm-data.js';
 
 export const HOOK_USAGE_LINE =
-  'sidekick hook post-skill|post-read|post-tool-batch|memory-start   (reads the hook event on stdin)';
+  'sidekick hook post-skill|post-read|post-tool-batch|memory-start|pre-enter-worktree   (reads the hook event on stdin)';
 
 export interface HookEnv {
   /** Reads the hook event; called only once the verb is known. */
@@ -317,6 +320,16 @@ const VERBS = new Map<string, Verb>([
   ['post-skill', { eventName: 'PostToolUse', contextFor: postSkillContext }],
   ['post-read', { eventName: 'PostToolUse', contextFor: postReadContext }],
   ['memory-start', { eventName: 'SessionStart', contextFor: memoryStartHook }],
+  [
+    'pre-enter-worktree',
+    {
+      eventName: 'PreToolUse',
+      contextFor: (stdin) => {
+        enterWorktreeFetch(stdin, execRunner);
+        return {};
+      },
+    },
+  ],
   [
     'post-tool-batch',
     {

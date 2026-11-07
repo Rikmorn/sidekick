@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# PreToolUse hook on EnterWorktree: before a worktree is created, fetch the
+# default branch so it starts from the remote's tip. Silent, with exit 0, for
+# everything else: no node on PATH, a malformed event, a failed or slow fetch.
+# A hook never fails the call it watches.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+command -v node >/dev/null 2>&1 || exit 0
+node "$ROOT/bin/sidekick" hook pre-enter-worktree 2>/dev/null
+exit 0
