@@ -5,12 +5,12 @@
  * superpowers' own, or the one sk-milestone's release check builds, which gets
  * lines of its own. The PostToolBatch verb warns the model as its context
  * fills, and tells the operator once, through a `systemMessage`, when
- * sidekick's mods are not running. The SessionStart verb `memory-start` prints
- * the memory store's workstream and record for the session. The PreToolUse
- * verb `pre-enter-worktree` fetches the default branch before `EnterWorktree`
- * creates a worktree, and prints nothing. Every other input
- * prints nothing and returns 0, because a hook
- * never blocks or fails the call it watches (ADR-0010, ADR-0011).
+ * sidekick's mods are not running. The SessionStart verb `memory-start`
+ * prints the memory store's workstream and record for the session. The
+ * PreToolUse verb `pre-enter-worktree` fetches the default branch before
+ * `EnterWorktree` creates a worktree, and prints nothing. Every other input
+ * prints nothing and returns 0, because a hook never blocks or fails the call
+ * it watches (ADR-0010, ADR-0011).
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -61,6 +61,7 @@ type ContextFor = (stdin: string, env: HookEnv) => MonitorOutput | undefined;
 
 const DESIGN_SKILL = path.join('skills', 'sk-design', 'SKILL.md');
 const EXECUTE_SKILL = path.join('skills', 'sk-execute', 'SKILL.md');
+const WORKTREE_SKILL = path.join('skills', 'sk-worktree', 'SKILL.md');
 const PLAN_SECTIONS = [
   '## A plan carries intent',
   '## Before the plan goes out',
@@ -216,8 +217,31 @@ function writingPlansNudge(pluginDir: string): string | undefined {
   return [PLAN_LEAD, ...found].join('\n\n');
 }
 
+/** The lead, then the skill's live description; nothing when the description is unreadable. */
+function worktreeNudge(lead: string, pluginDir: string): string | undefined {
+  const description = readSkillDescription(
+    path.join(pluginDir, WORKTREE_SKILL),
+  );
+  if (description === undefined) return undefined;
+  return `${lead} sidekick:sk-worktree: ${description}`;
+}
+
+const USING_WORKTREES_LEAD =
+  "sidekick: in this session, start the worktree with `sk-worktree` in place of this skill's steps. It enters with `EnterWorktree`, moves the worktree onto its branch, then runs the repo's own setup in place of `npm install`. In a dispatched worker, the brief's place and setup answer this skill.";
+
+const FINISHING_BRANCH_LEAD =
+  "sidekick: in a linked worktree, `sk-worktree`'s done replaces this skill's options, since a local merge from a worktree changes the main checkout under any session there. In the main checkout, this skill runs as written. In a dispatched worker, keep the branch as it is: the brief and `sidekick worker finish` answer this skill.";
+
 const NUDGES = new Map<string, Nudge>([
   ['superpowers:brainstorming', brainstormNudge],
+  [
+    'superpowers:using-git-worktrees',
+    (pluginDir) => worktreeNudge(USING_WORKTREES_LEAD, pluginDir),
+  ],
+  [
+    'superpowers:finishing-a-development-branch',
+    (pluginDir) => worktreeNudge(FINISHING_BRANCH_LEAD, pluginDir),
+  ],
   ['superpowers:writing-plans', writingPlansNudge],
 ]);
 

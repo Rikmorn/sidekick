@@ -294,6 +294,73 @@ describe('runHookCli post-skill, writing-plans', () => {
   });
 });
 
+describe('runHookCli post-skill, worktree skills', () => {
+  const WORKTREE_SKILL = path.join(
+    PLUGIN_DIR,
+    'skills',
+    'sk-worktree',
+    'SKILL.md',
+  );
+  const USING = 'superpowers:using-git-worktrees';
+  const FINISHING = 'superpowers:finishing-a-development-branch';
+  const USING_LEAD =
+    "sidekick: in this session, start the worktree with `sk-worktree` in place of this skill's steps.";
+  const FINISHING_LEAD =
+    "sidekick: in a linked worktree, `sk-worktree`'s done replaces this skill's options";
+  const WORKER_SENTENCE = 'In a dispatched worker, ';
+  const silent = { code: 0, out: [], err: [] };
+
+  /** A plugin dir whose sk-worktree skill holds the given text, or no skill when undefined. */
+  function pluginWithWorktree(text: string | undefined): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-hook-plugin-'));
+    if (text === undefined) return dir;
+    fs.mkdirSync(path.join(dir, 'skills', 'sk-worktree'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'skills', 'sk-worktree', 'SKILL.md'), text);
+    return dir;
+  }
+
+  function contextOf(skill: string): string {
+    const { code, out, err } = run(event(skill));
+    expect(code).toBe(0);
+    expect(err).toEqual([]);
+    expect(out.length).toBe(1);
+    const parsed = JSON.parse(out[0]);
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('PostToolUse');
+    return parsed.hookSpecificOutput.additionalContext;
+  }
+
+  test('each skill gets its lead and the live description', () => {
+    const description = `sidekick:sk-worktree: ${readSkillDescription(WORKTREE_SKILL)}`;
+    const using = contextOf(USING);
+    expect(using.startsWith(USING_LEAD)).toBe(true);
+    expect(using).toContain(description);
+    const finishing = contextOf(FINISHING);
+    expect(finishing.startsWith(FINISHING_LEAD)).toBe(true);
+    expect(finishing).toContain(description);
+  });
+
+  test('each lead carries the worker sentence', () => {
+    expect(contextOf(USING)).toContain(WORKER_SENTENCE);
+    expect(contextOf(FINISHING)).toContain(WORKER_SENTENCE);
+  });
+
+  test('a plugin dir without the skill prints nothing', () => {
+    const dir = pluginWithWorktree(undefined);
+    expect(run(event(USING), dir)).toEqual(silent);
+    expect(run(event(FINISHING), dir)).toEqual(silent);
+  });
+
+  test('a skill file with no quoted description prints nothing', () => {
+    const dir = pluginWithWorktree('---\nname: sk-worktree\n---\n\n# Body\n');
+    expect(run(event(USING), dir)).toEqual(silent);
+    expect(run(event(FINISHING), dir)).toEqual(silent);
+  });
+
+  test('a skill with no nudge still gets nothing', () => {
+    expect(run(event('superpowers:executing-plans'))).toEqual(silent);
+  });
+});
+
 describe('plugin/hooks/post-skill', () => {
   test('passes stdin to the bundled CLI and prints the nudge', () => {
     const r = spawnSync('bash', [WRAPPER], {

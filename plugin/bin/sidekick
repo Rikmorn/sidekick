@@ -7614,6 +7614,7 @@ function readContent(event) {
 }
 var DESIGN_SKILL = path34.join("skills", "sk-design", "SKILL.md");
 var EXECUTE_SKILL = path34.join("skills", "sk-execute", "SKILL.md");
+var WORKTREE_SKILL = path34.join("skills", "sk-worktree", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
   "## Before the plan goes out",
@@ -7756,8 +7757,24 @@ function writingPlansNudge(pluginDir) {
 
 `);
 }
+function worktreeNudge(lead, pluginDir) {
+  const description = readSkillDescription(path34.join(pluginDir, WORKTREE_SKILL));
+  if (description === undefined)
+    return;
+  return `${lead} sidekick:sk-worktree: ${description}`;
+}
+var USING_WORKTREES_LEAD = "sidekick: in this session, start the worktree with `sk-worktree` in place of this skill's steps. It enters with `EnterWorktree`, moves the worktree onto its branch, then runs the repo's own setup in place of `npm install`. In a dispatched worker, the brief's place and setup answer this skill.";
+var FINISHING_BRANCH_LEAD = "sidekick: in a linked worktree, `sk-worktree`'s done replaces this skill's options, since a local merge from a worktree changes the main checkout under any session there. In the main checkout, this skill runs as written. In a dispatched worker, keep the branch as it is: the brief and `sidekick worker finish` answer this skill.";
 var NUDGES = new Map([
   ["superpowers:brainstorming", brainstormNudge],
+  [
+    "superpowers:using-git-worktrees",
+    (pluginDir) => worktreeNudge(USING_WORKTREES_LEAD, pluginDir)
+  ],
+  [
+    "superpowers:finishing-a-development-branch",
+    (pluginDir) => worktreeNudge(FINISHING_BRANCH_LEAD, pluginDir)
+  ],
   ["superpowers:writing-plans", writingPlansNudge]
 ]);
 var READ_LEAD_LINE = "sidekick: this file is a superpowers review package, so sidekick's reviewer rules hold for this review alongside superpowers' reviewer instructions.";

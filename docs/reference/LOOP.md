@@ -15,8 +15,8 @@ What each skill in the loop does when it runs. For each: what it reads, what it 
 | 3 Shape the work | `superpowers:brainstorming`, then `superpowers:writing-plans` | The model, before any creative work |
 | 4 Execute, choosing how | `sk-execute`; in a worker session, `sk-worker` | The model for `sk-execute`. Once you choose the worker mode, the model dispatches `sk-worker` with `sidekick worker dispatch`; without agent view, you type `/sidekick:sk-worker <brief>` yourself |
 | 4 Execute, in a worktree of its own | `sk-worktree`: start before the work, done after it | You, typing `/sidekick:sk-worktree …`, or the model when you ask for a worktree or to finish one. In a dispatched worker, the brief answers it |
-| 4 Execute | `superpowers:using-git-worktrees`, then `superpowers:subagent-driven-development` or `superpowers:executing-plans` | The model, in the current session or a worker session. In a worker, the brief says where it works, and its `setup` replaces Project Setup |
-| 4 Execute, at the end | `superpowers:requesting-code-review`, `superpowers:finishing-a-development-branch` | The executing skill calls them |
+| 4 Execute | `superpowers:using-git-worktrees`, then `superpowers:subagent-driven-development` or `superpowers:executing-plans` | The model, in the current session or a worker session. The Skill-tool hook points the session at `sk-worktree` when it loads. In a worker, the brief says where it works, and its `setup` replaces Project Setup |
+| 4 Execute, at the end | `superpowers:requesting-code-review`, `superpowers:finishing-a-development-branch` | The executing skill calls them. In a linked worktree, the Skill-tool hook has `sk-worktree`'s done replace the second one's options |
 | 5 File what you notice | `sk-track` §Filing | The model, mid-session |
 | 6 Close | `sk-track` §Closing | The model, when a piece of work is done |
 | 7 Close the milestone | `sk-milestone` | The model or you, at the end of a milestone |
@@ -38,7 +38,7 @@ It then starts `sidekick memory snapshot` detached. The verb commits the store w
 
 ### The Skill-tool hook
 
-Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick hook post-skill` with the hook's event on stdin. When the skill that loaded is `superpowers:brainstorming`, it adds one paragraph to context: check whether the change needs a design pass, followed by `sk-design`'s description. When it is `superpowers:writing-plans`, it adds a lead line and three sections of `sk-execute`: §A plan carries intent, §Before the plan goes out, and §Choose the mode. The plan is written to the first two and handed off by the third. You then review the plan and, unless you already named a method, choose its mode, in one question. Any other skill, and any failure, gets nothing and exit 0, so it never blocks a call. A slash command you type yourself loads without the Skill tool, and the hook does not fire then. ADR-0010 records the mechanism.
+Fires on `PostToolUse` for the Skill tool, from `plugin/hooks/hooks.json`. It runs `node <plugin>/bin/sidekick hook post-skill` with the hook's event on stdin. When the skill that loaded is `superpowers:brainstorming`, it adds one paragraph to context: check whether the change needs a design pass, followed by `sk-design`'s description. When it is `superpowers:writing-plans`, it adds a lead line and three sections of `sk-execute`: §A plan carries intent, §Before the plan goes out, and §Choose the mode. The plan is written to the first two and handed off by the third. You then review the plan and, unless you already named a method, choose its mode, in one question. When it is `superpowers:using-git-worktrees`, it adds a lead line and `sk-worktree`'s description: start the worktree with `sk-worktree` in place of the skill's steps, and in a worker the brief answers. When it is `superpowers:finishing-a-development-branch`, it adds a lead line and the same description: in a linked worktree, `sk-worktree`'s done replaces the skill's options, in the main checkout the skill runs as written, and in a worker the brief and `sidekick worker finish` answer. Any other skill, and any failure, gets nothing and exit 0, so it never blocks a call. A slash command you type yourself loads without the Skill tool, and the hook does not fire then. ADR-0010 records the mechanism.
 
 ### The Read hook
 
@@ -220,7 +220,7 @@ Turns the spec into `docs/superpowers/plans/<date>-<name>.md`. The header carrie
 
 ### `using-git-worktrees`
 
-Detects whether the session is already isolated. It asks your consent first, unless your instructions already state a preference, and works in place if you decline. It uses the harness's native worktree tool when there is one. Without one, it runs `git worktree add` under an existing `.worktrees/` or `worktrees/` folder, else `.worktrees/`. When that folder is not ignored, it adds it to `.gitignore` and commits. It installs dependencies and runs the baseline tests. Reports ready, or reports failures and asks.
+The Skill-tool hook adds a lead that points the session at `sk-worktree` in place of these steps; in a worker, the brief's place and setup answer. The skill itself detects whether the session is already isolated. It asks your consent first, unless your instructions already state a preference, and works in place if you decline. It uses the harness's native worktree tool when there is one. Without one, it runs `git worktree add` under an existing `.worktrees/` or `worktrees/` folder, else `.worktrees/`. When that folder is not ignored, it adds it to `.gitignore` and commits. It installs dependencies and runs the baseline tests. Reports ready, or reports failures and asks.
 
 ### `subagent-driven-development`
 
@@ -248,7 +248,7 @@ Dispatches a code reviewer with the diff range and the spec; mandatory after a t
 
 ### `finishing-a-development-branch`
 
-Verifies the tests, and stops when they fail. Then it detects the environment and the base branch, and asks when the base is not known. On a named branch it offers three choices: merge locally, push and open a pull request, or keep the branch. On a detached HEAD it offers the last two. It discards the work only when you ask, and confirm. It removes the worktree only after a local merge or a confirmed discard, and asks first when the worktree holds files found nowhere else. Pauses for the choice.
+The Skill-tool hook adds a lead: in a linked worktree, `sk-worktree`'s done replaces the skill's options, since a local merge from a worktree changes the main checkout under any session there. In the main checkout the skill runs as written, and in a worker the brief and `sidekick worker finish` answer it. The skill verifies the tests, and stops when they fail. Then it detects the environment and the base branch, and asks when the base is not known. On a named branch it offers three choices: merge locally, push and open a pull request, or keep the branch. On a detached HEAD it offers the last two. It discards the work only when you ask, and confirm. It removes the worktree only after a local merge or a confirmed discard, and asks first when the worktree holds files found nowhere else. Pauses for the choice.
 
 ### `code-review:code-review`
 
