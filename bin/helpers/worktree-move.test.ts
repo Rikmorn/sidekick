@@ -22,7 +22,6 @@ const INSIDE_WAY =
   'run move inside the worktree EnterWorktree or claude -w made';
 const FRESH_WAY =
   'move runs only on a fresh worktree: start one with EnterWorktree or claude -w';
-const MARK_WAY = `if move made ${NAME} and could not mark it, mark it with: git config --local branch.${NAME}.sidekickWorktree ${NAME}, then run move again`;
 
 interface Fixture {
   main: string;
@@ -219,25 +218,23 @@ describe('checkMove: a re-run', () => {
     });
   });
 
-  test('a worktree on its own name, unmarked, is no re-run: refused as off worktree-w1, with the line that marks it', () => {
+  test('a worktree on its own name, unmarked, is no re-run: refused as off worktree-w1, with no line that marks it, since move may have switched to it', () => {
     const f = fixture();
     git(f.dir, 'switch', '-q', '-c', NAME);
     const { result } = check(f.dir, f.main, [f.trunk]);
     expect(refused(result)).toEqual([
       `${f.dir} is on ${NAME}, not ${OWN}`,
-      MARK_WAY,
       FRESH_WAY,
     ]);
   });
 
-  test('a worktree on its own name, marked for another worktree, is no re-run: refused with the line that marks it', () => {
+  test('a worktree on its own name, marked for another worktree, is no re-run: refused with no line that marks it', () => {
     const f = fixture();
     git(f.dir, 'switch', '-q', '-c', NAME);
     git(f.main, 'config', '--local', `branch.${NAME}.sidekickWorktree`, 'w9');
     const { result } = check(f.dir, f.main, [f.trunk]);
     expect(refused(result)).toEqual([
       `${f.dir} is on ${NAME}, not ${OWN}`,
-      MARK_WAY,
       FRESH_WAY,
     ]);
   });
@@ -1205,7 +1202,7 @@ describe('move: refusals and failures', () => {
     expect(git(f.dir, 'branch', '--show-current')).toBe('worktree-HEAD');
   });
 
-  test('a re-run after a failed held mark gives the line that marks the branch, and runs once it is marked', () => {
+  test('a failed held mark gives the line that marks the branch; a re-run refuses until it is marked, then finds the move done', () => {
     const f = fixture();
     const lock = path.join(f.main, '.git', 'config.lock');
     fs.writeFileSync(lock, '');
@@ -1219,7 +1216,6 @@ describe('move: refusals and failures', () => {
     expectFailed(again);
     expect(again.err).toEqual([
       `${f.dir} is on ${NAME}, not ${OWN}`,
-      MARK_WAY,
       FRESH_WAY,
     ]);
     git(f.main, 'config', '--local', `branch.${NAME}.sidekickWorktree`, NAME);

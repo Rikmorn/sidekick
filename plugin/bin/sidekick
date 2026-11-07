@@ -11284,11 +11284,7 @@ function workerRefusal(env, place) {
     return;
   return refuse6(`a worker record would not read, so ${place.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
 }
-var markWay = (name) => {
-  const mark = ["git", "config", "--local", markKeyOf(name), name];
-  return `if move made ${name} and could not mark it, mark it with: ${mark.map(shellArg).join(" ")}, ${AGAIN_WAY}`;
-};
-function branchRefusal(runGit, place) {
+function branchRefusal(place) {
   const { entry, name } = place;
   const own = nativeBranch(name);
   if (entry.branch === `${HEADS}${own}`)
@@ -11296,11 +11292,7 @@ function branchRefusal(runGit, place) {
   if (entry.branch === undefined) {
     return refuse6(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
   }
-  const found = `${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`;
-  const onOwnNameNotMarkedForIt = entry.branch === `${HEADS}${name}` && markOf2(runGit, entry.path, name) !== name;
-  if (onOwnNameNotMarkedForIt)
-    return refuse6(found, markWay(name), FRESH_WAY);
-  return refuse6(found, FRESH_WAY);
+  return refuse6(`${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`, FRESH_WAY);
 }
 function changesRefusal(runGit, place) {
   const { entry } = place;
@@ -11483,7 +11475,7 @@ function checkMove(args, env, err) {
   const line = rerunLine(runGit, place, args);
   if (line !== undefined)
     return { kind: "already", line };
-  const unfresh = workerRefusal(env, place) ?? branchRefusal(runGit, place) ?? changesRefusal(runGit, place);
+  const unfresh = workerRefusal(env, place) ?? branchRefusal(place) ?? changesRefusal(runGit, place);
   if (unfresh !== undefined)
     return unfresh;
   const created = freshHead(runGit, place);

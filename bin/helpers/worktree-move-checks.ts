@@ -9,7 +9,6 @@ import * as path from 'node:path';
 import { findRepo, type Repo } from './desk-children.js';
 import type { Runner } from './pm-data.js';
 import { parseFlags } from './profile.js';
-import { shellArg } from './shell.js';
 import { statusEntriesIn, type WorktreeEntry } from './worker-listing.js';
 import { readRecords } from './worker-record.js';
 import {
@@ -21,7 +20,7 @@ import {
   physical,
 } from './worker-repo.js';
 import { nativeBranch, shortBranch } from './worker-worktree.js';
-import { markKeyOf, markOf } from './worktree-mark.js';
+import { markOf } from './worktree-mark.js';
 import { type Out, omittedWords, type WorktreeEnv } from './worktree-read.js';
 import { isWorkers, type Omitted } from './worktree-state.js';
 
@@ -227,14 +226,7 @@ function workerRefusal(env: WorktreeEnv, place: Place): Refused | undefined {
   );
 }
 
-// The held row's branch left without this worktree's mark when its mark
-// failed: the line that marks it lets a re-run find the move done.
-const markWay = (name: string): string => {
-  const mark = ['git', 'config', '--local', markKeyOf(name), name];
-  return `if move made ${name} and could not mark it, mark it with: ${mark.map(shellArg).join(' ')}, ${AGAIN_WAY}`;
-};
-
-function branchRefusal(runGit: Runner, place: Place): Refused | undefined {
+function branchRefusal(place: Place): Refused | undefined {
   const { entry, name } = place;
   const own = nativeBranch(name);
   if (entry.branch === `${HEADS}${own}`) return undefined;
@@ -244,12 +236,12 @@ function branchRefusal(runGit: Runner, place: Place): Refused | undefined {
       FRESH_WAY,
     );
   }
-  const found = `${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`;
-  const onOwnNameNotMarkedForIt =
-    entry.branch === `${HEADS}${name}` &&
-    markOf(runGit, entry.path, name) !== name;
-  if (onOwnNameNotMarkedForIt) return refuse(found, markWay(name), FRESH_WAY);
-  return refuse(found, FRESH_WAY);
+  // No mark line here: a branch named for the worktree may be one move
+  // switched to, and marking it would have remove delete it.
+  return refuse(
+    `${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`,
+    FRESH_WAY,
+  );
 }
 
 // Ignored files are not read: .worktreeinclude copies some into every new worktree.
@@ -572,7 +564,7 @@ export function checkMove(
   if (line !== undefined) return { kind: 'already', line };
   const unfresh =
     workerRefusal(env, place) ??
-    branchRefusal(runGit, place) ??
+    branchRefusal(place) ??
     changesRefusal(runGit, place);
   if (unfresh !== undefined) return unfresh;
   const created = freshHead(runGit, place);

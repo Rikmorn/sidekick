@@ -142,7 +142,7 @@ The checks run in this order, and the first that fails stops `move`. The check f
 
 1. It runs outside a repository, outside a work tree, in the main checkout, or in a folder git lists no worktree for.
 2. A worker owns the worktree: `SIDEKICK_WORKER` is set, a worker record names the worktree, or an unreadable worker record may name it. `remove` refuses such a worktree too. A worker's brief sets its branch.
-3. The worktree is on any branch but `worktree-<name>`, or its `HEAD` is detached. A held move whose mark failed leaves the worktree on a branch of its own name, not marked for it. There the refusal also gives the `git config` line that marks it. With the mark set, `move` onto the held branch reads as a re-run.
+3. The worktree is on any branch but `worktree-<name>`, or its `HEAD` is detached. A held move whose mark failed prints the `git config` line that marks the branch, at the time it fails. This refusal gives no such line. A branch named for the worktree may be one `move` switched to, and marking it would have `remove` delete it. With the mark set, `move` onto the held branch reads as a re-run.
 4. It has tracked or untracked changes. The refusal names the first 20 paths. Ignored files are not read, since `.worktreeinclude` copies some into every new worktree.
 5. Its `HEAD` is not the creation commit of `worktree-<name>`, which is the oldest entry of that branch's reflog. The refusal names both commits, and counts the commits on top when `HEAD` is ahead.
 6. git refuses `<branch>` as a name, or reads it as another, such as `@{-1}`.
