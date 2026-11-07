@@ -11343,7 +11343,7 @@ function freshHead(runGit, place) {
 function nameRefusal(runGit, dir, branch) {
   const verdict = branchNameOf(runGit, dir, branch);
   if ("issue" in verdict) {
-    return refuse6(`git check-ref-format refuses ${branch}: ${verdict.issue.replace(FATAL, "")}`, "choose another name");
+    return refuse6(`git check-ref-format refuses ${branch}: ${verdict.issue}`, "choose another name");
   }
   if (verdict.read === branch)
     return;
@@ -11351,8 +11351,9 @@ function nameRefusal(runGit, dir, branch) {
 }
 function branchNameOf(runGit, dir, name) {
   const result = runGit("git", ["check-ref-format", "--branch", name], dir);
-  if (result.code !== 0)
-    return { issue: gitWords(result.stderr) };
+  if (result.code !== 0) {
+    return { issue: gitWords(result.stderr).replace(FATAL, "") };
+  }
   return { read: result.stdout.trim() };
 }
 function isPlainBranchName(runGit, dir, name) {

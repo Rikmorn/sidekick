@@ -637,11 +637,11 @@ describe('checkMove: the move each branch needs', () => {
     'HEAD',
     '.w1',
     '-w1',
-  ])('a held branch, from a worktree named %s, which git refuses as a branch, refused', (name) => {
+  ])('a held branch, from a worktree named %s, which git refuses as a branch, refused with git’s words and no fatal: prefix', (name) => {
     const f = fixture({ name });
     const { result } = check(f.dir, f.main, [f.trunk]);
     expect(refused(result)).toEqual([
-      `${f.main} holds ${f.trunk}, so move would create a branch named for this worktree, ${name}, but git refuses ${name} as a branch name: fatal: '${name}' is not a valid branch name`,
+      `${f.main} holds ${f.trunk}, so move would create a branch named for this worktree, ${name}, but git refuses ${name} as a branch name: '${name}' is not a valid branch name`,
       `start a worktree under a name git takes as a branch and run move there, or land the work onto ${f.trunk} from another worktree`,
     ]);
   });
@@ -1198,7 +1198,7 @@ describe('move: refusals and failures', () => {
     const moved = move(f.dir, [f.trunk]);
     expectFailed(moved);
     expect(moved.err).toEqual([
-      `${f.main} holds ${f.trunk}, so move would create a branch named for this worktree, HEAD, but git refuses HEAD as a branch name: fatal: 'HEAD' is not a valid branch name`,
+      `${f.main} holds ${f.trunk}, so move would create a branch named for this worktree, HEAD, but git refuses HEAD as a branch name: 'HEAD' is not a valid branch name`,
       `start a worktree under a name git takes as a branch and run move there, or land the work onto ${f.trunk} from another worktree`,
     ]);
     expect(snapshot(f.main)).toEqual(before);

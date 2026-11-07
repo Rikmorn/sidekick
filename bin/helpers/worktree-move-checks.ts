@@ -320,7 +320,7 @@ function nameRefusal(
   const verdict = branchNameOf(runGit, dir, branch);
   if ('issue' in verdict) {
     return refuse(
-      `git check-ref-format refuses ${branch}: ${verdict.issue.replace(FATAL, '')}`,
+      `git check-ref-format refuses ${branch}: ${verdict.issue}`,
       'choose another name',
     );
   }
@@ -331,14 +331,16 @@ function nameRefusal(
 }
 
 // The name `git check-ref-format --branch` reads `name` as, which differs for
-// `@{-N}`, or git's words when it refuses the name.
+// `@{-N}`, or git's words, less `fatal: `, when it refuses the name.
 function branchNameOf(
   runGit: Runner,
   dir: string,
   name: string,
 ): { read: string } | { issue: string } {
   const result = runGit('git', ['check-ref-format', '--branch', name], dir);
-  if (result.code !== 0) return { issue: gitWords(result.stderr) };
+  if (result.code !== 0) {
+    return { issue: gitWords(result.stderr).replace(FATAL, '') };
+  }
   return { read: result.stdout.trim() };
 }
 
