@@ -1,6 +1,6 @@
 ---
 name: sk-worktree
-description: "Start a session's worktree on any branch, and finish it: land the work on its target, then remove the worktree. Use in a main session to start, reopen, finish, or remove a worktree, or to go off main. Also use when superpowers' using-git-worktrees or finishing-a-development-branch loads. In a dispatched worker, the brief answers instead."
+description: "Start a session's worktree on any branch, and finish it: land the work on its target, then remove the worktree. Use in a main session to start, reopen, finish, or remove a worktree, or to go off main. Also use when superpowers' using-git-worktrees loads, or when finishing-a-development-branch loads in a linked worktree. In a dispatched worker, the brief answers instead."
 ---
 
 # sk-worktree
@@ -11,7 +11,7 @@ In a dispatched worker, the brief answers this skill instead. Its `place` and `s
 
 ## Entry
 
-The operator types `/sidekick:sk-worktree …` as a session's prompt, with their words after it. Those words name what they want: a branch to start on, "go off main", a pull request, or done with a target. From the shell, `claude "/sidekick:sk-worktree …"` launches a session that runs it. `claude -w <name> "/sidekick:sk-worktree …"` launches one inside a new worktree. Superpowers' `using-git-worktrees` and `finishing-a-development-branch` point here when they load.
+The operator types `/sidekick:sk-worktree …` as a session's prompt, with their words after it. Those words name what they want: a branch to start on, "go off main", a pull request, or done with a target. From the shell, `claude "/sidekick:sk-worktree …"` launches a session that runs it. `claude -w <name> "/sidekick:sk-worktree …"` launches one inside a new worktree. Superpowers' `using-git-worktrees` points here when it loads, and `finishing-a-development-branch` does in a linked worktree. In the main checkout, `finishing-a-development-branch` runs as written.
 
 ## The repo's guidance comes first
 
@@ -67,16 +67,16 @@ The route depends on which checkout holds the target, which `sidekick worktree l
 |---|---|
 | The remote | Push the branch. A pull request follows the repo's convention, and the worktree stays until it merges. A later done fetches, and `remove` then finds the work landed, squash merges included |
 | A branch no checkout holds | From inside, `git push . HEAD:<target>`. Git fast-forwards the branch, and refuses a push that is not a fast-forward |
-| The branch the main checkout holds | Read `list`'s main-checkout row from inside the worktree, before stepping out, since the row counts this session once its `cwd` is in the main checkout. A fast-forward moves files under any session there. So when the row reads `in use` or `unknown`, ask whether to land anyway, wait, or push instead. Then step out with `ExitWorktree` `keep`, and run `git merge --ff-only <branch>` in the main checkout |
+| The branch the main checkout holds | Read `list`'s main-checkout row from inside the worktree, before stepping out, since the row counts this session once its `cwd` is in the main checkout. A fast-forward moves files under any session there. So when the row reads `in use` or `unknown`, ask whether to land anyway, wait, or push instead. Then step out with `ExitWorktree` `keep`, and run `git merge --ff-only <worktree-branch>` in the main checkout. `<worktree-branch>` is the worktree's branch, the first field of `move`'s line, not the target |
 | A branch another worktree holds | When `list` shows nothing holds that worktree, and it sits under `.claude/worktrees/`, enter it with `EnterWorktree` and its `path`. Fast-forward there, and step out with `keep`. Otherwise ask |
 
-The worktree stays for a pull request because removing it at the push would delete the branch `move` made. A review round would then bring the branch back through `move` as an unmarked tracking branch, which the next `remove` keeps.
+The worktree stays for a pull request because removing it at the push would delete the branch `move` marked. A review round would then bring the branch back through `move` as an unmarked tracking branch, which the next `remove` keeps.
 
 ### Removing the worktree
 
-`remove` refuses the worktree that holds its own directory, so it runs once the session has stepped out. From the main checkout, run `sidekick worktree remove <name> --into <target>`. `--into` takes a local branch, or a remote-tracking ref such as `origin/main`. With the work landed, `remove` needs no `--discard`. It deletes the worktree's own branch, `worktree-<name>` or the one `move` made, and keeps any other. It keeps the head in a backup ref, and ends with a `restore with:` line; report its lines. Work that has not landed stays, or goes with `--discard` on the operator's word. For a worktree no session is in, `list`'s state says whether `remove` takes it as it stands.
+`remove` refuses the worktree that holds its own directory, so it runs once the session has stepped out. From the main checkout, run `sidekick worktree remove <name> --into <target>`. `--into` takes a local branch, or a remote-tracking ref such as `origin/main`. With the work landed, `remove` needs no `--discard`. It deletes the worktree's own branch, `worktree-<name>` or a branch `move` marked for it, and keeps any other. It keeps the head in a backup ref, and ends with a `restore with:` line; report its lines. Work that has not landed stays, or goes with `--discard` on the operator's word. For a worktree no session is in, `list`'s state says whether `remove` takes it as it stands.
 
-An unchanged support worktree has no commits or changes of its own, so its commit is already in the base. Step out with `keep` and run `remove <name>`, which reads it as landed and deletes the branch `move` made. `ExitWorktree` `remove` would leave that branch behind.
+An unchanged support worktree has no commits or changes of its own, so its commit is already in the base. Step out with `keep` and run `remove <name>`, in place of `ExitWorktree` `remove`. `remove` checks that the work landed, reads this commit as landed, and deletes the branch `move` marked.
 
 ### Ignored files
 
@@ -86,4 +86,4 @@ An unchanged support worktree has no commits or changes of its own, so its commi
 
 `ExitWorktree` waits for the user's ask, and running done is the operator's ask to step out. With `keep`, it returns the session to where it was before `EnterWorktree`, usually the main checkout, where `remove` runs.
 
-It acts only on a worktree this session made or entered with `EnterWorktree`. Anywhere else it reports that no worktree session is active and changes nothing. A session launched with `claude -w` is one such session: it cannot step out. It lands what it can from inside, by a push or by `git push .`, and hands the rest of done to a session in the main checkout. Tell the operator the target and what is left. `remove` refuses a worktree a live session holds, so that session lands the rest and runs `remove` once this one is closed. Ask the operator to keep the worktree at Claude Code's exit prompt, so the checks fall to `remove`.
+`ExitWorktree` acts only on a worktree this session made or entered with `EnterWorktree`. Anywhere else it reports that no worktree session is active and changes nothing. In a session launched with `claude -w`, `ExitWorktree` does nothing, so the session cannot step out. It lands what it can from inside, by a push or by `git push .`, and hands the rest of done to a session in the main checkout. Tell the operator the target and what is left. `remove` refuses a worktree a live session holds. So the main checkout's session lands the rest and runs `remove` once this one is closed. Ask the operator to keep the worktree at Claude Code's exit prompt, so the checks fall to `remove`.
