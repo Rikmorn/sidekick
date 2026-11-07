@@ -1,21 +1,21 @@
 # sk-* Parallel sessions
 
-Sessions sharing a checkout move files and `HEAD` under each other, so a session needing its own seat works in a worktree Claude Code makes.
+Sessions sharing a checkout move files and `HEAD` under each other. So a session that needs its own seat works in a worktree Claude Code makes, started and finished with `sk-worktree`.
 
-## Moving into a worktree
+## When to move
 
-- Move on the operator's word, or when another live session has work on this checkout's branch.
-- Move before writing a spec or plan. A worktree session cannot edit the main checkout.
-- Use `EnterWorktree`, or `claude -w <name>` for a new session. Both copy what `.worktreeinclude` lists, and offer removal. A hand-built worktree gets neither.
-- In a fresh worktree, run the repo's declared setup before any other command, even for a task with no gates. Without it, tools borrow the main checkout's packages. Link nothing from the main checkout: installs write through links.
+- Move on the operator's word, or when another live session works on this checkout's branch.
+- Move before writing a spec or plan, since a worktree session cannot edit the main checkout.
+- Support work, such as a production check, gets its own worktree from the remote's default branch. "Go off main" asks for one, even when this checkout holds that branch.
 
-## Bases
+## Facts
 
-The repo's `worktree.baseRef` sets the base. `"fresh"`, the default, is the remote's default branch, from an `origin` up to a day old: fetch first. `"head"` is this checkout's `HEAD`. For the other base, start a new session with `claude -w <name> --settings '{"worktree":{"baseRef":"…"}}'`, from the branch's checkout for `"head"`.
-
-## Support work
-
-Support work, such as a production check, runs in its own worktree from the remote's default branch. "Go off main" asks for one, even when this checkout holds that branch. Removing it unchanged at the end is the operator's standing request: call `ExitWorktree` with `remove` without asking. Changed code instead becomes a branch landing by the repo's own route, and its worktree stays until then.
+- Git checks a branch out in one checkout at a time, and refuses a second checkout's switch to it. So work lands onto a held branch in the checkout that holds it.
+- Landing in a checkout rewrites its files under every session working there.
+- `ExitWorktree` acts only on a worktree this session made or entered with `EnterWorktree`, and elsewhere changes nothing. So a session launched with `claude -w` cannot step out.
+- Claude Code makes each worktree inside the repo, under `.claude/worktrees/`, and copies in the git-ignored files `.worktreeinclude` lists. A worktree built by hand gets no copy. A scanner run from the main checkout, such as a linter, reaches into the nested worktrees unless it ignores that folder.
+- A fresh worktree runs the repo's setup once it is on its branch, before other work. Without it, a tool that looks for packages in parent folders finds the main checkout's, since the worktree sits inside it. Link nothing from the main checkout: an install through a link writes the main checkout's files, under every session using them.
+- Settings and denies reach every worktree and worker, `settings.local.json` included. Claude Code reads that file from the main checkout's root, so a change to it holds in every checkout.
 
 ## The isolation guard
 
@@ -27,8 +27,7 @@ Claude Code refuses any command in a worktree, a subagent's too, whose text cann
 - the Write tool for files, and `sed -i ''` on macOS;
 - the main checkout read by absolute path, never through `cd`.
 
-## Landing and leaving
+## Rulings
 
-- Land only in the target branch's owner checkout. From a worktree, hand the tested commit to its session or the operator; never move a branch another checkout holds.
-- In a worktree, at superpowers' `finishing-a-development-branch`, offer only a pull request or keep, since merging locally changes into the main checkout. At its `using-git-worktrees` Project Setup, run the repo's setup, not `npm install`.
-- `ExitWorktree` removes only a worktree this session made with `EnterWorktree`. Any other goes at the session's exit prompt, or, for a dispatched worker, through `sidekick worker finish`.
+- Remove an unchanged support worktree without asking, at the operator's standing request.
+- A dispatched worker follows its brief: its `place` and `setup` say where the work runs, and `sidekick worker finish` removes its worktree.
