@@ -14,6 +14,7 @@ What each skill in the loop does when it runs. For each: what it reads, what it 
 | 3 Shape the work | `sk-design`, before or during brainstorming | The model, when a change is costly to undo, with the Skill-tool hook as a prompt; you, to explore or evaluate |
 | 3 Shape the work | `superpowers:brainstorming`, then `superpowers:writing-plans` | The model, before any creative work |
 | 4 Execute, choosing how | `sk-execute`; in a worker session, `sk-worker` | The model for `sk-execute`. Once you choose the worker mode, the model dispatches `sk-worker` with `sidekick worker dispatch`; without agent view, you type `/sidekick:sk-worker <brief>` yourself |
+| 4 Execute, in a worktree of its own | `sk-worktree`: start before the work, done after it | You, typing `/sidekick:sk-worktree …`, or the model when you ask for a worktree or to finish one. In a dispatched worker, the brief answers it |
 | 4 Execute | `superpowers:using-git-worktrees`, then `superpowers:subagent-driven-development` or `superpowers:executing-plans` | The model, in the current session or a worker session. In a worker, the brief says where it works, and its `setup` replaces Project Setup |
 | 4 Execute, at the end | `superpowers:requesting-code-review`, `superpowers:finishing-a-development-branch` | The executing skill calls them |
 | 5 File what you notice | `sk-track` §Filing | The model, mid-session |
@@ -193,6 +194,15 @@ Fires when you ask to save context, before a `/clear`, at a session's end, or wh
 ### `sk-worker`
 
 `sk-execute` dispatches it once you choose the worker mode, as a background session in a worktree of its own. When agent view is unavailable, you type `/sidekick:sk-worker <brief>` in a session of your own instead. A dispatched worker checks its own worktree and relies on `dispatch`'s checks of the brief; one you start checks the brief and the tree. Either then runs the brief's `setup`. Before Task 1 it scans the plan and sends every question in one report. It reads each ruling from the rulings file the brief names, never from a message. It then runs the superpowers skill the brief names, ruling as superpowers does except on plan decisions and goals. Each task lands as its own commits, and a fix adds a commit rather than amending one. It never pushes, reads GitHub without writing, and ends with a run report at the brief's `report` path. Pauses with `BLOCKED` when a check fails, and after its scan for the rulings.
+
+### `sk-worktree`
+
+Fires in a main session when you ask to start, reopen, finish, or remove a worktree, or to go off main. You can also type `/sidekick:sk-worktree …`. From the shell, `claude "/sidekick:sk-worktree …"` runs it, and `claude -w <name> "/sidekick:sk-worktree …"` runs it in a new worktree. It reads the repo's worktree guidance first, which wins over its own defaults.
+
+- **Start** enters with `EnterWorktree`, or stays in a fresh `claude -w` worktree. It runs `sidekick worktree move` onto the branch, then the repo's setup. It reports the path, the branch, the base, setup's result, and `claude -w <name>` as the way back.
+- **Done** lands the work by where the target lives: a push, a fast-forward `git push .`, or a fast-forward in the checkout that holds the target. Then it runs `sidekick worktree remove <name> --into <target>` from the main checkout. A pull request's worktree stays until it merges. A `claude -w` session cannot step out, so it hands the rest of done to a session in the main checkout.
+
+In a dispatched worker, the brief answers it instead. Pauses for the target when neither you nor the repo's landing line names one, and for uncommitted work. It also pauses for a session in the main checkout before landing there, and for each refusal from `move` or `remove`. Ignored files that `remove` would lose, and any `--discard`, wait for your word. An unchanged support worktree goes without a pause.
 
 ### `sidekick`
 
