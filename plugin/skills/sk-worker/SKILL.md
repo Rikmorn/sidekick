@@ -46,7 +46,7 @@ If any check fails, reply `BLOCKED` with every failure, send the same to the orc
 
 ## Setup
 
-Run the brief's `setup` command where you work, before the scan, since the scan runs the gates. It replaces Project Setup in superpowers' `using-git-worktrees`, which runs `npm install` whenever it finds a `package.json`. With no `setup`, skip Project Setup. A `setup` that fails is a failed check, as §On start describes.
+Run the brief's `setup` command where you work, before the scan, since the scan runs the gates. It replaces Project Setup in superpowers' `using-git-worktrees`, which runs `npm install` whenever it finds a `package.json`. It replaces `sk-worktree`'s start too, and the brief's `place` replaces its placement: a worker stays on `worktree-<name>`, which `move` would leave. With no `setup`, skip Project Setup. A `setup` that fails is a failed check, as §On start describes.
 
 ## The scan, before Task 1
 
@@ -73,7 +73,7 @@ The orchestrator writes its rulings in the rulings file, and its message only po
 
 Invoke the superpowers skill the brief's `skill` names, and follow it. Its task list and progress stay in this session, where the operator can see them. These rules hold on top of it:
 
-- **The brief answers superpowers' questions.** Where superpowers would ask the person, the brief has already answered: `place` says where to work, and `setup` replaces Project Setup. At `finishing-a-development-branch`, keep the branch as it is; the orchestrator reviews and integrates.
+- **The brief answers superpowers' questions.** Where superpowers would ask the person, the brief has already answered: `place` says where to work, and `setup` replaces Project Setup. At `finishing-a-development-branch`, keep the branch as it is and run no `sk-worktree` done. The orchestrator reviews and integrates; your end is the run report and `sidekick worker finish`.
 - **Settle a small misfit; raise one that recurs.** Shape the sketch to the tree and list each deviation in the run report. A misfit that keeps recurring goes to the orchestrator, because the plan's premise is wrong.
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
 - **Run the prose step** wherever a task has one.

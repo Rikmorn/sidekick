@@ -179,7 +179,7 @@ Each refusal names what it found and deletes nothing. The checks run in this ord
 | An `--into` target that names no local branch and no remote-tracking ref | `--into` takes an exact ref: a local branch such as `main`, else a remote-tracking ref such as `origin/main`. A revision such as `main~1` names no ref. This check runs before every other. |
 | A name that matches no worktree, or several | It removes exactly one. When two share a name, give the path. |
 | The main checkout | The repository lives there. |
-| The worktree that holds the command's own directory | Leave it first: in a Claude Code session, `ExitWorktree` with `keep`; in a shell, `cd` out. Then run `remove` from the main checkout. |
+| The worktree that holds the command's own directory | Leave it first: in a Claude Code session, `ExitWorktree` with `keep`. A session launched with `claude -w` cannot step out, so close the session. In a shell, `cd` out. Then run `remove` from the main checkout. |
 | An `--into` target that is the branch the worktree is on | That branch holds the worktree's head whether or not the work landed, so it shows nothing. Name the branch the work should land in. |
 | A worktree with another worktree inside its folder | Removing the outer folder would delete the inner worktree's files. Remove the inner one first. |
 | `claude agents` failed | Without the session rows, a worktree Claude Code did not lock looks free. The refusal gives the reason. |

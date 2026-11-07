@@ -440,7 +440,7 @@ describe('worktree remove: refuses', () => {
     expect(backupRefs(main)).toEqual([]);
   });
 
-  test("the worktree holding the command's own cwd, naming ExitWorktree with keep", () => {
+  test("the worktree holding the command's own cwd, naming each way out", () => {
     const main = repo();
     const dir = addWorktree(main, 'here');
     const sub = path.join(dir, 'sub');
@@ -449,6 +449,8 @@ describe('worktree remove: refuses', () => {
     expect(code).toBe(1);
     expect(joined(err)).toContain('ExitWorktree');
     expect(joined(err)).toContain('keep');
+    expect(joined(err)).toContain('claude -w');
+    expect(joined(err)).toContain('close the session');
     expectUntouched(main, dir, 'worktree-here');
   });
 
