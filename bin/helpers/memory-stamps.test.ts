@@ -3,7 +3,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { git, removeTemps, tmp } from './fixtures/worker/repo.js';
 import { copyState, ownedChanges } from './memory-link-facts.js';
-import { sameIgnoringStamps, withoutStamps } from './memory-stamps.js';
+import { compareDefaultFolder } from './memory-lint-repos.js';
+import {
+  sameFileIgnoringStamps,
+  sameIgnoringStamps,
+  withoutStamps,
+} from './memory-stamps.js';
 import { execRunner } from './pm-data.js';
 
 afterEach(removeTemps);
@@ -56,6 +61,44 @@ describe('copyState', () => {
     expect(copyState(path.join(base, 'a.md'), path.join(base, 'c.md'))).toBe(
       'differs',
     );
+  });
+});
+
+describe('files that are not valid UTF-8', () => {
+  test('differing invalid bytes differ, and equal ones match', () => {
+    const [x, y] = [Buffer.from([0x80]), Buffer.from([0x81])];
+    expect(sameFileIgnoringStamps(x, y)).toBe(false);
+    expect(sameFileIgnoringStamps(x, Buffer.from([0x80]))).toBe(true);
+    expect(
+      sameFileIgnoringStamps(Buffer.from(file(A)), Buffer.from(file(B))),
+    ).toBe(true);
+  });
+
+  test('copyState reads two differing invalid-UTF-8 files as differing', () => {
+    const base = tmp();
+    fs.writeFileSync(path.join(base, 'a.bin'), Buffer.from([0x80]));
+    fs.writeFileSync(path.join(base, 'b.bin'), Buffer.from([0x81]));
+    expect(copyState(path.join(base, 'a.bin'), path.join(base, 'b.bin'))).toBe(
+      'differs',
+    );
+  });
+
+  test('the lint lists such a pair as differing', () => {
+    const base = tmp();
+    const store = path.join(base, 'store');
+    const key = 'proj';
+    fs.mkdirSync(path.join(store, key), { recursive: true });
+    fs.writeFileSync(path.join(store, key, 'x.bin'), Buffer.from([0x80]));
+    const def = path.join(base, 'memory');
+    fs.mkdirSync(def);
+    fs.writeFileSync(path.join(def, 'x.bin'), Buffer.from([0x81]));
+    const diff = compareDefaultFolder(def, path.join(store, key), ['x.bin']);
+    expect(diff).toEqual({
+      kind: 'present',
+      differs: ['x.bin'],
+      onlyThere: [],
+      onlyInStore: [],
+    });
   });
 });
 

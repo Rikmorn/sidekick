@@ -5067,6 +5067,13 @@ function withoutStamps(text) {
 function sameIgnoringStamps(a, b) {
   return a === b || withoutStamps(a) === withoutStamps(b);
 }
+function sameFileIgnoringStamps(a, b) {
+  if (a.equals(b))
+    return true;
+  const [x, y] = [a.toString("utf8"), b.toString("utf8")];
+  const valid = Buffer.from(x, "utf8").equals(a) && Buffer.from(y, "utf8").equals(b);
+  return valid && sameIgnoringStamps(x, y);
+}
 
 // bin/helpers/memory-link-facts.ts
 function gatherFacts(opts, deps) {
@@ -5246,8 +5253,7 @@ function copyState(from, to) {
   return sameContent(from, to) ? "same" : "differs";
 }
 function sameContent(a, b) {
-  const [x, y] = [fs18.readFileSync(a), fs18.readFileSync(b)];
-  return x.equals(y) || sameIgnoringStamps(x.toString("utf8"), y.toString("utf8"));
+  return sameFileIgnoringStamps(fs18.readFileSync(a), fs18.readFileSync(b));
 }
 function ownedChanges(store, owned, runGit) {
   const listed = statusIn(store, [owned.folderRel, ARCHIVE_DIR], runGit);
@@ -5411,8 +5417,7 @@ function compareCopy(from, to) {
     return "absent";
   try {
     const [a, b] = [fs19.readFileSync(from), fs19.readFileSync(to)];
-    const same = a.equals(b) || sameIgnoringStamps(a.toString("utf8"), b.toString("utf8"));
-    return same ? "same" : "differs";
+    return sameFileIgnoringStamps(a, b) ? "same" : "differs";
   } catch {
     return "differs";
   }

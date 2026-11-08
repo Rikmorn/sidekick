@@ -11,7 +11,7 @@ import { findRepo } from './desk-children.js';
 import { expandHome } from './home-path.js';
 import { walkFolder } from './memory-link-facts.js';
 import { checkoutIssue, readKeyAt } from './memory-settings.js';
-import { sameIgnoringStamps } from './memory-stamps.js';
+import { sameFileIgnoringStamps } from './memory-stamps.js';
 import { folderNameIssue, MARKER_FILE, readMarker } from './memory-store.js';
 import type { Runner } from './pm-data.js';
 
@@ -135,9 +135,7 @@ function compareCopy(from: string, to: string): CopyCompare {
   if (!fs.existsSync(to)) return 'absent';
   try {
     const [a, b] = [fs.readFileSync(from), fs.readFileSync(to)];
-    const same =
-      a.equals(b) || sameIgnoringStamps(a.toString('utf8'), b.toString('utf8'));
-    return same ? 'same' : 'differs';
+    return sameFileIgnoringStamps(a, b) ? 'same' : 'differs';
   } catch {
     return 'differs';
   }

@@ -29,7 +29,7 @@ import type {
 } from './memory-link-types.js';
 import { sessionsInRepo } from './memory-sessions.js';
 import { mainCheckout, settingsState } from './memory-settings.js';
-import { sameIgnoringStamps } from './memory-stamps.js';
+import { sameFileIgnoringStamps } from './memory-stamps.js';
 import {
   CREATION_PATHS,
   findMarkers,
@@ -316,12 +316,8 @@ export function copyState(from: string, to: string): CopyState {
   return sameContent(from, to) ? 'same' : 'differs';
 }
 
-// Equal bytes, or text equal once the stamps are set aside.
 function sameContent(a: string, b: string): boolean {
-  const [x, y] = [fs.readFileSync(a), fs.readFileSync(b)];
-  return (
-    x.equals(y) || sameIgnoringStamps(x.toString('utf8'), y.toString('utf8'))
-  );
+  return sameFileIgnoringStamps(fs.readFileSync(a), fs.readFileSync(b));
 }
 
 /**

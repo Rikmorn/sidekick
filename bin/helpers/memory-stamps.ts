@@ -18,3 +18,16 @@ export function withoutStamps(text: string): string {
 export function sameIgnoringStamps(a: string, b: string): boolean {
   return a === b || withoutStamps(a) === withoutStamps(b);
 }
+
+/**
+ * Whether two files' bytes are equal, or are text equal once the stamps are
+ * set aside. A file that is not valid UTF-8 matches only byte for byte, since
+ * decoding maps every invalid sequence to the same character.
+ */
+export function sameFileIgnoringStamps(a: Buffer, b: Buffer): boolean {
+  if (a.equals(b)) return true;
+  const [x, y] = [a.toString('utf8'), b.toString('utf8')];
+  const valid =
+    Buffer.from(x, 'utf8').equals(a) && Buffer.from(y, 'utf8').equals(b);
+  return valid && sameIgnoringStamps(x, y);
+}
