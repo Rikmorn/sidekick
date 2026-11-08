@@ -145,6 +145,6 @@ claude plugin validate --strict . && claude plugin validate --strict plugin
 claude plugin test plugin  # the mods' tests
 ```
 
-A release is a milestone closed, tagged `sidekick--v<version>` and published as a GitHub Release; `AGENTS.md` §Releasing holds the steps. This repo consumes its own plugin like any other repo, and reads the user-level rules, which only a release updates.
+A milestone closes with a release, tagged `sidekick--v<version>` and published as a GitHub Release, and a patch release for any defect found after it ships. `AGENTS.md` §Releasing holds the steps. This repo consumes its own plugin like any other repo, and reads the user-level rules, which only a release updates.
 
 `docs/` holds the records: ADRs, research, and learnings, beside the steering docs. `docs/README.md` lists what sidekick adds to the docs layout.
