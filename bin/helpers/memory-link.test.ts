@@ -649,6 +649,22 @@ describe('applyAction: the archive', () => {
     );
   });
 
+  test('a file whose only change since the copy is a stamp is not listed', () => {
+    const f = folders();
+    const doc = (stamp: string): string => `---\nname: s\n${stamp}---\nBody.\n`;
+    fs.writeFileSync(path.join(f.from, 's.md'), doc('modified: 2026-11-02\n'));
+    fs.writeFileSync(
+      path.join(f.copies, 's.md'),
+      doc('modified: 2026-11-01\n'),
+    );
+    const applied = applyAction(
+      { kind: 'archiveDefault', ...f, reappeared: false },
+      execRunner,
+    );
+    if (!applied.ok) throw new Error(applied.issue);
+    expect(applied.lines.join('\n')).not.toContain('s.md');
+  });
+
   test('a reappeared folder asks for a merge by hand of the same files', () => {
     const f = folders();
     const applied = applyAction(

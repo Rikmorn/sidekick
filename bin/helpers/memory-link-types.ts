@@ -108,7 +108,8 @@ export interface OwnedPaths {
   projectKey: string;
   /**
    * The default folder. A repo-folder file is one of `link`'s copies when its
-   * bytes equal the same path here or in one of this repo's archive folders;
+   * content equals the same path here or in one of this repo's archive folders,
+   * front-matter stamps aside;
    * a session's later write differs or has no counterpart.
    */
   defaultFolder: string;

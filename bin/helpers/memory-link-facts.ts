@@ -29,6 +29,7 @@ import type {
 } from './memory-link-types.js';
 import { sessionsInRepo } from './memory-sessions.js';
 import { mainCheckout, settingsState } from './memory-settings.js';
+import { sameIgnoringStamps } from './memory-stamps.js';
 import {
   CREATION_PATHS,
   findMarkers,
@@ -303,7 +304,7 @@ function readDefaultFolder(
   return { kind: 'present', folder, files, issues: walked.issues };
 }
 
-/** How `from` compares with `to`, by bytes. */
+/** How `from` compares with `to`, by bytes once the front-matter stamps are set aside. */
 export function copyState(from: string, to: string): CopyState {
   try {
     if (!fs.statSync(to).isFile()) return 'notFile';
@@ -312,14 +313,22 @@ export function copyState(from: string, to: string): CopyState {
       error instanceof Error && 'code' in error && error.code === 'ENOENT';
     return absent ? 'absent' : 'notFile';
   }
-  return fs.readFileSync(from).equals(fs.readFileSync(to)) ? 'same' : 'differs';
+  return sameContent(from, to) ? 'same' : 'differs';
+}
+
+// Equal bytes, or text equal once the stamps are set aside.
+function sameContent(a: string, b: string): boolean {
+  const [x, y] = [fs.readFileSync(a), fs.readFileSync(b)];
+  return (
+    x.equals(y) || sameIgnoringStamps(x.toString('utf8'), y.toString('utf8'))
+  );
 }
 
 /**
  * The uncommitted or staged store files `link` owns: the repo folder's
  * marker, every file in this repo's archive folders, and each repo-folder
- * file whose bytes equal the same path in the default folder or in one of
- * those archives, which is what a copy is. A deleted path never counts.
+ * file whose content equals the same path in the default folder or in one of
+ * those archives, stamps aside, which is what a copy is. A deleted path never counts.
  */
 export function ownedChanges(
   store: string,
@@ -388,7 +397,7 @@ function statusIn(
   return { entries: porcelainEntries(r.stdout) };
 }
 
-// The marker, or a file equal byte for byte to its counterpart in a source.
+// The marker, or a file equal to its counterpart in a source, stamps aside.
 function isOwnCopy(
   store: string,
   folderRel: string,
@@ -406,7 +415,7 @@ function isOwnCopy(
 function sameBytes(a: string, b: string): boolean {
   try {
     const bothFiles = fs.statSync(a).isFile() && fs.statSync(b).isFile();
-    return bothFiles && fs.readFileSync(a).equals(fs.readFileSync(b));
+    return bothFiles && sameContent(a, b);
   } catch {
     // A missing counterpart, or a file where a folder should be: no match.
     return false;
