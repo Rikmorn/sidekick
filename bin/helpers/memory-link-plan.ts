@@ -444,7 +444,7 @@ function notesOf(
   const moves = actions.some(
     (a) => a.kind === 'mergeKey' || a.kind === 'archiveDefault',
   );
-  // A re-run that only commits finishes a run that set the key or archived the folder, then failed at its commit.
+  // A plan that only commits, such as the re-run after a failed commit.
   const commitsOnly =
     actions.length > 0 && actions.every((a) => a.kind === 'commit');
   const noDefault =
@@ -491,13 +491,13 @@ function rerunSessionNotes(sessions: SessionFacts, folder: string): string[] {
   }
   const others = sessions.others.map(
     (job) =>
-      `Open in the repo: ${describeJob(job)}. If it started before the key was set, it keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`,
+      `Open in the repo: ${describeJob(job)}. If it started before the key was set, it keeps writing to ${folder} until it restarts. Run link again afterwards to archive what it wrote.`,
   );
   const self =
     sessions.self === undefined
       ? []
       : [
-          `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts, if it started before the key was set. Restart it once the link is done.`,
+          `If this session (${describeJob(sessions.self)}) started before the key was set, it keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`,
         ];
   return [...others, ...self];
 }

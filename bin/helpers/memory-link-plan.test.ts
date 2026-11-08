@@ -574,7 +574,19 @@ describe('planLink: sessions on a re-run that only commits', () => {
     const notes = notesOf(plan).join('\n');
     expect(notes).toContain('me');
     expect(notes).toContain('restart');
-    expect(notes).toContain('started before');
+    expect(notes).toContain(
+      'If this session (me in /x/odin) started before the key was set, it keeps reading and writing',
+    );
+  });
+
+  test('the others-note keeps its condition and its follow-up as two sentences', () => {
+    const plan = planLink(
+      commitOnly({ kind: 'listed', self: undefined, others: [other] }),
+      NO_FLAGS,
+    );
+    expect(notesOf(plan).join('\n')).toContain(
+      `until it restarts. Run link again afterwards to archive what it wrote.`,
+    );
   });
 
   test('no session note when no session is open', () => {

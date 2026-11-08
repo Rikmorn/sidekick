@@ -4924,9 +4924,9 @@ function rerunSessionNotes(sessions, folder) {
       `The check for other open sessions did not run: ${sessions.issues.join(" ")} A session open in the repo since before the key was set keeps writing to ${folder} until it restarts.`
     ];
   }
-  const others = sessions.others.map((job) => `Open in the repo: ${describeJob(job)}. If it started before the key was set, it keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`);
+  const others = sessions.others.map((job) => `Open in the repo: ${describeJob(job)}. If it started before the key was set, it keeps writing to ${folder} until it restarts. Run link again afterwards to archive what it wrote.`);
   const self = sessions.self === undefined ? [] : [
-    `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts, if it started before the key was set. Restart it once the link is done.`
+    `If this session (${describeJob(sessions.self)}) started before the key was set, it keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`
   ];
   return [...others, ...self];
 }
