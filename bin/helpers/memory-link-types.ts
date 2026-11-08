@@ -98,6 +98,8 @@ export interface PlanOptions {
   family: string | undefined;
   name: string | undefined;
   force: boolean;
+  /** Suggested commands keep `--dry-run` when set. */
+  dryRun: boolean;
 }
 
 /** The store paths `link` owns, which its commit may take. */

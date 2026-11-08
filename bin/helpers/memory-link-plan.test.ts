@@ -26,6 +26,7 @@ const NO_FLAGS: PlanOptions = {
   family: undefined,
   name: undefined,
   force: false,
+  dryRun: false,
 };
 const FORCE: PlanOptions = { ...NO_FLAGS, force: true };
 
@@ -816,5 +817,63 @@ describe('planLink: refusals', () => {
       ),
     );
     expect(refusal).toContain("sidekick memory link '/x/my repo' --force");
+  });
+});
+
+describe('planLink: suggested commands under --dry-run', () => {
+  const ODD_ROOT = "/x/o din's repo";
+  const QUOTED_ROOT = `'/x/o din'\\''s repo'`;
+  const DRY: PlanOptions = { ...NO_FLAGS, dryRun: true };
+  const busy = (root: string) =>
+    repo({
+      root,
+      sessions: {
+        kind: 'listed',
+        self: undefined,
+        others: [job('other', `${root}/src`)],
+      },
+    });
+  const linkedElsewhere = (root: string) =>
+    repo({
+      root,
+      target: target({
+        elsewhere: [{ folder: '/s/store/fam/odin', family: 'fam' }],
+      }),
+    });
+  const first = (r: RepoFacts, opts: PlanOptions): string =>
+    refusalsOf(planLink(facts({ repo: r }), opts))[0] ?? '';
+
+  test('a dry run with another session open suggests --force --dry-run', () => {
+    expect(first(busy(ROOT), DRY)).toEndWith(
+      'sidekick memory link /x/odin --force --dry-run',
+    );
+  });
+
+  test('a dry run for a repo linked elsewhere finishes it with --dry-run', () => {
+    expect(first(linkedElsewhere(ROOT), DRY)).toEndWith(
+      'sidekick memory link /x/odin --family fam --name odin --dry-run',
+    );
+  });
+
+  test('a real run suggests commands with no --dry-run', () => {
+    expect(first(busy(ROOT), NO_FLAGS)).not.toContain('--dry-run');
+    expect(first(linkedElsewhere(ROOT), NO_FLAGS)).not.toContain('--dry-run');
+  });
+
+  test('a repo path with a space and a quote keeps its quoting under --dry-run', () => {
+    expect(first(busy(ODD_ROOT), DRY)).toEndWith(
+      `sidekick memory link ${QUOTED_ROOT} --force --dry-run`,
+    );
+    expect(first(linkedElsewhere(ODD_ROOT), DRY)).toEndWith(
+      `sidekick memory link ${QUOTED_ROOT} --family fam --name odin --dry-run`,
+    );
+  });
+
+  test('a dry run keeps --family and --name in the --force retry', () => {
+    expect(
+      first(busy(ROOT), { ...DRY, family: 'fam', name: 'odin' }),
+    ).toEndWith(
+      'sidekick memory link /x/odin --family fam --name odin --force --dry-run',
+    );
   });
 });

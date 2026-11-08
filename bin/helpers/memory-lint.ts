@@ -770,7 +770,7 @@ function staleLock(input: LintInput, id: MemoryLintId): MemoryFinding[] {
 function relinkCommand(scan: RepoScan): string {
   const folderName = path.basename(scan.dir);
   const name = folderName === path.basename(scan.root) ? undefined : folderName;
-  return linkCommand(scan.root, { family: scan.family, name });
+  return linkCommand(scan.root, { family: scan.family, name, dryRun: false });
 }
 
 function settingMissing(input: LintInput, id: MemoryLintId): MemoryFinding[] {

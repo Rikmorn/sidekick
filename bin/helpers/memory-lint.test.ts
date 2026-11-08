@@ -939,6 +939,7 @@ describe('setting-missing', () => {
     const command = linkCommand(rootOf('proj'), {
       family: undefined,
       name: undefined,
+      dryRun: false,
     });
     expect(lint().findings).toEqual([
       {
@@ -956,6 +957,7 @@ describe('setting-missing', () => {
     const command = linkCommand(rootOf('repo'), {
       family: 'fam',
       name: undefined,
+      dryRun: false,
     });
     expect(lint().findings).toEqual([
       {

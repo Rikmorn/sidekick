@@ -4629,11 +4629,13 @@ function readyOf(facts) {
     storePending: storePending.paths
   };
 }
-function linkCommand(root, names, extra = "") {
+function linkCommand(root, opts, extra = "") {
+  const names = opts;
   const flags = [
     names.family === undefined ? "" : ` --family ${shellArg(names.family)}`,
     names.name === undefined ? "" : ` --name ${shellArg(names.name)}`,
-    extra === "" ? "" : ` ${extra}`
+    extra === "" ? "" : ` ${extra}`,
+    opts.dryRun ? " --dry-run" : ""
   ];
   return `sidekick memory link ${shellArg(root)}${flags.join("")}`;
 }
@@ -4673,7 +4675,7 @@ function repoRefusals(repo, opts) {
     ...keyMissedRefusals(repo),
     ...defaultFolderRefusals(repo),
     ...sessionRefusals(repo, opts),
-    ...repo.target === undefined ? [] : targetRefusals(repo.target, repo.root)
+    ...repo.target === undefined ? [] : targetRefusals(repo.target, repo.root, opts.dryRun)
   ];
 }
 function settingsRefusals(repo) {
@@ -4742,11 +4744,15 @@ function sessionRefusals(repo, opts) {
     `Other sessions are open in the repo: ${sessions.others.map(describeJob).join("; ")}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`
   ];
 }
-function targetRefusals(target, root) {
+function targetRefusals(target, root, dryRun) {
   return [
     ...targetStateRefusals(target, root),
     ...familyRefusals(target),
-    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path17.basename(found.folder) })}`),
+    ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, {
+      family: found.family,
+      name: path17.basename(found.folder),
+      dryRun
+    })}`),
     ..."issue" in target.pending ? [pendingRefusal(target.pending.issue)] : []
   ];
 }
@@ -6654,7 +6660,7 @@ function staleLock(input, id) {
 function relinkCommand(scan) {
   const folderName = path28.basename(scan.dir);
   const name = folderName === path28.basename(scan.root) ? undefined : folderName;
-  return linkCommand(scan.root, { family: scan.family, name });
+  return linkCommand(scan.root, { family: scan.family, name, dryRun: false });
 }
 function settingMissing(input, id) {
   const { store, deps } = input;
@@ -6967,7 +6973,8 @@ function missingSettingText(view) {
   const name = folderName === path30.basename(view.root) ? undefined : folderName;
   const command = linkCommand(withheldNames(view.root, path30.sep), {
     family: shownName2(view.family),
-    name: shownName2(name)
+    name: shownName2(name),
+    dryRun: false
   });
   return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: ${command}`;
 }

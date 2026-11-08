@@ -78,16 +78,26 @@ function readyOf(facts: LinkFacts): Ready | undefined {
   };
 }
 
-/** A command that runs `link` again on `root` with these names and extra flags, safe to paste. */
+/**
+ * A command that runs `link` again on `root` with these names and extra flags,
+ * safe to paste. It ends in `--dry-run` exactly when `dryRun` is set, so a
+ * command copied from a dry run stays one.
+ */
 export function linkCommand(
   root: string,
-  names: { family: string | undefined; name: string | undefined },
+  opts: {
+    family: string | undefined;
+    name: string | undefined;
+    dryRun: boolean;
+  },
   extra = '',
 ): string {
+  const names = opts;
   const flags = [
     names.family === undefined ? '' : ` --family ${shellArg(names.family)}`,
     names.name === undefined ? '' : ` --name ${shellArg(names.name)}`,
     extra === '' ? '' : ` ${extra}`,
+    opts.dryRun ? ' --dry-run' : '',
   ];
   return `sidekick memory link ${shellArg(root)}${flags.join('')}`;
 }
@@ -157,7 +167,7 @@ function repoRefusals(repo: RepoFacts, opts: PlanOptions): string[] {
     ...sessionRefusals(repo, opts),
     ...(repo.target === undefined
       ? []
-      : targetRefusals(repo.target, repo.root)),
+      : targetRefusals(repo.target, repo.root, opts.dryRun)),
   ];
 }
 
@@ -238,13 +248,24 @@ function sessionRefusals(repo: RepoFacts, opts: PlanOptions): string[] {
   ];
 }
 
-function targetRefusals(target: TargetFacts, root: string): string[] {
+function targetRefusals(
+  target: TargetFacts,
+  root: string,
+  dryRun: boolean,
+): string[] {
   return [
     ...targetStateRefusals(target, root),
     ...familyRefusals(target),
     ...target.elsewhere.map(
       (found) =>
-        `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, { family: found.family, name: path.basename(found.folder) })}`,
+        `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(
+          root,
+          {
+            family: found.family,
+            name: path.basename(found.folder),
+            dryRun,
+          },
+        )}`,
     ),
     ...('issue' in target.pending
       ? [pendingRefusal(target.pending.issue)]

@@ -226,6 +226,7 @@ function missingSettingText(
   const command = linkCommand(withheldNames(view.root, path.sep), {
     family: shownName(view.family),
     name: shownName(name),
+    dryRun: false,
   });
   return `This repo is linked in the memory store, but its autoMemoryDirectory setting is missing, so Claude Code keeps memory elsewhere. Run: ${command}`;
 }
