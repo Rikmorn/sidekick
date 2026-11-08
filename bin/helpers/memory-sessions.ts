@@ -6,6 +6,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isCurrent } from './desk-snapshot.js';
 import type { Job } from './worker-jobs.js';
 
 // The real path, or the resolved literal when the folder is gone.
@@ -16,11 +17,6 @@ function realOrResolved(p: string): string {
     return path.resolve(p);
   }
 }
-
-// A listed `stopped` job's process has ended, and resuming it starts a new
-// process that reads the new key. `done` covers live processes as well as
-// ended ones, so it still counts as open.
-const STOPPED_STATE = 'stopped';
 
 // Equal to the checkout, or under it by whole path segments.
 function isInside(dir: string, checkout: string): boolean {
@@ -34,7 +30,10 @@ function isInside(dir: string, checkout: string): boolean {
 /**
  * Split the sessions open in the repo into the running one and the rest. A job
  * is in the repo when its `cwd` equals a checkout or lies under one, compared
- * as real paths. A `stopped` job is not open, since its process has ended.
+ * as real paths. A job is open by the desk's rule, `isCurrent`: it carries a
+ * `pid`, or it is a background job still `working` or `blocked`. A `stopped` or
+ * `done` job with no `pid` has no process to write to the old folder, and
+ * resuming it starts a new process that reads the new key.
  * `self` is the in-repo job whose `sessionId` equals `selfId`; it is
  * `undefined` when no id is given or that session is outside the repo, since
  * only an in-repo session keeps the old folder.
@@ -47,7 +46,7 @@ export function sessionsInRepo(
   const roots = checkouts.map(realOrResolved);
   const inRepo = jobs.filter(
     (j) =>
-      j.state !== STOPPED_STATE &&
+      isCurrent(j) &&
       j.cwd !== undefined &&
       roots.some((root) => isInside(realOrResolved(j.cwd ?? ''), root)),
   );

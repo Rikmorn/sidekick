@@ -4136,20 +4136,23 @@ function newProfile(name, description, root) {
 var LISTING_ARGS = ["agents", "--json", "--all"];
 var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
 var OptionalText = nullish(string());
+var OptionalPid = nullish(number());
 var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an object"), object({
   id: OptionalText,
   kind: OptionalText,
   name: OptionalText,
   cwd: OptionalText,
   sessionId: OptionalText,
-  state: OptionalText
+  state: OptionalText,
+  pid: OptionalPid
 }), transform((row) => ({
   id: row.id ?? undefined,
   kind: row.kind ?? undefined,
   name: row.name ?? undefined,
   cwd: row.cwd ?? undefined,
   sessionId: row.sessionId ?? undefined,
-  state: row.state ?? undefined
+  state: row.state ?? undefined,
+  pid: row.pid ?? undefined
 })));
 var ListingSchema = array(JobSchema);
 function parseJson3(text) {
@@ -5163,14 +5166,13 @@ function realOrResolved(p) {
     return path20.resolve(p);
   }
 }
-var STOPPED_STATE = "stopped";
 function isInside(dir, checkout) {
   const rel = path20.relative(checkout, dir);
   return rel === "" || !(rel === ".." || rel.startsWith(`..${path20.sep}`) || path20.isAbsolute(rel));
 }
 function sessionsInRepo(jobs, checkouts, selfId) {
   const roots = checkouts.map(realOrResolved);
-  const inRepo = jobs.filter((j) => j.state !== STOPPED_STATE && j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
+  const inRepo = jobs.filter((j) => isCurrent(j) && j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
   const hasSelf = selfId !== undefined && selfId !== "";
   const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
   return { self, others: inRepo.filter((j) => j !== self) };

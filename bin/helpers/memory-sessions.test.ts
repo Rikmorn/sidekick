@@ -5,13 +5,20 @@ import * as path from 'node:path';
 import { sessionsInRepo } from './memory-sessions.js';
 import type { Job } from './worker-jobs.js';
 
-const job = (sessionId: string, cwd?: string, state?: string): Job => ({
+const job = (
+  sessionId: string,
+  cwd?: string,
+  state?: string,
+  over: Partial<Job> = {},
+): Job => ({
   id: undefined,
   kind: 'interactive',
   name: undefined,
   cwd,
   sessionId,
   state,
+  pid: 100,
+  ...over,
 });
 
 describe('sessionsInRepo', () => {
@@ -83,16 +90,39 @@ describe('sessionsInRepo', () => {
     }
   });
 
-  test('a stopped row has no process left, so it is not open; a done row still is', () => {
-    const stopped = job('s', '/x/odin', 'stopped');
-    const done = job('d', '/x/odin', 'done');
-    const working = job('w', '/x/odin', 'working');
-    const result = sessionsInRepo(
-      [stopped, done, working],
-      ['/x/odin'],
-      undefined,
-    );
-    expect(result.others).toEqual([done, working]);
+  test('a stopped row has no process left, so it is not open', () => {
+    const stopped = job('s', '/x/odin', 'stopped', { pid: undefined });
+    const result = sessionsInRepo([stopped], ['/x/odin'], undefined);
+    expect(result.others).toEqual([]);
+  });
+
+  test('a finished background row with no pid is not open', () => {
+    const done = job('d', '/x/odin', 'done', {
+      kind: 'background',
+      pid: undefined,
+    });
+    expect(sessionsInRepo([done], ['/x/odin'], undefined).others).toEqual([]);
+  });
+
+  test('a done row with a pid still has a process, so it is open', () => {
+    const done = job('d', '/x/odin', 'done', { kind: 'background', pid: 41 });
+    expect(sessionsInRepo([done], ['/x/odin'], undefined).others).toEqual([
+      done,
+    ]);
+  });
+
+  test('a working or blocked background row without a pid is open', () => {
+    const working = job('w', '/x/odin', 'working', {
+      kind: 'background',
+      pid: undefined,
+    });
+    const blocked = job('b', '/x/odin', 'blocked', {
+      kind: 'background',
+      pid: undefined,
+    });
+    expect(
+      sessionsInRepo([working, blocked], ['/x/odin'], undefined).others,
+    ).toEqual([working, blocked]);
   });
 
   test('a cwd whose folder is gone compares by its literal path', () => {

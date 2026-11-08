@@ -13,6 +13,9 @@ export const LISTING_ARGS = ['agents', '--json', '--all'];
 export const LISTING = `claude ${LISTING_ARGS.join(' ')}`;
 
 const OptionalText = v.nullish(v.string());
+// A pid of another type fails the listing: `link` then cannot tell whether a
+// process runs, and refuses with its `--force` way forward.
+const OptionalPid = v.nullish(v.number());
 
 // valibot's object accepts an array, so the array check runs on the raw row.
 const JobSchema = v.pipe(
@@ -25,6 +28,7 @@ const JobSchema = v.pipe(
     cwd: OptionalText,
     sessionId: OptionalText,
     state: OptionalText,
+    pid: OptionalPid,
   }),
   v.transform((row) => ({
     id: row.id ?? undefined,
@@ -33,6 +37,7 @@ const JobSchema = v.pipe(
     cwd: row.cwd ?? undefined,
     sessionId: row.sessionId ?? undefined,
     state: row.state ?? undefined,
+    pid: row.pid ?? undefined,
   })),
 );
 

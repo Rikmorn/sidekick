@@ -51,6 +51,7 @@ describe('listJobs', () => {
           cwd: '/repo/.claude/worktrees/w1',
           sessionId: 'abc',
           state: 'done',
+          pid: undefined,
         },
         {
           id: undefined,
@@ -59,6 +60,7 @@ describe('listJobs', () => {
           cwd: undefined,
           sessionId: undefined,
           state: undefined,
+          pid: 4242,
         },
       ],
     });
@@ -71,6 +73,7 @@ describe('listJobs', () => {
     ['a row that is an array', '[[]]', 'does not parse'],
     ['a field of the wrong type', '[{"name":7}]', 'does not parse'],
     ['a cwd of the wrong type', '[{"cwd":7}]', 'does not parse'],
+    ['a pid of the wrong type', '[{"pid":"41"}]', 'does not parse'],
   ])('refuses a listing that is %s', (_label, stdout, phrase) => {
     const result = listJobs(runner({ stdout }).run, '/repo');
     expect('issues' in result).toBe(true);

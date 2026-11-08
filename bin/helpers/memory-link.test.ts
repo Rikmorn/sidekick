@@ -51,13 +51,18 @@ interface Row {
   sessionId: string;
   cwd: string;
   state?: string;
+  kind?: string;
+  pid?: number;
 }
+
+// A live session's row carries a pid, as the real listing's does.
+const LIVE_PID = 4242;
 
 const listing =
   (rows: Row[]): ClaudeRunner =>
   () => ({
     code: 0,
-    stdout: JSON.stringify(rows),
+    stdout: JSON.stringify(rows.map((row) => ({ pid: LIVE_PID, ...row }))),
     stderr: '',
     timedOut: false,
   });
@@ -734,19 +739,27 @@ describe('runLink: refusals write nothing', () => {
     expect(forced.out.join('\n')).toContain('other');
   });
 
-  test('a stopped session in the repo does not refuse, and a done one still does', () => {
+  test('a finished or stopped job with no process does not refuse, and a done one with a pid still does', () => {
     const w = world();
-    const withRow = (state: string): LinkDeps => ({
+    const withRow = (row: Partial<Row>): LinkDeps => ({
       ...w.deps,
-      runClaude: listing([{ sessionId: 'bg', cwd: w.top, state }]),
+      runClaude: listing([
+        { sessionId: 'bg', cwd: w.top, kind: 'background', ...row },
+      ]),
     });
-    const done = link(w, opts(w.top), withRow('done'));
+    const done = link(w, opts(w.top), withRow({ state: 'done' }));
     expect(done.code).toBe(1);
     expect(done.err.join('\n')).toContain('Other sessions are open');
-    const stopped = link(w, opts(w.top), withRow('stopped'));
-    expect(stopped.err).toEqual([]);
-    expect(stopped.code).toBe(0);
-    expect(stopped.out.join('\n')).not.toContain('bg in');
+    const exited = [
+      { state: 'done', pid: undefined },
+      { state: 'stopped', pid: undefined },
+    ];
+    for (const row of exited) {
+      const run = link(w, opts(w.top, { dryRun: true }), withRow(row));
+      expect(run.err).toEqual([]);
+      expect(run.code).toBe(0);
+      expect(run.out.join('\n')).not.toContain('bg in');
+    }
   });
 
   test('the session running link is told to restart', () => {
