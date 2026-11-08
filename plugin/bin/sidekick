@@ -2303,14 +2303,10 @@ var KeySchema = optional(string());
 var isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var messageOf = (error) => error instanceof Error ? error.message : String(error);
 var defaultOwned = (target) => fs8.statSync(target).uid === process.getuid?.();
-var SUPPORT_REQUEST = [
-  "gh issue create -R Rikmorn/sidekick",
-  `--title ${shellQuote("memory link: a repo whose git dir is not .git")}`,
-  `--body ${shellQuote("sidekick memory link refuses a repo whose git dir is not a folder named .git, such as one made with git init --separate-git-dir.")}`
-].join(" ");
+var supportRequest = (title, body) => `gh issue create -R Rikmorn/sidekick --title ${shellQuote(title)} --body ${shellQuote(body)}`;
 function checkoutIssue2(target, repo, home, owned = defaultOwned) {
   if (path9.basename(repo.commonDir) !== ".git") {
-    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git. Claude Code then does not find its main checkout, so sidekick cannot link the repo. To ask for support, run: ${SUPPORT_REQUEST}`;
+    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git. Claude Code then does not find its main checkout, so sidekick cannot link the repo. To ask for support, run: ${supportRequest("memory link: a repo whose git dir is not .git", "sidekick memory link refuses a repo whose git dir is not a folder named .git, such as one made with git init --separate-git-dir.")}`;
   }
   const root = fs8.realpathSync(repo.top);
   if (root === physical(home)) {
@@ -4696,7 +4692,7 @@ function keyMissedRefusals(repo) {
     return [];
   const { claudeJson, projectFolder } = repo.keyMissed;
   return [
-    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path17.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`
+    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Its folder is somewhere under ${path17.dirname(projectFolder)}. To ask for support, run: ${supportRequest("memory link: a project folder named by a rule link does not know", "sidekick memory link found no project folder where it computes one, for a repo that .claude.json lists.")}`
   ];
 }
 function defaultFolderRefusals(repo) {

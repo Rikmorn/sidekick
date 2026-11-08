@@ -641,8 +641,9 @@ describe('planLink: refusals', () => {
         },
       }),
     });
-    expect(refusal).toContain('/c/.claude.json');
-    expect(refusal).toContain(`/c/projects/${KEY}`);
+    expect(refusal).toBe(
+      `/c/.claude.json lists ${ROOT}, but /c/projects/${KEY} is absent, so Claude Code names its project folders by a rule link does not know. Its folder is somewhere under /c/projects. To ask for support, run: gh issue create -R Rikmorn/sidekick --title 'memory link: a project folder named by a rule link does not know' --body 'sidekick memory link found no project folder where it computes one, for a repo that .claude.json lists.'`,
+    );
   });
 
   test('a default folder holding a link out of it', () => {

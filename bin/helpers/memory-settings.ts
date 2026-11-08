@@ -32,12 +32,9 @@ const messageOf = (error: unknown): string =>
 const defaultOwned = (target: string): boolean =>
   fs.statSync(target).uid === process.getuid?.();
 
-// The issue to file on sidekick's repo for a repo whose git dir is not `.git`.
-const SUPPORT_REQUEST = [
-  'gh issue create -R Rikmorn/sidekick',
-  `--title ${shellQuote('memory link: a repo whose git dir is not .git')}`,
-  `--body ${shellQuote('sidekick memory link refuses a repo whose git dir is not a folder named .git, such as one made with git init --separate-git-dir.')}`,
-].join(' ');
+/** A command, safe to paste, that files an issue on sidekick's repo asking for support. */
+export const supportRequest = (title: string, body: string): string =>
+  `gh issue create -R Rikmorn/sidekick --title ${shellQuote(title)} --body ${shellQuote(body)}`;
 
 /**
  * Why Claude Code does not read the settings under `repo`'s main checkout,
@@ -51,7 +48,10 @@ export function checkoutIssue(
   owned: (target: string) => boolean = defaultOwned,
 ): string | undefined {
   if (path.basename(repo.commonDir) !== '.git') {
-    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git. Claude Code then does not find its main checkout, so sidekick cannot link the repo. To ask for support, run: ${SUPPORT_REQUEST}`;
+    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git. Claude Code then does not find its main checkout, so sidekick cannot link the repo. To ask for support, run: ${supportRequest(
+      'memory link: a repo whose git dir is not .git',
+      'sidekick memory link refuses a repo whose git dir is not a folder named .git, such as one made with git init --separate-git-dir.',
+    )}`;
   }
   const root = fs.realpathSync(repo.top);
   if (root === physical(home)) {

@@ -19,7 +19,11 @@ import type {
   SessionFacts,
   TargetFacts,
 } from './memory-link-types.js';
-import { SETTINGS_KEY, type SettingsState } from './memory-settings.js';
+import {
+  SETTINGS_KEY,
+  type SettingsState,
+  supportRequest,
+} from './memory-settings.js';
 import { MARKER_FILE, refusesStore, type StoreState } from './memory-store.js';
 import { shellArg } from './shell.js';
 import type { Job } from './worker-jobs.js';
@@ -173,7 +177,10 @@ function keyMissedRefusals(repo: RepoFacts): string[] {
   if (repo.keyMissed === undefined) return [];
   const { claudeJson, projectFolder } = repo.keyMissed;
   return [
-    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Find the repo's folder under ${path.dirname(projectFolder)} by hand, and raise it as a sidekick issue.`,
+    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Its folder is somewhere under ${path.dirname(projectFolder)}. To ask for support, run: ${supportRequest(
+      'memory link: a project folder named by a rule link does not know',
+      'sidekick memory link found no project folder where it computes one, for a repo that .claude.json lists.',
+    )}`,
   ];
 }
 
