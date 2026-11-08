@@ -28,10 +28,18 @@ This repo is a Claude Code plugin bundle and the one-plugin marketplace that ser
 - One package, `package.json`. `bun run test`, `bun run typecheck`, `bun run check`, `bun run build`, `bun run prose <files>` for Markdown, `bun run typecheck:mods`, and `bun run check:docs`, which checks Markdown links, permalinks, and the docs layout's indexes and status lines. Bun builds and tests; Node runs the executable. Valibot is the CLI's one runtime dependency, and `bun run build` bundles it into `plugin/bin/sidekick`, so an install fetches nothing.
 - `claude plugin validate --strict .` and `claude plugin validate --strict plugin` gate the manifests. `claude plugin test plugin` runs the mods' tests. `tsc --noEmit` does not see `bin/**/*.test.ts`; only `bun test` does. `bun run typecheck:mods` covers the mods, their tests included. CI runs `validate` and `plugin test` on the mods but not `bun run typecheck:mods`, with the Claude Code build `.claude-code-version` names. Mods need Claude Code 2.1.287 or later. Run `bun run check:mods` after a Claude Code upgrade, or when the canary speaks.
 - Work integrates by fast-forward onto `master`. A milestone that runs on a `milestone/<name>` branch integrates there instead, and the branch lands on `master` at its release, as §Releasing says. This repo takes no pull requests.
-- A session that moves into a worktree follows `plugin/rules/sk-parallel-sessions.md`. `.claude/settings.json` sets `worktree.baseRef` to `"head"`, so `EnterWorktree` and `claude -w` branch from the launching checkout's `HEAD`, which in the main checkout is the integration branch. In a fresh worktree, run `bun install --frozen-lockfile` before anything else; `.worktreeinclude` copies the ignored files the gates read.
+- A session that moves into a worktree follows `plugin/rules/sk-parallel-sessions.md`. `.claude/settings.json` sets `worktree.baseRef` to `"head"`, so `EnterWorktree` and `claude -w` branch from the launching checkout's `HEAD`, which in the main checkout is the integration branch. §Worktrees says what a fresh worktree runs first. `.worktreeinclude` copies the ignored files the gates read.
 - Rules are edited in `plugin/rules/`. This repo carries no copies: like the other home repos, it reads the user-level rules, which are always the released ones. A rule edit reaches `~/.claude/rules/` only through a release, so unreleased work stays out of every other repo; do not install rules from the repo bundle. For in-progress skills, agents, hooks, and the CLI, start the session with `claude --plugin-dir ./plugin`. That session loads the plugin as `sidekick@inline`, so the context monitor reads its `context_window` option from `pluginConfigs` under that key. Rules are not plugin content, so an edited rule takes effect after its release.
 - Prose follows `plugin/rules/sk-language.md`; guidance changes follow `plugin/rules/sk-guidance-authoring.md`; agent and skill prompts follow `plugin/rules/sk-agent-prompts.md`.
 - Specs and plans live under `docs/superpowers/`, gitignored and transient. The durable record of a piece of work is its issue, its close comment, and any ADR, research report, or learning record it produced.
+
+## Worktrees
+
+`sk-worktree` reads this section first, so it holds sidekick's setup, landing, and quirks.
+
+- **Setup:** run `bun install --frozen-lockfile` once the worktree is on its branch, after `sidekick worktree move` and before other work. `move` refuses a worktree with any change, and an install run earlier would use the base's lockfile instead of the branch's.
+- **Landing:** work fast-forwards onto the branch the main checkout holds, as §Working here says.
+- **Quirk:** the format hook in `.claude/settings.json` runs `./node_modules/.bin/biome` and discards its output, so before setup it formats nothing and says nothing.
 
 ## Releasing
 

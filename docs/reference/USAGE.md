@@ -32,6 +32,14 @@ The `gh` version decides whether the skills write a card's Status by name or by 
 
 For a repo you own and want tracked, ask for the `sidekick` skill by name, or say "bring this repo under tracking". The skill's §Bringing a repo under tracking copies the reference board and links it. It creates the labels once you agree the `area:*` set, then verifies. The skill text doubles as the checklist if you would rather run it by hand.
 
+Each repo you work in with worktrees needs short worktree guidance in a file every session loads, such as `AGENTS.md`, `CLAUDE.md`, or a project rule. It covers three things:
+
+- **setup**, the command a fresh worktree runs once it is on its branch;
+- **landing**, how work lands;
+- **quirks**, what a worktree must not do.
+
+`sk-worktree` reads that guidance first. Also check that your linters, builds, and container contexts ignore `.claude/worktrees/`. They must not skip the files inside a worktree. Otherwise a scanner run from the main checkout reads every worktree's copy.
+
 For a repo where someone else owns the tracking, do nothing: `sidekick pm board --quiet` finds no board of yours and stays silent, which is the design.
 
 ## The GitHub model

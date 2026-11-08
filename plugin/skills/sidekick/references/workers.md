@@ -49,6 +49,14 @@ The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI par
 
 A worktree starts with none of the launching checkout's git-ignored files. List the ones the gates need in a `.worktreeinclude` at the repo top. Claude Code copies them into each worktree it makes (the dispatch probes, "`.worktreeinclude` held"). `setup` is then left for what a command rebuilds, such as dependencies.
 
+Ask each repo for short worktree guidance in a file every session loads, such as `AGENTS.md`, `CLAUDE.md`, or a project rule. It covers three things:
+
+- **setup**, the command a fresh worktree runs once it is on its branch, which a brief's `setup` can repeat;
+- **landing**, how work lands;
+- **quirks**, what a worktree must not do.
+
+`sk-worktree` reads that guidance first. Ask also that the repo's linters, builds, and container contexts ignore `.claude/worktrees/` without skipping the files inside a worktree.
+
 ## `dispatch`
 
 ### What it checks
