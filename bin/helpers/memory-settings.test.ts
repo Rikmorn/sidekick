@@ -139,13 +139,16 @@ describe('mainCheckout', () => {
       args[0] === 'worktree'
         ? { code: 128, stdout: '', stderr: 'fatal: broken' }
         : execRunner(cmd, args, cwd);
-    expect(issueOf(mainCheckout(top, listFails, tmp(), mine))).toEndWith(
-      '; fix what git reports, then run the command again',
+    const listed = issueOf(mainCheckout(top, listFails, tmp(), mine));
+    expect(listed).toBe(
+      `${top} has no main checkout, since git worktree list failed there: fatal: broken; fix what git reports, then run the command again`,
     );
+    expect(listed).not.toContain('no children show');
     const work = tmp();
-    git(work, 'init', '-q', `--separate-git-dir=${path.join(tmp(), 'g.git')}`);
-    expect(issueOf(mainCheckout(work, execRunner, tmp(), mine))).toEndWith(
-      '; sidekick cannot link such a repo, so raise a sidekick issue if you need one linked',
+    const gitDir = path.join(tmp(), 'g.git');
+    git(work, 'init', '-q', `--separate-git-dir=${gitDir}`);
+    expect(issueOf(mainCheckout(work, execRunner, tmp(), mine))).toBe(
+      `${work} is in a repo whose git dir is ${gitDir}, not a folder named .git. Claude Code then does not find its main checkout, so sidekick cannot link the repo. To ask for support, run: gh issue create -R Rikmorn/sidekick --title 'memory link: a repo whose git dir is not .git' --body 'sidekick memory link refuses a repo whose git dir is not a folder named .git, such as one made with git init --separate-git-dir.'`,
     );
     expect(issueOf(mainCheckout(top, execRunner, top, mine))).toEndWith(
       '; run the command on a path inside another repo',

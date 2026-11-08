@@ -533,6 +533,52 @@ describe('runLink: re-runs', () => {
     );
   });
 
+  test('a re-run after the store creation stopped, with the README and a file link did not write, refuses and names it; once it is moved out, the re-run finishes', () => {
+    const w = world();
+    fs.mkdirSync(w.store);
+    git(w.store, 'init', '-q');
+    fs.writeFileSync(path.join(w.store, 'README.md'), STORE_README);
+    fs.writeFileSync(path.join(w.store, 'notes.md'), 'mine\n');
+    const roots = [w.top, path.dirname(w.configDir), path.dirname(w.store)];
+    const before = snapshot(...roots);
+    const refused = link(w, opts(w.top));
+    expect(refused.code).toBe(1);
+    expect(refused.err).toEqual([
+      'link refused, and wrote nothing:',
+      `- ${w.store} is a store whose creation stopped part-way, and it also holds notes.md, which link did not write. Move them out of ${w.store}, then run link again to finish the store.`,
+    ]);
+    expect(snapshot(...roots)).toEqual(before);
+    fs.renameSync(path.join(w.store, 'notes.md'), path.join(tmp(), 'notes.md'));
+    const again = link(w, opts(w.top));
+    expect(again.err).toEqual([]);
+    expect(again.code).toBe(0);
+    expectCreatedThenLinked(w);
+  });
+
+  test('a re-run after the store creation stopped, with only .DS_Store files beside the store files, finishes, and they stay untracked and ignored', () => {
+    for (const written of [[], ['README.md']]) {
+      const w = world();
+      fs.mkdirSync(w.store);
+      git(w.store, 'init', '-q');
+      for (const rel of written) {
+        fs.writeFileSync(path.join(w.store, rel), STORE_README);
+      }
+      fs.writeFileSync(path.join(w.store, '.DS_Store'), 'finder\n');
+      fs.mkdirSync(path.join(w.store, 'archive'));
+      fs.writeFileSync(path.join(w.store, 'archive', '.DS_Store'), 'finder\n');
+      const again = link(w, opts(w.top));
+      expect(again.err).toEqual([]);
+      expect(again.code).toBe(0);
+      expectCreatedThenLinked(w);
+      expect(
+        git(w.store, 'ls-files', '--', '.DS_Store', 'archive/.DS_Store'),
+      ).toBe('');
+      expect(git(w.store, 'check-ignore', '-v', '--', '.DS_Store')).toBe(
+        '.gitignore:1:.DS_Store\t.DS_Store',
+      );
+    }
+  });
+
   test('an existing store with no .gitignore is unaffected by a link', () => {
     const w = world();
     expect(createStore(w.store, execRunner).ok).toBe(true);
@@ -653,6 +699,23 @@ describe('runLink: refusals write nothing', () => {
     expect(run.code).toBe(1);
     expect(run.err.join('\n')).toContain('SIDEKICK_MEMORY_STORE');
     expect(snapshot(...roots)).toEqual(before);
+  });
+
+  test('a repo whose git worktree list fails refuses in its own words, without the desk wording', () => {
+    const w = world();
+    const run = link(w, opts(w.top), {
+      ...w.deps,
+      runGit: (cmd, args, cwd) =>
+        args[0] === 'worktree'
+          ? { code: 128, stdout: '', stderr: 'fatal: worktrees broken\n' }
+          : execRunner(cmd, args, cwd),
+    });
+    expect(run.code).toBe(1);
+    expect(run.err).toEqual([
+      'link refused, and wrote nothing:',
+      `- ${w.top} has no main checkout, since git worktree list failed there: fatal: worktrees broken; fix what git reports, then run the command again`,
+    ]);
+    expect(run.err.join('\n')).not.toContain('no children show');
   });
 
   test('another open session refuses, and --force links and reports it', () => {

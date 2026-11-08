@@ -551,6 +551,14 @@ describe('planLink: refusals', () => {
     expect(refusal).toContain('SIDEKICK_MEMORY_STORE');
   });
 
+  test('a stopped store creation beside paths link did not write is refused in its own words, which name the way forward', () => {
+    const issue =
+      '/s/store is a store whose creation stopped part-way, and it also holds notes.md, which link did not write. Move them out of /s/store, then run link again to finish the store.';
+    expect(refusals({ storeState: { kind: 'cluttered', issue } })).toEqual([
+      issue,
+    ]);
+  });
+
   test('an override variable', () => {
     expect(refusals({ overrideIssue: 'X is set' })[0]).toContain('X is set');
   });

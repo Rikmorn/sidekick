@@ -19,7 +19,9 @@ export const MARKER_FILE = '.sidekick.json';
 const README_FILE = 'README.md';
 const KEEP_FILE = '.gitkeep';
 const IGNORE_FILE = '.gitignore';
-const IGNORE_CONTENT = '.DS_Store\n';
+// The file Finder writes in each folder it opens, which the store ignores.
+const FINDER_FILE = '.DS_Store';
+const IGNORE_CONTENT = `${FINDER_FILE}\n`;
 const GIT_FOLDER = '.git';
 
 /** The store's own files, which its first commit takes. */
@@ -143,8 +145,14 @@ export type StoreState =
   | { kind: 'empty' }
   /** What `createStore` leaves when it stops part-way, which it can finish. */
   | { kind: 'unfinished' }
+  /** A stopped creation beside paths `createStore` did not write; `issue` names them and the way forward. */
+  | { kind: 'cluttered'; issue: string }
   | { kind: 'store' }
   | { kind: 'foreign'; issue: string };
+
+/** Whether `link` refuses the store folder as it stands. */
+export const refusesStore = (state: StoreState): boolean =>
+  state.kind === 'foreign' || state.kind === 'cluttered';
 
 function realPath(p: string): string {
   try {
@@ -161,11 +169,11 @@ export function isWorkTreeTop(store: string, runGit: Runner): boolean {
 }
 
 /**
- * What `store` is: absent, an empty folder, unfinished, a store (a git work
- * tree whose top is `store` and which holds `README.md`), or foreign (a file,
- * or a non-empty folder that is none of these). Unfinished is a `git init`
- * that nothing has committed to, holding nothing but `CREATION_PATHS` beside
- * its `.git` folder.
+ * What `store` is: absent, an empty folder, unfinished, cluttered, a store (a
+ * git work tree whose top is `store` and which holds `README.md`), or foreign
+ * (a file, or a non-empty folder that is none of these). Unfinished and
+ * cluttered are a `git init` that nothing has committed to, as `createStore`
+ * leaves it when it stops part-way.
  */
 export function storeState(store: string, runGit: Runner): StoreState {
   if (!fs.existsSync(store)) return { kind: 'absent' };
@@ -174,63 +182,85 @@ export function storeState(store: string, runGit: Runner): StoreState {
   }
   if (fs.readdirSync(store).length === 0) return { kind: 'empty' };
   const top = isWorkTreeTop(store, runGit);
-  if (top && holdsOnlyCreation(store) && isFreshInit(store, runGit)) {
-    return { kind: 'unfinished' };
-  }
-  if (top && fs.existsSync(path.join(store, README_FILE))) {
-    return { kind: 'store' };
-  }
-  return {
-    kind: 'foreign',
-    issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`,
-  };
+  const stopped = top ? stoppedCreation(store, runGit) : undefined;
+  if (stopped !== undefined) return stopped;
+  return top && hasReadme(store) ? { kind: 'store' } : notAStore(store);
 }
 
-// A `.git` folder, and beside it nothing but `CREATION_PATHS`, each a plain
-// file, and the plain folders that hold them. A link is neither.
-function holdsOnlyCreation(store: string): boolean {
+const hasReadme = (store: string): boolean =>
+  fs.existsSync(path.join(store, README_FILE));
+
+const notAStore = (store: string): StoreState => ({
+  kind: 'foreign',
+  issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`,
+});
+
+// A repo with no commit whose `.git` is a plain folder, as `createStore`
+// leaves it when it stops part-way: unfinished when nothing but its paths
+// sits beside `.git`, cluttered when the README sits there with other paths,
+// and foreign otherwise. Undefined for any other repo.
+function stoppedCreation(
+  store: string,
+  runGit: Runner,
+): StoreState | undefined {
   const dotGit = fs.lstatSync(path.join(store, GIT_FOLDER), {
     throwIfNoEntry: false,
   });
-  return dotGit?.isDirectory() === true && onlyCreationIn(store, '');
+  if (dotGit?.isDirectory() !== true) return undefined;
+  const index = uncommittedIndex(store, runGit);
+  if (index === undefined) return undefined;
+  const staged = index.filter((rel) => !CREATION_PATHS.includes(rel));
+  if (staged.length > 0) {
+    return {
+      kind: 'foreign',
+      issue: `${store} is a git repo with no commit, and its index holds ${staged.join(', ')}, which link did not stage`,
+    };
+  }
+  const others = othersIn(store, '');
+  if (others.length === 0) return { kind: 'unfinished' };
+  if (!hasReadme(store)) return notAStore(store);
+  return {
+    kind: 'cluttered',
+    issue: `${store} is a store whose creation stopped part-way, and it also holds ${others.join(', ')}, which link did not write. Move them out of ${store}, then run link again to finish the store.`,
+  };
 }
 
-function onlyCreationIn(store: string, rel: string): boolean {
+// Each path under `store` that `createStore` did not write, sorted, with a
+// folder as `name/`. Neither `.git`, `CREATION_PATHS`, the plain folders that
+// hold them, nor a `.DS_Store` file counts. A link is neither file nor folder.
+function othersIn(store: string, rel: string): string[] {
   return fs
     .readdirSync(path.join(store, rel), { withFileTypes: true })
-    .every((entry) => {
+    .sort((a, b) => (a.name < b.name ? -1 : 1))
+    .flatMap((entry) => {
       const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
-      if (entry.isDirectory()) {
-        return (
-          child === GIT_FOLDER ||
-          (CREATION_FOLDERS.has(child) && onlyCreationIn(store, child))
-        );
-      }
-      return entry.isFile() && CREATION_PATHS.includes(child);
+      const ownFile =
+        entry.name === FINDER_FILE || CREATION_PATHS.includes(child);
+      if (entry.isFile() && ownFile) return [];
+      if (!entry.isDirectory()) return [child];
+      if (child === GIT_FOLDER) return [];
+      return CREATION_FOLDERS.has(child)
+        ? othersIn(store, child)
+        : [`${child}/`];
     });
 }
 
 // `git rev-parse --verify --quiet` exits 1 when the name is no commit.
 const NOT_A_COMMIT = 1;
 
-// The repo `git init` made, with no commit since: no ref, a HEAD that names
-// no commit, and an index of nothing but `CREATION_PATHS`, as a failed first
-// commit leaves it.
-function isFreshInit(store: string, runGit: Runner): boolean {
+// The paths in the index of a repo that no ref or HEAD gives a commit, as
+// `git init` and a failed first commit leave it. Undefined when one does, or
+// when git fails.
+function uncommittedIndex(store: string, runGit: Runner): string[] | undefined {
   const git = (...args: string[]) =>
     runGit('git', ['--no-optional-locks', ...args], store);
   const head = git('rev-parse', '--verify', '--quiet', 'HEAD');
-  if (head.code !== NOT_A_COMMIT) return false;
+  if (head.code !== NOT_A_COMMIT) return undefined;
   const refs = git('for-each-ref', '--count=1');
-  if (refs.code !== 0 || refs.stdout !== '') return false;
+  if (refs.code !== 0 || refs.stdout !== '') return undefined;
   const index = git('ls-files', '-z');
-  return (
-    index.code === 0 &&
-    index.stdout
-      .split('\0')
-      .filter((rel) => rel !== '')
-      .every((rel) => CREATION_PATHS.includes(rel))
-  );
+  if (index.code !== 0) return undefined;
+  return index.stdout.split('\0').filter((rel) => rel !== '');
 }
 
 export type Outcome = { ok: true } | { ok: false; issue: string };
@@ -278,7 +308,9 @@ export function createStore(
   runGit: Runner,
 ): { ok: true; paths: string[] } | { ok: false; issue: string } {
   const state = storeState(store, runGit);
-  if (state.kind === 'foreign') return { ok: false, issue: state.issue };
+  if (state.kind === 'foreign' || state.kind === 'cluttered') {
+    return { ok: false, issue: state.issue };
+  }
   if (state.kind === 'store') {
     return { ok: false, issue: `${store} is already a store` };
   }

@@ -41,13 +41,14 @@ const firstLine = (text: string): string => text.trim().split('\n')[0];
 /**
  * The repository holding `cwd`, from its main checkout or any linked
  * worktree. The main checkout's top is the first entry `git worktree list`
- * gives. Undefined outside a repository, and, with a warning, when
- * `git worktree list` fails inside one.
+ * gives. Undefined outside a repository, and, with the desk's warning, when
+ * `git worktree list` fails inside one. `listIssue` is then git's own first
+ * line, for a caller that words its own message.
  */
 export function findRepo(
   runGit: Runner,
   cwd: string,
-): { repo?: Repo; warnings: string[] } {
+): { repo?: Repo; warnings: string[]; listIssue?: string } {
   const common = runGit(
     'git',
     ['rev-parse', '--path-format=absolute', '--git-common-dir'],
@@ -56,10 +57,12 @@ export function findRepo(
   if (common.code !== 0) return { warnings: [] };
   const list = listWorktrees(runGit, cwd);
   if ('issue' in list) {
+    const listIssue = firstLine(list.issue);
     return {
       warnings: [
-        `git worktree list failed in ${cwd}, so no children show: ${firstLine(list.issue)}`,
+        `git worktree list failed in ${cwd}, so no children show: ${listIssue}`,
       ],
+      listIssue,
     };
   }
   // Only the final newline goes, since a path may end in a space.

@@ -1751,10 +1751,12 @@ function findRepo(runGit, cwd) {
     return { warnings: [] };
   const list = listWorktrees(runGit, cwd);
   if ("issue" in list) {
+    const listIssue = firstLine(list.issue);
     return {
       warnings: [
-        `git worktree list failed in ${cwd}, so no children show: ${firstLine(list.issue)}`
-      ]
+        `git worktree list failed in ${cwd}, so no children show: ${listIssue}`
+      ],
+      listIssue
     };
   }
   const commonDir = common.stdout.replace(/\n$/, "");
@@ -2301,9 +2303,14 @@ var KeySchema = optional(string());
 var isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var messageOf = (error) => error instanceof Error ? error.message : String(error);
 var defaultOwned = (target) => fs8.statSync(target).uid === process.getuid?.();
+var SUPPORT_REQUEST = [
+  "gh issue create -R Rikmorn/sidekick",
+  `--title ${shellQuote("memory link: a repo whose git dir is not .git")}`,
+  `--body ${shellQuote("sidekick memory link refuses a repo whose git dir is not a folder named .git, such as one made with git init --separate-git-dir.")}`
+].join(" ");
 function checkoutIssue2(target, repo, home, owned = defaultOwned) {
   if (path9.basename(repo.commonDir) !== ".git") {
-    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout; sidekick cannot link such a repo, so raise a sidekick issue if you need one linked`;
+    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git. Claude Code then does not find its main checkout, so sidekick cannot link the repo. To ask for support, run: ${SUPPORT_REQUEST}`;
   }
   const root = fs8.realpathSync(repo.top);
   if (root === physical(home)) {
@@ -2318,9 +2325,9 @@ function checkoutIssue2(target, repo, home, owned = defaultOwned) {
 function mainCheckout(target, runGit, home, owned = defaultOwned) {
   const found = findRepo(runGit, target);
   if (found.repo === undefined) {
-    const [warning] = found.warnings;
+    const { listIssue } = found;
     return {
-      issue: warning === undefined ? `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one` : `${target} has no main checkout: ${warning}; fix what git reports, then run the command again`
+      issue: listIssue === undefined ? `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one` : `${target} has no main checkout, since git worktree list failed there: ${listIssue || "it printed nothing"}; fix what git reports, then run the command again`
     };
   }
   const { repo } = found;
@@ -2540,7 +2547,8 @@ var MARKER_FILE = ".sidekick.json";
 var README_FILE = "README.md";
 var KEEP_FILE = ".gitkeep";
 var IGNORE_FILE = ".gitignore";
-var IGNORE_CONTENT = `.DS_Store
+var FINDER_FILE = ".DS_Store";
+var IGNORE_CONTENT = `${FINDER_FILE}
 `;
 var GIT_FOLDER = ".git";
 var CREATION_PATHS = [
@@ -2612,6 +2620,7 @@ function findMarkers(store) {
     });
   });
 }
+var refusesStore = (state) => state.kind === "foreign" || state.kind === "cluttered";
 function realPath(p) {
   try {
     return fs9.realpathSync(p);
@@ -2632,43 +2641,68 @@ function storeState(store, runGit) {
   if (fs9.readdirSync(store).length === 0)
     return { kind: "empty" };
   const top = isWorkTreeTop(store, runGit);
-  if (top && holdsOnlyCreation(store) && isFreshInit(store, runGit)) {
-    return { kind: "unfinished" };
-  }
-  if (top && fs9.existsSync(path10.join(store, README_FILE))) {
-    return { kind: "store" };
-  }
-  return {
-    kind: "foreign",
-    issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`
-  };
+  const stopped = top ? stoppedCreation(store, runGit) : undefined;
+  if (stopped !== undefined)
+    return stopped;
+  return top && hasReadme(store) ? { kind: "store" } : notAStore(store);
 }
-function holdsOnlyCreation(store) {
+var hasReadme = (store) => fs9.existsSync(path10.join(store, README_FILE));
+var notAStore = (store) => ({
+  kind: "foreign",
+  issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`
+});
+function stoppedCreation(store, runGit) {
   const dotGit = fs9.lstatSync(path10.join(store, GIT_FOLDER), {
     throwIfNoEntry: false
   });
-  return dotGit?.isDirectory() === true && onlyCreationIn(store, "");
+  if (dotGit?.isDirectory() !== true)
+    return;
+  const index = uncommittedIndex(store, runGit);
+  if (index === undefined)
+    return;
+  const staged = index.filter((rel) => !CREATION_PATHS.includes(rel));
+  if (staged.length > 0) {
+    return {
+      kind: "foreign",
+      issue: `${store} is a git repo with no commit, and its index holds ${staged.join(", ")}, which link did not stage`
+    };
+  }
+  const others = othersIn(store, "");
+  if (others.length === 0)
+    return { kind: "unfinished" };
+  if (!hasReadme(store))
+    return notAStore(store);
+  return {
+    kind: "cluttered",
+    issue: `${store} is a store whose creation stopped part-way, and it also holds ${others.join(", ")}, which link did not write. Move them out of ${store}, then run link again to finish the store.`
+  };
 }
-function onlyCreationIn(store, rel) {
-  return fs9.readdirSync(path10.join(store, rel), { withFileTypes: true }).every((entry) => {
+function othersIn(store, rel) {
+  return fs9.readdirSync(path10.join(store, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
     const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
-    if (entry.isDirectory()) {
-      return child === GIT_FOLDER || CREATION_FOLDERS.has(child) && onlyCreationIn(store, child);
-    }
-    return entry.isFile() && CREATION_PATHS.includes(child);
+    const ownFile = entry.name === FINDER_FILE || CREATION_PATHS.includes(child);
+    if (entry.isFile() && ownFile)
+      return [];
+    if (!entry.isDirectory())
+      return [child];
+    if (child === GIT_FOLDER)
+      return [];
+    return CREATION_FOLDERS.has(child) ? othersIn(store, child) : [`${child}/`];
   });
 }
 var NOT_A_COMMIT = 1;
-function isFreshInit(store, runGit) {
+function uncommittedIndex(store, runGit) {
   const git = (...args) => runGit("git", ["--no-optional-locks", ...args], store);
   const head = git("rev-parse", "--verify", "--quiet", "HEAD");
   if (head.code !== NOT_A_COMMIT)
-    return false;
+    return;
   const refs = git("for-each-ref", "--count=1");
   if (refs.code !== 0 || refs.stdout !== "")
-    return false;
+    return;
   const index = git("ls-files", "-z");
-  return index.code === 0 && index.stdout.split("\x00").filter((rel) => rel !== "").every((rel) => CREATION_PATHS.includes(rel));
+  if (index.code !== 0)
+    return;
+  return index.stdout.split("\x00").filter((rel) => rel !== "");
 }
 function gitIssue(args, r) {
   const detail = r.stderr.trim() || r.stdout.trim() || "no output";
@@ -2688,8 +2722,9 @@ function commitPaths(store, paths, message, runGit) {
 }
 function createStore(store, runGit) {
   const state = storeState(store, runGit);
-  if (state.kind === "foreign")
+  if (state.kind === "foreign" || state.kind === "cluttered") {
     return { ok: false, issue: state.issue };
+  }
   if (state.kind === "store") {
     return { ok: false, issue: `${store} is already a store` };
   }
@@ -4582,7 +4617,7 @@ function planLink(facts, opts) {
 }
 function readyOf(facts) {
   const { repo, storePending } = facts;
-  if (facts.storeState.kind === "foreign" || repo.kind === "refused") {
+  if (refusesStore(facts.storeState) || repo.kind === "refused") {
     return;
   }
   const { settings, target } = repo;
@@ -4628,6 +4663,8 @@ function refusalsOf(facts, opts) {
 }
 var pendingRefusal = (issue) => `${issue}. Fix the store's git repo, then run link again.`;
 function storeRefusals(state) {
+  if (state.kind === "cluttered")
+    return [state.issue];
   if (state.kind !== "foreign")
     return [];
   return [
@@ -5163,7 +5200,7 @@ function repoFacts(input) {
   const key = projectKey(root);
   const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
   const folder = path21.join(input.store, ...rel.split("/"));
-  const knowsFolder = input.namesOk && input.state.kind !== "foreign";
+  const knowsFolder = input.namesOk && !refusesStore(input.state);
   const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
   const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
   return {

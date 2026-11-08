@@ -36,6 +36,7 @@ import {
   folderNameIssue,
   MARKER_FILE,
   readMarker,
+  refusesStore,
   type StoreState,
   storeRoot,
   storeState,
@@ -120,7 +121,7 @@ function repoFacts(input: RepoInput): RepoFacts {
   const rel =
     input.family === undefined ? input.name : `${input.family}/${input.name}`;
   const folder = path.join(input.store, ...rel.split('/'));
-  const knowsFolder = input.namesOk && input.state.kind !== 'foreign';
+  const knowsFolder = input.namesOk && !refusesStore(input.state);
   const defaultFolder = readDefaultFolder(
     defaultMemoryFolder(root, deps.configDir),
     knowsFolder ? folder : undefined,

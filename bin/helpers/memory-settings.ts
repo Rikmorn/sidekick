@@ -32,6 +32,13 @@ const messageOf = (error: unknown): string =>
 const defaultOwned = (target: string): boolean =>
   fs.statSync(target).uid === process.getuid?.();
 
+// The issue to file on sidekick's repo for a repo whose git dir is not `.git`.
+const SUPPORT_REQUEST = [
+  'gh issue create -R Rikmorn/sidekick',
+  `--title ${shellQuote('memory link: a repo whose git dir is not .git')}`,
+  `--body ${shellQuote('sidekick memory link refuses a repo whose git dir is not a folder named .git, such as one made with git init --separate-git-dir.')}`,
+].join(' ');
+
 /**
  * Why Claude Code does not read the settings under `repo`'s main checkout,
  * with the way forward, or undefined when it does. `target` is the path the
@@ -44,7 +51,7 @@ export function checkoutIssue(
   owned: (target: string) => boolean = defaultOwned,
 ): string | undefined {
   if (path.basename(repo.commonDir) !== '.git') {
-    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout; sidekick cannot link such a repo, so raise a sidekick issue if you need one linked`;
+    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git. Claude Code then does not find its main checkout, so sidekick cannot link the repo. To ask for support, run: ${SUPPORT_REQUEST}`;
   }
   const root = fs.realpathSync(repo.top);
   if (root === physical(home)) {
@@ -70,13 +77,12 @@ export function mainCheckout(
 ): { root: string; checkouts: string[] } | { issue: string } {
   const found = findRepo(runGit, target);
   if (found.repo === undefined) {
-    // findRepo warns only when git failed inside a repository.
-    const [warning] = found.warnings;
+    const { listIssue } = found;
     return {
       issue:
-        warning === undefined
+        listIssue === undefined
           ? `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one`
-          : `${target} has no main checkout: ${warning}; fix what git reports, then run the command again`,
+          : `${target} has no main checkout, since git worktree list failed there: ${listIssue || 'it printed nothing'}; fix what git reports, then run the command again`,
     };
   }
   const { repo } = found;

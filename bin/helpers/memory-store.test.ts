@@ -311,6 +311,51 @@ describe('storeState', () => {
     expect(storeState(store, execRunner)).toEqual({ kind: 'unfinished' });
   });
 
+  test('a stopped creation with the README beside paths link did not write refuses, naming each, and how to finish', () => {
+    const store = path.join(tmp, 'store');
+    stoppedCreation(store, ['README.md', 'sources/.gitkeep']);
+    fs.writeFileSync(path.join(store, 'notes.md'), 'mine\n');
+    fs.mkdirSync(path.join(store, 'drafts'));
+    fs.writeFileSync(path.join(store, 'drafts', 'a.md'), 'mine\n');
+    fs.writeFileSync(path.join(store, 'sources', 'b.md'), 'mine\n');
+    fs.writeFileSync(path.join(store, '.DS_Store'), 'finder\n');
+    expect(storeState(store, execRunner)).toEqual({
+      kind: 'cluttered',
+      issue: `${store} is a store whose creation stopped part-way, and it also holds drafts/, notes.md, sources/b.md, which link did not write. Move them out of ${store}, then run link again to finish the store.`,
+    });
+  });
+
+  test('a stopped creation whose index holds a path link did not stage refuses as not a store, naming it', () => {
+    const store = path.join(tmp, 'store');
+    stoppedCreation(store, ['README.md']);
+    fs.writeFileSync(path.join(store, 'notes.md'), 'mine\n');
+    git(store, 'add', '--', 'notes.md');
+    fs.rmSync(path.join(store, 'notes.md'));
+    expect(storeState(store, execRunner)).toEqual({
+      kind: 'foreign',
+      issue: `${store} is a git repo with no commit, and its index holds notes.md, which link did not stage`,
+    });
+  });
+
+  test.each([
+    ['after git init', []],
+    ['after the README', ['README.md']],
+  ])('a stopped creation %s with .DS_Store files beside it is unfinished, since the store ignores them', (_name, written) => {
+    const store = path.join(tmp, 'store');
+    stoppedCreation(store, written);
+    fs.writeFileSync(path.join(store, '.DS_Store'), 'finder\n');
+    fs.mkdirSync(path.join(store, 'sources'), { recursive: true });
+    fs.writeFileSync(path.join(store, 'sources', '.DS_Store'), 'finder\n');
+    expect(storeState(store, execRunner)).toEqual({ kind: 'unfinished' });
+  });
+
+  test('a store with commits beside other paths is a store, as before', () => {
+    const store = path.join(tmp, 'store');
+    expect(createStore(store, execRunner).ok).toBe(true);
+    fs.writeFileSync(path.join(store, 'notes.md'), 'mine\n');
+    expect(storeState(store, execRunner)).toEqual({ kind: 'store' });
+  });
+
   test.each(
     NOT_FRESH,
   )('a stopped creation with %s is not unfinished', (_name, make) => {
@@ -408,6 +453,20 @@ describe('createStore', () => {
     }
     expect(git(store, 'status', '--porcelain')).toBe('');
     expect(storeState(store, execRunner)).toEqual({ kind: 'store' });
+  });
+
+  test('finishing beside .DS_Store files writes the .gitignore that keeps them untracked', () => {
+    const store = path.join(tmp, 'store');
+    stoppedCreation(store, ['README.md']);
+    fs.writeFileSync(path.join(store, '.DS_Store'), 'finder\n');
+    expect(createStore(store, execRunner).ok).toBe(true);
+    expect(git(store, 'status', '--porcelain')).toBe('');
+    expect(git(store, 'check-ignore', '-v', '--', '.DS_Store')).toBe(
+      '.gitignore:1:.DS_Store\t.DS_Store\n',
+    );
+    expect(git(store, 'ls-files').trim().split('\n').sort()).toEqual(
+      [...CREATION_PATHS].sort(),
+    );
   });
 
   test('finishing keeps a store file already there as it is', () => {

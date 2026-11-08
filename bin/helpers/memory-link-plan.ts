@@ -20,7 +20,7 @@ import type {
   TargetFacts,
 } from './memory-link-types.js';
 import { SETTINGS_KEY, type SettingsState } from './memory-settings.js';
-import { MARKER_FILE, type StoreState } from './memory-store.js';
+import { MARKER_FILE, refusesStore, type StoreState } from './memory-store.js';
 import { shellArg } from './shell.js';
 import type { Job } from './worker-jobs.js';
 
@@ -59,7 +59,7 @@ export function planLink(facts: LinkFacts, opts: PlanOptions): LinkPlan {
 // settings, a name, or either list of pending paths.
 function readyOf(facts: LinkFacts): Ready | undefined {
   const { repo, storePending } = facts;
-  if (facts.storeState.kind === 'foreign' || repo.kind === 'refused') {
+  if (refusesStore(facts.storeState) || repo.kind === 'refused') {
     return undefined;
   }
   const { settings, target } = repo;
@@ -136,7 +136,9 @@ function refusalsOf(facts: LinkFacts, opts: PlanOptions): string[] {
 const pendingRefusal = (issue: string): string =>
   `${issue}. Fix the store's git repo, then run link again.`;
 
+// A cluttered store's issue carries its own way forward.
 function storeRefusals(state: StoreState): string[] {
+  if (state.kind === 'cluttered') return [state.issue];
   if (state.kind !== 'foreign') return [];
   return [
     `${state.issue}. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`,
