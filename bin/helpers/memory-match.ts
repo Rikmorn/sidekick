@@ -1,5 +1,6 @@
 /**
- * Matches a session to one memory workstream by five tiers, first match wins.
+ * Matches a session to one memory workstream by four tiers, first match wins;
+ * the menu of open workstreams is the fallback.
  */
 
 import type { Workstream } from './memory-view.js';

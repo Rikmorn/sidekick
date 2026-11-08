@@ -3527,7 +3527,7 @@ A repo folder holds \`.sidekick.json\`, which names the repo's main checkout as 
 
 ## Changes by hand
 
-- **Unlink a repo.** Remove the \`autoMemoryDirectory\` entry from the repo's \`.claude/settings.local.json\`, in its main checkout. Claude Code then uses its default memory folder again. The repo folder here stays until you delete it.
+- **Unlink a repo.** Remove the \`autoMemoryDirectory\` entry from the repo's \`.claude/settings.local.json\`, in its main checkout. Claude Code then uses its default memory folder again, which \`link\` moved to \`archive/default-folders/<key>-<date>\`. To get the memory as it was at link time, move that folder back to \`~/.claude/projects/<key>/memory\`. To keep what came after, copy the repo folder's files there instead. The repo folder here stays until you delete it.
 - **Move a repo between families.** Move its folder to the new family folder with \`mv\`, then set \`autoMemoryDirectory\` in the repo's \`.claude/settings.local.json\` to the new path. Close the repo's sessions first, since a running session keeps writing to the old path.
 - **Move the store.** Move this folder, then update \`autoMemoryDirectory\` in every linked repo's \`.claude/settings.local.json\`. Each marker holds the repo's root rather than the store's path, so markers stay as they are. Set \`SIDEKICK_MEMORY_STORE\` to the new path if you keep the store anywhere other than \`~/sk-memory-store\`.
 

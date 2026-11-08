@@ -314,7 +314,7 @@ function postReadContext(stdin: string, env: HookEnv): MonitorOutput {
   return { context: reviewerLines(pluginDir, readContent(event)) };
 }
 
-/** The memory-start verb: prints the session's workstream and starts the snapshot. */
+// The memory-start verb: prints the session's workstream and starts the snapshot.
 function memoryStartHook(stdin: string, env: HookEnv): MonitorOutput {
   try {
     const result = memoryStartContext(stdin, {

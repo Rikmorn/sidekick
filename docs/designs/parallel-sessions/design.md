@@ -1,6 +1,6 @@
 # Worktrees and parallel sessions
 
-Status: planned (#266, #267, #282, #283, #284, #285, #286, #287, #295, #296, #303, #309, #310, #311, #312, #313) · Scale: explore · 2026-10-31
+Status: planned (#266, #267, #282, #283, #284, #285, #286, #287, #288, #289, #290, #291, #295, #296, #303, #309, #310, #311, #312, #313, #315, #316, #324, #327, #328) · Scale: explore · 2026-10-31
 
 Amended 2026-10-31 (#266): piece 3's landed check became a simulated merge over the target's history. A review found that the two patch-id checks missed a landing after the target edited near the landed lines, and matched a change of meaning. The merge caught every landing that kept the content. Every `finish` now keeps its branch in a backup ref. The options, the decision, and the review record the design as it stood.
 
@@ -11,6 +11,8 @@ Amended 2026-11-02 (#301): R10 dropped the desk and landing pieces. #283 and #23
 Amended 2026-11-04 (#308): R10's outcome widened to worktrees that run end to end. #284 split: its tidying half rejoined R10, and piece 5's overlap half became #312, in backlog. #309 extends this design with the cases a week of use found, before more is built.
 
 Amended 2026-11-04 (#309): §Cases adds C5 to C13. [`use-cases.md`](use-cases.md) checks every case against the milestone branch, and gives #287's verdict and #309's breakdown.
+
+Amended 2026-11-08 (#313, #315): plan 10 narrowed this design and plan 11 reshaped it, and #313's and #315's dated sections hold the rulings. The rule states facts and rulings instead of routes. The worker record's target shipped as the brief's `target` field, which `dispatch` requires when the launching checkout holds a branch. The record stays version 2, not version 3 as §Breakdown's piece 2 says.
 
 The design became #282 to #291, and took #266 and #267 as one of its pieces. #266, #267, and #282 to #287 joined R10 beside the memory design's #270 to #278, and #288 to #291 stay in backlog (operator, 2026-10-31). Gate 1 approved by the operator on 2026-10-31, with the assumed A3 replaced by the stated K18, and P3's missing case answered (§Constraints, §Cases). Gate 2: T1 and T2 ruled on 2026-10-31, and T4 settled after a survey (§Rulings at gate 2). Gate 3 approved on 2026-10-31 (§Decision).
 

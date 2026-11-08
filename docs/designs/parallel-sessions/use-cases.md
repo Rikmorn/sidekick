@@ -2,6 +2,8 @@
 
 Issue: #309. Part of [the parallel-sessions design](design.md), whose §Cases lists C1 to C13. Scale: explore · 2026-11-04.
 
+Amended 2026-11-08 (#313): I7, on `ExitWorktree` under `claude -w`, and §Breakdown's item 8, on #313 naming routes, predate plan 11b. The facts in the shipped `plugin/rules/sk-parallel-sessions.md` supersede them.
+
 Every cell was checked on 2026-11-04 against `milestone/r10-memory-and-parallel-sessions` at `501676b`, on Claude Code 2.1.318. Nothing here was checked against 0.6.0.
 
 ## Problem
@@ -26,7 +28,7 @@ Non-goals, stated: overlap between parallel branches (the design's G2, #312), on
 - **V3.** `claude rm` then removed P1's session, worktree, and branch (`git worktree list` and `git branch --list`, after). Plan 4's `finish` did the same on 2026-11-01 (#282's close comment).
 - **V4.** A worker dispatched from a feature worktree lands in the feature's branch. #282's by-hand check on 2026-11-01 ran it from a hand-built sibling worktree, before worktrunk was enabled. The worker's worktree sat under the main checkout's `.claude/worktrees/`, at the feature's own commit.
 - **V5. `finish` has no removal path for a hook-made worker worktree today.** In plans 5, 6, and 7, `claude rm` refused one, so `finish` saved the report and stopped (#287, comments of 2026-11-02). `finish` answers any such refusal with a generic way out that fails the same way (`bin/helpers/worker-teardown.ts:187-200`). The test fixture has no variant that refuses a hook-made worktree (`bin/helpers/fixtures/worker/finish.ts:183-210`, `:262-271`). Claude Code 2.1.318's `claude rm` has `--force-remove-worktree <worktree-id>`, for a worktree "the WorktreeRemove hook or git couldn't remove", given "the value a previous 'claude rm <id>' reported", and it keeps the branch (`claude rm --help`). Nothing in sidekick uses it. The refusals quoted on #287 print no such id.
-- **V6.** Under worktrunk's hook, `ExitWorktree` refuses to remove a worktree without `discard_changes: true`, which Claude Code says to confirm with the user (#287, 2026-11-01). `plugin/rules/sk-parallel-sessions.md` §Support work says to remove an unchanged support worktree without asking.
+- **V6.** Under worktrunk's hook, `ExitWorktree` refuses to remove a worktree without `discard_changes: true`, which Claude Code says to confirm with the user (#287, 2026-11-01). `plugin/rules/sk-parallel-sessions.md` §Rulings says to remove an unchanged support worktree without asking.
 - **V7.** worktrunk's `WorktreeCreate` hook runs `wt switch --create <name>` with no base, so `worktree.baseRef` never reaches it (#287, 2026-11-01). In the work repo on 2026-11-04, a worker started at the default branch, off its baseline (#287, 2026-11-04). sidekick masks this by setting worktrunk's default branch to the milestone branch, a hand step at each milestone.
 - **V8.** `finish`'s dirty check runs `git status --porcelain -z --untracked-files=all` with no `--ignored` (`bin/helpers/worker-repo.ts:112-114`). Removing a Claude Code worktree deletes its ignored files without asking (`docs/research/parallel-sessions/2026-10-31-claude-code-worktree-features.md:490`). So a new ignored script a worker wrote is lost.
 - **V9.** No CLI path lists or removes a worktree that no worker record names. The worker verbs are `dispatch` and `finish` (`bin/helpers/worker.ts:51-54`), and the desk prunes only stale records (`bin/helpers/desk.ts:151-160`).

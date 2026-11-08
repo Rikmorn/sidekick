@@ -160,12 +160,13 @@ It decides the record question itself and states the judgment. It asks you only 
 
 **Closing**:
 
-- `sidekick pm gate` and `sidekick pm lint` first, and every open issue dispositioned.
+- `sidekick pm gate` and `sidekick pm lint` first, and every open issue dispositioned. An issue whose check is the release stays open with a `Verified by the release:` line.
 - The audit against the outcome sentence; each gap becomes an issue or a judgment. It also lists the issues added after Opening.
 - A check of the release as a whole: three sealed reviewers read everything the release ships. Each confirmed finding is fixed before the release. A finding too large for the session is posted `AT_RISK`, and you choose an added plan or a back-out.
 - Local preparation, left uncommitted: the learning record if the bar holds, and the deletions of the design folders whose issues have all closed. Then the repo's own preparation, such as the version bump, with the gates and draft notes.
 - A confirmation, carrying the learning-record judgment, the diff, and the check's findings. Nothing outward runs without a yes.
 - On yes, the release's publication: one commit of everything prepared, landed by the repo's route, then the tag and the GitHub Release. For sidekick itself, `AGENTS.md` §Releasing holds the preparation and publication steps.
+- Each `Verified by the release:` check, run after publication; its issue closes once the check passes. A failed check, or a defect found after the release ships, takes a patch release. The release check, preparation, and publication run again, from the published release's tag.
 - A `COMPLETE` status update, while the milestone is still open.
 - The milestone closed, and a "Resolved in" comment on each `COMPLETED` issue.
 
@@ -252,7 +253,7 @@ The Skill-tool hook adds a lead: in a linked worktree, `sk-worktree`'s done repl
 
 ### `code-review:code-review`
 
-The official plugin's command for a pull request. It reads the PR with `gh`, reviews the diff, and posts findings. Used where the work went through a PR rather than a fast-forward.
+The official plugin's command for a pull request. It reads the PR with `gh`, reviews the diff, and prints its findings. It posts them to the PR only with `--comment`. Used where the work went through a PR rather than a fast-forward.
 
 ## How the house uses them together
 

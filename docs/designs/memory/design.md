@@ -4,6 +4,8 @@ Status: planned (#270, #271, #272, #273, #274, #275, #276, #277, #278) · Scale:
 
 Amended 2026-11-02 (#301): R10 narrowed to save and pick-up. W-b's per-write commits moved to backlog (#273), and R3's stub and compaction records were dropped. #274 prints the matched workstream's state and takes a snapshot commit of the store at session start. #277 and #300 moved to backlog.
 
+Amended 2026-11-08 (#271): the store this design names `~/AI-Memory-Store` was renamed `~/sk-memory-store` on 2026-11-02, on the operator's rename (`6f4f1f4`).
+
 Issue: #269. Gate 1 approved by the operator on 2026-10-30 ("yeah to all"), with G2, G3, G4, and G6 confirmed. Gate 2's threads were settled on 2026-10-30 and 2026-10-31 (§Rulings on the trial). Gate 3 approved on 2026-10-31 ("yeah to all, looks fine at first glance"): the note, option A over A0, the store at `~/AI-Memory-Store`, and the ADR inside piece 2.
 
 Research: [`docs/research/memory/`](../../research/memory/README.md), in particular the two reports dated 2026-10-30, and [the 2026-10-12 memory-and-context report](../../research/control-centre/2026-10-12-memory-and-context.md) with [its probes](../../research/control-centre/2026-10-12-probes.md).
