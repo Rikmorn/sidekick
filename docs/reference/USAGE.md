@@ -10,7 +10,7 @@ Superpowers is the trunk: brainstorm, plan, execute, review. The official code-r
 |---|---|---|
 | House guidance | The `sk-*` rules Claude Code reads in every repo: working standards, language, clean code, TypeScript, guidance authoring, PM conventions, agent prompts, parallel sessions, memory | `plugin/rules/`, delivered by `sidekick rules install` |
 | PM layer | Tracking on GitHub for your repos: session-start pickup, filing, closing with a record, a milestone's scope review and release check, a lint. The board, a Claude Code mod, keeps one state line in view under the prompt | `sidekick pm`, its session-start hook, and the `sk-orient`, `sk-track`, and `sk-milestone` skills, and the `sk-holistic-reviewer` agent. The board mod in `plugin/hooks/board/` |
-| Execution | How a written plan runs: a mode chosen per plan, what the plan carries, and the worker handoff. A session's worktree, started on its branch and finished once the work lands. The desk, a Claude Code mod, names the sessions waiting on you and shows what each worker does | The `sk-execute` and `sk-worker` skills, and the `sidekick worker` verbs, `dispatch` and `finish`. The `sk-worktree` skill, over the `sidekick worktree` verbs. The desk in `plugin/hooks/desk/`, and `sidekick desk --json`. The Skill-tool hook that gives `writing-plans` the plan stance and the handoff and points the two worktree skills at `sk-worktree`, the Read hook that gives reviewers sidekick's reviewer lines, and the fetch hook that fetches the default branch, within 5 seconds, before `EnterWorktree` makes a worktree |
+| Execution | How a written plan runs: a mode chosen per plan, what the plan carries, and the worker handoff. A session's worktree, started on its branch and finished once the work lands. The desk, a Claude Code mod, names the sessions waiting on you and shows what each worker does | The `sk-execute` and `sk-worker` skills, and the `sidekick worker` verbs, `dispatch` and `finish`. The `sk-worktree` skill, over the `sidekick worktree` verbs. The desk in `plugin/hooks/desk/`, and `sidekick desk --json`. The Skill-tool hook that gives `writing-plans` the plan stance and the handoff, and points the two worktree skills at `sk-worktree`. The Read hook that gives reviewers sidekick's reviewer lines. The fetch hook that fetches the default branch, within 5 seconds, before `EnterWorktree` makes a worktree |
 | Context | Tells the model when its main-thread context fills, at 65% and 75% of the way to compaction, or of the window when no compaction point is known. The gauge, a Claude Code mod, draws the identity row under the prompt in every session (§Mains and workers). It also supplies the compaction point | The context monitor hook (`PostToolBatch`), the gauge in `plugin/hooks/gauge/`, and the `context_window` setting |
 | Profiles | What a session loads: a folder of rules plus a manifest, for an interactive session or a background one. The scope mod keeps a profile's hidden agents out of the model's listing, and refuses their dispatch. `/profile` shows the profile, what it hides, and what loaded | `sidekick profile`, its `skp` alias, and the `sidekick` skill's `references/profiles.md`. The scope mod in `plugin/hooks/scope/` |
 | Extensions | Design-side steps the ecosystem lacks. Shipped: a design pass before or during brainstorming. To come: a sealed review after a spec, a goal-backward verdict after a build | The `sk-design` skill and the Skill-tool hook's brainstorming nudge; later milestones for the rest |
@@ -32,15 +32,15 @@ The `gh` version decides whether the skills write a card's Status by name or by 
 
 For a repo you own and want tracked, ask for the `sidekick` skill by name, or say "bring this repo under tracking". The skill's §Bringing a repo under tracking copies the reference board and links it. It creates the labels once you agree the `area:*` set, then verifies. The skill text doubles as the checklist if you would rather run it by hand.
 
-Each repo you work in with worktrees needs short worktree guidance in a file every session loads, such as `AGENTS.md`, `CLAUDE.md`, or a project rule. It covers three things:
+For a repo where someone else owns the tracking, do nothing: `sidekick pm board --quiet` finds no board of yours and stays silent, which is the design.
+
+Each repo you work in with worktrees, tracked or not, needs short worktree guidance. It sits in a file every session loads, such as `AGENTS.md`, `CLAUDE.md`, or a project rule. It covers three things:
 
 - **setup**, the command a fresh worktree runs once it is on its branch;
 - **landing**, how work lands;
 - **quirks**, what a worktree must not do.
 
 `sk-worktree` reads that guidance first. Also check that your linters, builds, and container contexts ignore `.claude/worktrees/`. They must not skip the files inside a worktree. Otherwise a scanner run from the main checkout reads every worktree's copy.
-
-For a repo where someone else owns the tracking, do nothing: `sidekick pm board --quiet` finds no board of yours and stays silent, which is the design.
 
 ## The GitHub model
 

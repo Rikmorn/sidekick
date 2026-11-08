@@ -7763,7 +7763,7 @@ function worktreeNudge(lead, pluginDir) {
     return;
   return `${lead} sidekick:sk-worktree: ${description}`;
 }
-var USING_WORKTREES_LEAD = "sidekick: in this session, start the worktree with `sk-worktree` in place of this skill's steps. It enters with `EnterWorktree`, moves the worktree onto its branch, then runs the repo's own setup in place of `npm install`. In a dispatched worker, the brief's place and setup answer this skill.";
+var USING_WORKTREES_LEAD = "sidekick: in this session, start or verify the worktree with `sk-worktree` in place of this skill's steps. Start enters with `EnterWorktree`, moves the worktree onto its branch, then runs the repo's own setup in place of `npm install`. In a dispatched worker, the brief's place and setup answer this skill.";
 var FINISHING_BRANCH_LEAD = "sidekick: in a linked worktree, `sk-worktree`'s done replaces this skill's options, since a local merge from a worktree changes the main checkout under any session there. In the main checkout, this skill runs as written. In a dispatched worker, keep the branch as it is: the brief and `sidekick worker finish` answer this skill.";
 var NUDGES = new Map([
   ["superpowers:brainstorming", brainstormNudge],

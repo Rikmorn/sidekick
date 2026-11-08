@@ -304,7 +304,7 @@ describe('runHookCli post-skill, worktree skills', () => {
   const USING = 'superpowers:using-git-worktrees';
   const FINISHING = 'superpowers:finishing-a-development-branch';
   const USING_LEAD =
-    "sidekick: in this session, start the worktree with `sk-worktree` in place of this skill's steps.";
+    "sidekick: in this session, start or verify the worktree with `sk-worktree` in place of this skill's steps.";
   const FINISHING_LEAD =
     "sidekick: in a linked worktree, `sk-worktree`'s done replaces this skill's options";
   const WORKER_SENTENCE = 'In a dispatched worker, ';
