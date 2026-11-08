@@ -562,6 +562,35 @@ describe('runLink: re-runs', () => {
     expectCreatedThenLinked(w);
   });
 
+  test('a stopped store creation whose index holds a path link did not stage refuses with the command that unstages it, then finishes', () => {
+    const w = world();
+    fs.mkdirSync(w.store);
+    git(w.store, 'init', '-q');
+    fs.writeFileSync(path.join(w.store, 'README.md'), STORE_README);
+    fs.writeFileSync(path.join(w.store, 'notes.md'), 'mine\n');
+    git(w.store, 'add', '--', 'notes.md');
+    fs.renameSync(path.join(w.store, 'notes.md'), path.join(tmp(), 'notes.md'));
+    const refused = link(w, opts(w.top));
+    expect(refused.code).toBe(1);
+    expect(refused.err).toEqual([
+      'link refused, and wrote nothing:',
+      `- ${w.store} is a git repo with no commit, and its index holds notes.md, which link did not stage. In '${w.store}', unstage it with this command, then run link again: git --literal-pathspecs rm --cached -- notes.md`,
+    ]);
+    git(
+      w.store,
+      '--literal-pathspecs',
+      'rm',
+      '--cached',
+      '-q',
+      '--',
+      'notes.md',
+    );
+    const again = link(w, opts(w.top));
+    expect(again.err).toEqual([]);
+    expect(again.code).toBe(0);
+    expectCreatedThenLinked(w);
+  });
+
   test('a re-run after the store creation stopped, with only .DS_Store files beside the store files, finishes, and they stay untracked and ignored', () => {
     for (const written of [[], ['README.md']]) {
       const w = world();
@@ -603,7 +632,11 @@ describe('runLink: re-runs', () => {
     git(w.store, 'rm', '-q', '.gitignore');
     git(w.store, 'commit', '-q', '-m', 'drop the ignore file');
     fs.writeFileSync(path.join(w.store, '.gitignore'), '.DS_Store\n*.tmp\n');
-    expect(link(w, opts(w.top)).code).toBe(0);
+    const run = link(w, opts(w.top));
+    expect(run.code).toBe(0);
+    expect(run.out[0]).toBe(
+      `Committed the store's own files missing from its commits, as "chore: create the memory store": .gitignore`,
+    );
     expect(git(w.store, 'status', '--porcelain')).toBe('');
     expect(
       git(w.store, 'show', '--name-only', '--format=', 'HEAD~1').trim(),
@@ -772,11 +805,10 @@ describe('runLink: refusals write nothing', () => {
     });
     const refused = link(w, opts(w.top), row(w.top));
     expect(refused.code).toBe(1);
-    expect(refused.err.join('\n')).toContain(
-      'cannot tell whether another session is open',
-    );
-    expect(refused.err.join('\n')).toContain('not a number');
-    expect(refused.err.join('\n')).toContain('--force');
+    expect(refused.err).toEqual([
+      'link refused, and wrote nothing:',
+      `- claude agents --json --all gives a pid that is not a number for bg in ${w.top}, so link cannot tell whether that session is open. If it is open, close it. Then run again with --force: sidekick memory link ${w.top} --force`,
+    ]);
     expect(fs.existsSync(w.store)).toBe(false);
     const outside = link(
       w,
@@ -787,6 +819,26 @@ describe('runLink: refusals write nothing', () => {
     expect(outside.code).toBe(0);
     const forced = link(w, opts(w.top, { force: true }), row(w.top));
     expect(forced.code).toBe(0);
+    const notes = forced.out.join('\n');
+    expect(notes).toContain(
+      `Passed over with --force: bg in ${w.top}, whose pid is not a number.`,
+    );
+    expect(notes).not.toContain('did not run');
+  });
+
+  test("the running session's own row with a malformed pid never refuses, and is told to restart", () => {
+    const w = world();
+    const deps = {
+      ...w.deps,
+      env: { ...w.deps.env, CLAUDE_CODE_SESSION_ID: 'me' },
+      runClaude: listing([{ sessionId: 'me', cwd: w.top, pid: 'abc' }]),
+    };
+    const run = link(w, opts(w.top), deps);
+    expect(run.err).toEqual([]);
+    expect(run.code).toBe(0);
+    expect(run.out.join('\n')).toContain(
+      `This session (me in ${w.top}) keeps reading and writing`,
+    );
   });
 
   test('the session running link is told to restart', () => {

@@ -85,7 +85,7 @@ function repo(over: Partial<RepoFacts> = {}): RepoFacts {
       ['MEMORY.md', 'absent'],
       ['notes.md', 'absent'],
     ]),
-    sessions: { kind: 'listed', self: undefined, others: [] },
+    sessions: { kind: 'listed', self: undefined, others: [], unreadable: [] },
     target: target(),
     ...over,
   };
@@ -286,33 +286,6 @@ describe('planLink: a re-run after each action', () => {
     expect(actions.some((a) => a.kind === 'createStore')).toBe(false);
   });
 
-  test("after the store's failed first commit: commits its own files first, then the same plan", () => {
-    const paths = ['README.md', 'sources/.gitkeep', 'archive/.gitkeep'];
-    const actions = actionsOf(
-      planLink(facts({ storePending: { paths } }), NO_FLAGS),
-    );
-    expect(actions[0]).toEqual({ kind: 'finishStore', store: STORE, paths });
-    expect(actions.slice(1)).toEqual(actionsOf(planLink(facts(), NO_FLAGS)));
-  });
-
-  test("after the store's failed first commit, on a linked repo: that commit is the one step", () => {
-    const paths = ['README.md'];
-    const plan = planLink(
-      facts({
-        storePending: { paths },
-        repo: repo({
-          settings: settings(TARGET),
-          defaultFolder: ABSENT_DEFAULT,
-          target: MARKED,
-        }),
-      }),
-      NO_FLAGS,
-    );
-    expect(actionsOf(plan)).toEqual([
-      { kind: 'finishStore', store: STORE, paths },
-    ]);
-  });
-
   test('after the folder: writes the marker into the empty folder', () => {
     const plan = planLink(
       facts({ repo: repo({ target: target({ state: { kind: 'empty' } }) }) }),
@@ -411,6 +384,36 @@ describe('planLink: a re-run after each action', () => {
   });
 });
 
+// A store with no commit goes back through `createStore`; these stores have one.
+describe("planLink: a store with a commit that lacks some of the store's own files", () => {
+  test('commits those files first, then the same plan', () => {
+    const paths = ['.gitignore', 'archive/.gitkeep'];
+    const actions = actionsOf(
+      planLink(facts({ storePending: { paths } }), NO_FLAGS),
+    );
+    expect(actions[0]).toEqual({ kind: 'finishStore', store: STORE, paths });
+    expect(actions.slice(1)).toEqual(actionsOf(planLink(facts(), NO_FLAGS)));
+  });
+
+  test('on a linked repo, committing those files is the one step', () => {
+    const paths = ['.gitignore'];
+    const plan = planLink(
+      facts({
+        storePending: { paths },
+        repo: repo({
+          settings: settings(TARGET),
+          defaultFolder: ABSENT_DEFAULT,
+          target: MARKED,
+        }),
+      }),
+      NO_FLAGS,
+    );
+    expect(actionsOf(plan)).toEqual([
+      { kind: 'finishStore', store: STORE, paths },
+    ]);
+  });
+});
+
 describe('planLink: a default folder that reappears after the link', () => {
   test('is archived as it is, under a new name, with no copy and no merge', () => {
     const plan = planLink(
@@ -454,7 +457,12 @@ describe('planLink: sessions', () => {
     const plan = planLink(
       facts({
         repo: repo({
-          sessions: { kind: 'listed', self: undefined, others: [other] },
+          sessions: {
+            kind: 'listed',
+            self: undefined,
+            others: [other],
+            unreadable: [],
+          },
         }),
       }),
       NO_FLAGS,
@@ -468,7 +476,12 @@ describe('planLink: sessions', () => {
     const plan = planLink(
       facts({
         repo: repo({
-          sessions: { kind: 'listed', self: undefined, others: [other] },
+          sessions: {
+            kind: 'listed',
+            self: undefined,
+            others: [other],
+            unreadable: [],
+          },
         }),
       }),
       FORCE,
@@ -488,6 +501,80 @@ describe('planLink: sessions', () => {
     expect(forced.join('\n')).toContain('did not run');
   });
 
+  const unreadable = (...rows: Job[]): RepoFacts =>
+    repo({
+      sessions: {
+        kind: 'listed',
+        self: undefined,
+        others: [],
+        unreadable: rows,
+      },
+    });
+  const malformed = (sessionId: string, cwd: string): Job => ({
+    ...job(sessionId, cwd),
+    kind: 'background',
+    state: 'done',
+    pidMalformed: true,
+  });
+
+  test('a row whose pid is not a number refuses in its own words, with --force as the way forward', () => {
+    const plan = planLink(
+      facts({ repo: unreadable(malformed('bg', '/x/odin')) }),
+      NO_FLAGS,
+    );
+    expect(refusalsOf(plan)).toEqual([
+      'claude agents --json --all gives a pid that is not a number for bg in /x/odin, so link cannot tell whether that session is open. If it is open, close it. Then run again with --force: sidekick memory link /x/odin --force',
+    ]);
+  });
+
+  test('several rows whose pid is not a number share one refusal', () => {
+    const plan = planLink(
+      facts({
+        repo: unreadable(
+          malformed('a', '/x/odin'),
+          malformed('b', '/x/odin/src'),
+        ),
+      }),
+      NO_FLAGS,
+    );
+    expect(refusalsOf(plan)).toEqual([
+      'claude agents --json --all gives a pid that is not a number for a in /x/odin; b in /x/odin/src, so link cannot tell whether those sessions are open. Close each one that is open. Then run again with --force: sidekick memory link /x/odin --force',
+    ]);
+  });
+
+  test('an open session and a row whose pid is not a number each refuse', () => {
+    const plan = planLink(
+      facts({
+        repo: repo({
+          sessions: {
+            kind: 'listed',
+            self: undefined,
+            others: [other],
+            unreadable: [malformed('bg', '/x/odin')],
+          },
+        }),
+      }),
+      NO_FLAGS,
+    );
+    const got = refusalsOf(plan);
+    expect(got).toHaveLength(2);
+    expect(got[0]).toStartWith('Other sessions are open in the repo: other');
+    expect(got[1]).toContain('bg in /x/odin, so link cannot tell');
+  });
+
+  test('--force passes over a row whose pid is not a number and names it, since the check ran', () => {
+    const plan = planLink(
+      facts({ repo: unreadable(malformed('bg', '/x/odin')) }),
+      FORCE,
+    );
+    expect(actionsOf(plan)).toContainEqual(MERGE);
+    const notes = notesOf(plan).join('\n');
+    expect(notes).toContain(
+      `Passed over with --force: bg in /x/odin, whose pid is not a number. If it is open, it keeps writing to ${DEFAULT} until it restarts; run link again afterwards to archive what it wrote.`,
+    );
+    expect(notes).not.toContain('did not run');
+  });
+
   test('the session running link never refuses, and is told to restart', () => {
     const plan = planLink(
       facts({
@@ -496,6 +583,7 @@ describe('planLink: sessions', () => {
             kind: 'listed',
             self: job('me', '/x/odin'),
             others: [],
+            unreadable: [],
           },
         }),
       }),
@@ -513,7 +601,12 @@ describe('planLink: sessions', () => {
           settings: settings(TARGET),
           defaultFolder: ABSENT_DEFAULT,
           target: MARKED,
-          sessions: { kind: 'listed', self: undefined, others: [other] },
+          sessions: {
+            kind: 'listed',
+            self: undefined,
+            others: [other],
+            unreadable: [],
+          },
         }),
       }),
       NO_FLAGS,
@@ -542,7 +635,12 @@ describe('planLink: sessions on a re-run that only commits', () => {
     ['with --force', FORCE],
   ])('names an open session and never claims --force, %s', (_label, opts) => {
     const plan = planLink(
-      commitOnly({ kind: 'listed', self: undefined, others: [other] }),
+      commitOnly({
+        kind: 'listed',
+        self: undefined,
+        others: [other],
+        unreadable: [],
+      }),
       opts,
     );
     expect(actionsOf(plan)).toEqual([COMMIT]);
@@ -566,9 +664,40 @@ describe('planLink: sessions on a re-run that only commits', () => {
     expect(notes).not.toContain('--force');
   });
 
+  test.each([
+    ['without --force', NO_FLAGS],
+    ['with --force', FORCE],
+  ])('a row whose pid is not a number is named, and the check is not said to have failed, %s', (_label, opts) => {
+    const bad: Job = {
+      ...job('bg', '/x/odin'),
+      kind: 'background',
+      state: 'done',
+      pidMalformed: true,
+    };
+    const plan = planLink(
+      commitOnly({
+        kind: 'listed',
+        self: undefined,
+        others: [],
+        unreadable: [bad],
+      }),
+      opts,
+    );
+    expect(actionsOf(plan)).toEqual([COMMIT]);
+    const notes = notesOf(plan).join('\n');
+    expect(notes).toBe(
+      `claude agents --json --all gives a pid that is not a number for bg in /x/odin. If it is open and started before the key was set, it keeps writing to ${DEFAULT} until it restarts. Run link again afterwards to archive what it wrote.`,
+    );
+  });
+
   test('the session running link is told to restart if it began before the key', () => {
     const plan = planLink(
-      commitOnly({ kind: 'listed', self: job('me', '/x/odin'), others: [] }),
+      commitOnly({
+        kind: 'listed',
+        self: job('me', '/x/odin'),
+        others: [],
+        unreadable: [],
+      }),
       NO_FLAGS,
     );
     const notes = notesOf(plan).join('\n');
@@ -581,7 +710,12 @@ describe('planLink: sessions on a re-run that only commits', () => {
 
   test('the others-note keeps its condition and its follow-up as two sentences', () => {
     const plan = planLink(
-      commitOnly({ kind: 'listed', self: undefined, others: [other] }),
+      commitOnly({
+        kind: 'listed',
+        self: undefined,
+        others: [other],
+        unreadable: [],
+      }),
       NO_FLAGS,
     );
     expect(notesOf(plan).join('\n')).toContain(
@@ -591,7 +725,12 @@ describe('planLink: sessions on a re-run that only commits', () => {
 
   test('no session note when no session is open', () => {
     const plan = planLink(
-      commitOnly({ kind: 'listed', self: undefined, others: [] }),
+      commitOnly({
+        kind: 'listed',
+        self: undefined,
+        others: [],
+        unreadable: [],
+      }),
       NO_FLAGS,
     );
     expect(notesOf(plan)).toEqual([]);
@@ -604,7 +743,12 @@ describe('planLink: sessions on a re-run that only commits', () => {
           settings: settings(TARGET),
           defaultFolder: ABSENT_DEFAULT,
           target: MARKED,
-          sessions: { kind: 'listed', self: undefined, others: [other] },
+          sessions: {
+            kind: 'listed',
+            self: undefined,
+            others: [other],
+            unreadable: [],
+          },
         }),
       }),
       NO_FLAGS,
@@ -681,6 +825,7 @@ describe('planLink: refusals', () => {
           kind: 'listed',
           self: undefined,
           others: [job('o', '/x/odin')],
+          unreadable: [],
         },
       }),
     });
@@ -886,6 +1031,7 @@ describe('planLink: refusals', () => {
           kind: 'listed',
           self: undefined,
           others: [job('o', '/x/odin')],
+          unreadable: [],
         },
       }),
     });
@@ -902,6 +1048,7 @@ describe('planLink: refusals', () => {
               kind: 'listed',
               self: undefined,
               others: [job('o', '/x/my repo')],
+              unreadable: [],
             },
           }),
         }),
@@ -923,6 +1070,7 @@ describe('planLink: suggested commands under --dry-run', () => {
         kind: 'listed',
         self: undefined,
         others: [job('other', `${root}/src`)],
+        unreadable: [],
       },
     });
   const linkedElsewhere = (root: string) =>

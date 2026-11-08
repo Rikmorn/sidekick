@@ -157,21 +157,10 @@ function sessionFacts(input: RepoInput): SessionFacts {
   const listed = listJobs(input.deps.runClaude, input.root);
   if ('issues' in listed) return { kind: 'failed', issues: listed.issues };
   const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
-  const { self, others, unreadable } = sessionsInRepo(
-    listed.jobs,
-    input.checkouts,
-    selfId,
-  );
-  if (unreadable.length > 0) {
-    return {
-      kind: 'failed',
-      issues: unreadable.map(
-        (j) =>
-          `The listing's row for ${j.name ?? j.sessionId ?? j.id ?? 'a session'} in ${j.cwd ?? 'an unknown folder'} has a pid that is not a number.`,
-      ),
-    };
-  }
-  return { kind: 'listed', self, others };
+  return {
+    kind: 'listed',
+    ...sessionsInRepo(listed.jobs, input.checkouts, selfId),
+  };
 }
 
 interface TargetInput extends RepoInput {
@@ -366,9 +355,10 @@ interface StatusEntry {
 }
 
 /**
- * The store's own files that its first commit never took, when that commit
- * failed: each of `CREATION_PATHS` on disk that git lists as untracked or
- * added. A committed file edited since is the operator's, so it never counts.
+ * The store's own files that a store with a commit holds uncommitted: each of
+ * `CREATION_PATHS` on disk that git lists as untracked or added, such as a
+ * `.gitignore` written by hand. A committed file edited since is the
+ * operator's, so it never counts.
  */
 export function uncommittedCreation(
   store: string,

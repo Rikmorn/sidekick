@@ -77,13 +77,7 @@ export function mainCheckout(
 ): { root: string; checkouts: string[] } | { issue: string } {
   const found = findRepo(runGit, target);
   if (found.repo === undefined) {
-    const { listIssue } = found;
-    return {
-      issue:
-        listIssue === undefined
-          ? `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one`
-          : `${target} has no main checkout, since git worktree list failed there: ${listIssue || 'it printed nothing'}; fix what git reports, then run the command again`,
-    };
+    return { issue: noCheckoutIssue(target, found) };
   }
   const { repo } = found;
   const issue = checkoutIssue(target, repo, home, owned);
@@ -92,6 +86,37 @@ export function mainCheckout(
     root: fs.realpathSync(repo.top),
     checkouts: repo.worktrees.map((worktree) => physical(worktree.path)),
   };
+}
+
+// How `git rev-parse` words a path outside every repository.
+const NOT_A_REPO = 'not a git repository';
+
+function isFolder(target: string): boolean {
+  try {
+    return fs.statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+// Why `target` has no main checkout, quoting git when it gave a reason other
+// than being outside a repository. A path that is no folder fails before git
+// runs, so the runner's words are never quoted as git's.
+function noCheckoutIssue(
+  target: string,
+  found: { listIssue?: string; revParseIssue?: string },
+): string {
+  const { listIssue, revParseIssue = '' } = found;
+  if (listIssue !== undefined) {
+    return `${target} has no main checkout, since git worktree list failed there: ${listIssue || 'it printed nothing'}; fix what git reports, then run the command again`;
+  }
+  const gitRefused =
+    revParseIssue !== '' &&
+    !revParseIssue.includes(NOT_A_REPO) &&
+    isFolder(target);
+  return gitRefused
+    ? `${target} has no main checkout, since git rev-parse failed there: ${revParseIssue}; fix what git reports, then run the command again`
+    : `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one`;
 }
 
 type Parsed =

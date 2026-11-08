@@ -24,6 +24,24 @@ describe('findRepo', () => {
     const found = findRepo(execRunner, repo());
     expect(found.warnings).toEqual([]);
     expect(found.listIssue).toBeUndefined();
-    expect(findRepo(execRunner, tmp())).toEqual({ warnings: [] });
+    expect(found.revParseIssue).toBeUndefined();
+    const outside = findRepo(execRunner, tmp());
+    expect(outside.repo).toBeUndefined();
+    expect(outside.warnings).toEqual([]);
+    expect(outside.listIssue).toBeUndefined();
+  });
+
+  test("a failed git rev-parse gives git's first line apart, and no desk warning", () => {
+    const runGit: Runner = () => ({
+      code: 128,
+      stdout: '',
+      stderr:
+        "fatal: detected dubious ownership in repository at '/x/odin'\nTo add an exception for this directory, call:\n",
+    });
+    expect(findRepo(runGit, '/x/odin')).toEqual({
+      warnings: [],
+      revParseIssue:
+        "fatal: detected dubious ownership in repository at '/x/odin'",
+    });
   });
 });

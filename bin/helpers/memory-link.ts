@@ -402,7 +402,7 @@ function phrase(action: LinkAction): Phrase {
       return forms(
         'Committed',
         'commit',
-        `the store's own files, which its first commit missed, as "${CREATION_MESSAGE}": ${action.paths.join(', ')}`,
+        `the store's own files missing from its commits, as "${CREATION_MESSAGE}": ${action.paths.join(', ')}`,
       );
     case 'createFolder':
       return forms('Created', 'create', action.folder);

@@ -41,20 +41,28 @@ const firstLine = (text: string): string => text.trim().split('\n')[0];
 /**
  * The repository holding `cwd`, from its main checkout or any linked
  * worktree. The main checkout's top is the first entry `git worktree list`
- * gives. Undefined outside a repository, and, with the desk's warning, when
- * `git worktree list` fails inside one. `listIssue` is then git's own first
- * line, for a caller that words its own message.
+ * gives. Undefined when `git rev-parse` fails, as it does outside a
+ * repository, and, with the desk's warning, when `git worktree list` fails
+ * inside one. `revParseIssue` or `listIssue` is then git's own first line,
+ * for a caller that words its own message.
  */
 export function findRepo(
   runGit: Runner,
   cwd: string,
-): { repo?: Repo; warnings: string[]; listIssue?: string } {
+): {
+  repo?: Repo;
+  warnings: string[];
+  listIssue?: string;
+  revParseIssue?: string;
+} {
   const common = runGit(
     'git',
     ['rev-parse', '--path-format=absolute', '--git-common-dir'],
     cwd,
   );
-  if (common.code !== 0) return { warnings: [] };
+  if (common.code !== 0) {
+    return { warnings: [], revParseIssue: firstLine(common.stderr) };
+  }
   const list = listWorktrees(runGit, cwd);
   if ('issue' in list) {
     const listIssue = firstLine(list.issue);

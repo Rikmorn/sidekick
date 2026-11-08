@@ -1747,8 +1747,9 @@ var firstLine = (text) => text.trim().split(`
 `)[0];
 function findRepo(runGit, cwd) {
   const common = runGit("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
-  if (common.code !== 0)
-    return { warnings: [] };
+  if (common.code !== 0) {
+    return { warnings: [], revParseIssue: firstLine(common.stderr) };
+  }
   const list = listWorktrees(runGit, cwd);
   if ("issue" in list) {
     const listIssue = firstLine(list.issue);
@@ -2321,10 +2322,7 @@ function checkoutIssue2(target, repo, home, owned = defaultOwned) {
 function mainCheckout(target, runGit, home, owned = defaultOwned) {
   const found = findRepo(runGit, target);
   if (found.repo === undefined) {
-    const { listIssue } = found;
-    return {
-      issue: listIssue === undefined ? `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one` : `${target} has no main checkout, since git worktree list failed there: ${listIssue || "it printed nothing"}; fix what git reports, then run the command again`
-    };
+    return { issue: noCheckoutIssue(target, found) };
   }
   const { repo } = found;
   const issue = checkoutIssue2(target, repo, home, owned);
@@ -2334,6 +2332,22 @@ function mainCheckout(target, runGit, home, owned = defaultOwned) {
     root: fs8.realpathSync(repo.top),
     checkouts: repo.worktrees.map((worktree) => physical(worktree.path))
   };
+}
+var NOT_A_REPO = "not a git repository";
+function isFolder(target) {
+  try {
+    return fs8.statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function noCheckoutIssue(target, found) {
+  const { listIssue, revParseIssue = "" } = found;
+  if (listIssue !== undefined) {
+    return `${target} has no main checkout, since git worktree list failed there: ${listIssue || "it printed nothing"}; fix what git reports, then run the command again`;
+  }
+  const gitRefused = revParseIssue !== "" && !revParseIssue.includes(NOT_A_REPO) && isFolder(target);
+  return gitRefused ? `${target} has no main checkout, since git rev-parse failed there: ${revParseIssue}; fix what git reports, then run the command again` : `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one`;
 }
 function parseSettings(text, file) {
   if (text.trim() === "")
@@ -3388,10 +3402,7 @@ function stoppedCreation(store, runGit) {
     return;
   const staged = index.filter((rel) => !CREATION_PATHS.includes(rel));
   if (staged.length > 0) {
-    return {
-      kind: "foreign",
-      issue: `${store} is a git repo with no commit, and its index holds ${staged.join(", ")}, which link did not stage`
-    };
+    return { kind: "cluttered", issue: stagedIssue(store, staged) };
   }
   const others = othersIn(store, "");
   if (others.length === 0)
@@ -3402,6 +3413,11 @@ function stoppedCreation(store, runGit) {
     kind: "cluttered",
     issue: `${store} is a store whose creation stopped part-way, and it also holds ${others.join(", ")}, which link did not write. Move them out of ${store}, then run link again to finish the store.`
   };
+}
+function stagedIssue(store, staged) {
+  const unstage = `git --literal-pathspecs rm --cached -- ${staged.map(shellArg).join(" ")}`;
+  const them = staged.length === 1 ? "it" : "them";
+  return `${store} is a git repo with no commit, and its index holds ${staged.join(", ")}, which link did not stage. In ${shellQuote(store)}, unstage ${them} with this command, then run link again: ${unstage}`;
 }
 function othersIn(store, rel) {
   return fs9.readdirSync(path10.join(store, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
@@ -4762,10 +4778,19 @@ function sessionRefusals(repo, opts) {
       `link cannot tell whether another session is open in the repo: ${sessions.issues.join(" ")} Fix the listing, or run again with --force: ${retry}`
     ];
   }
-  if (sessions.others.length === 0)
-    return [];
-  return [
+  const open = sessions.others.length === 0 ? [] : [
     `Other sessions are open in the repo: ${sessions.others.map(describeJob).join("; ")}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`
+  ];
+  return [...open, ...unreadableRefusals(sessions.unreadable, retry)];
+}
+function unreadableRefusals(rows, retry) {
+  if (rows.length === 0)
+    return [];
+  const one = rows.length === 1;
+  const which = one ? "that session is" : "those sessions are";
+  const close = one ? "If it is open, close it." : "Close each one that is open.";
+  return [
+    `${LISTING} gives a pid that is not a number for ${rows.map(describeJob).join("; ")}, so link cannot tell whether ${which} open. ${close} Then run again with --force: ${retry}`
   ];
 }
 function targetRefusals(target, root, dryRun) {
@@ -4937,10 +4962,11 @@ function sessionNotes(sessions, folder) {
     ];
   }
   const forced = sessions.others.map((job) => `Passed over with --force: ${describeJob(job)}. It keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`);
+  const unread = sessions.unreadable.map((job) => `Passed over with --force: ${describeJob(job)}, whose pid is not a number. If it is open, it keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`);
   const self = sessions.self === undefined ? [] : [
     `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`
   ];
-  return [...forced, ...self];
+  return [...forced, ...unread, ...self];
 }
 function rerunSessionNotes(sessions, folder) {
   if (sessions.kind === "failed") {
@@ -4949,10 +4975,11 @@ function rerunSessionNotes(sessions, folder) {
     ];
   }
   const others = sessions.others.map((job) => `Open in the repo: ${describeJob(job)}. If it started before the key was set, it keeps writing to ${folder} until it restarts. Run link again afterwards to archive what it wrote.`);
+  const unread = sessions.unreadable.map((job) => `${LISTING} gives a pid that is not a number for ${describeJob(job)}. If it is open and started before the key was set, it keeps writing to ${folder} until it restarts. Run link again afterwards to archive what it wrote.`);
   const self = sessions.self === undefined ? [] : [
     `If this session (${describeJob(sessions.self)}) started before the key was set, it keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`
   ];
-  return [...others, ...self];
+  return [...others, ...unread, ...self];
 }
 function userSettingsNotes(facts) {
   const { file, covered } = facts.userSettings;
@@ -5176,11 +5203,16 @@ function isInside(dir, checkout) {
 function sessionsInRepo(jobs, checkouts, selfId) {
   const roots = checkouts.map(realOrResolved);
   const notStopped = jobs.filter((j) => j.state !== STOPPED_STATE && j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
-  const unreadable = notStopped.filter((j) => j.pidMalformed === true);
-  const inRepo = notStopped.filter(isCurrent);
   const hasSelf = selfId !== undefined && selfId !== "";
-  const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
-  return { self, others: inRepo.filter((j) => j !== self), unreadable };
+  const isSelf = (j) => hasSelf && j.sessionId === selfId;
+  const isMalformed = (j) => j.pidMalformed === true;
+  const inRepo = notStopped.filter(isCurrent);
+  const self = inRepo.find(isSelf) ?? notStopped.find((j) => isSelf(j) && isMalformed(j));
+  return {
+    self,
+    others: inRepo.filter((j) => j !== self),
+    unreadable: notStopped.filter((j) => isMalformed(j) && !isSelf(j))
+  };
 }
 
 // bin/helpers/memory-stamps.ts
@@ -5270,14 +5302,10 @@ function sessionFacts(input) {
   if ("issues" in listed)
     return { kind: "failed", issues: listed.issues };
   const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
-  const { self, others, unreadable } = sessionsInRepo(listed.jobs, input.checkouts, selfId);
-  if (unreadable.length > 0) {
-    return {
-      kind: "failed",
-      issues: unreadable.map((j) => `The listing's row for ${j.name ?? j.sessionId ?? j.id ?? "a session"} in ${j.cwd ?? "an unknown folder"} has a pid that is not a number.`)
-    };
-  }
-  return { kind: "listed", self, others };
+  return {
+    kind: "listed",
+    ...sessionsInRepo(listed.jobs, input.checkouts, selfId)
+  };
 }
 function targetFacts(input) {
   const { store, folder, rel, key, defaultFolder } = input;
@@ -8268,7 +8296,7 @@ function phrase(action) {
     case "createStore":
       return forms("Created", "create", `the store at ${action.store}`);
     case "finishStore":
-      return forms("Committed", "commit", `the store's own files, which its first commit missed, as "${CREATION_MESSAGE}": ${action.paths.join(", ")}`);
+      return forms("Committed", "commit", `the store's own files missing from its commits, as "${CREATION_MESSAGE}": ${action.paths.join(", ")}`);
     case "createFolder":
       return forms("Created", "create", action.folder);
     case "writeMarker":
@@ -9678,7 +9706,7 @@ var PERMISSION_MODES = [
 ];
 var MODE_LIST = PERMISSION_MODES.join(", ");
 var BYPASS = "bypassPermissions";
-var isFolder = (dir) => {
+var isFolder2 = (dir) => {
   try {
     return fs33.statSync(dir).isDirectory();
   } catch {
@@ -9694,7 +9722,7 @@ function modeIssues(mode) {
   const known = PERMISSION_MODES.some((m) => m === mode);
   return known ? [] : [`--permission-mode "${mode}" is not one of ${MODE_LIST}`];
 }
-var pluginDirIssues = (dir) => dir === undefined || isFolder(dir) ? [] : [`--plugin-dir: ${dir} is not a folder`];
+var pluginDirIssues = (dir) => dir === undefined || isFolder2(dir) ? [] : [`--plugin-dir: ${dir} is not a folder`];
 var placeIssues = (brief) => brief.place === "worktree" ? [] : [
   `place: "${brief.place}" is not "worktree"; dispatch starts a worker only in a worktree of its own`
 ];
@@ -9763,7 +9791,7 @@ function bypassIssues(profile, mode) {
 }
 function missingProfileHint(name, penv) {
   const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder(path40.join(root.dir, name)));
+  const held = roots.some((root) => isFolder2(path40.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv, main, reads) {

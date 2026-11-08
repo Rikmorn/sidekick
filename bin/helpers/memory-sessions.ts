@@ -39,10 +39,12 @@ function isInside(dir: string, checkout: string): boolean {
  * job, or a `done` one with no `pid`, has no process to write to the old
  * folder, and resuming it starts a new process that reads the new key. A
  * non-`stopped` in-repo job whose pid is not a number goes in `unreadable`,
- * since its process cannot be told.
- * `self` is the in-repo job whose `sessionId` equals `selfId`; it is
- * `undefined` when no id is given or that session is outside the repo, since
- * only an in-repo session keeps the old folder.
+ * since its process cannot be told, unless its `sessionId` is `selfId`.
+ * `self` is the in-repo job whose `sessionId` equals `selfId`: an open one,
+ * else one whose pid is not a number, since the running session is open
+ * whatever its row says. It is `undefined` when no id is given or that
+ * session is outside the repo, since only an in-repo session keeps the old
+ * folder.
  */
 export function sessionsInRepo(
   jobs: Job[],
@@ -56,9 +58,15 @@ export function sessionsInRepo(
       j.cwd !== undefined &&
       roots.some((root) => isInside(realOrResolved(j.cwd ?? ''), root)),
   );
-  const unreadable = notStopped.filter((j) => j.pidMalformed === true);
-  const inRepo = notStopped.filter(isCurrent);
   const hasSelf = selfId !== undefined && selfId !== '';
-  const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
-  return { self, others: inRepo.filter((j) => j !== self), unreadable };
+  const isSelf = (j: Job): boolean => hasSelf && j.sessionId === selfId;
+  const isMalformed = (j: Job): boolean => j.pidMalformed === true;
+  const inRepo = notStopped.filter(isCurrent);
+  const self =
+    inRepo.find(isSelf) ?? notStopped.find((j) => isSelf(j) && isMalformed(j));
+  return {
+    self,
+    others: inRepo.filter((j) => j !== self),
+    unreadable: notStopped.filter((j) => isMalformed(j) && !isSelf(j)),
+  };
 }

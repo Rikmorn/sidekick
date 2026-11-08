@@ -179,6 +179,39 @@ describe('mainCheckout', () => {
       `; change the owner of ${top} to you, then run the command again`,
     );
   });
+
+  // The first line git prints for each failure, as `git rev-parse` words it.
+  const revParseFails =
+    (stderr: string): Runner =>
+    () => ({ code: 128, stdout: '', stderr });
+
+  test('a git rev-parse failure other than "not a git repository" quotes git', () => {
+    const work = tmp();
+    const dubious = revParseFails(
+      `fatal: detected dubious ownership in repository at '${work}'\nTo add an exception for this directory, call:\n`,
+    );
+    expect(issueOf(mainCheckout(work, dubious, tmp(), mine))).toBe(
+      `${work} has no main checkout, since git rev-parse failed there: fatal: detected dubious ownership in repository at '${work}'; fix what git reports, then run the command again`,
+    );
+  });
+
+  test('"not a git repository", a silent failure, or a path that is no folder reads as outside git', () => {
+    const work = tmp();
+    const outside = `${work} has no main checkout: it is not inside a git repository; run the command on a path inside one`;
+    const notARepo = revParseFails(
+      'fatal: not a git repository (or any of the parent directories): .git\n',
+    );
+    expect(issueOf(mainCheckout(work, notARepo, tmp(), mine))).toBe(outside);
+    expect(issueOf(mainCheckout(work, revParseFails(''), tmp(), mine))).toBe(
+      outside,
+    );
+    // A missing folder fails the spawn itself, so the runner speaks, not git.
+    const gone = path.join(work, 'gone');
+    const spawnFails = revParseFails('spawnSync git ENOENT');
+    expect(issueOf(mainCheckout(gone, spawnFails, tmp(), mine))).toBe(
+      `${gone} has no main checkout: it is not inside a git repository; run the command on a path inside one`,
+    );
+  });
 });
 
 describe('settingsState', () => {

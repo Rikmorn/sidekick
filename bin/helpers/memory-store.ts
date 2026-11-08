@@ -9,6 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
 import { MAX_OUTPUT, type Runner } from './pm-data.js';
+import { shellArg, shellQuote } from './shell.js';
 
 /** Top-level names the store keeps for itself; no family or repo folder takes one. */
 export const RESERVED_NAMES: readonly string[] = ['sources', 'archive'];
@@ -145,7 +146,7 @@ export type StoreState =
   | { kind: 'empty' }
   /** What `createStore` leaves when it stops part-way, which it can finish. */
   | { kind: 'unfinished' }
-  /** A stopped creation beside paths `createStore` did not write; `issue` names them and the way forward. */
+  /** A stopped creation beside paths `createStore` did not write or stage; `issue` names them and the way forward. */
   | { kind: 'cluttered'; issue: string }
   | { kind: 'store' }
   | { kind: 'foreign'; issue: string };
@@ -197,8 +198,9 @@ const notAStore = (store: string): StoreState => ({
 
 // A repo with no commit whose `.git` is a plain folder, as `createStore`
 // leaves it when it stops part-way: unfinished when nothing but its paths
-// sits beside `.git`, cluttered when the README sits there with other paths,
-// and foreign otherwise. Undefined for any other repo.
+// sits beside `.git`, cluttered when its index holds other paths or the
+// README sits there with other paths, and foreign otherwise. Undefined for any
+// other repo.
 function stoppedCreation(
   store: string,
   runGit: Runner,
@@ -211,10 +213,7 @@ function stoppedCreation(
   if (index === undefined) return undefined;
   const staged = index.filter((rel) => !CREATION_PATHS.includes(rel));
   if (staged.length > 0) {
-    return {
-      kind: 'foreign',
-      issue: `${store} is a git repo with no commit, and its index holds ${staged.join(', ')}, which link did not stage`,
-    };
+    return { kind: 'cluttered', issue: stagedIssue(store, staged) };
   }
   const others = othersIn(store, '');
   if (others.length === 0) return { kind: 'unfinished' };
@@ -223,6 +222,15 @@ function stoppedCreation(
     kind: 'cluttered',
     issue: `${store} is a store whose creation stopped part-way, and it also holds ${others.join(', ')}, which link did not write. Move them out of ${store}, then run link again to finish the store.`,
   };
+}
+
+// Moving a staged file leaves its index entry, so only unstaging clears it.
+// `git rm --cached` keeps each file on disk, and refuses one whose staged
+// content differs from it.
+function stagedIssue(store: string, staged: string[]): string {
+  const unstage = `git --literal-pathspecs rm --cached -- ${staged.map(shellArg).join(' ')}`;
+  const them = staged.length === 1 ? 'it' : 'them';
+  return `${store} is a git repo with no commit, and its index holds ${staged.join(', ')}, which link did not stage. In ${shellQuote(store)}, unstage ${them} with this command, then run link again: ${unstage}`;
 }
 
 // Each path under `store` that `createStore` did not write, sorted, with a

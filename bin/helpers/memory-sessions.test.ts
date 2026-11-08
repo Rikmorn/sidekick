@@ -165,6 +165,40 @@ describe('sessionsInRepo', () => {
     expect(result.others).toEqual([]);
   });
 
+  test("the running session's own row is never unreadable, and stays self when its pid is not a number", () => {
+    const me = job('me', '/x/odin', undefined, {
+      pid: undefined,
+      pidMalformed: true,
+    });
+    const bad = { ...me, sessionId: 'b' };
+    const result = sessionsInRepo([me, bad], ['/x/odin'], 'me');
+    expect(result.self).toBe(me);
+    expect(result.unreadable).toEqual([bad]);
+    expect(result.others).toEqual([]);
+  });
+
+  test('a readable self row is self, and a second row for the session is not unreadable', () => {
+    const echo = job('me', '/x/odin', undefined, {
+      pid: undefined,
+      pidMalformed: true,
+    });
+    const me = job('me', '/x/odin/src');
+    const result = sessionsInRepo([echo, me], ['/x/odin'], 'me');
+    expect(result.self).toBe(me);
+    expect(result.unreadable).toEqual([]);
+    expect(result.others).toEqual([]);
+  });
+
+  test('with no self id, a row whose pid is not a number stays unreadable', () => {
+    const row = job('', '/x/odin', undefined, {
+      pid: undefined,
+      pidMalformed: true,
+    });
+    for (const id of [undefined, '']) {
+      expect(sessionsInRepo([row], ['/x/odin'], id).unreadable).toEqual([row]);
+    }
+  });
+
   test('a cwd whose folder is gone compares by its literal path', () => {
     const gone = job('a', '/nonexistent-sidekick/odin/src');
     const result = sessionsInRepo(

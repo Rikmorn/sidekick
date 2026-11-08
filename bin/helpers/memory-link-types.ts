@@ -58,7 +58,13 @@ export interface TargetFacts {
 
 /** The sessions listed in the repo, or why the listing failed. */
 export type SessionFacts =
-  | { kind: 'listed'; self: Job | undefined; others: Job[] }
+  | {
+      kind: 'listed';
+      self: Job | undefined;
+      others: Job[];
+      /** Rows whose pid is not a number, so whether each is open cannot be told. */
+      unreadable: Job[];
+    }
   | { kind: 'failed'; issues: string[] };
 
 /** The facts that need the repo's main checkout. */
@@ -82,7 +88,7 @@ export interface LinkFacts {
   /** The store's absolute path. */
   store: string;
   storeState: StoreState;
-  /** The store's own files its first commit never took, or why git could not list them. */
+  /** The store's own files on disk that no commit holds, or why git could not list them. */
   storePending: { paths: string[] } | { issue: string };
   overrideIssue: string | undefined;
   nameIssues: string[];
@@ -120,7 +126,7 @@ export interface OwnedPaths {
 /** One step of a link, in the order it runs. */
 export type LinkAction =
   | { kind: 'createStore'; store: string }
-  /** Commits the store's own files after its first commit failed. */
+  /** In a store that has a commit, commits the store's own files that are on disk but in none of its commits. */
   | { kind: 'finishStore'; store: string; paths: string[] }
   | { kind: 'createFolder'; folder: string }
   | { kind: 'writeMarker'; folder: string; root: string }

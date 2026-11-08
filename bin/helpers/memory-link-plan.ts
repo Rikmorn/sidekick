@@ -26,7 +26,7 @@ import {
 } from './memory-settings.js';
 import { MARKER_FILE, refusesStore, type StoreState } from './memory-store.js';
 import { shellArg } from './shell.js';
-import type { Job } from './worker-jobs.js';
+import { type Job, LISTING } from './worker-jobs.js';
 
 /** Where `link` moves default folders, relative to the store. */
 export const ARCHIVE_DIR = 'archive/default-folders';
@@ -242,9 +242,25 @@ function sessionRefusals(repo: RepoFacts, opts: PlanOptions): string[] {
       `link cannot tell whether another session is open in the repo: ${sessions.issues.join(' ')} Fix the listing, or run again with --force: ${retry}`,
     ];
   }
-  if (sessions.others.length === 0) return [];
+  const open =
+    sessions.others.length === 0
+      ? []
+      : [
+          `Other sessions are open in the repo: ${sessions.others.map(describeJob).join('; ')}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`,
+        ];
+  return [...open, ...unreadableRefusals(sessions.unreadable, retry)];
+}
+
+// The listing ran, but a row's pid is not a number, so only --force gets past it.
+function unreadableRefusals(rows: Job[], retry: string): string[] {
+  if (rows.length === 0) return [];
+  const one = rows.length === 1;
+  const which = one ? 'that session is' : 'those sessions are';
+  const close = one
+    ? 'If it is open, close it.'
+    : 'Close each one that is open.';
   return [
-    `Other sessions are open in the repo: ${sessions.others.map(describeJob).join('; ')}. Each keeps writing to ${repo.defaultFolder.folder} until it restarts. Close them and run link again, or run again with --force: ${retry}`,
+    `${LISTING} gives a pid that is not a number for ${rows.map(describeJob).join('; ')}, so link cannot tell whether ${which} open. ${close} Then run again with --force: ${retry}`,
   ];
 }
 
@@ -473,13 +489,17 @@ function sessionNotes(sessions: SessionFacts, folder: string): string[] {
     (job) =>
       `Passed over with --force: ${describeJob(job)}. It keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`,
   );
+  const unread = sessions.unreadable.map(
+    (job) =>
+      `Passed over with --force: ${describeJob(job)}, whose pid is not a number. If it is open, it keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`,
+  );
   const self =
     sessions.self === undefined
       ? []
       : [
           `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`,
         ];
-  return [...forced, ...self];
+  return [...forced, ...unread, ...self];
 }
 
 // A commit-only plan never refuses over sessions, so `--force` says nothing about them here, and a session may have started after the key was set.
@@ -493,13 +513,17 @@ function rerunSessionNotes(sessions: SessionFacts, folder: string): string[] {
     (job) =>
       `Open in the repo: ${describeJob(job)}. If it started before the key was set, it keeps writing to ${folder} until it restarts. Run link again afterwards to archive what it wrote.`,
   );
+  const unread = sessions.unreadable.map(
+    (job) =>
+      `${LISTING} gives a pid that is not a number for ${describeJob(job)}. If it is open and started before the key was set, it keeps writing to ${folder} until it restarts. Run link again afterwards to archive what it wrote.`,
+  );
   const self =
     sessions.self === undefined
       ? []
       : [
           `If this session (${describeJob(sessions.self)}) started before the key was set, it keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`,
         ];
-  return [...others, ...self];
+  return [...others, ...unread, ...self];
 }
 
 function userSettingsNotes(facts: LinkFacts): string[] {

@@ -16,7 +16,7 @@ const OptionalText = v.nullish(v.string());
 // A pid of another type parses to `pidMalformed`, not to a failed listing: no
 // caller but `sessionsInRepo` reads a pid, and a dispatch must not fail on it.
 // `link` treats a malformed pid on an in-repo row as "cannot tell" (see
-// `sessionFacts` in memory-link-facts.ts).
+// `sessionsInRepo` in memory-sessions.ts).
 const RawPid = v.optional(v.unknown());
 
 const isMalformedPid = (pid: unknown): boolean =>
