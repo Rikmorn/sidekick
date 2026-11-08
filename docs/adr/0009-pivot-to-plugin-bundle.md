@@ -10,6 +10,8 @@
 
 > **Amended 2026-11-01 (#271):** §Decision 3 has a second case. sidekick writes only what it owns, shown by a prefix, a namespace, or a marker. In a repo's gitignored `.claude/settings.local.json` it owns the one `autoMemoryDirectory` key that a store marker proves it wrote, and it may change or remove that key. ADR-0013 records it. The installer's `sk-*.md` rule is unchanged.
 
+> **Amended 2026-11-08 (#271, #324):** §Decision 3's "sidekick writes only what it owns" gains two writes on what sidekick replaces: `link`'s archive of Claude Code's default memory folder, and `sidekick worktree move`'s deletion of Claude Code's branch for the same worktree. ADR-0013's amendment of that date records the ruling.
+
 **Status:** Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002; parks the eval, knowledge-layer, and measurement programmes of ADR-0006, ADR-0007, and ADR-0008. Issue #93, milestone R5.
 
 ## Context

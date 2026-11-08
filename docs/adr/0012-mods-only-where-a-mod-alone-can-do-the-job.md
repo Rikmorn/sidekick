@@ -1,5 +1,7 @@
 # ADR-0012 — Mods only where a mod alone can do the job
 
+> **Amended 2026-11-08 (#295, #274):** ADR-0010's Decision 2, which this ADR bounds to settings hooks, now lets a settings hook act, when the act is bounded in time and never fails or denies the call. ADR-0010's amendment of that date records the ruling, and names the two hooks that act.
+
 > **Amended 2026-10-27 (#208):** The operator ruled at R9's close that the gauge's one environment write sits on the first rung. The gauge sets `SIDEKICK_CONTEXT_LIMIT` with `$.env.set` for sidekick's context monitor, and every later Bash child inherits it. §Decision's rungs do not name an environment write. Any other variable a mod sets needs its own ruling, since a variable can change what a tool does.
 
 > **Amended 2026-10-22 (#245):** The operator ruled the name mod in on 2026-10-22, on a rung §Decision's four do not name. When a main's name would not survive `←`, the mod renames its own session once, to the name the session already shows. Claude Code then tells the model that the operator named the session ([the main and worker probes, §Freezing a derived name (R1)](../research/control-centre/2026-10-22-main-and-worker-probes.md#freezing-a-derived-name-r1)). The mod never approves a call, and each of its hooks fails open.
