@@ -124,9 +124,7 @@ function refusalsOf(facts: LinkFacts, opts: PlanOptions): string[] {
     ...('issue' in facts.storePending
       ? [pendingRefusal(facts.storePending.issue)]
       : []),
-    ...(facts.overrideIssue === undefined
-      ? []
-      : [`${facts.overrideIssue}. Unset it and run link again.`]),
+    ...(facts.overrideIssue === undefined ? [] : [facts.overrideIssue]),
     ...facts.nameIssues.map(
       (issue) => `${issue}; choose another with --family or --name.`,
     ),
@@ -315,9 +313,10 @@ function actionsOf(ready: Ready, facts: LinkFacts): LinkAction[] {
 }
 
 // The store's own commit comes first, as the store's first commit would have.
+// `createStore` also finishes a creation that stopped part-way.
 function storeActions(ready: Ready, facts: LinkFacts): LinkAction[] {
   const { kind } = facts.storeState;
-  if (kind === 'absent' || kind === 'empty') {
+  if (kind === 'absent' || kind === 'empty' || kind === 'unfinished') {
     return [{ kind: 'createStore', store: facts.store }];
   }
   return ready.storePending.length > 0

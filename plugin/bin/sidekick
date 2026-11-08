@@ -2303,23 +2303,25 @@ var messageOf = (error) => error instanceof Error ? error.message : String(error
 var defaultOwned = (target) => fs8.statSync(target).uid === process.getuid?.();
 function checkoutIssue2(target, repo, home, owned = defaultOwned) {
   if (path9.basename(repo.commonDir) !== ".git") {
-    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout`;
+    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout; sidekick cannot link such a repo, so raise a sidekick issue if you need one linked`;
   }
   const root = fs8.realpathSync(repo.top);
   if (root === physical(home)) {
-    return `${root} is the home folder, which Claude Code does not treat as a repo root`;
+    return `${root} is the home folder, which Claude Code does not treat as a repo root; run the command on a path inside another repo`;
   }
   const unowned = [root, path9.join(root, ".git"), path9.join(root, ".claude")].filter((entry) => entry !== path9.join(root, ".claude") || fs8.existsSync(entry)).find((entry) => !owned(entry));
   if (unowned !== undefined) {
-    return `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}`;
+    return `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}; change the owner of ${unowned} to you, then run the command again`;
   }
   return;
 }
 function mainCheckout(target, runGit, home, owned = defaultOwned) {
   const found = findRepo(runGit, target);
   if (found.repo === undefined) {
-    const why = found.warnings[0] ?? "it is not inside a git repository";
-    return { issue: `${target} has no main checkout: ${why}` };
+    const [warning] = found.warnings;
+    return {
+      issue: warning === undefined ? `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one` : `${target} has no main checkout: ${warning}; fix what git reports, then run the command again`
+    };
   }
   const { repo } = found;
   const issue = checkoutIssue2(target, repo, home, owned);
@@ -2364,21 +2366,24 @@ function readText(file) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       return { text: "" };
     }
-    return { issue: `${file} cannot be read: ${messageOf(error)}` };
+    return {
+      issue: `${file} cannot be read: ${messageOf(error)}; make it a readable file and run the command again`
+    };
   }
 }
 function gitRefusal(root, runGit) {
   const tracked = runGit("git", ["ls-files", "--error-unmatch", "--", SETTINGS_GIT_PATH], root);
   if (tracked.code === 0) {
-    return `${SETTINGS_GIT_PATH} is tracked by git, so a key written there would reach the repo's history. Untrack it first with: git -C ${shellQuote(root)} rm --cached -- ${SETTINGS_GIT_PATH}`;
+    return `${SETTINGS_GIT_PATH} is tracked by git, so a key written there would reach the repo's history. In the main checkout, ${shellQuote(root)}, untrack it with: git rm --cached -- ${SETTINGS_GIT_PATH}`;
   }
   const ignored = runGit("git", ["check-ignore", "-q", "--", SETTINGS_GIT_PATH], root);
   if (ignored.code === 0)
     return;
   if (ignored.code === 1) {
-    return `git does not ignore ${SETTINGS_GIT_PATH}, so a key written there would show up as a change. Add this line to ${shellQuote(path9.join(root, ".gitignore"))}: ${SETTINGS_GIT_PATH}`;
+    return `git does not ignore ${SETTINGS_GIT_PATH}, so a key written there would show up as a change. In the main checkout, add this line to ${shellQuote(path9.join(root, ".gitignore"))}: ${SETTINGS_GIT_PATH}`;
   }
-  return `git check-ignore failed in ${root}: ${ignored.stderr.trim()}`;
+  const detail = ignored.stderr.trim() || `exit code ${ignored.code}`;
+  return `git check-ignore failed in ${root}: ${detail}. Fix what git reports there, then run the command again`;
 }
 function settingsState(root, runGit) {
   const file = path9.join(root, SETTINGS_REL);
@@ -2426,7 +2431,9 @@ function resolveFile(file) {
     return { real: fs8.realpathSync(file) };
   } catch (error) {
     if (!(error instanceof Error && ("code" in error) && error.code === "ENOENT")) {
-      return { issue: `${file} cannot be resolved: ${messageOf(error)}` };
+      return {
+        issue: `${file} cannot be resolved: ${messageOf(error)}; fix or remove the link, or make the folders on its path readable, then run the command again`
+      };
     }
   }
   const isLink = (() => {
@@ -2507,7 +2514,7 @@ function replaceIfUnchanged(file, text, base, afterWrite) {
       fs8.rmSync(temp, { force: true });
     return {
       ok: false,
-      issue: `${file} cannot be written: ${messageOf(error)}`
+      issue: `${file} cannot be written: ${messageOf(error)}; check that ${path9.dirname(file)} is writable, then run the command again`
     };
   }
 }
@@ -2535,11 +2542,13 @@ var KEEP_FILE = ".gitkeep";
 var IGNORE_FILE = ".gitignore";
 var IGNORE_CONTENT = `.DS_Store
 `;
+var GIT_FOLDER = ".git";
 var CREATION_PATHS = [
   README_FILE,
   IGNORE_FILE,
   ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`)
 ];
+var CREATION_FOLDERS = new Set(CREATION_PATHS.filter((rel) => rel.includes("/")).map((rel) => path10.posix.dirname(rel)));
 var CREATION_MESSAGE = "chore: create the memory store";
 function storeRoot(env, home) {
   const override = env.SIDEKICK_MEMORY_STORE;
@@ -2622,13 +2631,44 @@ function storeState(store, runGit) {
   }
   if (fs9.readdirSync(store).length === 0)
     return { kind: "empty" };
-  if (isWorkTreeTop(store, runGit) && fs9.existsSync(path10.join(store, README_FILE))) {
+  const top = isWorkTreeTop(store, runGit);
+  if (top && holdsOnlyCreation(store) && isFreshInit(store, runGit)) {
+    return { kind: "unfinished" };
+  }
+  if (top && fs9.existsSync(path10.join(store, README_FILE))) {
     return { kind: "store" };
   }
   return {
     kind: "foreign",
     issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`
   };
+}
+function holdsOnlyCreation(store) {
+  const dotGit = fs9.lstatSync(path10.join(store, GIT_FOLDER), {
+    throwIfNoEntry: false
+  });
+  return dotGit?.isDirectory() === true && onlyCreationIn(store, "");
+}
+function onlyCreationIn(store, rel) {
+  return fs9.readdirSync(path10.join(store, rel), { withFileTypes: true }).every((entry) => {
+    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
+    if (entry.isDirectory()) {
+      return child === GIT_FOLDER || CREATION_FOLDERS.has(child) && onlyCreationIn(store, child);
+    }
+    return entry.isFile() && CREATION_PATHS.includes(child);
+  });
+}
+var NOT_A_COMMIT = 1;
+function isFreshInit(store, runGit) {
+  const git = (...args) => runGit("git", ["--no-optional-locks", ...args], store);
+  const head = git("rev-parse", "--verify", "--quiet", "HEAD");
+  if (head.code !== NOT_A_COMMIT)
+    return false;
+  const refs = git("for-each-ref", "--count=1");
+  if (refs.code !== 0 || refs.stdout !== "")
+    return false;
+  const index = git("ls-files", "-z");
+  return index.code === 0 && index.stdout.split("\x00").filter((rel) => rel !== "").every((rel) => CREATION_PATHS.includes(rel));
 }
 function gitIssue(args, r) {
   const detail = r.stderr.trim() || r.stdout.trim() || "no output";
@@ -2653,19 +2693,31 @@ function createStore(store, runGit) {
   if (state.kind === "store") {
     return { ok: false, issue: `${store} is already a store` };
   }
-  fs9.mkdirSync(store, { recursive: true });
-  const init = runGit("git", ["init"], store);
-  if (init.code !== 0)
-    return { ok: false, issue: gitIssue(["init"], init) };
-  const paths = [...CREATION_PATHS];
-  fs9.writeFileSync(path10.join(store, README_FILE), STORE_README);
-  fs9.writeFileSync(path10.join(store, IGNORE_FILE), IGNORE_CONTENT);
-  for (const name of RESERVED_NAMES) {
-    fs9.mkdirSync(path10.join(store, name), { recursive: true });
-    fs9.writeFileSync(path10.join(store, name, KEEP_FILE), "");
+  if (state.kind !== "unfinished") {
+    fs9.mkdirSync(store, { recursive: true });
+    const init = runGit("git", ["init"], store);
+    if (init.code !== 0)
+      return { ok: false, issue: gitIssue(["init"], init) };
   }
+  const paths = [...CREATION_PATHS];
+  for (const rel of paths)
+    writeIfAbsent(store, rel);
   const committed = commitPaths(store, paths, CREATION_MESSAGE, runGit);
   return committed.ok ? { ok: true, paths } : committed;
+}
+function creationContent(rel) {
+  if (rel === README_FILE)
+    return STORE_README;
+  if (rel === IGNORE_FILE)
+    return IGNORE_CONTENT;
+  return "";
+}
+function writeIfAbsent(store, rel) {
+  const file = path10.join(store, ...rel.split("/"));
+  if (fs9.lstatSync(file, { throwIfNoEntry: false })?.isFile() === true)
+    return;
+  fs9.mkdirSync(path10.dirname(file), { recursive: true });
+  fs9.writeFileSync(file, creationContent(rel), { flag: "wx" });
 }
 var STORE_README = `# Memory store
 
@@ -4568,7 +4620,7 @@ function refusalsOf(facts, opts) {
   const all = [
     ...storeRefusals(facts.storeState),
     ..."issue" in facts.storePending ? [pendingRefusal(facts.storePending.issue)] : [],
-    ...facts.overrideIssue === undefined ? [] : [`${facts.overrideIssue}. Unset it and run link again.`],
+    ...facts.overrideIssue === undefined ? [] : [facts.overrideIssue],
     ...facts.nameIssues.map((issue) => `${issue}; choose another with --family or --name.`),
     ...repo.kind === "refused" ? [repo.issue] : repoRefusals(repo, opts)
   ];
@@ -4725,7 +4777,7 @@ function actionsOf(ready, facts) {
 }
 function storeActions(ready, facts) {
   const { kind } = facts.storeState;
-  if (kind === "absent" || kind === "empty") {
+  if (kind === "absent" || kind === "empty" || kind === "unfinished") {
     return [{ kind: "createStore", store: facts.store }];
   }
   return ready.storePending.length > 0 ? [{ kind: "finishStore", store: facts.store, paths: ready.storePending }] : [];
@@ -4859,13 +4911,13 @@ function defaultMemoryFolder(root, configDir) {
 }
 function overrideIssue(env) {
   if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
-    return "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere";
+    return "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere. Unset CLAUDE_COWORK_MEMORY_PATH_OVERRIDE and run link again.";
   }
   if (env.CLAUDE_CODE_REMOTE_MEMORY_DIR !== undefined) {
-    return "CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere";
+    return "CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere. Unset CLAUDE_CODE_REMOTE_MEMORY_DIR and run link again.";
   }
   if (env.CLAUDE_CODE_PROJECT_DIR_NAME !== undefined && env.CLAUDE_CONFIG_DIR !== undefined) {
-    return "CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently";
+    return "CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently. Unset CLAUDE_CODE_PROJECT_DIR_NAME and run link again.";
   }
   return;
 }
@@ -7922,6 +7974,7 @@ function runLink(opts, deps, out, err) {
   const gathered = gather2(opts, deps);
   if ("issue" in gathered) {
     err(`link could not read what it needs, and wrote nothing: ${gathered.issue}`);
+    err("Fix that, then run the same command again.");
     return 1;
   }
   const plan = planLink(gathered.facts, opts);

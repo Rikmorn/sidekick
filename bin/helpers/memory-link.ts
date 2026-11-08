@@ -49,6 +49,7 @@ export function runLink(
     err(
       `link could not read what it needs, and wrote nothing: ${gathered.issue}`,
     );
+    err('Fix that, then run the same command again.');
     return 1;
   }
   const plan = planLink(gathered.facts, opts);

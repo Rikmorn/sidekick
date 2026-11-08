@@ -33,8 +33,9 @@ const defaultOwned = (target: string): boolean =>
   fs.statSync(target).uid === process.getuid?.();
 
 /**
- * Why Claude Code does not read the settings under `repo`'s main checkout, or
- * undefined when it does. `target` is the path the caller asked about.
+ * Why Claude Code does not read the settings under `repo`'s main checkout,
+ * with the way forward, or undefined when it does. `target` is the path the
+ * caller asked about.
  */
 export function checkoutIssue(
   target: string,
@@ -43,11 +44,11 @@ export function checkoutIssue(
   owned: (target: string) => boolean = defaultOwned,
 ): string | undefined {
   if (path.basename(repo.commonDir) !== '.git') {
-    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout`;
+    return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git, so Claude Code does not find its main checkout; sidekick cannot link such a repo, so raise a sidekick issue if you need one linked`;
   }
   const root = fs.realpathSync(repo.top);
   if (root === physical(home)) {
-    return `${root} is the home folder, which Claude Code does not treat as a repo root`;
+    return `${root} is the home folder, which Claude Code does not treat as a repo root; run the command on a path inside another repo`;
   }
   const unowned = [root, path.join(root, '.git'), path.join(root, '.claude')]
     .filter(
@@ -55,12 +56,12 @@ export function checkoutIssue(
     )
     .find((entry) => !owned(entry));
   if (unowned !== undefined) {
-    return `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}`;
+    return `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}; change the owner of ${unowned} to you, then run the command again`;
   }
   return undefined;
 }
 
-/** The main checkout's real root and every checkout of the repo, or why `path` has none. */
+/** The main checkout's real root and every checkout of the repo, or why `path` has none and the way forward. */
 export function mainCheckout(
   target: string,
   runGit: Runner,
@@ -69,8 +70,14 @@ export function mainCheckout(
 ): { root: string; checkouts: string[] } | { issue: string } {
   const found = findRepo(runGit, target);
   if (found.repo === undefined) {
-    const why = found.warnings[0] ?? 'it is not inside a git repository';
-    return { issue: `${target} has no main checkout: ${why}` };
+    // findRepo warns only when git failed inside a repository.
+    const [warning] = found.warnings;
+    return {
+      issue:
+        warning === undefined
+          ? `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one`
+          : `${target} has no main checkout: ${warning}; fix what git reports, then run the command again`,
+    };
   }
   const { repo } = found;
   const issue = checkoutIssue(target, repo, home, owned);
@@ -122,7 +129,9 @@ function readText(file: string): Read {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       return { text: '' };
     }
-    return { issue: `${file} cannot be read: ${messageOf(error)}` };
+    return {
+      issue: `${file} cannot be read: ${messageOf(error)}; make it a readable file and run the command again`,
+    };
   }
 }
 
@@ -138,6 +147,9 @@ export type SettingsState =
     }
   | { kind: 'refused'; issue: string };
 
+// Each way forward names the main checkout `root`, where its step must run: a
+// worktree's `git rm --cached` changes only that worktree's index and branch,
+// and a worktree session cannot edit the main checkout's files.
 function gitRefusal(root: string, runGit: Runner): string | undefined {
   const tracked = runGit(
     'git',
@@ -145,7 +157,7 @@ function gitRefusal(root: string, runGit: Runner): string | undefined {
     root,
   );
   if (tracked.code === 0) {
-    return `${SETTINGS_GIT_PATH} is tracked by git, so a key written there would reach the repo's history. Untrack it first with: git -C ${shellQuote(root)} rm --cached -- ${SETTINGS_GIT_PATH}`;
+    return `${SETTINGS_GIT_PATH} is tracked by git, so a key written there would reach the repo's history. In the main checkout, ${shellQuote(root)}, untrack it with: git rm --cached -- ${SETTINGS_GIT_PATH}`;
   }
   const ignored = runGit(
     'git',
@@ -154,9 +166,10 @@ function gitRefusal(root: string, runGit: Runner): string | undefined {
   );
   if (ignored.code === 0) return undefined;
   if (ignored.code === 1) {
-    return `git does not ignore ${SETTINGS_GIT_PATH}, so a key written there would show up as a change. Add this line to ${shellQuote(path.join(root, '.gitignore'))}: ${SETTINGS_GIT_PATH}`;
+    return `git does not ignore ${SETTINGS_GIT_PATH}, so a key written there would show up as a change. In the main checkout, add this line to ${shellQuote(path.join(root, '.gitignore'))}: ${SETTINGS_GIT_PATH}`;
   }
-  return `git check-ignore failed in ${root}: ${ignored.stderr.trim()}`;
+  const detail = ignored.stderr.trim() || `exit code ${ignored.code}`;
+  return `git check-ignore failed in ${root}: ${detail}. Fix what git reports there, then run the command again`;
 }
 
 /** The settings file at `root`, read and checked: untracked, ignored, a JSON object. */
@@ -220,7 +233,9 @@ function resolveFile(file: string): Resolved {
     if (
       !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
     ) {
-      return { issue: `${file} cannot be resolved: ${messageOf(error)}` };
+      return {
+        issue: `${file} cannot be resolved: ${messageOf(error)}; fix or remove the link, or make the folders on its path readable, then run the command again`,
+      };
     }
   }
   const isLink = (() => {
@@ -317,7 +332,7 @@ function replaceIfUnchanged(
     if (temp !== undefined) fs.rmSync(temp, { force: true });
     return {
       ok: false,
-      issue: `${file} cannot be written: ${messageOf(error)}`,
+      issue: `${file} cannot be written: ${messageOf(error)}; check that ${path.dirname(file)} is writable, then run the command again`,
     };
   }
 }

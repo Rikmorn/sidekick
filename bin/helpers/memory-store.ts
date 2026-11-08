@@ -20,6 +20,7 @@ const README_FILE = 'README.md';
 const KEEP_FILE = '.gitkeep';
 const IGNORE_FILE = '.gitignore';
 const IGNORE_CONTENT = '.DS_Store\n';
+const GIT_FOLDER = '.git';
 
 /** The store's own files, which its first commit takes. */
 export const CREATION_PATHS: readonly string[] = [
@@ -27,6 +28,13 @@ export const CREATION_PATHS: readonly string[] = [
   IGNORE_FILE,
   ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`),
 ];
+
+// The folders that hold a creation path, slash-separated.
+const CREATION_FOLDERS: ReadonlySet<string> = new Set(
+  CREATION_PATHS.filter((rel) => rel.includes('/')).map((rel) =>
+    path.posix.dirname(rel),
+  ),
+);
 
 /** The message of the store's first commit. */
 export const CREATION_MESSAGE = 'chore: create the memory store';
@@ -133,6 +141,8 @@ export function findMarkers(store: string): FoundMarker[] {
 export type StoreState =
   | { kind: 'absent' }
   | { kind: 'empty' }
+  /** What `createStore` leaves when it stops part-way, which it can finish. */
+  | { kind: 'unfinished' }
   | { kind: 'store' }
   | { kind: 'foreign'; issue: string };
 
@@ -151,9 +161,11 @@ export function isWorkTreeTop(store: string, runGit: Runner): boolean {
 }
 
 /**
- * What `store` is: absent, an empty folder, a store (a git work tree whose
- * top is `store` and which holds `README.md`), or foreign (a file, or a
- * non-empty folder that is not a store).
+ * What `store` is: absent, an empty folder, unfinished, a store (a git work
+ * tree whose top is `store` and which holds `README.md`), or foreign (a file,
+ * or a non-empty folder that is none of these). Unfinished is a `git init`
+ * that nothing has committed to, holding nothing but `CREATION_PATHS` beside
+ * its `.git` folder.
  */
 export function storeState(store: string, runGit: Runner): StoreState {
   if (!fs.existsSync(store)) return { kind: 'absent' };
@@ -161,16 +173,64 @@ export function storeState(store: string, runGit: Runner): StoreState {
     return { kind: 'foreign', issue: `${store} is a file, not a store folder` };
   }
   if (fs.readdirSync(store).length === 0) return { kind: 'empty' };
-  if (
-    isWorkTreeTop(store, runGit) &&
-    fs.existsSync(path.join(store, README_FILE))
-  ) {
+  const top = isWorkTreeTop(store, runGit);
+  if (top && holdsOnlyCreation(store) && isFreshInit(store, runGit)) {
+    return { kind: 'unfinished' };
+  }
+  if (top && fs.existsSync(path.join(store, README_FILE))) {
     return { kind: 'store' };
   }
   return {
     kind: 'foreign',
     issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`,
   };
+}
+
+// A `.git` folder, and beside it nothing but `CREATION_PATHS`, each a plain
+// file, and the plain folders that hold them. A link is neither.
+function holdsOnlyCreation(store: string): boolean {
+  const dotGit = fs.lstatSync(path.join(store, GIT_FOLDER), {
+    throwIfNoEntry: false,
+  });
+  return dotGit?.isDirectory() === true && onlyCreationIn(store, '');
+}
+
+function onlyCreationIn(store: string, rel: string): boolean {
+  return fs
+    .readdirSync(path.join(store, rel), { withFileTypes: true })
+    .every((entry) => {
+      const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        return (
+          child === GIT_FOLDER ||
+          (CREATION_FOLDERS.has(child) && onlyCreationIn(store, child))
+        );
+      }
+      return entry.isFile() && CREATION_PATHS.includes(child);
+    });
+}
+
+// `git rev-parse --verify --quiet` exits 1 when the name is no commit.
+const NOT_A_COMMIT = 1;
+
+// The repo `git init` made, with no commit since: no ref, a HEAD that names
+// no commit, and an index of nothing but `CREATION_PATHS`, as a failed first
+// commit leaves it.
+function isFreshInit(store: string, runGit: Runner): boolean {
+  const git = (...args: string[]) =>
+    runGit('git', ['--no-optional-locks', ...args], store);
+  const head = git('rev-parse', '--verify', '--quiet', 'HEAD');
+  if (head.code !== NOT_A_COMMIT) return false;
+  const refs = git('for-each-ref', '--count=1');
+  if (refs.code !== 0 || refs.stdout !== '') return false;
+  const index = git('ls-files', '-z');
+  return (
+    index.code === 0 &&
+    index.stdout
+      .split('\0')
+      .filter((rel) => rel !== '')
+      .every((rel) => CREATION_PATHS.includes(rel))
+  );
 }
 
 export type Outcome = { ok: true } | { ok: false; issue: string };
@@ -207,8 +267,11 @@ export function commitPaths(
 
 /**
  * Creates the store in an absent or empty folder: `git init`, the README,
- * `.gitignore`, `sources/.gitkeep`, `archive/.gitkeep`, then one commit of exactly those
- * paths. Any other folder, or a file, refuses and is left as it was.
+ * `.gitignore`, `sources/.gitkeep`, `archive/.gitkeep`, then one commit of
+ * exactly those paths. In an unfinished folder, which an earlier call left
+ * when it stopped part-way, it writes only the paths still missing, keeps
+ * each one there as it is, and makes that commit. Any other folder, or a
+ * file, refuses and is left as it was.
  */
 export function createStore(
   store: string,
@@ -219,18 +282,30 @@ export function createStore(
   if (state.kind === 'store') {
     return { ok: false, issue: `${store} is already a store` };
   }
-  fs.mkdirSync(store, { recursive: true });
-  const init = runGit('git', ['init'], store);
-  if (init.code !== 0) return { ok: false, issue: gitIssue(['init'], init) };
-  const paths = [...CREATION_PATHS];
-  fs.writeFileSync(path.join(store, README_FILE), STORE_README);
-  fs.writeFileSync(path.join(store, IGNORE_FILE), IGNORE_CONTENT);
-  for (const name of RESERVED_NAMES) {
-    fs.mkdirSync(path.join(store, name), { recursive: true });
-    fs.writeFileSync(path.join(store, name, KEEP_FILE), '');
+  if (state.kind !== 'unfinished') {
+    fs.mkdirSync(store, { recursive: true });
+    const init = runGit('git', ['init'], store);
+    if (init.code !== 0) return { ok: false, issue: gitIssue(['init'], init) };
   }
+  const paths = [...CREATION_PATHS];
+  for (const rel of paths) writeIfAbsent(store, rel);
   const committed = commitPaths(store, paths, CREATION_MESSAGE, runGit);
   return committed.ok ? { ok: true, paths } : committed;
+}
+
+// What `createStore` writes at each of `CREATION_PATHS`.
+function creationContent(rel: string): string {
+  if (rel === README_FILE) return STORE_README;
+  if (rel === IGNORE_FILE) return IGNORE_CONTENT;
+  return '';
+}
+
+// A plain file already at `rel` stays; anything else there fails the write.
+function writeIfAbsent(store: string, rel: string): void {
+  const file = path.join(store, ...rel.split('/'));
+  if (fs.lstatSync(file, { throwIfNoEntry: false })?.isFile() === true) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, creationContent(rel), { flag: 'wx' });
 }
 
 /** The README written once, when the store is created. */

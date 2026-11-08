@@ -56,19 +56,19 @@ export function defaultMemoryFolder(root: string, configDir: string): string {
   return path.join(configDir, 'projects', projectKey(root), 'memory');
 }
 
-/** Why the default folder cannot be trusted in `env`, or undefined when it can. */
+/** Why the default folder cannot be trusted in `env`, naming the variable to unset, or undefined when it can. */
 export function overrideIssue(env: NodeJS.ProcessEnv): string | undefined {
   if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
-    return 'CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere';
+    return 'CLAUDE_COWORK_MEMORY_PATH_OVERRIDE is set, so Claude Code keeps memory elsewhere. Unset CLAUDE_COWORK_MEMORY_PATH_OVERRIDE and run link again.';
   }
   if (env.CLAUDE_CODE_REMOTE_MEMORY_DIR !== undefined) {
-    return 'CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere';
+    return 'CLAUDE_CODE_REMOTE_MEMORY_DIR is set, so Claude Code keeps memory elsewhere. Unset CLAUDE_CODE_REMOTE_MEMORY_DIR and run link again.';
   }
   if (
     env.CLAUDE_CODE_PROJECT_DIR_NAME !== undefined &&
     env.CLAUDE_CONFIG_DIR !== undefined
   ) {
-    return 'CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently';
+    return 'CLAUDE_CODE_PROJECT_DIR_NAME is set together with CLAUDE_CONFIG_DIR, so Claude Code names the project folder differently. Unset CLAUDE_CODE_PROJECT_DIR_NAME and run link again.';
   }
   return undefined;
 }

@@ -48,6 +48,122 @@ function git(cwd: string, ...args: string[]): string {
   return execRunner('git', args, cwd).stdout;
 }
 
+// What `createStore` writes at each of its paths; a `.gitkeep` is empty.
+const CREATION_CONTENT: Record<string, string> = {
+  'README.md': STORE_README,
+  '.gitignore': '.DS_Store\n',
+};
+
+/** What `createStore` leaves when it stops after `git init` and the paths in `written`. */
+function stoppedCreation(store: string, written: readonly string[]): void {
+  fs.mkdirSync(store, { recursive: true });
+  git(store, 'init', '-q');
+  for (const rel of written) {
+    const file = path.join(store, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, CREATION_CONTENT[rel] ?? '');
+  }
+}
+
+// Every path under `root`, `.git` included, with its bytes; folders and links as entries too.
+function tree(root: string): Map<string, string> {
+  const entries = new Map<string, string>();
+  const visit = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isSymbolicLink()) entries.set(full, fs.readlinkSync(full));
+      else if (entry.isDirectory()) {
+        entries.set(full, 'dir');
+        visit(full);
+      } else entries.set(full, fs.readFileSync(full).toString('base64'));
+    }
+  };
+  visit(root);
+  return entries;
+}
+
+// Stopped creations that hold something else, or whose repo is not a fresh `git init`.
+const NOT_FRESH: [string, (store: string) => void][] = [
+  [
+    'another file',
+    (store) => {
+      stoppedCreation(store, []);
+      fs.writeFileSync(path.join(store, 'notes.md'), 'mine\n');
+    },
+  ],
+  [
+    'another file beside the README',
+    (store) => {
+      stoppedCreation(store, ['README.md']);
+      fs.writeFileSync(path.join(store, 'notes.md'), 'mine\n');
+    },
+  ],
+  [
+    'another file inside a reserved folder',
+    (store) => {
+      stoppedCreation(store, ['README.md', 'sources/.gitkeep']);
+      fs.writeFileSync(path.join(store, 'sources', 'notes.md'), 'mine\n');
+    },
+  ],
+  [
+    'a file at a reserved folder name',
+    (store) => {
+      stoppedCreation(store, ['README.md']);
+      fs.writeFileSync(path.join(store, 'sources'), 'mine\n');
+    },
+  ],
+  [
+    'a README that is a link',
+    (store) => {
+      stoppedCreation(store, []);
+      const elsewhere = path.join(tmp, 'elsewhere.md');
+      fs.writeFileSync(elsewhere, 'mine\n');
+      fs.symlinkSync(elsewhere, path.join(store, 'README.md'));
+    },
+  ],
+  [
+    'a repo with a commit',
+    (store) => {
+      stoppedCreation(store, ['README.md']);
+      git(store, 'commit', '-q', '--allow-empty', '-m', 'mine');
+    },
+  ],
+  [
+    'a repo whose HEAD has no commit but another branch has',
+    (store) => {
+      stoppedCreation(store, []);
+      git(store, 'commit', '-q', '--allow-empty', '-m', 'mine');
+      git(store, 'checkout', '-q', '--orphan', 'other');
+    },
+  ],
+  [
+    'an index holding another path',
+    (store) => {
+      stoppedCreation(store, ['README.md']);
+      fs.writeFileSync(path.join(store, 'notes.md'), 'mine\n');
+      git(store, 'add', '--', 'notes.md');
+      fs.rmSync(path.join(store, 'notes.md'));
+    },
+  ],
+  [
+    'a .git that is a link to a fresh git init elsewhere',
+    (store) => {
+      const elsewhere = path.join(tmp, 'elsewhere');
+      stoppedCreation(elsewhere, []);
+      fs.mkdirSync(store);
+      fs.symlinkSync(path.join(elsewhere, '.git'), path.join(store, '.git'));
+    },
+  ],
+  [
+    'a .git file rather than a folder',
+    (store) => {
+      fs.mkdirSync(store);
+      git(store, 'init', '-q', `--separate-git-dir=${path.join(tmp, 'git')}`);
+      fs.writeFileSync(path.join(store, 'README.md'), STORE_README);
+    },
+  ],
+];
+
 describe('storeRoot', () => {
   test('uses SIDEKICK_MEMORY_STORE when set and non-empty', () => {
     expect(storeRoot({ SIDEKICK_MEMORY_STORE: '/x/store' }, '/home/me')).toBe(
@@ -176,6 +292,32 @@ describe('storeState', () => {
     fs.writeFileSync(path.join(inner, 'f'), 'x');
     expect(storeState(inner, execRunner).kind).toBe('foreign');
   });
+
+  test.each([
+    0,
+    1,
+    2,
+    CREATION_PATHS.length,
+  ])('a git init with no commit and the first %i of the store files, nothing else, is unfinished', (count) => {
+    const store = path.join(tmp, 'store');
+    stoppedCreation(store, CREATION_PATHS.slice(0, count));
+    expect(storeState(store, execRunner)).toEqual({ kind: 'unfinished' });
+  });
+
+  test('a creation whose commit failed with its files staged is unfinished', () => {
+    const store = path.join(tmp, 'store');
+    stoppedCreation(store, CREATION_PATHS);
+    git(store, 'add', '--', ...CREATION_PATHS);
+    expect(storeState(store, execRunner)).toEqual({ kind: 'unfinished' });
+  });
+
+  test.each(
+    NOT_FRESH,
+  )('a stopped creation with %s is not unfinished', (_name, make) => {
+    const store = path.join(tmp, 'store');
+    make(store);
+    expect(storeState(store, execRunner).kind).not.toBe('unfinished');
+  });
 });
 
 describe('createStore', () => {
@@ -239,6 +381,54 @@ describe('createStore', () => {
     const file = path.join(tmp, 'keep');
     expect(createStore(file, execRunner).ok).toBe(false);
     expect(fs.readFileSync(file, 'utf-8')).toBe('x');
+  });
+
+  test.each([
+    0,
+    1,
+    3,
+    CREATION_PATHS.length,
+  ])('finishes a creation that stopped after git init and %i of its files: writes the rest, then one commit of exactly its paths', (count) => {
+    const store = path.join(tmp, 'store');
+    stoppedCreation(store, CREATION_PATHS.slice(0, count));
+    expect(createStore(store, execRunner)).toEqual({
+      ok: true,
+      paths: [...CREATION_PATHS],
+    });
+    expect(git(store, 'rev-list', '--count', 'HEAD').trim()).toBe('1');
+    const files = git(store, 'show', '--name-only', '--format=', 'HEAD')
+      .trim()
+      .split('\n')
+      .sort();
+    expect(files).toEqual([...CREATION_PATHS].sort());
+    for (const rel of CREATION_PATHS) {
+      expect(fs.readFileSync(path.join(store, rel), 'utf-8')).toBe(
+        CREATION_CONTENT[rel] ?? '',
+      );
+    }
+    expect(git(store, 'status', '--porcelain')).toBe('');
+    expect(storeState(store, execRunner)).toEqual({ kind: 'store' });
+  });
+
+  test('finishing keeps a store file already there as it is', () => {
+    const store = path.join(tmp, 'store');
+    stoppedCreation(store, []);
+    fs.writeFileSync(path.join(store, 'README.md'), 'a README cut short');
+    expect(createStore(store, execRunner).ok).toBe(true);
+    expect(fs.readFileSync(path.join(store, 'README.md'), 'utf-8')).toBe(
+      'a README cut short',
+    );
+    expect(git(store, 'show', 'HEAD:README.md')).toBe('a README cut short');
+  });
+
+  test.each(
+    NOT_FRESH,
+  )('refuses a stopped creation with %s, and leaves every path as it was', (_name, make) => {
+    const store = path.join(tmp, 'store');
+    make(store);
+    const before = tree(tmp);
+    expect(createStore(store, execRunner).ok).toBe(false);
+    expect(tree(tmp)).toEqual(before);
   });
 });
 

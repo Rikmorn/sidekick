@@ -81,6 +81,22 @@ describe('overrideIssue', () => {
     expect(issue).toContain('CLAUDE_CODE_PROJECT_DIR_NAME');
     expect(issue).toContain('CLAUDE_CONFIG_DIR');
   });
+
+  test.each([
+    [
+      { CLAUDE_COWORK_MEMORY_PATH_OVERRIDE: '/x' },
+      'CLAUDE_COWORK_MEMORY_PATH_OVERRIDE',
+    ],
+    [{ CLAUDE_CODE_REMOTE_MEMORY_DIR: '/x' }, 'CLAUDE_CODE_REMOTE_MEMORY_DIR'],
+    [
+      { CLAUDE_CODE_PROJECT_DIR_NAME: 'x', CLAUDE_CONFIG_DIR: '/c' },
+      'CLAUDE_CODE_PROJECT_DIR_NAME',
+    ],
+  ])('names the one variable to unset, by name', (env, variable) => {
+    expect(overrideIssue(env)).toEndWith(
+      `. Unset ${variable} and run link again.`,
+    );
+  });
 });
 
 describe('knownRoot', () => {

@@ -10,7 +10,7 @@ import {
   SETTINGS_KEY,
   settingsState,
 } from './memory-settings.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 
 const IDENTITY = {
   GIT_AUTHOR_NAME: 'test',
@@ -128,6 +128,32 @@ describe('mainCheckout', () => {
     const top = repo();
     expect('root' in mainCheckout(top, execRunner, tmp())).toBe(true);
   });
+
+  test('each refusal names a way forward', () => {
+    const outside = tmp();
+    expect(issueOf(mainCheckout(outside, execRunner, tmp(), mine))).toBe(
+      `${outside} has no main checkout: it is not inside a git repository; run the command on a path inside one`,
+    );
+    const top = repo();
+    const listFails: Runner = (cmd, args, cwd) =>
+      args[0] === 'worktree'
+        ? { code: 128, stdout: '', stderr: 'fatal: broken' }
+        : execRunner(cmd, args, cwd);
+    expect(issueOf(mainCheckout(top, listFails, tmp(), mine))).toEndWith(
+      '; fix what git reports, then run the command again',
+    );
+    const work = tmp();
+    git(work, 'init', '-q', `--separate-git-dir=${path.join(tmp(), 'g.git')}`);
+    expect(issueOf(mainCheckout(work, execRunner, tmp(), mine))).toEndWith(
+      '; sidekick cannot link such a repo, so raise a sidekick issue if you need one linked',
+    );
+    expect(issueOf(mainCheckout(top, execRunner, top, mine))).toEndWith(
+      '; run the command on a path inside another repo',
+    );
+    expect(issueOf(mainCheckout(top, execRunner, tmp(), notMine))).toEndWith(
+      `; change the owner of ${top} to you, then run the command again`,
+    );
+  });
 });
 
 describe('settingsState', () => {
@@ -166,18 +192,20 @@ describe('settingsState', () => {
     });
   });
 
-  test('refuses a file git does not ignore, naming the line to add', () => {
+  test('refuses a file git does not ignore, naming the line to add to the main checkout .gitignore', () => {
     const top = repo();
     writeSettings(top, '{}');
     const state = settingsState(top, execRunner);
     expect(state.kind).toBe('refused');
     if (state.kind === 'refused') {
-      expect(state.issue).toContain('.gitignore');
-      expect(state.issue).toContain(REL);
+      expect(state.issue).toContain(
+        `In the main checkout, add this line to '${top}/.gitignore': ${REL}`,
+      );
+      expect(state.issue.endsWith(`: ${REL}`)).toBe(true);
     }
   });
 
-  test('refuses a tracked file, naming how to untrack it with the path quoted', () => {
+  test('refuses a tracked file, with the untrack command to run in the main checkout, which a worktree cannot do', () => {
     const top = ignoringRepo();
     const file = writeSettings(top, '{}');
     git(top, 'add', '-f', file);
@@ -186,8 +214,40 @@ describe('settingsState', () => {
     expect(state.kind).toBe('refused');
     if (state.kind === 'refused') {
       expect(state.issue).toContain('tracked');
-      expect(state.issue).toContain('rm --cached');
+      expect(state.issue).toContain(
+        `In the main checkout, '${top}', untrack it with: git rm --cached -- ${REL}`,
+      );
+      expect(state.issue.endsWith(`git rm --cached -- ${REL}`)).toBe(true);
+      expect(state.issue).not.toContain('git -C');
     }
+  });
+
+  test('refuses when git check-ignore fails, with what git said and a way forward', () => {
+    const top = repo();
+    const runGit: Runner = (cmd, args, cwd) =>
+      args[0] === 'check-ignore'
+        ? { code: 128, stdout: '', stderr: 'fatal: index file corrupt\n' }
+        : execRunner(cmd, args, cwd);
+    const state = settingsState(top, runGit);
+    expect(state).toEqual({
+      kind: 'refused',
+      issue: `git check-ignore failed in ${top}: fatal: index file corrupt. Fix what git reports there, then run the command again`,
+    });
+    const silent: Runner = (cmd, args, cwd) =>
+      args[0] === 'check-ignore'
+        ? { code: 128, stdout: '', stderr: '' }
+        : execRunner(cmd, args, cwd);
+    expect(issueOf(settingsState(top, silent))).toContain('exit code 128');
+  });
+
+  test('refuses a settings file it cannot read, with a way forward', () => {
+    const top = ignoringRepo();
+    fs.mkdirSync(path.join(top, REL), { recursive: true });
+    const issue = issueOf(settingsState(top, execRunner));
+    expect(issue).toContain(`${path.join(top, REL)} cannot be read`);
+    expect(issue).toContain(
+      'make it a readable file and run the command again',
+    );
   });
 
   test('quotes the root in a printed command when it holds a space', () => {
@@ -355,7 +415,12 @@ describe('mergeKey', () => {
       }
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.issue).toContain('cannot be written');
+    if (!result.ok) {
+      expect(result.issue).toContain('cannot be written');
+      expect(result.issue).toEndWith(
+        `; check that ${folder} is writable, then run the command again`,
+      );
+    }
     expect(fs.readdirSync(folder)).toEqual(['settings.local.json']);
   });
 

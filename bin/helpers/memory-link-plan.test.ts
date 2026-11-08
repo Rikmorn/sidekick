@@ -194,6 +194,16 @@ describe('planLink: a first link', () => {
     expect(actionsOf(plan)[0]).toEqual({ kind: 'createStore', store: STORE });
   });
 
+  test('a store whose creation stopped part-way is created, then linked, as an absent one is', () => {
+    const plan = planLink(
+      facts({ storeState: { kind: 'unfinished' } }),
+      NO_FLAGS,
+    );
+    expect(actionsOf(plan)).toEqual(
+      actionsOf(planLink(facts({ storeState: { kind: 'absent' } }), NO_FLAGS)),
+    );
+  });
+
   test('a family puts the folder under it and names it in the commit', () => {
     const folder = '/s/store/fam/odin';
     const plan = planLink(
@@ -543,6 +553,12 @@ describe('planLink: refusals', () => {
 
   test('an override variable', () => {
     expect(refusals({ overrideIssue: 'X is set' })[0]).toContain('X is set');
+  });
+
+  test('an override variable is refused in its own words, which name the variable to unset', () => {
+    const issue =
+      'X is set, so Claude Code keeps memory elsewhere. Unset X and run link again.';
+    expect(refusals({ overrideIssue: issue })).toEqual([issue]);
   });
 
   test('a reserved or malformed family or folder name', () => {

@@ -10,7 +10,12 @@ import {
   moveFolder,
   runLink,
 } from './memory-link.js';
-import { CREATION_PATHS, createStore, writeMarker } from './memory-store.js';
+import {
+  CREATION_PATHS,
+  createStore,
+  STORE_README,
+  writeMarker,
+} from './memory-store.js';
 import { execRunner } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
 
@@ -371,6 +376,19 @@ describe('runLink: --dry-run', () => {
     }
   });
 
+  test('after a store creation that stopped part-way, prints its steps and leaves every folder byte-identical', () => {
+    const w = world();
+    fs.mkdirSync(w.store);
+    git(w.store, 'init', '-q');
+    const roots = [w.top, path.dirname(w.configDir), path.dirname(w.store)];
+    const before = snapshot(...roots);
+    const run = link(w, opts(w.top, { dryRun: true }));
+    expect(run.err).toEqual([]);
+    expect(run.code).toBe(0);
+    expect(run.out).toContain(`Would create the store at ${w.store}`);
+    expect(snapshot(...roots)).toEqual(before);
+  });
+
   test('a refusal under --dry-run prints it and exits 1', () => {
     const w = world({ env: { CLAUDE_CODE_REMOTE_MEMORY_DIR: '/r' } });
     const run = link(w, opts(w.top, { dryRun: true }));
@@ -478,6 +496,43 @@ describe('runLink: re-runs', () => {
     }
   });
 
+  test('a re-run after the store creation stopped right after git init finishes the store, then links', () => {
+    const w = world();
+    // The README write fails once git init has run, as on a full disk.
+    const stopsAfterInit: LinkDeps['runGit'] = (cmd, args, cwd) => {
+      const r = execRunner(cmd, args, cwd);
+      if (args[0] === 'init') fs.chmodSync(cwd, 0o555);
+      return r;
+    };
+    try {
+      const first = link(w, opts(w.top), { ...w.deps, runGit: stopsAfterInit });
+      expect(first.code).toBe(1);
+      expect(first.err[0]).toContain('create the store');
+      expect(first.err[0]).toContain('README.md');
+    } finally {
+      if (fs.existsSync(w.store)) fs.chmodSync(w.store, 0o755);
+    }
+    expect(fs.readdirSync(w.store)).toEqual(['.git']);
+    const again = link(w, opts(w.top));
+    expect(again.err).toEqual([]);
+    expect(again.code).toBe(0);
+    expectCreatedThenLinked(w);
+  });
+
+  test('a re-run after the store creation stopped once the README was written writes the rest of the store files', () => {
+    const w = world();
+    fs.mkdirSync(w.store);
+    git(w.store, 'init', '-q');
+    fs.writeFileSync(path.join(w.store, 'README.md'), STORE_README);
+    const again = link(w, opts(w.top));
+    expect(again.err).toEqual([]);
+    expect(again.code).toBe(0);
+    expectCreatedThenLinked(w);
+    expect(fs.readFileSync(path.join(w.store, '.gitignore'), 'utf-8')).toBe(
+      '.DS_Store\n',
+    );
+  });
+
   test('an existing store with no .gitignore is unaffected by a link', () => {
     const w = world();
     expect(createStore(w.store, execRunner).ok).toBe(true);
@@ -535,6 +590,20 @@ describe('runLink: re-runs', () => {
   });
 });
 
+// The store's first commit holds exactly its own files, and the link's commit follows it.
+function expectCreatedThenLinked(w: World): void {
+  expect(git(w.store, 'log', '--format=%s')).toBe(
+    `link ${path.basename(w.top)}\nchore: create the memory store`,
+  );
+  expect(
+    git(w.store, 'show', '--name-only', '--format=', 'HEAD~1')
+      .split('\n')
+      .sort(),
+  ).toEqual([...CREATION_PATHS].sort());
+  expect(committed(w.store)).toEqual(linkPaths(w));
+  expect(git(w.store, 'status', '--porcelain')).toBe('');
+}
+
 // Every path a link of the world's two default files writes in the store, sorted.
 function linkPaths(w: World): string[] {
   const name = path.basename(w.top);
@@ -570,6 +639,19 @@ describe('runLink: refusals write nothing', () => {
     const run = link(w, opts(w.top));
     expect(run.code).toBe(1);
     expect(run.err.join('\n')).toContain(path.join(folder, 'notes.md'));
+    expect(snapshot(...roots)).toEqual(before);
+  });
+
+  test('a stopped store creation beside a file link did not write refuses, and leaves every folder as it was', () => {
+    const w = world();
+    fs.mkdirSync(w.store);
+    git(w.store, 'init', '-q');
+    fs.writeFileSync(path.join(w.store, 'notes.md'), 'mine\n');
+    const roots = [w.top, path.dirname(w.configDir), path.dirname(w.store)];
+    const before = snapshot(...roots);
+    const run = link(w, opts(w.top));
+    expect(run.code).toBe(1);
+    expect(run.err.join('\n')).toContain('SIDEKICK_MEMORY_STORE');
     expect(snapshot(...roots)).toEqual(before);
   });
 
@@ -677,6 +759,24 @@ describe('applyAction: the archive', () => {
       `  ${path.join(f.to, 'b.md')}`,
       `  ${path.join(f.to, 'c.md')}`,
     ]);
+  });
+});
+
+describe('runLink: a failed read', () => {
+  test('names the error, says nothing was written, and says to run it again', () => {
+    const w = world();
+    const run = link(w, opts(w.top), {
+      ...w.deps,
+      runClaude: () => {
+        throw new Error('the listing crashed');
+      },
+    });
+    expect(run.code).toBe(1);
+    expect(run.err).toEqual([
+      'link could not read what it needs, and wrote nothing: the listing crashed',
+      'Fix that, then run the same command again.',
+    ]);
+    expect(fs.existsSync(w.store)).toBe(false);
   });
 });
 
