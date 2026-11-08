@@ -29,7 +29,7 @@ sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | -
 
 ## The brief
 
-The brief is a Markdown file in the launching checkout, named `<plan>-brief.md`. The orchestrator writes it, `dispatch` checks it, and a dispatched worker relies on those checks and checks only its own worktree, as `sk-worker` §On start describes. A worker the operator starts checks the brief itself. It opens with a frontmatter between two `---` lines. The body follows, carrying the gate commands and their results at the baseline, and the run's limits on what the worker may write, read, and run. Nothing parses it.
+The brief is a Markdown file in the launching checkout, named `<plan>-brief.md`. The orchestrator writes it, `dispatch` checks it, and a dispatched worker relies on those checks and checks only its own worktree, as `sk-worker` §On start describes. A worker the operator starts checks the brief itself. It opens with a frontmatter between two `---` lines. The body follows, carrying the gate commands and their results at the baseline, and the run's limits: where the worker may write, what it may read, and the commands it may not run. Nothing parses it.
 
 The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI parses it itself, since it ships no YAML parser. A key is lower-case letters, and the value is the rest of the line after the first `: `, trimmed. Blank lines are skipped, and Windows line endings and trailing spaces parse the same. Any other line, a repeated key, or an unknown key refuses the brief.
 
