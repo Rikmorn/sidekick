@@ -53,6 +53,28 @@ function writeSettings(top: string, text: string): string {
   return file;
 }
 
+/** Every path under `dir` with its kind, mode, and file text, for before-and-after equality. Skips `.git`. */
+function snapshot(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (current: string) => {
+    for (const name of fs.readdirSync(current).sort()) {
+      if (name === '.git') continue;
+      const full = path.join(current, name);
+      const stat = fs.lstatSync(full);
+      const rel = path.relative(dir, full);
+      if (stat.isSymbolicLink()) out[rel] = `link ${fs.readlinkSync(full)}`;
+      else if (stat.isDirectory()) {
+        out[rel] = `dir ${stat.mode & 0o777}`;
+        if ((stat.mode & 0o500) === 0o500) walk(full);
+      } else
+        out[rel] =
+          `file ${stat.mode & 0o777} ${fs.readFileSync(full, 'utf-8')}`;
+    }
+  };
+  walk(dir);
+  return out;
+}
+
 function issueOf(result: { issue: string } | object): string {
   if (!('issue' in result)) throw new Error('expected a refusal');
   return result.issue;
@@ -489,6 +511,111 @@ describe('mergeKey', () => {
       expect(fs.readdirSync(store)).toEqual([]);
       expect(fs.lstatSync(file).isSymbolicLink()).toBe(true);
     });
+
+    test('refuses a symlink loop, naming it and one way forward, and leaves the folder as it was', () => {
+      const top = ignoringRepo();
+      const file = path.join(top, REL);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.symlinkSync(file, file);
+      const before = snapshot(top);
+      const result = mergeKey(file, '/s/r', '');
+      expect(result.ok).toBe(false);
+      const issue = issueOf(result);
+      expect(issue).toContain(file);
+      expect(issue).toContain('symlink loop');
+      expect(issue).toEndWith('; remove the link, then run the command again');
+      expect(snapshot(top)).toEqual(before);
+    });
+  });
+
+  describe('a settings path that cannot be resolved', () => {
+    const WAY_FORWARD =
+      '; make every folder on its path a readable folder, then run the command again';
+
+    test('refuses a parent that is a file without calling it a link, and changes nothing', () => {
+      const top = ignoringRepo();
+      fs.writeFileSync(path.join(top, '.claude'), 'not a folder');
+      const file = path.join(top, REL);
+      const before = snapshot(top);
+      const result = mergeKey(file, '/s/r', '');
+      expect(result.ok).toBe(false);
+      const issue = issueOf(result);
+      expect(issue).toContain(file);
+      expect(issue).toContain('cannot be resolved');
+      expect(issue).not.toContain('link');
+      expect(issue).toEndWith(WAY_FORWARD);
+      expect(snapshot(top)).toEqual(before);
+    });
+
+    test.skipIf(process.getuid?.() === 0)(
+      'refuses a folder it cannot read, with one way forward, and changes nothing (skipped as root: permissions do not bind root)',
+      () => {
+        const top = ignoringRepo();
+        const file = writeSettings(top, '{}');
+        const folder = path.dirname(file);
+        const before = snapshot(top);
+        fs.chmodSync(folder, 0o000);
+        try {
+          const result = mergeKey(file, '/s/r', '{}');
+          expect(result.ok).toBe(false);
+          const issue = issueOf(result);
+          expect(issue).toContain('cannot be resolved');
+          expect(issue).toContain('EACCES');
+          expect(issue).toEndWith(WAY_FORWARD);
+        } finally {
+          fs.chmodSync(folder, 0o755);
+        }
+        expect(snapshot(top)).toEqual(before);
+      },
+    );
+  });
+
+  describe('an unwritable .claude folder', () => {
+    test.skipIf(process.getuid?.() === 0)(
+      'refuses with the folder named, leaves no temporary file, and keeps the file (skipped as root: permissions do not bind root)',
+      () => {
+        const top = ignoringRepo();
+        const file = writeSettings(top, '{"a":1}');
+        const folder = path.dirname(file);
+        const before = snapshot(top);
+        fs.chmodSync(folder, 0o555);
+        try {
+          const result = mergeKey(file, '/s/r', '{"a":1}');
+          expect(result.ok).toBe(false);
+          const issue = issueOf(result);
+          expect(issue).toContain('cannot be written');
+          expect(issue).toEndWith(
+            `; check that ${folder} is writable, then run the command again`,
+          );
+        } finally {
+          fs.chmodSync(folder, 0o755);
+        }
+        expect(snapshot(top)).toEqual(before);
+      },
+    );
+
+    test.skipIf(process.getuid?.() === 0)(
+      'refuses when the file is absent too, and creates nothing (skipped as root: permissions do not bind root)',
+      () => {
+        const top = ignoringRepo();
+        const folder = path.join(top, '.claude');
+        fs.mkdirSync(folder);
+        const before = snapshot(top);
+        fs.chmodSync(folder, 0o555);
+        try {
+          const result = mergeKey(
+            path.join(folder, 'settings.local.json'),
+            '/s/r',
+            '',
+          );
+          expect(result.ok).toBe(false);
+          expect(issueOf(result)).toContain('cannot be written');
+        } finally {
+          fs.chmodSync(folder, 0o755);
+        }
+        expect(snapshot(top)).toEqual(before);
+      },
+    );
   });
 });
 

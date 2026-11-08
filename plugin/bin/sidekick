@@ -2433,9 +2433,15 @@ function resolveFile(file) {
   try {
     return { real: fs8.realpathSync(file) };
   } catch (error) {
-    if (!(error instanceof Error && ("code" in error) && error.code === "ENOENT")) {
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    if (code === "ELOOP") {
       return {
-        issue: `${file} cannot be resolved: ${messageOf(error)}; fix or remove the link, or make the folders on its path readable, then run the command again`
+        issue: `${file} is a symlink loop: ${messageOf(error)}; remove the link, then run the command again`
+      };
+    }
+    if (code !== "ENOENT") {
+      return {
+        issue: `${file} cannot be resolved: ${messageOf(error)}; make every folder on its path a readable folder, then run the command again`
       };
     }
   }
