@@ -208,8 +208,9 @@ function endedLines(ids: string[]): string[] {
 const RESTORED = 'restored-';
 
 // With no branch deleted, the line names a branch after the folder, as the
-// ref encodes it. git refuses a few such names as a branch, `HEAD` among them,
-// and only those take the prefix.
+// ref encodes it. A name git refuses as a branch, `HEAD` among them, takes the
+// prefix, as does one a branch holds or nests under: a kept branch often
+// shares the folder's name. A prefixed name already taken adds the head.
 function restoreBranch(
   env: WorktreeEnv,
   top: string,
@@ -217,12 +218,19 @@ function restoreBranch(
 ): string {
   if (checked.plan.kind === 'delete') return checked.plan.branch;
   const segment = refSegment(checked.name);
-  const check = env.runGit(
-    'git',
-    ['check-ref-format', '--branch', segment],
-    top,
-  );
-  return check.code === 0 ? segment : `${RESTORED}${segment}`;
+  const prefixed = `${RESTORED}${segment}`;
+  const free = [segment, prefixed].find((b) => isFreeBranch(env, top, b));
+  return free ?? `${prefixed}-${checked.head}`;
+}
+
+// A name git accepts as a branch, with no branch at it or under it: git
+// refuses `feat` beside `feat/x`. for-each-ref's pattern matches both.
+function isFreeBranch(env: WorktreeEnv, top: string, branch: string): boolean {
+  const git = (args: string[]) => env.runGit('git', args, top);
+  const accepted = git(['check-ref-format', '--branch', branch]).code === 0;
+  if (!accepted) return false;
+  const listed = git(['for-each-ref', '--count=1', `refs/heads/${branch}`]);
+  return listed.code === 0 && listed.stdout.trim() === '';
 }
 
 // Quoted for a POSIX shell, as finish's own restore line is.

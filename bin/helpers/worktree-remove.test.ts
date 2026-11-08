@@ -449,8 +449,9 @@ describe('worktree remove: refuses', () => {
     expect(code).toBe(1);
     expect(joined(err)).toContain('ExitWorktree');
     expect(joined(err)).toContain('keep');
-    expect(joined(err)).toContain('claude -w');
+    expect(joined(err)).toContain('finds no worktree session');
     expect(joined(err)).toContain('close the session');
+    expect(joined(err)).not.toContain('cannot step out');
     expectUntouched(main, dir, 'worktree-here');
   });
 
@@ -777,6 +778,57 @@ describe('worktree remove: folder names a ref cannot hold as they are', () => {
     for (const name of ['r10-p9-dispatch', 'w1', 'r10-x', 'v1.2_rc-3']) {
       expect(refSegment(name)).toBe(name);
     }
+  });
+
+  // Removes the worktree `feat` on the kept branch `kept`, with `taken`
+  // branches made first, then runs its restore line, which must create
+  // `branch`.
+  function restoreKeptFeat(
+    kept: string,
+    taken: string[],
+    branch: (head: string) => string,
+  ) {
+    const main = repo();
+    for (const name of [kept, ...taken]) git(main, 'branch', name);
+    const dir = path.join(tmp(), 'feat');
+    git(main, 'worktree', 'add', '-q', dir, kept);
+    const head = commit(dir, 'b.txt');
+    const { code, out, err } = run(main, ['feat']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    const ref = `refs/sidekick/kept/feat/${head}`;
+    expect(backupRefs(main)).toEqual([ref]);
+    expect(git(main, 'rev-parse', kept)).toBe(head);
+    const line = out.at(-1) ?? '';
+    expect(line).toBe(`${RESTORE}${branch(head)} ${ref}`);
+    const command = line.slice('restore with: '.length);
+    execFileSync('/bin/sh', ['-c', command], { cwd: main });
+    expect(git(main, 'rev-parse', `refs/heads/${branch(head)}`)).toBe(head);
+  }
+
+  test("a kept branch of the folder's own name restores as restored-<name>, a line that runs", () => {
+    restoreKeptFeat('feat', [], () => 'restored-feat');
+  });
+
+  test('a kept branch nested under the folder name, feat/x beside feat, restores as restored-<name>', () => {
+    restoreKeptFeat('feat/x', [], () => 'restored-feat');
+  });
+
+  test('with restored-<name> taken too, the restore line adds the head', () => {
+    restoreKeptFeat(
+      'feat',
+      ['restored-feat'],
+      (head) => `restored-feat-${head}`,
+    );
+  });
+
+  test('a branch whose name only starts with the folder name, feature beside feat, leaves the name free', () => {
+    const main = repo();
+    git(main, 'branch', 'feature');
+    git(main, 'worktree', 'add', '-q', '--detach', path.join(tmp(), 'feat'));
+    const { code, out } = run(main, ['feat']);
+    expect(code).toBe(0);
+    expect(out.at(-1)).toStartWith(`${RESTORE}feat refs/sidekick/landed/feat/`);
   });
 });
 

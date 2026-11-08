@@ -179,7 +179,7 @@ Each refusal names what it found and deletes nothing. The checks run in this ord
 | An `--into` target that names no local branch and no remote-tracking ref | `--into` takes an exact ref: a local branch such as `main`, else a remote-tracking ref such as `origin/main`. A revision such as `main~1` names no ref. This check runs before every other. |
 | A name that matches no worktree, or several | It removes exactly one. When two share a name, give the path. |
 | The main checkout | The repository lives there. |
-| The worktree that holds the command's own directory | Leave it first: in a Claude Code session, `ExitWorktree` with `keep`. A session launched with `claude -w` cannot step out, so close the session. In a shell, `cd` out. Then run `remove` from the main checkout. |
+| The worktree that holds the command's own directory | Leave it first: in a Claude Code session, `ExitWorktree` with `keep`. When `ExitWorktree` finds no worktree session to leave, close the session. In a shell, `cd` out. Then run `remove` from the main checkout. |
 | An `--into` target that is the branch the worktree is on | That branch holds the worktree's head whether or not the work landed, so it shows nothing. Name the branch the work should land in. |
 | A worktree with another worktree inside its folder | Removing the outer folder would delete the inner worktree's files. Remove the inner one first. |
 | `claude agents` failed | Without the session rows, a worktree Claude Code did not lock looks free. The refusal gives the reason. |
@@ -209,7 +209,7 @@ It prints `worktree <path> removed`, then `branch <branch> removed` for the bran
 restore with: git branch worktree-r10-x refs/sidekick/landed/r10-x/<head>
 ```
 
-For a detached worktree or a kept branch, the restore line names the worktree's name, encoded as in the ref, as the branch to create. Where git refuses that name as a branch, as it refuses `HEAD`, the line prefixes it with `restored-`. A kept branch may still exist under its own name. The line quotes each word a POSIX shell would read otherwise, as `finish`'s does.
+For a detached worktree or a kept branch, the restore line names the worktree's name, encoded as in the ref, as the branch to create. The line prefixes that name with `restored-` where git refuses it as a branch, as it refuses `HEAD`. It does the same where a branch holds that name or nests under it, since git refuses `feat` beside `feat/x`. A kept branch often holds it, because `sk-worktree` names a worktree after its branch. When the prefixed name is taken too, the line adds `-` and the full head. The line quotes each word a POSIX shell would read otherwise, as `finish`'s does.
 
 ### What `--into` adds
 

@@ -11933,7 +11933,7 @@ function resolveTarget3(repo, cwd, target) {
     return refuse7(`${entry.path} is the main checkout, which remove never takes`);
   }
   if (insideOf(cwd, entry.path)) {
-    return refuse7(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when the session was launched with claude -w, which cannot step out, close the session; in a shell, cd out. Then run remove from the main checkout`);
+    return refuse7(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`);
   }
   return entry;
 }
@@ -12203,8 +12203,17 @@ function restoreBranch(env, top, checked2) {
   if (checked2.plan.kind === "delete")
     return checked2.plan.branch;
   const segment = refSegment(checked2.name);
-  const check2 = env.runGit("git", ["check-ref-format", "--branch", segment], top);
-  return check2.code === 0 ? segment : `${RESTORED}${segment}`;
+  const prefixed = `${RESTORED}${segment}`;
+  const free = [segment, prefixed].find((b) => isFreeBranch(env, top, b));
+  return free ?? `${prefixed}-${checked2.head}`;
+}
+function isFreeBranch(env, top, branch) {
+  const git = (args) => env.runGit("git", args, top);
+  const accepted = git(["check-ref-format", "--branch", branch]).code === 0;
+  if (!accepted)
+    return false;
+  const listed = git(["for-each-ref", "--count=1", `refs/heads/${branch}`]);
+  return listed.code === 0 && listed.stdout.trim() === "";
 }
 var restoreLine = (branch, checked2) => `restore with: git branch ${shellArg(branch)} ${shellArg(checked2.plan.ref)}`;
 var fail2 = (lines, err) => {

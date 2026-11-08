@@ -176,7 +176,7 @@ function resolveTarget(
   }
   if (insideOf(cwd, entry.path)) {
     return refuse(
-      `remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when the session was launched with claude -w, which cannot step out, close the session; in a shell, cd out. Then run remove from the main checkout`,
+      `remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`,
     );
   }
   return entry;
