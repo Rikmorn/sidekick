@@ -12,7 +12,7 @@ This session runs a plan from a brief. Superpowers does the executing; this skil
 
 The brief's path is this skill's argument. With none, reply `BLOCKED` asking for it, and wait. `sidekick worker dispatch` launches with `--dispatched` before the path, as `/sidekick:sk-worker --dispatched <absolute brief path>`. The marker comes first so a path with spaces stays whole. Drop the marker and take the rest as the path. A session the operator starts has no marker.
 
-The brief opens with `key: value` lines between two `---` lines. Its body holds the gate commands and their results at the baseline.
+The brief opens with `key: value` lines between two `---` lines. Its body holds the gate commands and their results at the baseline, and the run's limits: where it may write, what it may read, and the commands it may not run.
 
 | Field | What it holds |
 |---|---|
@@ -78,7 +78,7 @@ Invoke the superpowers skill the brief's `skill` names, and follow it. Its task 
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
 - **Run the prose step** wherever a task has one.
 - **Read GitHub, never write it.** Issues, comments, and the board belong to the orchestrator.
-- **Each subagent carries the brief's limits.** A subagent sees only the prompt you give it, never the brief. So every prompt you write, a reviewer's included, states the brief's limits that bind that subagent's work: where it may write, what it may read, and the commands it may not run. A reviewer the brief limits to two issues reads only those two.
+- **Each subagent carries your limits.** A subagent never sees the brief or this skill. It gets your prompt, plus the rules and `CLAUDE.md` files its type loads. So every prompt you write, a reviewer's included, states the limits that bind that subagent's work. Those are the brief's limits on where it may write, what it may read, and which commands it may not run. They also include this skill's: it reads GitHub but never writes it, and it never pushes. Put them where superpowers' prompt takes constraints. A reviewer the brief limits to two issues reads only those two.
 
 ## Git
 
