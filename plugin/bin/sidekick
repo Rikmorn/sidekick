@@ -4718,7 +4718,7 @@ function settingsRefusals(repo) {
   ];
 }
 function keyMissedRefusals(repo) {
-  if (repo.keyMissed === undefined)
+  if (repo.keyMissed === undefined || !isFirstLink(repo))
     return [];
   const { claudeJson, projectFolder } = repo.keyMissed;
   return [

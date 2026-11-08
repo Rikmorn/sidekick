@@ -884,6 +884,30 @@ describe('planLink: refusals', () => {
     );
   });
 
+  test('an absent project folder once the link is in place refuses nothing', () => {
+    const plan = planLink(
+      facts({
+        repo: repo({
+          settings: settings(TARGET),
+          defaultFolder: ABSENT_DEFAULT,
+          target: MARKED,
+          keyMissed: {
+            claudeJson: '/c/.claude.json',
+            projectFolder: `/c/projects/${KEY}`,
+          },
+        }),
+      }),
+      NO_FLAGS,
+    );
+    expect(plan).toEqual({
+      kind: 'ready',
+      root: ROOT,
+      target: TARGET,
+      actions: [],
+      notes: [],
+    });
+  });
+
   test('a default folder holding a link out of it', () => {
     const [refusal] = refusals({
       repo: repo({

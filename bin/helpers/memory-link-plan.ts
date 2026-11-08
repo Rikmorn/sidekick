@@ -181,8 +181,10 @@ function settingsRefusals(repo: RepoFacts): string[] {
   ];
 }
 
+// Only a first link needs the default folder's place; once the key is in
+// place, the emptied project folder may be gone.
 function keyMissedRefusals(repo: RepoFacts): string[] {
-  if (repo.keyMissed === undefined) return [];
+  if (repo.keyMissed === undefined || !isFirstLink(repo)) return [];
   const { claudeJson, projectFolder } = repo.keyMissed;
   return [
     `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Its folder is somewhere under ${path.dirname(projectFolder)}. To ask for support, run: ${supportRequest(
