@@ -448,10 +448,10 @@ describe('runLink: re-runs', () => {
 
   test('a re-run after a failed commit commits the staged copies, and leaves a later session write out', () => {
     const w = world();
-    const failing: LinkDeps['runGit'] = (cmd, args, cwd) =>
+    const failing: LinkDeps['runGit'] = (cmd, args, cwd, runOpts) =>
       args.includes('commit') && args.some((a) => a.startsWith('link '))
         ? { code: 1, stdout: '', stderr: 'gpg failed to sign the data' }
-        : execRunner(cmd, args, cwd);
+        : execRunner(cmd, args, cwd, runOpts);
     const first = link(w, opts(w.top), { ...w.deps, runGit: failing });
     expect(first.code).toBe(1);
     expect(first.err.join('\n')).toContain('gpg failed to sign the data');
@@ -472,10 +472,12 @@ describe('runLink: re-runs', () => {
     // A failed add leaves the files untracked; a failed commit leaves them staged.
     for (const step of ['add', 'commit']) {
       const w = world();
-      const failing: LinkDeps['runGit'] = (cmd, args, cwd) =>
-        args.includes(step) && args.includes('README.md')
+      // `commitPaths` sends its paths on stdin, NUL-separated.
+      const failing: LinkDeps['runGit'] = (cmd, args, cwd, runOpts) =>
+        args.includes(step) &&
+        (runOpts?.input ?? '').split('\0').includes('README.md')
           ? { code: 1, stdout: '', stderr: 'gpg failed to sign the data' }
-          : execRunner(cmd, args, cwd);
+          : execRunner(cmd, args, cwd, runOpts);
       const first = link(w, opts(w.top), { ...w.deps, runGit: failing });
       expect(first.code).toBe(1);
       expect(first.err[0]).toContain('create the store');
@@ -499,8 +501,8 @@ describe('runLink: re-runs', () => {
   test('a re-run after the store creation stopped right after git init finishes the store, then links', () => {
     const w = world();
     // The README write fails once git init has run, as on a full disk.
-    const stopsAfterInit: LinkDeps['runGit'] = (cmd, args, cwd) => {
-      const r = execRunner(cmd, args, cwd);
+    const stopsAfterInit: LinkDeps['runGit'] = (cmd, args, cwd, runOpts) => {
+      const r = execRunner(cmd, args, cwd, runOpts);
       if (args[0] === 'init') fs.chmodSync(cwd, 0o555);
       return r;
     };
@@ -705,10 +707,10 @@ describe('runLink: refusals write nothing', () => {
     const w = world();
     const run = link(w, opts(w.top), {
       ...w.deps,
-      runGit: (cmd, args, cwd) =>
+      runGit: (cmd, args, cwd, runOpts) =>
         args[0] === 'worktree'
           ? { code: 128, stdout: '', stderr: 'fatal: worktrees broken\n' }
-          : execRunner(cmd, args, cwd),
+          : execRunner(cmd, args, cwd, runOpts),
     });
     expect(run.code).toBe(1);
     expect(run.err).toEqual([
@@ -848,10 +850,10 @@ describe('runLink: a failed step', () => {
     const w = world();
     const run = link(w, opts(w.top), {
       ...w.deps,
-      runGit: (cmd, args, cwd) =>
+      runGit: (cmd, args, cwd, runOpts) =>
         args[0] === 'init'
           ? { code: 1, stdout: '', stderr: 'init refused' }
-          : execRunner(cmd, args, cwd),
+          : execRunner(cmd, args, cwd, runOpts),
     });
     expect(run.code).toBe(1);
     expect(run.err[0]).toContain('create the store');
@@ -872,10 +874,10 @@ describe('runLink: a failed step', () => {
           { sessionId: 'me', cwd: w.top },
           { sessionId: 'other', cwd: w.top },
         ]),
-        runGit: (cmd, args, cwd) =>
+        runGit: (cmd, args, cwd, runOpts) =>
           args.includes('commit') && args.some((a) => a.startsWith('link '))
             ? { code: 1, stdout: '', stderr: 'gpg failed to sign the data' }
-            : execRunner(cmd, args, cwd),
+            : execRunner(cmd, args, cwd, runOpts),
       },
       (l) => lines.push(`out: ${l}`),
       (l) => lines.push(`err: ${l}`),

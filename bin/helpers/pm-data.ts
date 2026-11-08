@@ -21,6 +21,8 @@ export interface RunOptions {
    * `GIT_TERMINAL_PROMPT=0`, since a prompt could only wait out the limit.
    */
   timeoutMs?: number;
+  /** Written to the call's stdin. Without it, stdin is the null device. */
+  input?: string;
 }
 export type Runner = (
   cmd: 'gh' | 'git',
@@ -36,12 +38,18 @@ const ranOut = (error: Error | undefined): boolean =>
   error !== undefined && 'code' in error && error.code === 'ETIMEDOUT';
 
 /** Never a shell: arguments go straight to the binary. */
-export const execRunner: Runner = (cmd, args, cwd, { timeoutMs } = {}) => {
+export const execRunner: Runner = (
+  cmd,
+  args,
+  cwd,
+  { timeoutMs, input } = {},
+) => {
   const env = envWithoutRepoVars(process.env);
   const r = spawnSync(cmd, args, {
     cwd,
     encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+    input,
     env: timeoutMs === undefined ? env : { ...env, GIT_TERMINAL_PROMPT: '0' },
     timeout: timeoutMs,
   });

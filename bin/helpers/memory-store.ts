@@ -273,10 +273,14 @@ function gitIssue(
   return `git ${args[0]} failed: ${detail}`;
 }
 
+// Pathspecs read from stdin, NUL-separated, so no path is an argument.
+const PATHS_ON_STDIN = ['--pathspec-from-file=-', '--pathspec-file-nul'];
+
 /**
  * Commits only `paths`, so another session's uncommitted writes stay
- * uncommitted: `git add -- paths`, then `git commit -m message -- paths`.
- * Each path is literal, never a glob, so `a[1].md` does not take `a1.md`.
+ * uncommitted: one `git add`, then one `git commit --only`, each reading
+ * `paths` on stdin. Each path is literal, never a glob, so `a[1].md` does
+ * not take `a1.md`. An empty `paths` fails and commits nothing.
  */
 export function commitPaths(
   store: string,
@@ -285,11 +289,16 @@ export function commitPaths(
   runGit: Runner,
 ): Outcome {
   const steps = [
-    ['add', '--', ...paths],
-    ['commit', '-m', message, '--', ...paths],
+    ['add', ...PATHS_ON_STDIN],
+    // `--only` refuses an empty pathspec, which would commit the whole index.
+    // `--quiet` drops the per-file summary, which can overflow the runner's output buffer.
+    ['commit', '--quiet', '--only', '-m', message, ...PATHS_ON_STDIN],
   ];
+  const input = paths.join('\0');
   for (const args of steps) {
-    const r = runGit('git', ['--literal-pathspecs', ...args], store);
+    const r = runGit('git', ['--literal-pathspecs', ...args], store, {
+      input,
+    });
     if (r.code !== 0) return { ok: false, issue: gitIssue(args, r) };
   }
   return { ok: true };

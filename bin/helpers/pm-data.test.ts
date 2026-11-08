@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { fixture, fixtureRunner, sidekickMap } from './fixtures/pm/runner.js';
 import { removeTemps, repo } from './fixtures/worker/repo.js';
 import { tiers } from './pm.js';
@@ -25,6 +27,7 @@ import {
   parseRepoIssuesPage,
   parseStatusField,
   type Runner,
+  type RunOptions,
   runnerKey,
   touchedAt,
   versionAtLeast,
@@ -158,6 +161,40 @@ describe('execRunner', () => {
       { timeoutMs: 5_000 },
     );
     expect(seen.stdout.trim()).toBe('0');
+  });
+  test('a call with input writes it to stdin, byte for byte', () => {
+    const top = repo();
+    const input = 'one\0two\nthree';
+    fs.writeFileSync(path.join(top, 'expected'), input);
+    const expected = execRunner('git', ['hash-object', 'expected'], top);
+    const piped = execRunner('git', ['hash-object', '--stdin'], top, {
+      input,
+    });
+    expect(piped.code).toBe(0);
+    expect(piped.stdout).toBe(expected.stdout);
+  });
+  test('a call without input spawns as before, with the null device as stdin', () => {
+    const top = repo();
+    fs.writeFileSync(path.join(top, 'empty'), '');
+    const empty = execRunner('git', ['hash-object', 'empty'], top);
+    const read = execRunner('git', ['hash-object', '--stdin'], top);
+    expect(read.code).toBe(0);
+    expect(read.stdout).toBe(empty.stdout);
+    const stdinKind = (opts?: RunOptions): string =>
+      execRunner(
+        'git',
+        [
+          '-c',
+          'alias.stdin=!f() { if [ -c /dev/stdin ]; then echo device; else echo other; fi; }; f',
+          'stdin',
+        ],
+        top,
+        opts,
+      ).stdout.trim();
+    expect(stdinKind()).toBe('device');
+    expect(stdinKind({ timeoutMs: 5_000 })).toBe('device');
+    // Node and Bun both hand a call with input a socket, not the device.
+    expect(stdinKind({ input: 'x' })).toBe('other');
   });
   test('git reports a failing command with its exit code', () => {
     const r = execRunner(

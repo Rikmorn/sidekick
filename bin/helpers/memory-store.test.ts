@@ -15,7 +15,7 @@ import {
   storeState,
   writeMarker,
 } from './memory-store.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 
 const IDENTITY = {
   GIT_AUTHOR_NAME: 'Test',
@@ -521,4 +521,73 @@ describe('commitPaths', () => {
     const result = commitPaths(tmp, ['nope'], 'm', execRunner);
     expect(result.ok).toBe(false);
   });
+
+  test('leaves a path someone else staged staged, and out of the commit', () => {
+    const store = withStagedOther();
+    fs.writeFileSync(path.join(store, 'a.md'), 'mine');
+    expect(commitPaths(store, ['a.md'], 'add a', execRunner)).toEqual({
+      ok: true,
+    });
+    const files = git(store, 'show', '--name-only', '--format=', 'HEAD').trim();
+    expect(files).toBe('a.md');
+    expect(git(store, 'status', '--porcelain').trim()).toBe('A  other.md');
+  });
+
+  test('reads a name with a newline in it as one path', () => {
+    const store = path.join(tmp, 'store');
+    createStore(store, execRunner);
+    const name = 'line\nbreak.md';
+    fs.writeFileSync(path.join(store, name), 'mine');
+    expect(commitPaths(store, [name], 'add', execRunner)).toEqual({ ok: true });
+    const files = git(store, 'show', '-z', '--name-only', '--format=', 'HEAD');
+    expect(files.split('\0').filter((f) => f !== '')).toEqual([name]);
+  });
+
+  test('passes the paths on stdin, so no git argument list grows with their count', () => {
+    const calls = (paths: string[]) => {
+      const seen: { args: string[]; input: string | undefined }[] = [];
+      const runner: Runner = (_cmd, args, _cwd, opts) => {
+        seen.push({ args, input: opts?.input });
+        return { code: 0, stdout: '', stderr: '' };
+      };
+      expect(commitPaths('/store', paths, 'm', runner)).toEqual({ ok: true });
+      return seen;
+    };
+    const many = Array.from({ length: 10_000 }, (_, i) => `repo/n${i}.md`);
+    const manyCalls = calls(many);
+    const oneCalls = calls(['repo/a.md']);
+    expect(manyCalls.map((c) => c.args)).toEqual(oneCalls.map((c) => c.args));
+    expect(manyCalls.map((c) => c.input)).toEqual([
+      many.join('\0'),
+      many.join('\0'),
+    ]);
+  });
+
+  test('commits nothing when no path reaches git, even with another path staged', () => {
+    const store = withStagedOther();
+    fs.writeFileSync(path.join(store, 'a.md'), 'mine');
+    const head = git(store, 'rev-parse', 'HEAD');
+    // A runner that drops its options, as a wrapper might, sends git no paths.
+    const dropsOptions: Runner = (cmd, args, cwd) => execRunner(cmd, args, cwd);
+    for (const [paths, runner] of [
+      [[], execRunner],
+      [['a.md'], dropsOptions],
+    ] satisfies [string[], Runner][]) {
+      const result = commitPaths(store, paths, 'm', runner);
+      expect(result.ok).toBe(false);
+      expect(git(store, 'rev-parse', 'HEAD')).toBe(head);
+      expect(git(store, 'status', '--porcelain').trim()).toBe(
+        'A  other.md\n?? a.md',
+      );
+    }
+  });
 });
+
+// A store whose index holds `other.md`, which no call of the test staged.
+function withStagedOther(): string {
+  const store = path.join(tmp, 'store');
+  createStore(store, execRunner);
+  fs.writeFileSync(path.join(store, 'other.md'), 'someone else');
+  git(store, 'add', '--', 'other.md');
+  return store;
+}
