@@ -385,7 +385,7 @@ describe('planLink: a re-run after each action', () => {
 });
 
 // A store with no commit goes back through `createStore`; these stores have one.
-describe("planLink: a store with a commit that lacks some of the store's own files", () => {
+describe("planLink: a store with a commit, and some of the store's own files untracked or newly added", () => {
   test('commits those files first, then the same plan', () => {
     const paths = ['.gitignore', 'archive/.gitkeep'];
     const actions = actionsOf(
@@ -780,12 +780,12 @@ describe('planLink: refusals', () => {
   const refusals = (over: Partial<LinkFacts>, opts = NO_FLAGS): string[] =>
     refusalsOf(planLink(facts(over), opts));
 
-  test('a store folder that is not a store', () => {
-    const [refusal] = refusals({
-      storeState: { kind: 'foreign', issue: '/s/store holds files' },
-    });
-    expect(refusal).toContain('/s/store holds files');
-    expect(refusal).toContain('SIDEKICK_MEMORY_STORE');
+  test('a store folder that is not a store is refused in its own words, which name the way forward', () => {
+    const issue =
+      '/s/store holds files but is not a sidekick store (a git repo with a README.md). Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.';
+    expect(refusals({ storeState: { kind: 'foreign', issue } })).toEqual([
+      issue,
+    ]);
   });
 
   test('a stopped store creation beside paths link did not write is refused in its own words, which name the way forward', () => {

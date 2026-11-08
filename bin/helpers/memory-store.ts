@@ -9,7 +9,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
 import { MAX_OUTPUT, type Runner } from './pm-data.js';
-import { shellArg, shellQuote } from './shell.js';
 
 /** Top-level names the store keeps for itself; no family or repo folder takes one. */
 export const RESERVED_NAMES: readonly string[] = ['sources', 'archive'];
@@ -146,10 +145,21 @@ export type StoreState =
   | { kind: 'empty' }
   /** What `createStore` leaves when it stops part-way, which it can finish. */
   | { kind: 'unfinished' }
-  /** A stopped creation beside paths `createStore` did not write or stage; `issue` names them and the way forward. */
+  /** A stopped creation beside paths `createStore` did not write; `issue` names them and the way forward. */
   | { kind: 'cluttered'; issue: string }
   | { kind: 'store' }
+  /** Neither a store nor a stopped creation; `issue` says what is there and the way forward. */
   | { kind: 'foreign'; issue: string };
+
+// Pointing the store elsewhere leaves this folder as it is.
+const POINT_ELSEWHERE =
+  'Point SIDEKICK_MEMORY_STORE at an empty or absent folder';
+
+// Moving a plain file or folder out clears the way.
+const foreign = (
+  issue: string,
+  way = `${POINT_ELSEWHERE}, or move what is there.`,
+): StoreState => ({ kind: 'foreign', issue: `${issue}. ${way}` });
 
 /** Whether `link` refuses the store folder as it stands. */
 export const refusesStore = (state: StoreState): boolean =>
@@ -179,7 +189,7 @@ export function isWorkTreeTop(store: string, runGit: Runner): boolean {
 export function storeState(store: string, runGit: Runner): StoreState {
   if (!fs.existsSync(store)) return { kind: 'absent' };
   if (!fs.statSync(store).isDirectory()) {
-    return { kind: 'foreign', issue: `${store} is a file, not a store folder` };
+    return foreign(`${store} is a file, not a store folder`);
   }
   if (fs.readdirSync(store).length === 0) return { kind: 'empty' };
   const top = isWorkTreeTop(store, runGit);
@@ -191,16 +201,15 @@ export function storeState(store: string, runGit: Runner): StoreState {
 const hasReadme = (store: string): boolean =>
   fs.existsSync(path.join(store, README_FILE));
 
-const notAStore = (store: string): StoreState => ({
-  kind: 'foreign',
-  issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`,
-});
+const notAStore = (store: string): StoreState =>
+  foreign(
+    `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`,
+  );
 
 // A repo with no commit whose `.git` is a plain folder, as `createStore`
 // leaves it when it stops part-way: unfinished when nothing but its paths
-// sits beside `.git`, cluttered when its index holds other paths or the
-// README sits there with other paths, and foreign otherwise. Undefined for any
-// other repo.
+// sits beside `.git`, cluttered when the README sits there with other paths,
+// and foreign otherwise. Undefined for any other repo.
 function stoppedCreation(
   store: string,
   runGit: Runner,
@@ -212,8 +221,13 @@ function stoppedCreation(
   const index = uncommittedIndex(store, runGit);
   if (index === undefined) return undefined;
   const staged = index.filter((rel) => !CREATION_PATHS.includes(rel));
+  // Moving a staged file leaves its index entry, and unstaging one deleted
+  // from disk loses its content, so the way forward touches nothing here.
   if (staged.length > 0) {
-    return { kind: 'cluttered', issue: stagedIssue(store, staged) };
+    return foreign(
+      `${store} is a git repo with no commit, and its index holds ${staged.join(', ')}, which link did not stage`,
+      `${POINT_ELSEWHERE}, then run link again.`,
+    );
   }
   const others = othersIn(store, '');
   if (others.length === 0) return { kind: 'unfinished' };
@@ -222,15 +236,6 @@ function stoppedCreation(
     kind: 'cluttered',
     issue: `${store} is a store whose creation stopped part-way, and it also holds ${others.join(', ')}, which link did not write. Move them out of ${store}, then run link again to finish the store.`,
   };
-}
-
-// Moving a staged file leaves its index entry, so only unstaging clears it.
-// `git rm --cached` keeps each file on disk, and refuses one whose staged
-// content differs from it.
-function stagedIssue(store: string, staged: string[]): string {
-  const unstage = `git --literal-pathspecs rm --cached -- ${staged.map(shellArg).join(' ')}`;
-  const them = staged.length === 1 ? 'it' : 'them';
-  return `${store} is a git repo with no commit, and its index holds ${staged.join(', ')}, which link did not stage. In ${shellQuote(store)}, unstage ${them} with this command, then run link again: ${unstage}`;
 }
 
 // Each path under `store` that `createStore` did not write, sorted, with a

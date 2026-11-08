@@ -3360,6 +3360,8 @@ function findMarkers(store) {
     });
   });
 }
+var POINT_ELSEWHERE = "Point SIDEKICK_MEMORY_STORE at an empty or absent folder";
+var foreign = (issue, way = `${POINT_ELSEWHERE}, or move what is there.`) => ({ kind: "foreign", issue: `${issue}. ${way}` });
 var refusesStore = (state) => state.kind === "foreign" || state.kind === "cluttered";
 function realPath(p) {
   try {
@@ -3376,7 +3378,7 @@ function storeState(store, runGit) {
   if (!fs9.existsSync(store))
     return { kind: "absent" };
   if (!fs9.statSync(store).isDirectory()) {
-    return { kind: "foreign", issue: `${store} is a file, not a store folder` };
+    return foreign(`${store} is a file, not a store folder`);
   }
   if (fs9.readdirSync(store).length === 0)
     return { kind: "empty" };
@@ -3387,10 +3389,7 @@ function storeState(store, runGit) {
   return top && hasReadme(store) ? { kind: "store" } : notAStore(store);
 }
 var hasReadme = (store) => fs9.existsSync(path10.join(store, README_FILE));
-var notAStore = (store) => ({
-  kind: "foreign",
-  issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`
-});
+var notAStore = (store) => foreign(`${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`);
 function stoppedCreation(store, runGit) {
   const dotGit = fs9.lstatSync(path10.join(store, GIT_FOLDER), {
     throwIfNoEntry: false
@@ -3402,7 +3401,7 @@ function stoppedCreation(store, runGit) {
     return;
   const staged = index.filter((rel) => !CREATION_PATHS.includes(rel));
   if (staged.length > 0) {
-    return { kind: "cluttered", issue: stagedIssue(store, staged) };
+    return foreign(`${store} is a git repo with no commit, and its index holds ${staged.join(", ")}, which link did not stage`, `${POINT_ELSEWHERE}, then run link again.`);
   }
   const others = othersIn(store, "");
   if (others.length === 0)
@@ -3413,11 +3412,6 @@ function stoppedCreation(store, runGit) {
     kind: "cluttered",
     issue: `${store} is a store whose creation stopped part-way, and it also holds ${others.join(", ")}, which link did not write. Move them out of ${store}, then run link again to finish the store.`
   };
-}
-function stagedIssue(store, staged) {
-  const unstage = `git --literal-pathspecs rm --cached -- ${staged.map(shellArg).join(" ")}`;
-  const them = staged.length === 1 ? "it" : "them";
-  return `${store} is a git repo with no commit, and its index holds ${staged.join(", ")}, which link did not stage. In ${shellQuote(store)}, unstage ${them} with this command, then run link again: ${unstage}`;
 }
 function othersIn(store, rel) {
   return fs9.readdirSync(path10.join(store, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
@@ -4701,13 +4695,7 @@ function refusalsOf(facts, opts) {
 }
 var pendingRefusal = (issue) => `${issue}. Fix the store's git repo, then run link again.`;
 function storeRefusals(state) {
-  if (state.kind === "cluttered")
-    return [state.issue];
-  if (state.kind !== "foreign")
-    return [];
-  return [
-    `${state.issue}. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`
-  ];
+  return state.kind === "cluttered" || state.kind === "foreign" ? [state.issue] : [];
 }
 function repoRefusals(repo, opts) {
   return [
@@ -8296,7 +8284,7 @@ function phrase(action) {
     case "createStore":
       return forms("Created", "create", `the store at ${action.store}`);
     case "finishStore":
-      return forms("Committed", "commit", `the store's own files missing from its commits, as "${CREATION_MESSAGE}": ${action.paths.join(", ")}`);
+      return forms("Committed", "commit", `the store's own untracked or newly added files, as "${CREATION_MESSAGE}": ${action.paths.join(", ")}`);
     case "createFolder":
       return forms("Created", "create", action.folder);
     case "writeMarker":

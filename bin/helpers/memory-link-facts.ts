@@ -355,9 +355,9 @@ interface StatusEntry {
 }
 
 /**
- * The store's own files that a store with a commit holds uncommitted: each of
- * `CREATION_PATHS` on disk that git lists as untracked or added, such as a
- * `.gitignore` written by hand. A committed file edited since is the
+ * The store's own files that git lists as untracked or newly added, in a
+ * store with a commit: each of `CREATION_PATHS` on disk with either status,
+ * such as a `.gitignore` written by hand. A committed file edited since is the
  * operator's, so it never counts.
  */
 export function uncommittedCreation(

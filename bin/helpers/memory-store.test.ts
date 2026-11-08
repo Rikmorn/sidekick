@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -268,14 +267,18 @@ describe('storeState', () => {
   test('a file is foreign and named', () => {
     const file = path.join(tmp, 'f');
     fs.writeFileSync(file, 'x');
-    const state = storeState(file, execRunner);
-    expect(state.kind).toBe('foreign');
-    if (state.kind === 'foreign') expect(state.issue).toContain(file);
+    expect(storeState(file, execRunner)).toEqual({
+      kind: 'foreign',
+      issue: `${file} is a file, not a store folder. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`,
+    });
   });
 
   test('a non-empty plain folder is foreign', () => {
     fs.writeFileSync(path.join(tmp, 'notes.txt'), 'x');
-    expect(storeState(tmp, execRunner).kind).toBe('foreign');
+    expect(storeState(tmp, execRunner)).toEqual({
+      kind: 'foreign',
+      issue: `${tmp} holds files but is not a sidekick store (a git repo with a README.md). Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`,
+    });
   });
 
   test('a git repo without the README is foreign', () => {
@@ -331,36 +334,16 @@ describe('storeState', () => {
     });
   });
 
-  test('a stopped creation whose index holds a path link did not stage refuses, naming it and the command that unstages it', () => {
+  test('a stopped creation whose index holds a path link did not stage is foreign, naming it, with a way forward that touches nothing there', () => {
     const store = path.join(tmp, 'store');
     stoppedCreation(store, ['README.md']);
     fs.writeFileSync(path.join(store, 'notes.md'), 'mine\n');
     git(store, 'add', '--', 'notes.md');
     fs.rmSync(path.join(store, 'notes.md'));
     expect(storeState(store, execRunner)).toEqual({
-      kind: 'cluttered',
-      issue: `${store} is a git repo with no commit, and its index holds notes.md, which link did not stage. In '${store}', unstage it with this command, then run link again: git --literal-pathspecs rm --cached -- notes.md`,
+      kind: 'foreign',
+      issue: `${store} is a git repo with no commit, and its index holds notes.md, which link did not stage. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, then run link again.`,
     });
-  });
-
-  test("the staged-index refusal's command runs as printed, unstaging only those paths and keeping their files", () => {
-    const store = path.join(tmp, "it's a store");
-    stoppedCreation(store, ['README.md']);
-    const odd = ['*.md', 'a[1].md', "it's a note.md"];
-    for (const name of odd) fs.writeFileSync(path.join(store, name), 'mine\n');
-    git(store, '--literal-pathspecs', 'add', '--', 'README.md', ...odd);
-    const state = storeState(store, execRunner);
-    if (state.kind !== 'cluttered') throw new Error(`got ${state.kind}`);
-    expect(state.issue).toContain(
-      `In '${store.replaceAll("'", "'\\''")}', unstage them with this command`,
-    );
-    const [, command] = state.issue.split('then run link again: ');
-    const ran = spawnSync('sh', ['-c', command], { cwd: store });
-    expect(ran.status).toBe(0);
-    expect(git(store, 'ls-files')).toBe('README.md\n');
-    for (const name of odd) {
-      expect(fs.existsSync(path.join(store, name))).toBe(true);
-    }
   });
 
   test.each([

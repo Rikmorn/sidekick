@@ -88,7 +88,7 @@ export interface LinkFacts {
   /** The store's absolute path. */
   store: string;
   storeState: StoreState;
-  /** The store's own files on disk that no commit holds, or why git could not list them. */
+  /** The store's own files that git lists as untracked or newly added, or why git could not list them. */
   storePending: { paths: string[] } | { issue: string };
   overrideIssue: string | undefined;
   nameIssues: string[];
@@ -126,7 +126,7 @@ export interface OwnedPaths {
 /** One step of a link, in the order it runs. */
 export type LinkAction =
   | { kind: 'createStore'; store: string }
-  /** In a store that has a commit, commits the store's own files that are on disk but in none of its commits. */
+  /** In a store that has a commit, commits the store's own files that git lists as untracked or newly added. */
   | { kind: 'finishStore'; store: string; paths: string[] }
   | { kind: 'createFolder'; folder: string }
   | { kind: 'writeMarker'; folder: string; root: string }

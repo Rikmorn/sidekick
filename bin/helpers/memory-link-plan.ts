@@ -150,13 +150,11 @@ function refusalsOf(facts: LinkFacts, opts: PlanOptions): string[] {
 const pendingRefusal = (issue: string): string =>
   `${issue}. Fix the store's git repo, then run link again.`;
 
-// A cluttered store's issue carries its own way forward.
+// A refused store's issue carries its own way forward.
 function storeRefusals(state: StoreState): string[] {
-  if (state.kind === 'cluttered') return [state.issue];
-  if (state.kind !== 'foreign') return [];
-  return [
-    `${state.issue}. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, or move what is there.`,
-  ];
+  return state.kind === 'cluttered' || state.kind === 'foreign'
+    ? [state.issue]
+    : [];
 }
 
 function repoRefusals(repo: RepoFacts, opts: PlanOptions): string[] {

@@ -562,33 +562,27 @@ describe('runLink: re-runs', () => {
     expectCreatedThenLinked(w);
   });
 
-  test('a stopped store creation whose index holds a path link did not stage refuses with the command that unstages it, then finishes', () => {
+  test('a stopped store creation whose index holds paths link did not stage refuses with no git rm, and leaves the store byte for byte', () => {
     const w = world();
     fs.mkdirSync(w.store);
     git(w.store, 'init', '-q');
     fs.writeFileSync(path.join(w.store, 'README.md'), STORE_README);
+    // One staged file is gone from disk, and one differs from its staged copy:
+    // unstaging either would lose what only the index holds.
+    fs.writeFileSync(path.join(w.store, 'edited.md'), 'staged\n');
     fs.writeFileSync(path.join(w.store, 'notes.md'), 'mine\n');
-    git(w.store, 'add', '--', 'notes.md');
-    fs.renameSync(path.join(w.store, 'notes.md'), path.join(tmp(), 'notes.md'));
+    git(w.store, 'add', '--', 'edited.md', 'notes.md');
+    fs.writeFileSync(path.join(w.store, 'edited.md'), 'edited since\n');
+    fs.rmSync(path.join(w.store, 'notes.md'));
+    const before = snapshot(w.store);
     const refused = link(w, opts(w.top));
     expect(refused.code).toBe(1);
     expect(refused.err).toEqual([
       'link refused, and wrote nothing:',
-      `- ${w.store} is a git repo with no commit, and its index holds notes.md, which link did not stage. In '${w.store}', unstage it with this command, then run link again: git --literal-pathspecs rm --cached -- notes.md`,
+      `- ${w.store} is a git repo with no commit, and its index holds edited.md, notes.md, which link did not stage. Point SIDEKICK_MEMORY_STORE at an empty or absent folder, then run link again.`,
     ]);
-    git(
-      w.store,
-      '--literal-pathspecs',
-      'rm',
-      '--cached',
-      '-q',
-      '--',
-      'notes.md',
-    );
-    const again = link(w, opts(w.top));
-    expect(again.err).toEqual([]);
-    expect(again.code).toBe(0);
-    expectCreatedThenLinked(w);
+    expect(refused.err.join('\n')).not.toContain('rm ');
+    expect(snapshot(w.store)).toEqual(before);
   });
 
   test('a re-run after the store creation stopped, with only .DS_Store files beside the store files, finishes, and they stay untracked and ignored', () => {
@@ -635,7 +629,7 @@ describe('runLink: re-runs', () => {
     const run = link(w, opts(w.top));
     expect(run.code).toBe(0);
     expect(run.out[0]).toBe(
-      `Committed the store's own files missing from its commits, as "chore: create the memory store": .gitignore`,
+      `Committed the store's own untracked or newly added files, as "chore: create the memory store": .gitignore`,
     );
     expect(git(w.store, 'status', '--porcelain')).toBe('');
     expect(

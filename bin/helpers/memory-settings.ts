@@ -99,9 +99,10 @@ function isFolder(target: string): boolean {
   }
 }
 
-// Why `target` has no main checkout, quoting git when it gave a reason other
-// than being outside a repository. A path that is no folder fails before git
-// runs, so the runner's words are never quoted as git's.
+// Why `target` has no main checkout, quoting the failure when it gives a
+// reason other than being outside a repository. A path that is no folder
+// fails the spawn before git runs, so it keeps the outside-git wording; a
+// spawn that fails in a folder, as with git missing from PATH, is quoted.
 function noCheckoutIssue(
   target: string,
   found: { listIssue?: string; revParseIssue?: string },
