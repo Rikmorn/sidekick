@@ -895,32 +895,136 @@ describe('runLink: a failed step', () => {
 });
 
 describe('moveFolder', () => {
-  test('copies then removes when rename fails across filesystems, keeping links as written', () => {
+  const crossDevice = (): never => {
+    throw Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
+  };
+
+  // A default folder of two files, one in a subfolder, and where it moves to.
+  function folders(): { from: string; to: string } {
     const base = tmp();
     const from = path.join(base, 'from');
     fs.mkdirSync(path.join(from, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(from, 'MEMORY.md'), 'index');
     fs.writeFileSync(path.join(from, 'sub', 'a.md'), 'a');
+    return { from, to: path.join(base, 'archive', 'to') };
+  }
+
+  // A copy that writes one file into `to`, then fails, as a full disk would.
+  const failsPartWay = (_from: string, to: string): never => {
+    fs.writeFileSync(path.join(to, 'MEMORY.md'), 'ind');
+    throw new Error('ENOSPC: no space left on device, write');
+  };
+
+  test('copies then removes when rename fails across filesystems, keeping links as written', () => {
+    const { from, to } = folders();
     fs.symlinkSync('sub/a.md', path.join(from, 'link.md'));
-    const to = path.join(base, 'archive', 'to');
-    const crossDevice = (): never => {
-      throw Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
-    };
-    moveFolder(from, to, crossDevice);
+    moveFolder(from, to, { rename: crossDevice });
     expect(fs.existsSync(from)).toBe(false);
     expect(fs.readFileSync(path.join(to, 'sub', 'a.md'), 'utf-8')).toBe('a');
     expect(fs.readlinkSync(path.join(to, 'link.md'))).toBe('sub/a.md');
   });
 
   test('any other rename failure is thrown', () => {
-    const base = tmp();
-    const from = path.join(base, 'from');
-    fs.mkdirSync(from);
+    const { from, to } = folders();
     const denied = (): never => {
       throw Object.assign(new Error('denied'), { code: 'EACCES' });
     };
-    expect(() => moveFolder(from, path.join(base, 'to'), denied)).toThrow(
-      'denied',
-    );
+    expect(() => moveFolder(from, to, { rename: denied })).toThrow('denied');
     expect(fs.existsSync(from)).toBe(true);
   });
+
+  test('a cross-device copy that fails part-way leaves the folder whole and removes the partial copy', () => {
+    const { from, to } = folders();
+    const before = snapshot(from);
+    const removed: string[] = [];
+    const remove = (target: string): void => {
+      removed.push(target);
+      fs.rmSync(target, { recursive: true });
+    };
+    expect(() =>
+      moveFolder(from, to, { rename: crossDevice, copy: failsPartWay, remove }),
+    ).toThrow(
+      `copying across filesystems failed, so link left ${from} intact and removed its partial copy at ${to}: ENOSPC: no space left on device, write`,
+    );
+    expect(snapshot(from)).toEqual(before);
+    expect(fs.existsSync(to)).toBe(false);
+    expect(removed).toEqual([to]);
+  });
+
+  test('a partial copy that cannot be removed is named, with the folder left whole', () => {
+    const { from, to } = folders();
+    const before = snapshot(from);
+    const stuck = (): never => {
+      throw new Error('EACCES: permission denied, rmdir');
+    };
+    expect(() =>
+      moveFolder(from, to, {
+        rename: crossDevice,
+        copy: failsPartWay,
+        remove: stuck,
+      }),
+    ).toThrow(
+      `copying across filesystems failed, so link left ${from} intact: ENOSPC: no space left on device, write. link could not remove its partial copy either, so delete ${to} by hand: EACCES: permission denied, rmdir`,
+    );
+    expect(snapshot(from)).toEqual(before);
+    expect(fs.readdirSync(to)).toEqual(['MEMORY.md']);
+  });
+
+  test('a folder already at the destination is left alone, and nothing is copied', () => {
+    const { from, to } = folders();
+    fs.mkdirSync(to, { recursive: true });
+    fs.writeFileSync(path.join(to, 'theirs.md'), 'not link');
+    const before = snapshot(from, to);
+    const copied: string[] = [];
+    const copy = (_from: string, into: string): void => {
+      copied.push(into);
+    };
+    expect(() => moveFolder(from, to, { rename: crossDevice, copy })).toThrow(
+      `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.`,
+    );
+    expect(snapshot(from, to)).toEqual(before);
+    expect(copied).toEqual([]);
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    'a destination it cannot create stops the move before any copy',
+    () => {
+      const { from, to } = folders();
+      const parent = path.dirname(to);
+      fs.mkdirSync(parent);
+      fs.chmodSync(parent, 0o555);
+      const before = snapshot(from);
+      try {
+        expect(() => moveFolder(from, to, { rename: crossDevice })).toThrow(
+          `link could not create ${to}, so it copied nothing and left ${from} intact: EACCES`,
+        );
+      } finally {
+        fs.chmodSync(parent, 0o755);
+      }
+      expect(snapshot(from)).toEqual(before);
+      expect(fs.existsSync(to)).toBe(false);
+    },
+  );
+
+  test('a copy whose source cannot then be removed says the copy holds every file', () => {
+    const { from, to } = folders();
+    const before = snapshot(from);
+    // Removes one file, then fails, as a read-only subfolder would.
+    const stopsPartWay = (target: string): never => {
+      fs.rmSync(path.join(target, 'MEMORY.md'));
+      throw new Error('EACCES: permission denied, unlink');
+    };
+    expect(() =>
+      moveFolder(from, to, { rename: crossDevice, remove: stopsPartWay }),
+    ).toThrow(
+      `link copied every file to ${to}, then could not remove ${from}: EACCES: permission denied, unlink. Keep ${to}, which holds them all; a re-run moves what is left of ${from} beside it.`,
+    );
+    expect(relative(snapshot(to), to)).toEqual(relative(before, from));
+  });
+
+  // A snapshot's entries by their path inside `root`, sorted.
+  const relative = (files: Map<string, string>, root: string): string[][] =>
+    [...files]
+      .map(([file, bytes]) => [path.relative(root, file), bytes])
+      .sort(([a], [b]) => (a < b ? -1 : 1));
 });

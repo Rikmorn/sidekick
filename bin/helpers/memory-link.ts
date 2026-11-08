@@ -198,31 +198,114 @@ function archive(action: Archive): Applied {
   return { ok: true, lines: [phrase(action).done, why, ...listed] };
 }
 
-/**
- * Moves the folder `from` to `to`, creating `to`'s parent. When `rename`
- * fails because the two sit on different filesystems, it copies, keeping
- * links as written, then removes `from`.
- */
-export function moveFolder(
-  from: string,
-  to: string,
-  rename: (from: string, to: string) => void = fs.renameSync,
-): void {
-  fs.mkdirSync(path.dirname(to), { recursive: true });
-  try {
-    rename(from, to);
-  } catch (error) {
-    const crossDevice =
-      error instanceof Error && 'code' in error && error.code === 'EXDEV';
-    if (!crossDevice) throw error;
+/** The filesystem calls `moveFolder` makes; a test may replace any of them. */
+export interface FolderMoves {
+  rename: (from: string, to: string) => void;
+  /** Copies the folder `from` into `to`, an empty folder the move created. */
+  copy: (from: string, to: string) => void;
+  /** Removes a folder and everything in it. */
+  remove: (folder: string) => void;
+}
+
+const FS_MOVES: FolderMoves = {
+  rename: fs.renameSync,
+  copy: (from, to) =>
     fs.cpSync(from, to, {
       recursive: true,
       errorOnExist: true,
       force: false,
       verbatimSymlinks: true,
       preserveTimestamps: true,
-    });
-    fs.rmSync(from, { recursive: true });
+    }),
+  remove: (folder) => fs.rmSync(folder, { recursive: true }),
+};
+
+/**
+ * Moves the folder `from` to `to`, creating `to`'s parent. When `rename`
+ * fails because the two sit on different filesystems, it creates `to`,
+ * copies into it, keeping links as written, then removes `from`. It copies
+ * nothing when `to` already exists. A failed copy leaves `from` as it was
+ * and removes `to`, which the move created.
+ */
+export function moveFolder(
+  from: string,
+  to: string,
+  moves: Partial<FolderMoves> = {},
+): void {
+  const { rename, copy, remove } = { ...FS_MOVES, ...moves };
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  try {
+    rename(from, to);
+  } catch (error) {
+    if (!hasCode(error, 'EXDEV')) throw error;
+    claim(from, to);
+    copyInto(from, to, copy, remove);
+    removeSource(from, to, remove);
+  }
+}
+
+const hasCode = (error: unknown, code: string): boolean =>
+  error instanceof Error && 'code' in error && error.code === code;
+
+// Creates `to` and fails when anything is there, so `to` is the move's own.
+function claim(from: string, to: string): void {
+  try {
+    fs.mkdirSync(to);
+  } catch (error) {
+    const message = hasCode(error, 'EEXIST')
+      ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.`
+      : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf(error)}`;
+    throw new Error(message, { cause: error });
+  }
+}
+
+// On a failed copy, removes `to`, which `claim` created, and never `from`.
+function copyInto(
+  from: string,
+  to: string,
+  copy: FolderMoves['copy'],
+  remove: FolderMoves['remove'],
+): void {
+  try {
+    copy(from, to);
+  } catch (error) {
+    const reason = messageOf(error);
+    const failed = `copying across filesystems failed, so link left ${from} intact`;
+    const leftover = removalIssue(to, remove);
+    const message =
+      leftover === undefined
+        ? `${failed} and removed its partial copy at ${to}: ${reason}`
+        : `${failed}: ${reason}. link could not remove its partial copy either, so delete ${to} by hand: ${leftover}`;
+    throw new Error(message, { cause: error });
+  }
+}
+
+// Removes `folder`; why that failed, or undefined when it did not.
+function removalIssue(
+  folder: string,
+  remove: FolderMoves['remove'],
+): string | undefined {
+  try {
+    remove(folder);
+    return undefined;
+  } catch (error) {
+    return messageOf(error);
+  }
+}
+
+// The copy is whole by now, so a failure here leaves `from` a partial duplicate.
+function removeSource(
+  from: string,
+  to: string,
+  remove: FolderMoves['remove'],
+): void {
+  try {
+    remove(from);
+  } catch (error) {
+    throw new Error(
+      `link copied every file to ${to}, then could not remove ${from}: ${messageOf(error)}. Keep ${to}, which holds them all; a re-run moves what is left of ${from} beside it.`,
+      { cause: error },
+    );
   }
 }
 

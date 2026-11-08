@@ -8129,22 +8129,63 @@ function archive(action) {
   const why = action.reappeared ? `The default folder came back after the link. These files in it differ from ${action.copies} or are missing there, so merge what is new by hand:` : `These files changed after the copy, so their latest version is kept in the archive only:`;
   return { ok: true, lines: [phrase(action).done, why, ...listed] };
 }
-function moveFolder(from, to, rename = fs28.renameSync) {
+var FS_MOVES = {
+  rename: fs28.renameSync,
+  copy: (from, to) => fs28.cpSync(from, to, {
+    recursive: true,
+    errorOnExist: true,
+    force: false,
+    verbatimSymlinks: true,
+    preserveTimestamps: true
+  }),
+  remove: (folder) => fs28.rmSync(folder, { recursive: true })
+};
+function moveFolder(from, to, moves = {}) {
+  const { rename, copy, remove } = { ...FS_MOVES, ...moves };
   fs28.mkdirSync(path35.dirname(to), { recursive: true });
   try {
     rename(from, to);
   } catch (error) {
-    const crossDevice = error instanceof Error && "code" in error && error.code === "EXDEV";
-    if (!crossDevice)
+    if (!hasCode(error, "EXDEV"))
       throw error;
-    fs28.cpSync(from, to, {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-      verbatimSymlinks: true,
-      preserveTimestamps: true
-    });
-    fs28.rmSync(from, { recursive: true });
+    claim(from, to);
+    copyInto(from, to, copy, remove);
+    removeSource(from, to, remove);
+  }
+}
+var hasCode = (error, code) => error instanceof Error && ("code" in error) && error.code === code;
+function claim(from, to) {
+  try {
+    fs28.mkdirSync(to);
+  } catch (error) {
+    const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf3(error)}`;
+    throw new Error(message, { cause: error });
+  }
+}
+function copyInto(from, to, copy, remove) {
+  try {
+    copy(from, to);
+  } catch (error) {
+    const reason6 = messageOf3(error);
+    const failed = `copying across filesystems failed, so link left ${from} intact`;
+    const leftover = removalIssue(to, remove);
+    const message = leftover === undefined ? `${failed} and removed its partial copy at ${to}: ${reason6}` : `${failed}: ${reason6}. link could not remove its partial copy either, so delete ${to} by hand: ${leftover}`;
+    throw new Error(message, { cause: error });
+  }
+}
+function removalIssue(folder, remove) {
+  try {
+    remove(folder);
+    return;
+  } catch (error) {
+    return messageOf3(error);
+  }
+}
+function removeSource(from, to, remove) {
+  try {
+    remove(from);
+  } catch (error) {
+    throw new Error(`link copied every file to ${to}, then could not remove ${from}: ${messageOf3(error)}. Keep ${to}, which holds them all; a re-run moves what is left of ${from} beside it.`, { cause: error });
   }
 }
 function commit(action, runGit) {
