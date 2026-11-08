@@ -1,6 +1,6 @@
 # ADR-0013 — sidekick writes the one settings key it owns
 
-> **Amended 2026-11-08 (#271):** `link` also moves Claude Code's default memory folder, `~/.claude/projects/<key>/memory`, into the store as `archive/default-folders/<key>-<date>`. A taken name gets the first free `-2`, `-3`, … suffix (`archive` in `bin/helpers/memory-link.ts`). That move writes outside sidekick's prefix, namespace, or marker, so it departs from Decision 1. Consequences' "removing the key reverses a link" holds only once that folder is moved back.
+> **Amended 2026-11-08 (#271):** `link` also moves Claude Code's default memory folder, `~/.claude/projects/<key>/memory` unless `CLAUDE_CONFIG_DIR` moves it, into the store as `archive/default-folders/<key>-<date>` (`archive` in `bin/helpers/memory-link.ts`). A taken name gets the first free `-2`, `-3`, … suffix (`archiveName` in `bin/helpers/memory-link-plan.ts`). That move writes outside sidekick's prefix, namespace, or marker, so it departs from Decision 1. Consequences' "removing the key reverses a link" holds only once that folder moves back and the repo folder moves into the store's `archive/`. `STORE_README` in `bin/helpers/memory-store.ts` gives the steps, under Changes by hand.
 
 **Status:** Accepted (2026-11-01), as the operator decided it on 2026-11-01. Amends ADR-0009's Decision 3. Issue #271, milestone R10.
 

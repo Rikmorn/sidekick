@@ -12,7 +12,7 @@ Sessions sharing a checkout move files and `HEAD` under each other. So a session
 
 - Git checks a branch out in one checkout at a time, and refuses a second checkout's switch to it. So work lands onto a held branch in the checkout that holds it.
 - Landing in a checkout rewrites its files under every session working there.
-- `ExitWorktree` steps out of a worktree this session made or entered with `EnterWorktree`, or one a fresh `claude -w` launch made (measured on 2.1.319, #313). With `keep`, it returns the session to where it was before the worktree. When it reports no worktree session, it has changed nothing.
+- `ExitWorktree` steps out of a worktree this session made or entered with `EnterWorktree`, or one a fresh `claude -w` launch made (measured on Claude Code 2.1.319, 2026-11-08). With `keep`, it returns the session to where it was before the worktree. When it reports no worktree session, it has changed nothing.
 - Claude Code makes each worktree inside the repo, under `.claude/worktrees/`, and copies in the git-ignored files `.worktreeinclude` lists. A worktree built by hand gets no copy. A scanner run from the main checkout, such as a linter, reaches into the nested worktrees unless it ignores that folder.
 - A fresh worktree runs the repo's setup once it is on its branch, before other work. Without it, a tool that looks for packages in parent folders finds the main checkout's, since the worktree sits inside it. Link nothing from the main checkout: an install through a link writes the main checkout's files, under every session using them.
 - Settings and denies reach every worktree and worker, `settings.local.json` included. Claude Code reads that file from the main checkout's root, so a change to it holds in every checkout.

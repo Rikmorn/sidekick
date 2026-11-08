@@ -2,7 +2,10 @@
 
 Issue: #309. Part of [the parallel-sessions design](design.md), whose §Cases lists C1 to C13. Scale: explore · 2026-11-04.
 
-Amended 2026-11-08 (#313): I7, on `ExitWorktree` under `claude -w`, and §Breakdown's item 8, on #313 naming routes, predate plan 11b. The facts in the shipped `plugin/rules/sk-parallel-sessions.md` supersede them.
+Amended 2026-11-08 (#313): These predate plan 11b, and the shipped rule and hook supersede them:
+
+- I7, on `ExitWorktree` under `claude -w`, and §Breakdown's item 8, on #313 naming routes. The facts in `plugin/rules/sk-parallel-sessions.md` hold now.
+- §Breakdown's item 7, the trait row for a `"head"` base ref, and §Breakdown's plan-11 line, on #295's hook fetching only under `"fresh"`. The shipped hook reads no settings and fetches before every `EnterWorktree` call that makes a worktree (`bin/helpers/enter-worktree-fetch.ts`).
 
 Every cell was checked on 2026-11-04 against `milestone/r10-memory-and-parallel-sessions` at `501676b`, on Claude Code 2.1.318. Nothing here was checked against 0.6.0.
 

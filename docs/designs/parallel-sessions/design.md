@@ -12,7 +12,7 @@ Amended 2026-11-04 (#308): R10's outcome widened to worktrees that run end to en
 
 Amended 2026-11-04 (#309): §Cases adds C5 to C13. [`use-cases.md`](use-cases.md) checks every case against the milestone branch, and gives #287's verdict and #309's breakdown.
 
-Amended 2026-11-08 (#313, #315): plan 10 narrowed this design and plan 11 reshaped it, and #313's and #315's dated sections hold the rulings. The rule states facts and rulings instead of routes. The worker record's target shipped as the brief's `target` field, which `dispatch` requires when the launching checkout holds a branch. The record stays version 2, not version 3 as §Breakdown's piece 2 says.
+Amended 2026-11-08 (#284, #313, #315): plan 10 narrowed this design and plan 11 reshaped it. #284's dated section holds plan 10's rulings, and #313's and #315's hold plan 11's. The rule states facts and rulings instead of routes. The worker record's target shipped as the brief's `target` field, which `dispatch` requires when the launching checkout holds a branch. The record stays version 2, not version 3 as §Breakdown's piece 2 and §Review's round 1 minor findings say.
 
 The design became #282 to #291, and took #266 and #267 as one of its pieces. #266, #267, and #282 to #287 joined R10 beside the memory design's #270 to #278, and #288 to #291 stay in backlog (operator, 2026-10-31). Gate 1 approved by the operator on 2026-10-31, with the assumed A3 replaced by the stated K18, and P3's missing case answered (§Constraints, §Cases). Gate 2: T1 and T2 ruled on 2026-10-31, and T4 settled after a survey (§Rulings at gate 2). Gate 3 approved on 2026-10-31 (§Decision).
 

@@ -4,6 +4,7 @@ One line per topic. Each topic's `README.md` lists its reports and the issues it
 
 - [agentic-loops](./agentic-loops/README.md): When does an outer programmatic loop beat a single agentic invocation, and which parts of building one stay durable as models improve?
 - [context-memory](./context-memory/README.md): How should an autonomous agent manage context and persistent memory so quality does not silently degrade and a wrong lesson does not poison later runs?
+- [control-centre](./control-centre/README.md): What can Claude Code's extension and session surface do for running many sessions at once? How can it scope what each session loads and remembers, and show all of it in one place? What already exists?
 - [docs-structure](./docs-structure/README.md): How a repo's `docs/` should be laid out by lifecycle, who keeps each part true, and which checks catch drift.
 - [enforcement-surface](./enforcement-surface/README.md): How should a harness design its enforcement surface: which check sits at which layer, and how are per-project gates generated, sealed, and kept fresh?
 - [eval-harness](./eval-harness/README.md): How should a harness test the prompt, agent, and skill layer, and how does prior art split those tests by how each expectation is checked?
@@ -11,6 +12,7 @@ One line per topic. Each topic's `README.md` lists its reports and the issues it
 - [knowledge-layer](./knowledge-layer/README.md): Should sidekick rent, build, or glue together a knowledge layer that makes its repo's docs and records queryable by both operator and agent?
 - [memory](./memory/README.md): What is memory for an AI assistant, and how should it be represented, related, consolidated, retrieved, and inspected?
 - [orchestration](./orchestration/README.md): When does multi-agent orchestration beat a single strong agent, and should agents communicate in natural language rather than forced structured output?
+- [parallel-sessions](./parallel-sessions/README.md): How should one operator run worktrees and parallel sessions day to day? The cases are several features in one repo, support work on main beside them, and one feature across sibling repos. What do Claude Code, superpowers, sidekick, and community tools already do for each?
 - [platform-coupling](./platform-coupling/README.md): Should sidekick's orchestration loops be built on Claude Code's platform primitives, kept hand-rolled in skills, or split, and which coupling posture minimises regret?
 - [pm-layer](./pm-layer/README.md): Which existing GitHub-tracking plugins, skills, and practices should sidekick's project-management layer adopt, borrow from, or write itself?
 - [prompting](./prompting/README.md): For capable agentic models, where does declarative guardrail prompting beat imperative prompting, and does the repo's agent-prompt discipline hold up against the literature?

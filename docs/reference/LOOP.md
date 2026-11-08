@@ -166,7 +166,7 @@ It decides the record question itself and states the judgment. It asks you only 
 - Local preparation, left uncommitted: the learning record if the bar holds, and the deletions of the design folders whose issues have all closed. Then the repo's own preparation, such as the version bump, with the gates and draft notes.
 - A confirmation, carrying the learning-record judgment, the diff, and the check's findings. Nothing outward runs without a yes.
 - On yes, the release's publication: one commit of everything prepared, landed by the repo's route, then the tag and the GitHub Release. For sidekick itself, `AGENTS.md` §Releasing holds the preparation and publication steps.
-- Each `Verified by the release:` check, run after publication; its issue closes once the check passes. A failed check, or a defect found after the release ships, takes a patch release. The release check, preparation, and publication run again, from the published release's tag.
+- Each `Verified by the release:` check, run after publication; its issue closes once the check passes. A failed check, or a defect found after the release ships, takes a patch release. The release check, preparation, and publication run again, from the published release's tag. Then the gate runs again.
 - A `COMPLETE` status update, while the milestone is still open.
 - The milestone closed, and a "Resolved in" comment on each `COMPLETED` issue.
 

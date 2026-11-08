@@ -12,7 +12,7 @@ sidekick worker dispatch --check --permission-mode <mode> [--profile <name>] [--
 sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]
 ```
 
-- Both run from any checkout of the repo: the main checkout or a linked worktree, from its top or any folder under it. `dispatch` refuses inside a worker, where `SIDEKICK_WORKER` is set, naming #255. `finish` runs its `claude` calls at the main checkout.
+- Both run from any checkout of the repo: the main checkout or a linked worktree, from its top or any folder under it. `dispatch` refuses inside a worker, where `SIDEKICK_WORKER` is set, naming Rikmorn/sidekick#255. `finish` runs its `claude` calls at the main checkout.
 - A relative brief path resolves against the current folder. The worker receives the absolute path.
 - `--permission-mode` is required. It takes the values `claude --permission-mode` accepts: `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`, or `manual`. "The permission mode" says which one to pass.
 - `--profile` names the profile the worker launches with, and defaults to `worker`. "A worker profile" suggests one.
