@@ -1056,9 +1056,67 @@ describe('moveFolder', () => {
     expect(() =>
       moveFolder(from, to, { rename: crossDevice, remove: stopsPartWay }),
     ).toThrow(
-      `link copied every file to ${to}, then could not remove ${from}: EACCES: permission denied, unlink. Keep ${to}, which holds them all; a re-run moves what is left of ${from} beside it.`,
+      `the copy at ${to} is whole, but removing ${from} failed: EACCES: permission denied, unlink. Keep ${to}; a re-run archives what is left of ${from}.`,
     );
     expect(relative(snapshot(to), to)).toEqual(relative(before, from));
+  });
+
+  // Each change a session could make to the default folder while the copy runs.
+  const writes: [string, (from: string) => void, string][] = [
+    [
+      'a new file',
+      (from) => fs.writeFileSync(path.join(from, 'new.md'), 'during the copy'),
+      'new.md',
+    ],
+    [
+      'a front-matter stamp',
+      (from) =>
+        fs.writeFileSync(
+          path.join(from, 'MEMORY.md'),
+          '---\nmodified: 2026-11-02\n---\nindex',
+        ),
+      'MEMORY.md',
+    ],
+    [
+      'a link pointed elsewhere',
+      (from) => {
+        fs.rmSync(path.join(from, 'link.md'));
+        fs.symlinkSync('MEMORY.md', path.join(from, 'link.md'));
+      },
+      'link.md',
+    ],
+    ['a new folder', (from) => fs.mkdirSync(path.join(from, 'later')), 'later'],
+  ];
+
+  test.each(
+    writes,
+  )('%s written during a cross-device copy keeps the folder, written, and names it', (_kind, write, rel) => {
+    const { from, to } = folders();
+    fs.writeFileSync(
+      path.join(from, 'MEMORY.md'),
+      '---\nmodified: 2026-11-01\n---\nindex',
+    );
+    fs.symlinkSync('sub/a.md', path.join(from, 'link.md'));
+    const seen: { copied?: string[][]; written?: string[][] } = {};
+    // Copies as the default does, then the write lands after the copy read past it.
+    const copy = (source: string, into: string): void => {
+      fs.cpSync(source, into, { recursive: true, verbatimSymlinks: true });
+      seen.copied = relative(snapshot(source), source);
+      write(source);
+      seen.written = relative(snapshot(source), source);
+    };
+    const removed: string[] = [];
+    const remove = (folder: string): void => {
+      removed.push(folder);
+    };
+    expect(() =>
+      moveFolder(from, to, { rename: crossDevice, copy, remove }),
+    ).toThrow(
+      `${from} changed during the copy, so link kept it: ${path.join(from, rel)}. ${to} holds the copy taken at the move, and a re-run archives what ${from} now holds.`,
+    );
+    expect(removed).toEqual([]);
+    expect(relative(snapshot(from), from)).toEqual(seen.written ?? []);
+    expect(relative(snapshot(to), to)).toEqual(seen.copied ?? []);
   });
 
   // A snapshot's entries by their path inside `root`, sorted.

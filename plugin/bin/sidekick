@@ -8163,6 +8163,7 @@ function moveFolder(from, to, moves = {}) {
       throw error;
     claim(from, to);
     copyInto(from, to, copy, remove);
+    keepIfChanged(from, to);
     removeSource(from, to, remove);
   }
 }
@@ -8181,12 +8182,12 @@ function copyInto(from, to, copy, remove) {
   } catch (error) {
     const reason6 = messageOf3(error);
     const failed = `copying across filesystems failed, so link left ${from} intact`;
-    const leftover = removalIssue(to, remove);
+    const leftover = removeOrSayWhy(to, remove);
     const message = leftover === undefined ? `${failed} and removed its partial copy at ${to}: ${reason6}` : `${failed}: ${reason6}. link could not remove its partial copy either, so delete ${to} by hand: ${leftover}`;
     throw new Error(message, { cause: error });
   }
 }
-function removalIssue(folder, remove) {
+function removeOrSayWhy(folder, remove) {
   try {
     remove(folder);
     return;
@@ -8194,11 +8195,37 @@ function removalIssue(folder, remove) {
     return messageOf3(error);
   }
 }
+function keepIfChanged(from, to) {
+  const changed = changedSince(from, to);
+  if (changed.length === 0)
+    return;
+  throw new Error(`${from} changed during the copy, so link kept it: ${changed.join(", ")}. ${to} holds the copy taken at the move, and a re-run archives what ${from} now holds.`);
+}
+function changedSince(from, to) {
+  return fs28.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+    const source = path35.join(from, entry.name);
+    const copy = path35.join(to, entry.name);
+    const copied = fs28.lstatSync(copy, { throwIfNoEntry: false });
+    if (entry.isDirectory() && copied?.isDirectory() === true) {
+      return changedSince(source, copy);
+    }
+    return copied !== undefined && sameEntry(entry, source, copy, copied) ? [] : [source];
+  });
+}
+function sameEntry(entry, source, copy, copied) {
+  if (entry.isSymbolicLink()) {
+    return copied.isSymbolicLink() && fs28.readlinkSync(source) === fs28.readlinkSync(copy);
+  }
+  if (entry.isFile()) {
+    return copied.isFile() && fs28.readFileSync(source).equals(fs28.readFileSync(copy));
+  }
+  return false;
+}
 function removeSource(from, to, remove) {
   try {
     remove(from);
   } catch (error) {
-    throw new Error(`link copied every file to ${to}, then could not remove ${from}: ${messageOf3(error)}. Keep ${to}, which holds them all; a re-run moves what is left of ${from} beside it.`, { cause: error });
+    throw new Error(`the copy at ${to} is whole, but removing ${from} failed: ${messageOf3(error)}. Keep ${to}; a re-run archives what is left of ${from}.`, { cause: error });
   }
 }
 function commit(action, runGit) {

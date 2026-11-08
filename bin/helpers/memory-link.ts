@@ -225,7 +225,8 @@ const FS_MOVES: FolderMoves = {
  * fails because the two sit on different filesystems, it creates `to`,
  * copies into it, keeping links as written, then removes `from`. It copies
  * nothing when `to` already exists. A failed copy leaves `from` as it was
- * and removes `to`, which the move created.
+ * and removes `to`, which the move created. A `from` that changed during
+ * the copy stays, beside its copy.
  */
 export function moveFolder(
   from: string,
@@ -240,6 +241,7 @@ export function moveFolder(
     if (!hasCode(error, 'EXDEV')) throw error;
     claim(from, to);
     copyInto(from, to, copy, remove);
+    keepIfChanged(from, to);
     removeSource(from, to, remove);
   }
 }
@@ -271,7 +273,7 @@ function copyInto(
   } catch (error) {
     const reason = messageOf(error);
     const failed = `copying across filesystems failed, so link left ${from} intact`;
-    const leftover = removalIssue(to, remove);
+    const leftover = removeOrSayWhy(to, remove);
     const message =
       leftover === undefined
         ? `${failed} and removed its partial copy at ${to}: ${reason}`
@@ -280,8 +282,8 @@ function copyInto(
   }
 }
 
-// Removes `folder`; why that failed, or undefined when it did not.
-function removalIssue(
+// Removes `folder`, and returns why it could not, or undefined once it has.
+function removeOrSayWhy(
   folder: string,
   remove: FolderMoves['remove'],
 ): string | undefined {
@@ -293,7 +295,58 @@ function removalIssue(
   }
 }
 
-// The copy is whole by now, so a failure here leaves `from` a partial duplicate.
+// A session may write to `from` while the copy runs, and removing `from`
+// would lose that write, so `from` then stays for a re-run to archive.
+function keepIfChanged(from: string, to: string): void {
+  const changed = changedSince(from, to);
+  if (changed.length === 0) return;
+  throw new Error(
+    `${from} changed during the copy, so link kept it: ${changed.join(', ')}. ${to} holds the copy taken at the move, and a re-run archives what ${from} now holds.`,
+  );
+}
+
+// Each entry under `from` that `to` lacks or holds otherwise, by bytes for a
+// file and by target for a link, sorted. A folder in both is compared inside.
+function changedSince(from: string, to: string): string[] {
+  return fs
+    .readdirSync(from, { withFileTypes: true })
+    .sort((a, b) => (a.name < b.name ? -1 : 1))
+    .flatMap((entry) => {
+      const source = path.join(from, entry.name);
+      const copy = path.join(to, entry.name);
+      const copied = fs.lstatSync(copy, { throwIfNoEntry: false });
+      if (entry.isDirectory() && copied?.isDirectory() === true) {
+        return changedSince(source, copy);
+      }
+      return copied !== undefined && sameEntry(entry, source, copy, copied)
+        ? []
+        : [source];
+    });
+}
+
+// A file with the same bytes, or a link with the same target; nothing else matches.
+function sameEntry(
+  entry: fs.Dirent,
+  source: string,
+  copy: string,
+  copied: fs.Stats,
+): boolean {
+  if (entry.isSymbolicLink()) {
+    return (
+      copied.isSymbolicLink() &&
+      fs.readlinkSync(source) === fs.readlinkSync(copy)
+    );
+  }
+  if (entry.isFile()) {
+    return (
+      copied.isFile() && fs.readFileSync(source).equals(fs.readFileSync(copy))
+    );
+  }
+  return false;
+}
+
+// `keepIfChanged` found each entry of `from` in `to`, so a failure here
+// leaves `from` a partial duplicate of `to`.
 function removeSource(
   from: string,
   to: string,
@@ -303,7 +356,7 @@ function removeSource(
     remove(from);
   } catch (error) {
     throw new Error(
-      `link copied every file to ${to}, then could not remove ${from}: ${messageOf(error)}. Keep ${to}, which holds them all; a re-run moves what is left of ${from} beside it.`,
+      `the copy at ${to} is whole, but removing ${from} failed: ${messageOf(error)}. Keep ${to}; a re-run archives what is left of ${from}.`,
       { cause: error },
     );
   }
