@@ -16,7 +16,7 @@ import {
   STORE_README,
   writeMarker,
 } from './memory-store.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, MAX_OUTPUT } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
 
 const IDENTITY = {
@@ -894,6 +894,43 @@ describe('runLink: a failed step', () => {
     expect(forced).toBeGreaterThan(failed);
     expect(self).toBeGreaterThan(failed);
   });
+});
+
+describe('runLink: a large default folder', () => {
+  test('links 10,000 files in one run, commits every one, and re-runs as already linked', () => {
+    const w = world();
+    // Long enough names that git's listing of them passes 1 MiB.
+    const names = Array.from(
+      { length: 10_000 },
+      (_, i) => `a-note-about-one-topic-${i}.md`,
+    );
+    for (const name of names) {
+      fs.writeFileSync(path.join(w.memory, name), `${name}\n`);
+    }
+    const first = link(w, opts(w.top));
+    expect(first.err).toEqual([]);
+    expect(first.code).toBe(0);
+    const again = link(w, opts(w.top));
+    expect(again.err).toEqual([]);
+    expect(again.code).toBe(0);
+    expect(again.out.join('\n')).toContain('already linked');
+    const tree = execRunner(
+      'git',
+      ['ls-tree', '-r', '-z', '--name-only', 'HEAD'],
+      w.store,
+      { maxBuffer: MAX_OUTPUT },
+    );
+    const committedNow = new Set(tree.stdout.split('\0'));
+    const archive = `archive/default-folders/${projectKey(w.top)}-${TODAY}`;
+    const missing = [...names, 'MEMORY.md', 'notes.md']
+      .flatMap((name) => [
+        `${path.basename(w.top)}/${name}`,
+        `${archive}/${name}`,
+      ])
+      .filter((rel) => !committedNow.has(rel));
+    expect(missing).toEqual([]);
+    expect(git(w.store, 'status', '--porcelain')).toBe('');
+  }, 120_000);
 });
 
 describe('moveFolder', () => {

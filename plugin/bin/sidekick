@@ -2538,270 +2538,9 @@ function readKeyAt(top) {
 // bin/helpers/memory-store.ts
 import * as fs9 from "node:fs";
 import * as path10 from "node:path";
-var RESERVED_NAMES = ["sources", "archive"];
-var MARKER_FILE = ".sidekick.json";
-var README_FILE = "README.md";
-var KEEP_FILE = ".gitkeep";
-var IGNORE_FILE = ".gitignore";
-var FINDER_FILE = ".DS_Store";
-var IGNORE_CONTENT = `${FINDER_FILE}
-`;
-var GIT_FOLDER = ".git";
-var CREATION_PATHS = [
-  README_FILE,
-  IGNORE_FILE,
-  ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`)
-];
-var CREATION_FOLDERS = new Set(CREATION_PATHS.filter((rel) => rel.includes("/")).map((rel) => path10.posix.dirname(rel)));
-var CREATION_MESSAGE = "chore: create the memory store";
-function storeRoot(env, home) {
-  const override = env.SIDEKICK_MEMORY_STORE;
-  return override !== undefined && override !== "" ? override : path10.join(home, "sk-memory-store");
-}
-function folderNameIssue(name) {
-  if (name === "")
-    return "a folder name cannot be empty";
-  if (name.includes("/") || name.includes("\\")) {
-    return `"${name}" holds a path separator`;
-  }
-  if (name.startsWith("."))
-    return `"${name}" cannot start with "."`;
-  if (RESERVED_NAMES.includes(name)) {
-    return `"${name}" is a reserved name (${RESERVED_NAMES.join(", ")})`;
-  }
-  return;
-}
-var MarkerSchema = object({ root: string() });
-function readMarker(folder) {
-  const file = path10.join(folder, MARKER_FILE);
-  if (!fs9.existsSync(file))
-    return { kind: "none" };
-  try {
-    const parsed = safeParse(MarkerSchema, JSON.parse(fs9.readFileSync(file, "utf-8")));
-    if (parsed.success)
-      return { kind: "marker", root: parsed.output.root };
-    return { kind: "invalid", issue: `${file} must be {"root": "<path>"}` };
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return { kind: "invalid", issue: `${file} is not readable JSON: ${why}` };
-  }
-}
-function writeMarker(folder, root) {
-  const marker = { root };
-  fs9.writeFileSync(path10.join(folder, MARKER_FILE), `${JSON.stringify(marker, null, 2)}
-`);
-}
-function children(folder) {
-  try {
-    return fs9.readdirSync(folder, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name);
-  } catch {
-    return [];
-  }
-}
-function markerRoot(folder) {
-  const read = readMarker(folder);
-  return read.kind === "marker" ? read.root : undefined;
-}
-function findMarkers(store) {
-  return children(store).flatMap((first) => {
-    const firstFolder = path10.join(store, first);
-    const own = markerRoot(firstFolder);
-    if (own !== undefined) {
-      return [{ folder: firstFolder, root: own, family: undefined }];
-    }
-    return children(firstFolder).flatMap((second) => {
-      const folder = path10.join(firstFolder, second);
-      const root = markerRoot(folder);
-      return root === undefined ? [] : [{ folder, root, family: first }];
-    });
-  });
-}
-var refusesStore = (state) => state.kind === "foreign" || state.kind === "cluttered";
-function realPath(p) {
-  try {
-    return fs9.realpathSync(p);
-  } catch {
-    return path10.resolve(p);
-  }
-}
-function isWorkTreeTop(store, runGit) {
-  const top = runGit("git", ["rev-parse", "--show-toplevel"], store);
-  return top.code === 0 && realPath(top.stdout.trim()) === realPath(store);
-}
-function storeState(store, runGit) {
-  if (!fs9.existsSync(store))
-    return { kind: "absent" };
-  if (!fs9.statSync(store).isDirectory()) {
-    return { kind: "foreign", issue: `${store} is a file, not a store folder` };
-  }
-  if (fs9.readdirSync(store).length === 0)
-    return { kind: "empty" };
-  const top = isWorkTreeTop(store, runGit);
-  const stopped = top ? stoppedCreation(store, runGit) : undefined;
-  if (stopped !== undefined)
-    return stopped;
-  return top && hasReadme(store) ? { kind: "store" } : notAStore(store);
-}
-var hasReadme = (store) => fs9.existsSync(path10.join(store, README_FILE));
-var notAStore = (store) => ({
-  kind: "foreign",
-  issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`
-});
-function stoppedCreation(store, runGit) {
-  const dotGit = fs9.lstatSync(path10.join(store, GIT_FOLDER), {
-    throwIfNoEntry: false
-  });
-  if (dotGit?.isDirectory() !== true)
-    return;
-  const index = uncommittedIndex(store, runGit);
-  if (index === undefined)
-    return;
-  const staged = index.filter((rel) => !CREATION_PATHS.includes(rel));
-  if (staged.length > 0) {
-    return {
-      kind: "foreign",
-      issue: `${store} is a git repo with no commit, and its index holds ${staged.join(", ")}, which link did not stage`
-    };
-  }
-  const others = othersIn(store, "");
-  if (others.length === 0)
-    return { kind: "unfinished" };
-  if (!hasReadme(store))
-    return notAStore(store);
-  return {
-    kind: "cluttered",
-    issue: `${store} is a store whose creation stopped part-way, and it also holds ${others.join(", ")}, which link did not write. Move them out of ${store}, then run link again to finish the store.`
-  };
-}
-function othersIn(store, rel) {
-  return fs9.readdirSync(path10.join(store, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
-    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
-    const ownFile = entry.name === FINDER_FILE || CREATION_PATHS.includes(child);
-    if (entry.isFile() && ownFile)
-      return [];
-    if (!entry.isDirectory())
-      return [child];
-    if (child === GIT_FOLDER)
-      return [];
-    return CREATION_FOLDERS.has(child) ? othersIn(store, child) : [`${child}/`];
-  });
-}
-var NOT_A_COMMIT = 1;
-function uncommittedIndex(store, runGit) {
-  const git = (...args) => runGit("git", ["--no-optional-locks", ...args], store);
-  const head = git("rev-parse", "--verify", "--quiet", "HEAD");
-  if (head.code !== NOT_A_COMMIT)
-    return;
-  const refs = git("for-each-ref", "--count=1");
-  if (refs.code !== 0 || refs.stdout !== "")
-    return;
-  const index = git("ls-files", "-z");
-  if (index.code !== 0)
-    return;
-  return index.stdout.split("\x00").filter((rel) => rel !== "");
-}
-function gitIssue(args, r) {
-  const detail = r.stderr.trim() || r.stdout.trim() || "no output";
-  return `git ${args[0]} failed: ${detail}`;
-}
-var PATHS_ON_STDIN = ["--pathspec-from-file=-", "--pathspec-file-nul"];
-function commitPaths(store, paths, message, runGit) {
-  const steps = [
-    ["add", ...PATHS_ON_STDIN],
-    ["commit", "--quiet", "--only", "-m", message, ...PATHS_ON_STDIN]
-  ];
-  const input = paths.join("\x00");
-  for (const args of steps) {
-    const r = runGit("git", ["--literal-pathspecs", ...args], store, {
-      input
-    });
-    if (r.code !== 0)
-      return { ok: false, issue: gitIssue(args, r) };
-  }
-  return { ok: true };
-}
-function createStore(store, runGit) {
-  const state = storeState(store, runGit);
-  if (state.kind === "foreign" || state.kind === "cluttered") {
-    return { ok: false, issue: state.issue };
-  }
-  if (state.kind === "store") {
-    return { ok: false, issue: `${store} is already a store` };
-  }
-  if (state.kind !== "unfinished") {
-    fs9.mkdirSync(store, { recursive: true });
-    const init = runGit("git", ["init"], store);
-    if (init.code !== 0)
-      return { ok: false, issue: gitIssue(["init"], init) };
-  }
-  const paths = [...CREATION_PATHS];
-  for (const rel of paths)
-    writeIfAbsent(store, rel);
-  const committed = commitPaths(store, paths, CREATION_MESSAGE, runGit);
-  return committed.ok ? { ok: true, paths } : committed;
-}
-function creationContent(rel) {
-  if (rel === README_FILE)
-    return STORE_README;
-  if (rel === IGNORE_FILE)
-    return IGNORE_CONTENT;
-  return "";
-}
-function writeIfAbsent(store, rel) {
-  const file = path10.join(store, ...rel.split("/"));
-  if (fs9.lstatSync(file, { throwIfNoEntry: false })?.isFile() === true)
-    return;
-  fs9.mkdirSync(path10.dirname(file), { recursive: true });
-  fs9.writeFileSync(file, creationContent(rel), { flag: "wx" });
-}
-var STORE_README = `# Memory store
-
-This folder is a git repo that holds the auto-memory of several repos. A repo's \`.claude/settings.local.json\` points Claude Code at one folder here through its \`autoMemoryDirectory\` key.
-
-## Layout
-
-- A family folder groups related repos. It holds the repo folders and the family's own files: \`MEMORY.md\` (the family index), the workstreams that span repos, the support file, and the script catalogue.
-- A repo folder holds one repo's memory. A repo with no family sits at the top level.
-- \`sessions/\` inside a repo folder holds one record per session. Claude Code's auto-dream reviews that folder.
-- A session record is \`sessions/<YYYY-MM-DD>-<session id>.md\`. Its front matter keeps \`metadata.kind\` (\`session\`), \`metadata.session\` (the session id), and \`metadata.workstream\` (the workstream's name, absent when the session served none).
-- A session record's sections are \`## Done, ## Decisions, ## Findings, ## Next steps, ## Where each item went\`.
-- A workstream file is \`<name>.md\` in a repo folder, or in the family folder when it spans repos. Its front matter keeps \`metadata.kind\` (\`workstream\`), \`metadata.status\` (\`open\` or \`closed\`), and \`metadata.branches\`.
-- A workstream file's sections are \`## State, ## Next steps, ## Key files, ## Context\`.
-- \`metadata.branches\` is one string of \`<repo>:<branch>\` pairs joined by \`, \`, with the repo folder's name as \`<repo>\`.
-- Each session start commits the store's changes as "memory: snapshot at <source> of session <id>", with a \`Session:\` trailer.
-- \`.gitignore\` keeps \`.DS_Store\` out of those commits.
-- \`settings.json\` is optional. Its keys are \`indexLineCap\` (the lines a \`MEMORY.md\` may hold, unset by default) and \`indexLineLength\` (the characters an index line may hold, 300 by default), both positive integers that \`sidekick memory lint\` checks.
-- \`sources/\` holds reference material that is not memory.
-- \`archive/\` holds retired memory, such as a repo's old default memory folder after it moved here.
-
-## The marker
-
-A repo folder holds \`.sidekick.json\`, which names the repo's main checkout as \`{"root": "<path>"}\`. A folder with a marker is a repo folder. A top-level folder without one is a family, or a reserved area.
-
-## Reserved names
-
-\`sources\` and \`archive\` belong to the store. No family or repo folder takes either name, a name that starts with ".", or a name with a path separator.
-
-## Changes by hand
-
-- **Unlink a repo.** Remove the \`autoMemoryDirectory\` entry from the repo's \`.claude/settings.local.json\`, in its main checkout. Claude Code then uses its default memory folder again. The repo folder here stays until you delete it.
-- **Move a repo between families.** Move its folder to the new family folder with \`mv\`, then set \`autoMemoryDirectory\` in the repo's \`.claude/settings.local.json\` to the new path. Close the repo's sessions first, since a running session keeps writing to the old path.
-- **Move the store.** Move this folder, then update \`autoMemoryDirectory\` in every linked repo's \`.claude/settings.local.json\`. Each marker holds the repo's root rather than the store's path, so markers stay as they are. Set \`SIDEKICK_MEMORY_STORE\` to the new path if you keep the store anywhere other than \`~/sk-memory-store\`.
-
-## Settings that affect auto-memory
-
-With \`blockReadsOutsideWorkingDirectories\` turned on, Claude Code may switch auto-memory off in a linked repo when it judges the local settings file tracked. Leave the setting off in \`~/.claude/settings.json\`.
-
-## Searches
-
-Leave \`archive/\` out of searches. It holds retired memory that no longer describes the repos.
-
-## Rules for sessions
-
-The user-level rule \`sk-memory.md\` says what a session writes here and what it only reads.
-`;
 
 // bin/helpers/pm-data.ts
+import { constants as constants2 } from "node:buffer";
 import { spawnSync } from "node:child_process";
 
 // bin/helpers/git-env.ts
@@ -3136,9 +2875,10 @@ function glanceState(input) {
 }
 
 // bin/helpers/pm-data.ts
+var MAX_OUTPUT = constants2.MAX_STRING_LENGTH;
 var TIMED_OUT = 124;
 var ranOut = (error) => error !== undefined && ("code" in error) && error.code === "ETIMEDOUT";
-var execRunner = (cmd, args, cwd, { timeoutMs, input } = {}) => {
+var execRunner = (cmd, args, cwd, { timeoutMs, input, maxBuffer } = {}) => {
   const env = envWithoutRepoVars(process.env);
   const r = spawnSync(cmd, args, {
     cwd,
@@ -3146,7 +2886,8 @@ var execRunner = (cmd, args, cwd, { timeoutMs, input } = {}) => {
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     input,
     env: timeoutMs === undefined ? env : { ...env, GIT_TERMINAL_PROMPT: "0" },
-    timeout: timeoutMs
+    timeout: timeoutMs,
+    ...maxBuffer === undefined ? {} : { maxBuffer }
   });
   if (timeoutMs !== undefined && ranOut(r.error)) {
     return {
@@ -3519,6 +3260,273 @@ function fetchStatusUpdates(run, cwd, projectId) {
     throw e;
   }
 }
+
+// bin/helpers/memory-store.ts
+var RESERVED_NAMES = ["sources", "archive"];
+var MARKER_FILE = ".sidekick.json";
+var README_FILE = "README.md";
+var KEEP_FILE = ".gitkeep";
+var IGNORE_FILE = ".gitignore";
+var FINDER_FILE = ".DS_Store";
+var IGNORE_CONTENT = `${FINDER_FILE}
+`;
+var GIT_FOLDER = ".git";
+var CREATION_PATHS = [
+  README_FILE,
+  IGNORE_FILE,
+  ...RESERVED_NAMES.map((name) => `${name}/${KEEP_FILE}`)
+];
+var CREATION_FOLDERS = new Set(CREATION_PATHS.filter((rel) => rel.includes("/")).map((rel) => path10.posix.dirname(rel)));
+var CREATION_MESSAGE = "chore: create the memory store";
+function storeRoot(env, home) {
+  const override = env.SIDEKICK_MEMORY_STORE;
+  return override !== undefined && override !== "" ? override : path10.join(home, "sk-memory-store");
+}
+function folderNameIssue(name) {
+  if (name === "")
+    return "a folder name cannot be empty";
+  if (name.includes("/") || name.includes("\\")) {
+    return `"${name}" holds a path separator`;
+  }
+  if (name.startsWith("."))
+    return `"${name}" cannot start with "."`;
+  if (RESERVED_NAMES.includes(name)) {
+    return `"${name}" is a reserved name (${RESERVED_NAMES.join(", ")})`;
+  }
+  return;
+}
+var MarkerSchema = object({ root: string() });
+function readMarker(folder) {
+  const file = path10.join(folder, MARKER_FILE);
+  if (!fs9.existsSync(file))
+    return { kind: "none" };
+  try {
+    const parsed = safeParse(MarkerSchema, JSON.parse(fs9.readFileSync(file, "utf-8")));
+    if (parsed.success)
+      return { kind: "marker", root: parsed.output.root };
+    return { kind: "invalid", issue: `${file} must be {"root": "<path>"}` };
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { kind: "invalid", issue: `${file} is not readable JSON: ${why}` };
+  }
+}
+function writeMarker(folder, root) {
+  const marker = { root };
+  fs9.writeFileSync(path10.join(folder, MARKER_FILE), `${JSON.stringify(marker, null, 2)}
+`);
+}
+function children(folder) {
+  try {
+    return fs9.readdirSync(folder, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+function markerRoot(folder) {
+  const read = readMarker(folder);
+  return read.kind === "marker" ? read.root : undefined;
+}
+function findMarkers(store) {
+  return children(store).flatMap((first) => {
+    const firstFolder = path10.join(store, first);
+    const own = markerRoot(firstFolder);
+    if (own !== undefined) {
+      return [{ folder: firstFolder, root: own, family: undefined }];
+    }
+    return children(firstFolder).flatMap((second) => {
+      const folder = path10.join(firstFolder, second);
+      const root = markerRoot(folder);
+      return root === undefined ? [] : [{ folder, root, family: first }];
+    });
+  });
+}
+var refusesStore = (state) => state.kind === "foreign" || state.kind === "cluttered";
+function realPath(p) {
+  try {
+    return fs9.realpathSync(p);
+  } catch {
+    return path10.resolve(p);
+  }
+}
+function isWorkTreeTop(store, runGit) {
+  const top = runGit("git", ["rev-parse", "--show-toplevel"], store);
+  return top.code === 0 && realPath(top.stdout.trim()) === realPath(store);
+}
+function storeState(store, runGit) {
+  if (!fs9.existsSync(store))
+    return { kind: "absent" };
+  if (!fs9.statSync(store).isDirectory()) {
+    return { kind: "foreign", issue: `${store} is a file, not a store folder` };
+  }
+  if (fs9.readdirSync(store).length === 0)
+    return { kind: "empty" };
+  const top = isWorkTreeTop(store, runGit);
+  const stopped = top ? stoppedCreation(store, runGit) : undefined;
+  if (stopped !== undefined)
+    return stopped;
+  return top && hasReadme(store) ? { kind: "store" } : notAStore(store);
+}
+var hasReadme = (store) => fs9.existsSync(path10.join(store, README_FILE));
+var notAStore = (store) => ({
+  kind: "foreign",
+  issue: `${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`
+});
+function stoppedCreation(store, runGit) {
+  const dotGit = fs9.lstatSync(path10.join(store, GIT_FOLDER), {
+    throwIfNoEntry: false
+  });
+  if (dotGit?.isDirectory() !== true)
+    return;
+  const index = uncommittedIndex(store, runGit);
+  if (index === undefined)
+    return;
+  const staged = index.filter((rel) => !CREATION_PATHS.includes(rel));
+  if (staged.length > 0) {
+    return {
+      kind: "foreign",
+      issue: `${store} is a git repo with no commit, and its index holds ${staged.join(", ")}, which link did not stage`
+    };
+  }
+  const others = othersIn(store, "");
+  if (others.length === 0)
+    return { kind: "unfinished" };
+  if (!hasReadme(store))
+    return notAStore(store);
+  return {
+    kind: "cluttered",
+    issue: `${store} is a store whose creation stopped part-way, and it also holds ${others.join(", ")}, which link did not write. Move them out of ${store}, then run link again to finish the store.`
+  };
+}
+function othersIn(store, rel) {
+  return fs9.readdirSync(path10.join(store, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
+    const ownFile = entry.name === FINDER_FILE || CREATION_PATHS.includes(child);
+    if (entry.isFile() && ownFile)
+      return [];
+    if (!entry.isDirectory())
+      return [child];
+    if (child === GIT_FOLDER)
+      return [];
+    return CREATION_FOLDERS.has(child) ? othersIn(store, child) : [`${child}/`];
+  });
+}
+var NOT_A_COMMIT = 1;
+function uncommittedIndex(store, runGit) {
+  const git = (...args) => runGit("git", ["--no-optional-locks", ...args], store);
+  const head = git("rev-parse", "--verify", "--quiet", "HEAD");
+  if (head.code !== NOT_A_COMMIT)
+    return;
+  const refs = git("for-each-ref", "--count=1");
+  if (refs.code !== 0 || refs.stdout !== "")
+    return;
+  const index = runGit("git", ["--no-optional-locks", "ls-files", "-z"], store, {
+    maxBuffer: MAX_OUTPUT
+  });
+  if (index.code !== 0)
+    return;
+  return index.stdout.split("\x00").filter((rel) => rel !== "");
+}
+function gitIssue(args, r) {
+  const detail = r.stderr.trim() || r.stdout.trim() || "no output";
+  return `git ${args[0]} failed: ${detail}`;
+}
+var PATHS_ON_STDIN = ["--pathspec-from-file=-", "--pathspec-file-nul"];
+function commitPaths(store, paths, message, runGit) {
+  const steps = [
+    ["add", ...PATHS_ON_STDIN],
+    ["commit", "--quiet", "--only", "-m", message, ...PATHS_ON_STDIN]
+  ];
+  const input = paths.join("\x00");
+  for (const args of steps) {
+    const r = runGit("git", ["--literal-pathspecs", ...args], store, {
+      input,
+      maxBuffer: MAX_OUTPUT
+    });
+    if (r.code !== 0)
+      return { ok: false, issue: gitIssue(args, r) };
+  }
+  return { ok: true };
+}
+function createStore(store, runGit) {
+  const state = storeState(store, runGit);
+  if (state.kind === "foreign" || state.kind === "cluttered") {
+    return { ok: false, issue: state.issue };
+  }
+  if (state.kind === "store") {
+    return { ok: false, issue: `${store} is already a store` };
+  }
+  if (state.kind !== "unfinished") {
+    fs9.mkdirSync(store, { recursive: true });
+    const init = runGit("git", ["init"], store);
+    if (init.code !== 0)
+      return { ok: false, issue: gitIssue(["init"], init) };
+  }
+  const paths = [...CREATION_PATHS];
+  for (const rel of paths)
+    writeIfAbsent(store, rel);
+  const committed = commitPaths(store, paths, CREATION_MESSAGE, runGit);
+  return committed.ok ? { ok: true, paths } : committed;
+}
+function creationContent(rel) {
+  if (rel === README_FILE)
+    return STORE_README;
+  if (rel === IGNORE_FILE)
+    return IGNORE_CONTENT;
+  return "";
+}
+function writeIfAbsent(store, rel) {
+  const file = path10.join(store, ...rel.split("/"));
+  if (fs9.lstatSync(file, { throwIfNoEntry: false })?.isFile() === true)
+    return;
+  fs9.mkdirSync(path10.dirname(file), { recursive: true });
+  fs9.writeFileSync(file, creationContent(rel), { flag: "wx" });
+}
+var STORE_README = `# Memory store
+
+This folder is a git repo that holds the auto-memory of several repos. A repo's \`.claude/settings.local.json\` points Claude Code at one folder here through its \`autoMemoryDirectory\` key.
+
+## Layout
+
+- A family folder groups related repos. It holds the repo folders and the family's own files: \`MEMORY.md\` (the family index), the workstreams that span repos, the support file, and the script catalogue.
+- A repo folder holds one repo's memory. A repo with no family sits at the top level.
+- \`sessions/\` inside a repo folder holds one record per session. Claude Code's auto-dream reviews that folder.
+- A session record is \`sessions/<YYYY-MM-DD>-<session id>.md\`. Its front matter keeps \`metadata.kind\` (\`session\`), \`metadata.session\` (the session id), and \`metadata.workstream\` (the workstream's name, absent when the session served none).
+- A session record's sections are \`## Done, ## Decisions, ## Findings, ## Next steps, ## Where each item went\`.
+- A workstream file is \`<name>.md\` in a repo folder, or in the family folder when it spans repos. Its front matter keeps \`metadata.kind\` (\`workstream\`), \`metadata.status\` (\`open\` or \`closed\`), and \`metadata.branches\`.
+- A workstream file's sections are \`## State, ## Next steps, ## Key files, ## Context\`.
+- \`metadata.branches\` is one string of \`<repo>:<branch>\` pairs joined by \`, \`, with the repo folder's name as \`<repo>\`.
+- Each session start commits the store's changes as "memory: snapshot at <source> of session <id>", with a \`Session:\` trailer.
+- \`.gitignore\` keeps \`.DS_Store\` out of those commits.
+- \`settings.json\` is optional. Its keys are \`indexLineCap\` (the lines a \`MEMORY.md\` may hold, unset by default) and \`indexLineLength\` (the characters an index line may hold, 300 by default), both positive integers that \`sidekick memory lint\` checks.
+- \`sources/\` holds reference material that is not memory.
+- \`archive/\` holds retired memory, such as a repo's old default memory folder after it moved here.
+
+## The marker
+
+A repo folder holds \`.sidekick.json\`, which names the repo's main checkout as \`{"root": "<path>"}\`. A folder with a marker is a repo folder. A top-level folder without one is a family, or a reserved area.
+
+## Reserved names
+
+\`sources\` and \`archive\` belong to the store. No family or repo folder takes either name, a name that starts with ".", or a name with a path separator.
+
+## Changes by hand
+
+- **Unlink a repo.** Remove the \`autoMemoryDirectory\` entry from the repo's \`.claude/settings.local.json\`, in its main checkout. Claude Code then uses its default memory folder again. The repo folder here stays until you delete it.
+- **Move a repo between families.** Move its folder to the new family folder with \`mv\`, then set \`autoMemoryDirectory\` in the repo's \`.claude/settings.local.json\` to the new path. Close the repo's sessions first, since a running session keeps writing to the old path.
+- **Move the store.** Move this folder, then update \`autoMemoryDirectory\` in every linked repo's \`.claude/settings.local.json\`. Each marker holds the repo's root rather than the store's path, so markers stay as they are. Set \`SIDEKICK_MEMORY_STORE\` to the new path if you keep the store anywhere other than \`~/sk-memory-store\`.
+
+## Settings that affect auto-memory
+
+With \`blockReadsOutsideWorkingDirectories\` turned on, Claude Code may switch auto-memory off in a linked repo when it judges the local settings file tracked. Leave the setting off in \`~/.claude/settings.json\`.
+
+## Searches
+
+Leave \`archive/\` out of searches. It holds retired memory that no longer describes the repos.
+
+## Rules for sessions
+
+The user-level rule \`sk-memory.md\` says what a session writes here and what it only reads.
+`;
 
 // bin/helpers/profile-launch.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
@@ -5398,7 +5406,7 @@ function statusIn(store, pathspecs, runGit) {
     "--",
     ...pathspecs
   ];
-  const r = runGit("git", args, store);
+  const r = runGit("git", args, store, { maxBuffer: MAX_OUTPUT });
   if (r.code !== 0) {
     return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
   }

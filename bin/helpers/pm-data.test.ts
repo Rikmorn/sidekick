@@ -132,6 +132,18 @@ describe('touchedAt', () => {
   });
 });
 
+// More than the 1 MiB that Node's spawnSync holds by default.
+const OVER_DEFAULT_LIMIT = 1_500_000;
+
+// A git call in `top` that prints `bytes` zero bytes on stdout.
+const printsBytes = (top: string, bytes: number, opts?: RunOptions) =>
+  execRunner(
+    'git',
+    ['-c', `alias.zeros=!f() { head -c ${bytes} /dev/zero; }; f`, 'zeros'],
+    top,
+    opts,
+  );
+
 describe('execRunner', () => {
   afterEach(removeTemps);
   test('a missing binary is code 127, not a throw', () => {
@@ -195,6 +207,22 @@ describe('execRunner', () => {
     expect(stdinKind({ timeoutMs: 5_000 })).toBe('device');
     // Node and Bun both hand a call with input a socket, not the device.
     expect(stdinKind({ input: 'x' })).toBe('other');
+  });
+  test('a call without maxBuffer keeps the default output limit, as before', () => {
+    const top = repo();
+    for (const opts of [undefined, { timeoutMs: 5_000 }, { input: '' }]) {
+      const r = printsBytes(top, OVER_DEFAULT_LIMIT, opts);
+      expect(r.code).toBe(127);
+      expect(r.stderr).toContain('ENOBUFS');
+    }
+  });
+  test('a call with maxBuffer reads output past the default limit', () => {
+    const top = repo();
+    const r = printsBytes(top, OVER_DEFAULT_LIMIT, {
+      maxBuffer: 2 * OVER_DEFAULT_LIMIT,
+    });
+    expect(r.code).toBe(0);
+    expect(r.stdout.length).toBe(OVER_DEFAULT_LIMIT);
   });
   test('git reports a failing command with its exit code', () => {
     const r = execRunner(

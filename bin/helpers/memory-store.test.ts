@@ -15,7 +15,12 @@ import {
   storeState,
   writeMarker,
 } from './memory-store.js';
-import { execRunner, type Runner } from './pm-data.js';
+import {
+  execRunner,
+  MAX_OUTPUT,
+  type Runner,
+  type RunOptions,
+} from './pm-data.js';
 
 const IDENTITY = {
   GIT_AUTHOR_NAME: 'Test',
@@ -363,6 +368,18 @@ describe('storeState', () => {
     make(store);
     expect(storeState(store, execRunner).kind).not.toBe('unfinished');
   });
+
+  test("reads a commit-less repo's index with room for every path in it", () => {
+    const store = path.join(tmp, 'store');
+    stoppedCreation(store, []);
+    const listings: (RunOptions | undefined)[] = [];
+    const runner: Runner = (cmd, args, cwd, opts) => {
+      if (args.includes('ls-files')) listings.push(opts);
+      return execRunner(cmd, args, cwd, opts);
+    };
+    expect(storeState(store, runner)).toEqual({ kind: 'unfinished' });
+    expect(listings).toEqual([{ maxBuffer: MAX_OUTPUT }]);
+  });
 });
 
 describe('createStore', () => {
@@ -515,6 +532,8 @@ describe('commitPaths', () => {
     });
     const files = git(store, 'show', '--name-only', '--format=', 'HEAD').trim();
     expect(files).toBe('a[1].md');
+    // A glob-reading add would have staged it.
+    expect(git(store, 'status', '--porcelain').trim()).toBe('?? a1.md');
   });
 
   test('reports a failure with the git message', () => {
@@ -545,9 +564,9 @@ describe('commitPaths', () => {
 
   test('passes the paths on stdin, so no git argument list grows with their count', () => {
     const calls = (paths: string[]) => {
-      const seen: { args: string[]; input: string | undefined }[] = [];
+      const seen: { args: string[]; opts: RunOptions | undefined }[] = [];
       const runner: Runner = (_cmd, args, _cwd, opts) => {
-        seen.push({ args, input: opts?.input });
+        seen.push({ args, opts });
         return { code: 0, stdout: '', stderr: '' };
       };
       expect(commitPaths('/store', paths, 'm', runner)).toEqual({ ok: true });
@@ -557,9 +576,11 @@ describe('commitPaths', () => {
     const manyCalls = calls(many);
     const oneCalls = calls(['repo/a.md']);
     expect(manyCalls.map((c) => c.args)).toEqual(oneCalls.map((c) => c.args));
-    expect(manyCalls.map((c) => c.input)).toEqual([
-      many.join('\0'),
-      many.join('\0'),
+    expect(manyCalls[1].args).toContain('--quiet');
+    // git add warns once per file in some configurations, as with core.autocrlf.
+    expect(manyCalls.map((c) => c.opts)).toEqual([
+      { input: many.join('\0'), maxBuffer: MAX_OUTPUT },
+      { input: many.join('\0'), maxBuffer: MAX_OUTPUT },
     ]);
   });
 

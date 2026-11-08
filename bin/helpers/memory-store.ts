@@ -8,7 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
-import type { Runner } from './pm-data.js';
+import { MAX_OUTPUT, type Runner } from './pm-data.js';
 
 /** Top-level names the store keeps for itself; no family or repo folder takes one. */
 export const RESERVED_NAMES: readonly string[] = ['sources', 'archive'];
@@ -258,7 +258,15 @@ function uncommittedIndex(store: string, runGit: Runner): string[] | undefined {
   if (head.code !== NOT_A_COMMIT) return undefined;
   const refs = git('for-each-ref', '--count=1');
   if (refs.code !== 0 || refs.stdout !== '') return undefined;
-  const index = git('ls-files', '-z');
+  // The index can hold any number of paths, so its listing can pass the default limit.
+  const index = runGit(
+    'git',
+    ['--no-optional-locks', 'ls-files', '-z'],
+    store,
+    {
+      maxBuffer: MAX_OUTPUT,
+    },
+  );
   if (index.code !== 0) return undefined;
   return index.stdout.split('\0').filter((rel) => rel !== '');
 }
@@ -296,8 +304,11 @@ export function commitPaths(
   ];
   const input = paths.join('\0');
   for (const args of steps) {
+    // `add` can warn once per file, as `core.autocrlf` makes it, and a failed
+    // `commit` lists every untracked file.
     const r = runGit('git', ['--literal-pathspecs', ...args], store, {
       input,
+      maxBuffer: MAX_OUTPUT,
     });
     if (r.code !== 0) return { ok: false, issue: gitIssue(args, r) };
   }

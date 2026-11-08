@@ -41,7 +41,7 @@ import {
   storeRoot,
   storeState,
 } from './memory-store.js';
-import type { Runner } from './pm-data.js';
+import { MAX_OUTPUT, type Runner } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
 import { listJobs } from './worker-jobs.js';
 import { physical } from './worker-repo.js';
@@ -387,7 +387,8 @@ function statusIn(
     '--',
     ...pathspecs,
   ];
-  const r = runGit('git', args, store);
+  // The listing grows with the files under `pathspecs`, past the default limit.
+  const r = runGit('git', args, store, { maxBuffer: MAX_OUTPUT });
   if (r.code !== 0) {
     return { issue: `git status failed in ${store}: ${r.stderr.trim()}` };
   }

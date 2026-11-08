@@ -4,6 +4,7 @@
  * the seat reasons about. Nothing here writes to GitHub.
  */
 
+import { constants } from 'node:buffer';
 import { spawnSync } from 'node:child_process';
 import * as v from 'valibot';
 import { envWithoutRepoVars } from './git-env.js';
@@ -23,6 +24,11 @@ export interface RunOptions {
   timeoutMs?: number;
   /** Written to the call's stdin. Without it, stdin is the null device. */
   input?: string;
+  /**
+   * The most bytes the call may print on stdout, and on stderr; past it the
+   * call fails. Without it, the runtime's default limit applies.
+   */
+  maxBuffer?: number;
 }
 export type Runner = (
   cmd: 'gh' | 'git',
@@ -30,6 +36,13 @@ export type Runner = (
   cwd: string,
   opts?: RunOptions,
 ) => RunResult;
+
+/**
+ * The `maxBuffer` for a call whose output grows with a folder's files: the
+ * longest string the runtime decodes, so no output the runner could return
+ * is refused. The runner holds only as much as the call prints.
+ */
+export const MAX_OUTPUT: number = constants.MAX_STRING_LENGTH;
 
 /** The exit code of a call that ran past its limit, as timeout(1) gives. */
 export const TIMED_OUT = 124;
@@ -42,7 +55,7 @@ export const execRunner: Runner = (
   cmd,
   args,
   cwd,
-  { timeoutMs, input } = {},
+  { timeoutMs, input, maxBuffer } = {},
 ) => {
   const env = envWithoutRepoVars(process.env);
   const r = spawnSync(cmd, args, {
@@ -52,6 +65,8 @@ export const execRunner: Runner = (
     input,
     env: timeoutMs === undefined ? env : { ...env, GIT_TERMINAL_PROMPT: '0' },
     timeout: timeoutMs,
+    // A `maxBuffer` of undefined lifts the default limit, so it goes only when set.
+    ...(maxBuffer === undefined ? {} : { maxBuffer }),
   });
   if (timeoutMs !== undefined && ranOut(r.error)) {
     return {
