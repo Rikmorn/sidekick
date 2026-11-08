@@ -126,7 +126,7 @@ Steps 3 to 5 hold, except `finish`: it finds a worker by its background job, so 
 
 At `finishing-a-development-branch`, take the option that matches the repo's route, as §Hand off to a worker step 5 describes. Then run the plan's after-file, if it has one.
 
-Inside a linked worktree, `sk-worktree`'s done replaces `finishing-a-development-branch`'s local merge. An after-file's steps that check the work, such as the gates and by-hand runs, come before done lands it. Its steps that record or close, such as close comments citing commits, come after, since those commits have landed by then.
+Inside a linked worktree, `sk-worktree`'s done replaces `finishing-a-development-branch`'s options. An after-file's steps that check the work, such as the gates and by-hand runs, come before done lands it. Its steps that record or close, such as close comments citing commits, come after, since those commits have landed by then.
 
 The closing summary records these fields beside superpowers' "Rulings I made":
 

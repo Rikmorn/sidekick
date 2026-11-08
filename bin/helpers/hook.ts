@@ -1,17 +1,18 @@
 /**
  * `sidekick hook post-skill`, `post-read`, `post-tool-batch`, `memory-start`,
  * and `pre-enter-worktree`: the verbs sidekick's hooks run. The first four add
- * context. The two PostToolUse verbs fire when a skill sidekick extends loads,
- * or when a review package is read: superpowers' own, or the one
- * sk-milestone's release check builds, which gets lines of its own. The
- * PostToolBatch verb warns the model as its context fills, and tells the
- * operator once, through a `systemMessage`, when sidekick's mods are not
- * running. The SessionStart verb `memory-start` prints the memory store's
- * workstream and record for the session. The PreToolUse verb
- * `pre-enter-worktree` adds no context: it fetches the default branch before
- * `EnterWorktree` creates a worktree, and prints nothing. Every other input
- * prints nothing and returns 0, because a hook never blocks or fails the call
- * it watches (ADR-0010, ADR-0011).
+ * context. The two PostToolUse verbs fire in two cases. One is when a skill
+ * sidekick extends loads. The other is when a review package is read:
+ * superpowers' own, or the one sk-milestone's release check builds, which gets
+ * lines of its own. The PostToolBatch verb warns the model as its context
+ * fills, and tells the operator once, through a `systemMessage`, when
+ * sidekick's mods are not running. The SessionStart verb `memory-start` prints
+ * the memory store's workstream and record for the session. The PreToolUse
+ * verb `pre-enter-worktree` adds no context: it fetches the default branch
+ * before `EnterWorktree` creates a worktree, and prints nothing. A known verb
+ * prints nothing and returns 0 for any other event, because a hook never
+ * blocks or fails the call it watches (ADR-0010, ADR-0011). An unknown or
+ * missing verb prints the usage and returns 1.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -227,7 +228,7 @@ function worktreeNudge(lead: string, pluginDir: string): string | undefined {
 }
 
 const USING_WORKTREES_LEAD =
-  "sidekick: in this session, start or verify the worktree with `sk-worktree` in place of this skill's steps. Start enters with `EnterWorktree`, moves the worktree onto its branch, then runs the repo's own setup in place of `npm install`. In a dispatched worker, the brief's place and setup answer this skill.";
+  "sidekick: in this session, `sk-worktree` replaces this skill's Steps 1 and 2: it makes the worktree and runs the repo's setup in place of `npm install`. From the main checkout, start enters with `EnterWorktree`, moves the worktree onto its branch, then runs that setup. In a fresh `claude -w` worktree, it stays and moves. Step 3 still runs once setup is done: run the tests to check a clean baseline. In a dispatched worker, the brief's place and setup answer Steps 1 and 2.";
 
 const FINISHING_BRANCH_LEAD =
   "sidekick: in a linked worktree, `sk-worktree`'s done replaces this skill's options, since a local merge from a worktree changes the main checkout under any session there. In the main checkout, this skill runs as written. In a dispatched worker, keep the branch as it is: the brief and `sidekick worker finish` answer this skill.";
