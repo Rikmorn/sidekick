@@ -304,7 +304,7 @@ describe('runHookCli post-skill, worktree skills', () => {
   const USING = 'superpowers:using-git-worktrees';
   const FINISHING = 'superpowers:finishing-a-development-branch';
   const USING_LEAD =
-    "sidekick: in this session, `sk-worktree` replaces this skill's Steps 1 and 2: it makes the worktree and runs the repo's setup in place of `npm install`. From the main checkout, start enters with `EnterWorktree`, moves the worktree onto its branch, then runs that setup. In a fresh `claude -w` worktree, it stays and moves. Step 3 still runs once setup is done: run the tests to check a clean baseline.";
+    "sidekick: in this session, `sk-worktree` replaces this skill's Create Isolated Workspace and Project Setup steps: it makes the worktree and runs the repo's setup in place of `npm install`. From the main checkout, start enters with `EnterWorktree`, moves the worktree onto its branch, then runs that setup. In a fresh `claude -w` worktree, it stays and runs `move`. Verify Clean Baseline still runs once setup is done: run the tests to check a clean baseline.";
   const FINISHING_LEAD =
     "sidekick: in a linked worktree, `sk-worktree`'s done replaces this skill's options";
   const WORKER_SENTENCE = 'In a dispatched worker, ';
