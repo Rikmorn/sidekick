@@ -444,15 +444,21 @@ function notesOf(
   const moves = actions.some(
     (a) => a.kind === 'mergeKey' || a.kind === 'archiveDefault',
   );
+  // A re-run that only commits finishes a run that set the key or archived the folder, then failed at its commit.
+  const commitsOnly =
+    actions.length > 0 && actions.every((a) => a.kind === 'commit');
   const noDefault =
     isFirstLink(ready.repo) && defaultFolder.kind === 'absent'
       ? [
           `No default memory folder at ${defaultFolder.folder}: nothing to copy or archive.`,
         ]
       : [];
+  const sessions = ready.repo.sessions;
+  const folder = defaultFolder.folder;
   return [
     ...noDefault,
-    ...(moves ? sessionNotes(ready.repo.sessions, defaultFolder.folder) : []),
+    ...(moves ? sessionNotes(sessions, folder) : []),
+    ...(commitsOnly ? rerunSessionNotes(sessions, folder) : []),
     ...userSettingsNotes(facts),
   ];
 }
@@ -474,6 +480,26 @@ function sessionNotes(sessions: SessionFacts, folder: string): string[] {
           `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts. Restart it once the link is done.`,
         ];
   return [...forced, ...self];
+}
+
+// A commit-only plan never refuses over sessions, so `--force` says nothing about them here, and a session may have started after the key was set.
+function rerunSessionNotes(sessions: SessionFacts, folder: string): string[] {
+  if (sessions.kind === 'failed') {
+    return [
+      `The check for other open sessions did not run: ${sessions.issues.join(' ')} A session open in the repo since before the key was set keeps writing to ${folder} until it restarts.`,
+    ];
+  }
+  const others = sessions.others.map(
+    (job) =>
+      `Open in the repo: ${describeJob(job)}. If it started before the key was set, it keeps writing to ${folder} until it restarts; run link again afterwards to archive what it wrote.`,
+  );
+  const self =
+    sessions.self === undefined
+      ? []
+      : [
+          `This session (${describeJob(sessions.self)}) keeps reading and writing ${folder} until it restarts, if it started before the key was set. Restart it once the link is done.`,
+        ];
+  return [...others, ...self];
 }
 
 function userSettingsNotes(facts: LinkFacts): string[] {

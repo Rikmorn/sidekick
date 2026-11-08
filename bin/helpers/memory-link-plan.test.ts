@@ -8,6 +8,7 @@ import type {
   LinkPlan,
   PlanOptions,
   RepoFacts,
+  SessionFacts,
   TargetFacts,
 } from './memory-link-types.js';
 import type { SettingsState } from './memory-settings.js';
@@ -518,6 +519,85 @@ describe('planLink: sessions', () => {
       NO_FLAGS,
     );
     expect(actionsOf(plan)).toEqual([]);
+  });
+});
+
+describe('planLink: sessions on a re-run that only commits', () => {
+  const other = job('other', '/x/odin/src');
+  const commitOnly = (sessions: SessionFacts) =>
+    facts({
+      repo: repo({
+        settings: settings(TARGET),
+        defaultFolder: ABSENT_DEFAULT,
+        sessions,
+        target: target({
+          state: { kind: 'marked', root: ROOT },
+          pending: { paths: ['odin/.sidekick.json'] },
+        }),
+      }),
+    });
+
+  test.each([
+    ['without --force', NO_FLAGS],
+    ['with --force', FORCE],
+  ])('names an open session and never claims --force, %s', (_label, opts) => {
+    const plan = planLink(
+      commitOnly({ kind: 'listed', self: undefined, others: [other] }),
+      opts,
+    );
+    expect(actionsOf(plan)).toEqual([COMMIT]);
+    const notes = notesOf(plan).join('\n');
+    expect(notes).toContain('other in /x/odin/src');
+    expect(notes).toContain(DEFAULT);
+    expect(notes).not.toContain('--force');
+  });
+
+  test.each([
+    ['without --force', NO_FLAGS],
+    ['with --force', FORCE],
+  ])('a failed listing says the check did not run, %s', (_label, opts) => {
+    const plan = planLink(
+      commitOnly({ kind: 'failed', issues: ['claude agents failed.'] }),
+      opts,
+    );
+    const notes = notesOf(plan).join('\n');
+    expect(notes).toContain('did not run');
+    expect(notes).toContain('claude agents failed.');
+    expect(notes).not.toContain('--force');
+  });
+
+  test('the session running link is told to restart if it began before the key', () => {
+    const plan = planLink(
+      commitOnly({ kind: 'listed', self: job('me', '/x/odin'), others: [] }),
+      NO_FLAGS,
+    );
+    const notes = notesOf(plan).join('\n');
+    expect(notes).toContain('me');
+    expect(notes).toContain('restart');
+    expect(notes).toContain('started before');
+  });
+
+  test('no session note when no session is open', () => {
+    const plan = planLink(
+      commitOnly({ kind: 'listed', self: undefined, others: [] }),
+      NO_FLAGS,
+    );
+    expect(notesOf(plan)).toEqual([]);
+  });
+
+  test('a run that plans no commit prints no session note', () => {
+    const plan = planLink(
+      facts({
+        repo: repo({
+          settings: settings(TARGET),
+          defaultFolder: ABSENT_DEFAULT,
+          target: MARKED,
+          sessions: { kind: 'listed', self: undefined, others: [other] },
+        }),
+      }),
+      NO_FLAGS,
+    );
+    expect(notesOf(plan)).toEqual([]);
   });
 });
 
