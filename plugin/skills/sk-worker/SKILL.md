@@ -78,6 +78,7 @@ Invoke the superpowers skill the brief's `skill` names, and follow it. Its task 
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
 - **Run the prose step** wherever a task has one.
 - **Read GitHub, never write it.** Issues, comments, and the board belong to the orchestrator.
+- **Each subagent carries the brief's limits.** A subagent sees only the prompt you give it, never the brief. So every prompt you write, a reviewer's included, states the brief's limits that bind that subagent's work: where it may write, what it may read, and the commands it may not run. A reviewer the brief limits to two issues reads only those two.
 
 ## Git
 
