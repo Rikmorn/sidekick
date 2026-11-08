@@ -157,10 +157,21 @@ function sessionFacts(input: RepoInput): SessionFacts {
   const listed = listJobs(input.deps.runClaude, input.root);
   if ('issues' in listed) return { kind: 'failed', issues: listed.issues };
   const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
-  return {
-    kind: 'listed',
-    ...sessionsInRepo(listed.jobs, input.checkouts, selfId),
-  };
+  const { self, others, unreadable } = sessionsInRepo(
+    listed.jobs,
+    input.checkouts,
+    selfId,
+  );
+  if (unreadable.length > 0) {
+    return {
+      kind: 'failed',
+      issues: unreadable.map(
+        (j) =>
+          `The listing's row for ${j.name ?? j.sessionId ?? j.id ?? 'a session'} in ${j.cwd ?? 'an unknown folder'} has a pid that is not a number.`,
+      ),
+    };
+  }
+  return { kind: 'listed', self, others };
 }
 
 interface TargetInput extends RepoInput {

@@ -13,9 +13,14 @@ export const LISTING_ARGS = ['agents', '--json', '--all'];
 export const LISTING = `claude ${LISTING_ARGS.join(' ')}`;
 
 const OptionalText = v.nullish(v.string());
-// A pid of another type fails the listing: `link` then cannot tell whether a
-// process runs, and refuses with its `--force` way forward.
-const OptionalPid = v.nullish(v.number());
+// A pid of another type parses to `pidMalformed`, not to a failed listing: no
+// caller but `sessionsInRepo` reads a pid, and a dispatch must not fail on it.
+// `link` treats a malformed pid on an in-repo row as "cannot tell" (see
+// `sessionFacts` in memory-link-facts.ts).
+const RawPid = v.optional(v.unknown());
+
+const isMalformedPid = (pid: unknown): boolean =>
+  pid !== undefined && pid !== null && typeof pid !== 'number';
 
 // valibot's object accepts an array, so the array check runs on the raw row.
 const JobSchema = v.pipe(
@@ -28,7 +33,7 @@ const JobSchema = v.pipe(
     cwd: OptionalText,
     sessionId: OptionalText,
     state: OptionalText,
-    pid: OptionalPid,
+    pid: RawPid,
   }),
   v.transform((row) => ({
     id: row.id ?? undefined,
@@ -37,7 +42,8 @@ const JobSchema = v.pipe(
     cwd: row.cwd ?? undefined,
     sessionId: row.sessionId ?? undefined,
     state: row.state ?? undefined,
-    pid: row.pid ?? undefined,
+    pid: typeof row.pid === 'number' ? row.pid : undefined,
+    ...(isMalformedPid(row.pid) ? { pidMalformed: true } : {}),
   })),
 );
 

@@ -52,7 +52,7 @@ interface Row {
   cwd: string;
   state?: string;
   kind?: string;
-  pid?: number;
+  pid?: number | string;
 }
 
 // A live session's row carries a pid, as the real listing's does.
@@ -760,6 +760,33 @@ describe('runLink: refusals write nothing', () => {
       expect(run.code).toBe(0);
       expect(run.out.join('\n')).not.toContain('bg in');
     }
+  });
+
+  test('a malformed pid on an in-repo row refuses as cannot tell, and --force links; one outside the repo is ignored', () => {
+    const w = world();
+    const row = (cwd: string): LinkDeps => ({
+      ...w.deps,
+      runClaude: listing([
+        { sessionId: 'bg', cwd, kind: 'background', state: 'done', pid: '41' },
+      ]),
+    });
+    const refused = link(w, opts(w.top), row(w.top));
+    expect(refused.code).toBe(1);
+    expect(refused.err.join('\n')).toContain(
+      'cannot tell whether another session is open',
+    );
+    expect(refused.err.join('\n')).toContain('not a number');
+    expect(refused.err.join('\n')).toContain('--force');
+    expect(fs.existsSync(w.store)).toBe(false);
+    const outside = link(
+      w,
+      opts(w.top, { dryRun: true }),
+      row('/nonexistent-sidekick/elsewhere'),
+    );
+    expect(outside.err).toEqual([]);
+    expect(outside.code).toBe(0);
+    const forced = link(w, opts(w.top, { force: true }), row(w.top));
+    expect(forced.code).toBe(0);
   });
 
   test('the session running link is told to restart', () => {

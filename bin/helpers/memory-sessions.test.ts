@@ -45,7 +45,7 @@ describe('sessionsInRepo', () => {
 
   test('a job with no cwd is not in the repo', () => {
     const result = sessionsInRepo([job('a')], ['/x/odin'], undefined);
-    expect(result).toEqual({ self: undefined, others: [] });
+    expect(result).toEqual({ self: undefined, others: [], unreadable: [] });
   });
 
   test('picks self out of others', () => {
@@ -123,6 +123,46 @@ describe('sessionsInRepo', () => {
     expect(
       sessionsInRepo([working, blocked], ['/x/odin'], undefined).others,
     ).toEqual([working, blocked]);
+  });
+
+  test('a stopped row stays passed over even when it carries a pid', () => {
+    const stopped = job('s', '/x/odin', 'stopped', { pid: 7 });
+    expect(sessionsInRepo([stopped], ['/x/odin'], undefined).others).toEqual(
+      [],
+    );
+  });
+
+  test('a failed background row with no pid is not open', () => {
+    const failed = job('f', '/x/odin', 'failed', {
+      kind: 'background',
+      pid: undefined,
+    });
+    expect(sessionsInRepo([failed], ['/x/odin'], undefined).others).toEqual([]);
+  });
+
+  test('an interactive row is open with a pid and passed over without one', () => {
+    const live = job('l', '/x/odin', undefined, { pid: 9 });
+    const gone = job('g', '/x/odin', undefined, { pid: undefined });
+    expect(sessionsInRepo([live, gone], ['/x/odin'], undefined).others).toEqual(
+      [live],
+    );
+  });
+
+  test('an in-repo row with a malformed pid is unreadable; one outside the repo or stopped is not', () => {
+    const bad = job('b', '/x/odin', 'done', {
+      kind: 'background',
+      pid: undefined,
+      pidMalformed: true,
+    });
+    const outside = { ...bad, sessionId: 'o', cwd: '/x/other' };
+    const stopped = { ...bad, sessionId: 's', state: 'stopped' };
+    const result = sessionsInRepo(
+      [bad, outside, stopped],
+      ['/x/odin'],
+      undefined,
+    );
+    expect(result.unreadable).toEqual([bad]);
+    expect(result.others).toEqual([]);
   });
 
   test('a cwd whose folder is gone compares by its literal path', () => {

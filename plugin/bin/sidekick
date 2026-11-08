@@ -4136,7 +4136,8 @@ function newProfile(name, description, root) {
 var LISTING_ARGS = ["agents", "--json", "--all"];
 var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
 var OptionalText = nullish(string());
-var OptionalPid = nullish(number());
+var RawPid = optional(unknown());
+var isMalformedPid = (pid) => pid !== undefined && pid !== null && typeof pid !== "number";
 var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an object"), object({
   id: OptionalText,
   kind: OptionalText,
@@ -4144,7 +4145,7 @@ var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an 
   cwd: OptionalText,
   sessionId: OptionalText,
   state: OptionalText,
-  pid: OptionalPid
+  pid: RawPid
 }), transform((row) => ({
   id: row.id ?? undefined,
   kind: row.kind ?? undefined,
@@ -4152,7 +4153,8 @@ var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an 
   cwd: row.cwd ?? undefined,
   sessionId: row.sessionId ?? undefined,
   state: row.state ?? undefined,
-  pid: row.pid ?? undefined
+  pid: typeof row.pid === "number" ? row.pid : undefined,
+  ...isMalformedPid(row.pid) ? { pidMalformed: true } : {}
 })));
 var ListingSchema = array(JobSchema);
 function parseJson3(text) {
@@ -5166,16 +5168,19 @@ function realOrResolved(p) {
     return path20.resolve(p);
   }
 }
+var STOPPED_STATE = "stopped";
 function isInside(dir, checkout) {
   const rel = path20.relative(checkout, dir);
   return rel === "" || !(rel === ".." || rel.startsWith(`..${path20.sep}`) || path20.isAbsolute(rel));
 }
 function sessionsInRepo(jobs, checkouts, selfId) {
   const roots = checkouts.map(realOrResolved);
-  const inRepo = jobs.filter((j) => isCurrent(j) && j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
+  const notStopped = jobs.filter((j) => j.state !== STOPPED_STATE && j.cwd !== undefined && roots.some((root) => isInside(realOrResolved(j.cwd ?? ""), root)));
+  const unreadable = notStopped.filter((j) => j.pidMalformed === true);
+  const inRepo = notStopped.filter(isCurrent);
   const hasSelf = selfId !== undefined && selfId !== "";
   const self = hasSelf ? inRepo.find((j) => j.sessionId === selfId) : undefined;
-  return { self, others: inRepo.filter((j) => j !== self) };
+  return { self, others: inRepo.filter((j) => j !== self), unreadable };
 }
 
 // bin/helpers/memory-stamps.ts
@@ -5265,10 +5270,14 @@ function sessionFacts(input) {
   if ("issues" in listed)
     return { kind: "failed", issues: listed.issues };
   const selfId = input.deps.env.CLAUDE_CODE_SESSION_ID;
-  return {
-    kind: "listed",
-    ...sessionsInRepo(listed.jobs, input.checkouts, selfId)
-  };
+  const { self, others, unreadable } = sessionsInRepo(listed.jobs, input.checkouts, selfId);
+  if (unreadable.length > 0) {
+    return {
+      kind: "failed",
+      issues: unreadable.map((j) => `The listing's row for ${j.name ?? j.sessionId ?? j.id ?? "a session"} in ${j.cwd ?? "an unknown folder"} has a pid that is not a number.`)
+    };
+  }
+  return { kind: "listed", self, others };
 }
 function targetFacts(input) {
   const { store, folder, rel, key, defaultFolder } = input;

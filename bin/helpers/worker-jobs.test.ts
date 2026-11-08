@@ -73,13 +73,28 @@ describe('listJobs', () => {
     ['a row that is an array', '[[]]', 'does not parse'],
     ['a field of the wrong type', '[{"name":7}]', 'does not parse'],
     ['a cwd of the wrong type', '[{"cwd":7}]', 'does not parse'],
-    ['a pid of the wrong type', '[{"pid":"41"}]', 'does not parse'],
   ])('refuses a listing that is %s', (_label, stdout, phrase) => {
     const result = listJobs(runner({ stdout }).run, '/repo');
     expect('issues' in result).toBe(true);
     if (!('issues' in result)) return;
     expect(result.issues[0]).toContain('claude agents --json --all');
     expect(result.issues[0]).toContain(phrase);
+  });
+
+  test('a pid of the wrong type parses, flagged, so callers that ignore pids still succeed', () => {
+    const listing = [
+      { id: 'a', kind: 'background', state: 'done', pid: '41' },
+      { id: 'b', kind: 'background', state: 'done', pid: null },
+    ];
+    const result = listJobs(
+      runner({ stdout: JSON.stringify(listing) }).run,
+      '/repo',
+    );
+    if (!('jobs' in result)) throw new Error(result.issues.join(' '));
+    expect(result.jobs.map((j) => [j.id, j.pid, j.pidMalformed])).toEqual([
+      ['a', undefined, true],
+      ['b', undefined, undefined],
+    ]);
   });
 
   test('refuses a failed or timed-out run, printing its text', () => {
