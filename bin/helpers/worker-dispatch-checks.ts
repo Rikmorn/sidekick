@@ -7,11 +7,13 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { readSection } from './hook.js';
 import { type ResolvedMain, resolveMain } from './main-session.js';
 import type { Runner } from './pm-data.js';
 import { checkComposed, loadForLaunch, type ProfileEnv } from './profile.js';
 import { isProfileName } from './profile-manifest.js';
 import { type Profile, storeRoots } from './profile-store.js';
+import { BRIEF_LIMITS_HEADING, readBriefLimits } from './subagent-limits.js';
 import type { WorkerEnv } from './worker.js';
 import { type Brief, briefFileIssues } from './worker-brief.js';
 import type { CheckOptions, SharedOptions } from './worker-dispatch-args.js';
@@ -153,6 +155,15 @@ function targetIssues(brief: Brief, branch: string | undefined): string[] {
       ];
 }
 
+/** The brief's limits reach every subagent through the subagent start hook, so a brief without them is refused. */
+function limitsIssues(briefPath: string): string[] {
+  return readBriefLimits(briefPath, readSection) === undefined
+    ? [
+        `${briefPath}: the brief has no ${BRIEF_LIMITS_HEADING} section with text under it: add one holding where the worker may write, what it may read, and the commands it may not run`,
+      ]
+    : [];
+}
+
 function checkoutIssues(
   brief: Brief,
   briefPath: string,
@@ -163,6 +174,7 @@ function checkoutIssues(
   const { launchTop, mainTop } = facts;
   return [
     ...briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }),
+    ...limitsIssues(briefPath),
     ...baselineIssues(runGit, launchTop, brief.baseline),
     ...cleanIssues(runGit, launchTop),
     ...targetIssues(brief, facts.branch),

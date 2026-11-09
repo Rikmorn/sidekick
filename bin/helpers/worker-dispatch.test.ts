@@ -14,10 +14,17 @@ import {
 
 afterEach(removeTemps);
 
-const briefText = (fields: Record<string, string>): string =>
+const LIMITS_SECTION =
+  '## Limits\n\nWrite only inside the worktree; never push.\n';
+
+// `body` replaces the gates line and the limits section, for a brief that lacks the section.
+const briefText = (
+  fields: Record<string, string>,
+  body = `Gates at the baseline: all pass.\n\n${LIMITS_SECTION}`,
+): string =>
   `---\n${Object.entries(fields)
     .map(([key, value]) => `${key}: ${value}`)
-    .join('\n')}\n---\n\nGates at the baseline: all pass.\n`;
+    .join('\n')}\n---\n\n${body}`;
 
 /**
  * A repo whose `docs/` holds a plan, a spec, and a brief named `w1` at `HEAD`,
@@ -425,6 +432,36 @@ describe('dispatch refuses', () => {
       code,
       `target: missing; this checkout holds the branch ${branch}: add the line "target: ${branch}" to the brief`,
     );
+  });
+
+  test.each([
+    ['no section', 'Gates at the baseline: all pass.\n'],
+    ['an empty section', 'Gates at the baseline: all pass.\n\n## Limits\n'],
+    ['an h3 heading', 'Gates.\n\n### Limits\n\nWrite only here.\n'],
+    [
+      'a longer heading',
+      'Gates.\n\n## Limits that bind the run\n\nWrite only here.\n',
+    ],
+  ])('a brief with %s in place of ## Limits', (_name, body) => {
+    const fx = fixture();
+    fs.writeFileSync(fx.brief, briefText(fx.fields, body));
+    const h = harness(fx);
+    const code = h.dispatch(fx.brief, '--permission-mode', 'auto');
+    expect(code).toBe(1);
+    const line = h.err.find((l) => l.includes('## Limits'));
+    expect(line).toContain(fx.brief);
+    expect(line).toContain('where the worker may write');
+    expect(h.claude.launches()).toEqual([]);
+  });
+
+  test('a brief with no ## Limits and no target reports both', () => {
+    const fx = fixture();
+    const { target: _target, ...rest } = fx.fields;
+    fs.writeFileSync(fx.brief, briefText(rest, 'Gates.\n'));
+    const h = harness(fx);
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(1);
+    expect(h.err.some((l) => l.startsWith('target: missing'))).toBe(true);
+    expect(h.err.some((l) => l.includes('## Limits'))).toBe(true);
   });
 
   test('a target other than the branch the checkout holds', () => {
@@ -1178,6 +1215,14 @@ describe('dispatch --check', () => {
       'not inside a git work tree: run sidekick worker from a checkout of the repo',
     );
     expect(h.out).toEqual([]);
+  });
+
+  test('passes where the brief has no ## Limits, since it takes no brief', () => {
+    const fx = fixture();
+    fs.writeFileSync(fx.brief, briefText(fx.fields, 'Gates.\n'));
+    const h = harness(fx);
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(0);
+    expect(h.err).toEqual([]);
   });
 
   test('refuses a brief, naming it', () => {

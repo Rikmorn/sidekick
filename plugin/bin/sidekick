@@ -9916,10 +9916,16 @@ function targetIssues(brief, branch) {
     `target: "${brief.target}" is not the branch this checkout holds (${branch}); write the line "target: ${branch}"`
   ];
 }
+function limitsIssues(briefPath) {
+  return readBriefLimits(briefPath, readSection) === undefined ? [
+    `${briefPath}: the brief has no ${BRIEF_LIMITS_HEADING} section with text under it: add one holding where the worker may write, what it may read, and the commands it may not run`
+  ] : [];
+}
 function checkoutIssues(brief, briefPath, opts, runGit, facts) {
   const { launchTop, mainTop } = facts;
   return [
     ...briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }),
+    ...limitsIssues(briefPath),
     ...baselineIssues(runGit, launchTop, brief.baseline),
     ...cleanIssues(runGit, launchTop),
     ...targetIssues(brief, facts.branch),
