@@ -14,8 +14,10 @@ store=${SIDEKICK_PROFILES_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/profiles}
 listing=$(SIDEKICK_PROFILES_DIR=$store "$bin" profile list) ||
   fail "a profile in $store is invalid: $listing"
 
-# Profile names hold no whitespace (bin/helpers/profile-manifest.ts), so the first field is the name.
-for name in $(printf '%s\n' "$listing" | awk 'NF { print $1 }'); do
+# The glob selects the folders that listRoot in bin/helpers/profile-store.ts lists.
+for dir in "$store"/*/; do
+  [ -d "$dir" ] || continue
+  name=$(basename "$dir")
   SIDEKICK_PROFILES_DIR=$store "$bin" profile argv "$name" >/dev/null ||
     fail "the user-level profile \"$name\" refused; fix what the lines before this one name, then run this again"
 done
