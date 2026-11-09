@@ -212,7 +212,7 @@ The flags go before the subcommand, since `plugin list --settings` is an unknown
 The check refuses on:
 
 - Each `dependency-unsatisfied` detail, once per plugin and dependency, since the same detail can sit on several entries. The message names both plugins, the profile's `profile.json`, and the fix: enable the dependency in `settings.enabledPlugins` there, or set the dependent plugin `false` too.
-- Each key of `settings.enabledPlugins`, set `true` or `false`, that names no listed `id`. A misspelled `false` would otherwise leave the intended plugin on. The message names the profile's `profile.json` and both fixes. Delete the entry when you removed the plugin on purpose; correct the id when it is misspelled. Ids ending `@builtin` or `@inline` pass, on the assumption that the list never shows them. That assumption was not measured.
+- Each key of `settings.enabledPlugins`, set `true` or `false`, that names no listed `id`. A misspelled `false` would otherwise leave the intended plugin on. The message names the profile's `profile.json` and both fixes. Delete the entry when you removed the plugin on purpose; correct the id when it is misspelled. When the profile leaves out the user source, the message adds a third fix: add `user` to `settingSources`, so the list shows a synced plugin. Ids ending `@builtin` or `@inline` pass, on the assumption that the list never shows them. That assumption was not measured.
 - Output that no longer parses, a non-zero exit, or a timeout. The parse refusal names the skip variable.
 
 Any other detail `type` prints as a warning and does not refuse. An id installed only for another repo is listed, so it passes the unknown-id test.

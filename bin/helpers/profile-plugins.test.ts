@@ -145,6 +145,22 @@ describe('judgePluginList', () => {
     expect(refusal()).not.toContain(SYNCED_CLAUSE);
   });
 
+  test('gives the synced fix only when the profile leaves out the user source', () => {
+    const out = JSON.stringify([entry('sidekick@rikmorn')]);
+    const refusal = (settingSources?: SettingSource[]): string =>
+      issuesOf(
+        judgePluginList(
+          out,
+          target({ ...naming('sidekik@rikmorn'), settingSources }),
+        ),
+      ).join('\n');
+    const syncedFix = 'add "user" to settingSources there';
+    expect(refusal(['project', 'local'])).toContain(syncedFix);
+    expect(refusal(['project', 'local'])).not.toContain('installed');
+    expect(refusal(['user', 'project'])).not.toContain(syncedFix);
+    expect(refusal()).not.toContain(syncedFix);
+  });
+
   test('accepts a named id that is listed', () => {
     const out = JSON.stringify([entry('sidekick@rikmorn')]);
     expect(judgePluginList(out, target(naming('sidekick@rikmorn')))).toEqual({

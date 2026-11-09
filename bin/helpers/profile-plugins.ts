@@ -67,8 +67,12 @@ const unknownIdIssues = (
   { manifest, manifestFile }: PluginCheckTarget,
   listed: ReadonlySet<string>,
 ): string[] => {
-  const synced = leavesOutUser(manifest)
+  const syncedCase = leavesOutUser(manifest);
+  const synced = syncedCase
     ? '; a synced plugin is not listed when the profile leaves out the user source'
+    : '';
+  const syncedFix = syncedCase
+    ? ' If it is a synced plugin, add "user" to settingSources there, so the list shows it.'
     : '';
   return enabledPluginIds(manifest)
     .filter(
@@ -76,7 +80,7 @@ const unknownIdIssues = (
     )
     .map(
       (id) =>
-        `"${id}": no plugin listed under this profile's settings has that id${synced}. If you removed that plugin on purpose, delete the entry from settings.enabledPlugins in ${manifestFile}; if the id is misspelled, correct it there.`,
+        `"${id}": no plugin listed under this profile's settings has that id${synced}. If you removed that plugin on purpose, delete the entry from settings.enabledPlugins in ${manifestFile}; if the id is misspelled, correct it there.${syncedFix}`,
     );
 };
 

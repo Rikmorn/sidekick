@@ -3733,8 +3733,10 @@ var enabledPluginIds = (manifest) => {
 };
 var leavesOutUser = (manifest) => manifest.settingSources !== undefined && !manifest.settingSources.includes("user");
 var unknownIdIssues = ({ manifest, manifestFile }, listed) => {
-  const synced = leavesOutUser(manifest) ? "; a synced plugin is not listed when the profile leaves out the user source" : "";
-  return enabledPluginIds(manifest).filter((id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s))).map((id) => `"${id}": no plugin listed under this profile's settings has that id${synced}. If you removed that plugin on purpose, delete the entry from settings.enabledPlugins in ${manifestFile}; if the id is misspelled, correct it there.`);
+  const syncedCase = leavesOutUser(manifest);
+  const synced = syncedCase ? "; a synced plugin is not listed when the profile leaves out the user source" : "";
+  const syncedFix = syncedCase ? ' If it is a synced plugin, add "user" to settingSources there, so the list shows it.' : "";
+  return enabledPluginIds(manifest).filter((id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s))).map((id) => `"${id}": no plugin listed under this profile's settings has that id${synced}. If you removed that plugin on purpose, delete the entry from settings.enabledPlugins in ${manifestFile}; if the id is misspelled, correct it there.${syncedFix}`);
 };
 var parseJson2 = (text) => {
   try {
