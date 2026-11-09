@@ -1,6 +1,7 @@
 #!/bin/sh
 # Updates the user-scope sidekick install, then installs and checks the user-level rules
-# from the released binary, never from PATH.
+# from the released binary, never from PATH. It then runs every user-level profile's
+# launch checks with that binary, through bin/release-check-profiles.sh.
 set -eu
 fail() { echo "release:install: $*" >&2; exit 1; }
 
@@ -22,4 +23,5 @@ got=$("$bin" --version) || fail "$bin --version failed"
 [ "$got" = "$want" ] || fail "the user install is $got, but plugin.json says $want, so the update did not land; check its output above, push master if needed, then run this again"
 
 "$bin" rules install --user
-exec "$bin" rules check --user --strict
+"$bin" rules check --user --strict
+exec sh bin/release-check-profiles.sh "$bin"
