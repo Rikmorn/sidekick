@@ -37,6 +37,12 @@ const EntrySchema = v.looseObject({
 });
 const ListSchema = v.array(EntrySchema);
 
+/** The profile a plugin check judges, and the file its refusals name. */
+export interface PluginCheckTarget {
+  manifest: ProfileManifest;
+  manifestFile: string;
+}
+
 const refuse = (...issues: string[]): CheckResult => ({ ok: false, issues });
 
 /** Report whether the manifest changes which plugins load, so the check applies. */
@@ -58,7 +64,7 @@ const leavesOutUser = (manifest: ProfileManifest): boolean =>
   !manifest.settingSources.includes('user');
 
 const unknownIdIssues = (
-  manifest: ProfileManifest,
+  { manifest, manifestFile }: PluginCheckTarget,
   listed: ReadonlySet<string>,
 ): string[] => {
   const synced = leavesOutUser(manifest)
@@ -70,7 +76,7 @@ const unknownIdIssues = (
     )
     .map(
       (id) =>
-        `"${id}": no plugin listed under this profile's settings has that id${synced}.`,
+        `"${id}": no plugin listed under this profile's settings has that id${synced}. If you removed that plugin on purpose, delete the entry from settings.enabledPlugins in ${manifestFile}; if the id is misspelled, correct it there.`,
     );
 };
 
@@ -83,13 +89,13 @@ const parseJson = (text: string): unknown => {
 };
 
 /**
- * Judges `plugin list --json` output against the profile's manifest. Each id
+ * Judges `plugin list --json` output against the target's manifest. Each id
  * its `settings.enabledPlugins` sets must be listed or end `@builtin` or
- * `@inline`.
+ * `@inline`. A refusal names the target's manifest file.
  */
 export function judgePluginList(
   stdout: string,
-  manifest: ProfileManifest,
+  target: PluginCheckTarget,
 ): CheckResult {
   const parsed = v.safeParse(ListSchema, parseJson(stdout));
   if (!parsed.success) {
@@ -114,12 +120,12 @@ export function judgePluginList(
       if (seen.has(key)) continue;
       seen.add(key);
       issues.push(
-        `${entry.id} needs ${detail.dependency ?? '(unnamed)'}, which these settings do not enable. Enable it in the profile's settings.enabledPlugins, or set ${entry.id} to false too.`,
+        `${entry.id} needs ${detail.dependency ?? '(unnamed)'}, which these settings do not enable. Enable it in settings.enabledPlugins in ${target.manifestFile}, or set ${entry.id} to false there too.`,
       );
     }
   }
   issues.push(
-    ...unknownIdIssues(manifest, new Set(entries.map((entry) => entry.id))),
+    ...unknownIdIssues(target, new Set(entries.map((entry) => entry.id))),
   );
   return issues.length > 0
     ? refuse(...issues)
@@ -128,11 +134,12 @@ export function judgePluginList(
 
 /**
  * Runs `plugin list --json` on a copy of `settings` written to a fresh folder
- * under `tmpdir`, removed on every path, and judges the output.
+ * under `tmpdir`, removed on every path, and judges the output against the
+ * target's manifest.
  */
 export function checkPlugins(
   settings: Settings,
-  manifest: ProfileManifest,
+  target: PluginCheckTarget,
   deps: { run: ClaudeRunner; cwd: string; tmpdir: string; skip: boolean },
   timeoutMs = 30_000,
 ): CheckResult {
@@ -141,7 +148,7 @@ export function checkPlugins(
   try {
     const file = path.join(dir, 'settings.json');
     fs.writeFileSync(file, JSON.stringify(settings), { mode: 0o600 });
-    const sources = manifest.settingSources;
+    const sources = target.manifest.settingSources;
     const result = deps.run(
       [
         '--settings',
@@ -164,7 +171,7 @@ export function checkPlugins(
         ...printedStreams(result),
       );
     }
-    return judgePluginList(result.stdout, manifest);
+    return judgePluginList(result.stdout, target);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

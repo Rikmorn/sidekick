@@ -251,6 +251,32 @@ describe('the plugin dependency check', () => {
     expect(h.err).toEqual([]);
     expect(callWords(h)).toEqual(['--json']);
   });
+  test('show and argv name the profile file in a plugin refusal', () => {
+    const h = harness();
+    h.runner.state.pluginList = unmet;
+    const file = path.join(
+      mkProfile(h.store, 'a', withPlugins),
+      'profile.json',
+    );
+    expect(h.run('show', 'a')).toBe(0);
+    expect(h.out.join('\n')).toContain(file);
+    expect(h.run('argv', 'a')).toBe(1);
+    expect(h.err.join('\n')).toContain(file);
+  });
+  test('show names the file and the id for an unlisted plugin id', () => {
+    const h = harness();
+    h.runner.state.pluginList = '[]';
+    const file = path.join(
+      mkProfile(h.store, 'a', {
+        description: 'A',
+        settings: { enabledPlugins: { 'gone@x': true } },
+      }),
+      'profile.json',
+    );
+    expect(h.run('show', 'a')).toBe(0);
+    expect(h.out.join('\n')).toContain(file);
+    expect(h.out.join('\n')).toContain('"gone@x"');
+  });
   test('show reports ok', () => {
     const h = harness();
     mkProfile(h.store, 'a', withPlugins);

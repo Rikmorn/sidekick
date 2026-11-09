@@ -9,6 +9,7 @@ import {
   judgePluginList,
   needsPluginCheck,
   PLUGIN_SKIP_VARIABLE,
+  type PluginCheckTarget,
 } from './profile-plugins.js';
 
 const entry = (id: string, details?: unknown) =>
@@ -33,6 +34,12 @@ const naming = (...ids: string[]): ProfileManifest => ({
   settings: { enabledPlugins: Object.fromEntries(ids.map((id) => [id, true])) },
 });
 
+const FILE = '/profiles/a/profile.json';
+const target = (manifest: ProfileManifest): PluginCheckTarget => ({
+  manifest,
+  manifestFile: FILE,
+});
+
 const SYNCED_CLAUSE =
   'a synced plugin is not listed when the profile leaves out the user source';
 
@@ -42,12 +49,18 @@ describe('judgePluginList', () => {
       entry('sidekick@rikmorn'),
       entry('superpowers@claude-plugins-official'),
     ]);
-    expect(judgePluginList(out, bare)).toEqual({ ok: true, warnings: [] });
+    expect(judgePluginList(out, target(bare))).toEqual({
+      ok: true,
+      warnings: [],
+    });
   });
 
   test('passes errorDetails null and empty', () => {
     const out = JSON.stringify([entry('a@m', null), entry('b@m', [])]);
-    expect(judgePluginList(out, bare)).toEqual({ ok: true, warnings: [] });
+    expect(judgePluginList(out, target(bare))).toEqual({
+      ok: true,
+      warnings: [],
+    });
   });
 
   test('refuses once for the same unmet dependency on two entries of one plugin', () => {
@@ -55,7 +68,7 @@ describe('judgePluginList', () => {
       entry('sidekick@rikmorn', [unsatisfied]),
       entry('sidekick@rikmorn', [unsatisfied]),
     ]);
-    const issues = issuesOf(judgePluginList(out, bare));
+    const issues = issuesOf(judgePluginList(out, target(bare)));
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('sidekick@rikmorn');
     expect(issues[0]).toContain('superpowers@claude-plugins-official');
@@ -67,30 +80,65 @@ describe('judgePluginList', () => {
     const out = JSON.stringify([
       entry('sidekick@rikmorn', [unsatisfied, other]),
     ]);
-    expect(issuesOf(judgePluginList(out, bare))).toHaveLength(2);
+    expect(issuesOf(judgePluginList(out, target(bare)))).toHaveLength(2);
   });
 
   test('refuses although the entry is disabled', () => {
     const out = JSON.stringify([
       { ...entry('sidekick@rikmorn', [unsatisfied]), enabled: false },
     ]);
-    expect(issuesOf(judgePluginList(out, bare))).toHaveLength(1);
+    expect(issuesOf(judgePluginList(out, target(bare)))).toHaveLength(1);
   });
 
   test('refuses an unknown id, naming it', () => {
     const out = JSON.stringify([entry('sidekick@rikmorn')]);
-    const issues = issuesOf(judgePluginList(out, naming('sidekik@rikmorn')));
+    const issues = issuesOf(
+      judgePluginList(out, target(naming('sidekik@rikmorn'))),
+    );
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('"sidekik@rikmorn"');
     expect(issues[0]).toContain("this profile's settings");
     expect(issues[0]).not.toContain('installed');
   });
 
+  test('an unknown id names the profile file and both fixes', () => {
+    const out = JSON.stringify([entry('sidekick@rikmorn')]);
+    const [issue] = issuesOf(
+      judgePluginList(out, target(naming('gone@nowhere'))),
+    );
+    expect(issue).toContain('"gone@nowhere"');
+    expect(issue).toContain(FILE);
+    expect(issue).toContain('removed that plugin on purpose');
+    expect(issue).toContain('misspelled');
+    expect(issue).not.toContain('installed');
+  });
+
+  test('an unmet dependency names the profile file', () => {
+    const out = JSON.stringify([entry('sidekick@rikmorn', [unsatisfied])]);
+    const [issue] = issuesOf(judgePluginList(out, target(bare)));
+    expect(issue).toContain(FILE);
+    expect(issue).toContain('settings.enabledPlugins');
+  });
+
+  test('the synced clause comes before the fixes', () => {
+    const out = JSON.stringify([entry('sidekick@rikmorn')]);
+    const manifest: ProfileManifest = {
+      ...naming('sidekik@rikmorn'),
+      settingSources: ['project', 'local'],
+    };
+    const [issue] = issuesOf(judgePluginList(out, target(manifest)));
+    expect(issue.indexOf(SYNCED_CLAUSE)).toBeGreaterThan(-1);
+    expect(issue.indexOf(SYNCED_CLAUSE)).toBeLessThan(issue.indexOf(FILE));
+  });
+
   test('names the synced case only when the profile leaves out the user source', () => {
     const out = JSON.stringify([entry('sidekick@rikmorn')]);
     const refusal = (settingSources?: SettingSource[]): string =>
       issuesOf(
-        judgePluginList(out, { ...naming('sidekik@rikmorn'), settingSources }),
+        judgePluginList(
+          out,
+          target({ ...naming('sidekik@rikmorn'), settingSources }),
+        ),
       ).join('\n');
     expect(refusal(['project', 'local'])).toContain(SYNCED_CLAUSE);
     expect(refusal(['user', 'project'])).not.toContain(SYNCED_CLAUSE);
@@ -99,7 +147,7 @@ describe('judgePluginList', () => {
 
   test('accepts a named id that is listed', () => {
     const out = JSON.stringify([entry('sidekick@rikmorn')]);
-    expect(judgePluginList(out, naming('sidekick@rikmorn'))).toEqual({
+    expect(judgePluginList(out, target(naming('sidekick@rikmorn')))).toEqual({
       ok: true,
       warnings: [],
     });
@@ -108,7 +156,7 @@ describe('judgePluginList', () => {
   test('exempts @builtin and @inline ids', () => {
     const out = JSON.stringify([entry('sidekick@rikmorn')]);
     expect(
-      judgePluginList(out, naming('x@builtin', 'sidekick@inline')),
+      judgePluginList(out, target(naming('x@builtin', 'sidekick@inline'))),
     ).toEqual({
       ok: true,
       warnings: [],
@@ -119,7 +167,7 @@ describe('judgePluginList', () => {
     const out = JSON.stringify([
       entry('a@m', [{ type: 'mcp-server-error', message: 'x' }]),
     ]);
-    const r = judgePluginList(out, bare);
+    const r = judgePluginList(out, target(bare));
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.warnings).toHaveLength(1);
@@ -134,27 +182,27 @@ describe('judgePluginList', () => {
       entry('a@m', [detail]),
       entry('a@m', [detail]),
     ]);
-    expect(judgePluginList(out, bare)).toEqual({
+    expect(judgePluginList(out, target(bare))).toEqual({
       ok: true,
       warnings: ['a@m: claude plugin list reports mcp-server-error.'],
     });
   });
 
   test('refuses output that is not JSON, naming the skip variable', () => {
-    const issues = issuesOf(judgePluginList('not json', bare));
+    const issues = issuesOf(judgePluginList('not json', target(bare)));
     expect(issues.join('\n')).toContain(PLUGIN_SKIP_VARIABLE);
     expect(issues.join('\n')).toContain('no longer parses');
   });
 
   test('refuses a JSON object that is not an array', () => {
-    expect(issuesOf(judgePluginList('{}', bare)).join('\n')).toContain(
+    expect(issuesOf(judgePluginList('{}', target(bare))).join('\n')).toContain(
       PLUGIN_SKIP_VARIABLE,
     );
   });
 
   test('refuses an entry without id', () => {
     const out = JSON.stringify([{ scope: 'user' }]);
-    expect(issuesOf(judgePluginList(out, bare)).join('\n')).toContain(
+    expect(issuesOf(judgePluginList(out, target(bare))).join('\n')).toContain(
       PLUGIN_SKIP_VARIABLE,
     );
   });
@@ -220,7 +268,7 @@ describe('checkPlugins', () => {
     const h = harness(() => ok());
     const settings = { enabledPlugins: { 'sidekick@rikmorn': true } };
     expect(
-      checkPlugins(settings, { description: 'd', settings }, h.deps),
+      checkPlugins(settings, target({ description: 'd', settings }), h.deps),
     ).toEqual({
       ok: true,
       warnings: [],
@@ -242,7 +290,7 @@ describe('checkPlugins', () => {
       content = fs.readFileSync(args[1], 'utf-8');
       return ok();
     };
-    checkPlugins({ env: { A: '1' } }, manifest, {
+    checkPlugins({ env: { A: '1' } }, target(manifest), {
       run,
       cwd: root,
       tmpdir: root,
@@ -255,7 +303,7 @@ describe('checkPlugins', () => {
     const h = harness(() => ok());
     checkPlugins(
       {},
-      { ...manifest, settingSources: ['project', 'local'] },
+      target({ ...manifest, settingSources: ['project', 'local'] }),
       h.deps,
     );
     expect(h.calls[0].args).toEqual([
@@ -273,7 +321,7 @@ describe('checkPlugins', () => {
     const h = harness(() => ok());
     const settings = { enabledPlugins: { 'x@m': true, 'y@m': false } };
     const issues = issuesOf(
-      checkPlugins(settings, { description: 'd', settings }, h.deps),
+      checkPlugins(settings, target({ description: 'd', settings }), h.deps),
     );
     expect(issues).toHaveLength(2);
     expect(issues[0]).toContain('"x@m"');
@@ -285,14 +333,14 @@ describe('checkPlugins', () => {
       const h = harness(() => ok());
       const settings = { enabledPlugins: bad };
       expect(
-        checkPlugins(settings, { description: 'd', settings }, h.deps),
+        checkPlugins(settings, target({ description: 'd', settings }), h.deps),
       ).toEqual({ ok: true, warnings: [] });
     }
   });
 
   test('removes the temp folder after a pass', () => {
     const h = harness(() => ok());
-    checkPlugins({}, manifest, h.deps);
+    checkPlugins({}, target(manifest), h.deps);
     expect(leftover(h.root)).toEqual([]);
   });
 
@@ -300,13 +348,13 @@ describe('checkPlugins', () => {
     const h = harness(() =>
       ok({ stdout: JSON.stringify([entry('s@m', [unsatisfied])]) }),
     );
-    expect(checkPlugins({}, manifest, h.deps).ok).toBe(false);
+    expect(checkPlugins({}, target(manifest), h.deps).ok).toBe(false);
     expect(leftover(h.root)).toEqual([]);
   });
 
   test('refuses on a timeout and removes the folder', () => {
     const h = harness(() => ok({ code: 1, timedOut: true }));
-    const r = checkPlugins({}, manifest, h.deps);
+    const r = checkPlugins({}, target(manifest), h.deps);
     expect(issuesOf(r).join('\n')).toContain('timed out');
     expect(leftover(h.root)).toEqual([]);
   });
@@ -315,7 +363,7 @@ describe('checkPlugins', () => {
     const h = harness(() =>
       ok({ code: 2, stdout: 'out text', stderr: 'err text' }),
     );
-    const r = checkPlugins({}, manifest, h.deps);
+    const r = checkPlugins({}, target(manifest), h.deps);
     const text = issuesOf(r).join('\n');
     expect(text).toContain('exit code 2');
     expect(text).toContain('out text');
@@ -335,7 +383,7 @@ describe('checkPlugins', () => {
       const h = harness(() =>
         ok({ code: failed.code, timedOut: failed.timedOut, stdout: '' }),
       );
-      expect(issuesOf(checkPlugins({}, manifest, h.deps))).toEqual([
+      expect(issuesOf(checkPlugins({}, target(manifest), h.deps))).toEqual([
         failed.reason,
       ]);
     }
@@ -345,13 +393,13 @@ describe('checkPlugins', () => {
     const h = harness(() => {
       throw new Error('boom');
     });
-    expect(() => checkPlugins({}, manifest, h.deps)).toThrow('boom');
+    expect(() => checkPlugins({}, target(manifest), h.deps)).toThrow('boom');
     expect(leftover(h.root)).toEqual([]);
   });
 
   test('skip runs nothing and warns naming the variable', () => {
     const h = harness(() => ok());
-    const r = checkPlugins({}, manifest, { ...h.deps, skip: true });
+    const r = checkPlugins({}, target(manifest), { ...h.deps, skip: true });
     expect(h.calls).toHaveLength(0);
     expect(r.ok).toBe(true);
     if (r.ok) {

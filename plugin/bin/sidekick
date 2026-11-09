@@ -3732,9 +3732,9 @@ var enabledPluginIds = (manifest) => {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.keys(value) : [];
 };
 var leavesOutUser = (manifest) => manifest.settingSources !== undefined && !manifest.settingSources.includes("user");
-var unknownIdIssues = (manifest, listed) => {
+var unknownIdIssues = ({ manifest, manifestFile }, listed) => {
   const synced = leavesOutUser(manifest) ? "; a synced plugin is not listed when the profile leaves out the user source" : "";
-  return enabledPluginIds(manifest).filter((id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s))).map((id) => `"${id}": no plugin listed under this profile's settings has that id${synced}.`);
+  return enabledPluginIds(manifest).filter((id) => !listed.has(id) && !EXEMPT_SUFFIXES.some((s) => id.endsWith(s))).map((id) => `"${id}": no plugin listed under this profile's settings has that id${synced}. If you removed that plugin on purpose, delete the entry from settings.enabledPlugins in ${manifestFile}; if the id is misspelled, correct it there.`);
 };
 var parseJson2 = (text) => {
   try {
@@ -3743,7 +3743,7 @@ var parseJson2 = (text) => {
     return;
   }
 };
-function judgePluginList(stdout, manifest) {
+function judgePluginList(stdout, target) {
   const parsed = safeParse(ListSchema, parseJson2(stdout));
   if (!parsed.success) {
     return refuse2("claude plugin list's output no longer parses, so a broken plugin dependency could pass unseen.", `Set ${PLUGIN_SKIP_VARIABLE}=1 to skip the check until sidekick catches up.`);
@@ -3762,20 +3762,20 @@ function judgePluginList(stdout, manifest) {
       if (seen.has(key))
         continue;
       seen.add(key);
-      issues.push(`${entry.id} needs ${detail.dependency ?? "(unnamed)"}, which these settings do not enable. Enable it in the profile's settings.enabledPlugins, or set ${entry.id} to false too.`);
+      issues.push(`${entry.id} needs ${detail.dependency ?? "(unnamed)"}, which these settings do not enable. Enable it in settings.enabledPlugins in ${target.manifestFile}, or set ${entry.id} to false there too.`);
     }
   }
-  issues.push(...unknownIdIssues(manifest, new Set(entries.map((entry) => entry.id))));
+  issues.push(...unknownIdIssues(target, new Set(entries.map((entry) => entry.id))));
   return issues.length > 0 ? refuse2(...issues) : { ok: true, warnings: [...new Set(warnings)] };
 }
-function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
+function checkPlugins(settings, target, deps, timeoutMs = 30000) {
   if (deps.skip)
     return { ok: true, warnings: [SKIP_WARNING2] };
   const dir = fs11.mkdtempSync(path12.join(deps.tmpdir, "sidekick-profile-"));
   try {
     const file = path12.join(dir, "settings.json");
     fs11.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
-    const sources = manifest.settingSources;
+    const sources = target.manifest.settingSources;
     const result = deps.run([
       "--settings",
       file,
@@ -3790,7 +3790,7 @@ function checkPlugins(settings, manifest, deps, timeoutMs = 30000) {
     if (result.code !== 0) {
       return refuse2(`claude plugin list failed with exit code ${result.code}.`, ...printedStreams(result));
     }
-    return judgePluginList(result.stdout, manifest);
+    return judgePluginList(result.stdout, target);
   } finally {
     fs11.rmSync(dir, { recursive: true, force: true });
   }
@@ -3939,6 +3939,7 @@ var shellFunction = (shell, aliasNames) => {
 import * as fs13 from "node:fs";
 import * as path13 from "node:path";
 var MANIFEST_FILE = "profile.json";
+var manifestPath = (dir) => path13.join(dir, MANIFEST_FILE);
 var notAName = (name) => `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
 var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
 var ENABLES_PLUGINS = "can enable plugins outside the checked settings block; put settings in profile.json";
@@ -4273,7 +4274,7 @@ var settingsCheck = (settings, penv) => checkSettings(settings, {
   skip: penv.env[SKIP_VARIABLE] === "1"
 });
 var skipsPluginCheck = (penv) => penv.env[PLUGIN_SKIP_VARIABLE] === "1";
-var pluginCheck = (profile, settings, penv) => checkPlugins(settings, profile.manifest, {
+var pluginCheck = (profile, settings, penv) => checkPlugins(settings, { manifest: profile.manifest, manifestFile: manifestPath(profile.dir) }, {
   run: penv.runClaude,
   cwd: penv.cwd,
   tmpdir: penv.tmpdir,

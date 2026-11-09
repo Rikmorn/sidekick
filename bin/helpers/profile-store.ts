@@ -56,6 +56,10 @@ export type NewResult =
 
 const MANIFEST_FILE = 'profile.json';
 
+/** The path of the manifest in the profile folder `dir`. */
+export const manifestPath = (dir: string): string =>
+  path.join(dir, MANIFEST_FILE);
+
 const notAName = (name: string): string =>
   `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
 

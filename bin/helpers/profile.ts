@@ -33,6 +33,7 @@ import {
 import {
   listProfiles,
   loadProfile,
+  manifestPath,
   newProfile,
   type Profile,
   storeRoots,
@@ -178,12 +179,16 @@ const pluginCheck = (
   settings: ReturnType<typeof composed>['settings'],
   penv: ProfileEnv,
 ): CheckResult =>
-  checkPlugins(settings, profile.manifest, {
-    run: penv.runClaude,
-    cwd: penv.cwd,
-    tmpdir: penv.tmpdir,
-    skip: skipsPluginCheck(penv),
-  });
+  checkPlugins(
+    settings,
+    { manifest: profile.manifest, manifestFile: manifestPath(profile.dir) },
+    {
+      run: penv.runClaude,
+      cwd: penv.cwd,
+      tmpdir: penv.tmpdir,
+      skip: skipsPluginCheck(penv),
+    },
+  );
 
 // The `doctor` check, then the plugin check when `doctor` passes and the manifest needs it.
 function checkProfile(
