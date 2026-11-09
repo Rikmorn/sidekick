@@ -20,6 +20,7 @@ import {
   fetchGhVersion,
   fetchLocalLogin,
   fetchMilestones,
+  fetchOpenBodies,
   fetchOpenIssues,
   fetchRepoIssues,
   fetchScopeHeaders,
@@ -43,7 +44,12 @@ import {
 import { glanceState } from './pm-glance.js';
 import { lintAll } from './pm-lint.js';
 import { paneRows } from './pm-pane.js';
-import { type Plans, planView } from './pm-plans.js';
+import {
+  awaitsReleaseCheck,
+  type Plans,
+  parsePlansHeader,
+  planView,
+} from './pm-plans.js';
 import { renderReport } from './pm-report.js';
 import { pickupView } from './pm-view.js';
 import { repoRootOf } from './rules.js';
@@ -218,6 +224,22 @@ export interface PmEnv {
 
 const VERBS = new Set(['board', 'pickup', 'lint', 'gate']);
 
+// The milestone's open issues that wait only for their release check. Only a
+// plans header gives them a meaning, so a milestone without one costs no read.
+function releaseChecks(
+  run: Runner,
+  cwd: string,
+  board: { owner: string; repo: string },
+  ms: Milestone,
+): ReadonlySet<number> {
+  if (parsePlansHeader(ms.description).parse !== 'ok') return new Set();
+  const bodies =
+    fetchOpenBodies(run, cwd, board.owner, board.repo, ms.number) ?? [];
+  return new Set(
+    bodies.filter((b) => awaitsReleaseCheck(b.body)).map((b) => b.number),
+  );
+}
+
 // Reads `--milestone <title>` and `--milestone=<title>`. A flag with no
 // value, or whose next argument is another flag, is `invalid`.
 function milestoneFlag(args: string[]): {
@@ -302,7 +324,13 @@ export function runPmCli(
         msTitle === undefined
           ? activeMilestone(open, items)
           : namedMilestone(open, msTitle);
-      const plans = active ? planView(active, items) : null;
+      const plans = active
+        ? planView(
+            active,
+            items,
+            releaseChecks(run, info.root, { owner, repo }, active),
+          )
+        : null;
       const issueCounts = active
         ? milestoneCounts(repoIssues, active.title)
         : null;

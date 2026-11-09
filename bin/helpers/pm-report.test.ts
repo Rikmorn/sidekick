@@ -46,6 +46,27 @@ const report = (
     plans: planView(r9(description), items),
   });
 
+describe('renderReport with release checks', () => {
+  test('marks an issue that awaits its release check, so a done row with an open issue explains itself', () => {
+    const description = plansHeader('A (#1, #2)', 'B (#3)');
+    const items = [
+      card(1, 'Done', 'CLOSED'),
+      card(2, 'Backlog'),
+      card(3, 'Backlog'),
+    ];
+    const r = renderReport({
+      board: { owner: 'Rikmorn', repo: 'sidekick' },
+      milestone: r9(description),
+      issue_counts: { open: 2, closed: 1 },
+      plans: planView(r9(description), items, new Set([2])),
+    });
+    expect(r).toContain(
+      '| done | A | 1 of 2 | Rikmorn/sidekick#1 Rikmorn/sidekick#2 (release check) |',
+    );
+    expect(r).toContain('| next | B | 0 of 1 | Rikmorn/sidekick#3 |');
+  });
+});
+
 describe('renderReport', () => {
   test('the header prints the issue read’s counts, not GitHub’s counters', () => {
     const r = report(plansHeader('A (#1)'), [card(1, 'Backlog')], {

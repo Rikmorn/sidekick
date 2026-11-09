@@ -74,6 +74,27 @@ const FirstPage = v.object({
   }),
 });
 
+/** The fixture key of the release-checks read for milestone `number`. */
+export const releaseChecksKey = (number: number): string =>
+  `gh api graphql -f query=query ReleaseChecks -f owner=Rikmorn -f name=sidekick -F number=${number}`;
+
+/** One page of the release-checks read, holding `nodes` and no next page. */
+export const releaseChecksPage = (
+  nodes: Array<{ number: number; body: string }>,
+): string =>
+  JSON.stringify({
+    data: {
+      repository: {
+        milestone: {
+          issues: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes,
+          },
+        },
+      },
+    },
+  });
+
 const ISSUES_ARGS =
   'gh issue list -R Rikmorn/sidekick --state open --limit 500 --json number,title,labels,body,milestone,updatedAt';
 
@@ -99,6 +120,9 @@ export function sidekickMap(): FixtureMap {
       fixture('field-sidekick.json'),
     [issues]: p1,
     [`${issues} -f after=${cursor}`]: fixture('repo-issues-p2.json'),
+    // Not captured: R6 carries no release checks, and pickup reads them only
+    // when a test gives R6 a plans header.
+    [releaseChecksKey(6)]: releaseChecksPage([]),
     'gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100': fixture(
       'milestones-open.json',
     ),

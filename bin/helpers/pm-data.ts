@@ -246,6 +246,7 @@ export const STATUS_UPDATES_QUERY =
   'query StatusUpdates($id: ID!) { node(id: $id) { ... on ProjectV2 { statusUpdates(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { status startDate } } } } }';
 export const ISSUES_PAGE = 100;
 export const ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason closedAt updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id isArchived project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
+export const RELEASE_CHECKS_QUERY = `query ReleaseChecks($owner: String!, $name: String!, $number: Int!, $after: String) { repository(owner: $owner, name: $name) { milestone(number: $number) { issues(first: ${ISSUES_PAGE}, after: $after, states: OPEN) { pageInfo { hasNextPage endCursor } nodes { number body } } } } }`;
 /** `gh issue list` truncates silently at `--limit`; hitting it is an error. */
 export const ISSUE_LIMIT = 500;
 
@@ -674,6 +675,67 @@ const StatusUpdatesData = v.object({
     statusUpdates: v.object({ nodes: v.array(v.unknown()) }),
   }),
 });
+
+const OpenBodiesPage = v.object({
+  repository: v.object({
+    milestone: v.nullable(
+      v.object({
+        issues: v.object({
+          pageInfo: v.object({
+            hasNextPage: v.boolean(),
+            endCursor: v.nullable(v.string()),
+          }),
+          nodes: v.array(v.object({ number: v.number(), body: v.string() })),
+        }),
+      }),
+    ),
+  }),
+});
+
+export interface OpenBody {
+  number: number;
+  body: string;
+}
+
+/**
+ * The open issues of milestone `number`, with their bodies. A read that
+ * fails is `undefined`, so the pickup stands without them.
+ */
+export function fetchOpenBodies(
+  run: Runner,
+  cwd: string,
+  owner: string,
+  repo: string,
+  number: number,
+): OpenBody[] | undefined {
+  const bodies: OpenBody[] = [];
+  let after: string | null = null;
+  try {
+    for (;;) {
+      const vars: Var[] = [
+        ['-f', `owner=${owner}`],
+        ['-f', `name=${repo}`],
+        ['-F', `number=${number}`],
+      ];
+      if (after) vars.push(['-f', `after=${after}`]);
+      const page = v.safeParse(
+        OpenBodiesPage,
+        gql(run, cwd, RELEASE_CHECKS_QUERY, vars),
+      );
+      if (!page.success) return undefined;
+      const issues = page.output.repository.milestone?.issues;
+      if (issues === undefined) return bodies;
+      bodies.push(...issues.nodes);
+      if (!issues.pageInfo.hasNextPage || !issues.pageInfo.endCursor) {
+        return bodies;
+      }
+      after = issues.pageInfo.endCursor;
+    }
+  } catch (e) {
+    if (e instanceof PmError || e instanceof SyntaxError) return undefined;
+    throw e;
+  }
+}
 
 /** A read that fails is `{ ok: false }`, so the pickup stands without the status. */
 export function fetchStatusUpdates(

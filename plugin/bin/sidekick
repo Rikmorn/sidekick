@@ -2657,7 +2657,9 @@ function descriptionProse(description) {
   return found.at === "top" ? found.prose.join(`
 `) : normalise(description);
 }
-var openOf = (issues) => issues.filter((i) => i.open);
+var RELEASE_CHECK_LINE = /^\s*(?:[-*+][ \t]+)?(?:(\*\*|__|\*|_)verified by the release(?::\1|\1:)|verified by the release:)/im;
+var awaitsReleaseCheck = (body) => RELEASE_CHECK_LINE.test(body);
+var openOf = (issues) => issues.filter((i) => i.open && !i.awaitsRelease);
 var inProgress = (i) => i.status === "In Progress";
 var notStarted = (i) => i.status === "Backlog" || i.status === null;
 function startable(issues) {
@@ -2674,7 +2676,7 @@ function stateOf2(issues, isNext) {
     return "next";
   return "later";
 }
-function planView(ms, items) {
+function planView(ms, items, awaiting = new Set) {
   const c = parsePlansHeader(ms.description);
   if (c.parse === "none")
     return { parse: "none", list: [], unplanned: [] };
@@ -2684,12 +2686,9 @@ function planView(ms, items) {
   const byNumber = new Map(items.map((i) => [i.number, i]));
   const issueOf = (n) => {
     const i = byNumber.get(n);
-    return i ? {
-      number: n,
-      title: i.title,
-      open: i.state === "OPEN",
-      status: i.status
-    } : { number: n, title: null, open: true, status: null };
+    const open = i === undefined || i.state === "OPEN";
+    const awaitsRelease = open && awaiting.has(n);
+    return i ? { number: n, title: i.title, open, status: i.status, awaitsRelease } : { number: n, title: null, open, status: null, awaitsRelease };
   };
   const issues = c.plans.map((p) => p.issues.map(issueOf));
   const nextAt = issues.findIndex(startable);
@@ -2973,6 +2972,7 @@ var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(logi
 var STATUS_UPDATES_QUERY = "query StatusUpdates($id: ID!) { node(id: $id) { ... on ProjectV2 { statusUpdates(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { status startDate } } } } }";
 var ISSUES_PAGE = 100;
 var ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason closedAt updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id isArchived project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
+var RELEASE_CHECKS_QUERY = `query ReleaseChecks($owner: String!, $name: String!, $number: Int!, $after: String) { repository(owner: $owner, name: $name) { milestone(number: $number) { issues(first: ${ISSUES_PAGE}, after: $after, states: OPEN) { pageInfo { hasNextPage endCursor } nodes { number body } } } } }`;
 var ISSUE_LIMIT = 500;
 var GqlEnvelope = object({
   data: optional(unknown()),
@@ -3261,6 +3261,49 @@ var StatusUpdatesData = object({
     statusUpdates: object({ nodes: array(unknown()) })
   })
 });
+var OpenBodiesPage = object({
+  repository: object({
+    milestone: nullable(object({
+      issues: object({
+        pageInfo: object({
+          hasNextPage: boolean(),
+          endCursor: nullable(string())
+        }),
+        nodes: array(object({ number: number(), body: string() }))
+      })
+    }))
+  })
+});
+function fetchOpenBodies(run, cwd, owner, repo, number2) {
+  const bodies = [];
+  let after = null;
+  try {
+    for (;; ) {
+      const vars = [
+        ["-f", `owner=${owner}`],
+        ["-f", `name=${repo}`],
+        ["-F", `number=${number2}`]
+      ];
+      if (after)
+        vars.push(["-f", `after=${after}`]);
+      const page = safeParse(OpenBodiesPage, gql(run, cwd, RELEASE_CHECKS_QUERY, vars));
+      if (!page.success)
+        return;
+      const issues = page.output.repository.milestone?.issues;
+      if (issues === undefined)
+        return bodies;
+      bodies.push(...issues.nodes);
+      if (!issues.pageInfo.hasNextPage || !issues.pageInfo.endCursor) {
+        return bodies;
+      }
+      after = issues.pageInfo.endCursor;
+    }
+  } catch (e) {
+    if (e instanceof PmError || e instanceof SyntaxError)
+      return;
+    throw e;
+  }
+}
 function fetchStatusUpdates(run, cwd, projectId) {
   try {
     const data = gql(run, cwd, STATUS_UPDATES_QUERY, [
@@ -8836,7 +8879,7 @@ var STATE_CELL = {
 var cell = (text) => text.replaceAll("|", "\\|");
 function row(plan, ref2) {
   const closed = plan.issues.filter((i) => !i.open).length;
-  const issues = plan.issues.map((i) => ref2(i.number)).join(" ");
+  const issues = plan.issues.map((i) => i.awaitsRelease ? `${ref2(i.number)} (release check)` : ref2(i.number)).join(" ");
   return `| ${STATE_CELL[plan.state]} | ${cell(plan.name)} | ${closed} of ${plan.issues.length} | ${issues} |`;
 }
 function renderReport(r) {
@@ -9320,6 +9363,12 @@ function discover(run, cwd) {
 var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report|--glance] [--milestone <title>]";
 var PM_USAGE = `usage: ${PM_USAGE_LINE}`;
 var VERBS3 = new Set(["board", "pickup", "lint", "gate"]);
+function releaseChecks(run, cwd, board, ms) {
+  if (parsePlansHeader(ms.description).parse !== "ok")
+    return new Set;
+  const bodies = fetchOpenBodies(run, cwd, board.owner, board.repo, ms.number) ?? [];
+  return new Set(bodies.filter((b) => awaitsReleaseCheck(b.body)).map((b) => b.number));
+}
 function milestoneFlag(args) {
   const at = args.findIndex((a) => a === "--milestone" || a.startsWith("--milestone="));
   if (at < 0)
@@ -9373,7 +9422,7 @@ function runPmCli(args, env, out, err) {
       const repoIssues = fetchRepoIssues(run, info.root, owner, repo, project.id);
       const items = cardedItems(repoIssues, fullName);
       const active = msTitle === undefined ? activeMilestone(open2, items) : namedMilestone(open2, msTitle);
-      const plans = active ? planView(active, items) : null;
+      const plans = active ? planView(active, items, releaseChecks(run, info.root, { owner, repo }, active)) : null;
       const issueCounts = active ? milestoneCounts(repoIssues, active.title) : null;
       if (report2) {
         return emitReport({

@@ -21,7 +21,7 @@ Move the card before starting: `gh project item-edit <board number> --owner @me 
 
 ## Status updates
 
-The PM reports a milestone's plans to the operator as project status updates on the repo's board, per plan and never per issue. Post one at a milestone's Opening, when a plan is picked up, when a plan's last issue closes, and at the close. `sidekick pm pickup --report --milestone "<title>"` prints the body for the milestone the post reports on. Always name it: the poster knows it, and `pickup` alone names none while several are open. It exits 1 with its reason when there is nothing sound to post; post nothing then, and tell the operator why.
+The PM reports a milestone's plans to the operator as project status updates on the repo's board, per plan and never per issue. Post one at a milestone's Opening, when a plan is picked up, when `pickup` shows a plan done, and at the close. A plan is done when its last issue closes, or when its only open issues wait for their release check. `sidekick pm pickup --report --milestone "<title>"` prints the body for the milestone the post reports on. Always name it: the poster knows it, and `pickup` alone names none while several are open. It exits 1 with its reason when there is nothing sound to post; post nothing then, and tell the operator why.
 
 ```
 body="$(sidekick pm pickup --report --milestone "<title>")" && gh api graphql -f query='mutation($p:ID!,$b:String!,$s:ProjectV2StatusUpdateStatus!,$d:Date){createProjectV2StatusUpdate(input:{projectId:$p,body:$b,status:$s,startDate:$d}){statusUpdate{id}}}' -f p=<project id> -f b="$body" -f s=ON_TRACK -f d=<YYYY-MM-DD>

@@ -63,6 +63,7 @@ describe('pickupView', () => {
       title: null,
       open: true,
       status: null,
+      awaitsRelease: false,
       ageDays: null,
     });
   });

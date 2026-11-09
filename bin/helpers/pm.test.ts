@@ -5,6 +5,8 @@ import {
   fixture,
   fixtureRunner,
   plansHeader,
+  releaseChecksKey,
+  releaseChecksPage,
   sidekickMap,
 } from './fixtures/pm/runner.js';
 import {
@@ -712,6 +714,57 @@ describe('runPmCli pickup plans', () => {
   });
 });
 
+describe('runPmCli pickup release checks', () => {
+  const plansWith = (
+    release: string | { code: number; stdout: string; stderr: string },
+  ): Plans => {
+    const map = sidekickMap();
+    r6Board(map);
+    const open = JSON.parse(fixture('milestones-open.json')) as Array<
+      Record<string, unknown>
+    >;
+    open[0].description = plansHeader('Landed (#110)', 'Orient (#111, #112)');
+    map['gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100'] =
+      JSON.stringify(open);
+    map[releaseChecksKey(6)] = release;
+    const c = capture();
+    const code = runPmCli(
+      ['pickup'],
+      {
+        cwd: '/',
+        run: fixtureRunner(map),
+        now: new Date('2026-09-19T12:00:00Z'),
+      },
+      c.o,
+      c.e,
+    );
+    expect(code).toBe(0);
+    return (JSON.parse(c.out[0]) as { plans: Plans }).plans;
+  };
+  const states = (plans: Plans) => plans.list.map((p) => [p.name, p.state]);
+
+  test('a plan whose open issue carries a release check is done, and the next plan is next', () => {
+    const plans = plansWith(
+      releaseChecksPage([
+        { number: 110, body: 'Problem.\n\nVerified by the release: run it.' },
+        { number: 111, body: 'Problem.' },
+      ]),
+    );
+    expect(states(plans)).toEqual([
+      ['Landed', 'done'],
+      ['Orient', 'next'],
+    ]);
+  });
+
+  test('a failed read leaves the plans as the board alone gives them', () => {
+    const plans = plansWith({ code: 1, stdout: '', stderr: 'HTTP 502' });
+    expect(states(plans)).toEqual([
+      ['Landed', 'next'],
+      ['Orient', 'later'],
+    ]);
+  });
+});
+
 describe('pickup --report', () => {
   const run = (description: string | null, args: string[]) => {
     const map = sidekickMap();
@@ -812,6 +865,8 @@ describe('pickup with several open milestones', () => {
     r6Board(map);
     map['gh api repos/Rikmorn/sidekick/milestones?state=open&per_page=100'] =
       JSON.stringify(open);
+    // The other milestone, 7, carries a plans header too, so it reads its release checks when active.
+    map[releaseChecksKey(7)] = releaseChecksPage([]);
     const c = capture();
     const code = runPmCli(
       ['pickup', ...args],

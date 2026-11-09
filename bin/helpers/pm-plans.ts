@@ -118,7 +118,20 @@ export interface PlanIssue {
   title: string | null;
   open: boolean;
   status: string | null;
+  /** Open only for its release check, so its plan's work has landed. */
+  awaitsRelease: boolean;
 }
+
+// The form pm-lint.ts accepts for `Revisit when:`: plain, bold, italic, or a list item.
+const RELEASE_CHECK_LINE =
+  /^\s*(?:[-*+][ \t]+)?(?:(\*\*|__|\*|_)verified by the release(?::\1|\1:)|verified by the release:)/im;
+
+/**
+ * Whether `body` carries a line beginning `Verified by the release:`, which
+ * keeps an issue open until its check passes after the release.
+ */
+export const awaitsReleaseCheck = (body: string): boolean =>
+  RELEASE_CHECK_LINE.test(body);
 
 export interface PlanView {
   name: string;
@@ -136,8 +149,9 @@ export type Plans =
   | ({ parse: 'none' } & PlansBody)
   | ({ parse: 'malformed'; reason: string } & PlansBody);
 
+// The open issues still to do: one awaiting its release check has landed.
 const openOf = (issues: PlanIssue[]): PlanIssue[] =>
-  issues.filter((i) => i.open);
+  issues.filter((i) => i.open && !i.awaitsRelease);
 const inProgress = (i: PlanIssue): boolean => i.status === 'In Progress';
 // No card yet reads as not started; see planView.
 const notStarted = (i: PlanIssue): boolean =>
@@ -159,9 +173,15 @@ function stateOf(issues: PlanIssue[], isNext: boolean): PlanState {
 /**
  * The milestone's plans in header order, each with a state from the board.
  * A header issue with no card counts as open and not started: a card has
- * to be added to the board, and the issue may not have been.
+ * to be added to the board, and the issue may not have been. An open issue
+ * in `awaiting` waits only for its release check, so it neither makes its
+ * plan startable nor keeps it running.
  */
-export function planView(ms: Milestone, items: Item[]): Plans {
+export function planView(
+  ms: Milestone,
+  items: Item[],
+  awaiting: ReadonlySet<number> = new Set(),
+): Plans {
   const c = parsePlansHeader(ms.description);
   if (c.parse === 'none') return { parse: 'none', list: [], unplanned: [] };
   if (c.parse === 'malformed') {
@@ -170,14 +190,11 @@ export function planView(ms: Milestone, items: Item[]): Plans {
   const byNumber = new Map(items.map((i) => [i.number, i]));
   const issueOf = (n: number): PlanIssue => {
     const i = byNumber.get(n);
+    const open = i === undefined || i.state === 'OPEN';
+    const awaitsRelease = open && awaiting.has(n);
     return i
-      ? {
-          number: n,
-          title: i.title,
-          open: i.state === 'OPEN',
-          status: i.status,
-        }
-      : { number: n, title: null, open: true, status: null };
+      ? { number: n, title: i.title, open, status: i.status, awaitsRelease }
+      : { number: n, title: null, open, status: null, awaitsRelease };
   };
   const issues = c.plans.map((p) => p.issues.map(issueOf));
   const nextAt = issues.findIndex(startable);

@@ -26,7 +26,11 @@ const cell = (text: string): string => text.replaceAll('|', '\\|');
 
 function row(plan: PlanView, ref: (n: number) => string): string {
   const closed = plan.issues.filter((i) => !i.open).length;
-  const issues = plan.issues.map((i) => ref(i.number)).join(' ');
+  const issues = plan.issues
+    .map((i) =>
+      i.awaitsRelease ? `${ref(i.number)} (release check)` : ref(i.number),
+    )
+    .join(' ');
   return `| ${STATE_CELL[plan.state]} | ${cell(plan.name)} | ${closed} of ${plan.issues.length} | ${issues} |`;
 }
 

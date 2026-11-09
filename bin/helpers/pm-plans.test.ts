@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { fixture } from './fixtures/pm/runner.js';
 import type { Item, Milestone } from './pm-data.js';
-import { descriptionProse, parsePlansHeader, planView } from './pm-plans.js';
+import {
+  awaitsReleaseCheck,
+  descriptionProse,
+  parsePlansHeader,
+  planView,
+} from './pm-plans.js';
 
 const item = (p: Partial<Item> & { number: number }): Item => ({
   itemId: `PVTI_${p.number}`,
@@ -198,6 +203,94 @@ describe('descriptionProse', () => {
   });
 });
 
+describe('awaitsReleaseCheck', () => {
+  test('finds the line plain, bold, italic, indented, or as a list item', () => {
+    for (const body of [
+      'Problem.\n\nVerified by the release: run it after step 5.',
+      'Problem.\n**Verified by the release:** run it.',
+      'Problem.\n**Verified by the release**: run it.',
+      'Problem.\n_Verified by the release:_ run it.',
+      'Problem.\n- Verified by the release: run it.',
+      '  verified by the release: run it.',
+    ]) {
+      expect(awaitsReleaseCheck(body)).toBe(true);
+    }
+  });
+
+  test('ignores a mention inside a line, and a body without one', () => {
+    expect(
+      awaitsReleaseCheck(
+        'Its body carries a line beginning `Verified by the release:`.',
+      ),
+    ).toBe(false);
+    expect(awaitsReleaseCheck('Verified by the release, later.')).toBe(false);
+    expect(awaitsReleaseCheck('')).toBe(false);
+  });
+});
+
+describe('planView with release checks', () => {
+  const states = (description: string, items: Item[], awaiting: number[]) =>
+    planView(ms(description), items, new Set(awaiting)).list.map((p) => [
+      p.name,
+      p.state,
+    ]);
+
+  test('a plan whose only open issue awaits its release check is done, and the next plan is next', () => {
+    const v = planView(
+      ms(header('1. Landed (#1, #2)', '2. After (#3)')),
+      [
+        item({ number: 1, state: 'CLOSED', status: 'Done' }),
+        item({ number: 2 }),
+        item({ number: 3 }),
+      ],
+      new Set([2]),
+    );
+    expect(v.list.map((p) => [p.name, p.state])).toEqual([
+      ['Landed', 'done'],
+      ['After', 'next'],
+    ]);
+    expect(v.list[0].issues.map((i) => [i.number, i.awaitsRelease])).toEqual([
+      [1, false],
+      [2, true],
+    ]);
+  });
+
+  test('an ordinary open issue beside one awaiting the release keeps the plan startable', () => {
+    expect(
+      states(
+        header('1. Mixed (#1, #2)', '2. After (#3)'),
+        [item({ number: 1 }), item({ number: 2 }), item({ number: 3 })],
+        [1],
+      ),
+    ).toEqual([
+      ['Mixed', 'next'],
+      ['After', 'later'],
+    ]);
+  });
+
+  test('an issue awaiting the release does not keep its plan running', () => {
+    expect(
+      states(
+        header('1. Landed (#1)', '2. After (#2)'),
+        [item({ number: 1, status: 'In Progress' }), item({ number: 2 })],
+        [1],
+      ),
+    ).toEqual([
+      ['Landed', 'done'],
+      ['After', 'next'],
+    ]);
+  });
+
+  test('a closed issue never awaits the release', () => {
+    const v = planView(
+      ms(header('1. P (#1)')),
+      [item({ number: 1, state: 'CLOSED', status: 'Done' })],
+      new Set([1]),
+    );
+    expect(v.list[0].issues[0].awaitsRelease).toBe(false);
+  });
+});
+
 describe('planView', () => {
   const states = (description: string, items: Item[]) =>
     planView(ms(description), items).list.map((p) => [p.name, p.state]);
@@ -239,7 +332,15 @@ describe('planView', () => {
       {
         name: 'New',
         state: 'next',
-        issues: [{ number: 8, title: null, open: true, status: null }],
+        issues: [
+          {
+            number: 8,
+            title: null,
+            open: true,
+            status: null,
+            awaitsRelease: false,
+          },
+        ],
       },
     ]);
   });
@@ -250,8 +351,20 @@ describe('planView', () => {
       item({ number: 3, state: 'CLOSED', status: 'Done' }),
     ]);
     expect(v.list[0].issues).toEqual([
-      { number: 3, title: 't3', open: false, status: 'Done' },
-      { number: 1, title: 't1', open: true, status: 'Backlog' },
+      {
+        number: 3,
+        title: 't3',
+        open: false,
+        status: 'Done',
+        awaitsRelease: false,
+      },
+      {
+        number: 1,
+        title: 't1',
+        open: true,
+        status: 'Backlog',
+        awaitsRelease: false,
+      },
     ]);
   });
 
