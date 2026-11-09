@@ -6077,11 +6077,12 @@ function warningsBlock(parts) {
 function countBlock(lintCount) {
   if (lintCount === undefined || lintCount.count === 0)
     return [];
-  const { count, ranAt } = lintCount;
+  const { count, byCheck, ranAt } = lintCount;
+  const checks = byCheck.map((check2) => `${check2.id} ${check2.count}`);
   const folders = lintCount.folders.map((folder) => withheldNames(folder));
   const where = folders.map((folder) => `${folder}/`).join(" and ");
   const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
-  const text = `Memory lint: ${counted(count, "finding")} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(" ")}`;
+  const text = `Memory lint: ${counted(count, "finding")} in ${where} (run ${ranAt}): ${checks.join(LIST_SEPARATOR)}. List them: sidekick memory lint ${args.join(" ")}`;
   return [{ text, drop: Drop.Count }];
 }
 function blocksOf(parts, gate) {
@@ -7060,8 +7061,18 @@ function lintCountOf(view, source, deps) {
     if (cache === undefined)
       return;
     const folders = sessionFolders(view);
-    const count2 = cache.findings.filter((f) => countsHere(f, folders)).length;
-    return { count: count2, folders, ranAt: localMinute(new Date(cache.ranAt)) };
+    const here = cache.findings.filter((f) => countsHere(f, folders));
+    const counts = countById(here);
+    const byCheck = MEMORY_LINT_IDS.flatMap((id) => {
+      const found = counts[id];
+      return found === undefined ? [] : [{ id, count: found }];
+    });
+    return {
+      count: here.length,
+      byCheck,
+      folders,
+      ranAt: localMinute(new Date(cache.ranAt))
+    };
   } catch {
     return;
   }

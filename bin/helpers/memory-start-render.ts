@@ -15,6 +15,8 @@ export type StartSource = 'startup' | 'resume' | 'clear' | 'compact' | 'fork';
 /** The cached lint's count for the session's folders. */
 export interface LintCount {
   count: number;
+  /** Each check with findings, in the lint's id order, and its count. */
+  byCheck: ReadonlyArray<{ id: string; count: number }>;
   /** Store-relative, the repo folder first, as `sidekick memory lint --folder` takes them. */
   folders: string[];
   /** When the lint ran, in local time as YYYY-MM-DD HH:MM. */
@@ -362,11 +364,12 @@ function warningsBlock(parts: StartParts): Block[] {
 // A withheld folder's --folder argument names no folder; the operator finds that folder with ls.
 function countBlock(lintCount: LintCount | undefined): Block[] {
   if (lintCount === undefined || lintCount.count === 0) return [];
-  const { count, ranAt } = lintCount;
+  const { count, byCheck, ranAt } = lintCount;
+  const checks = byCheck.map((check) => `${check.id} ${check.count}`);
   const folders = lintCount.folders.map((folder) => withheldNames(folder));
   const where = folders.map((folder) => `${folder}/`).join(' and ');
   const args = folders.map((folder) => `--folder ${shellArg(folder)}`);
-  const text = `Memory lint: ${counted(count, 'finding')} in ${where} (run ${ranAt}). List them: sidekick memory lint ${args.join(' ')}`;
+  const text = `Memory lint: ${counted(count, 'finding')} in ${where} (run ${ranAt}): ${checks.join(LIST_SEPARATOR)}. List them: sidekick memory lint ${args.join(' ')}`;
   return [{ text, drop: Drop.Count }];
 }
 

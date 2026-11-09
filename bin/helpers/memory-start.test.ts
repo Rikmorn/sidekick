@@ -677,9 +677,18 @@ describe('the memory gate', () => {
 });
 
 const SPEC_COUNT_LINE =
-  'Memory lint: 3 findings in sidekick/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder sidekick';
-const lintCount = (count: number, folders = ['sidekick']) => ({
+  'Memory lint: 3 findings in sidekick/ (run 2026-11-02 14:10): dead-link 2, unindexed 1. List them: sidekick memory lint --folder sidekick';
+const SPEC_CHECKS = [
+  { id: 'dead-link', count: 2 },
+  { id: 'unindexed', count: 1 },
+];
+const lintCount = (
+  count: number,
+  folders = ['sidekick'],
+  byCheck = [{ id: 'dead-link', count }],
+) => ({
   count,
+  byCheck,
   folders,
   ranAt: '2026-11-02 14:10',
 });
@@ -694,7 +703,10 @@ const ALSO_FOLDED =
 describe('the lint count line', () => {
   test('prints as its own block after the warnings, as the spec gives it', () => {
     const out = renderStart(
-      parts({ warnings: ['w1'], lintCount: lintCount(3) }),
+      parts({
+        warnings: ['w1'],
+        lintCount: lintCount(3, undefined, SPEC_CHECKS),
+      }),
     );
     expect(out.split('\n\n').slice(-2)).toEqual([
       'Warning: w1',
@@ -703,7 +715,9 @@ describe('the lint count line', () => {
   });
 
   test('prints as its own block when there are no warnings', () => {
-    const out = renderStart(parts({ lintCount: lintCount(3) }));
+    const out = renderStart(
+      parts({ lintCount: lintCount(3, undefined, SPEC_CHECKS) }),
+    );
     expect(out.split('\n\n')).toEqual([
       `${FIRST}\n${WORKSTREAM_LINE}`,
       '## State\nIn flight.',
@@ -717,15 +731,81 @@ describe('the lint count line', () => {
       parts({ lintCount: lintCount(1, ['fam/proj', 'fam']) }),
     );
     expect(out.split('\n\n').at(-1)).toBe(
-      'Memory lint: 1 finding in fam/proj/ and fam/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder fam/proj --folder fam',
+      'Memory lint: 1 finding in fam/proj/ and fam/ (run 2026-11-02 14:10): dead-link 1. List them: sidekick memory lint --folder fam/proj --folder fam',
     );
   });
 
   test('a folder name holding a space is quoted in the command', () => {
     const out = renderStart(parts({ lintCount: lintCount(2, ['my proj']) }));
     expect(out.split('\n\n').at(-1)).toBe(
-      "Memory lint: 2 findings in my proj/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder 'my proj'",
+      "Memory lint: 2 findings in my proj/ (run 2026-11-02 14:10): dead-link 2. List them: sidekick memory lint --folder 'my proj'",
     );
+  });
+
+  test('the breakdown names each check in the order given, after the run time', () => {
+    const byCheck = [
+      { id: 'dead-link', count: 4 },
+      { id: 'workstream-cut', count: 2 },
+      { id: 'metadata-flattened', count: 1 },
+    ];
+    const out = renderStart(
+      parts({ lintCount: lintCount(7, undefined, byCheck) }),
+    );
+    expect(out.split('\n\n').at(-1)).toBe(
+      'Memory lint: 7 findings in sidekick/ (run 2026-11-02 14:10): dead-link 4, workstream-cut 2, metadata-flattened 1. List them: sidekick memory lint --folder sidekick',
+    );
+  });
+
+  test('a single check prints alone', () => {
+    const byCheck = [{ id: 'metadata-flattened', count: 3 }];
+    const out = renderStart(
+      parts({ lintCount: lintCount(3, undefined, byCheck) }),
+    );
+    expect(out.split('\n\n').at(-1)).toBe(
+      'Memory lint: 3 findings in sidekick/ (run 2026-11-02 14:10): metadata-flattened 3. List them: sidekick memory lint --folder sidekick',
+    );
+  });
+
+  test('past 9,000 the count line goes once the warnings and the family index have, and the records stay', () => {
+    const others = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        ws(`other-${String(i).padStart(5, '0')}`),
+      );
+    const full = (n: number, extras: Partial<Parameters<typeof parts>[0]>) =>
+      renderStart(
+        parts({
+          match: {
+            kind: 'matched',
+            workstream: ws('alpha', { path: FILE }),
+            label: 'branch feat',
+            others: others(n),
+          },
+          state: `## State\n${longText(300, 60)}`,
+          nextSteps: `## Next steps\n${longText(300, 60)}`,
+          records: [record('2026-10-01'), record('2026-10-02')],
+          ...extras,
+        }),
+      );
+    const countLength = SPEC_COUNT_LINE.length + '\n\n'.length;
+    const n = Array.from({ length: 300 }, (_, i) => i).find((i) => {
+      const bare = full(i, {}).length;
+      return bare <= 9000 && bare + countLength > 9000;
+    });
+    expect(n).toBeDefined();
+    const out = full(n ?? 0, {
+      family: {
+        name: 'fam',
+        path: FAMILY_INDEX,
+        lines: longText(200, 50).split('\n'),
+      },
+      warnings: ['w'],
+      lintCount: lintCount(3, undefined, SPEC_CHECKS),
+    });
+    expect(out.length).toBeLessThanOrEqual(9000);
+    expect(out).not.toContain('Memory lint:');
+    expect(out).not.toContain('Family index');
+    expect(out).not.toContain('Warning: w');
+    expect(out).toContain('Recent records');
   });
 
   test('a count of zero prints no line', () => {
@@ -750,7 +830,7 @@ describe('the lint count line', () => {
           lines: longText(200, 50).split('\n'),
         },
         warnings: ['w'],
-        lintCount: lintCount(3),
+        lintCount: lintCount(3, undefined, SPEC_CHECKS),
       }),
     );
     expect(out.length).toBeLessThanOrEqual(9000);
@@ -792,7 +872,7 @@ describe('the lint count line', () => {
           lines: longText(200, 50).split('\n'),
         },
         warnings: ['w'],
-        lintCount: lintCount(3),
+        lintCount: lintCount(3, undefined, SPEC_CHECKS),
       }),
     );
     expect(out.split('\n\n')[0]?.length).toBeGreaterThan(775);
@@ -1342,7 +1422,7 @@ describe("the lint's cached count at session start", () => {
       finding('index-line-long', 'fam'),
     ]);
     expect(lastLine(contextOf(store, repo))).toBe(
-      'Memory lint: 6 findings in proj/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder proj',
+      'Memory lint: 6 findings in proj/ (run 2026-11-02 14:10): dead-link 2, unindexed 1, settings-invalid 1, dangling-marker 1, default-folder-left 1. List them: sidekick memory lint --folder proj',
     );
   });
 
@@ -1356,7 +1436,19 @@ describe("the lint's cached count at session start", () => {
       finding('dead-link', 'proj'),
     ]);
     expect(lastLine(contextOf(store, repo))).toBe(
-      'Memory lint: 3 findings in fam/proj/ and fam/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder fam/proj --folder fam',
+      'Memory lint: 3 findings in fam/proj/ and fam/ (run 2026-11-02 14:10): dead-link 1, index-line-long 1, settings-invalid 1. List them: sidekick memory lint --folder fam/proj --folder fam',
+    );
+  });
+
+  test('the breakdown follows the lint id order, whatever order the cache holds', () => {
+    const { store, repo } = cachedLinked();
+    cacheFindings(store, [
+      finding('metadata-flattened', 'proj'),
+      finding('dead-link', 'proj'),
+      finding('metadata-flattened', 'proj'),
+    ]);
+    expect(lastLine(contextOf(store, repo))).toBe(
+      'Memory lint: 3 findings in proj/ (run 2026-11-02 14:10): dead-link 1, metadata-flattened 2. List them: sidekick memory lint --folder proj',
     );
   });
 
@@ -1365,7 +1457,7 @@ describe("the lint's cached count at session start", () => {
     cacheFindings(store, [finding('dead-link', 'proj')]);
     process.env.TZ = 'Asia/Tokyo';
     expect(lastLine(contextOf(store, repo))).toBe(
-      'Memory lint: 1 finding in proj/ (run 2026-11-02 23:10). List them: sidekick memory lint --folder proj',
+      'Memory lint: 1 finding in proj/ (run 2026-11-02 23:10): dead-link 1. List them: sidekick memory lint --folder proj',
     );
   });
 
@@ -1488,7 +1580,7 @@ describe("the lint's cached count at session start", () => {
     });
     const line = lastLine(contextOf(store, repo)) ?? '';
     expect(line).toBe(
-      'Memory lint: 3 findings in fam/proj/ and fam/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder fam/proj --folder fam',
+      'Memory lint: 3 findings in fam/proj/ and fam/ (run 2026-11-02 14:10): dead-link 2, settings-invalid 1. List them: sidekick memory lint --folder fam/proj --folder fam',
     );
     const named = [...line.matchAll(/--folder (\S+)/g)].map((m) => m[1] ?? '');
     const listed = lintStore(
@@ -1513,7 +1605,7 @@ describe("the lint's cached count at session start", () => {
     fs.writeFileSync(path.join(folder, 'MEMORY.md'), DEAD_INDEX);
     expect(cacheRealLint(store).counts).toEqual({ 'dead-link': 1 });
     expect(lastLine(contextOf(store, repo))).toBe(
-      'Memory lint: 1 finding in proj/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder proj',
+      'Memory lint: 1 finding in proj/ (run 2026-11-02 14:10): dead-link 1. List them: sidekick memory lint --folder proj',
     );
   });
 
@@ -1530,7 +1622,7 @@ describe("the lint's cached count at session start", () => {
     fs.writeFileSync(path.join(folder, 'MEMORY.md'), DEAD_INDEX);
     expect(cacheRealLint(store).counts).toEqual({ 'dead-link': 1 });
     expect(lastLine(contextOf(store, repo))).toBe(
-      'Memory lint: 1 finding in proj/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder proj',
+      'Memory lint: 1 finding in proj/ (run 2026-11-02 14:10): dead-link 1. List them: sidekick memory lint --folder proj',
     );
   });
 });
@@ -1692,10 +1784,16 @@ describe('a store name the hook prints', () => {
 
   test('a lint count folder whose name holds tag characters is withheld alone in its folder list and its --folder argument, and a clean folder prints as before', () => {
     const out = renderStart(
-      parts({ lintCount: lintCount(2, [`fam/${TAGGED}`, 'fam']) }),
+      parts({
+        lintCount: lintCount(
+          2,
+          [`fam/${TAGGED}`, 'fam'],
+          [{ id: 'dead-link', count: 2 }],
+        ),
+      }),
     );
     expect(out.split('\n\n').at(-1)).toBe(
-      `Memory lint: 2 findings in fam/${NAME_HELD}/ and fam/ (run 2026-11-02 14:10). List them: sidekick memory lint --folder ${shellArg(`fam/${NAME_HELD}`)} --folder fam`,
+      `Memory lint: 2 findings in fam/${NAME_HELD}/ and fam/ (run 2026-11-02 14:10): dead-link 2. List them: sidekick memory lint --folder ${shellArg(`fam/${NAME_HELD}`)} --folder fam`,
     );
     expect(out).not.toMatch(TAG_CHAR);
   });

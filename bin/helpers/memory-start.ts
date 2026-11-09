@@ -10,6 +10,8 @@ import * as v from 'valibot';
 import { localMinute } from './local-date.js';
 import { linkCommand } from './memory-link-plan.js';
 import {
+  countById,
+  MEMORY_LINT_IDS,
   type MemoryFinding,
   type MemoryLintId,
   STORE_WIDE_IDS,
@@ -207,8 +209,18 @@ function lintCountOf(
     const cache = file === undefined ? undefined : readCache(file);
     if (cache === undefined) return undefined;
     const folders = sessionFolders(view);
-    const count = cache.findings.filter((f) => countsHere(f, folders)).length;
-    return { count, folders, ranAt: localMinute(new Date(cache.ranAt)) };
+    const here = cache.findings.filter((f) => countsHere(f, folders));
+    const counts = countById(here);
+    const byCheck = MEMORY_LINT_IDS.flatMap((id) => {
+      const found = counts[id];
+      return found === undefined ? [] : [{ id, count: found }];
+    });
+    return {
+      count: here.length,
+      byCheck,
+      folders,
+      ranAt: localMinute(new Date(cache.ranAt)),
+    };
   } catch {
     return undefined;
   }

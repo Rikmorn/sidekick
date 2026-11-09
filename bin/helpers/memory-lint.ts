@@ -835,7 +835,8 @@ const PREDICATES: Record<MemoryLintId, Predicate> = {
 
 // --- The run ---
 
-function countById(
+/** Each id with findings and its count, in `MEMORY_LINT_IDS` order. */
+export function countById(
   findings: readonly MemoryFinding[],
 ): Partial<Record<MemoryLintId, number>> {
   return Object.fromEntries(
