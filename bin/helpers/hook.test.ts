@@ -10,6 +10,7 @@ import { FETCH_LIMIT_MS } from './enter-worktree-fetch.js';
 import { removeTemps, repo } from './fixtures/worker/repo.js';
 import {
   HOOK_USAGE_LINE,
+  type HookEnv,
   readSection,
   readSkillDescription,
   runHookCli,
@@ -32,6 +33,7 @@ const CLEAN_CODE = path.join(PLUGIN_DIR, 'rules', 'sk-clean-code.md');
 const READ_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-read');
 const BATCH_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'post-tool-batch');
 const FETCH_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'pre-enter-worktree');
+const SUBAGENT_WRAPPER = path.join(PLUGIN_DIR, 'hooks', 'subagent-start');
 // A phrase the claims paragraph keeps.
 const CLAIMS_MARK = 'its other copies are its call sites';
 const READ_LEAD =
@@ -76,12 +78,17 @@ function readEvent(
   });
 }
 
-function runVerb(verb: string, stdin: string, pluginDir = PLUGIN_DIR) {
+function runVerb(
+  verb: string,
+  stdin: string,
+  pluginDir = PLUGIN_DIR,
+  env: HookEnv['env'] = {},
+) {
   const out: string[] = [];
   const err: string[] = [];
   const code = runHookCli(
     [verb],
-    { readStdin: () => stdin, pluginDir, env: {}, tmpdir: os.tmpdir() },
+    { readStdin: () => stdin, pluginDir, env, tmpdir: os.tmpdir() },
     (l) => out.push(l),
     (l) => err.push(l),
   );
@@ -1153,5 +1160,98 @@ describe('plugin/hooks/pre-enter-worktree', () => {
     );
     expect(entry.hooks[0].command).toContain('hooks/pre-enter-worktree');
     expect(entry.hooks[0].timeout * 1000).toBeGreaterThan(FETCH_LIMIT_MS);
+  });
+});
+
+describe('runHookCli subagent-start', () => {
+  const brief = () =>
+    tmpFile(
+      'brief.md',
+      '# Brief\n\n## Limits\n\nNo writes outside the worktree.\n\n## Next\n\nx\n',
+    );
+
+  test('a worker with a limits section prints one SubagentStart line', () => {
+    const { code, out } = runVerb('subagent-start', '{}', PLUGIN_DIR, {
+      SIDEKICK_WORKER: brief(),
+    });
+    expect(code).toBe(0);
+    expect(out.length).toBe(1);
+    const parsed = JSON.parse(out[0]);
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('SubagentStart');
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      'No writes outside the worktree.',
+    );
+  });
+
+  test.each([
+    ['no SIDEKICK_WORKER', {}],
+    ['a missing brief', { SIDEKICK_WORKER: '/nonexistent/brief.md' }],
+  ])('%s prints nothing and returns 0', (_label, env) => {
+    expect(runVerb('subagent-start', '{}', PLUGIN_DIR, env)).toEqual({
+      code: 0,
+      out: [],
+      err: [],
+    });
+  });
+
+  test('stdin that is not JSON still yields the limits', () => {
+    const { code, out } = runVerb('subagent-start', 'not json', PLUGIN_DIR, {
+      SIDEKICK_WORKER: brief(),
+    });
+    expect(code).toBe(0);
+    expect(out.length).toBe(1);
+  });
+
+  test('the usage line names the verb', () => {
+    expect(HOOK_USAGE_LINE).toContain('subagent-start');
+  });
+});
+
+describe('plugin/hooks/subagent-start', () => {
+  afterEach(removeTemps);
+
+  test('exits 0 silently when node is not on PATH and no worker is set', () => {
+    const r = spawnSync('/bin/bash', [SUBAGENT_WRAPPER], {
+      input: '{}',
+      encoding: 'utf-8',
+      env: { PATH: '/nonexistent' },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+  });
+
+  test('exits 0 silently in a worker when node is not on PATH', () => {
+    const r = spawnSync('/bin/bash', [SUBAGENT_WRAPPER], {
+      input: '{}',
+      encoding: 'utf-8',
+      env: { PATH: '/nonexistent', SIDEKICK_WORKER: '/tmp/brief.md' },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+  });
+
+  test.each([
+    ['unset', {}],
+    ['empty', { SIDEKICK_WORKER: '' }],
+  ])('exits before starting node when SIDEKICK_WORKER is %s', (_label, extra) => {
+    const fake = fakeNode();
+    const r = spawnSync('/bin/bash', [SUBAGENT_WRAPPER], {
+      input: '{}',
+      encoding: 'utf-8',
+      env: { PATH: `${fake.binDir}:/usr/bin:/bin`, ...extra },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(fs.existsSync(fake.marker)).toBe(false);
+  });
+
+  test('hooks.json has a SubagentStart entry with no matcher and a 5 s timeout', () => {
+    const hooks = JSON.parse(
+      fs.readFileSync(path.join(PLUGIN_DIR, 'hooks', 'hooks.json'), 'utf-8'),
+    );
+    const [entry] = hooks.hooks.SubagentStart;
+    expect(entry.matcher).toBeUndefined();
+    expect(entry.hooks[0].command).toContain('hooks/subagent-start');
+    expect(entry.hooks[0].timeout).toBe(5);
   });
 });

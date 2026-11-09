@@ -56,6 +56,17 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolBatch": [
       {
         "hooks": [

@@ -1,13 +1,14 @@
 /**
  * `sidekick hook post-skill`, `post-read`, `post-tool-batch`, `memory-start`,
- * and `pre-enter-worktree`: the verbs sidekick's hooks run. The first four add
- * context. The two PostToolUse verbs fire in two cases. One is when a skill
- * sidekick extends loads. The other is when a review package is read:
+ * `pre-enter-worktree`, and `subagent-start`: the verbs sidekick's hooks run.
+ * All but `pre-enter-worktree` add context. The two PostToolUse verbs fire in
+ * two cases. One is when a skill sidekick extends loads. The other is when a review package is read:
  * superpowers' own, or the one sk-milestone's release check builds, which gets
  * lines of its own. The PostToolBatch verb warns the model as its context
  * fills, and tells the operator once, through a `systemMessage`, when
  * sidekick's mods are not running. The SessionStart verb `memory-start` prints
- * the memory store's workstream and record for the session. The PreToolUse
+ * the memory store's workstream and record for the session. The SubagentStart
+ * verb `subagent-start` adds the worker's limits. The PreToolUse
  * verb `pre-enter-worktree` adds no context: it fetches the default branch
  * before `EnterWorktree` creates a worktree, and prints nothing. A known verb
  * prints nothing and returns 0 for any other event, because a hook never
@@ -27,9 +28,10 @@ import { localToday } from './local-date.js';
 import { startSnapshot } from './memory-snapshot.js';
 import { memoryStartContext } from './memory-start.js';
 import { execRunner } from './pm-data.js';
+import { subagentLimitsContext } from './subagent-limits.js';
 
 export const HOOK_USAGE_LINE =
-  'sidekick hook post-skill|post-read|post-tool-batch|memory-start|pre-enter-worktree   (reads the hook event on stdin)';
+  'sidekick hook post-skill|post-read|post-tool-batch|memory-start|pre-enter-worktree|subagent-start   (reads the hook event on stdin)';
 
 export interface HookEnv {
   /** Reads the hook event; called only once the verb is known. */
@@ -353,6 +355,19 @@ const VERBS = new Map<string, Verb>([
         enterWorktreeFetch(stdin, execRunner);
         return {};
       },
+    },
+  ],
+  [
+    'subagent-start',
+    {
+      eventName: 'SubagentStart',
+      contextFor: (_stdin, env) => ({
+        context: subagentLimitsContext({
+          env: env.env,
+          pluginDir: env.pluginDir,
+          readSection,
+        }),
+      }),
     },
   ],
   [

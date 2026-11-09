@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# SubagentStart hook: in a dispatched worker, hand each subagent the brief's
+# limits and sk-worker's own (#342). Silent, with exit 0, outside a worker and
+# on anything unexpected. A hook never fails the call it watches.
+set -uo pipefail
+
+[ -n "${SIDEKICK_WORKER:-}" ] || exit 0
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+command -v node >/dev/null 2>&1 || exit 0
+node "$ROOT/bin/sidekick" hook subagent-start 2>/dev/null
+exit 0
