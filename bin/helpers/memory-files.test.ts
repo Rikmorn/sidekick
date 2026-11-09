@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { parseMemoryText, readMemoryFile } from './memory-files.js';
+import { flattening, parseMemoryText, readMemoryFile } from './memory-files.js';
 
 const CLAUDE_WRITTEN = `---
 name: r10
@@ -95,4 +95,77 @@ test('readMemoryFile reads a file and gives undefined for a missing one', () => 
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const FLATTENED = `---
+
+name: alpha
+description: x
+metadata:
+node_type: memory
+type: project
+kind: workstream
+status: open
+---
+
+## State
+`;
+
+test('flattening names the margin keys after metadata: and the blank line', () => {
+  expect(flattening(FLATTENED)).toEqual({
+    keys: ['node_type', 'type', 'kind', 'status'],
+    blankLine: true,
+  });
+});
+
+test('flattening reports no blank line when the fence is followed by a key', () => {
+  expect(flattening(FLATTENED.replace('---\n\n', '---\n'))?.blankLine).toBe(
+    false,
+  );
+});
+
+test('flattening gives only the margin key of a partial flattening', () => {
+  const text =
+    '---\nname: a\nmetadata:\n  kind: workstream\nstatus: open\n---\n';
+  expect(flattening(text)).toEqual({ keys: ['status'], blankLine: false });
+});
+
+test('flattening finds nothing in a well-formed file', () => {
+  expect(flattening(CLAUDE_WRITTEN)).toBeUndefined();
+});
+
+test('flattening finds nothing in the older shape with no metadata: line', () => {
+  const text =
+    '---\nname: a\ndescription: x\ntype: project\noriginSessionId: abc\n---\n';
+  expect(flattening(text)).toBeUndefined();
+});
+
+test('flattening treats a key before metadata: as deliberate', () => {
+  const text =
+    '---\nname: a\ndescription: x\ntags: a\nmetadata:\n  kind: workstream\n---\n';
+  expect(flattening(text)).toBeUndefined();
+});
+
+test('flattening reads a flow-style metadata value as holding no block', () => {
+  const text = '---\nname: a\nmetadata: {type: project}\n---\n';
+  expect(flattening(text)).toBeUndefined();
+});
+
+test('flattening finds the same keys in CRLF text', () => {
+  expect(flattening(FLATTENED.replace(/\n/g, '\r\n'))).toEqual({
+    keys: ['node_type', 'type', 'kind', 'status'],
+    blankLine: true,
+  });
+});
+
+test('flattening finds nothing in front matter that never closes', () => {
+  expect(
+    flattening('---\n\nname: a\nmetadata:\nkind: workstream\n'),
+  ).toBeUndefined();
+});
+
+test('flattening skips name and description after metadata:', () => {
+  const text =
+    '---\nmetadata:\n  kind: workstream\nname: a\ndescription: x\n---\n';
+  expect(flattening(text)).toBeUndefined();
 });

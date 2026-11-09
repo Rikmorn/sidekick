@@ -8,7 +8,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { configDirOf } from './main-session.js';
 import { defaultMemoryFolder } from './memory-default.js';
-import { type MemoryFile, parseMemoryText } from './memory-files.js';
+import {
+  flattening,
+  type MemoryFile,
+  parseMemoryText,
+} from './memory-files.js';
 import { linkCommand } from './memory-link-plan.js';
 import { linksIn, reachFrom } from './memory-links.js';
 import {
@@ -62,6 +66,7 @@ export const MEMORY_LINT_IDS = [
   'index-line-long',
   'workstream-cut',
   'workstream-dropped',
+  'metadata-flattened',
   'key-shaped',
   'injection-shaped',
   'settings-invalid',
@@ -525,6 +530,26 @@ function droppedWorkstreams(scan: FolderScan): Hit[] {
     });
 }
 
+function flattenedMessage(found: {
+  keys: string[];
+  blankLine: boolean;
+}): string {
+  const keys = quoteOrWithhold(found.keys.join(', '));
+  const blank = found.blankLine
+    ? ', and delete the blank line after the opening ---'
+    : '';
+  return `its metadata keys sit at the left margin (${keys}), so no reader sees them: indent each two spaces under metadata:${blank}`;
+}
+
+function flattenedFiles(scan: FolderScan): Hit[] {
+  return [...scan.files, ...scan.sessions].flatMap((own) => {
+    const found = flattening(own.text);
+    return found === undefined
+      ? []
+      : [{ file: own.file, message: flattenedMessage(found) }];
+  });
+}
+
 // The shared deciders and the checks they run, so a finding names the same ids the gate would.
 const SHAPES = {
   key: { hits: keyHits, checks: KEY_CHECKS },
@@ -797,6 +822,7 @@ const PREDICATES: Record<MemoryLintId, Predicate> = {
   'index-line-long': perFolder(longIndexLines),
   'workstream-cut': perFolder(cutWorkstreams),
   'workstream-dropped': perFolder(droppedWorkstreams),
+  'metadata-flattened': perFolder(flattenedFiles),
   'key-shaped': perFolder(keyShaped),
   'injection-shaped': perFolder(injectionShaped),
   'settings-invalid': settingsInvalid,

@@ -34,6 +34,8 @@ interface Scan {
   top: Record<string, string>;
   metadata: Record<string, string>;
   inMetadata: boolean;
+  opened: boolean;
+  afterOpener: readonly string[];
 }
 
 function scanLine(scan: Scan, line: string): Scan {
@@ -47,24 +49,46 @@ function scanLine(scan: Scan, line: string): Scan {
   if (key === undefined) return scan;
   const value = top?.[2] ?? '';
   if (key === METADATA_KEY && value.trim() === '') {
-    return { ...scan, inMetadata: true };
+    return { ...scan, inMetadata: true, opened: true };
   }
   scan.top[key] = unquote(value);
-  return { ...scan, inMetadata: false };
+  const afterOpener = scan.opened
+    ? [...scan.afterOpener, key]
+    : scan.afterOpener;
+  return { ...scan, inMetadata: false, afterOpener };
 }
 
-/** Parses memory text, or gives undefined when it has no closed front matter. */
-export function parseMemoryText(text: string): MemoryFile | undefined {
+interface Scanned {
+  lines: string[];
+  end: number;
+  scan: Scan;
+}
+
+function scanFrontMatter(text: string): Scanned | undefined {
   const lines = text.split('\n');
   const isFence = (l: string | undefined) => l?.trimEnd() === FENCE;
   if (!isFence(lines[0])) return undefined;
   const end = lines.findIndex((l, i) => i > 0 && isFence(l));
   if (end === -1) return undefined;
-  const initial: Scan = { top: {}, metadata: {}, inMetadata: false };
+  const initial: Scan = {
+    top: {},
+    metadata: {},
+    inMetadata: false,
+    opened: false,
+    afterOpener: [],
+  };
   const scan = lines
     .slice(1, end)
     .map((l) => l.trimEnd())
     .reduce(scanLine, initial);
+  return { lines, end, scan };
+}
+
+/** Parses memory text, or gives undefined when it has no closed front matter. */
+export function parseMemoryText(text: string): MemoryFile | undefined {
+  const scanned = scanFrontMatter(text);
+  if (scanned === undefined) return undefined;
+  const { lines, end, scan } = scanned;
   const rest = lines.slice(end + 1);
   const firstContent = rest.findIndex((l) => l.trim() !== '');
   return {
@@ -82,4 +106,19 @@ export function readMemoryFile(file: string): MemoryFile | undefined {
   } catch {
     return undefined;
   }
+}
+
+const METADATA_OWN_KEYS = ['name', 'description'];
+
+/** The top-level keys after a front matter's `metadata:` line, other than `name` and `description`, and whether a blank line follows the opening fence. Undefined when no such key exists or the front matter does not parse. */
+export function flattening(
+  text: string,
+): { keys: string[]; blankLine: boolean } | undefined {
+  const scanned = scanFrontMatter(text);
+  if (scanned === undefined) return undefined;
+  const keys = scanned.scan.afterOpener.filter(
+    (key) => !METADATA_OWN_KEYS.includes(key),
+  );
+  if (keys.length === 0) return undefined;
+  return { keys, blankLine: scanned.lines[1]?.trim() === '' };
 }

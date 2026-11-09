@@ -537,6 +537,69 @@ describe('workstream-dropped', () => {
   });
 });
 
+describe('metadata-flattened', () => {
+  const flattened = (name: string, key = 'kind'): string =>
+    `---\n\nname: ${name}\ndescription: x\nmetadata:\nnode_type: memory\ntype: project\n${key}: workstream\nstatus: open\n---\n\n${SECTIONS}`;
+  const message = (keys: string, blank = true): string =>
+    `its metadata keys sit at the left margin (${keys}), so no reader sees them: indent each two spaces under metadata:${blank ? ', and delete the blank line after the opening ---' : ''}`;
+  const flaggedOnly = () =>
+    lint().findings.filter((finding) => finding.id === 'metadata-flattened');
+
+  test('a flattened workstream draws one finding and no workstream-dropped', () => {
+    append('proj/MEMORY.md', '- [flat](flat.md)\n');
+    const file = write('proj/flat.md', flattened('flat'));
+    expect(lint().findings).toEqual([
+      {
+        id: 'metadata-flattened',
+        folder: 'proj',
+        file,
+        message: message('node_type, type, kind, status'),
+      },
+    ]);
+  });
+
+  test('a flattened session record is found in its repo folder', () => {
+    const file = write('proj/sessions/2026-11-02-flat.md', flattened('rec'));
+    expect(flaggedOnly()).toEqual([
+      {
+        id: 'metadata-flattened',
+        folder: 'proj',
+        file,
+        message: message('node_type, type, kind, status'),
+      },
+    ]);
+  });
+
+  test('a flattened file in a family folder is found there', () => {
+    append('fam/MEMORY.md', '- [flat](flat.md)\n');
+    write('fam/flat.md', flattened('flat'));
+    expect(flaggedOnly().map((finding) => finding.folder)).toEqual(['fam']);
+  });
+
+  test('a file without the blank line gets the message without its clause', () => {
+    append('proj/MEMORY.md', '- [flat](flat.md)\n');
+    write('proj/flat.md', flattened('flat').replace('---\n\n', '---\n'));
+    expect(flaggedOnly().map((finding) => finding.message)).toEqual([
+      message('node_type, type, kind, status', false),
+    ]);
+  });
+
+  test('a margin key that matches a pattern is withheld, never quoted', () => {
+    append('proj/MEMORY.md', '- [flat](flat.md)\n');
+    write('proj/flat.md', flattened('flat', 'AKIAIOSFODNN7EXAMPLE'));
+    const [finding, ...rest] = flaggedOnly();
+    expect(rest).toEqual([]);
+    expect(finding?.message).toContain('(withheld: aws-access-key)');
+    expect(finding?.message).not.toContain('AKIAIOSFODNN7EXAMPLE');
+  });
+
+  test('front matter that never closes is workstream-dropped alone', () => {
+    append('proj/MEMORY.md', '- [flat](flat.md)\n');
+    write('proj/flat.md', '---\n\nname: flat\nmetadata:\nkind: workstream\n');
+    expect(ids(lint().findings)).toEqual(['workstream-dropped']);
+  });
+});
+
 describe('settings-invalid', () => {
   test('a schema failure is one store-wide finding', () => {
     write('settings.json', '{ "indexLineCap": 0 }');

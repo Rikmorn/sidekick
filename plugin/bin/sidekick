@@ -5073,12 +5073,13 @@ function scanLine(scan, line) {
     return scan;
   const value = top?.[2] ?? "";
   if (key === METADATA_KEY && value.trim() === "") {
-    return { ...scan, inMetadata: true };
+    return { ...scan, inMetadata: true, opened: true };
   }
   scan.top[key] = unquote(value);
-  return { ...scan, inMetadata: false };
+  const afterOpener = scan.opened ? [...scan.afterOpener, key] : scan.afterOpener;
+  return { ...scan, inMetadata: false, afterOpener };
 }
-function parseMemoryText(text) {
+function scanFrontMatter(text) {
   const lines = text.split(`
 `);
   const isFence = (l) => l?.trimEnd() === FENCE2;
@@ -5087,8 +5088,21 @@ function parseMemoryText(text) {
   const end = lines.findIndex((l, i) => i > 0 && isFence(l));
   if (end === -1)
     return;
-  const initial = { top: {}, metadata: {}, inMetadata: false };
+  const initial = {
+    top: {},
+    metadata: {},
+    inMetadata: false,
+    opened: false,
+    afterOpener: []
+  };
   const scan = lines.slice(1, end).map((l) => l.trimEnd()).reduce(scanLine, initial);
+  return { lines, end, scan };
+}
+function parseMemoryText(text) {
+  const scanned = scanFrontMatter(text);
+  if (scanned === undefined)
+    return;
+  const { lines, end, scan } = scanned;
   const rest2 = lines.slice(end + 1);
   const firstContent = rest2.findIndex((l) => l.trim() !== "");
   return {
@@ -5105,6 +5119,16 @@ function readMemoryFile(file) {
   } catch {
     return;
   }
+}
+var METADATA_OWN_KEYS = ["name", "description"];
+function flattening(text) {
+  const scanned = scanFrontMatter(text);
+  if (scanned === undefined)
+    return;
+  const keys = scanned.scan.afterOpener.filter((key) => !METADATA_OWN_KEYS.includes(key));
+  if (keys.length === 0)
+    return;
+  return { keys, blankLine: scanned.lines[1]?.trim() === "" };
 }
 
 // bin/helpers/memory-links.ts
@@ -6299,6 +6323,7 @@ var MEMORY_LINT_IDS = [
   "index-line-long",
   "workstream-cut",
   "workstream-dropped",
+  "metadata-flattened",
   "key-shaped",
   "injection-shaped",
   "settings-invalid",
@@ -6541,6 +6566,17 @@ function droppedWorkstreams(scan) {
     return message === undefined ? [] : [{ file: own.file, message }];
   });
 }
+function flattenedMessage(found) {
+  const keys = quoteOrWithhold(found.keys.join(", "));
+  const blank = found.blankLine ? ", and delete the blank line after the opening ---" : "";
+  return `its metadata keys sit at the left margin (${keys}), so no reader sees them: indent each two spaces under metadata:${blank}`;
+}
+function flattenedFiles(scan) {
+  return [...scan.files, ...scan.sessions].flatMap((own) => {
+    const found = flattening(own.text);
+    return found === undefined ? [] : [{ file: own.file, message: flattenedMessage(found) }];
+  });
+}
 var SHAPES = {
   key: { hits: keyHits, checks: KEY_CHECKS },
   injection: { hits: gateHits, checks: GATE_CHECKS }
@@ -6744,6 +6780,7 @@ var PREDICATES = {
   "index-line-long": perFolder(longIndexLines),
   "workstream-cut": perFolder(cutWorkstreams),
   "workstream-dropped": perFolder(droppedWorkstreams),
+  "metadata-flattened": perFolder(flattenedFiles),
   "key-shaped": perFolder(keyShaped),
   "injection-shaped": perFolder(injectionShaped),
   "settings-invalid": settingsInvalid,
