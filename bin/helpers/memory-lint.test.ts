@@ -593,6 +593,27 @@ describe('metadata-flattened', () => {
     expect(finding?.message).not.toContain('AKIAIOSFODNN7EXAMPLE');
   });
 
+  test('a partial flattening that leaves kind nested draws metadata-flattened alone', () => {
+    append('proj/MEMORY.md', '- [part](part.md)\n');
+    write(
+      'proj/part.md',
+      `---\nname: part\ndescription: x\nmetadata:\n  kind: workstream\nstatus: open\n---\n\n${SECTIONS}`,
+    );
+    expect(ids(lint().findings)).toEqual(['metadata-flattened']);
+    expect(flaggedOnly().map((finding) => finding.message)).toEqual([
+      'its metadata keys sit at the left margin (status), so no reader sees them: indent each two spaces under metadata:',
+    ]);
+  });
+
+  test('a file in the older shape draws no finding', () => {
+    append('proj/MEMORY.md', '- [old](old.md)\n');
+    write(
+      'proj/old.md',
+      `---\nname: old\ndescription: x\ntype: project\noriginSessionId: abc\n---\n\nbody\n`,
+    );
+    expect(lint().findings).toEqual([]);
+  });
+
   test('front matter that never closes is workstream-dropped alone', () => {
     append('proj/MEMORY.md', '- [flat](flat.md)\n');
     write('proj/flat.md', '---\n\nname: flat\nmetadata:\nkind: workstream\n');

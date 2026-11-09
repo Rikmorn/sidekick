@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import { configDirOf } from './main-session.js';
 import { defaultMemoryFolder } from './memory-default.js';
 import {
+  type Flattening,
   flattening,
   type MemoryFile,
   parseMemoryText,
@@ -514,6 +515,7 @@ function dropReason(
   if (memory === undefined) {
     return 'its front matter does not parse: it needs a --- line at the top and another closing it';
   }
+  if (flattening(own.text) !== undefined) return undefined;
   const isDropped =
     memory.metadata.kind === 'workstream' && !kept.has(own.file);
   return isDropped ? workstreamFaults(memory) : undefined;
@@ -530,10 +532,7 @@ function droppedWorkstreams(scan: FolderScan): Hit[] {
     });
 }
 
-function flattenedMessage(found: {
-  keys: string[];
-  blankLine: boolean;
-}): string {
+function flattenedMessage(found: Flattening): string {
   const keys = quoteOrWithhold(found.keys.join(', '));
   const blank = found.blankLine
     ? ', and delete the blank line after the opening ---'

@@ -5120,12 +5120,12 @@ function readMemoryFile(file) {
     return;
   }
 }
-var METADATA_OWN_KEYS = ["name", "description"];
+var TOP_LEVEL_KEYS = ["name", "description"];
 function flattening(text) {
   const scanned = scanFrontMatter(text);
   if (scanned === undefined)
     return;
-  const keys = scanned.scan.afterOpener.filter((key) => !METADATA_OWN_KEYS.includes(key));
+  const keys = scanned.scan.afterOpener.filter((key) => !TOP_LEVEL_KEYS.includes(key));
   if (keys.length === 0)
     return;
   return { keys, blankLine: scanned.lines[1]?.trim() === "" };
@@ -6556,6 +6556,8 @@ function dropReason(own, kept) {
   if (memory === undefined) {
     return "its front matter does not parse: it needs a --- line at the top and another closing it";
   }
+  if (flattening(own.text) !== undefined)
+    return;
   const isDropped = memory.metadata.kind === "workstream" && !kept.has(own.file);
   return isDropped ? workstreamFaults(memory) : undefined;
 }

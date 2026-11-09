@@ -108,16 +108,16 @@ export function readMemoryFile(file: string): MemoryFile | undefined {
   }
 }
 
-const METADATA_OWN_KEYS = ['name', 'description'];
+const TOP_LEVEL_KEYS = ['name', 'description'];
+
+export type Flattening = { keys: string[]; blankLine: boolean };
 
 /** The top-level keys after a front matter's `metadata:` line, other than `name` and `description`, and whether a blank line follows the opening fence. Undefined when no such key exists or the front matter does not parse. */
-export function flattening(
-  text: string,
-): { keys: string[]; blankLine: boolean } | undefined {
+export function flattening(text: string): Flattening | undefined {
   const scanned = scanFrontMatter(text);
   if (scanned === undefined) return undefined;
   const keys = scanned.scan.afterOpener.filter(
-    (key) => !METADATA_OWN_KEYS.includes(key),
+    (key) => !TOP_LEVEL_KEYS.includes(key),
   );
   if (keys.length === 0) return undefined;
   return { keys, blankLine: scanned.lines[1]?.trim() === '' };
