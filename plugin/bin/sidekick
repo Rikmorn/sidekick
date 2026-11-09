@@ -4332,6 +4332,7 @@ function pluginReport(profile, settings, penv) {
   const plugins = pluginCheck(profile, settings, penv);
   return plugins.ok ? ["plugins: ok", ...plugins.warnings.map((w) => `  ${w}`)] : ["plugins: refused", ...plugins.issues.map((i) => `  ${i}`)];
 }
+var oneLine2 = (text) => text.replace(/\s*[\r\n]\s*/g, " ");
 var list = (rest2, penv, out, err) => {
   if (rest2.length > 0)
     return usage(err);
@@ -4339,7 +4340,7 @@ var list = (rest2, penv, out, err) => {
   for (const p of profiles) {
     const shadowed = p.shadowedBy === undefined ? "" : `, shadowed by ${p.shadowedBy}`;
     const where = `(${p.store}: ${p.root}${shadowed})`;
-    out(p.issues.length > 0 ? `${p.name}  invalid: ${p.issues[0]}  ${where}` : `${p.name}  ${p.description}  ${where}`);
+    out(p.issues.length > 0 ? `${p.name}  invalid: ${p.issues[0]}  ${where}` : `${p.name}  ${oneLine2(p.description ?? "")}  ${where}`);
   }
   return profiles.some((p) => p.issues.length > 0) ? 1 : 0;
 };

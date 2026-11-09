@@ -119,6 +119,17 @@ describe('profile list', () => {
     expect(h.run('list')).toBe(0);
     expect(h.out).toEqual([`a  Alpha  (user: ${path.resolve(h.store)})`]);
   });
+  test('keeps a description that holds line breaks on one line', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'line one\nsecond line' });
+    mkProfile(h.store, 'b', { description: 'first\r\n  second' });
+    expect(h.run('list')).toBe(0);
+    const root = path.resolve(h.store);
+    expect(h.out).toEqual([
+      `a  line one second line  (user: ${root})`,
+      `b  first second  (user: ${root})`,
+    ]);
+  });
   test('shows invalid: for a broken profile and returns 1', () => {
     const h = harness();
     mkProfile(h.store, 'bad', { nope: 1 });

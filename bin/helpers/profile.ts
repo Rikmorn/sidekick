@@ -285,6 +285,9 @@ function pluginReport(
     : ['plugins: refused', ...plugins.issues.map((i) => `  ${i}`)];
 }
 
+// A listing keeps each profile on one line, so a line break in a description prints as a space.
+const oneLine = (text: string): string => text.replace(/\s*[\r\n]\s*/g, ' ');
+
 const list: Verb = (rest, penv, out, err) => {
   if (rest.length > 0) return usage(err);
   const profiles = listProfiles(
@@ -297,7 +300,7 @@ const list: Verb = (rest, penv, out, err) => {
     out(
       p.issues.length > 0
         ? `${p.name}  invalid: ${p.issues[0]}  ${where}`
-        : `${p.name}  ${p.description}  ${where}`,
+        : `${p.name}  ${oneLine(p.description ?? '')}  ${where}`,
     );
   }
   return profiles.some((p) => p.issues.length > 0) ? 1 : 0;
