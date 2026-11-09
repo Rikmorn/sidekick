@@ -12,5 +12,5 @@
     "noEmit": true
   },
   "include": ["bin/**/*.ts"],
-  "exclude": ["bin/**/*.test.ts", "node_modules"]
+  "exclude": ["bin/**/*.test.ts", "bin/test-preload.ts", "node_modules"]
 }
