@@ -25,6 +25,7 @@ Claude Code refuses any command in a worktree, a subagent's too, whose text cann
 - no `$VAR` or `$(…)` beside git; elsewhere, spell paths out, or double-quote a value starting with literal text, as in `"./$f"`;
 - no `git -C`, subshell around git, or heredoc chained with other commands;
 - the Write tool for files, and `sed -i ''` on macOS;
+- a script named by its literal absolute path, with or without `bash`, run from where you work;
 - the main checkout read by absolute path, never through `cd`.
 
 ## Rulings
