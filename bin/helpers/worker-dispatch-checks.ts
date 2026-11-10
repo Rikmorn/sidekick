@@ -155,7 +155,8 @@ function targetIssues(brief: Brief, branch: string | undefined): string[] {
       ];
 }
 
-/** The brief's limits reach every subagent through the subagent start hook, so a brief without them is refused. */
+// The brief's limits reach every subagent but `web-fetch` through the subagent
+// start hook, so a brief without them is refused.
 function limitsIssues(briefPath: string): string[] {
   return readBriefLimits(briefPath, readSection) === undefined
     ? [

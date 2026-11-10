@@ -3,7 +3,7 @@
  * lines. The CLI parses it itself, since Valibot is its one runtime
  * dependency and no YAML parser ships. The body is for the worker, except its
  * `## Limits` section, which `dispatch` checks and the subagent start hook
- * hands to every subagent.
+ * hands to every subagent but `web-fetch`.
  */
 
 import * as fs from 'node:fs';

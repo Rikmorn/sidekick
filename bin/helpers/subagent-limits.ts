@@ -14,7 +14,6 @@ export const WORKER_LIMITS_HEADING = '## Limits this skill adds';
 /** `readSection`'s signature; passed in because `hook.ts` imports this module. */
 export type ReadSection = (file: string, heading: string) => string | undefined;
 
-// The skill file whose section joins the brief's, under the plugin's folder.
 const WORKER_SKILL = path.join('skills', 'sk-worker', 'SKILL.md');
 
 const NARROW_NOT_WIDEN = 'Your own prompt may narrow them, never widen them.';
