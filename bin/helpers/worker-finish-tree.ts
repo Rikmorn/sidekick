@@ -3,8 +3,9 @@
  * report sit, refuse when the finder found no worktree, or none at the
  * operator's `--worktree`, or found one on a branch nothing shows is the
  * worker's. They check whether it is on its branch, still linked to git, and
- * free of uncommitted work and of ignored files its removal would lose, and
- * whether it holds a partial removal that an earlier run left.
+ * free of uncommitted work, flagged files included, and of ignored files its
+ * removal would lose, and whether it holds a partial removal that an earlier
+ * run left.
  */
 
 import * as fs from 'node:fs';
@@ -27,7 +28,6 @@ import {
   checkedOut,
   DELETED,
   type StatusEntry,
-  statusEntriesIn,
   type WorktreeEntry,
   worktreeListed,
 } from './worker-listing.js';
@@ -40,6 +40,7 @@ import {
   nativeBranch,
   shortBranch,
 } from './worker-worktree.js';
+import { flaggedStatus } from './worktree-flagged.js';
 import { ignoredLosses, skipListPath } from './worktree-ignored.js';
 import { omittedWords } from './worktree-read.js';
 
@@ -222,23 +223,27 @@ export function unlinkedIssues(
   ];
 }
 
+// Each kind of file the worktree's removal would destroy, the report aside.
 type Status =
   | {
-      entries: StatusEntry[];
+      /** git status's entries for files no flag hides. */
+      changed: StatusEntry[];
+      ignored: string[];
+      /** Edited skip-worktree files. */
+      skipWorktree: string[];
+      /** Present assume-unchanged files, edited or not. */
+      assumed: string[];
       report: string | undefined;
-      /** More ignored losses exist than `entries` names. */
+      /** More ignored losses exist than `ignored` names. */
       truncated: boolean;
       skipList: string;
     }
   | { issue: string };
 
-// Porcelain's code for an ignored path; here, one that removal would lose.
-const IGNORED_LOSS = '!!';
-
-// The worktree's status entries, the report aside, and the report's path. The
-// ignored files its removal would lose join them with the code `!!`; the scan
-// skips the report, so it takes no place under the scan's cap. Under --name
-// the report is unknown, so every entry counts.
+// The worktree's status entries and the other files its removal would lose,
+// ignored or flagged, each kind apart, with the report's path. The ignored
+// scan skips the report, so it takes no place under the scan's cap. Under
+// --name the report is unknown, so every entry counts.
 export function statusBesideReport(
   runGit: Runner,
   places: {
@@ -248,10 +253,10 @@ export function statusBesideReport(
     report: string | undefined;
   },
 ): Status {
-  const status = statusEntriesIn(runGit, places.mainTop, places.worktree);
+  const status = flaggedStatus(runGit, places.mainTop, places.worktree);
   if ('issue' in status) {
     return {
-      issue: `git status failed in the worktree ${places.worktree}: ${status.issue}`,
+      issue: `${status.command} failed in the worktree ${places.worktree}: ${status.issue}`,
     };
   }
   const losses = ignoredLosses(runGit, places, { exempt: places.report });
@@ -260,15 +265,13 @@ export function statusBesideReport(
       issue: `git status --ignored failed in the worktree ${places.worktree}: ${losses.issue}`,
     };
   }
-  const ignored = losses.paths.map((lost) => ({
-    code: IGNORED_LOSS,
-    path: lost,
-  }));
-  const entries = [...status.entries, ...ignored].filter(
-    (entry) => entry.path !== places.report,
-  );
+  const kept = (paths: string[]): string[] =>
+    paths.filter((file) => file !== places.report);
   return {
-    entries,
+    changed: status.changed.filter((entry) => entry.path !== places.report),
+    ignored: kept(losses.paths),
+    skipWorktree: kept(status.skipWorktree.map((entry) => entry.path)),
+    assumed: kept(status.assumed),
     report: places.report,
     truncated: losses.truncated,
     skipList: skipListPath(places.commonDir),
@@ -277,9 +280,6 @@ export function statusBesideReport(
 
 const onlyDeleted = (entries: StatusEntry[]): boolean =>
   entries.length > 0 && entries.every((entry) => entry.code === DELETED);
-
-const trackedOf = (entries: StatusEntry[]): StatusEntry[] =>
-  entries.filter((entry) => entry.code !== IGNORED_LOSS);
 
 // What to do with uncommitted work: landed mode integrates it, and discard mode
 // keeps it in the backup ref.
@@ -296,10 +296,31 @@ function dirtyAdvice(mode: FinishMode['kind']): string {
   }
 }
 
-// Uncommitted work and ignored files in the worktree, which removing it would
-// destroy. The report is allowed, since saveReport saves it, and so are deleted
-// files alone in a partial removal, since restorePartial writes them back.
-// Ignored files get a line of their own, since their way out is not a commit.
+// Flagged files in the worktree, whose edits git status hides.
+function flaggedIssues(
+  worktree: string,
+  { skipWorktree, assumed }: { skipWorktree: string[]; assumed: string[] },
+  mode: FinishMode['kind'],
+): string[] {
+  const issues: string[] = [];
+  if (skipWorktree.length > 0) {
+    issues.push(
+      `the worktree ${worktree} holds edited skip-worktree files, which git status hides and its removal would destroy: ${skipWorktree.join(', ')}. Clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. ${dirtyAdvice(mode)}`,
+    );
+  }
+  if (assumed.length > 0) {
+    issues.push(
+      `the worktree ${worktree} holds assume-unchanged files, which git assumes unchanged, so nothing can tell whether they hold edits: ${assumed.join(', ')}. Clear each flag with git update-index --no-assume-unchanged -- <file>, then run finish again`,
+    );
+  }
+  return issues;
+}
+
+// Uncommitted work, ignored files, and flagged files in the worktree, which
+// removing it would destroy. The report is allowed, since saveReport saves it,
+// and so are deleted files alone in a partial removal, since restorePartial
+// writes them back. Ignored and flagged files get lines of their own, since a
+// commit alone is not their way out.
 export function dirtyIssues(
   worktree: string,
   status: Status,
@@ -307,32 +328,29 @@ export function dirtyIssues(
   mode: FinishMode['kind'],
 ): string[] {
   if ('issue' in status) return [status.issue];
-  const { entries, report, truncated, skipList } = status;
-  const names = (list: StatusEntry[]): string =>
-    list.map((entry) => entry.path).join(', ');
-  const tracked = trackedOf(entries);
-  const ignored = entries.filter((entry) => entry.code === IGNORED_LOSS);
-  const restored = partial && onlyDeleted(tracked);
+  const { changed, ignored, report, truncated, skipList } = status;
+  const restored = partial && onlyDeleted(changed);
   const issues: string[] = [];
-  if (tracked.length > 0 && !restored) {
+  if (changed.length > 0 && !restored) {
     // Under --name there is no report to set aside.
     const besides = report === undefined ? '' : ' besides the report';
+    const names = changed.map((entry) => entry.path).join(', ');
     issues.push(
-      `the worktree ${worktree} holds uncommitted work${besides}, which its removal would destroy: ${names(tracked)}. ${dirtyAdvice(mode)}`,
+      `the worktree ${worktree} holds uncommitted work${besides}, which its removal would destroy: ${names}. ${dirtyAdvice(mode)}`,
     );
   }
   if (ignored.length > 0) {
     const more = truncated ? omittedWords({ kind: 'at least', count: 1 }) : '';
     issues.push(
-      `the worktree ${worktree} holds ignored files that its removal would delete, and the main checkout lacks them or holds other contents: ${names(ignored)}${more}. Move or delete them, or add their folder to ${skipList}, then run finish again`,
+      `the worktree ${worktree} holds ignored files that its removal would delete, and the main checkout lacks them or holds other contents: ${ignored.join(', ')}${more}. Move or delete them, or add their folder to ${skipList}, then run finish again`,
     );
   }
-  return issues;
+  return [...issues, ...flaggedIssues(worktree, status, mode)];
 }
 
 // A partial removal is deleted tracked files alone at a head a backup ref
 // already holds, which an earlier run wrote right before its claude rm.
-// Ignored files beside them refuse on their own line.
+// Ignored and flagged files beside them refuse on their own lines.
 function isPartial(
   runGit: Runner,
   top: string,
@@ -341,7 +359,7 @@ function isPartial(
 ): boolean {
   const { name, head } = worker;
   if (head === undefined || 'issue' in status) return false;
-  if (!onlyDeleted(trackedOf(status.entries))) return false;
+  if (!onlyDeleted(status.changed)) return false;
   return heldBackup(runGit, top, name, head) !== undefined;
 }
 

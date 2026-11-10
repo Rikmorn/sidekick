@@ -103,6 +103,17 @@ describe('worktree list: one line per state', () => {
     expect(out.some((l) => l.startsWith('remove one with'))).toBe(false);
   });
 
+  test('an edited skip-worktree file reads dirty, and the index stays as it was (#319)', () => {
+    const main = repo();
+    const dir = addWorktree(main, 'feat');
+    git(dir, 'update-index', '--skip-worktree', 'a.txt');
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'edited\n');
+    const before = git(dir, 'ls-files', '-v');
+    const { out } = run(main, ['list']);
+    expect(lineFor(out, 'feat')).toStartWith('feat · dirty: a.txt · ');
+    expect(git(dir, 'ls-files', '-v')).toBe(before);
+  });
+
   test('more than 20 untracked files give an exact count of the rest', () => {
     const main = repo();
     const dir = addWorktree(main, 'many');

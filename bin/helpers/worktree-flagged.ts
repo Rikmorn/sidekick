@@ -3,12 +3,13 @@
  * file is edited or missing. `git ls-files -v` tags each entry, and the tag
  * says which route reads it: a skip-worktree file's edits show in a status run
  * with sparse checkout on, and an assume-unchanged file's need a read of the
- * file itself.
+ * file itself. The removal checks read both routes here, with git status.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { MAX_OUTPUT, type Runner } from './pm-data.js';
+import { type StatusEntry, statusEntriesIn } from './worker-listing.js';
 
 /** The flagged entries of one worktree, as paths relative to its top. */
 export interface Flagged {
@@ -57,5 +58,44 @@ export function flaggedEntries(
           e.tag !== e.tag.toUpperCase() && onDisk(path.join(worktree, e.path)),
       )
       .map((e) => e.path),
+  };
+}
+
+/** A worktree's status entries by whether a flag hides the file, and the files no status reads. */
+export interface FlaggedStatus {
+  /** The entries of files no flag hides. */
+  changed: StatusEntry[];
+  /** The entries of edited skip-worktree files. */
+  skipWorktree: StatusEntry[];
+  /** Every present assume-unchanged file, `s` included, in listing order. */
+  assumed: string[];
+}
+
+/**
+ * git status in the worktree at `worktree`, read after the listing of its
+ * flagged entries. The status reads skip-worktree edits only when the listing
+ * names an `S` entry. A path in `assumed` leaves the entries, so each path
+ * has one kind. `command` names the git command that failed.
+ */
+export function flaggedStatus(
+  runGit: Runner,
+  top: string,
+  worktree: string,
+): FlaggedStatus | { command: string; issue: string } {
+  const flagged = flaggedEntries(runGit, top, worktree);
+  if ('issue' in flagged) {
+    return { command: 'git ls-files', issue: flagged.issue };
+  }
+  const { skipWorktree } = flagged;
+  const status = statusEntriesIn(runGit, top, worktree, {
+    skipWorktree: skipWorktree.size > 0,
+  });
+  if ('issue' in status) return { command: 'git status', issue: status.issue };
+  const assumed = new Set(flagged.assumed);
+  const seen = status.entries.filter((entry) => !assumed.has(entry.path));
+  return {
+    changed: seen.filter((entry) => !skipWorktree.has(entry.path)),
+    skipWorktree: seen.filter((entry) => skipWorktree.has(entry.path)),
+    assumed: flagged.assumed,
   };
 }

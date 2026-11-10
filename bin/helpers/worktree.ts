@@ -55,7 +55,7 @@ function stateWords(state: WorktreeState): string {
     case 'folder gone':
       return 'folder gone';
     case 'dirty':
-      return `dirty: ${state.paths.join(', ')}${omittedWords(state.omitted)}`;
+      return `dirty: ${state.files.map((file) => file.path).join(', ')}${omittedWords(state.omitted)}`;
     case 'removable':
       return 'removable';
     default: {

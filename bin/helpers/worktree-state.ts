@@ -12,15 +12,16 @@ import { isCurrent, type ListingRow } from './desk-snapshot.js';
 import { defaultBranchOf } from './memory-start.js';
 import type { Runner } from './pm-data.js';
 import { landedIn } from './worker-landed.js';
-import { statusEntriesIn, type WorktreeEntry } from './worker-listing.js';
+import type { StatusEntry, WorktreeEntry } from './worker-listing.js';
 import type { WorkerRecord } from './worker-record.js';
 import { commitOf, HEADS, physical } from './worker-repo.js';
 import { nativeBranch, nativeFolder, shortBranch } from './worker-worktree.js';
+import { flaggedStatus } from './worktree-flagged.js';
 import { ignoredLosses } from './worktree-ignored.js';
 import { type LockState, lockStateOf } from './worktree-lock.js';
 
 /**
- * How many dirty paths a state leaves out of `paths`. `exact` when every source
+ * How many dirty paths a state leaves out of `files`. `exact` when every source
  * was read in full; `at least` when the ignored-file scan stopped at its cap,
  * since it never walks further to count.
  */
@@ -28,12 +29,25 @@ export type Omitted =
   | { kind: 'exact'; count: number }
   | { kind: 'at least'; count: number };
 
+/**
+ * Why removal would lose a file: a change git status lists, an ignored file,
+ * or a flagged file that git status hides.
+ */
+export type Loss = 'changed' | 'ignored' | 'skip-worktree' | 'assume-unchanged';
+
+/** A file removal would lose, relative to the worktree's top, and why. */
+export interface LostFile {
+  path: string;
+  loss: Loss;
+}
+
 export type WorktreeState =
   /** `by` reads `pid 4242`, `session <id>`, or `lock: <reason>`. */
   | { kind: 'held'; by: string }
   | { kind: 'worker'; name: string }
   | { kind: 'folder gone' }
-  | { kind: 'dirty'; paths: string[]; omitted: Omitted }
+  /** Flagged files come first, so a cap that cuts any of them named no other file. */
+  | { kind: 'dirty'; files: LostFile[]; omitted: Omitted }
   | { kind: 'removable' };
 
 /** The states a worktree's folder gives on its own; `worker` comes from the records. */
@@ -243,32 +257,46 @@ export interface FilesAt {
   commonDir: string;
 }
 
+const lost = (paths: string[], loss: Loss): LostFile[] =>
+  paths.map((file) => ({ path: file, loss }));
+
 function dirtyState(runGit: Runner, at: FilesAt): FilesState {
-  const status = statusEntriesIn(runGit, at.mainTop, at.worktree);
+  const status = flaggedStatus(runGit, at.mainTop, at.worktree);
   if ('issue' in status) {
-    return { kind: 'held', by: `unknown: git status failed: ${status.issue}` };
+    return {
+      kind: 'held',
+      by: `unknown: ${status.command} failed: ${status.issue}`,
+    };
   }
   const ignored = ignoredLosses(runGit, at, { cap: DIRTY_CAP });
   if ('issue' in ignored) {
     return { kind: 'held', by: `unknown: ${ignored.issue}` };
   }
-  const all = [...status.entries.map((e) => e.path), ...ignored.paths];
+  const pathsOf = (entries: StatusEntry[]): string[] =>
+    entries.map((entry) => entry.path);
+  const all = [
+    ...lost(pathsOf(status.skipWorktree), 'skip-worktree'),
+    ...lost(status.assumed, 'assume-unchanged'),
+    ...lost(pathsOf(status.changed), 'changed'),
+    ...lost(ignored.paths, 'ignored'),
+  ];
   if (all.length === 0) return { kind: 'removable' };
   // A truncated scan found one path past its cap and dropped it from `paths`.
   const known = all.length + (ignored.truncated ? 1 : 0);
   const count = Math.max(0, known - DIRTY_CAP);
   return {
     kind: 'dirty',
-    paths: all.slice(0, DIRTY_CAP),
+    files: all.slice(0, DIRTY_CAP),
     omitted: { kind: ignored.truncated ? 'at least' : 'exact', count },
   };
 }
 
 /**
- * What a worktree's folder holds, by git status and the ignored-file check:
- * gone when the folder is missing, dirty, or removable; held when git cannot
- * tell. git marks prunable a folder that lost its `.git` entry too, and git
- * run there reads whatever repository encloses it, so that folder is held.
+ * What a worktree's folder holds, by git status, the flagged-file listing, and
+ * the ignored-file check: gone when the folder is missing, dirty, or
+ * removable; held when git cannot tell. git marks prunable a folder that lost
+ * its `.git` entry too, and git run there reads whatever repository encloses
+ * it, so that folder is held.
  */
 export function filesState(runGit: Runner, at: FilesAt): FilesState {
   if (!fs.existsSync(at.worktree)) return { kind: 'folder gone' };

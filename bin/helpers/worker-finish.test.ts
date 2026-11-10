@@ -276,7 +276,7 @@ describe('finish refuses', () => {
       `the worktree ${fx.worktree} has an unreadable HEAD (`,
     );
     expect(h.err[1]).toStartWith(
-      `git status failed in the worktree ${fx.worktree}: `,
+      `git ls-files failed in the worktree ${fx.worktree}: `,
     );
     expect(h.err[2]).toStartWith(
       `the worktree has no run report at ${path.join(fx.worktree, REPORT)}: `,
@@ -1400,6 +1400,32 @@ describe('finish after a removal cut short', () => {
       .split('\0')
       .filter((p) => p !== '');
     expect(paths.sort()).toEqual(['a*b', 'a.txt', 'b.txt', 'c:d', 'e\nf']);
+  });
+
+  test('completes a cut that deleted a skip-worktree and an assume-unchanged file, restoring only the rest (#319)', () => {
+    const fx = fixture();
+    fs.writeFileSync(path.join(fx.worktree, 'c.txt'), 'c\n');
+    git(fx.worktree, 'add', 'c.txt');
+    git(fx.worktree, 'commit', '-q', '-m', 'c');
+    fx.integrate();
+    git(fx.worktree, 'update-index', '--skip-worktree', 'a.txt');
+    const { runGit, calls } = recording();
+    const h = harness(fx, { runGit });
+    // A present assume-unchanged file refuses the first check, so its flag comes with the cut.
+    const cut: Rm = {
+      ...cutShort(),
+      during: () =>
+        git(fx.worktree, 'update-index', '--assume-unchanged', 'b.txt'),
+    };
+    const rerun = cutThenRerun(h, fx, cut, []);
+    expect(rerun).toContain(
+      `restored 1 deleted file in ${fx.worktree} from its index, so claude rm finds it clean`,
+    );
+    const inputs = restores(calls).map((c) => c.opts?.input);
+    expect(inputs).toEqual(['c.txt\0']);
+    expect(h.claude.statusAtRm[1]).toBe(`?? ${REPORT}`);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    expect(branchRemains(fx)).toBe(false);
   });
 
   test('a cut-short removal that deleted nothing runs no checkout-index', () => {
@@ -3054,5 +3080,86 @@ describe('finish and ignored files', () => {
     expect(h.err).toContain(ignoredLine(fx, 'scratch/late.sh'));
     expect(h.claude.named('rm')).toEqual([]);
     expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+});
+
+describe('finish and flagged files (#319)', () => {
+  // The fixture's worktree, landed, with its tracked a.txt carrying each of `flags`.
+  function flagged(...flags: string[]): Fixture {
+    const fx = fixture();
+    fx.integrate();
+    for (const flag of flags) git(fx.worktree, 'update-index', flag, 'a.txt');
+    return fx;
+  }
+
+  const edit = (fx: Fixture): void =>
+    fs.writeFileSync(path.join(fx.worktree, 'a.txt'), 'edited\n');
+
+  const skipLine = (fx: Fixture, advice: string): string =>
+    `the worktree ${fx.worktree} holds edited skip-worktree files, which git status hides and its removal would destroy: a.txt. Clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. ${advice}`;
+
+  const LANDED_ADVICE =
+    'Commit and integrate it, or remove it, then run finish again';
+
+  const assumedLine = (fx: Fixture): string =>
+    `the worktree ${fx.worktree} holds assume-unchanged files, which git assumes unchanged, so nothing can tell whether they hold edits: a.txt. Clear each flag with git update-index --no-assume-unchanged -- <file>, then run finish again`;
+
+  test('an edited skip-worktree file keeps the worktree, naming its way out, and leaves the index as it was', () => {
+    const fx = flagged('--skip-worktree');
+    edit(fx);
+    const before = git(fx.worktree, 'ls-files', '-v');
+    const h = harness(fx);
+    const line = skipLine(fx, LANDED_ADVICE);
+    expectRefusedUntouched(h, fx, h.finish(fx.brief), line);
+    expect(h.err).toEqual([line]);
+    expect(git(fx.worktree, 'ls-files', '-v')).toBe(before);
+  });
+
+  test('--discard refuses an edited skip-worktree file with its own advice', () => {
+    const fx = flagged('--skip-worktree');
+    edit(fx);
+    const h = harness(fx);
+    const line = skipLine(
+      fx,
+      'Commit it so that the backup ref keeps it, or remove it, then run finish again',
+    );
+    expectRefusedUntouched(h, fx, h.finish(fx.brief, '--discard'), line);
+  });
+
+  test('an unedited skip-worktree file does not block the removal', () => {
+    const fx = flagged('--skip-worktree');
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test.each([
+    ['edited', true],
+    ['unedited', false],
+  ])('a present %s assume-unchanged file keeps the worktree, naming its way out', (_label, edited) => {
+    const fx = flagged('--assume-unchanged');
+    if (edited) edit(fx);
+    const h = harness(fx);
+    expectRefusedUntouched(h, fx, h.finish(fx.brief), assumedLine(fx));
+    expect(h.err).toEqual([assumedLine(fx)]);
+  });
+
+  test('an edited file carrying both flags keeps the worktree as an assume-unchanged one', () => {
+    const fx = flagged('--skip-worktree', '--assume-unchanged');
+    expect(git(fx.worktree, 'ls-files', '-v', 'a.txt')).toStartWith('s ');
+    edit(fx);
+    const h = harness(fx);
+    expectRefusedUntouched(h, fx, h.finish(fx.brief), assumedLine(fx));
+  });
+
+  test.each([
+    ['skip-worktree', '--skip-worktree'],
+    ['assume-unchanged', '--assume-unchanged'],
+  ])('a missing %s file does not block the removal', (_label, flag) => {
+    const fx = flagged(flag);
+    fs.rmSync(path.join(fx.worktree, 'a.txt'));
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
   });
 });

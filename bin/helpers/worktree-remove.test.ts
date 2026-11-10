@@ -663,6 +663,118 @@ describe('worktree remove: refuses', () => {
   });
 });
 
+describe('worktree remove: flagged files (#319)', () => {
+  // The worktree `flags`, whose tracked a.txt carries each of `flags`.
+  function flaggedWorktree(...flags: string[]): { main: string; dir: string } {
+    const main = repo();
+    const dir = addWorktree(main, 'flags');
+    for (const flag of flags) git(dir, 'update-index', flag, 'a.txt');
+    return { main, dir };
+  }
+
+  const edit = (dir: string): void =>
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'edited\n');
+
+  const skipLines = (dir: string): string[] => [
+    `${dir} holds edited skip-worktree files, which git status hides and its removal would lose: a.txt`,
+    'clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. Then commit or remove the file, and run remove again',
+  ];
+
+  const assumedLines = (dir: string): string[] => [
+    `${dir} holds assume-unchanged files, which git assumes unchanged, so nothing can tell whether they hold edits: a.txt`,
+    'clear each flag with git update-index --no-assume-unchanged -- <file>, then run remove again',
+  ];
+
+  test('an edited skip-worktree file keeps the worktree, naming its way out, and leaves the index as it was', () => {
+    const { main, dir } = flaggedWorktree('--skip-worktree');
+    edit(dir);
+    const before = git(dir, 'ls-files', '-v');
+    const { code, err } = run(main, ['flags']);
+    expect(code).toBe(1);
+    expect(err).toEqual(skipLines(dir));
+    expect(git(dir, 'ls-files', '-v')).toBe(before);
+    expect(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8')).toBe('edited\n');
+    expectUntouched(main, dir, 'worktree-flags');
+  });
+
+  test('an unedited skip-worktree file does not block removal', () => {
+    const { main, dir } = flaggedWorktree('--skip-worktree');
+    const { code, err } = run(main, ['flags']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(listed(main, dir)).toBe(false);
+  });
+
+  test.each([
+    ['edited', true],
+    ['unedited', false],
+  ])('a present %s assume-unchanged file keeps the worktree, naming its way out', (_label, edited) => {
+    const { main, dir } = flaggedWorktree('--assume-unchanged');
+    if (edited) edit(dir);
+    const { code, err } = run(main, ['flags']);
+    expect(code).toBe(1);
+    expect(err).toEqual(assumedLines(dir));
+    expectUntouched(main, dir, 'worktree-flags');
+  });
+
+  test('an edited file carrying both flags keeps the worktree as an assume-unchanged one', () => {
+    const { main, dir } = flaggedWorktree(
+      '--skip-worktree',
+      '--assume-unchanged',
+    );
+    expect(git(dir, 'ls-files', '-v', 'a.txt')).toStartWith('s ');
+    edit(dir);
+    const { code, err } = run(main, ['flags']);
+    expect(code).toBe(1);
+    expect(err).toEqual(assumedLines(dir));
+    expectUntouched(main, dir, 'worktree-flags');
+  });
+
+  test.each([
+    ['skip-worktree', '--skip-worktree'],
+    ['assume-unchanged', '--assume-unchanged'],
+  ])('a missing %s file does not block removal', (_label, flag) => {
+    const { main, dir } = flaggedWorktree(flag);
+    fs.rmSync(path.join(dir, 'a.txt'));
+    const { code, err } = run(main, ['flags']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(listed(main, dir)).toBe(false);
+  });
+
+  test('names a flagged file on its own lines, and an untracked file on the lines that say to commit it', () => {
+    const { main, dir } = flaggedWorktree('--skip-worktree');
+    edit(dir);
+    fs.writeFileSync(path.join(dir, 'notes.md'), 'n\n');
+    const { code, err } = run(main, ['flags']);
+    expect(code).toBe(1);
+    expect(err).toEqual([
+      ...skipLines(dir),
+      `${dir} holds files its removal would lose: notes.md`,
+      `commit, move, or delete them, then run remove again. An ignored file goes with the worktree once its folder is listed in ${skipListPath(path.join(main, '.git'))}`,
+    ]);
+  });
+
+  test('flagged files past the cap leave the count on a line of its own', () => {
+    const { main, dir } = flaggedWorktree();
+    const files = Array.from(
+      { length: 22 },
+      (_, i) => `f${String(i).padStart(2, '0')}.txt`,
+    );
+    for (const file of files) fs.writeFileSync(path.join(dir, file), 'x\n');
+    git(dir, 'add', '--', ...files);
+    git(dir, 'commit', '-q', '-m', 'many');
+    git(dir, 'update-index', '--assume-unchanged', '--', ...files);
+    const { code, err } = run(main, ['flags']);
+    expect(code).toBe(1);
+    expect(err).toEqual([
+      `${dir} holds assume-unchanged files, which git assumes unchanged, so nothing can tell whether they hold edits: ${files.slice(0, 20).join(', ')}`,
+      'clear each flag with git update-index --no-assume-unchanged -- <file>, then run remove again',
+      `${dir} holds 2 more files its removal would lose`,
+    ]);
+  });
+});
+
 describe('worktree remove: folder names a ref cannot hold as they are', () => {
   const RESTORE = 'restore with: git branch ';
 

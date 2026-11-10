@@ -9,7 +9,7 @@ import {
 } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import { statusEntriesIn } from './worker-listing.js';
-import { flaggedEntries } from './worktree-flagged.js';
+import { flaggedEntries, flaggedStatus } from './worktree-flagged.js';
 
 afterEach(removeTemps);
 
@@ -139,6 +139,37 @@ describe('statusEntriesIn with skipWorktree', () => {
         '--porcelain',
         '-z',
         '--untracked-files=all',
+      ],
+    ]);
+  });
+});
+
+describe('flaggedStatus', () => {
+  const statusCalls = (calls: { args: string[] }[]): string[][] =>
+    calls.map((c) => c.args).filter((args) => args.includes('status'));
+
+  test('runs the plain status when the listing names no S entry, an assume-unchanged one included', () => {
+    const { worktree } = fixture();
+    git(worktree, 'update-index', '--assume-unchanged', 'hide.txt');
+    const { runGit, calls } = recording();
+    flaggedStatus(runGit, worktree, worktree);
+    expect(statusCalls(calls)).toEqual([
+      ['-C', worktree, 'status', '--porcelain', '-z', '--untracked-files=all'],
+    ]);
+  });
+
+  test('runs the sparse status when the listing names an S entry', () => {
+    const { worktree } = fixture();
+    git(worktree, 'update-index', '--skip-worktree', 'skip.txt');
+    const { runGit, calls } = recording();
+    flaggedStatus(runGit, worktree, worktree);
+    expect(statusCalls(calls).map((args) => args.slice(0, 5))).toEqual([
+      [
+        '--no-optional-locks',
+        '-c',
+        'core.sparseCheckout=true',
+        '-c',
+        'sparse.expectFilesOutsideOfPatterns=false',
       ],
     ]);
   });

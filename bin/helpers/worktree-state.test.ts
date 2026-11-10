@@ -9,7 +9,7 @@ import {
   repoWithWorktree,
   tmp,
 } from './fixtures/worker/repo.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 import type { WorkerRecord } from './worker-record.js';
 import { nativeFolder } from './worker-worktree.js';
 import {
@@ -199,7 +199,7 @@ describe('worktreeRows: each state', () => {
     expect(stateOf(sources(r.main))).toEqual([
       {
         kind: 'dirty',
-        paths: ['scratch.sh'],
+        files: [{ path: 'scratch.sh', loss: 'ignored' }],
         omitted: { kind: 'exact', count: 0 },
       },
     ]);
@@ -211,9 +211,61 @@ describe('worktreeRows: each state', () => {
     expect(stateOf(sources(r.main))).toEqual([
       {
         kind: 'dirty',
-        paths: ['new.txt'],
+        files: [{ path: 'new.txt', loss: 'changed' }],
         omitted: { kind: 'exact', count: 0 },
       },
+    ]);
+  });
+
+  test('a flagged file gives dirty with its kind, and the flagged files come first (#319)', () => {
+    const r = repoWithWorktree('*.sh\n');
+    for (const file of ['skip.txt', 'hide.txt']) {
+      fs.writeFileSync(path.join(r.worktree, file), 'v1\n');
+    }
+    git(r.worktree, 'add', 'skip.txt', 'hide.txt');
+    git(r.worktree, 'commit', '-q', '-m', 'files');
+    git(r.worktree, 'update-index', '--skip-worktree', 'skip.txt');
+    git(r.worktree, 'update-index', '--assume-unchanged', 'hide.txt');
+    fs.writeFileSync(path.join(r.worktree, 'skip.txt'), 'edited\n');
+    fs.writeFileSync(path.join(r.worktree, 'new.txt'), 'x\n');
+    fs.writeFileSync(path.join(r.worktree, 'scratch.sh'), 'echo\n');
+    expect(stateOf(sources(r.main))).toEqual([
+      {
+        kind: 'dirty',
+        files: [
+          { path: 'skip.txt', loss: 'skip-worktree' },
+          { path: 'hide.txt', loss: 'assume-unchanged' },
+          { path: 'new.txt', loss: 'changed' },
+          { path: 'scratch.sh', loss: 'ignored' },
+        ],
+        omitted: { kind: 'exact', count: 0 },
+      },
+    ]);
+  });
+
+  test('a staged change to an assume-unchanged file takes that kind alone', () => {
+    const r = repoWithWorktree('');
+    fs.writeFileSync(path.join(r.worktree, 'a.txt'), 'staged\n');
+    git(r.worktree, 'add', 'a.txt');
+    git(r.worktree, 'update-index', '--assume-unchanged', 'a.txt');
+    expect(stateOf(sources(r.main))).toEqual([
+      {
+        kind: 'dirty',
+        files: [{ path: 'a.txt', loss: 'assume-unchanged' }],
+        omitted: { kind: 'exact', count: 0 },
+      },
+    ]);
+  });
+
+  test('a failed listing of flagged files gives held, unknown', () => {
+    const r = repoWithWorktree('');
+    const failing: Runner = (cmd, args, cwd, opts) =>
+      args.includes('ls-files')
+        ? { code: 128, stdout: '', stderr: 'fatal: broken' }
+        : execRunner(cmd, args, cwd, opts);
+    const rows = worktreeRows(sources(r.main), failing);
+    expect(rows.map((row) => row.state)).toEqual([
+      { kind: 'held', by: 'unknown: git ls-files failed: fatal: broken' },
     ]);
   });
 

@@ -53,8 +53,9 @@ function forgottenWayOut({
   return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`;
 }
 
-// The files git's removal would lose, ignored ones included, read right before
-// it as `remove` reads them; a report copy clearSavedReport left counts too.
+// The files git's removal would lose, ignored and flagged ones included, read
+// right before it as `remove` reads them; a report copy clearSavedReport left
+// counts too.
 function leftoverIssues(runGit: Runner, ready: Ready): string[] {
   const { worktree } = ready;
   const state = filesState(runGit, ready);
@@ -64,7 +65,7 @@ function leftoverIssues(runGit: Runner, ready: Ready): string[] {
       return [];
     case 'dirty':
       return [
-        `the worktree ${worktree} holds files its removal would lose: ${state.paths.join(', ')}${omittedWords(state.omitted)}`,
+        `the worktree ${worktree} holds files its removal would lose: ${state.files.map((file) => file.path).join(', ')}${omittedWords(state.omitted)}`,
       ];
     case 'held':
       return [

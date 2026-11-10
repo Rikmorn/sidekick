@@ -28,6 +28,9 @@ import {
   type CommitsAt,
   commitsAt,
   insideOf,
+  type Loss,
+  type LostFile,
+  type Omitted,
   stateOf,
   type TargetRef,
   type WorktreeRow,
@@ -198,6 +201,63 @@ const TOOK_NOTHING = 'so remove took nothing';
 /** After claude rm, which may have removed a session, the worktree is what stays. */
 export const KEPT_WORKTREE = 'so remove kept the worktree';
 
+const SKIP_WORKTREE_WAY_OUT =
+  'clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. Then commit or remove the file, and run remove again';
+const ASSUMED_WAY_OUT =
+  'clear each flag with git update-index --no-assume-unchanged -- <file>, then run remove again';
+
+const pathsOf = (files: LostFile[], ...losses: Loss[]): string[] =>
+  files.filter((file) => losses.includes(file.loss)).map((file) => file.path);
+
+// The changed and ignored files, whose way out is a commit or a deletion. With
+// none named, any count past the cap may hold flagged files, so it stands alone.
+function changedLines(
+  at: string,
+  files: string[],
+  omitted: Omitted,
+  skipList: string,
+): string[] {
+  if (files.length > 0) {
+    return [
+      `${at} holds files its removal would lose: ${files.join(', ')}${omittedWords(omitted)}`,
+      `commit, move, or delete them, then run remove again. An ignored file goes with the worktree once its folder is listed in ${skipList}`,
+    ];
+  }
+  if (omitted.count === 0) return [];
+  const least = omitted.kind === 'at least' ? 'at least ' : '';
+  const noun = omitted.count === 1 ? 'file' : 'files';
+  return [
+    `${at} holds ${least}${omitted.count} more ${noun} its removal would lose`,
+  ];
+}
+
+// A flagged kind's files, then its way out; nothing when none is named.
+const flaggedLines = (paths: string[], what: string, wayOut: string) =>
+  paths.length === 0 ? [] : [`${what}: ${paths.join(', ')}`, wayOut];
+
+// Each kind of file a dirty worktree holds, with its way out. Flagged files
+// get lines of their own, since a commit alone is not their way out.
+function dirtyLines(
+  at: string,
+  { files, omitted }: { files: LostFile[]; omitted: Omitted },
+  skipList: string,
+): string[] {
+  const changed = pathsOf(files, 'changed', 'ignored');
+  return [
+    ...flaggedLines(
+      pathsOf(files, 'skip-worktree'),
+      `${at} holds edited skip-worktree files, which git status hides and its removal would lose`,
+      SKIP_WORKTREE_WAY_OUT,
+    ),
+    ...flaggedLines(
+      pathsOf(files, 'assume-unchanged'),
+      `${at} holds assume-unchanged files, which git assumes unchanged, so nothing can tell whether they hold edits`,
+      ASSUMED_WAY_OUT,
+    ),
+    ...changedLines(at, changed, omitted, skipList),
+  ];
+}
+
 /**
  * The states that keep a worktree, at the checks and at each re-check; none
  * for the rest. `stopped` says what remove left as it stopped.
@@ -216,10 +276,7 @@ export function stateLines(
         `${entry.path} is the worker ${state.name}'s: clear it with sidekick worker finish, which removes its session too`,
       ];
     case 'dirty':
-      return [
-        `${entry.path} holds files its removal would lose: ${state.paths.join(', ')}${omittedWords(state.omitted)}`,
-        `commit, move, or delete them, then run remove again. An ignored file goes with the worktree once its folder is listed in ${skipList}`,
-      ];
+      return dirtyLines(entry.path, state, skipList);
     case 'folder gone':
     case 'removable':
       return [];
