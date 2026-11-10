@@ -10232,46 +10232,6 @@ function ensureWorktreesExcluded(runGit, top, commonDir) {
 }
 
 // bin/helpers/worker-teardown.ts
-import * as fs35 from "node:fs";
-import * as path44 from "node:path";
-
-// bin/helpers/worktree-read.ts
-function repoOf2(env, err) {
-  const found = findRepo(env.runGit, env.cwd);
-  for (const warning of found.warnings)
-    err(warning);
-  if (found.repo === undefined && found.warnings.length === 0) {
-    err(`${env.cwd} is not inside a git repository`);
-  }
-  return found.repo;
-}
-function readSources(env, repo) {
-  const listing = readListing(env.runClaude, env.cwd);
-  const skips = readSkips(repo.commonDir);
-  const stored = readRecords(repo.commonDir);
-  return {
-    src: {
-      repo,
-      rows: "error" in listing ? undefined : listing.rows,
-      listingWarnings: "error" in listing ? [] : listing.warnings,
-      records: stored.records,
-      unreadRecords: stored.warnings,
-      isAlive: env.isAlive
-    },
-    listing,
-    skipWarnings: skips.warnings
-  };
-}
-var heldWords = (by) => by.startsWith("unknown") ? `held, ${by}` : `held by ${by}`;
-function omittedWords(omitted) {
-  if (omitted.count === 0)
-    return "";
-  const count2 = `${omitted.kind === "at least" ? "at least " : ""}${omitted.count}`;
-  return `, and ${count2} more`;
-}
-
-// bin/helpers/worker-teardown.ts
-var ENDED_STATES = ["stopped", "done"];
 var REMOVED = /^removed\b/;
 var DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
 var NO_LIMIT = 0;
@@ -10282,257 +10242,8 @@ function withText(lead, result) {
 }
 var ranClean = (result) => result.code === 0 && !result.timedOut;
 var failure = (result) => result.timedOut ? "did not return in time" : `failed with exit code ${result.code}`;
-var runStop = (job, wenv) => {
-  const args = ["stop", job.id];
-  const result = claudeAt(job, wenv, args);
-  if (ranClean(result))
-    return [];
-  return withText(`claude ${args.join(" ")} ${failure(result)}, so finish stopped before claude rm`, result);
-};
-var stopJob = (job, wenv) => {
-  const listedEnded = job.state !== undefined && ENDED_STATES.includes(job.state);
-  if (listedEnded && !lockHeldLive(job, wenv))
-    return [];
-  return runStop(job, wenv);
-};
-function lockPidNow(at, wenv) {
-  return lockPid(lockReasonOf(wenv.runGit, at.mainTop, at.worktree));
-}
-function lockHeldLive(job, wenv) {
-  const pid = lockPidNow(job, wenv);
-  return pid !== undefined && wenv.isAlive(pid);
-}
-function waitForExit(pid, wenv, limitMs = 15000, pollMs = 250) {
-  for (let waited = 0;wenv.isAlive(pid); waited += pollMs) {
-    if (waited >= limitMs) {
-      return [
-        `the worktree's lock still names a running process, pid ${pid}, after ${limitMs / 1000} s: run finish again once it exits`
-      ];
-    }
-    wenv.sleep(pollMs);
-  }
-  return [];
-}
-var waitForLock = (ready, wenv) => {
-  const pid = lockPidNow(ready, wenv);
-  return pid === undefined ? [] : waitForExit(pid, wenv);
-};
 var saidRemoved = (result) => ranClean(result) && REMOVED.test(printedStreams(result).join(`
 `));
-var isHookMade = (ready) => physical(ready.worktree) !== physical(nativeFolder(ready.mainTop, ready.name)) || ready.branch !== nativeBranch(ready.name);
-function unknownAnswer(ready, args, result) {
-  const what = ranClean(result) ? "did not say removed, and finish does not know its answer" : failure(result);
-  const command = `claude ${args.map(shellArg).join(" ")}`;
-  const refused = withText(`${command} ${what}, so finish removed nothing more`, result);
-  if (isHookMade(ready)) {
-    return [
-      ...refused,
-      `the worktree ${ready.worktree} on ${ready.branch} is not the one Claude Code makes for ${ready.name}, so a WorktreeCreate hook likely made it and claude rm will not remove it: remove it with that hook's own removal, then run ${ready.discardCommand}`
-    ];
-  }
-  return [
-    ...refused,
-    `run finish again with ${ready.rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`
-  ];
-}
-function discard(ready, wenv, kept) {
-  const text = printedStreams(kept).join(`
-`);
-  const offer = DISCARD_LINE.exec(text);
-  if (offer === null)
-    return unknownAnswer(ready, ["rm", ready.id], kept);
-  const [, sha, worktreeId] = offer;
-  if (sha !== ready.head) {
-    return withText(`claude rm offers to discard ${sha}, which is not ${ready.branch}'s verified head (${ready.head}), so finish did not run it`, kept);
-  }
-  const args = ["rm", ready.id, "--discard-unpushed", `${sha}@${worktreeId}`];
-  const result = claudeAt(ready, wenv, args, NO_LIMIT);
-  return saidRemoved(result) ? [] : unknownAnswer(ready, args, result);
-}
-var removeSession = (ready, wenv, out) => {
-  const first = claudeAt(ready, wenv, ["rm", ready.id], NO_LIMIT);
-  const issues = saidRemoved(first) ? [] : discard(ready, wenv, first);
-  if (issues.length > 0)
-    return issues;
-  out(`session ${ready.id} removed`);
-  return [];
-};
-function clearSavedReport(ready) {
-  const step = ready.reportStep;
-  if (step.kind === "none" || step.kind === "no brief")
-    return;
-  if (step.from === step.to)
-    return;
-  try {
-    const saved = fs35.readFileSync(step.to);
-    if (fs35.readFileSync(step.from).equals(saved))
-      fs35.unlinkSync(step.from);
-  } catch {}
-}
-function forgottenWayOut({
-  worktree,
-  branch
-}) {
-  const route = `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
-  const removable = nativeBranch(path44.basename(worktree));
-  if (branch === removable)
-    return route;
-  return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`;
-}
-function leftoverIssues(runGit, ready) {
-  const { worktree } = ready;
-  const state = filesState(runGit, ready);
-  switch (state.kind) {
-    case "folder gone":
-    case "removable":
-      return [];
-    case "dirty":
-      return [
-        `the worktree ${worktree} holds files its removal would lose: ${state.paths.join(", ")}${omittedWords(state.omitted)}`
-      ];
-    case "held":
-      return [
-        `finish cannot tell what the worktree ${worktree} holds, so it removed nothing more: ${state.by}`
-      ];
-    default: {
-      const _exhaustive = state;
-      throw new Error(`Unhandled state: ${JSON.stringify(_exhaustive)}`);
-    }
-  }
-}
-var lockNow = ({ mainTop, worktree }, { runGit, isAlive }) => lockStateOf(lockReasonOf(runGit, mainTop, worktree), isAlive);
-function worktreeGoneIssues(ready, wenv) {
-  const { runGit } = wenv;
-  const { mainTop: top, worktree } = ready;
-  const list2 = worktreeListed(runGit, top, worktree);
-  if ("issue" in list2) {
-    return [
-      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.issue}`,
-      forgottenWayOut(ready)
-    ];
-  }
-  if (!list2.listed)
-    return [];
-  const first = lockNow(ready, wenv);
-  const unlocked = first.kind === "dead" || first.kind === "none";
-  if (unlocked)
-    clearSavedReport(ready);
-  const files = unlocked ? leftoverIssues(runGit, ready) : [];
-  const lock = unlocked && files.length === 0 ? lockNow(ready, wenv) : first;
-  const issues = files.length > 0 ? files : removeGitWorktree(runGit, top, worktree, lock);
-  if (issues.length === 0)
-    return [];
-  return [
-    `claude rm said removed, but git still lists the worktree ${worktree}`,
-    ...issues,
-    forgottenWayOut(ready)
-  ];
-}
-function branchGoneIssues(runGit, top, branch, head) {
-  if (!branchExists(runGit, top, branch))
-    return [];
-  const ref2 = `refs/heads/${branch}`;
-  const result = runGit("git", ["update-ref", "-d", ref2, head], top);
-  if (result.code !== 0) {
-    return [`git update-ref -d ${ref2} failed: ${result.stderr.trim()}`];
-  }
-  return dropBranchConfig(runGit, top, branch);
-}
-var ERE_SPECIAL = /[.[\\()*+?{|^$]/g;
-var literalPattern = (text) => text.replace(ERE_SPECIAL, (char) => `\\${char}`);
-function dropBranchConfig(runGit, top, branch) {
-  const listed = runGit("git", [
-    "config",
-    "--local",
-    "--name-only",
-    "--get-regexp",
-    `^${literalPattern(`branch.${branch}`)}\\.[^.]+$`
-  ], top);
-  if (listed.code !== 0)
-    return [];
-  const keys = new Set(listed.stdout.split(`
-`).filter((key) => key !== ""));
-  return [...keys].flatMap((key) => {
-    const result = runGit("git", ["config", "--local", "--unset-all", key], top);
-    if (result.code === 0)
-      return [];
-    return [`git config --unset-all ${key} failed: ${result.stderr.trim()}`];
-  });
-}
-var removeLeftovers = (ready, wenv, out) => {
-  const worktree = worktreeGoneIssues(ready, wenv);
-  if (worktree.length > 0)
-    return worktree;
-  out(`worktree ${ready.worktree} removed`);
-  const branch = branchGoneIssues(wenv.runGit, ready.mainTop, ready.branch, ready.head);
-  if (branch.length > 0)
-    return branch;
-  out(`branch ${ready.branch} removed`);
-  return [];
-};
-var forgetRecord = (ready) => {
-  removeRecord(ready.commonDir, ready.name);
-  return [];
-};
-var BACKUP_KINDS = ["landed", "pushed", "discarded", "kept"];
-var REF_SAFE = /^[A-Za-z0-9._-]$/;
-var percent = (byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
-var encodeByte = (byte) => {
-  const char = String.fromCharCode(byte);
-  return REF_SAFE.test(char) ? char : percent(byte);
-};
-var DOT = percent(46);
-function refSegment(name) {
-  return [...Buffer.from(name, "utf8")].map(encodeByte).join("").replace(/^[.-]/, (char) => percent(char.charCodeAt(0))).replace(/\.(?=\.)/g, DOT).replace(/\.$/, DOT).replace(/\.lock$/, `${DOT}lock`);
-}
-var backupRef = (kind, name, head) => `refs/sidekick/${kind}/${refSegment(name)}/${head}`;
-function heldBackup(runGit, top, name, head) {
-  return BACKUP_KINDS.map((kind) => backupRef(kind, name, head)).find((ref2) => commitOf(runGit, top, ref2) === head);
-}
-function readyBackup(ready) {
-  const { verdict } = ready;
-  switch (verdict.kind) {
-    case "landed":
-      return backupRef("landed", ready.name, ready.head);
-    case "discard":
-      return backupRef("discarded", ready.name, ready.head);
-    default: {
-      const unhandled = verdict;
-      throw new Error(`unhandled verdict: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
-function writeBackup(runGit, top, ref2, head) {
-  if (commitOf(runGit, top, ref2) === head)
-    return [];
-  const result = runGit("git", ["update-ref", ref2, head, ""], top);
-  if (result.code === 0)
-    return [];
-  return [`cannot keep ${ref2}: ${result.stderr.trim()}`];
-}
-var keepBackup = (ready, wenv) => writeBackup(wenv.runGit, ready.mainTop, readyBackup(ready), ready.head);
-var restorePartial = (ready, wenv, out) => {
-  if (!ready.partial)
-    return [];
-  const status = statusEntriesIn(wenv.runGit, ready.mainTop, ready.worktree);
-  if ("issue" in status) {
-    return [
-      `git status failed in the worktree ${ready.worktree}: ${status.issue}`
-    ];
-  }
-  const deleted = status.entries.filter((entry) => entry.code === DELETED).map((entry) => entry.path);
-  if (deleted.length === 0)
-    return [];
-  const result = wenv.runGit("git", ["-C", ready.worktree, "checkout-index", "--", ...deleted], ready.mainTop);
-  if (result.code !== 0) {
-    return [
-      `git checkout-index failed in the worktree ${ready.worktree}, so finish removed nothing: ${result.stderr.trim()}`
-    ];
-  }
-  const files = `${deleted.length} deleted ${deleted.length === 1 ? "file" : "files"}`;
-  out(`restored ${files} in ${ready.worktree} from its index, so claude rm finds it clean`);
-  return [];
-};
 
 // bin/helpers/worker-dispatch.ts
 var withoutTrailingNewline2 = (text) => text.replace(/\n$/, "");
@@ -10580,8 +10291,8 @@ function keepRecord(ready, job, err) {
     err(written.issue);
 }
 function wayOut(ready, verdict, stopped) {
-  const discard2 = `sidekick worker finish ${shellArg(ready.briefPath)} --discard`;
-  return verdict.cause === "creator" ? `${stopped} Remove its worktree with the hook's own removal, then run: ${discard2}` : `${stopped} Then run: ${discard2}`;
+  const discard = `sidekick worker finish ${shellArg(ready.briefPath)} --discard`;
+  return verdict.cause === "creator" ? `${stopped} Remove its worktree with the hook's own removal, then run: ${discard}` : `${stopped} Then run: ${discard}`;
 }
 function stopStray(ready, job, wenv, timeoutMs = 1e4) {
   const result = wenv.runClaude(["stop", job], {
@@ -10672,7 +10383,7 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-dispatch-args.ts
-import * as path45 from "node:path";
+import * as path44 from "node:path";
 var DEFAULT_WORKER_PROFILE = "worker";
 var stringFlag = (values, key) => {
   const value = values[key];
@@ -10700,18 +10411,57 @@ function parseDispatchArgs(rest2, cwd) {
   const shared = {
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path45.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path44.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
   return check2 ? { ...shared, check: true } : {
     ...shared,
     check: false,
-    brief: path45.resolve(cwd, parsed.positionals[0])
+    brief: path44.resolve(cwd, parsed.positionals[0])
   };
 }
 
+// bin/helpers/worker-backup.ts
+var BACKUP_KINDS = ["landed", "pushed", "discarded", "kept"];
+var REF_SAFE = /^[A-Za-z0-9._-]$/;
+var percent = (byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+var encodeByte = (byte) => {
+  const char = String.fromCharCode(byte);
+  return REF_SAFE.test(char) ? char : percent(byte);
+};
+var DOT = percent(46);
+function refSegment(name) {
+  return [...Buffer.from(name, "utf8")].map(encodeByte).join("").replace(/^[.-]/, (char) => percent(char.charCodeAt(0))).replace(/\.(?=\.)/g, DOT).replace(/\.$/, DOT).replace(/\.lock$/, `${DOT}lock`);
+}
+var backupRef = (kind, name, head) => `refs/sidekick/${kind}/${refSegment(name)}/${head}`;
+function heldBackup(runGit, top, name, head) {
+  return BACKUP_KINDS.map((kind) => backupRef(kind, name, head)).find((ref2) => commitOf(runGit, top, ref2) === head);
+}
+function readyBackup(ready) {
+  const { verdict } = ready;
+  switch (verdict.kind) {
+    case "landed":
+      return backupRef("landed", ready.name, ready.head);
+    case "discard":
+      return backupRef("discarded", ready.name, ready.head);
+    default: {
+      const unhandled = verdict;
+      throw new Error(`unhandled verdict: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+function writeBackup(runGit, top, ref2, head) {
+  if (commitOf(runGit, top, ref2) === head)
+    return [];
+  const result = runGit("git", ["update-ref", ref2, head, ""], top);
+  if (result.code === 0)
+    return [];
+  return [`cannot keep ${ref2}: ${result.stderr.trim()}`];
+}
+var keepBackup = (ready, wenv) => writeBackup(wenv.runGit, ready.mainTop, readyBackup(ready), ready.head);
+
 // bin/helpers/worker-finish-args.ts
-import * as path46 from "node:path";
+import * as path45 from "node:path";
 var NEEDS_REPORT = "--name needs --no-report or --discard, since there is no brief to say where the run report goes";
 var NEEDS_INTO = "--name needs --into <rev> or --discard, since there is no brief to name the target";
 var stringFlag2 = (values, key) => {
@@ -10731,13 +10481,13 @@ function parseFinishArgs(rest2, cwd) {
   const { values, positionals } = parsed;
   const into = stringFlag2(values, "into");
   const worktree = stringFlag2(values, "worktree");
-  const discard2 = values.discard === true;
-  if (discard2 && into !== undefined || worktree === "")
+  const discard = values.discard === true;
+  if (discard && into !== undefined || worktree === "")
     return;
   const shared = {
     noReport: values["no-report"] === true,
-    mode: discard2 ? { kind: "discard" } : { kind: "landed", into },
-    worktree: worktree === undefined ? undefined : path46.resolve(cwd, worktree)
+    mode: discard ? { kind: "discard" } : { kind: "landed", into },
+    worktree: worktree === undefined ? undefined : path45.resolve(cwd, worktree)
   };
   const name = stringFlag2(values, "name");
   if (name !== undefined) {
@@ -10745,7 +10495,7 @@ function parseFinishArgs(rest2, cwd) {
   }
   if (positionals.length !== 1)
     return;
-  const brief = path46.resolve(cwd, positionals[0]);
+  const brief = path45.resolve(cwd, positionals[0]);
   return { subject: { kind: "brief", brief }, ...shared };
 }
 function byName3(name, shared) {
@@ -10807,8 +10557,8 @@ var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
-import * as fs36 from "node:fs";
-import * as path47 from "node:path";
+import * as fs35 from "node:fs";
+import * as path46 from "node:path";
 
 // bin/helpers/worker-finish-target.ts
 function targetName(runGit, top, rev) {
@@ -10948,6 +10698,41 @@ function landedVerdict(runGit, ctx, worker, opts) {
   }
 }
 
+// bin/helpers/worktree-read.ts
+function repoOf2(env, err) {
+  const found = findRepo(env.runGit, env.cwd);
+  for (const warning of found.warnings)
+    err(warning);
+  if (found.repo === undefined && found.warnings.length === 0) {
+    err(`${env.cwd} is not inside a git repository`);
+  }
+  return found.repo;
+}
+function readSources(env, repo) {
+  const listing = readListing(env.runClaude, env.cwd);
+  const skips = readSkips(repo.commonDir);
+  const stored = readRecords(repo.commonDir);
+  return {
+    src: {
+      repo,
+      rows: "error" in listing ? undefined : listing.rows,
+      listingWarnings: "error" in listing ? [] : listing.warnings,
+      records: stored.records,
+      unreadRecords: stored.warnings,
+      isAlive: env.isAlive
+    },
+    listing,
+    skipWarnings: skips.warnings
+  };
+}
+var heldWords = (by) => by.startsWith("unknown") ? `held, ${by}` : `held by ${by}`;
+function omittedWords(omitted) {
+  if (omitted.count === 0)
+    return "";
+  const count2 = `${omitted.kind === "at least" ? "at least " : ""}${omitted.count}`;
+  return `, and ${count2} more`;
+}
+
 // bin/helpers/worker-finish-tree.ts
 function onBranchIssues(runGit, worktree, branch, mode, discardCommand, id) {
   const head = checkedOut(runGit, worktree);
@@ -10970,15 +10755,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report2 = path47.posix.normalize(read.brief.report);
+  const report2 = path46.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: read.brief.target,
     report: report2,
-    reportFrom: path47.join(worktree, report2),
-    reportTo: top === undefined ? undefined : path47.join(top, report2)
+    reportFrom: path46.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path46.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -11023,7 +10808,7 @@ function operatorIssues(name, tried, linked2) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs36.existsSync(worktree) && !fs36.existsSync(path47.join(worktree, ".git"));
+  const linkless = fs35.existsSync(worktree) && !fs35.existsSync(path46.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -11131,6 +10916,44 @@ function headMovedIssues(runGit, ready) {
   ];
 }
 
+// bin/helpers/worker-teardown-stop.ts
+var ENDED_STATES = ["stopped", "done"];
+var runStop = (job, wenv) => {
+  const args = ["stop", job.id];
+  const result = claudeAt(job, wenv, args);
+  if (ranClean(result))
+    return [];
+  return withText(`claude ${args.join(" ")} ${failure(result)}, so finish stopped before claude rm`, result);
+};
+var stopJob = (job, wenv) => {
+  const listedEnded = job.state !== undefined && ENDED_STATES.includes(job.state);
+  if (listedEnded && !lockHeldLive(job, wenv))
+    return [];
+  return runStop(job, wenv);
+};
+function lockPidNow(at, wenv) {
+  return lockPid(lockReasonOf(wenv.runGit, at.mainTop, at.worktree));
+}
+function lockHeldLive(job, wenv) {
+  const pid = lockPidNow(job, wenv);
+  return pid !== undefined && wenv.isAlive(pid);
+}
+function waitForExit(pid, wenv, limitMs = 15000, pollMs = 250) {
+  for (let waited = 0;wenv.isAlive(pid); waited += pollMs) {
+    if (waited >= limitMs) {
+      return [
+        `the worktree's lock still names a running process, pid ${pid}, after ${limitMs / 1000} s: run finish again once it exits`
+      ];
+    }
+    wenv.sleep(pollMs);
+  }
+  return [];
+}
+var waitForLock = (ready, wenv) => {
+  const pid = lockPidNow(ready, wenv);
+  return pid === undefined ? [] : waitForExit(pid, wenv);
+};
+
 // bin/helpers/worker-finish-gone.ts
 function whenNotFound(tried, at, opts) {
   const { linked: linked2, ...job } = at;
@@ -11166,7 +10989,7 @@ function keptIssues(gone, result) {
     `run finish again with ${gone.rerun}, or complete the removal by hand with ${stopFirst}`
   ];
 }
-var removeSession2 = (gone, wenv, out) => {
+var removeSession = (gone, wenv, out) => {
   const cwd = gone.mainTop;
   const result = wenv.runClaude(["rm", gone.id], { cwd, timeoutMs: NO_LIMIT });
   if (!saidRemoved(result))
@@ -11174,7 +10997,7 @@ var removeSession2 = (gone, wenv, out) => {
   out(`session ${gone.id} removed`);
   return [];
 };
-var forgetRecord2 = (gone) => {
+var forgetRecord = (gone) => {
   removeRecord(gone.commonDir, gone.name);
   return [];
 };
@@ -11186,8 +11009,8 @@ var sayByHand = (gone, _wenv, out) => {
 var GONE_STEPS = [
   sayNotFound,
   stop,
-  removeSession2,
-  forgetRecord2,
+  removeSession,
+  forgetRecord,
   sayByHand
 ];
 function clearGone(gone, wenv, out) {
@@ -11200,12 +11023,12 @@ function clearGone(gone, wenv, out) {
 }
 
 // bin/helpers/worker-finish-report.ts
-import * as fs37 from "node:fs";
-import * as path48 from "node:path";
+import * as fs36 from "node:fs";
+import * as path47 from "node:path";
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs37.readFileSync(file) };
+    return { data: fs36.readFileSync(file) };
   } catch (e) {
     if (isMissing5(e))
       return { data: undefined };
@@ -11258,8 +11081,8 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs37.mkdirSync(path48.dirname(to), { recursive: true });
-    fs37.copyFileSync(from, to, fs37.constants.COPYFILE_EXCL);
+    fs36.mkdirSync(path47.dirname(to), { recursive: true });
+    fs36.copyFileSync(from, to, fs36.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${to}: ${why}`];
@@ -11321,8 +11144,8 @@ function copyChangedIssues(from, to, now) {
 }
 
 // bin/helpers/worker-finish-subject.ts
-import * as fs38 from "node:fs";
-import * as path49 from "node:path";
+import * as fs37 from "node:fs";
+import * as path48 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -11333,7 +11156,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path49.dirname(subject.brief);
+      const folder = path48.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -11351,8 +11174,8 @@ function recordedTop(runGit, commonDir, name) {
   const record2 = records.find((r) => r.name === name);
   if (record2 === undefined)
     return;
-  const folder = path49.dirname(record2.brief);
-  return fs38.existsSync(folder) ? topOf(runGit, folder) : undefined;
+  const folder = path48.dirname(record2.brief);
+  return fs37.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
   const { read } = subject;
@@ -11369,6 +11192,191 @@ function launcherOf(subject, facts, runGit) {
     return;
   return { top: facts.launchTop, role: "the checkout finish runs in" };
 }
+
+// bin/helpers/worker-teardown-leftovers.ts
+import * as fs38 from "node:fs";
+import * as path49 from "node:path";
+function clearSavedReport(ready) {
+  const step = ready.reportStep;
+  if (step.kind === "none" || step.kind === "no brief")
+    return;
+  if (step.from === step.to)
+    return;
+  try {
+    const saved = fs38.readFileSync(step.to);
+    if (fs38.readFileSync(step.from).equals(saved))
+      fs38.unlinkSync(step.from);
+  } catch {}
+}
+function forgottenWayOut({
+  worktree,
+  branch
+}) {
+  const route = `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
+  const removable = nativeBranch(path49.basename(worktree));
+  if (branch === removable)
+    return route;
+  return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`;
+}
+function leftoverIssues(runGit, ready) {
+  const { worktree } = ready;
+  const state = filesState(runGit, ready);
+  switch (state.kind) {
+    case "folder gone":
+    case "removable":
+      return [];
+    case "dirty":
+      return [
+        `the worktree ${worktree} holds files its removal would lose: ${state.paths.join(", ")}${omittedWords(state.omitted)}`
+      ];
+    case "held":
+      return [
+        `finish cannot tell what the worktree ${worktree} holds, so it removed nothing more: ${state.by}`
+      ];
+    default: {
+      const _exhaustive = state;
+      throw new Error(`Unhandled state: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+var lockNow = ({ mainTop, worktree }, { runGit, isAlive }) => lockStateOf(lockReasonOf(runGit, mainTop, worktree), isAlive);
+function worktreeGoneIssues(ready, wenv) {
+  const { runGit } = wenv;
+  const { mainTop: top, worktree } = ready;
+  const list2 = worktreeListed(runGit, top, worktree);
+  if ("issue" in list2) {
+    return [
+      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.issue}`,
+      forgottenWayOut(ready)
+    ];
+  }
+  if (!list2.listed)
+    return [];
+  const first = lockNow(ready, wenv);
+  const unlocked = first.kind === "dead" || first.kind === "none";
+  if (unlocked)
+    clearSavedReport(ready);
+  const files = unlocked ? leftoverIssues(runGit, ready) : [];
+  const lock = unlocked && files.length === 0 ? lockNow(ready, wenv) : first;
+  const issues = files.length > 0 ? files : removeGitWorktree(runGit, top, worktree, lock);
+  if (issues.length === 0)
+    return [];
+  return [
+    `claude rm said removed, but git still lists the worktree ${worktree}`,
+    ...issues,
+    forgottenWayOut(ready)
+  ];
+}
+function branchGoneIssues(runGit, top, branch, head) {
+  if (!branchExists(runGit, top, branch))
+    return [];
+  const ref2 = `refs/heads/${branch}`;
+  const result = runGit("git", ["update-ref", "-d", ref2, head], top);
+  if (result.code !== 0) {
+    return [`git update-ref -d ${ref2} failed: ${result.stderr.trim()}`];
+  }
+  return dropBranchConfig(runGit, top, branch);
+}
+var ERE_SPECIAL = /[.[\\()*+?{|^$]/g;
+var literalPattern = (text) => text.replace(ERE_SPECIAL, (char) => `\\${char}`);
+function dropBranchConfig(runGit, top, branch) {
+  const listed = runGit("git", [
+    "config",
+    "--local",
+    "--name-only",
+    "--get-regexp",
+    `^${literalPattern(`branch.${branch}`)}\\.[^.]+$`
+  ], top);
+  if (listed.code !== 0)
+    return [];
+  const keys = new Set(listed.stdout.split(`
+`).filter((key) => key !== ""));
+  return [...keys].flatMap((key) => {
+    const result = runGit("git", ["config", "--local", "--unset-all", key], top);
+    if (result.code === 0)
+      return [];
+    return [`git config --unset-all ${key} failed: ${result.stderr.trim()}`];
+  });
+}
+var removeLeftovers = (ready, wenv, out) => {
+  const worktree = worktreeGoneIssues(ready, wenv);
+  if (worktree.length > 0)
+    return worktree;
+  out(`worktree ${ready.worktree} removed`);
+  const branch = branchGoneIssues(wenv.runGit, ready.mainTop, ready.branch, ready.head);
+  if (branch.length > 0)
+    return branch;
+  out(`branch ${ready.branch} removed`);
+  return [];
+};
+var forgetRecord2 = (ready) => {
+  removeRecord(ready.commonDir, ready.name);
+  return [];
+};
+
+// bin/helpers/worker-teardown-restore.ts
+var restorePartial = (ready, wenv, out) => {
+  if (!ready.partial)
+    return [];
+  const status = statusEntriesIn(wenv.runGit, ready.mainTop, ready.worktree);
+  if ("issue" in status) {
+    return [
+      `git status failed in the worktree ${ready.worktree}: ${status.issue}`
+    ];
+  }
+  const deleted = status.entries.filter((entry) => entry.code === DELETED).map((entry) => entry.path);
+  if (deleted.length === 0)
+    return [];
+  const result = wenv.runGit("git", ["-C", ready.worktree, "checkout-index", "--", ...deleted], ready.mainTop);
+  if (result.code !== 0) {
+    return [
+      `git checkout-index failed in the worktree ${ready.worktree}, so finish removed nothing: ${result.stderr.trim()}`
+    ];
+  }
+  const files = `${deleted.length} deleted ${deleted.length === 1 ? "file" : "files"}`;
+  out(`restored ${files} in ${ready.worktree} from its index, so claude rm finds it clean`);
+  return [];
+};
+
+// bin/helpers/worker-teardown-rm.ts
+var isHookMade = (ready) => physical(ready.worktree) !== physical(nativeFolder(ready.mainTop, ready.name)) || ready.branch !== nativeBranch(ready.name);
+function unknownAnswer(ready, args, result) {
+  const what = ranClean(result) ? "did not say removed, and finish does not know its answer" : failure(result);
+  const command = `claude ${args.map(shellArg).join(" ")}`;
+  const refused = withText(`${command} ${what}, so finish removed nothing more`, result);
+  if (isHookMade(ready)) {
+    return [
+      ...refused,
+      `the worktree ${ready.worktree} on ${ready.branch} is not the one Claude Code makes for ${ready.name}, so a WorktreeCreate hook likely made it and claude rm will not remove it: remove it with that hook's own removal, then run ${ready.discardCommand}`
+    ];
+  }
+  return [
+    ...refused,
+    `run finish again with ${ready.rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`
+  ];
+}
+function discard(ready, wenv, kept) {
+  const text = printedStreams(kept).join(`
+`);
+  const offer = DISCARD_LINE.exec(text);
+  if (offer === null)
+    return unknownAnswer(ready, ["rm", ready.id], kept);
+  const [, sha, worktreeId] = offer;
+  if (sha !== ready.head) {
+    return withText(`claude rm offers to discard ${sha}, which is not ${ready.branch}'s verified head (${ready.head}), so finish did not run it`, kept);
+  }
+  const args = ["rm", ready.id, "--discard-unpushed", `${sha}@${worktreeId}`];
+  const result = claudeAt(ready, wenv, args, NO_LIMIT);
+  return saidRemoved(result) ? [] : unknownAnswer(ready, args, result);
+}
+var removeSession2 = (ready, wenv, out) => {
+  const first = claudeAt(ready, wenv, ["rm", ready.id], NO_LIMIT);
+  const issues = saidRemoved(first) ? [] : discard(ready, wenv, first);
+  if (issues.length > 0)
+    return issues;
+  out(`session ${ready.id} removed`);
+  return [];
+};
 
 // bin/helpers/worker-finish.ts
 var SHORT_SHA2 = 7;
@@ -11552,8 +11560,8 @@ var STEPS = [
   recheckWorktree,
   keepBackup,
   restorePartial,
-  removeSession,
-  forgetRecord,
+  removeSession2,
+  forgetRecord2,
   removeLeftovers,
   sayBackup
 ];

@@ -13,19 +13,14 @@
 import type { Repo } from './desk-children.js';
 import { isCurrent, type ListingRow } from './desk-snapshot.js';
 import { shellArg } from './shell.js';
+import { refSegment, writeBackup } from './worker-backup.js';
 import {
   listWorktrees,
   lockReasonOf,
   type WorktreeEntry,
 } from './worker-listing.js';
-import {
-  branchGoneIssues,
-  NO_LIMIT,
-  refSegment,
-  saidRemoved,
-  withText,
-  writeBackup,
-} from './worker-teardown.js';
+import { NO_LIMIT, saidRemoved, withText } from './worker-teardown.js';
+import { branchGoneIssues } from './worker-teardown-leftovers.js';
 import { nativeBranch } from './worker-worktree.js';
 import { skipListPath } from './worktree-ignored.js';
 import { lockStateOf, removeGitWorktree } from './worktree-lock.js';

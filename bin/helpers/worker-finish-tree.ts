@@ -11,6 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 import { shellArg } from './shell.js';
+import { heldBackup } from './worker-backup.js';
 import type { Brief } from './worker-brief.js';
 import {
   discardCommandFor,
@@ -31,7 +32,7 @@ import {
   worktreeListed,
 } from './worker-listing.js';
 import { commitOf } from './worker-repo.js';
-import { heldBackup, type Ready } from './worker-teardown.js';
+import type { Ready } from './worker-teardown.js';
 import {
   type Found,
   type FoundWorktree,

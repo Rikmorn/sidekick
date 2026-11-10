@@ -13,7 +13,7 @@ import type { Runner } from './pm-data.js';
 import { shellArg } from './shell.js';
 import { statusEntriesIn } from './worker-listing.js';
 import { branchExists, commitOf, HEADS } from './worker-repo.js';
-import { branchGoneIssues } from './worker-teardown.js';
+import { branchGoneIssues } from './worker-teardown-leftovers.js';
 import { nativeBranch } from './worker-worktree.js';
 import { clearMark, markKeyOf, markOf, writeMark } from './worktree-mark.js';
 import {

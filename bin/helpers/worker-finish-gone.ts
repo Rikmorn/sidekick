@@ -24,10 +24,10 @@ import {
   NO_LIMIT,
   type Out,
   ranClean,
-  runStop,
   saidRemoved,
   withText,
 } from './worker-teardown.js';
+import { runStop } from './worker-teardown-stop.js';
 
 /** What `finish --discard` clears when the finder found no worktree. */
 export interface Gone {

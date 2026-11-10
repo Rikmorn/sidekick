@@ -20,6 +20,7 @@
 import { configDirOf } from './main-session.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
+import { keepBackup, readyBackup } from './worker-backup.js';
 import { checkoutFacts } from './worker-facts.js';
 import {
   discardCommandFor,
@@ -58,21 +59,17 @@ import {
 } from './worker-finish-tree.js';
 import { LISTING, listJobs } from './worker-jobs.js';
 import { commitOf } from './worker-repo.js';
-import {
-  forgetRecord,
-  keepBackup,
-  type Out,
-  type Ready,
-  readyBackup,
-  removeLeftovers,
-  removeSession,
-  restorePartial,
-  type Step,
-  stopJob,
-  type Verdict,
-  type WorkerJob,
-  waitForLock,
+import type {
+  Out,
+  Ready,
+  Step,
+  Verdict,
+  WorkerJob,
 } from './worker-teardown.js';
+import { forgetRecord, removeLeftovers } from './worker-teardown-leftovers.js';
+import { restorePartial } from './worker-teardown-restore.js';
+import { removeSession } from './worker-teardown-rm.js';
+import { stopJob, waitForLock } from './worker-teardown-stop.js';
 import {
   type Found,
   type Launcher,
