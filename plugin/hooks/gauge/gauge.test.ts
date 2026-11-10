@@ -256,6 +256,7 @@ test('a desk whose /desk is refused leaves the gauge whole, and the band draws t
     component: 'AbovePrompt',
     props: {
       hasSurvey: false,
+      isCollapsed: false,
       isWorking: false,
       maxRows: 10,
       bodyColumns: 200,

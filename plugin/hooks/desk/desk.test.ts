@@ -182,6 +182,7 @@ function bandProps(
 ): RenderPropsOf['AbovePrompt'] {
   return {
     hasSurvey,
+    isCollapsed: false,
     isWorking: false,
     maxRows: 10,
     bodyColumns,

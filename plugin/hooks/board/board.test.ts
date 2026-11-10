@@ -200,6 +200,7 @@ const HINT_PROPS: RenderPropsOf['PromptHint'] = {
 function bandProps(bodyColumns: number): RenderPropsOf['AbovePrompt'] {
   return {
     hasSurvey: false,
+    isCollapsed: false,
     isWorking: false,
     maxRows: 10,
     bodyColumns,
