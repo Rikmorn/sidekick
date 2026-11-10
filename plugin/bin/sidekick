@@ -11018,7 +11018,7 @@ var forgetRecord = (gone) => {
   removeRecord(gone.commonDir, gone.name);
   return [];
 };
-var leftoverRoute = (name) => `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks a new worktree named ${name}; once you have checked that its commits have landed, delete it with git branch -D worktree-${name}, or dispatch under another name`;
+var leftoverRoute = (name) => `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks a new worktree named ${name}. Once you have checked that its commits have landed, delete it with git branch -D worktree-${name}, or dispatch under another name`;
 var sayByHand = (gone, _wenv, out) => {
   out(`the worktree of ${gone.name} was not found, so finish deleted no branch: ${leftoverRoute(gone.name)}`);
   return [];

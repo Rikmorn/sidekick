@@ -105,7 +105,7 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief),
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1; once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name. Otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name. Otherwise check the name in the brief',
     );
   });
 
@@ -117,7 +117,7 @@ describe('finish refuses', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1; once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name. Otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name. Otherwise check the name in the brief',
     ]);
   });
 
@@ -2522,7 +2522,7 @@ describe('finish --name', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish('--name', 'w1', '--discard')).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1; once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name. Otherwise check the name given to --name',
+      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name. Otherwise check the name given to --name',
     ]);
   });
 });
@@ -2618,7 +2618,7 @@ describe('finish --name keeps the checkout that dispatched the worker', () => {
 const GONE_HEAD =
   'finish cannot find the worktree of w1, so it removes only its session and record. It tried:';
 const GONE_TAIL =
-  "the worktree of w1 was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks a new worktree named w1; once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name";
+  "the worktree of w1 was not found, so finish deleted no branch: run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name";
 
 describe('finish --discard with no worktree found', () => {
   test('removes the session and the record, and leaves every branch and worktree in place', () => {
