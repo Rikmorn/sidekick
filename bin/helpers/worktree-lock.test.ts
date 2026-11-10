@@ -3,13 +3,27 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { git, removeTemps, repoWithWorktree } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
-import { lockStateOf, removeGitWorktree } from './worktree-lock.js';
+import { lockPid, lockStateOf, removeGitWorktree } from './worktree-lock.js';
 
 afterEach(removeTemps);
 
 const alive = () => true;
 const dead = () => false;
 const SESSION_LOCK = 'claude session w1 (pid 4242 start 2026-11-05)';
+
+describe('lockPid', () => {
+  test('a pid past process.kill range reads as none', () => {
+    expect(
+      lockPid('claude session w1 (pid 2147483648 start x)'),
+    ).toBeUndefined();
+  });
+
+  test('the largest pid process.kill accepts reads as itself', () => {
+    expect(lockPid('claude session w1 (pid 2147483647 start x)')).toBe(
+      2147483647,
+    );
+  });
+});
 
 describe('lockStateOf', () => {
   test('no lock is none', () => {

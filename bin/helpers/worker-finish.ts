@@ -75,6 +75,7 @@ import {
   type Launcher,
   locateWorktree,
 } from './worker-worktree.js';
+import { usablePid } from './worktree-lock.js';
 
 /** The length `finish` shortens a sha to in the landing line. */
 export const SHORT_SHA = 7;
@@ -85,14 +86,6 @@ type ListedWorker = WorkerJob & {
   sessionId: string | undefined;
   pid: number | undefined;
 };
-
-// The largest pid `process.kill` accepts; a pid outside 1 to this reads as none.
-const MAX_KILL_PID = 0x7fffffff;
-
-const usablePid = (pid: number | undefined): number | undefined =>
-  pid !== undefined && Number.isInteger(pid) && pid > 0 && pid <= MAX_KILL_PID
-    ? pid
-    : undefined;
 
 // Where the worker's name came from, which a refusal says to check.
 const NAME_FROM = {

@@ -984,6 +984,10 @@ describe('finish clears the worker', () => {
 
   test.each([
     ['a pid of 0', 'claude session w1 (pid 0 start x)'],
+    [
+      'a pid past process.kill range',
+      'claude session w1 (pid 2147483648 start x)',
+    ],
     ['no pid', 'locked by hand'],
   ])('without waiting on a lock with %s', (_label, text) => {
     const fx = fixture();

@@ -11,6 +11,15 @@ import type { Runner } from './pm-data.js';
 // The lock reads `claude session <name> (pid <n> start <date>)`.
 const LOCK_PID = /\(pid (\d+)\b/;
 
+// The largest pid `process.kill` accepts; a pid outside 1 to this reads as none.
+const MAX_KILL_PID = 0x7fffffff;
+
+/** The pid when it lies in `process.kill`'s range, else `undefined`. */
+export const usablePid = (pid: number | undefined): number | undefined =>
+  pid !== undefined && Number.isInteger(pid) && pid > 0 && pid <= MAX_KILL_PID
+    ? pid
+    : undefined;
+
 /**
  * The lock's pid, when it names one. kill(0, 0) signals the process group, so
  * only a positive pid counts.
@@ -18,7 +27,7 @@ const LOCK_PID = /\(pid (\d+)\b/;
 export function lockPid(reason: string | undefined): number | undefined {
   if (reason === undefined) return undefined;
   const pid = Number(LOCK_PID.exec(reason)?.[1]);
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+  return usablePid(pid);
 }
 
 export type LockState =

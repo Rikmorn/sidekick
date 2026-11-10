@@ -7532,11 +7532,13 @@ function ignoredLosses(runGit, places, {
 
 // bin/helpers/worktree-lock.ts
 var LOCK_PID = /\(pid (\d+)\b/;
+var MAX_KILL_PID = 2147483647;
+var usablePid = (pid) => pid !== undefined && Number.isInteger(pid) && pid > 0 && pid <= MAX_KILL_PID ? pid : undefined;
 function lockPid(reason5) {
   if (reason5 === undefined)
     return;
   const pid = Number(LOCK_PID.exec(reason5)?.[1]);
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+  return usablePid(pid);
 }
 var SESSION_LOCK = "claude session ";
 function lockStateOf(locked, isAlive) {
@@ -11471,8 +11473,6 @@ var removeSession2 = (ready, wenv, out) => {
 
 // bin/helpers/worker-finish.ts
 var SHORT_SHA2 = 7;
-var MAX_KILL_PID = 2147483647;
-var usablePid = (pid) => pid !== undefined && Number.isInteger(pid) && pid > 0 && pid <= MAX_KILL_PID ? pid : undefined;
 var NAME_FROM = {
   brief: "the name in the brief",
   name: "the name given to --name"
