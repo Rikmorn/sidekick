@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { CONTEXT_LIMIT_VAR } from '../../plugin/hooks/gauge/contract.js';
 import { CANARY_TEXT, warningText } from './context-monitor.js';
 import { FETCH_LIMIT_MS } from './enter-worktree-fetch.js';
-import { removeTemps, repo } from './fixtures/worker/repo.js';
+import { removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import {
   HOOK_USAGE_LINE,
   type HookEnv,
@@ -1243,6 +1243,42 @@ describe('plugin/hooks/subagent-start', () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toBe('');
     expect(fs.existsSync(fake.marker)).toBe(false);
+  });
+
+  test('starts node in a worker when SIDEKICK_WORKER is set', () => {
+    const fake = fakeNode();
+    const r = spawnSync('/bin/bash', [SUBAGENT_WRAPPER], {
+      input: '{}',
+      encoding: 'utf-8',
+      env: {
+        PATH: `${fake.binDir}:/usr/bin:/bin`,
+        SIDEKICK_WORKER: '/tmp/brief.md',
+      },
+    });
+    expect(r.status).toBe(0);
+    expect(fs.existsSync(fake.marker)).toBe(true);
+  });
+
+  test('hands a worker the brief limits through the real CLI', () => {
+    const brief = path.join(tmp(), 'brief.md');
+    fs.writeFileSync(
+      brief,
+      '---\nname: x\n---\n\n## Limits\n\nWrite only inside the worktree.\n\n## Other\n\nmore\n',
+    );
+    // Only PATH (to find node) and SIDEKICK_WORKER; nothing else is inherited.
+    const r = spawnSync('/bin/bash', [SUBAGENT_WRAPPER], {
+      input: '{}',
+      encoding: 'utf-8',
+      env: { PATH: process.env.PATH ?? '', SIDEKICK_WORKER: brief },
+    });
+    expect(r.status).toBe(0);
+    const lines = r.stdout.trim().split('\n');
+    expect(lines).toHaveLength(1);
+    const out = JSON.parse(lines[0] ?? '');
+    expect(out.hookSpecificOutput.hookEventName).toBe('SubagentStart');
+    expect(out.hookSpecificOutput.additionalContext).toContain(
+      '## Limits\n\nWrite only inside the worktree.',
+    );
   });
 
   test('hooks.json has a SubagentStart entry with no matcher and a 5 s timeout', () => {
