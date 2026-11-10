@@ -12,7 +12,7 @@ This session runs a plan from a brief. Superpowers does the executing; this skil
 
 The brief's path is this skill's argument. With none, reply `BLOCKED` asking for it, and wait. `sidekick worker dispatch` launches with `--dispatched` before the path, as `/sidekick:sk-worker --dispatched <absolute brief path>`. The marker comes first so a path with spaces stays whole. Drop the marker and take the rest as the path. A session the operator starts has no marker.
 
-The brief opens with `key: value` lines between two `---` lines. Its body holds the gate commands and their results at the baseline, and the run's limits: where it may write, what it may read, and the commands it may not run.
+The brief opens with `key: value` lines between two `---` lines. Its body holds the gate commands and their results at the baseline, and the run's limits, under its `## Limits` heading: where it may write, what it may read, and the commands it may not run.
 
 | Field | What it holds |
 |---|---|
@@ -77,15 +77,24 @@ Invoke the superpowers skill the brief's `skill` names, and follow it. Its task 
 - **Settle a small misfit; raise one that recurs.** Shape the sketch to the tree and list each deviation in the run report. A misfit that keeps recurring goes to the orchestrator, because the plan's premise is wrong.
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
 - **Run the prose step** wherever a task has one.
-- **Read GitHub, never write it.** Issues, comments, and the board belong to the orchestrator.
-- **Keep to the brief's limits, and give each subagent the ones that bind it.** A subagent never sees the worker's brief or this skill. It gets your prompt, the rules and `CLAUDE.md` files its type loads, and any context a hook adds, such as sidekick's reviewer lines. So every prompt you write, a reviewer's included, carries the limits that bind that subagent's work, in a section of their own. Superpowers' templates have no place for them: the final reviewer's takes no constraints, and the task reviewer's takes only the spec's. The brief's limits are where the subagent may write, what it may read, and the commands it may not run. This skill adds its own: read GitHub but never write it, never push, and never amend a commit. A limit outranks an instruction to confirm a fact at its source, so a fact the subagent may not read is reported as untraced.
+- **Keep to the brief's limits and §Limits this skill adds, and back them up in each subagent's prompt.** A subagent never sees the worker's brief or this skill. A hook hands every subagent but `web-fetch` the brief's `## Limits` and that section, and Claude Code fires no start event for `web-fetch`. So write the limits that bind a subagent's work into its prompt as well, a reviewer's included, in a section of their own. Superpowers' templates have no place for them: the final reviewer's takes no constraints, and the task reviewer's takes only the spec's. Give a `web-fetch` subagent what it may read.
+- **Name the scratchpad for a read-only subagent's gate output.** When the brief lists the session's scratchpad as a place to write, say so in the prompt of a subagent that cannot write elsewhere, as the place for gate output.
+
+## Limits this skill adds
+
+These limits hold for every session in this run, on top of the run's own limits.
+
+- Read GitHub as needed, and leave writing it to the orchestrator, which owns issues, comments, and the board.
+- Push nothing: the orchestrator integrates.
+- Add a commit for a fix and amend none, since a review diffs from the last reviewed commit.
+- Treat a limit as outranking an instruction to confirm a fact at its source. Report a fact you may not read as untraced.
 
 ## Git
 
 Run git plainly from where you work. In a worktree session, Claude Code refuses a command it cannot show keeps git inside the worktree. The spellings that pass are in `sk-parallel-sessions.md` §The isolation guard. When that rule is not in your context, read the section at `../../rules/sk-parallel-sessions.md`, relative to this skill's base directory. Give it to each subagent you dispatch that does not load user-level rules, such as Explore.
 
-- **Each task lands as its own commits,** on the branch where you work. A fix adds a commit and never amends one. The task's base and head stay valid after an amend. The re-review diffs from the last reviewed commit, which an amend removes.
-- **Never push, and open no pull request.** The orchestrator integrates. A background session's default is to push its branch and open a pull request; this rule overrides that default.
+- **Each task lands as its own commits,** on the branch where you work. §Limits this skill adds says a fix adds a commit. Keeping the task's base and head valid is why: the re-review diffs from the last reviewed commit, which an amend removes.
+- **Open no pull request.** A background session's default is to push its branch and open a pull request; the push limit in §Limits this skill adds and this rule override that default. The orchestrator integrates.
 
 ## At the end
 

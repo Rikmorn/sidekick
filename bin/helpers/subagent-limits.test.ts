@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readSection } from './hook.js';
 import {
   BRIEF_LIMITS_HEADING,
@@ -142,5 +143,23 @@ describe('subagentLimitsContext', () => {
       },
     });
     expect(text).toBeUndefined();
+  });
+});
+
+describe('the shipped sk-worker skill', () => {
+  test('has the section the hook hands to subagents', () => {
+    const shipped = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      'plugin',
+      'skills',
+      'sk-worker',
+      'SKILL.md',
+    );
+    const section = readSection(shipped, WORKER_LIMITS_HEADING);
+    expect(section).toBeDefined();
+    const lines = (section ?? '').split('\n').slice(1);
+    expect(lines.some((line) => line.trim() !== '')).toBe(true);
   });
 });
