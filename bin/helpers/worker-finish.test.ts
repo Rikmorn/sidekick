@@ -1068,12 +1068,12 @@ describe('finish clears the worker', () => {
   test('refusing when git worktree list fails after claude rm, naming worktree remove', () => {
     const fx = fixture();
     fx.integrate();
-    const runGit: Runner = (cmd, args, cwd) => {
+    const runGit: Runner = (cmd, args, cwd, opts) => {
       const listing = args[0] === 'worktree' && args[1] === 'list';
       if (listing && h.claude.named('rm').length > 0) {
         return { code: 128, stdout: '', stderr: 'fatal: cannot list\n' };
       }
-      return execRunner(cmd, args, cwd);
+      return execRunner(cmd, args, cwd, opts);
     };
     const h = harness(fx, { runGit });
     h.claude.state.rm = [removed('nothing')];
@@ -1171,13 +1171,13 @@ describe('finish clears the worker', () => {
     // The files check runs git status after the first lock reading; a session
     // locks the worktree at that moment.
     let relocked = false;
-    const runGit: Runner = (cmd, args, cwd) => {
+    const runGit: Runner = (cmd, args, cwd, opts) => {
       const afterRm = h.claude.named('rm').length > 0;
       if (afterRm && !relocked && args.includes('status')) {
         lockWorktree(fx, liveLock);
         relocked = true;
       }
-      return execRunner(cmd, args, cwd);
+      return execRunner(cmd, args, cwd, opts);
     };
     const h = harness(fx, { runGit, isAlive: (pid) => pid === 5151 });
     h.claude.state.rm = [removed('nothing')];
@@ -2020,13 +2020,13 @@ describe('finish finds the worktree wherever it was made', () => {
     fx.integrate();
     const listed: string[] = [];
     // checkoutFacts lists first; the finder's listing is the second.
-    const runGit: Runner = (cmd, args, cwd) => {
+    const runGit: Runner = (cmd, args, cwd, opts) => {
       const listing = args[0] === 'worktree' && args[1] === 'list';
       if (listing) listed.push(cwd);
       if (listing && listed.length === 2) {
         return { code: 128, stdout: '', stderr: 'fatal: cannot list\n' };
       }
-      return execRunner(cmd, args, cwd);
+      return execRunner(cmd, args, cwd, opts);
     };
     const h = harness(fx, { runGit });
     expect(h.finish(fx.brief)).toBe(1);
@@ -2124,10 +2124,10 @@ describe('finish names its target in one line', () => {
 
   test('before a refusal from a landed check that fails to run', () => {
     const fx = fixture();
-    const runGit: Runner = (cmd, args, cwd) =>
+    const runGit: Runner = (cmd, args, cwd, opts) =>
       args.includes('merge-tree')
         ? { code: 129, stdout: '', stderr: 'usage: git merge-tree\n' }
-        : execRunner(cmd, args, cwd);
+        : execRunner(cmd, args, cwd, opts);
     const h = harness(fx, { runGit });
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.out).toEqual([headTarget(fx.top)]);

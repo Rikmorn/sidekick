@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { git, removeTemps, repo } from './fixtures/worker/repo.js';
-import { execRunner } from './pm-data.js';
+import {
+  git,
+  type RecordedCall,
+  recording,
+  removeTemps,
+  repo,
+} from './fixtures/worker/repo.js';
+import { execRunner, MAX_OUTPUT } from './pm-data.js';
 import { type Landing, landedIn } from './worker-landed.js';
 
 afterEach(removeTemps);
@@ -275,5 +281,99 @@ describe('landedIn, further cases', () => {
       walked: 0,
       capped: false,
     });
+  });
+});
+
+/**
+ * `main` holds each of `names`; branch `w` edits line 5 of each; `main` takes
+ * the branch as a squash and then edits beside it.
+ */
+function squashedNames(names: string[]): string {
+  const top = repo();
+  git(top, 'branch', '-M', 'main');
+  for (const name of names) addFile(top, name, lines());
+  git(top, 'switch', '-q', '-c', 'w');
+  for (const name of names) edit(top, name, '5', 'five');
+  commit(top, 'c1');
+  git(top, 'switch', '-q', 'main');
+  addFile(top, 'o.txt', 'other\n');
+  squash(top);
+  for (const name of names) {
+    edit(top, name, '6', 'SIX');
+    edit(top, name, '13', 'THIRTEEN');
+  }
+  commit(top, 'beside');
+  return top;
+}
+
+function recordedLanding(top: string): {
+  result: Landing;
+  calls: RecordedCall[];
+} {
+  const { runGit, calls } = recording();
+  const refs = {
+    target: git(top, 'rev-parse', 'main'),
+    head: git(top, 'rev-parse', 'w'),
+  };
+  return { result: landedIn(runGit, top, refs), calls };
+}
+
+const callWith = (
+  calls: RecordedCall[],
+  verb: string,
+): RecordedCall | undefined => calls.find((call) => call.args.includes(verb));
+
+const foundInHistory = (result: Landing): void => {
+  expect(result.kind).toBe('landed');
+  if (result.kind === 'landed') expect(result.how).toBe('history');
+};
+
+describe('landedIn, paths on stdin', () => {
+  test('a name holding a star is found', () => {
+    foundInHistory(recordedLanding(squashedNames(['a*b'])).result);
+  });
+
+  test('a name holding a newline is found', () => {
+    foundInHistory(recordedLanding(squashedNames(['a\nb'])).result);
+  });
+
+  test('ordinary names go on stdin and none on argv', () => {
+    const { result, calls } = recordedLanding(squashedNames(['f', 'g h.txt']));
+    foundInHistory(result);
+    const call = callWith(calls, 'log');
+    expect(call?.args).toContain('--stdin');
+    expect(call?.args).not.toContain('f');
+    expect(call?.args).not.toContain('g h.txt');
+    expect(call?.opts?.input).toBe('--\nf\ng h.txt\n');
+  });
+
+  test('a change set whose every name holds a newline passes no --stdin', () => {
+    const { result, calls } = recordedLanding(squashedNames(['a\nb', 'c\nd']));
+    foundInHistory(result);
+    const call = callWith(calls, 'log');
+    expect(call?.args).not.toContain('--stdin');
+    expect(call?.opts?.input).toBeUndefined();
+    expect(call?.args.slice(-3)).toEqual(['--', 'a\nb', 'c\nd']);
+  });
+
+  test('a name ending in a carriage return goes on argv and is found', () => {
+    const { result, calls } = recordedLanding(squashedNames(['cr\r']));
+    foundInHistory(result);
+    expect(callWith(calls, 'log')?.args).toContain('cr\r');
+    expect(callWith(calls, 'log')?.args).not.toContain('--stdin');
+  });
+
+  test('a mix splits by what stdin can carry', () => {
+    const { result, calls } = recordedLanding(squashedNames(['f', 'a\nb']));
+    foundInHistory(result);
+    const call = callWith(calls, 'log');
+    expect(call?.args).toContain('--stdin');
+    expect(call?.args.slice(-2)).toEqual(['--', 'a\nb']);
+    expect(call?.opts?.input).toBe('--\nf\n');
+  });
+
+  test('the branch diff takes the largest output the runtime holds', () => {
+    const { calls } = recordedLanding(squashedNames(['f']));
+    expect(callWith(calls, 'diff')?.opts?.maxBuffer).toBe(MAX_OUTPUT);
   });
 });

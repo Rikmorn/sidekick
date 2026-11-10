@@ -7239,15 +7239,18 @@ function mergeBase(runGit, top, refs) {
   return result.code === 0 ? result.stdout.trim() : null;
 }
 function branchFiles(runGit, top, base, head) {
-  const result = runGit("git", ["diff", "--name-only", "--no-renames", "-z", base, head], top);
+  const result = runGit("git", ["diff", "--name-only", "--no-renames", "-z", base, head], top, { maxBuffer: MAX_OUTPUT });
   if (result.code !== 0) {
     return { issue: `git diff failed: ${result.stderr.trim()}` };
   }
   return result.stdout.split("\x00").filter((file) => file !== "");
 }
+var onStdin = (file) => !/[\n\r]/.test(file);
 function candidates2(runGit, top, refs, files, cap) {
   if (files.length === 0)
     return [];
+  const piped = files.filter(onStdin);
+  const named = files.filter((file) => !onStdin(file));
   const result = runGit("git", [
     "--literal-pathspecs",
     "log",
@@ -7256,11 +7259,15 @@ function candidates2(runGit, top, refs, files, cap) {
     "--no-follow",
     "--format=%H %T",
     `--max-count=${cap}`,
+    ...piped.length > 0 ? ["--stdin"] : [],
     `${refs.target}^@`,
     `^${refs.base}`,
     "--",
-    ...files
-  ], top);
+    ...named
+  ], top, { input: piped.length > 0 ? `--
+${piped.join(`
+`)}
+` : undefined });
   if (result.code !== 0) {
     return { issue: `git log failed: ${result.stderr.trim()}` };
   }

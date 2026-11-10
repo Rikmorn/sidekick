@@ -5,7 +5,7 @@
  * `hash-object -w` and `merge-tree --write-tree` write objects.
  */
 
-import type { Runner } from './pm-data.js';
+import { MAX_OUTPUT, type Runner } from './pm-data.js';
 
 /** Where `head`'s content was found, or why it was not. */
 export type Landing =
@@ -26,8 +26,7 @@ const isFailure = (value: unknown): value is Failure =>
   typeof value === 'object' && value !== null && 'issue' in value;
 
 // The empty tree's id in this repo's hash format, written so the object exists
-// whatever the git version; `/dev/null` is an argument because the runner gives
-// git no stdin.
+// whatever the git version.
 function emptyTreeId(runGit: Runner, top: string): string | Failure {
   const result = runGit(
     'git',
@@ -99,6 +98,7 @@ function branchFiles(
     'git',
     ['diff', '--name-only', '--no-renames', '-z', base, head],
     top,
+    { maxBuffer: MAX_OUTPUT },
   );
   if (result.code !== 0) {
     return { issue: `git diff failed: ${result.stderr.trim()}` };
@@ -106,9 +106,13 @@ function branchFiles(
   return result.stdout.split('\0').filter((file) => file !== '');
 }
 
+// stdin is read by line, and git strips a trailing CR from each.
+const onStdin = (file: string): boolean => !/[\n\r]/.test(file);
+
 // Commits that touch those files, newest first, from the target's parents back
 // to `base`. The target is out of the list before the cap applies, since the
-// tip merge tried it. Literal pathspecs keep `:` and `*` in names plain.
+// tip merge tried it. Literal pathspecs keep `:` and `*` in names plain; names
+// stdin cannot carry go on argv, whose length the change set does not bound.
 function candidates(
   runGit: Runner,
   top: string,
@@ -117,6 +121,8 @@ function candidates(
   cap: number,
 ): Commit[] | Failure {
   if (files.length === 0) return [];
+  const piped = files.filter(onStdin);
+  const named = files.filter((file) => !onStdin(file));
   const result = runGit(
     'git',
     [
@@ -127,12 +133,15 @@ function candidates(
       '--no-follow',
       '--format=%H %T',
       `--max-count=${cap}`,
+      // An empty stdin list alone gives the unfiltered log.
+      ...(piped.length > 0 ? ['--stdin'] : []),
       `${refs.target}^@`,
       `^${refs.base}`,
       '--',
-      ...files,
+      ...named,
     ],
     top,
+    { input: piped.length > 0 ? `--\n${piped.join('\n')}\n` : undefined },
   );
   if (result.code !== 0) {
     return { issue: `git log failed: ${result.stderr.trim()}` };
