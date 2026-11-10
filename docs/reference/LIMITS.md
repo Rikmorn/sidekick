@@ -16,7 +16,7 @@ Claude Code's `/goal` completion check is a single fixed same-family model judgi
 
 ## Read-only subagents that hold Bash are restrained by prompt, not enforcement
 
-A subagent that needs `git diff` or `git log` holds `Bash`, and `Bash` can write. Its "never modify" is prose. Where a step must not modify state, the orchestrator runs the check from its own session, or the subagent's `tools:` drops `Bash` and takes the diff as input.
+A subagent that needs `git diff` or `git log` holds `Bash`, and `Bash` can write. Its "never modify" is prose. That prose comes from the subagent's prompt or, in a worker, the subagent start hook's context (`docs/reference/LOOP.md` §The subagent start hook). Where a step must not modify state, the orchestrator runs the check from its own session, or the subagent's `tools:` drops `Bash` and takes the diff as input.
 
 ## Plugins cannot ship path-scoped rules, and their hooks cannot change each other's skills
 
