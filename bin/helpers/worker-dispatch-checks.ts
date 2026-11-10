@@ -109,7 +109,9 @@ function treeNameIssues(runGit: Runner, top: string, name: string): string[] {
   return [
     ...(fs.existsSync(folder) ? [`name: ${folder} already exists`] : []),
     ...(branchExists(runGit, top, branch)
-      ? [`name: the branch ${branch} already exists`]
+      ? [
+          `name: the branch ${branch} already exists: once you have checked that its commits have landed, delete it with git branch -D ${branch}, or dispatch under another name`,
+        ]
       : []),
   ];
 }

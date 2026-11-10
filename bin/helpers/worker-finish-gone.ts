@@ -135,7 +135,7 @@ const forgetRecord: GoneStep = (gone) => {
  * that the branch is free.
  */
 export const leftoverRoute = (name: string): string =>
-  `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks a new worktree named ${name}; dispatch refuses it`;
+  `run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker's commits, and blocks a new worktree named ${name}; once you have checked that its commits have landed, delete it with git branch -D worktree-${name}, or dispatch under another name`;
 
 const sayByHand: GoneStep = (gone, _wenv, out) => {
   out(

@@ -318,7 +318,11 @@ describe('dispatch refuses', () => {
     git(fx.top, 'branch', 'worktree-w1');
     const h = harness(fx);
     const code = h.dispatch(fx.brief, '--permission-mode', 'auto');
-    expectRefused(h, code, 'name: the branch worktree-w1 already exists');
+    expectRefused(
+      h,
+      code,
+      'name: the branch worktree-w1 already exists: once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name',
+    );
   });
 
   test('an agents listing that does not parse', () => {
@@ -815,7 +819,9 @@ describe('dispatch from another checkout', () => {
     const code = h.dispatch(sib.brief, '--permission-mode', 'auto');
     expect(code).toBe(1);
     expect(h.err).toContain(`name: ${folder} already exists`);
-    expect(h.err).toContain('name: the branch worktree-w1 already exists');
+    expect(h.err).toContain(
+      'name: the branch worktree-w1 already exists: once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name',
+    );
   });
 
   test('accepts target: <branch> when a tag shares the branch name', () => {
