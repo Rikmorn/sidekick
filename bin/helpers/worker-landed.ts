@@ -111,8 +111,9 @@ const onStdin = (file: string): boolean => !/[\n\r]/.test(file);
 
 // Commits that touch those files, newest first, from the target's parents back
 // to `base`. The target is out of the list before the cap applies, since the
-// tip merge tried it. Literal pathspecs keep `:` and `*` in names plain; names
-// stdin cannot carry go on argv, whose length the change set does not bound.
+// tip merge tried it. Literal pathspecs keep `:` and `*` in names plain. The
+// paths go on stdin, since a change set can pass the argument limit; a name
+// holding a newline or CR goes on argv.
 function candidates(
   runGit: Runner,
   top: string,

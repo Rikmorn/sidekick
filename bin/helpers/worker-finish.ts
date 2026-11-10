@@ -86,6 +86,14 @@ type ListedWorker = WorkerJob & {
   pid: number | undefined;
 };
 
+// The largest pid `process.kill` accepts; a pid outside 1 to this reads as none.
+const MAX_KILL_PID = 0x7fffffff;
+
+const usablePid = (pid: number | undefined): number | undefined =>
+  pid !== undefined && Number.isInteger(pid) && pid > 0 && pid <= MAX_KILL_PID
+    ? pid
+    : undefined;
+
 // Where the worker's name came from, which a refusal says to check.
 const NAME_FROM = {
   brief: 'the name in the brief',
@@ -105,7 +113,7 @@ function findJob(
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, ${leftoverRoute(name)}. Otherwise check ${NAME_FROM[subject.from]}`,
+        `no session in ${LISTING} is named "${name}": check ${NAME_FROM[subject.from]}. If finish already removed it, ${leftoverRoute(name)}`,
       ],
     };
   }
@@ -117,7 +125,7 @@ function findJob(
       ],
     };
   }
-  const [{ id, state, cwd, sessionId, pid }] = matches;
+  const [{ id, state, cwd, sessionId, pid: listedPid }] = matches;
   if (id === undefined) {
     return {
       issues: [
@@ -125,7 +133,7 @@ function findJob(
       ],
     };
   }
-  return { id, state, cwd, sessionId, pid };
+  return { id, state, cwd, sessionId, pid: usablePid(listedPid) };
 }
 
 // The worker's worktree, from the operator's --worktree alone when given,

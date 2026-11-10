@@ -78,7 +78,7 @@ const sayNotFound: GoneStep = (gone, _wenv, out) => {
 };
 
 // The stop runs whatever the job lists as, since a done job's process may still
-// hold a lock. The pid comes from the listing before the stop, which drops it after.
+// hold a lock. A listing read after the stop named no pid (Claude Code 2.1.322, 2026-11-10).
 const stop: GoneStep = (gone, wenv) => {
   const issues = runStop(gone, wenv);
   if (issues.length > 0 || gone.pid === undefined) return issues;

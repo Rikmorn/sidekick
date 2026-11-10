@@ -19,7 +19,7 @@ export const restorePartial: Step = (ready, wenv, out) => {
     .filter((entry) => entry.code === DELETED)
     .map((entry) => entry.path);
   if (deleted.length === 0) return [];
-  // The paths go on stdin, since thousands would pass the argument-size limit.
+  // The paths go on stdin, since a long list can pass the OS's argument-size limit.
   // checkout-index refuses to overwrite a file that exists.
   const result = wenv.runGit(
     'git',

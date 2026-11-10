@@ -4,8 +4,8 @@
  * `worker-teardown-stop.ts`, `worker-teardown-rm.ts`,
  * `worker-teardown-leftovers.ts`, `worker-backup.ts`, and
  * `worker-teardown-restore.ts`. Each step returns the issues that stop the
- * run, none on success. The readers also serve `worker-finish-gone.ts` and
- * `worker-dispatch.ts`.
+ * run, none on success. The readers also serve `worker-finish-gone.ts`,
+ * `worker-dispatch.ts`, and `worktree-remove.ts`.
  */
 
 import { type ClaudeResult, printedStreams } from './profile-launch.js';

@@ -11397,6 +11397,8 @@ var removeSession2 = (ready, wenv, out) => {
 
 // bin/helpers/worker-finish.ts
 var SHORT_SHA2 = 7;
+var MAX_KILL_PID = 2147483647;
+var usablePid = (pid) => pid !== undefined && Number.isInteger(pid) && pid > 0 && pid <= MAX_KILL_PID ? pid : undefined;
 var NAME_FROM = {
   brief: "the name in the brief",
   name: "the name given to --name"
@@ -11410,7 +11412,7 @@ function findJob(wenv, top, subject) {
   if (matches.length === 0) {
     return {
       issues: [
-        `no session in ${LISTING} is named "${name}". If finish already removed it, ${leftoverRoute(name)}. Otherwise check ${NAME_FROM[subject.from]}`
+        `no session in ${LISTING} is named "${name}": check ${NAME_FROM[subject.from]}. If finish already removed it, ${leftoverRoute(name)}`
       ]
     };
   }
@@ -11422,7 +11424,7 @@ function findJob(wenv, top, subject) {
       ]
     };
   }
-  const [{ id, state, cwd, sessionId, pid }] = matches;
+  const [{ id, state, cwd, sessionId, pid: listedPid }] = matches;
   if (id === undefined) {
     return {
       issues: [
@@ -11430,7 +11432,7 @@ function findJob(wenv, top, subject) {
       ]
     };
   }
-  return { id, state, cwd, sessionId, pid };
+  return { id, state, cwd, sessionId, pid: usablePid(listedPid) };
 }
 function worktreeOf(wenv, where, job, operatorPath) {
   const { name } = where;

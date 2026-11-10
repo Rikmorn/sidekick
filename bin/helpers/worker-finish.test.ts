@@ -105,7 +105,7 @@ describe('finish refuses', () => {
       h,
       fx,
       h.finish(fx.brief),
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name. Otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1": check the name in the brief. If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name',
     );
   });
 
@@ -117,7 +117,7 @@ describe('finish refuses', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish(fx.brief)).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name. Otherwise check the name in the brief',
+      'no session in claude agents --json --all is named "w1": check the name in the brief. If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name',
     ]);
   });
 
@@ -1402,7 +1402,7 @@ describe('finish after a removal cut short', () => {
     expect(paths.sort()).toEqual(['a*b', 'a.txt', 'b.txt', 'c:d', 'e\nf']);
   });
 
-  test('a partial removal with nothing deleted runs no checkout-index', () => {
+  test('a cut-short removal that deleted nothing runs no checkout-index', () => {
     const fx = fixture();
     fx.integrate();
     git(fx.top, 'update-ref', backup(fx), fx.head);
@@ -2522,7 +2522,7 @@ describe('finish --name', () => {
     h.claude.state.agents = JSON.stringify([]);
     expect(h.finish('--name', 'w1', '--discard')).toBe(1);
     expect(h.err).toEqual([
-      'no session in claude agents --json --all is named "w1". If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name. Otherwise check the name given to --name',
+      'no session in claude agents --json --all is named "w1": check the name given to --name. If finish already removed it, run sidekick worktree list, then sidekick worktree remove <name> for a worktree the worker left, since remove takes no branch. A branch left with no worktree holds the worker\'s commits, and blocks a new worktree named w1. Once you have checked that its commits have landed, delete it with git branch -D worktree-w1, or dispatch under another name',
     ]);
   });
 });
@@ -2775,9 +2775,9 @@ describe('finish --discard with no worktree found', () => {
     expect(h.claude.named('rm')).toEqual([]);
   });
 
-  // On 2.1.322 the row drops its pid once the stop has run and claude stop
-  // returns before the process exits (spec probe, 2026-11-10), so the wait
-  // reads the pid from the listing taken before the stop.
+  // Measured on Claude Code 2.1.322, 2026-11-10: a listing read after the stop
+  // named no pid, and claude stop returned before the process exited. So the
+  // wait reads the pid from the listing taken before the stop.
   describe('waits on the process the listing named', () => {
     const PID = 4242;
 
@@ -2802,7 +2802,7 @@ describe('finish --discard with no worktree found', () => {
       };
       h.claude.state.rm = [removed('nothing')];
       expect(h.finish(fx.brief, '--discard')).toBe(0);
-      expect(h.slept.length).toBeGreaterThanOrEqual(1);
+      expect(h.slept).toEqual([250, 250]);
       expect(h.claude.named('rm')).toEqual([['rm', ID]]);
       expect(readRecords(commonDir)).toEqual({ records: [], warnings: [] });
     });
@@ -2822,6 +2822,24 @@ describe('finish --discard with no worktree found', () => {
       ]);
       expect(h.claude.named('rm')).toEqual([]);
       expect(readRecords(commonDir).records).toHaveLength(1);
+    });
+
+    test.each([
+      0,
+      -1,
+      1.5,
+      2 ** 40,
+    ])('reads the listed pid %p as none, so it neither waits nor refuses', (bad) => {
+      const fx = fixture(worktrunk);
+      const h = harness(fx, { isAlive: (pid) => pid === bad });
+      lose(fx, h);
+      h.claude.state.agents = JSON.stringify([
+        agentRow(fx, { cwd: fx.top, state: 'done', pid: bad }),
+      ]);
+      h.claude.state.rm = [removed('nothing')];
+      expect(h.finish(fx.brief, '--discard')).toBe(0);
+      expect(h.slept).toEqual([]);
+      expect(h.claude.named('rm')).toEqual([['rm', ID]]);
     });
 
     test('does not sleep when the process is gone as the stop returns', () => {

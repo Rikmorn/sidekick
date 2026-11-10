@@ -1,5 +1,5 @@
 /**
- * Test-only. Temporary folders and git repos for the `sidekick worker` tests.
+ * Test-only. Temporary folders, git repos, and the recording runner for the `sidekick worker` tests.
  * `tsc` checks this file and has no `bun:test` types, so each test file
  * registers the cleanup itself, with `afterEach(removeTemps)`.
  */
