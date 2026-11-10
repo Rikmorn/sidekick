@@ -50,7 +50,7 @@ Fires on `PreToolUse` for `EnterWorktree`, from `plugin/hooks/hooks.json`, throu
 
 ### The subagent start hook
 
-Fires on `SubagentStart` from `plugin/hooks/hooks.json`, through the wrapper `plugin/hooks/subagent-start`. The wrapper ends in bash when `SIDEKICK_WORKER` is unset or empty. Otherwise it runs `node <plugin>/bin/sidekick hook subagent-start`, which hands the subagent a lead line, the brief's `## Limits`, and `sk-worker`'s `## Limits this skill adds`. When the text passes 9,000 characters, it sends a pointer to both sections instead. It is silent when the brief cannot be read or has no `## Limits` section. It never fails the subagent's start: it exits 0 in every case. `web-fetch` gets nothing from it, since Claude Code fires no `SubagentStart` for that type (#347).
+Fires on `SubagentStart` from `plugin/hooks/hooks.json`, through the wrapper `plugin/hooks/subagent-start`. The wrapper ends in bash when `SIDEKICK_WORKER` is unset or empty. Otherwise it runs `node <plugin>/bin/sidekick hook subagent-start`, which hands the subagent a lead line, the brief's `## Limits`, and `sk-worker`'s `## Limits this skill adds`. When the text passes 9,000 characters, it sends a pointer to both sections instead. It is silent when the brief cannot be read or has no `## Limits` section. Every path through the wrapper exits 0, so it never fails the subagent's start. `web-fetch` gets nothing from it, since Claude Code fires no `SubagentStart` for that type (#347).
 
 ### The context monitor hook
 
