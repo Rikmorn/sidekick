@@ -169,7 +169,7 @@ Once the checks pass, `dispatch` acts in this order:
 
 Three things keep a worker from pushing:
 
-- **The instruction.** `sk-worker` §Git tells the worker never to push. That overrides a background session's default, which is to push its branch.
+- **The instruction.** `sk-worker` §Limits this skill adds tells the worker never to push. That overrides a background session's default, which is to push its branch.
 - **The rewrite.** The overlay's `GIT_CONFIG_*` entries turn every push URL into `sidekick-push-blocked::<url>`. Git reads that as a remote helper that does not exist, so the push fails and fetch still works.
 - **The deny rule.** `Bash(git push:*)` refuses the plain spelling before it runs.
 
@@ -278,7 +278,7 @@ Git-ignored files that the check skips go with the worktree: `node_modules` and 
 When agent view is unavailable, the operator starts the worker instead. The orchestrator writes the brief as for a dispatch, and the operator types `/sidekick:sk-worker <brief>` in a session of their own.
 
 - **`place`.** `worktree` suits only a session whose settings set `worktree.baseRef` to `"head"`. That worker enters its worktree with `EnterWorktree`, which branches from that setting. The default, `"fresh"`, branches from the remote's default branch, so the worker lands off the baseline and blocks. Otherwise use `in-place` or `branch <name>`.
-- **The guards.** No overlay reaches that session, so only `sk-worker` §Git's instruction blocks a push. The context monitor gives it the warning any session gets.
+- **The guards.** No overlay reaches that session, so only `sk-worker` §Limits this skill adds blocks a push, by instruction. The subagent start hook is silent there, since no overlay sets `SIDEKICK_WORKER`, so each subagent's prompt carries its limits. The context monitor gives it the warning any session gets.
 - **The run report.** `finish` does not apply, since it clears only a dispatched job. The orchestrator saves the run report to the brief's `report` path by hand, before any worktree that worker used is removed.
 
 ## A worker profile

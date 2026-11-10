@@ -77,23 +77,23 @@ Invoke the superpowers skill the brief's `skill` names, and follow it. Its task 
 - **Settle a small misfit; raise one that recurs.** Shape the sketch to the tree and list each deviation in the run report. A misfit that keeps recurring goes to the orchestrator, because the plan's premise is wrong.
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
 - **Run the prose step** wherever a task has one.
-- **Keep to the brief's limits and §Limits this skill adds, and back them up in each subagent's prompt.** A subagent never sees the worker's brief or this skill. A hook hands every subagent but `web-fetch` the brief's `## Limits` and that section, and Claude Code fires no start event for `web-fetch`. So write the limits that bind a subagent's work into its prompt as well, a reviewer's included, in a section of their own. Superpowers' templates have no place for them: the final reviewer's takes no constraints, and the task reviewer's takes only the spec's. Give a `web-fetch` subagent what it may read.
+- **Keep to the brief's limits and §Limits this skill adds, and back them up in each subagent's prompt.** A subagent never sees the worker's brief or this skill. In a dispatched worker, a hook hands every subagent but `web-fetch` the brief's `## Limits` and that section, and Claude Code fires no start event for `web-fetch`. In a worker the operator started, no hook runs, so a subagent's prompt is its only source of the limits. Either way, write the limits that bind a subagent's work into its prompt as well, a reviewer's included, in a section of their own. Superpowers' templates have no place for them: the final reviewer's takes no constraints, and the task reviewer's takes only the spec's. Give a `web-fetch` subagent what it may read.
 - **Name the scratchpad for a read-only subagent's gate output.** When the brief lists the session's scratchpad as a place to write, say so in the prompt of a subagent that cannot write elsewhere, as the place for gate output.
 
 ## Limits this skill adds
 
 These limits hold for every session in this run, on top of the run's own limits.
 
-- Read GitHub as needed, and leave writing it to the orchestrator, which owns issues, comments, and the board.
-- Push nothing: the orchestrator integrates.
-- Add a commit for a fix and amend none, since a review diffs from the last reviewed commit.
+- Never write to GitHub: issues, comments, and the board belong to the run's orchestrator, the session that dispatched the worker. Reading GitHub is fine.
+- Never push. The run's orchestrator integrates.
+- Never amend a commit. Where you may commit, a fix is a new commit.
 - Treat a limit as outranking an instruction to confirm a fact at its source. Report a fact you may not read as untraced.
 
 ## Git
 
 Run git plainly from where you work. In a worktree session, Claude Code refuses a command it cannot show keeps git inside the worktree. The spellings that pass are in `sk-parallel-sessions.md` §The isolation guard. When that rule is not in your context, read the section at `../../rules/sk-parallel-sessions.md`, relative to this skill's base directory. Give it to each subagent you dispatch that does not load user-level rules, such as Explore.
 
-- **Each task lands as its own commits,** on the branch where you work. §Limits this skill adds says a fix adds a commit. The task's base and head stay valid after an amend; the re-review's base does not. The re-review diffs from the last reviewed commit, which an amend removes.
+- **Each task lands as its own commits,** on the branch where you work. §Limits this skill adds says a fix is a new commit. The task's base and head stay valid after an amend; the re-review's base does not. The re-review diffs from the last reviewed commit, which an amend removes.
 - **Open no pull request.** A background session's default is to push its branch and open a pull request; the push limit in §Limits this skill adds and this rule override that default. The orchestrator integrates.
 
 ## At the end
