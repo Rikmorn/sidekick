@@ -5843,7 +5843,7 @@ function otherHeadings(file) {
 }
 
 // bin/helpers/memory-snapshot.ts
-import { spawn, spawnSync as spawnSync3 } from "node:child_process";
+import { spawn } from "node:child_process";
 import * as path24 from "node:path";
 var SNAPSHOT_DEADLINE_MS = 5000;
 function snapshotStore(store, sessionId, source, runGit) {
@@ -5866,33 +5866,16 @@ function snapshotStore(store, sessionId, source, runGit) {
   ]);
   return commit.code === 0 ? "committed" : "failed";
 }
-var DEADLINE_EXIT = 124;
-var TIMED_OUT2 = "ETIMEDOUT";
-var SPAWN_FAILED_EXIT = 127;
+var DEADLINE_EXIT = TIMED_OUT;
 function deadlineRunner(ms, now) {
   const endsAt = now() + ms;
-  const run = (cmd, args, cwd) => {
+  const run = (cmd, args, cwd, opts = {}) => {
     const left = endsAt - now();
     if (left <= 0) {
       return { code: DEADLINE_EXIT, stdout: "", stderr: "deadline passed" };
     }
-    const r = spawnSync3(cmd, args, {
-      cwd,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: left,
-      env: envWithoutRepoVars(process.env)
-    });
-    if (r.error) {
-      const timedOut = "code" in r.error && r.error.code === TIMED_OUT2;
-      const code = timedOut ? DEADLINE_EXIT : SPAWN_FAILED_EXIT;
-      return { code, stdout: "", stderr: r.error.message };
-    }
-    return {
-      code: r.status ?? 1,
-      stdout: r.stdout ?? "",
-      stderr: r.stderr ?? ""
-    };
+    const timeoutMs = Math.min(opts.timeoutMs ?? left, left);
+    return execRunner(cmd, args, cwd, { ...opts, timeoutMs });
   };
   return Object.assign(run, { endsAt });
 }
@@ -6499,8 +6482,8 @@ function scanFolder(place) {
   };
 }
 function stopAtDeadline(runGit) {
-  return (cmd, args, cwd) => {
-    const result = runGit(cmd, args, cwd);
+  return (cmd, args, cwd, opts) => {
+    const result = runGit(cmd, args, cwd, opts);
     if (result.code === DEADLINE_EXIT)
       throw new GitDeadlineError(args, cwd);
     return result;

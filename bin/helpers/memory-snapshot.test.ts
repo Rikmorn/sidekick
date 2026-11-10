@@ -6,12 +6,13 @@ import { pathToFileURL } from 'node:url';
 import { main } from '../cli.js';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import {
+  DEADLINE_EXIT,
   deadlineRunner,
   snapshotStore,
   startSnapshot,
 } from './memory-snapshot.js';
 import { createStore } from './memory-store.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, MAX_OUTPUT, TIMED_OUT } from './pm-data.js';
 
 const IDENTITY = {
   GIT_AUTHOR_NAME: 'test',
@@ -208,6 +209,41 @@ describe('deadlineRunner', () => {
     // The alias outlives the deadline; its output goes nowhere, so the kill returns at once.
     const nap = ['-c', 'alias.nap=!sleep 2 </dev/null >/dev/null 2>&1', 'nap'];
     expect(run('git', nap, tmp()).code).toBe(124);
+  });
+
+  test("DEADLINE_EXIT is the runner contract's TIMED_OUT", () => {
+    expect(DEADLINE_EXIT).toBe(TIMED_OUT);
+  });
+
+  test('a call with input reaches stdin (#351)', () => {
+    const run = deadlineRunner(5000, () => 0);
+    const r = run('git', ['hash-object', '--stdin'], tmp(), { input: 'x\n' });
+    expect(r.stdout.trim()).toBe('587be6b4c3f93f93c489c0111bba5596147a26cb');
+  });
+
+  test('a call with maxBuffer returns output past the default limit (#351)', () => {
+    const cwd = repo();
+    const run = deadlineRunner(20_000, Date.now);
+    const blob = 'a'.repeat(2 * 1024 * 1024);
+    const written = run('git', ['hash-object', '-w', '--stdin'], cwd, {
+      input: blob,
+    });
+    expect(written.code).toBe(0);
+    const read = run('git', ['cat-file', 'blob', written.stdout.trim()], cwd, {
+      maxBuffer: MAX_OUTPUT,
+    });
+    expect(read.code).toBe(0);
+    expect(read.stdout.length).toBe(blob.length);
+  });
+
+  test('a call timeout shorter than the time left cuts the call (#351)', () => {
+    const run = deadlineRunner(60_000, Date.now);
+    // The alias outlives the call's limit; its output goes nowhere, so the kill returns at once.
+    const nap = ['-c', 'alias.nap=!sleep 2 </dev/null >/dev/null 2>&1', 'nap'];
+    const started = Date.now();
+    const r = run('git', nap, tmp(), { timeoutMs: 200 });
+    expect(r.code).toBe(DEADLINE_EXIT);
+    expect(Date.now() - started).toBeLessThan(1900);
   });
 
   test('a call that cannot start keeps exit code 127', () => {

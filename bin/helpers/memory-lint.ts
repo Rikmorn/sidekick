@@ -324,9 +324,9 @@ interface LinkedRepo {
 }
 
 // Every git call the lint makes goes through this, so a call the deadline cut never becomes a finding.
-function stopAtDeadline(runGit: Runner): Runner {
-  return (cmd, args, cwd) => {
-    const result = runGit(cmd, args, cwd);
+export function stopAtDeadline(runGit: Runner): Runner {
+  return (cmd, args, cwd, opts) => {
+    const result = runGit(cmd, args, cwd, opts);
     if (result.code === DEADLINE_EXIT) throw new GitDeadlineError(args, cwd);
     return result;
   };

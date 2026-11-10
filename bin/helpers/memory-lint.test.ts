@@ -14,6 +14,7 @@ import {
   MEMORY_LINT_IDS,
   type MemoryFinding,
   STORE_WIDE_IDS,
+  stopAtDeadline,
 } from './memory-lint.js';
 import { gateHits, keyHits } from './memory-patterns.js';
 import { writeMarker } from './memory-store.js';
@@ -1285,6 +1286,19 @@ describe('a git call past its deadline', () => {
     expect(
       lintStore(store, { ...deps(), runGit: worktreeFails }).findings,
     ).toEqual([]);
+  });
+});
+
+describe('stopAtDeadline', () => {
+  test("passes each call's options on to the runner beneath it (#351)", () => {
+    const seen: unknown[] = [];
+    const recording: Runner = (_cmd, _args, _cwd, opts) => {
+      seen.push(opts);
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    const opts = { input: 'x', timeoutMs: 50, maxBuffer: 10 };
+    stopAtDeadline(recording)('git', ['status'], '/', opts);
+    expect(seen).toEqual([opts]);
   });
 });
 
