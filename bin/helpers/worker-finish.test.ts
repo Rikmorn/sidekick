@@ -2774,6 +2774,93 @@ describe('finish --discard with no worktree found', () => {
     ]);
     expect(h.claude.named('rm')).toEqual([]);
   });
+
+  // On 2.1.322 the row drops its pid once the stop has run and claude stop
+  // returns before the process exits (spec probe, 2026-11-10), so the wait
+  // reads the pid from the listing taken before the stop.
+  describe('waits on the process the listing named', () => {
+    const PID = 4242;
+
+    test.each([
+      'done',
+      'working',
+    ])('waits for a job listed as %s before claude rm', (state) => {
+      const fx = fixture(worktrunk);
+      const commonDir = path.join(fx.top, '.git');
+      writeRecord(commonDir, recordFor(fx));
+      let stopped = false;
+      let polls = 0;
+      const h = harness(fx, {
+        isAlive: (pid) => pid === PID && (!stopped || polls++ < 2),
+      });
+      lose(fx, h);
+      h.claude.state.agents = JSON.stringify([
+        agentRow(fx, { cwd: fx.top, state, pid: PID }),
+      ]);
+      h.claude.state.whileStopping = () => {
+        stopped = true;
+      };
+      h.claude.state.rm = [removed('nothing')];
+      expect(h.finish(fx.brief, '--discard')).toBe(0);
+      expect(h.slept.length).toBeGreaterThanOrEqual(1);
+      expect(h.claude.named('rm')).toEqual([['rm', ID]]);
+      expect(readRecords(commonDir)).toEqual({ records: [], warnings: [] });
+    });
+
+    test('refuses when the process never exits, and runs no claude rm', () => {
+      const fx = fixture(worktrunk);
+      const commonDir = path.join(fx.top, '.git');
+      writeRecord(commonDir, recordFor(fx));
+      const h = harness(fx, { isAlive: (pid) => pid === PID });
+      lose(fx, h);
+      h.claude.state.agents = JSON.stringify([
+        agentRow(fx, { cwd: fx.top, state: 'done', pid: PID }),
+      ]);
+      expect(h.finish(fx.brief, '--discard')).toBe(1);
+      expect(h.err).toEqual([
+        `the job's process, pid ${PID}, still runs 15 s after claude stop: run finish again with sidekick worker finish ${fx.brief} --discard once it exits`,
+      ]);
+      expect(h.claude.named('rm')).toEqual([]);
+      expect(readRecords(commonDir).records).toHaveLength(1);
+    });
+
+    test('does not sleep when the process is gone as the stop returns', () => {
+      const fx = fixture(worktrunk);
+      let stopped = false;
+      const h = harness(fx, { isAlive: (pid) => pid === PID && !stopped });
+      lose(fx, h);
+      h.claude.state.agents = JSON.stringify([
+        agentRow(fx, { cwd: fx.top, state: 'done', pid: PID }),
+      ]);
+      h.claude.state.whileStopping = () => {
+        stopped = true;
+      };
+      h.claude.state.rm = [removed('nothing')];
+      expect(h.finish(fx.brief, '--discard')).toBe(0);
+      expect(h.slept).toEqual([]);
+      expect(h.claude.named('rm')).toEqual([['rm', ID]]);
+    });
+
+    test('does not wait after a claude stop that fails', () => {
+      const fx = fixture(worktrunk);
+      const h = harness(fx, { isAlive: (pid) => pid === PID });
+      lose(fx, h);
+      h.claude.state.agents = JSON.stringify([
+        agentRow(fx, { cwd: fx.top, state: 'done', pid: PID }),
+      ]);
+      h.claude.state.stop = ok({
+        code: 1,
+        stderr: 'No running job 213245a1\n',
+      });
+      expect(h.finish(fx.brief, '--discard')).toBe(1);
+      expect(h.err).toEqual([
+        `claude stop ${ID} failed with exit code 1, so finish stopped before claude rm:`,
+        'No running job 213245a1',
+      ]);
+      expect(h.slept).toEqual([]);
+      expect(h.claude.named('rm')).toEqual([]);
+    });
+  });
 });
 
 describe('the target with no brief', () => {

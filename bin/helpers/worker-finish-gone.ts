@@ -27,7 +27,7 @@ import {
   saidRemoved,
   withText,
 } from './worker-teardown.js';
-import { runStop } from './worker-teardown-stop.js';
+import { runStop, waitForExit } from './worker-teardown-stop.js';
 
 /** What `finish --discard` clears when the finder found no worktree. */
 export interface Gone {
@@ -35,6 +35,8 @@ export interface Gone {
   name: string;
   mainTop: string;
   commonDir: string;
+  /** The job's process, from the listing taken before the stop; undefined when it listed none. */
+  pid: number | undefined;
   /** The command that repeats this run. */
   rerun: string;
   /** Each place the finder tried, and why it rejected it. */
@@ -75,10 +77,16 @@ const sayNotFound: GoneStep = (gone, _wenv, out) => {
   return [];
 };
 
-// With no worktree there is no lock to read, and a job listed as done may still
-// idle and hold one, which makes claude rm keep everything. So the stop runs
-// whatever the job lists as; claude stop exits 0 on a done job either way.
-const stop: GoneStep = (gone, wenv) => runStop(gone, wenv);
+// The stop runs whatever the job lists as, since a done job's process may still
+// hold a lock. The pid comes from the listing before the stop, which drops it after.
+const stop: GoneStep = (gone, wenv) => {
+  const issues = runStop(gone, wenv);
+  if (issues.length > 0 || gone.pid === undefined) return issues;
+  return waitForExit(gone.pid, wenv, {
+    refusal: (pid, seconds) =>
+      `the job's process, pid ${pid}, still runs ${seconds} s after claude stop: run finish again with ${gone.rerun} once it exits`,
+  });
+};
 
 // claude rm's offer names a sha, and with no worktree finish verified no head
 // to check it against, so the offer goes to the operator.

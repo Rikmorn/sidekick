@@ -83,6 +83,7 @@ export const SHORT_SHA = 7;
 type ListedWorker = WorkerJob & {
   cwd: string | undefined;
   sessionId: string | undefined;
+  pid: number | undefined;
 };
 
 // Where the worker's name came from, which a refusal says to check.
@@ -116,7 +117,7 @@ function findJob(
       ],
     };
   }
-  const [{ id, state, cwd, sessionId }] = matches;
+  const [{ id, state, cwd, sessionId, pid }] = matches;
   if (id === undefined) {
     return {
       issues: [
@@ -124,7 +125,7 @@ function findJob(
       ],
     };
   }
-  return { id, state, cwd, sessionId };
+  return { id, state, cwd, sessionId, pid };
 }
 
 // The worker's worktree, from the operator's --worktree alone when given,
@@ -177,7 +178,14 @@ function locate(
   if (found.kind === 'not found') {
     const { id } = job;
     const linked = facts.worktrees.slice(1);
-    const at = { id, name: subject.name, mainTop, commonDir, linked };
+    const at = {
+      id,
+      name: subject.name,
+      mainTop,
+      commonDir,
+      pid: job.pid,
+      linked,
+    };
     const gone = whenNotFound(found.tried, at, opts);
     return 'issues' in gone ? gone : { kind: 'gone', gone };
   }

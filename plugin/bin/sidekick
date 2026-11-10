@@ -10943,20 +10943,23 @@ function lockHeldLive(job, wenv) {
   const pid = lockPidNow(job, wenv);
   return pid !== undefined && wenv.isAlive(pid);
 }
-function waitForExit(pid, wenv, limitMs = 15000, pollMs = 250) {
+function waitForExit(pid, wenv, {
+  refusal: refusal2,
+  limitMs = 15000,
+  pollMs = 250
+}) {
   for (let waited = 0;wenv.isAlive(pid); waited += pollMs) {
-    if (waited >= limitMs) {
-      return [
-        `the worktree's lock still names a running process, pid ${pid}, after ${limitMs / 1000} s: run finish again once it exits`
-      ];
-    }
+    if (waited >= limitMs)
+      return [refusal2(pid, limitMs / 1000)];
     wenv.sleep(pollMs);
   }
   return [];
 }
 var waitForLock = (ready, wenv) => {
   const pid = lockPidNow(ready, wenv);
-  return pid === undefined ? [] : waitForExit(pid, wenv);
+  return pid === undefined ? [] : waitForExit(pid, wenv, {
+    refusal: (named, seconds) => `the worktree's lock still names a running process, pid ${named}, after ${seconds} s: run finish again once it exits`
+  });
 };
 
 // bin/helpers/worker-finish-gone.ts
@@ -10976,7 +10979,14 @@ var sayNotFound = (gone, _wenv, out) => {
     out(triedLine(tried));
   return [];
 };
-var stop = (gone, wenv) => runStop(gone, wenv);
+var stop = (gone, wenv) => {
+  const issues = runStop(gone, wenv);
+  if (issues.length > 0 || gone.pid === undefined)
+    return issues;
+  return waitForExit(gone.pid, wenv, {
+    refusal: (pid, seconds) => `the job's process, pid ${pid}, still runs ${seconds} s after claude stop: run finish again with ${gone.rerun} once it exits`
+  });
+};
 function keptIssues(gone, result) {
   const hand = `claude rm ${shellArg(gone.id)}`;
   const offer = DISCARD_LINE.exec(printedStreams(result).join(`
@@ -11410,7 +11420,7 @@ function findJob(wenv, top, subject) {
       ]
     };
   }
-  const [{ id, state, cwd, sessionId }] = matches;
+  const [{ id, state, cwd, sessionId, pid }] = matches;
   if (id === undefined) {
     return {
       issues: [
@@ -11418,7 +11428,7 @@ function findJob(wenv, top, subject) {
       ]
     };
   }
-  return { id, state, cwd, sessionId };
+  return { id, state, cwd, sessionId, pid };
 }
 function worktreeOf(wenv, where, job, operatorPath) {
   const { name } = where;
@@ -11454,7 +11464,14 @@ function locate2(subject, opts, wenv) {
   if (found.kind === "not found") {
     const { id } = job;
     const linked2 = facts.worktrees.slice(1);
-    const at = { id, name: subject.name, mainTop, commonDir, linked: linked2 };
+    const at = {
+      id,
+      name: subject.name,
+      mainTop,
+      commonDir,
+      pid: job.pid,
+      linked: linked2
+    };
     const gone = whenNotFound(found.tried, at, opts);
     return "issues" in gone ? gone : { kind: "gone", gone };
   }

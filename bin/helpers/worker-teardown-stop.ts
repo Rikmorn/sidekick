@@ -1,7 +1,7 @@
 /**
  * Stopping the worker's job, the first steps of `sidekick worker finish`:
  * `claude stop` and the wait for the worktree's lock to clear.
- * `worker-finish-gone.ts` also uses `runStop`.
+ * `worker-finish-gone.ts` also uses `runStop` and `waitForExit`.
  */
 
 import type { WorkerEnv } from './worker.js';
@@ -59,18 +59,22 @@ function lockHeldLive(job: JobAt, wenv: WorkerEnv): boolean {
   return pid !== undefined && wenv.isAlive(pid);
 }
 
-function waitForExit(
+/** Polls until `pid` exits; the caller's refusal once `limitMs` has passed. */
+export function waitForExit(
   pid: number,
   wenv: WorkerEnv,
-  limitMs = 15_000,
-  pollMs = 250,
+  {
+    refusal,
+    limitMs = 15_000,
+    pollMs = 250,
+  }: {
+    refusal: (pid: number, seconds: number) => string;
+    limitMs?: number;
+    pollMs?: number;
+  },
 ): string[] {
   for (let waited = 0; wenv.isAlive(pid); waited += pollMs) {
-    if (waited >= limitMs) {
-      return [
-        `the worktree's lock still names a running process, pid ${pid}, after ${limitMs / 1000} s: run finish again once it exits`,
-      ];
-    }
+    if (waited >= limitMs) return [refusal(pid, limitMs / 1000)];
     wenv.sleep(pollMs);
   }
   return [];
@@ -80,5 +84,10 @@ function waitForExit(
 // naming a pid is waited on, a claude session's or not: a wait unlocks nothing.
 export const waitForLock: Step = (ready, wenv) => {
   const pid = lockPidNow(ready, wenv);
-  return pid === undefined ? [] : waitForExit(pid, wenv);
+  return pid === undefined
+    ? []
+    : waitForExit(pid, wenv, {
+        refusal: (named, seconds) =>
+          `the worktree's lock still names a running process, pid ${named}, after ${seconds} s: run finish again once it exits`,
+      });
 };
