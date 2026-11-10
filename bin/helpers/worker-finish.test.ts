@@ -23,8 +23,14 @@ import {
   WORKTREE_ID,
   writeTranscript,
 } from './fixtures/worker/finish.js';
-import { git, removeTemps, tmp } from './fixtures/worker/repo.js';
-import { execRunner, type Runner } from './pm-data.js';
+import {
+  git,
+  type RecordedCall,
+  recording,
+  removeTemps,
+  tmp,
+} from './fixtures/worker/repo.js';
+import { execRunner, MAX_OUTPUT, type Runner } from './pm-data.js';
 import { SHORT_SHA } from './worker-finish.js';
 import { judgeFor } from './worker-finish-target.js';
 import {
@@ -1348,9 +1354,9 @@ describe('finish after a removal cut short', () => {
     const fx = fixture();
     fx.integrate();
     const a = path.join(fx.worktree, 'a.txt');
-    const runGit: Runner = (cmd, args, cwd) => {
+    const runGit: Runner = (cmd, args, cwd, opts) => {
       if (args.includes('checkout-index')) fs.writeFileSync(a, 'late\n');
-      return execRunner(cmd, args, cwd);
+      return execRunner(cmd, args, cwd, opts);
     };
     const h = harness(fx, { runGit });
     h.claude.state.rm = [cutShort(), removed()];
@@ -1362,6 +1368,89 @@ describe('finish after a removal cut short', () => {
     expect(h.claude.named('rm')).toEqual([['rm', ID]]);
     expect(fs.readFileSync(a, 'utf-8')).toBe('late\n');
   });
+
+  // The calls of the restore, which reads its paths from stdin.
+  const restores = (calls: RecordedCall[]): RecordedCall[] =>
+    calls.filter((c) => c.args.includes('checkout-index'));
+
+  test('restores a file whose name holds a glob, a colon, or a newline, through stdin', () => {
+    const fx = fixture();
+    const odd = ['a*b', 'c:d', 'e\nf'];
+    for (const name of odd)
+      fs.writeFileSync(path.join(fx.worktree, name), 'x\n');
+    git(fx.worktree, 'add', '--', ...odd);
+    git(fx.worktree, 'commit', '-q', '-m', 'odd names');
+    fx.integrate();
+    const { runGit, calls } = recording();
+    const h = harness(fx, { runGit });
+    const rerun = cutThenRerun(h, fx, cutShort(), []);
+    expect(rerun).toContain(
+      `restored 5 deleted files in ${fx.worktree} from its index, so claude rm finds it clean`,
+    );
+    expect(h.claude.statusAtRm[1]).toBe(`?? ${REPORT}`);
+    const [restore] = restores(calls);
+    expect(restore.args).toEqual([
+      '-C',
+      fx.worktree,
+      'checkout-index',
+      '--stdin',
+      '-z',
+    ]);
+    const paths = (restore.opts?.input ?? '')
+      .split('\0')
+      .filter((p) => p !== '');
+    expect(paths.sort()).toEqual(['a*b', 'a.txt', 'b.txt', 'c:d', 'e\nf']);
+  });
+
+  test('a partial removal with nothing deleted runs no checkout-index', () => {
+    const fx = fixture();
+    fx.integrate();
+    git(fx.top, 'update-ref', backup(fx), fx.head);
+    const { runGit, calls } = recording();
+    const h = harness(fx, { runGit });
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.out.join('\n')).not.toContain('restored');
+    expect(restores(calls)).toEqual([]);
+  });
+
+  test('completes a cut-short removal whose status lists more than 1 MB (#293)', () => {
+    const fx = fixture();
+    const folder = path.join(fx.worktree, `d${'x'.repeat(100)}`);
+    fs.mkdirSync(folder);
+    for (let i = 0; i < 5500; i++) {
+      const name = `${String(i).padStart(5, '0')}${'x'.repeat(115)}`;
+      fs.writeFileSync(path.join(folder, name), '');
+    }
+    git(fx.worktree, 'add', '--', folder);
+    git(fx.worktree, 'commit', '-q', '-m', 'many long names');
+    const tracked = git(fx.worktree, 'ls-files').split('\n').length;
+    fx.integrate();
+    const { runGit, calls } = recording();
+    const h = harness(fx, { runGit });
+    h.claude.state.rm = [cutShort(), removed()];
+    expect(h.finish(fx.brief)).toBe(1);
+    const status = execRunner(
+      'git',
+      ['-C', fx.worktree, 'status', '--porcelain', '-z'],
+      fx.top,
+      { maxBuffer: MAX_OUTPUT },
+    );
+    expect(status.stdout.length).toBeGreaterThan(1024 * 1024);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(h.out).toContain(
+      `restored ${tracked} deleted files in ${fx.worktree} from its index, so claude rm finds it clean`,
+    );
+    expect(h.claude.statusAtRm[1]).toBe(`?? ${REPORT}`);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+    const argv = restores(calls).flatMap((c) => c.args);
+    expect(argv).toEqual([
+      '-C',
+      fx.worktree,
+      'checkout-index',
+      '--stdin',
+      '-z',
+    ]);
+  }, 60_000);
 
   test('refuses a deletion the worker left uncommitted on a first run, restoring nothing and writing no ref', () => {
     const fx = fixture();

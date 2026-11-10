@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { git, removeTemps, repoWithWorktree } from './fixtures/worker/repo.js';
-import { execRunner, type Runner } from './pm-data.js';
+import {
+  git,
+  recording,
+  removeTemps,
+  repoWithWorktree,
+} from './fixtures/worker/repo.js';
+import { execRunner, MAX_OUTPUT, type Runner } from './pm-data.js';
 import {
   BUILT_IN_SKIPS,
   ignoredLosses,
@@ -29,6 +34,14 @@ function setup(gitignore: string) {
 const none = { paths: [], truncated: false };
 
 describe('ignoredLosses: ignored files that removal would delete', () => {
+  test("its status read asks for the runtime's largest output, since it lists every deleted tracked file", () => {
+    const r = setup('*.sh\n');
+    const { runGit, calls } = recording();
+    ignoredLosses(runGit, r.places);
+    const reads = calls.filter((c) => c.args.includes('--ignored'));
+    expect(reads.map((c) => c.opts?.maxBuffer)).toEqual([MAX_OUTPUT]);
+  });
+
   test('a new ignored file is a loss', () => {
     const r = setup('*.sh\n');
     write(r.worktree, 'scratch.sh', 'echo\n');

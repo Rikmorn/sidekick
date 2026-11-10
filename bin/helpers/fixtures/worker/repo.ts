@@ -8,6 +8,12 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import {
+  execRunner,
+  MAX_OUTPUT,
+  type Runner,
+  type RunOptions,
+} from '../../pm-data.js';
 
 const made: string[] = [];
 
@@ -32,7 +38,11 @@ export function removeTemps(): void {
 
 /** Runs git in `cwd` and returns its output, trimmed. */
 export const git = (cwd: string, ...args: string[]): string =>
-  execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
+  execFileSync('git', args, {
+    cwd,
+    encoding: 'utf-8',
+    maxBuffer: MAX_OUTPUT,
+  }).trim();
 
 /**
  * A repo holding one commit of `a.txt`, with its identity and signing set
@@ -73,4 +83,20 @@ export function repoWithWorktree(gitignore: string): {
   const worktree = path.join(tmp(), 'side');
   git(main, 'worktree', 'add', '-q', '-b', 'side', worktree);
   return { main, worktree, commonDir: path.join(main, '.git') };
+}
+
+/** One call a `recording` runner saw. */
+export interface RecordedCall {
+  args: string[];
+  opts: RunOptions | undefined;
+}
+
+/** A runner that runs real git through `execRunner` and keeps each call's arguments and options. */
+export function recording(): { runGit: Runner; calls: RecordedCall[] } {
+  const calls: RecordedCall[] = [];
+  const runGit: Runner = (cmd, args, cwd, opts) => {
+    calls.push({ args, opts });
+    return execRunner(cmd, args, cwd, opts);
+  };
+  return { runGit, calls };
 }

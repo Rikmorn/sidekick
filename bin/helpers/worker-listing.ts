@@ -5,7 +5,7 @@
  * with their codes.
  */
 
-import type { Runner } from './pm-data.js';
+import { MAX_OUTPUT, type Runner } from './pm-data.js';
 import { physical } from './worker-repo.js';
 
 /**
@@ -66,6 +66,8 @@ export function statusEntriesIn(
     'git',
     ['-C', dir, 'status', '--porcelain', '-z', '--untracked-files=all'],
     top,
+    // A cut-short removal lists every deleted file, past the runtime's default limit.
+    { maxBuffer: MAX_OUTPUT },
   );
   if (status.code !== 0) return { issue: status.stderr.trim() };
   return { entries: statusEntries(status.stdout) };

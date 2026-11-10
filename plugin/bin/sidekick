@@ -1332,6 +1332,771 @@ function firstPlace(file, maxBytes = 256 * 1024) {
   }
 }
 
+// bin/helpers/pm-data.ts
+import { constants as constants2 } from "node:buffer";
+import { spawnSync } from "node:child_process";
+
+// bin/helpers/git-env.ts
+var REPO_LOCATING_VARS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_NAMESPACE"
+];
+function envWithoutRepoVars(env) {
+  const kept = { ...env };
+  for (const name of REPO_LOCATING_VARS)
+    delete kept[name];
+  return kept;
+}
+
+// plugin/hooks/board/contract.ts
+var GLANCE_VERSION = 2;
+var GLANCE_COMPLETE_WORD = "complete";
+
+// bin/helpers/pm-plans.ts
+var HEADER_OPEN = "<!-- plans -->";
+var HEADER_CLOSE = "<!-- /plans -->";
+var LINE = /^\s*\d+\.(?!\d)\s*(.*)$/;
+var GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
+var normalise = (text) => text.replace(/\r\n?/g, `
+`);
+var oneLine = (text) => text.replace(/\s+/g, " ").trim();
+var isMarker = (line) => line.trim() === HEADER_OPEN || line.trim() === HEADER_CLOSE;
+function locate(description) {
+  const lines = normalise(description).split(`
+`);
+  const first = lines.findIndex((l) => l.trim() !== "");
+  if (first < 0 || lines[first].trim() !== HEADER_OPEN) {
+    return lines.some(isMarker) ? { at: "elsewhere" } : { at: "none" };
+  }
+  const close = lines.findIndex((l, k) => k > first && l.trim() === HEADER_CLOSE);
+  if (close < 0)
+    return { at: "unclosed" };
+  return {
+    at: "top",
+    lines: lines.slice(first + 1, close),
+    prose: lines.slice(close + 1)
+  };
+}
+var malformed = (reason2) => ({
+  parse: "malformed",
+  reason: oneLine(reason2)
+});
+function duplicate(plans) {
+  const names = plans.map((p) => p.name);
+  const name = names.find((n, i) => names.indexOf(n) !== i);
+  if (name !== undefined)
+    return `plan "${name}" appears twice`;
+  const issues = plans.flatMap((p) => p.issues);
+  const issue = issues.find((n, i) => issues.indexOf(n) !== i);
+  return issue === undefined ? null : `#${issue} appears in two plans`;
+}
+function parsePlansHeader(description) {
+  const found = locate(description);
+  if (found.at === "none")
+    return { parse: "none" };
+  if (found.at === "elsewhere") {
+    return malformed("the plans header is not at the top");
+  }
+  if (found.at === "unclosed") {
+    return malformed(`the plans header has no ${HEADER_CLOSE} line`);
+  }
+  if (found.prose.some(isMarker)) {
+    return malformed("a second plans header follows the first");
+  }
+  const plans = [];
+  for (const line of found.lines.filter((l) => l.trim() !== "")) {
+    const numbered = LINE.exec(line);
+    const group = numbered === null ? null : GROUP.exec(numbered[1]);
+    if (group === null) {
+      return malformed(`"${line.trim()}" is not <n>. <name> (#N, …)`);
+    }
+    plans.push({
+      name: oneLine(group[1]),
+      issues: group[2].split(",").map((r) => Number(r.trim().slice(1)))
+    });
+  }
+  if (plans.length === 0)
+    return malformed("the plans header lists no plans");
+  const reason2 = duplicate(plans);
+  return reason2 === null ? { parse: "ok", plans } : malformed(reason2);
+}
+function descriptionProse(description) {
+  const found = locate(description);
+  return found.at === "top" ? found.prose.join(`
+`) : normalise(description);
+}
+var RELEASE_CHECK_LINE = /^\s*(?:[-*+][ \t]+)?(?:(\*\*|__|\*|_)verified by the release(?::\1|\1:)|verified by the release:)/im;
+var awaitsReleaseCheck = (body) => RELEASE_CHECK_LINE.test(body);
+var openOf = (issues) => issues.filter((i) => i.open && !i.awaitsRelease);
+var inProgress = (i) => i.status === "In Progress";
+var notStarted = (i) => i.status === "Backlog" || i.status === null;
+function startable(issues) {
+  const open = openOf(issues);
+  return open.length > 0 && !open.some(inProgress) && open.some(notStarted);
+}
+function stateOf(issues, isNext) {
+  const open = openOf(issues);
+  if (open.length === 0)
+    return "done";
+  if (open.some(inProgress))
+    return "running";
+  if (isNext)
+    return "next";
+  return "later";
+}
+function planView(ms, items, awaiting = new Set) {
+  const c = parsePlansHeader(ms.description);
+  if (c.parse === "none")
+    return { parse: "none", list: [], unplanned: [] };
+  if (c.parse === "malformed") {
+    return { parse: "malformed", reason: c.reason, list: [], unplanned: [] };
+  }
+  const byNumber = new Map(items.map((i) => [i.number, i]));
+  const issueOf = (n) => {
+    const i = byNumber.get(n);
+    const open = i === undefined || i.state === "OPEN";
+    const awaitsRelease = open && awaiting.has(n);
+    return i ? { number: n, title: i.title, open, status: i.status, awaitsRelease } : { number: n, title: null, open, status: null, awaitsRelease };
+  };
+  const issues = c.plans.map((p) => p.issues.map(issueOf));
+  const nextAt = issues.findIndex(startable);
+  const list = c.plans.map((p, k) => ({
+    name: p.name,
+    state: stateOf(issues[k], k === nextAt),
+    issues: issues[k]
+  }));
+  const planned = new Set(c.plans.flatMap((p) => p.issues));
+  const unplanned = items.filter((i) => i.state === "OPEN" && i.milestone === ms.title && !planned.has(i.number)).sort((a, b) => a.number - b.number).map((i) => ({ number: i.number, title: i.title }));
+  return { parse: "ok", list, unplanned };
+}
+
+// bin/helpers/pm-view.ts
+var TITLE_MAX = 60;
+function cut(title) {
+  return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title;
+}
+function firstSentence(text) {
+  const t = text.replace(/\s+/g, " ").trim();
+  const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
+  return m ? m[1] : t;
+}
+var titles = (list) => list.map((m) => cut(m.title)).join(", ");
+function parsedPlans(p) {
+  if (p.plans === null || p.plans.parse !== "ok")
+    return null;
+  return { list: p.plans.list, unplanned: p.plans.unplanned };
+}
+var openRefs = (plan) => plan.issues.filter((i) => i.open).map((i) => `#${i.number}`).join(", ");
+var plannedNumbers = (list) => new Set(list.flatMap((pl) => pl.issues.map((i) => i.number)));
+function continueMove(cards, plans) {
+  const lowest = Math.min(...cards.map((i) => i.number));
+  const plan = plans === null ? undefined : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
+  return plan === undefined ? `continue #${lowest}` : `continue plan ${plan.name} (${openRefs(plan)})`;
+}
+function pullMove(p, plans) {
+  if (plans === null) {
+    return p.candidates.some((c) => c.tier === 1) ? "pull one tier-1 candidate" : null;
+  }
+  const next = plans.list.find((pl) => pl.state === "next");
+  if (next !== undefined)
+    return `pull plan ${next.name} (${openRefs(next)})`;
+  const planned = plannedNumbers(plans.list);
+  const unplanned = p.candidates.some((c) => c.tier === 1 && !planned.has(c.number));
+  return unplanned ? "pull one unplanned candidate" : null;
+}
+function nextMove(p) {
+  if (p.milestone === null && p.open_milestones.length > 1) {
+    return `choose a milestone: ${titles(p.open_milestones)}`;
+  }
+  const plans = parsedPlans(p);
+  if (p.in_progress.length > 0)
+    return continueMove(p.in_progress, plans);
+  const pull = pullMove(p, plans);
+  if (pull !== null)
+    return pull;
+  if (p.milestone)
+    return "nothing to pick up: verify, then close the milestone";
+  return "nothing open: open the next milestone";
+}
+function driftEntries(drift, plans) {
+  const entries = [];
+  const unpushed = drift.unpushed.count;
+  if (unpushed !== null && unpushed > 0) {
+    entries.push({
+      full: `${unpushed} unpushed`,
+      short: `${unpushed} unpushed`
+    });
+  }
+  const [firstStale] = drift.stale_in_progress;
+  if (firstStale !== undefined) {
+    entries.push({
+      full: `stale: ${drift.stale_in_progress.map((i) => `#${i.number} (${i.age_days} d)`).join(", ")}`,
+      short: `stale #${firstStale.number}`
+    });
+  }
+  if (drift.open_pr) {
+    const text = `open PR #${drift.open_pr.number}`;
+    entries.push({ full: text, short: text });
+  }
+  if (drift.in_progress_split.length > 0) {
+    entries.push({
+      full: `In Progress split: ${drift.in_progress_split.map(cut).join(", ")}`,
+      short: "split"
+    });
+  }
+  if (plans !== null && plans.parse === "malformed") {
+    entries.push({
+      full: `plans header: ${plans.reason}`,
+      short: "plans header"
+    });
+  }
+  return entries;
+}
+function viewIssue(issue, cards) {
+  const card = cards.get(issue.number);
+  return {
+    ...issue,
+    ageDays: issue.status === "In Progress" && card !== undefined ? card.age_days : null
+  };
+}
+function viewPlans(p, cards) {
+  const plans = p.plans;
+  if (plans === null)
+    return { parse: "none" };
+  if (plans.parse === "malformed") {
+    return { parse: "malformed", reason: plans.reason };
+  }
+  if (plans.parse === "none")
+    return { parse: "none" };
+  return {
+    parse: "ok",
+    list: plans.list.map((pl) => ({
+      name: pl.name,
+      state: pl.state,
+      issues: pl.issues.map((i) => viewIssue(i, cards))
+    }))
+  };
+}
+function groupInProgress(p, plans, cards) {
+  if (plans === null)
+    return { byPlan: [], loose: p.in_progress };
+  const byPlan = plans.list.flatMap((pl) => {
+    const mine = pl.issues.flatMap((i) => cards.get(i.number) ?? []);
+    return mine.length === 0 ? [] : [{ name: pl.name, cards: mine }];
+  });
+  const planned = plannedNumbers(plans.list);
+  return {
+    byPlan,
+    loose: p.in_progress.filter((i) => !planned.has(i.number))
+  };
+}
+function pickupView(p) {
+  const cards = new Map(p.in_progress.map((i) => [i.number, i]));
+  const plans = parsedPlans(p);
+  const m = p.milestone;
+  const outcome = m === null ? null : firstSentence(descriptionProse(m.description));
+  return {
+    board: {
+      owner: p.board.owner,
+      repo: p.board.repo,
+      project: p.board.project.number
+    },
+    milestone: m === null ? null : {
+      title: m.title,
+      outcome: outcome === "" ? null : outcome,
+      counts: p.issue_counts
+    },
+    openMilestones: p.open_milestones,
+    otherOpen: p.open_milestones.filter((o) => o.number !== m?.number).map((o) => o.title),
+    plans: viewPlans(p, cards),
+    inProgress: groupInProgress(p, plans, cards),
+    unplanned: plans === null ? [] : plans.unplanned.filter((i) => !cards.has(i.number)),
+    tier1: p.candidates.filter((c) => c.tier === 1),
+    tier2: p.candidates.filter((c) => c.tier === 2),
+    drift: driftEntries(p.drift, p.plans),
+    next: nextMove(p)
+  };
+}
+
+// bin/helpers/pm-glance.ts
+var UPDATE_STATUSES = [
+  "INACTIVE",
+  "ON_TRACK",
+  "AT_RISK",
+  "OFF_TRACK",
+  "COMPLETE"
+];
+var BY_STATUS = {
+  ON_TRACK: { level: "good", word: "on track", detail: null },
+  COMPLETE: { level: "good", word: GLANCE_COMPLETE_WORD, detail: null },
+  AT_RISK: { level: "warning", word: "at risk", detail: null },
+  OFF_TRACK: { level: "bad", word: "off track", detail: null },
+  INACTIVE: { level: "unknown", word: "inactive", detail: null }
+};
+function unknown2(word) {
+  return { level: "unknown", word, detail: null };
+}
+function floorOf(input) {
+  const { milestone, status } = input;
+  if (milestone === null) {
+    return unknown2(input.openCount > 1 ? "pick a milestone" : "no milestone");
+  }
+  if (!status.ok)
+    return unknown2("status unread");
+  const day = milestone.created_at.slice(0, 10);
+  const counted = status.updates.find((u) => u.startDate === day);
+  return counted ? BY_STATUS[counted.status] : unknown2("no update");
+}
+var driftKinds = ({ drift, plans }) => driftEntries(drift, plans).map((d) => d.short);
+function glanceState(input) {
+  const floor = floorOf(input);
+  const kinds = driftKinds(input);
+  const [head, ...rest] = kinds;
+  if (head === undefined)
+    return floor;
+  const detail = rest.length > 0 ? `${head} +${rest.length}` : head;
+  if (floor.level === "good" || floor.level === "unknown") {
+    return { level: "warning", word: "drift", detail };
+  }
+  return { ...floor, detail };
+}
+
+// bin/helpers/pm-data.ts
+var MAX_OUTPUT = constants2.MAX_STRING_LENGTH;
+var TIMED_OUT = 124;
+var ranOut = (error) => error !== undefined && ("code" in error) && error.code === "ETIMEDOUT";
+var execRunner = (cmd, args, cwd, { timeoutMs, input, maxBuffer } = {}) => {
+  const env = envWithoutRepoVars(process.env);
+  const r = spawnSync(cmd, args, {
+    cwd,
+    encoding: "utf-8",
+    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+    input,
+    env: timeoutMs === undefined ? env : { ...env, GIT_TERMINAL_PROMPT: "0" },
+    timeout: timeoutMs,
+    ...maxBuffer === undefined ? {} : { maxBuffer }
+  });
+  if (timeoutMs !== undefined && ranOut(r.error)) {
+    return {
+      code: TIMED_OUT,
+      stdout: "",
+      stderr: `${cmd} did not finish within ${timeoutMs / 1000} s`
+    };
+  }
+  if (r.error)
+    return { code: 127, stdout: "", stderr: r.error.message };
+  return {
+    code: r.status ?? 1,
+    stdout: r.stdout ?? "",
+    stderr: r.stderr ?? ""
+  };
+};
+
+class PmError extends Error {
+  exit;
+  constructor(exit, message) {
+    super(message);
+    this.exit = exit;
+  }
+}
+var ORIGIN = /^(?:git@github\.com:|https:\/\/github\.com\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/;
+function parseOrigin(url) {
+  const m = url.trim().match(ORIGIN);
+  return m ? { owner: m[1], repo: m[2] } : null;
+}
+function parseGhVersion(firstLine) {
+  const m = firstLine.match(/^gh version (\d+\.\d+\.\d+)/);
+  return m ? m[1] : null;
+}
+function versionAtLeast(v, min) {
+  const a = v.split(".").map(Number);
+  const b = min.split(".").map(Number);
+  for (let i = 0;i < 3; i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y)
+      return x > y;
+  }
+  return true;
+}
+function hasProjectScope(headers) {
+  const line = headers.split(/\r?\n/).find((l) => /^x-oauth-scopes:/i.test(l));
+  if (!line)
+    return false;
+  return line.slice(line.indexOf(":") + 1).split(",").map((s) => s.trim()).includes("project");
+}
+function ageDays(iso, now) {
+  return Math.floor((now.getTime() - new Date(iso).getTime()) / 86400000);
+}
+function touchedAt(item) {
+  const { updatedAt, statusUpdatedAt } = item;
+  if (statusUpdatedAt === null)
+    return updatedAt;
+  return Date.parse(statusUpdatedAt) > Date.parse(updatedAt) ? statusUpdatedAt : updatedAt;
+}
+var STALE_DAYS = 7;
+var DISCOVERY_QUERY = "query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }";
+var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url createdAt field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
+var STATUS_UPDATES_QUERY = "query StatusUpdates($id: ID!) { node(id: $id) { ... on ProjectV2 { statusUpdates(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { status startDate } } } } }";
+var ISSUES_PAGE = 100;
+var ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason closedAt updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id isArchived project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
+var RELEASE_CHECKS_QUERY = `query ReleaseChecks($owner: String!, $name: String!, $number: Int!, $after: String) { repository(owner: $owner, name: $name) { milestone(number: $number) { issues(first: ${ISSUES_PAGE}, after: $after, states: OPEN) { pageInfo { hasNextPage endCursor } nodes { number body } } } } }`;
+var ISSUE_LIMIT = 500;
+var GqlEnvelope = object({
+  data: optional(unknown()),
+  errors: nullish(array(object({ message: string() })))
+});
+function checked(schema, value, what) {
+  const result = safeParse(schema, value);
+  if (!result.success) {
+    throw new PmError(1, `gh returned an unexpected ${what}: ${summarize(result.issues)}`);
+  }
+  return result.output;
+}
+function gql(run, cwd, doc, vars) {
+  const args = ["api", "graphql", "-f", `query=${doc}`];
+  for (const [flag, kv] of vars)
+    args.push(flag, kv);
+  const r = run("gh", args, cwd);
+  if (r.code !== 0) {
+    throw new PmError(1, r.stderr.trim() || "gh api graphql failed");
+  }
+  const parsed = checked(GqlEnvelope, JSON.parse(r.stdout), "GraphQL response");
+  if (parsed.errors?.length)
+    throw new PmError(1, parsed.errors[0].message);
+  return parsed.data;
+}
+function rest(run, cwd, args) {
+  const r = run("gh", args, cwd);
+  if (r.code !== 0) {
+    throw new PmError(1, r.stderr.trim() || `gh ${args[0]} failed`);
+  }
+  return r.stdout;
+}
+function fetchGhVersion(run, cwd) {
+  const r = run("gh", ["--version"], cwd);
+  if (r.code !== 0)
+    return { found: false, version: null };
+  return {
+    found: true,
+    version: parseGhVersion(r.stdout.split(`
+`)[0] ?? "")
+  };
+}
+function fetchLocalLogin(run, cwd) {
+  const r = run("gh", ["config", "get", "-h", "github.com", "user"], cwd);
+  const login = r.stdout.trim();
+  return r.code === 0 && login ? login : null;
+}
+function fetchScopeHeaders(run, cwd) {
+  return rest(run, cwd, ["api", "-i", "user"]);
+}
+var DiscoveryData = object({
+  viewer: object({ login: string() }),
+  repository: nullable(object({
+    projectsV2: object({
+      nodes: array(object({
+        number: number(),
+        title: string(),
+        closed: boolean(),
+        url: string(),
+        id: string(),
+        owner: object({ login: optional(string()) })
+      }))
+    })
+  }))
+});
+function parseDiscovery(data) {
+  const d = checked(DiscoveryData, data, "discovery");
+  const nodes = d.repository?.projectsV2.nodes ?? [];
+  return {
+    viewer: d.viewer.login,
+    boards: nodes.map((n) => ({
+      number: n.number,
+      title: n.title,
+      closed: n.closed,
+      url: n.url,
+      id: n.id,
+      ownerLogin: n.owner.login ?? ""
+    }))
+  };
+}
+function fetchDiscovery(run, cwd, owner, repo) {
+  return parseDiscovery(gql(run, cwd, DISCOVERY_QUERY, [
+    ["-f", `owner=${owner}`],
+    ["-f", `name=${repo}`]
+  ]));
+}
+var FieldData = object({
+  user: object({
+    projectV2: object({
+      id: string(),
+      title: string(),
+      url: string(),
+      createdAt: string(),
+      field: nullable(object({
+        id: string(),
+        options: array(object({ id: string(), name: string() }))
+      }))
+    })
+  })
+});
+function parseStatusField(data) {
+  const p = checked(FieldData, data, "status field").user.projectV2;
+  const statusField = p.field ? {
+    id: p.field.id,
+    options: Object.fromEntries(p.field.options.map((o) => [o.name, o.id]))
+  } : null;
+  return {
+    id: p.id,
+    title: p.title,
+    url: p.url,
+    createdAt: p.createdAt,
+    statusField
+  };
+}
+function fetchStatusField(run, cwd, login, number2) {
+  return parseStatusField(gql(run, cwd, FIELD_QUERY, [
+    ["-f", `login=${login}`],
+    ["-F", `number=${number2}`]
+  ]));
+}
+var IssuesData = object({
+  repository: object({
+    issues: object({
+      pageInfo: object({
+        hasNextPage: boolean(),
+        endCursor: nullable(string())
+      }),
+      nodes: array(object({
+        number: number(),
+        title: string(),
+        state: picklist(["OPEN", "CLOSED"]),
+        stateReason: nullable(string()),
+        closedAt: nullable(string()),
+        updatedAt: string(),
+        url: string(),
+        milestone: nullable(object({ title: string() })),
+        labels: object({ nodes: array(object({ name: string() })) }),
+        assignees: object({
+          nodes: array(object({ login: string() }))
+        }),
+        projectItems: object({
+          pageInfo: object({ hasNextPage: boolean() }),
+          nodes: array(object({
+            id: string(),
+            isArchived: boolean(),
+            project: object({ id: string() }),
+            fieldValueByName: nullable(object({
+              name: optional(string()),
+              updatedAt: optional(string())
+            }))
+          }))
+        })
+      }))
+    })
+  })
+});
+function parseRepoIssuesPage(data, projectId) {
+  const page = checked(IssuesData, data, "issues page").repository.issues;
+  const issues = page.nodes.map((n) => {
+    const hit = n.projectItems.nodes.find((c) => c.project.id === projectId);
+    if (!hit && n.projectItems.pageInfo.hasNextPage) {
+      throw new PmError(1, `#${n.number} sits on more boards than one page lists, so its card on this board cannot be ruled out`);
+    }
+    const cardArchived = hit?.isArchived === true && n.state === "OPEN";
+    return {
+      number: n.number,
+      title: n.title,
+      state: n.state,
+      stateReason: n.stateReason ?? null,
+      closedAt: n.closedAt ?? null,
+      updatedAt: n.updatedAt,
+      url: n.url,
+      milestone: n.milestone?.title ?? null,
+      labels: n.labels.nodes.map((l) => l.name),
+      assignees: n.assignees.nodes.map((a) => a.login),
+      card: hit && !cardArchived ? {
+        itemId: hit.id,
+        status: hit.fieldValueByName?.name ?? null,
+        statusUpdatedAt: hit.fieldValueByName?.updatedAt ?? null
+      } : null,
+      cardArchived
+    };
+  });
+  return {
+    issues,
+    hasNextPage: page.pageInfo.hasNextPage,
+    endCursor: page.pageInfo.endCursor
+  };
+}
+function fetchRepoIssues(run, cwd, owner, repo, projectId) {
+  const issues = [];
+  let after = null;
+  for (;; ) {
+    const vars = [
+      ["-f", `owner=${owner}`],
+      ["-f", `name=${repo}`]
+    ];
+    if (after)
+      vars.push(["-f", `after=${after}`]);
+    const page = parseRepoIssuesPage(gql(run, cwd, ISSUES_QUERY, vars), projectId);
+    issues.push(...page.issues);
+    if (!page.hasNextPage || !page.endCursor)
+      break;
+    after = page.endCursor;
+  }
+  return issues;
+}
+function cardedItems(issues, fullName) {
+  return issues.flatMap(({ card, closedAt, cardArchived, ...i }) => card ? [{ ...i, ...card, repo: fullName }] : []);
+}
+function milestoneCounts(issues, title) {
+  const mine = issues.filter((i) => i.milestone === title);
+  const open = mine.filter((i) => i.state === "OPEN").length;
+  return { open, closed: mine.length - open };
+}
+var RestMilestones = array(object({
+  number: number(),
+  title: string(),
+  description: nullable(string()),
+  due_on: nullable(string()),
+  open_issues: number(),
+  closed_issues: number(),
+  state: picklist(["open", "closed"]),
+  created_at: string()
+}));
+function parseMilestones(json) {
+  return checked(RestMilestones, JSON.parse(json), "milestone list").map((m) => ({
+    number: m.number,
+    title: m.title,
+    description: m.description ?? "",
+    due_on: m.due_on,
+    open_issues: m.open_issues,
+    closed_issues: m.closed_issues,
+    state: m.state,
+    created_at: m.created_at
+  }));
+}
+function fetchMilestones(run, cwd, owner, repo, state) {
+  return parseMilestones(rest(run, cwd, [
+    "api",
+    `repos/${owner}/${repo}/milestones?state=${state}&per_page=100`
+  ]));
+}
+var CliIssues = array(object({
+  number: number(),
+  title: string(),
+  labels: array(object({ name: string() })),
+  body: string(),
+  milestone: nullable(object({ title: string() })),
+  updatedAt: string()
+}));
+function parseIssues(json) {
+  const list = checked(CliIssues, JSON.parse(json), "issue list");
+  if (list.length >= ISSUE_LIMIT) {
+    throw new PmError(1, `gh issue list returned ${list.length} issues, the limit; refusing to reason over a truncated list`);
+  }
+  return list.map((i) => ({
+    number: i.number,
+    title: i.title,
+    labels: i.labels.map((l) => l.name),
+    body: i.body,
+    milestone: i.milestone?.title ?? null,
+    updatedAt: i.updatedAt
+  }));
+}
+function fetchOpenIssues(run, cwd, owner, repo) {
+  return parseIssues(rest(run, cwd, [
+    "issue",
+    "list",
+    "-R",
+    `${owner}/${repo}`,
+    "--state",
+    "open",
+    "--limit",
+    String(ISSUE_LIMIT),
+    "--json",
+    "number,title,labels,body,milestone,updatedAt"
+  ]));
+}
+var StatusUpdateNode = object({
+  status: picklist(UPDATE_STATUSES),
+  startDate: string()
+});
+var StatusUpdatesData = object({
+  node: object({
+    statusUpdates: object({ nodes: array(unknown()) })
+  })
+});
+var OpenBodiesPage = object({
+  repository: object({
+    milestone: nullable(object({
+      issues: object({
+        pageInfo: object({
+          hasNextPage: boolean(),
+          endCursor: nullable(string())
+        }),
+        nodes: array(object({ number: number(), body: string() }))
+      })
+    }))
+  })
+});
+function fetchOpenBodies(run, cwd, owner, repo, number2) {
+  const bodies = [];
+  let after = null;
+  try {
+    for (;; ) {
+      const vars = [
+        ["-f", `owner=${owner}`],
+        ["-f", `name=${repo}`],
+        ["-F", `number=${number2}`]
+      ];
+      if (after)
+        vars.push(["-f", `after=${after}`]);
+      const page = safeParse(OpenBodiesPage, gql(run, cwd, RELEASE_CHECKS_QUERY, vars));
+      if (!page.success)
+        return;
+      const issues = page.output.repository.milestone?.issues;
+      if (issues === undefined)
+        return bodies;
+      bodies.push(...issues.nodes);
+      if (!issues.pageInfo.hasNextPage || !issues.pageInfo.endCursor) {
+        return bodies;
+      }
+      after = issues.pageInfo.endCursor;
+    }
+  } catch (e) {
+    if (e instanceof PmError || e instanceof SyntaxError)
+      return;
+    throw e;
+  }
+}
+function fetchStatusUpdates(run, cwd, projectId) {
+  try {
+    const data = gql(run, cwd, STATUS_UPDATES_QUERY, [
+      ["-f", `id=${projectId}`]
+    ]);
+    const parsed = safeParse(StatusUpdatesData, data);
+    if (!parsed.success)
+      return { ok: false };
+    const updates = parsed.output.node.statusUpdates.nodes.flatMap((node) => {
+      const update = safeParse(StatusUpdateNode, node);
+      return update.success ? [update.output] : [];
+    });
+    return { ok: true, updates };
+  } catch (e) {
+    if (e instanceof PmError || e instanceof SyntaxError)
+      return { ok: false };
+    throw e;
+  }
+}
+
 // bin/helpers/worker-brief.ts
 import * as fs4 from "node:fs";
 import * as path4 from "node:path";
@@ -1359,16 +2124,16 @@ function checkoutOf(runGit, folder) {
 }
 function physical(p) {
   const abs = path3.resolve(p);
-  const rest = [];
+  const rest2 = [];
   let dir = abs;
   for (;; ) {
     try {
-      return path3.join(fs3.realpathSync(dir), ...rest);
+      return path3.join(fs3.realpathSync(dir), ...rest2);
     } catch {
       const parent = path3.dirname(dir);
       if (parent === dir)
         return abs;
-      rest.unshift(path3.basename(dir));
+      rest2.unshift(path3.basename(dir));
       dir = parent;
     }
   }
@@ -1545,7 +2310,7 @@ function statusEntries(stdout) {
   return entries;
 }
 function statusEntriesIn(runGit, top, dir) {
-  const status = runGit("git", ["-C", dir, "status", "--porcelain", "-z", "--untracked-files=all"], top);
+  const status = runGit("git", ["-C", dir, "status", "--porcelain", "-z", "--untracked-files=all"], top, { maxBuffer: MAX_OUTPUT });
   if (status.code !== 0)
     return { issue: status.stderr.trim() };
   return { entries: statusEntries(status.stdout) };
@@ -1772,7 +2537,7 @@ function findRepo(runGit, cwd) {
 }
 var subcommandOf = (args) => args.find((arg) => !arg.startsWith("-")) ?? args.join(" ");
 function gitIn(runGit, dir, args, name) {
-  const result = runGit("git", args, dir);
+  const result = runGit("git", args, dir, { maxBuffer: MAX_OUTPUT });
   if (result.code === 0)
     return { stdout: result.stdout };
   return {
@@ -1925,7 +2690,7 @@ function parseJson(text) {
 function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function stateOf(content, blocked) {
+function stateOf2(content, blocked) {
   const { detail, needs } = content;
   const wanted = [
     ["detail", detail],
@@ -1958,7 +2723,7 @@ function readOne(file, who, blocked) {
   if (!isRecord4(json.value)) {
     return { warnings: [`${who}: its job state is not a JSON object`] };
   }
-  const { state, wrong } = stateOf(json.value, blocked);
+  const { state, wrong } = stateOf2(json.value, blocked);
   return {
     state,
     warnings: wrong.length === 0 ? [] : [`${who}: its job state changed shape: ${wrong.join(", ")}`]
@@ -2067,14 +2832,14 @@ function classify(row, fresh) {
 }
 function rowWarnings(row) {
   const who = displayName(row);
-  const unknown2 = (field, value, known) => value !== undefined && !known ? [`${who}: the listing has an unknown ${field} "${value}"`] : [];
+  const unknown3 = (field, value, known) => value !== undefined && !known ? [`${who}: the listing has an unknown ${field} "${value}"`] : [];
   const shape = (missing) => [
     `${who}: the listing's shape changed, a ${missing}`
   ];
   return [
-    ...unknown2("kind", row.kind, KNOWN_KINDS.has(row.kind ?? "")),
-    ...unknown2("state", row.state, STATE_CLASS.has(row.state ?? "")),
-    ...unknown2("status", row.status, KNOWN_STATUSES.has(row.status ?? "")),
+    ...unknown3("kind", row.kind, KNOWN_KINDS.has(row.kind ?? "")),
+    ...unknown3("state", row.state, STATE_CLASS.has(row.state ?? "")),
+    ...unknown3("status", row.status, KNOWN_STATUSES.has(row.status ?? "")),
     ...hasProcess(row) && row.status === undefined ? shape("row with a pid has no status") : [],
     ...row.kind === "background" && row.state === undefined ? shape("background row has no state") : []
   ];
@@ -2558,773 +3323,6 @@ function readKeyAt(top) {
 // bin/helpers/memory-store.ts
 import * as fs9 from "node:fs";
 import * as path10 from "node:path";
-
-// bin/helpers/pm-data.ts
-import { constants as constants2 } from "node:buffer";
-import { spawnSync } from "node:child_process";
-
-// bin/helpers/git-env.ts
-var REPO_LOCATING_VARS = [
-  "GIT_DIR",
-  "GIT_WORK_TREE",
-  "GIT_INDEX_FILE",
-  "GIT_COMMON_DIR",
-  "GIT_OBJECT_DIRECTORY",
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  "GIT_NAMESPACE"
-];
-function envWithoutRepoVars(env) {
-  const kept = { ...env };
-  for (const name of REPO_LOCATING_VARS)
-    delete kept[name];
-  return kept;
-}
-
-// plugin/hooks/board/contract.ts
-var GLANCE_VERSION = 2;
-var GLANCE_COMPLETE_WORD = "complete";
-
-// bin/helpers/pm-plans.ts
-var HEADER_OPEN = "<!-- plans -->";
-var HEADER_CLOSE = "<!-- /plans -->";
-var LINE = /^\s*\d+\.(?!\d)\s*(.*)$/;
-var GROUP = /^\s*([^();\s][^();]*?)\s*\(\s*(#\d+(?:\s*,\s*#\d+)*)\s*\)\s*$/;
-var normalise = (text) => text.replace(/\r\n?/g, `
-`);
-var oneLine = (text) => text.replace(/\s+/g, " ").trim();
-var isMarker = (line) => line.trim() === HEADER_OPEN || line.trim() === HEADER_CLOSE;
-function locate(description) {
-  const lines = normalise(description).split(`
-`);
-  const first = lines.findIndex((l) => l.trim() !== "");
-  if (first < 0 || lines[first].trim() !== HEADER_OPEN) {
-    return lines.some(isMarker) ? { at: "elsewhere" } : { at: "none" };
-  }
-  const close = lines.findIndex((l, k) => k > first && l.trim() === HEADER_CLOSE);
-  if (close < 0)
-    return { at: "unclosed" };
-  return {
-    at: "top",
-    lines: lines.slice(first + 1, close),
-    prose: lines.slice(close + 1)
-  };
-}
-var malformed = (reason4) => ({
-  parse: "malformed",
-  reason: oneLine(reason4)
-});
-function duplicate(plans) {
-  const names = plans.map((p) => p.name);
-  const name = names.find((n, i) => names.indexOf(n) !== i);
-  if (name !== undefined)
-    return `plan "${name}" appears twice`;
-  const issues = plans.flatMap((p) => p.issues);
-  const issue = issues.find((n, i) => issues.indexOf(n) !== i);
-  return issue === undefined ? null : `#${issue} appears in two plans`;
-}
-function parsePlansHeader(description) {
-  const found = locate(description);
-  if (found.at === "none")
-    return { parse: "none" };
-  if (found.at === "elsewhere") {
-    return malformed("the plans header is not at the top");
-  }
-  if (found.at === "unclosed") {
-    return malformed(`the plans header has no ${HEADER_CLOSE} line`);
-  }
-  if (found.prose.some(isMarker)) {
-    return malformed("a second plans header follows the first");
-  }
-  const plans = [];
-  for (const line of found.lines.filter((l) => l.trim() !== "")) {
-    const numbered = LINE.exec(line);
-    const group = numbered === null ? null : GROUP.exec(numbered[1]);
-    if (group === null) {
-      return malformed(`"${line.trim()}" is not <n>. <name> (#N, …)`);
-    }
-    plans.push({
-      name: oneLine(group[1]),
-      issues: group[2].split(",").map((r) => Number(r.trim().slice(1)))
-    });
-  }
-  if (plans.length === 0)
-    return malformed("the plans header lists no plans");
-  const reason4 = duplicate(plans);
-  return reason4 === null ? { parse: "ok", plans } : malformed(reason4);
-}
-function descriptionProse(description) {
-  const found = locate(description);
-  return found.at === "top" ? found.prose.join(`
-`) : normalise(description);
-}
-var RELEASE_CHECK_LINE = /^\s*(?:[-*+][ \t]+)?(?:(\*\*|__|\*|_)verified by the release(?::\1|\1:)|verified by the release:)/im;
-var awaitsReleaseCheck = (body) => RELEASE_CHECK_LINE.test(body);
-var openOf = (issues) => issues.filter((i) => i.open && !i.awaitsRelease);
-var inProgress = (i) => i.status === "In Progress";
-var notStarted = (i) => i.status === "Backlog" || i.status === null;
-function startable(issues) {
-  const open = openOf(issues);
-  return open.length > 0 && !open.some(inProgress) && open.some(notStarted);
-}
-function stateOf2(issues, isNext) {
-  const open = openOf(issues);
-  if (open.length === 0)
-    return "done";
-  if (open.some(inProgress))
-    return "running";
-  if (isNext)
-    return "next";
-  return "later";
-}
-function planView(ms, items, awaiting = new Set) {
-  const c = parsePlansHeader(ms.description);
-  if (c.parse === "none")
-    return { parse: "none", list: [], unplanned: [] };
-  if (c.parse === "malformed") {
-    return { parse: "malformed", reason: c.reason, list: [], unplanned: [] };
-  }
-  const byNumber = new Map(items.map((i) => [i.number, i]));
-  const issueOf = (n) => {
-    const i = byNumber.get(n);
-    const open = i === undefined || i.state === "OPEN";
-    const awaitsRelease = open && awaiting.has(n);
-    return i ? { number: n, title: i.title, open, status: i.status, awaitsRelease } : { number: n, title: null, open, status: null, awaitsRelease };
-  };
-  const issues = c.plans.map((p) => p.issues.map(issueOf));
-  const nextAt = issues.findIndex(startable);
-  const list = c.plans.map((p, k) => ({
-    name: p.name,
-    state: stateOf2(issues[k], k === nextAt),
-    issues: issues[k]
-  }));
-  const planned = new Set(c.plans.flatMap((p) => p.issues));
-  const unplanned = items.filter((i) => i.state === "OPEN" && i.milestone === ms.title && !planned.has(i.number)).sort((a, b) => a.number - b.number).map((i) => ({ number: i.number, title: i.title }));
-  return { parse: "ok", list, unplanned };
-}
-
-// bin/helpers/pm-view.ts
-var TITLE_MAX = 60;
-function cut(title) {
-  return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title;
-}
-function firstSentence(text) {
-  const t = text.replace(/\s+/g, " ").trim();
-  const m = /^(.*?[.!?])(?:\s|$)/.exec(t);
-  return m ? m[1] : t;
-}
-var titles = (list) => list.map((m) => cut(m.title)).join(", ");
-function parsedPlans(p) {
-  if (p.plans === null || p.plans.parse !== "ok")
-    return null;
-  return { list: p.plans.list, unplanned: p.plans.unplanned };
-}
-var openRefs = (plan) => plan.issues.filter((i) => i.open).map((i) => `#${i.number}`).join(", ");
-var plannedNumbers = (list) => new Set(list.flatMap((pl) => pl.issues.map((i) => i.number)));
-function continueMove(cards, plans) {
-  const lowest = Math.min(...cards.map((i) => i.number));
-  const plan = plans === null ? undefined : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
-  return plan === undefined ? `continue #${lowest}` : `continue plan ${plan.name} (${openRefs(plan)})`;
-}
-function pullMove(p, plans) {
-  if (plans === null) {
-    return p.candidates.some((c) => c.tier === 1) ? "pull one tier-1 candidate" : null;
-  }
-  const next = plans.list.find((pl) => pl.state === "next");
-  if (next !== undefined)
-    return `pull plan ${next.name} (${openRefs(next)})`;
-  const planned = plannedNumbers(plans.list);
-  const unplanned = p.candidates.some((c) => c.tier === 1 && !planned.has(c.number));
-  return unplanned ? "pull one unplanned candidate" : null;
-}
-function nextMove(p) {
-  if (p.milestone === null && p.open_milestones.length > 1) {
-    return `choose a milestone: ${titles(p.open_milestones)}`;
-  }
-  const plans = parsedPlans(p);
-  if (p.in_progress.length > 0)
-    return continueMove(p.in_progress, plans);
-  const pull = pullMove(p, plans);
-  if (pull !== null)
-    return pull;
-  if (p.milestone)
-    return "nothing to pick up: verify, then close the milestone";
-  return "nothing open: open the next milestone";
-}
-function driftEntries(drift, plans) {
-  const entries = [];
-  const unpushed = drift.unpushed.count;
-  if (unpushed !== null && unpushed > 0) {
-    entries.push({
-      full: `${unpushed} unpushed`,
-      short: `${unpushed} unpushed`
-    });
-  }
-  const [firstStale] = drift.stale_in_progress;
-  if (firstStale !== undefined) {
-    entries.push({
-      full: `stale: ${drift.stale_in_progress.map((i) => `#${i.number} (${i.age_days} d)`).join(", ")}`,
-      short: `stale #${firstStale.number}`
-    });
-  }
-  if (drift.open_pr) {
-    const text = `open PR #${drift.open_pr.number}`;
-    entries.push({ full: text, short: text });
-  }
-  if (drift.in_progress_split.length > 0) {
-    entries.push({
-      full: `In Progress split: ${drift.in_progress_split.map(cut).join(", ")}`,
-      short: "split"
-    });
-  }
-  if (plans !== null && plans.parse === "malformed") {
-    entries.push({
-      full: `plans header: ${plans.reason}`,
-      short: "plans header"
-    });
-  }
-  return entries;
-}
-function viewIssue(issue, cards) {
-  const card = cards.get(issue.number);
-  return {
-    ...issue,
-    ageDays: issue.status === "In Progress" && card !== undefined ? card.age_days : null
-  };
-}
-function viewPlans(p, cards) {
-  const plans = p.plans;
-  if (plans === null)
-    return { parse: "none" };
-  if (plans.parse === "malformed") {
-    return { parse: "malformed", reason: plans.reason };
-  }
-  if (plans.parse === "none")
-    return { parse: "none" };
-  return {
-    parse: "ok",
-    list: plans.list.map((pl) => ({
-      name: pl.name,
-      state: pl.state,
-      issues: pl.issues.map((i) => viewIssue(i, cards))
-    }))
-  };
-}
-function groupInProgress(p, plans, cards) {
-  if (plans === null)
-    return { byPlan: [], loose: p.in_progress };
-  const byPlan = plans.list.flatMap((pl) => {
-    const mine = pl.issues.flatMap((i) => cards.get(i.number) ?? []);
-    return mine.length === 0 ? [] : [{ name: pl.name, cards: mine }];
-  });
-  const planned = plannedNumbers(plans.list);
-  return {
-    byPlan,
-    loose: p.in_progress.filter((i) => !planned.has(i.number))
-  };
-}
-function pickupView(p) {
-  const cards = new Map(p.in_progress.map((i) => [i.number, i]));
-  const plans = parsedPlans(p);
-  const m = p.milestone;
-  const outcome = m === null ? null : firstSentence(descriptionProse(m.description));
-  return {
-    board: {
-      owner: p.board.owner,
-      repo: p.board.repo,
-      project: p.board.project.number
-    },
-    milestone: m === null ? null : {
-      title: m.title,
-      outcome: outcome === "" ? null : outcome,
-      counts: p.issue_counts
-    },
-    openMilestones: p.open_milestones,
-    otherOpen: p.open_milestones.filter((o) => o.number !== m?.number).map((o) => o.title),
-    plans: viewPlans(p, cards),
-    inProgress: groupInProgress(p, plans, cards),
-    unplanned: plans === null ? [] : plans.unplanned.filter((i) => !cards.has(i.number)),
-    tier1: p.candidates.filter((c) => c.tier === 1),
-    tier2: p.candidates.filter((c) => c.tier === 2),
-    drift: driftEntries(p.drift, p.plans),
-    next: nextMove(p)
-  };
-}
-
-// bin/helpers/pm-glance.ts
-var UPDATE_STATUSES = [
-  "INACTIVE",
-  "ON_TRACK",
-  "AT_RISK",
-  "OFF_TRACK",
-  "COMPLETE"
-];
-var BY_STATUS = {
-  ON_TRACK: { level: "good", word: "on track", detail: null },
-  COMPLETE: { level: "good", word: GLANCE_COMPLETE_WORD, detail: null },
-  AT_RISK: { level: "warning", word: "at risk", detail: null },
-  OFF_TRACK: { level: "bad", word: "off track", detail: null },
-  INACTIVE: { level: "unknown", word: "inactive", detail: null }
-};
-function unknown2(word) {
-  return { level: "unknown", word, detail: null };
-}
-function floorOf(input) {
-  const { milestone, status } = input;
-  if (milestone === null) {
-    return unknown2(input.openCount > 1 ? "pick a milestone" : "no milestone");
-  }
-  if (!status.ok)
-    return unknown2("status unread");
-  const day = milestone.created_at.slice(0, 10);
-  const counted = status.updates.find((u) => u.startDate === day);
-  return counted ? BY_STATUS[counted.status] : unknown2("no update");
-}
-var driftKinds = ({ drift, plans }) => driftEntries(drift, plans).map((d) => d.short);
-function glanceState(input) {
-  const floor = floorOf(input);
-  const kinds = driftKinds(input);
-  const [head, ...rest] = kinds;
-  if (head === undefined)
-    return floor;
-  const detail = rest.length > 0 ? `${head} +${rest.length}` : head;
-  if (floor.level === "good" || floor.level === "unknown") {
-    return { level: "warning", word: "drift", detail };
-  }
-  return { ...floor, detail };
-}
-
-// bin/helpers/pm-data.ts
-var MAX_OUTPUT = constants2.MAX_STRING_LENGTH;
-var TIMED_OUT = 124;
-var ranOut = (error) => error !== undefined && ("code" in error) && error.code === "ETIMEDOUT";
-var execRunner = (cmd, args, cwd, { timeoutMs, input, maxBuffer } = {}) => {
-  const env = envWithoutRepoVars(process.env);
-  const r = spawnSync(cmd, args, {
-    cwd,
-    encoding: "utf-8",
-    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-    input,
-    env: timeoutMs === undefined ? env : { ...env, GIT_TERMINAL_PROMPT: "0" },
-    timeout: timeoutMs,
-    ...maxBuffer === undefined ? {} : { maxBuffer }
-  });
-  if (timeoutMs !== undefined && ranOut(r.error)) {
-    return {
-      code: TIMED_OUT,
-      stdout: "",
-      stderr: `${cmd} did not finish within ${timeoutMs / 1000} s`
-    };
-  }
-  if (r.error)
-    return { code: 127, stdout: "", stderr: r.error.message };
-  return {
-    code: r.status ?? 1,
-    stdout: r.stdout ?? "",
-    stderr: r.stderr ?? ""
-  };
-};
-
-class PmError extends Error {
-  exit;
-  constructor(exit, message) {
-    super(message);
-    this.exit = exit;
-  }
-}
-var ORIGIN = /^(?:git@github\.com:|https:\/\/github\.com\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/;
-function parseOrigin(url) {
-  const m = url.trim().match(ORIGIN);
-  return m ? { owner: m[1], repo: m[2] } : null;
-}
-function parseGhVersion(firstLine2) {
-  const m = firstLine2.match(/^gh version (\d+\.\d+\.\d+)/);
-  return m ? m[1] : null;
-}
-function versionAtLeast(v, min) {
-  const a = v.split(".").map(Number);
-  const b = min.split(".").map(Number);
-  for (let i = 0;i < 3; i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    if (x !== y)
-      return x > y;
-  }
-  return true;
-}
-function hasProjectScope(headers) {
-  const line = headers.split(/\r?\n/).find((l) => /^x-oauth-scopes:/i.test(l));
-  if (!line)
-    return false;
-  return line.slice(line.indexOf(":") + 1).split(",").map((s) => s.trim()).includes("project");
-}
-function ageDays(iso, now) {
-  return Math.floor((now.getTime() - new Date(iso).getTime()) / 86400000);
-}
-function touchedAt(item) {
-  const { updatedAt, statusUpdatedAt } = item;
-  if (statusUpdatedAt === null)
-    return updatedAt;
-  return Date.parse(statusUpdatedAt) > Date.parse(updatedAt) ? statusUpdatedAt : updatedAt;
-}
-var STALE_DAYS = 7;
-var DISCOVERY_QUERY = "query Discovery($owner: String!, $name: String!) { viewer { login } repository(owner: $owner, name: $name) { projectsV2(first: 10) { nodes { number title closed url id owner { __typename ... on User { login } ... on Organization { login } } } } } }";
-var FIELD_QUERY = 'query StatusField($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id title url createdAt field(name: "Status") { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }';
-var STATUS_UPDATES_QUERY = "query StatusUpdates($id: ID!) { node(id: $id) { ... on ProjectV2 { statusUpdates(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { status startDate } } } } }";
-var ISSUES_PAGE = 100;
-var ISSUES_QUERY = `query RepoIssues($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { issues(first: ${ISSUES_PAGE}, after: $after) { pageInfo { hasNextPage endCursor } nodes { number title state stateReason closedAt updatedAt url milestone { title } labels(first: 10) { nodes { name } } assignees(first: 5) { nodes { login } } projectItems(first: 10) { pageInfo { hasNextPage } nodes { id isArchived project { id } fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } } } } } } } }`;
-var RELEASE_CHECKS_QUERY = `query ReleaseChecks($owner: String!, $name: String!, $number: Int!, $after: String) { repository(owner: $owner, name: $name) { milestone(number: $number) { issues(first: ${ISSUES_PAGE}, after: $after, states: OPEN) { pageInfo { hasNextPage endCursor } nodes { number body } } } } }`;
-var ISSUE_LIMIT = 500;
-var GqlEnvelope = object({
-  data: optional(unknown()),
-  errors: nullish(array(object({ message: string() })))
-});
-function checked(schema, value, what) {
-  const result = safeParse(schema, value);
-  if (!result.success) {
-    throw new PmError(1, `gh returned an unexpected ${what}: ${summarize(result.issues)}`);
-  }
-  return result.output;
-}
-function gql(run, cwd, doc, vars) {
-  const args = ["api", "graphql", "-f", `query=${doc}`];
-  for (const [flag, kv] of vars)
-    args.push(flag, kv);
-  const r = run("gh", args, cwd);
-  if (r.code !== 0) {
-    throw new PmError(1, r.stderr.trim() || "gh api graphql failed");
-  }
-  const parsed = checked(GqlEnvelope, JSON.parse(r.stdout), "GraphQL response");
-  if (parsed.errors?.length)
-    throw new PmError(1, parsed.errors[0].message);
-  return parsed.data;
-}
-function rest(run, cwd, args) {
-  const r = run("gh", args, cwd);
-  if (r.code !== 0) {
-    throw new PmError(1, r.stderr.trim() || `gh ${args[0]} failed`);
-  }
-  return r.stdout;
-}
-function fetchGhVersion(run, cwd) {
-  const r = run("gh", ["--version"], cwd);
-  if (r.code !== 0)
-    return { found: false, version: null };
-  return {
-    found: true,
-    version: parseGhVersion(r.stdout.split(`
-`)[0] ?? "")
-  };
-}
-function fetchLocalLogin(run, cwd) {
-  const r = run("gh", ["config", "get", "-h", "github.com", "user"], cwd);
-  const login = r.stdout.trim();
-  return r.code === 0 && login ? login : null;
-}
-function fetchScopeHeaders(run, cwd) {
-  return rest(run, cwd, ["api", "-i", "user"]);
-}
-var DiscoveryData = object({
-  viewer: object({ login: string() }),
-  repository: nullable(object({
-    projectsV2: object({
-      nodes: array(object({
-        number: number(),
-        title: string(),
-        closed: boolean(),
-        url: string(),
-        id: string(),
-        owner: object({ login: optional(string()) })
-      }))
-    })
-  }))
-});
-function parseDiscovery(data) {
-  const d = checked(DiscoveryData, data, "discovery");
-  const nodes = d.repository?.projectsV2.nodes ?? [];
-  return {
-    viewer: d.viewer.login,
-    boards: nodes.map((n) => ({
-      number: n.number,
-      title: n.title,
-      closed: n.closed,
-      url: n.url,
-      id: n.id,
-      ownerLogin: n.owner.login ?? ""
-    }))
-  };
-}
-function fetchDiscovery(run, cwd, owner, repo) {
-  return parseDiscovery(gql(run, cwd, DISCOVERY_QUERY, [
-    ["-f", `owner=${owner}`],
-    ["-f", `name=${repo}`]
-  ]));
-}
-var FieldData = object({
-  user: object({
-    projectV2: object({
-      id: string(),
-      title: string(),
-      url: string(),
-      createdAt: string(),
-      field: nullable(object({
-        id: string(),
-        options: array(object({ id: string(), name: string() }))
-      }))
-    })
-  })
-});
-function parseStatusField(data) {
-  const p = checked(FieldData, data, "status field").user.projectV2;
-  const statusField = p.field ? {
-    id: p.field.id,
-    options: Object.fromEntries(p.field.options.map((o) => [o.name, o.id]))
-  } : null;
-  return {
-    id: p.id,
-    title: p.title,
-    url: p.url,
-    createdAt: p.createdAt,
-    statusField
-  };
-}
-function fetchStatusField(run, cwd, login, number2) {
-  return parseStatusField(gql(run, cwd, FIELD_QUERY, [
-    ["-f", `login=${login}`],
-    ["-F", `number=${number2}`]
-  ]));
-}
-var IssuesData = object({
-  repository: object({
-    issues: object({
-      pageInfo: object({
-        hasNextPage: boolean(),
-        endCursor: nullable(string())
-      }),
-      nodes: array(object({
-        number: number(),
-        title: string(),
-        state: picklist(["OPEN", "CLOSED"]),
-        stateReason: nullable(string()),
-        closedAt: nullable(string()),
-        updatedAt: string(),
-        url: string(),
-        milestone: nullable(object({ title: string() })),
-        labels: object({ nodes: array(object({ name: string() })) }),
-        assignees: object({
-          nodes: array(object({ login: string() }))
-        }),
-        projectItems: object({
-          pageInfo: object({ hasNextPage: boolean() }),
-          nodes: array(object({
-            id: string(),
-            isArchived: boolean(),
-            project: object({ id: string() }),
-            fieldValueByName: nullable(object({
-              name: optional(string()),
-              updatedAt: optional(string())
-            }))
-          }))
-        })
-      }))
-    })
-  })
-});
-function parseRepoIssuesPage(data, projectId) {
-  const page = checked(IssuesData, data, "issues page").repository.issues;
-  const issues = page.nodes.map((n) => {
-    const hit = n.projectItems.nodes.find((c) => c.project.id === projectId);
-    if (!hit && n.projectItems.pageInfo.hasNextPage) {
-      throw new PmError(1, `#${n.number} sits on more boards than one page lists, so its card on this board cannot be ruled out`);
-    }
-    const cardArchived = hit?.isArchived === true && n.state === "OPEN";
-    return {
-      number: n.number,
-      title: n.title,
-      state: n.state,
-      stateReason: n.stateReason ?? null,
-      closedAt: n.closedAt ?? null,
-      updatedAt: n.updatedAt,
-      url: n.url,
-      milestone: n.milestone?.title ?? null,
-      labels: n.labels.nodes.map((l) => l.name),
-      assignees: n.assignees.nodes.map((a) => a.login),
-      card: hit && !cardArchived ? {
-        itemId: hit.id,
-        status: hit.fieldValueByName?.name ?? null,
-        statusUpdatedAt: hit.fieldValueByName?.updatedAt ?? null
-      } : null,
-      cardArchived
-    };
-  });
-  return {
-    issues,
-    hasNextPage: page.pageInfo.hasNextPage,
-    endCursor: page.pageInfo.endCursor
-  };
-}
-function fetchRepoIssues(run, cwd, owner, repo, projectId) {
-  const issues = [];
-  let after = null;
-  for (;; ) {
-    const vars = [
-      ["-f", `owner=${owner}`],
-      ["-f", `name=${repo}`]
-    ];
-    if (after)
-      vars.push(["-f", `after=${after}`]);
-    const page = parseRepoIssuesPage(gql(run, cwd, ISSUES_QUERY, vars), projectId);
-    issues.push(...page.issues);
-    if (!page.hasNextPage || !page.endCursor)
-      break;
-    after = page.endCursor;
-  }
-  return issues;
-}
-function cardedItems(issues, fullName) {
-  return issues.flatMap(({ card, closedAt, cardArchived, ...i }) => card ? [{ ...i, ...card, repo: fullName }] : []);
-}
-function milestoneCounts(issues, title) {
-  const mine = issues.filter((i) => i.milestone === title);
-  const open = mine.filter((i) => i.state === "OPEN").length;
-  return { open, closed: mine.length - open };
-}
-var RestMilestones = array(object({
-  number: number(),
-  title: string(),
-  description: nullable(string()),
-  due_on: nullable(string()),
-  open_issues: number(),
-  closed_issues: number(),
-  state: picklist(["open", "closed"]),
-  created_at: string()
-}));
-function parseMilestones(json) {
-  return checked(RestMilestones, JSON.parse(json), "milestone list").map((m) => ({
-    number: m.number,
-    title: m.title,
-    description: m.description ?? "",
-    due_on: m.due_on,
-    open_issues: m.open_issues,
-    closed_issues: m.closed_issues,
-    state: m.state,
-    created_at: m.created_at
-  }));
-}
-function fetchMilestones(run, cwd, owner, repo, state) {
-  return parseMilestones(rest(run, cwd, [
-    "api",
-    `repos/${owner}/${repo}/milestones?state=${state}&per_page=100`
-  ]));
-}
-var CliIssues = array(object({
-  number: number(),
-  title: string(),
-  labels: array(object({ name: string() })),
-  body: string(),
-  milestone: nullable(object({ title: string() })),
-  updatedAt: string()
-}));
-function parseIssues(json) {
-  const list = checked(CliIssues, JSON.parse(json), "issue list");
-  if (list.length >= ISSUE_LIMIT) {
-    throw new PmError(1, `gh issue list returned ${list.length} issues, the limit; refusing to reason over a truncated list`);
-  }
-  return list.map((i) => ({
-    number: i.number,
-    title: i.title,
-    labels: i.labels.map((l) => l.name),
-    body: i.body,
-    milestone: i.milestone?.title ?? null,
-    updatedAt: i.updatedAt
-  }));
-}
-function fetchOpenIssues(run, cwd, owner, repo) {
-  return parseIssues(rest(run, cwd, [
-    "issue",
-    "list",
-    "-R",
-    `${owner}/${repo}`,
-    "--state",
-    "open",
-    "--limit",
-    String(ISSUE_LIMIT),
-    "--json",
-    "number,title,labels,body,milestone,updatedAt"
-  ]));
-}
-var StatusUpdateNode = object({
-  status: picklist(UPDATE_STATUSES),
-  startDate: string()
-});
-var StatusUpdatesData = object({
-  node: object({
-    statusUpdates: object({ nodes: array(unknown()) })
-  })
-});
-var OpenBodiesPage = object({
-  repository: object({
-    milestone: nullable(object({
-      issues: object({
-        pageInfo: object({
-          hasNextPage: boolean(),
-          endCursor: nullable(string())
-        }),
-        nodes: array(object({ number: number(), body: string() }))
-      })
-    }))
-  })
-});
-function fetchOpenBodies(run, cwd, owner, repo, number2) {
-  const bodies = [];
-  let after = null;
-  try {
-    for (;; ) {
-      const vars = [
-        ["-f", `owner=${owner}`],
-        ["-f", `name=${repo}`],
-        ["-F", `number=${number2}`]
-      ];
-      if (after)
-        vars.push(["-f", `after=${after}`]);
-      const page = safeParse(OpenBodiesPage, gql(run, cwd, RELEASE_CHECKS_QUERY, vars));
-      if (!page.success)
-        return;
-      const issues = page.output.repository.milestone?.issues;
-      if (issues === undefined)
-        return bodies;
-      bodies.push(...issues.nodes);
-      if (!issues.pageInfo.hasNextPage || !issues.pageInfo.endCursor) {
-        return bodies;
-      }
-      after = issues.pageInfo.endCursor;
-    }
-  } catch (e) {
-    if (e instanceof PmError || e instanceof SyntaxError)
-      return;
-    throw e;
-  }
-}
-function fetchStatusUpdates(run, cwd, projectId) {
-  try {
-    const data = gql(run, cwd, STATUS_UPDATES_QUERY, [
-      ["-f", `id=${projectId}`]
-    ]);
-    const parsed = safeParse(StatusUpdatesData, data);
-    if (!parsed.success)
-      return { ok: false };
-    const updates = parsed.output.node.statusUpdates.nodes.flatMap((node) => {
-      const update = safeParse(StatusUpdateNode, node);
-      return update.success ? [update.output] : [];
-    });
-    return { ok: true, updates };
-  } catch (e) {
-    if (e instanceof PmError || e instanceof SyntaxError)
-      return { ok: false };
-    throw e;
-  }
-}
-
-// bin/helpers/memory-store.ts
 var RESERVED_NAMES = ["sources", "archive"];
 var MARKER_FILE = ".sidekick.json";
 var README_FILE = "README.md";
@@ -7436,7 +7434,7 @@ function ignoredEntries(runGit, worktree) {
     "-z",
     "--ignored",
     "--untracked-files=normal"
-  ], worktree);
+  ], worktree, { maxBuffer: MAX_OUTPUT });
   if (status.code !== 0)
     return { issue: status.stderr.trim() };
   return statusEntries(status.stdout).filter((entry) => entry.code === IGNORED).map((entry) => entry.path.replace(/\/+$/, ""));
@@ -11327,7 +11325,7 @@ var restorePartial = (ready, wenv, out) => {
   const deleted = status.entries.filter((entry) => entry.code === DELETED).map((entry) => entry.path);
   if (deleted.length === 0)
     return [];
-  const result = wenv.runGit("git", ["-C", ready.worktree, "checkout-index", "--", ...deleted], ready.mainTop);
+  const result = wenv.runGit("git", ["-C", ready.worktree, "checkout-index", "--stdin", "-z"], ready.mainTop, { input: deleted.map((file) => `${file}\x00`).join("") });
   if (result.code !== 0) {
     return [
       `git checkout-index failed in the worktree ${ready.worktree}, so finish removed nothing: ${result.stderr.trim()}`

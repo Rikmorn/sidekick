@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
-import { execRunner } from './pm-data.js';
+import {
+  git,
+  recording,
+  removeTemps,
+  repo,
+  tmp,
+} from './fixtures/worker/repo.js';
+import { execRunner, MAX_OUTPUT } from './pm-data.js';
 import {
   checkedOut,
   listWorktrees,
@@ -36,6 +42,14 @@ describe('a worktree: what it has checked out, and its status', () => {
     const result = statusEntriesIn(execRunner, top, top);
     const paths = 'entries' in result ? result.entries.map((e) => e.path) : [];
     expect(paths.sort()).toEqual(['a.txt', 'b.txt', 'new/deep/n.txt']);
+  });
+
+  test("statusEntriesIn asks for the runtime's largest output, so a long status is not cut off", () => {
+    const top = repo();
+    const { runGit, calls } = recording();
+    statusEntriesIn(runGit, top, top);
+    expect(calls.map((c) => c.opts?.maxBuffer)).toEqual([MAX_OUTPUT]);
+    expect(calls[0].args).toContain('status');
   });
 
   test('statusEntriesIn gives a deleted, a modified, and an untracked file their codes', () => {

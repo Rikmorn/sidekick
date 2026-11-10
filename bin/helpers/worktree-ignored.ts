@@ -6,7 +6,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { Runner } from './pm-data.js';
+import { MAX_OUTPUT, type Runner } from './pm-data.js';
 import { statusEntries } from './worker-listing.js';
 
 /**
@@ -194,6 +194,8 @@ function ignoredEntries(
       '--untracked-files=normal',
     ],
     worktree,
+    // The listing names every deleted tracked file of a cut-short removal.
+    { maxBuffer: MAX_OUTPUT },
   );
   if (status.code !== 0) return { issue: status.stderr.trim() };
   return statusEntries(status.stdout)

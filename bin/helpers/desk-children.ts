@@ -13,7 +13,7 @@ import {
   type TranscriptFinder,
   tokensOf,
 } from './desk-transcripts.js';
-import type { Runner } from './pm-data.js';
+import { MAX_OUTPUT, type Runner } from './pm-data.js';
 import { readBrief } from './worker-brief.js';
 import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
 import type { WorkerRecord } from './worker-record.js';
@@ -97,7 +97,8 @@ function gitIn(
   args: string[],
   name: string,
 ): GitOutput {
-  const result = runGit('git', args, dir);
+  // The status of a worker's worktree can list more than the runtime's default limit.
+  const result = runGit('git', args, dir, { maxBuffer: MAX_OUTPUT });
   if (result.code === 0) return { stdout: result.stdout };
   return {
     warning: `${name}: git ${subcommandOf(args)} failed in ${dir}: ${firstLine(result.stderr)}`,

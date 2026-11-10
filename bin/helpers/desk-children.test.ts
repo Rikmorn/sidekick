@@ -1,9 +1,34 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { findRepo } from './desk-children.js';
-import { removeTemps, repo, tmp } from './fixtures/worker/repo.js';
-import { execRunner, type Runner } from './pm-data.js';
+import { childFacts, findRepo } from './desk-children.js';
+import { fixture } from './fixtures/worker/finish.js';
+import { recording, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
+import { execRunner, MAX_OUTPUT, type Runner } from './pm-data.js';
 
 afterEach(removeTemps);
+
+describe('childFacts', () => {
+  test("reads the worktree's status with the runtime's largest output, so a long status is not cut off", () => {
+    const fx = fixture();
+    const found = findRepo(execRunner, fx.top);
+    if (found.repo === undefined) throw new Error('no repo');
+    const { runGit, calls } = recording();
+    const { facts } = childFacts(
+      { runGit, repo: found.repo, find: () => undefined },
+      {
+        version: 2,
+        name: 'w1',
+        job: null,
+        main: null,
+        brief: fx.brief,
+        dispatchedAt: '2026-11-10T00:00:00Z',
+      },
+      { cwd: fx.worktree },
+    );
+    expect(facts.worktreeExists).toBe(true);
+    const reads = calls.filter((c) => c.args.includes('status'));
+    expect(reads.map((c) => c.opts?.maxBuffer)).toEqual([MAX_OUTPUT]);
+  });
+});
 
 describe('findRepo', () => {
   test("a failed git worktree list keeps the desk's warning word for word, and gives git's first line apart", () => {
