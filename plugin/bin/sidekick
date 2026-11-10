@@ -2309,8 +2309,23 @@ function statusEntries(stdout) {
   }
   return entries;
 }
-function statusEntriesIn(runGit, top, dir) {
-  const status = runGit("git", ["-C", dir, "status", "--porcelain", "-z", "--untracked-files=all"], top, { maxBuffer: MAX_OUTPUT });
+function statusEntriesIn(runGit, top, dir, { skipWorktree = false } = {}) {
+  const sparse = skipWorktree ? [
+    "--no-optional-locks",
+    "-c",
+    "core.sparseCheckout=true",
+    "-c",
+    "sparse.expectFilesOutsideOfPatterns=false"
+  ] : [];
+  const status = runGit("git", [
+    ...sparse,
+    "-C",
+    dir,
+    "status",
+    "--porcelain",
+    "-z",
+    "--untracked-files=all"
+  ], top, { maxBuffer: MAX_OUTPUT });
   if (status.code !== 0)
     return { issue: status.stderr.trim() };
   return { entries: statusEntries(status.stdout) };

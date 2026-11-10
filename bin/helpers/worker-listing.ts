@@ -53,18 +53,38 @@ export function statusEntries(stdout: string): StatusEntry[] {
 /**
  * Every entry `git status` names in the work tree at `dir`, with its `XY`
  * code and a path relative to the top: each untracked file by its own path,
- * and a rename's source as its own entry with the rename's code. The issue is
+ * and a rename's source as its own entry with the rename's code. With
+ * `skipWorktree`, an edited skip-worktree file is named too. The issue is
  * git's message when the status fails.
  */
 export function statusEntriesIn(
   runGit: Runner,
   top: string,
   dir: string,
+  { skipWorktree = false }: { skipWorktree?: boolean } = {},
 ): { entries: StatusEntry[] } | { issue: string } {
+  // Sparse checkout on reads a skip-worktree file; no optional locks keeps the run off the real index.
+  const sparse = skipWorktree
+    ? [
+        '--no-optional-locks',
+        '-c',
+        'core.sparseCheckout=true',
+        '-c',
+        'sparse.expectFilesOutsideOfPatterns=false',
+      ]
+    : [];
   // -uall names each untracked file, where the default names only its folder.
   const status = runGit(
     'git',
-    ['-C', dir, 'status', '--porcelain', '-z', '--untracked-files=all'],
+    [
+      ...sparse,
+      '-C',
+      dir,
+      'status',
+      '--porcelain',
+      '-z',
+      '--untracked-files=all',
+    ],
     top,
     // A cut-short removal lists every deleted file, past the runtime's default limit.
     { maxBuffer: MAX_OUTPUT },
