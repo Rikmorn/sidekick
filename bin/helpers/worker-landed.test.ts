@@ -363,6 +363,16 @@ describe('landedIn, paths on stdin', () => {
     expect(callWith(calls, 'log')?.args).not.toContain('--stdin');
   });
 
+  test('a name with a leading quote, a backslash, and a trailing space is read verbatim', () => {
+    const name = '"q\\b ';
+    const { result, calls } = recordedLanding(squashedNames([name]));
+    foundInHistory(result);
+    const call = callWith(calls, 'log');
+    expect(call?.args).toContain('--stdin');
+    expect(call?.args).not.toContain(name);
+    expect(call?.opts?.input).toBe(`--\n${name}\n`);
+  });
+
   test('a mix splits by what stdin can carry', () => {
     const { result, calls } = recordedLanding(squashedNames(['f', 'a\nb']));
     foundInHistory(result);
