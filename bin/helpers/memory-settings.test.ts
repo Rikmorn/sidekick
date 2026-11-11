@@ -185,7 +185,7 @@ describe('mainCheckout', () => {
     (stderr: string): Runner =>
     () => ({ code: 128, stdout: '', stderr });
 
-  test('a git rev-parse failure other than "not a git repository" quotes git', () => {
+  test('a git rev-parse failure other than an outside-every-repository one quotes git', () => {
     const work = tmp();
     const dubious = revParseFails(
       `fatal: detected dubious ownership in repository at '${work}'\nTo add an exception for this directory, call:\n`,

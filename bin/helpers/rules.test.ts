@@ -28,7 +28,7 @@ const removeAll = (...dirs: string[]): void => {
 };
 
 // A folder whose `.git` is a file holding `garbage`, where `git rev-parse`
-// fails for a reason other than "not a git repository".
+// fails for a reason other than outside every repository.
 function brokenGitFile(): string {
   const dir = fs.realpathSync(tmp());
   fs.writeFileSync(path.join(dir, '.git'), 'garbage');
