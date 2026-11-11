@@ -7,7 +7,7 @@ import { execRunner } from './pm-data.js';
 afterEach(removeTemps);
 
 describe('outsideRepo', () => {
-  test('"not a git repository", a silent failure, or a path that is no folder reads as outside', () => {
+  test('"not a git repository (or any …)", a silent failure, or a path that is no folder reads as outside', () => {
     const dir = tmp();
     expect(
       outsideRepo(

@@ -195,7 +195,7 @@ describe('mainCheckout', () => {
     );
   });
 
-  test('"not a git repository", a silent failure, or a path that is no folder reads as outside git', () => {
+  test('"not a git repository (or any …)", a silent failure, or a path that is no folder reads as outside git', () => {
     const work = tmp();
     const outside = `${work} has no main checkout: it is not inside a git repository; run the command on a path inside one`;
     const notARepo = revParseFails(

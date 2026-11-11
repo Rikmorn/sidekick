@@ -11,9 +11,11 @@
  * verb `subagent-start` adds the worker's limits. The PreToolUse
  * verb `pre-enter-worktree` adds no context: it fetches the default branch
  * before `EnterWorktree` creates a worktree, and prints nothing. A known verb
- * prints nothing and returns 0 for any other event, because a hook never
- * blocks or fails the call it watches (ADR-0010, ADR-0011). An unknown or
- * missing verb prints the usage and returns 1.
+ * prints nothing and returns 0 on input it does not recognise, because a hook
+ * never blocks or fails the call it watches (ADR-0010, ADR-0011).
+ * `subagent-start` reads no input: hooks.json binds it to SubagentStart alone,
+ * and its wrapper runs only in a dispatched worker. An unknown or missing verb
+ * prints the usage and returns 1.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';

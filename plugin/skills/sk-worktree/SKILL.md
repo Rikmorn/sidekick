@@ -66,7 +66,7 @@ The route depends on which checkout holds the target, which `sidekick worktree l
 
 | Target | Route |
 |---|---|
-| The remote | Push the branch. A pull request follows the repo's convention, and the worktree stays until it merges. A later done fetches, and `remove` then finds the work landed, squash merges included |
+| The remote | Push the branch. A pull request follows the repo's convention, and the worktree stays until it merges. A later done fetches, and `remove` then finds the work landed, rebased or squash-merged work included |
 | A branch no checkout holds | From inside, `git push . HEAD:<target>`. Git fast-forwards the branch, and refuses a push that is not a fast-forward |
 | The branch the main checkout holds | Read `list`'s main-checkout row from inside the worktree, before stepping out, since the row counts this session once its `cwd` is in the main checkout. A fast-forward moves files under any session there. So when the row reads `in use` or `unknown`, ask whether to land anyway, wait, or push instead. Then step out with `ExitWorktree` `keep`, and run `git merge --ff-only <worktree-branch>` in the main checkout. `<worktree-branch>` is the worktree's branch, the first field of `move`'s line, not the target |
 | A branch another worktree holds | When `list` shows nothing holds that worktree, and it sits under `.claude/worktrees/`, enter it with `EnterWorktree` and its `path`. Fast-forward there, and step out with `keep`. Otherwise ask |

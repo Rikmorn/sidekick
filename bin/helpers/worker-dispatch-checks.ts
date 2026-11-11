@@ -1,6 +1,6 @@
 /**
  * The checks `sidekick worker dispatch` runs before it launches: the brief's
- * place, the launching checkout, the worker's names, the permission mode, the
+ * place and its `## Limits` section, the launching checkout, the worker's names, the permission mode, the
  * plugin folder, and the profile. Every check names each reason it refuses; a
  * pass hands the launch a `Ready`.
  */
