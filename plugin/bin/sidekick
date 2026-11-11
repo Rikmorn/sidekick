@@ -1432,7 +1432,8 @@ function descriptionProse(description) {
 }
 var RELEASE_CHECK_LINE = /^\s*(?:[-*+][ \t]+)?(?:(\*\*|__|\*|_)verified by the release(?::\1|\1:)|verified by the release:)/im;
 var awaitsReleaseCheck = (body) => RELEASE_CHECK_LINE.test(body);
-var openOf = (issues) => issues.filter((i) => i.open && !i.awaitsRelease);
+var isOpenWork = (issue) => issue.open && !issue.awaitsRelease;
+var openOf = (issues) => issues.filter(isOpenWork);
 var inProgress = (i) => i.status === "In Progress";
 var notStarted = (i) => i.status === "Backlog" || i.status === null;
 function startable(issues) {
@@ -1491,12 +1492,15 @@ function parsedPlans(p) {
     return null;
   return { list: p.plans.list, unplanned: p.plans.unplanned };
 }
-var openRefs = (plan) => plan.issues.filter((i) => i.open).map((i) => `#${i.number}`).join(", ");
+var openRefs = (plan) => plan.issues.filter(isOpenWork).map((i) => `#${i.number}`).join(", ");
 var plannedNumbers = (list) => new Set(list.flatMap((pl) => pl.issues.map((i) => i.number)));
 function continueMove(cards, plans) {
   const lowest = Math.min(...cards.map((i) => i.number));
   const plan = plans === null ? undefined : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
-  return plan === undefined ? `continue #${lowest}` : `continue plan ${plan.name} (${openRefs(plan)})`;
+  const refs = plan === undefined ? "" : openRefs(plan);
+  if (plan === undefined || refs === "")
+    return `continue #${lowest}`;
+  return `continue plan ${plan.name} (${refs})`;
 }
 function pullMove(p, plans) {
   if (plans === null) {
@@ -8706,7 +8710,8 @@ function tierLine(tier, candidates3) {
   const body = tierBody(candidates3);
   return body === null ? null : `tier ${tier} ${body}`;
 }
-var openRefs2 = (plan) => plan.issues.filter((i) => i.open).map((i) => `#${i.number}`).join(", ");
+var openRefs2 = (plan) => plan.issues.filter(isOpenWork).map((i) => `#${i.number}`).join(", ");
+var awaitingRefs = (plan) => plan.issues.filter((i) => i.awaitsRelease).map((i) => `#${i.number} (release check)`).join(", ");
 var card = (i) => `#${i.number} (${i.age_days} d)`;
 var titledCard = (i) => `${ref(i)} (${i.age_days} d)`;
 function inProgressLine(v) {
@@ -8724,16 +8729,20 @@ function doneSegment(count2) {
     return null;
   return count2 === 1 ? "1 plan done" : `${count2} plans done`;
 }
+function waitingSegments(done) {
+  return done.filter((pl) => pl.issues.some((i) => i.awaitsRelease)).map((pl) => `plan ${cut(pl.name)} waits for ${awaitingRefs(pl)}`);
+}
 function planCandidatesLine(v, list2) {
   const inState = (state) => list2.filter((pl) => pl.state === state);
   const next = list2.find((pl) => pl.state === "next");
   const later = inState("later");
-  const openCount = (pl) => pl.issues.filter((i) => i.open).length;
+  const openCount = (pl) => pl.issues.filter(isOpenWork).length;
   const unplanned = v.unplanned.map((i) => `#${i.number}`).join(", ");
   const segments = [
     next === undefined ? null : `next plan ${cut(next.name)} (${openRefs2(next)})`,
     later.length === 0 ? null : `then ${later.map((pl) => `${cut(pl.name)} (${openCount(pl)})`).join(", ")}`,
     doneSegment(inState("done").length),
+    ...waitingSegments(inState("done")),
     `unplanned: ${unplanned === "" ? "none" : unplanned}`,
     `tier 2: ${tierBody(v.tier2) ?? "none"}`
   ];
@@ -8863,6 +8872,7 @@ function lintAll(input) {
 
 // bin/helpers/pm-pane.ts
 var IN_PROGRESS = "In Progress";
+var RELEASE_CHECK = "release check";
 function ageText(days) {
   return days === null ? null : `${days} d`;
 }
@@ -8877,12 +8887,13 @@ function leaf(mark, ref2, text, age) {
   };
 }
 function markOf(issue) {
-  if (issue.open && issue.status === IN_PROGRESS)
-    return "running";
-  return issue.open ? "later" : "done";
+  if (!isOpenWork(issue))
+    return "done";
+  return issue.status === IN_PROGRESS ? "running" : "later";
 }
 function issueNode(issue) {
-  return leaf(markOf(issue), `#${issue.number}`, issue.title ?? "no card", issue.ageDays);
+  const node = leaf(markOf(issue), `#${issue.number}`, issue.title ?? "no card", issue.ageDays);
+  return issue.awaitsRelease ? { ...node, right: RELEASE_CHECK, weight: "quiet" } : node;
 }
 function titledNode(issue, mark, age) {
   return leaf(mark, `#${issue.number}`, issue.title, age);
@@ -8891,10 +8902,13 @@ function quiet(mark, text, children2 = []) {
   return { mark, ref: null, text, right: null, weight: "quiet", children: children2 };
 }
 function openIssues(plan) {
-  const open2 = plan.issues.filter((i) => i.open);
+  const open2 = plan.issues.filter(isOpenWork);
   const started = open2.filter((i) => i.status === IN_PROGRESS);
   const rest2 = open2.filter((i) => i.status !== IN_PROGRESS);
   return [...started, ...rest2].map(issueNode);
+}
+function awaitingIssues(plan) {
+  return plan.issues.filter((i) => i.awaitsRelease).map(issueNode);
 }
 function closedNode(plan) {
   const closed = plan.issues.filter((i) => !i.open).length;
@@ -8907,7 +8921,11 @@ function planNode(plan) {
       ...base,
       right: null,
       weight: "strong",
-      children: [...openIssues(plan), ...closedNode(plan)]
+      children: [
+        ...openIssues(plan),
+        ...awaitingIssues(plan),
+        ...closedNode(plan)
+      ]
     };
   }
   if (plan.state === "next") {
@@ -8915,10 +8933,10 @@ function planNode(plan) {
       ...base,
       right: "next",
       weight: "plain",
-      children: openIssues(plan)
+      children: [...openIssues(plan), ...awaitingIssues(plan)]
     };
   }
-  const open2 = plan.issues.filter((i) => i.open).length;
+  const open2 = plan.issues.filter(isOpenWork).length;
   return {
     ...base,
     right: `${open2} open`,
@@ -8929,13 +8947,24 @@ function planNode(plan) {
 function plural(count2, noun) {
   return `${count2} ${noun}${count2 === 1 ? "" : "s"}`;
 }
+function waitingPlans(done) {
+  return done.flatMap((plan) => {
+    const awaiting = awaitingIssues(plan);
+    return awaiting.length === 0 ? [] : [quiet("done", plan.name, awaiting)];
+  });
+}
+function foldNode(done) {
+  if (done.length === 0)
+    return [];
+  const text = `${plural(done.length, "plan")} done`;
+  return [quiet("done", text, waitingPlans(done))];
+}
 function planNodes(view) {
   if (view.plans.parse !== "ok")
     return [];
-  const done = view.plans.list.filter((p) => p.state === "done").length;
-  const fold = done === 0 ? [] : [quiet("done", `${plural(done, "plan")} done`)];
+  const done = view.plans.list.filter((p) => p.state === "done");
   const active = view.plans.list.filter((p) => p.state !== "done");
-  return [...fold, ...active.map(planNode)];
+  return [...foldNode(done), ...active.map(planNode)];
 }
 function capped(name, issues) {
   if (issues.length === 0)

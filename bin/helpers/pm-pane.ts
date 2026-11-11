@@ -5,9 +5,11 @@ import type {
   PaneRow,
 } from '../../plugin/hooks/board/contract.js';
 import { PER_TIER_MAX } from './pm-brief.js';
+import { isOpenWork } from './pm-plans.js';
 import type { PickupView, ViewIssue, ViewPlan } from './pm-view.js';
 
 const IN_PROGRESS = 'In Progress';
+const RELEASE_CHECK = 'release check';
 
 type Titled = { number: number; title: string };
 
@@ -31,18 +33,22 @@ function leaf(
   };
 }
 
+// An issue awaiting its release check has landed, so it reads as done.
 function markOf(issue: ViewIssue): 'done' | 'running' | 'later' {
-  if (issue.open && issue.status === IN_PROGRESS) return 'running';
-  return issue.open ? 'later' : 'done';
+  if (!isOpenWork(issue)) return 'done';
+  return issue.status === IN_PROGRESS ? 'running' : 'later';
 }
 
 function issueNode(issue: ViewIssue): PaneNode {
-  return leaf(
+  const node = leaf(
     markOf(issue),
     `#${issue.number}`,
     issue.title ?? 'no card',
     issue.ageDays,
   );
+  return issue.awaitsRelease
+    ? { ...node, right: RELEASE_CHECK, weight: 'quiet' }
+    : node;
 }
 
 function titledNode(
@@ -62,10 +68,14 @@ function quiet(
 }
 
 function openIssues(plan: ViewPlan): PaneNode[] {
-  const open = plan.issues.filter((i) => i.open);
+  const open = plan.issues.filter(isOpenWork);
   const started = open.filter((i) => i.status === IN_PROGRESS);
   const rest = open.filter((i) => i.status !== IN_PROGRESS);
   return [...started, ...rest].map(issueNode);
+}
+
+function awaitingIssues(plan: ViewPlan): PaneNode[] {
+  return plan.issues.filter((i) => i.awaitsRelease).map(issueNode);
 }
 
 function closedNode(plan: ViewPlan): PaneNode[] {
@@ -80,7 +90,11 @@ function planNode(plan: ViewPlan): PaneNode {
       ...base,
       right: null,
       weight: 'strong',
-      children: [...openIssues(plan), ...closedNode(plan)],
+      children: [
+        ...openIssues(plan),
+        ...awaitingIssues(plan),
+        ...closedNode(plan),
+      ],
     };
   }
   if (plan.state === 'next') {
@@ -88,10 +102,10 @@ function planNode(plan: ViewPlan): PaneNode {
       ...base,
       right: 'next',
       weight: 'plain',
-      children: openIssues(plan),
+      children: [...openIssues(plan), ...awaitingIssues(plan)],
     };
   }
-  const open = plan.issues.filter((i) => i.open).length;
+  const open = plan.issues.filter(isOpenWork).length;
   return {
     ...base,
     right: `${open} open`,
@@ -104,13 +118,25 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
+// A done plan stays folded unless it still waits for a release check.
+function waitingPlans(done: ViewPlan[]): PaneNode[] {
+  return done.flatMap((plan) => {
+    const awaiting = awaitingIssues(plan);
+    return awaiting.length === 0 ? [] : [quiet('done', plan.name, awaiting)];
+  });
+}
+
+function foldNode(done: ViewPlan[]): PaneNode[] {
+  if (done.length === 0) return [];
+  const text = `${plural(done.length, 'plan')} done`;
+  return [quiet('done', text, waitingPlans(done))];
+}
+
 function planNodes(view: PickupView): PaneNode[] {
   if (view.plans.parse !== 'ok') return [];
-  const done = view.plans.list.filter((p) => p.state === 'done').length;
-  const fold =
-    done === 0 ? [] : [quiet('done', `${plural(done, 'plan')} done`)];
+  const done = view.plans.list.filter((p) => p.state === 'done');
   const active = view.plans.list.filter((p) => p.state !== 'done');
-  return [...fold, ...active.map(planNode)];
+  return [...foldNode(done), ...active.map(planNode)];
 }
 
 function capped(name: string, issues: Titled[]): PaneNode[] {

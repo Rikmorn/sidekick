@@ -7,7 +7,7 @@
 
 import type { Candidate, Drift, InProgress } from './pm.js';
 import type { IssueCounts, Milestone } from './pm-data.js';
-import type { Plans } from './pm-plans.js';
+import { isOpenWork, type Plans } from './pm-plans.js';
 import {
   cut,
   nextMove,
@@ -56,8 +56,15 @@ function tierLine(tier: 1 | 2, candidates: Candidate[]): string | null {
 
 const openRefs = (plan: ViewPlan): string =>
   plan.issues
-    .filter((i) => i.open)
+    .filter(isOpenWork)
     .map((i) => `#${i.number}`)
+    .join(', ');
+
+// Marked as `--report` marks them.
+const awaitingRefs = (plan: ViewPlan): string =>
+  plan.issues
+    .filter((i) => i.awaitsRelease)
+    .map((i) => `#${i.number} (release check)`)
     .join(', ');
 
 const card = (i: InProgress): string => `#${i.number} (${i.age_days} d)`;
@@ -81,12 +88,18 @@ function doneSegment(count: number): string | null {
   return count === 1 ? '1 plan done' : `${count} plans done`;
 }
 
+function waitingSegments(done: ViewPlan[]): string[] {
+  return done
+    .filter((pl) => pl.issues.some((i) => i.awaitsRelease))
+    .map((pl) => `plan ${cut(pl.name)} waits for ${awaitingRefs(pl)}`);
+}
+
 function planCandidatesLine(v: PickupView, list: ViewPlan[]): string {
   const inState = (state: ViewPlan['state']) =>
     list.filter((pl) => pl.state === state);
   const next = list.find((pl) => pl.state === 'next');
   const later = inState('later');
-  const openCount = (pl: ViewPlan) => pl.issues.filter((i) => i.open).length;
+  const openCount = (pl: ViewPlan) => pl.issues.filter(isOpenWork).length;
   const unplanned = v.unplanned.map((i) => `#${i.number}`).join(', ');
   const segments = [
     next === undefined
@@ -96,6 +109,7 @@ function planCandidatesLine(v: PickupView, list: ViewPlan[]): string {
       ? null
       : `then ${later.map((pl) => `${cut(pl.name)} (${openCount(pl)})`).join(', ')}`,
     doneSegment(inState('done').length),
+    ...waitingSegments(inState('done')),
     `unplanned: ${unplanned === '' ? 'none' : unplanned}`,
     `tier 2: ${tierBody(v.tier2) ?? 'none'}`,
   ];

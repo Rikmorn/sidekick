@@ -478,3 +478,104 @@ describe('plans in the brief', () => {
     ).toBe('nothing to pick up: verify, then close the milestone');
   });
 });
+
+describe('release checks in the brief', () => {
+  const ms = (description: string): Milestone => ({
+    number: 9,
+    title: 'R9',
+    description,
+    due_on: null,
+    open_issues: 4,
+    closed_issues: 1,
+    state: 'open',
+    created_at: '2026-10-01T09:00:00Z',
+  });
+  const card = (number: number, status: string): Item => ({
+    itemId: `PVTI_${number}`,
+    number,
+    status,
+    title: `t${number}`,
+    state: status === 'Done' ? 'CLOSED' : 'OPEN',
+    stateReason: null,
+    updatedAt: '2026-10-01T00:00:00Z',
+    statusUpdatedAt: null,
+    url: '',
+    milestone: 'R9',
+    labels: [],
+    assignees: [],
+    repo: 'Rikmorn/sidekick',
+  });
+  const brief = (
+    description: string,
+    items: Item[],
+    awaiting: number[],
+    over: Partial<BriefInput> = {},
+  ): string[] =>
+    renderBrief(
+      base({
+        milestone: ms(description),
+        plans: planView(ms(description), items, new Set(awaiting)),
+        ...over,
+      }),
+    ).split('\n');
+
+  test('a done plan whose only open issue awaits its release check says so, and the next plan is the pull', () => {
+    const r = brief(
+      plansHeader('Landed (#1, #2)', 'Orient (#3)'),
+      [card(1, 'Done'), card(2, 'Backlog'), card(3, 'Backlog')],
+      [2],
+    );
+    expect(r[3]).toBe(
+      'candidates: next plan Orient (#3) · 1 plan done · plan Landed waits for #2 (release check) · unplanned: none · tier 2: none',
+    );
+    expect(r[5]).toBe('next: pull plan Orient (#3)');
+  });
+
+  test('a done plan names every issue awaiting its release check', () => {
+    const r = brief(
+      plansHeader('Landed (#1, #2)'),
+      [card(1, 'Backlog'), card(2, 'Backlog')],
+      [1, 2],
+    );
+    expect(r[3]).toBe(
+      'candidates: 1 plan done · plan Landed waits for #1 (release check), #2 (release check) · unplanned: none · tier 2: none',
+    );
+  });
+
+  test('a plan that mixes an awaiting issue with open work lists and counts only the work', () => {
+    const r = brief(
+      plansHeader('A (#1, #2)', 'B (#3, #4)'),
+      [
+        card(1, 'Backlog'),
+        card(2, 'Backlog'),
+        card(3, 'Backlog'),
+        card(4, 'Backlog'),
+      ],
+      [1, 4],
+    );
+    expect(r[3]).toBe(
+      'candidates: next plan A (#2) · then B (1) · unplanned: none · tier 2: none',
+    );
+    expect(r[5]).toBe('next: pull plan A (#2)');
+  });
+
+  test('continuing a running plan names only its open work', () => {
+    const r = brief(
+      plansHeader('A (#1, #2)'),
+      [card(1, 'In Progress'), card(2, 'Backlog')],
+      [2],
+      { in_progress: [inProgress(1, 0)] },
+    );
+    expect(r[5]).toBe('next: continue plan A (#1)');
+  });
+
+  test('an awaiting issue left In Progress is continued alone, since its plan is done', () => {
+    const r = brief(
+      plansHeader('A (#1, #2)', 'B (#3)'),
+      [card(1, 'Done'), card(2, 'In Progress'), card(3, 'Backlog')],
+      [2],
+      { in_progress: [inProgress(2, 1)] },
+    );
+    expect(r[5]).toBe('next: continue #2');
+  });
+});

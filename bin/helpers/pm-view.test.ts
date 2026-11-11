@@ -116,6 +116,24 @@ describe('pickupView', () => {
       expect(pickupView(p).next).toBe(nextMove(p));
     }
   });
+
+  test('a plan issue keeps whether it awaits its release check', () => {
+    const v = pickupView(pick('releaseChecks'));
+    if (v.plans.parse !== 'ok') throw new Error('fixture parses');
+    const landed = v.plans.list[1];
+    expect(landed?.issues.map((i) => [i.number, i.awaitsRelease])).toEqual([
+      [61, false],
+      [62, true],
+    ]);
+  });
+});
+
+describe('nextMove with release checks', () => {
+  test('continuing or pulling a plan names only its open work', () => {
+    const p = pick('releaseChecks');
+    expect(nextMove(p)).toBe('continue plan Running (#65)');
+    expect(nextMove({ ...p, in_progress: [] })).toBe('pull plan Mixed (#69)');
+  });
 });
 
 describe('driftEntries', () => {

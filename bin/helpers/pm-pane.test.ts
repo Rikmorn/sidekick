@@ -30,6 +30,8 @@ const running = (n: number, age: number) =>
   node('running', `#${n}`, `t${n}`, `${age} d`, 'plain');
 const group = (text: string, children: PaneNode[]) =>
   node('group', null, text, null, 'quiet', children);
+const awaiting = (n: number) =>
+  node('done', `#${n}`, `t${n}`, 'release check', 'quiet');
 const more = (n: number) => node('more', null, `+${n} more`, null, 'quiet');
 
 const nextRow = (input: BriefInput): PaneRow => ({
@@ -282,6 +284,7 @@ describe('paneRows', () => {
       title: `t${number}`,
       open: true,
       status,
+      awaitsRelease: false,
       ageDays: status === 'In Progress' ? 3 : null,
     });
     const view = {
@@ -301,6 +304,40 @@ describe('paneRows', () => {
     if (tree?.kind !== 'tree') throw new Error('the view has a tree');
     const plan = tree.nodes.find((n) => n.text === 'Plan');
     expect(plan?.children.map((c) => c.ref)).toEqual(['#2', '#1']);
+  });
+});
+
+describe('paneRows with release checks', () => {
+  const treeOf = (input: BriefInput): PaneNode[] => {
+    const tree = rowsOf(input).at(-1);
+    if (tree?.kind !== 'tree') throw new Error('the pickup has a tree');
+    return tree.nodes;
+  };
+
+  test('the fold opens on each done plan that waits for its release check, naming its awaiting issues', () => {
+    const [fold] = treeOf(pick('releaseChecks'));
+    expect(fold).toEqual(
+      node('done', null, '3 plans done', null, 'quiet', [
+        node('done', null, 'Landed', null, 'quiet', [awaiting(62)]),
+        node('done', null, 'Two checks', null, 'quiet', [
+          awaiting(63),
+          awaiting(64),
+        ]),
+      ]),
+    );
+  });
+
+  test('a plan with open work lists an awaiting issue as landed, after the work, and counts only the work', () => {
+    const [, ...active] = treeOf(pick('releaseChecks'));
+    expect(active).toEqual([
+      node('running', null, 'Running', null, 'strong', [
+        running(65, 2),
+        awaiting(66),
+        node('done', null, '1 closed', null, 'quiet'),
+      ]),
+      node('next', null, 'Mixed', 'next', 'plain', [later(69), awaiting(68)]),
+      node('later', null, 'Later', '1 open', 'quiet'),
+    ]);
   });
 });
 

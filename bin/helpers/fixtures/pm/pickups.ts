@@ -31,6 +31,11 @@ const planIssue = (
   status,
   awaitsRelease: false,
 });
+// Open, on the board in Backlog, and waiting only for its release check.
+const awaiting = (number: number): PlanIssue => ({
+  ...planIssue(number, 'Backlog'),
+  awaitsRelease: true,
+});
 
 const milestone = (description: string, number = 6): Milestone => ({
   number,
@@ -550,5 +555,27 @@ export const pickups: Record<string, BriefInput> = {
   emptyMilestone: base({
     issue_counts: { open: 0, closed: 0 },
     plans: { parse: 'none', list: [], unplanned: [] },
+  }),
+  // The states are planView's for these issues: an awaiting issue is landed work.
+  releaseChecks: base({
+    in_progress: [card(65, 2)],
+    plans: {
+      parse: 'ok',
+      list: [
+        planned('Plain', 'done', planIssue(60, 'Done')),
+        planned('Landed', 'done', planIssue(61, 'Done'), awaiting(62)),
+        planned('Two checks', 'done', awaiting(63), awaiting(64)),
+        planned(
+          'Running',
+          'running',
+          planIssue(65, 'In Progress'),
+          awaiting(66),
+          planIssue(67, 'Done'),
+        ),
+        planned('Mixed', 'next', awaiting(68), planIssue(69, 'Backlog')),
+        planned('Later', 'later', planIssue(70, 'Backlog'), awaiting(71)),
+      ],
+      unplanned: [],
+    },
   }),
 };

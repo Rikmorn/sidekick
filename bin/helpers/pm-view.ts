@@ -9,6 +9,7 @@ import type { BriefInput } from './pm-brief.js';
 import type { IssueCounts } from './pm-data.js';
 import {
   descriptionProse,
+  isOpenWork,
   type PlanIssue,
   type PlanState,
   type Plans,
@@ -43,7 +44,7 @@ function parsedPlans(p: BriefInput): ParsedPlans | null {
 
 const openRefs = (plan: PlanView): string =>
   plan.issues
-    .filter((i) => i.open)
+    .filter(isOpenWork)
     .map((i) => `#${i.number}`)
     .join(', ');
 
@@ -56,9 +57,10 @@ function continueMove(cards: InProgress[], plans: ParsedPlans | null): string {
     plans === null
       ? undefined
       : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
-  return plan === undefined
-    ? `continue #${lowest}`
-    : `continue plan ${plan.name} (${openRefs(plan)})`;
+  const refs = plan === undefined ? '' : openRefs(plan);
+  // A card awaiting its release check can sit in a done plan, which holds no work.
+  if (plan === undefined || refs === '') return `continue #${lowest}`;
+  return `continue plan ${plan.name} (${refs})`;
 }
 
 function pullMove(p: BriefInput, plans: ParsedPlans | null): string | null {
@@ -138,12 +140,7 @@ export function driftEntries(drift: Drift, plans: Plans | null): DriftEntry[] {
   return entries;
 }
 
-export interface ViewIssue {
-  number: number;
-  /** `null` when the issue has no card on the board yet. */
-  title: string | null;
-  open: boolean;
-  status: string | null;
+export interface ViewIssue extends PlanIssue {
   /** Days In Progress; `null` unless the issue is In Progress with a card. */
   ageDays: number | null;
 }

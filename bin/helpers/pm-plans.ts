@@ -149,9 +149,12 @@ export type Plans =
   | ({ parse: 'none' } & PlansBody)
   | ({ parse: 'malformed'; reason: string } & PlansBody);
 
-// The open issues still to do: one awaiting its release check has landed.
-const openOf = (issues: PlanIssue[]): PlanIssue[] =>
-  issues.filter((i) => i.open && !i.awaitsRelease);
+/** Whether an issue is work still to do: open, and not awaiting its release check, since an issue awaiting one has landed. */
+export const isOpenWork = (
+  issue: Pick<PlanIssue, 'open' | 'awaitsRelease'>,
+): boolean => issue.open && !issue.awaitsRelease;
+
+const openOf = (issues: PlanIssue[]): PlanIssue[] => issues.filter(isOpenWork);
 const inProgress = (i: PlanIssue): boolean => i.status === 'In Progress';
 // No card yet reads as not started; see planView.
 const notStarted = (i: PlanIssue): boolean =>

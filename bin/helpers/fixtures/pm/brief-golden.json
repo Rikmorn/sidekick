@@ -133,5 +133,20 @@
         "detail": null
       }
     }
+  },
+  "releaseChecks": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: R6 — PM layer (3 open, 2 closed) · Outcome: sessions start from the board.\nin progress: plan Running: #65 (2 d)\ncandidates: next plan Mixed (#69) · then Later (1) · 3 plans done · plan Landed waits for #62 (release check) · plan Two checks waits for #63 (release check), #64 (release check) · unplanned: none · tier 2: none\ndrift: none\nnext: continue plan Running (#65)",
+    "glance": {
+      "ON_TRACK": {
+        "level": "good",
+        "word": "on track",
+        "detail": null
+      },
+      "AT_RISK": {
+        "level": "warning",
+        "word": "at risk",
+        "detail": null
+      }
+    }
   }
 }
