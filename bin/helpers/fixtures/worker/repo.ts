@@ -47,12 +47,17 @@ export function brokenGitFile(): string {
   return dir;
 }
 
-/** Runs git in `cwd` and returns its output, trimmed. */
+/**
+ * Runs git in `cwd` and returns its output, trimmed. git's stderr goes to the
+ * thrown error, not the terminal, so a test that expects git to fail prints
+ * nothing.
+ */
 export const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', args, {
     cwd,
     encoding: 'utf-8',
     maxBuffer: MAX_OUTPUT,
+    stdio: 'pipe',
   }).trim();
 
 /**
