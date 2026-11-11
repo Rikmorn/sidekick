@@ -12,6 +12,8 @@
 
 > **Amended 2026-11-09 (#342):** a `SubagentStart` settings hook is the third attachment point, after the Skill hook and ADR-0011's Read hook. In a dispatched worker, `sidekick hook subagent-start` hands each subagent the brief's `## Limits` and `sk-worker`'s own limits. Claude Code runs no plugin's `SubagentStart` hook for `web-fetch` (#347), so that type gets nothing. The hook adds context only.
 
+> **Amended 2026-11-11 (#342):** Decision 2 excepts `sidekick hook subagent-start`, by the operator's ruling of 2026-11-11. The verb ignores its input and hands over the limits whatever stdin holds. `hooks.json` binds it to `SubagentStart` alone, and its wrapper exits at once outside a dispatched worker. It still adds context only, and never fails the call.
+
 **Status:** Accepted (2026-09-25). Amends ADR-0009's Consequences on how far sidekick reaches into superpowers' skills. Issue #119, milestone R7.
 
 ## Context
