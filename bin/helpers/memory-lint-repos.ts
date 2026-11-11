@@ -13,6 +13,7 @@ import { walkFolder } from './memory-link-facts.js';
 import { checkoutIssue, readKeyAt } from './memory-settings.js';
 import { sameFileIgnoringStamps } from './memory-stamps.js';
 import { folderNameIssue, MARKER_FILE, readMarker } from './memory-store.js';
+import { outsideRepo } from './outside-repo.js';
 import type { Runner } from './pm-data.js';
 
 /** Realpath where the path exists, else lexical, as `repoView` resolves paths. */
@@ -33,14 +34,17 @@ function isInside(folder: string, parent: string): boolean {
 }
 
 /**
- * What a marker's root is. `undecided` means git failed inside a repository,
- * which says nothing about the root, so no check reports on it. `refused` is
- * a repository whose settings Claude Code does not read, for `checkoutIssue`'s
- * reasons; the memory hook prints nothing there, so no check reports on it.
+ * What a marker's root is. `undecided` means git worktree list failed inside
+ * a repository, which says nothing about the root, so no check reports on it.
+ * `git-failed` carries git's line from a `git rev-parse` that failed for a
+ * reason other than being outside every repository. `refused` is a repository
+ * whose settings Claude Code does not read, for `checkoutIssue`'s reasons;
+ * the memory hook prints nothing there, so no check reports on it.
  */
 export type RootFact =
   | { kind: 'missing' }
   | { kind: 'outside-git' }
+  | { kind: 'git-failed'; issue: string }
   | { kind: 'refused' }
   | { kind: 'not-main'; top: string }
   | { kind: 'undecided' }
@@ -51,10 +55,12 @@ export function rootFact(root: string, runGit: Runner, home: string): RootFact {
   if (!fs.existsSync(root)) return { kind: 'missing' };
   const found = findRepo(runGit, root);
   if (found.repo === undefined) {
-    // findRepo warns only when git failed inside a repository.
-    return found.warnings.length > 0
-      ? { kind: 'undecided' }
-      : { kind: 'outside-git' };
+    // findRepo gives no rev-parse issue only when git worktree list failed.
+    const issue = found.revParseIssue;
+    if (issue === undefined) return { kind: 'undecided' };
+    return outsideRepo(issue, root)
+      ? { kind: 'outside-git' }
+      : { kind: 'git-failed', issue };
   }
   // Before the top: git names a repo's git dir as its main worktree when that dir is not named .git.
   if (checkoutIssue(root, found.repo, home) !== undefined) {

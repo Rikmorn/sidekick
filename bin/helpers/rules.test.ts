@@ -27,18 +27,41 @@ const removeAll = (...dirs: string[]): void => {
   for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
 };
 
+// A folder whose `.git` is a file holding `garbage`, where `git rev-parse`
+// fails for a reason other than "not a git repository".
+function brokenGitFile(): string {
+  const dir = fs.realpathSync(tmp());
+  fs.writeFileSync(path.join(dir, '.git'), 'garbage');
+  return dir;
+}
+
 describe('workTreeRootOf', () => {
-  test('finds the top from a subfolder, and undefined outside a work tree', () => {
+  test('finds the top from a subfolder, and reads a plain folder as outside', () => {
     const repo = tmp();
     const plain = tmp();
     try {
       gitInit(repo);
       const sub = path.join(repo, 'a', 'b');
       fs.mkdirSync(sub, { recursive: true });
-      expect(workTreeRootOf(sub)).toBe(fs.realpathSync(repo));
-      expect(workTreeRootOf(plain)).toBeUndefined();
+      expect(workTreeRootOf(sub)).toEqual({
+        kind: 'inside',
+        top: fs.realpathSync(repo),
+      });
+      expect(workTreeRootOf(plain)).toEqual({ kind: 'outside' });
     } finally {
       removeAll(repo, plain);
+    }
+  });
+
+  test("gives git's line where git rev-parse fails for another reason", () => {
+    const dir = brokenGitFile();
+    try {
+      expect(workTreeRootOf(dir)).toEqual({
+        kind: 'failed',
+        issue: `fatal: invalid gitfile format: ${dir}/.git`,
+      });
+    } finally {
+      removeAll(dir);
     }
   });
 
@@ -54,7 +77,8 @@ describe('workTreeRootOf', () => {
       // goes in a child's own environment. Under GIT_DIR alone git takes cwd
       // as the top, so a subfolder tells the two repos apart.
       const script = `import { workTreeRootOf } from ${JSON.stringify(`${import.meta.dir}/rules.ts`)};
-        process.stdout.write(workTreeRootOf(${JSON.stringify(sub)}) ?? '');`;
+        const root = workTreeRootOf(${JSON.stringify(sub)});
+        process.stdout.write(root.kind === 'inside' ? root.top : '');`;
       const child = spawnSync(process.execPath, ['-e', script], {
         encoding: 'utf-8',
         env: { ...process.env, GIT_DIR: path.join(other, '.git') },
@@ -90,16 +114,34 @@ describe('workTreeRootOf', () => {
       const linked = path.join(holder, 'wt');
       execFileSync('git', ['worktree', 'add', '-q', linked], { cwd: repo });
       expect(fs.statSync(path.join(linked, '.git')).isFile()).toBe(true);
-      expect(workTreeRootOf(linked)).toBe(fs.realpathSync(linked));
+      expect(workTreeRootOf(linked)).toEqual({
+        kind: 'inside',
+        top: fs.realpathSync(linked),
+      });
     } finally {
       removeAll(repo, holder);
     }
   });
 
-  test('repoRootOf still falls back to cwd outside a work tree', () => {
+  test('repoRootOf still falls back to cwd outside a work tree, and warns nothing', () => {
     const dir = tmp();
+    const warned: string[] = [];
     try {
-      expect(repoRootOf(dir)).toBe(dir);
+      expect(repoRootOf(dir, (l) => warned.push(l))).toBe(dir);
+      expect(warned).toEqual([]);
+    } finally {
+      removeAll(dir);
+    }
+  });
+
+  test("repoRootOf falls back to cwd where git rev-parse fails for another reason, warning with git's line", () => {
+    const dir = brokenGitFile();
+    const warned: string[] = [];
+    try {
+      expect(repoRootOf(dir, (l) => warned.push(l))).toBe(dir);
+      expect(warned).toEqual([
+        `git rev-parse failed in ${dir}, so the repo root falls back to that folder: fatal: invalid gitfile format: ${dir}/.git; fix what git reports, then run the command again`,
+      ]);
     } finally {
       removeAll(dir);
     }
@@ -252,6 +294,28 @@ describe('runRulesCli', () => {
       true,
     );
     expect(lines.join('\n')).toContain(`project root: ${cwd}`);
+    expect(lines[0]).toBe(`project root: ${cwd}`);
+  });
+
+  test("install --project where git rev-parse fails for another reason warns with git's line, then installs at cwd", () => {
+    const src = tmp();
+    const cwd = brokenGitFile();
+    const home = tmp();
+    write(src, 'sk-a.md', RULE_A);
+    const lines: string[] = [];
+    const code = runRulesCli(
+      ['install', '--project'],
+      { src, cwd, claudeHome: home },
+      (l) => lines.push(l),
+    );
+    expect(code).toBe(0);
+    expect(lines.slice(0, 2)).toEqual([
+      `git rev-parse failed in ${cwd}, so the repo root falls back to that folder: fatal: invalid gitfile format: ${cwd}/.git; fix what git reports, then run the command again`,
+      `project root: ${cwd}`,
+    ]);
+    expect(fs.existsSync(path.join(cwd, '.claude', 'rules', 'sk-a.md'))).toBe(
+      true,
+    );
   });
 
   test('check --user reports drift and overlap and exits 0; --strict exits 1 on drift only', () => {

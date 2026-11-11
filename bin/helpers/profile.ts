@@ -53,6 +53,8 @@ export interface ProfileEnv {
   home: string;
   /** The enclosing git work tree's top folder, or undefined outside one. */
   workTree: string | undefined;
+  /** git's line when `git rev-parse` failed for a reason other than being outside every repository; `workTree` is then undefined. */
+  workTreeIssue?: string;
   /** Where the settings check keeps its temp file. */
   tmpdir: string;
   runClaude: ClaudeRunner;
@@ -331,7 +333,9 @@ const noRepoStore = (penv: ProfileEnv): string => {
     return 'SIDEKICK_PROFILES_DIR is set, so there is no repo store';
   }
   if (penv.workTree === undefined) {
-    return 'not inside a git work tree, so there is no repo store';
+    return penv.workTreeIssue === undefined
+      ? 'not inside a git work tree, so there is no repo store'
+      : `git rev-parse failed in ${penv.cwd}, so there is no repo store: ${penv.workTreeIssue}; fix what git reports, then run the command again`;
   }
   return 'the repo store is the user store here, so --repo has nowhere else to write';
 };

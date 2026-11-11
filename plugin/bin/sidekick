@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs40 from "node:fs";
+import * as fs41 from "node:fs";
 import { realpathSync as realpathSync10 } from "node:fs";
 import * as os3 from "node:os";
 import * as path53 from "node:path";
@@ -3068,8 +3068,24 @@ function mainLine(main, held) {
 }
 
 // bin/helpers/memory-settings.ts
-import * as fs8 from "node:fs";
+import * as fs9 from "node:fs";
 import * as path9 from "node:path";
+
+// bin/helpers/outside-repo.ts
+import * as fs8 from "node:fs";
+var NOT_A_REPO = "not a git repository";
+function isFolder(target) {
+  try {
+    return fs8.statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
+var revParseLine = (stderr) => stderr.trim().split(`
+`)[0];
+function outsideRepo(revParseIssue, target) {
+  return revParseIssue === "" || revParseIssue.includes(NOT_A_REPO) || !isFolder(target);
+}
 
 // bin/helpers/shell.ts
 var shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
@@ -3083,17 +3099,17 @@ var SETTINGS_GIT_PATH = ".claude/settings.local.json";
 var KeySchema = optional(string());
 var isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var messageOf = (error) => error instanceof Error ? error.message : String(error);
-var defaultOwned = (target) => fs8.statSync(target).uid === process.getuid?.();
+var defaultOwned = (target) => fs9.statSync(target).uid === process.getuid?.();
 var supportRequest = (title, body) => `gh issue create -R Rikmorn/sidekick --title ${shellQuote(title)} --body ${shellQuote(body)}`;
 function checkoutIssue2(target, repo, home, owned = defaultOwned) {
   if (path9.basename(repo.commonDir) !== ".git") {
     return `${target} is in a repo whose git dir is ${repo.commonDir}, not a folder named .git. Claude Code then does not find its main checkout, so sidekick cannot link the repo. To ask for support, run: ${supportRequest("memory link: a repo whose git dir is not .git", "sidekick memory link refuses a repo whose git dir is not a folder named .git, such as one made with git init --separate-git-dir.")}`;
   }
-  const root = fs8.realpathSync(repo.top);
+  const root = fs9.realpathSync(repo.top);
   if (root === physical(home)) {
     return `${root} is the home folder, which Claude Code does not treat as a repo root; run the command on a path inside another repo`;
   }
-  const unowned = [root, path9.join(root, ".git"), path9.join(root, ".claude")].filter((entry) => entry !== path9.join(root, ".claude") || fs8.existsSync(entry)).find((entry) => !owned(entry));
+  const unowned = [root, path9.join(root, ".git"), path9.join(root, ".claude")].filter((entry) => entry !== path9.join(root, ".claude") || fs9.existsSync(entry)).find((entry) => !owned(entry));
   if (unowned !== undefined) {
     return `${unowned} is not owned by you, so Claude Code ignores the settings under ${root}; change the owner of ${unowned} to you, then run the command again`;
   }
@@ -3109,25 +3125,16 @@ function mainCheckout(target, runGit, home, owned = defaultOwned) {
   if (issue !== undefined)
     return { issue };
   return {
-    root: fs8.realpathSync(repo.top),
+    root: fs9.realpathSync(repo.top),
     checkouts: repo.worktrees.map((worktree) => physical(worktree.path))
   };
-}
-var NOT_A_REPO = "not a git repository";
-function isFolder(target) {
-  try {
-    return fs8.statSync(target).isDirectory();
-  } catch {
-    return false;
-  }
 }
 function noCheckoutIssue(target, found) {
   const { listIssue, revParseIssue = "" } = found;
   if (listIssue !== undefined) {
     return `${target} has no main checkout, since git worktree list failed there: ${listIssue || "it printed nothing"}; fix what git reports, then run the command again`;
   }
-  const gitRefused = revParseIssue !== "" && !revParseIssue.includes(NOT_A_REPO) && isFolder(target);
-  return gitRefused ? `${target} has no main checkout, since git rev-parse failed there: ${revParseIssue}; fix what git reports, then run the command again` : `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one`;
+  return outsideRepo(revParseIssue, target) ? `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one` : `${target} has no main checkout, since git rev-parse failed there: ${revParseIssue}; fix what git reports, then run the command again`;
 }
 function parseSettings(text, file) {
   if (text.trim() === "")
@@ -3158,7 +3165,7 @@ function parseSettings(text, file) {
 }
 function readText(file) {
   try {
-    return { text: fs8.readFileSync(file, "utf-8") };
+    return { text: fs9.readFileSync(file, "utf-8") };
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       return { text: "" };
@@ -3211,21 +3218,21 @@ function ownKeyIssue(parsed, value, file) {
   return `${file} now holds ${SETTINGS_KEY} ${parsed.key}, not ${value}; sidekick writes only a key that is absent or already its own`;
 }
 function writeTemp(file, text) {
-  fs8.mkdirSync(path9.dirname(file), { recursive: true });
+  fs9.mkdirSync(path9.dirname(file), { recursive: true });
   const temp = path9.join(path9.dirname(file), `.${path9.basename(file)}.${process.pid}.tmp`);
   try {
-    fs8.writeFileSync(temp, text, { flag: "wx" });
-    if (fs8.existsSync(file))
-      fs8.chmodSync(temp, fs8.statSync(file).mode & 511);
+    fs9.writeFileSync(temp, text, { flag: "wx" });
+    if (fs9.existsSync(file))
+      fs9.chmodSync(temp, fs9.statSync(file).mode & 511);
   } catch (error) {
-    fs8.rmSync(temp, { force: true });
+    fs9.rmSync(temp, { force: true });
     throw error;
   }
   return temp;
 }
 function resolveFile(file) {
   try {
-    return { real: fs8.realpathSync(file) };
+    return { real: fs9.realpathSync(file) };
   } catch (error) {
     const code = error instanceof Error && "code" in error ? error.code : undefined;
     if (code === "ELOOP") {
@@ -3241,7 +3248,7 @@ function resolveFile(file) {
   }
   const isLink = (() => {
     try {
-      return fs8.lstatSync(file).isSymbolicLink();
+      return fs9.lstatSync(file).isSymbolicLink();
     } catch {
       return false;
     }
@@ -3303,18 +3310,18 @@ function replaceIfUnchanged(file, text, base, afterWrite) {
     afterWrite();
     const again = readText(file);
     if ("issue" in again) {
-      fs8.rmSync(temp, { force: true });
+      fs9.rmSync(temp, { force: true });
       return { ok: false, issue: again.issue };
     }
     if (again.text !== base) {
-      fs8.rmSync(temp, { force: true });
+      fs9.rmSync(temp, { force: true });
       return "changed";
     }
-    fs8.renameSync(temp, file);
+    fs9.renameSync(temp, file);
     return "written";
   } catch (error) {
     if (temp !== undefined)
-      fs8.rmSync(temp, { force: true });
+      fs9.rmSync(temp, { force: true });
     return {
       ok: false,
       issue: `${file} cannot be written: ${messageOf(error)}; check that ${path9.dirname(file)} is writable, then run the command again`
@@ -3336,7 +3343,7 @@ function readKeyAt(top) {
 }
 
 // bin/helpers/memory-store.ts
-import * as fs9 from "node:fs";
+import * as fs10 from "node:fs";
 import * as path10 from "node:path";
 var RESERVED_NAMES = ["sources", "archive"];
 var MARKER_FILE = ".sidekick.json";
@@ -3374,10 +3381,10 @@ function folderNameIssue(name) {
 var MarkerSchema = object({ root: string() });
 function readMarker(folder) {
   const file = path10.join(folder, MARKER_FILE);
-  if (!fs9.existsSync(file))
+  if (!fs10.existsSync(file))
     return { kind: "none" };
   try {
-    const parsed = safeParse(MarkerSchema, JSON.parse(fs9.readFileSync(file, "utf-8")));
+    const parsed = safeParse(MarkerSchema, JSON.parse(fs10.readFileSync(file, "utf-8")));
     if (parsed.success)
       return { kind: "marker", root: parsed.output.root };
     return { kind: "invalid", issue: `${file} must be {"root": "<path>"}` };
@@ -3388,12 +3395,12 @@ function readMarker(folder) {
 }
 function writeMarker(folder, root) {
   const marker = { root };
-  fs9.writeFileSync(path10.join(folder, MARKER_FILE), `${JSON.stringify(marker, null, 2)}
+  fs10.writeFileSync(path10.join(folder, MARKER_FILE), `${JSON.stringify(marker, null, 2)}
 `);
 }
 function children(folder) {
   try {
-    return fs9.readdirSync(folder, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name);
+    return fs10.readdirSync(folder, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name);
   } catch {
     return [];
   }
@@ -3421,7 +3428,7 @@ var foreign = (issue, way = `${POINT_ELSEWHERE}, or move what is there.`) => ({ 
 var refusesStore = (state) => state.kind === "foreign" || state.kind === "cluttered";
 function realPath(p) {
   try {
-    return fs9.realpathSync(p);
+    return fs10.realpathSync(p);
   } catch {
     return path10.resolve(p);
   }
@@ -3431,12 +3438,12 @@ function isWorkTreeTop(store, runGit) {
   return top.code === 0 && realPath(top.stdout.trim()) === realPath(store);
 }
 function storeState(store, runGit) {
-  if (!fs9.existsSync(store))
+  if (!fs10.existsSync(store))
     return { kind: "absent" };
-  if (!fs9.statSync(store).isDirectory()) {
+  if (!fs10.statSync(store).isDirectory()) {
     return foreign(`${store} is a file, not a store folder`);
   }
-  if (fs9.readdirSync(store).length === 0)
+  if (fs10.readdirSync(store).length === 0)
     return { kind: "empty" };
   const top = isWorkTreeTop(store, runGit);
   const stopped = top ? stoppedCreation(store, runGit) : undefined;
@@ -3444,10 +3451,10 @@ function storeState(store, runGit) {
     return stopped;
   return top && hasReadme(store) ? { kind: "store" } : notAStore(store);
 }
-var hasReadme = (store) => fs9.existsSync(path10.join(store, README_FILE));
+var hasReadme = (store) => fs10.existsSync(path10.join(store, README_FILE));
 var notAStore = (store) => foreign(`${store} holds files but is not a sidekick store (a git repo with a ${README_FILE})`);
 function stoppedCreation(store, runGit) {
-  const dotGit = fs9.lstatSync(path10.join(store, GIT_FOLDER), {
+  const dotGit = fs10.lstatSync(path10.join(store, GIT_FOLDER), {
     throwIfNoEntry: false
   });
   if (dotGit?.isDirectory() !== true)
@@ -3470,7 +3477,7 @@ function stoppedCreation(store, runGit) {
   };
 }
 function othersIn(store, rel) {
-  return fs9.readdirSync(path10.join(store, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+  return fs10.readdirSync(path10.join(store, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
     const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
     const ownFile = entry.name === FINDER_FILE || CREATION_PATHS.includes(child);
     if (entry.isFile() && ownFile)
@@ -3528,7 +3535,7 @@ function createStore(store, runGit) {
     return { ok: false, issue: `${store} is already a store` };
   }
   if (state.kind !== "unfinished") {
-    fs9.mkdirSync(store, { recursive: true });
+    fs10.mkdirSync(store, { recursive: true });
     const init = runGit("git", ["init"], store);
     if (init.code !== 0)
       return { ok: false, issue: gitIssue(["init"], init) };
@@ -3548,10 +3555,10 @@ function creationContent(rel) {
 }
 function writeIfAbsent(store, rel) {
   const file = path10.join(store, ...rel.split("/"));
-  if (fs9.lstatSync(file, { throwIfNoEntry: false })?.isFile() === true)
+  if (fs10.lstatSync(file, { throwIfNoEntry: false })?.isFile() === true)
     return;
-  fs9.mkdirSync(path10.dirname(file), { recursive: true });
-  fs9.writeFileSync(file, creationContent(rel), { flag: "wx" });
+  fs10.mkdirSync(path10.dirname(file), { recursive: true });
+  fs10.writeFileSync(file, creationContent(rel), { flag: "wx" });
 }
 var STORE_README = `# Memory store
 
@@ -3602,7 +3609,7 @@ The user-level rule \`sk-memory.md\` says what a session writes here and what it
 
 // bin/helpers/profile-launch.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
-import * as fs10 from "node:fs";
+import * as fs11 from "node:fs";
 import * as path11 from "node:path";
 var isPlainObject = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var uniqueByValue = (items) => items.filter((item, i) => items.findIndex((o) => JSON.stringify(o) === JSON.stringify(item)) === i);
@@ -3735,10 +3742,10 @@ function checkSettings(settings, deps, timeoutMs = 30000) {
   if (canary === undefined) {
     return refuse(`The settings set both ${CANARY_KEYS.join(" and ")}, so the check has no canary key left.`);
   }
-  const dir = fs10.mkdtempSync(path11.join(deps.tmpdir, "sidekick-profile-"));
+  const dir = fs11.mkdtempSync(path11.join(deps.tmpdir, "sidekick-profile-"));
   try {
     const file = path11.join(dir, "settings.json");
-    fs10.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
+    fs11.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
       mode: 384
     });
     const result = deps.run(["--settings", file, "doctor"], {
@@ -3747,11 +3754,11 @@ function checkSettings(settings, deps, timeoutMs = 30000) {
     });
     const lines = invalidSettingsLines(result.stdout, [
       file,
-      fs10.realpathSync(file)
+      fs11.realpathSync(file)
     ]);
     return judge(result, lines, canary);
   } finally {
-    fs10.rmSync(dir, { recursive: true, force: true });
+    fs11.rmSync(dir, { recursive: true, force: true });
   }
 }
 var bgArgs = (base, opts) => [
@@ -3765,7 +3772,7 @@ var bgArgs = (base, opts) => [
 ];
 
 // bin/helpers/profile-plugins.ts
-import * as fs11 from "node:fs";
+import * as fs12 from "node:fs";
 import * as path12 from "node:path";
 var PLUGIN_SKIP_VARIABLE = "SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK";
 var SKIP_WARNING2 = `${PLUGIN_SKIP_VARIABLE}=1 is set, so the plugins were not checked with claude plugin list.`;
@@ -3829,10 +3836,10 @@ function judgePluginList(stdout, target) {
 function checkPlugins(settings, target, deps, timeoutMs = 30000) {
   if (deps.skip)
     return { ok: true, warnings: [SKIP_WARNING2] };
-  const dir = fs11.mkdtempSync(path12.join(deps.tmpdir, "sidekick-profile-"));
+  const dir = fs12.mkdtempSync(path12.join(deps.tmpdir, "sidekick-profile-"));
   try {
     const file = path12.join(dir, "settings.json");
-    fs11.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
+    fs12.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
     const sources = target.manifest.settingSources;
     const result = deps.run([
       "--settings",
@@ -3850,12 +3857,12 @@ function checkPlugins(settings, target, deps, timeoutMs = 30000) {
     }
     return judgePluginList(result.stdout, target);
   } finally {
-    fs11.rmSync(dir, { recursive: true, force: true });
+    fs12.rmSync(dir, { recursive: true, force: true });
   }
 }
 
 // bin/helpers/profile-manifest.ts
-import * as fs12 from "node:fs";
+import * as fs13 from "node:fs";
 
 // plugin/hooks/scope/contract.ts
 var MOD_PARTS = ["board", "desk"];
@@ -3890,7 +3897,7 @@ var isMissing3 = (err) => err instanceof Error && ("code" in err) && err.code ==
 function readManifest(file) {
   let text;
   try {
-    text = fs12.readFileSync(file, "utf8");
+    text = fs13.readFileSync(file, "utf8");
   } catch (err) {
     const why = isMissing3(err) ? "missing" : err instanceof Error ? err.message : String(err);
     return { ok: false, issues: [`${file}: ${why}`] };
@@ -3994,7 +4001,7 @@ var shellFunction = (shell, aliasNames) => {
 };
 
 // bin/helpers/profile-store.ts
-import * as fs13 from "node:fs";
+import * as fs14 from "node:fs";
 import * as path13 from "node:path";
 var MANIFEST_FILE = "profile.json";
 var manifestPath = (dir) => path13.join(dir, MANIFEST_FILE);
@@ -4031,7 +4038,7 @@ function storeRoots(env, cwd, home, workTree) {
 }
 var isPresent = (file) => {
   try {
-    fs13.lstatSync(file);
+    fs14.lstatSync(file);
     return true;
   } catch {
     return false;
@@ -4039,14 +4046,14 @@ var isPresent = (file) => {
 };
 var isDirectory = (dir) => {
   try {
-    return fs13.statSync(dir).isDirectory();
+    return fs14.statSync(dir).isDirectory();
   } catch {
     return false;
   }
 };
 var entriesOf = (dir) => {
   try {
-    return fs13.readdirSync(dir).sort();
+    return fs14.readdirSync(dir).sort();
   } catch {
     return [];
   }
@@ -4060,7 +4067,7 @@ function checkLayout(dir) {
 var holdsMarkdown = (dir) => {
   let entries;
   try {
-    entries = fs13.readdirSync(dir, { withFileTypes: true });
+    entries = fs14.readdirSync(dir, { withFileTypes: true });
   } catch {
     return false;
   }
@@ -4115,7 +4122,7 @@ var isHidden = (name) => name.startsWith(".");
 var listRoot = (root) => {
   let names;
   try {
-    names = fs13.readdirSync(root.dir).sort();
+    names = fs14.readdirSync(root.dir).sort();
   } catch {
     return [];
   }
@@ -4152,7 +4159,7 @@ var isExists = (err) => err instanceof Error && ("code" in err) && err.code === 
 var messageOf2 = (err) => err instanceof Error ? err.message : String(err);
 var makeRoot = (root) => {
   try {
-    fs13.mkdirSync(root, { recursive: true });
+    fs14.mkdirSync(root, { recursive: true });
     return [];
   } catch (err) {
     return [
@@ -4164,8 +4171,8 @@ var unmake = (dir) => {
   try {
     const manifest = path13.join(dir, MANIFEST_FILE);
     if (isPresent(manifest))
-      fs13.rmSync(manifest);
-    fs13.rmdirSync(dir);
+      fs14.rmSync(manifest);
+    fs14.rmdirSync(dir);
     return [];
   } catch (err) {
     return [`${dir}: could not remove it: ${messageOf2(err)}`];
@@ -4183,14 +4190,14 @@ function newProfile(name, description, root) {
     return { ok: false, issues: rootIssues };
   const dir = path13.join(root, name);
   try {
-    fs13.mkdirSync(dir);
+    fs14.mkdirSync(dir);
   } catch (err) {
     const why = isExists(err) ? "already exists" : messageOf2(err);
     return { ok: false, issues: [`${dir}: ${why}`] };
   }
   const file = path13.join(dir, MANIFEST_FILE);
   try {
-    fs13.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
+    fs14.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
 `);
   } catch (err) {
     return {
@@ -4428,7 +4435,7 @@ var noRepoStore = (penv) => {
     return "SIDEKICK_PROFILES_DIR is set, so there is no repo store";
   }
   if (penv.workTree === undefined) {
-    return "not inside a git work tree, so there is no repo store";
+    return penv.workTreeIssue === undefined ? "not inside a git work tree, so there is no repo store" : `git rev-parse failed in ${penv.cwd}, so there is no repo store: ${penv.workTreeIssue}; fix what git reports, then run the command again`;
   }
   return "the repo store is the user store here, so --repo has nowhere else to write";
 };
@@ -4569,7 +4576,7 @@ function runProfileCli(args, penv, out, err) {
 }
 
 // bin/helpers/worker-record.ts
-import * as fs14 from "node:fs";
+import * as fs15 from "node:fs";
 import * as path15 from "node:path";
 var recordFields = {
   name: WorkerNameSchema,
@@ -4610,8 +4617,8 @@ function writeRecord(commonDir, record2) {
   }
   const file = fileFor(commonDir, record2.name);
   try {
-    fs14.mkdirSync(recordsDir(commonDir), { recursive: true });
-    fs14.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+    fs15.mkdirSync(recordsDir(commonDir), { recursive: true });
+    fs15.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
 `);
     return { ok: true };
   } catch (e) {
@@ -4620,7 +4627,7 @@ function writeRecord(commonDir, record2) {
 }
 function parseRecord(file) {
   try {
-    const parsed = safeParse(RecordSchema, JSON.parse(fs14.readFileSync(file, "utf-8")));
+    const parsed = safeParse(RecordSchema, JSON.parse(fs15.readFileSync(file, "utf-8")));
     if (!parsed.success) {
       return `${file} is not a worker record: ${parsed.issues[0].message}`;
     }
@@ -4639,7 +4646,7 @@ function readRecords(commonDir) {
   const warnings = [];
   let files;
   try {
-    files = fs14.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
+    files = fs15.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { records, warnings };
@@ -4658,15 +4665,15 @@ function readRecords(commonDir) {
 function removeRecord(commonDir, name) {
   if (!isWorkerName(name))
     return;
-  fs14.rmSync(fileFor(commonDir, name), { force: true });
+  fs15.rmSync(fileFor(commonDir, name), { force: true });
 }
 
 // bin/helpers/worktree-state.ts
-import * as fs27 from "node:fs";
+import * as fs28 from "node:fs";
 import * as path33 from "node:path";
 
 // bin/helpers/memory-start.ts
-import * as fs24 from "node:fs";
+import * as fs25 from "node:fs";
 import * as path30 from "node:path";
 
 // bin/helpers/local-date.ts
@@ -5039,11 +5046,11 @@ function userSettingsNotes(facts) {
 }
 
 // bin/helpers/memory-lint.ts
-import * as fs22 from "node:fs";
+import * as fs23 from "node:fs";
 import * as path28 from "node:path";
 
 // bin/helpers/memory-default.ts
-import * as fs15 from "node:fs";
+import * as fs16 from "node:fs";
 import * as path18 from "node:path";
 var MAX_KEY_LENGTH = 200;
 var WRITE_BITS = 146;
@@ -5078,7 +5085,7 @@ function overrideIssue(env) {
 var ClaudeJson = object({ projects: record(string(), unknown()) });
 function knownRoot(root, claudeJson) {
   try {
-    const parsed = safeParse(ClaudeJson, JSON.parse(fs15.readFileSync(claudeJson, "utf-8")));
+    const parsed = safeParse(ClaudeJson, JSON.parse(fs16.readFileSync(claudeJson, "utf-8")));
     return parsed.success && Object.hasOwn(parsed.output.projects, root);
   } catch {
     return false;
@@ -5086,10 +5093,10 @@ function knownRoot(root, claudeJson) {
 }
 function legacyPreferred(legacy, current) {
   try {
-    const stat = fs15.statSync(legacy);
+    const stat = fs16.statSync(legacy);
     if (!stat.isFile())
       return false;
-    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs15.existsSync(current);
+    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs16.existsSync(current);
   } catch {
     return false;
   }
@@ -5101,7 +5108,7 @@ function claudeJsonPath(env, home) {
 }
 
 // bin/helpers/memory-files.ts
-import * as fs16 from "node:fs";
+import * as fs17 from "node:fs";
 var FENCE2 = "---";
 var TOP_LINE = /^([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
 var NESTED_LINE = /^ {2}([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
@@ -5175,7 +5182,7 @@ function parseMemoryText(text) {
 }
 function readMemoryFile(file) {
   try {
-    return parseMemoryText(fs16.readFileSync(file, "utf8"));
+    return parseMemoryText(fs17.readFileSync(file, "utf8"));
   } catch {
     return;
   }
@@ -5250,19 +5257,19 @@ function reachFrom(dir, files, starts) {
 }
 
 // bin/helpers/memory-lint-repos.ts
-import * as fs19 from "node:fs";
+import * as fs20 from "node:fs";
 import * as path22 from "node:path";
 
 // bin/helpers/memory-link-facts.ts
-import * as fs18 from "node:fs";
+import * as fs19 from "node:fs";
 import * as path21 from "node:path";
 
 // bin/helpers/memory-sessions.ts
-import * as fs17 from "node:fs";
+import * as fs18 from "node:fs";
 import * as path20 from "node:path";
 function realOrResolved(p) {
   try {
-    return fs17.realpathSync(p);
+    return fs18.realpathSync(p);
   } catch {
     return path20.resolve(p);
   }
@@ -5366,7 +5373,7 @@ function repoFacts(input) {
 function keyMissed(root, key, deps) {
   const claudeJson = claudeJsonPath(deps.env, deps.home);
   const projectFolder = path21.join(deps.configDir, "projects", key);
-  const missed = knownRoot(root, claudeJson) && !fs18.existsSync(projectFolder);
+  const missed = knownRoot(root, claudeJson) && !fs19.existsSync(projectFolder);
   return missed ? { claudeJson, projectFolder } : undefined;
 }
 function sessionFacts(input) {
@@ -5397,7 +5404,7 @@ function targetFacts(input) {
   };
 }
 function targetState(folder) {
-  const stat = fs18.statSync(folder, { throwIfNoEntry: false });
+  const stat = fs19.statSync(folder, { throwIfNoEntry: false });
   if (stat === undefined)
     return { kind: "absent" };
   if (!stat.isDirectory())
@@ -5408,10 +5415,10 @@ function targetState(folder) {
   if (marker.kind === "invalid") {
     return { kind: "invalidMarker", issue: marker.issue };
   }
-  return fs18.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
+  return fs19.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
 }
 function familyState(folder) {
-  const stat = fs18.statSync(folder, { throwIfNoEntry: false });
+  const stat = fs19.statSync(folder, { throwIfNoEntry: false });
   if (stat === undefined)
     return "absent";
   if (!stat.isDirectory())
@@ -5420,21 +5427,21 @@ function familyState(folder) {
 }
 function archiveNames(store) {
   const folder = path21.join(store, ...ARCHIVE_DIR.split("/"));
-  return fs18.existsSync(folder) ? fs18.readdirSync(folder) : [];
+  return fs19.existsSync(folder) ? fs19.readdirSync(folder) : [];
 }
 function isInside2(dir, parent) {
   const rel = path21.relative(parent, dir);
   return rel === "" || !(rel === ".." || rel.startsWith(`..${path21.sep}`) || path21.isAbsolute(rel));
 }
 function walkFolder(root) {
-  const entries = entriesOf2(fs18.realpathSync(root), root, "");
+  const entries = entriesOf2(fs19.realpathSync(root), root, "");
   return {
     files: entries.flatMap((e) => ("file" in e) ? [e.file] : []),
     issues: entries.flatMap((e) => ("issue" in e) ? [e.issue] : [])
   };
 }
 function entriesOf2(real, root, rel) {
-  return fs18.readdirSync(path21.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+  return fs19.readdirSync(path21.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
     const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
     if (entry.isDirectory())
       return entriesOf2(real, root, child);
@@ -5453,8 +5460,8 @@ function linkEntry(real, root, child) {
   const full = path21.join(root, child);
   const way = "Replace it with the file itself, or remove it, then run link again.";
   try {
-    const named = fs18.realpathSync(full);
-    if (isInside2(named, real) && fs18.statSync(named).isFile()) {
+    const named = fs19.realpathSync(full);
+    if (isInside2(named, real) && fs19.statSync(named).isFile()) {
       return { file: child };
     }
     return {
@@ -5465,7 +5472,7 @@ function linkEntry(real, root, child) {
   }
 }
 function readDefaultFolder(folder, target) {
-  const stat = fs18.lstatSync(folder, { throwIfNoEntry: false });
+  const stat = fs19.lstatSync(folder, { throwIfNoEntry: false });
   if (stat === undefined)
     return { kind: "absent", folder };
   if (!stat.isDirectory()) {
@@ -5481,7 +5488,7 @@ function readDefaultFolder(folder, target) {
 }
 function copyState(from, to) {
   try {
-    if (!fs18.statSync(to).isFile())
+    if (!fs19.statSync(to).isFile())
       return "notFile";
   } catch (error) {
     const absent = error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -5490,7 +5497,7 @@ function copyState(from, to) {
   return sameContent(from, to) ? "same" : "differs";
 }
 function sameContent(a, b) {
-  return sameFileIgnoringStamps(fs18.readFileSync(a), fs18.readFileSync(b));
+  return sameFileIgnoringStamps(fs19.readFileSync(a), fs19.readFileSync(b));
 }
 function ownedChanges(store, owned, runGit) {
   const listed = statusIn(store, [owned.folderRel, ARCHIVE_DIR], runGit);
@@ -5500,7 +5507,7 @@ function ownedChanges(store, owned, runGit) {
     owned.defaultFolder,
     ...ownArchives(store, owned.projectKey)
   ];
-  const isOwned = (p) => fs18.existsSync(path21.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
+  const isOwned = (p) => fs19.existsSync(path21.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
   return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
 }
 var UNTRACKED = "??";
@@ -5509,7 +5516,7 @@ function uncommittedCreation(store, runGit) {
   const listed = statusIn(store, [...CREATION_PATHS], runGit);
   if ("issue" in listed)
     return listed;
-  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs18.existsSync(path21.join(store, e.path));
+  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs19.existsSync(path21.join(store, e.path));
   return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
 }
 function statusIn(store, pathspecs, runGit) {
@@ -5541,7 +5548,7 @@ function isOwnCopy(store, folderRel, sources, p) {
 }
 function sameBytes(a, b) {
   try {
-    const bothFiles = fs18.statSync(a).isFile() && fs18.statSync(b).isFile();
+    const bothFiles = fs19.statSync(a).isFile() && fs19.statSync(b).isFile();
     return bothFiles && sameContent(a, b);
   } catch {
     return false;
@@ -5578,7 +5585,7 @@ var UserSettingsSchema = object({
 });
 function additionalDirectories(file) {
   try {
-    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs18.readFileSync(file, "utf-8")));
+    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs19.readFileSync(file, "utf-8")));
     return parsed.success ? parsed.output.permissions.additionalDirectories : [];
   } catch {
     return [];
@@ -5597,7 +5604,7 @@ function userSettingsFacts(configDir, store, home) {
 function resolvedPath(target) {
   const lexical = path22.resolve(target);
   try {
-    return fs19.realpathSync(lexical);
+    return fs20.realpathSync(lexical);
   } catch {
     return lexical;
   }
@@ -5607,11 +5614,14 @@ function isInside3(folder, parent) {
   return relative5 !== "" && !relative5.startsWith("..") && !path22.isAbsolute(relative5);
 }
 function rootFact(root, runGit, home) {
-  if (!fs19.existsSync(root))
+  if (!fs20.existsSync(root))
     return { kind: "missing" };
   const found = findRepo(runGit, root);
   if (found.repo === undefined) {
-    return found.warnings.length > 0 ? { kind: "undecided" } : { kind: "outside-git" };
+    const issue = found.revParseIssue;
+    if (issue === undefined)
+      return { kind: "undecided" };
+    return outsideRepo(issue, root) ? { kind: "outside-git" } : { kind: "git-failed", issue };
   }
   if (checkoutIssue2(root, found.repo, home) !== undefined) {
     return { kind: "refused" };
@@ -5629,7 +5639,7 @@ function keyInStore(rawKey, store, home) {
 }
 function candidates(dir) {
   try {
-    return fs19.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name).sort();
+    return fs20.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name).sort();
   } catch {
     return [];
   }
@@ -5650,10 +5660,10 @@ function invalidMarkers(store) {
   });
 }
 function compareCopy(from, to) {
-  if (!fs19.existsSync(to))
+  if (!fs20.existsSync(to))
     return "absent";
   try {
-    const [a, b] = [fs19.readFileSync(from), fs19.readFileSync(to)];
+    const [a, b] = [fs20.readFileSync(from), fs20.readFileSync(to)];
     return sameFileIgnoringStamps(a, b) ? "same" : "differs";
   } catch {
     return "differs";
@@ -5672,7 +5682,7 @@ function filesUnder(dir) {
   }
 }
 function compareDefaultFolder(defaultDir, storeDir, storeNames) {
-  if (!fs19.existsSync(defaultDir))
+  if (!fs20.existsSync(defaultDir))
     return { kind: "absent" };
   const listed = filesUnder(defaultDir);
   if ("why" in listed)
@@ -6168,7 +6178,7 @@ function renderStart(parts, matcher = gateHits) {
 }
 
 // bin/helpers/memory-store-settings.ts
-import * as fs20 from "node:fs";
+import * as fs21 from "node:fs";
 import * as path26 from "node:path";
 var STORE_SETTINGS_FILE = "settings.json";
 var POSITIVE_INTEGER2 = "must be a positive integer";
@@ -6184,7 +6194,7 @@ function defaults() {
 function readRaw(file) {
   const read = (() => {
     try {
-      return { text: fs20.readFileSync(file, "utf8") };
+      return { text: fs21.readFileSync(file, "utf8") };
     } catch (error) {
       return { error };
     }
@@ -6229,7 +6239,7 @@ function readStoreSettings(store) {
 }
 
 // bin/helpers/memory-view.ts
-import * as fs21 from "node:fs";
+import * as fs22 from "node:fs";
 import * as path27 from "node:path";
 var INDEX_FILE = "MEMORY.md";
 var SESSIONS_DIR = "sessions";
@@ -6238,7 +6248,7 @@ var TITLE_LINE = /^# +(.+?)\s*$/m;
 function resolved(target) {
   const lexical = path27.resolve(target);
   try {
-    return fs21.realpathSync(lexical);
+    return fs22.realpathSync(lexical);
   } catch {
     return lexical;
   }
@@ -6279,7 +6289,7 @@ function repoView(cwd, deps) {
 }
 function listDir(folder, suffix) {
   try {
-    return fs21.readdirSync(folder).filter((entry) => entry.endsWith(suffix)).sort();
+    return fs22.readdirSync(folder).filter((entry) => entry.endsWith(suffix)).sort();
   } catch {
     return [];
   }
@@ -6324,7 +6334,7 @@ function listWorkstreams(repoFolder, familyFolder) {
 }
 function modifiedAt2(file) {
   try {
-    return fs21.statSync(file).mtimeMs;
+    return fs22.statSync(file).mtimeMs;
   } catch {
     return 0;
   }
@@ -6425,7 +6435,7 @@ function lintFolders(store) {
 }
 function ownNames(dir) {
   try {
-    const names = fs22.readdirSync(dir, { withFileTypes: true }).filter((entry) => !entry.isDirectory() && entry.name.endsWith(".md")).map((entry) => entry.name).sort();
+    const names = fs23.readdirSync(dir, { withFileTypes: true }).filter((entry) => !entry.isDirectory() && entry.name.endsWith(".md")).map((entry) => entry.name).sort();
     return { names };
   } catch (error) {
     return { why: errorCode(error) };
@@ -6436,7 +6446,7 @@ function readOwn(dir, name) {
   try {
     return {
       kind: "read",
-      own: { name, file, text: fs22.readFileSync(file, "utf8") }
+      own: { name, file, text: fs23.readFileSync(file, "utf8") }
     };
   } catch (error) {
     return { kind: "unreadable", file, why: errorCode(error) };
@@ -6456,7 +6466,7 @@ function readFolder2(dir) {
 var NO_FILES = { names: [], files: [], failed: [], unlisted: [] };
 function readSessions(place) {
   const dir = path28.join(place.dir, SESSIONS_DIR2);
-  if (place.kind !== "repo" || !fs22.existsSync(dir))
+  if (place.kind !== "repo" || !fs23.existsSync(dir))
     return NO_FILES;
   return readFolder2(dir);
 }
@@ -6511,7 +6521,7 @@ function indexOf(scan) {
   return scan.files.find((own) => own.name === INDEX_FILE2);
 }
 function deadLinks(scan) {
-  return scan.files.filter((own) => scan.reached.has(own.name)).flatMap((own) => linksIn(own.text).filter((link) => !fs22.existsSync(path28.resolve(scan.dir, link.target))).map((link) => ({
+  return scan.files.filter((own) => scan.reached.has(own.name)).flatMap((own) => linksIn(own.text).filter((link) => !fs23.existsSync(path28.resolve(scan.dir, link.target))).map((link) => ({
     file: own.file,
     line: link.line,
     message: `links to ${quoteOrWithhold(link.target)}, which does not exist`
@@ -6736,6 +6746,8 @@ function rootFault(fact) {
       return "which does not exist";
     case "outside-git":
       return "which is not inside a git repository";
+    case "git-failed":
+      return `but git rev-parse failed there: ${quoteOrWithhold(fact.issue)}; fix what git reports`;
     case "not-main":
       return `but the repository there has its main checkout at ${quoteOrWithhold(fact.top)}`;
     case "undecided":
@@ -6786,7 +6798,7 @@ function defaultFolderLeft(scan, input) {
 }
 function lockAge(lock, now) {
   try {
-    return now - fs22.statSync(lock).mtimeMs;
+    return now - fs23.statSync(lock).mtimeMs;
   } catch {
     return;
   }
@@ -6878,7 +6890,7 @@ function lintStore(store, deps, opts = {}) {
 
 // bin/helpers/memory-lint-cache.ts
 import { randomBytes } from "node:crypto";
-import * as fs23 from "node:fs";
+import * as fs24 from "node:fs";
 import * as path29 from "node:path";
 var CACHE_FILE = "sidekick-lint.json";
 var CACHE_VERSION = 1;
@@ -6914,9 +6926,9 @@ function writeCache(file, result, ranAt) {
   };
   const temp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   try {
-    fs23.writeFileSync(temp, `${JSON.stringify(cache)}
+    fs24.writeFileSync(temp, `${JSON.stringify(cache)}
 `);
-    fs23.renameSync(temp, file);
+    fs24.renameSync(temp, file);
   } catch (error) {
     removeQuietly(temp);
     throw error;
@@ -6924,12 +6936,12 @@ function writeCache(file, result, ranAt) {
 }
 function removeQuietly(file) {
   try {
-    fs23.rmSync(file, { force: true });
+    fs24.rmSync(file, { force: true });
   } catch {}
 }
 function readCache(file) {
   try {
-    const parsed = safeParse(LintCacheSchema, JSON.parse(fs23.readFileSync(file, "utf8")));
+    const parsed = safeParse(LintCacheSchema, JSON.parse(fs24.readFileSync(file, "utf8")));
     return parsed.success ? parsed.output : undefined;
   } catch {
     return;
@@ -7046,7 +7058,7 @@ function briefWorkstream(env) {
 function staleLockWarning(store, now) {
   const lock = path30.join(store, ".git", "index.lock");
   try {
-    if (now - fs24.statSync(lock).mtimeMs <= STALE_LOCK_MS2)
+    if (now - fs25.statSync(lock).mtimeMs <= STALE_LOCK_MS2)
       return [];
     return [
       `The memory store has a stale git lock at ${lock}; snapshots stop until it is removed.`
@@ -7060,7 +7072,7 @@ function familyOf(familyFolder) {
     return;
   const file = path30.join(familyFolder, INDEX_FILE3);
   try {
-    const lines = fs24.readFileSync(file, "utf8").trimEnd().split(`
+    const lines = fs25.readFileSync(file, "utf8").trimEnd().split(`
 `);
     if (lines.every((line) => line.trim() === ""))
       return;
@@ -7319,12 +7331,12 @@ function landedIn(runGit, top, refs, { cap = DEFAULT_CAP } = {}) {
 }
 
 // bin/helpers/worktree-flagged.ts
-import * as fs25 from "node:fs";
+import * as fs26 from "node:fs";
 import * as path31 from "node:path";
 var TAG_LENGTH = "T ".length;
 function onDisk(file) {
   try {
-    fs25.lstatSync(file);
+    fs26.lstatSync(file);
     return true;
   } catch {
     return false;
@@ -7363,7 +7375,7 @@ function flaggedStatus(runGit, top, worktree) {
 }
 
 // bin/helpers/worktree-ignored.ts
-import * as fs26 from "node:fs";
+import * as fs27 from "node:fs";
 import * as path32 from "node:path";
 var BUILT_IN_SKIPS = { folders: ["node_modules"], files: [".DS_Store"] };
 function skipListPath(commonDir) {
@@ -7375,7 +7387,7 @@ function skipFolder(line) {
 function readSkips(commonDir) {
   const file = skipListPath(commonDir);
   try {
-    const folders = fs26.readFileSync(file, "utf-8").split(`
+    const folders = fs27.readFileSync(file, "utf-8").split(`
 `).map(skipFolder).filter((folder) => folder !== "");
     return { folders, warnings: [] };
   } catch (error) {
@@ -7392,7 +7404,7 @@ function skipper(folders) {
 var isSkippedFile = (rel, stat) => stat.isFile() && BUILT_IN_SKIPS.files.includes(path32.posix.basename(rel));
 function lstatOf(file) {
   try {
-    return fs26.lstatSync(file);
+    return fs27.lstatSync(file);
   } catch {
     return;
   }
@@ -7400,7 +7412,7 @@ function lstatOf(file) {
 function readChunk(fd, buf) {
   let filled = 0;
   while (filled < buf.length) {
-    const read = fs26.readSync(fd, buf, filled, buf.length - filled, null);
+    const read = fs27.readSync(fd, buf, filled, buf.length - filled, null);
     if (read === 0)
       return filled;
     filled += read;
@@ -7423,11 +7435,11 @@ function sameChunks(fdA, fdB, chunkBytes) {
   }
 }
 function withOpen(file, use) {
-  const fd = fs26.openSync(file, "r");
+  const fd = fs27.openSync(file, "r");
   try {
     return use(fd);
   } finally {
-    fs26.closeSync(fd);
+    fs27.closeSync(fd);
   }
 }
 function sameBytes2(a, b, chunkBytes) {
@@ -7439,7 +7451,7 @@ function sameBytes2(a, b, chunkBytes) {
 }
 function sameLink(a, b) {
   try {
-    return fs26.readlinkSync(a) === fs26.readlinkSync(b);
+    return fs27.readlinkSync(a) === fs27.readlinkSync(b);
   } catch {
     return false;
   }
@@ -7469,7 +7481,7 @@ function* filesUnder2(worktree, rel, skipped) {
       yield rel;
     return;
   }
-  const names = fs26.readdirSync(path32.join(worktree, rel)).sort();
+  const names = fs27.readdirSync(path32.join(worktree, rel)).sort();
   for (const name of names)
     yield* filesUnder2(worktree, `${rel}/${name}`, skipped);
 }
@@ -7653,9 +7665,9 @@ function dirtyState(runGit, at) {
   };
 }
 function filesState(runGit, at) {
-  if (!fs27.existsSync(at.worktree))
+  if (!fs28.existsSync(at.worktree))
     return { kind: "folder gone" };
-  if (!fs27.existsSync(path33.join(at.worktree, ".git"))) {
+  if (!fs28.existsSync(path33.join(at.worktree, ".git"))) {
     return {
       kind: "held",
       by: `unknown: ${at.worktree} holds no .git entry, so git cannot read its files`
@@ -7894,7 +7906,7 @@ function runDeskCli(rest2, denv, out, err) {
 }
 
 // bin/helpers/hook.ts
-import * as fs28 from "node:fs";
+import * as fs29 from "node:fs";
 import * as os2 from "node:os";
 import * as path36 from "node:path";
 
@@ -8014,7 +8026,7 @@ function parseJson5(raw) {
 }
 function readText2(file) {
   try {
-    return fs28.readFileSync(file, "utf-8");
+    return fs29.readFileSync(file, "utf-8");
   } catch {
     return;
   }
@@ -8277,11 +8289,11 @@ function runHookCli(args, env, out, err) {
 }
 
 // bin/helpers/memory.ts
-import * as fs30 from "node:fs";
+import * as fs31 from "node:fs";
 import * as path38 from "node:path";
 
 // bin/helpers/memory-link.ts
-import * as fs29 from "node:fs";
+import * as fs30 from "node:fs";
 import * as path37 from "node:path";
 var messageOf3 = (error) => error instanceof Error ? error.message : String(error);
 function runLink(opts, deps, out, err) {
@@ -8355,14 +8367,14 @@ function runAction(action, runGit) {
       return finished.ok ? done : finished;
     }
     case "createFolder":
-      fs29.mkdirSync(action.folder, { recursive: true });
+      fs30.mkdirSync(action.folder, { recursive: true });
       return done;
     case "writeMarker":
       writeMarker(action.folder, action.root);
       return done;
     case "copyFile":
-      fs29.mkdirSync(path37.dirname(action.to), { recursive: true });
-      fs29.copyFileSync(action.from, action.to, fs29.constants.COPYFILE_EXCL);
+      fs30.mkdirSync(path37.dirname(action.to), { recursive: true });
+      fs30.copyFileSync(action.from, action.to, fs30.constants.COPYFILE_EXCL);
       return done;
     case "mergeKey": {
       const merged = mergeKey(action.file, action.value, action.expected);
@@ -8388,19 +8400,19 @@ function archive(action) {
   return { ok: true, lines: [phrase(action).done, why, ...listed] };
 }
 var FS_MOVES = {
-  rename: fs29.renameSync,
-  copy: (from, to) => fs29.cpSync(from, to, {
+  rename: fs30.renameSync,
+  copy: (from, to) => fs30.cpSync(from, to, {
     recursive: true,
     errorOnExist: true,
     force: false,
     verbatimSymlinks: true,
     preserveTimestamps: true
   }),
-  remove: (folder) => fs29.rmSync(folder, { recursive: true })
+  remove: (folder) => fs30.rmSync(folder, { recursive: true })
 };
 function moveFolder(from, to, moves = {}) {
   const { rename, copy, remove } = { ...FS_MOVES, ...moves };
-  fs29.mkdirSync(path37.dirname(to), { recursive: true });
+  fs30.mkdirSync(path37.dirname(to), { recursive: true });
   try {
     rename(from, to);
   } catch (error) {
@@ -8415,7 +8427,7 @@ function moveFolder(from, to, moves = {}) {
 var hasCode = (error, code) => error instanceof Error && ("code" in error) && error.code === code;
 function claim(from, to) {
   try {
-    fs29.mkdirSync(to);
+    fs30.mkdirSync(to);
   } catch (error) {
     const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf3(error)}`;
     throw new Error(message, { cause: error });
@@ -8447,10 +8459,10 @@ function keepIfChanged(from, to) {
   throw new Error(`${from} changed during the copy, so link kept it: ${changed.join(", ")}. ${to} holds the copy taken at the move, and a re-run archives what ${from} now holds.`);
 }
 function changedSince(from, to) {
-  return fs29.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+  return fs30.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
     const source = path37.join(from, entry.name);
     const copy = path37.join(to, entry.name);
-    const copied = fs29.lstatSync(copy, { throwIfNoEntry: false });
+    const copied = fs30.lstatSync(copy, { throwIfNoEntry: false });
     if (entry.isDirectory() && copied?.isDirectory() === true) {
       return changedSince(source, copy);
     }
@@ -8459,10 +8471,10 @@ function changedSince(from, to) {
 }
 function sameEntry(entry, source, copy, copied) {
   if (entry.isSymbolicLink()) {
-    return copied.isSymbolicLink() && fs29.readlinkSync(source) === fs29.readlinkSync(copy);
+    return copied.isSymbolicLink() && fs30.readlinkSync(source) === fs30.readlinkSync(copy);
   }
   if (entry.isFile()) {
-    return copied.isFile() && fs29.readFileSync(source).equals(fs29.readFileSync(copy));
+    return copied.isFile() && fs30.readFileSync(source).equals(fs30.readFileSync(copy));
   }
   return false;
 }
@@ -8612,9 +8624,9 @@ function withheldFindings(result, store) {
 }
 function isReadableDirectory(dir) {
   try {
-    if (!fs30.statSync(dir).isDirectory())
+    if (!fs31.statSync(dir).isDirectory())
       return false;
-    fs30.readdirSync(dir);
+    fs31.readdirSync(dir);
     return true;
   } catch {
     return false;
@@ -9015,32 +9027,31 @@ function renderReport(r) {
 }
 
 // bin/helpers/rules.ts
-import { execFileSync } from "node:child_process";
-import * as fs33 from "node:fs";
+import * as fs34 from "node:fs";
 import * as path41 from "node:path";
 
 // bin/helpers/rules-fs.ts
-import * as fs31 from "node:fs";
+import * as fs32 from "node:fs";
 import * as path39 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
 function statusOf(dir, name) {
-  const st = fs31.lstatSync(path39.join(dir, name), { throwIfNoEntry: false });
+  const st = fs32.lstatSync(path39.join(dir, name), { throwIfNoEntry: false });
   if (!st)
     return "absent";
   return st.isFile() ? "file" : "other";
 }
 var isRegularFile = (dir, name) => statusOf(dir, name) === "file";
 function ownedRulesIn(dir) {
-  const dirStat = fs31.statSync(dir, { throwIfNoEntry: false });
+  const dirStat = fs32.statSync(dir, { throwIfNoEntry: false });
   if (!dirStat)
     return [];
   if (!dirStat.isDirectory())
     return [];
-  return fs31.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
+  return fs32.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
 }
 
 // bin/helpers/rules-overlap.ts
-import * as fs32 from "node:fs";
+import * as fs33 from "node:fs";
 import * as path40 from "node:path";
 var MIN_SHARED_HEADINGS = 2;
 var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
@@ -9077,20 +9088,20 @@ function signalsFor(file, body, rule) {
 }
 function findOverlap(src, dest) {
   const report2 = { pairs: [], extensions: [] };
-  const destStat = fs32.statSync(dest, { throwIfNoEntry: false });
+  const destStat = fs33.statSync(dest, { throwIfNoEntry: false });
   if (!destStat?.isDirectory())
     return report2;
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs32.readFileSync(path40.join(src, name), "utf-8");
+    const body = fs33.readFileSync(path40.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
       opening: openingOf(body)
     };
   });
-  const others = fs32.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
+  const others = fs33.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   for (const file of others) {
-    const body = fs32.readFileSync(path40.join(dest, file), "utf-8");
+    const body = fs33.readFileSync(path40.join(dest, file), "utf-8");
     for (const rule of rules) {
       const signals = signalsFor(file, body, rule);
       if (signals.length === 0)
@@ -9132,18 +9143,21 @@ function resolveDest(scope, cwd, claudeHome) {
   return scope === "project" ? path41.join(cwd, ".claude", "rules") : path41.join(claudeHome, "rules");
 }
 function workTreeRootOf(cwd) {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-      env: envWithoutRepoVars(process.env)
-    }).trim();
-  } catch {
-    return;
-  }
+  const result = execRunner("git", ["rev-parse", "--show-toplevel"], cwd);
+  if (result.code === 0)
+    return { kind: "inside", top: result.stdout.trim() };
+  const issue = revParseLine(result.stderr);
+  return outsideRepo(issue, cwd) ? { kind: "outside" } : { kind: "failed", issue };
 }
-var repoRootOf = (cwd) => workTreeRootOf(cwd) ?? cwd;
+function repoRootOf(cwd, warn2) {
+  const root = workTreeRootOf(cwd);
+  if (root.kind === "inside")
+    return root.top;
+  if (root.kind === "failed") {
+    warn2(`git rev-parse failed in ${cwd}, so the repo root falls back to that folder: ${root.issue}; fix what git reports, then run the command again`);
+  }
+  return cwd;
+}
 var PLUGIN_ONLY_RULES = [
   "sk-pm-conventions.md",
   "sk-parallel-sessions.md",
@@ -9155,7 +9169,7 @@ function pluginEnablement(root) {
   const file = path41.join(root, ".claude", "settings.json");
   let text;
   try {
-    text = fs33.readFileSync(file, "utf-8");
+    text = fs34.readFileSync(file, "utf-8");
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { state: "not-enabled" };
@@ -9203,9 +9217,9 @@ function installRules(src, dest, scope = EVERY_RULE) {
     return { installed: [], removed: [], leftOut: [], skipped: [] };
   }
   const set = shippedOnly(scope, shipped);
-  fs33.mkdirSync(dest, { recursive: true });
+  fs34.mkdirSync(dest, { recursive: true });
   const byLowerCase = new Map;
-  for (const existing of fs33.readdirSync(dest)) {
+  for (const existing of fs34.readdirSync(dest)) {
     byLowerCase.set(existing.toLowerCase(), existing);
   }
   const installed = [];
@@ -9220,7 +9234,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
       skipped.push({ name, why: "not-a-regular-file" });
       continue;
     }
-    fs33.copyFileSync(path41.join(src, name), path41.join(dest, name));
+    fs34.copyFileSync(path41.join(src, name), path41.join(dest, name));
     installed.push(name);
   }
   const keep = new Set(shipped);
@@ -9228,7 +9242,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
   const removed = owned.filter((n) => !keep.has(n));
   const leftOut = owned.filter((n) => set.leaveOut.includes(n));
   for (const name of [...removed, ...leftOut]) {
-    fs33.rmSync(path41.join(dest, name));
+    fs34.rmSync(path41.join(dest, name));
   }
   return { installed, removed, leftOut, skipped };
 }
@@ -9240,11 +9254,11 @@ function checkRules(src, dest, scope = EVERY_RULE) {
   const drift = [];
   for (const name of expected) {
     const there = path41.join(dest, name);
-    if (!fs33.existsSync(there)) {
+    if (!fs34.existsSync(there)) {
       drift.push({ kind: "missing", name });
       continue;
     }
-    const same = fs33.readFileSync(path41.join(src, name)).equals(fs33.readFileSync(there));
+    const same = fs34.readFileSync(path41.join(src, name)).equals(fs34.readFileSync(there));
     if (!same)
       drift.push({ kind: "stale", name });
   }
@@ -9297,7 +9311,7 @@ function scopeSet(scope, root) {
 var deliveryMode = (projectDest) => ownedRulesIn(projectDest).length > 0 ? "project" : "user";
 var realOrSelf = (p) => {
   try {
-    return fs33.realpathSync(p);
+    return fs34.realpathSync(p);
   } catch {
     return path41.resolve(p);
   }
@@ -9324,7 +9338,7 @@ function reportDuplicates(expected, dest, userDest, out) {
   out(`your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`);
 }
 function refuseNonDirectory(dir, out) {
-  const st = fs33.statSync(dir, { throwIfNoEntry: false });
+  const st = fs34.statSync(dir, { throwIfNoEntry: false });
   if (!st || st.isDirectory())
     return false;
   out(`${dir} exists and is not a directory; refusing to write rules there`);
@@ -9348,7 +9362,7 @@ function runRulesCli(args, env, out) {
     return 1;
   }
   const { verb, scope, strict } = parsed;
-  const root = scope === "project" ? repoRootOf(env.cwd) : env.cwd;
+  const root = scope === "project" ? repoRootOf(env.cwd, out) : env.cwd;
   if (scope === "project")
     out(`project root: ${root}`);
   const dest = resolveDest(scope, root, env.claudeHome);
@@ -9405,11 +9419,11 @@ function preflightOf(version) {
     warnings
   };
 }
-function discover(run, cwd) {
+function discover(run, cwd, warn2) {
   const gh = fetchGhVersion(run, cwd);
   if (!gh.found)
     throw new PmError(2, "gh not found on PATH");
-  const root = repoRootOf(cwd);
+  const root = repoRootOf(cwd, warn2);
   const preflight = preflightOf(gh.version);
   const untracked = (reason6, fields = {}) => ({
     tracked: false,
@@ -9511,7 +9525,7 @@ function runPmCli(args, env, out, err) {
   }
   const emit = (o) => out(JSON.stringify(o, null, 2));
   try {
-    const info = discover(run, env.cwd);
+    const info = discover(run, env.cwd, err);
     const { root: _root, ...shown2 } = info;
     if (!info.tracked) {
       if (report2) {
@@ -9791,7 +9805,7 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 }
 
 // bin/helpers/worker-dispatch-checks.ts
-import * as fs34 from "node:fs";
+import * as fs35 from "node:fs";
 import * as path42 from "node:path";
 
 // bin/helpers/worker-facts.ts
@@ -9803,9 +9817,10 @@ function checkoutFacts(runGit, cwd) {
     "--git-common-dir"
   ], cwd);
   if (result.code !== 0) {
+    const issue = revParseLine(result.stderr);
     return {
       issues: [
-        "not inside a git work tree: run sidekick worker from a checkout of the repo"
+        outsideRepo(issue, cwd) ? "not inside a git work tree: run sidekick worker from a checkout of the repo" : `git rev-parse failed in ${cwd}: ${issue}; fix what git reports, then run sidekick worker again`
       ]
     };
   }
@@ -9914,7 +9929,7 @@ var MODE_LIST = PERMISSION_MODES.join(", ");
 var BYPASS = "bypassPermissions";
 var isFolder2 = (dir) => {
   try {
-    return fs34.statSync(dir).isDirectory();
+    return fs35.statSync(dir).isDirectory();
   } catch {
     return false;
   }
@@ -9948,7 +9963,7 @@ function treeNameIssues(runGit, top, name) {
   const folder = nativeFolder(top, name);
   const branch = nativeBranch(name);
   return [
-    ...fs34.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...fs35.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [
       `name: the branch ${branch} already exists: once you have checked that its commits have landed, delete it with git branch -D ${branch}, or dispatch under another name`
     ] : []
@@ -10242,7 +10257,7 @@ function verifyWorktree(input) {
 }
 
 // bin/helpers/worker-exclude.ts
-import * as fs35 from "node:fs";
+import * as fs36 from "node:fs";
 import * as path44 from "node:path";
 var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
@@ -10250,7 +10265,7 @@ var reason6 = (e) => e instanceof Error ? e.message : String(e);
 var isMissing4 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readExclude(file) {
   try {
-    return { text: fs35.readFileSync(file, "utf-8") };
+    return { text: fs36.readFileSync(file, "utf-8") };
   } catch (e) {
     if (isMissing4(e))
       return { text: "" };
@@ -10266,8 +10281,8 @@ function appendExclude(file, text) {
 `) ? "" : `
 `;
   try {
-    fs35.mkdirSync(path44.dirname(file), { recursive: true });
-    fs35.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+    fs36.mkdirSync(path44.dirname(file), { recursive: true });
+    fs36.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
 `);
     return [];
   } catch (e) {
@@ -10618,7 +10633,7 @@ var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
-import * as fs36 from "node:fs";
+import * as fs37 from "node:fs";
 import * as path47 from "node:path";
 
 // bin/helpers/worker-finish-target.ts
@@ -10764,8 +10779,9 @@ function repoOf2(env, err) {
   const found = findRepo(env.runGit, env.cwd);
   for (const warning of found.warnings)
     err(warning);
-  if (found.repo === undefined && found.warnings.length === 0) {
-    err(`${env.cwd} is not inside a git repository`);
+  const issue = found.revParseIssue;
+  if (issue !== undefined) {
+    err(outsideRepo(issue, env.cwd) ? `${env.cwd} is not inside a git repository` : `git rev-parse failed in ${env.cwd}: ${issue}; fix what git reports, then run the command again`);
   }
   return found.repo;
 }
@@ -10869,7 +10885,7 @@ function operatorIssues(name, tried, linked2) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs36.existsSync(worktree) && !fs36.existsSync(path47.join(worktree, ".git"));
+  const linkless = fs37.existsSync(worktree) && !fs37.existsSync(path47.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -11099,12 +11115,12 @@ function clearGone(gone, wenv, out) {
 }
 
 // bin/helpers/worker-finish-report.ts
-import * as fs37 from "node:fs";
+import * as fs38 from "node:fs";
 import * as path48 from "node:path";
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs37.readFileSync(file) };
+    return { data: fs38.readFileSync(file) };
   } catch (e) {
     if (isMissing5(e))
       return { data: undefined };
@@ -11157,8 +11173,8 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs37.mkdirSync(path48.dirname(to), { recursive: true });
-    fs37.copyFileSync(from, to, fs37.constants.COPYFILE_EXCL);
+    fs38.mkdirSync(path48.dirname(to), { recursive: true });
+    fs38.copyFileSync(from, to, fs38.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${to}: ${why}`];
@@ -11220,7 +11236,7 @@ function copyChangedIssues(from, to, now) {
 }
 
 // bin/helpers/worker-finish-subject.ts
-import * as fs38 from "node:fs";
+import * as fs39 from "node:fs";
 import * as path49 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
@@ -11251,7 +11267,7 @@ function recordedTop(runGit, commonDir, name) {
   if (record2 === undefined)
     return;
   const folder = path49.dirname(record2.brief);
-  return fs38.existsSync(folder) ? topOf(runGit, folder) : undefined;
+  return fs39.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
   const { read } = subject;
@@ -11270,7 +11286,7 @@ function launcherOf(subject, facts, runGit) {
 }
 
 // bin/helpers/worker-teardown-leftovers.ts
-import * as fs39 from "node:fs";
+import * as fs40 from "node:fs";
 import * as path50 from "node:path";
 function clearSavedReport(ready) {
   const step = ready.reportStep;
@@ -11279,9 +11295,9 @@ function clearSavedReport(ready) {
   if (step.from === step.to)
     return;
   try {
-    const saved = fs39.readFileSync(step.to);
-    if (fs39.readFileSync(step.from).equals(saved))
-      fs39.unlinkSync(step.from);
+    const saved = fs40.readFileSync(step.to);
+    if (fs40.readFileSync(step.from).equals(saved))
+      fs40.unlinkSync(step.from);
   } catch {}
 }
 function forgottenWayOut({
@@ -11787,6 +11803,10 @@ function whereItRuns(env, err) {
     err(warning);
   const repo = found.repo;
   if (repo === undefined) {
+    const issue = found.revParseIssue;
+    if (issue !== undefined && !outsideRepo(issue, env.cwd)) {
+      return refuse6(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue}`, `fix what git reports, ${AGAIN_WAY}`);
+    }
     return refuse6(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
   }
   const checkout = checkoutOf(env.runGit, env.cwd);
@@ -12917,7 +12937,7 @@ function resolvePluginDir(entryFileUrl) {
     path53.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs40.existsSync(path53.join(c, "rules")))
+    if (fs41.existsSync(path53.join(c, "rules")))
       return c;
   }
   return candidates3[0];
@@ -12926,7 +12946,7 @@ var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
   const manifest = path53.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs40.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs41.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -12955,25 +12975,29 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs40.writeSync(1, buffer, offset);
+      offset += fs41.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
     }
   }
 }
-var profileEnvOf = (ctx) => ({
-  env: ctx.env,
-  cwd: ctx.cwd,
-  home: ctx.env.HOME || os3.homedir(),
-  workTree: workTreeRootOf(ctx.cwd),
-  tmpdir: ctx.tmpdir ?? os3.tmpdir(),
-  runClaude: ctx.runClaude ?? execClaude,
-  write: ctx.write ?? writeStdout
-});
+function profileEnvOf(ctx) {
+  const root = workTreeRootOf(ctx.cwd);
+  return {
+    env: ctx.env,
+    cwd: ctx.cwd,
+    home: ctx.env.HOME || os3.homedir(),
+    workTree: root.kind === "inside" ? root.top : undefined,
+    workTreeIssue: root.kind === "failed" ? root.issue : undefined,
+    tmpdir: ctx.tmpdir ?? os3.tmpdir(),
+    runClaude: ctx.runClaude ?? execClaude,
+    write: ctx.write ?? writeStdout
+  };
+}
 function readProcessStdin() {
   try {
-    return fs40.readFileSync(0, "utf-8");
+    return fs41.readFileSync(0, "utf-8");
   } catch {
     return "";
   }

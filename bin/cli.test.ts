@@ -314,6 +314,40 @@ describe('main: profile', () => {
       `review  R  (repo: ${path.join(top, '.claude', 'profiles')})`,
     ]);
   });
+  // `profile new --repo` from `cwd`, which refuses before writing when no repo store exists.
+  const newInRepo = (cwd: string) => {
+    const err: string[] = [];
+    const code = main(
+      ['profile', 'new', 'fresh', '--description', 'F', '--repo'],
+      {
+        env: { HOME: madeDir() },
+        cwd,
+        entryFileUrl,
+        runClaude: () => {
+          throw new Error('no claude in tests');
+        },
+      },
+      () => {},
+      (l) => err.push(l),
+    );
+    return { code, err };
+  };
+  test('profile new --repo outside every repository says it is outside a work tree', () => {
+    expect(newInRepo(madeDir())).toEqual({
+      code: 1,
+      err: ['not inside a git work tree, so there is no repo store'],
+    });
+  });
+  test("profile new --repo where git rev-parse fails for another reason quotes git's line", () => {
+    const cwd = fs.realpathSync(madeDir());
+    write(path.join(cwd, '.git'), 'garbage');
+    expect(newInRepo(cwd)).toEqual({
+      code: 1,
+      err: [
+        `git rev-parse failed in ${cwd}, so there is no repo store: fatal: invalid gitfile format: ${cwd}/.git; fix what git reports, then run the command again`,
+      ],
+    });
+  });
   test('an unknown profile verb prints the profile usage', () => {
     const err: string[] = [];
     const code = main(

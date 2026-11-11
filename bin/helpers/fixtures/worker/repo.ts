@@ -36,6 +36,17 @@ export function removeTemps(): void {
   }
 }
 
+/**
+ * A new temporary folder whose `.git` is a file holding `garbage`. There
+ * `git rev-parse` fails with `fatal: invalid gitfile format: <folder>/.git`,
+ * a failure other than "not a git repository".
+ */
+export function brokenGitFile(): string {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, '.git'), 'garbage');
+  return dir;
+}
+
 /** Runs git in `cwd` and returns its output, trimmed. */
 export const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', args, {

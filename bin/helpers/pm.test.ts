@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { parseGlance } from '../../plugin/hooks/board/contract.js';
 import {
   type FixtureMap,
@@ -9,6 +9,7 @@ import {
   releaseChecksPage,
   sidekickMap,
 } from './fixtures/pm/runner.js';
+import { brokenGitFile, removeTemps, tmp } from './fixtures/worker/repo.js';
 import {
   activeMilestone,
   chooseBoard,
@@ -25,6 +26,8 @@ import { type BriefInput, renderBrief } from './pm-brief.js';
 import type { Item, LinkedBoard, Milestone } from './pm-data.js';
 import { LINT_IDS } from './pm-lint.js';
 import type { Plans } from './pm-plans.js';
+
+afterEach(removeTemps);
 
 const board = (
   n: number,
@@ -185,6 +188,10 @@ const untracked = () =>
     'git remote get-url origin': 'git@github.com:acme/work.git\n',
     'gh config get -h github.com user': 'Rikmorn\n',
   });
+// discover's warning sink at `/`, outside every repository, where it warns nothing.
+const unwarned = (line: string): void => {
+  throw new Error(`unexpected warning: ${line}`);
+};
 
 describe('chooseBoard', () => {
   test('keeps open boards owned by the viewer and titled after the repo, lowest number first', () => {
@@ -206,7 +213,7 @@ describe('chooseBoard', () => {
 
 describe('discover', () => {
   test('sidekick is tracked on board #2 with the three Status options', () => {
-    const info = discover(fixtureRunner(sidekickMap()), '/');
+    const info = discover(fixtureRunner(sidekickMap()), '/', unwarned);
     expect(info.tracked).toBe(true);
     expect(info.reason).toBeNull();
     expect(info.owner).toBe('Rikmorn');
@@ -225,7 +232,7 @@ describe('discover', () => {
     expect(info.preflight.project_scope).toBe(true);
   });
   test('the local guard stops before any network call when the remote owner is not the user', () => {
-    const info = discover(untracked(), '/');
+    const info = discover(untracked(), '/', unwarned);
     expect(info.tracked).toBe(false);
     expect(info.reason).toBe('remote-owner-mismatch');
   });
@@ -241,6 +248,7 @@ describe('discover', () => {
         },
       }),
       '/',
+      unwarned,
     );
     expect(info.tracked).toBe(false);
     expect(info.reason).toBe('no-local-login');
@@ -262,6 +270,7 @@ describe('discover', () => {
           },
         }),
         '/',
+        unwarned,
       ).reason,
     ).toBe('no-origin');
     expect(
@@ -271,6 +280,7 @@ describe('discover', () => {
           'git remote get-url origin': 'git@gitlab.com:Rikmorn/x.git\n',
         }),
         '/',
+        unwarned,
       ).reason,
     ).toBe('not-github');
     const map = sidekickMap();
@@ -279,10 +289,10 @@ describe('discover', () => {
       'gh api graphql -f query=query Discovery -f owner=Rikmorn -f name=furnace'
     ] =
       '{"data":{"viewer":{"login":"Rikmorn"},"repository":{"projectsV2":{"nodes":[]}}}}';
-    expect(discover(fixtureRunner(map), '/').reason).toBe('no-board');
+    expect(discover(fixtureRunner(map), '/', unwarned).reason).toBe('no-board');
   });
   test('gh below the minimum is a warning, not a failure', () => {
-    const info = discover(fixtureRunner(sidekickMap()), '/');
+    const info = discover(fixtureRunner(sidekickMap()), '/', unwarned);
     expect(info.preflight.gh_version).toBe('2.96.0');
     expect(info.preflight.gh_ok).toBe(false);
     expect(info.preflight.warnings.join(' ')).toContain('2.98.0');
@@ -293,7 +303,7 @@ describe('discover', () => {
       'gh api graphql -f query=query StatusField -f login=Rikmorn -F number=2'
     ] =
       '{"data":{"user":{"projectV2":{"id":"x","title":"sidekick","url":"u","createdAt":"2026-09-01T18:12:09Z","field":null}}}}';
-    const info = discover(fixtureRunner(map), '/');
+    const info = discover(fixtureRunner(map), '/', unwarned);
     expect(info.tracked).toBe(true);
     expect(info.status_field).toBeNull();
   });
@@ -325,6 +335,25 @@ describe('runPmCli board', () => {
     ).toBe(0);
     expect(c.out).toEqual([]);
     expect(c.err).toEqual([]);
+  });
+  test('outside every repository, the root falls back to cwd without a warning', () => {
+    const cwd = tmp();
+    const c = capture();
+    expect(
+      runPmCli(['board', '--quiet'], { cwd, run: untracked() }, c.o, c.e),
+    ).toBe(0);
+    expect(c.err).toEqual([]);
+  });
+  test("where git rev-parse fails for another reason, it warns with git's line and carries on", () => {
+    const cwd = brokenGitFile();
+    const c = capture();
+    expect(
+      runPmCli(['board', '--quiet'], { cwd, run: untracked() }, c.o, c.e),
+    ).toBe(0);
+    expect(c.out).toEqual([]);
+    expect(c.err).toEqual([
+      `git rev-parse failed in ${cwd}, so the repo root falls back to that folder: fatal: invalid gitfile format: ${cwd}/.git; fix what git reports, then run the command again`,
+    ]);
   });
   test('without --quiet, not tracked still prints the JSON with its reason', () => {
     const c = capture();

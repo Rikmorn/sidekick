@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { envWithoutRepoVars } from './helpers/git-env.js';
+import { outsideRepo, revParseLine } from './helpers/outside-repo.js';
 
 // sidekick's own docs check, run in CI; the shipped CLI never imports it.
 
@@ -280,9 +281,15 @@ const fail = (message: string): never => {
 };
 
 const repoRoot = (): string => {
-  const top = git(process.cwd(), ['rev-parse', '--show-toplevel']);
+  const cwd = process.cwd();
+  const top = git(cwd, ['rev-parse', '--show-toplevel']);
   if (top.status !== 0) {
-    return fail('not inside a git repository');
+    const issue = revParseLine(top.error?.message ?? top.stderr);
+    return fail(
+      outsideRepo(issue, cwd)
+        ? 'not inside a git repository'
+        : `git rev-parse failed in ${cwd}: ${issue}; fix what git reports, then run the check again`,
+    );
   }
   const root = top.stdout.trim();
   const shallow = git(root, ['rev-parse', '--is-shallow-repository']);

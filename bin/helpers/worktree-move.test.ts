@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
+import {
+  brokenGitFile,
+  git,
+  removeTemps,
+  repo,
+  tmp,
+} from './fixtures/worker/repo.js';
 import { execRunner, type Runner } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
 import { recordsDir, writeRecord } from './worker-record.js';
@@ -187,6 +193,17 @@ describe('checkMove: where it runs', () => {
     const { result, err } = check(outside, f.main, ['feat']);
     expect(refused(result)).toEqual([
       `move found no repository at ${outside}: ${INSIDE_WAY}`,
+    ]);
+    expect(err).toEqual([]);
+  });
+
+  test("where git rev-parse fails for another reason, refused with git's line", () => {
+    const f = fixture();
+    const dir = brokenGitFile();
+    const { result, err } = check(dir, f.main, ['feat']);
+    expect(refused(result)).toEqual([
+      `git rev-parse failed in ${dir}, so move found no repository: fatal: invalid gitfile format: ${dir}/.git`,
+      'fix what git reports, then run move again',
     ]);
     expect(err).toEqual([]);
   });

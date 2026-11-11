@@ -4,10 +4,10 @@
  * them. Ownership is the `sk-` prefix: this module writes and removes only
  * `sk-*.md`, and reports (never resolves) overlap with anything else.
  */
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { envWithoutRepoVars } from './git-env.js';
+import { outsideRepo, revParseLine } from './outside-repo.js';
+import { execRunner } from './pm-data.js';
 import { ownedRulesIn, statusOf } from './rules-fs.js';
 import { findOverlap, formatOverlap } from './rules-overlap.js';
 
@@ -33,18 +33,20 @@ export function resolveDest(
     : path.join(claudeHome, 'rules');
 }
 
-/** The top of the git work tree holding `cwd`, or undefined outside one. */
-export function workTreeRootOf(cwd: string): string | undefined {
-  try {
-    return execFileSync('git', ['rev-parse', '--show-toplevel'], {
-      cwd,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      env: envWithoutRepoVars(process.env),
-    }).trim();
-  } catch {
-    return undefined;
-  }
+/** Where `cwd` sits: in a git work tree with its top, outside every repository, or where `git rev-parse` failed with git's line. */
+export type WorkTreeRoot =
+  | { kind: 'inside'; top: string }
+  | { kind: 'outside' }
+  | { kind: 'failed'; issue: string };
+
+/** The top of the git work tree holding `cwd`, or why there is none. */
+export function workTreeRootOf(cwd: string): WorkTreeRoot {
+  const result = execRunner('git', ['rev-parse', '--show-toplevel'], cwd);
+  if (result.code === 0) return { kind: 'inside', top: result.stdout.trim() };
+  const issue = revParseLine(result.stderr);
+  return outsideRepo(issue, cwd)
+    ? { kind: 'outside' }
+    : { kind: 'failed', issue };
 }
 
 /**
@@ -52,9 +54,20 @@ export function workTreeRootOf(cwd: string): string | undefined {
  * monorepo subdirectory has its own writable `.claude/rules`, so a plain
  * cwd join silently scopes the install to that subtree. Falls back to
  * `cwd` where `workTreeRootOf` finds no work tree, so callers never need a
- * second branch.
+ * second branch. A git failure other than being outside every repository
+ * goes to `warn` with git's line, and never refuses: `outsideRepo` matches
+ * git's English text, which a translating git words otherwise.
  */
-export const repoRootOf = (cwd: string): string => workTreeRootOf(cwd) ?? cwd;
+export function repoRootOf(cwd: string, warn: (line: string) => void): string {
+  const root = workTreeRootOf(cwd);
+  if (root.kind === 'inside') return root.top;
+  if (root.kind === 'failed') {
+    warn(
+      `git rev-parse failed in ${cwd}, so the repo root falls back to that folder: ${root.issue}; fix what git reports, then run the command again`,
+    );
+  }
+  return cwd;
+}
 
 /** Rules a project install delivers only where the repo enables the plugin: each carries a personal way of working with sidekick, which a team repo has not agreed. */
 export const PLUGIN_ONLY_RULES: readonly string[] = [
@@ -388,7 +401,7 @@ export function runRulesCli(
     return 1;
   }
   const { verb, scope, strict } = parsed;
-  const root = scope === 'project' ? repoRootOf(env.cwd) : env.cwd;
+  const root = scope === 'project' ? repoRootOf(env.cwd, out) : env.cwd;
   if (scope === 'project') out(`project root: ${root}`);
   const dest = resolveDest(scope, root, env.claudeHome);
   if (ownedRulesIn(env.src).length === 0) {

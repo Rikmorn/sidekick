@@ -911,6 +911,15 @@ describe('the repo store', () => {
       'not inside a git work tree, so there is no repo store',
     ]);
   });
+  test("new --repo refuses where git rev-parse failed for another reason, quoting git's line", () => {
+    const h = repoHarness();
+    h.penv.workTree = undefined;
+    h.penv.workTreeIssue = 'fatal: invalid gitfile format: /x/.git';
+    expect(h.run('new', 'fresh', '--description', 'F', '--repo')).toBe(1);
+    expect(h.err).toEqual([
+      `git rev-parse failed in ${h.penv.cwd}, so there is no repo store: fatal: invalid gitfile format: /x/.git; fix what git reports, then run the command again`,
+    ]);
+  });
   test('new --repo refuses where the repo store is the user store, saying why', () => {
     const atHome = repoHarness();
     atHome.penv.home = atHome.workTree;

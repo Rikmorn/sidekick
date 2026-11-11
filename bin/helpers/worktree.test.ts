@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
+import {
+  brokenGitFile,
+  git,
+  removeTemps,
+  repo,
+  tmp,
+} from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { recordsDir, writeRecord } from './worker-record.js';
@@ -395,10 +401,20 @@ describe('worktree list: the frame', () => {
     expect(out[0]).toContain(skips);
   });
 
-  test('outside a repository it fails', () => {
-    const { code, err } = run(tmp(), ['list']);
+  test('outside a repository it fails, and says so', () => {
+    const outside = tmp();
+    const { code, err } = run(outside, ['list']);
     expect(code).toBe(1);
-    expect(err).toHaveLength(1);
+    expect(err).toEqual([`${outside} is not inside a git repository`]);
+  });
+
+  test("where git rev-parse fails for another reason, it quotes git's line", () => {
+    const dir = brokenGitFile();
+    const { code, err } = run(dir, ['list']);
+    expect(code).toBe(1);
+    expect(err).toEqual([
+      `git rev-parse failed in ${dir}: fatal: invalid gitfile format: ${dir}/.git; fix what git reports, then run the command again`,
+    ]);
   });
 });
 

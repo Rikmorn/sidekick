@@ -6,6 +6,7 @@
 
 import { readListing } from './desk.js';
 import { findRepo, type Repo } from './desk-children.js';
+import { outsideRepo } from './outside-repo.js';
 import type { Runner } from './pm-data.js';
 import type { ClaudeRunner } from './profile-launch.js';
 import { readRecords } from './worker-record.js';
@@ -23,12 +24,17 @@ export interface WorktreeEnv {
 
 export type Out = (line: string) => void;
 
-/** The repository holding `env.cwd`; undefined outside one, with the reason printed to `err`. */
+/** The repository holding `env.cwd`; undefined when git finds none, with the reason printed to `err`. */
 export function repoOf(env: WorktreeEnv, err: Out): Repo | undefined {
   const found = findRepo(env.runGit, env.cwd);
   for (const warning of found.warnings) err(warning);
-  if (found.repo === undefined && found.warnings.length === 0) {
-    err(`${env.cwd} is not inside a git repository`);
+  const issue = found.revParseIssue;
+  if (issue !== undefined) {
+    err(
+      outsideRepo(issue, env.cwd)
+        ? `${env.cwd} is not inside a git repository`
+        : `git rev-parse failed in ${env.cwd}: ${issue}; fix what git reports, then run the command again`,
+    );
   }
   return found.repo;
 }

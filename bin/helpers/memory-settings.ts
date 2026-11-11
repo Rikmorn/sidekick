@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
 import { findRepo, type Repo } from './desk-children.js';
+import { outsideRepo } from './outside-repo.js';
 import type { Runner } from './pm-data.js';
 import { shellQuote } from './shell.js';
 import { physical } from './worker-repo.js';
@@ -88,21 +89,8 @@ export function mainCheckout(
   };
 }
 
-// How `git rev-parse` words a path outside every repository.
-const NOT_A_REPO = 'not a git repository';
-
-function isFolder(target: string): boolean {
-  try {
-    return fs.statSync(target).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
 // Why `target` has no main checkout, quoting the failure when it gives a
-// reason other than being outside a repository. A path that is no folder
-// fails the spawn before git runs, so it keeps the outside-git wording; a
-// spawn that fails in a folder, as with git missing from PATH, is quoted.
+// reason other than being outside a repository.
 function noCheckoutIssue(
   target: string,
   found: { listIssue?: string; revParseIssue?: string },
@@ -111,13 +99,9 @@ function noCheckoutIssue(
   if (listIssue !== undefined) {
     return `${target} has no main checkout, since git worktree list failed there: ${listIssue || 'it printed nothing'}; fix what git reports, then run the command again`;
   }
-  const gitRefused =
-    revParseIssue !== '' &&
-    !revParseIssue.includes(NOT_A_REPO) &&
-    isFolder(target);
-  return gitRefused
-    ? `${target} has no main checkout, since git rev-parse failed there: ${revParseIssue}; fix what git reports, then run the command again`
-    : `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one`;
+  return outsideRepo(revParseIssue, target)
+    ? `${target} has no main checkout: it is not inside a git repository; run the command on a path inside one`
+    : `${target} has no main checkout, since git rev-parse failed there: ${revParseIssue}; fix what git reports, then run the command again`;
 }
 
 type Parsed =

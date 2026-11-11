@@ -72,8 +72,8 @@ const repo = (files: Record<string, string>): string => {
 
 const head = (root: string) => git(root, 'rev-parse', 'HEAD');
 
-const run = (cwd: string) =>
-  spawnSync(process.execPath, [SCRIPT], { cwd, encoding: 'utf8' });
+const run = (cwd: string, env?: NodeJS.ProcessEnv) =>
+  spawnSync(process.execPath, [SCRIPT], { cwd, encoding: 'utf8', env });
 
 describe('linksOf', () => {
   it('returns an inline link, an image, and a definition with their lines', () => {
@@ -389,6 +389,28 @@ describe('bun run check:docs', () => {
     const result = run(clone);
     expect(result.status).toBe(2);
     expect(result.stdout + result.stderr).toContain('fetch-depth: 0');
+  });
+
+  it('exits 2 outside every repository, saying so', () => {
+    const outside = tempDir();
+    const result = run(outside, {
+      ...process.env,
+      GIT_CEILING_DIRECTORIES: path.dirname(outside),
+    });
+    expect(result.status).toBe(2);
+    expect(result.stdout + result.stderr).toBe(
+      'check-docs: not inside a git repository\n',
+    );
+  });
+
+  it("exits 2 where git rev-parse fails for another reason, quoting git's line", () => {
+    const dir = tempDir();
+    fs.writeFileSync(path.join(dir, '.git'), 'garbage');
+    const result = run(dir);
+    expect(result.status).toBe(2);
+    expect(result.stdout + result.stderr).toBe(
+      `check-docs: git rev-parse failed in ${dir}: fatal: invalid gitfile format: ${dir}/.git; fix what git reports, then run the check again\n`,
+    );
   });
 
   it('names a repo-relative path when run from a subdirectory', () => {

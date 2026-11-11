@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
+import {
+  brokenGitFile,
+  git,
+  removeTemps,
+  repo,
+  tmp,
+} from './fixtures/worker/repo.js';
 import { execRunner, type Runner } from './pm-data.js';
 import { checkoutFacts } from './worker-facts.js';
 
@@ -90,9 +96,20 @@ describe('checkoutFacts', () => {
     });
   });
 
-  test('gives an issue outside a work tree', () => {
+  test('outside every repository, gives the outside wording', () => {
     expect(checkoutFacts(execRunner, tmp())).toEqual({
-      issues: [expect.stringContaining('not inside a git work tree')],
+      issues: [
+        'not inside a git work tree: run sidekick worker from a checkout of the repo',
+      ],
+    });
+  });
+
+  test("where git rev-parse fails for another reason, quotes git's line", () => {
+    const dir = brokenGitFile();
+    expect(checkoutFacts(execRunner, dir)).toEqual({
+      issues: [
+        `git rev-parse failed in ${dir}: fatal: invalid gitfile format: ${dir}/.git; fix what git reports, then run sidekick worker again`,
+      ],
     });
   });
 });

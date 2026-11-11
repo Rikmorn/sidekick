@@ -709,6 +709,8 @@ function rootFault(fact: RootFact): string | undefined {
       return 'which does not exist';
     case 'outside-git':
       return 'which is not inside a git repository';
+    case 'git-failed':
+      return `but git rev-parse failed there: ${quoteOrWithhold(fact.issue)}; fix what git reports`;
     case 'not-main':
       return `but the repository there has its main checkout at ${quoteOrWithhold(fact.top)}`;
     case 'undecided':

@@ -131,11 +131,16 @@ function preflightOf(version: string | null): Preflight {
  * Tracked ⇔ exactly one open board linked to the repo, titled after it,
  * owned by the user. The login check is local so an untracked repo costs
  * no request. Throws `PmError(2)` when `gh` is missing or lacks `project`.
+ * `warn` takes `repoRootOf`'s warning, which quotes a failed `git rev-parse`.
  */
-export function discover(run: Runner, cwd: string): BoardInfo {
+export function discover(
+  run: Runner,
+  cwd: string,
+  warn: (line: string) => void,
+): BoardInfo {
   const gh = fetchGhVersion(run, cwd);
   if (!gh.found) throw new PmError(2, 'gh not found on PATH');
-  const root = repoRootOf(cwd);
+  const root = repoRootOf(cwd, warn);
   const preflight = preflightOf(gh.version);
   const untracked = (
     reason: NotTrackedReason,
@@ -288,7 +293,7 @@ export function runPmCli(
   }
   const emit = (o: unknown): void => out(JSON.stringify(o, null, 2));
   try {
-    const info = discover(run, env.cwd);
+    const info = discover(run, env.cwd, err);
     const { root: _root, ...shown } = info;
     if (!info.tracked) {
       if (report) {

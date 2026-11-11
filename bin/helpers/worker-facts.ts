@@ -4,6 +4,7 @@
  * launching checkout holds, and the worktrees git lists.
  */
 
+import { outsideRepo, revParseLine } from './outside-repo.js';
 import type { Runner } from './pm-data.js';
 import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
 import { HEADS } from './worker-repo.js';
@@ -21,7 +22,8 @@ export interface CheckoutFacts {
 /**
  * The launching checkout's top, the main checkout's top, the common git dir,
  * and the branch the launching checkout holds, from `cwd` or any folder below
- * it. Refuses outside a work tree.
+ * it. Refuses outside a work tree, quoting git's line when `git rev-parse`
+ * fails for another reason.
  */
 export function checkoutFacts(
   runGit: Runner,
@@ -38,9 +40,12 @@ export function checkoutFacts(
     cwd,
   );
   if (result.code !== 0) {
+    const issue = revParseLine(result.stderr);
     return {
       issues: [
-        'not inside a git work tree: run sidekick worker from a checkout of the repo',
+        outsideRepo(issue, cwd)
+          ? 'not inside a git work tree: run sidekick worker from a checkout of the repo'
+          : `git rev-parse failed in ${cwd}: ${issue}; fix what git reports, then run sidekick worker again`,
       ],
     };
   }

@@ -7,6 +7,7 @@
 
 import * as path from 'node:path';
 import { findRepo, type Repo } from './desk-children.js';
+import { outsideRepo } from './outside-repo.js';
 import type { Runner } from './pm-data.js';
 import { parseFlags } from './profile.js';
 import { statusEntriesIn, type WorktreeEntry } from './worker-listing.js';
@@ -128,6 +129,13 @@ function whereItRuns(env: WorktreeEnv, err: Out): Place | Refused {
   for (const warning of found.warnings) err(warning);
   const repo = found.repo;
   if (repo === undefined) {
+    const issue = found.revParseIssue;
+    if (issue !== undefined && !outsideRepo(issue, env.cwd)) {
+      return refuse(
+        `git rev-parse failed in ${env.cwd}, so move found no repository: ${issue}`,
+        `fix what git reports, ${AGAIN_WAY}`,
+      );
+    }
     return refuse(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
   }
   const checkout = checkoutOf(env.runGit, env.cwd);
