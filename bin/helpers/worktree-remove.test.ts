@@ -1313,6 +1313,25 @@ describe('worktree remove: --into, and the branch move made', () => {
     expect(out[0]).toBe('feat landed in target');
   });
 
+  test('--into a target that moved on, after the branch landed by rebase, finds the landing', () => {
+    const main = repo();
+    git(main, 'branch', 'target');
+    const dir = addMarked(main, 'rb', 'feat');
+    commit(dir, 'b.txt');
+    const head = commit(dir, 'c.txt');
+    const at = path.join(tmp(), 'rebase');
+    git(main, 'worktree', 'add', '-q', at, 'target');
+    commit(at, 'moved.txt');
+    git(at, 'cherry-pick', 'feat~1', 'feat');
+    git(main, 'worktree', 'remove', at);
+    expect(git(main, 'rev-parse', 'target')).not.toBe(head);
+    const { code, out, err } = run(main, ['rb', '--into', 'target']);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(backupRefs(main)).toEqual([`refs/sidekick/landed/rb/${head}`]);
+    expect(out[0]).toBe('feat landed in target');
+  });
+
   test('--into, not landed, refuses naming the target and the count, and --discard deletes behind a discarded ref', () => {
     const main = repo();
     git(main, 'branch', 'target');

@@ -62,7 +62,7 @@ A Claude Code session's lock whose pid is dead does not hold the worktree.
 
 Both checks read local refs, as of the last fetch.
 
-- `landed in <ref>`: the commits reached a target by merge, fast-forward, or squash. The targets are tried in this order: the `--into` ref when `remove` got one, the branch the main checkout holds, then `origin`'s default branch.
+- `landed in <ref>`: the branch's content reached a target by merge, fast-forward, rebase, or squash, including work edited beside afterwards. The check compares content, not commit identity, so rebased hashes don't matter. It walks the target newest first, up to 200 commits that touched a file the branch changed. A landed change with an altered line, or one past that cap, reads as not landed. The targets are tried in this order: the `--into` ref when `remove` got one, the branch the main checkout holds, then `origin`'s default branch.
 - `pushed to <ref>`: a remote-tracking ref contains the commit, such as `origin/feature-x`.
 - `only here, N commits`: neither holds them. When `remove` deletes the worktree's own branch, or the `HEAD` is detached, a backup ref is then the only place they remain.
 - `commits unknown: <why>`: git could not answer.
