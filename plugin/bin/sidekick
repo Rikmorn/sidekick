@@ -3073,7 +3073,7 @@ import * as path9 from "node:path";
 
 // bin/helpers/outside-repo.ts
 import * as fs8 from "node:fs";
-var NOT_A_REPO = "not a git repository";
+var OUTSIDE_EVERY_REPO = "not a git repository (or any";
 function isFolder(target) {
   try {
     return fs8.statSync(target).isDirectory();
@@ -3084,7 +3084,7 @@ function isFolder(target) {
 var revParseLine = (stderr) => stderr.trim().split(`
 `)[0];
 function outsideRepo(revParseIssue, target) {
-  return revParseIssue === "" || revParseIssue.includes(NOT_A_REPO) || !isFolder(target);
+  return revParseIssue === "" || revParseIssue.includes(OUTSIDE_EVERY_REPO) || !isFolder(target);
 }
 
 // bin/helpers/shell.ts

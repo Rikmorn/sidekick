@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   brokenGitFile,
+  danglingWorktree,
   git,
   removeTemps,
   repo,
@@ -406,6 +407,15 @@ describe('worktree list: the frame', () => {
     const { code, err } = run(outside, ['list']);
     expect(code).toBe(1);
     expect(err).toEqual([`${outside} is not inside a git repository`]);
+  });
+
+  test("in a linked worktree whose git dir is gone, it quotes git's line", () => {
+    const { dir, gitDir } = danglingWorktree();
+    const { code, err } = run(dir, ['list']);
+    expect(code).toBe(1);
+    expect(err).toEqual([
+      `git rev-parse failed in ${dir}: fatal: not a git repository: ${gitDir}; fix what git reports, then run the command again`,
+    ]);
   });
 
   test("where git rev-parse fails for another reason, it quotes git's line", () => {

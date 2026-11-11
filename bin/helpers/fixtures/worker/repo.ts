@@ -39,7 +39,7 @@ export function removeTemps(): void {
 /**
  * A new temporary folder whose `.git` is a file holding `garbage`. There
  * `git rev-parse` fails with `fatal: invalid gitfile format: <folder>/.git`,
- * a failure other than "not a git repository".
+ * a failure other than being outside every repository.
  */
 export function brokenGitFile(): string {
   const dir = tmp();
@@ -76,6 +76,20 @@ export function repo(): string {
   git(top, 'add', 'a.txt');
   git(top, 'commit', '-q', '-m', 'init');
   return top;
+}
+
+/**
+ * A linked worktree whose git dir under the main checkout is gone. There
+ * `git rev-parse` fails with `fatal: not a git repository: <gitDir>`, which is
+ * not one of git's outside-every-repository messages.
+ */
+export function danglingWorktree(): { dir: string; gitDir: string } {
+  const main = repo();
+  const dir = path.join(tmp(), 'wt');
+  git(main, 'worktree', 'add', '-q', '-b', 'wt', dir);
+  const gitDir = path.join(main, '.git', 'worktrees', 'wt');
+  fs.rmSync(gitDir, { recursive: true, force: true });
+  return { dir, gitDir };
 }
 
 /**
