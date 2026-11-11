@@ -10937,10 +10937,22 @@ function dirtyAdvice(mode) {
     }
   }
 }
+function flaggedAdvice(mode) {
+  switch (mode) {
+    case "landed":
+      return "Then commit and integrate the edit, or discard it with git restore -- <file>, then run finish again";
+    case "discard":
+      return "Then commit the edit so that the backup ref keeps it, or discard it with git restore -- <file>, then run finish again";
+    default: {
+      const unhandled = mode;
+      throw new Error(`unhandled mode: ${unhandled}`);
+    }
+  }
+}
 function flaggedIssues(worktree, { skipWorktree, assumed }, mode) {
   const issues = [];
   if (skipWorktree.length > 0) {
-    issues.push(`the worktree ${worktree} holds edited skip-worktree files, which git status hides and its removal would destroy: ${skipWorktree.join(", ")}. Clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. ${dirtyAdvice(mode)}`);
+    issues.push(`the worktree ${worktree} holds edited skip-worktree files, which git status hides and its removal would destroy: ${skipWorktree.join(", ")}. Clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. ${flaggedAdvice(mode)}`);
   }
   if (assumed.length > 0) {
     issues.push(`the worktree ${worktree} holds assume-unchanged files, which git assumes unchanged, so nothing can tell whether they hold edits: ${assumed.join(", ")}. Clear each flag with git update-index --no-assume-unchanged -- <file>, then run finish again`);
@@ -12461,7 +12473,7 @@ function nestedLines(repo, entry) {
 }
 var TOOK_NOTHING = "so remove took nothing";
 var KEPT_WORKTREE = "so remove kept the worktree";
-var SKIP_WORKTREE_WAY_OUT = "clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. Then commit or remove the file, and run remove again";
+var SKIP_WORKTREE_WAY_OUT = "clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. Then commit the edit, or discard it with git restore -- <file>, and run remove again";
 var ASSUMED_WAY_OUT = "clear each flag with git update-index --no-assume-unchanged -- <file>, then run remove again";
 var pathsOf = (files, ...losses) => files.filter((file) => losses.includes(file.loss)).map((file) => file.path);
 function changedLines(at2, files, omitted, skipList) {

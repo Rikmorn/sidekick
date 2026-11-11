@@ -677,7 +677,7 @@ describe('worktree remove: flagged files (#319)', () => {
 
   const skipLines = (dir: string): string[] => [
     `${dir} holds edited skip-worktree files, which git status hides and its removal would lose: a.txt`,
-    'clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. Then commit or remove the file, and run remove again',
+    'clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. Then commit the edit, or discard it with git restore -- <file>, and run remove again',
   ];
 
   const assumedLines = (dir: string): string[] => [

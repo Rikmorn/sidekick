@@ -5,8 +5,9 @@
  * made for it, or a branch `sidekick worktree move` made for it and marked.
  * It keeps any other. `--into` adds a local branch or remote-tracking ref to
  * the landed check. The worktree's head, on any branch or detached, goes into
- * a backup ref before anything is deleted. It never forces, so git itself
- * refuses a worktree with changes. Each refusal names what it found. The
+ * a backup ref before anything is deleted. It never forces: git refuses the
+ * changes `git status` lists, and the `dirty` check covers ignored and flagged
+ * files. Each refusal names what it found. The
  * checks live in `worktree-remove-checks.ts`; the deletions live here.
  */
 

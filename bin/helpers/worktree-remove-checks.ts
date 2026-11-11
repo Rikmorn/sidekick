@@ -202,7 +202,7 @@ const TOOK_NOTHING = 'so remove took nothing';
 export const KEPT_WORKTREE = 'so remove kept the worktree';
 
 const SKIP_WORKTREE_WAY_OUT =
-  'clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. Then commit or remove the file, and run remove again';
+  'clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. Then commit the edit, or discard it with git restore -- <file>, and run remove again';
 const ASSUMED_WAY_OUT =
   'clear each flag with git update-index --no-assume-unchanged -- <file>, then run remove again';
 

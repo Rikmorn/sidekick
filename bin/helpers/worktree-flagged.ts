@@ -1,9 +1,9 @@
 /**
  * The index entries a worktree flags, which `git status` hides whether the
  * file is edited or missing. `git ls-files -v` tags each entry, and the tag
- * says which route reads it: a skip-worktree file's edits show in a status run
- * with sparse checkout on, and an assume-unchanged file's need a read of the
- * file itself. The removal checks read both routes here, with git status.
+ * says which route reads it: a skip-worktree file's edits come from git's
+ * sparse-checkout recovery status. A present assume-unchanged file counts as
+ * dirty by `lstat` alone, since nothing can tell whether it holds edits.
  */
 
 import * as fs from 'node:fs';

@@ -3103,7 +3103,7 @@ describe('finish and flagged files (#319)', () => {
     `the worktree ${fx.worktree} holds edited skip-worktree files, which git status hides and its removal would destroy: a.txt. Clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. ${advice}`;
 
   const LANDED_ADVICE =
-    'Commit and integrate it, or remove it, then run finish again';
+    'Then commit and integrate the edit, or discard it with git restore -- <file>, then run finish again';
 
   const assumedLine = (fx: Fixture): string =>
     `the worktree ${fx.worktree} holds assume-unchanged files, which git assumes unchanged, so nothing can tell whether they hold edits: a.txt. Clear each flag with git update-index --no-assume-unchanged -- <file>, then run finish again`;
@@ -3125,7 +3125,7 @@ describe('finish and flagged files (#319)', () => {
     const h = harness(fx);
     const line = skipLine(
       fx,
-      'Commit it so that the backup ref keeps it, or remove it, then run finish again',
+      'Then commit the edit so that the backup ref keeps it, or discard it with git restore -- <file>, then run finish again',
     );
     expectRefusedUntouched(h, fx, h.finish(fx.brief, '--discard'), line);
   });

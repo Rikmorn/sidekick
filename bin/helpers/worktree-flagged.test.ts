@@ -95,6 +95,8 @@ describe('statusEntriesIn with skipWorktree', () => {
     fs.writeFileSync(path.join(worktree, 'skip.txt'), 'edited\n');
     fs.writeFileSync(path.join(worktree, 'plain.txt'), 'v1\n');
     fs.rmSync(path.join(worktree, 'both.txt'));
+    const later = new Date(Date.now() + 3_600_000);
+    fs.utimesSync(path.join(worktree, 'plain.txt'), later, later);
     const result = statusEntriesIn(execRunner, worktree, worktree, {
       skipWorktree: true,
     });

@@ -296,6 +296,21 @@ function dirtyAdvice(mode: FinishMode['kind']): string {
   }
 }
 
+// The way out of an edited skip-worktree file: once its flag is clear, git restore discards the
+// edit, where deleting the file leaves it modified.
+function flaggedAdvice(mode: FinishMode['kind']): string {
+  switch (mode) {
+    case 'landed':
+      return 'Then commit and integrate the edit, or discard it with git restore -- <file>, then run finish again';
+    case 'discard':
+      return 'Then commit the edit so that the backup ref keeps it, or discard it with git restore -- <file>, then run finish again';
+    default: {
+      const unhandled: never = mode;
+      throw new Error(`unhandled mode: ${unhandled}`);
+    }
+  }
+}
+
 // Flagged files in the worktree, whose edits git status hides.
 function flaggedIssues(
   worktree: string,
@@ -305,7 +320,7 @@ function flaggedIssues(
   const issues: string[] = [];
   if (skipWorktree.length > 0) {
     issues.push(
-      `the worktree ${worktree} holds edited skip-worktree files, which git status hides and its removal would destroy: ${skipWorktree.join(', ')}. Clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. ${dirtyAdvice(mode)}`,
+      `the worktree ${worktree} holds edited skip-worktree files, which git status hides and its removal would destroy: ${skipWorktree.join(', ')}. Clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. ${flaggedAdvice(mode)}`,
     );
   }
   if (assumed.length > 0) {
