@@ -61,7 +61,7 @@ const openRefs = (plan: ViewPlan): string =>
     .map((i) => `#${i.number}`)
     .join(', ');
 
-// Marked as `--report` marks them.
+// Marked as `--report` marks it.
 const awaitingRef = (number: number): string => `#${number} (release check)`;
 
 const awaitingRefs = (plan: ViewPlan): string =>

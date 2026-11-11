@@ -49,7 +49,7 @@ Each repo you work in with worktrees, tracked or not, needs short worktree guida
 
 ## A session, start to finish
 
-**1. Orient.** The session-start hook prints `sidekick pm pickup --brief` into context. It names the active milestone with its outcome, what is In Progress with its age, the candidates, drift, and a suggested move. Drift covers unpushed commits, cards stale past seven days, and an open PR on the current branch. It also names In Progress cards split across milestones and a malformed plans header. `sk-orient` §Reading it says how to read each line and what to pick up. Continue what is In Progress unless you pause it on purpose; pull new work when In Progress drops, not on top of it. Run the command yourself for a fresh picture mid-session.
+**1. Orient.** The session-start hook prints `sidekick pm pickup --brief` into context. It names the active milestone with its outcome, what is In Progress with its age, the candidates, drift, and a suggested move. Drift covers unpushed commits, cards stale past seven days, and an open PR on the current branch. It also names In Progress cards split across milestones and a malformed plans header. `sk-orient` §Reading it says how to read each line and what to pick up. Continue what is In Progress unless you pause it on purpose; pull new work when In Progress drops, not on top of it. A card that waits only for its release check has landed, so it is not continued. Run the command yourself for a fresh picture mid-session.
 
 **2. Pick up.** `sk-orient` §Picking up moves the card, or a whole plan's cards, to In Progress, and posts a status update. The issue body is the brief.
 

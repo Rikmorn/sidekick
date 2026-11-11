@@ -135,7 +135,7 @@ The scope mod rewrites what the model is offered, the third rung of ADR-0012's l
 
 ### `sk-orient`
 
-Reads the brief: board, milestone with its outcome, In Progress with ages, candidates by plan or by tier, drift, and a suggested move. Decides by rule: continue what is In Progress unless pausing it on purpose; pull the next plan when In Progress drops. Picks up by moving the card, or a whole plan's cards, to In Progress, as its §Picking up says. Posts a status update when it picks up a plan. Then states the pickup to you in one line. Runs on demand mid-session for a fresh picture. Pauses only when the board cannot choose: several milestones open with none active, or In Progress split across milestones. The choice is then yours.
+Reads the brief: board, milestone with its outcome, In Progress with ages, candidates by plan or by tier, drift, and a suggested move. Decides by rule: continue what is In Progress unless pausing it on purpose; pull the next plan when In Progress drops. A card that waits only for its release check is not continued. Picks up by moving the card, or a whole plan's cards, to In Progress, as its §Picking up says. Posts a status update when it picks up a plan. Then states the pickup to you in one line. Runs on demand mid-session for a fresh picture. Pauses only when the board cannot choose: several milestones open with none active, or In Progress split across milestones. The choice is then yours.
 
 ### `sk-track`
 
