@@ -51,6 +51,7 @@ Preparation runs before the ask and changes nothing but the working tree:
 1. Bump the three `version` fields: `plugin/.claude-plugin/plugin.json`, and `metadata.version` and `plugins[0].version` in `.claude-plugin/marketplace.json`.
 2. Run `bun run build`, then the gates §Working here names, and `claude plugin validate --strict` on `.` and on `plugin`.
 3. Write the release notes under `docs/superpowers/`, which git ignores. Their Upgrading line gives the update commands in `README.md` §Install.
+4. Check that CI passed on the commit the release builds on: `gh run list -R Rikmorn/sidekick --branch <branch> --limit 1` shows `success` for `HEAD`. CI runs on Linux with its own git, so it catches what a local run cannot. CI runs only on a push, so when that commit is unpushed, ask to push the branch first.
 
 Publication runs after the yes:
 

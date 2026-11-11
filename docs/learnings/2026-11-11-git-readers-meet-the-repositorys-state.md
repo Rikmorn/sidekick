@@ -2,6 +2,8 @@
 
 R10.1, milestone 11 on `Rikmorn/sidekick`, released as 0.7.2 (#293, #319, #332).
 
+> **Amended 2026-11-11:** git's own version is one more axis. CI's git 2.56 reworded a dangling worktree's error, and two tests pinned git 2.50's text. CI failed from `ca5a505` until `267742e` (#332), unseen by the local gates. `AGENTS.md` §Releasing now checks CI before the ask.
+
 ## Context
 
 R10.1 fixed defects in what 0.7.0 and 0.7.1 shipped. R10 had built its worker and worktree verbs from a matrix of use cases. That matrix crossed lifecycle stages, places, and repo traits (`2026-11-08-use-cases-before-building-more.md`). The verbs' tests built small repositories with `git init`. After the release, three defects came from git states that the matrix never named.
