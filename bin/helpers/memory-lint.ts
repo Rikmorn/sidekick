@@ -323,7 +323,7 @@ interface LinkedRepo {
   fact: RootFact;
 }
 
-// Every git call the lint makes goes through this, so a call the deadline cut never becomes a finding.
+/** Wraps every git call the lint makes, so a call the deadline cut never becomes a finding. */
 export function stopAtDeadline(runGit: Runner): Runner {
   return (cmd, args, cwd, opts) => {
     const result = runGit(cmd, args, cwd, opts);

@@ -22,7 +22,7 @@ export const usablePid = (pid: number | undefined): number | undefined =>
 
 /**
  * The lock's pid, when it names one. kill(0, 0) signals the process group, so
- * only a positive pid counts.
+ * the pid counts when `usablePid` accepts it: 1 to `process.kill`'s largest pid.
  */
 export function lockPid(reason: string | undefined): number | undefined {
   if (reason === undefined) return undefined;
