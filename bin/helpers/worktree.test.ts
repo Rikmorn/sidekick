@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import {
   brokenGitFile,
   danglingWorktree,
+  danglingWorktreeLines,
   git,
   removeTemps,
   repo,
@@ -413,9 +414,12 @@ describe('worktree list: the frame', () => {
     const { dir, gitDir } = danglingWorktree();
     const { code, err } = run(dir, ['list']);
     expect(code).toBe(1);
-    expect(err).toEqual([
-      `git rev-parse failed in ${dir}: fatal: not a git repository: ${gitDir}; fix what git reports, then run the command again`,
-    ]);
+    const quoted = danglingWorktreeLines(dir, gitDir).map(
+      (line) =>
+        `git rev-parse failed in ${dir}: ${line}; fix what git reports, then run the command again`,
+    );
+    expect(err).toHaveLength(1);
+    expect(quoted).toContain(err[0]);
   });
 
   test("where git rev-parse fails for another reason, it quotes git's line", () => {

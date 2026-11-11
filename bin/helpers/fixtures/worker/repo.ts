@@ -98,6 +98,18 @@ export function danglingWorktree(): { dir: string; gitDir: string } {
 }
 
 /**
+ * git's line for `rev-parse` in a `danglingWorktree`, in each wording git has
+ * used: 2.50 names the missing git dir, and 2.56 the worktree's `.git` file.
+ */
+export const danglingWorktreeLines = (
+  dir: string,
+  gitDir: string,
+): string[] => [
+  `fatal: not a git repository: ${gitDir}`,
+  `fatal: gitfile does not point to a valid repository: ${path.join(dir, '.git')}`,
+];
+
+/**
  * A repo whose second commit tracks `.gitignore` with the given lines, plus a
  * linked worktree on a new branch `side`. `commonDir` is the repo's `.git`.
  */

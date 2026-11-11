@@ -27,9 +27,10 @@ export const revParseLine = (stderr: string): string =>
  * - `not a git repository (or any of the parent directories): .git`
  * - `not a git repository (or any parent up to mount point <dir>)`
  *
- * Any other line is a failure to quote. That includes a dangling worktree's
- * `not a git repository: <gitdir>`, and a spawn that fails in a folder, as
- * with git missing from PATH.
+ * Any other line is a failure to quote, as with a spawn that fails in a folder
+ * when git is missing from PATH. So is a dangling worktree's line, in either
+ * wording: git 2.50 says `not a git repository: <gitdir>`, and git 2.56
+ * `gitfile does not point to a valid repository: <worktree>/.git`.
  */
 export function outsideRepo(revParseIssue: string, target: string): boolean {
   return (

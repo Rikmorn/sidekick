@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
-import { danglingWorktree, removeTemps, tmp } from './fixtures/worker/repo.js';
+import {
+  danglingWorktree,
+  danglingWorktreeLines,
+  removeTemps,
+  tmp,
+} from './fixtures/worker/repo.js';
 import { outsideRepo, revParseLine } from './outside-repo.js';
 import { execRunner } from './pm-data.js';
 
@@ -43,10 +48,8 @@ describe('outsideRepo', () => {
     for (const flag of ['--git-common-dir', '--show-toplevel']) {
       const result = execRunner('git', ['rev-parse', flag], dir);
       const issue = revParseLine(result.stderr);
-      expect({ code: result.code, issue }).toEqual({
-        code: 128,
-        issue: `fatal: not a git repository: ${gitDir}`,
-      });
+      expect(result.code).toBe(128);
+      expect(danglingWorktreeLines(dir, gitDir)).toContain(issue);
       expect(outsideRepo(issue, dir)).toBe(false);
     }
   });
