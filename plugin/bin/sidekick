@@ -1494,13 +1494,21 @@ function parsedPlans(p) {
 }
 var openRefs = (plan) => plan.issues.filter(isOpenWork).map((i) => `#${i.number}`).join(", ");
 var plannedNumbers = (list) => new Set(list.flatMap((pl) => pl.issues.map((i) => i.number)));
+function workCards(cards, plans) {
+  if (plans === null)
+    return cards;
+  const landed = new Set(plans.list.flatMap((pl) => pl.issues.filter((i) => !isOpenWork(i)).map((i) => i.number)));
+  return cards.filter((c) => !landed.has(c.number));
+}
 function continueMove(cards, plans) {
-  const lowest = Math.min(...cards.map((i) => i.number));
+  const work = workCards(cards, plans);
+  if (work.length === 0)
+    return null;
+  const lowest = Math.min(...work.map((i) => i.number));
   const plan = plans === null ? undefined : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
-  const refs = plan === undefined ? "" : openRefs(plan);
-  if (plan === undefined || refs === "")
+  if (plan === undefined)
     return `continue #${lowest}`;
-  return `continue plan ${plan.name} (${refs})`;
+  return `continue plan ${plan.name} (${openRefs(plan)})`;
 }
 function pullMove(p, plans) {
   if (plans === null) {
@@ -1518,8 +1526,9 @@ function nextMove(p) {
     return `choose a milestone: ${titles(p.open_milestones)}`;
   }
   const plans = parsedPlans(p);
-  if (p.in_progress.length > 0)
-    return continueMove(p.in_progress, plans);
+  const resume = continueMove(p.in_progress, plans);
+  if (resume !== null)
+    return resume;
   const pull = pullMove(p, plans);
   if (pull !== null)
     return pull;
@@ -1590,7 +1599,10 @@ function groupInProgress(p, plans, cards) {
   if (plans === null)
     return { byPlan: [], loose: p.in_progress };
   const byPlan = plans.list.flatMap((pl) => {
-    const mine = pl.issues.flatMap((i) => cards.get(i.number) ?? []);
+    const mine = pl.issues.flatMap((i) => {
+      const card = cards.get(i.number);
+      return card === undefined ? [] : [{ ...card, awaitsRelease: i.awaitsRelease }];
+    });
     return mine.length === 0 ? [] : [{ name: pl.name, cards: mine }];
   });
   const planned = plannedNumbers(plans.list);
@@ -8711,8 +8723,9 @@ function tierLine(tier, candidates3) {
   return body === null ? null : `tier ${tier} ${body}`;
 }
 var openRefs2 = (plan) => plan.issues.filter(isOpenWork).map((i) => `#${i.number}`).join(", ");
-var awaitingRefs = (plan) => plan.issues.filter((i) => i.awaitsRelease).map((i) => `#${i.number} (release check)`).join(", ");
-var card = (i) => `#${i.number} (${i.age_days} d)`;
+var awaitingRef = (number2) => `#${number2} (release check)`;
+var awaitingRefs = (plan) => plan.issues.filter((i) => i.awaitsRelease).map((i) => awaitingRef(i.number)).join(", ");
+var card = (i) => i.awaitsRelease ? awaitingRef(i.number) : `#${i.number} (${i.age_days} d)`;
 var titledCard = (i) => `${ref(i)} (${i.age_days} d)`;
 function inProgressLine(v) {
   const { byPlan, loose } = v.inProgress;

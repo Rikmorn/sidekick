@@ -148,5 +148,20 @@
         "detail": null
       }
     }
+  },
+  "awaitingInProgress": {
+    "brief": "sidekick · Rikmorn/sidekick · board #2\nmilestone: R6 — PM layer (3 open, 2 closed) · Outcome: sessions start from the board.\nin progress: plan Landed: #81 (release check)\ncandidates: next plan Orient (#82) · 1 plan done · plan Landed waits for #81 (release check) · unplanned: none · tier 2: none\ndrift: none\nnext: pull plan Orient (#82)",
+    "glance": {
+      "ON_TRACK": {
+        "level": "good",
+        "word": "on track",
+        "detail": null
+      },
+      "AT_RISK": {
+        "level": "warning",
+        "word": "at risk",
+        "detail": null
+      }
+    }
   }
 }

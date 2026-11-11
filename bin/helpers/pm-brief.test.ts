@@ -569,13 +569,59 @@ describe('release checks in the brief', () => {
     expect(r[5]).toBe('next: continue plan A (#1)');
   });
 
-  test('an awaiting issue left In Progress is continued alone, since its plan is done', () => {
+  test('an awaiting issue left In Progress is listed as landed and never continued, so the next plan is the pull', () => {
     const r = brief(
       plansHeader('A (#1, #2)', 'B (#3)'),
       [card(1, 'Done'), card(2, 'In Progress'), card(3, 'Backlog')],
       [2],
       { in_progress: [inProgress(2, 1)] },
     );
-    expect(r[5]).toBe('next: continue #2');
+    expect(r[2]).toBe('in progress: plan A: #2 (release check)');
+    expect(r[3]).toBe(
+      'candidates: next plan B (#3) · 1 plan done · plan A waits for #2 (release check) · unplanned: none · tier 2: none',
+    );
+    expect(r[5]).toBe('next: pull plan B (#3)');
+  });
+
+  test('an awaiting card numbered below a running plan’s card leaves the running plan to be continued', () => {
+    const r = brief(
+      plansHeader('A (#1, #2)', 'B (#3, #4)'),
+      [
+        card(1, 'Done'),
+        card(2, 'In Progress'),
+        card(3, 'In Progress'),
+        card(4, 'Backlog'),
+      ],
+      [2],
+      { in_progress: [inProgress(2, 4), inProgress(3, 1)] },
+    );
+    expect(r[2]).toBe(
+      'in progress: plan A: #2 (release check) · plan B: #3 (1 d)',
+    );
+    expect(r[5]).toBe('next: continue plan B (#3, #4)');
+  });
+
+  test('a running plan marks its awaiting card beside its work', () => {
+    const r = brief(
+      plansHeader('A (#1, #2)'),
+      [card(1, 'In Progress'), card(2, 'In Progress')],
+      [1],
+      { in_progress: [inProgress(1, 3), inProgress(2, 1)] },
+    );
+    expect(r[2]).toBe('in progress: plan A: #1 (release check), #2 (1 d)');
+    expect(r[5]).toBe('next: continue plan A (#2)');
+  });
+
+  test('with only awaiting cards In Progress and nothing to pull, next is to verify and close', () => {
+    const r = brief(
+      plansHeader('A (#1, #2)'),
+      [card(1, 'Done'), card(2, 'In Progress')],
+      [2],
+      { in_progress: [inProgress(2, 1)] },
+    );
+    expect(r[2]).toBe('in progress: plan A: #2 (release check)');
+    expect(r[5]).toBe(
+      'next: nothing to pick up: verify, then close the milestone',
+    );
   });
 });

@@ -339,6 +339,28 @@ describe('paneRows with release checks', () => {
       node('later', null, 'Later', '1 open', 'quiet'),
     ]);
   });
+
+  test('an awaiting card left In Progress folds with its done plan, and the next row pulls the next plan', () => {
+    const input = pick('awaitingInProgress');
+    expect(rowsOf(input)).toEqual([
+      { kind: 'prose', mark: 'next', text: 'pull plan Orient (#82)' },
+      {
+        kind: 'prose',
+        mark: 'outcome',
+        text: 'Outcome: sessions start from the board.',
+      },
+      { kind: 'cells', plans: ['done', 'next'], label: '1/2 plans' },
+      {
+        kind: 'tree',
+        nodes: [
+          node('done', null, '1 plan done', null, 'quiet', [
+            node('done', null, 'Landed', null, 'quiet', [awaiting(81)]),
+          ]),
+          node('next', null, 'Orient', 'next', 'plain', [later(82)]),
+        ],
+      },
+    ]);
+  });
 });
 
 describe('the contract', () => {

@@ -31,9 +31,9 @@ const planIssue = (
   status,
   awaitsRelease: false,
 });
-// Open, on the board in Backlog, and waiting only for its release check.
-const awaiting = (number: number): PlanIssue => ({
-  ...planIssue(number, 'Backlog'),
+// Open, on the board in `status`, and waiting only for its release check.
+const awaiting = (number: number, status = 'Backlog'): PlanIssue => ({
+  ...planIssue(number, status),
   awaitsRelease: true,
 });
 
@@ -574,6 +574,23 @@ export const pickups: Record<string, BriefInput> = {
         ),
         planned('Mixed', 'next', awaiting(68), planIssue(69, 'Backlog')),
         planned('Later', 'later', planIssue(70, 'Backlog'), awaiting(71)),
+      ],
+      unplanned: [],
+    },
+  }),
+  // sk-orient moves a plan's cards to In Progress at pickup, and nothing moves them back.
+  awaitingInProgress: base({
+    in_progress: [card(81, 2)],
+    plans: {
+      parse: 'ok',
+      list: [
+        planned(
+          'Landed',
+          'done',
+          planIssue(80, 'Done'),
+          awaiting(81, 'In Progress'),
+        ),
+        planned('Orient', 'next', planIssue(82, 'Backlog')),
       ],
       unplanned: [],
     },

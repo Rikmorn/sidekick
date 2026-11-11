@@ -272,10 +272,10 @@ html { scroll-behavior: smooth; }
       <li data-n="3"><span>The next move.</span></li>
       <li data-n="4"><span>Drift: here, commits not pushed.</span></li>
       <li data-n="5"><span>The milestone's outcome sentence.</span></li>
-      <li data-n="6"><span>A cell per plan: <code>█</code> done, <code>▓</code> running, <code>░</code> the rest, then the count. The done plans fold into one row under it.</span></li>
-      <li data-n="7"><span>The running plan: its open issues, those in progress first with their days so far, then a count of the closed ones.</span></li>
-      <li data-n="8"><span>The next plan, marked <code>next</code>. It lists its open issues but no <code>N closed</code> row.</span></li>
-      <li data-n="9"><span>Later plans, each with its count of open issues.</span></li>
+      <li data-n="6"><span>A cell per plan: <code>█</code> done, <code>▓</code> running, <code>░</code> the rest, then the count. The done plans fold into one row under it, which opens on a done plan that still waits for a release check.</span></li>
+      <li data-n="7"><span>The running plan: its open issues, those in progress first with their days so far, then any that wait for a release check, then a count of the closed ones.</span></li>
+      <li data-n="8"><span>The next plan, marked <code>next</code>. It lists its open issues, then any that wait for a release check, but no <code>N closed</code> row.</span></li>
+      <li data-n="9"><span>Later plans, each with its count of open issues still to do.</span></li>
       <li data-n="10"><span>When the tree was read. After a failed refresh it reads <code>refresh failed HH:MM</code> over the last good tree.</span></li>
     </ol>
     <figcaption>Docked, the pane shows the whole tree, and the board's line stays under the prompt. This dock is 53 columns wide, a width kept from earlier use, not the 40 the pane asks for.</figcaption>

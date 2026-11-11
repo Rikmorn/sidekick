@@ -134,6 +134,20 @@ describe('nextMove with release checks', () => {
     expect(nextMove(p)).toBe('continue plan Running (#65)');
     expect(nextMove({ ...p, in_progress: [] })).toBe('pull plan Mixed (#69)');
   });
+
+  test('an awaiting card In Progress is never continued, so the next plan is pulled', () => {
+    expect(nextMove(pick('awaitingInProgress'))).toBe('pull plan Orient (#82)');
+  });
+
+  test('an In Progress card keeps whether its plan issue awaits its release check', () => {
+    const v = pickupView(pick('awaitingInProgress'));
+    expect(
+      v.inProgress.byPlan.map((g) => [
+        g.name,
+        g.cards.map((c) => [c.number, c.awaitsRelease]),
+      ]),
+    ).toEqual([['Landed', [[81, true]]]]);
+  });
 });
 
 describe('driftEntries', () => {

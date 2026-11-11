@@ -15,6 +15,7 @@ import {
   pickupView,
   TITLE_MAX,
   titles,
+  type ViewCard,
   type ViewPlan,
 } from './pm-view.js';
 
@@ -61,13 +62,17 @@ const openRefs = (plan: ViewPlan): string =>
     .join(', ');
 
 // Marked as `--report` marks them.
+const awaitingRef = (number: number): string => `#${number} (release check)`;
+
 const awaitingRefs = (plan: ViewPlan): string =>
   plan.issues
     .filter((i) => i.awaitsRelease)
-    .map((i) => `#${i.number} (release check)`)
+    .map((i) => awaitingRef(i.number))
     .join(', ');
 
-const card = (i: InProgress): string => `#${i.number} (${i.age_days} d)`;
+// A card awaiting its release check has landed, so its mark takes the age's place.
+const card = (i: ViewCard): string =>
+  i.awaitsRelease ? awaitingRef(i.number) : `#${i.number} (${i.age_days} d)`;
 const titledCard = (i: InProgress): string => `${ref(i)} (${i.age_days} d)`;
 
 function inProgressLine(v: PickupView): string {

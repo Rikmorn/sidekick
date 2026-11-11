@@ -86,7 +86,7 @@ Ask each repo for short worktree guidance in a file every session loads, such as
 - `--permission-mode` is given and known, and `--plugin-dir`, when given, is an existing folder.
 - The profile loads, composes with the overlay, and passes the checks `dispatch` runs, with `bypassPermissions`'s acceptance among them. The overlay's marker names a placeholder brief path in the launching checkout, and the overlay carries no `Read` rules. The profile's warnings print on stderr, as `dispatch` prints them before its launch.
 
-It does not run the brief's checks (the files, `baseline`, `target`, `place`, and the name), the `claude agents` listing, or the `main:` lookup. Those stay at `dispatch`, so a pass does not promise that `dispatch` will pass.
+It does not run the brief's checks (the files, the `## Limits` section, `baseline`, `target`, `place`, and the name), the `claude agents` listing, or the `main:` lookup. Those stay at `dispatch`, so a pass does not promise that `dispatch` will pass.
 
 A pass exits 0 and prints one line on stdout, naming the branch the checkout holds, or `detached HEAD at <short commit>`, the profile, and the mode:
 

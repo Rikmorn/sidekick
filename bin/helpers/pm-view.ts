@@ -51,16 +51,33 @@ const openRefs = (plan: PlanView): string =>
 const plannedNumbers = (list: PlanView[]): Set<number> =>
   new Set(list.flatMap((pl) => pl.issues.map((i) => i.number)));
 
-function continueMove(cards: InProgress[], plans: ParsedPlans | null): string {
-  const lowest = Math.min(...cards.map((i) => i.number));
+// A card is work unless its plan issue is not, as one awaiting its release check is not.
+function workCards(
+  cards: InProgress[],
+  plans: ParsedPlans | null,
+): InProgress[] {
+  if (plans === null) return cards;
+  const landed = new Set(
+    plans.list.flatMap((pl) =>
+      pl.issues.filter((i) => !isOpenWork(i)).map((i) => i.number),
+    ),
+  );
+  return cards.filter((c) => !landed.has(c.number));
+}
+
+function continueMove(
+  cards: InProgress[],
+  plans: ParsedPlans | null,
+): string | null {
+  const work = workCards(cards, plans);
+  if (work.length === 0) return null;
+  const lowest = Math.min(...work.map((i) => i.number));
   const plan =
     plans === null
       ? undefined
       : plans.list.find((pl) => pl.issues.some((i) => i.number === lowest));
-  const refs = plan === undefined ? '' : openRefs(plan);
-  // A card awaiting its release check can sit in a done plan, which holds no work.
-  if (plan === undefined || refs === '') return `continue #${lowest}`;
-  return `continue plan ${plan.name} (${refs})`;
+  if (plan === undefined) return `continue #${lowest}`;
+  return `continue plan ${plan.name} (${openRefs(plan)})`;
 }
 
 function pullMove(p: BriefInput, plans: ParsedPlans | null): string | null {
@@ -80,16 +97,18 @@ function pullMove(p: BriefInput, plans: ParsedPlans | null): string | null {
 
 /**
  * The fixed rule: with several milestones open and none active, choose one.
- * Otherwise continue what is In Progress, else pull the next plan, an
- * unplanned issue, or a tier-1 candidate, else close or open a milestone.
- * Tier 2 is never the pick; taking it is a judgment.
+ * Otherwise continue the work In Progress, which a card awaiting its release
+ * check is not, else pull the next plan, an unplanned issue, or a tier-1
+ * candidate, else close or open a milestone. Tier 2 is never the pick;
+ * taking it is a judgment.
  */
 export function nextMove(p: BriefInput): string {
   if (p.milestone === null && p.open_milestones.length > 1) {
     return `choose a milestone: ${titles(p.open_milestones)}`;
   }
   const plans = parsedPlans(p);
-  if (p.in_progress.length > 0) return continueMove(p.in_progress, plans);
+  const resume = continueMove(p.in_progress, plans);
+  if (resume !== null) return resume;
   const pull = pullMove(p, plans);
   if (pull !== null) return pull;
   if (p.milestone)
@@ -156,9 +175,14 @@ export type ViewPlans =
   | { parse: 'none' }
   | { parse: 'malformed'; reason: string };
 
+export interface ViewCard extends InProgress {
+  /** Its plan issue awaits its release check, so the card's work has landed. */
+  awaitsRelease: boolean;
+}
+
 export interface PlanCards {
   name: string;
-  cards: InProgress[];
+  cards: ViewCard[];
 }
 
 export interface PickupView {
@@ -226,7 +250,12 @@ function groupInProgress(
 ): PickupView['inProgress'] {
   if (plans === null) return { byPlan: [], loose: p.in_progress };
   const byPlan = plans.list.flatMap((pl) => {
-    const mine = pl.issues.flatMap((i) => cards.get(i.number) ?? []);
+    const mine = pl.issues.flatMap((i) => {
+      const card = cards.get(i.number);
+      return card === undefined
+        ? []
+        : [{ ...card, awaitsRelease: i.awaitsRelease }];
+    });
     return mine.length === 0 ? [] : [{ name: pl.name, cards: mine }];
   });
   const planned = plannedNumbers(plans.list);

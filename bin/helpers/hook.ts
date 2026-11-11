@@ -13,9 +13,9 @@
  * before `EnterWorktree` creates a worktree, and prints nothing. A known verb
  * prints nothing and returns 0 on input it does not recognise, because a hook
  * never blocks or fails the call it watches (ADR-0010, ADR-0011).
- * `subagent-start` reads no input: hooks.json binds it to SubagentStart alone,
- * and its wrapper runs only in a dispatched worker. An unknown or missing verb
- * prints the usage and returns 1.
+ * `subagent-start` ignores its input: hooks.json binds it to SubagentStart
+ * alone, and its wrapper exits at once outside a dispatched worker. An unknown
+ * or missing verb prints the usage and returns 1.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
