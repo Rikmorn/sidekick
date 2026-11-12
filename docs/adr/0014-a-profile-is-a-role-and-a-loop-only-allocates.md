@@ -1,5 +1,7 @@
 # ADR-0014 — a profile is a role, and a loop is a thin manifest that only allocates
 
+> **Amended 2026-11-12, at R11's Opening (#367, #377):** Decision 3's "the loop runs only fixed `sidekick loop` verbs" overstated it. The loop also runs its reads and applies its outward classes. It never runs `sidekick worker` or `claude`, and anything that runs code still runs in a worker.
+
 **Status:** Accepted (2026-11-12), as the operator decided it at the loop design's third gate. Milestone R11, not yet opened; its Opening files the design's pieces as issues.
 
 ## Context

@@ -10,4 +10,4 @@ How can a repo define a long-lived Claude Code loop with a role and a mandate? H
 
 ## Served
 
-The `loop` design, for R11, and the issues it became at R11's Opening on 2026-11-12: #360 to #367.
+The `loop` design, for R11, and the issues it became at R11's Opening on 2026-11-12: #360 to #367, and #377.
