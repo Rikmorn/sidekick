@@ -8,6 +8,8 @@
 
 > **Amended 2026-11-12 (#360):** §Decision's "a denial seen only in the loop's record" and §Consequences' "the denial shows only in the loop's record" understate it. A denied call also leaves a `permissionDecision` of `reject` in the transcript, which the desk counts (#365). Three refusals leave none: the edit guard's, the block on a standalone `sleep`, and a mod's `allow` past a deny rule ([the R11 loop probes, §U13](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u13-how-a-call-dontask-denies-shows-in-a-transcript)).
 
+> **Amended 2026-11-12 (#360):** §Revisit when's "A managed settings file of the operator's own keeps a deny rule binding over a mod (probe U24)" is met. With the deny rules in a managed settings file the operator wrote with `sudo`, Claude Code seated its built-in guard. A mod's `allow` then no longer overrode a deny rule, on a personal subscription ([the R11 operator-present probes, §U24](https://github.com/Rikmorn/sidekick/blob/e1725169edd5003d050f8b3d9ebd6f71b7379205/docs/research/loop/2026-11-12-loop-probes-operator-run.md#u24-a-deny-rule-in-managed-settings-against-a-mods-approval)). Whether a managed file holds the loops' `never` rules is #363's plan's decision. The operator sets that file up with `sudo`, since sidekick cannot write it.
+
 **Status:** Accepted (2026-11-12), as the operator decided it at the loop design's third gate. Milestone R11, not yet opened; its Opening files the design's pieces as issues.
 
 ## Context
