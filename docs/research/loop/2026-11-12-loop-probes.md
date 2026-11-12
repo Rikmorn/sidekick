@@ -12,7 +12,8 @@ The probe folder is `docs/superpowers/probes/2026-11-12-r11/` in the main checko
 - `evidence/u9-decisions.txt`, one line per tool call in the U9, U20, and U24 sessions, with the call's permission decision and result. `bin/decisions.py` writes it from the raw transcripts.
 - `evidence/u9-layers.txt`, the settings layers read before the runs, and `evidence/u9-disk.txt`, the files and commits the calls left.
 - `evidence/pollfull-r11p-u12-busy.jsonl`, U12's poll of one session's agents row and job record, written by `bin/pollfull.sh`. `bin/u12-fields.py` compares its samples into `evidence/u12-fields.txt`.
-- The Claude Code docs, fetched on 2026-11-12 into `evidence/docs/` from `https://code.claude.com/docs/en/`. This record cites `permissions.md`, `tools-reference.md`, `skills.md`, `settings-reference.md`, `agent-view.md`, `scheduled-tasks.md`, and `plugins-loading.md` (the page `plugins/loading.md`).
+- `evidence/u10-*` and `evidence/u15-*`, Task 4's sandbox runs. They hold each call's permission decision (`-decisions.txt`), the sandbox setup each session was told (`-sandbox-instructions.txt`), the store's files after U15 (`u15-disk.txt`), and the worktree's `git status` before and after U10.
+- The Claude Code docs, fetched on 2026-11-12 into `evidence/docs/` from `https://code.claude.com/docs/en/`. This record cites `permissions.md`, `tools-reference.md`, `skills.md`, `settings-reference.md`, `agent-view.md`, `scheduled-tasks.md`, `plugins-loading.md` (the page `plugins/loading.md`), and `sandboxing.md`.
 
 ## Sessions
 
@@ -58,6 +59,29 @@ Every session but the two U21 subjects was stopped and removed: the matrix at ab
 | `r11p-u12-busy` | `f96cbb90` | 14:57:32 | 6.4.1 | `--settings <P>/settings/u12.json` | U12: a two-minute tick that runs `bin/busy75.sh`, polled every 10 seconds |
 
 `u11.json` and `u2.json` allow the tick's write, `Edit(//<P>/ticks/**)`. `u12.json` adds `Bash(sleep 75)` and `Bash(<P>/bin/busy75.sh)`. Each sets the guard. The debug logs show the local layer's `WebFetch` rule and these `--settings` rules loading, and no other (`r11p-u11-respawn-debug.log:42-43`). This task stopped the four between 15:01 and 15:15, which ended their jobs, and removed them at 15:15. `claude agents --json --all` then listed none of them (`evidence/t3-end-agents.json`).
+
+**Task 4's sessions** launched through `bin/launch.sh` with `--setting-sources local`, by the orchestrator's ruling. From the worktree, the project layer enables sidekick and superpowers. sidekick's memory hook would then start a snapshot that commits the memory store, outside the run's write limits. The sandbox and the allow rules come from `--settings` either way.
+
+Each ran under user-scope superpowers 6.4.1, as restored at 14:42:56 (`evidence/t4-plugin-state.txt`). Each debug log shows the same layers. The line numbers here are `r11p-u10-gates-debug.log`'s, and the other five logs hold the same entries at nearby lines:
+
+- **No managed settings.** `/Library/Application Support/ClaudeCode/managed-settings.json` is missing (`r11p-u10-gates-debug.log:2`).
+- **The local layer came from the main checkout's root,** as in Task 2. The working folder's own `.claude/settings.local.json` is missing (line 3). Yet one rule, `WebFetch(domain:raw.githubusercontent.com)`, loaded into `localSettings` (line 40). The main checkout's `.claude/settings.local.json` is the one file that holds it, and the session watched that file (line 214).
+- **The `--settings` file** held the sandbox keys, the guard, and the allow rules (line 41).
+- **No project or user layer.** The worktree's `.claude/settings.json` enables sidekick, and no session loaded sidekick or superpowers. Each loaded `probe-r11` and four or six built-in mods, with `Errors: 0` (line 257). No debug log holds a `Plugin loading errors` line.
+- **The guard held.** Each logged "Plugin autoupdate: skipped (auto-updater disabled)" within three seconds of its launch (line 213).
+
+Every `--settings` file also sets `"autoMemoryEnabled": false`. The local layer names the real memory store as its `autoMemoryDirectory`, and no probe may write there. No transcript names the store's path.
+
+| Name | Id | Launched | Plugin state | Other flags | Tests |
+|---|---|---|---|---|---|
+| `r11p-u15-open` | `64b2e6b6` | 15:35:20 | 6.4.1 | From `<P>/wd`, `--add-dir <P>/fake-store --settings <P>/settings/u15-open.json` | U15: a sandboxed `Bash` write into the added store, with no overlay rule |
+| `r11p-u15-deny` | `4115b90a` | 15:35:21 | 6.4.1 | As `r11p-u15-open`, with `settings/u15-deny.json` | U15: the same write, with `sandbox.filesystem.denyWrite` on the store |
+| `r11p-u15-deny-edit` | `83ca4104` | 15:35:22 | 6.4.1 | As `r11p-u15-open`, with `settings/u15-deny-edit.json` | U15: `denyWrite`, plus an `Edit` allow rule for the store that lets the `Write` tool run |
+| `r11p-u15-editdeny` | `7c17d296` | 15:35:23 | 6.4.1 | As `r11p-u15-open`, with `settings/u15-editdeny.json` | U15: an `Edit` deny rule on the store in place of `denyWrite` |
+| `r11p-u10-gates` | `de3cc215` | 15:41:06 | 6.4.1 | From the `r11-probes` worktree, `--settings <P>/settings/u10.json` | U10: sidekick's six gates in the sandbox |
+| `r11p-u10-cause` | `343f1714` | 15:50:55 | 6.4.1 | As `r11p-u10-gates`, with `settings/u10-cause.json` | U10: the cause of the six test failures |
+
+Each settings file turns the sandbox on with `enabled: true`, `autoAllowBashIfSandboxed: false`, `allowUnsandboxedCommands: false`, and `failIfUnavailable: true`. These are the keys #367 names for a unit worker. Each session ran the role agent on haiku at low effort, its whole script in its launch prompt. This task stopped and removed the six at 15:52. They held no cron jobs, and `claude agents --json --all` then listed none of them (`evidence/t4-end-agents.json`).
 
 ## Results by row
 
@@ -277,6 +301,75 @@ The session ran a tick every two minutes: a timestamp, then `bin/busy75.sh`, the
 
 So `start`'s idle wait holds if it reads `status` (`design.md:617,622`).
 
+### U10: sidekick's gates inside the sandbox
+
+**Measured** on Claude Code 2.1.322, in `r11p-u10-gates`, with `r11p-u10-cause` for the one failure. **Every gate matched its unsandboxed result but `bun run test`, which failed 6 of its 2860 tests.** All six are bash cases in `bin/helpers/profile-shell.test.ts`. The test spawns bash without `TMPDIR`, so the code under test makes its temp file in `/tmp`, which the sandbox refuses.
+
+The session ran in the `r11-probes` worktree at `fa2edbd`, after its setup. It ran each gate as one `Bash` call with `timeout: 600000`, under that gate's exact allow rule. The baseline is this task's own unsandboxed run of the same commands in the same worktree, from 15:32 to 15:40.
+
+| Gate | In the sandbox | Unsandboxed baseline | Evidence |
+|---|---|---|---|
+| `bin/u10-sandbox-check.sh` | A write outside the write set got "Operation not permitted". A write to `$TMPDIR`, `/tmp/claude-501`, ran | Not run | `u10-gates.txt:29-39` |
+| `bun run typecheck` | Exit 0 | Exit 0 | `u10-gates.txt:46`; `u10-baseline-fast.txt:3` |
+| `bun run check` | Exit 0, 263 files | Exit 0, 263 files | `u10-gates.txt:49-50`; `u10-baseline-fast.txt:6-7` |
+| `bun run check:docs` | Exit 1: "docs/research/loop/README.md: does not link 2026-11-12-loop-probes.md" | The same | `u10-gates.txt:53-55`; `u10-baseline-fast.txt:10-12` |
+| `bun run build` | Exit 0. `plugin/bin/sidekick` rewritten at 15:41:22, byte for byte the same | Exit 0, the same bytes | `u10-gates.txt:59-60`; `u10-build-and-modules.txt` |
+| `bun run prose README.md` | Exit 0: 0 errors, 9 warnings | The same | `u10-gates.txt:65-78`; `u10-baseline-fast.txt:34-35` |
+| `bun run test` | Exit 1: 2854 pass and 6 fail, in 433.6 s | Exit 0: 2860 pass, in 475.8 s | `u10-gates.txt:81,171-174`; `u10-baseline-test.txt:4-8` |
+
+The `check:docs` failure is this run's own gap. The record is not yet listed in `docs/research/loop/README.md`, which Task 8 adds.
+
+`r11p-u10-cause` measured the test failures' cause:
+
+- **skp's bash form makes a temp file at `${TMPDIR:-/tmp}/skp.XXXXXX`** (`bin/helpers/profile-shell.ts:34`). Its zsh form makes none.
+- **The test spawns bash with an `env` of its own.** That `env` holds `PATH`, `HOME`, `RECORD`, and `SHADOW_LOG`, and no `TMPDIR` (`bin/helpers/profile-shell.test.ts:92-101`). So the call falls back to `/tmp`.
+- **The sandbox's write set holds `/tmp/claude` and `$TMPDIR`, not `/tmp`** (`u10-sandbox-instructions.txt`). With `TMPDIR` unset, the call failed: "mktemp: mkstemp failed on /tmp/skp.8sC4w4: Operation not permitted". With `TMPDIR` kept, it made `/tmp/claude-501/skp.1og8BP` (`u10-cause.txt:22-26`).
+- **The test file alone failed the same six** in the sandbox: 14 pass, 6 fail (`u10-cause.txt:121-124`). Each failing case got exit status 1 where it expected 0 or 7 (`u10-test-result.txt`).
+
+By reading the code, not by a run: the six pass once the test passes `TMPDIR` into that `env`. This run changed no code.
+
+What else the run shows:
+
+- **Each gate needed its own exact rule.** With auto-allow off, every call was accepted as `reasonType: "rule"`, `ruleSource: "flagSettings"` (`u10-decisions.txt:2-8`). This run tried no other spelling.
+- **No gate met a refused host.** No result holds a `<sandbox_violations>` block, the form the session was told a refused connection takes (`u10-sandbox-instructions.txt`). This run did not run setup, `bun install --frozen-lockfile`, in the sandbox.
+- **The repo's own host rule lost its sandbox effect.** `allowUnsandboxedCommands: false` in `--settings` makes the sandbox admin-required (`sandboxing.md:245`). The log reads "[sandbox] admin sandbox mandate: ignoring 1 sandbox.network.allowedDomains / WebFetch(domain:…) allow entries from project/local settings" (`r11p-u10-gates-debug.log:114`). So a worker's hosts must come from `--settings`, managed settings, or the user's `~/.claude/settings.json`, never the repo's files (`sandboxing.md:771,777`). #367's overlay names them, so `--settings` carries them.
+- **The suite needs a `timeout` on its call.** It took 433.6 s in the sandbox. A call with no `timeout` gets two minutes, and a `timeout` gets at most ten (`tools-reference.md:161-162`). A foreground call past its timeout moves to the background (`tools-reference.md:215`). This run passed `timeout: 600000`, and the call finished in the foreground.
+- **From a linked worktree, the sandbox may write the main repo's `.git`.** The write set lists `/Users/roberto.sousa/Documents/Projects/sidekick/.git` (`u10-sandbox-instructions.txt`), as the docs say (`sandboxing.md:544`). No gate committed, so no run used it.
+- **The gates left no change in the worktree.** `git status` was empty before and after `r11p-u10-gates` (`u10-status-before.txt`, `u10-status-after.txt`). After `r11p-u10-cause`, it listed only this task's own edit to this record (`u10-status-after-cause.txt`). `git status --ignored` listed the same four folders throughout (`u10-ignored-*.txt`). Outside `node_modules`, the ignored files gained only this task's own scripts under `.superpowers/` (`u10-ignored-files-diff.txt`). `node_modules` gained no file (`u10-build-and-modules.txt`). So no ignored file needed deleting.
+
+### U15: an overlay against a sandboxed write into an added directory
+
+**Measured** on Claude Code 2.1.322, in the four `r11p-u15-*` sessions. **With no overlay rule, a sandboxed `Bash` command wrote into the `--add-dir` store. `sandbox.filesystem.denyWrite` on the store stopped it, and so did an `Edit` deny rule.** Only the `Edit` deny rule also stopped the `Write` tool.
+
+Each session ran from `<P>/wd` with `<P>/fake-store` added, and made three calls:
+
+1. `Bash` runs `bin/u15-write.sh <variant>`. The script appends one line to `fake-store/u15-<variant>-bash.txt`, and one to a file in `<P>/u15-outside/`. That folder is outside every writable one, so the second write shows whether the call ran sandboxed.
+2. The `Write` tool makes `fake-store/u15-<variant>-write.txt`.
+3. `Bash` runs the script again with `dangerouslyDisableSandbox: true`.
+
+Each `Bash` call had its exact allow rule, and each passed the permission check on it (`u15-decisions.txt`).
+
+| Variant | Overlay in `--settings` | Sandboxed `Bash` into the store | `Write` tool into the store | The call with `dangerouslyDisableSandbox: true` |
+|---|---|---|---|---|
+| `open` | None | Wrote: "store write: ok" (`u15-open.txt:24`) | Denied by the mode, `mode:dontAsk` (`u15-open.txt:28`; `u15-decisions.txt:3`) | Not made. The model declined, citing the session's sandbox instructions (`u15-open.txt:37`) |
+| `deny` | `denyWrite` on the store | Refused: "Operation not permitted" (`u15-deny.txt:22-26`) | Denied by the mode (`u15-deny.txt:34`) | Ran sandboxed, and was refused again (`u15-deny.txt:36-40`) |
+| `deny-edit` | `denyWrite`, plus an `Edit(//<P>/fake-store/**)` allow rule | Refused (`u15-deny-edit.txt:24-28`) | Wrote the file, on the `Edit` rule (`u15-deny-edit.txt:36`; `u15-decisions.txt:10`) | Refused again (`u15-deny-edit.txt:39-43`) |
+| `editdeny` | An `Edit(//<P>/fake-store/**)` deny rule | Refused (`u15-editdeny.txt:22-27`) | Refused: "File is in a directory that is denied by your permission settings." (`u15-editdeny.txt:29`; `u15-decisions.txt:14`) | Refused again (`u15-editdeny.txt:34-38`) |
+
+In every `Bash` call, the write outside the write set got "Operation not permitted", so every call ran sandboxed. The store holds the two files the table says were written, and no other (`u15-disk.txt`).
+
+What the measurements show:
+
+- **A sandboxed command may write an added directory by default,** as the docs say (`sandboxing.md:31`). The session's write set lists the store beside `.` and `$TMPDIR` (`u15-sandbox-instructions.txt`).
+- **`denyWrite` holds against the added directory, and against an `Edit` allow rule for the same path.** The docs add `Edit` allow rules to `allowWrite` (`settings-reference.md:1461`), and `denyWrite` blocks paths "inside a directory that is otherwise writable" (`settings-reference.md:1540`).
+- **The sandbox does not confine the `Write` tool.** Under `denyWrite`, the `Edit` allow rule let the `Write` tool make its file. The docs say the file tools "follow permission rules instead" (`sandboxing.md:42`).
+- **An `Edit` deny rule covers both.** It refused the sandboxed write and the `Write` tool. The docs add `Edit` deny rules to `denyWrite` (`settings-reference.md:1461`).
+- **With the retry off, `dangerouslyDisableSandbox: true` changed nothing.** Each such call passed the permission check on its allow rule, then ran sandboxed (`u15-decisions.txt:7,11,15`). The docs say Claude Code then ignores the parameter (`sandboxing.md:241`). No run measured `dontAsk` with the retry on, where the docs say the mode denies the retry (`sandboxing.md:228`).
+- **The `Edit` deny rule's refusal of `Write` lacks a `toolDenialKind`.** Its `permissionDecision` reads `reject` with `reasonCode: "rule:flagSettings"`, and its text is a `tool_use_error` (`u15-decisions.txt:14`). U13's count by `permissionDecision.decision` still finds it.
+- **Auto memory was off in every run.** This run did not measure whether auto memory's own writes to an `autoMemoryDirectory` pass an `Edit` deny rule. The local layer names the real store as that directory.
+
+So for #367's overlay, deny the memory store with an `Edit(//<store>/**)` deny rule. One rule then keeps both the sandboxed commands and the file tools out. With `denyWrite` alone, an `Edit` allow rule for the store reopens the `Write` tool.
+
 ## What breaks
 
 Each stance is cited by its line in `docs/designs/loop/design.md`.
@@ -291,3 +384,5 @@ Each stance is cited by its line in `docs/designs/loop/design.md`.
 | `design.md:560`: the arm skill reads `CronList`, deletes what does not match, and creates what is missing | U5: `CronList` shows each job's id, schedule, kind, next run, and the first 79 characters of its prompt. It shows no creation time, age, or expiry, and words a recurring schedule as `Every 2 minutes`, not its cron expression | Narrows: the arm skill matches its jobs by id, or by prompts that differ within 79 characters. It times the renewal from the state file's arm time | #364 |
 | `design.md:564`: a tick that wants a fresh context per unit runs the unit in a subagent | U2: a cron-fired `/compact` or `/clear` reaches the model as text and runs nothing. Whether a cron job survives a typed one is deferred to the operator-present run | Narrows: a tick never schedules `/clear` or `/compact`, so the subagent or worker is the only route to a fresh context | #366 |
 | `design.md:617,622`: `start` relaunches a loop only while `claude agents --json` reports it idle | U12: the row's `status` reads `busy` mid-tick and `idle` between ticks. Its `state` reads `working` in both | Narrows: `start` reads `status`, never the row's `state` | #364 |
+| `design.md:508` and ADR-0015 line 47: sidekick's gates pass inside the sandbox | U10: five gates matched their unsandboxed results. `bun run test` failed 6 of 2860 tests, all bash cases in `profile-shell.test.ts`. The test's spawned shell lacks `TMPDIR`, so its temp file falls back to `/tmp`, which the sandbox refuses | Breaks until the test passes `TMPDIR` to that shell: every sandboxed worker's test gate fails. The call also needs a `timeout`, since the suite ran 433.6 s | #367 |
+| `design.md:1047` and #367: a sandboxed command may write an additional directory, the memory store among them | U15: `sandbox.filesystem.denyWrite` or an `Edit` deny rule on the folder refuses the sandboxed write. Only the `Edit` deny rule also refuses the `Write` tool | Narrows: the worker's overlay denies the memory store with `Edit(//<store>/**)` | #367 |
