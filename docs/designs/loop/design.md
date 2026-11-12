@@ -1,6 +1,6 @@
 # Loop
 
-Status: ready for PM · Scale: explore · opened for R11 on 2026-11-11, gate 3 passed on 2026-11-12
+Status: planned (#360, #361, #362, #363, #364, #365, #366, #367) · Scale: explore · opened for R11 on 2026-11-11, gate 3 passed on 2026-11-12
 
 The design for R11, "loops and profiles", which is not yet opened on `Rikmorn/sidekick`. The operator agreed on 2026-11-08 that this design comes before R11's Opening. It takes #140's question as far as R11 reaches. [carried.md](carried.md) keeps what the control-centre design handed here on 2026-10-12, and [plugins.md](plugins.md) the plugin-split findings.
 
