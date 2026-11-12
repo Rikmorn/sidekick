@@ -1,5 +1,7 @@
 > Research for the `loop` design (`docs/designs/loop/`), which PM has not planned yet. Run 2026-11-08 and 2026-11-09 by Claude for the operator, on Claude Code 2.1.319, from session b24da16e in the sidekick main checkout. Written up here on 2026-11-11 from that session's scratch notes, which git ignores. A record: it takes only the edits `sk-pm-conventions.md` §Placement test (tense) lists.
 
+> **Amended 2026-11-12 (#360):** §Sources says removing the four sessions on 2026-11-09 deleted their transcripts. It did not: each session's `.jsonl` was still under `~/.claude/projects/` on 2026-11-12. On Claude Code 2.1.322, `claude rm` keeps a session's transcript ([2026-11-12-loop-probes.md](./2026-11-12-loop-probes.md) §U19).
+
 # Native loop mechanics on Claude Code 2.1.319 (2026-11-08)
 
 The loop design rests on Claude Code's own scheduling: `/loop` over `CronCreate`, background sessions, and `--agent`. These probes measured how those behave before the design opened. Local time in the probes was UTC.
