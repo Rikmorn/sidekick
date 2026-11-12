@@ -11,7 +11,8 @@ The probe folder is `docs/superpowers/probes/2026-11-12-r11/` in the main checko
 - The probe sessions, listed in §Sessions. For each one, `evidence/` holds the transcript printed by `bin/tx.py`, the raw transcript (`.jsonl`), and the subagent transcripts (`.subagents/`). It also holds the job record (`-job.json`) and the debug log (`r11p-<name>-debug.log`).
 - `evidence/u9-decisions.txt`, one line per tool call in the U9, U20, and U24 sessions, with the call's permission decision and result. `bin/decisions.py` writes it from the raw transcripts.
 - `evidence/u9-layers.txt`, the settings layers read before the runs, and `evidence/u9-disk.txt`, the files and commits the calls left.
-- The Claude Code docs, fetched on 2026-11-12 into `evidence/docs/` from `https://code.claude.com/docs/en/`. This record cites `permissions.md`, `tools-reference.md`, `skills.md`, `settings-reference.md`, `agent-view.md`, and `plugins-loading.md` (the page `plugins/loading.md`).
+- `evidence/pollfull-r11p-u12-busy.jsonl`, U12's poll of one session's agents row and job record, written by `bin/pollfull.sh`. `bin/u12-fields.py` compares its samples into `evidence/u12-fields.txt`.
+- The Claude Code docs, fetched on 2026-11-12 into `evidence/docs/` from `https://code.claude.com/docs/en/`. This record cites `permissions.md`, `tools-reference.md`, `skills.md`, `settings-reference.md`, `agent-view.md`, `scheduled-tasks.md`, and `plugins-loading.md` (the page `plugins/loading.md`).
 
 ## Sessions
 
@@ -46,6 +47,17 @@ The plugin state column gives the user-scope superpowers each session launched w
 The two U21 subjects launched before the guard existed. `u21.json` gained it afterwards, so Task 6's restarts from that path carry it.
 
 Every session but the two U21 subjects was stopped and removed: the matrix at about 14:08, `r11p-guard-env` after its check. `claude rm` removed each job record but left its transcript under `~/.claude/projects/`. That contradicts `2026-11-08-loop-probes.md` §Sources, which found on 2.1.319 that `claude rm` deletes the transcript.
+
+**Task 3's sessions** launched the same way, from `<P>/wd` with `--setting-sources project,local`. Each ran under user-scope superpowers 6.4.1, as restored at 14:42:56 (`evidence/t3-plugin-state.txt`). None loads the user layer, so none loaded superpowers or sidekick. Each loaded `probe-r11` and Claude Code's built-in mods (`r11p-u5-list-debug.log:50-78`), and no debug log holds a `Plugin loading errors` line. Each logged "Plugin autoupdate: skipped (auto-updater disabled)" within two seconds of its launch.
+
+| Name | Id | Launched | Plugin state | Other flags | Tests |
+|---|---|---|---|---|---|
+| `r11p-u5-list` | `982752ac` | 14:57:33 | 6.4.1 | `--settings <P>/settings/guard-env.json`, which `launch.sh` adds | U5: two recurring jobs and a one-shot, then `CronList`, and `CronList` at each fire |
+| `r11p-u11-respawn` | `26d5b3f0` | 14:57:31 | 6.4.1 | `--settings <P>/settings/u11.json` | U11: a one-shot due at 15:11 and a one-minute control, across a stop and respawn at 14:59 |
+| `r11p-u2-clear` | `70988425` | 14:57:32 | 6.4.1 | `--settings <P>/settings/u2.json` | U2: a two-minute tick, with a cron-fired `/compact` at 15:07 and `/clear` at 15:13 |
+| `r11p-u12-busy` | `f96cbb90` | 14:57:32 | 6.4.1 | `--settings <P>/settings/u12.json` | U12: a two-minute tick that runs `bin/busy75.sh`, polled every 10 seconds |
+
+`u11.json` and `u2.json` allow the tick's write, `Edit(//<P>/ticks/**)`. `u12.json` adds `Bash(sleep 75)` and `Bash(<P>/bin/busy75.sh)`. Each sets the guard. The debug logs show the local layer's `WebFetch` rule and these `--settings` rules loading, and no other (`r11p-u11-respawn-debug.log:42-43`). This task stopped the four between 15:01 and 15:15, which ended their jobs, and removed them at 15:15. `claude agents --json --all` then listed none of them (`evidence/t3-end-agents.json`).
 
 ## Results by row
 
@@ -161,6 +173,110 @@ And on a mod's (`permissions.md:645`):
 - **Evidence:** `r11p-guard-env` logged "Plugin autoupdate: skipped (auto-updater disabled)" one second after launch (`r11p-guard-env-debug.log:196`). It logged no check in the 12 minutes after its first turn (`guard-env.txt`).
 - **Docs:** `https://code.claude.com/docs/en/plugins/loading.md` §When auto-update runs says the variable turns the whole pass off (`plugins-loading.md:394`).
 
+### U5: what `CronList` shows of a job
+
+**Measured** on Claude Code 2.1.322, in `r11p-u5-list`, with the other Task 3 sessions as further samples. **`CronList` shows no job's age.** The session made two recurring jobs, one every two minutes and one daily at 09:07. It made a one-shot job for 13:00 the next day, then called `CronList` (`u5-list.txt:34-45`). The two-minute job's prompt called `CronList` again at each fire (`u5-list.txt:55-57,65-67`).
+
+The listing at creation (`u5-list.txt:43-45`):
+
+```text
+d1ee4f10 — Every 2 minutes (recurring) [session-only], next run Nov 12 2:59pm: Call CronList once, then reply with the single word listed.
+c03e0cad — Every day at 9:07 AM (recurring) [session-only], next run Nov 13 9:37am: Reply with the single word daily.
+30908c8f — 0 13 13 11 * (one-shot) [session-only], next run Nov 13 1:00pm: Reply with the single word later.
+```
+
+| Field | What `CronList` shows | Evidence |
+|---|---|---|
+| Id | The 8-character id that `CronCreate` returned | `u5-list.txt:34,43` |
+| Schedule | Words for a recurring job, such as `Every 2 minutes`; the cron expression for a one-shot | `u5-list.txt:43-45` |
+| Kind | `(recurring)` or `(one-shot)` | `u5-list.txt:43-45` |
+| Scope | `[session-only]` on every job | `u5-list.txt:43-45` |
+| Next run | The next fire's time, jitter included, to the minute | `u5-list.txt:43`; `r11p-u5-list-debug.log:439-441` |
+| Prompt | Whole for the prompts of 59 characters or fewer. The two of 141 and 535 characters were cut to their first 79, then `…` | `u5-list.txt:43`, `u11-respawn.txt:36`, `u12-busy.txt:40` |
+| Creation time, age, expiry, last run | None | `u5-list.txt:43-45,55-57,65-67` |
+
+What the measurements show:
+
+- **Nothing in the listing ages.** Across two fires, only the two-minute job's next run moved, from 2:59pm to 3:01pm, then to 3:03pm (`u5-list.txt:43,55,65`). `CronCreate`'s result says "Auto-expires after 7 days", with no date (`u5-list.txt:34`).
+- **The next run includes the jitter.** The debug log gives each due time. The two-minute job was due at 14:58:49.202, 49 seconds late. The daily job was due at 09:37:00, 30 minutes late. The 13:00 one-shot was due at 12:59:42.926, 17 seconds early (`r11p-u5-list-debug.log:439-441`).
+- **That matches the docs.** A recurring job runs "late by up to half the gap to the next run, and by at most 30 minutes". A one-shot at `:00` or `:30` "runs up to 90 seconds early" (`scheduled-tasks.md:188,207`).
+- **The listed time is the due time rounded to the nearest minute,** in every job this task listed. `r11p-u12-busy`'s job, due at 14:58:23.629, listed as 2:58pm (`r11p-u12-busy-debug.log:431`, `u12-busy.txt:40`).
+- **A fire's label names the scheduled minute.** The two-minute job fired at 14:58:50 as "Running scheduled task (Nov 12 2:58pm)" (`u5-list.txt:51`).
+- **The job record counts a session's pending jobs, and names none.** `r11p-u5-list`'s record read `"tasks": 3` with `"kinds": ["session_cron"]` under `inFlight` (`u5-list-job.json`). `r11p-u2-clear`'s read `"tasks": 1` once its two one-shots had fired (`u2-clear-job.json`). The record's `timeline.jsonl` holds the ids only inside the model's reply text (`u5-list-timeline.jsonl`).
+- **Sessions in one working folder share a scheduler lock.** The scheduler wrote `<P>/wd/.claude/scheduled_tasks.lock`, naming one session (`t3-scheduled_tasks.lock`). The other sessions logged "scheduler lock held by session …" and fired their jobs anyway (`r11p-u2-clear-debug.log:373,429`). Why a session takes the lock is not known. The file was gone by 15:15, leaving `wd/.claude/` empty.
+
+So, for the arm skill (`design.md:560`):
+
+- **It can tell its own jobs by id, or by prompt.** `CronCreate` returns each id, and the state file can keep it. A match by prompt holds only while each prompt differs from the others within its first 79 characters.
+- **A match by schedule needs the listing's wording.** It shows `Every 2 minutes` for `*/2 * * * *`, not the expression. This task saw three such wordings only.
+- **It cannot learn from `CronList` when to renew.** The listing shows no creation time, age, or expiry. The time the state file records at arming (`design.md:561`) is the only clock.
+- **A renewal due off the hour and half hour fires on time.** U11's one-shot for 15:11 fired at 15:11:00.952, as the docs say for any minute but `:00` and `:30` (`scheduled-tasks.md:207`).
+
+### U11: a one-shot job across `claude stop` then `claude respawn`
+
+**Measured** on Claude Code 2.1.322, in `r11p-u11-respawn`. **The one-shot survived the respawn and fired on time.** The session made a one-shot for 15:11, and a recurring control every minute. The control's prompt calls `CronList`, then the tick (`u11-respawn.txt:30-36`). This task stopped the session at 14:59:31 and respawned it at 14:59:38, by its own id (`u11-stop-respawn.txt`).
+
+| Time | Event | Evidence |
+|---|---|---|
+| 14:57:39 | Both jobs scheduled, the one-shot for 15:11:00.000 | `r11p-u11-respawn-debug.log:390-391` |
+| 14:58:12, 14:59:13 | The control fires twice | `r11p-u11-respawn-debug.log:400,503`; `u11-control-ticks.log` |
+| 14:59:14 | The last `CronList` before the stop lists both jobs | `u11-respawn.txt:70` |
+| 14:59:31 | `claude stop 26d5b3f0`; the session releases the scheduler lock | `u11-stop-respawn.txt`; `r11p-u11-respawn-debug.log:608` |
+| 14:59:38 | `claude respawn 26d5b3f0`: a new pid, the same session id | `u11-stop-respawn.txt` |
+| 14:59:39 | "resume: resurrected 2 session cron task(s)", and the one-shot is due again at 15:11:00.000 | `r11p-u11-respawn-debug.log:810,860` |
+| 15:00:14 | The first `CronList` after the respawn lists both jobs | `u11-respawn.txt:90` |
+| 15:11:00.952 | The one-shot fires, and its tick writes its line | `r11p-u11-respawn-debug.log:2166`; `u11-respawn.txt:308,320`; `u11-oneshot-ticks.log` |
+| 15:11:13 | `CronList` lists only the control | `u11-respawn.txt:331` |
+
+- **The control fired every minute across the respawn,** 14 times from 14:58:17 to 15:11:15, with no gap at the stop (`u11-control-ticks.log`). The stop spanned no scheduled run, so no missed run was tested.
+- **The one-shot deleted itself after its fire,** as `CronCreate`'s result said: "It will fire once then auto-delete" (`u11-respawn.txt:30`).
+- **Between the stop and the respawn,** `claude agents --json --all` listed the session with no `pid` and no `status`, and with `state: working` (`u11-stop-respawn.txt`).
+- **This matches the docs' rule for a resume.** It restores every job but an expired recurring one and a one-shot whose time has passed (`scheduled-tasks.md:241`). No run here let a one-shot's time pass during the stop.
+- **The design's stance holds:** a one-shot renewal survives a respawn (`design.md:577`). `2026-11-08-loop-probes.md` measured the same of a recurring job on 2.1.319.
+
+### U2: a cron job across a cron-fired `/compact` and `/clear`
+
+**Measured** on Claude Code 2.1.322, in `r11p-u2-clear`. **A cron-fired `/compact` or `/clear` does not run as a command:** each reaches the model as plain text. So this run could not test whether a cron job survives a compaction or a clear. **U2's typed variant is deferred to the operator-present run.**
+
+The session ticked every two minutes with `/probe-r11:tick r11p-u2-clear`. It held a one-shot whose prompt is `/compact` at 15:07, and one whose prompt is `/clear` at 15:13 (`u2-clear.txt:34-38`).
+
+- **The tick arrives as a command, and `/compact` and `/clear` as text.** Each tick fire wrote a `user` entry wrapping the skill in `<command-name>/probe-r11:tick</command-name>`. The `/compact` fire wrote a `user` entry whose content is the bare string `/compact`, marked `isMeta: true`. The `/clear` fire did the same (`u2-compact-entries.txt`, raw lines 169, 194, and 261).
+- **Neither command ran.** The model answered each in prose (`u2-clear.txt:144-147,208-211`). The transcript holds no `compact_boundary` entry. Every entry that names a session names the same one, and the transcript went on in the same file after the clear (`u2-clear.jsonl`).
+- **The tick kept firing,** every two minutes from 14:58:51 to 15:14:49 (`u2-ticks.log`). That includes 15:08:50, after the `/compact`, and 15:14:49, after the `/clear`.
+- **The docs say a scheduled fire runs no built-in command.** Such commands "reach Claude as plain text instead of executing", and `/clear` is one they name (`scheduled-tasks.md:50-52`).
+
+What follows:
+
+- **A loop cannot clear or compact its own context on a schedule.** A tick that wants a fresh context per unit runs the unit in a subagent or a worker, as the design's stance already says (`design.md:564`).
+- **Two questions stay open.** One is whether a cron job survives a `/compact` or `/clear` typed into an attached session. The other is whether it survives auto-compaction, which this run did not try. The operator-present run can type both commands into an attached probe that holds a tick.
+
+### U12: what tells a loop mid-tick from one between ticks
+
+**Measured** on Claude Code 2.1.322, in `r11p-u12-busy`. **The row's `status` in `claude agents --json` tells them apart, and its `state` does not.** The job record tells them apart by `state`, `tempo`, and `lastTerminalAt`.
+
+The session ran a tick every two minutes: a timestamp, then `bin/busy75.sh`, then a timestamp. `bin/pollfull.sh` read its agents row and whole job record every 10 seconds, from 14:57:41 to 15:06:42. That spans four full ticks (`pollfull-r11p-u12-busy.jsonl`). `bin/u12-fields.py` took each tick's window from the transcript, from its `scheduled_task_fire` entry to its `turn_duration` entry. It compared 32 samples taken mid-tick with 13 taken between ticks. It left out 4 samples within 2 seconds of a window's edge (`u12-fields.txt`).
+
+| Field | Mid-tick | Between ticks |
+|---|---|---|
+| `status`, in the agents row | `busy` | `idle` |
+| `state`, in the agents row | `working` | `working` |
+| `state`, in the job record | `working` | `done` |
+| `tempo` | `active` | `idle` |
+| `lastTerminalAt` | Absent | The last turn's end |
+| `output.result` | Absent, with `output` set to `null` | A one-line summary of the turn |
+| `fan` | The running shell call: its id, `"kind": "shell"`, the command, and its start | Absent |
+| `detail` | The classifier's line on the current step | Its line on the finished turn |
+| `inFlight` | `"tasks": 1`, `"kinds": ["session_cron"]` | The same |
+
+- **Read `status`, never the row's `state`.** The row's `state` read `working` in every sample, while the record's read `done` between ticks. The pending job likely holds the row there, since a row with no job pending read `state: done` (`guard-env-agents.json`). That reading was not checked further.
+- **The record's `state` lags at a tick's start.** At 15:00:24, within a second of the fire, `status` read `busy` and `tempo` read `active`. The record's `state` still read `done` (`pollfull-r11p-u12-busy.jsonl:17`).
+- **`fan` shows only while a tool runs,** so a tick spent in the model would show none. Here the script ran for 75 of each tick's 82 or so seconds.
+- **`tokens` and `linkScanOffset` differ too, but only because they grow.** Neither marks a phase.
+- **A standalone `sleep 75` is refused before it runs.** The probe's `Bash` call `sleep 75` returned "Blocked: standalone sleep 75…", a `tool_use_error` with no permission decision (`u12-busy.txt:25`). This task's own session met the same refusal (`t3-controller-sleep-block.txt`). So the tick ran `bin/busy75.sh`, which sleeps inside a script, under the rule `Bash(<P>/bin/busy75.sh)`.
+- **This task stopped the session mid-tick** at 15:07:25, so the fifth tick has no closing timestamp (`u12-ticks.log`).
+
+So `start`'s idle wait holds if it reads `status` (`design.md:617,622`).
+
 ## What breaks
 
 Each stance is cited by its line in `docs/designs/loop/design.md`.
@@ -172,3 +288,6 @@ Each stance is cited by its line in `docs/designs/loop/design.md`.
 | `design.md:1129`: G4b holds for the plugins a loop session loads that approve nothing, and `start` lists them | U9: two built-in mods that handle `tool.check`, `cc-plugin-plugin-authoring` and `cc-plugin-privacy`, loaded in all 11 of this task's sessions. The debug log names `cc-plugin-privacy` in a deny-to-allow override (`r11p-u24-control-debug.log:398`) | Breaks: G4b's set includes built-ins that no profile leaves out | #364 |
 | `design.md:1129`: a profile that leaves the user layer out loads only the role's plugins and sidekick | U9: with the user layer out and a working folder with no `.claude/`, sidekick did not load (`r11p-u9-target-debug.log:16,59`). By the docs, a working folder whose project settings enable sidekick loads it (`permissions.md:727`), as every sidekick worktree's do (`u9-layers.txt:46`); not measured | Narrows: in a repo whose project settings omit sidekick, launch passes sidekick itself | #362 |
 | `design.md:422,1065,1129` and ADR-0015 line 42: a profile that leaves the user layer out makes a loop a clean room | A session that loads no layer enabling sidekick ran plugin auto-update without sidekick's superpowers pin. It moved user-scope superpowers from `6.4.1` to `7.0.0` under every session on this Mac (`r11p-u9-target-debug.log:376-426`). The orchestrator restored `6.4.1` at 14:42:56. Mechanism inferred from the logs | Breaks: a clean-room loop or worker must turn auto-update off, as `DISABLE_AUTOUPDATER=1` does, or load a layer that declares the pins | #366 |
+| `design.md:560`: the arm skill reads `CronList`, deletes what does not match, and creates what is missing | U5: `CronList` shows each job's id, schedule, kind, next run, and the first 79 characters of its prompt. It shows no creation time, age, or expiry, and words a recurring schedule as `Every 2 minutes`, not its cron expression | Narrows: the arm skill matches its jobs by id, or by prompts that differ within 79 characters. It times the renewal from the state file's arm time | #364 |
+| `design.md:564`: a tick that wants a fresh context per unit runs the unit in a subagent | U2: a cron-fired `/compact` or `/clear` reaches the model as text and runs nothing. Whether a cron job survives a typed one is deferred to the operator-present run | Narrows: a tick never schedules `/clear` or `/compact`, so the subagent or worker is the only route to a fresh context | #366 |
+| `design.md:617,622`: `start` relaunches a loop only while `claude agents --json` reports it idle | U12: the row's `status` reads `busy` mid-tick and `idle` between ticks. Its `state` reads `working` in both | Narrows: `start` reads `status`, never the row's `state` | #364 |
