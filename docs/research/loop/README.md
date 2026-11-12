@@ -7,6 +7,7 @@ How can a repo define a long-lived Claude Code loop with a role and a mandate? H
 - [2026-11-08-loop-probes.md](./2026-11-08-loop-probes.md): what Claude Code 2.1.319 does with `/loop`, background sessions, `--agent` from a local plugin, a respawn, and an idle unattached session.
 - [2026-11-11-native-facts-recheck.md](./2026-11-11-native-facts-recheck.md): the docs' and the binary's loop facts re-read on 2.1.322, with quotes, and what changed from the probes' reading.
 - [2026-11-11-community-loop-tooling.md](./2026-11-11-community-loop-tooling.md): community and official tooling for scheduled and long-lived agent loops, each judged for use, borrowing, or rejection. It closes with documented practice on mandates and graduated autonomy.
+- [2026-11-12-loop-probes.md](./2026-11-12-loop-probes.md): the loop design's unknowns, measured on 2.1.322 in background probe sessions under `dontAsk`. It covers permissions, cron jobs across a respawn and a clear, the sandbox, MCP scoping, messaging a stopped worker, and `finish` after a landing. It names the stances the answers break, and the rows left for an operator-present run.
 
 ## Served
 
