@@ -1,5 +1,7 @@
 > Research for the `loop` design (`docs/designs/loop/`), measured for issue #360, R11 plan 1. Run 2026-11-12 by Claude for the operator, on Claude Code 2.1.322, from the worker `r11-probes` (session b9315799) in its worktree. A record: it takes only the edits `sk-pm-conventions.md` §Placement test (tense) lists.
 
+> **Amended 2026-11-12 (#360):** the operator-present run measured U2's typed and automatic cases, U14, and U24 the same evening, in [2026-11-12-loop-probes-operator-run.md](./2026-11-12-loop-probes-operator-run.md). U1 stays deferred to later in R11.
+
 # Loop probes on Claude Code 2.1.322 (2026-11-12)
 
 These probes answer the rows of #360 that the loop design left unmeasured. Each result names the build and the command, and quotes the tool result, log line, or job record field it rests on. Local time in the probes is GMT, which matches the UTC the logs print.
