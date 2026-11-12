@@ -14,7 +14,7 @@ The probe folder is `docs/superpowers/probes/2026-11-12-r11/` in the main checko
 - `evidence/pollfull-r11p-u12-busy.jsonl`, U12's poll of one session's agents row and job record, written by `bin/pollfull.sh`. `bin/u12-fields.py` compares its samples into `evidence/u12-fields.txt`.
 - `evidence/u4-*`, Task 5's MCP runs. `u4-tools.txt` lists each transcript's `mcp__` tool names and calls, `u4-decisions.txt` each call's permission decision, and `r11p-u4-<variant>-debug.log` the MCP connection lines. `bin/u4-tools.py` writes the first.
 - `evidence/u10-*` and `evidence/u15-*`, Task 4's sandbox runs. They hold each call's permission decision (`-decisions.txt`), the sandbox setup each session was told (`-sandbox-instructions.txt`), the store's files after U15 (`u15-disk.txt`), and the worktree's `git status` before and after U10.
-- The Claude Code docs, fetched on 2026-11-12 into `evidence/docs/` from `https://code.claude.com/docs/en/`. This record cites `permissions.md`, `tools-reference.md`, `skills.md`, `settings-reference.md`, `agent-view.md`, `scheduled-tasks.md`, `plugins-loading.md` (the page `plugins/loading.md`), and `sandboxing.md`.
+- The Claude Code docs, fetched on 2026-11-12 into `evidence/docs/` from `https://code.claude.com/docs/en/`. This record cites `permissions.md`, `tools-reference.md`, `skills.md`, `settings-reference.md`, `agent-view.md`, `scheduled-tasks.md`, `plugins-loading.md` (the page `plugins/loading.md`), `sandboxing.md`, and `mcp.md`.
 
 ## Sessions
 
@@ -84,7 +84,7 @@ Every `--settings` file also sets `"autoMemoryEnabled": false`. The local layer 
 
 Each settings file turns the sandbox on with `enabled: true`, `autoAllowBashIfSandboxed: false`, `allowUnsandboxedCommands: false`, and `failIfUnavailable: true`. These are the keys #367 names for a unit worker. Each session ran the role agent on haiku at low effort, its whole script in its launch prompt. This task stopped and removed the six at 15:52. They held no cron jobs, and `claude agents --json --all` then listed none of them (`evidence/t4-end-agents.json`).
 
-**Task 5's sessions** launched through `bin/u4-launch.sh` from `<P>/wd`, with `--setting-sources project,local`, `haiku`, `--effort low`, and `dontAsk`. They set no `--agent`, since one variant has no plugin. Each ran at 16:03 to 16:06 under user-scope superpowers 6.4.1 and sidekick 0.7.2. No session loaded either one: the working folder has no project settings, and the user layer was out. Each loaded `probe-r11` (or its copy) and six built-in mods, with the guard on (`r11p-u4-plugin-debug.log:61,229`). The prompt is `prompts/u4.txt`: one `ToolSearch` for "ping", a list of the `mcp__` tool names, and one call to a tool ending in `__ping`.
+**Task 5's sessions** launched through `bin/u4-launch.sh` from `<P>/wd`, with `--setting-sources project,local`, `haiku`, `--effort low`, and `dontAsk`. Only `r11p-u4-agent` set `--agent probe-r11:role`, the shape the spec's §Decisions gives a loop; the first ten set none, since `noplugin` has no plugin to hold an agent. Each ran at 16:03 to 16:06 under user-scope superpowers 6.4.1 and sidekick 0.7.2. No session loaded either one: the working folder has no project settings, and the user layer was out. Each loaded `probe-r11` (or its copy) and six built-in mods (four in `strictcfg`, where `cc-plugin-diff` and `cc-plugin-easel` did not register), with the guard on (`r11p-u4-plugin-debug.log:61,229`). The prompt is `prompts/u4.txt`: one `ToolSearch` for "ping", a list of the `mcp__` tool names, and one call to a tool ending in `__ping`.
 
 | Name | Id | Other flags | Allow rules in `--settings` |
 |---|---|---|---|
@@ -95,8 +95,9 @@ Each settings file turns the sandbox on with `enabled: true`, `autoAllowBashIfSa
 | `r11p-u4-strictcfg` | `9fccf257` | As `mcpconfig`, plus `--strict-mcp-config` | As `plugin` |
 | `r11p-u4-norule`, `-fullname`, `-server`, `-cfgname` | `945e9380`, `831c7614`, `fbe9b549`, `e78b03ce` | As `plugin` | None; the full name; `mcp__plugin_probe-r11_ping`; `mcp__ping__ping` |
 | `r11p-u4-cfgalone` | `143e0c1e` | As `mcpconfig` | `mcp__ping__ping` |
+| `r11p-u4-agent` | `31df5394` | As `plugin`, plus `--agent probe-r11:role` | `mcp__plugin_probe-r11_ping__ping` |
 
-`probe-r11-nomcp` is a copy of the fixture plugin without its `.mcp.json`. All ten sessions were stopped and removed, and `claude agents --json --all` then listed none of them (`u4-agents-after-cleanup.json`).
+`probe-r11-nomcp` is a copy of the fixture plugin without its `.mcp.json`. All eleven sessions were stopped and removed. `claude agents --json --all` listed none of them after the first ten (`u4-agents-after-cleanup.json`) and after `r11p-u4-agent` (`u4-agent-agents-after-cleanup.json`).
 
 ## Results by row
 
@@ -387,13 +388,14 @@ So for #367's overlay, deny the memory store with an `Edit(//<store>/**)` deny r
 
 ### U4: where a role plugin's MCP server loads
 
-**Measured** on Claude Code 2.1.322, in the ten `r11p-u4-*` sessions. **A plugin's `.mcp.json` server loaded and answered in the session that loaded the plugin, and in no other. So a role's MCP server can live in its plugin's `.mcp.json`, and a profile needs no key for `--mcp-config`. One flag breaks that: `--strict-mcp-config` drops the plugin's server.**
+**Measured** on Claude Code 2.1.322, in the eleven `r11p-u4-*` sessions. **A plugin's `.mcp.json` server loaded and answered in the session that loaded the plugin, and in no other, with or without `--agent <plugin>:<agent>`. So a role's MCP server can live in its plugin's `.mcp.json`, and a profile needs no key for `--mcp-config`, for a role agent with no `tools` field. One flag breaks that: `--strict-mcp-config` drops the plugin's server.**
 
 Each session was told to call `ping`, and to list the `mcp__` tool names it had. The table takes its results from the transcript's tool entries and the debug log. The model's own list was incomplete in some runs (`u4-mcpconfig.txt:29` names four tools).
 
 | Launch | Server connected | Tool name | `ping` result | Operator and built-in servers that loaded |
 |---|---|---|---|---|
 | `plugin`: `--plugin-dir` with `.mcp.json` | `plugin:probe-r11:ping` (`r11p-u4-plugin-debug.log:238`) | `mcp__plugin_probe-r11_ping__ping`, loaded by `ToolSearch` (`u4-tools.txt` §plugin) | `PONG-R11` (`u4-plugin.txt:27`) | `claude-in-chrome`, `easel`, `claude.ai Claude Docs` (`u4-tools.txt:4`) |
+| `agent`: `plugin` plus `--agent probe-r11:role` (replies began `ROLE-OK`, `u4-agent.txt:19`) | `plugin:probe-r11:ping` (`r11p-u4-agent-debug.log:267`) | `mcp__plugin_probe-r11_ping__ping`, loaded by `ToolSearch` (`u4-agent-tools.txt`) | `PONG-R11` (`u4-agent.txt:30`) | `claude-in-chrome`, `easel`, `claude.ai Claude Docs` (`u4-agent-tools.txt:4`) |
 | `noplugin`: no `--plugin-dir` | None | None: `ToolSearch` found "No matching deferred tools" (`u4-noplugin.txt:20`) | Not called | The same three (`u4-tools.txt:10`) |
 | `strict`: `plugin` plus `--strict-mcp-config` | None: no `plugin:probe-r11:ping` line in `r11p-u4-strict-debug.log` | None: "No matching deferred tools" (`u4-strict.txt:20`) | Not called | `claude-in-chrome` and `easel`; the claude.ai connector is gone (`u4-tools.txt:14`) |
 | `mcpconfig`: plugin copy with no `.mcp.json`, the server in `--mcp-config` | `ping` (`r11p-u4-mcpconfig-debug.log:220`) | `mcp__ping__ping` | `PONG-R11` | The same three (`u4-tools.txt:18`) |
@@ -403,10 +405,10 @@ What the measurements show:
 
 - **The plugin's `.mcp.json` server loads with the plugin and only then.** `noplugin` had no `ping` tool. The tool's name carries the plugin and the server, `mcp__plugin_<plugin>_<server>__<tool>`, as the docs say (`mcp.md:724`, `evidence/docs/`). The fixture's `${CLAUDE_PLUGIN_ROOT}` path resolved: the server started by bun from the plugin's folder.
 - **The `ping` tool is deferred.** It enters the session through `ToolSearch`, as a `deferred_tools_record` entry (`u4-tools.txt` §plugin), so a role that calls an MCP tool must have `ToolSearch` or an eager load. `ToolSearch` itself needed no allow rule (`u4-decisions.txt:2`). Whether a role's `tools` field must list the `mcp__` tool is not measured; the role agent was not used.
-- **`--strict-mcp-config` drops a plugin's server.** The docs say a strict session "uses only the MCP servers you pass with `--mcp-config`" (`mcp.md:809`). Here that left the plugin's `ping` out, and the claude.ai connector too. With `--mcp-config` as well, `ping` loaded (`strictcfg`). So a clean-room profile that sets `--strict-mcp-config` must pass the role's servers in a `--mcp-config` file.
+- **`--strict-mcp-config` drops a plugin's server.** The docs say a strict session "uses only the MCP servers you pass with `--mcp-config`" (`mcp.md:809`). Yet the built-in `claude-in-chrome` and `easel` still loaded under it. Here it left the plugin's `ping` out, and the claude.ai connector too. With `--mcp-config` as well, `ping` loaded (`strictcfg`). So a clean-room profile that sets `--strict-mcp-config` must pass the role's servers in a `--mcp-config` file.
 - **The operator's servers loaded in every launch that did not set strict.** `~/.claude.json` has no user-scope `mcpServers` (read for its keys only). Its project-scope entries belong to other folders, which no probe ran in. What loaded came from elsewhere:
-  - `claude-in-chrome`, an in-process server that connected in all ten launches (for example `r11p-u4-plugin-debug.log:162`).
-  - `easel`, the server of the built-in mod `cc-plugin-easel`, connected in nine of ten (`r11p-u4-plugin-debug.log:247`). In `strictcfg` it did not register, and no log line says why.
+  - `claude-in-chrome`, an in-process server that connected in all eleven launches (for example `r11p-u4-plugin-debug.log:162`).
+  - `easel`, the server of the built-in mod `cc-plugin-easel`, connected in ten of eleven (`r11p-u4-plugin-debug.log:247`). In `strictcfg` it did not register, nor did `cc-plugin-diff`, and no log line says why.
   - `claude.ai Claude Docs`, a claude.ai connector tied to the account, connected in the launches without strict (`r11p-u4-plugin-debug.log:343`). The debug log blocks four other connectors "by managed policy" (line 336).
   - `claude-artifacts` failed with a 404 in every launch without strict (`r11p-u4-plugin-debug.log:287`) and was skipped under strict (`r11p-u4-strict-debug.log:109`).
 - **Plugins enabled in the user layer did not load,** since every launch left the user layer out. So none of their MCP servers connected, and the all-layers case is not measured: a run would have connected the operator's real servers, which the task forbids.
@@ -419,6 +421,8 @@ What the measurements show:
 | `--mcp-config` | `mcp__<server>__<tool>`, here `mcp__ping__ping` | Allowed alone (`u4-decisions.txt:28`) |
 
 The `--mcp-config` spelling did not allow the plugin's tool (`u4-decisions.txt:22`), so a mandate must spell a role's MCP allow by where the server comes from. Each call passed on a `reasonType: "rule"` decision from `flagSettings`. `allow-rules.json` holds the spellings, and its `not_measured` key names what no run tried: wildcards, and rules for a claude.ai connector's tools.
+
+**Not measured:** a role agent whose `tools` field restricts MCP tools. `probe-r11:role` has no `tools` field, so it inherits every tool, and its call passed. Whether such a role must list the `mcp__` tool is a belief from the docs, and no run tried it.
 
 **For the design** (`design.md:383`): keep a role's MCP servers in its plugin's `.mcp.json`. The `--mcp-config` key the stance deferred is not needed for that. A profile needs one only when it also sets `--strict-mcp-config`, and then it carries the role's servers there and spells their allow rules as `mcp__<server>__<tool>`.
 
@@ -438,4 +442,4 @@ Each stance is cited by its line in `docs/designs/loop/design.md`.
 | `design.md:617,622`: `start` relaunches a loop only while `claude agents --json` reports it idle | U12: the row's `status` reads `busy` mid-tick and `idle` between ticks. Its `state` reads `working` in both | Narrows: `start` reads `status`, never the row's `state` | #364 |
 | `design.md:508` and ADR-0015 line 47: sidekick's gates pass inside the sandbox | U10: five gates matched their unsandboxed results. `bun run test` failed 6 of 2860 tests, all bash cases in `profile-shell.test.ts`. The test's spawned shell lacks `TMPDIR`, so its temp file falls back to `/tmp`, which the sandbox refuses | Breaks until the test passes `TMPDIR` to that shell: every sandboxed worker's test gate fails. The call also needs a `timeout`, since the suite ran 433.6 s | #367 |
 | `design.md:1047` and #367: a sandboxed command may write an additional directory, the memory store among them | U15: `sandbox.filesystem.denyWrite` or an `Edit` deny rule on the folder refuses the sandboxed write. Only the `Edit` deny rule also refuses the `Write` tool | Narrows: the worker's overlay denies the memory store with `Edit(//<store>/**)` | #367 |
-| `design.md:383`: a role's MCP servers go in its plugin's `.mcp.json`, and a profile key for `--mcp-config` waits on U4 | U4: the plugin's server loaded and answered with the plugin, and only then. `--strict-mcp-config` dropped it, and loaded it again once the server sat in `--mcp-config`. Under `dontAsk` the allow rule is spelled by source: `mcp__plugin_<plugin>_<server>__<tool>` or `mcp__<server>__<tool>` | Holds, with a narrowing: no profile key is needed unless the profile sets `--strict-mcp-config`, which then needs the role's servers in a `--mcp-config` file. The mandate compiler spells each MCP allow by the server's source | #362 |
+| `design.md:383`: a role's MCP servers go in its plugin's `.mcp.json`, and a profile key for `--mcp-config` waits on U4 | U4: the plugin's server loaded and answered with the plugin, and only then, with and without `--agent`, for a role with no `tools` field. `--strict-mcp-config` dropped it, and loaded it again once the server sat in `--mcp-config`. Under `dontAsk` the allow rule is spelled by source: `mcp__plugin_<plugin>_<server>__<tool>` or `mcp__<server>__<tool>` | Holds for a role with no `tools` field, with a narrowing: no profile key is needed unless the profile sets `--strict-mcp-config`, which then needs the role's servers in a `--mcp-config` file. The mandate compiler spells each MCP allow by the server's source | #363 |
