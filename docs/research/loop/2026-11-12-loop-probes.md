@@ -119,6 +119,8 @@ Each settings file turns the sandbox on with `enabled: true`, `autoAllowBashIfSa
 
 `u21.json` allows `SendMessage` and `ListAgents`, and `held-loop.json` allows `SendMessage` alone. `held-worker.json` allows `SendMessage` and denies `Bash(gh)` and `Bash(gh *)`. The deny enforces the run's rule that no probe runs `gh`. Under `dontAsk` a `gh` write with no allow rule is denied anyway, but the read-only set the docs give may include read forms of `gh`; no run checked. The deny reached the debug log (`r11p-held-worker-debug.log:38`) and no worker's transcript, so no model saw it. Each set the guard. This task stopped and removed all ten sessions at 16:31, the two Task 2 subjects among them. None held a cron job, and `claude agents --json --all` then listed no `r11p-` session (`evidence/t6-end-agents.json`).
 
+**The landing probe's one session,** `r11p-u19-worker` (`3bc62d4b`), launched at 16:52:06 with the command §Sessions opens with and `--setting-sources project,local`. It ran from a folder outside its toy repo, for the reason §U19 gives. Its `--settings` file allowed `Edit` in its worktree, and `git -C <worktree> add` and `commit`. It also set the guard and `"autoMemoryEnabled": false`. It ran under user-scope superpowers 6.4.1 and sidekick 0.7.2, and loaded neither. `sidekick worker finish` removed it at 16:57:08, and `claude agents --json --all` then listed no `r11p-` session.
+
 ## Results by row
 
 ### U9: what `dontAsk` denies a background loop, and the rule that allows each
@@ -509,6 +511,69 @@ What the measurements show:
 
 **For the design** (`design.md:772`, and #367's report that names the outward actions it proposes): a report can arrive without its proposals. A brief that tells the worker it cannot run the action makes the report match both rules' wording. The worker's brief states proposals as findings for the loop's classes, never as actions the worker is blocked from. The loop also checks a report against its unit, so a report with none reads as a gap, not as "nothing to do".
 
+### U19: `finish --into origin/master` after a loop's landing
+
+**Measured** on Claude Code 2.1.322 with sidekick 0.7.2, in one haiku worker and a toy repo with a local bare `origin`. **While local `master` lags, `finish` with the brief's target refuses, since the branch "has not landed in refs/heads/master". With `--into origin/master`, it counts the branch landed and removes the session, the worktree, and the branch, keeping a backup ref. So `land` can run `finish --into origin/master` after its push, as #377 says.** How `claude rm` treats a worktree Claude Code made, after such a push, is deferred to the operator-present run.
+
+The fixture, and why it departs from a dispatch:
+
+- **The toy repo** is a clone of a local bare `origin`, whose default branch is `master`, holding two commits. Its brief, plan, and spec were written by hand, git-ignored, as a dispatch's are. The brief names the worker `r11p-u19-worker`, sets `target: master`, and gives a `report` path.
+- **No dispatch.** `dispatch` refuses inside a worker: "SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)" (`bin/helpers/worker-dispatch-checks.ts:273-274,286`). This run is a dispatched worker, so the probe started its worker by hand. It wrote the record `dispatch` leaves, `<common git dir>/sidekick/workers/r11p-u19-worker.json`, by hand too.
+- **No session can start in the toy repo.** The first launch, from the toy repo with `--worktree r11p-u19-worker`, exited before it started: "Workspace not trusted. Run `claude` in … once and accept the trust prompt, then retry." The docs give the rule: trust "covers the whole repository apart from any git repository nested inside it" (`permissions.md` §Project allow rules and workspace trust). The toy repo sits inside the sidekick checkout, so the operator's trust of that checkout stops at it. Accepting the dialog writes the user's own config, which this run may not write.
+- **So the worker ran from a folder outside the toy repo,** inside the sidekick checkout's tree, which that trust covers. The probe made its worktree by hand where `--worktree` puts one: `.claude/worktrees/r11p-u19-worker` on the branch `worktree-r11p-u19-worker`. It branched from `origin/master` at `1aa4847`, as the default `worktree.baseRef` of `"fresh"` does. The probe then locked it as Claude Code locks its own, with the reason "claude session r11p-u19-worker (pid 15547 start …)". That is the format git lists on this run's own worktree.
+- **The worker's calls,** under `dontAsk`: `Read`, `Edit` of `app.txt`, `git -C <worktree> add app.txt`, `git -C <worktree> commit -m …`, and `Write` of the report. Claude Code accepted all five. `Read`, `Edit`, and `Write` passed on a rule with `"ruleSource": "flagSettings"`, the `--settings` layer, whose only file rule is `Edit(//<worktree>/**)`. Both git calls passed with `"reasonType": "subcommandResults"`. The commit printed "[worktree-r11p-u19-worker 7b43e5e] fix: bump the app version (U19)".
+- **Why the git rules carry `-C`.** The session's folder sits in the sidekick checkout, so a bare `git commit` there would commit whatever that checkout's index held. Rules pinned to `git -C <worktree>` allow no other repo.
+- **What loaded.** The launch folder held no project settings file. The local layer gave its one `WebFetch` rule, and the `--settings` file its three rules. The plugins were the probe plugin and five built-in mods: "Loaded plugins - Enabled: 5, Disabled: 3, Commands: 0, Agents: 1, Errors: 0". The guard logged "Plugin autoupdate: skipped (auto-updater disabled)" at 16:52:07, a second after launch.
+
+**The landing.** A loop pushes, but this run's session carries the dispatch push block. Its rewrite failed the fixture's first push: "fatal: remote helper 'sidekick-push-blocked' aborted session". So the probe moved `origin`'s `master` with a fetch run in the bare repo, from the worker's worktree. By git's refspec rules, a fetch without `+` refuses an update that is not a fast-forward, as a push without `--force` does. This landing was a fast-forward, so no run tried that refusal. A fetch in the toy repo followed:
+
+```
+== origin.git: git fetch <worker worktree> HEAD:refs/heads/master
+   1aa4847..7b43e5e  HEAD       -> master
+== toy: git fetch origin
+   1aa4847..7b43e5e  master     -> origin/master
+toy master 1aa48475ff3ff76f77dbee71a6874d861cc3da7f
+toy origin/master 7b43e5e258a5e02c86d9473860c0f9feaf4493ff
+## master...origin/master [behind 1]
+```
+
+**The two runs** went from the toy main checkout, as `env -u SIDEKICK_WORKER -u SIDEKICK_MAIN sidekick worker finish <brief>`, with `--into origin/master` on the second. Each ran under the Bash tool's `run_in_background`, after a check that one listed session carried the name. By its code `finish` reads neither variable; they were unset so that no run could pick up this run's brief.
+
+| Run | Exit | What `finish` printed | What it removed |
+|---|---|---|---|
+| The control, with no `--into`, at 16:56:54 | 1, within a second | "target: refs/heads/master (the brief's target)", then the refusal in the first excerpt that follows | Nothing: the repo's state, the worktree, the record, and the listing read the same before and after |
+| `--into origin/master`, at 16:57:06 | 0, in 2 seconds | The second excerpt that follows | The session, its job record, the worktree, the branch, and the dispatch record |
+
+The control's refusal, with the brief's path cut:
+
+```
+worktree-r11p-u19-worker has not landed in refs/heads/master (1aa48475ff3ff76f77dbee71a6874d861cc3da7f): its head 7b43e5e258a5e02c86d9473860c0f9feaf4493ff is not there, and the history walk tried 0 commits and found no match. Land it and run finish again; name the target with --into <rev>; discarding it is your call, with sidekick worker finish <brief> --discard
+```
+
+The `--into` run, with the toy repo's path and the report's path cut:
+
+```
+target: refs/remotes/origin/master (from --into)
+worktree-r11p-u19-worker landed in refs/remotes/origin/master at 7b43e5e
+report saved to <toy>/<report>
+session 3bc62d4b removed
+worktree <toy>/.claude/worktrees/r11p-u19-worker removed
+branch worktree-r11p-u19-worker removed
+worktree-r11p-u19-worker is kept as refs/sidekick/landed/r11p-u19-worker/7b43e5e258a5e02c86d9473860c0f9feaf4493ff: restore it with git branch worktree-r11p-u19-worker refs/sidekick/landed/r11p-u19-worker/7b43e5e258a5e02c86d9473860c0f9feaf4493ff
+```
+
+What the measurements show:
+
+- **A brief's target cannot see a push.** `finish` resolves a brief's `target` as `refs/heads/<target>` in the main checkout (`bin/helpers/worker-finish-target.ts:69-74`), so it names a local branch only. Once a loop has pushed, only `--into` names `origin`'s branch.
+- **`finish` fetches nothing.** It resolves `--into` in the checkout it runs in (`worker-finish-target.ts:60-62`), and read the remote-tracking ref that the toy repo's fetch had moved. A push also updates that ref in the repo it ran from, so `land` needs no fetch before `finish`; believed from git's defaults, not run.
+- **The ancestor check passed.** The worker's head is `origin/master`'s tip, and the landing line names that tip, `7b43e5e`. The checks for a rebased or squashed landing did not run, so only a fast-forward landing was measured.
+- **Everything went, and the commit stayed.** After the run, git listed the main checkout alone, and `refs/heads/worktree-r11p-u19-worker` was absent. `git for-each-ref refs/sidekick/` held `refs/sidekick/landed/r11p-u19-worker/7b43e5e…`. The listing held no `r11p-` session, and the job record's folder and the dispatch record were gone. The report sat in the toy main checkout, and `claude rm` kept the transcript.
+- **`finish` removed the worktree itself.** The worker's job record held no `worktreePath` or `worktreeBranch`, since the session did not make the worktree. A session started in a worktree of its own carries both, as this run's own job record does. So `claude rm` removed the session alone, inferred. `finish`'s leftover step then unlocked the dead lock and ran `git worktree remove` (`bin/helpers/worker-teardown-leftovers.ts:178-191`).
+- **What a real worker's removal adds.** `claude rm` removes a worktree Claude Code made, or keeps it and offers `--discard-unpushed <sha>@<id>` when no remote holds its commits. `finish` runs the offer only when its sha is the head it verified (`bin/helpers/worker-teardown-rm.ts:62-76`). So either answer ends with the worktree gone, by the code. Which one `claude rm` gives after a push is the part deferred.
+- **The row never read `done`.** From the turn's end at 16:52:16 through both runs, the worker's row read `"status": "idle"` and `"state": "working"`, as U12 found. `finish` stops a job unless it lists as `stopped` or `done` with no live lock holder (`bin/helpers/worker-teardown-stop.ts:21,40-45`), so it ran `claude stop` here, inferred. No process held pid 15547 after the run.
+
+**For the design** (`design.md:727,804`, and #377): the stance holds. `land` runs `sidekick worker finish --into origin/master` after its push, and the brief's `target` stays the local branch, which a landing never moves. One condition rides on it. A loop's workers start with `claude --bg`, which exits "Workspace not trusted" in a repo the operator has never trusted. So a loop runs only in a repo where the operator has accepted the trust dialog, inferred; no loop ran in an untrusted repo.
+
 ## What breaks
 
 Each stance is cited by its line in `docs/designs/loop/design.md`.
@@ -529,3 +594,4 @@ Each stance is cited by its line in `docs/designs/loop/design.md`.
 | `design.md:837`: a waiting worker stops after about an hour idle. Whether the loop's message restarts it is U21, and if not, the loop respawns it before it relays | U21: the message fails with "No agent named … is reachable", `is_error` false, and the worker stays stopped. After `claude respawn <id>`, the message lands, and the reply shows the conversation kept | Holds by its fallback, with a narrowing: the loop checks the worker's pid, respawns it, then sends, and reads the send's `success`. Its mandate needs a `Bash` rule for `claude respawn` with the worker's id, never `--all`; not measured | #367 |
 | `design.md:547`: `start` respawns a stopped loop session whose definition is unchanged | U21: a stopped session's row reads `state: done` with no `pid`, after the supervisor's idle stop and after `claude stop`. `claude respawn` brought each back with its conversation | Holds, with a narrowing: `start` tells a stopped session by its missing `pid`, never by a `stopped` state | #364 |
 | `design.md:772` and #367: a unit worker's report names the outward actions it proposes, and the loop applies them | Held back: one report in four withheld both proposals, from a brief saying the worker cannot run `gh`; that brief's repeat carried them. `SendMessage`'s description tells a worker never to ask a peer for what its own settings would block. Claude Code's note on a delivered message tells the loop to refuse an action the peer was denied | Narrows: the unit brief states proposals as findings for the loop's classes, never as actions the worker cannot take. The loop reads a report without proposals as a gap, not as nothing to do | #367 |
+| `design.md:727,804` and #377: `land` pushes, then runs `finish --into origin/master`; whether `finish` sees a branch pushed to `origin` while local `master` lags is U19 | U19: with the brief's target, `finish` refuses, since the branch "has not landed in refs/heads/master". With `--into origin/master`, it counts the branch landed and removes the session, the worktree, and the branch. A brief's `target` resolves under `refs/heads/` only | Holds as #377 words it: `land` passes `--into`, since no brief can name `origin`'s branch. `finish` fetches nothing, so `land` calls it after its push. A loop's workers start only in a repo the operator has trusted | #377 |
