@@ -9849,13 +9849,21 @@ var DAY_MS = 24 * 60 * MINUTE_MS2;
 var FALLBACK_WINDOW_DAYS = 366;
 var ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 var at = pipe(string(), check((s) => ISO_UTC.test(s) && !Number.isNaN(Date.parse(s)), "must be an ISO 8601 UTC time"));
-var summary = pipe(string(), minLength(1), maxLength(1000));
-var command = pipe(string(), minLength(1), maxLength(4000));
-var className = pipe(string(), minLength(1));
+var LAST_C0 = 31;
+var DEL = 127;
+var NEWLINE2 = 10;
+var isControl = (ch) => {
+  const code = ch.charCodeAt(0);
+  return code <= LAST_C0 || code === DEL;
+};
+var plain = check((s) => ![...s].some(isControl), "must hold no control character (U+0000 to U+001F, or U+007F)");
+var summary = pipe(string(), minLength(1), maxLength(1000), plain);
+var command = pipe(string(), minLength(1), maxLength(4000), plain);
+var className = pipe(string(), minLength(1), plain);
 var unit = pipe(string(), regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 of A-Z a-z 0-9 . _ -"));
 var hash = pipe(string(), minLength(1));
-var reason6 = pipe(string(), minLength(1), maxLength(1000));
-var commit = pipe(string(), regex(/^[0-9a-f]{7,40}$/i, "must be a hex object id of 7 to 40 characters"));
+var reason6 = pipe(string(), minLength(1), maxLength(1000), plain);
+var commit = pipe(string(), regex(/^[0-9a-f]{7,64}$/i, "must be a hex object id of 7 to 64 characters"));
 var head = { v: literal(1), at };
 var RecordLineSchema = variant("kind", [
   object({
@@ -9914,9 +9922,32 @@ var RecordLineSchema = variant("kind", [
 function recordFile(loopDir, at2) {
   return path47.join(loopDir, RECORDS_DIR, `${localDate(at2)}.jsonl`);
 }
+var errorText3 = (e) => e instanceof Error ? e.message : String(e);
+var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+function endsMidLine(file) {
+  const size = fs38.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
+  if (size === 0)
+    return false;
+  const last = Buffer.alloc(1);
+  const fd = fs38.openSync(file, "r");
+  try {
+    fs38.readSync(fd, last, 0, 1, size - 1);
+  } finally {
+    fs38.closeSync(fd);
+  }
+  return last[0] !== NEWLINE2;
+}
 function appendRecord(loopDir, line) {
-  fs38.mkdirSync(path47.join(loopDir, RECORDS_DIR), { recursive: true });
-  fs38.appendFileSync(recordFile(loopDir, new Date(line.at)), `${JSON.stringify(line)}
+  const parsed = safeParse(RecordLineSchema, line);
+  if (!parsed.success) {
+    const issues = parsed.issues.map((issue) => `${getDotPath(issue) ?? "kind"}: ${issue.message}`);
+    throw new Error(`the record line does not fit the schema: ${issues.join("; ")}`);
+  }
+  const file = recordFile(loopDir, new Date(parsed.output.at));
+  fs38.mkdirSync(path47.dirname(file), { recursive: true });
+  const lead = endsMidLine(file) ? `
+` : "";
+  fs38.appendFileSync(file, `${lead}${JSON.stringify(parsed.output)}
 `);
 }
 function parseLine(text) {
@@ -9935,20 +9966,27 @@ function localDays(since, until) {
   return days;
 }
 function readDay(loopDir, day) {
+  const file = recordFile(loopDir, day);
   try {
-    return fs38.readFileSync(recordFile(loopDir, day), "utf8").split(`
+    const texts = fs38.readFileSync(file, "utf8").split(`
 `).filter((text) => text.trim() !== "");
-  } catch {
-    return [];
+    return { texts };
+  } catch (e) {
+    return isMissing5(e) ? { texts: [] } : { unreadable: `${file}: ${errorText3(e)}` };
   }
 }
 function readRecords2(loopDir, since, until) {
-  const parsed = localDays(since, until).flatMap((day) => readDay(loopDir, day).map((text) => parseLine(text)));
+  const days = localDays(since, until).map((day) => readDay(loopDir, day));
+  const parsed = days.flatMap((day) => ("texts" in day) ? day.texts.map((text) => parseLine(text)) : []);
   const lines = parsed.filter((line) => line !== undefined).filter((line) => {
     const time = Date.parse(line.at);
     return time >= since.getTime() && time <= until.getTime();
   }).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  return { lines, skipped: parsed.filter((line) => line === undefined).length };
+  return {
+    lines,
+    skipped: parsed.filter((line) => line === undefined).length,
+    unreadable: days.flatMap((day) => ("unreadable" in day) ? [day.unreadable] : [])
+  };
 }
 function windowStart(cron, at2) {
   const fallback2 = new Date(at2.getTime() - FALLBACK_WINDOW_DAYS * DAY_MS);
@@ -10077,10 +10115,11 @@ function recordParts(line) {
 }
 var recordText = (line) => [localMinute(new Date(line.at)), line.kind, ...recordParts(line)].filter((part) => part !== undefined).map(oneLine3).join("  ");
 function recordLines(dir, since, until) {
-  const { lines, skipped } = readRecords2(dir, since, until);
+  const { lines, skipped, unreadable } = readRecords2(dir, since, until);
   return [
     ...section2(`records since ${localMinute(since)}:`, lines.map(recordText)),
-    ...skipped === 0 ? [] : [`  skipped ${plural(skipped, "line")} that did not parse`]
+    ...skipped === 0 ? [] : [`  skipped ${plural(skipped, "line")} that did not parse`],
+    ...unreadable.map((entry) => `  could not read ${entry}`)
   ];
 }
 var DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -11208,7 +11247,7 @@ var PLUGIN_ONLY_RULES = [
   "sk-memory.md"
 ];
 var isRecord8 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-var errorText3 = (e) => e instanceof Error ? e.message : String(e);
+var errorText4 = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
   const file = path53.join(root, ".claude", "settings.json");
   let text;
@@ -11218,7 +11257,7 @@ function pluginEnablement(root) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { state: "not-enabled" };
     }
-    return { state: "unreadable", path: file, reason: errorText3(e) };
+    return { state: "unreadable", path: file, reason: errorText4(e) };
   }
   if (text.trim() === "")
     return { state: "not-enabled" };
@@ -11226,7 +11265,7 @@ function pluginEnablement(root) {
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    return { state: "unreadable", path: file, reason: errorText3(e) };
+    return { state: "unreadable", path: file, reason: errorText4(e) };
   }
   if (!isRecord8(parsed)) {
     return { state: "unreadable", path: file, reason: "not a JSON object" };
@@ -12304,12 +12343,12 @@ import * as path56 from "node:path";
 var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
 var reason7 = (e) => e instanceof Error ? e.message : String(e);
-var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+var isMissing6 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readExclude(file) {
   try {
     return { text: fs45.readFileSync(file, "utf-8") };
   } catch (e) {
-    if (isMissing5(e))
+    if (isMissing6(e))
       return { text: "" };
     return {
       issues: [
@@ -13179,12 +13218,12 @@ function clearGone(gone, wenv, out) {
 // bin/helpers/worker-finish-report.ts
 import * as fs47 from "node:fs";
 import * as path60 from "node:path";
-var isMissing6 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+var isMissing7 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
     return { data: fs47.readFileSync(file) };
   } catch (e) {
-    if (isMissing6(e))
+    if (isMissing7(e))
       return { data: undefined };
     const why = e instanceof Error ? e.message : String(e);
     return { issue: `cannot read ${file}: ${why}` };

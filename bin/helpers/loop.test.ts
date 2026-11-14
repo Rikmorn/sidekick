@@ -295,7 +295,7 @@ describe('show', () => {
     {
       ...at(new Date(NOW.getTime() - 30 * 60 * 1000)),
       kind: 'note',
-      summary: 'two\nlines',
+      summary: 'half an hour ago',
     },
     {
       ...at(new Date(NOW.getTime() - 10 * 60 * 1000)),
@@ -310,7 +310,7 @@ describe('show', () => {
   const lastDay = (): string[] => [
     `records since ${localMinute(new Date(NOW.getTime() - 24 * HOUR_MS))}:`,
     `  ${localMinute(new Date(NOW.getTime() - HOUR_MS))}  would  class triage  gh issue edit 5 --add-label bug  unit u5`,
-    `  ${localMinute(new Date(NOW.getTime() - 30 * 60 * 1000))}  note  two lines`,
+    `  ${localMinute(new Date(NOW.getTime() - 30 * 60 * 1000))}  note  half an hour ago`,
     `  ${localMinute(new Date(NOW.getTime() - 10 * 60 * 1000))}  landed  commit abc1234  unit u5`,
   ];
 
@@ -434,6 +434,22 @@ describe('show', () => {
     );
     const r = run(['show', 'fixer']);
     expect(r.out.at(-1)).toBe('  skipped 2 lines that did not parse');
+  });
+
+  test('names a day file it cannot read, after the records', () => {
+    writeLoop();
+    writeProfile();
+    const file = path.join(loopDir(), 'records', '2026-11-14.jsonl');
+    fs.mkdirSync(file, { recursive: true });
+    appendRecord(loopDir(), {
+      ...at(new Date(NOW.getTime() - 20 * HOUR_MS)),
+      kind: 'note',
+      summary: 'yesterday',
+    });
+    const r = run(['show', 'fixer']);
+    expect(r.out.at(-2)).toEndWith('  note  yesterday');
+    expect(r.out.at(-1)).toStartWith(`  could not read ${file}: `);
+    expect(r.out.at(-1)).toContain('EISDIR');
   });
 
   test('a loop with no records in the window says so', () => {
@@ -702,6 +718,20 @@ describe('record', () => {
       'a bad unit',
       ['--kind', 'note', '--summary', 's', '--unit', 'two words'],
       ['--unit: must be 1 to 64 of A-Z a-z 0-9 . _ -'],
+    ],
+    [
+      'an ESC in the summary',
+      ['--kind', 'note', '--summary', 'a\u001b[1Ab'],
+      [
+        '--summary: must hold no control character (U+0000 to U+001F, or U+007F)',
+      ],
+    ],
+    [
+      'a newline in the command',
+      ['--kind', 'denied', '--summary', 's', '--command', 'a\nb'],
+      [
+        '--command: must hold no control character (U+0000 to U+001F, or U+007F)',
+      ],
     ],
   ];
 

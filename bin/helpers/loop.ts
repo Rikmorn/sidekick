@@ -197,12 +197,13 @@ const recordText = (line: RecordLine): string =>
     .join('  ');
 
 function recordLines(dir: string, since: Date, until: Date): string[] {
-  const { lines, skipped } = readRecords(dir, since, until);
+  const { lines, skipped, unreadable } = readRecords(dir, since, until);
   return [
     ...section(`records since ${localMinute(since)}:`, lines.map(recordText)),
     ...(skipped === 0
       ? []
       : [`  skipped ${plural(skipped, 'line')} that did not parse`]),
+    ...unreadable.map((entry) => `  could not read ${entry}`),
   ];
 }
 

@@ -89,6 +89,10 @@ describe('the schema', () => {
       'landed with a non-hex commit',
       { ...base(T), kind: 'landed', unit: 'u', commit: 'zzzzzzz' },
     ],
+    [
+      'landed with a commit over 64',
+      { ...base(T), kind: 'landed', unit: 'u', commit: 'a'.repeat(65) },
+    ],
     ['failed without reason', { ...base(T), kind: 'failed', unit: 'u' }],
     ['unknown kind', { ...base(T), kind: 'wat', summary: 's' }],
     [
@@ -131,6 +135,44 @@ describe('the schema', () => {
     };
     expect(v.safeParse(RecordLineSchema, ok).success).toBe(true);
   });
+
+  test('takes a SHA-256 object id of 64 hex characters, and a short id of 7', () => {
+    for (const commit of ['f'.repeat(64), 'abc1234']) {
+      const line = { ...base(T), kind: 'landed', unit: 'u', commit };
+      expect(v.safeParse(RecordLineSchema, line).success).toBe(true);
+    }
+  });
+
+  // A control character in a printed field could move the cursor or erase what `show` printed.
+  const CONTROLS: [string, string][] = [
+    ['an ESC', 'a\u001b[2Kb'],
+    ['a newline', 'a\nb'],
+    ['a DEL', 'a\u007fb'],
+  ];
+  const carriers = (text: string): [string, Record<string, unknown>][] => [
+    ['summary', { ...base(T), kind: 'note', summary: text }],
+    ['command', { ...base(T), kind: 'denied', summary: 's', command: text }],
+    [
+      'class',
+      { ...base(T), kind: 'would', summary: 's', class: text, command: 'x' },
+    ],
+    ['reason', { ...base(T), kind: 'failed', unit: 'u', reason: text }],
+  ];
+  for (const [label, text] of CONTROLS) {
+    for (const [field, input] of carriers(text)) {
+      test(`refuses ${label} in ${field}, naming the field`, () => {
+        const parsed = v.safeParse(RecordLineSchema, input);
+        expect(parsed.success).toBe(false);
+        if (parsed.success) return;
+        expect(parsed.issues.map((issue) => v.getDotPath(issue))).toEqual([
+          field,
+        ]);
+        expect(parsed.issues[0]?.message).toBe(
+          'must hold no control character (U+0000 to U+001F, or U+007F)',
+        );
+      });
+    }
+  }
 
   test('a field a newer writer added is stripped, not refused', () => {
     const parsed = v.safeParse(RecordLineSchema, {
@@ -203,7 +245,91 @@ describe('files and reading', () => {
     ).toEqual({
       lines: [],
       skipped: 0,
+      unreadable: [],
     });
+  });
+
+  test('names a day file it cannot read, and still reads the other days', () => {
+    const yesterday = new Date(2026, 10, 13, 9);
+    appendRecord(dir, { ...base(yesterday), kind: 'note', summary: 'kept' });
+    const file = recordFile(dir, T);
+    fs.mkdirSync(file, { recursive: true });
+    const read = readRecords(
+      dir,
+      new Date(2026, 10, 13),
+      new Date(2026, 10, 14, 23, 59),
+    );
+    expect(read.lines.map((l) => l.kind === 'note' && l.summary)).toEqual([
+      'kept',
+    ]);
+    expect(read.skipped).toBe(0);
+    expect(read.unreadable).toHaveLength(1);
+    expect(read.unreadable[0]).toStartWith(`${file}: `);
+    expect(read.unreadable[0]).toContain('EISDIR');
+  });
+});
+
+describe('appendRecord', () => {
+  const window = (): [Date, Date] => [
+    new Date(2026, 10, 14),
+    new Date(2026, 10, 14, 23, 59),
+  ];
+
+  test('throws on a line past a bound, naming the field, and writes nothing', () => {
+    const line: RecordLine = {
+      ...base(T),
+      kind: 'failed',
+      unit: 'u1',
+      reason: 'a'.repeat(1001),
+    };
+    expect(() => appendRecord(dir, line)).toThrow(
+      'the record line does not fit the schema: reason: Invalid length: Expected <=1000 but received 1001',
+    );
+    expect(fs.existsSync(path.join(dir, 'records'))).toBe(false);
+  });
+
+  test('throws on a control character, naming the field', () => {
+    const line: RecordLine = { ...base(T), kind: 'note', summary: 'a\u001bb' };
+    expect(() => appendRecord(dir, line)).toThrow(
+      'summary: must hold no control character',
+    );
+  });
+
+  test('writes a landed line with a SHA-256 commit, which reads back', () => {
+    const line: RecordLine = {
+      ...base(T),
+      kind: 'landed',
+      unit: 'u1',
+      commit: 'e'.repeat(64),
+    };
+    appendRecord(dir, line);
+    expect(readRecords(dir, ...window())).toEqual({
+      lines: [line],
+      skipped: 0,
+      unreadable: [],
+    });
+  });
+
+  test('starts a new line after a torn last line, so only the torn one is lost', () => {
+    fs.mkdirSync(path.join(dir, 'records'));
+    fs.writeFileSync(recordFile(dir, T), '{"v":1,"at":"2026-11');
+    appendRecord(dir, { ...base(T), kind: 'note', summary: 'after' });
+    const read = readRecords(dir, ...window());
+    expect(read.lines.map((l) => l.kind === 'note' && l.summary)).toEqual([
+      'after',
+    ]);
+    expect(read.skipped).toBe(1);
+  });
+
+  test('adds no blank line to a file that ends with a newline or is empty', () => {
+    fs.mkdirSync(path.join(dir, 'records'));
+    fs.writeFileSync(recordFile(dir, T), '');
+    appendRecord(dir, { ...base(T), kind: 'note', summary: 'a' });
+    appendRecord(dir, { ...base(T), kind: 'note', summary: 'b' });
+    const text = fs.readFileSync(recordFile(dir, T), 'utf8');
+    expect(text.split('\n')).toHaveLength(3);
+    expect(text.endsWith('\n')).toBe(true);
+    expect(text).not.toContain('\n\n');
   });
 });
 
@@ -258,5 +384,24 @@ describe('isNewRequest', () => {
   test('a request after `at` is outside the window', () => {
     appendRecord(dir, req(new Date(2026, 10, 14, 10, 30)));
     expect(isNewRequest(dir, cron, key, at)).toBe(true);
+  });
+
+  describe('across local midnight and two record files', () => {
+    // At 00:10 the latest fire is 23:55 last night and the one before it 23:55 the night before.
+    const daily = parseCron('55 23 * * *');
+    if (!daily.ok) throw new Error('fixture cron');
+    const afterMidnight = new Date(2026, 10, 14, 0, 10);
+
+    test('repeats a request made at 23:58 the day before', () => {
+      const asked = new Date(2026, 10, 13, 23, 58);
+      appendRecord(dir, req(asked));
+      expect(recordFile(dir, asked)).not.toBe(recordFile(dir, afterMidnight));
+      expect(isNewRequest(dir, daily.cron, key, afterMidnight)).toBe(false);
+    });
+
+    test('is new when the identical request came before the earlier fire', () => {
+      appendRecord(dir, req(new Date(2026, 10, 12, 23, 50)));
+      expect(isNewRequest(dir, daily.cron, key, afterMidnight)).toBe(true);
+    });
   });
 });

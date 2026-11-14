@@ -299,9 +299,13 @@ A loop's record is one JSON line per entry, in `records/<YYYY-MM-DD>.jsonl` in i
 | `failed` | `sidekick loop reap` and `land` (#367, #377) | `unit`, `reason` |
 | `discarded` | `sidekick loop discard` and `reap` (#367) | `unit`, `reason` |
 
-The bounds: `summary` and `reason` run 1 to 1,000 characters, and `command` 1 to 4,000. `unit` is 1 to 64 of letters, digits, `.`, `_`, and `-`. `commit` is a hex object id of 7 to 40 characters. `hash` stays absent until #364 writes `state.json`.
+The bounds: `summary` and `reason` run 1 to 1,000 characters, and `command` 1 to 4,000. `unit` is 1 to 64 of letters, digits, `.`, `_`, and `-`. `commit` is a hex object id of 7 to 64 characters, so a SHA-256 id fits. `hash` stays absent until #364 writes `state.json`.
 
-The caps count the four verb kinds, so the model never writes them, and `record` refuses each with the name of its writer. The reader skips a line that is not JSON or fails the schema, and counts the skips, so one bad line hides nothing else. A line holding a field a newer writer added still reads, without that field.
+`summary`, `command`, `reason`, and `class` hold no control character: nothing from U+0000 to U+001F, and no U+007F. A terminal reads those as commands, so a line `show` prints could otherwise move the cursor and hide the lines before it.
+
+The caps count the four verb kinds, so the model never writes them, and `record` refuses each with the name of its writer. Every write checks its line against the schema first and refuses one that fails, so a line a verb writes always reads back. A write after a torn last line starts a new line, so only the torn line is lost.
+
+The reader skips a line that is not JSON or fails the schema, and counts the skips, so one bad line hides nothing else. A day file that exists and cannot be read, such as a folder in its place, is named instead of read. A line holding a field a newer writer added still reads, without that field.
 
 ## `sidekick loop record`
 
@@ -316,7 +320,7 @@ It refuses:
 - any kind outside the five, naming the writer of each verb kind;
 - `would` and `did` without `--class`, and every kind but `note` without `--command`;
 - `note` with `--class` or `--command`, since its line holds a summary alone;
-- a value past its bound or outside its form, naming the flag;
+- a value past its bound, outside its form, or holding a control character, naming the flag;
 - a `--class` that `loop.json` does not name;
 - `did` for a class whose state is not `act`, with the advice to record `would`, or to ask with `request`;
 - text in `--summary`, `--command`, `--class`, or `--unit` that the key check flags, so keys stay out of the record and off the desk. The refusal names the flag and the check, never the text.
@@ -338,6 +342,6 @@ sidekick loop record <name> --kind <kind> --summary <text> [--class <class>] [--
 ```
 
 - **`list`** prints one line per loop: its name, `repo`, `profile`, `schedule`, each class with its state, then `ok` or `refused: <n> issues`. It runs the check without the inherited listing, so it runs git and no `claude`. An empty store prints one line saying so. `list` exits 1 when any loop is refused.
-- **`show`** prints the definition, the issues, the warnings, the inherited listing, then the records. A refused loop prints its issues first, and the rest still shows. The records are those of the last 24 hours, or those since local midnight of `--since`. Each prints as one line: local time, kind, class, command or summary, and unit. A line break in a value prints as a space. `show` exits 1 when the loop is refused.
+- **`show`** prints the definition, the issues, the warnings, the inherited listing, then the records. A refused loop prints its issues first, and the rest still shows. The records are those of the last 24 hours, or those since local midnight of `--since`. Each prints as one line: local time, kind, class, command or summary, and unit. After them come the count of skipped lines and each day file that could not be read. A line break in a definition value prints as a space. `show` exits 1 when the loop is refused.
 - **`record`** appends one line, as "`sidekick loop record`" says.
 - **A usage error** prints the usage and exits 1, as the `profile` family's do.
