@@ -4617,6 +4617,12 @@ var create = (rest2, penv, out, err) => {
   const root = resolved.roots.find((r) => r.kind === wanted);
   if (root === undefined)
     return refuse3(err, [noRepoStore(penv)]);
+  const oldUserStore = path16.join(configDir(penv.env, penv.cwd, penv.home), "profiles");
+  if (wanted === "repo" && sameFolder(root.dir, oldUserStore)) {
+    return refuse3(err, [
+      `${root.dir} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path16.join(sidekickHome(penv.env, penv.cwd, penv.home), "profiles")}.`
+    ]);
+  }
   if (wanted === "user" && !penv.env.SIDEKICK_PROFILES_DIR) {
     const issues = ensureSidekickRepo(sidekickHome(penv.env, penv.cwd, penv.home), penv.runGit);
     if (issues.length > 0)

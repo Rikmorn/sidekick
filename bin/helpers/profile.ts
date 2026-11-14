@@ -45,7 +45,12 @@ import {
 } from './profile-store.js';
 import type { WorkTreeRoot } from './rules.js';
 import { shellQuote } from './shell.js';
-import { ensureSidekickRepo, sidekickHome } from './sidekick-home.js';
+import {
+  configDir,
+  ensureSidekickRepo,
+  sameFolder,
+  sidekickHome,
+} from './sidekick-home.js';
 import { listJobs } from './worker-jobs.js';
 
 export const PROFILE_USAGE_LINE =
@@ -386,6 +391,15 @@ const create: Verb = (rest, penv, out, err) => {
   // The user root is always present, so only a repo root can be missing.
   const root = resolved.roots.find((r) => r.kind === wanted);
   if (root === undefined) return refuse(err, [noRepoStore(penv)]);
+  const oldUserStore = path.join(
+    configDir(penv.env, penv.cwd, penv.home),
+    'profiles',
+  );
+  if (wanted === 'repo' && sameFolder(root.dir, oldUserStore)) {
+    return refuse(err, [
+      `${root.dir} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path.join(sidekickHome(penv.env, penv.cwd, penv.home), 'profiles')}.`,
+    ]);
+  }
   if (wanted === 'user' && !penv.env.SIDEKICK_PROFILES_DIR) {
     const issues = ensureSidekickRepo(
       sidekickHome(penv.env, penv.cwd, penv.home),

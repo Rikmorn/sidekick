@@ -1097,3 +1097,55 @@ describe('the old profile store refuses every verb', () => {
     );
   });
 });
+
+describe('profile new --repo where the repo store is the old user store path', () => {
+  const oneLine = (h: { err: string[] }): string => h.err.join('\n');
+
+  test('a dotfiles repo at HOME refuses and writes nothing', () => {
+    const home = tmp();
+    const h = harness({
+      env: {},
+      home,
+      cwd: home,
+      workTree: { kind: 'inside', top: home },
+    });
+    expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(1);
+    const old = path.join(home, '.claude', 'profiles');
+    expect(h.err).toEqual([
+      `${old} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path.join(home, '.claude', 'sidekick', 'profiles')}.`,
+    ]);
+    expect(fs.existsSync(path.join(old, 'x'))).toBe(false);
+    expect(h.out).toEqual([]);
+  });
+
+  test('CLAUDE_CONFIG_DIR set to the repo .claude refuses the same way', () => {
+    const repo = tmp();
+    const home = tmp();
+    const h = harness({
+      env: { CLAUDE_CONFIG_DIR: path.join(repo, '.claude') },
+      home,
+      cwd: repo,
+      workTree: { kind: 'inside', top: repo },
+    });
+    expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(1);
+    expect(oneLine(h)).toContain("is the old user store's path");
+    expect(fs.existsSync(path.join(repo, '.claude', 'profiles', 'x'))).toBe(
+      false,
+    );
+  });
+
+  test('the bridged case still reaches the no-repo-store message', () => {
+    const home = tmp();
+    const fresh = path.join(home, '.claude', 'sidekick', 'profiles');
+    fs.mkdirSync(fresh, { recursive: true });
+    fs.symlinkSync(fresh, path.join(home, '.claude', 'profiles'));
+    const h = harness({
+      env: {},
+      home,
+      cwd: home,
+      workTree: { kind: 'inside', top: home },
+    });
+    expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(1);
+    expect(oneLine(h)).toContain('the repo store is the user store here');
+  });
+});
