@@ -26,14 +26,19 @@ export const pluginDirIssues = (dir: string | undefined): string[] =>
 const skippedFolders = new Set(['.git', 'node_modules']);
 const nulProbeBytes = 8192;
 
-// Files under `dir`, skipping .git, node_modules, and every link; an unreadable folder yields none.
-function pluginFiles(dir: string): string[] {
+// Files under `dir`, skipping .git, node_modules, every link, and the entries
+// `skipAtTop` names directly in `dir`; an unreadable folder yields none.
+function scannedFiles(
+  dir: string,
+  skipAtTop: ReadonlySet<string> = new Set(),
+): string[] {
   try {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      if (skipAtTop.has(entry.name)) return [];
       const full = path.join(dir, entry.name);
       if (entry.isFile()) return [full];
       if (entry.isDirectory() && !skippedFolders.has(entry.name))
-        return pluginFiles(full);
+        return scannedFiles(full);
       return [];
     });
   } catch {
@@ -54,26 +59,44 @@ function scannableText(file: string, maxBytes: number): string | undefined {
   }
 }
 
-const keyIssues = (dir: string, maxBytes: number): string[] =>
-  pluginFiles(dir).flatMap((file) => {
+/** How `keyIssues` scans a folder. */
+export interface KeyScan {
+  /** The largest file read, in bytes; a larger one is skipped. */
+  maxBytes?: number;
+  /** Names of entries directly in the folder to leave unread. */
+  skipAtTop?: ReadonlySet<string>;
+}
+
+/**
+ * One `<file>: <why>` line per file under `dir` that the key check flags,
+ * naming each key's id, never the key, and ending with `advice`. Skips `.git`,
+ * `node_modules`, every link, a binary file, and a file over `maxBytes`.
+ */
+export function keyIssues(
+  dir: string,
+  advice: string,
+  { maxBytes = 1_048_576, skipAtTop = new Set() }: KeyScan = {},
+): string[] {
+  return scannedFiles(dir, skipAtTop).flatMap((file) => {
     const text = scannableText(file, maxBytes);
     const ids = text === undefined ? [] : keyHits(text);
     return ids.length === 0
       ? []
-      : [
-          `${file}: the key check flags it (${ids.join(', ')}); keep keys out of a role's plugin`,
-        ];
+      : [`${file}: the key check flags it (${ids.join(', ')}); ${advice}`];
   });
+}
+
+const ROLE_PLUGIN_ADVICE = "keep keys out of a role's plugin";
 
 /** The issues that make a profile's role unlaunchable: a missing folder, or a file the key check flags. */
 export function rolePluginIssues(
   profile: Profile,
-  maxBytes = 1_048_576,
+  maxBytes?: number,
 ): string[] {
   const manifestFile = path.join(profile.dir, 'profile.json');
   return profile.pluginDirs.flatMap((dir) =>
     isFolder(dir)
-      ? keyIssues(dir, maxBytes)
+      ? keyIssues(dir, ROLE_PLUGIN_ADVICE, { maxBytes })
       : [`${manifestFile}: pluginDirs: ${dir} is not a folder`],
   );
 }
