@@ -14,6 +14,8 @@
 
 > **Amended 2026-11-11 (#342):** The rule that a hook prints nothing on input it does not recognise excepts `sidekick hook subagent-start`, by the operator's ruling of 2026-11-11. The verb ignores its input and hands over the limits whatever stdin holds. `hooks.json` binds it to `SubagentStart` alone, and its wrapper exits at once outside a dispatched worker. It still adds context only, and never fails the call.
 
+> **Amended 2026-11-14 (#387):** Decision 4's sealed spec review is not built, by the operator's ruling. ADR-0009's amendment of that date records it.
+
 **Status:** Accepted (2026-09-25). Amends ADR-0009's Consequences on how far sidekick reaches into superpowers' skills. Issue #119, milestone R7.
 
 ## Context

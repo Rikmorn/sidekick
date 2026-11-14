@@ -45,7 +45,7 @@ The docs layout says how each folder this pass writes works: `../sidekick/refere
 
 Restate the problem, split it into its parts, and name the unknowns before proposing anything. Read the repo's architecture sources: `AGENTS.md`, `CLAUDE.md`, the ADRs, any design-vision doc, and any design lenses the repo's rules add. Cite the one that binds rather than restating it. A README's claim is an assumption until the code confirms it.
 
-Settle the goals with the operator before any options, because a note serves only the goals it is given. Inside a brainstorm, its shared understanding has already done this: carry over the goals the operator stated or corrected there, and do not ask again. When the pass runs before brainstorming, write that understanding back yourself; at explore scale it is part of the first gate. Give the intended outcome, the constraints, and what success looks like, keeping what the operator said apart from what you inferred. Ask when nothing in the request or its context answers it. Wait for the operator's correction; the options then serve only goals the operator stated or confirmed. With no operator to ask, a goal counts as stated only where a record shows the operator said or confirmed it. Mark the rest inferred and go on. §Decide and route then registers the design as debt, so nothing is built on an unconfirmed goal.
+Settle the goals with the operator before any options, because a note serves only the goals it is given. Inside a brainstorm, its conversation has already done this: carry over the goals the operator stated or corrected there, and do not ask again. When the pass runs before brainstorming, write your understanding of the goals back yourself; at explore scale it is part of the first gate. Give the intended outcome, the constraints, and what success looks like, keeping what the operator said apart from what you inferred. Ask when nothing in the request or its context answers it. Wait for the operator's correction; the options then serve only goals the operator stated or confirmed. With no operator to ask, a goal counts as stated only where a record shows the operator said or confirmed it. Mark the rest inferred and go on. §Decide and route then registers the design as debt, so nothing is built on an unconfirmed goal.
 
 ## The note
 
@@ -117,16 +117,15 @@ Answer every finding in the Review section. Accept it and change the note, or re
 
 ## Shape scale in a brainstorm
 
-Brainstorming sorts work into a spike, a bounded change, or an architectural change, and the pass fits each differently.
+The pass attaches at brainstorming's approaches step, where brainstorming lays out the ways to build the change and the operator picks one. The rest of brainstorming runs as written.
 
-- **Architectural.** The pass takes brainstorming's "Propose 2-3 approaches" step.
-  1. Write the note and run the review.
-  2. Present the recommendation, the options, and the review, with the note's path. Brainstorming's approval at that step is the decision.
-  3. Brainstorming continues to its design sections and the spec. The spec cites the note and carries its constraints, decision, and blast radius as settled. Brainstorming asks only what the note leaves open; re-asking a settled question is a defect in the hand-off.
-- **Bounded.** Run the pass before brainstorming presents its short design. That design cites the note and carries its decision as settled. If the pass shows the change is larger than a bounded one, say so; brainstorming's own ratchet then moves it to the architectural path.
-- **Spike.** A spike answers a question and keeps no code, so the pass does not run.
+1. Write the note and run the review.
+2. Present the recommendation, the options, and the review, with the note's path, as that step's message. The operator's pick there is the decision.
+3. The spec brainstorming writes cites the note, and carries its constraints, decision, and blast radius as settled. Brainstorming asks only what the note leaves open; re-asking a settled question is a defect in the hand-off.
 
-When the pass ran before brainstorming, brainstorming starts from the note the same way. Its shared understanding then reflects the note's stated goals rather than asking again. When the design outgrows one spec, move the note to explore scale as `references/explore.md` says. Then stop the brainstorm and tell the operator, who decides whether to replan.
+A spike answers a question and keeps no code, so the pass does not run.
+
+When the pass ran before brainstorming, brainstorming starts from the note the same way. It reads the note before its first message, and does not ask again what the note settled. When the design outgrows one spec, move the note to explore scale as `references/explore.md` says. Then stop the brainstorm and tell the operator, who decides whether to replan.
 
 ## Decide and route
 

@@ -12,6 +12,10 @@
 
 > **Amended 2026-11-08 (#271, #324):** §Decision 3's "sidekick writes only what it owns" gains two writes on what sidekick replaces: `link`'s archive of Claude Code's default memory folder, and `sidekick worktree move`'s deletion of Claude Code's branch for the same worktree. ADR-0013's amendment of that date records the ruling.
 
+> **Amended 2026-11-14 (#385):** §1's superpowers range is now `>=6.4.1`, with no upper bound. An unmet range switches sidekick off in every new session. It cannot hold superpowers back either. On 2026-11-12, a session that left the user layer out moved superpowers to 7.0.0. The guidance sidekick ships describes superpowers 7.0.2, and names only the steps where it attaches. The amendment of 2026-10-10 no longer gives the range's reason.
+
+> **Amended 2026-11-14 (#387):** §4's sealed spec review does not return, by the operator's ruling. sidekick wraps superpowers rather than reviewing its outputs, and `sk-design`'s adversarial review of the design note is enough.
+
 **Status:** Accepted (2026-09-18). Supersedes the harness shape of ADR-0001 and the substrate scoping of ADR-0002; parks the eval, knowledge-layer, and measurement programmes of ADR-0006, ADR-0007, and ADR-0008. Issue #93, milestone R5.
 
 ## Context
