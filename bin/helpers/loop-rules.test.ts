@@ -228,10 +228,137 @@ const REFUSED_WORK = [
   'Bash(gh issue view 1 & x)',
   'Bash(gh issue view 1 && x)',
   'Bash(gh issue view 1\nx)',
+  // A NAME+=value word is a prefix assignment, as NAME=value is.
+  'Bash(FOO+=1 bash -c *)',
+  'Bash(X+=1 sh -c *)',
+  'Bash(FOO+=1 git log)',
+  'Bash(FOO+=1)',
+  'Monitor(FOO+=1 bash -c *)',
+  'PowerShell(FOO+=1 bash -c *)',
+  // Subcommand and long option words compare in lower case.
+  'Bash(git MERGETOOL --tool-help)',
+  'Bash(git FILTER-BRANCH -h)',
+  'Bash(git Config user.name)',
+  'Bash(git FETCH *)',
+  'Bash(git LOG *)',
+  'Bash(git log --UPLOAD-PACK=x)',
+  'Bash(git log --Exec=x)',
+  'Bash(git log --OUTPUT=x)',
+  'Bash(git CLONE -u x y)',
+  'Bash(gh EXTENSION exec x)',
+  'Bash(gh Alias set x y)',
+  'Bash(sidekick WORKER dispatch)',
+  'Bash(sidekick PROFILE launch x)',
+  'Bash(sidekick profile LAUNCH x)',
+  // Quoting, escapes, and braces in a word a check reads hide it from the check.
+  'Bash(sidekick profile "launch" x)',
+  'Bash(sidekick profile la\\unch x)',
+  'Bash(git log --upload-"pack"=x)',
+  'Bash(git log --up\\load-pack=x)',
+  'Bash(git log --out{put,x}=y)',
+  'Bash(git clone -"u" x y)',
+  'Bash(find /Users/me -e"xec" x +)',
+  'Bash(rg --pr"e" x y)',
+  'Bash(fd --e"xec" x)',
+  // Paths compare with the repo and the scratch folders without case.
+  'Bash(node /Users/someone/Elsewhere/REPO/x.js)',
+  'Bash(/USERS/someone/elsewhere/repo/tool *)',
+  'Bash(node /PRIVATE/TMP/nonexistent-sk/x.js)',
+  'Bash(node /private/TMP/x.js)',
+  'Bash(/private/TMP/tool *)',
+  'Bash(node /Users/SHARED/x.js)',
+  // script's first operand is its output file, so it takes no script path.
+  'Bash(script /Users/me/outside/log *)',
+  'Bash(script /Users/me/outside/log)',
+  'Bash(env /usr/bin/script /Users/me/l bash -c x)',
+  // A write rule names a // path whose first folder holds no wildcard.
+  'Edit(**)',
+  'Edit(//**)',
+  'Edit(//*/x/**)',
+  'Edit(//U*/me/**)',
+  'Edit(//?sers/me/**)',
+  'Edit(//[U]sers/me/**)',
+  'Edit(///x/**)',
+  'Edit(~/**)',
+  'Edit(~/x/**)',
+  'Edit(./**)',
+  'Edit(src/**)',
+  'Edit(//Users/../**)',
+  'Edit(//Users/me/./x/**)',
+  // More folders any local process can write.
+  'Bash(node /private/var/tmp/x.js)',
+  'Bash(node /var/tmp/x.js)',
+  'Bash(/Users/Shared/tool *)',
+  'Bash(node /Users/Shared/x.js)',
+  'Bash(env /Users/Shared/t)',
+  // git clone -u is --upload-pack.
+  'Bash(git clone -u x y)',
+  'Bash(git clone -ux y)',
+  'Bash(git clone -qu x y)',
+  'Bash(git clone --upload-pack=x y)',
+  // git --output writes a file, and a wildcard after these subcommands admits it.
+  'Bash(git log *)',
+  'Bash(git diff *)',
+  'Bash(git show *)',
+  'Bash(git format-patch *)',
+  'Bash(git log -p *)',
+  'Bash(git log --output=x)',
+  'Bash(git log --output x)',
+  'Bash(git diff --output=/Users/me/x)',
+  'Bash(git status --output=x)',
+  'Bash(git log --outp=x)',
+  'Bash(env /usr/bin/git log *)',
+  'Bash(/usr/bin/git log *)',
+  // More interpreters and wrappers.
+  'Bash(pypy -c x)',
+  'Bash(pypy3 -c x)',
+  'Bash(pypy3 /Users/me/x.py)',
+  'Bash(pypy3.10 -c x)',
+  'Bash(awk x)',
+  'Bash(gawk -f /Users/me/x.awk)',
+  'Bash(nawk x)',
+  'Bash(trap x EXIT)',
+  'Bash(nocorrect x)',
+  'Bash(gtimeout 5 x)',
+  'Bash(genv -i x)',
+  'Bash(genv /bin/sh -c x)',
+  'Bash(gxargs x)',
+  'Bash(gnice x)',
+  'Bash(gstdbuf -o0 x)',
+  'Bash(gnohup x)',
+  // find, rg, and fd run commands through options; tar and ssh refuse outright.
+  'Bash(find /Users/me -exec x +)',
+  'Bash(find /Users/me -execdir x +)',
+  'Bash(find /Users/me -ok x)',
+  'Bash(find /Users/me -okdir x)',
+  'Bash(find /Users/me *)',
+  'Bash(find /Users/me -name x?)',
+  'Bash(find /Users/me -name [a]b)',
+  'Bash(/usr/bin/find /Users/me -exec x +)',
+  'Bash(env /usr/bin/find /Users/me -exec x +)',
+  'Bash(FIND /Users/me -exec x +)',
+  'Bash(rg --pre /bin/sh x)',
+  'Bash(rg --pre=x y)',
+  'Bash(rg foo *)',
+  'Bash(rg fo? /Users/me)',
+  'Bash(fd -x rm)',
+  'Bash(fd -X rm)',
+  'Bash(fd -Hx rm)',
+  'Bash(fd --exec rm)',
+  'Bash(fd --exec-batch rm)',
+  'Bash(fd --exec=rm)',
+  'Bash(fd foo *)',
+  'Bash(fd fo?)',
+  'Bash(tar -xf /Users/me/a.tar)',
+  'Bash(tar)',
+  'Bash(/usr/bin/tar -tf x)',
+  'Bash(ssh host x)',
+  'Bash(ssh)',
+  'Bash(env /usr/bin/ssh host)',
 ];
 const PASSING_WORK = [
   'Bash(gh issue view *)',
-  'Bash(git log *)',
+  'Bash(git log --oneline -20)',
   'Bash(git)',
   'Bash(sidekick loop record fixer *)',
   'Bash(sidekick)',
@@ -249,8 +376,8 @@ const PASSING_WORK = [
   'Bash(nodemon x)',
   'Bash(sidekick profile list)',
   'Bash(git status)',
-  'Bash(git diff *)',
-  'Bash(git show *)',
+  'Bash(git diff --stat)',
+  'Bash(git show HEAD)',
   'Bash(git log --oneline)',
   'Bash(git log -o x)',
   'Bash(git fetch origin main)',
@@ -261,13 +388,27 @@ const PASSING_WORK = [
   'Bash(/Users/me/bin/tool *)',
   'Bash(env /Users/me/outside/tool *)',
   'Bash(node /Users/me/outside/x.js *)',
-  'Bash(env /usr/bin/git log *)',
+  'Bash(env /usr/bin/git log --oneline)',
   'Monitor(gh issue view *)',
   'PowerShell(Get-Date)',
-  'Bash(/usr/bin/git log *)',
+  'Bash(/usr/bin/git log --oneline -20)',
   'mcp__plugin_x_y__z',
   'mcp__server__*',
   'WebFetch(domain:github.com)',
+  // Kept: a case variant of a plain subcommand, and options that only look alike.
+  'Bash(git STATUS)',
+  'Bash(git log -u -1)',
+  'Bash(git clone /Users/me/a /Users/me/b)',
+  'Bash(node /Users/SharedStuff/x.js)',
+  'Edit(//Users/me/x/*.ts)',
+  'Bash(genv /Users/me/outside/tool)',
+  'Bash(gnohup /Users/me/outside/tool)',
+  'Bash(find /Users/me/x -name foo.ts)',
+  'Bash(find /Users/me/x -executable)',
+  'Bash(rg foo /Users/me/x)',
+  'Bash(rg --pre-glob x foo)',
+  'Bash(fd foo /Users/me/x)',
+  'Bash(fd -H foo)',
 ];
 
 const rows: Row[] = [
@@ -351,6 +492,19 @@ describe('RUNNER_WORDS', () => {
       'script',
       'expect',
       'tclsh',
+      'pypy',
+      'pypy3',
+      'awk',
+      'gawk',
+      'nawk',
+      'trap',
+      'nocorrect',
+      'gtimeout',
+      'genv',
+      'gxargs',
+      'gnice',
+      'gstdbuf',
+      'gnohup',
     ]);
   });
 });
@@ -379,6 +533,103 @@ describe('ruleIssues', () => {
     expect(
       ruleIssues('Bash(gh issue view 1 | x)', 'reads', REPO).join(' '),
     ).toContain('one rule per command');
+  });
+  test('a wildcard after git log says to name the options', () => {
+    expect(ruleIssues('Bash(git log *)', 'allow', REPO).join(' ')).toContain(
+      'name the options',
+    );
+  });
+  test('a runner with no script exception does not ask for a script path', () => {
+    const issues = ruleIssues('Bash(bun /Users/me/x.ts)', 'allow', REPO);
+    expect(issues.join(' ')).toContain('grant the program');
+    expect(issues.join(' ')).not.toContain('absolute path');
+  });
+
+  describe('an absolute path after a runner word', () => {
+    // The script runners and wrappers the rulings name; every other runner word takes neither.
+    const TAKES_A_PATH = new Set([
+      'sh',
+      'bash',
+      'zsh',
+      'fish',
+      'dash',
+      'ksh',
+      'csh',
+      'tcsh',
+      'python',
+      'python3',
+      'node',
+      'ruby',
+      'perl',
+      'php',
+      'lua',
+      'osascript',
+      'exec',
+      'env',
+      'xargs',
+      'sudo',
+      'nohup',
+      'timeout',
+      'nice',
+      'command',
+      'source',
+      '.',
+      'time',
+      'builtin',
+      'stdbuf',
+      'noglob',
+      'coproc',
+      'xcrun',
+      'caffeinate',
+      'arch',
+      'gtimeout',
+      'genv',
+      'gxargs',
+      'gnice',
+      'gstdbuf',
+      'gnohup',
+    ]);
+    test.each([...RUNNER_WORDS])('%s', (word) => {
+      const rule = `Bash(${word} /Users/me/outside/tool)`;
+      const issues = ruleIssues(rule, 'allow', REPO);
+      if (TAKES_A_PATH.has(word)) expect(issues).toEqual([]);
+      else expect(issues.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('paths compare without case', () => {
+    // No ancestor of these paths exists, so neither Bun nor Node folds their case.
+    test('refuses a script in a case twin of the repo', () => {
+      const repo = '/nonexistent-sk/Repo';
+      expect(
+        ruleIssues('Bash(node /nonexistent-sk/repo/x.js)', 'allow', repo, [])
+          .length,
+      ).toBeGreaterThan(0);
+      expect(
+        ruleIssues('Bash(/NONEXISTENT-SK/REPO/tool *)', 'reads', repo, [])
+          .length,
+      ).toBeGreaterThan(0);
+      expect(
+        ruleIssues(
+          'Bash(node /nonexistent-sk/repo-two/x.js)',
+          'allow',
+          repo,
+          [],
+        ),
+      ).toEqual([]);
+    });
+    test('refuses a script in a case twin of a scratch folder', () => {
+      const roots = ['/nonexistent-sk/scratch'];
+      const issues = (rule: string): string =>
+        ruleIssues(rule, 'allow', REPO, roots).join(' ');
+      expect(issues('Bash(node /NONEXISTENT-SK/Scratch/x.js)')).toContain(
+        'writable',
+      );
+      expect(issues('Bash(/nonexistent-sk/SCRATCH/tool *)')).toContain(
+        'writable',
+      );
+      expect(issues('Bash(node /nonexistent-sk/scratchy/x.js)')).toBe('');
+    });
   });
 
   describe('a script in a worker-writable folder', () => {
