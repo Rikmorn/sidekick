@@ -40,8 +40,6 @@ const REFUSED_ALL = [
   'Bash x',
 ];
 const PASSING_ALL = [
-  'Write',
-  'Write(*)',
   'Grep',
   'Edit(//Users/me/x/**)',
   'Read(//Users/me/x/**)',
@@ -87,6 +85,80 @@ const REFUSED_WORK = [
   'Bash(X=* git log)',
   'Bash(FOO=1 *)',
   'Bash(bash* -c x)',
+  'Write',
+  'Write(*)',
+  'Edit',
+  'Edit(*)',
+  'NotebookEdit',
+  'NotebookEdit(*)',
+  'MultiEdit',
+  'MultiEdit(*)',
+  'Bash(FOO=1 node /Users/me/f.js)',
+  'Bash(FOO=1 git log)',
+  'Monitor(FOO=1 git log)',
+  'PowerShell(FOO=1 Get-Date)',
+  'Bash(csh -c *)',
+  'Bash(tcsh -c x)',
+  'Bash(time git log)',
+  'Bash(builtin x)',
+  'Bash(stdbuf -o0 x)',
+  'Bash(noglob x)',
+  'Bash(coproc bash -c *)',
+  'Bash(xcrun x)',
+  'Bash(caffeinate x)',
+  'Bash(arch -x86_64 x)',
+  'Bash(script x)',
+  'Bash(expect -c x)',
+  'Bash(tclsh x)',
+  'Bash(python3.12 -c *)',
+  'Bash(ruby3.3 -e x)',
+  'Bash(perl5.34 -e x)',
+  'Bash(node22 -e x)',
+  'Bash(/usr/bin/python3.12 -c x)',
+  'Bash(sidekick profile launch x)',
+  'Bash(sidekick profile *)',
+  'Bash(bun /Users/me/x.ts)',
+  'Bash(deno /Users/me/x.ts)',
+  'Bash(npm /Users/me/x)',
+  'Bash(npx /Users/me/x)',
+  'Bash(yarn /Users/me/x)',
+  'Bash(pnpm /Users/me/x)',
+  'Bash(bunx /Users/me/x)',
+  'Bash(make /Users/me/x)',
+  'Bash(expect /Users/me/x.exp)',
+  'Bash(tclsh /Users/me/x.tcl)',
+  'Bash(node /tmp/x.js)',
+  'Bash(node /private/tmp/x.js)',
+  'Bash(node /var/folders/ab/x.js)',
+  'Bash(node /private/var/folders/ab/x.js)',
+  'Bash(node /dev/shm/x.js)',
+  'Bash(/tmp/tool *)',
+  'Bash(env /tmp/tool *)',
+  'Bash(git config *)',
+  'Bash(git config user.name)',
+  'Bash(git rebase *)',
+  'Bash(git bisect run x)',
+  'Bash(git submodule *)',
+  'Bash(git filter-branch *)',
+  'Bash(git difftool *)',
+  'Bash(git mergetool)',
+  'Bash(git grep -Ocmd x)',
+  'Bash(git log -Ofoo)',
+  'Bash(git grep -iOless x)',
+  'Bash(git log --upload-pack=x)',
+  'Bash(git log --receive-pack x)',
+  'Bash(git log --exec=x)',
+  'Bash(git log --exec x)',
+  'Bash(git log --open-files-in-pager=x)',
+  'Bash(git log --upload-p=x)',
+  'Bash(git fetch *)',
+  'Bash(git fetch origin *)',
+  'Bash(git pull *)',
+  'Bash(git clone *)',
+  'Bash(git ls-remote *)',
+  'Bash(git push *)',
+  'Bash(git archive *)',
+  'Bash(git grep *)',
   'Bash(env /bin/sh -c *)',
   'Bash(nohup /usr/local/bin/claude *)',
   'Bash(env /usr/bin/git -c x=y log)',
@@ -160,7 +232,25 @@ const PASSING_WORK = [
   'Bash(sidekick loop record fixer *)',
   'Bash(sidekick)',
   'Bash(node /Users/me/.claude/sidekick/profiles/fixer/plugin/bin/f.js *)',
-  'Bash(FOO=1 node /Users/me/f.js)',
+  'Bash(env /Users/me/outside/tool2 *)',
+  'Bash(time /Users/me/outside/tool)',
+  'Bash(python3.12 /Users/me/x.py)',
+  'Bash(zsh /Users/me/x.sh)',
+  'Bash(csh /Users/me/x.sh)',
+  'Bash(node22 /Users/me/x.js)',
+  'Bash(pythonista run)',
+  'Bash(nodemon x)',
+  'Bash(sidekick profile list)',
+  'Bash(git status)',
+  'Bash(git diff *)',
+  'Bash(git show *)',
+  'Bash(git log --oneline)',
+  'Bash(git log -o x)',
+  'Bash(git fetch origin main)',
+  'Bash(git grep foo)',
+  'Bash(node /Users/me/tmp/x.js)',
+  'Bash(node /tmpfoo/x.js)',
+  'Edit(//Users/me/x)',
   'Bash(/Users/me/bin/tool *)',
   'Bash(env /Users/me/outside/tool *)',
   'Bash(node /Users/me/outside/x.js *)',
@@ -241,6 +331,19 @@ describe('RUNNER_WORDS', () => {
       'pnpm',
       'yarn',
       'make',
+      'csh',
+      'tcsh',
+      'time',
+      'builtin',
+      'stdbuf',
+      'noglob',
+      'coproc',
+      'xcrun',
+      'caffeinate',
+      'arch',
+      'script',
+      'expect',
+      'tclsh',
     ]);
   });
 });
@@ -271,7 +374,22 @@ describe('ruleIssues', () => {
     ).toContain('one rule per command');
   });
 
+  describe('a script in a worker-writable folder', () => {
+    test('refuses a script under the OS temp folder by default', () => {
+      const repo = path.join(tmp, 'repo');
+      fs.mkdirSync(repo);
+      const other = path.join(tmp, 'other');
+      expect(
+        ruleIssues(`Bash(node ${other}/x.js)`, 'allow', repo).join(' '),
+      ).toContain('writable');
+      expect(ruleIssues(`Bash(${other}/tool)`, 'reads', repo).length).toBe(1);
+    });
+  });
+
   describe('a script inside repo', () => {
+    // The temp folder holds these fixtures, so its own refusal is switched off.
+    const noScratch = (rule: string, list: RuleList, repo: string): string[] =>
+      ruleIssues(rule, list, repo, []);
     const repoIn = (): string => {
       const repo = path.join(tmp, 'repo');
       fs.mkdirSync(repo);
@@ -280,13 +398,13 @@ describe('ruleIssues', () => {
     test('refuses an absolute script path inside repo', () => {
       const repo = repoIn();
       expect(
-        ruleIssues(`Bash(node ${repo}/x.js *)`, 'allow', repo).length,
+        noScratch(`Bash(node ${repo}/x.js *)`, 'allow', repo).length,
       ).toBeGreaterThan(0);
       expect(
-        ruleIssues(`Bash(${repo}/x.sh *)`, 'allow', repo).length,
+        noScratch(`Bash(${repo}/x.sh *)`, 'allow', repo).length,
       ).toBeGreaterThan(0);
       expect(
-        ruleIssues(`Bash(node ${tmp}/other/x.js *)`, 'allow', repo),
+        noScratch(`Bash(node ${tmp}/other/x.js *)`, 'allow', repo),
       ).toEqual([]);
     });
     test('refuses a script reached through a link, both ways', () => {
@@ -294,29 +412,29 @@ describe('ruleIssues', () => {
       const link = path.join(tmp, 'link');
       fs.symlinkSync(repo, link);
       expect(
-        ruleIssues(`Bash(node ${repo}/x.js)`, 'allow', link).length,
+        noScratch(`Bash(node ${repo}/x.js)`, 'allow', link).length,
       ).toBeGreaterThan(0);
       expect(
-        ruleIssues(`Bash(node ${link}/x.js)`, 'allow', repo).length,
+        noScratch(`Bash(node ${link}/x.js)`, 'allow', repo).length,
       ).toBeGreaterThan(0);
       expect(
-        ruleIssues(`Bash(${link}/x.sh)`, 'reads', repo).length,
+        noScratch(`Bash(${link}/x.sh)`, 'reads', repo).length,
       ).toBeGreaterThan(0);
     });
     test('refuses a script reached by .. segments', () => {
       const repo = repoIn();
       fs.mkdirSync(path.join(tmp, 'o'));
       expect(
-        ruleIssues(`Bash(node ${tmp}/o/../repo/x.js)`, 'allow', repo).length,
+        noScratch(`Bash(node ${tmp}/o/../repo/x.js)`, 'allow', repo).length,
       ).toBeGreaterThan(0);
     });
     test('refuses shell glob characters that could expand into repo', () => {
       const repo = repoIn();
       expect(
-        ruleIssues(`Bash(node ${tmp}/rep?/x.js)`, 'allow', repo).length,
+        noScratch(`Bash(node ${tmp}/rep?/x.js)`, 'allow', repo).length,
       ).toBeGreaterThan(0);
       expect(
-        ruleIssues(`Bash(${tmp}/[r]epo/x.js *)`, 'allow', repo).length,
+        noScratch(`Bash(${tmp}/[r]epo/x.js *)`, 'allow', repo).length,
       ).toBeGreaterThan(0);
     });
     test('refuses .. after a link, which the kernel follows first', () => {
@@ -324,19 +442,19 @@ describe('ruleIssues', () => {
       fs.mkdirSync(path.join(repo, 'sub'));
       fs.mkdirSync(path.join(tmp, 'out'));
       fs.symlinkSync(path.join(repo, 'sub'), path.join(tmp, 'out', 'l'));
-      const issues = ruleIssues(
+      const issues = noScratch(
         `Bash(node ${tmp}/out/l/../x.js)`,
         'allow',
         repo,
       );
       expect(issues.join(' ')).toContain('without . or ..');
       expect(
-        ruleIssues(`Bash(${tmp}/out/l/../x.sh)`, 'allow', repo).join(' '),
+        noScratch(`Bash(${tmp}/out/l/../x.sh)`, 'allow', repo).join(' '),
       ).toContain('without . or ..');
     });
     test('a sibling folder sharing the repo name prefix passes', () => {
       const repo = repoIn();
-      expect(ruleIssues(`Bash(node ${repo}-two/x.js)`, 'allow', repo)).toEqual(
+      expect(noScratch(`Bash(node ${repo}-two/x.js)`, 'allow', repo)).toEqual(
         [],
       );
     });
