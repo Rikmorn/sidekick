@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as v from 'valibot';
 import {
   isSidekickPlugin,
   SIDEKICK_DEPENDENCY_IDS,
@@ -22,14 +23,23 @@ const tempDir = (): string => {
   return dir;
 };
 
+const PluginManifest = v.object({
+  name: v.string(),
+  dependencies: v.array(
+    v.object({ name: v.string(), marketplace: v.string() }),
+  ),
+});
+const MarketplaceManifest = v.object({ name: v.string() });
+
 describe('the ids', () => {
-  const plugin = readJson('plugin', '.claude-plugin', 'plugin.json') as {
-    name: string;
-    dependencies: { name: string; marketplace: string }[];
-  };
-  const market = readJson('.claude-plugin', 'marketplace.json') as {
-    name: string;
-  };
+  const plugin = v.parse(
+    PluginManifest,
+    readJson('plugin', '.claude-plugin', 'plugin.json'),
+  );
+  const market = v.parse(
+    MarketplaceManifest,
+    readJson('.claude-plugin', 'marketplace.json'),
+  );
 
   test('SIDEKICK_ID is the plugin name at the marketplace name', () => {
     expect(SIDEKICK_ID).toBe(`${plugin.name}@${market.name}`);
