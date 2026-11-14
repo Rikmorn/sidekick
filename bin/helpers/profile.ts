@@ -321,7 +321,7 @@ function pluginReport(
 ): string[] {
   if (!needsPluginCheck(profile.manifest)) {
     return [
-      'plugins: not checked; the profile sets neither settings.enabledPlugins nor settingSources',
+      'plugins: not checked; the profile sets none of settings.enabledPlugins, settingSources, and pluginDirs',
     ];
   }
   if (skipsPluginCheck(penv)) {

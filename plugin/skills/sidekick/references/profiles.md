@@ -1,6 +1,6 @@
 # Profiles
 
-A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from three native flags: `--add-dir`, `--settings`, and `--setting-sources`. Issue #205 in the `Rikmorn/sidekick` repo decided the shape. Issue #213 added the repo store, the plugin dependency check, and switching. Most measurements behind these claims are in three reports under `docs/research/control-centre/` in that repo. `2026-10-13-profile-launch-probes.md` is called "the probes report" here. `2026-10-14-repo-profiles-and-switching-probes.md` is "the 2026-10-14 report", and `2026-10-14-switch-bench-and-folder-probes.md` is "the switch bench report". Each names the Claude Code version and date it ran on. Two facts were measured on 2026-10-12 during #205's design, on Claude Code 2.1.296. No report holds them, so the text marks them "design-time". The alias hazards have their own source, named where they appear.
+A profile is a folder plus a settings object that `sidekick profile` hands to `claude`. Claude Code has no profile feature of its own, so the CLI builds the launch from four native flags: `--add-dir`, `--plugin-dir`, `--settings`, and `--setting-sources`. Issue #205 in the `Rikmorn/sidekick` repo decided the shape. Issue #213 added the repo store, the plugin dependency check, and switching. Most measurements behind these claims are in three reports under `docs/research/control-centre/` in that repo. `2026-10-13-profile-launch-probes.md` is called "the probes report" here. `2026-10-14-repo-profiles-and-switching-probes.md` is "the 2026-10-14 report", and `2026-10-14-switch-bench-and-folder-probes.md` is "the switch bench report". Each names the Claude Code version and date it ran on. Two facts were measured on 2026-10-12 during #205's design, on Claude Code 2.1.296. No report holds them, so the text marks them "design-time". The alias hazards have their own source, named where they appear.
 
 ## The folder
 
@@ -29,7 +29,7 @@ A name is 1 to 64 lowercase letters, digits, and hyphens, starting with a letter
 | `settingSources` | Optional. A list of `user`, `project`, and `local`, without repeats. It becomes `--setting-sources`. |
 | `settings` | Optional object, passed through to `--settings`. It must not hold a `sidekick` key, because launch writes that one. |
 | `hide` | Optional. `agents` lists agent types the model is not offered, each named as the agent listing names it, such as `Explore`. `mods` lists sidekick mod parts that stay off: `board` and `desk`. Either list may be empty or left out. An agent name is a non-empty string, and neither list repeats an entry. |
-| `pluginDirs` | Optional. A list of non-empty plugin folders, without repeats. A relative entry resolves against the profile folder. Every launch passes each as `--plugin-dir`, and refuses a folder that does not exist. A role's plugin sits in its profile folder, usually `plugin/`. A role's stance stays in its rules. |
+| `pluginDirs` | Optional. A list of non-empty plugin folders, without repeats. A relative entry resolves against the profile folder. Every launch passes each as `--plugin-dir`, and refuses an entry that is not a folder. A role's plugin sits in its profile folder, usually `plugin/`. A role's stance stays in its rules. |
 
 Launch composes the settings from the profile's `settings` object, then adds its own keys:
 
@@ -215,7 +215,7 @@ Claude Code keeps a plugin disabled while a dependency it names is off, and show
 The check runs this in the current folder, where `<file>` is a copy of the composed settings in a temp folder the CLI removes afterwards:
 
 ```
-claude --settings <file> [--setting-sources <list>] plugin list --json
+claude [--plugin-dir <dir>…] --settings <file> [--setting-sources <list>] plugin list --json
 ```
 
 The flags go before the subcommand, since `plugin list --settings` is an unknown option. The check reads only each entry's `id` and `errorDetails`. Claude Code computes `enabled` and `errorDetails` for the current folder on every entry, other repos' project-scope entries included. `errorDetails` follows both `--settings` and `--setting-sources`. `enabled` follows `--settings` but ignores `--setting-sources`, and a plugin with an unmet dependency still reads `enabled: true`. The 2026-10-14 report measured each of these under "Plugin dependencies through `plugin list`". So `enabled` does not say whether a plugin loads.

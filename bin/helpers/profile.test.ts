@@ -301,7 +301,7 @@ describe('the plugin dependency check', () => {
     mkProfile(h.store, 'a', { description: 'A' });
     expect(h.run('show', 'a')).toBe(0);
     expect(h.out.join('\n')).toContain(
-      'plugins: not checked; the profile sets neither settings.enabledPlugins nor settingSources',
+      'plugins: not checked; the profile sets none of settings.enabledPlugins, settingSources, and pluginDirs',
     );
     expect(h.runner.calls).toEqual([]);
   });
@@ -579,6 +579,25 @@ describe('profile launch', () => {
     mkProfile(h.store, 'a', { description: 'A' });
     expect(h.run('launch', '--bg', 'a', '--plugin-dir', '')).toBe(1);
     expect(h.err.join('\n')).toContain('usage:');
+  });
+  test('argv writes each profile --plugin-dir after --add-dir, in manifest order', () => {
+    const h = harness();
+    const dir = mkProfile(h.store, 'a', {
+      description: 'A',
+      pluginDirs: ['one', 'two'],
+    });
+    fs.mkdirSync(path.join(dir, 'one'));
+    fs.mkdirSync(path.join(dir, 'two'));
+    expect(h.run('argv', 'a')).toBe(0);
+    const args = h.written.join('').split('\0').slice(0, 6);
+    expect(args).toEqual([
+      '--add-dir',
+      dir,
+      '--plugin-dir',
+      path.join(dir, 'one'),
+      '--plugin-dir',
+      path.join(dir, 'two'),
+    ]);
   });
   test('a missing pluginDirs entry refuses argv and launch, naming the manifest', () => {
     const h = harness();

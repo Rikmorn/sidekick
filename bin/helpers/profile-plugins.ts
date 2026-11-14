@@ -1,5 +1,5 @@
 /**
- * The plugin dependency check: `claude --settings <file> plugin list --json`
+ * The plugin dependency check: `claude [--plugin-dir <dir>…] --settings <file> plugin list --json`
  * run on the profile's composed settings. Claude Code puts an unmet plugin
  * dependency in an entry's `errorDetails`, and a launch does not report it, so
  * this check does. It reads only `id` and `errorDetails`: `enabled` ignores
