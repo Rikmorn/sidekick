@@ -684,13 +684,18 @@ describe('profile launch', () => {
       expect(s.env.DISABLE_AUTOUPDATER).toBe('1');
     });
 
-    test('launch --bg passes them, and no sidekick key with this repo plugin as --plugin-dir', () => {
+    // Launch's own overlay sets the variable for every profile, so the clean
+    // room's comes from argv's settings, which carry no overlay.
+    test('launch --bg passes what argv composes, and no sidekick key with this repo plugin as --plugin-dir', () => {
       const h = cleanHarness();
       prepared(h);
+      expect(h.run('argv', 'a')).toBe(0);
+      const fromArgv = settingsIn(h.written.join('').split('\0'));
+      expect(fromArgv).toMatchObject({ env: { DISABLE_AUTOUPDATER: '1' } });
       expect(h.run('launch', '--bg', 'a')).toBe(0);
       const plain = settingsIn(h.runner.calls.at(-1)?.args ?? []);
+      expect(plain).toMatchObject(fromArgv);
       expect(plain.enabledPlugins[SIDEKICK_ID]).toBe(true);
-      expect(plain.env.DISABLE_AUTOUPDATER).toBe('1');
       expect(h.run('launch', '--bg', 'a', '--plugin-dir', sidekickPlugin)).toBe(
         0,
       );

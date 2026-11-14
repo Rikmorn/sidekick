@@ -5,6 +5,7 @@ import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import { LAUNCH_TIMEOUT_MS } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
+import { SIDEKICK_DEPENDENCY_IDS, SIDEKICK_ID } from './sidekick-plugin.js';
 import { runWorkerCli, type WorkerEnv } from './worker.js';
 import {
   PUSH_DENY_RULE,
@@ -712,6 +713,26 @@ describe('dispatch launches', () => {
       '--plugin-dir',
       path.join(fx.top, 'plugin'),
     ]);
+  });
+
+  test('a clean room with the sidekick plugin folder enables its dependencies, and not its own id', () => {
+    const fx = fixture({ description: 'W', settingSources: ['project'] });
+    const sidekickPlugin = path.resolve(import.meta.dir, '..', '..', 'plugin');
+    const h = harness(fx);
+    expect(
+      h.dispatch(
+        fx.brief,
+        '--permission-mode',
+        'auto',
+        '--plugin-dir',
+        sidekickPlugin,
+      ),
+    ).toBe(0);
+    const enabled = settingsOf(onlyLaunch(h)).enabledPlugins;
+    expect(enabled).toEqual(
+      Object.fromEntries(SIDEKICK_DEPENDENCY_IDS.map((id) => [id, true])),
+    );
+    expect(enabled).not.toHaveProperty(SIDEKICK_ID);
   });
 
   test('the finish line quotes a brief path with a space', () => {
@@ -1445,6 +1466,7 @@ describe('dispatch --check with the old profile store', () => {
     const h = harness(fx, { env: {}, home });
     expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(1);
     expect(h.err[0]).toContain('old store');
+    expect(h.err.filter((l) => l.includes('old store'))).toHaveLength(1);
     expect(h.err.join('\n')).toContain('mv ');
     expect(h.err.join('\n')).not.toContain('sidekick profile new');
     expect(h.claude.launches()).toEqual([]);

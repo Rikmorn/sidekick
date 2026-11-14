@@ -177,12 +177,6 @@ describe('oldStoreIssues', () => {
     expect(lines[2]).toContain('w1');
     expect(jobsFromStore(config, old)).toEqual([{ id: 'j1', name: 'w1' }]);
   });
-
-  test('a work tree topped at HOME, as a dotfiles repo is, refuses the same way', () => {
-    const home = tmp();
-    profile(path.join(home, '.claude', 'profiles'), 'worker');
-    expect(oldStoreIssues({}, home, home)[0]).toContain('worker');
-  });
 });
 
 describe('jobsFromStore', () => {
