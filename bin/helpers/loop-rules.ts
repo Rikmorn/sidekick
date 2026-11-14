@@ -125,6 +125,16 @@ const WRAPPERS: readonly string[] = [
   'gnohup',
 ];
 
+// Shipped or packaged twins of the programs the judge knows, read as the program each is.
+const PROGRAM_TWINS: ReadonlyMap<string, string> = new Map([
+  ['bsdtar', 'tar'],
+  ['gtar', 'tar'],
+  ['slogin', 'ssh'],
+  ['gnumake', 'make'],
+  ['gmake', 'make'],
+  ['gfind', 'find'],
+]);
+
 // Folders a worker or the sandbox writes, or any local user can write, so a program there may be worker code.
 const SCRATCH_ROOTS: readonly string[] = [
   '/tmp',
@@ -211,6 +221,8 @@ const FD_RUNS_CODE: readonly string[] = ['--exec', '--exec-batch'];
 
 const RULE_PATTERN = /^([A-Za-z][A-Za-z0-9_-]*(?:\*)?)(?:\(([\s\S]+)\))?$/;
 const WILDCARD = '*';
+// Claude Code reads a trailing :* as a space and *.
+const LEGACY_WILDCARD = ':*';
 // Shell syntax that runs or chains a command the word test never sees.
 const SYNTAX_PATTERN = /\$\(|`|<\(|>\(|[;|&\n]/;
 // A prefix assignment, NAME=value or NAME+=value.
@@ -547,7 +559,8 @@ function runnerIssues(
 function commandIssues(words: readonly string[], where: Where): string[] {
   const [word = ''] = words;
   // Lower case, since the default macOS volume resolves BASH to bash.
-  const name = path.basename(word).toLowerCase();
+  const base = path.basename(word).toLowerCase();
+  const name = PROGRAM_TWINS.get(base) ?? base;
   if (words.slice(0, 1 + wordsRead(name)).some(isUnplain)) {
     return [UNPLAIN_ISSUE];
   }
@@ -596,13 +609,16 @@ function commandToolIssues(
       'a Bash, Monitor, or PowerShell rule must name a command, since the bare tool or (*) matches every command.',
     ];
   }
-  const syntax = SYNTAX_PATTERN.test(specifier)
+  const command = specifier.endsWith(LEGACY_WILDCARD)
+    ? `${specifier.slice(0, -LEGACY_WILDCARD.length)} ${WILDCARD}`
+    : specifier;
+  const syntax = SYNTAX_PATTERN.test(command)
     ? [
         'a command substitution, process substitution, ;, |, &, or newline chains commands the check cannot see, so write one rule per command.',
       ]
     : [];
   // Quoting inside a rule is out of scope: words split on whitespace alone.
-  const words = specifier.trim().split(/\s+/);
+  const words = command.trim().split(/\s+/);
   const commandAt = words.findIndex((w) => !ASSIGNMENT.test(w));
   const assignments =
     commandAt === 0

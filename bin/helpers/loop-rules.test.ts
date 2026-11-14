@@ -389,6 +389,27 @@ const REFUSED_WORK = [
   'Bash(env /usr/libexec/git-core/git-log *)',
   'Bash(nohup /usr/libexec/git-core/git-mergetool)',
   'Monitor(git-log --oneline)',
+  // A shipped or packaged twin is the program it is.
+  'Bash(bsdtar -xf /Users/me/a.tar)',
+  'Bash(/usr/bin/bsdtar -tf x)',
+  'Bash(BSDTAR -tf x)',
+  'Bash(gtar -xf /Users/me/a.tar)',
+  'Bash(env /opt/homebrew/bin/gtar -tf x)',
+  'Bash(slogin host x)',
+  'Bash(/usr/bin/slogin host)',
+  'Bash(env /usr/bin/slogin host)',
+  'Bash(gnumake test)',
+  'Bash(/usr/bin/gnumake test)',
+  'Bash(nohup /usr/bin/gnumake test)',
+  'Bash(gmake test)',
+  'Bash(gfind /Users/me -exec x +)',
+  'Bash(gfind /Users/me *)',
+  'Bash(env /opt/homebrew/bin/gfind /Users/me -exec x +)',
+  // A trailing :* reads as a trailing space and *.
+  'Bash(git log:*)',
+  'Bash(git fetch:*)',
+  'Bash(git:*)',
+  'Monitor(git log:*)',
 ];
 const PASSING_WORK = [
   'Bash(gh issue view *)',
@@ -449,6 +470,12 @@ const PASSING_WORK = [
   'Bash(/usr/local/bin/gitk)',
   'Bash(github-cli x)',
   'Bash(env /usr/local/bin/gitk)',
+  // A twin keeps the checks of the program it is, so a narrow rule still passes.
+  'Bash(gfind /Users/me/x -name foo.ts)',
+  // A trailing :* passes where a trailing * does.
+  'Bash(git status:*)',
+  'Bash(gh issue view:*)',
+  'Monitor(gh issue view:*)',
 ];
 
 const rows: Row[] = [
@@ -589,6 +616,36 @@ describe('ruleIssues', () => {
     const issues = ruleIssues('Bash(bun /Users/me/x.ts)', 'allow', REPO);
     expect(issues.join(' ')).toContain('grant the program');
     expect(issues.join(' ')).not.toContain('absolute path');
+  });
+  test.each([
+    ['Bash(git status:*)', 'Bash(git status *)'],
+    ['Bash(git log:*)', 'Bash(git log *)'],
+    ['Bash(gh issue view:*)', 'Bash(gh issue view *)'],
+    ['Bash(bash:*)', 'Bash(bash *)'],
+    ['Monitor(git log:*)', 'Monitor(git log *)'],
+  ])('%s gets the verdict of %s', (legacy, spaced) => {
+    for (const list of ALL) {
+      expect(ruleIssues(legacy, list, REPO)).toEqual(
+        ruleIssues(spaced, list, REPO),
+      );
+    }
+  });
+  test('git log:* refuses with the named-options message', () => {
+    expect(ruleIssues('Bash(git log:*)', 'allow', REPO).join(' ')).toContain(
+      'name the options',
+    );
+  });
+  test.each([
+    ['Bash(bsdtar -tf x)', 'Bash(tar -tf x)'],
+    ['Bash(gtar -tf x)', 'Bash(tar -tf x)'],
+    ['Bash(slogin host)', 'Bash(ssh host)'],
+    ['Bash(gnumake test)', 'Bash(make test)'],
+    ['Bash(gmake test)', 'Bash(make test)'],
+    ['Bash(gfind /Users/me -exec x +)', 'Bash(find /Users/me -exec x +)'],
+  ])('%s gets the issues of %s', (twin, program) => {
+    expect(ruleIssues(twin, 'allow', REPO)).toEqual(
+      ruleIssues(program, 'allow', REPO),
+    );
   });
   test('a dashed git program says to write git <subcommand>', () => {
     expect(

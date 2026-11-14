@@ -157,7 +157,7 @@ So the one write rule that passes there is a scoped `Edit(//<path>…)`, such as
 
 `Bash`, `Monitor`, and `PowerShell` rules pass through one judge. By Claude Code's tools reference, `Monitor` takes Bash's permission rules, and a bare `PowerShell` rule matches every command. By its permission-modes docs, Claude Code runs `Monitor` commands through the shell.
 
-The judge splits a rule's specifier on whitespace, and reads no quoting. The command word is the first word. These refuse:
+The judge splits a rule's specifier on whitespace, and reads no quoting. Before it splits, it reads a trailing `:*` as a space and `*`, as Claude Code's permissions docs say it does. So `Bash(git status:*)` passes as `Bash(git status *)` does, and `Bash(git log:*)` refuses as `Bash(git log *)` does. The command word is the first word. These refuse:
 
 - **The bare tool, and the tool with `(*)`,** which match every command.
 - **Shell syntax anywhere in the specifier:** `$(`, a backtick, `<(`, `>(`, `;`, `|`, `&`, or a newline. Each chains a command the check never sees, so write one rule per command.
@@ -167,6 +167,8 @@ The judge splits a rule's specifier on whitespace, and reads no quoting. The com
 - **A quote, a backslash, a brace, or `$`** in the command word, or in any word its own check reads. Each changes the word before the program sees it, so `"bash"` runs `bash`. The git, `find`, `rg`, and `fd` checks read every word. The `sidekick` check reads two, and the `gh` check and the runners one. So `Bash(git log --format="%h %s")` refuses.
 
 The judge lower-cases the command word's base name before every test, since the default macOS volume ignores case and `BASH` runs `bash`. It judges an absolute path by its base name too, so `/usr/bin/bash` is `bash`.
+
+It then reads a shipped or packaged twin as the program it is: `bsdtar` and `gtar` as `tar`, `slogin` as `ssh`, `gnumake` and `gmake` as `make`, and `gfind` as `find`. That holds for the command word and for the word a runner or wrapper runs. On macOS, `/usr/bin/tar` links to `bsdtar`, `/usr/bin/slogin` links to `ssh`, and `gnumake` reports the same GNU Make as `make`. All three were measured while #363 was built.
 
 #### A command path
 
@@ -191,7 +193,7 @@ The in-repo and scratch tests compare paths without regard to case. They also st
 
 **The rest take nothing,** so a rule starting with one refuses whatever follows: `bun`, `deno`, `npx`, `bunx`, `npm`, `pnpm`, `yarn`, `make`, `eval`, `trap`, `awk`, `gawk`, `nawk`, `script`, `expect`, `tclsh`, `pypy`, `pypy3`, and `nocorrect`.
 
-- The package runners and `make` read the working folder's own files, such as `package.json` or a `Makefile`. So `Bash(bun run test)` runs whatever the repo's script says.
+- The package runners and `make`, with its twins `gnumake` and `gmake`, read the working folder's own files, such as `package.json` or a `Makefile`. So `Bash(bun run test)` runs whatever the repo's script says.
 - `eval`, `trap`, and the `awk` family run the program text they are given.
 - On macOS, `script` takes its output file first, then runs the command after it, as measured while #363 was built.
 - `expect`, `tclsh`, `pypy`, `pypy3`, and `nocorrect` sit outside both lists that take a path. A word added to `RUNNER_WORDS` later starts there too, until a ruling moves it.
@@ -201,10 +203,10 @@ The in-repo and scratch tests compare paths without regard to case. They also st
 - **`claude`** refuses outright, since it starts a Claude session. That covers `Bash(claude respawn *)`, which a loop would need to respawn a stopped worker; #367 holds that open question.
 - **`sidekick`** must name its subcommand plainly, with no wildcard and no leading option in the next word. It refuses `sidekick worker` and `sidekick profile launch`, which start sessions, and `sidekick profile` before a wildcard. Its first two words compare lower-cased. `Bash(sidekick loop record fixer *)` passes.
 - **`gh`** must name its subcommand next, with no leading option and no wildcard. It refuses `gh extension` and `gh alias`, which run code. So put `-R` after the subcommand, as in `Bash(gh issue list -R <owner>/<repo>)`. The subcommand compares lower-cased.
-- **`find`** refuses with `-exec`, `-execdir`, `-ok`, `-okdir`, or a wildcard in any word. Each primary runs a command, and a wildcard could spell one.
+- **`find`** and its GNU twin `gfind` refuse with `-exec`, `-execdir`, `-ok`, `-okdir`, or a wildcard in any word. Each primary runs a command, and a wildcard could spell one.
 - **`rg`** refuses with `--pre`, alone or joined to a value, or a wildcard in any word. ripgrep 14.1.1 ran a preprocessor command for `--pre <cmd>` and `--pre=<cmd>`, as measured while #363 was built.
 - **`fd`** refuses a single-dash word holding `x` or `X`, such as `-x`, `-X`, or `-Hx`. It also refuses `--exec` or `--exec-batch`, alone or joined to a value, and a wildcard in any word.
-- **`tar`** and **`ssh`** refuse outright. `tar` can run a command through its options, and `ssh` runs commands on another host.
+- **`tar`** and **`ssh`** refuse outright, and so do their twins `bsdtar`, `gtar`, and `slogin`. `tar` can run a command through its options, and `ssh` runs commands on another host.
 
 **`git`** gets the most tests, since git runs commands that its options, its config, and some subcommands name:
 

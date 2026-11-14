@@ -9160,6 +9160,14 @@ var WRAPPERS = [
   "gstdbuf",
   "gnohup"
 ];
+var PROGRAM_TWINS = new Map([
+  ["bsdtar", "tar"],
+  ["gtar", "tar"],
+  ["slogin", "ssh"],
+  ["gnumake", "make"],
+  ["gmake", "make"],
+  ["gfind", "find"]
+]);
 var SCRATCH_ROOTS = [
   "/tmp",
   "/private/tmp",
@@ -9224,6 +9232,7 @@ var FIND_RUNS_CODE = [
 var FD_RUNS_CODE = ["--exec", "--exec-batch"];
 var RULE_PATTERN = /^([A-Za-z][A-Za-z0-9_-]*(?:\*)?)(?:\(([\s\S]+)\))?$/;
 var WILDCARD = "*";
+var LEGACY_WILDCARD = ":*";
 var SYNTAX_PATTERN = /\$\(|`|<\(|>\(|[;|&\n]/;
 var ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
 var UNPLAIN_CHARS = /['"\\${}]/;
@@ -9448,7 +9457,8 @@ function runnerIssues(name, rest2, where) {
 }
 function commandIssues(words, where) {
   const [word = ""] = words;
-  const name = path43.basename(word).toLowerCase();
+  const base = path43.basename(word).toLowerCase();
+  const name = PROGRAM_TWINS.get(base) ?? base;
   if (words.slice(0, 1 + wordsRead(name)).some(isUnplain)) {
     return [UNPLAIN_ISSUE];
   }
@@ -9485,10 +9495,11 @@ function commandToolIssues(specifier, where) {
       "a Bash, Monitor, or PowerShell rule must name a command, since the bare tool or (*) matches every command."
     ];
   }
-  const syntax = SYNTAX_PATTERN.test(specifier) ? [
+  const command = specifier.endsWith(LEGACY_WILDCARD) ? `${specifier.slice(0, -LEGACY_WILDCARD.length)} ${WILDCARD}` : specifier;
+  const syntax = SYNTAX_PATTERN.test(command) ? [
     "a command substitution, process substitution, ;, |, &, or newline chains commands the check cannot see, so write one rule per command."
   ] : [];
-  const words = specifier.trim().split(/\s+/);
+  const words = command.trim().split(/\s+/);
   const commandAt = words.findIndex((w) => !ASSIGNMENT.test(w));
   const assignments = commandAt === 0 ? [] : [
     "a NAME=value word can change what a program loads, so write the rule without it."
