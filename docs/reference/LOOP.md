@@ -22,7 +22,7 @@ What each skill in the loop does when it runs. For each: what it reads, what it 
 | 7 Close the milestone | `sk-milestone` | The model or you, at the end of a milestone |
 | A pull request exists | `code-review:code-review` | You or the model, on a PR |
 
-`sidekick pm` is not a skill. It is the read side every sidekick skill calls, and `USAGE.md` §The commands says what each of its verbs prints. The CLI's other verbs serve the control centre. `sidekick profile` makes and launches profiles, and `sidekick worker` dispatches and finishes a worker. `sidekick worktree` lists, moves, and removes worktrees. `sidekick desk` and `sidekick session` give the mods their snapshots. `sidekick memory link` moves a repo's auto-memory into the memory store; `README.md` §Memory covers it.
+`sidekick pm` is not a skill. It is the read side every sidekick skill calls, and `USAGE.md` §The commands says what each of its verbs prints. The CLI's other verbs serve the control centre. `sidekick profile` makes and launches profiles, and `sidekick worker` dispatches and finishes a worker. `sidekick loop` checks a loop's definition, and lists, shows, and records loops. `sidekick worktree` lists, moves, and removes worktrees. `sidekick desk` and `sidekick session` give the mods their snapshots. `sidekick memory link` moves a repo's auto-memory into the memory store; `README.md` §Memory covers it.
 
 ## sidekick's skills
 
@@ -211,7 +211,7 @@ In a dispatched worker, the brief answers it instead. Pauses for the target when
 
 ### `sidekick`
 
-The reference skill. It says what the bundle is, and how each `docs/` folder its rules and skills use works. Its §The rules says how to deliver and audit the rules. Its §Bringing a repo under tracking copies the reference board, links it, creates the labels, and verifies. Its §Profiles covers the `sidekick profile` verbs, its §Workers covers `sidekick worker dispatch` and `finish`, and its §Worktrees covers `sidekick worktree`, with `references/profiles.md`, `references/workers.md`, and `references/worktrees.md` behind them. Pauses on the `area:*` set, which is yours to name.
+The reference skill. It says what the bundle is, and how each `docs/` folder its rules and skills use works. Its §The rules says how to deliver and audit the rules. Its §Bringing a repo under tracking copies the reference board, links it, creates the labels, and verifies. Its §Profiles covers the `sidekick profile` verbs, and its §Loops covers `sidekick loop`. Its §Workers covers `sidekick worker dispatch` and `finish`, and its §Worktrees covers `sidekick worktree`. `references/profiles.md`, `references/loops.md`, `references/workers.md`, and `references/worktrees.md` stand behind them. Pauses on the `area:*` set, which is yours to name.
 
 ## Superpowers, as the loop uses it
 

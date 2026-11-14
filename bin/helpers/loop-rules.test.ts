@@ -2,12 +2,27 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import {
   parseRule,
   RUNNER_WORDS,
   type RuleList,
   ruleIssues,
 } from './loop-rules.js';
+
+const LOOPS_DOC = path.join(
+  import.meta.dir,
+  '..',
+  '..',
+  'plugin/skills/sidekick/references/loops.md',
+);
+
+type MdNode = ReturnType<typeof fromMarkdown>['children'][number];
+
+const codeSpans = (node: MdNode): string[] => [
+  ...(node.type === 'inlineCode' ? [node.value] : []),
+  ...('children' in node ? node.children.flatMap(codeSpans) : []),
+];
 
 let tmp: string;
 beforeEach(() => {
@@ -531,6 +546,12 @@ describe('RUNNER_WORDS', () => {
       'gstdbuf',
       'gnohup',
     ]);
+  });
+
+  test('references/loops.md names each word in a code span', () => {
+    const doc = fs.readFileSync(LOOPS_DOC, 'utf8');
+    const spans = new Set(fromMarkdown(doc).children.flatMap(codeSpans));
+    expect(RUNNER_WORDS.filter((word) => !spans.has(word))).toEqual([]);
   });
 });
 
