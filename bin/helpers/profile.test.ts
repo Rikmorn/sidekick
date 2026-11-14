@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { execRunner } from './pm-data.js';
 import { type ProfileEnv, parseFlags, runProfileCli } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
+import { SIDEKICK_DEPENDENCY_IDS, SIDEKICK_ID } from './sidekick-plugin.js';
 
 const made: string[] = [];
 const tmp = (): string => {
@@ -621,6 +622,61 @@ describe('profile launch', () => {
     fs.mkdirSync(path.join(dir, 'plugin'));
     expect(h.run('show', 'a')).toBe(0);
     expect(h.out).toContain(`  ${path.join(dir, 'plugin')}`);
+  });
+  describe('a clean room loads sidekick and runs no updates', () => {
+    const sidekickPlugin = path.resolve(import.meta.dir, '..', '..', 'plugin');
+    const cleanRoom = { description: 'A', settingSources: ['project'] };
+    const cleanHarness = () =>
+      harness({
+        env: {
+          SIDEKICK_PROFILES_DIR: tmp(),
+          SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK: '1',
+        },
+      });
+    const settingsIn = (args: string[]) =>
+      JSON.parse(args[args.indexOf('--settings') + 1]);
+    const prepared = (h: ReturnType<typeof harness>) => {
+      const store = h.penv.env.SIDEKICK_PROFILES_DIR ?? '';
+      mkProfile(store, 'a', cleanRoom);
+    };
+
+    test('argv writes the enables and the variable', () => {
+      const h = cleanHarness();
+      prepared(h);
+      expect(h.run('argv', 'a')).toBe(0);
+      const s = settingsIn(h.written.join('').split('\0'));
+      expect(s.enabledPlugins).toEqual({
+        [SIDEKICK_ID]: true,
+        ...Object.fromEntries(SIDEKICK_DEPENDENCY_IDS.map((id) => [id, true])),
+      });
+      expect(s.env.DISABLE_AUTOUPDATER).toBe('1');
+    });
+
+    test('launch --bg passes them, and no sidekick key with this repo plugin as --plugin-dir', () => {
+      const h = cleanHarness();
+      prepared(h);
+      expect(h.run('launch', '--bg', 'a')).toBe(0);
+      const plain = settingsIn(h.runner.calls.at(-1)?.args ?? []);
+      expect(plain.enabledPlugins[SIDEKICK_ID]).toBe(true);
+      expect(plain.env.DISABLE_AUTOUPDATER).toBe('1');
+      expect(h.run('launch', '--bg', 'a', '--plugin-dir', sidekickPlugin)).toBe(
+        0,
+      );
+      const inline = settingsIn(h.runner.calls.at(-1)?.args ?? []);
+      expect(inline.enabledPlugins).not.toHaveProperty(SIDEKICK_ID);
+      for (const id of SIDEKICK_DEPENDENCY_IDS) {
+        expect(inline.enabledPlugins[id]).toBe(true);
+      }
+    });
+
+    test('a profile plugin dir that is sidekick also makes it inline', () => {
+      const h = cleanHarness();
+      const store = h.penv.env.SIDEKICK_PROFILES_DIR ?? '';
+      mkProfile(store, 'a', { ...cleanRoom, pluginDirs: [sidekickPlugin] });
+      expect(h.run('argv', 'a')).toBe(0);
+      const s = settingsIn(h.written.join('').split('\0'));
+      expect(s.enabledPlugins).not.toHaveProperty(SIDEKICK_ID);
+    });
   });
   test('launchTimeoutMs bounds the launch, and only the launch', () => {
     const h = harness({ launchTimeoutMs: 5_000 });

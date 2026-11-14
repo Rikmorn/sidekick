@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs44 from "node:fs";
+import * as fs45 from "node:fs";
 import { realpathSync as realpathSync11 } from "node:fs";
 import * as os3 from "node:os";
-import * as path56 from "node:path";
+import * as path57 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -943,7 +943,7 @@ function summarize(issues) {
 }
 
 // bin/helpers/desk.ts
-import * as path37 from "node:path";
+import * as path38 from "node:path";
 
 // plugin/hooks/desk/contract.ts
 var DESK_VERSION = 2;
@@ -3023,7 +3023,7 @@ function staleRecordNames(rows, records, facts) {
 }
 
 // bin/helpers/profile.ts
-import * as path17 from "node:path";
+import * as path18 from "node:path";
 import { parseArgs } from "node:util";
 
 // bin/helpers/main-session.ts
@@ -3625,8 +3625,81 @@ The user-level rule \`sk-memory.md\` says what a session writes here and what it
 
 // bin/helpers/profile-launch.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
+import * as fs12 from "node:fs";
+import * as path12 from "node:path";
+
+// bin/helpers/sidekick-plugin.ts
 import * as fs11 from "node:fs";
 import * as path11 from "node:path";
+// .claude-plugin/marketplace.json
+var marketplace_default = {
+  name: "rikmorn",
+  owner: { name: "Roberto Sousa" },
+  metadata: {
+    description: "Roberto's personal Claude Code plugins",
+    version: "0.7.4"
+  },
+  allowCrossMarketplaceDependenciesOn: ["superpowers", "code-review"],
+  plugins: [
+    {
+      name: "sidekick",
+      source: "./plugin",
+      version: "0.7.4",
+      description: "Personal everyday loop for Claude Code: superpowers plus house guidance, GitHub project management, plan execution, worktrees from start to landing, a shared memory store, a control centre for parallel sessions, and design-side extensions"
+    }
+  ]
+};
+// plugin/.claude-plugin/plugin.json
+var plugin_default = {
+  name: "sidekick",
+  version: "0.7.4",
+  description: "Personal everyday loop for Claude Code: superpowers plus house guidance, GitHub project management, plan execution, worktrees from start to landing, a shared memory store, a control centre for parallel sessions, and design-side extensions",
+  author: { name: "Roberto Sousa" },
+  repository: "https://github.com/Rikmorn/sidekick",
+  license: "MIT",
+  keywords: ["workflow", "guidance", "project-management", "superpowers"],
+  types: "./hooks/state.d.ts",
+  userConfig: {
+    context_window: {
+      type: "number",
+      title: "Context window",
+      description: "Tokens in your sessions' context window, such as 1000000. The context monitor warns at 65% and 75% of it. When sidekick's mods run, the gauge's compaction point comes first, then `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. The monitor stays silent when none of the three applies."
+    }
+  },
+  dependencies: [
+    {
+      name: "superpowers",
+      version: ">=6.4.1",
+      marketplace: "claude-plugins-official"
+    },
+    { name: "code-review", marketplace: "claude-plugins-official" }
+  ]
+};
+
+// bin/helpers/sidekick-plugin.ts
+var NameSchema = object({ name: pipe(string(), minLength(1)) });
+var PluginSchema = object({
+  name: pipe(string(), minLength(1)),
+  dependencies: array(object({
+    name: pipe(string(), minLength(1)),
+    marketplace: pipe(string(), minLength(1))
+  }))
+});
+var plugin = parse(PluginSchema, plugin_default);
+var marketplace = parse(NameSchema, marketplace_default);
+var SIDEKICK_ID = `${plugin.name}@${marketplace.name}`;
+var SIDEKICK_DEPENDENCY_IDS = plugin.dependencies.map((d) => `${d.name}@${d.marketplace}`);
+function isSidekickPlugin(dir) {
+  try {
+    const raw = JSON.parse(fs11.readFileSync(path11.join(dir, ".claude-plugin", "plugin.json"), "utf8"));
+    const parsed = safeParse(NameSchema, raw);
+    return parsed.success && parsed.output.name === plugin.name;
+  } catch {
+    return false;
+  }
+}
+
+// bin/helpers/profile-launch.ts
 var isPlainObject = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var uniqueByValue = (items) => items.filter((item, i) => items.findIndex((o) => JSON.stringify(o) === JSON.stringify(item)) === i);
 function mergeValue(prev, next) {
@@ -3656,25 +3729,43 @@ function memoryKeys(sources, memory) {
     ...sources.includes("user") ? {} : { permissions: { additionalDirectories: [memory.store] } }
   };
 }
-function launchKeys(profile, home, memory) {
+function namesSidekick(profile) {
+  const enabled = profile.manifest.settings?.enabledPlugins;
+  return isPlainObject(enabled) && Object.hasOwn(enabled, SIDEKICK_ID);
+}
+function pluginKeys(profile, source) {
+  if (namesSidekick(profile))
+    return {};
+  const ids = [
+    ...source === "installed" ? [SIDEKICK_ID] : [],
+    ...SIDEKICK_DEPENDENCY_IDS
+  ];
+  return { enabledPlugins: Object.fromEntries(ids.map((id) => [id, true])) };
+}
+function launchKeys(profile, home, memory, source) {
   const isCleanRoom = profile.manifest.settingSources !== undefined && !profile.manifest.settingSources.includes("user");
+  const env = {
+    ...profile.hasRules ? { [memoryVariable]: "1" } : {},
+    ...isCleanRoom ? NO_UPDATES_ENV : {}
+  };
   return {
     ...memoryKeys(profile.manifest.settingSources, memory),
     sidekick: {
       profile: profile.name,
       ...profile.manifest.hide === undefined ? {} : { hide: profile.manifest.hide }
     },
-    ...profile.hasRules ? { env: { [memoryVariable]: "1" } } : {},
+    ...Object.keys(env).length > 0 ? { env } : {},
     ...isCleanRoom ? {
+      ...pluginKeys(profile, source),
       claudeMdExcludes: [
-        path11.join(home, ".claude", "CLAUDE.md"),
-        path11.join(home, ".claude", "rules", "**")
+        path12.join(home, ".claude", "CLAUDE.md"),
+        path12.join(home, ".claude", "rules", "**")
       ]
     } : {}
   };
 }
 function composeSettings(profile, opts) {
-  return mergeSettings(profile.manifest.settings ?? {}, opts.overlay ?? {}, launchKeys(profile, opts.home, opts.memory));
+  return mergeSettings(profile.manifest.settings ?? {}, opts.overlay ?? {}, launchKeys(profile, opts.home, opts.memory, opts.sidekick ?? "installed"));
 }
 function launchArgs(profile, settings) {
   const sources = profile.manifest.settingSources;
@@ -3760,10 +3851,10 @@ function checkSettings(settings, deps, timeoutMs = 30000) {
   if (canary === undefined) {
     return refuse(`The settings set both ${CANARY_KEYS.join(" and ")}, so the check has no canary key left.`);
   }
-  const dir = fs11.mkdtempSync(path11.join(deps.tmpdir, "sidekick-profile-"));
+  const dir = fs12.mkdtempSync(path12.join(deps.tmpdir, "sidekick-profile-"));
   try {
-    const file = path11.join(dir, "settings.json");
-    fs11.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
+    const file = path12.join(dir, "settings.json");
+    fs12.writeFileSync(file, JSON.stringify({ ...settings, [canary]: CANARY_VALUE }), {
       mode: 384
     });
     const result = deps.run(["--settings", file, "doctor"], {
@@ -3772,11 +3863,11 @@ function checkSettings(settings, deps, timeoutMs = 30000) {
     });
     const lines = invalidSettingsLines(result.stdout, [
       file,
-      fs11.realpathSync(file)
+      fs12.realpathSync(file)
     ]);
     return judge(result, lines, canary);
   } finally {
-    fs11.rmSync(dir, { recursive: true, force: true });
+    fs12.rmSync(dir, { recursive: true, force: true });
   }
 }
 var bgArgs = (base, opts) => [
@@ -3790,7 +3881,7 @@ var bgArgs = (base, opts) => [
 ];
 
 // bin/helpers/profile-manifest.ts
-import * as fs12 from "node:fs";
+import * as fs13 from "node:fs";
 
 // plugin/hooks/scope/contract.ts
 var MOD_PARTS = ["board", "desk"];
@@ -3826,7 +3917,7 @@ var isMissing3 = (err) => err instanceof Error && ("code" in err) && err.code ==
 function readManifest(file) {
   let text;
   try {
-    text = fs12.readFileSync(file, "utf8");
+    text = fs13.readFileSync(file, "utf8");
   } catch (err) {
     const why = isMissing3(err) ? "missing" : err instanceof Error ? err.message : String(err);
     return { ok: false, issues: [`${file}: ${why}`] };
@@ -3845,26 +3936,26 @@ function readManifest(file) {
 }
 
 // bin/helpers/profile-old-store.ts
-import * as fs14 from "node:fs";
-import * as path13 from "node:path";
+import * as fs15 from "node:fs";
+import * as path14 from "node:path";
 
 // bin/helpers/sidekick-home.ts
-import * as fs13 from "node:fs";
-import * as path12 from "node:path";
-var configDir = (env, cwd, home) => path12.resolve(cwd, configDirOf(env, home));
-var sidekickHome = (env, cwd, home) => path12.join(configDir(env, cwd, home), "sidekick");
+import * as fs14 from "node:fs";
+import * as path13 from "node:path";
+var configDir = (env, cwd, home) => path13.resolve(cwd, configDirOf(env, home));
+var sidekickHome = (env, cwd, home) => path13.join(configDir(env, cwd, home), "sidekick");
 var IGNORED = ["loops/*/records/", "loops/*/state.json"];
 function sameFolder(a, b) {
   try {
-    return fs13.realpathSync(a) === fs13.realpathSync(b);
+    return fs14.realpathSync(a) === fs14.realpathSync(b);
   } catch {
-    return path12.resolve(a) === path12.resolve(b);
+    return path13.resolve(a) === path13.resolve(b);
   }
 }
 var messageOf2 = (e) => e instanceof Error ? e.message : String(e);
 function ensureSidekickRepo(dir, runGit) {
   try {
-    fs13.mkdirSync(dir, { recursive: true });
+    fs14.mkdirSync(dir, { recursive: true });
   } catch (e) {
     return [`${dir}: cannot make the folder: ${messageOf2(e)}`];
   }
@@ -3874,10 +3965,10 @@ function ensureSidekickRepo(dir, runGit) {
       return [`${dir}: git init failed: ${init.stderr.trim()}`];
     }
   }
-  const ignore = path12.join(dir, ".gitignore");
-  if (!fs13.existsSync(ignore)) {
+  const ignore = path13.join(dir, ".gitignore");
+  if (!fs14.existsSync(ignore)) {
     try {
-      fs13.writeFileSync(ignore, `${IGNORED.join(`
+      fs14.writeFileSync(ignore, `${IGNORED.join(`
 `)}
 `);
     } catch (e) {
@@ -3894,31 +3985,31 @@ var JobState = looseObject({
 });
 var isFolder2 = (dir) => {
   try {
-    return fs14.statSync(dir).isDirectory();
+    return fs15.statSync(dir).isDirectory();
   } catch {
     return false;
   }
 };
 var readJob = (file) => {
   try {
-    const parsed = safeParse(JobState, JSON.parse(fs14.readFileSync(file, "utf-8")));
+    const parsed = safeParse(JobState, JSON.parse(fs15.readFileSync(file, "utf-8")));
     return parsed.success ? parsed.output : undefined;
   } catch {
     return;
   }
 };
-var underOrEqual = (flag, dir) => flag === dir || flag.startsWith(dir + path13.sep);
+var underOrEqual = (flag, dir) => flag === dir || flag.startsWith(dir + path14.sep);
 function jobsFromStore(configFolder, oldStore) {
-  const jobsDir = path13.join(configFolder, "jobs");
+  const jobsDir = path14.join(configFolder, "jobs");
   let ids;
   try {
-    ids = fs14.readdirSync(jobsDir);
+    ids = fs15.readdirSync(jobsDir);
   } catch {
     return [];
   }
   const found = [];
   for (const id of ids.sort()) {
-    const job = readJob(path13.join(jobsDir, id, "state.json"));
+    const job = readJob(path14.join(jobsDir, id, "state.json"));
     if (job?.respawnFlags.some((flag) => underOrEqual(flag, oldStore))) {
       found.push({ id, name: job.name });
     }
@@ -3927,29 +4018,29 @@ function jobsFromStore(configFolder, oldStore) {
 }
 var heldNames = (oldStore) => {
   try {
-    return fs14.readdirSync(oldStore).filter((n) => !n.startsWith(".") && isFolder2(path13.join(oldStore, n))).sort();
+    return fs15.readdirSync(oldStore).filter((n) => !n.startsWith(".") && isFolder2(path14.join(oldStore, n))).sort();
   } catch {
     return [];
   }
 };
 var moveLines = (oldStore, newStore, names) => {
-  if (!fs14.existsSync(newStore)) {
+  if (!fs15.existsSync(newStore)) {
     return [
-      `mkdir -p ${shellQuote(path13.dirname(newStore))} && mv ${shellQuote(oldStore)} ${shellQuote(newStore)}`
+      `mkdir -p ${shellQuote(path14.dirname(newStore))} && mv ${shellQuote(oldStore)} ${shellQuote(newStore)}`
     ];
   }
   return names.map((name) => {
-    const from = path13.join(oldStore, name);
-    const to = path13.join(newStore, name);
-    return fs14.existsSync(to) ? `${shellQuote(to)} already exists: merge ${shellQuote(from)} into it by hand` : `mv ${shellQuote(from)} ${shellQuote(to)}`;
+    const from = path14.join(oldStore, name);
+    const to = path14.join(newStore, name);
+    return fs15.existsSync(to) ? `${shellQuote(to)} already exists: merge ${shellQuote(from)} into it by hand` : `mv ${shellQuote(from)} ${shellQuote(to)}`;
   });
 };
 function oldStoreIssues(env, cwd, home) {
   if (env.SIDEKICK_PROFILES_DIR)
     return [];
   const config = configDir(env, cwd, home);
-  const oldStore = path13.join(config, "profiles");
-  const newStore = path13.join(sidekickHome(env, cwd, home), "profiles");
+  const oldStore = path14.join(config, "profiles");
+  const newStore = path14.join(sidekickHome(env, cwd, home), "profiles");
   if (!isFolder2(oldStore) || sameFolder(oldStore, newStore))
     return [];
   const names = heldNames(oldStore);
@@ -3963,8 +4054,8 @@ function oldStoreIssues(env, cwd, home) {
 }
 
 // bin/helpers/profile-plugins.ts
-import * as fs15 from "node:fs";
-import * as path14 from "node:path";
+import * as fs16 from "node:fs";
+import * as path15 from "node:path";
 var PLUGIN_SKIP_VARIABLE = "SIDEKICK_PROFILE_SKIP_PLUGIN_CHECK";
 var SKIP_WARNING2 = `${PLUGIN_SKIP_VARIABLE}=1 is set, so the plugins were not checked with claude plugin list.`;
 var UNSATISFIED = "dependency-unsatisfied";
@@ -4027,10 +4118,10 @@ function judgePluginList(stdout, target) {
 function checkPlugins(settings, target, deps, timeoutMs = 30000) {
   if (deps.skip)
     return { ok: true, warnings: [SKIP_WARNING2] };
-  const dir = fs15.mkdtempSync(path14.join(deps.tmpdir, "sidekick-profile-"));
+  const dir = fs16.mkdtempSync(path15.join(deps.tmpdir, "sidekick-profile-"));
   try {
-    const file = path14.join(dir, "settings.json");
-    fs15.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
+    const file = path15.join(dir, "settings.json");
+    fs16.writeFileSync(file, JSON.stringify(settings), { mode: 384 });
     const sources = target.manifest.settingSources;
     const result = deps.run([
       ...(deps.pluginDirs ?? []).flatMap((dir2) => ["--plugin-dir", dir2]),
@@ -4049,23 +4140,23 @@ function checkPlugins(settings, target, deps, timeoutMs = 30000) {
     }
     return judgePluginList(result.stdout, target);
   } finally {
-    fs15.rmSync(dir, { recursive: true, force: true });
+    fs16.rmSync(dir, { recursive: true, force: true });
   }
 }
 
 // bin/helpers/profile-role.ts
-import * as fs16 from "node:fs";
-import * as path15 from "node:path";
+import * as fs17 from "node:fs";
+import * as path16 from "node:path";
 var isFolder3 = (dir) => {
   try {
-    return fs16.statSync(dir).isDirectory();
+    return fs17.statSync(dir).isDirectory();
   } catch {
     return false;
   }
 };
 var pluginDirIssues = (dir) => dir === undefined || isFolder3(dir) ? [] : [`--plugin-dir: ${dir} is not a folder`];
 function rolePluginIssues(profile) {
-  const manifestFile = path15.join(profile.dir, "profile.json");
+  const manifestFile = path16.join(profile.dir, "profile.json");
   return profile.pluginDirs.filter((dir) => !isFolder3(dir)).map((dir) => `${manifestFile}: pluginDirs: ${dir} is not a folder`);
 }
 
@@ -4155,10 +4246,10 @@ var shellFunction = (shell, aliasNames) => {
 };
 
 // bin/helpers/profile-store.ts
-import * as fs17 from "node:fs";
-import * as path16 from "node:path";
+import * as fs18 from "node:fs";
+import * as path17 from "node:path";
 var MANIFEST_FILE = "profile.json";
-var manifestPath = (dir) => path16.join(dir, MANIFEST_FILE);
+var manifestPath = (dir) => path17.join(dir, MANIFEST_FILE);
 var notAName = (name) => `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
 var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
 var ENABLES_PLUGINS = "can enable plugins outside the checked settings block; put settings in profile.json";
@@ -4176,24 +4267,24 @@ var CLAUDE_DIR_REASONS = new Map([
 function storeRoots(store, env, cwd, home, workTree) {
   const user = {
     kind: "user",
-    dir: path16.join(sidekickHome(env, cwd, home), store)
+    dir: path17.join(sidekickHome(env, cwd, home), store)
   };
   if (store === "loops")
     return [user];
   const override = env.SIDEKICK_PROFILES_DIR;
   if (override)
-    return [{ kind: "user", dir: path16.resolve(cwd, override) }];
+    return [{ kind: "user", dir: path17.resolve(cwd, override) }];
   if (workTree.kind !== "inside")
     return [user];
   const repo = {
     kind: "repo",
-    dir: path16.resolve(workTree.top, ".claude", "profiles")
+    dir: path17.resolve(workTree.top, ".claude", "profiles")
   };
   return sameFolder(repo.dir, user.dir) ? [user] : [repo, user];
 }
 var isPresent = (file) => {
   try {
-    fs17.lstatSync(file);
+    fs18.lstatSync(file);
     return true;
   } catch {
     return false;
@@ -4201,33 +4292,33 @@ var isPresent = (file) => {
 };
 var isDirectory = (dir) => {
   try {
-    return fs17.statSync(dir).isDirectory();
+    return fs18.statSync(dir).isDirectory();
   } catch {
     return false;
   }
 };
 var entriesOf = (dir) => {
   try {
-    return fs17.readdirSync(dir).sort();
+    return fs18.readdirSync(dir).sort();
   } catch {
     return [];
   }
 };
 function checkLayout(dir) {
-  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path16.join(dir, r.path))).map((r) => `${path16.join(dir, r.path)}: ${r.why}`);
-  const claudeDir = path16.join(dir, ".claude");
-  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path16.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
+  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path17.join(dir, r.path))).map((r) => `${path17.join(dir, r.path)}: ${r.why}`);
+  const claudeDir = path17.join(dir, ".claude");
+  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path17.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
   return [...atRoot, ...inClaudeDir];
 }
 var holdsMarkdown = (dir) => {
   let entries;
   try {
-    entries = fs17.readdirSync(dir, { withFileTypes: true });
+    entries = fs18.readdirSync(dir, { withFileTypes: true });
   } catch {
     return false;
   }
   return entries.some((e) => {
-    const full = path16.join(dir, e.name);
+    const full = path17.join(dir, e.name);
     if (e.isDirectory())
       return holdsMarkdown(full);
     if (e.isSymbolicLink() && isDirectory(full))
@@ -4236,11 +4327,11 @@ var holdsMarkdown = (dir) => {
   });
 };
 var readFolder = (name, root, shadows) => {
-  const dir = path16.join(root.dir, name);
+  const dir = path17.join(root.dir, name);
   const layout = checkLayout(dir);
   if (layout.length > 0)
     return { ok: false, issues: layout };
-  const read = readManifest(path16.join(dir, MANIFEST_FILE));
+  const read = readManifest(path17.join(dir, MANIFEST_FILE));
   if (!read.ok)
     return read;
   return {
@@ -4252,15 +4343,15 @@ var readFolder = (name, root, shadows) => {
       store: root.kind,
       shadows,
       manifest: read.manifest,
-      pluginDirs: (read.manifest.pluginDirs ?? []).map((d) => path16.resolve(dir, d)),
-      hasRules: holdsMarkdown(path16.join(dir, ".claude", "rules"))
+      pluginDirs: (read.manifest.pluginDirs ?? []).map((d) => path17.resolve(dir, d)),
+      hasRules: holdsMarkdown(path17.join(dir, ".claude", "rules"))
     }
   };
 };
 function loadProfile(name, roots) {
   if (!isProfileName(name))
     return { ok: false, issues: [notAName(name)] };
-  const held = (root) => isDirectory(path16.join(root.dir, name));
+  const held = (root) => isDirectory(path17.join(root.dir, name));
   const index = roots.findIndex(held);
   const winner = roots[index];
   if (winner === undefined) {
@@ -4272,17 +4363,17 @@ function loadProfile(name, roots) {
     };
   }
   const later = roots.slice(index + 1).find(held);
-  return readFolder(name, winner, later === undefined ? undefined : path16.join(later.dir, name));
+  return readFolder(name, winner, later === undefined ? undefined : path17.join(later.dir, name));
 }
 var isHidden = (name) => name.startsWith(".");
 var listRoot = (root) => {
   let names;
   try {
-    names = fs17.readdirSync(root.dir).sort();
+    names = fs18.readdirSync(root.dir).sort();
   } catch {
     return [];
   }
-  return names.filter((name) => !isHidden(name) && isDirectory(path16.join(root.dir, name))).map((name) => {
+  return names.filter((name) => !isHidden(name) && isDirectory(path17.join(root.dir, name))).map((name) => {
     const base = {
       name,
       root: root.dir,
@@ -4305,7 +4396,7 @@ function listProfiles(roots) {
   return roots.flatMap((root) => listRoot(root).map((listed) => {
     const winner = winners.get(listed.name);
     if (winner === undefined) {
-      winners.set(listed.name, path16.join(root.dir, listed.name));
+      winners.set(listed.name, path17.join(root.dir, listed.name));
       return listed;
     }
     return { ...listed, shadowedBy: winner };
@@ -4315,7 +4406,7 @@ var isExists = (err) => err instanceof Error && ("code" in err) && err.code === 
 var messageOf3 = (err) => err instanceof Error ? err.message : String(err);
 var makeRoot = (root) => {
   try {
-    fs17.mkdirSync(root, { recursive: true });
+    fs18.mkdirSync(root, { recursive: true });
     return [];
   } catch (err) {
     return [
@@ -4325,10 +4416,10 @@ var makeRoot = (root) => {
 };
 var unmake = (dir) => {
   try {
-    const manifest = path16.join(dir, MANIFEST_FILE);
+    const manifest = path17.join(dir, MANIFEST_FILE);
     if (isPresent(manifest))
-      fs17.rmSync(manifest);
-    fs17.rmdirSync(dir);
+      fs18.rmSync(manifest);
+    fs18.rmdirSync(dir);
     return [];
   } catch (err) {
     return [`${dir}: could not remove it: ${messageOf3(err)}`];
@@ -4344,16 +4435,16 @@ function newProfile(name, description, root) {
   const rootIssues = makeRoot(root);
   if (rootIssues.length > 0)
     return { ok: false, issues: rootIssues };
-  const dir = path16.join(root, name);
+  const dir = path17.join(root, name);
   try {
-    fs17.mkdirSync(dir);
+    fs18.mkdirSync(dir);
   } catch (err) {
     const why = isExists(err) ? "already exists" : messageOf3(err);
     return { ok: false, issues: [`${dir}: ${why}`] };
   }
-  const file = path16.join(dir, MANIFEST_FILE);
+  const file = path17.join(dir, MANIFEST_FILE);
   try {
-    fs17.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
+    fs18.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
 `);
   } catch (err) {
     return {
@@ -4489,14 +4580,16 @@ function memoryLaunch(penv) {
     return;
   return {
     key,
-    store: path17.resolve(penv.cwd, storeRoot(penv.env, penv.home))
+    store: path18.resolve(penv.cwd, storeRoot(penv.env, penv.home))
   };
 }
-var composed = (profile, penv, overlay) => {
+var allPluginDirs = (profile, extra) => [...profile.pluginDirs, ...extra];
+var composed = (profile, penv, opts = {}) => {
   const settings = composeSettings(profile, {
     home: penv.home,
-    overlay,
-    memory: memoryLaunch(penv)
+    overlay: opts.overlay,
+    memory: memoryLaunch(penv),
+    sidekick: allPluginDirs(profile, opts.pluginDirs ?? []).some(isSidekickPlugin) ? "inline" : "installed"
   });
   return { settings, args: launchArgs(profile, settings) };
 };
@@ -4507,7 +4600,6 @@ var settingsCheck = (settings, penv) => checkSettings(settings, {
   skip: penv.env[SKIP_VARIABLE] === "1"
 });
 var skipsPluginCheck = (penv) => penv.env[PLUGIN_SKIP_VARIABLE] === "1";
-var allPluginDirs = (profile, extra) => [...profile.pluginDirs, ...extra];
 var pluginCheck = (profile, settings, penv, extra) => checkPlugins(settings, { manifest: profile.manifest, manifestFile: manifestPath(profile.dir) }, {
   run: penv.runClaude,
   cwd: penv.cwd,
@@ -4539,7 +4631,7 @@ function loadForLaunch(name, penv, err) {
   return loaded.profile;
 }
 function checkComposed(profile, penv, err, opts = {}) {
-  const { settings, args } = composed(profile, penv, opts.overlay);
+  const { settings, args } = composed(profile, penv, opts);
   const checked2 = checkProfile(profile, settings, penv, opts.pluginDirs ?? []);
   if (!checked2.ok) {
     refuse3(err, checked2.issues);
@@ -4649,10 +4741,10 @@ var create = (rest2, penv, out, err) => {
   const root = resolved.roots.find((r) => r.kind === wanted);
   if (root === undefined)
     return refuse3(err, [noRepoStore(penv)]);
-  const oldUserStore = path17.join(configDir(penv.env, penv.cwd, penv.home), "profiles");
+  const oldUserStore = path18.join(configDir(penv.env, penv.cwd, penv.home), "profiles");
   if (wanted === "repo" && sameFolder(root.dir, oldUserStore)) {
     return refuse3(err, [
-      `${root.dir} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path17.join(sidekickHome(penv.env, penv.cwd, penv.home), "profiles")}.`
+      `${root.dir} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path18.join(sidekickHome(penv.env, penv.cwd, penv.home), "profiles")}.`
     ]);
   }
   if (wanted === "user" && !penv.env.SIDEKICK_PROFILES_DIR) {
@@ -4692,7 +4784,7 @@ var launch = (rest2, penv, out, err) => {
   const flaggedDir = parsed.values["plugin-dir"];
   if (flaggedDir === "")
     return usage(err);
-  const extraDir = typeof flaggedDir === "string" ? path17.resolve(penv.cwd, flaggedDir) : undefined;
+  const extraDir = typeof flaggedDir === "string" ? path18.resolve(penv.cwd, flaggedDir) : undefined;
   if (parsed.values.bg !== true) {
     return refuse3(err, [
       "launch only starts background sessions: pass --bg.",
@@ -4802,8 +4894,8 @@ function runProfileCli(args, penv, out, err) {
 }
 
 // bin/helpers/worker-record.ts
-import * as fs18 from "node:fs";
-import * as path18 from "node:path";
+import * as fs19 from "node:fs";
+import * as path19 from "node:path";
 var recordFields = {
   name: WorkerNameSchema,
   job: nullable(string()),
@@ -4820,10 +4912,10 @@ var RecordSchema = pipe(variant("version", [
 ]), transform((record2) => record2.version === 1 ? { ...record2, version: 2, main: null } : record2));
 var isWorkerName = (name) => is(WorkerNameSchema, name);
 function recordsDir(commonDir) {
-  return path18.join(commonDir, "sidekick", "workers");
+  return path19.join(commonDir, "sidekick", "workers");
 }
 var RECORD_SUFFIX = ".json";
-var fileFor = (commonDir, name) => path18.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
+var fileFor = (commonDir, name) => path19.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
 function jobIdFrom(stdout, name) {
   const lines = stdout.split(`
 `).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
@@ -4843,8 +4935,8 @@ function writeRecord(commonDir, record2) {
   }
   const file = fileFor(commonDir, record2.name);
   try {
-    fs18.mkdirSync(recordsDir(commonDir), { recursive: true });
-    fs18.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
+    fs19.mkdirSync(recordsDir(commonDir), { recursive: true });
+    fs19.writeFileSync(file, `${JSON.stringify(record2, null, 2)}
 `);
     return { ok: true };
   } catch (e) {
@@ -4853,11 +4945,11 @@ function writeRecord(commonDir, record2) {
 }
 function parseRecord(file) {
   try {
-    const parsed = safeParse(RecordSchema, JSON.parse(fs18.readFileSync(file, "utf-8")));
+    const parsed = safeParse(RecordSchema, JSON.parse(fs19.readFileSync(file, "utf-8")));
     if (!parsed.success) {
       return `${file} is not a worker record: ${parsed.issues[0].message}`;
     }
-    const base = path18.basename(file, RECORD_SUFFIX);
+    const base = path19.basename(file, RECORD_SUFFIX);
     if (parsed.output.name !== base) {
       return `${file} holds the record of "${parsed.output.name}", not of "${base}"`;
     }
@@ -4872,7 +4964,7 @@ function readRecords(commonDir) {
   const warnings = [];
   let files;
   try {
-    files = fs18.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
+    files = fs19.readdirSync(dir).filter((f) => f.endsWith(RECORD_SUFFIX)).sort();
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { records, warnings };
@@ -4880,7 +4972,7 @@ function readRecords(commonDir) {
     return { records, warnings: [`${dir} cannot be listed: ${reason4(e)}`] };
   }
   for (const f of files) {
-    const read = parseRecord(path18.join(dir, f));
+    const read = parseRecord(path19.join(dir, f));
     if (typeof read === "string")
       warnings.push(read);
     else
@@ -4891,16 +4983,16 @@ function readRecords(commonDir) {
 function removeRecord(commonDir, name) {
   if (!isWorkerName(name))
     return;
-  fs18.rmSync(fileFor(commonDir, name), { force: true });
+  fs19.rmSync(fileFor(commonDir, name), { force: true });
 }
 
 // bin/helpers/worktree-state.ts
-import * as fs31 from "node:fs";
-import * as path36 from "node:path";
+import * as fs32 from "node:fs";
+import * as path37 from "node:path";
 
 // bin/helpers/memory-start.ts
-import * as fs28 from "node:fs";
-import * as path33 from "node:path";
+import * as fs29 from "node:fs";
+import * as path34 from "node:path";
 
 // bin/helpers/local-date.ts
 var pad = (n) => String(n).padStart(2, "0");
@@ -4913,12 +5005,12 @@ function localMinute(at) {
 }
 
 // bin/helpers/memory-link-plan.ts
-import * as path20 from "node:path";
+import * as path21 from "node:path";
 
 // bin/helpers/home-path.ts
-import * as path19 from "node:path";
+import * as path20 from "node:path";
 function expandHome(entry, home) {
-  return entry === "~" || entry.startsWith("~/") ? path19.join(home, entry.slice(1)) : entry;
+  return entry === "~" || entry.startsWith("~/") ? path20.join(home, entry.slice(1)) : entry;
 }
 
 // bin/helpers/memory-link-plan.ts
@@ -5015,7 +5107,7 @@ function keyMissedRefusals(repo) {
     return [];
   const { claudeJson, projectFolder } = repo.keyMissed;
   return [
-    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Its folder is somewhere under ${path20.dirname(projectFolder)}. To ask for support, run: ${supportRequest("memory link: a project folder named by a rule link does not know", "sidekick memory link found no project folder where it computes one, for a repo that .claude.json lists.")}`
+    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Its folder is somewhere under ${path21.dirname(projectFolder)}. To ask for support, run: ${supportRequest("memory link: a project folder named by a rule link does not know", "sidekick memory link found no project folder where it computes one, for a repo that .claude.json lists.")}`
   ];
 }
 function defaultFolderRefusals(repo) {
@@ -5025,7 +5117,7 @@ function defaultFolderRefusals(repo) {
   if (!isFirstLink(repo))
     return defaultFolder.issues;
   const forged = defaultFolder.files.some((f) => f.rel === MARKER_FILE) ? [
-    `${path20.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
+    `${path21.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
   ] : [];
   const into = repo.target?.folder;
   const conflicts = into === undefined ? [] : defaultFolder.files.flatMap((f) => copyRefusals(defaultFolder.folder, into, f));
@@ -5034,8 +5126,8 @@ function defaultFolderRefusals(repo) {
 function copyRefusals(from, into, file) {
   if (file.rel === MARKER_FILE)
     return [];
-  const source = path20.join(from, file.rel);
-  const copy = path20.join(into, file.rel);
+  const source = path21.join(from, file.rel);
+  const copy = path21.join(into, file.rel);
   if (file.copy === "differs") {
     return [
       `${source} differs from ${copy}, which is already in the store. Merge the two by hand into the store copy, then run link again.`
@@ -5080,7 +5172,7 @@ function targetRefusals(target, root, dryRun) {
     ...familyRefusals(target),
     ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, {
       family: found.family,
-      name: path20.basename(found.folder),
+      name: path21.basename(found.folder),
       dryRun
     })}`),
     ..."issue" in target.pending ? [pendingRefusal(target.pending.issue)] : []
@@ -5114,7 +5206,7 @@ function targetStateRefusals(target, root) {
 }
 function familyRefusals(target) {
   const { family } = target;
-  const folder = path20.dirname(target.folder);
+  const folder = path21.dirname(target.folder);
   if (family === "marked") {
     return [
       `${folder} holds a ${MARKER_FILE}, so it is a repo folder, not a family. Choose another family with --family.`
@@ -5169,8 +5261,8 @@ function copyActions(ready) {
     return [];
   return defaultFolder.files.filter((f) => f.copy === "absent" && f.rel !== MARKER_FILE).map((f) => ({
     kind: "copyFile",
-    from: path20.join(defaultFolder.folder, f.rel),
-    to: path20.join(ready.target.folder, f.rel)
+    from: path21.join(defaultFolder.folder, f.rel),
+    to: path21.join(ready.target.folder, f.rel)
   }));
 }
 var keyNamesTarget = (ready) => keyFolder(ready.settings.key, ready.repo.home) === ready.target.folder;
@@ -5191,7 +5283,7 @@ function archiveActions(ready, facts, first) {
     {
       kind: "archiveDefault",
       from: defaultFolder.folder,
-      to: path20.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
+      to: path21.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
       copies: ready.target.folder,
       reappeared: !first
     }
@@ -5272,12 +5364,12 @@ function userSettingsNotes(facts) {
 }
 
 // bin/helpers/memory-lint.ts
-import * as fs26 from "node:fs";
-import * as path31 from "node:path";
+import * as fs27 from "node:fs";
+import * as path32 from "node:path";
 
 // bin/helpers/memory-default.ts
-import * as fs19 from "node:fs";
-import * as path21 from "node:path";
+import * as fs20 from "node:fs";
+import * as path22 from "node:path";
 var MAX_KEY_LENGTH = 200;
 var WRITE_BITS = 146;
 function hashOf(text) {
@@ -5294,7 +5386,7 @@ function projectKey(p) {
   return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
 }
 function defaultMemoryFolder(root, configDir2) {
-  return path21.join(configDir2, "projects", projectKey(root), "memory");
+  return path22.join(configDir2, "projects", projectKey(root), "memory");
 }
 function overrideIssue(env) {
   if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
@@ -5311,7 +5403,7 @@ function overrideIssue(env) {
 var ClaudeJson = object({ projects: record(string(), unknown()) });
 function knownRoot(root, claudeJson) {
   try {
-    const parsed = safeParse(ClaudeJson, JSON.parse(fs19.readFileSync(claudeJson, "utf-8")));
+    const parsed = safeParse(ClaudeJson, JSON.parse(fs20.readFileSync(claudeJson, "utf-8")));
     return parsed.success && Object.hasOwn(parsed.output.projects, root);
   } catch {
     return false;
@@ -5319,22 +5411,22 @@ function knownRoot(root, claudeJson) {
 }
 function legacyPreferred(legacy, current) {
   try {
-    const stat = fs19.statSync(legacy);
+    const stat = fs20.statSync(legacy);
     if (!stat.isFile())
       return false;
-    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs19.existsSync(current);
+    return stat.size > 0 || (stat.mode & WRITE_BITS) !== 0 && !fs20.existsSync(current);
   } catch {
     return false;
   }
 }
 function claudeJsonPath(env, home) {
-  const current = path21.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
-  const legacy = path21.join(configDirOf(env, home), ".config.json");
+  const current = path22.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
+  const legacy = path22.join(configDirOf(env, home), ".config.json");
   return legacyPreferred(legacy, current) ? legacy : current;
 }
 
 // bin/helpers/memory-files.ts
-import * as fs20 from "node:fs";
+import * as fs21 from "node:fs";
 var FENCE2 = "---";
 var TOP_LINE = /^([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
 var NESTED_LINE = /^ {2}([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
@@ -5408,7 +5500,7 @@ function parseMemoryText(text) {
 }
 function readMemoryFile(file) {
   try {
-    return parseMemoryText(fs20.readFileSync(file, "utf8"));
+    return parseMemoryText(fs21.readFileSync(file, "utf8"));
   } catch {
     return;
   }
@@ -5425,7 +5517,7 @@ function flattening(text) {
 }
 
 // bin/helpers/memory-links.ts
-import * as path22 from "node:path";
+import * as path23 from "node:path";
 var INLINE_LINK = /\[[^\]\n]*\]\(([^)\n]*)\)/g;
 var CODE_SPAN = /`[^`\n]*`/g;
 var URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
@@ -5464,7 +5556,7 @@ function linksIn(text) {
   });
 }
 function ownTargets(dir, text) {
-  return linksIn(text).map((link) => path22.resolve(dir, link.target)).filter((target) => path22.dirname(target) === dir).map((target) => path22.basename(target));
+  return linksIn(text).map((link) => path23.resolve(dir, link.target)).filter((target) => path23.dirname(target) === dir).map((target) => path23.basename(target));
 }
 function reachFrom(dir, files, starts) {
   const byName2 = new Map(files.map((own) => [own.name, own]));
@@ -5483,27 +5575,27 @@ function reachFrom(dir, files, starts) {
 }
 
 // bin/helpers/memory-lint-repos.ts
+import * as fs24 from "node:fs";
+import * as path26 from "node:path";
+
+// bin/helpers/memory-link-facts.ts
 import * as fs23 from "node:fs";
 import * as path25 from "node:path";
 
-// bin/helpers/memory-link-facts.ts
+// bin/helpers/memory-sessions.ts
 import * as fs22 from "node:fs";
 import * as path24 from "node:path";
-
-// bin/helpers/memory-sessions.ts
-import * as fs21 from "node:fs";
-import * as path23 from "node:path";
 function realOrResolved(p) {
   try {
-    return fs21.realpathSync(p);
+    return fs22.realpathSync(p);
   } catch {
-    return path23.resolve(p);
+    return path24.resolve(p);
   }
 }
 var STOPPED_STATE = "stopped";
 function isInside(dir, checkout) {
-  const rel = path23.relative(checkout, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path23.sep}`) || path23.isAbsolute(rel));
+  const rel = path24.relative(checkout, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path24.sep}`) || path24.isAbsolute(rel));
 }
 function sessionsInRepo(jobs, checkouts, selfId) {
   const roots = checkouts.map(realOrResolved);
@@ -5547,10 +5639,10 @@ function sameFileIgnoringStamps(a, b) {
 
 // bin/helpers/memory-link-facts.ts
 function gatherFacts(opts, deps) {
-  const store = path24.resolve(storeRoot(deps.env, deps.home));
+  const store = path25.resolve(storeRoot(deps.env, deps.home));
   const state = storeState(store, deps.runGit);
-  const found = mainCheckout(path24.resolve(opts.repo), deps.runGit, deps.home);
-  const name = opts.name ?? ("root" in found ? path24.basename(found.root) : undefined);
+  const found = mainCheckout(path25.resolve(opts.repo), deps.runGit, deps.home);
+  const name = opts.name ?? ("root" in found ? path25.basename(found.root) : undefined);
   const nameIssues = [opts.family, name].flatMap((n) => {
     const issue = n === undefined ? undefined : folderNameIssue(n);
     return issue === undefined ? [] : [issue];
@@ -5560,7 +5652,7 @@ function gatherFacts(opts, deps) {
     store,
     state,
     family: opts.family,
-    name: name ?? path24.basename(found.root),
+    name: name ?? path25.basename(found.root),
     namesOk: nameIssues.length === 0,
     deps
   });
@@ -5580,7 +5672,7 @@ function repoFacts(input) {
   const settings = settingsState(root, deps.runGit);
   const key = projectKey(root);
   const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
-  const folder = path24.join(input.store, ...rel.split("/"));
+  const folder = path25.join(input.store, ...rel.split("/"));
   const knowsFolder = input.namesOk && !refusesStore(input.state);
   const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
   const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
@@ -5598,8 +5690,8 @@ function repoFacts(input) {
 }
 function keyMissed(root, key, deps) {
   const claudeJson = claudeJsonPath(deps.env, deps.home);
-  const projectFolder = path24.join(deps.configDir, "projects", key);
-  const missed = knownRoot(root, claudeJson) && !fs22.existsSync(projectFolder);
+  const projectFolder = path25.join(deps.configDir, "projects", key);
+  const missed = knownRoot(root, claudeJson) && !fs23.existsSync(projectFolder);
   return missed ? { claudeJson, projectFolder } : undefined;
 }
 function sessionFacts(input) {
@@ -5623,14 +5715,14 @@ function targetFacts(input) {
     folder,
     rel,
     state: targetState(folder),
-    family: input.family === undefined ? "none" : familyState(path24.join(store, input.family)),
+    family: input.family === undefined ? "none" : familyState(path25.join(store, input.family)),
     elsewhere: findMarkers(store).filter((m) => m.root === input.root && m.folder !== folder).map((m) => ({ folder: m.folder, family: m.family })),
     archives: archiveNames(store),
     pending: input.state.kind === "store" ? ownedChanges(store, owned, input.deps.runGit) : { paths: [] }
   };
 }
 function targetState(folder) {
-  const stat = fs22.statSync(folder, { throwIfNoEntry: false });
+  const stat = fs23.statSync(folder, { throwIfNoEntry: false });
   if (stat === undefined)
     return { kind: "absent" };
   if (!stat.isDirectory())
@@ -5641,10 +5733,10 @@ function targetState(folder) {
   if (marker.kind === "invalid") {
     return { kind: "invalidMarker", issue: marker.issue };
   }
-  return fs22.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
+  return fs23.readdirSync(folder).length === 0 ? { kind: "empty" } : { kind: "unmarked" };
 }
 function familyState(folder) {
-  const stat = fs22.statSync(folder, { throwIfNoEntry: false });
+  const stat = fs23.statSync(folder, { throwIfNoEntry: false });
   if (stat === undefined)
     return "absent";
   if (!stat.isDirectory())
@@ -5652,22 +5744,22 @@ function familyState(folder) {
   return readMarker(folder).kind === "none" ? "folder" : "marked";
 }
 function archiveNames(store) {
-  const folder = path24.join(store, ...ARCHIVE_DIR.split("/"));
-  return fs22.existsSync(folder) ? fs22.readdirSync(folder) : [];
+  const folder = path25.join(store, ...ARCHIVE_DIR.split("/"));
+  return fs23.existsSync(folder) ? fs23.readdirSync(folder) : [];
 }
 function isInside2(dir, parent) {
-  const rel = path24.relative(parent, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path24.sep}`) || path24.isAbsolute(rel));
+  const rel = path25.relative(parent, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path25.sep}`) || path25.isAbsolute(rel));
 }
 function walkFolder(root) {
-  const entries = entriesOf2(fs22.realpathSync(root), root, "");
+  const entries = entriesOf2(fs23.realpathSync(root), root, "");
   return {
     files: entries.flatMap((e) => ("file" in e) ? [e.file] : []),
     issues: entries.flatMap((e) => ("issue" in e) ? [e.issue] : [])
   };
 }
 function entriesOf2(real, root, rel) {
-  return fs22.readdirSync(path24.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+  return fs23.readdirSync(path25.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
     const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
     if (entry.isDirectory())
       return entriesOf2(real, root, child);
@@ -5677,17 +5769,17 @@ function entriesOf2(real, root, rel) {
       return [linkEntry(real, root, child)];
     return [
       {
-        issue: `${path24.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
+        issue: `${path25.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
       }
     ];
   });
 }
 function linkEntry(real, root, child) {
-  const full = path24.join(root, child);
+  const full = path25.join(root, child);
   const way = "Replace it with the file itself, or remove it, then run link again.";
   try {
-    const named = fs22.realpathSync(full);
-    if (isInside2(named, real) && fs22.statSync(named).isFile()) {
+    const named = fs23.realpathSync(full);
+    if (isInside2(named, real) && fs23.statSync(named).isFile()) {
       return { file: child };
     }
     return {
@@ -5698,7 +5790,7 @@ function linkEntry(real, root, child) {
   }
 }
 function readDefaultFolder(folder, target) {
-  const stat = fs22.lstatSync(folder, { throwIfNoEntry: false });
+  const stat = fs23.lstatSync(folder, { throwIfNoEntry: false });
   if (stat === undefined)
     return { kind: "absent", folder };
   if (!stat.isDirectory()) {
@@ -5708,13 +5800,13 @@ function readDefaultFolder(folder, target) {
   const walked = walkFolder(folder);
   const files = walked.files.map((rel) => ({
     rel,
-    copy: target === undefined ? "absent" : copyState(path24.join(folder, rel), path24.join(target, rel))
+    copy: target === undefined ? "absent" : copyState(path25.join(folder, rel), path25.join(target, rel))
   }));
   return { kind: "present", folder, files, issues: walked.issues };
 }
 function copyState(from, to) {
   try {
-    if (!fs22.statSync(to).isFile())
+    if (!fs23.statSync(to).isFile())
       return "notFile";
   } catch (error) {
     const absent = error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -5723,7 +5815,7 @@ function copyState(from, to) {
   return sameContent(from, to) ? "same" : "differs";
 }
 function sameContent(a, b) {
-  return sameFileIgnoringStamps(fs22.readFileSync(a), fs22.readFileSync(b));
+  return sameFileIgnoringStamps(fs23.readFileSync(a), fs23.readFileSync(b));
 }
 function ownedChanges(store, owned, runGit) {
   const listed = statusIn(store, [owned.folderRel, ARCHIVE_DIR], runGit);
@@ -5733,7 +5825,7 @@ function ownedChanges(store, owned, runGit) {
     owned.defaultFolder,
     ...ownArchives(store, owned.projectKey)
   ];
-  const isOwned = (p) => fs22.existsSync(path24.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
+  const isOwned = (p) => fs23.existsSync(path25.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
   return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
 }
 var UNTRACKED = "??";
@@ -5742,7 +5834,7 @@ function uncommittedCreation(store, runGit) {
   const listed = statusIn(store, [...CREATION_PATHS], runGit);
   if ("issue" in listed)
     return listed;
-  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs22.existsSync(path24.join(store, e.path));
+  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs23.existsSync(path25.join(store, e.path));
   return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
 }
 function statusIn(store, pathspecs, runGit) {
@@ -5769,20 +5861,20 @@ function isOwnCopy(store, folderRel, sources, p) {
   const rel = p.slice(prefix.length);
   if (rel === MARKER_FILE)
     return true;
-  const file = path24.join(store, p);
-  return sources.some((source) => sameBytes(path24.join(source, rel), file));
+  const file = path25.join(store, p);
+  return sources.some((source) => sameBytes(path25.join(source, rel), file));
 }
 function sameBytes(a, b) {
   try {
-    const bothFiles = fs22.statSync(a).isFile() && fs22.statSync(b).isFile();
+    const bothFiles = fs23.statSync(a).isFile() && fs23.statSync(b).isFile();
     return bothFiles && sameContent(a, b);
   } catch {
     return false;
   }
 }
 function ownArchives(store, key) {
-  const parent = path24.join(store, ...ARCHIVE_DIR.split("/"));
-  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path24.join(parent, name));
+  const parent = path25.join(store, ...ARCHIVE_DIR.split("/"));
+  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path25.join(parent, name));
 }
 function porcelainEntries(output) {
   const fields = output.split("\x00").filter((field) => field !== "");
@@ -5811,16 +5903,16 @@ var UserSettingsSchema = object({
 });
 function additionalDirectories(file) {
   try {
-    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs22.readFileSync(file, "utf-8")));
+    const parsed = safeParse(UserSettingsSchema, JSON.parse(fs23.readFileSync(file, "utf-8")));
     return parsed.success ? parsed.output.permissions.additionalDirectories : [];
   } catch {
     return [];
   }
 }
 function userSettingsFacts(configDir2, store, home) {
-  const file = path24.join(configDir2, "settings.json");
+  const file = path25.join(configDir2, "settings.json");
   const covered = additionalDirectories(file).some((entry) => {
-    const dir = path24.resolve(expandHome(entry, home));
+    const dir = path25.resolve(expandHome(entry, home));
     return isInside2(store, dir) || isInside2(physical(store), physical(dir));
   });
   return { file, covered };
@@ -5828,19 +5920,19 @@ function userSettingsFacts(configDir2, store, home) {
 
 // bin/helpers/memory-lint-repos.ts
 function resolvedPath(target) {
-  const lexical = path25.resolve(target);
+  const lexical = path26.resolve(target);
   try {
-    return fs23.realpathSync(lexical);
+    return fs24.realpathSync(lexical);
   } catch {
     return lexical;
   }
 }
 function isInside3(folder, parent) {
-  const relative5 = path25.relative(parent, folder);
-  return relative5 !== "" && !relative5.startsWith("..") && !path25.isAbsolute(relative5);
+  const relative5 = path26.relative(parent, folder);
+  return relative5 !== "" && !relative5.startsWith("..") && !path26.isAbsolute(relative5);
 }
 function rootFact(root, runGit, home) {
-  if (!fs23.existsSync(root))
+  if (!fs24.existsSync(root))
     return { kind: "missing" };
   const found = findRepo(runGit, root);
   if (found.repo === undefined) {
@@ -5861,11 +5953,11 @@ function keyInStore(rawKey, store, home) {
   if (rawKey === undefined)
     return false;
   const key = expandHome(rawKey, home);
-  return path25.isAbsolute(key) && isInside3(resolvedPath(key), store);
+  return path26.isAbsolute(key) && isInside3(resolvedPath(key), store);
 }
 function candidates(dir) {
   try {
-    return fs23.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name).sort();
+    return fs24.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && folderNameIssue(e.name) === undefined).map((e) => e.name).sort();
   } catch {
     return [];
   }
@@ -5874,22 +5966,22 @@ function invalidAt(dir, folder) {
   const read = readMarker(dir);
   if (read.kind !== "invalid")
     return [];
-  return [{ folder, file: path25.join(dir, MARKER_FILE), issue: read.issue }];
+  return [{ folder, file: path26.join(dir, MARKER_FILE), issue: read.issue }];
 }
 function invalidMarkers(store) {
   return candidates(store).flatMap((first) => {
-    const dir = path25.join(store, first);
+    const dir = path26.join(store, first);
     if (readMarker(dir).kind === "marker")
       return [];
-    const nested = candidates(dir).flatMap((second) => invalidAt(path25.join(dir, second), `${first}/${second}`));
+    const nested = candidates(dir).flatMap((second) => invalidAt(path26.join(dir, second), `${first}/${second}`));
     return [...invalidAt(dir, first), ...nested];
   });
 }
 function compareCopy(from, to) {
-  if (!fs23.existsSync(to))
+  if (!fs24.existsSync(to))
     return "absent";
   try {
-    const [a, b] = [fs23.readFileSync(from), fs23.readFileSync(to)];
+    const [a, b] = [fs24.readFileSync(from), fs24.readFileSync(to)];
     return sameFileIgnoringStamps(a, b) ? "same" : "differs";
   } catch {
     return "differs";
@@ -5908,14 +6000,14 @@ function filesUnder(dir) {
   }
 }
 function compareDefaultFolder(defaultDir, storeDir, storeNames) {
-  if (!fs23.existsSync(defaultDir))
+  if (!fs24.existsSync(defaultDir))
     return { kind: "absent" };
   const listed = filesUnder(defaultDir);
   if ("why" in listed)
     return { kind: "unlisted", why: listed.why };
   const compared = listed.files.map((rel) => ({
     rel,
-    state: compareCopy(path25.join(defaultDir, rel), path25.join(storeDir, rel))
+    state: compareCopy(path26.join(defaultDir, rel), path26.join(storeDir, rel))
   }));
   const named = (state) => compared.filter((entry) => entry.state === state).map((entry) => entry.rel);
   return {
@@ -5927,7 +6019,7 @@ function compareDefaultFolder(defaultDir, storeDir, storeNames) {
 }
 
 // bin/helpers/memory-patterns.ts
-import * as path26 from "node:path";
+import * as path27 from "node:path";
 var INJECTION = [
   {
     id: "ignore-previous-instructions",
@@ -6041,12 +6133,12 @@ function withheldNames(names, separator = "/") {
   return across.length === 0 ? joined : withheldName(across);
 }
 function withheldPath(file, base) {
-  const relative6 = path26.relative(base, file);
-  const inside = !relative6.startsWith("..") && !path26.isAbsolute(relative6);
+  const relative6 = path27.relative(base, file);
+  const inside = !relative6.startsWith("..") && !path27.isAbsolute(relative6);
   if (!inside)
-    return withheldNames(file, path26.sep);
-  const checked2 = withheldNames(relative6, path26.sep);
-  return checked2 === relative6 ? file : path26.join(base, checked2);
+    return withheldNames(file, path27.sep);
+  const checked2 = withheldNames(relative6, path27.sep);
+  return checked2 === relative6 ? file : path27.join(base, checked2);
 }
 var codePointName = (char) => `U+${codePointOf(char).toString(16).toUpperCase().padStart(4, "0")}`;
 function invisibleCharacters(text) {
@@ -6080,7 +6172,7 @@ function otherHeadings(file) {
 
 // bin/helpers/memory-snapshot.ts
 import { spawn } from "node:child_process";
-import * as path27 from "node:path";
+import * as path28 from "node:path";
 var SNAPSHOT_DEADLINE_MS = 5000;
 function snapshotStore(store, commit, runGit) {
   if (!isWorkTreeTop(store, runGit))
@@ -6117,7 +6209,7 @@ function deadlineRunner(ms, now) {
 function startSnapshot(pluginDir, store, sessionId, source) {
   try {
     const child = spawn(process.execPath, [
-      path27.join(pluginDir, "bin", "sidekick"),
+      path28.join(pluginDir, "bin", "sidekick"),
       "memory",
       "snapshot",
       "--store",
@@ -6133,7 +6225,7 @@ function startSnapshot(pluginDir, store, sessionId, source) {
 }
 
 // bin/helpers/memory-start-render.ts
-import * as path28 from "node:path";
+import * as path29 from "node:path";
 var TOTAL_BUDGET = 9000;
 var NEXT_STEPS_BUDGET = 3000;
 var STATE_AND_NEXT_BUDGET = 5000;
@@ -6156,7 +6248,7 @@ var unchecked = () => {
   return;
 };
 function storeFolder(store, dir) {
-  return path28.relative(store, dir).split(path28.sep).join("/");
+  return path29.relative(store, dir).split(path29.sep).join("/");
 }
 function withholding(store, matcher) {
   return ({ file, dir, tested }) => {
@@ -6171,14 +6263,14 @@ function withholding(store, matcher) {
 var shown = (gate, source) => gate(source) ?? source.text;
 var fileSource = (file, text) => ({
   file,
-  dir: path28.dirname(file),
+  dir: path29.dirname(file),
   text,
   tested: [text]
 });
 var shownName = (gate, stream) => shown(gate, fileSource(stream.path, stream.name));
 var recordSource = (record2, text) => ({
   file: record2.path,
-  dir: path28.dirname(path28.dirname(record2.path)),
+  dir: path29.dirname(path29.dirname(record2.path)),
   text,
   tested: [text]
 });
@@ -6247,7 +6339,7 @@ function headerBlock(parts, gate) {
     return [];
   const record2 = withheldPath(parts.recordPath, store);
   const first = `sidekick memory: session ${parts.sessionId}. Your record is ${record2}; save to it with the sk-save skill.`;
-  const repoFolder = path28.dirname(path28.dirname(parts.recordPath));
+  const repoFolder = path29.dirname(path29.dirname(parts.recordPath));
   const lines = matchLines(match, store, repoFolder, gate);
   const text = [first, ...lines].join(`
 `);
@@ -6322,7 +6414,7 @@ function recordsBlock(parts, gate) {
   const lead = `Recent records on ${shownName(gate, match.workstream)}:`;
   const text = [lead, ...lines].join(`
 `);
-  const readPath = withheldPath(path28.dirname(newest.path), store);
+  const readPath = withheldPath(path29.dirname(newest.path), store);
   const fitted = fitSection(text, RECORDS_BUDGET, readPath);
   return [{ text: fitted, drop: Drop.Records }];
 }
@@ -6403,8 +6495,8 @@ function renderStart(parts, matcher = gateHits) {
 }
 
 // bin/helpers/memory-store-settings.ts
-import * as fs24 from "node:fs";
-import * as path29 from "node:path";
+import * as fs25 from "node:fs";
+import * as path30 from "node:path";
 var STORE_SETTINGS_FILE = "settings.json";
 var POSITIVE_INTEGER2 = "must be a positive integer";
 var NOT_AN_OBJECT = "the file must hold a JSON object";
@@ -6419,7 +6511,7 @@ function defaults() {
 function readRaw(file) {
   const read = (() => {
     try {
-      return { text: fs24.readFileSync(file, "utf8") };
+      return { text: fs25.readFileSync(file, "utf8") };
     } catch (error) {
       return { error };
     }
@@ -6443,7 +6535,7 @@ function errorCode2(error) {
   return error instanceof Error ? error.message : String(error);
 }
 function readStoreSettings(store) {
-  const raw = readRaw(path29.join(store, STORE_SETTINGS_FILE));
+  const raw = readRaw(path30.join(store, STORE_SETTINGS_FILE));
   if (raw.kind === "missing")
     return { settings: defaults() };
   if (raw.kind === "failed")
@@ -6464,33 +6556,33 @@ function readStoreSettings(store) {
 }
 
 // bin/helpers/memory-view.ts
-import * as fs25 from "node:fs";
-import * as path30 from "node:path";
+import * as fs26 from "node:fs";
+import * as path31 from "node:path";
 var INDEX_FILE = "MEMORY.md";
 var SESSIONS_DIR = "sessions";
 var RECORD_NAME = /^(\d{4}-\d{2}-\d{2})-(.+)\.md$/;
 var TITLE_LINE = /^# +(.+?)\s*$/m;
 function resolved(target) {
-  const lexical = path30.resolve(target);
+  const lexical = path31.resolve(target);
   try {
-    return fs25.realpathSync(lexical);
+    return fs26.realpathSync(lexical);
   } catch {
     return lexical;
   }
 }
 function isInside4(folder, parent) {
-  const relative8 = path30.relative(parent, folder);
-  return relative8 !== "" && !relative8.startsWith("..") && !path30.isAbsolute(relative8);
+  const relative8 = path31.relative(parent, folder);
+  return relative8 !== "" && !relative8.startsWith("..") && !path31.isAbsolute(relative8);
 }
 function linkedView(root, store, key) {
   const repoFolder = resolved(key);
-  const parent = path30.dirname(repoFolder);
+  const parent = path31.dirname(repoFolder);
   return {
     kind: "linked",
     root,
     store,
     repoFolder,
-    repoName: path30.basename(repoFolder),
+    repoName: path31.basename(repoFolder),
     familyFolder: parent === store ? undefined : parent
   };
 }
@@ -6501,7 +6593,7 @@ function repoView(cwd, deps) {
   const store = resolved(storeRoot(deps.env, deps.home));
   const rawKey = readKey(cwd, deps.runGit);
   const key = rawKey === undefined ? undefined : expandHome(rawKey, deps.home);
-  if (key !== undefined && path30.isAbsolute(key) && isInside4(resolved(key), store)) {
+  if (key !== undefined && path31.isAbsolute(key) && isInside4(resolved(key), store)) {
     return linkedView(main.root, store, key);
   }
   const marker = findMarkers(store).find((found) => resolved(found.root) === main.root);
@@ -6514,7 +6606,7 @@ function repoView(cwd, deps) {
 }
 function listDir(folder, suffix) {
   try {
-    return fs25.readdirSync(folder).filter((entry) => entry.endsWith(suffix)).sort();
+    return fs26.readdirSync(folder).filter((entry) => entry.endsWith(suffix)).sort();
   } catch {
     return [];
   }
@@ -6545,7 +6637,7 @@ function toWorkstream(file, memory) {
 }
 function workstreamsIn(folder) {
   return listDir(folder, ".md").filter((entry) => entry !== INDEX_FILE).flatMap((entry) => {
-    const file = path30.join(folder, entry);
+    const file = path31.join(folder, entry);
     const memory = readMemoryFile(file);
     const found = memory && toWorkstream(file, memory);
     return found ? [found] : [];
@@ -6559,13 +6651,13 @@ function listWorkstreams(repoFolder, familyFolder) {
 }
 function modifiedAt2(file) {
   try {
-    return fs25.statSync(file).mtimeMs;
+    return fs26.statSync(file).mtimeMs;
   } catch {
     return 0;
   }
 }
 function toRecord(file) {
-  const named = RECORD_NAME.exec(path30.basename(file));
+  const named = RECORD_NAME.exec(path31.basename(file));
   const memory = readMemoryFile(file);
   if (!named || !memory || memory.metadata.kind !== "session")
     return;
@@ -6579,19 +6671,19 @@ function toRecord(file) {
   };
 }
 function listRecords(repoFolder) {
-  const dir = path30.join(repoFolder, SESSIONS_DIR);
+  const dir = path31.join(repoFolder, SESSIONS_DIR);
   return listDir(dir, ".md").flatMap((entry) => {
-    const record2 = toRecord(path30.join(dir, entry));
+    const record2 = toRecord(path31.join(dir, entry));
     return record2 ? [{ record: record2, mtime: modifiedAt2(record2.path) }] : [];
   }).sort((a, b) => b.record.date.localeCompare(a.record.date) || b.mtime - a.mtime).map((entry) => entry.record);
 }
 function recordPath(repoFolder, sessionId, today) {
-  const dir = path30.join(repoFolder, SESSIONS_DIR);
+  const dir = path31.join(repoFolder, SESSIONS_DIR);
   const existing = listDir(dir, `-${sessionId}.md`).find((entry) => RECORD_NAME.test(entry));
   if (existing !== undefined) {
-    return { path: path30.join(dir, existing), exists: true };
+    return { path: path31.join(dir, existing), exists: true };
   }
-  return { path: path30.join(dir, `${today}-${sessionId}.md`), exists: false };
+  return { path: path31.join(dir, `${today}-${sessionId}.md`), exists: false };
 }
 
 // bin/helpers/memory-lint.ts
@@ -6654,24 +6746,24 @@ function lintFolders(store) {
   const families = [...familyNames].map((name) => ({
     kind: "family",
     folder: name,
-    dir: path31.join(store, name)
+    dir: path32.join(store, name)
   }));
   return [...repos, ...families].sort((a, b) => a.folder.localeCompare(b.folder));
 }
 function ownNames(dir) {
   try {
-    const names = fs26.readdirSync(dir, { withFileTypes: true }).filter((entry) => !entry.isDirectory() && entry.name.endsWith(".md")).map((entry) => entry.name).sort();
+    const names = fs27.readdirSync(dir, { withFileTypes: true }).filter((entry) => !entry.isDirectory() && entry.name.endsWith(".md")).map((entry) => entry.name).sort();
     return { names };
   } catch (error) {
     return { why: errorCode(error) };
   }
 }
 function readOwn(dir, name) {
-  const file = path31.join(dir, name);
+  const file = path32.join(dir, name);
   try {
     return {
       kind: "read",
-      own: { name, file, text: fs26.readFileSync(file, "utf8") }
+      own: { name, file, text: fs27.readFileSync(file, "utf8") }
     };
   } catch (error) {
     return { kind: "unreadable", file, why: errorCode(error) };
@@ -6690,15 +6782,15 @@ function readFolder2(dir) {
 }
 var NO_FILES = { names: [], files: [], failed: [], unlisted: [] };
 function readSessions(place) {
-  const dir = path31.join(place.dir, SESSIONS_DIR2);
-  if (place.kind !== "repo" || !fs26.existsSync(dir))
+  const dir = path32.join(place.dir, SESSIONS_DIR2);
+  if (place.kind !== "repo" || !fs27.existsSync(dir))
     return NO_FILES;
   return readFolder2(dir);
 }
 function scanFolder(place) {
   const own = readFolder2(place.dir);
   const sessions = readSessions(place);
-  const blocked = new Set(own.failed.map((read) => path31.basename(read.file)));
+  const blocked = new Set(own.failed.map((read) => path32.basename(read.file)));
   const starts = own.names.includes(INDEX_FILE2) ? [INDEX_FILE2] : [];
   const reached = reachFrom(place.dir, own.files, starts);
   return {
@@ -6746,7 +6838,7 @@ function indexOf(scan) {
   return scan.files.find((own) => own.name === INDEX_FILE2);
 }
 function deadLinks(scan) {
-  return scan.files.filter((own) => scan.reached.has(own.name)).flatMap((own) => linksIn(own.text).filter((link) => !fs26.existsSync(path31.resolve(scan.dir, link.target))).map((link) => ({
+  return scan.files.filter((own) => scan.reached.has(own.name)).flatMap((own) => linksIn(own.text).filter((link) => !fs27.existsSync(path32.resolve(scan.dir, link.target))).map((link) => ({
     file: own.file,
     line: link.line,
     message: `links to ${quoteOrWithhold(link.target)}, which does not exist`
@@ -6756,7 +6848,7 @@ function unindexedFiles(scan) {
   if (!scan.reachComplete)
     return [];
   const message = scan.names.includes(INDEX_FILE2) ? "no link from MEMORY.md reaches it, directly or through other files" : "the folder has no MEMORY.md to link it";
-  return scan.names.filter((name) => name !== INDEX_FILE2 && !scan.reached.has(name)).map((name) => ({ file: path31.join(scan.dir, name), message }));
+  return scan.names.filter((name) => name !== INDEX_FILE2 && !scan.reached.has(name)).map((name) => ({ file: path32.join(scan.dir, name), message }));
 }
 function lineCount(text) {
   return text === "" ? 0 : text.replace(/\n$/, "").split(`
@@ -6953,7 +7045,7 @@ function settingsInvalid(input, id) {
     {
       id,
       folder: "",
-      file: path31.join(input.store, STORE_SETTINGS_FILE),
+      file: path32.join(input.store, STORE_SETTINGS_FILE),
       message: `${quoteOrWithhold(input.settingsIssue)}; defaults apply`
     }
   ];
@@ -6964,7 +7056,7 @@ function unreadableFiles(scan) {
     message: `cannot be read (${entry.why}), so the lint skipped it`
   }));
 }
-var markerOf = (scan) => path31.join(scan.dir, MARKER_FILE);
+var markerOf = (scan) => path32.join(scan.dir, MARKER_FILE);
 function rootFault(fact) {
   switch (fact.kind) {
     case "missing":
@@ -7023,13 +7115,13 @@ function defaultFolderLeft(scan, input) {
 }
 function lockAge(lock, now) {
   try {
-    return now - fs26.statSync(lock).mtimeMs;
+    return now - fs27.statSync(lock).mtimeMs;
   } catch {
     return;
   }
 }
 function staleLock(input, id) {
-  const lock = path31.join(input.store, ".git", "index.lock");
+  const lock = path32.join(input.store, ".git", "index.lock");
   const age = lockAge(lock, input.deps.now());
   if (age === undefined || age <= STALE_LOCK_MS)
     return [];
@@ -7039,8 +7131,8 @@ function staleLock(input, id) {
   return [{ id, folder: "", file: lock, message }];
 }
 function relinkCommand(scan) {
-  const folderName = path31.basename(scan.dir);
-  const name = folderName === path31.basename(scan.root) ? undefined : folderName;
+  const folderName = path32.basename(scan.dir);
+  const name = folderName === path32.basename(scan.root) ? undefined : folderName;
   return linkCommand(scan.root, { family: scan.family, name, dryRun: false });
 }
 function settingMissing(input, id) {
@@ -7115,8 +7207,8 @@ function lintStore(store, deps, opts = {}) {
 
 // bin/helpers/memory-lint-cache.ts
 import { randomBytes } from "node:crypto";
-import * as fs27 from "node:fs";
-import * as path32 from "node:path";
+import * as fs28 from "node:fs";
+import * as path33 from "node:path";
 var CACHE_FILE = "sidekick-lint.json";
 var CACHE_VERSION = 1;
 var lintId = picklist(MEMORY_LINT_IDS);
@@ -7140,7 +7232,7 @@ function cachePath(store, runGit) {
   const found = r.stdout.trim();
   if (r.code !== 0 || found === "")
     return;
-  return path32.resolve(store, found);
+  return path33.resolve(store, found);
 }
 function writeCache(file, result, ranAt) {
   const cache = {
@@ -7151,9 +7243,9 @@ function writeCache(file, result, ranAt) {
   };
   const temp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   try {
-    fs27.writeFileSync(temp, `${JSON.stringify(cache)}
+    fs28.writeFileSync(temp, `${JSON.stringify(cache)}
 `);
-    fs27.renameSync(temp, file);
+    fs28.renameSync(temp, file);
   } catch (error) {
     removeQuietly(temp);
     throw error;
@@ -7161,12 +7253,12 @@ function writeCache(file, result, ranAt) {
 }
 function removeQuietly(file) {
   try {
-    fs27.rmSync(file, { force: true });
+    fs28.rmSync(file, { force: true });
   } catch {}
 }
 function readCache(file) {
   try {
-    const parsed = safeParse(LintCacheSchema, JSON.parse(fs27.readFileSync(file, "utf8")));
+    const parsed = safeParse(LintCacheSchema, JSON.parse(fs28.readFileSync(file, "utf8")));
     return parsed.success ? parsed.output : undefined;
   } catch {
     return;
@@ -7281,9 +7373,9 @@ function briefWorkstream(env) {
   return "brief" in read ? read.brief.workstream : undefined;
 }
 function staleLockWarning(store, now) {
-  const lock = path33.join(store, ".git", "index.lock");
+  const lock = path34.join(store, ".git", "index.lock");
   try {
-    if (now - fs28.statSync(lock).mtimeMs <= STALE_LOCK_MS2)
+    if (now - fs29.statSync(lock).mtimeMs <= STALE_LOCK_MS2)
       return [];
     return [
       `The memory store has a stale git lock at ${lock}; snapshots stop until it is removed.`
@@ -7295,13 +7387,13 @@ function staleLockWarning(store, now) {
 function familyOf(familyFolder) {
   if (familyFolder === undefined)
     return;
-  const file = path33.join(familyFolder, INDEX_FILE3);
+  const file = path34.join(familyFolder, INDEX_FILE3);
   try {
-    const lines = fs28.readFileSync(file, "utf8").trimEnd().split(`
+    const lines = fs29.readFileSync(file, "utf8").trimEnd().split(`
 `);
     if (lines.every((line) => line.trim() === ""))
       return;
-    return { name: path33.basename(familyFolder), path: file, lines };
+    return { name: path34.basename(familyFolder), path: file, lines };
   } catch {
     return;
   }
@@ -7361,9 +7453,9 @@ function lintCountOf(view, source, deps) {
 }
 var shownName2 = (name) => name === undefined ? undefined : withheldNames(name);
 function missingSettingText(view) {
-  const folderName = path33.basename(view.folder);
-  const name = folderName === path33.basename(view.root) ? undefined : folderName;
-  const command = linkCommand(withheldNames(view.root, path33.sep), {
+  const folderName = path34.basename(view.folder);
+  const name = folderName === path34.basename(view.root) ? undefined : folderName;
+  const command = linkCommand(withheldNames(view.root, path34.sep), {
     family: shownName2(view.family),
     name: shownName2(name),
     dryRun: false
@@ -7556,12 +7648,12 @@ function landedIn(runGit, top, refs, { cap = DEFAULT_CAP } = {}) {
 }
 
 // bin/helpers/worktree-flagged.ts
-import * as fs29 from "node:fs";
-import * as path34 from "node:path";
+import * as fs30 from "node:fs";
+import * as path35 from "node:path";
 var TAG_LENGTH = "T ".length;
 function onDisk(file) {
   try {
-    fs29.lstatSync(file);
+    fs30.lstatSync(file);
     return true;
   } catch {
     return false;
@@ -7576,7 +7668,7 @@ function flaggedEntries(runGit, top, worktree) {
   const entries = listed.stdout.split("\x00").filter((entry) => entry !== "").map((entry) => ({ tag: entry.charAt(0), path: entry.slice(TAG_LENGTH) }));
   return {
     skipWorktree: new Set(entries.filter((e) => e.tag === "S").map((e) => e.path)),
-    assumed: entries.filter((e) => e.tag !== e.tag.toUpperCase() && onDisk(path34.join(worktree, e.path))).map((e) => e.path)
+    assumed: entries.filter((e) => e.tag !== e.tag.toUpperCase() && onDisk(path35.join(worktree, e.path))).map((e) => e.path)
   };
 }
 function flaggedStatus(runGit, top, worktree) {
@@ -7600,11 +7692,11 @@ function flaggedStatus(runGit, top, worktree) {
 }
 
 // bin/helpers/worktree-ignored.ts
-import * as fs30 from "node:fs";
-import * as path35 from "node:path";
+import * as fs31 from "node:fs";
+import * as path36 from "node:path";
 var BUILT_IN_SKIPS = { folders: ["node_modules"], files: [".DS_Store"] };
 function skipListPath(commonDir) {
-  return path35.join(commonDir, "sidekick", "disposable");
+  return path36.join(commonDir, "sidekick", "disposable");
 }
 function skipFolder(line) {
   return line.replace(/#.*$/, "").trim().replace(/^\.\//, "").replace(/\/+$/, "");
@@ -7612,7 +7704,7 @@ function skipFolder(line) {
 function readSkips(commonDir) {
   const file = skipListPath(commonDir);
   try {
-    const folders = fs30.readFileSync(file, "utf-8").split(`
+    const folders = fs31.readFileSync(file, "utf-8").split(`
 `).map(skipFolder).filter((folder) => folder !== "");
     return { folders, warnings: [] };
   } catch (error) {
@@ -7626,10 +7718,10 @@ function readSkips(commonDir) {
 function skipper(folders) {
   return (rel) => rel.split("/").some((segment) => BUILT_IN_SKIPS.folders.includes(segment)) || folders.some((folder) => rel === folder || rel.startsWith(`${folder}/`));
 }
-var isSkippedFile = (rel, stat) => stat.isFile() && BUILT_IN_SKIPS.files.includes(path35.posix.basename(rel));
+var isSkippedFile = (rel, stat) => stat.isFile() && BUILT_IN_SKIPS.files.includes(path36.posix.basename(rel));
 function lstatOf(file) {
   try {
-    return fs30.lstatSync(file);
+    return fs31.lstatSync(file);
   } catch {
     return;
   }
@@ -7637,7 +7729,7 @@ function lstatOf(file) {
 function readChunk(fd, buf) {
   let filled = 0;
   while (filled < buf.length) {
-    const read = fs30.readSync(fd, buf, filled, buf.length - filled, null);
+    const read = fs31.readSync(fd, buf, filled, buf.length - filled, null);
     if (read === 0)
       return filled;
     filled += read;
@@ -7660,11 +7752,11 @@ function sameChunks(fdA, fdB, chunkBytes) {
   }
 }
 function withOpen(file, use) {
-  const fd = fs30.openSync(file, "r");
+  const fd = fs31.openSync(file, "r");
   try {
     return use(fd);
   } finally {
-    fs30.closeSync(fd);
+    fs31.closeSync(fd);
   }
 }
 function sameBytes2(a, b, chunkBytes) {
@@ -7676,7 +7768,7 @@ function sameBytes2(a, b, chunkBytes) {
 }
 function sameLink(a, b) {
   try {
-    return fs30.readlinkSync(a) === fs30.readlinkSync(b);
+    return fs31.readlinkSync(a) === fs31.readlinkSync(b);
   } catch {
     return false;
   }
@@ -7698,7 +7790,7 @@ function isLoss(worktreeFile, mainFile, chunkBytes) {
 function* filesUnder2(worktree, rel, skipped) {
   if (skipped(rel))
     return;
-  const stat = lstatOf(path35.join(worktree, rel));
+  const stat = lstatOf(path36.join(worktree, rel));
   if (stat === undefined)
     return;
   if (!stat.isDirectory()) {
@@ -7706,7 +7798,7 @@ function* filesUnder2(worktree, rel, skipped) {
       yield rel;
     return;
   }
-  const names = fs30.readdirSync(path35.join(worktree, rel)).sort();
+  const names = fs31.readdirSync(path36.join(worktree, rel)).sort();
   for (const name of names)
     yield* filesUnder2(worktree, `${rel}/${name}`, skipped);
 }
@@ -7739,7 +7831,7 @@ function ignoredLosses(runGit, places, {
     for (const rel of filesUnder2(places.worktree, entry, skipped)) {
       if (rel === exempt)
         continue;
-      const lost = isLoss(path35.join(places.worktree, rel), path35.join(places.mainTop, rel), chunkBytes);
+      const lost = isLoss(path36.join(places.worktree, rel), path36.join(places.mainTop, rel), chunkBytes);
       if (!lost)
         continue;
       paths.push(rel);
@@ -7770,19 +7862,19 @@ function lockStateOf(locked, isAlive) {
   return isAlive(pid) ? { kind: "live", pid } : { kind: "dead", pid };
 }
 var gitIssue2 = (verb, stderr) => `git worktree ${verb} failed: ${stderr.trim()}`;
-function removeGitWorktree(runGit, top, path36, lock) {
+function removeGitWorktree(runGit, top, path37, lock) {
   if (lock.kind === "live") {
-    return [`${path36} is locked by a live session (pid ${lock.pid})`];
+    return [`${path37} is locked by a live session (pid ${lock.pid})`];
   }
   if (lock.kind === "other") {
-    return [`${path36} is locked${lock.reason === "" ? "" : `: ${lock.reason}`}`];
+    return [`${path37} is locked${lock.reason === "" ? "" : `: ${lock.reason}`}`];
   }
   if (lock.kind === "dead") {
-    const unlock = runGit("git", ["worktree", "unlock", path36], top);
+    const unlock = runGit("git", ["worktree", "unlock", path37], top);
     if (unlock.code !== 0)
       return [gitIssue2("unlock", unlock.stderr)];
   }
-  const removed = runGit("git", ["worktree", "remove", path36], top);
+  const removed = runGit("git", ["worktree", "remove", path37], top);
   return removed.code === 0 ? [] : [gitIssue2("remove", removed.stderr)];
 }
 
@@ -7790,7 +7882,7 @@ function removeGitWorktree(runGit, top, path36, lock) {
 var DIRTY_CAP = 20;
 var REMOTES = "refs/remotes/";
 var UNSEEN_SESSIONS = "unknown: claude agents failed";
-var under = (at, root) => at === root || at.startsWith(`${root}${path36.sep}`);
+var under = (at, root) => at === root || at.startsWith(`${root}${path37.sep}`);
 var insideOf = (cwd, folder) => under(physical(cwd), physical(folder));
 function sessionInside(cwd, folder, platform = process.platform) {
   if (platform !== "darwin")
@@ -7843,7 +7935,7 @@ function mainCheckoutUse(src) {
 }
 function isWorkers(top, name, entry) {
   const branch = entry.branch === undefined ? undefined : shortBranch(entry.branch);
-  return physical(nativeFolder(top, name)) === physical(entry.path) || path36.basename(entry.path) === name || branch === nativeBranch(name) || branch === name;
+  return physical(nativeFolder(top, name)) === physical(entry.path) || path37.basename(entry.path) === name || branch === nativeBranch(name) || branch === name;
 }
 function cheapState(src, entry, lock) {
   const by = lockHold(lock) ?? (src.rows === undefined ? undefined : sessionHold(src.rows, entry));
@@ -7890,9 +7982,9 @@ function dirtyState(runGit, at) {
   };
 }
 function filesState(runGit, at) {
-  if (!fs31.existsSync(at.worktree))
+  if (!fs32.existsSync(at.worktree))
     return { kind: "folder gone" };
-  if (!fs31.existsSync(path36.join(at.worktree, ".git"))) {
+  if (!fs32.existsSync(path37.join(at.worktree, ".git"))) {
     return {
       kind: "held",
       by: `unknown: ${at.worktree} holds no .git entry, so git cannot read its files`
@@ -7912,7 +8004,7 @@ function worktreeRows(src, runGit, extra = []) {
   return linked(src.repo).map((entry) => {
     const lock = lockStateOf(entry.locked, src.isAlive);
     const state = stateOf3(src, runGit, entry, lock);
-    const base = { entry, name: path36.basename(entry.path), lock, state };
+    const base = { entry, name: path37.basename(entry.path), lock, state };
     if (state.kind === "held" || state.kind === "worker")
       return base;
     const commits = commitsAt(runGit, src.repo, entry.head ?? "", extra);
@@ -8057,7 +8149,7 @@ function readAndPruneChildren(denv, listing, find) {
   const kept = gathered.filter((g) => !stale.includes(g.record.name));
   const records = kept.map((g) => g.record);
   return {
-    repo: path37.basename(repo.top),
+    repo: path38.basename(repo.top),
     records,
     facts,
     leftBehind: leftBehind({
@@ -8081,11 +8173,11 @@ function repoNameFor(runGit, cwd) {
   if (common.code !== 0)
     return;
   const commonDir = common.stdout.replace(/\n$/, "");
-  if (path37.basename(commonDir) === GIT_SUFFIX) {
-    return path37.basename(path37.dirname(commonDir));
+  if (path38.basename(commonDir) === GIT_SUFFIX) {
+    return path38.basename(path38.dirname(commonDir));
   }
   const list2 = listWorktrees(runGit, cwd);
-  return "issue" in list2 ? undefined : path37.basename(list2.worktrees[0].path);
+  return "issue" in list2 ? undefined : path38.basename(list2.worktrees[0].path);
 }
 function repoNamesOf(runGit, rows) {
   const cwds = new Set(rows.flatMap(({ cwd }) => cwd ?? []));
@@ -8131,9 +8223,9 @@ function runDeskCli(rest2, denv, out, err) {
 }
 
 // bin/helpers/hook.ts
-import * as fs32 from "node:fs";
+import * as fs33 from "node:fs";
 import * as os2 from "node:os";
-import * as path39 from "node:path";
+import * as path40 from "node:path";
 
 // bin/helpers/enter-worktree-fetch.ts
 var FETCH_LIMIT_MS = 5000;
@@ -8166,10 +8258,10 @@ function enterWorktreeFetch(stdin, runGit) {
 }
 
 // bin/helpers/subagent-limits.ts
-import * as path38 from "node:path";
+import * as path39 from "node:path";
 var BRIEF_LIMITS_HEADING = "## Limits";
 var WORKER_LIMITS_HEADING = "## Limits this skill adds";
-var WORKER_SKILL = path38.join("skills", "sk-worker", "SKILL.md");
+var WORKER_SKILL = path39.join("skills", "sk-worker", "SKILL.md");
 var NARROW_NOT_WIDEN = "Your own prompt may narrow them, never widen them.";
 var LEAD = `sidekick: you are a subagent of a dispatched worker. These limits bind every session in its run, yours included. They are the run's outer bounds: your own prompt may narrow them, never widen them. Where an instruction you were given would cross them, such as a template's \`git worktree add /tmp/…\`, the limits win.`;
 function readBriefLimits(briefPath, readSection) {
@@ -8197,12 +8289,12 @@ function subagentLimitsContext({
     const limits = readBriefLimits(brief, readSection);
     if (limits === undefined)
       return;
-    const skill = path38.join(pluginDir, WORKER_SKILL);
+    const skill = path39.join(pluginDir, WORKER_SKILL);
     const own = readSection(skill, WORKER_LIMITS_HEADING);
     const text = [LEAD, limits, ...own === undefined ? [] : [own]].join(`
 
 `);
-    return text.length <= budget ? text : pointer(path38.resolve(brief), skill);
+    return text.length <= budget ? text : pointer(path39.resolve(brief), skill);
   } catch {
     return;
   }
@@ -8216,15 +8308,15 @@ function readContent(event) {
     return "";
   return typeof response.file.content === "string" ? response.file.content : "";
 }
-var DESIGN_SKILL = path39.join("skills", "sk-design", "SKILL.md");
-var EXECUTE_SKILL = path39.join("skills", "sk-execute", "SKILL.md");
-var WORKTREE_SKILL = path39.join("skills", "sk-worktree", "SKILL.md");
+var DESIGN_SKILL = path40.join("skills", "sk-design", "SKILL.md");
+var EXECUTE_SKILL = path40.join("skills", "sk-execute", "SKILL.md");
+var WORKTREE_SKILL = path40.join("skills", "sk-worktree", "SKILL.md");
 var PLAN_SECTIONS = [
   "## A plan carries intent",
   "## Before the plan goes out",
   "## Choose the mode"
 ];
-var CLEAN_CODE_RULE = path39.join("rules", "sk-clean-code.md");
+var CLEAN_CODE_RULE = path40.join("rules", "sk-clean-code.md");
 var COMMENTS_HEADING = "## Comments";
 var DESCRIPTION_LINE = /^description:\s*(".*")\s*$/;
 var REVIEW_PACKAGE = /(^|\/)\.superpowers\/sdd\/[^/]+\/review-[0-9a-f]+\.\.[0-9a-f]+\.diff$/;
@@ -8251,7 +8343,7 @@ function parseJson5(raw) {
 }
 function readText2(file) {
   try {
-    return fs32.readFileSync(file, "utf-8");
+    return fs33.readFileSync(file, "utf-8");
   } catch {
     return;
   }
@@ -8340,7 +8432,7 @@ function ruleCoversPackage(rulePaths, content) {
   return visiblePaths(content).some((p) => exts.some((ext) => p.endsWith(ext)));
 }
 function brainstormNudge(pluginDir) {
-  const description = readSkillDescription(path39.join(pluginDir, DESIGN_SKILL));
+  const description = readSkillDescription(path40.join(pluginDir, DESIGN_SKILL));
   if (description === undefined)
     return;
   return [
@@ -8352,7 +8444,7 @@ function brainstormNudge(pluginDir) {
 }
 var PLAN_LEAD = "sidekick: `sk-execute` governs how this plan is written and handed off, and it overrides parts of this skill. A plan carries intent, and code in it is a sketch. At the handoff, its modes and one recommendation replace this skill's two-option question, and the claim that native execution runs well on a mid-tier model does not carry over. Write the plan to the first two of these sections of `sk-execute`, and hand it off by the third:";
 function writingPlansNudge(pluginDir) {
-  const file = path39.join(pluginDir, EXECUTE_SKILL);
+  const file = path40.join(pluginDir, EXECUTE_SKILL);
   const sections = PLAN_SECTIONS.map((heading) => readSection(file, heading));
   const found = sections.flatMap((s) => s === undefined ? [] : [s]);
   if (found.length < PLAN_SECTIONS.length)
@@ -8362,7 +8454,7 @@ function writingPlansNudge(pluginDir) {
 `);
 }
 function worktreeNudge(lead, pluginDir) {
-  const description = readSkillDescription(path39.join(pluginDir, WORKTREE_SKILL));
+  const description = readSkillDescription(path40.join(pluginDir, WORKTREE_SKILL));
   if (description === undefined)
     return;
   return `${lead} sidekick:sk-worktree: ${description}`;
@@ -8387,7 +8479,7 @@ var CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. W
 var RELEASE_LEAD_LINE = "sidekick: this file is the package of sk-milestone's release check, so sidekick's reviewer lines hold for this review beside the prompt you were given.";
 var RELEASE_CLAIMS_PARAGRAPH = "Check what the diff says about the rest of the system. Two kinds of finding count. A sentence the diff adds that states a fact is one: a count, a path, a list someone will decide on, how a part behaves. Find the fact's source and confirm it there. A fact the diff changes is a cross-cutting change, and its other copies are its call sites. Search for them with your search tool, read the block each one sits in, and report each copy left stale. A true statement the diff deletes is a finding unless the change made it false. Report a claim you cannot trace to a source as a finding.";
 function commentsLines(pluginDir, packageText) {
-  const rule = path39.join(pluginDir, CLEAN_CODE_RULE);
+  const rule = path40.join(pluginDir, CLEAN_CODE_RULE);
   const comments = readSection(rule, COMMENTS_HEADING);
   if (comments === undefined || !ruleCoversPackage(readRulePaths(rule), packageText)) {
     return [];
@@ -8514,12 +8606,12 @@ function runHookCli(args, env, out, err) {
 }
 
 // bin/helpers/memory.ts
-import * as fs34 from "node:fs";
-import * as path41 from "node:path";
+import * as fs35 from "node:fs";
+import * as path42 from "node:path";
 
 // bin/helpers/memory-link.ts
-import * as fs33 from "node:fs";
-import * as path40 from "node:path";
+import * as fs34 from "node:fs";
+import * as path41 from "node:path";
 var messageOf4 = (error) => error instanceof Error ? error.message : String(error);
 function runLink(opts, deps, out, err) {
   const gathered = gather2(opts, deps);
@@ -8592,14 +8684,14 @@ function runAction(action, runGit) {
       return finished.ok ? done : finished;
     }
     case "createFolder":
-      fs33.mkdirSync(action.folder, { recursive: true });
+      fs34.mkdirSync(action.folder, { recursive: true });
       return done;
     case "writeMarker":
       writeMarker(action.folder, action.root);
       return done;
     case "copyFile":
-      fs33.mkdirSync(path40.dirname(action.to), { recursive: true });
-      fs33.copyFileSync(action.from, action.to, fs33.constants.COPYFILE_EXCL);
+      fs34.mkdirSync(path41.dirname(action.to), { recursive: true });
+      fs34.copyFileSync(action.from, action.to, fs34.constants.COPYFILE_EXCL);
       return done;
     case "mergeKey": {
       const merged = mergeKey(action.file, action.value, action.expected);
@@ -8616,28 +8708,28 @@ function runAction(action, runGit) {
   }
 }
 function archive(action) {
-  const kept = walkFolder(action.from).files.filter((rel) => copyState(path40.join(action.from, rel), path40.join(action.copies, rel)) !== "same");
+  const kept = walkFolder(action.from).files.filter((rel) => copyState(path41.join(action.from, rel), path41.join(action.copies, rel)) !== "same");
   moveFolder(action.from, action.to);
-  const listed = kept.map((rel) => `  ${path40.join(action.to, rel)}`);
+  const listed = kept.map((rel) => `  ${path41.join(action.to, rel)}`);
   if (kept.length === 0)
     return { ok: true, lines: [phrase(action).done] };
   const why = action.reappeared ? `The default folder came back after the link. These files in it differ from ${action.copies} or are missing there, so merge what is new by hand:` : `These files changed after the copy, so their latest version is kept in the archive only:`;
   return { ok: true, lines: [phrase(action).done, why, ...listed] };
 }
 var FS_MOVES = {
-  rename: fs33.renameSync,
-  copy: (from, to) => fs33.cpSync(from, to, {
+  rename: fs34.renameSync,
+  copy: (from, to) => fs34.cpSync(from, to, {
     recursive: true,
     errorOnExist: true,
     force: false,
     verbatimSymlinks: true,
     preserveTimestamps: true
   }),
-  remove: (folder) => fs33.rmSync(folder, { recursive: true })
+  remove: (folder) => fs34.rmSync(folder, { recursive: true })
 };
 function moveFolder(from, to, moves = {}) {
   const { rename, copy, remove } = { ...FS_MOVES, ...moves };
-  fs33.mkdirSync(path40.dirname(to), { recursive: true });
+  fs34.mkdirSync(path41.dirname(to), { recursive: true });
   try {
     rename(from, to);
   } catch (error) {
@@ -8652,7 +8744,7 @@ function moveFolder(from, to, moves = {}) {
 var hasCode = (error, code) => error instanceof Error && ("code" in error) && error.code === code;
 function claim(from, to) {
   try {
-    fs33.mkdirSync(to);
+    fs34.mkdirSync(to);
   } catch (error) {
     const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf4(error)}`;
     throw new Error(message, { cause: error });
@@ -8684,10 +8776,10 @@ function keepIfChanged(from, to) {
   throw new Error(`${from} changed during the copy, so link kept it: ${changed.join(", ")}. ${to} holds the copy taken at the move, and a re-run archives what ${from} now holds.`);
 }
 function changedSince(from, to) {
-  return fs33.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
-    const source = path40.join(from, entry.name);
-    const copy = path40.join(to, entry.name);
-    const copied = fs33.lstatSync(copy, { throwIfNoEntry: false });
+  return fs34.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+    const source = path41.join(from, entry.name);
+    const copy = path41.join(to, entry.name);
+    const copied = fs34.lstatSync(copy, { throwIfNoEntry: false });
     if (entry.isDirectory() && copied?.isDirectory() === true) {
       return changedSince(source, copy);
     }
@@ -8696,10 +8788,10 @@ function changedSince(from, to) {
 }
 function sameEntry(entry, source, copy, copied) {
   if (entry.isSymbolicLink()) {
-    return copied.isSymbolicLink() && fs33.readlinkSync(source) === fs33.readlinkSync(copy);
+    return copied.isSymbolicLink() && fs34.readlinkSync(source) === fs34.readlinkSync(copy);
   }
   if (entry.isFile()) {
-    return copied.isFile() && fs33.readFileSync(source).equals(fs33.readFileSync(copy));
+    return copied.isFile() && fs34.readFileSync(source).equals(fs34.readFileSync(copy));
   }
   return false;
 }
@@ -8737,7 +8829,7 @@ function phrase(action) {
     case "createFolder":
       return forms("Created", "create", action.folder);
     case "writeMarker":
-      return forms("Wrote", "write", `${path40.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
+      return forms("Wrote", "write", `${path41.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
     case "copyFile":
       return forms("Copied", "copy", `${action.from} to ${action.to}`);
     case "mergeKey":
@@ -8780,7 +8872,7 @@ function envWithAbsoluteStore(env, cwd) {
   const store = env.SIDEKICK_MEMORY_STORE;
   if (store === undefined || store === "")
     return env;
-  return { ...env, SIDEKICK_MEMORY_STORE: path41.resolve(cwd, store) };
+  return { ...env, SIDEKICK_MEMORY_STORE: path42.resolve(cwd, store) };
 }
 function parseSnapshotArgs(rest2) {
   const parsed = parseFlags(rest2, {
@@ -8789,7 +8881,7 @@ function parseSnapshotArgs(rest2) {
     source: { type: "string" }
   });
   const { store, session, source } = parsed?.values ?? {};
-  if (typeof store === "string" && path41.isAbsolute(store) && typeof session === "string" && typeof source === "string") {
+  if (typeof store === "string" && path42.isAbsolute(store) && typeof session === "string" && typeof source === "string") {
     return { store, session, source };
   }
   return;
@@ -8852,9 +8944,9 @@ function withheldFindings(result, store) {
 }
 function isReadableDirectory(dir) {
   try {
-    if (!fs34.statSync(dir).isDirectory())
+    if (!fs35.statSync(dir).isDirectory())
       return false;
-    fs34.readdirSync(dir);
+    fs35.readdirSync(dir);
     return true;
   } catch {
     return false;
@@ -8908,7 +9000,7 @@ function runMemoryCli(argv2, ctx, out, err) {
     return 1;
   }
   const env = envWithAbsoluteStore(ctx.env, ctx.cwd);
-  return runLink({ ...parsed, repo: path41.resolve(ctx.cwd, parsed.repo) }, {
+  return runLink({ ...parsed, repo: path42.resolve(ctx.cwd, parsed.repo) }, {
     env,
     home: ctx.home,
     configDir: configDirOf(env, ctx.home),
@@ -9281,32 +9373,32 @@ function renderReport(r) {
 }
 
 // bin/helpers/rules.ts
-import * as fs37 from "node:fs";
-import * as path44 from "node:path";
+import * as fs38 from "node:fs";
+import * as path45 from "node:path";
 
 // bin/helpers/rules-fs.ts
-import * as fs35 from "node:fs";
-import * as path42 from "node:path";
+import * as fs36 from "node:fs";
+import * as path43 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
 function statusOf(dir, name) {
-  const st = fs35.lstatSync(path42.join(dir, name), { throwIfNoEntry: false });
+  const st = fs36.lstatSync(path43.join(dir, name), { throwIfNoEntry: false });
   if (!st)
     return "absent";
   return st.isFile() ? "file" : "other";
 }
 var isRegularFile = (dir, name) => statusOf(dir, name) === "file";
 function ownedRulesIn(dir) {
-  const dirStat = fs35.statSync(dir, { throwIfNoEntry: false });
+  const dirStat = fs36.statSync(dir, { throwIfNoEntry: false });
   if (!dirStat)
     return [];
   if (!dirStat.isDirectory())
     return [];
-  return fs35.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
+  return fs36.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
 }
 
 // bin/helpers/rules-overlap.ts
-import * as fs36 from "node:fs";
-import * as path43 from "node:path";
+import * as fs37 from "node:fs";
+import * as path44 from "node:path";
 var MIN_SHARED_HEADINGS = 2;
 var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
 function headingsOf(body) {
@@ -9342,20 +9434,20 @@ function signalsFor(file, body, rule) {
 }
 function findOverlap(src, dest) {
   const report2 = { pairs: [], extensions: [] };
-  const destStat = fs36.statSync(dest, { throwIfNoEntry: false });
+  const destStat = fs37.statSync(dest, { throwIfNoEntry: false });
   if (!destStat?.isDirectory())
     return report2;
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs36.readFileSync(path43.join(src, name), "utf-8");
+    const body = fs37.readFileSync(path44.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
       opening: openingOf(body)
     };
   });
-  const others = fs36.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
+  const others = fs37.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   for (const file of others) {
-    const body = fs36.readFileSync(path43.join(dest, file), "utf-8");
+    const body = fs37.readFileSync(path44.join(dest, file), "utf-8");
     for (const rule of rules) {
       const signals = signalsFor(file, body, rule);
       if (signals.length === 0)
@@ -9394,7 +9486,7 @@ function formatOverlap(report2) {
 
 // bin/helpers/rules.ts
 function resolveDest(scope, cwd, claudeHome) {
-  return scope === "project" ? path44.join(cwd, ".claude", "rules") : path44.join(claudeHome, "rules");
+  return scope === "project" ? path45.join(cwd, ".claude", "rules") : path45.join(claudeHome, "rules");
 }
 function workTreeRootOf(cwd) {
   const result = execRunner("git", ["rev-parse", "--show-toplevel"], cwd);
@@ -9420,10 +9512,10 @@ var PLUGIN_ONLY_RULES = [
 var isRecord8 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
-  const file = path44.join(root, ".claude", "settings.json");
+  const file = path45.join(root, ".claude", "settings.json");
   let text;
   try {
-    text = fs37.readFileSync(file, "utf-8");
+    text = fs38.readFileSync(file, "utf-8");
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { state: "not-enabled" };
@@ -9471,9 +9563,9 @@ function installRules(src, dest, scope = EVERY_RULE) {
     return { installed: [], removed: [], leftOut: [], skipped: [] };
   }
   const set = shippedOnly(scope, shipped);
-  fs37.mkdirSync(dest, { recursive: true });
+  fs38.mkdirSync(dest, { recursive: true });
   const byLowerCase = new Map;
-  for (const existing of fs37.readdirSync(dest)) {
+  for (const existing of fs38.readdirSync(dest)) {
     byLowerCase.set(existing.toLowerCase(), existing);
   }
   const installed = [];
@@ -9488,7 +9580,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
       skipped.push({ name, why: "not-a-regular-file" });
       continue;
     }
-    fs37.copyFileSync(path44.join(src, name), path44.join(dest, name));
+    fs38.copyFileSync(path45.join(src, name), path45.join(dest, name));
     installed.push(name);
   }
   const keep = new Set(shipped);
@@ -9496,7 +9588,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
   const removed = owned.filter((n) => !keep.has(n));
   const leftOut = owned.filter((n) => set.leaveOut.includes(n));
   for (const name of [...removed, ...leftOut]) {
-    fs37.rmSync(path44.join(dest, name));
+    fs38.rmSync(path45.join(dest, name));
   }
   return { installed, removed, leftOut, skipped };
 }
@@ -9507,12 +9599,12 @@ function checkRules(src, dest, scope = EVERY_RULE) {
   const installed = ownedRulesIn(dest);
   const drift = [];
   for (const name of expected) {
-    const there = path44.join(dest, name);
-    if (!fs37.existsSync(there)) {
+    const there = path45.join(dest, name);
+    if (!fs38.existsSync(there)) {
       drift.push({ kind: "missing", name });
       continue;
     }
-    const same = fs37.readFileSync(path44.join(src, name)).equals(fs37.readFileSync(there));
+    const same = fs38.readFileSync(path45.join(src, name)).equals(fs38.readFileSync(there));
     if (!same)
       drift.push({ kind: "stale", name });
   }
@@ -9565,9 +9657,9 @@ function scopeSet(scope, root) {
 var deliveryMode = (projectDest) => ownedRulesIn(projectDest).length > 0 ? "project" : "user";
 var realOrSelf = (p) => {
   try {
-    return fs37.realpathSync(p);
+    return fs38.realpathSync(p);
   } catch {
-    return path44.resolve(p);
+    return path45.resolve(p);
   }
 };
 var sameDir = (a, b) => realOrSelf(a) === realOrSelf(b);
@@ -9592,7 +9684,7 @@ function reportDuplicates(expected, dest, userDest, out) {
   out(`your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`);
 }
 function refuseNonDirectory(dir, out) {
-  const st = fs37.statSync(dir, { throwIfNoEntry: false });
+  const st = fs38.statSync(dir, { throwIfNoEntry: false });
   if (!st || st.isDirectory())
     return false;
   out(`${dir} exists and is not a directory; refusing to write rules there`);
@@ -10059,8 +10151,8 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 }
 
 // bin/helpers/worker-dispatch-checks.ts
-import * as fs38 from "node:fs";
-import * as path45 from "node:path";
+import * as fs39 from "node:fs";
+import * as path46 from "node:path";
 
 // bin/helpers/worker-facts.ts
 function checkoutFacts(runGit, cwd) {
@@ -10210,7 +10302,7 @@ function treeNameIssues(runGit, top, name) {
   const folder = nativeFolder(top, name);
   const branch = nativeBranch(name);
   return [
-    ...fs38.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...fs39.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [
       `name: the branch ${branch} already exists: once you have checked that its commits have landed, delete it with git branch -D ${branch}, or dispatch under another name`
     ] : []
@@ -10269,7 +10361,7 @@ function missingProfileHint(name, penv) {
   if (oldStoreIssues(penv.env, penv.cwd, penv.home).length > 0)
     return [];
   const roots = storeRoots("profiles", penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder3(path45.join(root.dir, name)));
+  const held = roots.some((root) => isFolder3(path46.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv, main, reads) {
@@ -10349,7 +10441,7 @@ function checkOnly(opts, wenv) {
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   const at = "issues" in facts ? wenv.cwd : facts.launchTop;
   const head = "issues" in facts ? undefined : headCommit(wenv.runGit, at);
-  const prepared = prepareProfile(opts, path45.join(at, CHECK_BRIEF), { ...wenv, cwd: at }, undefined, []);
+  const prepared = prepareProfile(opts, path46.join(at, CHECK_BRIEF), { ...wenv, cwd: at }, undefined, []);
   const issues = [
     ..."issues" in facts ? facts.issues : [
       ...head === undefined ? [NO_COMMIT] : [],
@@ -10372,7 +10464,7 @@ function checkOnly(opts, wenv) {
 }
 
 // bin/helpers/worker-dispatch-verify.ts
-import * as path46 from "node:path";
+import * as path47 from "node:path";
 function checkoutAt(input, cwd) {
   if (cwd === physical(input.launchTop)) {
     return `the launching checkout ${input.launchTop}`;
@@ -10394,7 +10486,7 @@ function landingOnce(input, jobId, readTimeoutMs) {
   if (row2.cwd === undefined) {
     return { kind: "missing", saw: `the job ${jobId} lists no cwd` };
   }
-  const cwd = physical(path46.resolve(input.launchTop, row2.cwd));
+  const cwd = physical(path47.resolve(input.launchTop, row2.cwd));
   const checkout = checkoutAt(input, cwd);
   if (checkout !== undefined)
     return { kind: "checkout", checkout };
@@ -10509,15 +10601,15 @@ function verifyWorktree(input) {
 }
 
 // bin/helpers/worker-exclude.ts
-import * as fs39 from "node:fs";
-import * as path47 from "node:path";
+import * as fs40 from "node:fs";
+import * as path48 from "node:path";
 var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
 var reason6 = (e) => e instanceof Error ? e.message : String(e);
 var isMissing4 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readExclude(file) {
   try {
-    return { text: fs39.readFileSync(file, "utf-8") };
+    return { text: fs40.readFileSync(file, "utf-8") };
   } catch (e) {
     if (isMissing4(e))
       return { text: "" };
@@ -10533,8 +10625,8 @@ function appendExclude(file, text) {
 `) ? "" : `
 `;
   try {
-    fs39.mkdirSync(path47.dirname(file), { recursive: true });
-    fs39.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+    fs40.mkdirSync(path48.dirname(file), { recursive: true });
+    fs40.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
 `);
     return [];
   } catch (e) {
@@ -10546,7 +10638,7 @@ function appendExclude(file, text) {
 function ensureWorktreesExcluded(runGit, top, commonDir) {
   if (isIgnored(runGit, top))
     return { line: undefined };
-  const file = path47.join(commonDir, "info", "exclude");
+  const file = path48.join(commonDir, "info", "exclude");
   const read = readExclude(file);
   if ("issues" in read)
     return read;
@@ -10711,7 +10803,7 @@ function dispatch(opts, wenv, out, err) {
 }
 
 // bin/helpers/worker-dispatch-args.ts
-import * as path48 from "node:path";
+import * as path49 from "node:path";
 var DEFAULT_WORKER_PROFILE = "worker";
 var stringFlag = (values, key) => {
   const value = values[key];
@@ -10739,13 +10831,13 @@ function parseDispatchArgs(rest2, cwd) {
   const shared = {
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path48.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path49.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
   return check2 ? { ...shared, check: true } : {
     ...shared,
     check: false,
-    brief: path48.resolve(cwd, parsed.positionals[0])
+    brief: path49.resolve(cwd, parsed.positionals[0])
   };
 }
 
@@ -10789,7 +10881,7 @@ function writeBackup(runGit, top, ref2, head) {
 var keepBackup = (ready, wenv) => writeBackup(wenv.runGit, ready.mainTop, readyBackup(ready), ready.head);
 
 // bin/helpers/worker-finish-args.ts
-import * as path49 from "node:path";
+import * as path50 from "node:path";
 var NEEDS_REPORT = "--name needs --no-report or --discard, since there is no brief to say where the run report goes";
 var NEEDS_INTO = "--name needs --into <rev> or --discard, since there is no brief to name the target";
 var stringFlag2 = (values, key) => {
@@ -10815,7 +10907,7 @@ function parseFinishArgs(rest2, cwd) {
   const shared = {
     noReport: values["no-report"] === true,
     mode: discard ? { kind: "discard" } : { kind: "landed", into },
-    worktree: worktree === undefined ? undefined : path49.resolve(cwd, worktree)
+    worktree: worktree === undefined ? undefined : path50.resolve(cwd, worktree)
   };
   const name = stringFlag2(values, "name");
   if (name !== undefined) {
@@ -10823,7 +10915,7 @@ function parseFinishArgs(rest2, cwd) {
   }
   if (positionals.length !== 1)
     return;
-  const brief = path49.resolve(cwd, positionals[0]);
+  const brief = path50.resolve(cwd, positionals[0]);
   return { subject: { kind: "brief", brief }, ...shared };
 }
 function byName3(name, shared) {
@@ -10885,8 +10977,8 @@ var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
-import * as fs40 from "node:fs";
-import * as path50 from "node:path";
+import * as fs41 from "node:fs";
+import * as path51 from "node:path";
 
 // bin/helpers/worker-finish-target.ts
 function targetName(runGit, top, rev) {
@@ -11084,15 +11176,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report2 = path50.posix.normalize(read.brief.report);
+  const report2 = path51.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: read.brief.target,
     report: report2,
-    reportFrom: path50.join(worktree, report2),
-    reportTo: top === undefined ? undefined : path50.join(top, report2)
+    reportFrom: path51.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path51.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -11137,7 +11229,7 @@ function operatorIssues(name, tried, linked2) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs40.existsSync(worktree) && !fs40.existsSync(path50.join(worktree, ".git"));
+  const linkless = fs41.existsSync(worktree) && !fs41.existsSync(path51.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list2 = worktreeListed(runGit, top, worktree);
@@ -11379,12 +11471,12 @@ function clearGone(gone, wenv, out) {
 }
 
 // bin/helpers/worker-finish-report.ts
-import * as fs41 from "node:fs";
-import * as path51 from "node:path";
+import * as fs42 from "node:fs";
+import * as path52 from "node:path";
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs41.readFileSync(file) };
+    return { data: fs42.readFileSync(file) };
   } catch (e) {
     if (isMissing5(e))
       return { data: undefined };
@@ -11437,8 +11529,8 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs41.mkdirSync(path51.dirname(to), { recursive: true });
-    fs41.copyFileSync(from, to, fs41.constants.COPYFILE_EXCL);
+    fs42.mkdirSync(path52.dirname(to), { recursive: true });
+    fs42.copyFileSync(from, to, fs42.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${to}: ${why}`];
@@ -11500,8 +11592,8 @@ function copyChangedIssues(from, to, now) {
 }
 
 // bin/helpers/worker-finish-subject.ts
-import * as fs42 from "node:fs";
-import * as path52 from "node:path";
+import * as fs43 from "node:fs";
+import * as path53 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -11512,7 +11604,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path52.dirname(subject.brief);
+      const folder = path53.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -11530,8 +11622,8 @@ function recordedTop(runGit, commonDir, name) {
   const record2 = records.find((r) => r.name === name);
   if (record2 === undefined)
     return;
-  const folder = path52.dirname(record2.brief);
-  return fs42.existsSync(folder) ? topOf(runGit, folder) : undefined;
+  const folder = path53.dirname(record2.brief);
+  return fs43.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
   const { read } = subject;
@@ -11550,8 +11642,8 @@ function launcherOf(subject, facts, runGit) {
 }
 
 // bin/helpers/worker-teardown-leftovers.ts
-import * as fs43 from "node:fs";
-import * as path53 from "node:path";
+import * as fs44 from "node:fs";
+import * as path54 from "node:path";
 function clearSavedReport(ready) {
   const step = ready.reportStep;
   if (step.kind === "none" || step.kind === "no brief")
@@ -11559,9 +11651,9 @@ function clearSavedReport(ready) {
   if (step.from === step.to)
     return;
   try {
-    const saved = fs43.readFileSync(step.to);
-    if (fs43.readFileSync(step.from).equals(saved))
-      fs43.unlinkSync(step.from);
+    const saved = fs44.readFileSync(step.to);
+    if (fs44.readFileSync(step.from).equals(saved))
+      fs44.unlinkSync(step.from);
   } catch {}
 }
 function forgottenWayOut({
@@ -11569,7 +11661,7 @@ function forgottenWayOut({
   branch
 }) {
   const route = `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
-  const removable = nativeBranch(path53.basename(worktree));
+  const removable = nativeBranch(path54.basename(worktree));
   if (branch === removable)
     return route;
   return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`;
@@ -12028,7 +12120,7 @@ function isOwnBranch(runGit, top, branch, name) {
 }
 
 // bin/helpers/worktree-move-checks.ts
-import * as path54 from "node:path";
+import * as path55 from "node:path";
 var DIGITS = /^\d+$/;
 function parseMoveArgs(rest2) {
   const parsed = parseFlags(rest2, {
@@ -12086,7 +12178,7 @@ function whereItRuns(env, err) {
     return refuse6(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
   }
   const entry = repo.worktrees[at];
-  return { repo, entry, name: path54.basename(entry.path) };
+  return { repo, entry, name: path55.basename(entry.path) };
 }
 var heldElsewhere = (place, branch) => place.repo.worktrees.some((entry) => entry !== place.entry && entry.branch === `${HEADS}${branch}`);
 function onBranchMoved(runGit, place, on, branch) {
@@ -12648,7 +12740,7 @@ function moveWorktree(args, env, out, err) {
 }
 
 // bin/helpers/worktree-remove-checks.ts
-import * as path55 from "node:path";
+import * as path56 from "node:path";
 var DISCARD = "--discard";
 var REMOTES2 = "refs/remotes/";
 function parseRemoveArgs(rest2) {
@@ -12696,8 +12788,8 @@ var alone = (repo, entry) => ({
   worktrees: [repo.worktrees[0], entry]
 });
 function resolveTarget3(repo, cwd, target) {
-  const asPath = path55.resolve(cwd, target);
-  const matches = repo.worktrees.filter((entry2) => path55.basename(entry2.path) === target || samePath(entry2.path, asPath));
+  const asPath = path56.resolve(cwd, target);
+  const matches = repo.worktrees.filter((entry2) => path56.basename(entry2.path) === target || samePath(entry2.path, asPath));
   if (matches.length === 0) {
     return refuse7(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
   }
@@ -13195,22 +13287,22 @@ function runWorktreeCli(rest2, env, out, err) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path56.dirname(fileURLToPath(entryFileUrl));
+  const here = path57.dirname(fileURLToPath(entryFileUrl));
   const candidates3 = [
-    path56.resolve(here, ".."),
-    path56.resolve(here, "..", "plugin")
+    path57.resolve(here, ".."),
+    path57.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs44.existsSync(path56.join(c, "rules")))
+    if (fs45.existsSync(path57.join(c, "rules")))
       return c;
   }
   return candidates3[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path56.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path57.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs44.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs45.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -13239,7 +13331,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs44.writeSync(1, buffer, offset);
+      offset += fs45.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -13260,7 +13352,7 @@ function profileEnvOf(ctx) {
 }
 function readProcessStdin() {
   try {
-    return fs44.readFileSync(0, "utf-8");
+    return fs45.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -13327,7 +13419,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path56.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path57.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

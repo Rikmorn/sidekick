@@ -52,6 +52,7 @@ import {
   sameFolder,
   sidekickHome,
 } from './sidekick-home.js';
+import { isSidekickPlugin } from './sidekick-plugin.js';
 import { listJobs } from './worker-jobs.js';
 
 export const PROFILE_USAGE_LINE =
@@ -177,11 +178,33 @@ function memoryLaunch(penv: ProfileEnv): MemoryLaunch | undefined {
   };
 }
 
-const composed = (profile: Profile, penv: ProfileEnv, overlay?: Settings) => {
+/** What a launch adds to the profile's own `pluginDirs` and settings. */
+export interface LaunchOptions {
+  overlay?: Settings;
+  /** The launch's plugin dirs beyond the profile's own. */
+  pluginDirs?: readonly string[];
+}
+
+// The profile's plugin dirs, then the launch's: the list the plugin check passes and the sidekick decision reads.
+const allPluginDirs = (
+  profile: Profile,
+  extra: readonly string[],
+): readonly string[] => [...profile.pluginDirs, ...extra];
+
+const composed = (
+  profile: Profile,
+  penv: ProfileEnv,
+  opts: LaunchOptions = {},
+) => {
   const settings = composeSettings(profile, {
     home: penv.home,
-    overlay,
+    overlay: opts.overlay,
     memory: memoryLaunch(penv),
+    sidekick: allPluginDirs(profile, opts.pluginDirs ?? []).some(
+      isSidekickPlugin,
+    )
+      ? 'inline'
+      : 'installed',
   });
   return { settings, args: launchArgs(profile, settings) };
 };
@@ -199,19 +222,6 @@ const settingsCheck = (
 
 const skipsPluginCheck = (penv: ProfileEnv): boolean =>
   penv.env[PLUGIN_SKIP_VARIABLE] === '1';
-
-/** What a launch adds to the profile's own `pluginDirs` and settings. */
-export interface LaunchOptions {
-  overlay?: Settings;
-  /** The launch's plugin dirs beyond the profile's own. */
-  pluginDirs?: readonly string[];
-}
-
-// The profile's plugin dirs, then the launch's: the one list every plugin check and argument reads.
-const allPluginDirs = (
-  profile: Profile,
-  extra: readonly string[],
-): readonly string[] => [...profile.pluginDirs, ...extra];
 
 const pluginCheck = (
   profile: Profile,
@@ -282,7 +292,7 @@ export function checkComposed(
   err: Out,
   opts: LaunchOptions = {},
 ): string[] | undefined {
-  const { settings, args } = composed(profile, penv, opts.overlay);
+  const { settings, args } = composed(profile, penv, opts);
   const checked = checkProfile(profile, settings, penv, opts.pluginDirs ?? []);
   if (!checked.ok) {
     refuse(err, checked.issues);

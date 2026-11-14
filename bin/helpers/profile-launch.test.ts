@@ -16,6 +16,7 @@ import {
 } from './profile-launch.js';
 import { type ProfileManifest, parseManifest } from './profile-manifest.js';
 import type { Profile } from './profile-store.js';
+import { SIDEKICK_DEPENDENCY_IDS, SIDEKICK_ID } from './sidekick-plugin.js';
 
 const profile = (
   manifest: Partial<ProfileManifest> = {},
@@ -162,6 +163,69 @@ describe('composeSettings', () => {
       expect(JSON.stringify(compose(undefined))).toBe(
         JSON.stringify(composeSettings(p, { home: '/h' })),
       );
+    });
+  });
+
+  describe('a clean room loads sidekick and runs no updates', () => {
+    const clean = (settings?: ProfileManifest['settings'], hasRules = false) =>
+      profile({ settingSources: ['project', 'local'], settings }, { hasRules });
+    const deps = Object.fromEntries(
+      SIDEKICK_DEPENDENCY_IDS.map((id) => [id, true]),
+    );
+
+    test("'installed' enables sidekick and each dependency", () => {
+      const s = composeSettings(clean(), { home: '/h', sidekick: 'installed' });
+      expect(s.enabledPlugins).toEqual({ [SIDEKICK_ID]: true, ...deps });
+      expect(s.env).toEqual({ DISABLE_AUTOUPDATER: '1' });
+    });
+
+    test("'inline' enables the dependencies and names no sidekick key", () => {
+      const s = composeSettings(clean(), { home: '/h', sidekick: 'inline' });
+      expect(s.enabledPlugins).toEqual(deps);
+      expect(s.enabledPlugins).not.toHaveProperty(SIDEKICK_ID);
+    });
+
+    test('a profile that names sidekick keeps its value and gains no dependency key', () => {
+      const s = composeSettings(
+        clean({ enabledPlugins: { [SIDEKICK_ID]: false } }),
+        { home: '/h', sidekick: 'installed' },
+      );
+      expect(s.enabledPlugins).toEqual({ [SIDEKICK_ID]: false });
+      expect(s.env).toEqual({ DISABLE_AUTOUPDATER: '1' });
+    });
+
+    test("the profile's other enabledPlugins merge with launch's", () => {
+      const s = composeSettings(clean({ enabledPlugins: { 'x@y': true } }), {
+        home: '/h',
+        sidekick: 'installed',
+      });
+      expect(s.enabledPlugins).toEqual({
+        'x@y': true,
+        [SIDEKICK_ID]: true,
+        ...deps,
+      });
+    });
+
+    test('a profile that is not a clean room gets no enables and no variable', () => {
+      for (const settingSources of [undefined, ['user', 'project']] as const) {
+        const s = composeSettings(
+          profile({ settingSources: settingSources && [...settingSources] }),
+          { home: '/h', sidekick: 'installed' },
+        );
+        expect(s).not.toHaveProperty('enabledPlugins');
+        expect(s.env).toBeUndefined();
+      }
+    });
+
+    test('the memory variable and the updates variable both stay', () => {
+      const s = composeSettings(clean(undefined, true), {
+        home: '/h',
+        sidekick: 'installed',
+      });
+      expect(s.env).toEqual({
+        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+        DISABLE_AUTOUPDATER: '1',
+      });
     });
   });
 

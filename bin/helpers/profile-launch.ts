@@ -11,6 +11,7 @@ import * as path from 'node:path';
 import { envWithoutRepoVars } from './git-env.js';
 import { withoutMarkers } from './main-session.js';
 import type { Profile } from './profile-store.js';
+import { SIDEKICK_DEPENDENCY_IDS, SIDEKICK_ID } from './sidekick-plugin.js';
 
 export type Settings = Record<string, unknown>;
 
@@ -80,15 +81,39 @@ function memoryKeys(
   };
 }
 
-// The keys launch owns: the profile's name, the two that depend on its folder, and the memory ones.
+/** Whether the launch loads sidekick from an installed plugin or from a `--plugin-dir`. */
+export type SidekickSource = 'installed' | 'inline';
+
+// Whether the profile's own enabledPlugins has the key `SIDEKICK_ID`, with any value.
+function namesSidekick(profile: Profile): boolean {
+  const enabled: unknown = profile.manifest.settings?.enabledPlugins;
+  return isPlainObject(enabled) && Object.hasOwn(enabled, SIDEKICK_ID);
+}
+
+// A clean room loads no user-scope plugin, so launch enables sidekick and its dependencies.
+function pluginKeys(profile: Profile, source: SidekickSource): Settings {
+  if (namesSidekick(profile)) return {};
+  const ids = [
+    ...(source === 'installed' ? [SIDEKICK_ID] : []),
+    ...SIDEKICK_DEPENDENCY_IDS,
+  ];
+  return { enabledPlugins: Object.fromEntries(ids.map((id) => [id, true])) };
+}
+
+// The keys launch owns: the profile's name, the two that depend on its folder, the memory ones, and a clean room's plugins and updates.
 function launchKeys(
   profile: Profile,
   home: string,
   memory: MemoryLaunch | undefined,
+  source: SidekickSource,
 ): Settings {
   const isCleanRoom =
     profile.manifest.settingSources !== undefined &&
     !profile.manifest.settingSources.includes('user');
+  const env = {
+    ...(profile.hasRules ? { [memoryVariable]: '1' } : {}),
+    ...(isCleanRoom ? NO_UPDATES_ENV : {}),
+  };
   return {
     ...memoryKeys(profile.manifest.settingSources, memory),
     sidekick: {
@@ -97,9 +122,10 @@ function launchKeys(
         ? {}
         : { hide: profile.manifest.hide }),
     },
-    ...(profile.hasRules ? { env: { [memoryVariable]: '1' } } : {}),
+    ...(Object.keys(env).length > 0 ? { env } : {}),
     ...(isCleanRoom
       ? {
+          ...pluginKeys(profile, source),
           claudeMdExcludes: [
             path.join(home, '.claude', 'CLAUDE.md'),
             path.join(home, '.claude', 'rules', '**'),
@@ -114,15 +140,22 @@ function launchKeys(
  * The excludes sit under `home`, where the user-level copies load, never under
  * `CLAUDE_CONFIG_DIR`. `memory` puts back the repo's key and the store when
  * the manifest's setting sources leave out the files that carry them.
+ * `sidekick` says where a clean room gets sidekick: installed, or inline from
+ * a plugin dir. Without it, a clean room is composed as for an install.
  */
 export function composeSettings(
   profile: Profile,
-  opts: { home: string; overlay?: Settings; memory?: MemoryLaunch },
+  opts: {
+    home: string;
+    overlay?: Settings;
+    memory?: MemoryLaunch;
+    sidekick?: SidekickSource;
+  },
 ): Settings {
   return mergeSettings(
     profile.manifest.settings ?? {},
     opts.overlay ?? {},
-    launchKeys(profile, opts.home, opts.memory),
+    launchKeys(profile, opts.home, opts.memory, opts.sidekick ?? 'installed'),
   );
 }
 
