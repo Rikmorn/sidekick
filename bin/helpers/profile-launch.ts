@@ -51,6 +51,13 @@ function mergeTwo(base: Settings, next: Settings): Settings {
 export const mergeSettings = (...layers: Settings[]): Settings =>
   layers.reduce(mergeTwo, {});
 
+/**
+ * The env of a session sidekick launches unattended. Claude Code shows an
+ * update's notice only in the session that ran it, so a session nobody
+ * watches runs no update of Claude Code or of a plugin.
+ */
+export const NO_UPDATES_ENV = { DISABLE_AUTOUPDATER: '1' } as const;
+
 const memoryVariable = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD';
 
 /** A repo's memory key and the store's absolute path; passed only when the repo has a key. */

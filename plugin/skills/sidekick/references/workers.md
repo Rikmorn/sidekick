@@ -148,6 +148,7 @@ Once the checks pass, `dispatch` acts in this order:
   "env": {
     "SIDEKICK_WORKER": "<absolute brief path>",
     "SIDEKICK_MAIN": "<the main's name>",
+    "DISABLE_AUTOUPDATER": "1",
     "GIT_CONFIG_COUNT": "<n + 1>",
     "GIT_CONFIG_KEY_<n>": "url.sidekick-push-blocked::.pushInsteadOf",
     "GIT_CONFIG_VALUE_<n>": ""
@@ -164,6 +165,7 @@ Once the checks pass, `dispatch` acts in this order:
 - `worktree.baseRef: "head"` branches the worktree from the launching checkout's `HEAD`. The default, `"fresh"`, would branch from the remote's default branch.
 - `SIDEKICK_WORKER` marks the session as a worker, for the mods' role and for the context monitor. At the critical warning, the context monitor then tells it to carry on rather than stop to tell the user, since no one watches it. It also says to keep superpowers' ledger current and to re-read the brief after a compaction. The variable also tells the subagent start hook which brief to read.
 - `SIDEKICK_MAIN` names the worker's main: the dispatching session's name as `claude agents --json --all` lists it, or its session id's first 8 characters without one. A worker that dispatches passes its own main on. `dispatch` adds the key only when it runs inside a session. It spawns `claude` without either marker in its environment, so the overlay is their only way in. The worker's identity row names the main from it, as `docs/reference/USAGE.md` §Mains and workers in the `Rikmorn/sidekick` repo says.
+- `DISABLE_AUTOUPDATER` keeps the worker from updating Claude Code or any plugin. Claude Code shows an update's notice only in the session that ran it, and nobody watches a worker. So updates happen in sessions the operator starts, and `references/versions.md` says how to lock a version when one goes wrong.
 
 ## The push block
 

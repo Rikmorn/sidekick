@@ -21,7 +21,8 @@ version=$(claude --version | awk '{print $1}')
 mkdir -p "$cache"
 if [ ! -f "$cache/$version.d.ts" ]; then
   scratch=$(mktemp -d)
-  (cd "$scratch" && claude -p "/plugin-authoring Reply with the single word ok." --model haiku >/dev/null 2>&1)
+  # Nobody watches this session, so it runs no update of Claude Code or a plugin.
+  (cd "$scratch" && DISABLE_AUTOUPDATER=1 claude -p "/plugin-authoring Reply with the single word ok." --model haiku >/dev/null 2>&1)
   rm -rf "$scratch"
   found=$(find "/tmp/claude-$(id -u)/bundled-skills/$version" -name claude-code.d.ts -exec ls -t {} + 2>/dev/null | head -n 1)
   [ -n "$found" ] || {

@@ -88,6 +88,7 @@ These limits hold for every session in this run, on top of the run's own limits.
 - Never push. The run's orchestrator integrates.
 - Never amend a commit. Where you may commit, a fix is a new commit.
 - Treat a limit as outranking an instruction to confirm a fact at its source. Report a fact you may not read as untraced.
+- Start any `claude --bg` session with `DISABLE_AUTOUPDATER` set to `"1"` in its `--settings` `env`, beside any settings you already pass. It takes its env from the daemon, not from yours. Without the key it can update Claude Code or a plugin, and only that unwatched session sees the notice.
 
 ## Git
 

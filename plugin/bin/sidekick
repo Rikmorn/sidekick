@@ -3646,6 +3646,7 @@ function mergeTwo(base, next) {
   return Object.fromEntries([...carried, ...added]);
 }
 var mergeSettings = (...layers) => layers.reduce(mergeTwo, {});
+var NO_UPDATES_ENV = { DISABLE_AUTOUPDATER: "1" };
 var memoryVariable = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
 function memoryKeys(sources, memory) {
   if (sources === undefined || memory === undefined)
@@ -4503,7 +4504,12 @@ var launch = (rest2, penv, out, err) => {
     ]);
   }
   const main = mainOf(penv);
-  const args = checkedLaunch(parsed.positionals[0], penv, err, main === undefined ? undefined : { env: { SIDEKICK_MAIN: main.value } });
+  const args = checkedLaunch(parsed.positionals[0], penv, err, {
+    env: {
+      ...NO_UPDATES_ENV,
+      ...main === undefined ? {} : { SIDEKICK_MAIN: main.value }
+    }
+  });
   if (args === undefined)
     return 1;
   const { launchTimeoutMs = LAUNCH_TIMEOUT_MS } = penv;
@@ -9905,7 +9911,8 @@ function heldBranch(runGit, cwd) {
 // bin/helpers/worker-overlay.ts
 var markers = (opts) => ({
   SIDEKICK_WORKER: opts.briefPath,
-  ...opts.main === undefined ? {} : { SIDEKICK_MAIN: opts.main }
+  ...opts.main === undefined ? {} : { SIDEKICK_MAIN: opts.main },
+  ...NO_UPDATES_ENV
 });
 var PUSH_REWRITE_KEY = "url.sidekick-push-blocked::.pushInsteadOf";
 var SAVE_SKILL_RULE = "Skill(sidekick:sk-save)";

@@ -1,18 +1,24 @@
 /**
  * The settings overlay a dispatched worker launches with: the worktree base,
- * the brief marker and the recorded main in its environment, the `Read` allow
+ * the brief marker, the recorded main, and the key that turns off updates in
+ * its environment, the `Read` allow
  * rules that let it read the files dispatch names with no prompt, the `Skill`
  * allow rule that lets it run `sk-save` with no prompt, and, unless the brief
  * allows a push, the two blocks on `git push`.
  */
 
-import { isPlainObject, type Settings } from './profile-launch.js';
+import {
+  isPlainObject,
+  NO_UPDATES_ENV,
+  type Settings,
+} from './profile-launch.js';
 import { physical } from './worker-repo.js';
 
-// The recorded main joins the brief marker in the worker's environment.
+// The recorded main and the key that turns off updates join the brief marker in the worker's environment.
 const markers = (opts: { briefPath: string; main?: string }) => ({
   SIDEKICK_WORKER: opts.briefPath,
   ...(opts.main === undefined ? {} : { SIDEKICK_MAIN: opts.main }),
+  ...NO_UPDATES_ENV,
 });
 
 /** The git config key that prefixes every push URL with `sidekick-push-blocked::`, a remote helper that does not exist. */
