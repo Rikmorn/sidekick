@@ -3023,7 +3023,7 @@ function staleRecordNames(rows, records, facts) {
 }
 
 // bin/helpers/profile.ts
-import * as path18 from "node:path";
+import * as path19 from "node:path";
 import { parseArgs } from "node:util";
 
 // bin/helpers/main-session.ts
@@ -4146,7 +4146,138 @@ function checkPlugins(settings, target, deps, timeoutMs = 30000) {
 
 // bin/helpers/profile-role.ts
 import * as fs17 from "node:fs";
+import * as path17 from "node:path";
+
+// bin/helpers/memory-patterns.ts
 import * as path16 from "node:path";
+var INJECTION = [
+  {
+    id: "ignore-previous-instructions",
+    re: /ignore\s+(all\s+)?previous\s+instructions/i
+  },
+  {
+    id: "ignore-above-instructions",
+    re: /ignore\s+(all\s+)?above\s+instructions/i
+  },
+  { id: "disregard-previous", re: /disregard\s+(all\s+)?previous/i },
+  {
+    id: "forget-instructions",
+    re: /forget\s+(all\s+)?(your\s+)?instructions/i
+  },
+  {
+    id: "override-system-prompt",
+    re: /override\s+(system|previous)\s+(prompt|instructions)/i
+  },
+  { id: "you-are-now", re: /you\s+are\s+now\s+(?:a|an|the)\s+/i },
+  { id: "act-as", re: /act\s+as\s+(?:a|an|the)\s+(?!plan|phase|wave)/i },
+  { id: "pretend-to-be", re: /pretend\s+(?:you(?:'re| are)\s+|to\s+be\s+)/i },
+  {
+    id: "from-now-on",
+    re: /from\s+now\s+on,?\s+you\s+(?:are|will|should|must)/i
+  },
+  {
+    id: "reveal-prompt",
+    re: /(?:print|output|reveal|show|display|repeat)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions)/i
+  },
+  { id: "role-tag", re: /<\/?(?:system|assistant|human)>/i },
+  { id: "system-marker", re: /\[SYSTEM\]/i },
+  { id: "inst-marker", re: /\[INST\]/i },
+  { id: "sys-marker", re: /<<\s*SYS\s*>>/i },
+  {
+    id: "when-summarising-retain",
+    re: /when\s+(?:summari[sz]ing|compressing|compacting),?\s+(?:retain|preserve|keep)\s+(?:this|these)/i
+  },
+  {
+    id: "instruction-is-permanent",
+    re: /this\s+(?:instruction|directive|rule)\s+is\s+(?:permanent|persistent|immutable)/i
+  },
+  {
+    id: "preserve-rules-through",
+    re: /preserve\s+(?:these|this)\s+(?:rules?|instructions?|directives?)\s+(?:in|through|after|during)/i
+  },
+  {
+    id: "retain-through-summary",
+    re: /(?:retain|keep)\s+(?:this|these)\s+(?:in|through|after)\s+(?:summar|compress|compact)/i
+  }
+];
+var INVISIBLE = /[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060-\u2069]/gu;
+var TAG = /[\u{E0000}-\u{E007F}]/gu;
+var ASCII_TAG = /[\u{E0020}-\u{E007E}]/gu;
+var TAG_OFFSET = 917504;
+var TAG_FLAG = /\u{1F3F4}(?:[\u{E0061}-\u{E007A}]{2}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{1,4}|[\u{E0030}-\u{E0039}]{3}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{0,4})\u{E007F}/gu;
+var EMOJI_JOINER = /(\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}])?)\u200D(?=\p{Extended_Pictographic})/gu;
+var codePointOf = (char) => char.codePointAt(0) ?? 0;
+var tagsDecoded = (text) => text.replace(ASCII_TAG, (tag) => String.fromCodePoint(codePointOf(tag) - TAG_OFFSET));
+var invisibleStripped = (text) => tagsDecoded(text.replace(INVISIBLE, "")).replace(TAG, "");
+var withoutFlags = (text) => text.replace(TAG_FLAG, "");
+var asWritten = (text) => text;
+var STRAY_TAG = {
+  id: "unicode-tag-block",
+  re: /[\u{E0000}-\u{E007F}]/u
+};
+var GATE_CHECKS = [
+  { patterns: INJECTION, readings: [tagsDecoded, invisibleStripped] },
+  { patterns: [STRAY_TAG], readings: [withoutFlags] }
+];
+var KEYS = [
+  {
+    id: "aws-access-key",
+    re: /\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b/
+  },
+  { id: "github-classic-pat", re: /ghp_[0-9a-zA-Z]{36}/ },
+  { id: "github-fine-grained-pat", re: /github_pat_\w{82}/ },
+  {
+    id: "anthropic-api-key",
+    re: /\b(sk-ant-api03-[a-zA-Z0-9_-]{93}AA)(?:[`'"\s;]|\\[nr]|$)/
+  },
+  {
+    id: "openai-api-key",
+    re: /\b(sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})(?:[`'"\s;]|\\[nr]|$)/
+  },
+  { id: "slack-bot-token", re: /xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/ },
+  {
+    id: "private-key-block",
+    re: /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i
+  }
+];
+var KEY_CHECKS = [
+  { patterns: KEYS, readings: [asWritten] }
+];
+var hits = (checks, text) => checks.flatMap(({ patterns, readings }) => {
+  const read = readings.map((reading) => reading(text));
+  return patterns.filter(({ re }) => read.some((reading) => re.test(reading))).map(({ id }) => id);
+});
+var gateHits = (text) => hits(GATE_CHECKS, text);
+var keyHits = (text) => hits(KEY_CHECKS, text);
+var printedHits = (text) => [
+  ...keyHits(text),
+  ...gateHits(text)
+];
+var withheldName = (ids) => `(withheld name: ${ids.join(", ")})`;
+function withheldNames(names, separator = "/") {
+  const joined = names.split(separator).map((name) => {
+    const ids = printedHits(name);
+    return ids.length === 0 ? name : withheldName(ids);
+  }).join(separator);
+  const across = printedHits(joined);
+  return across.length === 0 ? joined : withheldName(across);
+}
+function withheldPath(file, base) {
+  const relative3 = path16.relative(base, file);
+  const inside = !relative3.startsWith("..") && !path16.isAbsolute(relative3);
+  if (!inside)
+    return withheldNames(file, path16.sep);
+  const checked2 = withheldNames(relative3, path16.sep);
+  return checked2 === relative3 ? file : path16.join(base, checked2);
+}
+var codePointName = (char) => `U+${codePointOf(char).toString(16).toUpperCase().padStart(4, "0")}`;
+function invisibleCharacters(text) {
+  const loose = text.replace(EMOJI_JOINER, "$1");
+  const names = [...loose.matchAll(INVISIBLE)].map(([char]) => codePointName(char));
+  return [...new Set(names)];
+}
+
+// bin/helpers/profile-role.ts
 var isFolder3 = (dir) => {
   try {
     return fs17.statSync(dir).isDirectory();
@@ -4155,9 +4286,42 @@ var isFolder3 = (dir) => {
   }
 };
 var pluginDirIssues = (dir) => dir === undefined || isFolder3(dir) ? [] : [`--plugin-dir: ${dir} is not a folder`];
-function rolePluginIssues(profile) {
-  const manifestFile = path16.join(profile.dir, "profile.json");
-  return profile.pluginDirs.filter((dir) => !isFolder3(dir)).map((dir) => `${manifestFile}: pluginDirs: ${dir} is not a folder`);
+var skippedFolders = new Set([".git", "node_modules"]);
+var nulProbeBytes = 8192;
+function pluginFiles(dir) {
+  try {
+    return fs17.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path17.join(dir, entry.name);
+      if (entry.isFile())
+        return [full];
+      if (entry.isDirectory() && !skippedFolders.has(entry.name))
+        return pluginFiles(full);
+      return [];
+    });
+  } catch {
+    return [];
+  }
+}
+function scannableText(file, maxBytes) {
+  try {
+    if (fs17.statSync(file).size > maxBytes)
+      return;
+    const bytes = fs17.readFileSync(file);
+    return bytes.subarray(0, nulProbeBytes).includes(0) ? undefined : bytes.toString("utf8");
+  } catch {
+    return;
+  }
+}
+var keyIssues = (dir, maxBytes) => pluginFiles(dir).flatMap((file) => {
+  const text = scannableText(file, maxBytes);
+  const ids = text === undefined ? [] : keyHits(text);
+  return ids.length === 0 ? [] : [
+    `${file}: the key check flags it (${ids.join(", ")}); keep keys out of a role's plugin`
+  ];
+});
+function rolePluginIssues(profile, maxBytes = 1048576) {
+  const manifestFile = path17.join(profile.dir, "profile.json");
+  return profile.pluginDirs.flatMap((dir) => isFolder3(dir) ? keyIssues(dir, maxBytes) : [`${manifestFile}: pluginDirs: ${dir} is not a folder`]);
 }
 
 // bin/helpers/profile-shell.ts
@@ -4247,9 +4411,9 @@ var shellFunction = (shell, aliasNames) => {
 
 // bin/helpers/profile-store.ts
 import * as fs18 from "node:fs";
-import * as path17 from "node:path";
+import * as path18 from "node:path";
 var MANIFEST_FILE = "profile.json";
-var manifestPath = (dir) => path17.join(dir, MANIFEST_FILE);
+var manifestPath = (dir) => path18.join(dir, MANIFEST_FILE);
 var notAName = (name) => `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
 var HIDES_AGENTS = "hides the repo's AGENTS.md in every profiled session; put the stance in .claude/rules/";
 var ENABLES_PLUGINS = "can enable plugins outside the checked settings block; put settings in profile.json";
@@ -4267,18 +4431,18 @@ var CLAUDE_DIR_REASONS = new Map([
 function storeRoots(store, env, cwd, home, workTree) {
   const user = {
     kind: "user",
-    dir: path17.join(sidekickHome(env, cwd, home), store)
+    dir: path18.join(sidekickHome(env, cwd, home), store)
   };
   if (store === "loops")
     return [user];
   const override = env.SIDEKICK_PROFILES_DIR;
   if (override)
-    return [{ kind: "user", dir: path17.resolve(cwd, override) }];
+    return [{ kind: "user", dir: path18.resolve(cwd, override) }];
   if (workTree.kind !== "inside")
     return [user];
   const repo = {
     kind: "repo",
-    dir: path17.resolve(workTree.top, ".claude", "profiles")
+    dir: path18.resolve(workTree.top, ".claude", "profiles")
   };
   return sameFolder(repo.dir, user.dir) ? [user] : [repo, user];
 }
@@ -4305,9 +4469,9 @@ var entriesOf = (dir) => {
   }
 };
 function checkLayout(dir) {
-  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path17.join(dir, r.path))).map((r) => `${path17.join(dir, r.path)}: ${r.why}`);
-  const claudeDir = path17.join(dir, ".claude");
-  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path17.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
+  const atRoot = REFUSED_AT_ROOT.filter((r) => isPresent(path18.join(dir, r.path))).map((r) => `${path18.join(dir, r.path)}: ${r.why}`);
+  const claudeDir = path18.join(dir, ".claude");
+  const inClaudeDir = entriesOf(claudeDir).filter((name) => name !== CLAUDE_DIR_ALLOWS).map((name) => `${path18.join(claudeDir, name)}: ${CLAUDE_DIR_REASONS.get(name) ?? RULES_ONLY}`);
   return [...atRoot, ...inClaudeDir];
 }
 var holdsMarkdown = (dir) => {
@@ -4318,7 +4482,7 @@ var holdsMarkdown = (dir) => {
     return false;
   }
   return entries.some((e) => {
-    const full = path17.join(dir, e.name);
+    const full = path18.join(dir, e.name);
     if (e.isDirectory())
       return holdsMarkdown(full);
     if (e.isSymbolicLink() && isDirectory(full))
@@ -4327,11 +4491,11 @@ var holdsMarkdown = (dir) => {
   });
 };
 var readFolder = (name, root, shadows) => {
-  const dir = path17.join(root.dir, name);
+  const dir = path18.join(root.dir, name);
   const layout = checkLayout(dir);
   if (layout.length > 0)
     return { ok: false, issues: layout };
-  const read = readManifest(path17.join(dir, MANIFEST_FILE));
+  const read = readManifest(path18.join(dir, MANIFEST_FILE));
   if (!read.ok)
     return read;
   return {
@@ -4343,15 +4507,15 @@ var readFolder = (name, root, shadows) => {
       store: root.kind,
       shadows,
       manifest: read.manifest,
-      pluginDirs: (read.manifest.pluginDirs ?? []).map((d) => path17.resolve(dir, d)),
-      hasRules: holdsMarkdown(path17.join(dir, ".claude", "rules"))
+      pluginDirs: (read.manifest.pluginDirs ?? []).map((d) => path18.resolve(dir, d)),
+      hasRules: holdsMarkdown(path18.join(dir, ".claude", "rules"))
     }
   };
 };
 function loadProfile(name, roots) {
   if (!isProfileName(name))
     return { ok: false, issues: [notAName(name)] };
-  const held = (root) => isDirectory(path17.join(root.dir, name));
+  const held = (root) => isDirectory(path18.join(root.dir, name));
   const index = roots.findIndex(held);
   const winner = roots[index];
   if (winner === undefined) {
@@ -4363,7 +4527,7 @@ function loadProfile(name, roots) {
     };
   }
   const later = roots.slice(index + 1).find(held);
-  return readFolder(name, winner, later === undefined ? undefined : path17.join(later.dir, name));
+  return readFolder(name, winner, later === undefined ? undefined : path18.join(later.dir, name));
 }
 var isHidden = (name) => name.startsWith(".");
 var listRoot = (root) => {
@@ -4373,7 +4537,7 @@ var listRoot = (root) => {
   } catch {
     return [];
   }
-  return names.filter((name) => !isHidden(name) && isDirectory(path17.join(root.dir, name))).map((name) => {
+  return names.filter((name) => !isHidden(name) && isDirectory(path18.join(root.dir, name))).map((name) => {
     const base = {
       name,
       root: root.dir,
@@ -4396,7 +4560,7 @@ function listProfiles(roots) {
   return roots.flatMap((root) => listRoot(root).map((listed) => {
     const winner = winners.get(listed.name);
     if (winner === undefined) {
-      winners.set(listed.name, path17.join(root.dir, listed.name));
+      winners.set(listed.name, path18.join(root.dir, listed.name));
       return listed;
     }
     return { ...listed, shadowedBy: winner };
@@ -4416,7 +4580,7 @@ var makeRoot = (root) => {
 };
 var unmake = (dir) => {
   try {
-    const manifest = path17.join(dir, MANIFEST_FILE);
+    const manifest = path18.join(dir, MANIFEST_FILE);
     if (isPresent(manifest))
       fs18.rmSync(manifest);
     fs18.rmdirSync(dir);
@@ -4435,14 +4599,14 @@ function newProfile(name, description, root) {
   const rootIssues = makeRoot(root);
   if (rootIssues.length > 0)
     return { ok: false, issues: rootIssues };
-  const dir = path17.join(root, name);
+  const dir = path18.join(root, name);
   try {
     fs18.mkdirSync(dir);
   } catch (err) {
     const why = isExists(err) ? "already exists" : messageOf3(err);
     return { ok: false, issues: [`${dir}: ${why}`] };
   }
-  const file = path17.join(dir, MANIFEST_FILE);
+  const file = path18.join(dir, MANIFEST_FILE);
   try {
     fs18.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}
 `);
@@ -4580,7 +4744,7 @@ function memoryLaunch(penv) {
     return;
   return {
     key,
-    store: path18.resolve(penv.cwd, storeRoot(penv.env, penv.home))
+    store: path19.resolve(penv.cwd, storeRoot(penv.env, penv.home))
   };
 }
 var allPluginDirs = (profile, extra) => [...profile.pluginDirs, ...extra];
@@ -4741,10 +4905,10 @@ var create = (rest2, penv, out, err) => {
   const root = resolved.roots.find((r) => r.kind === wanted);
   if (root === undefined)
     return refuse3(err, [noRepoStore(penv)]);
-  const oldUserStore = path18.join(configDir(penv.env, penv.cwd, penv.home), "profiles");
+  const oldUserStore = path19.join(configDir(penv.env, penv.cwd, penv.home), "profiles");
   if (wanted === "repo" && sameFolder(root.dir, oldUserStore)) {
     return refuse3(err, [
-      `${root.dir} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path18.join(sidekickHome(penv.env, penv.cwd, penv.home), "profiles")}.`
+      `${root.dir} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path19.join(sidekickHome(penv.env, penv.cwd, penv.home), "profiles")}.`
     ]);
   }
   if (wanted === "user" && !penv.env.SIDEKICK_PROFILES_DIR) {
@@ -4784,7 +4948,7 @@ var launch = (rest2, penv, out, err) => {
   const flaggedDir = parsed.values["plugin-dir"];
   if (flaggedDir === "")
     return usage(err);
-  const extraDir = typeof flaggedDir === "string" ? path18.resolve(penv.cwd, flaggedDir) : undefined;
+  const extraDir = typeof flaggedDir === "string" ? path19.resolve(penv.cwd, flaggedDir) : undefined;
   if (parsed.values.bg !== true) {
     return refuse3(err, [
       "launch only starts background sessions: pass --bg.",
@@ -4895,7 +5059,7 @@ function runProfileCli(args, penv, out, err) {
 
 // bin/helpers/worker-record.ts
 import * as fs19 from "node:fs";
-import * as path19 from "node:path";
+import * as path20 from "node:path";
 var recordFields = {
   name: WorkerNameSchema,
   job: nullable(string()),
@@ -4912,10 +5076,10 @@ var RecordSchema = pipe(variant("version", [
 ]), transform((record2) => record2.version === 1 ? { ...record2, version: 2, main: null } : record2));
 var isWorkerName = (name) => is(WorkerNameSchema, name);
 function recordsDir(commonDir) {
-  return path19.join(commonDir, "sidekick", "workers");
+  return path20.join(commonDir, "sidekick", "workers");
 }
 var RECORD_SUFFIX = ".json";
-var fileFor = (commonDir, name) => path19.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
+var fileFor = (commonDir, name) => path20.join(recordsDir(commonDir), `${name}${RECORD_SUFFIX}`);
 function jobIdFrom(stdout, name) {
   const lines = stdout.split(`
 `).map((line) => line.trim()).filter((line) => /^backgrounded\b/.test(line));
@@ -4949,7 +5113,7 @@ function parseRecord(file) {
     if (!parsed.success) {
       return `${file} is not a worker record: ${parsed.issues[0].message}`;
     }
-    const base = path19.basename(file, RECORD_SUFFIX);
+    const base = path20.basename(file, RECORD_SUFFIX);
     if (parsed.output.name !== base) {
       return `${file} holds the record of "${parsed.output.name}", not of "${base}"`;
     }
@@ -4972,7 +5136,7 @@ function readRecords(commonDir) {
     return { records, warnings: [`${dir} cannot be listed: ${reason4(e)}`] };
   }
   for (const f of files) {
-    const read = parseRecord(path19.join(dir, f));
+    const read = parseRecord(path20.join(dir, f));
     if (typeof read === "string")
       warnings.push(read);
     else
@@ -5005,12 +5169,12 @@ function localMinute(at) {
 }
 
 // bin/helpers/memory-link-plan.ts
-import * as path21 from "node:path";
+import * as path22 from "node:path";
 
 // bin/helpers/home-path.ts
-import * as path20 from "node:path";
+import * as path21 from "node:path";
 function expandHome(entry, home) {
-  return entry === "~" || entry.startsWith("~/") ? path20.join(home, entry.slice(1)) : entry;
+  return entry === "~" || entry.startsWith("~/") ? path21.join(home, entry.slice(1)) : entry;
 }
 
 // bin/helpers/memory-link-plan.ts
@@ -5107,7 +5271,7 @@ function keyMissedRefusals(repo) {
     return [];
   const { claudeJson, projectFolder } = repo.keyMissed;
   return [
-    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Its folder is somewhere under ${path21.dirname(projectFolder)}. To ask for support, run: ${supportRequest("memory link: a project folder named by a rule link does not know", "sidekick memory link found no project folder where it computes one, for a repo that .claude.json lists.")}`
+    `${claudeJson} lists ${repo.root}, but ${projectFolder} is absent, so Claude Code names its project folders by a rule link does not know. Its folder is somewhere under ${path22.dirname(projectFolder)}. To ask for support, run: ${supportRequest("memory link: a project folder named by a rule link does not know", "sidekick memory link found no project folder where it computes one, for a repo that .claude.json lists.")}`
   ];
 }
 function defaultFolderRefusals(repo) {
@@ -5117,7 +5281,7 @@ function defaultFolderRefusals(repo) {
   if (!isFirstLink(repo))
     return defaultFolder.issues;
   const forged = defaultFolder.files.some((f) => f.rel === MARKER_FILE) ? [
-    `${path21.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
+    `${path22.join(defaultFolder.folder, MARKER_FILE)} would become the repo folder's marker if copied. Move it out of the default folder by hand and run link again.`
   ] : [];
   const into = repo.target?.folder;
   const conflicts = into === undefined ? [] : defaultFolder.files.flatMap((f) => copyRefusals(defaultFolder.folder, into, f));
@@ -5126,8 +5290,8 @@ function defaultFolderRefusals(repo) {
 function copyRefusals(from, into, file) {
   if (file.rel === MARKER_FILE)
     return [];
-  const source = path21.join(from, file.rel);
-  const copy = path21.join(into, file.rel);
+  const source = path22.join(from, file.rel);
+  const copy = path22.join(into, file.rel);
   if (file.copy === "differs") {
     return [
       `${source} differs from ${copy}, which is already in the store. Merge the two by hand into the store copy, then run link again.`
@@ -5172,7 +5336,7 @@ function targetRefusals(target, root, dryRun) {
     ...familyRefusals(target),
     ...target.elsewhere.map((found) => `${root} is already linked at ${found.folder}, as its marker says. Finish that link with: ${linkCommand(root, {
       family: found.family,
-      name: path21.basename(found.folder),
+      name: path22.basename(found.folder),
       dryRun
     })}`),
     ..."issue" in target.pending ? [pendingRefusal(target.pending.issue)] : []
@@ -5206,7 +5370,7 @@ function targetStateRefusals(target, root) {
 }
 function familyRefusals(target) {
   const { family } = target;
-  const folder = path21.dirname(target.folder);
+  const folder = path22.dirname(target.folder);
   if (family === "marked") {
     return [
       `${folder} holds a ${MARKER_FILE}, so it is a repo folder, not a family. Choose another family with --family.`
@@ -5261,8 +5425,8 @@ function copyActions(ready) {
     return [];
   return defaultFolder.files.filter((f) => f.copy === "absent" && f.rel !== MARKER_FILE).map((f) => ({
     kind: "copyFile",
-    from: path21.join(defaultFolder.folder, f.rel),
-    to: path21.join(ready.target.folder, f.rel)
+    from: path22.join(defaultFolder.folder, f.rel),
+    to: path22.join(ready.target.folder, f.rel)
   }));
 }
 var keyNamesTarget = (ready) => keyFolder(ready.settings.key, ready.repo.home) === ready.target.folder;
@@ -5283,7 +5447,7 @@ function archiveActions(ready, facts, first) {
     {
       kind: "archiveDefault",
       from: defaultFolder.folder,
-      to: path21.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
+      to: path22.join(facts.store, ...ARCHIVE_DIR.split("/"), name),
       copies: ready.target.folder,
       reappeared: !first
     }
@@ -5369,7 +5533,7 @@ import * as path32 from "node:path";
 
 // bin/helpers/memory-default.ts
 import * as fs20 from "node:fs";
-import * as path22 from "node:path";
+import * as path23 from "node:path";
 var MAX_KEY_LENGTH = 200;
 var WRITE_BITS = 146;
 function hashOf(text) {
@@ -5386,7 +5550,7 @@ function projectKey(p) {
   return `${key.slice(0, MAX_KEY_LENGTH)}-${Math.abs(hashOf(p)).toString(36)}`;
 }
 function defaultMemoryFolder(root, configDir2) {
-  return path22.join(configDir2, "projects", projectKey(root), "memory");
+  return path23.join(configDir2, "projects", projectKey(root), "memory");
 }
 function overrideIssue(env) {
   if (env.CLAUDE_COWORK_MEMORY_PATH_OVERRIDE !== undefined) {
@@ -5420,8 +5584,8 @@ function legacyPreferred(legacy, current) {
   }
 }
 function claudeJsonPath(env, home) {
-  const current = path22.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
-  const legacy = path22.join(configDirOf(env, home), ".config.json");
+  const current = path23.join(env.CLAUDE_CONFIG_DIR || home, ".claude.json");
+  const legacy = path23.join(configDirOf(env, home), ".config.json");
   return legacyPreferred(legacy, current) ? legacy : current;
 }
 
@@ -5517,7 +5681,7 @@ function flattening(text) {
 }
 
 // bin/helpers/memory-links.ts
-import * as path23 from "node:path";
+import * as path24 from "node:path";
 var INLINE_LINK = /\[[^\]\n]*\]\(([^)\n]*)\)/g;
 var CODE_SPAN = /`[^`\n]*`/g;
 var URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
@@ -5556,7 +5720,7 @@ function linksIn(text) {
   });
 }
 function ownTargets(dir, text) {
-  return linksIn(text).map((link) => path23.resolve(dir, link.target)).filter((target) => path23.dirname(target) === dir).map((target) => path23.basename(target));
+  return linksIn(text).map((link) => path24.resolve(dir, link.target)).filter((target) => path24.dirname(target) === dir).map((target) => path24.basename(target));
 }
 function reachFrom(dir, files, starts) {
   const byName2 = new Map(files.map((own) => [own.name, own]));
@@ -5576,26 +5740,26 @@ function reachFrom(dir, files, starts) {
 
 // bin/helpers/memory-lint-repos.ts
 import * as fs24 from "node:fs";
-import * as path26 from "node:path";
+import * as path27 from "node:path";
 
 // bin/helpers/memory-link-facts.ts
 import * as fs23 from "node:fs";
-import * as path25 from "node:path";
+import * as path26 from "node:path";
 
 // bin/helpers/memory-sessions.ts
 import * as fs22 from "node:fs";
-import * as path24 from "node:path";
+import * as path25 from "node:path";
 function realOrResolved(p) {
   try {
     return fs22.realpathSync(p);
   } catch {
-    return path24.resolve(p);
+    return path25.resolve(p);
   }
 }
 var STOPPED_STATE = "stopped";
 function isInside(dir, checkout) {
-  const rel = path24.relative(checkout, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path24.sep}`) || path24.isAbsolute(rel));
+  const rel = path25.relative(checkout, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path25.sep}`) || path25.isAbsolute(rel));
 }
 function sessionsInRepo(jobs, checkouts, selfId) {
   const roots = checkouts.map(realOrResolved);
@@ -5639,10 +5803,10 @@ function sameFileIgnoringStamps(a, b) {
 
 // bin/helpers/memory-link-facts.ts
 function gatherFacts(opts, deps) {
-  const store = path25.resolve(storeRoot(deps.env, deps.home));
+  const store = path26.resolve(storeRoot(deps.env, deps.home));
   const state = storeState(store, deps.runGit);
-  const found = mainCheckout(path25.resolve(opts.repo), deps.runGit, deps.home);
-  const name = opts.name ?? ("root" in found ? path25.basename(found.root) : undefined);
+  const found = mainCheckout(path26.resolve(opts.repo), deps.runGit, deps.home);
+  const name = opts.name ?? ("root" in found ? path26.basename(found.root) : undefined);
   const nameIssues = [opts.family, name].flatMap((n) => {
     const issue = n === undefined ? undefined : folderNameIssue(n);
     return issue === undefined ? [] : [issue];
@@ -5652,7 +5816,7 @@ function gatherFacts(opts, deps) {
     store,
     state,
     family: opts.family,
-    name: name ?? path25.basename(found.root),
+    name: name ?? path26.basename(found.root),
     namesOk: nameIssues.length === 0,
     deps
   });
@@ -5672,7 +5836,7 @@ function repoFacts(input) {
   const settings = settingsState(root, deps.runGit);
   const key = projectKey(root);
   const rel = input.family === undefined ? input.name : `${input.family}/${input.name}`;
-  const folder = path25.join(input.store, ...rel.split("/"));
+  const folder = path26.join(input.store, ...rel.split("/"));
   const knowsFolder = input.namesOk && !refusesStore(input.state);
   const defaultFolder = readDefaultFolder(defaultMemoryFolder(root, deps.configDir), knowsFolder ? folder : undefined);
   const target = knowsFolder ? targetFacts({ ...input, folder, rel, key, defaultFolder }) : undefined;
@@ -5690,7 +5854,7 @@ function repoFacts(input) {
 }
 function keyMissed(root, key, deps) {
   const claudeJson = claudeJsonPath(deps.env, deps.home);
-  const projectFolder = path25.join(deps.configDir, "projects", key);
+  const projectFolder = path26.join(deps.configDir, "projects", key);
   const missed = knownRoot(root, claudeJson) && !fs23.existsSync(projectFolder);
   return missed ? { claudeJson, projectFolder } : undefined;
 }
@@ -5715,7 +5879,7 @@ function targetFacts(input) {
     folder,
     rel,
     state: targetState(folder),
-    family: input.family === undefined ? "none" : familyState(path25.join(store, input.family)),
+    family: input.family === undefined ? "none" : familyState(path26.join(store, input.family)),
     elsewhere: findMarkers(store).filter((m) => m.root === input.root && m.folder !== folder).map((m) => ({ folder: m.folder, family: m.family })),
     archives: archiveNames(store),
     pending: input.state.kind === "store" ? ownedChanges(store, owned, input.deps.runGit) : { paths: [] }
@@ -5744,12 +5908,12 @@ function familyState(folder) {
   return readMarker(folder).kind === "none" ? "folder" : "marked";
 }
 function archiveNames(store) {
-  const folder = path25.join(store, ...ARCHIVE_DIR.split("/"));
+  const folder = path26.join(store, ...ARCHIVE_DIR.split("/"));
   return fs23.existsSync(folder) ? fs23.readdirSync(folder) : [];
 }
 function isInside2(dir, parent) {
-  const rel = path25.relative(parent, dir);
-  return rel === "" || !(rel === ".." || rel.startsWith(`..${path25.sep}`) || path25.isAbsolute(rel));
+  const rel = path26.relative(parent, dir);
+  return rel === "" || !(rel === ".." || rel.startsWith(`..${path26.sep}`) || path26.isAbsolute(rel));
 }
 function walkFolder(root) {
   const entries = entriesOf2(fs23.realpathSync(root), root, "");
@@ -5759,7 +5923,7 @@ function walkFolder(root) {
   };
 }
 function entriesOf2(real, root, rel) {
-  return fs23.readdirSync(path25.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+  return fs23.readdirSync(path26.join(root, rel), { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
     const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
     if (entry.isDirectory())
       return entriesOf2(real, root, child);
@@ -5769,13 +5933,13 @@ function entriesOf2(real, root, rel) {
       return [linkEntry(real, root, child)];
     return [
       {
-        issue: `${path25.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
+        issue: `${path26.join(root, child)} is neither a file nor a folder. Move it out of the default folder by hand, then run link again.`
       }
     ];
   });
 }
 function linkEntry(real, root, child) {
-  const full = path25.join(root, child);
+  const full = path26.join(root, child);
   const way = "Replace it with the file itself, or remove it, then run link again.";
   try {
     const named = fs23.realpathSync(full);
@@ -5800,7 +5964,7 @@ function readDefaultFolder(folder, target) {
   const walked = walkFolder(folder);
   const files = walked.files.map((rel) => ({
     rel,
-    copy: target === undefined ? "absent" : copyState(path25.join(folder, rel), path25.join(target, rel))
+    copy: target === undefined ? "absent" : copyState(path26.join(folder, rel), path26.join(target, rel))
   }));
   return { kind: "present", folder, files, issues: walked.issues };
 }
@@ -5825,7 +5989,7 @@ function ownedChanges(store, owned, runGit) {
     owned.defaultFolder,
     ...ownArchives(store, owned.projectKey)
   ];
-  const isOwned = (p) => fs23.existsSync(path25.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
+  const isOwned = (p) => fs23.existsSync(path26.join(store, p)) && (isOwnArchivePath(p, owned.projectKey) || isOwnCopy(store, owned.folderRel, sources, p));
   return { paths: listed.entries.map((e) => e.path).filter(isOwned) };
 }
 var UNTRACKED = "??";
@@ -5834,7 +5998,7 @@ function uncommittedCreation(store, runGit) {
   const listed = statusIn(store, [...CREATION_PATHS], runGit);
   if ("issue" in listed)
     return listed;
-  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs23.existsSync(path25.join(store, e.path));
+  const neverCommitted = (e) => (e.status === UNTRACKED || e.status.startsWith(ADDED)) && fs23.existsSync(path26.join(store, e.path));
   return { paths: listed.entries.filter(neverCommitted).map((e) => e.path) };
 }
 function statusIn(store, pathspecs, runGit) {
@@ -5861,8 +6025,8 @@ function isOwnCopy(store, folderRel, sources, p) {
   const rel = p.slice(prefix.length);
   if (rel === MARKER_FILE)
     return true;
-  const file = path25.join(store, p);
-  return sources.some((source) => sameBytes(path25.join(source, rel), file));
+  const file = path26.join(store, p);
+  return sources.some((source) => sameBytes(path26.join(source, rel), file));
 }
 function sameBytes(a, b) {
   try {
@@ -5873,8 +6037,8 @@ function sameBytes(a, b) {
   }
 }
 function ownArchives(store, key) {
-  const parent = path25.join(store, ...ARCHIVE_DIR.split("/"));
-  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path25.join(parent, name));
+  const parent = path26.join(store, ...ARCHIVE_DIR.split("/"));
+  return archiveNames(store).filter((name) => isOwnArchiveName(name, key)).map((name) => path26.join(parent, name));
 }
 function porcelainEntries(output) {
   const fields = output.split("\x00").filter((field) => field !== "");
@@ -5910,9 +6074,9 @@ function additionalDirectories(file) {
   }
 }
 function userSettingsFacts(configDir2, store, home) {
-  const file = path25.join(configDir2, "settings.json");
+  const file = path26.join(configDir2, "settings.json");
   const covered = additionalDirectories(file).some((entry) => {
-    const dir = path25.resolve(expandHome(entry, home));
+    const dir = path26.resolve(expandHome(entry, home));
     return isInside2(store, dir) || isInside2(physical(store), physical(dir));
   });
   return { file, covered };
@@ -5920,7 +6084,7 @@ function userSettingsFacts(configDir2, store, home) {
 
 // bin/helpers/memory-lint-repos.ts
 function resolvedPath(target) {
-  const lexical = path26.resolve(target);
+  const lexical = path27.resolve(target);
   try {
     return fs24.realpathSync(lexical);
   } catch {
@@ -5928,8 +6092,8 @@ function resolvedPath(target) {
   }
 }
 function isInside3(folder, parent) {
-  const relative5 = path26.relative(parent, folder);
-  return relative5 !== "" && !relative5.startsWith("..") && !path26.isAbsolute(relative5);
+  const relative6 = path27.relative(parent, folder);
+  return relative6 !== "" && !relative6.startsWith("..") && !path27.isAbsolute(relative6);
 }
 function rootFact(root, runGit, home) {
   if (!fs24.existsSync(root))
@@ -5953,7 +6117,7 @@ function keyInStore(rawKey, store, home) {
   if (rawKey === undefined)
     return false;
   const key = expandHome(rawKey, home);
-  return path26.isAbsolute(key) && isInside3(resolvedPath(key), store);
+  return path27.isAbsolute(key) && isInside3(resolvedPath(key), store);
 }
 function candidates(dir) {
   try {
@@ -5966,14 +6130,14 @@ function invalidAt(dir, folder) {
   const read = readMarker(dir);
   if (read.kind !== "invalid")
     return [];
-  return [{ folder, file: path26.join(dir, MARKER_FILE), issue: read.issue }];
+  return [{ folder, file: path27.join(dir, MARKER_FILE), issue: read.issue }];
 }
 function invalidMarkers(store) {
   return candidates(store).flatMap((first) => {
-    const dir = path26.join(store, first);
+    const dir = path27.join(store, first);
     if (readMarker(dir).kind === "marker")
       return [];
-    const nested = candidates(dir).flatMap((second) => invalidAt(path26.join(dir, second), `${first}/${second}`));
+    const nested = candidates(dir).flatMap((second) => invalidAt(path27.join(dir, second), `${first}/${second}`));
     return [...invalidAt(dir, first), ...nested];
   });
 }
@@ -6007,7 +6171,7 @@ function compareDefaultFolder(defaultDir, storeDir, storeNames) {
     return { kind: "unlisted", why: listed.why };
   const compared = listed.files.map((rel) => ({
     rel,
-    state: compareCopy(path26.join(defaultDir, rel), path26.join(storeDir, rel))
+    state: compareCopy(path27.join(defaultDir, rel), path27.join(storeDir, rel))
   }));
   const named = (state) => compared.filter((entry) => entry.state === state).map((entry) => entry.rel);
   return {
@@ -6016,135 +6180,6 @@ function compareDefaultFolder(defaultDir, storeDir, storeNames) {
     onlyThere: named("absent"),
     onlyInStore: storeNames.filter((name) => !listed.files.includes(name))
   };
-}
-
-// bin/helpers/memory-patterns.ts
-import * as path27 from "node:path";
-var INJECTION = [
-  {
-    id: "ignore-previous-instructions",
-    re: /ignore\s+(all\s+)?previous\s+instructions/i
-  },
-  {
-    id: "ignore-above-instructions",
-    re: /ignore\s+(all\s+)?above\s+instructions/i
-  },
-  { id: "disregard-previous", re: /disregard\s+(all\s+)?previous/i },
-  {
-    id: "forget-instructions",
-    re: /forget\s+(all\s+)?(your\s+)?instructions/i
-  },
-  {
-    id: "override-system-prompt",
-    re: /override\s+(system|previous)\s+(prompt|instructions)/i
-  },
-  { id: "you-are-now", re: /you\s+are\s+now\s+(?:a|an|the)\s+/i },
-  { id: "act-as", re: /act\s+as\s+(?:a|an|the)\s+(?!plan|phase|wave)/i },
-  { id: "pretend-to-be", re: /pretend\s+(?:you(?:'re| are)\s+|to\s+be\s+)/i },
-  {
-    id: "from-now-on",
-    re: /from\s+now\s+on,?\s+you\s+(?:are|will|should|must)/i
-  },
-  {
-    id: "reveal-prompt",
-    re: /(?:print|output|reveal|show|display|repeat)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions)/i
-  },
-  { id: "role-tag", re: /<\/?(?:system|assistant|human)>/i },
-  { id: "system-marker", re: /\[SYSTEM\]/i },
-  { id: "inst-marker", re: /\[INST\]/i },
-  { id: "sys-marker", re: /<<\s*SYS\s*>>/i },
-  {
-    id: "when-summarising-retain",
-    re: /when\s+(?:summari[sz]ing|compressing|compacting),?\s+(?:retain|preserve|keep)\s+(?:this|these)/i
-  },
-  {
-    id: "instruction-is-permanent",
-    re: /this\s+(?:instruction|directive|rule)\s+is\s+(?:permanent|persistent|immutable)/i
-  },
-  {
-    id: "preserve-rules-through",
-    re: /preserve\s+(?:these|this)\s+(?:rules?|instructions?|directives?)\s+(?:in|through|after|during)/i
-  },
-  {
-    id: "retain-through-summary",
-    re: /(?:retain|keep)\s+(?:this|these)\s+(?:in|through|after)\s+(?:summar|compress|compact)/i
-  }
-];
-var INVISIBLE = /[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060-\u2069]/gu;
-var TAG = /[\u{E0000}-\u{E007F}]/gu;
-var ASCII_TAG = /[\u{E0020}-\u{E007E}]/gu;
-var TAG_OFFSET = 917504;
-var TAG_FLAG = /\u{1F3F4}(?:[\u{E0061}-\u{E007A}]{2}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{1,4}|[\u{E0030}-\u{E0039}]{3}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{0,4})\u{E007F}/gu;
-var EMOJI_JOINER = /(\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}])?)\u200D(?=\p{Extended_Pictographic})/gu;
-var codePointOf = (char) => char.codePointAt(0) ?? 0;
-var tagsDecoded = (text) => text.replace(ASCII_TAG, (tag) => String.fromCodePoint(codePointOf(tag) - TAG_OFFSET));
-var invisibleStripped = (text) => tagsDecoded(text.replace(INVISIBLE, "")).replace(TAG, "");
-var withoutFlags = (text) => text.replace(TAG_FLAG, "");
-var asWritten = (text) => text;
-var STRAY_TAG = {
-  id: "unicode-tag-block",
-  re: /[\u{E0000}-\u{E007F}]/u
-};
-var GATE_CHECKS = [
-  { patterns: INJECTION, readings: [tagsDecoded, invisibleStripped] },
-  { patterns: [STRAY_TAG], readings: [withoutFlags] }
-];
-var KEYS = [
-  {
-    id: "aws-access-key",
-    re: /\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b/
-  },
-  { id: "github-classic-pat", re: /ghp_[0-9a-zA-Z]{36}/ },
-  { id: "github-fine-grained-pat", re: /github_pat_\w{82}/ },
-  {
-    id: "anthropic-api-key",
-    re: /\b(sk-ant-api03-[a-zA-Z0-9_-]{93}AA)(?:[`'"\s;]|\\[nr]|$)/
-  },
-  {
-    id: "openai-api-key",
-    re: /\b(sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})(?:[`'"\s;]|\\[nr]|$)/
-  },
-  { id: "slack-bot-token", re: /xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/ },
-  {
-    id: "private-key-block",
-    re: /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i
-  }
-];
-var KEY_CHECKS = [
-  { patterns: KEYS, readings: [asWritten] }
-];
-var hits = (checks, text) => checks.flatMap(({ patterns, readings }) => {
-  const read = readings.map((reading) => reading(text));
-  return patterns.filter(({ re }) => read.some((reading) => re.test(reading))).map(({ id }) => id);
-});
-var gateHits = (text) => hits(GATE_CHECKS, text);
-var keyHits = (text) => hits(KEY_CHECKS, text);
-var printedHits = (text) => [
-  ...keyHits(text),
-  ...gateHits(text)
-];
-var withheldName = (ids) => `(withheld name: ${ids.join(", ")})`;
-function withheldNames(names, separator = "/") {
-  const joined = names.split(separator).map((name) => {
-    const ids = printedHits(name);
-    return ids.length === 0 ? name : withheldName(ids);
-  }).join(separator);
-  const across = printedHits(joined);
-  return across.length === 0 ? joined : withheldName(across);
-}
-function withheldPath(file, base) {
-  const relative6 = path27.relative(base, file);
-  const inside = !relative6.startsWith("..") && !path27.isAbsolute(relative6);
-  if (!inside)
-    return withheldNames(file, path27.sep);
-  const checked2 = withheldNames(relative6, path27.sep);
-  return checked2 === relative6 ? file : path27.join(base, checked2);
-}
-var codePointName = (char) => `U+${codePointOf(char).toString(16).toUpperCase().padStart(4, "0")}`;
-function invisibleCharacters(text) {
-  const loose = text.replace(EMOJI_JOINER, "$1");
-  const names = [...loose.matchAll(INVISIBLE)].map(([char]) => codePointName(char));
-  return [...new Set(names)];
 }
 
 // bin/helpers/memory-sections.ts

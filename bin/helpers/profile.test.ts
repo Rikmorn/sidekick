@@ -613,6 +613,23 @@ describe('profile launch', () => {
     expect(h.run('launch', '--bg', 'a')).toBe(1);
     expect(h.runner.calls).toEqual([]);
   });
+  test('a key in a role plugin refuses argv, naming the file and the id', () => {
+    const h = harness();
+    const dir = mkProfile(h.store, 'a', {
+      description: 'A',
+      pluginDirs: ['plugin'],
+    });
+    fs.mkdirSync(path.join(dir, 'plugin'));
+    const file = path.join(dir, 'plugin', 'k.md');
+    const key = `${'ghp'}${'_'}${'a1'.repeat(18)}`;
+    fs.writeFileSync(file, `token ${key}`);
+    expect(h.run('argv', 'a')).toBe(1);
+    expect(h.err).toContain(
+      `${file}: the key check flags it (github-classic-pat); keep keys out of a role's plugin`,
+    );
+    expect(h.err.join('\n')).not.toContain(key);
+    expect(h.written).toEqual([]);
+  });
   test('show prints the resolved pluginDirs', () => {
     const h = harness();
     const dir = mkProfile(h.store, 'a', {

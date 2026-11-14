@@ -29,7 +29,7 @@ A name is 1 to 64 lowercase letters, digits, and hyphens, starting with a letter
 | `settingSources` | Optional. A list of `user`, `project`, and `local`, without repeats. It becomes `--setting-sources`. |
 | `settings` | Optional object, passed through to `--settings`. It must not hold a `sidekick` key, because launch writes that one. |
 | `hide` | Optional. `agents` lists agent types the model is not offered, each named as the agent listing names it, such as `Explore`. `mods` lists sidekick mod parts that stay off: `board` and `desk`. Either list may be empty or left out. An agent name is a non-empty string, and neither list repeats an entry. |
-| `pluginDirs` | Optional. A list of non-empty plugin folders, without repeats. A relative entry resolves against the profile folder. Every launch passes each as `--plugin-dir`, and refuses an entry that is not a folder. A role's plugin sits in its profile folder, usually `plugin/`. A role's stance stays in its rules. |
+| `pluginDirs` | Optional. A list of non-empty plugin folders, without repeats. A relative entry resolves against the profile folder. Every launch passes each as `--plugin-dir`, and refuses an entry that is not a folder. The launch checks also scan each file in a role's plugin for keys,, since the profile folder sits in a git repo. The scan skips `.git`, `node_modules`, links, files over 1 MiB, and binary files. A role's plugin sits in its profile folder, usually `plugin/`. A role's stance stays in its rules. |
 
 Launch composes the settings from the profile's `settings` object, then adds its own keys:
 

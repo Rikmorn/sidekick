@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { keyHits } from './memory-patterns.js';
 import { isFolder, pluginDirIssues, rolePluginIssues } from './profile-role.js';
 import type { Profile } from './profile-store.js';
 
@@ -57,5 +58,62 @@ describe('rolePluginIssues', () => {
     expect(rolePluginIssues(profileWith([tmp, missing]))).toEqual([
       `${path.join(tmp, 'p', 'profile.json')}: pluginDirs: ${missing} is not a folder`,
     ]);
+  });
+});
+
+describe('rolePluginIssues key scan', () => {
+  const key = (): string => `token ${'ghp'}${'_'}${'a1'.repeat(18)}`;
+  const plugin = (): string => {
+    const dir = path.join(tmp, 'plugin');
+    fs.mkdirSync(dir);
+    return dir;
+  };
+  const write = (file: string, content: string | Buffer): string => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+    return file;
+  };
+
+  test('names the file and the id of a key, never the key', () => {
+    const dir = plugin();
+    const file = write(path.join(dir, 'skills', 's.md'), key());
+    const issues = rolePluginIssues(profileWith([dir]));
+    expect(issues).toEqual([
+      `${file}: the key check flags it (github-classic-pat); keep keys out of a role's plugin`,
+    ]);
+    expect(issues.join('\n')).not.toContain('a1a1a1');
+  });
+  test('passes a clean plugin', () => {
+    const dir = plugin();
+    write(path.join(dir, 'a.md'), 'nothing secret here');
+    expect(rolePluginIssues(profileWith([dir]))).toEqual([]);
+  });
+  test('ignores .git and node_modules', () => {
+    const dir = plugin();
+    write(path.join(dir, '.git', 'config'), key());
+    write(path.join(dir, 'node_modules', 'x', 'i.js'), key());
+    expect(rolePluginIssues(profileWith([dir]))).toEqual([]);
+  });
+  test('skips a file over the cap', () => {
+    const dir = plugin();
+    write(path.join(dir, 'big.md'), key());
+    expect(rolePluginIssues(profileWith([dir]))).toHaveLength(1);
+    expect(rolePluginIssues(profileWith([dir]), 4)).toEqual([]);
+  });
+  test('skips a file with a NUL byte', () => {
+    const dir = plugin();
+    write(path.join(dir, 'bin.dat'), Buffer.from(`\0${key()}`));
+    expect(rolePluginIssues(profileWith([dir]))).toEqual([]);
+  });
+  test('completes on a symlink loop and skips a linked folder', () => {
+    const dir = plugin();
+    fs.symlinkSync(dir, path.join(dir, 'loop'));
+    write(path.join(tmp, 'outside', 'k.md'), key());
+    fs.symlinkSync(path.join(tmp, 'outside'), path.join(dir, 'linked'));
+    write(path.join(dir, 'ok.md'), 'fine');
+    expect(rolePluginIssues(profileWith([dir]))).toEqual([]);
+  });
+  test('this test file holds no literal key', () => {
+    expect(keyHits(fs.readFileSync(import.meta.path, 'utf8'))).toEqual([]);
   });
 });
