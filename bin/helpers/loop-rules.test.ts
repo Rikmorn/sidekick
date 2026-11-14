@@ -355,6 +355,25 @@ const REFUSED_WORK = [
   'Bash(ssh host x)',
   'Bash(ssh)',
   'Bash(env /usr/bin/ssh host)',
+  // macOS shows each firmlinked folder under /System/Volumes/Data too.
+  'Bash(node /System/Volumes/Data/private/tmp/x.js)',
+  'Bash(/System/Volumes/Data/private/tmp/tool *)',
+  'Bash(env /System/Volumes/Data/private/tmp/tool *)',
+  'Bash(node /System/Volumes/Data/Users/Shared/x.js)',
+  'Bash(node /System/Volumes/Data/private/var/tmp/x.js)',
+  'Bash(node /system/volumes/data/private/tmp/x.js)',
+  'Bash(node /System/Volumes/Data/Users/someone/elsewhere/repo/bin/x.js)',
+  'Bash(/SYSTEM/VOLUMES/DATA/Users/someone/elsewhere/repo/tool *)',
+  // git's dashed programs are git under another name.
+  'Bash(/Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git-log *)',
+  'Bash(/Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git-config core.pager x)',
+  'Bash(/Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git-mergetool --tool-help)',
+  'Bash(/usr/libexec/git-core/git-status)',
+  'Bash(git-log *)',
+  'Bash(GIT-Config core.pager x)',
+  'Bash(env /usr/libexec/git-core/git-log *)',
+  'Bash(nohup /usr/libexec/git-core/git-mergetool)',
+  'Monitor(git-log --oneline)',
 ];
 const PASSING_WORK = [
   'Bash(gh issue view *)',
@@ -409,6 +428,12 @@ const PASSING_WORK = [
   'Bash(rg --pre-glob x foo)',
   'Bash(fd foo /Users/me/x)',
   'Bash(fd -H foo)',
+  // Kept: an alias outside the repo and scratch, and programs whose names only start with git.
+  'Bash(node /System/Volumes/Data/Users/me/outside/x.js)',
+  'Bash(gitk --all)',
+  'Bash(/usr/local/bin/gitk)',
+  'Bash(github-cli x)',
+  'Bash(env /usr/local/bin/gitk)',
 ];
 
 const rows: Row[] = [
@@ -544,6 +569,11 @@ describe('ruleIssues', () => {
     expect(issues.join(' ')).toContain('grant the program');
     expect(issues.join(' ')).not.toContain('absolute path');
   });
+  test('a dashed git program says to write git <subcommand>', () => {
+    expect(
+      ruleIssues('Bash(git-log --oneline)', 'allow', REPO).join(' '),
+    ).toContain('git <subcommand>');
+  });
 
   describe('an absolute path after a runner word', () => {
     // The script runners and wrappers the rulings name; every other runner word takes neither.
@@ -629,6 +659,49 @@ describe('ruleIssues', () => {
         'writable',
       );
       expect(issues('Bash(node /nonexistent-sk/scratchy/x.js)')).toBe('');
+    });
+  });
+
+  describe('a /System/Volumes/Data alias', () => {
+    // Nothing below the Data volume's root exists here, so neither Bun nor Node folds the alias.
+    test('refuses a script in the repo through the alias', () => {
+      const repo = '/nonexistent-sk/repo';
+      const issues = (rule: string, at = repo): string =>
+        ruleIssues(rule, 'allow', at, []).join(' ');
+      expect(
+        issues('Bash(node /System/Volumes/Data/nonexistent-sk/repo/x.js)'),
+      ).toContain('inside the repo');
+      expect(
+        issues('Bash(/system/volumes/DATA/nonexistent-sk/repo/tool *)'),
+      ).toContain('inside the repo');
+      expect(
+        issues(
+          'Bash(node /nonexistent-sk/repo/x.js)',
+          '/System/Volumes/Data/nonexistent-sk/repo',
+        ),
+      ).toContain('inside the repo');
+      expect(
+        issues('Bash(node /System/Volumes/DataX/nonexistent-sk/repo/x.js)'),
+      ).toBe('');
+    });
+    test('refuses a script in a scratch folder through the alias', () => {
+      const issues = (rule: string, root = '/nonexistent-sk/scratch'): string =>
+        ruleIssues(rule, 'allow', REPO, [root]).join(' ');
+      expect(
+        issues('Bash(node /System/Volumes/Data/nonexistent-sk/scratch/x.js)'),
+      ).toContain('writable');
+      expect(
+        issues('Bash(/SYSTEM/Volumes/Data/nonexistent-sk/scratch/tool *)'),
+      ).toContain('writable');
+      expect(
+        issues(
+          'Bash(node /nonexistent-sk/scratch/x.js)',
+          '/System/Volumes/Data/nonexistent-sk/scratch',
+        ),
+      ).toContain('writable');
+      expect(
+        issues('Bash(node /System/Volumes/Data/nonexistent-sk/scratchy/x.js)'),
+      ).toBe('');
     });
   });
 

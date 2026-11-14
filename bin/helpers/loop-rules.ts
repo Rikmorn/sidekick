@@ -125,7 +125,7 @@ const WRAPPERS: readonly string[] = [
   'gnohup',
 ];
 
-// Folders any local process can write, so a program there may be worker code.
+// Folders a worker or the sandbox writes, or any local user can write, so a program there may be worker code.
 const SCRATCH_ROOTS: readonly string[] = [
   '/tmp',
   '/private/tmp',
@@ -136,6 +136,9 @@ const SCRATCH_ROOTS: readonly string[] = [
   '/dev',
   '/Users/Shared',
 ];
+
+// macOS shows each firmlinked folder, such as /private and /Users, under this lower-case prefix too.
+const DATA_VOLUME = '/system/volumes/data';
 
 // Tools whose path specifier never matches, so only the bare tool or (*) means anything.
 const PATH_TOOLS: readonly string[] = [
@@ -182,6 +185,9 @@ const GIT_NAMED_OPTIONS: readonly string[] = [
   'show',
   'format-patch',
 ];
+
+// A git-<name> program runs as git <name>, through a link to git or a script of its own.
+const GIT_DASHED = 'git-';
 
 // git long options that run a command or write a file, refused in any git rule.
 const GIT_CODE_OPTIONS: readonly string[] = [
@@ -237,6 +243,8 @@ const PATH_GLOB_ISSUE =
   'a wildcard (*, ?, or [...]) in a program path could match any program, so spell the path out.';
 const RUNNER_ISSUE =
   'a rule starting with a shell, interpreter, runner, or wrapper grants arbitrary code, so give the absolute path of a script outside the loop repo, with no wildcard, or grant the program it runs.';
+const DASHED_GIT_ISSUE =
+  'a git-<subcommand> program runs git <subcommand> past the git checks, so write git <subcommand> instead.';
 const NO_SCRIPT_ISSUE =
   'a rule starting with bun, npm, make, awk, or another runner that takes no script path grants arbitrary code whatever follows, so grant the program it runs instead.';
 
@@ -258,11 +266,20 @@ const isUnplain = (word: string): boolean => UNPLAIN_CHARS.test(word);
 const hasDotSegment = (p: string): boolean =>
   p.split('/').some((s) => s === '.' || s === '..');
 
-// macOS volumes ignore case by default, and Node's realpathSync keeps the case it is given.
+const withoutDataVolume = (p: string): string =>
+  p.startsWith(DATA_VOLUME + path.sep) ? p.slice(DATA_VOLUME.length) : p;
+
+const within = (child: string, parent: string): boolean =>
+  child === parent || child.startsWith(parent + path.sep);
+
+// macOS volumes ignore case by default, and Node's realpathSync keeps the case it is given and the Data volume alias.
 const isUnder = (p: string, root: string): boolean => {
   const child = p.toLowerCase();
   const parent = root.toLowerCase();
-  return child === parent || child.startsWith(parent + path.sep);
+  return (
+    within(child, parent) ||
+    within(withoutDataVolume(child), withoutDataVolume(parent))
+  );
 };
 
 const insideRepo = (p: string, repo: string): boolean =>
@@ -430,7 +447,10 @@ const fdIssues = optionIssues(
 
 const refuse = (issue: string) => (): string[] => [issue];
 
-// The programs a check reads past the command word, keyed by lower-case name.
+const dashedGitIssues = (name: string): string[] =>
+  name.startsWith(GIT_DASHED) ? [DASHED_GIT_ISSUE] : [];
+
+// The programs that have a check of their own, keyed by lower-case name.
 const PROGRAM_CHECKS: ReadonlyMap<string, ProgramCheck> = new Map([
   [
     'claude',
@@ -534,6 +554,7 @@ function commandIssues(words: readonly string[], where: Where): string[] {
   const rest = words.slice(1);
   return [
     ...commandPathIssues(word, where),
+    ...dashedGitIssues(name),
     ...(PROGRAM_CHECKS.get(name)?.issues(rest) ?? []),
     ...runnerIssues(name, rest, where),
   ];
