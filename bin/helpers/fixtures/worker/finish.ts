@@ -312,7 +312,7 @@ export function harness(fx: Fixture, over: Partial<WorkerEnv> = {}) {
     env: { CLAUDE_CONFIG_DIR: fx.configDir },
     cwd: fx.top,
     home: '/home/test',
-    workTree: fx.top,
+    workTree: { kind: 'inside', top: fx.top },
     tmpdir: tmp(),
     runClaude: claude.run,
     write: () => {},

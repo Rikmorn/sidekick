@@ -1958,7 +1958,10 @@ describe('finish finds the worktree wherever it was made', () => {
     const fx = fixture();
     fx.integrate();
     const side = sibling(fx);
-    const h = harness(fx, { cwd: side, workTree: side });
+    const h = harness(fx, {
+      cwd: side,
+      workTree: { kind: 'inside', top: side },
+    });
     expect(h.finish(fx.brief)).toBe(0);
     expect(h.err).toEqual([]);
     expect(h.out[0]).toBe(headTarget(fx.top));
@@ -1976,7 +1979,10 @@ describe('finish finds the worktree wherever it was made', () => {
     fs.mkdirSync(path.join(side, 'docs'));
     const brief = path.join(side, 'docs', 'x-brief.md');
     fs.copyFileSync(fx.brief, brief);
-    const h = harness(fx, { cwd: side, workTree: side });
+    const h = harness(fx, {
+      cwd: side,
+      workTree: { kind: 'inside', top: side },
+    });
     expect(h.finish(brief)).toBe(0);
     expect(h.out.slice(0, 3)).toEqual([
       `target: refs/heads/feature (the HEAD of ${side}, since the brief names no target)`,
@@ -2109,7 +2115,10 @@ describe('finish names its target in one line', () => {
     const fx = fixture();
     const side = sibling(fx);
     git(side, 'merge', '-q', '--ff-only', fx.branch);
-    const h = harness(fx, { cwd: side, workTree: side });
+    const h = harness(fx, {
+      cwd: side,
+      workTree: { kind: 'inside', top: side },
+    });
     expect(h.finish(fx.brief, '--into', 'HEAD')).toBe(0);
     expect(h.out[0]).toBe('target: refs/heads/feature (from --into)');
   });
@@ -2600,7 +2609,10 @@ describe('finish --name keeps the checkout that dispatched the worker', () => {
     const fx = fixture(worktrunk);
     fx.integrate();
     const { side } = dispatchedFromSibling(fx, { record: false });
-    const h = harness(fx, { cwd: side, workTree: side });
+    const h = harness(fx, {
+      cwd: side,
+      workTree: { kind: 'inside', top: side },
+    });
     h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: side })]);
     const main = mainBranch(fx);
     expect(h.finish('--name', 'w1', '--no-report', '--into', main)).toBe(1);
@@ -2619,7 +2631,10 @@ describe('finish --name keeps the checkout that dispatched the worker', () => {
     fx.integrate();
     const { side } = dispatchedFromSibling(fx, { record: true });
     fs.rmSync(path.join(side, 'docs'), { recursive: true });
-    const h = harness(fx, { cwd: side, workTree: side });
+    const h = harness(fx, {
+      cwd: side,
+      workTree: { kind: 'inside', top: side },
+    });
     h.claude.state.agents = JSON.stringify([agentRow(fx, { cwd: side })]);
     expect(
       h.finish('--name', 'w1', '--no-report', '--into', mainBranch(fx)),

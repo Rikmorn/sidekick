@@ -13,6 +13,7 @@ import {
   parseManifest,
   readManifest,
 } from './profile-manifest.js';
+import type { WorkTreeRoot } from './rules.js';
 
 export type StoreKind = 'repo' | 'user';
 
@@ -90,14 +91,14 @@ const CLAUDE_DIR_REASONS: ReadonlyMap<string, string> = new Map([
 
 /**
  * The store's roots in search order: the work tree's `.claude/profiles/` when
- * `workTree` is defined, then the user store. `SIDEKICK_PROFILES_DIR` replaces
+ * `workTree` is inside one, then the user store. `SIDEKICK_PROFILES_DIR` replaces
  * both.
  */
 export function storeRoots(
   env: NodeJS.ProcessEnv,
   cwd: string,
   home: string,
-  workTree: string | undefined,
+  workTree: WorkTreeRoot,
 ): StoreRoot[] {
   const override = env.SIDEKICK_PROFILES_DIR;
   if (override) return [{ kind: 'user', dir: path.resolve(cwd, override) }];
@@ -106,10 +107,10 @@ export function storeRoots(
     kind: 'user',
     dir: path.resolve(cwd, configDir, 'profiles'),
   };
-  if (workTree === undefined) return [user];
+  if (workTree.kind !== 'inside') return [user];
   const repo: StoreRoot = {
     kind: 'repo',
-    dir: path.resolve(workTree, '.claude', 'profiles'),
+    dir: path.resolve(workTree.top, '.claude', 'profiles'),
   };
   // A dotfiles repo at $HOME, say: one folder is one store.
   return repo.dir === user.dir ? [user] : [repo, user];

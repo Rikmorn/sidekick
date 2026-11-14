@@ -175,7 +175,7 @@ function harness(fx: Fixture, over: Partial<WorkerEnv> = {}) {
     env: { SIDEKICK_PROFILES_DIR: fx.store },
     cwd: fx.top,
     home: '/home/test',
-    workTree: fx.top,
+    workTree: { kind: 'inside', top: fx.top },
     tmpdir: tmp(),
     runClaude: claude.run,
     write: () => {},
@@ -511,7 +511,10 @@ describe('dispatch refuses', () => {
     const sib = sibling(fx, path.join(tmp(), 'sib'));
     const rulings = path.join(fx.docs, 'rulings.md');
     fs.writeFileSync(sib.brief, sib.text({ rulings }));
-    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    const h = harness(fx, {
+      cwd: sib.top,
+      workTree: { kind: 'inside', top: sib.top },
+    });
     const code = h.dispatch(sib.brief, '--permission-mode', 'auto');
     expectRefused(
       h,
@@ -780,7 +783,10 @@ describe('dispatch from another checkout', () => {
     git(sib.top, 'commit', '-q', '--allow-empty', '-m', 'sib work');
     const sibHead = git(sib.top, 'rev-parse', 'HEAD');
     fs.writeFileSync(sib.brief, sib.text({ baseline: sibHead }));
-    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    const h = harness(fx, {
+      cwd: sib.top,
+      workTree: { kind: 'inside', top: sib.top },
+    });
     expect(h.dispatch(sib.brief, '--permission-mode', 'auto')).toBe(0);
     const launch = onlyLaunch(h);
     expect(launch.opts.cwd).toBe(sib.top);
@@ -801,7 +807,10 @@ describe('dispatch from another checkout', () => {
     const sib = sibling(fx, path.join(tmp(), 'sib'));
     git(sib.top, 'commit', '-q', '--allow-empty', '-m', 'sib work');
     const sibHead = git(sib.top, 'rev-parse', 'HEAD');
-    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    const h = harness(fx, {
+      cwd: sib.top,
+      workTree: { kind: 'inside', top: sib.top },
+    });
     const code = h.dispatch(sib.brief, '--permission-mode', 'auto');
     expectRefused(
       h,
@@ -816,7 +825,10 @@ describe('dispatch from another checkout', () => {
     const folder = path.join(fx.top, '.claude', 'worktrees', 'w1');
     fs.mkdirSync(folder, { recursive: true });
     git(fx.top, 'branch', 'worktree-w1');
-    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    const h = harness(fx, {
+      cwd: sib.top,
+      workTree: { kind: 'inside', top: sib.top },
+    });
     const code = h.dispatch(sib.brief, '--permission-mode', 'auto');
     expect(code).toBe(1);
     expect(h.err).toContain(`name: ${folder} already exists`);
@@ -1061,7 +1073,10 @@ describe("dispatch checks the worker's worktree after the launch", () => {
   test('from a linked worktree, a worktree under that checkout is refused, and stopped from it', () => {
     const fx = fixture();
     const sib = sibling(fx, path.join(tmp(), 'sib'));
-    const h = harness(fx, { cwd: sib.top, workTree: sib.top });
+    const h = harness(fx, {
+      cwd: sib.top,
+      workTree: { kind: 'inside', top: sib.top },
+    });
     const underSib = path.join(sib.top, '.claude', 'worktrees', 'w1');
     h.claude.state.land = (launchCwd, name) => {
       git(
@@ -1207,7 +1222,10 @@ describe('dispatch --check', () => {
     const fx = fixture();
     const empty = tmp();
     git(empty, 'init', '-q');
-    const h = harness(fx, { cwd: empty, workTree: empty });
+    const h = harness(fx, {
+      cwd: empty,
+      workTree: { kind: 'inside', top: empty },
+    });
     expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(1);
     expect(refusals(h)).toContain("this checkout's HEAD has no commit yet");
     expect(h.out).toEqual([]);
@@ -1216,7 +1234,10 @@ describe('dispatch --check', () => {
   test('refuses a folder outside any work tree', () => {
     const fx = fixture();
     const outside = tmp();
-    const h = harness(fx, { cwd: outside, workTree: outside });
+    const h = harness(fx, {
+      cwd: outside,
+      workTree: { kind: 'inside', top: outside },
+    });
     expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(1);
     expect(h.err).toContain(
       'not inside a git work tree: run sidekick worker from a checkout of the repo',

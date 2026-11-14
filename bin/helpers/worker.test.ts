@@ -20,7 +20,7 @@ function harness() {
     env: {},
     cwd: '/nowhere',
     home: '/home/test',
-    workTree: undefined,
+    workTree: { kind: 'outside' },
     tmpdir: '/nowhere',
     runClaude: noClaude,
     write: () => {},

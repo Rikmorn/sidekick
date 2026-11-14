@@ -39,6 +39,7 @@ import {
   type Profile,
   storeRoots,
 } from './profile-store.js';
+import type { WorkTreeRoot } from './rules.js';
 import { shellQuote } from './shell.js';
 import { listJobs } from './worker-jobs.js';
 
@@ -52,10 +53,8 @@ export interface ProfileEnv {
   env: NodeJS.ProcessEnv;
   cwd: string;
   home: string;
-  /** The enclosing git work tree's top folder, or undefined outside one. */
-  workTree: string | undefined;
-  /** git's line when `git rev-parse` failed for a reason other than being outside every repository; `workTree` is then undefined. */
-  workTreeIssue?: string;
+  /** Where `cwd` sits: inside a git work tree, outside every repository, or where `git rev-parse` failed. */
+  workTree: WorkTreeRoot;
   /** Where the settings check keeps its temp file. */
   tmpdir: string;
   runClaude: ClaudeRunner;
@@ -333,12 +332,18 @@ const noRepoStore = (penv: ProfileEnv): string => {
   if (penv.env.SIDEKICK_PROFILES_DIR) {
     return 'SIDEKICK_PROFILES_DIR is set, so there is no repo store';
   }
-  if (penv.workTree === undefined) {
-    return penv.workTreeIssue === undefined
-      ? 'not inside a git work tree, so there is no repo store'
-      : `git rev-parse failed in ${penv.cwd}, so there is no repo store: ${penv.workTreeIssue}; fix what git reports, then run the command again`;
+  switch (penv.workTree.kind) {
+    case 'inside':
+      return 'the repo store is the user store here, so --repo has nowhere else to write';
+    case 'outside':
+      return 'not inside a git work tree, so there is no repo store';
+    case 'failed':
+      return `git rev-parse failed in ${penv.cwd}, so there is no repo store: ${penv.workTree.issue}; fix what git reports, then run the command again`;
+    default: {
+      const unhandled: never = penv.workTree;
+      throw new Error(`unhandled work tree ${JSON.stringify(unhandled)}`);
+    }
   }
-  return 'the repo store is the user store here, so --repo has nowhere else to write';
 };
 
 const create: Verb = (rest, penv, out, err) => {
@@ -464,7 +469,7 @@ const switchProfile: Verb = (rest, penv, out, err) => {
   if (checkedLaunch(name, penv, err) === undefined) return 1;
   // The work tree's top: the shell may have moved below it, and a session
   // started in a subfolder does not load the top's project settings.
-  const folder = penv.workTree ?? penv.cwd;
+  const folder = penv.workTree.kind === 'inside' ? penv.workTree.top : penv.cwd;
   // No `#` comment on a command line: a default interactive zsh reads `#` as a word.
   const cd = `cd ${shellQuote(folder)}`;
   out(

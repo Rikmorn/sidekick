@@ -109,13 +109,11 @@ function writeStdout(chunk: string): void {
 
 // The environment the `profile` and `worker` families share.
 function profileEnvOf(ctx: MainContext): ProfileEnv {
-  const root = workTreeRootOf(ctx.cwd);
   return {
     env: ctx.env,
     cwd: ctx.cwd,
     home: ctx.env.HOME || os.homedir(),
-    workTree: root.kind === 'inside' ? root.top : undefined,
-    workTreeIssue: root.kind === 'failed' ? root.issue : undefined,
+    workTree: workTreeRootOf(ctx.cwd),
     tmpdir: ctx.tmpdir ?? os.tmpdir(),
     runClaude: ctx.runClaude ?? execClaude,
     write: ctx.write ?? writeStdout,

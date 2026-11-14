@@ -77,7 +77,7 @@ function harness(over: Partial<ProfileEnv> = {}) {
     tmpdir: tmp(),
     runClaude: runner.run,
     write: (c) => written.push(c),
-    workTree: undefined,
+    workTree: { kind: 'outside' },
     ...over,
   };
   const run = (...args: string[]) =>
@@ -839,7 +839,12 @@ function repoHarness() {
   const home = tmp();
   const repoStore = path.join(workTree, '.claude', 'profiles');
   const userStore = path.join(home, '.claude', 'profiles');
-  const h = harness({ env: {}, home, workTree, cwd: workTree });
+  const h = harness({
+    env: {},
+    home,
+    workTree: { kind: 'inside', top: workTree },
+    cwd: workTree,
+  });
   return { ...h, workTree, repoStore, userStore };
 }
 
@@ -923,7 +928,7 @@ describe('the repo store', () => {
   });
   test('new --repo refuses outside a work tree, saying why', () => {
     const h = repoHarness();
-    h.penv.workTree = undefined;
+    h.penv.workTree = { kind: 'outside' };
     expect(h.run('new', 'fresh', '--description', 'F', '--repo')).toBe(1);
     expect(h.err).toEqual([
       'not inside a git work tree, so there is no repo store',
@@ -931,8 +936,10 @@ describe('the repo store', () => {
   });
   test("new --repo refuses where git rev-parse failed for another reason, quoting git's line", () => {
     const h = repoHarness();
-    h.penv.workTree = undefined;
-    h.penv.workTreeIssue = 'fatal: invalid gitfile format: /x/.git';
+    h.penv.workTree = {
+      kind: 'failed',
+      issue: 'fatal: invalid gitfile format: /x/.git',
+    };
     expect(h.run('new', 'fresh', '--description', 'F', '--repo')).toBe(1);
     expect(h.err).toEqual([
       `git rev-parse failed in ${h.penv.cwd}, so there is no repo store: fatal: invalid gitfile format: /x/.git; fix what git reports, then run the command again`,
