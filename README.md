@@ -102,7 +102,7 @@ sidekick profile alias --shell zsh <name>      # print the skp shell function, t
 sidekick profile switch <name>                 # print the lines that resume this session under <name>
 ```
 
-`sidekick` is on `PATH` only inside a session, so run these from one, or call the installed `bin/sidekick` directly. `skp <name>` then starts an interactive session. Profiles live in two stores, searched in order. The repo store is `.claude/profiles/` at the top of the git work tree, and wins on a shared name. The user store is `profiles/` under `CLAUDE_CONFIG_DIR` or `~/.claude`. `SIDEKICK_PROFILES_DIR`, when set and non-empty, is the only store. The skill reference `plugin/skills/sidekick/references/profiles.md` covers the rest.
+`sidekick` is on `PATH` only inside a session, so run these from one, or call the installed `bin/sidekick` directly. `skp <name>` then starts an interactive session. Profiles live in two stores, searched in order. The repo store is `.claude/profiles/` at the top of the git work tree, and wins on a shared name. The user store is `sidekick/profiles/` under `CLAUDE_CONFIG_DIR` or `~/.claude`. `SIDEKICK_PROFILES_DIR`, when set and non-empty, is the only store. The skill reference `plugin/skills/sidekick/references/profiles.md` covers the rest.
 
 ## Memory
 

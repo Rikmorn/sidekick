@@ -15,9 +15,9 @@ A profile lives in a store, one folder per profile:
 Two stores hold profiles. The CLI searches them in order, and the first that holds a name wins:
 
 1. The repo store, `.claude/profiles/` at the top of the git work tree holding the current folder, as `git rev-parse --show-toplevel` reports it. A session in a subfolder finds the top's store, and a linked worktree reads its own checkout's. Outside a work tree there is no repo store.
-2. The user store, `profiles/` under `CLAUDE_CONFIG_DIR`, or under `~/.claude` when that is unset or empty.
+2. The user store, `sidekick/profiles/` under `CLAUDE_CONFIG_DIR`, or under `~/.claude` when that is unset or empty. "The sidekick folder" says what holds it.
 
-When the two stores are the same path, only the user store is searched. That happens in a dotfiles repo at `$HOME`, or with `CLAUDE_CONFIG_DIR` set to the repo's `.claude`. `SIDEKICK_PROFILES_DIR`, when set and non-empty, is the only store, and no repo store is searched. A relative path resolves against the current folder, so `--add-dir` always receives an absolute path.
+The two stores are one folder when the repo store is a link to the user store. That happens in a dotfiles repo at `$HOME` with the bridge link from `~/.claude/profiles` to `~/.claude/sidekick/profiles`. Only the user store is searched then. A dotfiles repo at `$HOME` without the link has the old path, `~/.claude/profiles`, as its repo store, and the old-store refusal covers it. `SIDEKICK_PROFILES_DIR`, when set and non-empty, is the only store, and no repo store is searched. A relative path resolves against the current folder, so `--add-dir` always receives an absolute path.
 
 A name is 1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit. The name is also a folder name and a shell alias, which is why the rule is that strict.
 
@@ -49,9 +49,18 @@ Under `.claude/`, the layout check allows only `rules/`. It refuses a folder tha
 - `.claude/settings.json` or `.claude/settings.local.json`. An `--add-dir` folder's settings file can enable plugins, and the settings check never sees it. Put settings in `profile.json`, where the check covers them.
 - Any other entry under `.claude/`, such as `agents/`, `skills/`, `commands/`, or `output-styles/`. A profile holds only rules, as "The folder" explains, so put these in a plugin the profile enables.
 
+## The sidekick folder
+
+`sidekick/` under `CLAUDE_CONFIG_DIR`, or under `~/.claude` when that is unset or empty, is the folder sidekick keeps its user files in. The user store, `sidekick/profiles/`, is the first of them.
+
+- The folder is a git repo that sidekick owns. `profile new` makes it: it creates the folder, runs `git init` unless the folder is already the top of a work tree, and writes the `.gitignore` when it is absent. It never commits.
+- The `.gitignore` keeps `loops/*/records/` and `loops/*/state.json` out of the repo, so each loop's records and state stay local.
+- Before the move, the user store was `profiles/` beside it. While that old store holds a profile, every `profile` verb and `worker dispatch` refuses. The refusal prints the `mv` lines that move it. It also names each background job whose respawn flags point into the old store, since the move breaks that respawn. Relaunch such a job once the store has moved. `SIDEKICK_PROFILES_DIR` skips the refusal, since it names the only store.
+- A link from `profiles/` to `sidekick/profiles/` bridges two sidekick versions, so a version that reads the old path still finds the profiles. With the link in place, the old path is the same folder as the new one, and the refusal stays silent.
+
 ## The repo store
 
-A repo profile has the layout and checks of a user profile, and travels with the repo. `new --repo` creates one in the repo store. It refuses outside a git work tree, and while `SIDEKICK_PROFILES_DIR` is set, since neither case has a repo store. It also refuses where the two stores are the same path, as "The folder" describes, since `--repo` would write where `new` already does. Without `--repo`, `new` writes to the user store.
+A repo profile has the layout and checks of a user profile, and travels with the repo. `new --repo` creates one in the repo store. It refuses outside a git work tree, and while `SIDEKICK_PROFILES_DIR` is set, since neither case has a repo store. It also refuses where the repo store is the user store's folder, as "The folder" describes, since `--repo` would write where `new` already does. It refuses too where the repo store is the old user store's path, and says to run `new` without `--repo`. Without `--repo`, `new` writes to the user store.
 
 On a shared name the repo profile wins, so the CLI says where each profile comes from:
 
