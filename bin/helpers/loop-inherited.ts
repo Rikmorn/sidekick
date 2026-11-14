@@ -1,0 +1,283 @@
+/**
+ * The inherited listing: what a loop and its workers inherit beyond the loop's
+ * mandate. It blocks nothing; `sidekick loop show` prints it.
+ */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as v from 'valibot';
+import {
+  keptLayers,
+  type Layer,
+  type LayerSummary,
+  summariseLayer,
+} from './loop-layers.js';
+import type { LoopManifest } from './loop-manifest.js';
+import {
+  type ClaudeRunner,
+  composeSettings,
+  isPlainObject,
+} from './profile-launch.js';
+import type { Profile } from './profile-store.js';
+
+/** Claude Code also loads built-in plugins, which `claude plugin list` does not show. */
+export const BUILTIN_NOTE: readonly string[] = [
+  'Claude Code also loads built-in plugins, which `claude plugin list` does not show.',
+  'On Claude Code 2.1.322, two of them handled tool calls: `cc-plugin-plugin-authoring` and `cc-plugin-privacy` (R11 loop probes, U9).',
+  'To see the current set, start a session with `--debug-file <file>` and search the log for `hooks module`.',
+];
+
+/** What the listing reads from and runs. `managedFile` overrides the managed settings path. */
+export interface InheritedDeps {
+  runClaude: ClaudeRunner;
+  configDir: string;
+  home: string;
+  managedFile?: string;
+}
+
+/** The listing's lines, ready to print, and the warnings it raised. */
+export interface Inherited {
+  lines: string[];
+  warnings: string[];
+}
+
+const PLUGIN_LIST_TIMEOUT_MS = 30_000;
+const NONE = '  (none)';
+const EXEMPT_SUFFIXES = ['@builtin', '@inline'];
+// A bare file-write rule, alone or with `(*)`, allows every path.
+const BARE_WRITE = /^(?:Edit|Write|MultiEdit|NotebookEdit)(?:\(\*\))?$/;
+
+const PluginListSchema = v.array(
+  v.looseObject({ id: v.string(), installPath: v.nullish(v.string()) }),
+);
+
+const errorText = (e: unknown): string =>
+  e instanceof Error ? e.message : String(e);
+
+const section = (title: string, entries: string[]): string[] => [
+  title,
+  ...(entries.length === 0 ? [NONE] : entries.map((entry) => `  ${entry}`)),
+];
+
+const hookLine = (
+  source: string,
+  hook: LayerSummary['hooks'][number],
+): string =>
+  `${source}: ${hook.event}${hook.matcher === undefined ? '' : ` [${hook.matcher}]`}: ${hook.command}`;
+
+const layerSource = (layer: Layer): string => `${layer.name} (${layer.file})`;
+
+/** Id to installed folder from `plugin list --json`, or the reason it is unavailable. */
+function listPlugins(
+  manifest: LoopManifest,
+  deps: InheritedDeps,
+): { folders: Map<string, string> } | { problem: string } {
+  const result = deps.runClaude(['plugin', 'list', '--json'], {
+    cwd: manifest.repo,
+    timeoutMs: PLUGIN_LIST_TIMEOUT_MS,
+  });
+  if (result.timedOut) {
+    return { problem: 'claude plugin list timed out' };
+  }
+  if (result.code !== 0) {
+    return { problem: `claude plugin list exited with code ${result.code}` };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(result.stdout);
+  } catch (e) {
+    return { problem: `claude plugin list printed no JSON: ${errorText(e)}` };
+  }
+  const parsed = v.safeParse(PluginListSchema, raw);
+  if (!parsed.success) {
+    return { problem: 'claude plugin list printed an unexpected shape' };
+  }
+  const folders = new Map<string, string>();
+  for (const entry of parsed.output) {
+    if (entry.installPath) folders.set(entry.id, entry.installPath);
+  }
+  return { folders };
+}
+
+/** The ids that load: layers merged lowest first, a later value winning, then the final `true`s. */
+function loadedIds(
+  layers: Layer[],
+  composed: Record<string, unknown>,
+): string[] {
+  const merged = new Map<string, boolean>();
+  const apply = (plugins: Record<string, boolean>): void => {
+    for (const [id, on] of Object.entries(plugins)) merged.set(id, on);
+  };
+  const fileLayers = (names: string[]): Layer[] =>
+    layers.filter((layer) => names.includes(layer.name));
+  const summaryOf = (layer: Layer): LayerSummary | undefined =>
+    'settings' in layer ? summariseLayer(layer.settings) : undefined;
+  for (const layer of fileLayers(['user', 'project', 'local'])) {
+    const summary = summaryOf(layer);
+    if (summary) apply(summary.enabledPlugins);
+  }
+  apply(summariseLayer(composed).enabledPlugins);
+  for (const layer of fileLayers(['managed'])) {
+    const summary = summaryOf(layer);
+    if (summary) apply(summary.enabledPlugins);
+  }
+  return [...merged].filter(([, on]) => on).map(([id]) => id);
+}
+
+type PluginHooks =
+  | { kind: 'none' }
+  | { kind: 'read'; hooks: LayerSummary['hooks']; mod: boolean }
+  | { kind: 'unreadable'; why: string };
+
+/** Reads `<folder>/hooks/hooks.json`: its approving hooks and whether it ships a mod. */
+function readPluginHooks(folder: string): PluginHooks {
+  if (!fs.existsSync(folder)) {
+    return { kind: 'unreadable', why: 'the folder is gone' };
+  }
+  const file = path.join(folder, 'hooks', 'hooks.json');
+  if (!fs.existsSync(file)) return { kind: 'none' };
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!isPlainObject(parsed)) {
+      return { kind: 'unreadable', why: 'hooks.json is not a JSON object' };
+    }
+    return {
+      kind: 'read',
+      hooks: summariseLayer(parsed).hooks,
+      mod: Array.isArray(parsed.modules) && parsed.modules.length > 0,
+    };
+  } catch (e) {
+    return { kind: 'unreadable', why: errorText(e) };
+  }
+}
+
+const MOD_MARK =
+  'ships a mod: on this subscription, a mod can approve a call past a deny rule';
+
+interface PluginsPart {
+  plugins: string[];
+  hooks: string[];
+  warnings: string[];
+}
+
+/** One plugin's line and hook lines, given its source label and folder (if known). */
+function describePlugin(
+  label: string,
+  folder: string | undefined,
+  notFound: string,
+): { line: string; hooks: string[] } {
+  if (folder === undefined) return { line: `${label}: ${notFound}`, hooks: [] };
+  const read = readPluginHooks(folder);
+  switch (read.kind) {
+    case 'none':
+      return { line: `${label} (${folder})`, hooks: [] };
+    case 'unreadable':
+      return {
+        line: `${label} (${folder}): its hooks could not be read: ${read.why}`,
+        hooks: [],
+      };
+    case 'read':
+      return {
+        line: `${label} (${folder})${read.mod ? `: ${MOD_MARK}` : ''}`,
+        hooks: read.hooks.map((hook) => hookLine(`plugin ${label}`, hook)),
+      };
+  }
+}
+
+function pluginsPart(
+  manifest: LoopManifest,
+  profile: Profile,
+  layers: Layer[],
+  deps: InheritedDeps,
+): PluginsPart {
+  const composed = composeSettings(profile, { home: deps.home });
+  const ids = loadedIds(layers, composed).filter(
+    (id) => !EXEMPT_SUFFIXES.some((suffix) => id.endsWith(suffix)),
+  );
+  const listed = listPlugins(manifest, deps);
+  const warnings: string[] = [];
+  const plugins: string[] = [];
+  const hooks: string[] = [];
+  if ('problem' in listed) {
+    warnings.push(`The plugin list is incomplete: ${listed.problem}.`);
+    plugins.push(
+      `(incomplete: ${listed.problem}, so installed plugins' folders and hooks are not shown)`,
+    );
+  }
+  for (const id of ids) {
+    if ('problem' in listed) continue;
+    const found = describePlugin(
+      id,
+      listed.folders.get(id),
+      'enabled, but not installed',
+    );
+    plugins.push(found.line);
+    hooks.push(...found.hooks);
+  }
+  for (const dir of profile.pluginDirs) {
+    const found = describePlugin(`plugin dir ${dir}`, dir, 'not found');
+    plugins.push(found.line);
+    hooks.push(...found.hooks);
+  }
+  return { plugins, hooks, warnings };
+}
+
+/**
+ * Lists what the loop and its workers inherit beyond the mandate: allow rules,
+ * hooks that can approve a call, what widens the workers' fence, the plugins
+ * loaded, and a fixed note on built-ins. Never throws.
+ */
+export function inheritedListing(
+  manifest: LoopManifest,
+  profile: Profile,
+  deps: InheritedDeps,
+): Inherited {
+  const layers = keptLayers(
+    profile,
+    manifest.repo,
+    deps.configDir,
+    deps.managedFile,
+  );
+  const warnings: string[] = [];
+  const allow: string[] = [];
+  const hooks: string[] = [];
+  const fence: string[] = [];
+  for (const layer of layers) {
+    const source = layerSource(layer);
+    if ('issue' in layer) {
+      const text = `${source}: could not be read: ${layer.issue}`;
+      allow.push(text);
+      warnings.push(`The ${layer.name} settings ${text}`);
+      continue;
+    }
+    const summary = summariseLayer(layer.settings);
+    allow.push(...summary.allow.map((rule) => `${source}: ${rule}`));
+    hooks.push(...summary.hooks.map((hook) => hookLine(source, hook)));
+    const widenings: [string, string[]][] = [
+      ['added directory', summary.addedDirectories],
+      ['sandbox write', summary.sandboxWrites],
+      ['allowed domain', summary.allowedDomains],
+      ['Edit allow', summary.editAllows],
+      [
+        'file-write allow for every path',
+        summary.allow.filter((rule) => BARE_WRITE.test(rule)),
+      ],
+    ];
+    for (const [kind, entries] of widenings) {
+      fence.push(...entries.map((entry) => `${source}: ${kind}: ${entry}`));
+    }
+  }
+  const part = pluginsPart(manifest, profile, layers, deps);
+  warnings.push(...part.warnings);
+  return {
+    lines: [
+      ...section('Allow rules', allow),
+      ...section('Hooks that can approve a call', [...hooks, ...part.hooks]),
+      ...section("What widens the workers' fence", fence),
+      ...section('Plugins', part.plugins),
+      'Built-ins',
+      ...BUILTIN_NOTE.map((line) => `  ${line}`),
+    ],
+    warnings,
+  };
+}
