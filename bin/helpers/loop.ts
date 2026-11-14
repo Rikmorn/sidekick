@@ -132,8 +132,13 @@ const section = (title: string, entries: readonly string[]): string[] => [
   ...(entries.length === 0 ? [NONE] : entries.map((entry) => `  ${entry}`)),
 ];
 
-const field = (key: string, value: unknown): string =>
-  `${key}: ${typeof value === 'string' ? oneLine(value) : JSON.stringify(value)}`;
+// A value the key check flags prints as its check ids, as the check's issue names them.
+function field(key: string, value: unknown): string {
+  const text =
+    typeof value === 'string' ? oneLine(value) : JSON.stringify(value);
+  const ids = keyHits(text);
+  return `${key}: ${ids.length === 0 ? text : `(withheld: ${ids.join(', ')})`}`;
+}
 
 // Each top-level field on one line, and the mandate one list or class per line.
 function definitionLines(file: string, manifest: LoopManifest | undefined) {

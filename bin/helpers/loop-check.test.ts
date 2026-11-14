@@ -7,7 +7,7 @@ import { envWithoutRepoVars } from './git-env.js';
 import { checkLoop, GITHUB_HOST_WARNING, type LoopDeps } from './loop-check.js';
 import { ruleIssues } from './loop-rules.js';
 import { keyHits } from './memory-patterns.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 import { PROFILE_NAME_RULE } from './profile-manifest.js';
 import { oldStoreIssues } from './profile-old-store.js';
 import { realPathOf } from './sidekick-home.js';
@@ -227,6 +227,59 @@ describe('checkLoop: the repo', () => {
     writeProfile(userStore());
     expect(checkLoop('fixer', deps).issues).toEqual([
       `${loopFile()}: repo: ${missing} is not a folder`,
+    ]);
+  });
+});
+
+describe('checkLoop: the repo, as git spells it', () => {
+  // git prints the real case, and Node's realpathSync keeps the case it is given.
+  const gitPrinting =
+    (top: string, common: string): Runner =>
+    (_cmd, args) => {
+      const printed: Record<string, string> = {
+        '--show-toplevel': top,
+        '--git-common-dir': common,
+      };
+      const out = printed[args[1] ?? ''];
+      return out === undefined
+        ? { code: 1, stdout: '', stderr: `unexpected git ${args.join(' ')}` }
+        : { code: 0, stdout: `${out}\n`, stderr: '' };
+    };
+  // A folder with no .git, so the common dir the stub prints exists under neither runtime and keeps its case.
+  const plainRepo = (): string => {
+    const dir = path.join(tmp, 'plainrepo');
+    fs.mkdirSync(dir);
+    writeLoop((m) => {
+      m.repo = dir;
+    });
+    writeProfile(userStore());
+    return dir;
+  };
+  const twin = (p: string): string =>
+    path.join(path.dirname(p), path.basename(p).toUpperCase());
+
+  test('passes a top and common dir that differ from repo only in case', () => {
+    const dir = plainRepo();
+    const real = realPathOf(dir);
+    const runGit = gitPrinting(twin(real), path.join(twin(real), '.GIT'));
+    expect(checkLoop('fixer', { ...deps, runGit }).issues).toEqual([]);
+  });
+
+  test('still refuses a top that is another folder', () => {
+    const dir = plainRepo();
+    const other = path.join(realPathOf(tmp), 'other');
+    const runGit = gitPrinting(other, path.join(other, '.git'));
+    expect(checkLoop('fixer', { ...deps, runGit }).issues).toEqual([
+      `${loopFile()}: repo: ${dir} is inside the work tree ${other}; name its main checkout's root`,
+    ]);
+  });
+
+  test('still refuses a common dir that is another folder', () => {
+    const dir = plainRepo();
+    const elsewhere = path.join(realPathOf(tmp), 'elsewhere', '.git');
+    const runGit = gitPrinting(realPathOf(dir), elsewhere);
+    expect(checkLoop('fixer', { ...deps, runGit }).issues).toEqual([
+      `${loopFile()}: repo: ${dir} keeps its git dir at ${elsewhere}, as a linked worktree or a submodule does; name the main checkout's root`,
     ]);
   });
 });

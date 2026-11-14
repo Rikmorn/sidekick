@@ -67,6 +67,15 @@ describe('RUNTIME_ENTRIES', () => {
         lines.some((line) => line === pattern || line === `${pattern}/`),
       ).toBe(true);
     }
+    // And the reverse: each loops/*/ line the file holds names a runtime entry.
+    const prefix = 'loops/*/';
+    const ignored = lines
+      .filter((line) => line.startsWith(prefix))
+      .map((line) => line.slice(prefix.length).replace(/\/$/, ''));
+    expect(ignored.length).toBeGreaterThan(0);
+    expect(ignored.filter((entry) => !RUNTIME_ENTRIES.includes(entry))).toEqual(
+      [],
+    );
   });
 });
 

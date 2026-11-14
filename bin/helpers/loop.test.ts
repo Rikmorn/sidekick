@@ -409,6 +409,20 @@ describe('show', () => {
     expect(r.out.slice(-lastDay().length)).toEqual(lastDay());
   });
 
+  test('withholds a definition value the key check flags, naming its ids', () => {
+    writeLoop((m) => {
+      m.description = `token ${key()}`;
+      m.mandate.never.push(`Bash(echo ${key()})`);
+    });
+    writeProfile();
+    const r = run(['show', 'fixer']);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('  description: (withheld: github-classic-pat)');
+    expect(r.out).toContain('  mandate.never: (withheld: github-classic-pat)');
+    expect(r.out).toContain('  profile: fixer');
+    expect(r.out.join('\n')).not.toContain(key());
+  });
+
   test("warnings hold the check's and the listing's own", () => {
     writeLoop((m) => {
       m.hosts = ['github.com'];

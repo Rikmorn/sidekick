@@ -46,6 +46,7 @@ const NONE = '  (none)';
 const EXEMPT_SUFFIXES = ['@builtin', '@inline'];
 // A bare file-write rule, alone or with `(*)`, allows every path.
 const BARE_WRITE = /^(?:Edit|Write|MultiEdit|NotebookEdit)(?:\(\*\))?$/;
+const isBareWrite = (rule: string): boolean => BARE_WRITE.test(rule);
 
 const PluginListSchema = v.array(
   v.looseObject({ id: v.string(), installPath: v.nullish(v.string()) }),
@@ -67,11 +68,10 @@ const hookLine = (
 
 const layerSource = (layer: Layer): string => `${layer.name} (${layer.file})`;
 
+type PluginList = { folders: Map<string, string> } | { problem: string };
+
 /** Id to installed folder from `plugin list --json`, or the reason it is unavailable. */
-function listPlugins(
-  manifest: LoopManifest,
-  deps: InheritedDeps,
-): { folders: Map<string, string> } | { problem: string } {
+function listPlugins(manifest: LoopManifest, deps: InheritedDeps): PluginList {
   const result = deps.runClaude(['plugin', 'list', '--json'], {
     cwd: manifest.repo,
     timeoutMs: PLUGIN_LIST_TIMEOUT_MS,
@@ -160,28 +160,45 @@ interface PluginsPart {
   warnings: string[];
 }
 
-/** One plugin's line and hook lines, given its source label and folder (if known). */
+// One plugin's line and hook lines; `head` names it on its line, and `source` on each hook line.
 function describePlugin(
-  label: string,
-  folder: string | undefined,
-  notFound: string,
+  head: string,
+  source: string,
+  folder: string,
 ): { line: string; hooks: string[] } {
-  if (folder === undefined) return { line: `${label}: ${notFound}`, hooks: [] };
   const read = readPluginHooks(folder);
   switch (read.kind) {
     case 'none':
-      return { line: `${label} (${folder})`, hooks: [] };
+      return { line: head, hooks: [] };
     case 'unreadable':
       return {
-        line: `${label} (${folder}): its hooks could not be read: ${read.why}`,
+        line: `${head}: its hooks could not be read: ${read.why}`,
         hooks: [],
       };
     case 'read':
       return {
-        line: `${label} (${folder})${read.mod ? `: ${MOD_MARK}` : ''}`,
-        hooks: read.hooks.map((hook) => hookLine(`plugin ${label}`, hook)),
+        line: `${head}${read.mod ? `: ${MOD_MARK}` : ''}`,
+        hooks: read.hooks.map((hook) => hookLine(source, hook)),
       };
   }
+}
+
+// An id's plugin line and hooks, by its folder from the plugin list.
+function describeId(
+  id: string,
+  listed: PluginList,
+): { line: string; hooks: string[] } {
+  if ('problem' in listed) {
+    return {
+      line: `${id}: loads, but its folder is unknown without the plugin list`,
+      hooks: [],
+    };
+  }
+  const folder = listed.folders.get(id);
+  if (folder === undefined) {
+    return { line: `${id}: enabled, but not installed`, hooks: [] };
+  }
+  return describePlugin(`${id} (${folder})`, `plugin ${id}`, folder);
 }
 
 function pluginsPart(
@@ -195,31 +212,28 @@ function pluginsPart(
     (id) => !EXEMPT_SUFFIXES.some((suffix) => id.endsWith(suffix)),
   );
   const listed = listPlugins(manifest, deps);
-  const warnings: string[] = [];
-  const plugins: string[] = [];
-  const hooks: string[] = [];
-  if ('problem' in listed) {
-    warnings.push(`The plugin list is incomplete: ${listed.problem}.`);
-    plugins.push(
-      `(incomplete: ${listed.problem}, so installed plugins' folders and hooks are not shown)`,
-    );
-  }
-  for (const id of ids) {
-    if ('problem' in listed) continue;
-    const found = describePlugin(
-      id,
-      listed.folders.get(id),
-      'enabled, but not installed',
-    );
-    plugins.push(found.line);
-    hooks.push(...found.hooks);
-  }
-  for (const dir of profile.pluginDirs) {
-    const found = describePlugin(`plugin dir ${dir}`, dir, 'not found');
-    plugins.push(found.line);
-    hooks.push(...found.hooks);
-  }
-  return { plugins, hooks, warnings };
+  const found = [
+    ...ids.map((id) => describeId(id, listed)),
+    ...profile.pluginDirs.map((dir) =>
+      describePlugin(`plugin dir ${dir}`, `plugin dir ${dir}`, dir),
+    ),
+  ];
+  const problem = 'problem' in listed ? listed.problem : undefined;
+  return {
+    plugins: [
+      ...(problem === undefined
+        ? []
+        : [
+            `(incomplete: ${problem}, so installed plugins' folders and hooks are not shown)`,
+          ]),
+      ...found.map(({ line }) => line),
+    ],
+    hooks: found.flatMap(({ hooks }) => hooks),
+    warnings:
+      problem === undefined
+        ? []
+        : [`The plugin list is incomplete: ${problem}.`],
+  };
 }
 
 /**
@@ -245,23 +259,22 @@ export function inheritedListing(
   for (const layer of layers) {
     const source = layerSource(layer);
     if ('issue' in layer) {
-      const text = `${source}: could not be read: ${layer.issue}`;
-      allow.push(text);
-      warnings.push(`The ${layer.name} settings ${text}`);
+      allow.push(`${source}: could not be read: ${layer.issue}`);
+      warnings.push(
+        `The ${layer.name} settings (${layer.file}) could not be read: ${layer.issue}`,
+      );
       continue;
     }
     const summary = summariseLayer(layer.settings);
     allow.push(...summary.allow.map((rule) => `${source}: ${rule}`));
     hooks.push(...summary.hooks.map((hook) => hookLine(source, hook)));
+    // A bare write rule prints under its own kind alone, so `Edit(*)` prints once.
     const widenings: [string, string[]][] = [
       ['added directory', summary.addedDirectories],
       ['sandbox write', summary.sandboxWrites],
       ['allowed domain', summary.allowedDomains],
-      ['Edit allow', summary.editAllows],
-      [
-        'file-write allow for every path',
-        summary.allow.filter((rule) => BARE_WRITE.test(rule)),
-      ],
+      ['Edit allow', summary.editAllows.filter((rule) => !isBareWrite(rule))],
+      ['file-write allow for every path', summary.allow.filter(isBareWrite)],
     ];
     for (const [kind, entries] of widenings) {
       fence.push(...entries.map((entry) => `${source}: ${kind}: ${entry}`));

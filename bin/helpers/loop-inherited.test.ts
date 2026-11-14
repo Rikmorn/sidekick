@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { BUILTIN_NOTE, inheritedListing } from './loop-inherited.js';
-import type { LoopManifest } from './loop-manifest.js';
+import { type LoopManifest, parseLoopManifest } from './loop-manifest.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import type { Profile } from './profile-store.js';
 import { SIDEKICK_ID } from './sidekick-plugin.js';
@@ -24,7 +24,25 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-const loop = (): LoopManifest => ({ repo }) as unknown as LoopManifest;
+const loop = (): LoopManifest => {
+  const parsed = parseLoopManifest({
+    description: 'd',
+    repo,
+    profile: 'p',
+    schedule: '7 * * * *',
+    tick: '/p:tick',
+    gates: [],
+    caps: {
+      attemptsPerUnit: 1,
+      workMinutesPerUnit: 1,
+      unitsPerDay: 1,
+      failedUnitsInARow: 1,
+    },
+    mandate: { reads: [], classes: {}, never: [] },
+  });
+  if (!parsed.ok) throw new Error(`fixture loop.json: ${parsed.issues}`);
+  return parsed.manifest;
+};
 
 const profileWith = (
   manifest: Partial<Profile['manifest']> = {},
@@ -80,6 +98,12 @@ const run = (
 };
 
 const text = (lines: string[]): string => lines.join('\n');
+// The lines of one section, from its title to the next unindented line.
+const sectionOf = (lines: string[], title: string): string[] => {
+  const from = lines.indexOf(title);
+  const to = lines.findIndex((line, i) => i > from && !line.startsWith(' '));
+  return lines.slice(from, to === -1 ? undefined : to);
+};
 const hasLine = (lines: string[], ...parts: string[]): boolean =>
   lines.some((line) => parts.every((part) => line.includes(part)));
 
@@ -194,7 +218,7 @@ describe('inheritedListing', () => {
     expect(hasLine(out.lines, 'off@m')).toBe(false);
   });
 
-  test('lists the profile plugin dirs by folder, with their hooks', () => {
+  test('lists the profile plugin dirs by folder, with their hooks, naming each once', () => {
     const dir = plugin('dirp', {
       hooks: {
         PreToolUse: [{ hooks: [{ type: 'command', command: 'dir-hook.sh' }] }],
@@ -202,8 +226,48 @@ describe('inheritedListing', () => {
       modules: ['m.ts'],
     });
     const out = run(profileWith({}, [dir]), listed([]));
-    expect(hasLine(out.lines, dir, 'ships a mod')).toBe(true);
-    expect(hasLine(out.lines, 'dir-hook.sh')).toBe(true);
+    expect(sectionOf(out.lines, 'Plugins')).toEqual([
+      'Plugins',
+      `  plugin dir ${dir}: ships a mod: on this subscription, a mod can approve a call past a deny rule`,
+    ]);
+    expect(sectionOf(out.lines, 'Hooks that can approve a call')).toEqual([
+      'Hooks that can approve a call',
+      `  plugin dir ${dir}: PreToolUse: dir-hook.sh`,
+    ]);
+  });
+
+  test('names an installed plugin by id and folder, and its hooks by id', () => {
+    const dir = plugin('a', {
+      hooks: {
+        PreToolUse: [{ hooks: [{ type: 'command', command: 'a.sh' }] }],
+      },
+    });
+    const out = run(
+      profileWith({ settings: { enabledPlugins: { 'a@m': true } } }),
+      listed([{ id: 'a@m', installPath: dir }]),
+    );
+    expect(sectionOf(out.lines, 'Plugins')).toEqual([
+      'Plugins',
+      `  a@m (${dir})`,
+    ]);
+    expect(sectionOf(out.lines, 'Hooks that can approve a call')).toEqual([
+      'Hooks that can approve a call',
+      '  plugin a@m: PreToolUse: a.sh',
+    ]);
+  });
+
+  test('prints a bare file-write rule once per layer in the fence', () => {
+    const file = path.join(configDir, 'settings.json');
+    json(file, {
+      permissions: { allow: ['Edit(//w/**)', 'Edit(*)', 'Write'] },
+    });
+    const out = run(profileWith(), listed([]));
+    expect(sectionOf(out.lines, "What widens the workers' fence")).toEqual([
+      "What widens the workers' fence",
+      `  user (${file}): Edit allow: Edit(//w/**)`,
+      `  user (${file}): file-write allow for every path: Edit(*)`,
+      `  user (${file}): file-write allow for every path: Write`,
+    ]);
   });
 
   test('says an enabled plugin with no install path is not installed', () => {
@@ -244,6 +308,24 @@ describe('inheritedListing', () => {
     expect(hasLine(out.lines, 'bad@m', 'hooks could not be read')).toBe(true);
   });
 
+  test('lists each loading id with its folder unknown when the plugin list fails', () => {
+    const dir = plugin('d');
+    const out = run(
+      profileWith(
+        { settings: { enabledPlugins: { 'a@m': true, 'b@m': true } } },
+        [dir],
+      ),
+      { code: 1, stdout: '', stderr: 'x', timedOut: false },
+    );
+    expect(sectionOf(out.lines, 'Plugins')).toEqual([
+      'Plugins',
+      "  (incomplete: claude plugin list exited with code 1, so installed plugins' folders and hooks are not shown)",
+      '  a@m: loads, but its folder is unknown without the plugin list',
+      '  b@m: loads, but its folder is unknown without the plugin list',
+      `  plugin dir ${dir}`,
+    ]);
+  });
+
   test('warns and marks the plugin part incomplete when the runner fails, keeping other sections', () => {
     json(path.join(configDir, 'settings.json'), {
       permissions: { allow: ['Bash(ls *)'] },
@@ -265,6 +347,18 @@ describe('inheritedListing', () => {
     const calls: { args: string[]; cwd: string }[] = [];
     run(profileWith(), listed([]), calls);
     expect(calls).toEqual([{ args: ['plugin', 'list', '--json'], cwd: repo }]);
+  });
+
+  test('words an unreadable layer once in its line and its warning', () => {
+    const file = path.join(repo, '.claude', 'settings.json');
+    json(file, []);
+    const out = run(profileWith(), listed([]));
+    expect(out.lines).toContain(
+      `  project (${file}): could not be read: the file is not a JSON object`,
+    );
+    expect(out.warnings).toEqual([
+      `The project settings (${file}) could not be read: the file is not a JSON object`,
+    ]);
   });
 
   test('reports a malformed settings layer by file, warns, and goes on', () => {

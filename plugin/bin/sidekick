@@ -9583,6 +9583,7 @@ function checkLoop(name, deps) {
     ]
   };
 }
+var sameRealPath = (a, b) => a.toLowerCase() === b.toLowerCase();
 function mainCheckoutIssues(where, repo, runGit) {
   if (!isFolder3(repo))
     return [`${where} is not a folder`];
@@ -9592,7 +9593,7 @@ function mainCheckoutIssues(where, repo, runGit) {
     return outsideRepo(line, repo) ? [`${where} is not in a git repo; name a main checkout's root`] : [`${where}: git rev-parse failed: ${line}`];
   }
   const realTop = realPathOf(top.stdout.trim());
-  if (realTop !== realPathOf(repo)) {
+  if (!sameRealPath(realTop, realPathOf(repo))) {
     return [
       `${where} is inside the work tree ${realTop}; name its main checkout's root`
     ];
@@ -9602,7 +9603,7 @@ function mainCheckoutIssues(where, repo, runGit) {
     return [`${where}: git rev-parse failed: ${revParseLine(common.stderr)}`];
   }
   const commonDir = realPathOf(path45.resolve(repo, common.stdout.trim()));
-  return commonDir === realPathOf(path45.join(repo, ".git")) ? [] : [
+  return sameRealPath(commonDir, realPathOf(path45.join(repo, ".git"))) ? [] : [
     `${where} keeps its git dir at ${commonDir}, as a linked worktree or a submodule does; name the main checkout's root`
   ];
 }
@@ -9675,6 +9676,7 @@ var PLUGIN_LIST_TIMEOUT_MS = 30000;
 var NONE = "  (none)";
 var EXEMPT_SUFFIXES2 = ["@builtin", "@inline"];
 var BARE_WRITE = /^(?:Edit|Write|MultiEdit|NotebookEdit)(?:\(\*\))?$/;
+var isBareWrite = (rule) => BARE_WRITE.test(rule);
 var PluginListSchema = array(looseObject({ id: string(), installPath: nullish(string()) }));
 var errorText2 = (e) => e instanceof Error ? e.message : String(e);
 var section = (title, entries) => [
@@ -9754,49 +9756,55 @@ function readPluginHooks(folder) {
   }
 }
 var MOD_MARK = "ships a mod: on this subscription, a mod can approve a call past a deny rule";
-function describePlugin(label, folder, notFound) {
-  if (folder === undefined)
-    return { line: `${label}: ${notFound}`, hooks: [] };
+function describePlugin(head, source, folder) {
   const read = readPluginHooks(folder);
   switch (read.kind) {
     case "none":
-      return { line: `${label} (${folder})`, hooks: [] };
+      return { line: head, hooks: [] };
     case "unreadable":
       return {
-        line: `${label} (${folder}): its hooks could not be read: ${read.why}`,
+        line: `${head}: its hooks could not be read: ${read.why}`,
         hooks: []
       };
     case "read":
       return {
-        line: `${label} (${folder})${read.mod ? `: ${MOD_MARK}` : ""}`,
-        hooks: read.hooks.map((hook) => hookLine(`plugin ${label}`, hook))
+        line: `${head}${read.mod ? `: ${MOD_MARK}` : ""}`,
+        hooks: read.hooks.map((hook) => hookLine(source, hook))
       };
   }
+}
+function describeId(id, listed) {
+  if ("problem" in listed) {
+    return {
+      line: `${id}: loads, but its folder is unknown without the plugin list`,
+      hooks: []
+    };
+  }
+  const folder = listed.folders.get(id);
+  if (folder === undefined) {
+    return { line: `${id}: enabled, but not installed`, hooks: [] };
+  }
+  return describePlugin(`${id} (${folder})`, `plugin ${id}`, folder);
 }
 function pluginsPart(manifest, profile, layers, deps) {
   const composed2 = composeSettings(profile, { home: deps.home });
   const ids = loadedIds(layers, composed2).filter((id) => !EXEMPT_SUFFIXES2.some((suffix) => id.endsWith(suffix)));
   const listed = listPlugins(manifest, deps);
-  const warnings = [];
-  const plugins = [];
-  const hooks = [];
-  if ("problem" in listed) {
-    warnings.push(`The plugin list is incomplete: ${listed.problem}.`);
-    plugins.push(`(incomplete: ${listed.problem}, so installed plugins' folders and hooks are not shown)`);
-  }
-  for (const id of ids) {
-    if ("problem" in listed)
-      continue;
-    const found = describePlugin(id, listed.folders.get(id), "enabled, but not installed");
-    plugins.push(found.line);
-    hooks.push(...found.hooks);
-  }
-  for (const dir of profile.pluginDirs) {
-    const found = describePlugin(`plugin dir ${dir}`, dir, "not found");
-    plugins.push(found.line);
-    hooks.push(...found.hooks);
-  }
-  return { plugins, hooks, warnings };
+  const found = [
+    ...ids.map((id) => describeId(id, listed)),
+    ...profile.pluginDirs.map((dir) => describePlugin(`plugin dir ${dir}`, `plugin dir ${dir}`, dir))
+  ];
+  const problem = "problem" in listed ? listed.problem : undefined;
+  return {
+    plugins: [
+      ...problem === undefined ? [] : [
+        `(incomplete: ${problem}, so installed plugins' folders and hooks are not shown)`
+      ],
+      ...found.map(({ line }) => line)
+    ],
+    hooks: found.flatMap(({ hooks }) => hooks),
+    warnings: problem === undefined ? [] : [`The plugin list is incomplete: ${problem}.`]
+  };
 }
 function inheritedListing(manifest, profile, deps) {
   const layers = keptLayers(profile, manifest.repo, deps.configDir, deps.managedFile);
@@ -9807,9 +9815,8 @@ function inheritedListing(manifest, profile, deps) {
   for (const layer of layers) {
     const source = layerSource(layer);
     if ("issue" in layer) {
-      const text = `${source}: could not be read: ${layer.issue}`;
-      allow.push(text);
-      warnings.push(`The ${layer.name} settings ${text}`);
+      allow.push(`${source}: could not be read: ${layer.issue}`);
+      warnings.push(`The ${layer.name} settings (${layer.file}) could not be read: ${layer.issue}`);
       continue;
     }
     const summary = summariseLayer(layer.settings);
@@ -9819,11 +9826,8 @@ function inheritedListing(manifest, profile, deps) {
       ["added directory", summary.addedDirectories],
       ["sandbox write", summary.sandboxWrites],
       ["allowed domain", summary.allowedDomains],
-      ["Edit allow", summary.editAllows],
-      [
-        "file-write allow for every path",
-        summary.allow.filter((rule) => BARE_WRITE.test(rule))
-      ]
+      ["Edit allow", summary.editAllows.filter((rule) => !isBareWrite(rule))],
+      ["file-write allow for every path", summary.allow.filter(isBareWrite)]
     ];
     for (const [kind, entries] of widenings) {
       fence.push(...entries.map((entry) => `${source}: ${kind}: ${entry}`));
@@ -10076,7 +10080,11 @@ var section2 = (title, entries) => [
   title,
   ...entries.length === 0 ? [NONE2] : entries.map((entry) => `  ${entry}`)
 ];
-var field = (key, value) => `${key}: ${typeof value === "string" ? oneLine3(value) : JSON.stringify(value)}`;
+function field(key, value) {
+  const text = typeof value === "string" ? oneLine3(value) : JSON.stringify(value);
+  const ids = keyHits(text);
+  return `${key}: ${ids.length === 0 ? text : `(withheld: ${ids.join(", ")})`}`;
+}
 function definitionLines(file, manifest) {
   const title = `definition (${file}):`;
   if (manifest === undefined) {

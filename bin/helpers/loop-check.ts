@@ -34,7 +34,9 @@ export interface LoopDeps {
 /**
  * A loop's check. `manifest` is set when `loop.json` parses, and `profile`
  * when the search finds a profile that loads, issues or not. Each issue and
- * warning reads `<path>: <why>`.
+ * warning reads `<path>: <why>`, except the old store's refusal, whose lines
+ * pass through as every profile verb prints them: the shell commands that
+ * move the store, and the jobs the move breaks.
  */
 export interface LoopCheck {
   dir: string;
@@ -106,6 +108,10 @@ export function checkLoop(name: string, deps: LoopDeps): LoopCheck {
   };
 }
 
+// macOS volumes ignore case by default, and Node's realpathSync keeps the case it is given while git prints the real case.
+const sameRealPath = (a: string, b: string): boolean =>
+  a.toLowerCase() === b.toLowerCase();
+
 // `where` opens each issue; `repo` must be a main checkout's root: a work tree's top whose git dir is its own `.git`.
 function mainCheckoutIssues(
   where: string,
@@ -121,7 +127,7 @@ function mainCheckoutIssues(
       : [`${where}: git rev-parse failed: ${line}`];
   }
   const realTop = realPathOf(top.stdout.trim());
-  if (realTop !== realPathOf(repo)) {
+  if (!sameRealPath(realTop, realPathOf(repo))) {
     return [
       `${where} is inside the work tree ${realTop}; name its main checkout's root`,
     ];
@@ -132,7 +138,7 @@ function mainCheckoutIssues(
   }
   // git may print the common dir relative to the folder it ran in.
   const commonDir = realPathOf(path.resolve(repo, common.stdout.trim()));
-  return commonDir === realPathOf(path.join(repo, '.git'))
+  return sameRealPath(commonDir, realPathOf(path.join(repo, '.git')))
     ? []
     : [
         `${where} keeps its git dir at ${commonDir}, as a linked worktree or a submodule does; name the main checkout's root`,
