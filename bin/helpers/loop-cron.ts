@@ -114,6 +114,8 @@ function neverFires(
  * runs 0-7 with 7 read as Sunday. Names, `@` macros, and a seconds field are refused.
  * It also refuses a schedule that never fires: day of month restricted, day of week
  * unrestricted, and no listed month holds a listed day in a non-leap year (`0 0 30 2 *`, `0 0 29 2 *`).
+ * A `*`-led day of week with a step counts as unrestricted yet still filters days, so a
+ * schedule for 31 December on Sundays alone passes, and goes years between fires.
  */
 export function parseCron(expr: string): CronParse {
   const fields = expr.trim().split(/\s+/);

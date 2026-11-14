@@ -49,7 +49,7 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 
 ## Loops
 
-`sidekick loop` reads and records the loops in the loop store, `<config>/sidekick/loops/`. A loop's folder holds its `loop.json`: the repo, the profile, the schedule, the tick, the workers' hosts and gates, the caps, and the mandate. Its verbs are `list`, `show <name>`, and `record <name> --kind <kind>`. `list` and `show` run the check, which refuses a definition a launch must not run, such as an allow rule that grants a shell. `show` adds what the loop inherits beyond its mandate, then its recent records. `record` appends one line to the loop's record, and says whether a request is new. Starting a loop arrives with #364. `references/loops.md` covers the schema, the caps, every refusal and its reason, and the inherited listing. It also covers the workers' fence, the managed-file option, and the record.
+`sidekick loop` reads and records the loops in the loop store, `<config>/sidekick/loops/`. A loop's folder holds its `loop.json`: the repo, the profile, the schedule, the tick, the workers' hosts and gates, the caps, and the mandate. Its verbs are `list`, `show <name>`, and `record <name> --kind <kind>`. `list` and `show` run the check, which refuses a definition a launch must not run, such as an allow rule that grants a shell. `show` adds what the loop inherits beyond its mandate, then its recent records. `record` appends one line to the loop's record, and says whether a request is new. Starting a loop arrives in a later release. `references/loops.md` covers the schema, the caps, every refusal and its reason, and the inherited listing. It also covers the workers' fence, the managed-file option, and the record.
 
 ## Workers
 

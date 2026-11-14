@@ -16,6 +16,7 @@ describe('parseCron accepts', () => {
     '0,30 8-18/2 1 1,6 0',
     '0 0 * * 7',
     '0 0 29 2 1',
+    '0 0 31 12 */7',
   ])('%s', (expr) => {
     expect(parseCron(expr).ok).toBe(true);
   });
@@ -76,6 +77,14 @@ describe('previousFire', () => {
     expect(previousFire(cron, new Date(2026, 10, 14, 12, 0))).toEqual(
       new Date(2026, 10, 9, 0, 0),
     );
+  });
+
+  test('a *-led day of week with a step still filters days, so a schedule can go years between fires', () => {
+    // */7 matches Sunday alone; 2023-12-31 was the last Sunday 31 December before 2026-11-14.
+    const cron = cronOf('0 0 31 12 */7');
+    const at = new Date(2026, 10, 14);
+    expect(previousFire(cron, at)).toBeUndefined();
+    expect(previousFire(cron, at, 3 * 366)).toEqual(new Date(2023, 11, 31));
   });
 
   test('returns undefined when nothing fires inside the horizon', () => {

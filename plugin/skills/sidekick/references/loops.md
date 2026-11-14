@@ -86,6 +86,7 @@ Each field takes `*`, a number, a range `a-b`, a step on either such as `*/15`, 
 
 - **Both day fields restricted:** a day matches either field, as standard cron reads it. A day field counts as unrestricted when its text starts with `*`, as Vixie cron and cronie read it. Claude Code's own reading of both is unknown. A mismatch shifts the new-request window, and refuses nothing.
 - **A schedule that never fires refuses.** That is a restricted day of month, an unrestricted day of week, and no listed month holding a listed day in a non-leap year. So `0 0 30 2 *` refuses, and so does `0 0 29 2 *`, which fires only in leap years.
+- **A `*`-led day field still filters by its step.** `*/7` counts as unrestricted, yet matches Sunday alone. So `0 0 31 12 */7` passes, though it fires only when 31 December falls on a Sunday, years apart. Its new-request window then looks back 366 days, as "When a request is new" says.
 
 `CronCreate` takes standard five-field cron in local time. By its tool description, read while #363 was designed on 2026-11-14, a recurring job runs up to half its period late, at most 30 minutes.
 

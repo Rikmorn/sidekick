@@ -10,7 +10,7 @@ export type Layer =
   | { name: LayerName; file: string; settings: Settings }
   | { name: LayerName; file: string; issue: string };
 
-/** Where macOS keeps the managed settings file, measured in the operator-present U24 probe. */
+// Where macOS keeps the managed settings file, measured in the operator-present U24 probe.
 const DEFAULT_MANAGED_FILE =
   '/Library/Application Support/ClaudeCode/managed-settings.json';
 
@@ -21,7 +21,7 @@ const PROMPT_PREVIEW_LENGTH = 60;
 const errorText = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
 
-/** Reads one settings file: no layer when it is missing, an issue layer when it cannot be used. */
+// Reads one settings file: no layer when it is missing, an issue layer when it cannot be used.
 function readLayer(name: LayerName, file: string): Layer | undefined {
   if (!fs.existsSync(file)) return undefined;
   try {
@@ -96,7 +96,7 @@ const stringOf = (value: unknown): string | undefined =>
 const listOf = (value: unknown): unknown[] =>
   Array.isArray(value) ? value : [];
 
-/** A hook handler as one line: its command, or its type with the field that says what it runs. */
+// A hook handler as one line: its command, or its type with the field that says what it runs.
 function describeHandler(handler: unknown): string | undefined {
   if (!isPlainObject(handler)) return undefined;
   const type = stringOf(handler.type);

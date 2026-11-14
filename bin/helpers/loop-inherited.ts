@@ -70,7 +70,7 @@ const layerSource = (layer: Layer): string => `${layer.name} (${layer.file})`;
 
 type PluginList = { folders: Map<string, string> } | { problem: string };
 
-/** Id to installed folder from `plugin list --json`, or the reason it is unavailable. */
+// Id to installed folder from `plugin list --json`, or the reason it is unavailable.
 function listPlugins(manifest: LoopManifest, deps: InheritedDeps): PluginList {
   const result = deps.runClaude(['plugin', 'list', '--json'], {
     cwd: manifest.repo,
@@ -99,7 +99,7 @@ function listPlugins(manifest: LoopManifest, deps: InheritedDeps): PluginList {
   return { folders };
 }
 
-/** The ids that load: layers merged lowest first, a later value winning, then the final `true`s. */
+// The ids that load: layers merged lowest first, a later value winning, then the final `true`s.
 function loadedIds(
   layers: Layer[],
   composed: Record<string, unknown>,
@@ -129,7 +129,7 @@ type PluginHooks =
   | { kind: 'read'; hooks: LayerSummary['hooks']; mod: boolean }
   | { kind: 'unreadable'; why: string };
 
-/** Reads `<folder>/hooks/hooks.json`: its approving hooks and whether it ships a mod. */
+// Reads `<folder>/hooks/hooks.json`: its approving hooks and whether it ships a mod.
 function readPluginHooks(folder: string): PluginHooks {
   if (!fs.existsSync(folder)) {
     return { kind: 'unreadable', why: 'the folder is gone' };
