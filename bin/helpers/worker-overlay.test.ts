@@ -29,6 +29,7 @@ describe('workerOverlay', () => {
       worktree: { baseRef: 'head' },
       env: {
         SIDEKICK_WORKER: '/abs/brief.md',
+        DISABLE_AUTOUPDATER: '1',
         GIT_CONFIG_COUNT: '1',
         GIT_CONFIG_KEY_0: PUSH_REWRITE_KEY,
         GIT_CONFIG_VALUE_0: '',
@@ -41,6 +42,7 @@ describe('workerOverlay', () => {
     const overlay = overlayOf({ env: { GIT_CONFIG_COUNT: '2' } });
     expect(overlay.env).toEqual({
       SIDEKICK_WORKER: '/abs/brief.md',
+      DISABLE_AUTOUPDATER: '1',
       GIT_CONFIG_COUNT: '3',
       GIT_CONFIG_KEY_2: PUSH_REWRITE_KEY,
       GIT_CONFIG_VALUE_2: '',
@@ -67,9 +69,34 @@ describe('workerOverlay', () => {
       ),
     ).toEqual({
       worktree: { baseRef: 'head' },
-      env: { SIDEKICK_WORKER: '/abs/brief.md' },
+      env: { SIDEKICK_WORKER: '/abs/brief.md', DISABLE_AUTOUPDATER: '1' },
       permissions: { allow: [SAVE_SKILL_RULE] },
     });
+  });
+
+  test('both branches keep the worker from running updates', () => {
+    expect(overlayOf(undefined).env).toMatchObject({
+      DISABLE_AUTOUPDATER: '1',
+    });
+    expect(
+      overlayOf(undefined, { ...opts, allowPush: true }).env,
+    ).toMatchObject({ DISABLE_AUTOUPDATER: '1' });
+  });
+
+  test("the overlay overrides a profile's own DISABLE_AUTOUPDATER", () => {
+    const settings = { env: { DISABLE_AUTOUPDATER: '0' } };
+    const profile: Profile = {
+      name: 'p',
+      dir: '/p',
+      root: '/',
+      store: 'user',
+      shadows: undefined,
+      hasRules: false,
+      manifest: { description: 'd', settings },
+    };
+    const overlay = overlayOf(settings);
+    const composed = composeSettings(profile, { home: '/h', overlay });
+    expect(composed.env).toMatchObject({ DISABLE_AUTOUPDATER: '1' });
   });
 
   test('a profile deny rule and the overlay rule both survive composition', () => {
@@ -102,7 +129,11 @@ describe('workerOverlay', () => {
     });
     expect(overlayOf(undefined, { ...opts, allowPush: true, main })).toEqual({
       worktree: { baseRef: 'head' },
-      env: { SIDEKICK_WORKER: '/abs/brief.md', SIDEKICK_MAIN: main },
+      env: {
+        SIDEKICK_WORKER: '/abs/brief.md',
+        SIDEKICK_MAIN: main,
+        DISABLE_AUTOUPDATER: '1',
+      },
       permissions: { allow: [SAVE_SKILL_RULE] },
     });
   });

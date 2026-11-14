@@ -527,6 +527,7 @@ describe('profile launch', () => {
       };
       expect(h.run('launch', '--bg', 'a')).toBe(0);
       expect(settingsOf(seen.at(-1) ?? []).env).toEqual({
+        DISABLE_AUTOUPDATER: '1',
         SIDEKICK_MAIN: 'Single word reply',
       });
       expect(h.out).toEqual([
@@ -555,6 +556,23 @@ describe('profile launch', () => {
       mkProfile(h.store, 'a', { description: 'A' });
       expect(h.run('launch', '--bg', 'a')).toBe(0);
       expect(h.out).toEqual([]);
+    });
+    test('outside a session the background launch still runs no updates', () => {
+      const h = harness();
+      mkProfile(h.store, 'a', { description: 'A' });
+      expect(h.run('launch', '--bg', 'a')).toBe(0);
+      expect(settingsOf(h.runner.calls.at(-1)?.args ?? []).env).toEqual({
+        DISABLE_AUTOUPDATER: '1',
+      });
+    });
+    test('argv leaves updates on, since an interactive session is watched', () => {
+      const h = harness();
+      mkProfile(h.store, 'a', { description: 'A' });
+      expect(h.run('argv', 'a')).toBe(0);
+      const args = h.written.join('').split('\0');
+      expect(JSON.stringify(settingsOf(args))).not.toContain(
+        'DISABLE_AUTOUPDATER',
+      );
     });
     test('a failed start prints no main line', () => {
       const h = inSession();

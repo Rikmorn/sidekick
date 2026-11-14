@@ -1,5 +1,5 @@
 #!/bin/sh
-# Proves, after a Claude Code upgrade, that sidekick's mods load and fire: the
+# Proves that sidekick's mods load and fire on the installed Claude Code: the
 # static checks, then one headless Haiku run whose transcript must hold the
 # gauge's compaction wording and no canary. It also proves the desk still reads
 # agent view's listing: a background Haiku session waits on a permission
@@ -51,7 +51,10 @@ a_lines=965
 # Read refuses a file over 25,000 tokens by default (read from the 2.1.300
 # binary, not observed); a.txt is larger.
 read_tokens=100000
-settings='{"enabledPlugins":{"sidekick@rikmorn":false},"sidekick":{"profile":"check"},"autoCompactWindow":150000}'
+# Neither live run may update Claude Code or a plugin: only the session that
+# updates shows the notice, and nobody watches these two.
+no_updates='{"env":{"DISABLE_AUTOUPDATER":"1"}}'
+settings='{"enabledPlugins":{"sidekick@rikmorn":false},"sidekick":{"profile":"check"},"autoCompactWindow":150000,"env":{"DISABLE_AUTOUPDATER":"1"}}'
 
 expected_limit=117,000
 work=$(mktemp -d)
@@ -174,7 +177,7 @@ trap 'exit 1' HUP INT TERM
 
 (
   cd "$root" || exit 1
-  claude --bg --model haiku --permission-mode default -n "$desk_name" -- "$desk_prompt"
+  claude --bg --model haiku --permission-mode default --settings "$no_updates" -n "$desk_name" -- "$desk_prompt"
 ) >"$desk_work/launch.txt" 2>"$desk_work/launch-err.txt" ||
   fail "claude --bg failed; its output is in $desk_work/launch.txt and launch-err.txt"
 # The line reads `backgrounded · <id> · <name>`, measured on Claude Code

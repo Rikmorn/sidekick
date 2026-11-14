@@ -17,6 +17,7 @@ import {
   composeSettings,
   launchArgs,
   type MemoryLaunch,
+  NO_UPDATES_ENV,
   type Settings,
   SKIP_VARIABLE,
 } from './profile-launch.js';
@@ -394,12 +395,12 @@ const launch: Verb = (rest, penv, out, err) => {
     ]);
   }
   const main = mainOf(penv);
-  const args = checkedLaunch(
-    parsed.positionals[0],
-    penv,
-    err,
-    main === undefined ? undefined : { env: { SIDEKICK_MAIN: main.value } },
-  );
+  const args = checkedLaunch(parsed.positionals[0], penv, err, {
+    env: {
+      ...NO_UPDATES_ENV,
+      ...(main === undefined ? {} : { SIDEKICK_MAIN: main.value }),
+    },
+  });
   if (args === undefined) return 1;
   const { launchTimeoutMs = LAUNCH_TIMEOUT_MS } = penv;
   const sessionName = parsed.values.n;

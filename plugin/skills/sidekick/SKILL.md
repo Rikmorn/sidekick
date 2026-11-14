@@ -1,6 +1,6 @@
 ---
 name: sidekick
-description: What the sidekick bundle is, what it depends on, how to deliver its rules into a repo, how to bring a repo under tracking on GitHub, and how the docs folders its rules and skills use work. Use when asked what sidekick is, how to install or update it, where the sk-* rules come from, how to set up the board and labels for a repo, how to make, list, or launch a profile, how sidekick memory link moves a repo's auto-memory into the memory store, how sidekick worker dispatches and finishes a plan's worker, how `sidekick worktree` lists, moves, and removes worktrees, or where a reference doc, design, research report, ADR, or learning record goes.
+description: What the sidekick bundle is, what it depends on, how to deliver its rules into a repo, how to bring a repo under tracking on GitHub, and how the docs folders its rules and skills use work. Use when asked what sidekick is, how to install or update it, how to lock or roll back Claude Code or superpowers when an update breaks something, where the sk-* rules come from, how to set up the board and labels for a repo, how to make, list, or launch a profile, how sidekick memory link moves a repo's auto-memory into the memory store, how sidekick worker dispatches and finishes a plan's worker, how `sidekick worktree` lists, moves, and removes worktrees, or where a reference doc, design, research report, ADR, or learning record goes.
 user-invocable: true
 ---
 
@@ -58,6 +58,10 @@ Nothing else is configured. There is no auto-add workflow, because filing adds t
 ## Memory
 
 `sidekick memory link <repo>` moves a repo's auto-memory into the memory store, one git repo at `~/sk-memory-store` or the folder `SIDEKICK_MEMORY_STORE` names. It copies the default memory folder, sets the repo's `autoMemoryDirectory` key, archives the default folder, and commits. It refuses rather than overwrites, and `--dry-run` shows its steps first. `--family <name>` places the repo in a family folder. The store's own `README.md` describes the layout. `README.md` §Memory covers the flags, and ADR-0013 records the settings key `link` owns. A release delivers `sk-memory.md`, the rule for sessions that write the store, through `sidekick rules install`; `link` does not. In a linked repo, a start hook prints the session's record path and the matched workstream, then starts `sidekick memory snapshot --store <path> --session <id> --source <source>`. It commits the store and caches a lint of it. The hook withholds any piece that matches an injection pattern, as a `Withheld: <file> matched <ids>` line, and prints `Memory lint: <n> findings in <folders> (run <date time>): <check> <n>, …` when the cached lint found something in the session's folders. The line names each check with its count. `sidekick memory lint [--folder <name>]... [--json]` lists the findings, read-only. It exits 0 with or without findings, and 1 on a usage error or an unreadable store. `--folder` lists each named folder's findings, `setting-missing` among them, and every store-wide finding, `stale-lock` included. The count leaves out those two, because the hook warns on them live. `README.md` §Memory covers the flags and the store's `settings.json`. The `sk-save` skill writes the record and the workstream's state.
+
+## Versions
+
+When something is off after Claude Code or superpowers updates, `references/versions.md` says how to lock the version that worked, roll back, and unlock. It also says why sidekick's unattended sessions run no updates, and what a project-scope lock can do.
 
 ## The docs layout
 

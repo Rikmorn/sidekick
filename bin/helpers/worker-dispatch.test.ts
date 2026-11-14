@@ -673,6 +673,7 @@ describe('dispatch launches', () => {
       worktree: { baseRef: 'head' },
       env: {
         SIDEKICK_WORKER: fx.brief,
+        DISABLE_AUTOUPDATER: '1',
         GIT_CONFIG_COUNT: '1',
         GIT_CONFIG_KEY_0: PUSH_REWRITE_KEY,
         GIT_CONFIG_VALUE_0: '',
@@ -696,7 +697,7 @@ describe('dispatch launches', () => {
     expect(code).toBe(0);
     expect(settingsOf(onlyLaunch(h))).toEqual({
       worktree: { baseRef: 'head' },
-      env: { SIDEKICK_WORKER: fx.brief },
+      env: { SIDEKICK_WORKER: fx.brief, DISABLE_AUTOUPDATER: '1' },
       permissions: { allow: allowRulesOf(fx) },
       sidekick: { profile: 'worker' },
     });

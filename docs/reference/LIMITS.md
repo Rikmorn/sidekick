@@ -8,7 +8,7 @@ Claude Code hooks can tighten but not loosen permissions, and a PreToolUse deny 
 
 ## Mods run on an early-access API, and fail quietly
 
-Claude Code marks the mod API early access: it may change between releases without notice, and it has no version policy. A mod hook that throws or overruns its 10-second budget is skipped, and an installed plugin's mod errors reach only the debug log. A broken sidekick mod costs a view, not a wrong result, because the context warning runs as a classic hook, not a mod (ADR-0012). After a Claude Code upgrade, `bun run check:mods` in this repo checks that the mods load and fire. In a session, the context monitor tells you once when they are not running.
+Claude Code marks the mod API early access: it may change between releases without notice, and it has no version policy. A mod hook that throws or overruns its 10-second budget is skipped, and an installed plugin's mod errors reach only the debug log. A broken sidekick mod costs a view, not a wrong result, because the context warning runs as a classic hook, not a mod (ADR-0012). When the canary speaks or a mod looks off, `bun run check:mods` in this repo checks that the mods load and fire. In a session, the context monitor tells you once when they are not running.
 
 ## `/goal` is not a verification gate
 

@@ -1,5 +1,7 @@
 # ADR-0012 — Mods only where a mod alone can do the job
 
+> **Amended 2026-11-14 (#390):** §Consequences and §Assumptions accept a check after each Claude Code upgrade. It now runs when the canary speaks or a mod looks off. The operator ruled that day that awareness of a break is the need, not a check per build. Claude Code installs a new build every day or two. The canary catches mods that do not run, and a subtler break waits for the operator to see it. `.claude-code-version`, and CI's install of it, trail the build in use until the next run.
+
 > **Amended 2026-11-08 (#295, #274):** ADR-0010's Decision 2, which this ADR bounds to settings hooks, now lets a settings hook act, when the act is bounded in time and never fails or denies the call. ADR-0010's amendment of that date records the ruling, and names the two hooks that act.
 
 > **Amended 2026-10-27 (#208):** The operator ruled at R9's close that the gauge's one environment write sits on the first rung. The gauge sets `SIDEKICK_CONTEXT_LIMIT` with `$.env.set` for sidekick's context monitor, and every later Bash child inherits it. §Decision's rungs do not name an environment write. Any other variable a mod sets needs its own ruling, since a variable can change what a tool does.
