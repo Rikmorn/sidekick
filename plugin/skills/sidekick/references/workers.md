@@ -78,7 +78,7 @@ Ask each repo for short worktree guidance in a file every session loads, such as
 
 ### What `--check` runs
 
-`dispatch --check` runs the checks under "What it checks" that read no brief, from the same checkout `dispatch` uses, and reports every reason at once. The exception is a `--plugin-dir` that is not a folder. It withholds the settings check's and the plugin check's reasons, since those checks then do not run. An orchestrator runs it before it offers a worker.
+`dispatch --check` runs the checks under "What it checks" that read no brief, from the same checkout `dispatch` uses. It reports every reason at once, except while it prepares the profile, where a failure stops the checks after it. A profile that does not load, an overlay issue, or a `--plugin-dir` that is not a folder withholds the settings check's and the plugin check's reasons. A failed settings check withholds the plugin check's. So run `--check` again after a fix. An orchestrator runs it before it offers a worker.
 
 - It runs outside a worker.
 - `HEAD` has a commit, and no tracked file has uncommitted changes.
