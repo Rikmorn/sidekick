@@ -6,7 +6,7 @@ import { execRunner } from './pm-data.js';
 import { LAUNCH_TIMEOUT_MS } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { SIDEKICK_DEPENDENCY_IDS, SIDEKICK_ID } from './sidekick-plugin.js';
-import { runWorkerCli, type WorkerEnv } from './worker.js';
+import { runWorkerCli, WORKER_USAGE_LINE, type WorkerEnv } from './worker.js';
 import {
   PUSH_DENY_RULE,
   PUSH_REWRITE_KEY,
@@ -416,7 +416,7 @@ describe('dispatch refuses', () => {
     ).toEqual([]);
   });
 
-  test('a repeated --plugin-dir, as a usage error naming the flag', () => {
+  test('a repeated --plugin-dir, as a usage error naming the flag, then the usage line', () => {
     const fx = fixture();
     fs.mkdirSync(path.join(fx.top, 'a'));
     fs.mkdirSync(path.join(fx.top, 'b'));
@@ -433,6 +433,7 @@ describe('dispatch refuses', () => {
     expect(code).toBe(1);
     expect(h.err).toEqual([
       '--plugin-dir given more than once: dispatch takes one plugin folder',
+      `usage: ${WORKER_USAGE_LINE}`,
     ]);
     expect(h.claude.calls).toEqual([]);
   });
@@ -1343,12 +1344,15 @@ describe('dispatch --check', () => {
     expect(h.err).toEqual([]);
   });
 
-  test('refuses a brief, naming it', () => {
+  test('refuses a brief, naming it, then the usage line', () => {
     const fx = fixture();
     const h = harness(fx);
     const code = h.dispatch('--check', fx.brief, '--permission-mode', 'auto');
     expect(code).toBe(1);
-    expect(h.err).toEqual(['--check takes no brief']);
+    expect(h.err).toEqual([
+      '--check takes no brief',
+      `usage: ${WORKER_USAGE_LINE}`,
+    ]);
     expect(h.out).toEqual([]);
     expect(h.claude.calls).toEqual([]);
   });

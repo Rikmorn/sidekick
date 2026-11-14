@@ -37,7 +37,8 @@ const stringFlag = (
  * Parses `dispatch`'s arguments, resolving the brief and `--plugin-dir`
  * against `cwd`, the folder the command was typed in. Undefined is a usage
  * error, and a brief given with `--check`, or a repeated `--plugin-dir`, is a
- * refusal. A missing `--permission-mode` is left to the checks, which name it.
+ * usage error with its reason. A missing `--permission-mode` is left to the
+ * checks, which name it.
  */
 export function parseDispatchArgs(
   rest: string[],

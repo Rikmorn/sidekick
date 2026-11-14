@@ -18,7 +18,7 @@ sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | -
 - `--profile` names the profile the worker launches with, and defaults to `worker`. "A worker profile" suggests one.
 - `--plugin-dir <dir>` loads a plugin folder in the worker, for an orchestrator that tests unreleased plugin content. It takes one folder, and refuses a repeat as a usage error.
 - `--allow-push` leaves out the push block, on the operator's word for that dispatch.
-- `--check` runs the checks that need no brief and starts nothing; "What `--check` runs" says which. It takes no brief, and a brief given with it refuses with `--check takes no brief`.
+- `--check` runs the checks that need no brief and starts nothing; "What `--check` runs" says which. It takes no brief, and a brief given with it is a usage error, `--check takes no brief`.
 - `--no-report` lets `finish` run without a run report, for a worker stopped before it wrote one, on the operator's word.
 - `--into <rev>` names the commit the work must have landed in, in place of the brief's `target`. It takes a branch, a tag, or a commit. It refuses the worker's own branch, which holds its head whether or not the work landed.
 - `--discard` clears a worker that did not land, on the operator's word. It excludes `--into`.
@@ -78,7 +78,7 @@ Ask each repo for short worktree guidance in a file every session loads, such as
 
 ### What `--check` runs
 
-`dispatch --check` runs the checks under "What it checks" that read no brief, from the same checkout `dispatch` uses, and reports every reason at once. An orchestrator runs it before it offers a worker.
+`dispatch --check` runs the checks under "What it checks" that read no brief, from the same checkout `dispatch` uses, and reports every reason at once. The exception is a `--plugin-dir` that is not a folder. It withholds the settings check's and the plugin check's reasons, since those checks then do not run. An orchestrator runs it before it offers a worker.
 
 - It runs outside a worker.
 - `HEAD` has a commit, and no tracked file has uncommitted changes.

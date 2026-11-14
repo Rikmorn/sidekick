@@ -38,10 +38,9 @@ describe('parseManifest', () => {
       'pluginDirs.0: must not be empty',
     );
   });
-  test('a repeated pluginDirs entry is refused', () => {
-    expect(issuesOf({ description: 'x', pluginDirs: ['a', 'a'] })).toContain(
-      'pluginDirs: must not repeat an entry',
-    );
+  test('a repeated pluginDirs entry parses, since the store refuses it by resolved path', () => {
+    const raw = { description: 'x', pluginDirs: ['a', 'a'] };
+    expect(parseManifest(raw)).toEqual({ ok: true, manifest: raw });
   });
   test('an unknown top-level key is refused, naming it', () => {
     expect(issuesOf({ description: 'x', stance: 'y' })).toContain('stance');

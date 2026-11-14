@@ -3902,7 +3902,7 @@ var ManifestSchema = strictObject({
   settingSources: optional(pipe(array(picklist(SETTING_SOURCES)), check((a) => new Set(a).size === a.length, "must not repeat a source"))),
   settings: optional(pipe(unknown(), check((s) => !Array.isArray(s), "must be an object"), record(string(), unknown()), check((s) => !Object.hasOwn(s, RESERVED_SETTINGS_KEY), `must not set "${RESERVED_SETTINGS_KEY}", which launch owns`))),
   hide: optional(HideSchema),
-  pluginDirs: optional(uniqueList(pipe(string(), minLength(1, "must not be empty"))))
+  pluginDirs: optional(array(pipe(string(), minLength(1, "must not be empty"))))
 });
 function parseManifest(raw) {
   const result = safeParse(ManifestSchema, raw);
@@ -4009,10 +4009,29 @@ var jobIds = (jobsDir) => {
     return [];
   }
 };
+var isLink = (p) => {
+  try {
+    return fs15.lstatSync(p).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+var ownPath = (p) => path14.join(realPathOf(path14.dirname(p)), path14.basename(p));
+var selfAndAbove = (p) => {
+  const parent = path14.dirname(p);
+  return parent === p ? [p] : [p, ...selfAndAbove(parent)];
+};
+var namesStoreAt = (oldStore) => {
+  if (isLink(oldStore)) {
+    const ownStore = ownPath(oldStore);
+    return (flag) => underOrEqual(flag, oldStore) || path14.isAbsolute(flag) && selfAndAbove(flag).some((p) => ownPath(p) === ownStore);
+  }
+  const realStore = realPathOf(oldStore);
+  return (flag) => underOrEqual(flag, oldStore) || path14.isAbsolute(flag) && underOrEqual(realPathOf(flag), realStore);
+};
 function jobsFromStore(configFolder, oldStore) {
   const jobsDir = path14.join(configFolder, "jobs");
-  const realStore = realPathOf(oldStore);
-  const namesStore = (flag) => underOrEqual(flag, oldStore) || path14.isAbsolute(flag) && underOrEqual(realPathOf(flag), realStore);
+  const namesStore = namesStoreAt(oldStore);
   return jobIds(jobsDir).flatMap((id) => {
     const job = readJob(path14.join(jobsDir, id, "state.json"));
     return job?.respawnFlags.some(namesStore) ? [{ id, name: job.name }] : [];
@@ -4031,11 +4050,17 @@ var moveLines = (oldStore, newStore, names) => {
       `mkdir -p ${shellQuote(path14.dirname(newStore))} && mv ${shellQuote(oldStore)} ${shellQuote(newStore)}`
     ];
   }
-  return names.map((name) => {
+  const clashes = names.filter((name) => fs15.existsSync(path14.join(newStore, name)));
+  const moves = names.map((name) => {
     const from = path14.join(oldStore, name);
     const to = path14.join(newStore, name);
-    return fs15.existsSync(to) ? `${shellQuote(to)} already exists: merge ${shellQuote(from)} into it by hand` : `mv ${shellQuote(from)} ${shellQuote(to)}`;
+    return clashes.includes(name) ? `${shellQuote(to)} already exists: merge ${shellQuote(from)} into it by hand` : `mv ${shellQuote(from)} ${shellQuote(to)}`;
   });
+  const rmdir = `rmdir ${shellQuote(oldStore)}`;
+  return [
+    ...moves,
+    clashes.length === 0 ? rmdir : `once every merge by hand is done and ${shellQuote(oldStore)} is empty: ${rmdir}`
+  ];
 };
 var linkTarget = (oldStore) => {
   try {
@@ -5031,8 +5056,12 @@ var launch = (rest2, penv, out, err) => {
 };
 var isShell = (value) => SHELLS.some((shell) => shell === value);
 function aliasIssues(names, penv) {
-  const named = names.flatMap((name) => aliasNameRefusal(name) ?? []);
-  const loadable = names.filter((name) => aliasNameRefusal(name) === undefined);
+  const checked2 = names.map((name) => ({
+    name,
+    refusal: aliasNameRefusal(name)
+  }));
+  const named = checked2.flatMap(({ refusal: refusal2 }) => refusal2 ?? []);
+  const loadable = checked2.flatMap(({ name, refusal: refusal2 }) => refusal2 === undefined ? [name] : []);
   if (loadable.length === 0)
     return named;
   const resolved = rootsFor(penv);
@@ -12155,8 +12184,11 @@ var dispatchVerb = (rest2, wenv, out, err) => {
   const opts = parseDispatchArgs(rest2, wenv.cwd);
   if (opts === undefined)
     return usage2(err);
-  if ("usageErrors" in opts)
-    return refuse5(err, opts.usageErrors);
+  if ("usageErrors" in opts) {
+    for (const line of opts.usageErrors)
+      err(line);
+    return usage2(err);
+  }
   return dispatch(opts, wenv, out, err);
 };
 var finishVerb = (rest2, wenv, out, err) => {

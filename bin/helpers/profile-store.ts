@@ -185,8 +185,6 @@ const holdsMarkdown = (dir: string): boolean => {
   });
 };
 
-// One `pluginDirs: …` line per entry that resolves to the path an earlier
-// entry resolves to.
 const repeatedPluginDirs = (
   entries: readonly string[],
   resolved: readonly string[],

@@ -264,6 +264,21 @@ describe('loadProfile', () => {
     });
   });
 
+  test('an exact repeat in pluginDirs gets the same refusal as a repeat by resolved path', () => {
+    const dir = profile(path.join(tmp, 'store'), 'p');
+    const manifest = path.join(dir, 'profile.json');
+    write(
+      manifest,
+      JSON.stringify({ description: 'd', pluginDirs: ['plugin', 'plugin'] }),
+    );
+    expect(loadProfile('p', users(path.join(tmp, 'store')))).toEqual({
+      ok: false,
+      issues: [
+        `${manifest}: pluginDirs: "plugin" names ${path.join(dir, 'plugin')}, as "plugin" does: name each folder once`,
+      ],
+    });
+  });
+
   test('a relative SIDEKICK_PROFILES_DIR still gives an absolute dir', () => {
     profile(path.join(tmp, 'store'), 'p');
     const roots = storeRoots(

@@ -67,6 +67,22 @@ describe('oldStoreIssues', () => {
     expect(lines[2]).toContain('merge');
     expect(lines[2]).toContain(`${old}/b`);
     expect(lines[2]).not.toContain('mv ');
+    expect(lines[3]).toBe(
+      `once every merge by hand is done and '${old}' is empty: rmdir '${old}'`,
+    );
+    expect(lines).toHaveLength(4);
+  });
+
+  test('ends the moves into a present store by removing the emptied old folder', () => {
+    const home = tmp();
+    const old = path.join(home, '.claude', 'profiles');
+    const fresh = path.join(home, '.claude', 'sidekick', 'profiles');
+    profile(old, 'a');
+    profile(fresh, 'b');
+    expect(oldStoreIssues({}, home, home).slice(1)).toEqual([
+      `mv '${old}/a' '${fresh}/a'`,
+      `rmdir '${old}'`,
+    ]);
   });
 
   test('gives nothing for a store holding only dotfiles or plain files', () => {
@@ -202,5 +218,29 @@ describe('jobsFromStore', () => {
     ];
     expect(jobsFromStore(path.join(home, '.claude'), linked)).toEqual(both);
     expect(jobsFromStore(path.dirname(resolved), resolved)).toEqual(both);
+  });
+
+  test('names a job by the path of a linked store itself, never by its target', () => {
+    const real = tmp();
+    const target = path.join(real, 'dotfiles', 'profiles');
+    profile(target, 'w');
+    const config = path.join(real, '.claude');
+    fs.mkdirSync(config);
+    const old = path.join(config, 'profiles');
+    fs.symlinkSync(target, old);
+    const flags = (dir: string): string =>
+      JSON.stringify({ respawnFlags: ['--add-dir', `${dir}/w`] });
+    job(config, 'by-link', flags(old));
+    job(config, 'by-target', flags(target));
+    const byLink = [{ id: 'by-link', name: undefined }];
+    expect(jobsFromStore(config, old)).toEqual(byLink);
+    const home = path.join(tmp(), 'home-link');
+    fs.symlinkSync(real, home);
+    expect(
+      jobsFromStore(
+        path.join(home, '.claude'),
+        path.join(home, '.claude', 'profiles'),
+      ),
+    ).toEqual(byLink);
   });
 });

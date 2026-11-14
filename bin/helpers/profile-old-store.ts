@@ -52,20 +52,53 @@ const jobIds = (jobsDir: string): string[] => {
   }
 };
 
+const isLink = (p: string): boolean => {
+  try {
+    return fs.lstatSync(p).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+
+// `p` with the folders above it resolved and its last part kept, so a link
+// keeps its own path instead of its target's.
+const ownPath = (p: string): string =>
+  path.join(realPathOf(path.dirname(p)), path.basename(p));
+
+const selfAndAbove = (p: string): string[] => {
+  const parent = path.dirname(p);
+  return parent === p ? [p] : [p, ...selfAndAbove(parent)];
+};
+
+// The relink keeps a linked store's target in place, so a job that names the
+// target keeps respawning.
+const namesStoreAt = (oldStore: string): ((flag: string) => boolean) => {
+  if (isLink(oldStore)) {
+    const ownStore = ownPath(oldStore);
+    return (flag) =>
+      underOrEqual(flag, oldStore) ||
+      (path.isAbsolute(flag) &&
+        selfAndAbove(flag).some((p) => ownPath(p) === ownStore));
+  }
+  const realStore = realPathOf(oldStore);
+  return (flag) =>
+    underOrEqual(flag, oldStore) ||
+    (path.isAbsolute(flag) && underOrEqual(realPathOf(flag), realStore));
+};
+
 /**
  * The jobs under `<configFolder>/jobs` whose respawn flags name `oldStore` or
- * a path under it, as spelled or by real path, so a link on either side still
- * matches. A record that cannot be read or parsed is skipped.
+ * a path under it. A folder matches as spelled or by real path, so a link on
+ * either side still matches. A linked store matches only by its own path,
+ * with the folders above it resolved, never by its target's. A record that
+ * cannot be read or parsed is skipped.
  */
 export function jobsFromStore(
   configFolder: string,
   oldStore: string,
 ): Array<{ id: string; name: string | undefined }> {
   const jobsDir = path.join(configFolder, 'jobs');
-  const realStore = realPathOf(oldStore);
-  const namesStore = (flag: string): boolean =>
-    underOrEqual(flag, oldStore) ||
-    (path.isAbsolute(flag) && underOrEqual(realPathOf(flag), realStore));
+  const namesStore = namesStoreAt(oldStore);
   return jobIds(jobsDir).flatMap((id) => {
     const job = readJob(path.join(jobsDir, id, 'state.json'));
     return job?.respawnFlags.some(namesStore) ? [{ id, name: job.name }] : [];
@@ -93,13 +126,24 @@ const moveLines = (
       `mkdir -p ${shellQuote(path.dirname(newStore))} && mv ${shellQuote(oldStore)} ${shellQuote(newStore)}`,
     ];
   }
-  return names.map((name) => {
+  const clashes = names.filter((name) =>
+    fs.existsSync(path.join(newStore, name)),
+  );
+  const moves = names.map((name) => {
     const from = path.join(oldStore, name);
     const to = path.join(newStore, name);
-    return fs.existsSync(to)
+    return clashes.includes(name)
       ? `${shellQuote(to)} already exists: merge ${shellQuote(from)} into it by hand`
       : `mv ${shellQuote(from)} ${shellQuote(to)}`;
   });
+  // A folder left at the old path would take the bridge link inside it.
+  const rmdir = `rmdir ${shellQuote(oldStore)}`;
+  return [
+    ...moves,
+    clashes.length === 0
+      ? rmdir
+      : `once every merge by hand is done and ${shellQuote(oldStore)} is empty: ${rmdir}`,
+  ];
 };
 
 const linkTarget = (oldStore: string): string | undefined => {

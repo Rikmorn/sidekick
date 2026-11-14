@@ -1284,6 +1284,64 @@ describe('the old profile store refuses every verb that reads or writes a store'
     expect(bare.err).toEqual([]);
   });
 
+  test('alias gives each refused name its line, then the old store refusal once, and reads no store for refused names alone', () => {
+    const h = oldStoreHarness();
+    expect(h.run('alias', 'skp', 'worker', 'do', 'other')).toBe(1);
+    expect(h.err).toHaveLength(4);
+    expect(h.err[0]).toStartWith('"skp" cannot be an alias');
+    expect(h.err[1]).toStartWith('"do" cannot be an alias');
+    expect(h.err[2]).toContain('the old store');
+    expect(h.err[3]).toStartWith('mkdir -p ');
+    const refusedOnly = oldStoreHarness();
+    expect(refusedOnly.run('alias', 'skp')).toBe(1);
+    expect(refusedOnly.err).toHaveLength(1);
+    expect(refusedOnly.err[0]).toStartWith('"skp" cannot be an alias');
+  });
+
+  test('the printed lines, then the bridge link as profiles.md gives it, leave list passing with no self-link', () => {
+    const home = path.join(tmp(), "it's home");
+    const config = path.join(home, '.claude');
+    const old = path.join(config, 'profiles');
+    const fresh = path.join(config, 'sidekick', 'profiles');
+    mkProfile(old, 'worker', { description: 'W' });
+    mkProfile(fresh, 'other', { description: 'O' });
+    const refused = harness({ env: {}, home, cwd: home });
+    expect(refused.run('list')).toBe(1);
+    const sh = (script: string) =>
+      spawnSync('sh', ['-c', script], {
+        env: { PATH: process.env.PATH, HOME: home },
+        encoding: 'utf-8',
+      });
+    for (const line of refused.err.slice(1)) {
+      expect(sh(line).status).toBe(0);
+    }
+    const doc = fs.readFileSync(
+      path.join(
+        import.meta.dir,
+        '..',
+        '..',
+        'plugin/skills/sidekick/references/profiles.md',
+      ),
+      'utf-8',
+    );
+    const bridgeLines = doc
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith('ln -s '));
+    expect(bridgeLines).toHaveLength(1);
+    const bridge = sh(bridgeLines[0]);
+    expect(bridge.stderr).toBe('');
+    expect(bridge.status).toBe(0);
+    const after = harness({ env: {}, home, cwd: home });
+    expect(after.run('list')).toBe(0);
+    expect(after.out).toEqual([
+      `other  O  (user: ${fresh})`,
+      `worker  W  (user: ${fresh})`,
+    ]);
+    expect(fs.readlinkSync(old)).toBe(fresh);
+    expect(fs.readdirSync(fresh).sort()).toEqual(['other', 'worker']);
+  });
+
   test('a work tree topped at HOME, as a dotfiles repo is, refuses the same way', () => {
     const home = tmp();
     mkProfile(path.join(home, '.claude', 'profiles'), 'worker', {

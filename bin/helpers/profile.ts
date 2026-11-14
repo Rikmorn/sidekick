@@ -526,11 +526,16 @@ const launch: Verb = (rest, penv, out, err) => {
 const isShell = (value: unknown): value is Shell =>
   SHELLS.some((shell) => shell === value);
 
-// Each name's own refusal, then the old store's refusal once, or each loadable
-// name's load issues. With no loadable name, no store is read.
+// With no loadable name, no store is read.
 function aliasIssues(names: readonly string[], penv: ProfileEnv): string[] {
-  const named = names.flatMap((name) => aliasNameRefusal(name) ?? []);
-  const loadable = names.filter((name) => aliasNameRefusal(name) === undefined);
+  const checked = names.map((name) => ({
+    name,
+    refusal: aliasNameRefusal(name),
+  }));
+  const named = checked.flatMap(({ refusal }) => refusal ?? []);
+  const loadable = checked.flatMap(({ name, refusal }) =>
+    refusal === undefined ? [name] : [],
+  );
   if (loadable.length === 0) return named;
   const resolved = rootsFor(penv);
   if (!resolved.ok) return [...named, ...resolved.issues];

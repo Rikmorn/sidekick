@@ -38,7 +38,10 @@ const refuse = (err: Out, lines: string[]): number => {
 const dispatchVerb: Verb = (rest, wenv, out, err) => {
   const opts = parseDispatchArgs(rest, wenv.cwd);
   if (opts === undefined) return usage(err);
-  if ('usageErrors' in opts) return refuse(err, opts.usageErrors);
+  if ('usageErrors' in opts) {
+    for (const line of opts.usageErrors) err(line);
+    return usage(err);
+  }
   return dispatch(opts, wenv, out, err);
 };
 
