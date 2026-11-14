@@ -14,6 +14,7 @@ import {
   USAGE,
 } from './cli.js';
 import { DESK_USAGE_LINE } from './helpers/desk.js';
+import { LOOP_USAGE_LINE } from './helpers/loop.js';
 import { PROFILE_USAGE_LINE } from './helpers/profile.js';
 import { SESSION_USAGE_LINE } from './helpers/session.js';
 import { WORKER_USAGE_LINE } from './helpers/worker.js';
@@ -424,6 +425,95 @@ describe('main: profile', () => {
     expect(r.stdout.toString()).toBe(
       `--add-dir\0${path.resolve(store)}/a\0--settings\0${composed}\0`,
     );
+  });
+});
+
+describe('main: loop', () => {
+  const entryFileUrl = pathToFileURL(path.join(__dirname, 'cli.ts')).href;
+  const made: string[] = [];
+  const madeDir = (): string => {
+    const dir = tmp();
+    made.push(dir);
+    return dir;
+  };
+  afterEach(() => {
+    for (const dir of made.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  const runLoop = (argv: string[], config: string) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = main(
+      ['loop', ...argv],
+      {
+        env: { CLAUDE_CONFIG_DIR: config },
+        cwd: config,
+        entryFileUrl,
+        runClaude: () => {
+          throw new Error('no claude in tests');
+        },
+      },
+      (l) => out.push(l),
+      (l) => err.push(l),
+    );
+    return { code, out, err };
+  };
+  test('USAGE names the loop family', () => {
+    expect(USAGE).toContain(LOOP_USAGE_LINE);
+  });
+  test('an unknown loop verb prints the loop usage and returns 1', () => {
+    const r = runLoop(['nope'], madeDir());
+    expect(r.code).toBe(1);
+    expect(r.err).toEqual([`usage: ${LOOP_USAGE_LINE}`]);
+  });
+  test('loop list under an empty config says the store holds no loop', () => {
+    const config = madeDir();
+    const r = runLoop(['list'], config);
+    expect(r).toEqual({
+      code: 0,
+      out: [
+        `the loop store ${path.join(config, 'sidekick', 'loops')} holds no loop`,
+      ],
+      err: [],
+    });
+  });
+  test('loop record stamps its line with the clock', () => {
+    const config = madeDir();
+    const dir = path.join(config, 'sidekick', 'loops', 'fixer');
+    write(
+      path.join(dir, 'loop.json'),
+      JSON.stringify({
+        description: 'd',
+        repo: path.join(config, 'repo'),
+        profile: 'fixer',
+        schedule: '7 * * * *',
+        tick: '/fixer:tick',
+        gates: [],
+        caps: {
+          attemptsPerUnit: 1,
+          workMinutesPerUnit: 1,
+          unitsPerDay: 1,
+          failedUnitsInARow: 1,
+        },
+        mandate: { reads: [], classes: {}, never: [] },
+      }),
+    );
+    const before = Date.now();
+    const r = runLoop(
+      ['record', 'fixer', '--kind', 'note', '--summary', 's'],
+      config,
+    );
+    const after = Date.now();
+    expect(r).toEqual({ code: 0, out: ['recorded note'], err: [] });
+    const files = fs.readdirSync(path.join(dir, 'records'));
+    expect(files).toHaveLength(1);
+    const line = JSON.parse(
+      fs.readFileSync(path.join(dir, 'records', files[0]), 'utf8'),
+    );
+    const at = Date.parse(line.at);
+    expect(at).toBeGreaterThanOrEqual(before);
+    expect(at).toBeLessThanOrEqual(after);
   });
 });
 

@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs45 from "node:fs";
+import * as fs50 from "node:fs";
 import { realpathSync as realpathSync12 } from "node:fs";
 import * as os3 from "node:os";
-import * as path57 from "node:path";
+import * as path65 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -169,6 +169,22 @@ function isoTimestamp(message$1) {
     }
   };
 }
+function maxLength(requirement, message$1) {
+  return {
+    kind: "validation",
+    type: "max_length",
+    reference: maxLength,
+    async: false,
+    expects: `<=${requirement}`,
+    requirement,
+    message: message$1,
+    "~run"(dataset, config$1) {
+      if (dataset.typed && dataset.value.length > this.requirement)
+        _addIssue(this, "length", dataset, config$1, { received: `${dataset.value.length}` });
+      return dataset;
+    }
+  };
+}
 function minLength(requirement, message$1) {
   return {
     kind: "validation",
@@ -197,6 +213,23 @@ function minValue(requirement, message$1) {
     "~run"(dataset, config$1) {
       if (dataset.typed && !(dataset.value >= this.requirement))
         _addIssue(this, "value", dataset, config$1, { received: dataset.value instanceof Date ? dataset.value.toJSON() : /* @__PURE__ */ _stringify(dataset.value) });
+      return dataset;
+    }
+  };
+}
+function rawCheck(action) {
+  return {
+    kind: "validation",
+    type: "raw_check",
+    reference: rawCheck,
+    async: false,
+    expects: null,
+    "~run"(dataset, config$1) {
+      action({
+        dataset,
+        config: config$1,
+        addIssue: (info) => _addIssue(this, info?.label ?? "input", dataset, config$1, info)
+      });
       return dataset;
     }
   };
@@ -5244,6 +5277,9 @@ import * as path34 from "node:path";
 // bin/helpers/local-date.ts
 var pad = (n) => String(n).padStart(2, "0");
 var dateOf = (at) => `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+function localDate(at) {
+  return dateOf(at);
+}
 function localToday() {
   return dateOf(new Date);
 }
@@ -8723,13 +8759,1557 @@ function runHookCli(args, env, out, err) {
   return 0;
 }
 
-// bin/helpers/memory.ts
+// bin/helpers/loop.ts
+import * as path48 from "node:path";
+
+// bin/helpers/loop-check.ts
+import * as path45 from "node:path";
+
+// bin/helpers/loop-layers.ts
+import * as fs34 from "node:fs";
+import * as path41 from "node:path";
+var DEFAULT_MANAGED_FILE = "/Library/Application Support/ClaudeCode/managed-settings.json";
+var ALL_SOURCES = ["user", "project", "local"];
+var HOOK_EVENTS = ["PreToolUse", "PermissionRequest"];
+var PROMPT_PREVIEW_LENGTH = 60;
+var errorText = (e) => e instanceof Error ? e.message : String(e);
+function readLayer(name, file) {
+  if (!fs34.existsSync(file))
+    return;
+  try {
+    const parsed = JSON.parse(fs34.readFileSync(file, "utf8"));
+    if (!isPlainObject(parsed)) {
+      return { name, file, issue: "the file is not a JSON object" };
+    }
+    return { name, file, settings: parsed };
+  } catch (e) {
+    return { name, file, issue: errorText(e) };
+  }
+}
+function keptLayers(profile, repo, configDir2, managedFile = DEFAULT_MANAGED_FILE) {
+  const kept = profile.manifest.settingSources ?? ALL_SOURCES;
+  const files = {
+    user: path41.join(configDir2, "settings.json"),
+    project: path41.join(repo, ".claude", "settings.json"),
+    local: path41.join(repo, ".claude", "settings.local.json")
+  };
+  const fileLayers = ALL_SOURCES.filter((name) => kept.includes(name)).map((name) => readLayer(name, files[name]));
+  const profileLayer = {
+    name: "profile",
+    file: path41.join(profile.dir, "profile.json"),
+    settings: profile.manifest.settings ?? {}
+  };
+  return [
+    ...fileLayers,
+    profileLayer,
+    readLayer("managed", managedFile)
+  ].filter((layer) => layer !== undefined);
+}
+var objectAt = (value, key) => isPlainObject(value) && isPlainObject(value[key]) ? value[key] : {};
+var stringsOf = (value) => Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : [];
+var stringOf = (value) => typeof value === "string" ? value : undefined;
+var listOf = (value) => Array.isArray(value) ? value : [];
+function describeHandler(handler) {
+  if (!isPlainObject(handler))
+    return;
+  const type = stringOf(handler.type);
+  if (type === undefined || type === "command") {
+    return stringOf(handler.command);
+  }
+  switch (type) {
+    case "http":
+      return `http: ${stringOf(handler.url) ?? ""}`;
+    case "mcp_tool":
+      return `mcp_tool: ${stringOf(handler.server) ?? ""}/${stringOf(handler.tool) ?? ""}`;
+    case "prompt":
+    case "agent":
+      return `${type}: ${(stringOf(handler.prompt) ?? "").slice(0, PROMPT_PREVIEW_LENGTH)}`;
+    default:
+      return type;
+  }
+}
+function hooksOf(settings) {
+  const hooks = objectAt(settings, "hooks");
+  return HOOK_EVENTS.flatMap((event) => listOf(hooks[event]).flatMap((entry) => {
+    if (!isPlainObject(entry))
+      return [];
+    const matcher = stringOf(entry.matcher);
+    return listOf(entry.hooks).flatMap((handler) => {
+      const command = describeHandler(handler);
+      return command === undefined ? [] : [{ event, matcher, command }];
+    });
+  }));
+}
+var booleanEntries = (value) => Object.fromEntries(Object.entries(isPlainObject(value) ? value : {}).filter((entry) => typeof entry[1] === "boolean"));
+function summariseLayer(settings) {
+  const permissions = objectAt(settings, "permissions");
+  const sandbox = objectAt(settings, "sandbox");
+  const allow = stringsOf(permissions.allow);
+  return {
+    allow,
+    hooks: hooksOf(settings),
+    addedDirectories: stringsOf(permissions.additionalDirectories),
+    sandboxWrites: stringsOf(objectAt(sandbox, "filesystem").allowWrite),
+    allowedDomains: stringsOf(objectAt(sandbox, "network").allowedDomains),
+    editAllows: allow.filter((rule) => rule.startsWith("Edit(")),
+    enabledPlugins: booleanEntries(settings.enabledPlugins)
+  };
+}
+
+// bin/helpers/loop-manifest.ts
 import * as fs35 from "node:fs";
 import * as path42 from "node:path";
 
+// bin/helpers/loop-cron.ts
+var MINUTE = { name: "minute", min: 0, max: 59 };
+var HOUR = { name: "hour", min: 0, max: 23 };
+var DAY_OF_MONTH = { name: "day of month", min: 1, max: 31 };
+var MONTH = { name: "month", min: 1, max: 12 };
+var DAY_OF_WEEK = { name: "day of week", min: 0, max: 7 };
+var MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+var MS_PER_MINUTE = 60000;
+var DEFAULT_HORIZON_DAYS = 366;
+var integerOf = (text) => /^\d+$/.test(text) ? Number(text) : undefined;
+var range = (from, to, step) => Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => from + i * step);
+function partValues(part, spec) {
+  const [base = "", stepText, ...extra] = part.split("/");
+  const fail = (why) => ({
+    ok: false,
+    issue: `${spec.name}: ${why}`
+  });
+  if (extra.length > 0)
+    return fail(`"${part}" has more than one step`);
+  const step = stepText === undefined ? 1 : integerOf(stepText);
+  if (step === undefined || step < 1)
+    return fail(`step "${stepText}" must be a whole number of at least 1`);
+  const bounds = base.split("-");
+  const [fromText = "", toText] = bounds;
+  if (bounds.length > 2)
+    return fail(`"${part}" is not a number or a range`);
+  const from = fromText === "*" ? spec.min : integerOf(fromText);
+  const to = fromText === "*" ? spec.max : toText === undefined ? stepText === undefined ? from : spec.max : integerOf(toText);
+  if (from === undefined || to === undefined || fromText === "*" && toText !== undefined) {
+    return fail(`"${part}" is not a number or a range (names and macros are not accepted)`);
+  }
+  if (from < spec.min || from > spec.max)
+    return fail(`${from} is out of range ${spec.min}-${spec.max}`);
+  if (to < spec.min || to > spec.max)
+    return fail(`${to} is out of range ${spec.min}-${spec.max}`);
+  if (from > to)
+    return fail(`range ${from}-${to} runs backwards`);
+  return { ok: true, values: range(from, to, step) };
+}
+function parseField(text, spec) {
+  const parts = text.split(",").map((part) => partValues(part, spec));
+  const failed = parts.find((part) => !part.ok);
+  if (failed && !failed.ok)
+    return failed;
+  return {
+    ok: true,
+    values: new Set(parts.flatMap((part) => part.ok ? part.values : []))
+  };
+}
+var isRestricted = (text) => !text.startsWith("*");
+function neverFires(dom, months) {
+  return ![...months].some((month) => [...dom].some((day) => day <= (MONTH_LENGTHS[month - 1] ?? 0)));
+}
+function parseCron(expr) {
+  const fields = expr.trim().split(/\s+/);
+  const [minuteText, hourText, domText, monthText, dowText] = fields;
+  if (fields.length !== 5 || minuteText === undefined || hourText === undefined || domText === undefined || monthText === undefined || dowText === undefined) {
+    return {
+      ok: false,
+      issue: `a schedule needs five fields (minute hour day-of-month month day-of-week), got ${fields.filter((f) => f !== "").length}`
+    };
+  }
+  const minutes = parseField(minuteText, MINUTE);
+  const hours = parseField(hourText, HOUR);
+  const daysOfMonth = parseField(domText, DAY_OF_MONTH);
+  const months = parseField(monthText, MONTH);
+  const daysOfWeek = parseField(dowText, DAY_OF_WEEK);
+  for (const field of [minutes, hours, daysOfMonth, months, daysOfWeek]) {
+    if (!field.ok)
+      return field;
+  }
+  if (!minutes.ok || !hours.ok || !daysOfMonth.ok || !months.ok || !daysOfWeek.ok) {
+    return { ok: false, issue: "a field did not parse" };
+  }
+  const domRestricted = isRestricted(domText);
+  const dowRestricted = isRestricted(dowText);
+  if (domRestricted && !dowRestricted && neverFires(daysOfMonth.values, months.values)) {
+    return {
+      ok: false,
+      issue: `day of month: no day in "${domText}" exists in month "${monthText}", so the schedule never fires`
+    };
+  }
+  return {
+    ok: true,
+    cron: {
+      minutes: minutes.values,
+      hours: hours.values,
+      daysOfMonth: daysOfMonth.values,
+      months: months.values,
+      daysOfWeek: new Set([...daysOfWeek.values].map((day) => day % 7)),
+      eitherDay: domRestricted && dowRestricted
+    }
+  };
+}
+function dayMatches(cron, at) {
+  const inMonth = cron.daysOfMonth.has(at.getDate());
+  const inWeek = cron.daysOfWeek.has(at.getDay());
+  return cron.eitherDay ? inMonth || inWeek : inMonth && inWeek;
+}
+var startOfLocalDay = (at) => new Date(at.getFullYear(), at.getMonth(), at.getDate());
+function previousFire(cron, at, horizonDays = DEFAULT_HORIZON_DAYS) {
+  const floor = Math.floor(at.getTime() / MS_PER_MINUTE) * MS_PER_MINUTE;
+  const limit = floor - horizonDays * 24 * 60 * MS_PER_MINUTE;
+  const next = (ms) => {
+    const t = new Date(ms);
+    if (!cron.months.has(t.getMonth() + 1) || !dayMatches(cron, t))
+      return startOfLocalDay(t).getTime() - MS_PER_MINUTE;
+    if (!cron.hours.has(t.getHours()))
+      return ms - (t.getMinutes() + 1) * MS_PER_MINUTE;
+    return ms - MS_PER_MINUTE;
+  };
+  const matches = (t) => cron.months.has(t.getMonth() + 1) && dayMatches(cron, t) && cron.hours.has(t.getHours()) && cron.minutes.has(t.getMinutes());
+  for (let ms = floor;ms >= limit; ms = next(ms)) {
+    const t = new Date(ms);
+    if (matches(t))
+      return t;
+  }
+  return;
+}
+
+// bin/helpers/loop-manifest.ts
+var LOOP_FILE = "loop.json";
+var CLASS_STATES = ["record", "ask", "act"];
+var nonEmpty = pipe(string(), minLength(1, "must not be empty"));
+var profileName = pipe(string(), check(isProfileName, `must be ${PROFILE_NAME_RULE}`));
+var TICK = /^\/(?:[A-Za-z0-9][\w-]*:)?[A-Za-z0-9][\w-]*(?: .*)?$/;
+var HOST = /^(?:\*\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
+var schedule = pipe(string(), rawCheck(({ dataset, addIssue }) => {
+  if (!dataset.typed)
+    return;
+  const parsed = parseCron(dataset.value);
+  if (!parsed.ok)
+    addIssue({ message: parsed.issue });
+}));
+var cap = pipe(number(), integer("must be a whole number"), minValue(1, "must be at least 1"));
+var CapsSchema = strictObject({
+  attemptsPerUnit: cap,
+  workMinutesPerUnit: cap,
+  waitMinutesPerUnit: optional(cap),
+  unitsPerDay: cap,
+  failedUnitsInARow: cap
+});
+var ClassSchema = strictObject({
+  state: picklist(CLASS_STATES),
+  allow: pipe(array(nonEmpty), minLength(1, "must hold at least one rule"))
+});
+var MandateSchema = strictObject({
+  reads: array(nonEmpty),
+  classes: record(profileName, ClassSchema),
+  never: array(nonEmpty)
+});
+var LoopSchema = strictObject({
+  description: nonEmpty,
+  repo: pipe(string(), check(path42.isAbsolute, "must be an absolute path")),
+  profile: profileName,
+  schedule,
+  tick: pipe(string(), regex(TICK, "must start with / and a skill name, /<plugin>:<skill> or /<skill>")),
+  hosts: optional(array(pipe(string(), regex(HOST, "must be a domain name, with an optional leading *."))), []),
+  gates: array(nonEmpty),
+  caps: CapsSchema,
+  mandate: MandateSchema
+});
+function parseLoopManifest(raw) {
+  const result = safeParse(LoopSchema, raw);
+  if (result.success)
+    return { ok: true, manifest: result.output };
+  return {
+    ok: false,
+    issues: result.issues.map((i) => `${getDotPath(i) ?? "(root)"}: ${i.message}`)
+  };
+}
+var isMissing4 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
+function readLoopManifest(file) {
+  let text;
+  try {
+    text = fs35.readFileSync(file, "utf8");
+  } catch (err) {
+    const why = isMissing4(err) ? "missing" : err instanceof Error ? err.message : String(err);
+    return { ok: false, issues: [`${file}: ${why}`] };
+  }
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    return { ok: false, issues: [`${file}: invalid JSON: ${why}`] };
+  }
+  const parsed = parseLoopManifest(raw);
+  if (parsed.ok)
+    return parsed;
+  return { ok: false, issues: parsed.issues.map((i) => `${file}: ${i}`) };
+}
+
+// bin/helpers/loop-rules.ts
+import * as path43 from "node:path";
+var RUNNER_WORDS = [
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "dash",
+  "ksh",
+  "python",
+  "python3",
+  "node",
+  "bun",
+  "deno",
+  "ruby",
+  "perl",
+  "php",
+  "lua",
+  "osascript",
+  "eval",
+  "exec",
+  "env",
+  "xargs",
+  "sudo",
+  "nohup",
+  "timeout",
+  "nice",
+  "command",
+  "source",
+  ".",
+  "npx",
+  "bunx",
+  "npm",
+  "pnpm",
+  "yarn",
+  "make",
+  "csh",
+  "tcsh",
+  "time",
+  "builtin",
+  "stdbuf",
+  "noglob",
+  "coproc",
+  "xcrun",
+  "caffeinate",
+  "arch",
+  "script",
+  "expect",
+  "tclsh",
+  "pypy",
+  "pypy3",
+  "awk",
+  "gawk",
+  "nawk",
+  "trap",
+  "nocorrect",
+  "gtimeout",
+  "genv",
+  "gxargs",
+  "gnice",
+  "gstdbuf",
+  "gnohup"
+];
+var SCRIPT_RUNNERS = [
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "dash",
+  "ksh",
+  "csh",
+  "tcsh",
+  "python",
+  "python3",
+  "node",
+  "ruby",
+  "perl",
+  "php",
+  "lua",
+  "osascript"
+];
+var WRAPPERS = [
+  "exec",
+  "env",
+  "xargs",
+  "sudo",
+  "nohup",
+  "timeout",
+  "nice",
+  "command",
+  "source",
+  ".",
+  "time",
+  "builtin",
+  "stdbuf",
+  "noglob",
+  "coproc",
+  "xcrun",
+  "caffeinate",
+  "arch",
+  "gtimeout",
+  "genv",
+  "gxargs",
+  "gnice",
+  "gstdbuf",
+  "gnohup"
+];
+var SCRATCH_ROOTS = [
+  "/tmp",
+  "/private/tmp",
+  "/var/tmp",
+  "/private/var/tmp",
+  "/var/folders",
+  "/private/var/folders",
+  "/dev",
+  "/Users/Shared"
+];
+var DATA_VOLUME = "/system/volumes/data";
+var PATH_TOOLS = [
+  "Write",
+  "NotebookEdit",
+  "MultiEdit",
+  "Glob",
+  "Grep"
+];
+var WRITE_TOOLS = [
+  "Write",
+  "Edit",
+  "NotebookEdit",
+  "MultiEdit"
+];
+var COMMAND_TOOLS = ["Bash", "Monitor", "PowerShell"];
+var GIT_RUNS_CODE = [
+  "config",
+  "rebase",
+  "bisect",
+  "submodule",
+  "filter-branch",
+  "difftool",
+  "mergetool"
+];
+var GIT_NAMED_OPTIONS = [
+  "fetch",
+  "pull",
+  "clone",
+  "ls-remote",
+  "push",
+  "archive",
+  "grep",
+  "log",
+  "diff",
+  "show",
+  "format-patch"
+];
+var GIT_DASHED = "git-";
+var GIT_CODE_OPTIONS = [
+  "--upload-pack",
+  "--receive-pack",
+  "--exec",
+  "--open-files-in-pager",
+  "--output"
+];
+var FIND_RUNS_CODE = [
+  "-exec",
+  "-execdir",
+  "-ok",
+  "-okdir"
+];
+var FD_RUNS_CODE = ["--exec", "--exec-batch"];
+var RULE_PATTERN = /^([A-Za-z][A-Za-z0-9_-]*(?:\*)?)(?:\(([\s\S]+)\))?$/;
+var WILDCARD = "*";
+var SYNTAX_PATTERN = /\$\(|`|<\(|>\(|[;|&\n]/;
+var ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
+var UNPLAIN_CHARS = /['"\\${}]/;
+var GLOB_CHARS = /[*?[\]]/;
+var GRAMMAR_CHARS = /[<>()!]/;
+var VERSION_SUFFIX = /[0-9.]+$/;
+var ONE_SLASH = /^\/(?!\/)/;
+var GIT_PAGER_SHORT = /^-[^-]*O/;
+var CLONE_UPLOAD_SHORT = /^-[^-]*u/;
+var FD_EXEC_SHORT = /^-[^-]*[xX]/;
+var UNPARSABLE_ISSUE = "the rule does not parse as Tool or Tool(specifier).";
+var UNPLAIN_ISSUE = "quotes, backslashes, braces, and $ in the words a check reads hide the program from the check, so spell them plainly.";
+var DOT_ISSUE = "a path with . or .. segments is resolved before links are followed, so spell the path without . or .. segments.";
+var SCRATCH_ISSUE = "a program in a worker-writable folder (such as /tmp, /var/folders, or /Users/Shared) may be worker code, so use a path outside them.";
+var IN_REPO_ISSUE = "a command inside the repo is code a worker can write, so use an absolute path outside the repo.";
+var PATH_GLOB_ISSUE = "a wildcard (*, ?, or [...]) in a program path could match any program, so spell the path out.";
+var RUNNER_ISSUE = "a rule starting with a shell, interpreter, runner, or wrapper grants arbitrary code, so give the absolute path of a script outside the loop repo, with no wildcard, or grant the program it runs.";
+var DASHED_GIT_ISSUE = "a git-<subcommand> program runs git <subcommand> past the git checks, so write git <subcommand> instead.";
+var NO_SCRIPT_ISSUE = "a rule starting with bun, npm, make, awk, or another runner that takes no script path grants arbitrary code whatever follows, so grant the program it runs instead.";
+function parseRule(text) {
+  const m = RULE_PATTERN.exec(text);
+  if (m?.[1] === undefined)
+    return;
+  return { tool: m[1], specifier: m[2] };
+}
+var hasGlob = (word) => GLOB_CHARS.test(word);
+var isUnplain = (word) => UNPLAIN_CHARS.test(word);
+var hasDotSegment = (p) => p.split("/").some((s) => s === "." || s === "..");
+var withoutDataVolume = (p) => p.startsWith(DATA_VOLUME + path43.sep) ? p.slice(DATA_VOLUME.length) : p;
+var within = (child, parent) => child === parent || child.startsWith(parent + path43.sep);
+var isUnder = (p, root) => {
+  const child = p.toLowerCase();
+  const parent = root.toLowerCase();
+  return within(child, parent) || within(withoutDataVolume(child), withoutDataVolume(parent));
+};
+var insideRepo = (p, repo) => isUnder(realPathOf(p), realPathOf(repo));
+var isScratch = (p, roots) => [path43.resolve(p), realPathOf(p)].some((c) => roots.some((r) => isUnder(c, r)));
+function writeScopeIssues(specifier) {
+  if (specifier === undefined || specifier === WILDCARD) {
+    return [
+      "a loop writes only its record, through sidekick loop record, so scope the rule as Edit(//<path>/**) if a write is needed."
+    ];
+  }
+  if (specifier.startsWith("~")) {
+    return [
+      "a write path under ~ reaches the home folder and Claude Code settings, so name the folder as Edit(//<path>/**)."
+    ];
+  }
+  if (!specifier.startsWith("//")) {
+    return [
+      "a relative write path anchors in the loop worktree of the repo, so name the folder as Edit(//<path>/**)."
+    ];
+  }
+  const absolute = specifier.slice(1);
+  const [, first = ""] = absolute.split("/");
+  if (first === "" || hasGlob(first)) {
+    return [
+      "a write path with a wildcard or nothing in its first folder reaches the whole disk, so name the folder as Edit(//<path>/**)."
+    ];
+  }
+  return hasDotSegment(absolute) ? [
+    "a write path with . or .. segments can climb out of the folder it names, so spell the path without them."
+  ] : [];
+}
+function pathRuleIssues(rule, list2) {
+  const { tool, specifier } = rule;
+  const hasPath = specifier !== undefined && specifier !== WILDCARD;
+  if (hasPath && PATH_TOOLS.includes(tool)) {
+    return [
+      `a ${tool} rule with a path never matches, so write ${tool} or ${tool}(*) instead.`
+    ];
+  }
+  const anchorsAtSource = hasPath && (tool === "Read" || tool === "Edit") && ONE_SLASH.test(specifier);
+  if (anchorsAtSource) {
+    return [
+      `a ${tool} path with one slash anchors at the settings source, so write // before an absolute path, or ~/ for home.`
+    ];
+  }
+  if (list2 === "never" || !WRITE_TOOLS.includes(tool))
+    return [];
+  return writeScopeIssues(specifier);
+}
+var EVERY_WORD = Number.POSITIVE_INFINITY;
+var sidekickIssues = (rest2) => {
+  const [next, second] = rest2.slice(0, 2).map((w) => w.toLowerCase());
+  if (next === undefined)
+    return [];
+  const launches = next === "profile" && second !== undefined && (second === "launch" || hasGlob(second));
+  const bad = launches || next === "worker" || hasGlob(next) || next.startsWith("-");
+  return bad ? [
+    "a sidekick rule must name its subcommand without a wildcard or leading option, and never worker or profile launch, which start sessions."
+  ] : [];
+};
+var ghIssues = (rest2) => {
+  const [first] = rest2;
+  if (first === undefined)
+    return [];
+  const next = first.toLowerCase();
+  const bad = hasGlob(next) || next.startsWith("-") || next === "extension" || next === "alias";
+  return bad ? [
+    "a gh rule must name its subcommand with no leading option and no wildcard, and never extension or alias, which run code."
+  ] : [];
+};
+var isGitCodeOption = (subcommand, word) => {
+  if (GIT_PAGER_SHORT.test(word))
+    return true;
+  if (subcommand === "clone" && CLONE_UPLOAD_SHORT.test(word))
+    return true;
+  if (!word.startsWith("--"))
+    return false;
+  const long = (word.split("=")[0] ?? word).toLowerCase();
+  return long.length > 2 && GIT_CODE_OPTIONS.some((o) => o.startsWith(long));
+};
+function gitIssues(rest2) {
+  const [first] = rest2;
+  if (first === undefined)
+    return [];
+  const subcommand = first.toLowerCase();
+  if (subcommand.startsWith("-") || hasGlob(subcommand)) {
+    return [
+      "a git rule must name its subcommand with no option before it and no wildcard in it, since a leading option can set config or the exec path, which runs code."
+    ];
+  }
+  if (GIT_RUNS_CODE.includes(subcommand)) {
+    return [
+      `git ${subcommand} can run code of its own, so grant a different subcommand.`
+    ];
+  }
+  const options = rest2.slice(1);
+  if (options.some((w) => isGitCodeOption(subcommand, w))) {
+    return [
+      "a git option such as -O, -u on clone, --upload-pack, --receive-pack, --exec, --open-files-in-pager, or --output runs a command or writes a file, so drop it from the rule."
+    ];
+  }
+  if (GIT_NAMED_OPTIONS.includes(subcommand) && options.some(hasGlob)) {
+    return [
+      `a wildcard after git ${subcommand} admits options that run code or write files, so name the options the rule needs instead.`
+    ];
+  }
+  return [];
+}
+var optionIssues = (runsCode, issue) => (rest2) => rest2.some((w) => hasGlob(w) || runsCode(w)) ? [issue] : [];
+var longName = (word) => word.split("=")[0] ?? word;
+var findIssues = optionIssues((w) => FIND_RUNS_CODE.includes(w), "a find rule with -exec, -execdir, -ok, -okdir, or a wildcard can run any command, so name the paths and tests it needs.");
+var rgIssues = optionIssues((w) => longName(w) === "--pre", "an rg rule with --pre or a wildcard can run any command as a preprocessor, so name the pattern, paths, and options it needs.");
+var fdIssues = optionIssues((w) => FD_EXEC_SHORT.test(w) || FD_RUNS_CODE.includes(longName(w)), "an fd rule with -x, -X, --exec, --exec-batch, or a wildcard can run any command, so name the pattern, paths, and options it needs.");
+var refuse4 = (issue) => () => [issue];
+var dashedGitIssues = (name) => name.startsWith(GIT_DASHED) ? [DASHED_GIT_ISSUE] : [];
+var PROGRAM_CHECKS = new Map([
+  [
+    "claude",
+    {
+      reads: 0,
+      issues: refuse4("a claude rule starts a Claude session, so grant a narrower command.")
+    }
+  ],
+  ["sidekick", { reads: 2, issues: sidekickIssues }],
+  ["git", { reads: EVERY_WORD, issues: gitIssues }],
+  ["gh", { reads: 1, issues: ghIssues }],
+  ["find", { reads: EVERY_WORD, issues: findIssues }],
+  ["rg", { reads: EVERY_WORD, issues: rgIssues }],
+  ["fd", { reads: EVERY_WORD, issues: fdIssues }],
+  [
+    "tar",
+    {
+      reads: 0,
+      issues: refuse4("a tar rule can run a command through its options, so grant a narrower command.")
+    }
+  ],
+  [
+    "ssh",
+    {
+      reads: 0,
+      issues: refuse4("an ssh rule runs commands on another host, so grant a narrower command.")
+    }
+  ]
+]);
+var runnerBase = (name) => {
+  if (RUNNER_WORDS.includes(name))
+    return name;
+  const base = name.replace(VERSION_SUFFIX, "");
+  return base !== name && RUNNER_WORDS.includes(base) ? base : undefined;
+};
+var takesAPath = (base) => SCRIPT_RUNNERS.includes(base) || WRAPPERS.includes(base);
+var wordsRead = (name) => PROGRAM_CHECKS.get(name)?.reads ?? (runnerBase(name) === undefined ? 0 : 1);
+function absolutePathIssue(p, where) {
+  if (hasDotSegment(p))
+    return DOT_ISSUE;
+  if (hasGlob(p))
+    return PATH_GLOB_ISSUE;
+  if (insideRepo(p, where.repo))
+    return IN_REPO_ISSUE;
+  return isScratch(p, where.scratch) ? SCRATCH_ISSUE : undefined;
+}
+function commandPathIssues(word, where) {
+  if (word.startsWith("~")) {
+    return [
+      "a command path starting with ~ is not expanded, so spell the path absolute."
+    ];
+  }
+  if (!word.includes("/"))
+    return [];
+  if (!path43.isAbsolute(word)) {
+    return [
+      "a relative command path anchors in the loop worktree of the repo, so spell an absolute path outside the repo."
+    ];
+  }
+  const issue = absolutePathIssue(word, where);
+  return issue === undefined ? [] : [issue];
+}
+function runnerIssues(name, rest2, where) {
+  const base = runnerBase(name);
+  if (base === undefined)
+    return [];
+  if (!takesAPath(base))
+    return [NO_SCRIPT_ISSUE];
+  const [next] = rest2;
+  if (next === undefined || !path43.isAbsolute(next))
+    return [RUNNER_ISSUE];
+  const issue = absolutePathIssue(next, where);
+  return issue === undefined ? commandIssues(rest2, where) : [issue];
+}
+function commandIssues(words, where) {
+  const [word = ""] = words;
+  const name = path43.basename(word).toLowerCase();
+  if (words.slice(0, 1 + wordsRead(name)).some(isUnplain)) {
+    return [UNPLAIN_ISSUE];
+  }
+  const rest2 = words.slice(1);
+  return [
+    ...commandPathIssues(word, where),
+    ...dashedGitIssues(name),
+    ...PROGRAM_CHECKS.get(name)?.issues(rest2) ?? [],
+    ...runnerIssues(name, rest2, where)
+  ];
+}
+function headIssues(words, commandAt, where) {
+  if (commandAt < 0 || words[commandAt] === "") {
+    return ["a rule must name a command after any NAME=value words."];
+  }
+  const head = words.slice(0, commandAt + 1);
+  if (head.some(hasGlob)) {
+    return [
+      "a wildcard (*, ?, or [...]) before or in the command word could match any program, so spell the command out."
+    ];
+  }
+  if (head.some((w) => GRAMMAR_CHARS.test(w))) {
+    return [
+      "a redirect, parenthesis, or ! before or in the command word is shell grammar the check cannot judge, so start the rule with the command."
+    ];
+  }
+  if (words.slice(0, commandAt).some(isUnplain))
+    return [UNPLAIN_ISSUE];
+  return commandIssues(words.slice(commandAt), where);
+}
+function commandToolIssues(specifier, where) {
+  if (specifier === undefined || specifier === WILDCARD) {
+    return [
+      "a Bash, Monitor, or PowerShell rule must name a command, since the bare tool or (*) matches every command."
+    ];
+  }
+  const syntax = SYNTAX_PATTERN.test(specifier) ? [
+    "a command substitution, process substitution, ;, |, &, or newline chains commands the check cannot see, so write one rule per command."
+  ] : [];
+  const words = specifier.trim().split(/\s+/);
+  const commandAt = words.findIndex((w) => !ASSIGNMENT.test(w));
+  const assignments = commandAt === 0 ? [] : [
+    "a NAME=value word can change what a program loads, so write the rule without it."
+  ];
+  return [...syntax, ...assignments, ...headIssues(words, commandAt, where)];
+}
+function ruleIssues(text, list2, repo, scratchRoots = SCRATCH_ROOTS) {
+  const rule = parseRule(text);
+  if (rule === undefined)
+    return [UNPARSABLE_ISSUE];
+  const pathIssues = pathRuleIssues(rule, list2);
+  if (list2 === "never" || !COMMAND_TOOLS.includes(rule.tool))
+    return pathIssues;
+  return [
+    ...pathIssues,
+    ...commandToolIssues(rule.specifier, { repo, scratch: scratchRoots })
+  ];
+}
+
+// bin/helpers/loop-store.ts
+import * as fs36 from "node:fs";
+import * as path44 from "node:path";
+var RUNTIME_ENTRIES = ["records", "state.json"];
+function loopsRoot(env, cwd, home) {
+  const [root] = storeRoots("loops", env, cwd, home, { kind: "outside" });
+  return root.dir;
+}
+var entriesOf3 = (dir) => {
+  try {
+    return fs36.readdirSync(dir);
+  } catch {
+    return [];
+  }
+};
+function loopNames(root) {
+  return entriesOf3(root).filter((name) => !name.startsWith(".") && isFolder3(path44.join(root, name))).sort();
+}
+
+// bin/helpers/loop-check.ts
+var GITHUB_HOST_WARNING = "it lets workers reach GitHub, where a worker can push by a spelling the push block misses; keep GitHub out of the workers' network";
+var LOOP_KEY_ADVICE = "keep keys out of a loop's folder";
+var UNREAD_LAYER = "the check cannot read it, so it cannot see the hosts it lets workers reach";
+var GITHUB = "github.com";
+function checkLoop(name, deps) {
+  const dir = path45.join(loopsRoot(deps.env, deps.cwd, deps.home), name);
+  const refused = (issues) => ({
+    dir,
+    manifest: undefined,
+    profile: undefined,
+    issues,
+    warnings: []
+  });
+  if (!isProfileName(name)) {
+    return refused([
+      `${dir}: "${name}" is not a loop name: use ${PROFILE_NAME_RULE}`
+    ]);
+  }
+  const file = path45.join(dir, LOOP_FILE);
+  const keys = keyIssues(dir, LOOP_KEY_ADVICE, {
+    skipAtTop: new Set(RUNTIME_ENTRIES)
+  });
+  const read = readLoopManifest(file);
+  if (!read.ok)
+    return refused([...read.issues, ...keys]);
+  const { manifest } = read;
+  const resolved2 = resolveProfile(file, manifest, deps);
+  const layers = resolved2.profile === undefined ? [] : keptLayers(resolved2.profile, manifest.repo, configDir(deps.env, deps.cwd, deps.home), deps.managedFile);
+  return {
+    dir,
+    manifest,
+    profile: resolved2.profile,
+    issues: [
+      ...mainCheckoutIssues(`${file}: repo: ${manifest.repo}`, manifest.repo, deps.runGit),
+      ...resolved2.issues,
+      ...keys,
+      ...mandateIssues(file, manifest)
+    ],
+    warnings: [
+      ...githubWarnings(`${file}: hosts`, manifest.hosts),
+      ...layers.flatMap(layerWarnings)
+    ]
+  };
+}
+function mainCheckoutIssues(where, repo, runGit) {
+  if (!isFolder3(repo))
+    return [`${where} is not a folder`];
+  const top = runGit("git", ["rev-parse", "--show-toplevel"], repo);
+  if (top.code !== 0) {
+    const line = revParseLine(top.stderr);
+    return outsideRepo(line, repo) ? [`${where} is not in a git repo; name a main checkout's root`] : [`${where}: git rev-parse failed: ${line}`];
+  }
+  const realTop = realPathOf(top.stdout.trim());
+  if (realTop !== realPathOf(repo)) {
+    return [
+      `${where} is inside the work tree ${realTop}; name its main checkout's root`
+    ];
+  }
+  const common = runGit("git", ["rev-parse", "--git-common-dir"], repo);
+  if (common.code !== 0) {
+    return [`${where}: git rev-parse failed: ${revParseLine(common.stderr)}`];
+  }
+  const commonDir = realPathOf(path45.resolve(repo, common.stdout.trim()));
+  return commonDir === realPathOf(path45.join(repo, ".git")) ? [] : [
+    `${where} keeps its git dir at ${commonDir}, as a linked worktree or a submodule does; name the main checkout's root`
+  ];
+}
+function resolveProfile(file, manifest, deps) {
+  const { env, cwd, home } = deps;
+  const old = oldStoreIssues(env, cwd, home);
+  if (old.length > 0)
+    return { profile: undefined, issues: old };
+  const name = manifest.profile;
+  const roots = storeRoots("profiles", env, cwd, home, {
+    kind: "inside",
+    top: manifest.repo
+  });
+  const loaded = loadProfile(name, roots);
+  if (!loaded.ok) {
+    const held = roots.some((root) => isFolder3(path45.join(root.dir, name)));
+    const issues = held ? loaded.issues : loaded.issues.map((issue) => `${file}: profile: ${issue}`);
+    return { profile: undefined, issues };
+  }
+  const { profile } = loaded;
+  const userStore = path45.join(sidekickHome(env, cwd, home), "profiles");
+  const fromRepo = profile.store === "repo" ? [
+    `${file}: profile: "${name}" resolves to the repo store's ${profile.dir}, whose plugin code the repo's commits can change; keep the loop's profile in ${userStore}`
+  ] : [];
+  return { profile, issues: [...fromRepo, ...rolePluginIssues(profile)] };
+}
+function mandateLists(manifest) {
+  const { reads, classes, never } = manifest.mandate;
+  return [
+    { at: "mandate.reads", list: "reads", rules: reads },
+    ...Object.entries(classes).map(([name, cls]) => ({
+      at: `mandate.classes.${name}.allow`,
+      list: "allow",
+      rules: cls.allow
+    })),
+    { at: "mandate.never", list: "never", rules: never }
+  ];
+}
+function mandateIssues(file, manifest) {
+  return mandateLists(manifest).flatMap(({ at, list: list2, rules }) => rules.flatMap((rule, i) => ruleIssues(rule, list2, manifest.repo).map((why) => `${file}: ${at}.${i}: ${why}`)));
+}
+var inGithub = (host) => host === GITHUB || host.endsWith(`.${GITHUB}`);
+function reachesGithub(pattern) {
+  const host = pattern.trim().toLowerCase().replace(/\.$/, "");
+  if (host === "*")
+    return true;
+  if (!host.startsWith("*."))
+    return inGithub(host);
+  const base = host.slice("*.".length);
+  return inGithub(base) || GITHUB.endsWith(`.${base}`);
+}
+var githubWarnings = (where, hosts) => hosts.filter(reachesGithub).map((host) => `${where}: ${host}: ${GITHUB_HOST_WARNING}`);
+function layerWarnings(layer) {
+  if (!("settings" in layer)) {
+    return [`${layer.file}: ${UNREAD_LAYER}: ${layer.issue}`];
+  }
+  const keyPath = layer.name === "profile" ? "settings.sandbox.network.allowedDomains" : "sandbox.network.allowedDomains";
+  return githubWarnings(`${layer.file}: ${keyPath}`, summariseLayer(layer.settings).allowedDomains);
+}
+
+// bin/helpers/loop-inherited.ts
+import * as fs37 from "node:fs";
+import * as path46 from "node:path";
+var BUILTIN_NOTE = [
+  "Claude Code also loads built-in plugins, which `claude plugin list` does not show.",
+  "On Claude Code 2.1.322, two of them handled tool calls: `cc-plugin-plugin-authoring` and `cc-plugin-privacy` (R11 loop probes, U9).",
+  "To see the current set, start a session with `--debug-file <file>` and search the log for `hooks module`."
+];
+var PLUGIN_LIST_TIMEOUT_MS = 30000;
+var NONE = "  (none)";
+var EXEMPT_SUFFIXES2 = ["@builtin", "@inline"];
+var BARE_WRITE = /^(?:Edit|Write|MultiEdit|NotebookEdit)(?:\(\*\))?$/;
+var PluginListSchema = array(looseObject({ id: string(), installPath: nullish(string()) }));
+var errorText2 = (e) => e instanceof Error ? e.message : String(e);
+var section = (title, entries) => [
+  title,
+  ...entries.length === 0 ? [NONE] : entries.map((entry) => `  ${entry}`)
+];
+var hookLine = (source, hook) => `${source}: ${hook.event}${hook.matcher === undefined ? "" : ` [${hook.matcher}]`}: ${hook.command}`;
+var layerSource = (layer) => `${layer.name} (${layer.file})`;
+function listPlugins(manifest, deps) {
+  const result = deps.runClaude(["plugin", "list", "--json"], {
+    cwd: manifest.repo,
+    timeoutMs: PLUGIN_LIST_TIMEOUT_MS
+  });
+  if (result.timedOut) {
+    return { problem: "claude plugin list timed out" };
+  }
+  if (result.code !== 0) {
+    return { problem: `claude plugin list exited with code ${result.code}` };
+  }
+  let raw;
+  try {
+    raw = JSON.parse(result.stdout);
+  } catch (e) {
+    return { problem: `claude plugin list printed no JSON: ${errorText2(e)}` };
+  }
+  const parsed = safeParse(PluginListSchema, raw);
+  if (!parsed.success) {
+    return { problem: "claude plugin list printed an unexpected shape" };
+  }
+  const folders = new Map;
+  for (const entry of parsed.output) {
+    if (entry.installPath)
+      folders.set(entry.id, entry.installPath);
+  }
+  return { folders };
+}
+function loadedIds(layers, composed2) {
+  const merged = new Map;
+  const apply = (plugins) => {
+    for (const [id, on] of Object.entries(plugins))
+      merged.set(id, on);
+  };
+  const fileLayers = (names) => layers.filter((layer) => names.includes(layer.name));
+  const summaryOf = (layer) => ("settings" in layer) ? summariseLayer(layer.settings) : undefined;
+  for (const layer of fileLayers(["user", "project", "local"])) {
+    const summary = summaryOf(layer);
+    if (summary)
+      apply(summary.enabledPlugins);
+  }
+  apply(summariseLayer(composed2).enabledPlugins);
+  for (const layer of fileLayers(["managed"])) {
+    const summary = summaryOf(layer);
+    if (summary)
+      apply(summary.enabledPlugins);
+  }
+  return [...merged].filter(([, on]) => on).map(([id]) => id);
+}
+function readPluginHooks(folder) {
+  if (!fs37.existsSync(folder)) {
+    return { kind: "unreadable", why: "the folder is gone" };
+  }
+  const file = path46.join(folder, "hooks", "hooks.json");
+  if (!fs37.existsSync(file))
+    return { kind: "none" };
+  try {
+    const parsed = JSON.parse(fs37.readFileSync(file, "utf8"));
+    if (!isPlainObject(parsed)) {
+      return { kind: "unreadable", why: "hooks.json is not a JSON object" };
+    }
+    return {
+      kind: "read",
+      hooks: summariseLayer(parsed).hooks,
+      mod: Array.isArray(parsed.modules) && parsed.modules.length > 0
+    };
+  } catch (e) {
+    return { kind: "unreadable", why: errorText2(e) };
+  }
+}
+var MOD_MARK = "ships a mod: on this subscription, a mod can approve a call past a deny rule";
+function describePlugin(label, folder, notFound) {
+  if (folder === undefined)
+    return { line: `${label}: ${notFound}`, hooks: [] };
+  const read = readPluginHooks(folder);
+  switch (read.kind) {
+    case "none":
+      return { line: `${label} (${folder})`, hooks: [] };
+    case "unreadable":
+      return {
+        line: `${label} (${folder}): its hooks could not be read: ${read.why}`,
+        hooks: []
+      };
+    case "read":
+      return {
+        line: `${label} (${folder})${read.mod ? `: ${MOD_MARK}` : ""}`,
+        hooks: read.hooks.map((hook) => hookLine(`plugin ${label}`, hook))
+      };
+  }
+}
+function pluginsPart(manifest, profile, layers, deps) {
+  const composed2 = composeSettings(profile, { home: deps.home });
+  const ids = loadedIds(layers, composed2).filter((id) => !EXEMPT_SUFFIXES2.some((suffix) => id.endsWith(suffix)));
+  const listed = listPlugins(manifest, deps);
+  const warnings = [];
+  const plugins = [];
+  const hooks = [];
+  if ("problem" in listed) {
+    warnings.push(`The plugin list is incomplete: ${listed.problem}.`);
+    plugins.push(`(incomplete: ${listed.problem}, so installed plugins' folders and hooks are not shown)`);
+  }
+  for (const id of ids) {
+    if ("problem" in listed)
+      continue;
+    const found = describePlugin(id, listed.folders.get(id), "enabled, but not installed");
+    plugins.push(found.line);
+    hooks.push(...found.hooks);
+  }
+  for (const dir of profile.pluginDirs) {
+    const found = describePlugin(`plugin dir ${dir}`, dir, "not found");
+    plugins.push(found.line);
+    hooks.push(...found.hooks);
+  }
+  return { plugins, hooks, warnings };
+}
+function inheritedListing(manifest, profile, deps) {
+  const layers = keptLayers(profile, manifest.repo, deps.configDir, deps.managedFile);
+  const warnings = [];
+  const allow = [];
+  const hooks = [];
+  const fence = [];
+  for (const layer of layers) {
+    const source = layerSource(layer);
+    if ("issue" in layer) {
+      const text = `${source}: could not be read: ${layer.issue}`;
+      allow.push(text);
+      warnings.push(`The ${layer.name} settings ${text}`);
+      continue;
+    }
+    const summary = summariseLayer(layer.settings);
+    allow.push(...summary.allow.map((rule) => `${source}: ${rule}`));
+    hooks.push(...summary.hooks.map((hook) => hookLine(source, hook)));
+    const widenings = [
+      ["added directory", summary.addedDirectories],
+      ["sandbox write", summary.sandboxWrites],
+      ["allowed domain", summary.allowedDomains],
+      ["Edit allow", summary.editAllows],
+      [
+        "file-write allow for every path",
+        summary.allow.filter((rule) => BARE_WRITE.test(rule))
+      ]
+    ];
+    for (const [kind, entries] of widenings) {
+      fence.push(...entries.map((entry) => `${source}: ${kind}: ${entry}`));
+    }
+  }
+  const part = pluginsPart(manifest, profile, layers, deps);
+  warnings.push(...part.warnings);
+  return {
+    lines: [
+      ...section("Allow rules", allow),
+      ...section("Hooks that can approve a call", [...hooks, ...part.hooks]),
+      ...section("What widens the workers' fence", fence),
+      ...section("Plugins", part.plugins),
+      "Built-ins",
+      ...BUILTIN_NOTE.map((line) => `  ${line}`)
+    ],
+    warnings
+  };
+}
+
+// bin/helpers/loop-record.ts
+import * as fs38 from "node:fs";
+import * as path47 from "node:path";
+var MODEL_KINDS = [
+  "would",
+  "request",
+  "did",
+  "denied",
+  "note"
+];
+var RECORDS_DIR = "records";
+var MINUTE_MS2 = 60000;
+var DAY_MS = 24 * 60 * MINUTE_MS2;
+var FALLBACK_WINDOW_DAYS = 366;
+var ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+var at = pipe(string(), check((s) => ISO_UTC.test(s) && !Number.isNaN(Date.parse(s)), "must be an ISO 8601 UTC time"));
+var summary = pipe(string(), minLength(1), maxLength(1000));
+var command = pipe(string(), minLength(1), maxLength(4000));
+var className = pipe(string(), minLength(1));
+var unit = pipe(string(), regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 of A-Z a-z 0-9 . _ -"));
+var hash = pipe(string(), minLength(1));
+var reason6 = pipe(string(), minLength(1), maxLength(1000));
+var commit = pipe(string(), regex(/^[0-9a-f]{7,40}$/i, "must be a hex object id of 7 to 40 characters"));
+var head = { v: literal(1), at };
+var RecordLineSchema = variant("kind", [
+  object({
+    ...head,
+    kind: literal("would"),
+    summary,
+    class: className,
+    command,
+    unit: optional(unit),
+    hash: optional(hash)
+  }),
+  object({
+    ...head,
+    kind: literal("request"),
+    summary,
+    command,
+    class: optional(className),
+    unit: optional(unit),
+    hash: optional(hash)
+  }),
+  object({
+    ...head,
+    kind: literal("did"),
+    summary,
+    class: className,
+    command,
+    unit: optional(unit),
+    hash: optional(hash)
+  }),
+  object({
+    ...head,
+    kind: literal("denied"),
+    summary,
+    command,
+    class: optional(className),
+    unit: optional(unit),
+    hash: optional(hash)
+  }),
+  object({
+    ...head,
+    kind: literal("note"),
+    summary,
+    unit: optional(unit),
+    hash: optional(hash)
+  }),
+  object({
+    ...head,
+    kind: literal("dispatched"),
+    unit,
+    record: optional(literal(true))
+  }),
+  object({ ...head, kind: literal("landed"), unit, commit }),
+  object({ ...head, kind: literal("failed"), unit, reason: reason6 }),
+  object({ ...head, kind: literal("discarded"), unit, reason: reason6 })
+]);
+function recordFile(loopDir, at2) {
+  return path47.join(loopDir, RECORDS_DIR, `${localDate(at2)}.jsonl`);
+}
+function appendRecord(loopDir, line) {
+  fs38.mkdirSync(path47.join(loopDir, RECORDS_DIR), { recursive: true });
+  fs38.appendFileSync(recordFile(loopDir, new Date(line.at)), `${JSON.stringify(line)}
+`);
+}
+function parseLine(text) {
+  try {
+    const parsed = safeParse(RecordLineSchema, JSON.parse(text));
+    return parsed.success ? parsed.output : undefined;
+  } catch {
+    return;
+  }
+}
+function localDays(since, until) {
+  const days = [];
+  for (let day = new Date(since.getFullYear(), since.getMonth(), since.getDate());day.getTime() <= until.getTime(); day = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1)) {
+    days.push(day);
+  }
+  return days;
+}
+function readDay(loopDir, day) {
+  try {
+    return fs38.readFileSync(recordFile(loopDir, day), "utf8").split(`
+`).filter((text) => text.trim() !== "");
+  } catch {
+    return [];
+  }
+}
+function readRecords2(loopDir, since, until) {
+  const parsed = localDays(since, until).flatMap((day) => readDay(loopDir, day).map((text) => parseLine(text)));
+  const lines = parsed.filter((line) => line !== undefined).filter((line) => {
+    const time = Date.parse(line.at);
+    return time >= since.getTime() && time <= until.getTime();
+  }).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  return { lines, skipped: parsed.filter((line) => line === undefined).length };
+}
+function windowStart(cron, at2) {
+  const fallback2 = new Date(at2.getTime() - FALLBACK_WINDOW_DAYS * DAY_MS);
+  const latest = previousFire(cron, at2);
+  if (latest === undefined)
+    return fallback2;
+  return previousFire(cron, new Date(latest.getTime() - MINUTE_MS2)) ?? fallback2;
+}
+function isNewRequest(loopDir, cron, key, at2) {
+  const { lines } = readRecords2(loopDir, windowStart(cron, at2), at2);
+  return !lines.some((line) => line.kind === "request" && line.class === key.class && line.command === key.command && line.unit === key.unit);
+}
+
+// bin/helpers/loop.ts
+var LOOP_USAGE_LINE = "sidekick loop list | show <name> [--since <YYYY-MM-DD>] | record <name> --kind <would|request|did|denied|note> --summary <text> [--class <class>] [--command <text>] [--unit <id>]";
+var DAY_MS2 = 24 * 60 * 60 * 1000;
+var NONE2 = "  (none)";
+var MODEL_KIND_LIST = "would, request, did, denied, and note";
+var usage2 = (err) => {
+  err(`usage: ${LOOP_USAGE_LINE}`);
+  return 1;
+};
+var refuse5 = (err, issues) => {
+  for (const issue of issues)
+    err(issue);
+  return 1;
+};
+var nameRefusal = (name) => isProfileName(name) ? undefined : `"${name}" is not a loop name: use ${PROFILE_NAME_RULE}`;
+var oneLine3 = (text) => text.replace(/\s*[\r\n]\s*/g, " ");
+var stringOr = (value) => typeof value === "string" ? value : undefined;
+var plural = (count2, noun) => `${count2} ${noun}${count2 === 1 ? "" : "s"}`;
+var depsOf = (lenv) => ({
+  env: lenv.env,
+  cwd: lenv.cwd,
+  home: lenv.home,
+  runGit: lenv.runGit,
+  managedFile: lenv.managedFile
+});
+var loopDirOf = (lenv, name) => path48.join(loopsRoot(lenv.env, lenv.cwd, lenv.home), name);
+function classesText(manifest) {
+  const classes = Object.entries(manifest.mandate.classes).map(([name, cls]) => `${name} (${cls.state})`);
+  return classes.length === 0 ? "(none)" : classes.join(", ");
+}
+function listLine(name, check2) {
+  const verdict = check2.issues.length === 0 ? "ok" : `refused: ${plural(check2.issues.length, "issue")} (sidekick loop show ${name} lists them)`;
+  const { manifest } = check2;
+  if (manifest === undefined)
+    return `${name}  ${verdict}`;
+  return [
+    name,
+    `repo: ${oneLine3(manifest.repo)}`,
+    `profile: ${manifest.profile}`,
+    `schedule: ${manifest.schedule}`,
+    `classes: ${classesText(manifest)}`,
+    verdict
+  ].join("  ");
+}
+var list2 = (rest2, lenv, out, err) => {
+  if (rest2.length > 0)
+    return usage2(err);
+  const root = loopsRoot(lenv.env, lenv.cwd, lenv.home);
+  const names = loopNames(root);
+  if (names.length === 0) {
+    out(`the loop store ${root} holds no loop`);
+    return 0;
+  }
+  const checked2 = names.map((name) => ({
+    name,
+    check: checkLoop(name, depsOf(lenv))
+  }));
+  for (const { name, check: check2 } of checked2)
+    out(listLine(name, check2));
+  return checked2.some(({ check: check2 }) => check2.issues.length > 0) ? 1 : 0;
+};
+var section2 = (title, entries) => [
+  title,
+  ...entries.length === 0 ? [NONE2] : entries.map((entry) => `  ${entry}`)
+];
+var field = (key, value) => `${key}: ${typeof value === "string" ? oneLine3(value) : JSON.stringify(value)}`;
+function definitionLines(file, manifest) {
+  const title = `definition (${file}):`;
+  if (manifest === undefined) {
+    return [
+      title,
+      `  not shown: ${LOOP_FILE} did not load; the issues say why`
+    ];
+  }
+  const { mandate, ...top } = manifest;
+  const classes = Object.entries(mandate.classes);
+  return section2(title, [
+    ...Object.entries(top).map(([key, value]) => field(key, value)),
+    field("mandate.reads", mandate.reads),
+    ...classes.length === 0 ? [field("mandate.classes", {})] : classes.map(([name, cls]) => field(`mandate.classes.${name}`, cls)),
+    field("mandate.never", mandate.never)
+  ]);
+}
+var unitText = (unit2) => unit2 === undefined ? undefined : `unit ${unit2}`;
+function recordParts(line) {
+  switch (line.kind) {
+    case "would":
+    case "request":
+    case "did":
+    case "denied":
+      return [
+        line.class === undefined ? undefined : `class ${line.class}`,
+        line.command,
+        unitText(line.unit)
+      ];
+    case "note":
+      return [line.summary, unitText(line.unit)];
+    case "dispatched":
+      return [
+        line.record === true ? "under start --record" : undefined,
+        unitText(line.unit)
+      ];
+    case "landed":
+      return [`commit ${line.commit}`, unitText(line.unit)];
+    case "failed":
+    case "discarded":
+      return [line.reason, unitText(line.unit)];
+    default: {
+      const unhandled = line;
+      throw new Error(`unhandled record ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+var recordText = (line) => [localMinute(new Date(line.at)), line.kind, ...recordParts(line)].filter((part) => part !== undefined).map(oneLine3).join("  ");
+function recordLines(dir, since, until) {
+  const { lines, skipped } = readRecords2(dir, since, until);
+  return [
+    ...section2(`records since ${localMinute(since)}:`, lines.map(recordText)),
+    ...skipped === 0 ? [] : [`  skipped ${plural(skipped, "line")} that did not parse`]
+  ];
+}
+var DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+function localMidnight(text) {
+  const match = DATE.exec(text);
+  if (match === null)
+    return;
+  const [, year, month, day] = match.map(Number);
+  const midnight = new Date(year, month - 1, day);
+  return localDate(midnight) === text ? midnight : undefined;
+}
+function listingOf(check2, lenv) {
+  const { manifest, profile } = check2;
+  if (manifest === undefined || profile === undefined) {
+    return {
+      lines: [
+        "not listed: the listing needs a loop.json that parses and a profile that loads"
+      ],
+      warnings: []
+    };
+  }
+  return inheritedListing(manifest, profile, {
+    runClaude: lenv.runClaude,
+    configDir: configDir(lenv.env, lenv.cwd, lenv.home),
+    home: lenv.home,
+    managedFile: lenv.managedFile
+  });
+}
+function sinceOf(text, now) {
+  if (text === undefined) {
+    return { ok: true, since: new Date(now.getTime() - DAY_MS2) };
+  }
+  const midnight = localMidnight(text);
+  return midnight === undefined ? {
+    ok: false,
+    issue: `--since takes a local date as YYYY-MM-DD, got "${text}"`
+  } : { ok: true, since: midnight };
+}
+var show2 = (rest2, lenv, out, err) => {
+  const parsed = parseFlags(rest2, { since: { type: "string" } });
+  if (parsed === undefined || parsed.positionals.length !== 1) {
+    return usage2(err);
+  }
+  const now = lenv.now();
+  const window = sinceOf(stringOr(parsed.values.since), now);
+  if (!window.ok) {
+    err(window.issue);
+    return usage2(err);
+  }
+  const { since } = window;
+  const [name] = parsed.positionals;
+  const refusal2 = nameRefusal(name);
+  if (refusal2 !== undefined)
+    return refuse5(err, [refusal2]);
+  const check2 = checkLoop(name, depsOf(lenv));
+  const listing = listingOf(check2, lenv);
+  const definition = definitionLines(path48.join(check2.dir, LOOP_FILE), check2.manifest);
+  const issues = section2("issues:", check2.issues);
+  const refused = check2.issues.length > 0;
+  const lines = [
+    ...refused ? [...issues, ...definition] : [...definition, ...issues],
+    ...section2("warnings:", [...check2.warnings, ...listing.warnings]),
+    ...section2("inherited beyond the mandate:", listing.lines),
+    ...recordLines(check2.dir, since, now)
+  ];
+  for (const line of lines)
+    out(line);
+  return refused ? 1 : 0;
+};
+var VERB_WRITERS = {
+  dispatched: "only sidekick loop dispatch writes it",
+  landed: "only sidekick loop land writes it",
+  failed: "only sidekick loop reap and sidekick loop land write it",
+  discarded: "only sidekick loop discard and sidekick loop reap write it"
+};
+var isModelKind = (kind) => MODEL_KINDS.some((known) => known === kind);
+var isVerbKind = (kind) => Object.hasOwn(VERB_WRITERS, kind);
+var FLAG_NEEDS = {
+  would: { class: "required", command: "required" },
+  request: { class: "optional", command: "required" },
+  did: { class: "required", command: "required" },
+  denied: { class: "optional", command: "required" },
+  note: { class: "refused", command: "refused" }
+};
+var RECORD_FLAGS = {
+  kind: { type: "string" },
+  summary: { type: "string" },
+  class: { type: "string" },
+  command: { type: "string" },
+  unit: { type: "string" }
+};
+function parseRecordArgs(rest2) {
+  const parsed = parseFlags(rest2, RECORD_FLAGS);
+  if (parsed === undefined || parsed.positionals.length !== 1)
+    return;
+  const kind = stringOr(parsed.values.kind);
+  const summary2 = stringOr(parsed.values.summary);
+  if (kind === undefined || summary2 === undefined)
+    return;
+  return {
+    name: parsed.positionals[0],
+    args: {
+      kind,
+      summary: summary2,
+      class: stringOr(parsed.values.class),
+      command: stringOr(parsed.values.command),
+      unit: stringOr(parsed.values.unit)
+    }
+  };
+}
+function kindRefusal(kind) {
+  const writer = isVerbKind(kind) ? `${VERB_WRITERS[kind]}, since the caps count it; ` : "";
+  return `--kind ${kind}: ${writer}record writes ${MODEL_KIND_LIST}`;
+}
+function flagRefusals(kind, args) {
+  const needs = FLAG_NEEDS[kind];
+  return ["class", "command"].flatMap((flag) => {
+    const given = args[flag] !== undefined;
+    if (needs[flag] === "required" && !given) {
+      return [`--kind ${kind} needs --${flag}`];
+    }
+    if (needs[flag] === "refused" && given) {
+      return [
+        `--kind ${kind} takes no --${flag}: its line holds a summary alone`
+      ];
+    }
+    return [];
+  });
+}
+function keyRefusals(args) {
+  return ["summary", "command", "class", "unit"].flatMap((flag) => {
+    const text = args[flag];
+    const ids = text === undefined ? [] : keyHits(text);
+    return ids.length === 0 ? [] : [
+      `--${flag} holds text that looks like a key (${ids.join(", ")}): keep keys out of the record`
+    ];
+  });
+}
+function argRefusals({ name, args }) {
+  const refusal2 = nameRefusal(name);
+  if (refusal2 !== undefined)
+    return [refusal2];
+  if (!isModelKind(args.kind))
+    return [kindRefusal(args.kind)];
+  return [...flagRefusals(args.kind, args), ...keyRefusals(args)];
+}
+function lineOf2(args, at2) {
+  const candidate = {
+    v: 1,
+    at: at2.toISOString(),
+    kind: args.kind,
+    summary: args.summary,
+    ...args.class === undefined ? {} : { class: args.class },
+    ...args.command === undefined ? {} : { command: args.command },
+    ...args.unit === undefined ? {} : { unit: args.unit }
+  };
+  const parsed = safeParse(RecordLineSchema, candidate);
+  if (parsed.success)
+    return { line: parsed.output };
+  return {
+    issues: parsed.issues.map((issue) => `--${getDotPath(issue) ?? "kind"}: ${issue.message}`)
+  };
+}
+function mandateRefusals(file, manifest, line) {
+  if (!("class" in line) || line.class === undefined)
+    return [];
+  const { classes } = manifest.mandate;
+  const named = line.class;
+  if (!Object.hasOwn(classes, named)) {
+    return [
+      `--class ${named}: ${file} names no class "${named}" in mandate.classes; record checks loop.json as it is now, so a class removed since the loop started refuses until its next start`
+    ];
+  }
+  const { state } = classes[named];
+  if (line.kind === "did" && state !== "act") {
+    return [
+      `--kind did: class "${named}" is in state ${state} in ${file}; did needs a class in act, so record it as would or ask with request`
+    ];
+  }
+  return [];
+}
+function successLine(dir, cron, line) {
+  if (line.kind !== "request")
+    return `recorded ${line.kind}`;
+  const key = { class: line.class, command: line.command, unit: line.unit };
+  return isNewRequest(dir, cron, key, new Date(line.at)) ? "new request" : "repeat request";
+}
+var record2 = (rest2, lenv, out, err) => {
+  const call = parseRecordArgs(rest2);
+  if (call === undefined)
+    return usage2(err);
+  const refusals = argRefusals(call);
+  if (refusals.length > 0)
+    return refuse5(err, refusals);
+  const built = lineOf2(call.args, lenv.now());
+  if ("issues" in built)
+    return refuse5(err, built.issues);
+  const dir = loopDirOf(lenv, call.name);
+  const file = path48.join(dir, LOOP_FILE);
+  const read = readLoopManifest(file);
+  if (!read.ok)
+    return refuse5(err, read.issues);
+  const { line } = built;
+  const mandate = mandateRefusals(file, read.manifest, line);
+  if (mandate.length > 0)
+    return refuse5(err, mandate);
+  const cron = parseCron(read.manifest.schedule);
+  if (!cron.ok)
+    return refuse5(err, [`${file}: schedule: ${cron.issue}`]);
+  const printed2 = successLine(dir, cron.cron, line);
+  appendRecord(dir, line);
+  out(printed2);
+  return 0;
+};
+var VERBS3 = { list: list2, show: show2, record: record2 };
+function runLoopCli(args, lenv, out, err) {
+  const [verb, ...rest2] = args;
+  if (verb === undefined || !Object.hasOwn(VERBS3, verb))
+    return usage2(err);
+  return VERBS3[verb](rest2, lenv, out, err);
+}
+
+// bin/helpers/memory.ts
+import * as fs40 from "node:fs";
+import * as path50 from "node:path";
+
 // bin/helpers/memory-link.ts
-import * as fs34 from "node:fs";
-import * as path41 from "node:path";
+import * as fs39 from "node:fs";
+import * as path49 from "node:path";
 var messageOf4 = (error) => error instanceof Error ? error.message : String(error);
 function runLink(opts, deps, out, err) {
   const gathered = gather2(opts, deps);
@@ -8802,14 +10382,14 @@ function runAction(action, runGit) {
       return finished.ok ? done : finished;
     }
     case "createFolder":
-      fs34.mkdirSync(action.folder, { recursive: true });
+      fs39.mkdirSync(action.folder, { recursive: true });
       return done;
     case "writeMarker":
       writeMarker(action.folder, action.root);
       return done;
     case "copyFile":
-      fs34.mkdirSync(path41.dirname(action.to), { recursive: true });
-      fs34.copyFileSync(action.from, action.to, fs34.constants.COPYFILE_EXCL);
+      fs39.mkdirSync(path49.dirname(action.to), { recursive: true });
+      fs39.copyFileSync(action.from, action.to, fs39.constants.COPYFILE_EXCL);
       return done;
     case "mergeKey": {
       const merged = mergeKey(action.file, action.value, action.expected);
@@ -8818,7 +10398,7 @@ function runAction(action, runGit) {
     case "archiveDefault":
       return archive(action);
     case "commit":
-      return commit(action, runGit);
+      return commit2(action, runGit);
     default: {
       const unhandled = action;
       throw new Error(`Unhandled action: ${JSON.stringify(unhandled)}`);
@@ -8826,28 +10406,28 @@ function runAction(action, runGit) {
   }
 }
 function archive(action) {
-  const kept = walkFolder(action.from).files.filter((rel) => copyState(path41.join(action.from, rel), path41.join(action.copies, rel)) !== "same");
+  const kept = walkFolder(action.from).files.filter((rel) => copyState(path49.join(action.from, rel), path49.join(action.copies, rel)) !== "same");
   moveFolder(action.from, action.to);
-  const listed = kept.map((rel) => `  ${path41.join(action.to, rel)}`);
+  const listed = kept.map((rel) => `  ${path49.join(action.to, rel)}`);
   if (kept.length === 0)
     return { ok: true, lines: [phrase(action).done] };
   const why = action.reappeared ? `The default folder came back after the link. These files in it differ from ${action.copies} or are missing there, so merge what is new by hand:` : `These files changed after the copy, so their latest version is kept in the archive only:`;
   return { ok: true, lines: [phrase(action).done, why, ...listed] };
 }
 var FS_MOVES = {
-  rename: fs34.renameSync,
-  copy: (from, to) => fs34.cpSync(from, to, {
+  rename: fs39.renameSync,
+  copy: (from, to) => fs39.cpSync(from, to, {
     recursive: true,
     errorOnExist: true,
     force: false,
     verbatimSymlinks: true,
     preserveTimestamps: true
   }),
-  remove: (folder) => fs34.rmSync(folder, { recursive: true })
+  remove: (folder) => fs39.rmSync(folder, { recursive: true })
 };
 function moveFolder(from, to, moves = {}) {
   const { rename, copy, remove } = { ...FS_MOVES, ...moves };
-  fs34.mkdirSync(path41.dirname(to), { recursive: true });
+  fs39.mkdirSync(path49.dirname(to), { recursive: true });
   try {
     rename(from, to);
   } catch (error) {
@@ -8862,7 +10442,7 @@ function moveFolder(from, to, moves = {}) {
 var hasCode = (error, code) => error instanceof Error && ("code" in error) && error.code === code;
 function claim(from, to) {
   try {
-    fs34.mkdirSync(to);
+    fs39.mkdirSync(to);
   } catch (error) {
     const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf4(error)}`;
     throw new Error(message, { cause: error });
@@ -8872,10 +10452,10 @@ function copyInto(from, to, copy, remove) {
   try {
     copy(from, to);
   } catch (error) {
-    const reason6 = messageOf4(error);
+    const reason7 = messageOf4(error);
     const failed = `copying across filesystems failed, so link left ${from} intact`;
     const leftover = removeOrSayWhy(to, remove);
-    const message = leftover === undefined ? `${failed} and removed its partial copy at ${to}: ${reason6}` : `${failed}: ${reason6}. link could not remove its partial copy either, so delete ${to} by hand: ${leftover}`;
+    const message = leftover === undefined ? `${failed} and removed its partial copy at ${to}: ${reason7}` : `${failed}: ${reason7}. link could not remove its partial copy either, so delete ${to} by hand: ${leftover}`;
     throw new Error(message, { cause: error });
   }
 }
@@ -8894,10 +10474,10 @@ function keepIfChanged(from, to) {
   throw new Error(`${from} changed during the copy, so link kept it: ${changed.join(", ")}. ${to} holds the copy taken at the move, and a re-run archives what ${from} now holds.`);
 }
 function changedSince(from, to) {
-  return fs34.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
-    const source = path41.join(from, entry.name);
-    const copy = path41.join(to, entry.name);
-    const copied = fs34.lstatSync(copy, { throwIfNoEntry: false });
+  return fs39.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+    const source = path49.join(from, entry.name);
+    const copy = path49.join(to, entry.name);
+    const copied = fs39.lstatSync(copy, { throwIfNoEntry: false });
     if (entry.isDirectory() && copied?.isDirectory() === true) {
       return changedSince(source, copy);
     }
@@ -8906,10 +10486,10 @@ function changedSince(from, to) {
 }
 function sameEntry(entry, source, copy, copied) {
   if (entry.isSymbolicLink()) {
-    return copied.isSymbolicLink() && fs34.readlinkSync(source) === fs34.readlinkSync(copy);
+    return copied.isSymbolicLink() && fs39.readlinkSync(source) === fs39.readlinkSync(copy);
   }
   if (entry.isFile()) {
-    return copied.isFile() && fs34.readFileSync(source).equals(fs34.readFileSync(copy));
+    return copied.isFile() && fs39.readFileSync(source).equals(fs39.readFileSync(copy));
   }
   return false;
 }
@@ -8920,7 +10500,7 @@ function removeSource(from, to, remove) {
     throw new Error(`the copy at ${to} is whole, but removing ${from} failed: ${messageOf4(error)}. Keep ${to}; a re-run archives what is left of ${from}.`, { cause: error });
   }
 }
-function commit(action, runGit) {
+function commit2(action, runGit) {
   const changes = ownedChanges(action.store, action.owned, runGit);
   if ("issue" in changes)
     return { ok: false, issue: changes.issue };
@@ -8947,7 +10527,7 @@ function phrase(action) {
     case "createFolder":
       return forms("Created", "create", action.folder);
     case "writeMarker":
-      return forms("Wrote", "write", `${path41.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
+      return forms("Wrote", "write", `${path49.join(action.folder, MARKER_FILE)}, naming ${action.root}`);
     case "copyFile":
       return forms("Copied", "copy", `${action.from} to ${action.to}`);
     case "mergeKey":
@@ -8990,7 +10570,7 @@ function envWithAbsoluteStore(env, cwd) {
   const store = env.SIDEKICK_MEMORY_STORE;
   if (store === undefined || store === "")
     return env;
-  return { ...env, SIDEKICK_MEMORY_STORE: path42.resolve(cwd, store) };
+  return { ...env, SIDEKICK_MEMORY_STORE: path50.resolve(cwd, store) };
 }
 function parseSnapshotArgs(rest2) {
   const parsed = parseFlags(rest2, {
@@ -8999,7 +10579,7 @@ function parseSnapshotArgs(rest2) {
     source: { type: "string" }
   });
   const { store, session, source } = parsed?.values ?? {};
-  if (typeof store === "string" && path42.isAbsolute(store) && typeof session === "string" && typeof source === "string") {
+  if (typeof store === "string" && path50.isAbsolute(store) && typeof session === "string" && typeof source === "string") {
     return { store, session, source };
   }
   return;
@@ -9062,9 +10642,9 @@ function withheldFindings(result, store) {
 }
 function isReadableDirectory(dir) {
   try {
-    if (!fs35.statSync(dir).isDirectory())
+    if (!fs40.statSync(dir).isDirectory())
       return false;
-    fs35.readdirSync(dir);
+    fs40.readdirSync(dir);
     return true;
   } catch {
     return false;
@@ -9118,7 +10698,7 @@ function runMemoryCli(argv2, ctx, out, err) {
     return 1;
   }
   const env = envWithAbsoluteStore(ctx.env, ctx.cwd);
-  return runLink({ ...parsed, repo: path42.resolve(ctx.cwd, parsed.repo) }, {
+  return runLink({ ...parsed, repo: path50.resolve(ctx.cwd, parsed.repo) }, {
     env,
     home: ctx.home,
     configDir: configDirOf(env, ctx.home),
@@ -9167,9 +10747,9 @@ function doneSegment(count2) {
 function waitingSegments(done) {
   return done.filter((pl) => pl.issues.some((i) => i.awaitsRelease)).map((pl) => `plan ${cut(pl.name)} waits for ${awaitingRefs(pl)}`);
 }
-function planCandidatesLine(v, list2) {
-  const inState = (state) => list2.filter((pl) => pl.state === state);
-  const next = list2.find((pl) => pl.state === "next");
+function planCandidatesLine(v, list3) {
+  const inState = (state) => list3.filter((pl) => pl.state === state);
+  const next = list3.find((pl) => pl.state === "next");
   const later = inState("later");
   const openCount = (pl) => pl.issues.filter(isOpenWork).length;
   const unplanned = v.unplanned.map((i) => `#${i.number}`).join(", ");
@@ -9301,7 +10881,7 @@ var PREDICATES2 = {
 function lintAll(input) {
   const entries = LINT_IDS.map((id) => [id, PREDICATES2[id](input)]);
   const findings = Object.fromEntries(entries);
-  const counts = Object.fromEntries(entries.map(([id, list2]) => [id, list2.length]));
+  const counts = Object.fromEntries(entries.map(([id, list3]) => [id, list3.length]));
   return { findings, counts };
 }
 
@@ -9379,7 +10959,7 @@ function planNode(plan) {
     children: []
   };
 }
-function plural(count2, noun) {
+function plural2(count2, noun) {
   return `${count2} ${noun}${count2 === 1 ? "" : "s"}`;
 }
 function waitingPlans(done) {
@@ -9391,7 +10971,7 @@ function waitingPlans(done) {
 function foldNode(done) {
   if (done.length === 0)
     return [];
-  const text = `${plural(done.length, "plan")} done`;
+  const text = `${plural2(done.length, "plan")} done`;
   return [quiet("done", text, waitingPlans(done))];
 }
 function planNodes(view) {
@@ -9491,32 +11071,32 @@ function renderReport(r) {
 }
 
 // bin/helpers/rules.ts
-import * as fs38 from "node:fs";
-import * as path45 from "node:path";
+import * as fs43 from "node:fs";
+import * as path53 from "node:path";
 
 // bin/helpers/rules-fs.ts
-import * as fs36 from "node:fs";
-import * as path43 from "node:path";
+import * as fs41 from "node:fs";
+import * as path51 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
 function statusOf(dir, name) {
-  const st = fs36.lstatSync(path43.join(dir, name), { throwIfNoEntry: false });
+  const st = fs41.lstatSync(path51.join(dir, name), { throwIfNoEntry: false });
   if (!st)
     return "absent";
   return st.isFile() ? "file" : "other";
 }
 var isRegularFile = (dir, name) => statusOf(dir, name) === "file";
 function ownedRulesIn(dir) {
-  const dirStat = fs36.statSync(dir, { throwIfNoEntry: false });
+  const dirStat = fs41.statSync(dir, { throwIfNoEntry: false });
   if (!dirStat)
     return [];
   if (!dirStat.isDirectory())
     return [];
-  return fs36.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
+  return fs41.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
 }
 
 // bin/helpers/rules-overlap.ts
-import * as fs37 from "node:fs";
-import * as path44 from "node:path";
+import * as fs42 from "node:fs";
+import * as path52 from "node:path";
 var MIN_SHARED_HEADINGS = 2;
 var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
 function headingsOf(body) {
@@ -9552,20 +11132,20 @@ function signalsFor(file, body, rule) {
 }
 function findOverlap(src, dest) {
   const report2 = { pairs: [], extensions: [] };
-  const destStat = fs37.statSync(dest, { throwIfNoEntry: false });
+  const destStat = fs42.statSync(dest, { throwIfNoEntry: false });
   if (!destStat?.isDirectory())
     return report2;
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs37.readFileSync(path44.join(src, name), "utf-8");
+    const body = fs42.readFileSync(path52.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
       opening: openingOf(body)
     };
   });
-  const others = fs37.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
+  const others = fs42.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   for (const file of others) {
-    const body = fs37.readFileSync(path44.join(dest, file), "utf-8");
+    const body = fs42.readFileSync(path52.join(dest, file), "utf-8");
     for (const rule of rules) {
       const signals = signalsFor(file, body, rule);
       if (signals.length === 0)
@@ -9604,7 +11184,7 @@ function formatOverlap(report2) {
 
 // bin/helpers/rules.ts
 function resolveDest(scope, cwd, claudeHome) {
-  return scope === "project" ? path45.join(cwd, ".claude", "rules") : path45.join(claudeHome, "rules");
+  return scope === "project" ? path53.join(cwd, ".claude", "rules") : path53.join(claudeHome, "rules");
 }
 function workTreeRootOf(cwd) {
   const result = execRunner("git", ["rev-parse", "--show-toplevel"], cwd);
@@ -9628,17 +11208,17 @@ var PLUGIN_ONLY_RULES = [
   "sk-memory.md"
 ];
 var isRecord8 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-var errorText = (e) => e instanceof Error ? e.message : String(e);
+var errorText3 = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
-  const file = path45.join(root, ".claude", "settings.json");
+  const file = path53.join(root, ".claude", "settings.json");
   let text;
   try {
-    text = fs38.readFileSync(file, "utf-8");
+    text = fs43.readFileSync(file, "utf-8");
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { state: "not-enabled" };
     }
-    return { state: "unreadable", path: file, reason: errorText(e) };
+    return { state: "unreadable", path: file, reason: errorText3(e) };
   }
   if (text.trim() === "")
     return { state: "not-enabled" };
@@ -9646,7 +11226,7 @@ function pluginEnablement(root) {
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    return { state: "unreadable", path: file, reason: errorText(e) };
+    return { state: "unreadable", path: file, reason: errorText3(e) };
   }
   if (!isRecord8(parsed)) {
     return { state: "unreadable", path: file, reason: "not a JSON object" };
@@ -9681,9 +11261,9 @@ function installRules(src, dest, scope = EVERY_RULE) {
     return { installed: [], removed: [], leftOut: [], skipped: [] };
   }
   const set = shippedOnly(scope, shipped);
-  fs38.mkdirSync(dest, { recursive: true });
+  fs43.mkdirSync(dest, { recursive: true });
   const byLowerCase = new Map;
-  for (const existing of fs38.readdirSync(dest)) {
+  for (const existing of fs43.readdirSync(dest)) {
     byLowerCase.set(existing.toLowerCase(), existing);
   }
   const installed = [];
@@ -9698,7 +11278,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
       skipped.push({ name, why: "not-a-regular-file" });
       continue;
     }
-    fs38.copyFileSync(path45.join(src, name), path45.join(dest, name));
+    fs43.copyFileSync(path53.join(src, name), path53.join(dest, name));
     installed.push(name);
   }
   const keep = new Set(shipped);
@@ -9706,7 +11286,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
   const removed = owned.filter((n) => !keep.has(n));
   const leftOut = owned.filter((n) => set.leaveOut.includes(n));
   for (const name of [...removed, ...leftOut]) {
-    fs38.rmSync(path45.join(dest, name));
+    fs43.rmSync(path53.join(dest, name));
   }
   return { installed, removed, leftOut, skipped };
 }
@@ -9717,12 +11297,12 @@ function checkRules(src, dest, scope = EVERY_RULE) {
   const installed = ownedRulesIn(dest);
   const drift = [];
   for (const name of expected) {
-    const there = path45.join(dest, name);
-    if (!fs38.existsSync(there)) {
+    const there = path53.join(dest, name);
+    if (!fs43.existsSync(there)) {
       drift.push({ kind: "missing", name });
       continue;
     }
-    const same = fs38.readFileSync(path45.join(src, name)).equals(fs38.readFileSync(there));
+    const same = fs43.readFileSync(path53.join(src, name)).equals(fs43.readFileSync(there));
     if (!same)
       drift.push({ kind: "stale", name });
   }
@@ -9775,9 +11355,9 @@ function scopeSet(scope, root) {
 var deliveryMode = (projectDest) => ownedRulesIn(projectDest).length > 0 ? "project" : "user";
 var realOrSelf = (p) => {
   try {
-    return fs38.realpathSync(p);
+    return fs43.realpathSync(p);
   } catch {
-    return path45.resolve(p);
+    return path53.resolve(p);
   }
 };
 var sameDir = (a, b) => realOrSelf(a) === realOrSelf(b);
@@ -9802,7 +11382,7 @@ function reportDuplicates(expected, dest, userDest, out) {
   out(`your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`);
 }
 function refuseNonDirectory(dir, out) {
-  const st = fs38.statSync(dir, { throwIfNoEntry: false });
+  const st = fs43.statSync(dir, { throwIfNoEntry: false });
   if (!st || st.isDirectory())
     return false;
   out(`${dir} exists and is not a directory; refusing to write rules there`);
@@ -9889,9 +11469,9 @@ function discover(run, cwd, warn2) {
     throw new PmError(2, "gh not found on PATH");
   const root = repoRootOf(cwd, warn2);
   const preflight = preflightOf(gh.version);
-  const untracked = (reason6, fields = {}) => ({
+  const untracked = (reason7, fields = {}) => ({
     tracked: false,
-    reason: reason6,
+    reason: reason7,
     owner: fields.owner ?? null,
     repo: fields.repo ?? null,
     project: null,
@@ -9955,7 +11535,7 @@ function discover(run, cwd, warn2) {
 }
 var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report|--glance] [--milestone <title>]";
 var PM_USAGE = `usage: ${PM_USAGE_LINE}`;
-var VERBS3 = new Set(["board", "pickup", "lint", "gate"]);
+var VERBS4 = new Set(["board", "pickup", "lint", "gate"]);
 function releaseChecks(run, cwd, board, ms) {
   if (parsePlansHeader(ms.description).parse !== "ok")
     return new Set;
@@ -9963,16 +11543,16 @@ function releaseChecks(run, cwd, board, ms) {
   return new Set(bodies.filter((b) => awaitsReleaseCheck(b.body)).map((b) => b.number));
 }
 function milestoneFlag(args) {
-  const at = args.findIndex((a) => a === "--milestone" || a.startsWith("--milestone="));
-  if (at < 0)
+  const at2 = args.findIndex((a) => a === "--milestone" || a.startsWith("--milestone="));
+  if (at2 < 0)
     return { title: undefined, invalid: false };
-  const title = args[at].startsWith("--milestone=") ? args[at].slice("--milestone=".length) : args[at + 1];
+  const title = args[at2].startsWith("--milestone=") ? args[at2].slice("--milestone=".length) : args[at2 + 1];
   const usable = title !== undefined && title !== "" && !title.startsWith("--");
   return usable ? { title, invalid: false } : { title: undefined, invalid: true };
 }
 function runPmCli(args, env, out, err) {
   const [verb, ...rest2] = args;
-  if (!verb || !VERBS3.has(verb)) {
+  if (!verb || !VERBS4.has(verb)) {
     err(PM_USAGE);
     return 1;
   }
@@ -10204,8 +11784,8 @@ function drift(run, root, inProgress2, inProgressSplit = []) {
     ], root);
     if (r.code === 0) {
       try {
-        const list2 = safeParse(OpenPrList, JSON.parse(r.stdout));
-        open_pr = list2.success ? list2.output[0] ?? null : null;
+        const list3 = safeParse(OpenPrList, JSON.parse(r.stdout));
+        open_pr = list3.success ? list3.output[0] ?? null : null;
       } catch {
         open_pr = null;
       }
@@ -10269,8 +11849,8 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 }
 
 // bin/helpers/worker-dispatch-checks.ts
-import * as fs39 from "node:fs";
-import * as path46 from "node:path";
+import * as fs44 from "node:fs";
+import * as path54 from "node:path";
 
 // bin/helpers/worker-facts.ts
 function checkoutFacts(runGit, cwd) {
@@ -10406,11 +11986,11 @@ var placeIssues = (brief) => brief.place === "worktree" ? [] : [
 ];
 var NO_COMMIT = "baseline: this checkout's HEAD has no commit yet";
 function baselineIssues(runGit, top, baseline) {
-  const head = headCommit(runGit, top);
-  if (head === undefined)
+  const head2 = headCommit(runGit, top);
+  if (head2 === undefined)
     return [NO_COMMIT];
-  return commitOf(runGit, top, baseline) === head ? [] : [
-    `baseline: ${baseline} does not resolve to this checkout's HEAD (${head})`
+  return commitOf(runGit, top, baseline) === head2 ? [] : [
+    `baseline: ${baseline} does not resolve to this checkout's HEAD (${head2})`
   ];
 }
 var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
@@ -10420,7 +12000,7 @@ function treeNameIssues(runGit, top, name) {
   const folder = nativeFolder(top, name);
   const branch = nativeBranch(name);
   return [
-    ...fs39.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...fs44.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [
       `name: the branch ${branch} already exists: once you have checked that its commits have landed, delete it with git branch -D ${branch}, or dispatch under another name`
     ] : []
@@ -10479,7 +12059,7 @@ function missingProfileHint(name, penv) {
   if (oldStoreIssues(penv.env, penv.cwd, penv.home).length > 0)
     return [];
   const roots = storeRoots("profiles", penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder3(path46.join(root.dir, name)));
+  const held = roots.some((root) => isFolder3(path54.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv, main, reads) {
@@ -10523,11 +12103,11 @@ function checkDispatch(brief, briefPath, opts, wenv) {
     return { issues: [insideWorkerIssue] };
   }
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
-  const at = "issues" in facts ? wenv.cwd : facts.launchTop;
-  const listed = listJobs(wenv.runClaude, at);
+  const at2 = "issues" in facts ? wenv.cwd : facts.launchTop;
+  const listed = listJobs(wenv.runClaude, at2);
   const main = resolveMain(wenv.env, "jobs" in listed ? listed.jobs : undefined);
   const reads = [briefPath, brief.plan, brief.spec, brief.rulings];
-  const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at }, main?.value, reads);
+  const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at2 }, main?.value, reads);
   const issues = [
     ..."issues" in facts ? facts.issues : checkoutIssues(brief, briefPath, opts, wenv.runGit, facts),
     ...placeIssues(brief),
@@ -10552,37 +12132,37 @@ function checkDispatch(brief, briefPath, opts, wenv) {
     main
   };
 }
-var whereLine = (branch, head) => branch ?? `detached HEAD at ${head.slice(0, SHORT_SHA)}`;
+var whereLine = (branch, head2) => branch ?? `detached HEAD at ${head2.slice(0, SHORT_SHA)}`;
 function checkOnly(opts, wenv) {
   if (wenv.env.SIDEKICK_WORKER !== undefined) {
     return { issues: [insideWorkerIssue] };
   }
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
-  const at = "issues" in facts ? wenv.cwd : facts.launchTop;
-  const head = "issues" in facts ? undefined : headCommit(wenv.runGit, at);
-  const prepared = prepareProfile(opts, path46.join(at, CHECK_BRIEF), { ...wenv, cwd: at }, undefined, []);
+  const at2 = "issues" in facts ? wenv.cwd : facts.launchTop;
+  const head2 = "issues" in facts ? undefined : headCommit(wenv.runGit, at2);
+  const prepared = prepareProfile(opts, path54.join(at2, CHECK_BRIEF), { ...wenv, cwd: at2 }, undefined, []);
   const issues = [
     ..."issues" in facts ? facts.issues : [
-      ...head === undefined ? [NO_COMMIT] : [],
-      ...cleanIssues(wenv.runGit, at),
-      ...opts.allowPush ? [] : pushUrlIssues(wenv.runGit, at)
+      ...head2 === undefined ? [NO_COMMIT] : [],
+      ...cleanIssues(wenv.runGit, at2),
+      ...opts.allowPush ? [] : pushUrlIssues(wenv.runGit, at2)
     ],
     ...modeIssues(opts.mode),
     ...prepared.ok ? [] : prepared.issues
   ];
-  if ("issues" in facts || head === undefined)
+  if ("issues" in facts || head2 === undefined)
     return { issues };
   if (issues.length > 0 || opts.mode === undefined || !prepared.ok) {
     return { issues };
   }
   return {
-    line: `dispatch can run here: ${whereLine(facts.branch, head)}, profile ${opts.profile}, mode ${opts.mode}`,
+    line: `dispatch can run here: ${whereLine(facts.branch, head2)}, profile ${opts.profile}, mode ${opts.mode}`,
     notes: prepared.notes
   };
 }
 
 // bin/helpers/worker-dispatch-verify.ts
-import * as path47 from "node:path";
+import * as path55 from "node:path";
 function checkoutAt(input, cwd) {
   if (cwd === physical(input.launchTop)) {
     return `the launching checkout ${input.launchTop}`;
@@ -10604,7 +12184,7 @@ function landingOnce(input, jobId, readTimeoutMs) {
   if (row2.cwd === undefined) {
     return { kind: "missing", saw: `the job ${jobId} lists no cwd` };
   }
-  const cwd = physical(path47.resolve(input.launchTop, row2.cwd));
+  const cwd = physical(path55.resolve(input.launchTop, row2.cwd));
   const checkout = checkoutAt(input, cwd);
   if (checkout !== undefined)
     return { kind: "checkout", checkout };
@@ -10719,21 +12299,21 @@ function verifyWorktree(input) {
 }
 
 // bin/helpers/worker-exclude.ts
-import * as fs40 from "node:fs";
-import * as path48 from "node:path";
+import * as fs45 from "node:fs";
+import * as path56 from "node:path";
 var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
-var reason6 = (e) => e instanceof Error ? e.message : String(e);
-var isMissing4 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+var reason7 = (e) => e instanceof Error ? e.message : String(e);
+var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readExclude(file) {
   try {
-    return { text: fs40.readFileSync(file, "utf-8") };
+    return { text: fs45.readFileSync(file, "utf-8") };
   } catch (e) {
-    if (isMissing4(e))
+    if (isMissing5(e))
       return { text: "" };
     return {
       issues: [
-        `cannot read ${file}, where dispatch adds ${EXCLUDE_ENTRY}: ${reason6(e)}. Fix the file, then run dispatch again`
+        `cannot read ${file}, where dispatch adds ${EXCLUDE_ENTRY}: ${reason7(e)}. Fix the file, then run dispatch again`
       ]
     };
   }
@@ -10743,20 +12323,20 @@ function appendExclude(file, text) {
 `) ? "" : `
 `;
   try {
-    fs40.mkdirSync(path48.dirname(file), { recursive: true });
-    fs40.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+    fs45.mkdirSync(path56.dirname(file), { recursive: true });
+    fs45.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
 `);
     return [];
   } catch (e) {
     return [
-      `cannot add ${EXCLUDE_ENTRY} to ${file}: ${reason6(e)}. Fix the file, then run dispatch again`
+      `cannot add ${EXCLUDE_ENTRY} to ${file}: ${reason7(e)}. Fix the file, then run dispatch again`
     ];
   }
 }
 function ensureWorktreesExcluded(runGit, top, commonDir) {
   if (isIgnored(runGit, top))
     return { line: undefined };
-  const file = path48.join(commonDir, "info", "exclude");
+  const file = path56.join(commonDir, "info", "exclude");
   const read = readExclude(file);
   if ("issues" in read)
     return read;
@@ -10773,7 +12353,7 @@ function ensureWorktreesExcluded(runGit, top, commonDir) {
 var REMOVED = /^removed\b/;
 var DISCARD_LINE = /--discard-unpushed ([0-9a-f]{40})@([0-9a-f]+)/;
 var NO_LIMIT = 0;
-var claudeAt = (at, wenv, args, timeoutMs = 30000) => wenv.runClaude(args, { cwd: at.mainTop, timeoutMs });
+var claudeAt = (at2, wenv, args, timeoutMs = 30000) => wenv.runClaude(args, { cwd: at2.mainTop, timeoutMs });
 function withText(lead, result) {
   const text = printedStreams(result);
   return text.length > 0 ? [`${lead}:`, ...text] : [lead];
@@ -10800,7 +12380,7 @@ function landingLine(ready) {
   const from = ready.launchTop === ready.mainTop ? "" : ` · launched from ${ready.launchTop}`;
   return `lands in: ${target}${from}`;
 }
-function summary(ready) {
+function summary2(ready) {
   const { brief, mode } = ready;
   const pushes = ready.allowPush ? "pushes ALLOWED on the operator's word" : "pushes blocked";
   return [
@@ -10811,7 +12391,7 @@ function summary(ready) {
     `finish: sidekick worker finish ${shellArg(ready.briefPath)}`
   ];
 }
-var refuse4 = (err, issues) => {
+var refuse6 = (err, issues) => {
   for (const issue of issues)
     err(issue);
   return 1;
@@ -10846,7 +12426,7 @@ function refuseStray(ready, verdict, wenv, err) {
   const stop = `claude stop ${shellArg(verdict.job)}`;
   const stopFailed = stopStray(ready, verdict.job, wenv);
   const stopped = stopFailed.length === 0 ? `dispatch stopped the worker with ${stop}.` : `Stop the worker with ${stop}.`;
-  return refuse4(err, [
+  return refuse6(err, [
     ...verdict.lines,
     ...stopFailed,
     wayOut(ready, verdict, stopped)
@@ -10868,7 +12448,7 @@ function afterStart(ready, result, wenv, { out, err }) {
   if (verdict.kind === "mismatch") {
     return refuseStray(ready, verdict, wenv, err);
   }
-  for (const line of [...mainLines(ready, wenv), ...summary(ready)]) {
+  for (const line of [...mainLines(ready, wenv), ...summary2(ready)]) {
     out(line);
   }
   if (verdict.kind === "unchecked")
@@ -10880,7 +12460,7 @@ function launch2(ready, wenv, out, err) {
     err(note);
   const excluded = ensureWorktreesExcluded(wenv.runGit, ready.mainTop, ready.commonDir);
   if ("issues" in excluded)
-    return refuse4(err, excluded.issues);
+    return refuse6(err, excluded.issues);
   if (excluded.line !== undefined)
     out(excluded.line);
   const args = bgArgs(ready.args, {
@@ -10902,7 +12482,7 @@ function launch2(ready, wenv, out, err) {
 function runCheck(opts, wenv, out, err) {
   const checked2 = checkOnly(opts, wenv);
   if ("issues" in checked2)
-    return refuse4(err, checked2.issues);
+    return refuse6(err, checked2.issues);
   for (const note of checked2.notes)
     err(note);
   out(checked2.line);
@@ -10913,15 +12493,15 @@ function dispatch(opts, wenv, out, err) {
     return runCheck(opts, wenv, out, err);
   const read = readBrief(opts.brief);
   if ("issues" in read)
-    return refuse4(err, read.issues);
+    return refuse6(err, read.issues);
   const checked2 = checkDispatch(read.brief, read.path, opts, wenv);
   if ("issues" in checked2)
-    return refuse4(err, checked2.issues);
+    return refuse6(err, checked2.issues);
   return launch2(checked2, wenv, out, err);
 }
 
 // bin/helpers/worker-dispatch-args.ts
-import * as path49 from "node:path";
+import * as path57 from "node:path";
 var DEFAULT_WORKER_PROFILE = "worker";
 var stringFlag = (values, key) => {
   const value = values[key];
@@ -10957,13 +12537,13 @@ function parseDispatchArgs(rest2, cwd) {
   const shared = {
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path49.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path57.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
   return check2 ? { ...shared, check: true } : {
     ...shared,
     check: false,
-    brief: path49.resolve(cwd, parsed.positionals[0])
+    brief: path57.resolve(cwd, parsed.positionals[0])
   };
 }
 
@@ -10979,9 +12559,9 @@ var DOT = percent(46);
 function refSegment(name) {
   return [...Buffer.from(name, "utf8")].map(encodeByte).join("").replace(/^[.-]/, (char) => percent(char.charCodeAt(0))).replace(/\.(?=\.)/g, DOT).replace(/\.$/, DOT).replace(/\.lock$/, `${DOT}lock`);
 }
-var backupRef = (kind, name, head) => `refs/sidekick/${kind}/${refSegment(name)}/${head}`;
-function heldBackup(runGit, top, name, head) {
-  return BACKUP_KINDS.map((kind) => backupRef(kind, name, head)).find((ref2) => commitOf(runGit, top, ref2) === head);
+var backupRef = (kind, name, head2) => `refs/sidekick/${kind}/${refSegment(name)}/${head2}`;
+function heldBackup(runGit, top, name, head2) {
+  return BACKUP_KINDS.map((kind) => backupRef(kind, name, head2)).find((ref2) => commitOf(runGit, top, ref2) === head2);
 }
 function readyBackup(ready) {
   const { verdict } = ready;
@@ -10996,10 +12576,10 @@ function readyBackup(ready) {
     }
   }
 }
-function writeBackup(runGit, top, ref2, head) {
-  if (commitOf(runGit, top, ref2) === head)
+function writeBackup(runGit, top, ref2, head2) {
+  if (commitOf(runGit, top, ref2) === head2)
     return [];
-  const result = runGit("git", ["update-ref", ref2, head, ""], top);
+  const result = runGit("git", ["update-ref", ref2, head2, ""], top);
   if (result.code === 0)
     return [];
   return [`cannot keep ${ref2}: ${result.stderr.trim()}`];
@@ -11007,7 +12587,7 @@ function writeBackup(runGit, top, ref2, head) {
 var keepBackup = (ready, wenv) => writeBackup(wenv.runGit, ready.mainTop, readyBackup(ready), ready.head);
 
 // bin/helpers/worker-finish-args.ts
-import * as path50 from "node:path";
+import * as path58 from "node:path";
 var NEEDS_REPORT = "--name needs --no-report or --discard, since there is no brief to say where the run report goes";
 var NEEDS_INTO = "--name needs --into <rev> or --discard, since there is no brief to name the target";
 var stringFlag2 = (values, key) => {
@@ -11033,7 +12613,7 @@ function parseFinishArgs(rest2, cwd) {
   const shared = {
     noReport: values["no-report"] === true,
     mode: discard ? { kind: "discard" } : { kind: "landed", into },
-    worktree: worktree === undefined ? undefined : path50.resolve(cwd, worktree)
+    worktree: worktree === undefined ? undefined : path58.resolve(cwd, worktree)
   };
   const name = stringFlag2(values, "name");
   if (name !== undefined) {
@@ -11041,7 +12621,7 @@ function parseFinishArgs(rest2, cwd) {
   }
   if (positionals.length !== 1)
     return;
-  const brief = path50.resolve(cwd, positionals[0]);
+  const brief = path58.resolve(cwd, positionals[0]);
   return { subject: { kind: "brief", brief }, ...shared };
 }
 function byName3(name, shared) {
@@ -11103,8 +12683,8 @@ var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
-import * as fs41 from "node:fs";
-import * as path51 from "node:path";
+import * as fs46 from "node:fs";
+import * as path59 from "node:path";
 
 // bin/helpers/worker-finish-target.ts
 function targetName(runGit, top, rev) {
@@ -11199,19 +12779,19 @@ function missingBranchIssue(branch, opts, id) {
   }
 }
 function judgeFor(runGit, ctx, branch, opts, id) {
-  const { name, head } = branch;
-  if (head === undefined) {
+  const { name, head: head2 } = branch;
+  if (head2 === undefined) {
     return { issues: [missingBranchIssue(name, opts, id)] };
   }
   const { mode } = opts;
   switch (mode.kind) {
     case "discard":
-      return { kind: "discard", head };
+      return { kind: "discard", head: head2 };
     case "landed": {
       const target = resolveTarget2(runGit, ctx, mode.into, name);
       if ("issue" in target)
         return { issues: [target.issue] };
-      return { kind: "landed", head, target };
+      return { kind: "landed", head: head2, target };
     }
     default: {
       const unhandled = mode;
@@ -11220,8 +12800,8 @@ function judgeFor(runGit, ctx, branch, opts, id) {
   }
 }
 function landedVerdict(runGit, ctx, worker, opts) {
-  const { branch, head, target } = worker;
-  const landing2 = landedIn(runGit, ctx.mainTop, { target: target.sha, head });
+  const { branch, head: head2, target } = worker;
+  const landing2 = landedIn(runGit, ctx.mainTop, { target: target.sha, head: head2 });
   switch (landing2.kind) {
     case "landed":
       return { verdict: { kind: "landed", target, at: landing2.at } };
@@ -11234,7 +12814,7 @@ function landedVerdict(runGit, ctx, worker, opts) {
     case "not landed":
       return {
         issues: [
-          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head} is not there, and ${walkedText(landing2.walked, landing2.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(discardCommandFor(opts))}`
+          `${branch} has not landed in ${target.name} (${target.sha}): its head ${head2} is not there, and ${walkedText(landing2.walked, landing2.capped)}. Land it and run finish again; name the target with --into <rev>; ${discardRoute(discardCommandFor(opts))}`
         ]
       };
     default: {
@@ -11282,11 +12862,11 @@ function omittedWords(omitted) {
 
 // bin/helpers/worker-finish-tree.ts
 function onBranchIssues(runGit, worktree, branch, mode, discardCommand, id) {
-  const head = checkedOut(runGit, worktree);
-  if (head === `refs/heads/${branch}`)
+  const head2 = checkedOut(runGit, worktree);
+  if (head2 === `refs/heads/${branch}`)
     return [];
   return [
-    `the worktree ${worktree} has ${head} checked out, not ${branch}, ${offBranchReason(mode, branch)}: check out ${branch} there and run finish again; ${routeFor(mode, discardCommand, id)}`
+    `the worktree ${worktree} has ${head2} checked out, not ${branch}, ${offBranchReason(mode, branch)}: check out ${branch} there and run finish again; ${routeFor(mode, discardCommand, id)}`
   ];
 }
 function offBranchReason(mode, branch) {
@@ -11302,15 +12882,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report2 = path51.posix.normalize(read.brief.report);
+  const report2 = path59.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: read.brief.target,
     report: report2,
-    reportFrom: path51.join(worktree, report2),
-    reportTo: top === undefined ? undefined : path51.join(top, report2)
+    reportFrom: path59.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path59.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -11355,16 +12935,16 @@ function operatorIssues(name, tried, linked2) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs41.existsSync(worktree) && !fs41.existsSync(path51.join(worktree, ".git"));
+  const linkless = fs46.existsSync(worktree) && !fs46.existsSync(path59.join(worktree, ".git"));
   if (!linkless)
     return [];
-  const list2 = worktreeListed(runGit, top, worktree);
-  if ("issue" in list2) {
+  const list3 = worktreeListed(runGit, top, worktree);
+  if ("issue" in list3) {
     return [
-      `git worktree list failed, so finish cannot tell whether git still lists the worktree ${worktree}: ${list2.issue}`
+      `git worktree list failed, so finish cannot tell whether git still lists the worktree ${worktree}: ${list3.issue}`
     ];
   }
-  if (!list2.listed)
+  if (!list3.listed)
     return [];
   return [
     `the worktree ${worktree} holds no .git entry while git still lists it, so a removal went past git's link to it: claude rm ${shellArg(id)} completes the removal`
@@ -11447,12 +13027,12 @@ function dirtyIssues(worktree, status, partial, mode) {
   return [...issues, ...flaggedIssues(worktree, status, mode)];
 }
 function isPartial(runGit, top, worker, status) {
-  const { name, head } = worker;
-  if (head === undefined || "issue" in status)
+  const { name, head: head2 } = worker;
+  if (head2 === undefined || "issue" in status)
     return false;
   if (!onlyDeleted(status.changed))
     return false;
-  return heldBackup(runGit, top, name, head) !== undefined;
+  return heldBackup(runGit, top, name, head2) !== undefined;
 }
 function worktreeCheck(runGit, places, worker, opts, commonDir) {
   const status = statusBesideReport(runGit, {
@@ -11495,8 +13075,8 @@ var stopJob = (job, wenv) => {
     return [];
   return runStop(job, wenv);
 };
-function lockPidNow(at, wenv) {
-  return lockPid(lockReasonOf(wenv.runGit, at.mainTop, at.worktree));
+function lockPidNow(at2, wenv) {
+  return lockPid(lockReasonOf(wenv.runGit, at2.mainTop, at2.worktree));
 }
 function lockHeldLive(job, wenv) {
   const pid = lockPidNow(job, wenv);
@@ -11522,13 +13102,13 @@ var waitForLock = (ready, wenv) => {
 };
 
 // bin/helpers/worker-finish-gone.ts
-function whenNotFound(tried, at, opts) {
-  const { linked: linked2, ...job } = at;
+function whenNotFound(tried, at2, opts) {
+  const { linked: linked2, ...job } = at2;
   if (opts.worktree !== undefined) {
-    return { issues: operatorIssues(at.name, tried, linked2) };
+    return { issues: operatorIssues(at2.name, tried, linked2) };
   }
   if (opts.mode.kind === "landed") {
-    return { issues: notFoundIssues(at.name, tried) };
+    return { issues: notFoundIssues(at2.name, tried) };
   }
   return { ...job, rerun: rerunCommand(opts), tried };
 }
@@ -11597,14 +13177,14 @@ function clearGone(gone, wenv, out) {
 }
 
 // bin/helpers/worker-finish-report.ts
-import * as fs42 from "node:fs";
-import * as path52 from "node:path";
-var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
+import * as fs47 from "node:fs";
+import * as path60 from "node:path";
+var isMissing6 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs42.readFileSync(file) };
+    return { data: fs47.readFileSync(file) };
   } catch (e) {
-    if (isMissing5(e))
+    if (isMissing6(e))
       return { data: undefined };
     const why = e instanceof Error ? e.message : String(e);
     return { issue: `cannot read ${file}: ${why}` };
@@ -11655,8 +13235,8 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs42.mkdirSync(path52.dirname(to), { recursive: true });
-    fs42.copyFileSync(from, to, fs42.constants.COPYFILE_EXCL);
+    fs47.mkdirSync(path60.dirname(to), { recursive: true });
+    fs47.copyFileSync(from, to, fs47.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${to}: ${why}`];
@@ -11718,8 +13298,8 @@ function copyChangedIssues(from, to, now) {
 }
 
 // bin/helpers/worker-finish-subject.ts
-import * as fs43 from "node:fs";
-import * as path53 from "node:path";
+import * as fs48 from "node:fs";
+import * as path61 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -11730,7 +13310,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path53.dirname(subject.brief);
+      const folder = path61.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -11745,11 +13325,11 @@ function readSubject(subject, runGit) {
 }
 function recordedTop(runGit, commonDir, name) {
   const { records } = readRecords(commonDir);
-  const record2 = records.find((r) => r.name === name);
-  if (record2 === undefined)
+  const record3 = records.find((r) => r.name === name);
+  if (record3 === undefined)
     return;
-  const folder = path53.dirname(record2.brief);
-  return fs43.existsSync(folder) ? topOf(runGit, folder) : undefined;
+  const folder = path61.dirname(record3.brief);
+  return fs48.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
   const { read } = subject;
@@ -11768,8 +13348,8 @@ function launcherOf(subject, facts, runGit) {
 }
 
 // bin/helpers/worker-teardown-leftovers.ts
-import * as fs44 from "node:fs";
-import * as path54 from "node:path";
+import * as fs49 from "node:fs";
+import * as path62 from "node:path";
 function clearSavedReport(ready) {
   const step = ready.reportStep;
   if (step.kind === "none" || step.kind === "no brief")
@@ -11777,9 +13357,9 @@ function clearSavedReport(ready) {
   if (step.from === step.to)
     return;
   try {
-    const saved = fs44.readFileSync(step.to);
-    if (fs44.readFileSync(step.from).equals(saved))
-      fs44.unlinkSync(step.from);
+    const saved = fs49.readFileSync(step.to);
+    if (fs49.readFileSync(step.from).equals(saved))
+      fs49.unlinkSync(step.from);
   } catch {}
 }
 function forgottenWayOut({
@@ -11787,7 +13367,7 @@ function forgottenWayOut({
   branch
 }) {
   const route = `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
-  const removable = nativeBranch(path54.basename(worktree));
+  const removable = nativeBranch(path62.basename(worktree));
   if (branch === removable)
     return route;
   return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`;
@@ -11817,14 +13397,14 @@ var lockNow = ({ mainTop, worktree }, { runGit, isAlive }) => lockStateOf(lockRe
 function worktreeGoneIssues(ready, wenv) {
   const { runGit } = wenv;
   const { mainTop: top, worktree } = ready;
-  const list2 = worktreeListed(runGit, top, worktree);
-  if ("issue" in list2) {
+  const list3 = worktreeListed(runGit, top, worktree);
+  if ("issue" in list3) {
     return [
-      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list2.issue}`,
+      `git worktree list failed, so finish cannot confirm the worktree is gone: ${list3.issue}`,
       forgottenWayOut(ready)
     ];
   }
-  if (!list2.listed)
+  if (!list3.listed)
     return [];
   const first = lockNow(ready, wenv);
   const unlocked = first.kind === "dead" || first.kind === "none";
@@ -11841,11 +13421,11 @@ function worktreeGoneIssues(ready, wenv) {
     forgottenWayOut(ready)
   ];
 }
-function branchGoneIssues(runGit, top, branch, head) {
+function branchGoneIssues(runGit, top, branch, head2) {
   if (!branchExists(runGit, top, branch))
     return [];
   const ref2 = `refs/heads/${branch}`;
-  const result = runGit("git", ["update-ref", "-d", ref2, head], top);
+  const result = runGit("git", ["update-ref", "-d", ref2, head2], top);
   if (result.code !== 0) {
     return [`git update-ref -d ${ref2} failed: ${result.stderr.trim()}`];
   }
@@ -11916,8 +13496,8 @@ var restorePartial = (ready, wenv, out) => {
 var isHookMade = (ready) => physical(ready.worktree) !== physical(nativeFolder(ready.mainTop, ready.name)) || ready.branch !== nativeBranch(ready.name);
 function unknownAnswer(ready, args, result) {
   const what = ranClean(result) ? "did not say removed, and finish does not know its answer" : failure(result);
-  const command = `claude ${args.map(shellArg).join(" ")}`;
-  const refused = withText(`${command} ${what}, so finish removed nothing more`, result);
+  const command2 = `claude ${args.map(shellArg).join(" ")}`;
+  const refused = withText(`${command2} ${what}, so finish removed nothing more`, result);
   if (isHookMade(ready)) {
     return [
       ...refused,
@@ -11926,7 +13506,7 @@ function unknownAnswer(ready, args, result) {
   }
   return [
     ...refused,
-    `run finish again with ${ready.rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command}`
+    `run finish again with ${ready.rerun}, which restores any files claude rm deleted, then runs claude rm again; or complete the removal by hand with ${command2}`
   ];
 }
 function discard(ready, wenv, kept) {
@@ -12023,7 +13603,7 @@ function locate2(subject, opts, wenv) {
   if (found.kind === "not found") {
     const { id } = job;
     const linked2 = facts.worktrees.slice(1);
-    const at = {
+    const at2 = {
       id,
       name: subject.name,
       mainTop,
@@ -12031,7 +13611,7 @@ function locate2(subject, opts, wenv) {
       pid: job.pid,
       linked: linked2
     };
-    const gone = whenNotFound(found.tried, at, opts);
+    const gone = whenNotFound(found.tried, at2, opts);
     return "issues" in gone ? gone : { kind: "gone", gone };
   }
   const confirm = rerunCommand({ ...opts, worktree: found.path });
@@ -12045,14 +13625,14 @@ function landedCheck(wenv, places, branch, opts, { id, out }) {
   const judge3 = judgeFor(wenv.runGit, places, branch, opts, id);
   if ("issues" in judge3)
     return judge3;
-  const { head } = judge3;
+  const { head: head2 } = judge3;
   switch (judge3.kind) {
     case "discard":
-      return { head, verdict: { kind: "discard" } };
+      return { head: head2, verdict: { kind: "discard" } };
     case "landed": {
       out(targetLine(judge3.target));
-      const judged = landedVerdict(wenv.runGit, places, { branch: branch.name, head, target: judge3.target }, opts);
-      return "issues" in judged ? judged : { head, verdict: judged.verdict };
+      const judged = landedVerdict(wenv.runGit, places, { branch: branch.name, head: head2, target: judge3.target }, opts);
+      return "issues" in judged ? judged : { head: head2, verdict: judged.verdict };
     }
     default: {
       const unhandled = judge3;
@@ -12073,10 +13653,10 @@ function checkFinish(name, located, opts, { wenv, out }) {
   const unlinked = unlinkedIssues(wenv.runGit, mainTop, worktree, job.id);
   if (unlinked.length > 0)
     return { issues: unlinked };
-  const head = commitOf(wenv.runGit, mainTop, `refs/heads/${places.branch}`);
-  const branch = { name: places.branch, head };
+  const head2 = commitOf(wenv.runGit, mainTop, `refs/heads/${places.branch}`);
+  const branch = { name: places.branch, head: head2 };
   const landed = landedCheck(wenv, places, branch, opts, { id: job.id, out });
-  const worker = { name, id: job.id, head };
+  const worker = { name, id: job.id, head: head2 };
   const tree = worktreeCheck(wenv.runGit, places, worker, opts, located.commonDir);
   const step = reportStep(places.brief, opts.noReport, tree.partial);
   if ("issues" in landed || tree.issues.length > 0 || "issues" in step) {
@@ -12174,11 +13754,11 @@ function finish(opts, wenv, out, err) {
 
 // bin/helpers/worker.ts
 var WORKER_USAGE_LINE = "sidekick worker dispatch (<brief> | --check) --permission-mode <mode> [--profile <name>] [--plugin-dir <dir>] [--allow-push] | finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]";
-var usage2 = (err) => {
+var usage3 = (err) => {
   err(`usage: ${WORKER_USAGE_LINE}`);
   return 1;
 };
-var refuse5 = (err, lines) => {
+var refuse7 = (err, lines) => {
   for (const line of lines)
     err(line);
   return 1;
@@ -12186,31 +13766,31 @@ var refuse5 = (err, lines) => {
 var dispatchVerb = (rest2, wenv, out, err) => {
   const opts = parseDispatchArgs(rest2, wenv.cwd);
   if (opts === undefined)
-    return usage2(err);
+    return usage3(err);
   if ("usageErrors" in opts) {
     for (const line of opts.usageErrors)
       err(line);
-    return usage2(err);
+    return usage3(err);
   }
   return dispatch(opts, wenv, out, err);
 };
 var finishVerb = (rest2, wenv, out, err) => {
   const args = parseFinishArgs(rest2, wenv.cwd);
   if (args === undefined)
-    return usage2(err);
+    return usage3(err);
   if ("usageErrors" in args)
-    return refuse5(err, args.usageErrors);
+    return refuse7(err, args.usageErrors);
   return finish(args, wenv, out, err);
 };
-var VERBS4 = {
+var VERBS5 = {
   dispatch: dispatchVerb,
   finish: finishVerb
 };
 function runWorkerCli(args, wenv, out, err) {
   const [name, ...rest2] = args;
-  if (name === undefined || !Object.hasOwn(VERBS4, name))
-    return usage2(err);
-  return VERBS4[name](rest2, wenv, out, err);
+  if (name === undefined || !Object.hasOwn(VERBS5, name))
+    return usage3(err);
+  return VERBS5[name](rest2, wenv, out, err);
 }
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -12249,7 +13829,7 @@ function isOwnBranch(runGit, top, branch, name) {
 }
 
 // bin/helpers/worktree-move-checks.ts
-import * as path55 from "node:path";
+import * as path63 from "node:path";
 var DIGITS = /^\d+$/;
 function parseMoveArgs(rest2) {
   const parsed = parseFlags(rest2, {
@@ -12269,7 +13849,7 @@ function parseMoveArgs(rest2) {
     return;
   return { kind: "branch", branch: positionals[0], from };
 }
-var refuse6 = (...lines) => ({ kind: "refused", lines });
+var refuse8 = (...lines) => ({ kind: "refused", lines });
 var ORIGIN2 = "origin";
 var SEPARATOR = " · ";
 var PATHS_CAP = 20;
@@ -12290,24 +13870,24 @@ function whereItRuns(env, err) {
   if (repo === undefined) {
     const issue = found.revParseIssue;
     if (issue !== undefined && !outsideRepo(issue, env.cwd)) {
-      return refuse6(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue}`, `fix what git reports, ${AGAIN_WAY}`);
+      return refuse8(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue}`, `fix what git reports, ${AGAIN_WAY}`);
     }
-    return refuse6(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
+    return refuse8(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
   }
   const checkout = checkoutOf(env.runGit, env.cwd);
   if ("issue" in checkout) {
-    return refuse6(`${env.cwd} is in no work tree, as git says: ${gitWords(checkout.issue)}`, INSIDE_WAY);
+    return refuse8(`${env.cwd} is in no work tree, as git says: ${gitWords(checkout.issue)}`, INSIDE_WAY);
   }
   const top = physical(checkout.top);
-  const at = repo.worktrees.findIndex((entry2) => physical(entry2.path) === top);
-  if (at === 0) {
-    return refuse6(`${checkout.top} is the main checkout, not a linked worktree: ${INSIDE_WAY}`);
+  const at2 = repo.worktrees.findIndex((entry2) => physical(entry2.path) === top);
+  if (at2 === 0) {
+    return refuse8(`${checkout.top} is the main checkout, not a linked worktree: ${INSIDE_WAY}`);
   }
-  if (at === -1) {
-    return refuse6(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
+  if (at2 === -1) {
+    return refuse8(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
   }
-  const entry = repo.worktrees[at];
-  return { repo, entry, name: path55.basename(entry.path) };
+  const entry = repo.worktrees[at2];
+  return { repo, entry, name: path63.basename(entry.path) };
 }
 var heldElsewhere = (place, branch) => place.repo.worktrees.some((entry) => entry !== place.entry && entry.branch === `${HEADS}${branch}`);
 function onBranchMoved(runGit, place, on, branch) {
@@ -12323,8 +13903,8 @@ function isMoved(runGit, place, args, on) {
       return onBranchMoved(runGit, place, on, args.branch);
     case "pr": {
       const pr = `refs/remotes/pr/${args.number}`;
-      const head = place.entry.head;
-      return on === undefined && commitOf(runGit, place.entry.path, pr) === head;
+      const head2 = place.entry.head;
+      return on === undefined && commitOf(runGit, place.entry.path, pr) === head2;
     }
     default: {
       const _exhaustive = args;
@@ -12344,16 +13924,16 @@ function rerunLine(runGit, place, args) {
 function workerRefusal(env, place) {
   const brief = env.env.SIDEKICK_WORKER;
   if (brief !== undefined && brief !== "") {
-    return refuse6(`this session is a worker, as SIDEKICK_WORKER is set to ${brief}: ${BRIEF_WAY}`);
+    return refuse8(`this session is a worker, as SIDEKICK_WORKER is set to ${brief}: ${BRIEF_WAY}`);
   }
   const stored = readRecords(place.repo.commonDir);
-  const record2 = stored.records.find((candidate) => isWorkers(place.repo.top, candidate.name, place.entry));
-  if (record2 !== undefined) {
-    return refuse6(`${place.entry.path} is the worker ${record2.name}'s worktree: ${BRIEF_WAY}`);
+  const record3 = stored.records.find((candidate) => isWorkers(place.repo.top, candidate.name, place.entry));
+  if (record3 !== undefined) {
+    return refuse8(`${place.entry.path} is the worker ${record3.name}'s worktree: ${BRIEF_WAY}`);
   }
   if (stored.warnings.length === 0)
     return;
-  return refuse6(`a worker record would not read, so ${place.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
+  return refuse8(`a worker record would not read, so ${place.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
 }
 function branchRefusal(place) {
   const { entry, name } = place;
@@ -12361,15 +13941,15 @@ function branchRefusal(place) {
   if (entry.branch === `${HEADS}${own}`)
     return;
   if (entry.branch === undefined) {
-    return refuse6(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
+    return refuse8(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
   }
-  return refuse6(`${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`, FRESH_WAY);
+  return refuse8(`${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`, FRESH_WAY);
 }
 function changesRefusal(runGit, place) {
   const { entry } = place;
   const status = statusEntriesIn(runGit, place.repo.top, entry.path);
   if ("issue" in status) {
-    return refuse6(`git status failed in ${entry.path}, so move cannot tell whether it has changes: ${gitWords(status.issue)}`, `check git status in ${entry.path}, ${AGAIN_WAY}`);
+    return refuse8(`git status failed in ${entry.path}, so move cannot tell whether it has changes: ${gitWords(status.issue)}`, `check git status in ${entry.path}, ${AGAIN_WAY}`);
   }
   if (status.entries.length === 0)
     return;
@@ -12378,11 +13958,11 @@ function changesRefusal(runGit, place) {
     kind: "exact",
     count: Math.max(0, paths.length - PATHS_CAP)
   };
-  return refuse6(`${entry.path} has tracked or untracked changes: ${paths.slice(0, PATHS_CAP).join(", ")}${omittedWords(omitted)}`, `take them out of the worktree or delete them, ${AGAIN_WAY}`);
+  return refuse8(`${entry.path} has tracked or untracked changes: ${paths.slice(0, PATHS_CAP).join(", ")}${omittedWords(omitted)}`, `take them out of the worktree or delete them, ${AGAIN_WAY}`);
 }
 var commitCount = (count2) => `${count2} ${count2 === 1 ? "commit" : "commits"}`;
-function onTopWords(runGit, dir, base, head) {
-  const result = runGit("git", ["rev-list", "--count", `${base}..${head}`], dir);
+function onTopWords(runGit, dir, base, head2) {
+  const result = runGit("git", ["rev-list", "--count", `${base}..${head2}`], dir);
   const count2 = Number(result.stdout.trim());
   if (result.code !== 0 || !Number.isSafeInteger(count2)) {
     return `, with commits git rev-list could not count (${gitWords(result.stderr)}) on top of it`;
@@ -12395,22 +13975,22 @@ function freshHead(runGit, place) {
   const { entry, name } = place;
   const created = creationCommit(runGit, entry.path, entry.branch);
   if ("issue" in created) {
-    return refuse6(`move cannot tell whether ${entry.path} is fresh: ${created.issue}`, FRESH_WAY);
+    return refuse8(`move cannot tell whether ${entry.path} is fresh: ${created.issue}`, FRESH_WAY);
   }
   if (entry.head === created.sha)
     return created.sha;
-  const head = entry.head ?? "no commit";
-  const onTop = onTopWords(runGit, entry.path, created.sha, head);
-  return refuse6(`the HEAD of ${entry.path} is ${head}, not ${nativeBranch(name)}'s creation commit ${created.sha}${onTop}`, FRESH_WAY);
+  const head2 = entry.head ?? "no commit";
+  const onTop = onTopWords(runGit, entry.path, created.sha, head2);
+  return refuse8(`the HEAD of ${entry.path} is ${head2}, not ${nativeBranch(name)}'s creation commit ${created.sha}${onTop}`, FRESH_WAY);
 }
-function nameRefusal(runGit, dir, branch) {
+function nameRefusal2(runGit, dir, branch) {
   const verdict = branchNameOf(runGit, dir, branch);
   if ("issue" in verdict) {
-    return refuse6(`git check-ref-format refuses ${branch}: ${verdict.issue}`, "choose another name");
+    return refuse8(`git check-ref-format refuses ${branch}: ${verdict.issue}`, "choose another name");
   }
   if (verdict.read === branch)
     return;
-  return refuse6(`git reads ${branch} as the branch ${verdict.read}: name it as ${verdict.read}`);
+  return refuse8(`git reads ${branch} as the branch ${verdict.read}: name it as ${verdict.read}`);
 }
 function branchNameOf(runGit, dir, name) {
   const result = runGit("git", ["check-ref-format", "--branch", name], dir);
@@ -12426,7 +14006,7 @@ function isPlainBranchName(runGit, dir, name) {
 function remotesOf(runGit, dir) {
   const result = runGit("git", ["remote"], dir);
   if (result.code !== 0) {
-    return refuse6(`git remote failed in ${dir}: ${gitWords(result.stderr)}`, `check git remote in ${dir}, ${AGAIN_WAY}`);
+    return refuse8(`git remote failed in ${dir}: ${gitWords(result.stderr)}`, `check git remote in ${dir}, ${AGAIN_WAY}`);
   }
   return result.stdout.split(`
 `).map((line) => line.trim()).filter((line) => line !== "");
@@ -12437,24 +14017,24 @@ function ambiguityRefusal(branch, remotes) {
   if (remote === undefined)
     return;
   if (remote === branch) {
-    return refuse6(`${branch} is a remote's name, so it reads as that remote: choose another name`);
+    return refuse8(`${branch} is a remote's name, so it reads as that remote: choose another name`);
   }
   const rest2 = branch.slice(remote.length + 1);
-  return refuse6(`${branch} begins with ${remote}/, a remote's name, so it reads as a branch of ${remote}: name it without the remote, as ${rest2}`);
+  return refuse8(`${branch} begins with ${remote}/, a remote's name, so it reads as a branch of ${remote}: name it without the remote, as ${rest2}`);
 }
-var fromRefusal = (branch, where) => refuse6(`${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`);
+var fromRefusal = (branch, where) => refuse8(`${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`);
 function ownNameRefusal(runGit, place, heldAt, branch) {
   const { entry, name } = place;
   const verdict = branchNameOf(runGit, entry.path, name);
   if ("read" in verdict && verdict.read === name)
     return;
   const why = "issue" in verdict ? `git refuses ${name} as a branch name: ${verdict.issue}` : `git reads ${name} as the branch ${verdict.read}`;
-  return refuse6(`${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`, `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`);
+  return refuse8(`${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`, `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`);
 }
 function localPlan(runGit, place, branch) {
   const { entry, name } = place;
   if (branch === nativeBranch(name)) {
-    return refuse6(`${branch} is the branch Claude Code made for this worktree, which move replaces: name the branch to move onto`);
+    return refuse8(`${branch} is the branch Claude Code made for this worktree, which move replaces: name the branch to move onto`);
   }
   const holder = place.repo.worktrees.find((other) => other.branch === `${HEADS}${branch}`);
   if (holder === undefined)
@@ -12464,10 +14044,10 @@ function localPlan(runGit, place, branch) {
     return badName;
   const sha = commitOf(runGit, entry.path, `${HEADS}${branch}`);
   if (sha === undefined) {
-    return refuse6(`${branch} names no commit, so move cannot branch from it`, `check ${branch} in ${holder.path}, ${AGAIN_WAY}`);
+    return refuse8(`${branch} names no commit, so move cannot branch from it`, `check ${branch} in ${holder.path}, ${AGAIN_WAY}`);
   }
   if (branchExists(runGit, entry.path, name)) {
-    return refuse6(`${holder.path} holds ${branch}, so move would create the branch ${name} at its commit, but ${name} exists`, `switch ${holder.path} to another branch, or start a worktree under another name, ${AGAIN_WAY}`);
+    return refuse8(`${holder.path} holds ${branch}, so move would create the branch ${name} at its commit, but ${name} exists`, `switch ${holder.path} to another branch, or start a worktree under another name, ${AGAIN_WAY}`);
   }
   return { kind: "held", branch, own: name, sha, heldAt: holder.path };
 }
@@ -12477,7 +14057,7 @@ function onOrigin(runGit, dir, branch) {
   if (result.code === NO_MATCH)
     return false;
   if (result.code !== 0) {
-    return refuse6(`git ls-remote origin failed, so move cannot tell whether origin has ${branch}: ${gitWords(result.stderr)}`, `check the remote origin, ${AGAIN_WAY}`);
+    return refuse8(`git ls-remote origin failed, so move cannot tell whether origin has ${branch}: ${gitWords(result.stderr)}`, `check the remote origin, ${AGAIN_WAY}`);
   }
   return result.stdout.split(`
 `).some((line) => line.split("\t")[1] === ref2);
@@ -12493,7 +14073,7 @@ function baseOf(runGit, dir, from, remotes) {
   }
   const sha = commitOf(runGit, dir, from);
   if (sha === undefined) {
-    return refuse6(`--from ${from} names no commit: give a branch, tag, or commit, or <remote>/<branch> for a remote's branch`);
+    return refuse8(`--from ${from} names no commit: give a branch, tag, or commit, or <remote>/<branch> for a remote's branch`);
   }
   return { kind: "local", rev: from, sha };
 }
@@ -12516,7 +14096,7 @@ function branchPlan(runGit, place, args, remotes) {
 }
 function branchMove(runGit, place, args) {
   const dir = place.entry.path;
-  const named = nameRefusal(runGit, dir, args.branch);
+  const named = nameRefusal2(runGit, dir, args.branch);
   if (named !== undefined)
     return named;
   const remotes = remotesOf(runGit, dir);
@@ -12536,7 +14116,7 @@ function prMove(runGit, place, number2) {
     return remotes;
   if (remotes.includes(ORIGIN2))
     return { kind: "pr", number: number2 };
-  return refuse6(`--pr reads pull requests from origin, and this repository has no remote named origin: add the GitHub remote as origin, ${AGAIN_WAY}`);
+  return refuse8(`--pr reads pull requests from origin, and this repository has no remote named origin: add the GitHub remote as origin, ${AGAIN_WAY}`);
 }
 function checkMove(args, env, err) {
   const { runGit } = env;
@@ -12563,14 +14143,14 @@ var SEPARATOR2 = " · ";
 var ORIGIN3 = "origin";
 var DETACHED = "a detached HEAD";
 var AGAIN_WAY2 = "then run move again";
-var command = (args) => ["git", ...args].map(shellArg).join(" ");
+var command2 = (args) => ["git", ...args].map(shellArg).join(" ");
 var create2 = (branch, start) => [
   "-c",
   branch,
   "--no-track",
   start
 ];
-var at = (args) => ({ args, fetched: undefined });
+var at2 = (args) => ({ args, fetched: undefined });
 var stayedLine = (here) => `nothing changed in ${here.entry.path}: it is still on ${nativeBranch(here.name)}`;
 function fetchInto(runGit, here, remote, refspec) {
   const spec = `+${refspec.src}:${refspec.dst}`;
@@ -12613,9 +14193,9 @@ function prStart(runGit, here, number2) {
 function newStart(branch, base) {
   switch (base.kind) {
     case "here":
-      return (_, here) => at(create2(branch, here.created));
+      return (_, here) => at2(create2(branch, here.created));
     case "local":
-      return () => at(create2(branch, base.sha));
+      return () => at2(create2(branch, base.sha));
     case "remote":
       return (runGit, here) => fromRemote(runGit, here, branch, base);
     default: {
@@ -12646,7 +14226,7 @@ var markStep = (branch) => (runGit, here, moved) => {
   return [
     ...issues.map(gitWords),
     `${moved}, and ${branch} stays unmarked, so remove keeps it`,
-    `mark it with: ${command(["config", "--local", key, here.name])}`
+    `mark it with: ${command2(["config", "--local", key, here.name])}`
   ];
 };
 var clearStale = (branch) => (runGit, here, moved) => {
@@ -12664,7 +14244,7 @@ var clearStale = (branch) => (runGit, here, moved) => {
   return [
     ...issues.map(gitWords),
     `${moved}, and ${branch} stays marked for the worktree ${mark}, so remove deletes it from a worktree of that name`,
-    `clear it with: ${command(["config", "--local", "--unset", key])}`
+    `clear it with: ${command2(["config", "--local", "--unset", key])}`
   ];
 };
 var nothingToClear = () => [];
@@ -12677,10 +14257,10 @@ var upstreamStep = (branch) => (runGit, here, moved) => {
     const result = runGit("git", args, here.entry.path);
     if (result.code !== 0) {
       return [
-        `${command(args)} failed: ${gitWords(result.stderr)}`,
+        `${command2(args)} failed: ${gitWords(result.stderr)}`,
         `${moved}, and ${branch} has no upstream`,
-        `set it with: ${command(writes[0])}`,
-        `and: ${command(writes[1])}`
+        `set it with: ${command2(writes[0])}`,
+        `and: ${command2(writes[1])}`
       ];
     }
   }
@@ -12701,7 +14281,7 @@ function moveOf(plan) {
       return {
         target: plan.branch,
         fields: ["existing branch", `from ${plan.branch}`],
-        start: () => at([plan.branch]),
+        start: () => at2([plan.branch]),
         clear: clearStale(plan.branch),
         settle: settled
       };
@@ -12713,7 +14293,7 @@ function moveOf(plan) {
           `from ${plan.branch}`,
           `land onto ${plan.branch}`
         ],
-        start: () => at(create2(plan.own, plan.sha)),
+        start: () => at2(create2(plan.own, plan.sha)),
         clear: nothingToClear,
         settle: markStep(plan.own)
       };
@@ -12779,7 +14359,7 @@ function switchTo(runGit, here, start) {
   const fetched = start.fetched === undefined ? [] : [`${start.fetched} holds the fetched commit`];
   return {
     lines: [
-      `${command(args)} failed: ${gitWords(result.stderr)}`,
+      `${command2(args)} failed: ${gitWords(result.stderr)}`,
       ...fetched,
       ...leftLines(runGit, here)
     ]
@@ -12811,14 +14391,14 @@ function dropLines(runGit, here, moved) {
     return [
       ...issues.map(gitWords),
       `${moved}, and ${own} stays at its creation commit ${here.created}, holding no commits of its own`,
-      `delete it with: ${command(remove)}`
+      `delete it with: ${command2(remove)}`
     ];
   }
-  const section = ["config", "--remove-section", `branch.${own}`];
+  const section3 = ["config", "--remove-section", `branch.${own}`];
   return [
     ...issues.map(gitWords),
     `${moved}, and ${own} is gone, but its config section stays`,
-    `drop it with: ${command(section)}`
+    `drop it with: ${command2(section3)}`
   ];
 }
 var fail = (lines, err) => {
@@ -12869,7 +14449,7 @@ function moveWorktree(args, env, out, err) {
 }
 
 // bin/helpers/worktree-remove-checks.ts
-import * as path56 from "node:path";
+import * as path64 from "node:path";
 var DISCARD = "--discard";
 var REMOTES2 = "refs/remotes/";
 function parseRemoveArgs(rest2) {
@@ -12890,7 +14470,7 @@ function parseRemoveArgs(rest2) {
     into: into.at(0)
   };
 }
-var refuse7 = (...lines) => ({ refused: lines });
+var refuse9 = (...lines) => ({ refused: lines });
 var INTO_WAY = "name a local branch, such as main, or a remote-tracking ref, such as origin/main";
 function refCommit(runGit, top, ref2) {
   const shown2 = runGit("git", ["show-ref", "--verify", "--hash", ref2], top);
@@ -12906,7 +14486,7 @@ function intoTargets(runGit, top, into) {
     if (sha !== undefined)
       return [{ name: into, sha, ref: ref2 }];
   }
-  return refuse7(`--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`, INTO_WAY);
+  return refuse9(`--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`, INTO_WAY);
 }
 function ownIntoLines(targets, entry) {
   return targets.filter((target) => target.ref === entry.branch).map((target) => `--into ${target.name} is the branch ${entry.path} is on, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in`);
@@ -12917,21 +14497,21 @@ var alone = (repo, entry) => ({
   worktrees: [repo.worktrees[0], entry]
 });
 function resolveTarget3(repo, cwd, target) {
-  const asPath = path56.resolve(cwd, target);
-  const matches = repo.worktrees.filter((entry2) => path56.basename(entry2.path) === target || samePath(entry2.path, asPath));
+  const asPath = path64.resolve(cwd, target);
+  const matches = repo.worktrees.filter((entry2) => path64.basename(entry2.path) === target || samePath(entry2.path, asPath));
   if (matches.length === 0) {
-    return refuse7(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
+    return refuse9(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
   }
   if (matches.length > 1) {
     const paths = matches.map((entry2) => entry2.path).join(", ");
-    return refuse7(`${matches.length} worktrees match ${target}: ${paths}. Name one by its path`);
+    return refuse9(`${matches.length} worktrees match ${target}: ${paths}. Name one by its path`);
   }
   const [entry] = matches;
   if (entry === repo.worktrees[0]) {
-    return refuse7(`${entry.path} is the main checkout, which remove never takes`);
+    return refuse9(`${entry.path} is the main checkout, which remove never takes`);
   }
   if (insideOf(cwd, entry.path)) {
-    return refuse7(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`);
+    return refuse9(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`);
   }
   return entry;
 }
@@ -12949,10 +14529,10 @@ var KEPT_WORKTREE = "so remove kept the worktree";
 var SKIP_WORKTREE_WAY_OUT = "clear each flag with git update-index --no-skip-worktree -- <file>, since git add refuses the file while it is set. Then commit the edit, or discard it with git restore -- <file>, and run remove again";
 var ASSUMED_WAY_OUT = "clear each flag with git update-index --no-assume-unchanged -- <file>, then run remove again";
 var pathsOf = (files, ...losses) => files.filter((file) => losses.includes(file.loss)).map((file) => file.path);
-function changedLines(at2, files, omitted, skipList) {
+function changedLines(at3, files, omitted, skipList) {
   if (files.length > 0) {
     return [
-      `${at2} holds files its removal would lose: ${files.join(", ")}${omittedWords(omitted)}`,
+      `${at3} holds files its removal would lose: ${files.join(", ")}${omittedWords(omitted)}`,
       `commit, move, or delete them, then run remove again. An ignored file goes with the worktree once its folder is listed in ${skipList}`
     ];
   }
@@ -12961,16 +14541,16 @@ function changedLines(at2, files, omitted, skipList) {
   const least = omitted.kind === "at least" ? "at least " : "";
   const noun = omitted.count === 1 ? "file" : "files";
   return [
-    `${at2} holds ${least}${omitted.count} more ${noun} its removal would lose`
+    `${at3} holds ${least}${omitted.count} more ${noun} its removal would lose`
   ];
 }
 var flaggedLines = (paths, what, wayOut2) => paths.length === 0 ? [] : [`${what}: ${paths.join(", ")}`, wayOut2];
-function dirtyLines(at2, { files, omitted }, skipList) {
+function dirtyLines(at3, { files, omitted }, skipList) {
   const changed = pathsOf(files, "changed", "ignored");
   return [
-    ...flaggedLines(pathsOf(files, "skip-worktree"), `${at2} holds edited skip-worktree files, which git status hides and its removal would lose`, SKIP_WORKTREE_WAY_OUT),
-    ...flaggedLines(pathsOf(files, "assume-unchanged"), `${at2} holds assume-unchanged files, which git assumes unchanged, so nothing can tell whether they hold edits`, ASSUMED_WAY_OUT),
-    ...changedLines(at2, changed, omitted, skipList)
+    ...flaggedLines(pathsOf(files, "skip-worktree"), `${at3} holds edited skip-worktree files, which git status hides and its removal would lose`, SKIP_WORKTREE_WAY_OUT),
+    ...flaggedLines(pathsOf(files, "assume-unchanged"), `${at3} holds assume-unchanged files, which git assumes unchanged, so nothing can tell whether they hold edits`, ASSUMED_WAY_OUT),
+    ...changedLines(at3, changed, omitted, skipList)
   ];
 }
 function stateLines(state, entry, skipList, stopped = TOOK_NOTHING) {
@@ -13014,13 +14594,13 @@ function backupKind(commits, branch, judging) {
         return "kept";
       if (discard2)
         return "discarded";
-      return refuse7(`${where} has ${commitCount2(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`, DISCARD_WAY);
+      return refuse9(`${where} has ${commitCount2(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`, DISCARD_WAY);
     case "unknown":
       if (stays)
         return "kept";
       if (discard2)
         return "discarded";
-      return refuse7(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
+      return refuse9(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
     default: {
       const _exhaustive = commits;
       throw new Error(`Unhandled commits: ${JSON.stringify(_exhaustive)}`);
@@ -13030,19 +14610,19 @@ function backupKind(commits, branch, judging) {
 var whereOf = (entry) => entry.branch?.replace(HEADS, "") ?? `the detached HEAD at ${entry.path}`;
 function branchPlan2(env, repo, row2, judging) {
   const { entry, name } = row2;
-  const head = entry.head === undefined ? undefined : commitOf(env.runGit, repo.top, entry.head);
-  if (head === undefined) {
-    return refuse7(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
+  const head2 = entry.head === undefined ? undefined : commitOf(env.runGit, repo.top, entry.head);
+  if (head2 === undefined) {
+    return refuse9(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
   }
   const branch = entry.branch?.replace(HEADS, "");
   const stays = branch !== undefined && !isOwnBranch(env.runGit, repo.top, branch, name);
   const where = whereOf(entry);
-  const commits = row2.commits ?? commitsAt(env.runGit, repo, head, judging.extra);
+  const commits = row2.commits ?? commitsAt(env.runGit, repo, head2, judging.extra);
   const kind = backupKind(commits, { stays, where }, judging);
   if (typeof kind !== "string")
     return kind;
-  const ref2 = backupRef(kind, name, head);
-  return { entry, name, head, commits, plan: planOf(branch, stays, ref2) };
+  const ref2 = backupRef(kind, name, head2);
+  return { entry, name, head: head2, commits, plan: planOf(branch, stays, ref2) };
 }
 function landedLines(extra, checked2) {
   const { commits, entry } = checked2;
@@ -13064,13 +14644,13 @@ function checkTarget(args, env, repo, out) {
     return entry;
   const ownInto = ownIntoLines(extra, entry);
   if (ownInto.length > 0)
-    return refuse7(...ownInto);
+    return refuse9(...ownInto);
   const nested = nestedLines(repo, entry);
   if (nested.length > 0)
-    return refuse7(...nested);
+    return refuse9(...nested);
   const { src, listing, skipWarnings } = readSources(env, alone(repo, entry));
   if ("error" in listing) {
-    return refuse7(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
+    return refuse9(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
   }
   for (const warning of [...listing.warnings, ...skipWarnings]) {
     out(warning);
@@ -13078,7 +14658,7 @@ function checkTarget(args, env, repo, out) {
   const [row2] = worktreeRows(src, env.runGit, extra);
   const kept = stateLines(row2.state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
-    return refuse7(...kept);
+    return refuse9(...kept);
   const checked2 = branchPlan2(env, repo, row2, { discard: args.discard, extra });
   if ("refused" in checked2)
     return checked2;
@@ -13086,35 +14666,35 @@ function checkTarget(args, env, repo, out) {
     out(line);
   return checked2;
 }
-function movedLines(entry, head, stopped) {
-  if (entry.head === head)
+function movedLines(entry, head2, stopped) {
+  if (entry.head === head2)
     return [];
   return [
-    `the HEAD of ${entry.path} moved from ${head} to ${entry.head ?? "no commit"} since the checks, ${stopped}: run remove again`
+    `the HEAD of ${entry.path} moved from ${head2} to ${entry.head ?? "no commit"} since the checks, ${stopped}: run remove again`
   ];
 }
 function recheck(env, repo, checked2) {
   const { src, listing } = readSources(env, repo);
   if ("error" in listing) {
-    return refuse7(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
+    return refuse9(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
   }
   const now = listWorktrees(env.runGit, repo.top);
   if ("issue" in now) {
-    return refuse7(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
+    return refuse9(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
   }
   const entry = now.worktrees.find((e) => samePath(e.path, checked2.entry.path));
   if (entry === undefined) {
-    return refuse7(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
+    return refuse9(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
   }
   const moved = movedLines(entry, checked2.head, "so remove deleted nothing");
   if (moved.length > 0)
-    return refuse7(...moved);
+    return refuse9(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
   const one = { ...src, repo: alone(repo, entry) };
   const state = stateOf3(one, env.runGit, entry, lock);
   const kept = stateLines(state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
-    return refuse7(...kept);
+    return refuse9(...kept);
   return listing.rows;
 }
 
@@ -13168,15 +14748,15 @@ function removeListed(env, repo, checked2) {
   const dirty = stateLines(disk, entry, skipList, KEPT_WORKTREE);
   if (dirty.length > 0)
     return dirty;
-  const reason7 = lockReasonOf(env.runGit, top, entry.path);
-  const lock = lockStateOf(reason7, env.isAlive);
+  const reason8 = lockReasonOf(env.runGit, top, entry.path);
+  const lock = lockStateOf(reason8, env.isAlive);
   const issues = removeGitWorktree(env.runGit, top, entry.path, lock);
   if (issues.length === 0)
     return [];
   return [...issues, "fix what git names, then run remove again"];
 }
 function settleBranch(env, top, checked2, out) {
-  const { plan, name, head } = checked2;
+  const { plan, name, head: head2 } = checked2;
   switch (plan.kind) {
     case "detached":
       return [];
@@ -13184,7 +14764,7 @@ function settleBranch(env, top, checked2, out) {
       out(`branch ${plan.branch} kept: remove deletes only ${nativeBranch(name)} or a branch sidekick worktree move made for this worktree`);
       return [];
     case "delete": {
-      const issues = branchGoneIssues(env.runGit, top, plan.branch, head);
+      const issues = branchGoneIssues(env.runGit, top, plan.branch, head2);
       if (issues.length > 0) {
         return [
           ...issues,
@@ -13250,14 +14830,14 @@ function removeWorktree(args, env, out, err) {
   const checked2 = checkTarget(args, env, repo, out);
   if ("refused" in checked2)
     return fail2(checked2.refused, err);
-  const { head } = checked2;
+  const { head: head2 } = checked2;
   const { ref: ref2 } = checked2.plan;
-  const kept = writeBackup(env.runGit, repo.top, ref2, head);
+  const kept = writeBackup(env.runGit, repo.top, ref2, head2);
   if (kept.length > 0)
     return fail2([...kept, "so remove deleted nothing"], err);
   const issues = removeChecked(env, repo, checked2, out);
   if (issues.length > 0) {
-    return fail2([...issues, `the backup ref ${ref2} keeps ${head}`], err);
+    return fail2([...issues, `the backup ref ${ref2} keeps ${head2}`], err);
   }
   out(restoreLine(restoreBranch(env, repo.top, checked2), checked2));
   return 0;
@@ -13268,7 +14848,7 @@ var WORKTREE_USAGE_LINE = "sidekick worktree list | move <branch> [--from <base>
 var SEPARATOR3 = " · ";
 var BACKUP_REFS = "refs/sidekick";
 var REMOVE_HINT = "remove one with: sidekick worktree remove <name>";
-var usage3 = (err) => {
+var usage4 = (err) => {
   err(`usage: ${WORKTREE_USAGE_LINE}`);
   return 1;
 };
@@ -13360,7 +14940,7 @@ function listingWarnings(listing) {
 }
 var listVerb = (rest2, env, out, err) => {
   if (rest2.length > 0)
-    return usage3(err);
+    return usage4(err);
   const repo = repoOf2(env, err);
   if (repo === undefined)
     return 1;
@@ -13393,45 +14973,45 @@ var listVerb = (rest2, env, out, err) => {
 var moveVerb = (rest2, env, out, err) => {
   const args = parseMoveArgs(rest2);
   if (args === undefined)
-    return usage3(err);
+    return usage4(err);
   return moveWorktree(args, env, out, err);
 };
 var removeVerb = (rest2, env, out, err) => {
   const args = parseRemoveArgs(rest2);
   if (args === undefined)
-    return usage3(err);
+    return usage4(err);
   return removeWorktree(args, env, out, err);
 };
-var VERBS5 = {
+var VERBS6 = {
   list: listVerb,
   move: moveVerb,
   remove: removeVerb
 };
 function runWorktreeCli(rest2, env, out, err) {
   const [name, ...args] = rest2;
-  if (name === undefined || !Object.hasOwn(VERBS5, name))
-    return usage3(err);
-  return VERBS5[name](args, env, out, err);
+  if (name === undefined || !Object.hasOwn(VERBS6, name))
+    return usage4(err);
+  return VERBS6[name](args, env, out, err);
 }
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path57.dirname(fileURLToPath(entryFileUrl));
+  const here = path65.dirname(fileURLToPath(entryFileUrl));
   const candidates3 = [
-    path57.resolve(here, ".."),
-    path57.resolve(here, "..", "plugin")
+    path65.resolve(here, ".."),
+    path65.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs45.existsSync(path57.join(c, "rules")))
+    if (fs50.existsSync(path65.join(c, "rules")))
       return c;
   }
   return candidates3[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path57.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path65.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs45.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs50.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -13450,6 +15030,7 @@ var USAGE2 = `usage: sidekick rules <install|check> --project|--user [--strict]
        ${PM_USAGE_LINE}
        ${HOOK_USAGE_LINE}
        ${PROFILE_USAGE_LINE}
+       ${LOOP_USAGE_LINE}
        ${WORKER_USAGE_LINE}
        ${WORKTREE_USAGE_LINE}
        ${DESK_USAGE_LINE}
@@ -13460,7 +15041,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs45.writeSync(1, buffer, offset);
+      offset += fs50.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -13481,7 +15062,7 @@ function profileEnvOf(ctx) {
 }
 function readProcessStdin() {
   try {
-    return fs45.readFileSync(0, "utf-8");
+    return fs50.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -13501,6 +15082,9 @@ function main(argv2, ctx, out, err) {
   }
   if (sub === "profile") {
     return runProfileCli(rest2, profileEnvOf(ctx), out, err);
+  }
+  if (sub === "loop") {
+    return runLoopCli(rest2, { ...profileEnvOf(ctx), now: () => new Date }, out, err);
   }
   if (sub === "worker") {
     return runWorkerCli(rest2, {
@@ -13548,7 +15132,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path57.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path65.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;
