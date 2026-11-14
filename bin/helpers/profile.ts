@@ -8,7 +8,7 @@ import { parseArgs } from 'node:util';
 import { mainReport, type ResolvedMain, resolveMain } from './main-session.js';
 import { readKey } from './memory-settings.js';
 import { storeRoot } from './memory-store.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 import {
   bgArgs,
   type CheckResult,
@@ -41,6 +41,7 @@ import {
 } from './profile-store.js';
 import type { WorkTreeRoot } from './rules.js';
 import { shellQuote } from './shell.js';
+import { ensureSidekickRepo, sidekickHome } from './sidekick-home.js';
 import { listJobs } from './worker-jobs.js';
 
 export const PROFILE_USAGE_LINE =
@@ -58,6 +59,8 @@ export interface ProfileEnv {
   /** Where the settings check keeps its temp file. */
   tmpdir: string;
   runClaude: ClaudeRunner;
+  /** Runs git, for the sidekick folder's repo and the worker verbs. */
+  runGit: Runner;
   /** Raw stdout, for `argv`'s NUL-terminated arguments. */
   write: (chunk: string) => void;
   /** The bound on a `launch --bg` start; defaults to a minute. */
@@ -130,7 +133,7 @@ function load(
 ): { profile: Profile } | { issues: string[] } {
   const loaded = loadProfile(
     name,
-    storeRoots(penv.env, penv.cwd, penv.home, penv.workTree),
+    storeRoots('profiles', penv.env, penv.cwd, penv.home, penv.workTree),
   );
   return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
 }
@@ -293,7 +296,7 @@ const oneLine = (text: string): string => text.replace(/\s*[\r\n]\s*/g, ' ');
 const list: Verb = (rest, penv, out, err) => {
   if (rest.length > 0) return usage(err);
   const profiles = listProfiles(
-    storeRoots(penv.env, penv.cwd, penv.home, penv.workTree),
+    storeRoots('profiles', penv.env, penv.cwd, penv.home, penv.workTree),
   );
   for (const p of profiles) {
     const shadowed =
@@ -361,10 +364,21 @@ const create: Verb = (rest, penv, out, err) => {
   }
   const wanted = parsed.values.repo === true ? 'repo' : 'user';
   // The user root is always present, so only a repo root can be missing.
-  const root = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree).find(
-    (r) => r.kind === wanted,
-  );
+  const root = storeRoots(
+    'profiles',
+    penv.env,
+    penv.cwd,
+    penv.home,
+    penv.workTree,
+  ).find((r) => r.kind === wanted);
   if (root === undefined) return refuse(err, [noRepoStore(penv)]);
+  if (wanted === 'user' && !penv.env.SIDEKICK_PROFILES_DIR) {
+    const issues = ensureSidekickRepo(
+      sidekickHome(penv.env, penv.cwd, penv.home),
+      penv.runGit,
+    );
+    if (issues.length > 0) return refuse(err, issues);
+  }
   const created = newProfile(parsed.positionals[0], description, root.dir);
   if (!created.ok) return refuse(err, created.issues);
   out(created.dir);

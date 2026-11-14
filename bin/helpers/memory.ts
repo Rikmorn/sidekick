@@ -147,7 +147,14 @@ export function runSnapshot(
   if (args === undefined) return 0;
   const runGit = deadlineRunner(SNAPSHOT_DEADLINE_MS, deps.now);
   try {
-    snapshotStore(args.store, args.session, args.source, runGit);
+    snapshotStore(
+      args.store,
+      {
+        message: `memory: snapshot at ${args.source} of session ${args.session}`,
+        trailers: [`Session: ${args.session}`],
+      },
+      runGit,
+    );
   } catch {}
   try {
     cacheLint(args.store, runGit, ctx, deps);

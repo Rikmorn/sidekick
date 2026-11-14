@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execRunner } from './pm-data.js';
 import { type ProfileEnv, parseFlags, runProfileCli } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 
@@ -76,6 +77,7 @@ function harness(over: Partial<ProfileEnv> = {}) {
     home: '/home/test',
     tmpdir: tmp(),
     runClaude: runner.run,
+    runGit: execRunner,
     write: (c) => written.push(c),
     workTree: { kind: 'outside' },
     ...over,
@@ -342,6 +344,67 @@ describe('profile new', () => {
     expect(
       h.run('new', 'fresh', '--description', 'x', '--descripton', 'y'),
     ).toBe(1);
+  });
+  test('makes the sidekick folder a repo before the first user profile', () => {
+    const home = fs.realpathSync(tmp());
+    const h = harness({ env: {}, home });
+    expect(h.run('new', 'x', '--description', 'd')).toBe(0);
+    const folder = path.join(home, '.claude', 'sidekick');
+    expect(fs.existsSync(path.join(folder, '.git'))).toBe(true);
+    expect(fs.readFileSync(path.join(folder, '.gitignore'), 'utf-8')).toBe(
+      'loops/*/records/\nloops/*/state.json\n',
+    );
+    expect(
+      fs.existsSync(path.join(folder, 'profiles', 'x', 'profile.json')),
+    ).toBe(true);
+  });
+  test('makes no repo with SIDEKICK_PROFILES_DIR set', () => {
+    const home = fs.realpathSync(tmp());
+    const h = harness({ home });
+    expect(h.run('new', 'x', '--description', 'd')).toBe(0);
+    expect(fs.existsSync(path.join(home, '.claude', 'sidekick'))).toBe(false);
+  });
+  test('makes no repo with --repo', () => {
+    const top = fs.realpathSync(tmp());
+    const home = fs.realpathSync(tmp());
+    const h = harness({
+      env: {},
+      home,
+      cwd: top,
+      workTree: { kind: 'inside', top },
+    });
+    expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(0);
+    expect(fs.existsSync(path.join(home, '.claude', 'sidekick'))).toBe(false);
+  });
+});
+
+describe('a dotfiles repo at home with the bridge link', () => {
+  const bridged = () => {
+    const home = fs.realpathSync(tmp());
+    spawnSync('git', ['init', '-q'], { cwd: home });
+    const store = path.join(home, '.claude', 'sidekick', 'profiles');
+    fs.mkdirSync(store, { recursive: true });
+    fs.symlinkSync(store, path.join(home, '.claude', 'profiles'));
+    mkProfile(store, 'p', { description: 'P' });
+    return harness({
+      env: {},
+      home,
+      cwd: home,
+      workTree: { kind: 'inside', top: home },
+    });
+  };
+
+  test('list shows each profile once', () => {
+    const h = bridged();
+    expect(h.run('list')).toBe(0);
+    expect(h.out.filter((l) => l.startsWith('p '))).toHaveLength(1);
+  });
+  test('new --repo exits 1 with the user-store message', () => {
+    const h = bridged();
+    expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(1);
+    expect(h.err).toEqual([
+      'the repo store is the user store here, so --repo has nowhere else to write',
+    ]);
   });
 });
 
@@ -838,7 +901,7 @@ function repoHarness() {
   const workTree = tmp();
   const home = tmp();
   const repoStore = path.join(workTree, '.claude', 'profiles');
-  const userStore = path.join(home, '.claude', 'profiles');
+  const userStore = path.join(home, '.claude', 'sidekick', 'profiles');
   const h = harness({
     env: {},
     home,
@@ -946,19 +1009,20 @@ describe('the repo store', () => {
     ]);
   });
   test('new --repo refuses where the repo store is the user store, saying why', () => {
-    const atHome = repoHarness();
-    atHome.penv.home = atHome.workTree;
-    const configInRepo = repoHarness();
-    configInRepo.penv.env = {
-      CLAUDE_CONFIG_DIR: path.join(configInRepo.workTree, '.claude'),
-    };
-    for (const h of [atHome, configInRepo]) {
-      expect(h.run('new', 'fresh', '--description', 'F', '--repo')).toBe(1);
-      expect(h.err).toEqual([
-        'the repo store is the user store here, so --repo has nowhere else to write',
-      ]);
-      expect(fs.existsSync(path.join(h.repoStore, 'fresh'))).toBe(false);
-    }
+    const h = repoHarness();
+    h.penv.home = h.workTree;
+    fs.mkdirSync(path.join(h.workTree, '.claude', 'sidekick', 'profiles'), {
+      recursive: true,
+    });
+    fs.symlinkSync(
+      path.join(h.workTree, '.claude', 'sidekick', 'profiles'),
+      h.repoStore,
+    );
+    expect(h.run('new', 'fresh', '--description', 'F', '--repo')).toBe(1);
+    expect(h.err).toEqual([
+      'the repo store is the user store here, so --repo has nowhere else to write',
+    ]);
+    expect(fs.existsSync(path.join(h.repoStore, 'fresh'))).toBe(false);
   });
   test('new --repo refuses while SIDEKICK_PROFILES_DIR is set, saying why', () => {
     const h = repoHarness();

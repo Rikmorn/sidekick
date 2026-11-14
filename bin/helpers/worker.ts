@@ -5,7 +5,6 @@
  * does.
  */
 
-import type { Runner } from './pm-data.js';
 import type { ProfileEnv } from './profile.js';
 import { dispatch } from './worker-dispatch.js';
 import { parseDispatchArgs } from './worker-dispatch-args.js';
@@ -17,7 +16,6 @@ export const WORKER_USAGE_LINE =
 
 /** The profile family's environment, plus git and the seams a lock wait runs through. */
 export interface WorkerEnv extends ProfileEnv {
-  runGit: Runner;
   /** Blocks for `ms` milliseconds. */
   sleep: (ms: number) => void;
   /** Whether process `pid` still runs. */

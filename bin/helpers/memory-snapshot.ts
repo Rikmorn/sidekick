@@ -21,8 +21,7 @@ export const SNAPSHOT_DEADLINE_MS = 5000;
  */
 export function snapshotStore(
   store: string,
-  sessionId: string,
-  source: string,
+  commit: { message: string; trailers: readonly string[] },
   runGit: Runner,
 ): SnapshotOutcome {
   if (!isWorkTreeTop(store, runGit)) return 'failed';
@@ -32,14 +31,13 @@ export function snapshotStore(
   const staged = run(['diff', '--cached', '--quiet']);
   if (staged.code === 0) return 'clean';
   if (staged.code !== 1) return 'failed';
-  const commit = run([
+  const committed = run([
     'commit',
     '-m',
-    `memory: snapshot at ${source} of session ${sessionId}`,
-    '--trailer',
-    `Session: ${sessionId}`,
+    commit.message,
+    ...commit.trailers.flatMap((trailer) => ['--trailer', trailer]),
   ]);
-  return commit.code === 0 ? 'committed' : 'failed';
+  return committed.code === 0 ? 'committed' : 'failed';
 }
 
 /** The exit code `deadlineRunner` gives a call made after its deadline, or cut by it. */

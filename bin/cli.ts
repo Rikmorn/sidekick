@@ -116,6 +116,7 @@ function profileEnvOf(ctx: MainContext): ProfileEnv {
     workTree: workTreeRootOf(ctx.cwd),
     tmpdir: ctx.tmpdir ?? os.tmpdir(),
     runClaude: ctx.runClaude ?? execClaude,
+    runGit: execRunner,
     write: ctx.write ?? writeStdout,
   };
 }
@@ -158,7 +159,6 @@ export function main(
       rest,
       {
         ...profileEnvOf(ctx),
-        runGit: execRunner,
         sleep: sleepSync,
         isAlive: processIsAlive,
       },

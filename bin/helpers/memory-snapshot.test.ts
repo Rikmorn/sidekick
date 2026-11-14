@@ -21,6 +21,10 @@ const IDENTITY = {
   GIT_COMMITTER_EMAIL: 'test@example.com',
 };
 const saved: Record<string, string | undefined> = {};
+const SNAP = {
+  message: 'memory: snapshot at resume of session s-1',
+  trailers: ['Session: s-1'],
+};
 
 beforeEach(() => {
   for (const [name, value] of Object.entries(IDENTITY)) {
@@ -65,7 +69,7 @@ describe('snapshotStore', () => {
   test('commits a change with the session trailer', () => {
     const store = newStore();
     fs.writeFileSync(path.join(store, 'note.md'), 'hello\n');
-    expect(snapshotStore(store, 's-1', 'resume', execRunner)).toBe('committed');
+    expect(snapshotStore(store, SNAP, execRunner)).toBe('committed');
     const body = git(store, 'log', '-1', '--format=%B');
     expect(body).toContain('memory: snapshot at resume of session s-1');
     expect(
@@ -74,10 +78,24 @@ describe('snapshotStore', () => {
     expect(git(store, 'status', '--porcelain')).toBe('');
   });
 
+  test('the commit carries the message and each trailer it was given', () => {
+    const store = newStore();
+    fs.writeFileSync(path.join(store, 'note.md'), 'hello\n');
+    const commit = { message: 'custom: msg', trailers: ['A: 1', 'B: 2'] };
+    expect(snapshotStore(store, commit, execRunner)).toBe('committed');
+    expect(git(store, 'log', '-1', '--format=%s')).toBe('custom: msg');
+    expect(
+      git(store, 'log', '-1', '--format=%(trailers:key=A,valueonly)'),
+    ).toBe('1');
+    expect(
+      git(store, 'log', '-1', '--format=%(trailers:key=B,valueonly)'),
+    ).toBe('2');
+  });
+
   test('a clean store gives clean and adds no commit', () => {
     const store = newStore();
     const head = git(store, 'rev-parse', 'HEAD');
-    expect(snapshotStore(store, 's-1', 'startup', execRunner)).toBe('clean');
+    expect(snapshotStore(store, SNAP, execRunner)).toBe('clean');
     expect(git(store, 'rev-parse', 'HEAD')).toBe(head);
   });
 
@@ -85,7 +103,7 @@ describe('snapshotStore', () => {
     const store = newStore();
     fs.writeFileSync(path.join(store, 'note.md'), 'hello\n');
     fs.writeFileSync(path.join(store, '.git', 'index.lock'), '');
-    expect(snapshotStore(store, 's-1', 'startup', execRunner)).toBe('failed');
+    expect(snapshotStore(store, SNAP, execRunner)).toBe('failed');
   });
 
   test('never stages .DS_Store', () => {
@@ -93,11 +111,9 @@ describe('snapshotStore', () => {
     fs.writeFileSync(path.join(store, '.DS_Store'), 'x');
     fs.mkdirSync(path.join(store, 'fam'));
     fs.writeFileSync(path.join(store, 'fam', '.DS_Store'), 'x');
-    expect(snapshotStore(store, 's-1', 'startup', execRunner)).toBe('clean');
+    expect(snapshotStore(store, SNAP, execRunner)).toBe('clean');
     fs.writeFileSync(path.join(store, 'fam', 'a.md'), 'a\n');
-    expect(snapshotStore(store, 's-1', 'startup', execRunner)).toBe(
-      'committed',
-    );
+    expect(snapshotStore(store, SNAP, execRunner)).toBe('committed');
     expect(git(store, 'show', '--name-only', '--format=', 'HEAD')).toBe(
       'fam/a.md',
     );
@@ -106,9 +122,7 @@ describe('snapshotStore', () => {
   test('a store path with a space stays whole', () => {
     const store = newStore('my store');
     fs.writeFileSync(path.join(store, 'a b.md'), 'a\n');
-    expect(snapshotStore(store, 's-1', 'startup', execRunner)).toBe(
-      'committed',
-    );
+    expect(snapshotStore(store, SNAP, execRunner)).toBe('committed');
   });
 
   test('a folder inside another repo, but not a repo itself, gives failed and leaves the outer history', () => {
@@ -117,15 +131,15 @@ describe('snapshotStore', () => {
     fs.mkdirSync(inner);
     fs.writeFileSync(path.join(inner, 'note.md'), 'hello\n');
     const head = git(outer, 'rev-parse', 'HEAD');
-    expect(snapshotStore(inner, 's-1', 'startup', execRunner)).toBe('failed');
+    expect(snapshotStore(inner, SNAP, execRunner)).toBe('failed');
     expect(git(outer, 'rev-parse', 'HEAD')).toBe(head);
     expect(git(outer, 'status', '--porcelain')).toBe('?? store/');
   });
 
   test('a missing folder gives failed', () => {
-    expect(
-      snapshotStore(path.join(tmp(), 'absent'), 's-1', 'startup', execRunner),
-    ).toBe('failed');
+    expect(snapshotStore(path.join(tmp(), 'absent'), SNAP, execRunner)).toBe(
+      'failed',
+    );
   });
 });
 

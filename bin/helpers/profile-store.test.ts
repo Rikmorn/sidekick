@@ -41,73 +41,132 @@ const profile = (
 describe('storeRoots', () => {
   test('SIDEKICK_PROFILES_DIR replaces the default root, resolved against cwd', () => {
     expect(
-      storeRoots({ SIDEKICK_PROFILES_DIR: 'store' }, '/work', '/home/u', {
-        kind: 'outside',
-      }),
+      storeRoots(
+        'profiles',
+        { SIDEKICK_PROFILES_DIR: 'store' },
+        '/work',
+        '/home/u',
+        {
+          kind: 'outside',
+        },
+      ),
     ).toEqual(users('/work/store'));
   });
   test('an empty SIDEKICK_PROFILES_DIR counts as unset', () => {
     expect(
-      storeRoots({ SIDEKICK_PROFILES_DIR: '' }, '/work', '/home/u', {
-        kind: 'outside',
-      }),
-    ).toEqual(users('/home/u/.claude/profiles'));
+      storeRoots(
+        'profiles',
+        { SIDEKICK_PROFILES_DIR: '' },
+        '/work',
+        '/home/u',
+        {
+          kind: 'outside',
+        },
+      ),
+    ).toEqual(users('/home/u/.claude/sidekick/profiles'));
   });
   test('an empty CLAUDE_CONFIG_DIR counts as unset', () => {
     expect(
-      storeRoots({ CLAUDE_CONFIG_DIR: '' }, '/work', '/home/u', {
+      storeRoots('profiles', { CLAUDE_CONFIG_DIR: '' }, '/work', '/home/u', {
         kind: 'outside',
       }),
-    ).toEqual(users('/home/u/.claude/profiles'));
+    ).toEqual(users('/home/u/.claude/sidekick/profiles'));
   });
   test('CLAUDE_CONFIG_DIR moves the default root', () => {
     expect(
-      storeRoots({ CLAUDE_CONFIG_DIR: '/cfg' }, '/work', '/home/u', {
-        kind: 'outside',
-      }),
-    ).toEqual(users('/cfg/profiles'));
+      storeRoots(
+        'profiles',
+        { CLAUDE_CONFIG_DIR: '/cfg' },
+        '/work',
+        '/home/u',
+        {
+          kind: 'outside',
+        },
+      ),
+    ).toEqual(users('/cfg/sidekick/profiles'));
   });
 });
 
 describe('storeRoots with a work tree', () => {
   test('puts the repo store first', () => {
     expect(
-      storeRoots({}, '/work', '/home/u', { kind: 'inside', top: '/repo' }),
+      storeRoots('profiles', {}, '/work', '/home/u', {
+        kind: 'inside',
+        top: '/repo',
+      }),
     ).toEqual([
       { kind: 'repo', dir: '/repo/.claude/profiles' },
-      { kind: 'user', dir: '/home/u/.claude/profiles' },
+      { kind: 'user', dir: '/home/u/.claude/sidekick/profiles' },
     ]);
   });
   test('a failed work tree lookup yields the user root alone, as outside does', () => {
     expect(
-      storeRoots({}, '/work', '/home/u', { kind: 'failed', issue: 'fatal: x' }),
-    ).toEqual(users('/home/u/.claude/profiles'));
+      storeRoots('profiles', {}, '/work', '/home/u', {
+        kind: 'failed',
+        issue: 'fatal: x',
+      }),
+    ).toEqual(users('/home/u/.claude/sidekick/profiles'));
   });
   test('SIDEKICK_PROFILES_DIR is the only store, work tree or not', () => {
     expect(
-      storeRoots({ SIDEKICK_PROFILES_DIR: '/s' }, '/work', '/home/u', {
-        kind: 'inside',
-        top: '/repo',
-      }),
+      storeRoots(
+        'profiles',
+        { SIDEKICK_PROFILES_DIR: '/s' },
+        '/work',
+        '/home/u',
+        {
+          kind: 'inside',
+          top: '/repo',
+        },
+      ),
     ).toEqual([{ kind: 'user', dir: '/s' }]);
   });
-  test('a work tree at home has no repo store: its folder is the user store', () => {
+  test('a work tree at home yields the repo root, then the user root', () => {
     expect(
-      storeRoots({}, '/work', '/home/u', { kind: 'inside', top: '/home/u' }),
-    ).toEqual([{ kind: 'user', dir: '/home/u/.claude/profiles' }]);
+      storeRoots('profiles', {}, '/work', '/home/u', {
+        kind: 'inside',
+        top: '/home/u',
+      }),
+    ).toEqual([
+      { kind: 'repo', dir: '/home/u/.claude/profiles' },
+      { kind: 'user', dir: '/home/u/.claude/sidekick/profiles' },
+    ]);
   });
-  test('a CLAUDE_CONFIG_DIR inside the work tree makes its profiles the user store', () => {
+  test('a dotfiles repo at home with the bridge link is one store', () => {
+    const home = fs.realpathSync(tmp);
+    const sidekickProfiles = path.join(home, '.claude', 'sidekick', 'profiles');
+    fs.mkdirSync(sidekickProfiles, { recursive: true });
+    fs.symlinkSync(sidekickProfiles, path.join(home, '.claude', 'profiles'));
     expect(
-      storeRoots({ CLAUDE_CONFIG_DIR: '/repo/.claude' }, '/work', '/home/u', {
+      storeRoots('profiles', {}, '/work', home, { kind: 'inside', top: home }),
+    ).toEqual(users(sidekickProfiles));
+  });
+  test('a CLAUDE_CONFIG_DIR inside the work tree keeps the repo root apart from the user root', () => {
+    expect(
+      storeRoots(
+        'profiles',
+        { CLAUDE_CONFIG_DIR: '/repo/.claude' },
+        '/work',
+        '/home/u',
+        { kind: 'inside', top: '/repo' },
+      ),
+    ).toEqual([
+      { kind: 'repo', dir: '/repo/.claude/profiles' },
+      { kind: 'user', dir: '/repo/.claude/sidekick/profiles' },
+    ]);
+  });
+  test('loops has one user root, whatever the override or work tree', () => {
+    expect(
+      storeRoots('loops', { SIDEKICK_PROFILES_DIR: '/s' }, '/work', '/home/u', {
         kind: 'inside',
         top: '/repo',
       }),
-    ).toEqual([{ kind: 'user', dir: '/repo/.claude/profiles' }]);
+    ).toEqual([{ kind: 'user', dir: '/home/u/.claude/sidekick/loops' }]);
   });
   test('no work tree, no repo store', () => {
-    expect(storeRoots({}, '/work', '/home/u', { kind: 'outside' })).toEqual([
-      { kind: 'user', dir: '/home/u/.claude/profiles' },
-    ]);
+    expect(
+      storeRoots('profiles', {}, '/work', '/home/u', { kind: 'outside' }),
+    ).toEqual([{ kind: 'user', dir: '/home/u/.claude/sidekick/profiles' }]);
   });
 });
 
@@ -172,10 +231,11 @@ describe('loadProfile', () => {
   test('a relative SIDEKICK_PROFILES_DIR still gives an absolute dir', () => {
     profile(path.join(tmp, 'store'), 'p');
     const roots = storeRoots(
+      'profiles',
       { SIDEKICK_PROFILES_DIR: 'store' },
       tmp,
       '/home/u',
-      undefined,
+      { kind: 'outside' },
     );
     const r = loadProfile('p', roots);
     expect(r.ok).toBe(true);

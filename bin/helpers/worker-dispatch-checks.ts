@@ -199,7 +199,13 @@ function bypassIssues(profile: Profile, mode: string | undefined): string[] {
 
 /** The `profile new` hint, when no store root holds a folder of that name. */
 function missingProfileHint(name: string, penv: ProfileEnv): string[] {
-  const roots = storeRoots(penv.env, penv.cwd, penv.home, penv.workTree);
+  const roots = storeRoots(
+    'profiles',
+    penv.env,
+    penv.cwd,
+    penv.home,
+    penv.workTree,
+  );
   const held = roots.some((root) => isFolder(path.join(root.dir, name)));
   return isProfileName(name) && !held
     ? [`create it with: sidekick profile new ${name} --description <text>`]

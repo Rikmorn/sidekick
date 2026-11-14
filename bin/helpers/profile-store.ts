@@ -14,6 +14,7 @@ import {
   readManifest,
 } from './profile-manifest.js';
 import type { WorkTreeRoot } from './rules.js';
+import { sameFolder, sidekickHome } from './sidekick-home.js';
 
 export type StoreKind = 'repo' | 'user';
 
@@ -89,31 +90,36 @@ const CLAUDE_DIR_REASONS: ReadonlyMap<string, string> = new Map([
   ['settings.local.json', ENABLES_PLUGINS],
 ]);
 
+/** The stores that live under the sidekick folder. */
+export type StoreName = 'profiles' | 'loops';
+
 /**
- * The store's roots in search order: the work tree's `.claude/profiles/` when
- * `workTree` is inside one, then the user store. `SIDEKICK_PROFILES_DIR` replaces
- * both.
+ * The store's roots in search order. `profiles` gives the work tree's
+ * `.claude/profiles/` when `workTree` is inside one, then
+ * `<config>/sidekick/profiles`; `SIDEKICK_PROFILES_DIR` replaces both.
+ * `loops` gives `<config>/sidekick/loops` alone.
  */
 export function storeRoots(
+  store: StoreName,
   env: NodeJS.ProcessEnv,
   cwd: string,
   home: string,
   workTree: WorkTreeRoot,
 ): StoreRoot[] {
-  const override = env.SIDEKICK_PROFILES_DIR;
-  if (override) return [{ kind: 'user', dir: path.resolve(cwd, override) }];
-  const configDir = env.CLAUDE_CONFIG_DIR || path.join(home, '.claude');
   const user: StoreRoot = {
     kind: 'user',
-    dir: path.resolve(cwd, configDir, 'profiles'),
+    dir: path.join(sidekickHome(env, cwd, home), store),
   };
+  if (store === 'loops') return [user];
+  const override = env.SIDEKICK_PROFILES_DIR;
+  if (override) return [{ kind: 'user', dir: path.resolve(cwd, override) }];
   if (workTree.kind !== 'inside') return [user];
   const repo: StoreRoot = {
     kind: 'repo',
     dir: path.resolve(workTree.top, '.claude', 'profiles'),
   };
-  // A dotfiles repo at $HOME, say: one folder is one store.
-  return repo.dir === user.dir ? [user] : [repo, user];
+  // A dotfiles repo at $HOME with a bridge link: one folder is one store.
+  return sameFolder(repo.dir, user.dir) ? [user] : [repo, user];
 }
 
 // A dangling symlink counts as present.
