@@ -310,7 +310,13 @@ function runnerIssues(words: string[], name: string, where: Where): string[] {
 /** Judges `words`, which start at a command word. */
 function commandIssues(words: string[], where: Where): string[] {
   const [word = '', next] = words;
-  if ([word, next].some((w) => w !== undefined && UNPLAIN_WORD.test(w))) {
+  // Lower case, since the default macOS volume resolves BASH to bash.
+  const name = path.basename(word).toLowerCase();
+  // The next word is a plain argument unless a check reads it as a subcommand or program.
+  const readsNext =
+    ['sidekick', 'git', 'gh'].includes(name) || runnerBase(name) !== undefined;
+  const tested = readsNext ? [word, next] : [word];
+  if (tested.some((w) => w !== undefined && UNPLAIN_WORD.test(w))) {
     return [
       'quotes, backslashes, braces, and $ in the command words hide the program from the check, so spell them plainly.',
     ];
@@ -319,8 +325,6 @@ function commandIssues(words: string[], where: Where): string[] {
     word.includes('/') || word.startsWith('~')
       ? commandPathIssues(word, where)
       : [];
-  // Lower case, since the default macOS volume resolves BASH to bash.
-  const name = path.basename(word).toLowerCase();
   return [
     ...pathIssues,
     ...programIssues(name, words.slice(1)),
