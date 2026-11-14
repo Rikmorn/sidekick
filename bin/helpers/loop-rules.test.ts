@@ -87,6 +87,37 @@ const REFUSED_WORK = [
   'Bash(X=* git log)',
   'Bash(FOO=1 *)',
   'Bash(bash* -c x)',
+  'Bash(env /bin/sh -c *)',
+  'Bash(nohup /usr/local/bin/claude *)',
+  'Bash(env /usr/bin/git -c x=y log)',
+  'Bash(node /abs/plugin/bin/sidekick worker dispatch *)',
+  'Bash(env /usr/bin/env /bin/sh -c x)',
+  'Bash(env /usr/bin/gh extension exec x)',
+  'Bash(sidekick worke? dispatch *)',
+  'Bash(sidekick wor[k]er dispatch)',
+  'Bash(ba?h -c *)',
+  'Bash(b[a]sh -c *)',
+  'Bash(git l[o]g)',
+  'Bash(git l?g)',
+  'Bash(gh iss?e view)',
+  'Bash(node /Users/me/x[1].js)',
+  'Bash(node /Users/me/x?.js)',
+  'Monitor',
+  'Monitor(*)',
+  'Monitor(bash -c *)',
+  'PowerShell',
+  'PowerShell(*)',
+  'PowerShell(bash -c *)',
+  'Bash(2>x bash -c *)',
+  'Bash(<x sh -c *)',
+  'Bash(! bash -c *)',
+  'Bash((bash -c *))',
+  'Bash(FOO=(x) git log)',
+  'Bash(node /Users/me/a/../x.js)',
+  'Bash(node /Users/me/./x.js)',
+  'Bash(/Users/me/./tool *)',
+  'Bash(/Users/me/a/../tool *)',
+  'Bash(env /Users/me/a/../x *)',
   'Bash(BASH -c *)',
   'Bash(Git -c x=y log)',
   'Bash(CLAUDE respawn)',
@@ -131,6 +162,11 @@ const PASSING_WORK = [
   'Bash(node /Users/me/.claude/sidekick/profiles/fixer/plugin/bin/f.js *)',
   'Bash(FOO=1 node /Users/me/f.js)',
   'Bash(/Users/me/bin/tool *)',
+  'Bash(env /Users/me/outside/tool *)',
+  'Bash(node /Users/me/outside/x.js *)',
+  'Bash(env /usr/bin/git log *)',
+  'Monitor(gh issue view *)',
+  'PowerShell(Get-Date)',
   'Bash(/usr/bin/git log *)',
   'mcp__plugin_x_y__z',
   'mcp__server__*',
@@ -273,6 +309,30 @@ describe('ruleIssues', () => {
       expect(
         ruleIssues(`Bash(node ${tmp}/o/../repo/x.js)`, 'allow', repo).length,
       ).toBeGreaterThan(0);
+    });
+    test('refuses shell glob characters that could expand into repo', () => {
+      const repo = repoIn();
+      expect(
+        ruleIssues(`Bash(node ${tmp}/rep?/x.js)`, 'allow', repo).length,
+      ).toBeGreaterThan(0);
+      expect(
+        ruleIssues(`Bash(${tmp}/[r]epo/x.js *)`, 'allow', repo).length,
+      ).toBeGreaterThan(0);
+    });
+    test('refuses .. after a link, which the kernel follows first', () => {
+      const repo = repoIn();
+      fs.mkdirSync(path.join(repo, 'sub'));
+      fs.mkdirSync(path.join(tmp, 'out'));
+      fs.symlinkSync(path.join(repo, 'sub'), path.join(tmp, 'out', 'l'));
+      const issues = ruleIssues(
+        `Bash(node ${tmp}/out/l/../x.js)`,
+        'allow',
+        repo,
+      );
+      expect(issues.join(' ')).toContain('without . or ..');
+      expect(
+        ruleIssues(`Bash(${tmp}/out/l/../x.sh)`, 'allow', repo).join(' '),
+      ).toContain('without . or ..');
     });
     test('a sibling folder sharing the repo name prefix passes', () => {
       const repo = repoIn();

@@ -53,6 +53,16 @@ const SYNTAX_PATTERN = /\$\(|`|<\(|>\(|[;|&\n]/;
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const UNPLAIN_WORD = /['"\\${}]/;
 const WILDCARD = '*';
+// The shell expands ? and [...] as well, so they count wherever a word is tested.
+const GLOB_CHARS = /[*?[\]]/;
+const GRAMMAR_CHARS = /[<>()!]/;
+// Monitor and PowerShell take Bash's rule syntax and run through a shell.
+const COMMAND_TOOLS = ['Bash', 'Monitor', 'PowerShell'];
+const hasGlob = (word: string): boolean => GLOB_CHARS.test(word);
+const hasDotSegment = (word: string): boolean =>
+  word.split('/').some((s) => s === '.' || s === '..');
+const DOT_ISSUE =
+  'a path with . or .. segments is resolved before links are followed, so spell the path without . or .. segments.';
 
 /** Parses `Tool` or `Tool(specifier)`; undefined for anything else. */
 export function parseRule(text: string): ParsedRule | undefined {
@@ -87,7 +97,8 @@ const pathToolIssues = (rule: ParsedRule): string[] => {
 const isOutsideScript = (script: string | undefined, repo: string): boolean =>
   script !== undefined &&
   path.isAbsolute(script) &&
-  !script.includes(WILDCARD) &&
+  !hasGlob(script) &&
+  !hasDotSegment(script) &&
   !insideRepo(script, repo);
 
 const SCRIPT_ADVICE =
@@ -104,6 +115,7 @@ const commandPathIssues = (word: string, repo: string): string[] => {
       'a relative command path anchors in the loop worktree of the repo, so spell an absolute path outside the repo.',
     ];
   }
+  if (hasDotSegment(word)) return [DOT_ISSUE];
   if (insideRepo(word, repo)) {
     return [
       'a command inside the repo is code a worker can write, so use an absolute path outside the repo.',
@@ -121,7 +133,7 @@ const programIssues = (name: string, next: string | undefined): string[] => {
   if (name === 'sidekick') {
     const bad =
       next !== undefined &&
-      (next === 'worker' || next.includes(WILDCARD) || next.startsWith('-'));
+      (next === 'worker' || hasGlob(next) || next.startsWith('-'));
     return bad
       ? [
           'a sidekick rule must name its subcommand without a wildcard or leading option, and never worker, which dispatches sessions.',
@@ -129,8 +141,7 @@ const programIssues = (name: string, next: string | undefined): string[] => {
       : [];
   }
   if (name === 'git') {
-    const bad =
-      next !== undefined && (next.startsWith('-') || next.includes(WILDCARD));
+    const bad = next !== undefined && (next.startsWith('-') || hasGlob(next));
     return bad
       ? [
           'a git rule must name its subcommand with no option before it and no wildcard in it, since a leading option can set config or the exec path, which runs code.',
@@ -140,7 +151,7 @@ const programIssues = (name: string, next: string | undefined): string[] => {
   if (name === 'gh') {
     const bad =
       next !== undefined &&
-      (next.includes(WILDCARD) ||
+      (hasGlob(next) ||
         next.startsWith('-') ||
         next === 'extension' ||
         next === 'alias');
@@ -153,22 +164,46 @@ const programIssues = (name: string, next: string | undefined): string[] => {
   return [];
 };
 
-const runnerIssues = (
-  name: string,
-  next: string | undefined,
-  repo: string,
-): string[] => {
+// A runner's absolute script is judged as a command of its own, so `env /bin/sh` refuses.
+function runnerIssues(words: string[], name: string, repo: string): string[] {
   if (!RUNNER_WORDS.includes(name)) return [];
-  if (name !== 'eval' && isOutsideScript(next, repo)) return [];
+  const next = words[1];
+  if (name !== 'eval' && isOutsideScript(next, repo)) {
+    return commandIssues(words.slice(1), repo);
+  }
+  if (next !== undefined && path.isAbsolute(next) && hasDotSegment(next)) {
+    return [DOT_ISSUE];
+  }
   return [
     `a rule starting with a shell, interpreter, runner, or wrapper grants arbitrary code, so ${SCRIPT_ADVICE}.`,
   ];
-};
+}
+
+/** Judges `words`, which start at a command word. */
+function commandIssues(words: string[], repo: string): string[] {
+  const [word = '', next] = words;
+  if ([word, next].some((w) => w !== undefined && UNPLAIN_WORD.test(w))) {
+    return [
+      'quotes, backslashes, braces, and $ in the command words hide the program from the check, so spell them plainly.',
+    ];
+  }
+  const pathIssues =
+    word.includes('/') || word.startsWith('~')
+      ? commandPathIssues(word, repo)
+      : [];
+  // Lower case, since the default macOS volume resolves BASH to bash.
+  const name = path.basename(word).toLowerCase();
+  return [
+    ...pathIssues,
+    ...programIssues(name, next),
+    ...runnerIssues(words, name, repo),
+  ];
+}
 
 const bashIssues = (specifier: string | undefined, repo: string): string[] => {
   if (specifier === undefined || specifier === WILDCARD) {
     return [
-      'a Bash rule must name a command, since a bare Bash or Bash(*) grants a shell.',
+      'a Bash, Monitor, or PowerShell rule must name a command, since the bare tool or (*) matches every command.',
     ];
   }
   const issues = SYNTAX_PATTERN.test(specifier)
@@ -182,35 +217,29 @@ const bashIssues = (specifier: string | undefined, repo: string): string[] => {
   if (commandAt < 0 || words[commandAt] === '') {
     return [
       ...issues,
-      'a Bash rule must name a command after any NAME=value words.',
+      'a rule must name a command after any NAME=value words.',
     ];
   }
-  if (words.slice(0, commandAt + 1).some((w) => w.includes(WILDCARD))) {
+  const head = words.slice(0, commandAt + 1);
+  if (head.some(hasGlob)) {
     return [
       ...issues,
-      'a wildcard before or in the command word could match any program, so spell the command out.',
+      'a wildcard (*, ?, or [...]) before or in the command word could match any program, so spell the command out.',
     ];
   }
-  if (words.slice(0, commandAt + 2).some((w) => UNPLAIN_WORD.test(w))) {
+  if (head.some((w) => GRAMMAR_CHARS.test(w))) {
+    return [
+      ...issues,
+      'a redirect, parenthesis, or ! before or in the command word is shell grammar the check cannot judge, so start the rule with the command.',
+    ];
+  }
+  if (words.slice(0, commandAt).some((w) => UNPLAIN_WORD.test(w))) {
     return [
       ...issues,
       'quotes, backslashes, braces, and $ in the command words hide the program from the check, so spell them plainly.',
     ];
   }
-  const word = words[commandAt] ?? '';
-  const next = words[commandAt + 1];
-  const pathIssues =
-    word.includes('/') || word.startsWith('~')
-      ? commandPathIssues(word, repo)
-      : [];
-  // Lower case, since the default macOS volume resolves BASH to bash.
-  const name = path.basename(word).toLowerCase();
-  return [
-    ...issues,
-    ...pathIssues,
-    ...programIssues(name, next),
-    ...runnerIssues(name, next, repo),
-  ];
+  return [...issues, ...commandIssues(words.slice(commandAt), repo)];
 };
 
 /**
@@ -228,6 +257,6 @@ export function ruleIssues(
     return ['the rule does not parse as Tool or Tool(specifier).'];
   }
   const issues = pathToolIssues(rule);
-  if (rule.tool !== 'Bash' || list === 'never') return issues;
+  if (!COMMAND_TOOLS.includes(rule.tool) || list === 'never') return issues;
   return [...issues, ...bashIssues(rule.specifier, repo)];
 }
