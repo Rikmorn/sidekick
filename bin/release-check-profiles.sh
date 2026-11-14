@@ -1,6 +1,8 @@
 #!/bin/sh
-# Runs every user-level profile's launch checks with the given sidekick binary,
-# and stops on the first refusal, naming the profile.
+# Runs every user-level profile's launch checks with the given sidekick binary.
+# It stops first when profile list refuses here: while the old store holds a
+# profile, or on an invalid profile in either store. Then it checks each
+# profile, and stops on the first refusal, naming the profile.
 set -eu
 fail() { echo "release:install: $*" >&2; exit 1; }
 
@@ -13,7 +15,8 @@ bin=$1
 store=${SIDEKICK_PROFILES_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/profiles}
 
 # Naming the store skips the old-store refusal, so a first call without the
-# variable lets the refusal speak. Its stderr, mv lines included, goes through.
+# variable lets the refusal speak. Its stderr, the move lines included, goes
+# through.
 if [ -z "${SIDEKICK_PROFILES_DIR:-}" ]; then
   "$bin" profile list >/dev/null ||
     fail "profile list refused; fix or move what the lines before this one name, then run this again"

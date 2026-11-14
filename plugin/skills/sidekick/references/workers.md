@@ -104,9 +104,9 @@ Once the checks pass, `dispatch` acts in this order:
 2. It spawns `claude` from the launching checkout's top, with the timeout `profile launch` uses:
 
    ```
-   claude --add-dir <profile folder> --settings <json> [--setting-sources <list>]
-     [--plugin-dir <dir>] --permission-mode <mode> --worktree <name> --bg -n <name>
-     -- /sidekick:sk-worker --dispatched <absolute brief path>
+   claude --add-dir <profile folder> [--plugin-dir <profile plugin>…] --settings <json>
+     [--setting-sources <list>] [--plugin-dir <dir>] --permission-mode <mode>
+     --worktree <name> --bg -n <name> -- /sidekick:sk-worker --dispatched <absolute brief path>
    ```
 
 3. It relays `claude`'s output, which names the job's id. Once `claude` exits 0, it writes the worker's record, with that id, as "The record" says. Every outcome of the check in step 4 keeps the record, so it comes first. A write that fails prints why and leaves the exit code alone. The worker runs, and only the desk loses sight of it.
