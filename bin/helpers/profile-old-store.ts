@@ -1,13 +1,19 @@
 /**
- * The refusal that holds every profile verb while the old user store, `<config>/profiles`,
- * still holds a profile. The profile store moved to `<config>/sidekick/profiles`.
+ * The refusal that holds each profile verb that reads or writes a store, and
+ * `worker dispatch`, while the old user store, `<config>/profiles`, still holds
+ * a profile. The profile store moved to `<config>/sidekick/profiles`.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
 import { shellQuote } from './shell.js';
-import { configDir, sameFolder, sidekickHome } from './sidekick-home.js';
+import {
+  configDir,
+  realPathOf,
+  sameFolder,
+  sidekickHome,
+} from './sidekick-home.js';
 
 // Claude Code's own undocumented file: read leniently, so a new field never hides a job.
 const JobState = v.looseObject({
@@ -38,29 +44,32 @@ const readJob = (file: string): v.InferOutput<typeof JobState> | undefined => {
 const underOrEqual = (flag: string, dir: string): boolean =>
   flag === dir || flag.startsWith(dir + path.sep);
 
+const jobIds = (jobsDir: string): string[] => {
+  try {
+    return fs.readdirSync(jobsDir).sort();
+  } catch {
+    return [];
+  }
+};
+
 /**
- * The jobs under `<configDir>/jobs` whose respawn flags name `oldStore` or a
- * path under it. A record that cannot be read or parsed is skipped.
+ * The jobs under `<configFolder>/jobs` whose respawn flags name `oldStore` or
+ * a path under it, as spelled or by real path, so a link on either side still
+ * matches. A record that cannot be read or parsed is skipped.
  */
 export function jobsFromStore(
   configFolder: string,
   oldStore: string,
 ): Array<{ id: string; name: string | undefined }> {
   const jobsDir = path.join(configFolder, 'jobs');
-  let ids: string[];
-  try {
-    ids = fs.readdirSync(jobsDir);
-  } catch {
-    return [];
-  }
-  const found: Array<{ id: string; name: string | undefined }> = [];
-  for (const id of ids.sort()) {
+  const realStore = realPathOf(oldStore);
+  const namesStore = (flag: string): boolean =>
+    underOrEqual(flag, oldStore) ||
+    (path.isAbsolute(flag) && underOrEqual(realPathOf(flag), realStore));
+  return jobIds(jobsDir).flatMap((id) => {
     const job = readJob(path.join(jobsDir, id, 'state.json'));
-    if (job?.respawnFlags.some((flag) => underOrEqual(flag, oldStore))) {
-      found.push({ id, name: job.name });
-    }
-  }
-  return found;
+    return job?.respawnFlags.some(namesStore) ? [{ id, name: job.name }] : [];
+  });
 }
 
 const heldNames = (oldStore: string): string[] => {
@@ -93,7 +102,6 @@ const moveLines = (
   });
 };
 
-// The real folder a linked old store points at; undefined when it is no link or cannot be read.
 const linkTarget = (oldStore: string): string | undefined => {
   try {
     return fs.lstatSync(oldStore).isSymbolicLink()
@@ -104,7 +112,8 @@ const linkTarget = (oldStore: string): string | undefined => {
   }
 };
 
-// A `mv` of a link moves the link, which a relative target then leaves dangling.
+// A `mv` of a link moves the link, which a relative target then leaves
+// dangling.
 const relinkLines = (
   oldStore: string,
   newStore: string,

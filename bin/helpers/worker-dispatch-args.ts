@@ -36,8 +36,8 @@ const stringFlag = (
 /**
  * Parses `dispatch`'s arguments, resolving the brief and `--plugin-dir`
  * against `cwd`, the folder the command was typed in. Undefined is a usage
- * error, and a brief given with `--check` is a refusal. A missing
- * `--permission-mode` is left to the checks, which name it.
+ * error, and a brief given with `--check`, or a repeated `--plugin-dir`, is a
+ * refusal. A missing `--permission-mode` is left to the checks, which name it.
  */
 export function parseDispatchArgs(
   rest: string[],
@@ -46,7 +46,7 @@ export function parseDispatchArgs(
   const parsed = parseFlags(rest, {
     'permission-mode': { type: 'string' },
     profile: { type: 'string' },
-    'plugin-dir': { type: 'string' },
+    'plugin-dir': { type: 'string', multiple: true },
     'allow-push': { type: 'boolean' },
     check: { type: 'boolean' },
   });
@@ -56,7 +56,15 @@ export function parseDispatchArgs(
     return { usageErrors: ['--check takes no brief'] };
   }
   if (!check && parsed.positionals.length !== 1) return undefined;
-  const pluginDir = stringFlag(parsed.values, 'plugin-dir');
+  const pluginDirs = parsed.lists['plugin-dir'] ?? [];
+  if (pluginDirs.length > 1) {
+    return {
+      usageErrors: [
+        '--plugin-dir given more than once: dispatch takes one plugin folder',
+      ],
+    };
+  }
+  const pluginDir = pluginDirs.at(0);
   // path.resolve would read an empty value as the current folder.
   if (pluginDir === '') return undefined;
   const shared: SharedOptions = {

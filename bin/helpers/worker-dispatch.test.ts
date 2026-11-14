@@ -387,6 +387,55 @@ describe('dispatch refuses', () => {
     );
   });
 
+  test('a --plugin-dir that is not a folder, before any claude check sees it', () => {
+    const fx = fixture({ description: 'W', settingSources: ['project'] });
+    const missing = path.join(fx.top, 'nowhere');
+    const h = harness(fx);
+    const code = h.dispatch(
+      fx.brief,
+      '--permission-mode',
+      'auto',
+      '--plugin-dir',
+      missing,
+    );
+    expectRefused(h, code, `--plugin-dir: ${missing} is not a folder`);
+    expect(h.claude.calls.filter((c) => c.args.includes(missing))).toEqual([]);
+    const checked = harness(fx);
+    const only = checked.dispatch(
+      '--check',
+      '--permission-mode',
+      'auto',
+      '--plugin-dir',
+      missing,
+    );
+    expect(only).toBe(1);
+    expect(checked.err).toContain(`--plugin-dir: ${missing} is not a folder`);
+    expect(
+      checked.claude.calls.filter((c) => c.args.includes(missing)),
+    ).toEqual([]);
+  });
+
+  test('a repeated --plugin-dir, as a usage error naming the flag', () => {
+    const fx = fixture();
+    fs.mkdirSync(path.join(fx.top, 'a'));
+    fs.mkdirSync(path.join(fx.top, 'b'));
+    const h = harness(fx);
+    const code = h.dispatch(
+      fx.brief,
+      '--permission-mode',
+      'auto',
+      '--plugin-dir',
+      'a',
+      '--plugin-dir',
+      'b',
+    );
+    expect(code).toBe(1);
+    expect(h.err).toEqual([
+      '--plugin-dir given more than once: dispatch takes one plugin folder',
+    ]);
+    expect(h.claude.calls).toEqual([]);
+  });
+
   test('bypassPermissions for a profile without the user setting source', () => {
     const fx = fixture({ description: 'W', settingSources: ['project'] });
     const h = harness(fx);

@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { execRunner } from './pm-data.js';
 import { type ProfileEnv, parseFlags, runProfileCli } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
+import { workTreeRootOf } from './rules.js';
 import { SIDEKICK_DEPENDENCY_IDS, SIDEKICK_ID } from './sidekick-plugin.js';
 
 const made: string[] = [];
@@ -1229,7 +1230,7 @@ describe('the repo store', () => {
   });
 });
 
-describe('the old profile store refuses every verb', () => {
+describe('the old profile store refuses every verb that reads or writes a store', () => {
   // A temp HOME whose old store holds `worker`, and no SIDEKICK_PROFILES_DIR.
   function oldStoreHarness() {
     const home = tmp();
@@ -1265,6 +1266,18 @@ describe('the old profile store refuses every verb', () => {
       );
     });
   }
+
+  test('alias prints the refusal once for several names, and reads no store without one', () => {
+    const h = oldStoreHarness();
+    expect(h.run('alias', 'worker', 'other')).toBe(1);
+    expect(h.err).toHaveLength(2);
+    expect(h.err[0]).toContain('worker');
+    expect(h.err[1]).toStartWith('mkdir -p ');
+    expect(h.out).toEqual([]);
+    const bare = oldStoreHarness();
+    expect(bare.run('alias')).toBe(0);
+    expect(bare.err).toEqual([]);
+  });
 
   test('a work tree topped at HOME, as a dotfiles repo is, refuses the same way', () => {
     const home = tmp();
@@ -1330,7 +1343,7 @@ describe('profile new --repo where the repo store is the old user store path', (
     expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(1);
     const old = path.join(home, '.claude', 'profiles');
     expect(h.err).toEqual([
-      `The repo store here, ${old}, is the old user store's path, and every profile verb refuses while that folder holds a profile. Run new without --repo to write to ${path.join(home, '.claude', 'sidekick', 'profiles')}.`,
+      `The repo store here, ${old}, is the old user store's path, and every profile verb that reads or writes a store refuses while that folder holds a profile. Run new without --repo to write to ${path.join(home, '.claude', 'sidekick', 'profiles')}.`,
     ]);
     expect(fs.existsSync(path.join(old, 'x'))).toBe(false);
     expect(h.out).toEqual([]);
@@ -1349,8 +1362,21 @@ describe('profile new --repo where the repo store is the old user store path', (
     });
     expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(1);
     expect(h.err).toEqual([
-      `The repo store here, ${path.join(home, '.claude', 'profiles')}, is the old user store's path, and every profile verb refuses while that folder holds a profile. Run new without --repo to write to ${path.join(home, '.claude', 'sidekick', 'profiles')}.`,
+      `The repo store here, ${path.join(home, '.claude', 'profiles')}, is the old user store's path, and every profile verb that reads or writes a store refuses while that folder holds a profile. Run new without --repo to write to ${path.join(home, '.claude', 'sidekick', 'profiles')}.`,
     ]);
+  });
+
+  test('a HOME reached through a link, with no old store yet, refuses the same way', () => {
+    const real = tmp();
+    expect(execRunner('git', ['init', '-q'], real).code).toBe(0);
+    const home = path.join(tmp(), 'home-link');
+    fs.symlinkSync(real, home);
+    const workTree = workTreeRootOf(home);
+    expect(workTree).toEqual({ kind: 'inside', top: fs.realpathSync(real) });
+    const h = harness({ env: {}, home, cwd: home, workTree });
+    expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(1);
+    expect(oneLine(h)).toContain("is the old user store's path");
+    expect(fs.existsSync(path.join(real, '.claude', 'profiles'))).toBe(false);
   });
 
   test('CLAUDE_CONFIG_DIR set to the repo .claude refuses the same way', () => {

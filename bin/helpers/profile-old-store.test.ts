@@ -189,4 +189,24 @@ describe('jobsFromStore', () => {
   test('returns nothing when there is no jobs folder', () => {
     expect(jobsFromStore(tmp(), '/old')).toEqual([]);
   });
+
+  test('names a job by real path, whichever side goes through a link', () => {
+    const real = tmp();
+    const config = path.join(real, '.claude');
+    profile(path.join(config, 'profiles'), 'worker');
+    const home = path.join(tmp(), 'home-link');
+    fs.symlinkSync(real, home);
+    const linked = path.join(home, '.claude', 'profiles');
+    const resolved = fs.realpathSync(path.join(config, 'profiles'));
+    const flags = (store: string): string =>
+      JSON.stringify({ respawnFlags: ['--add-dir', `${store}/worker`] });
+    job(config, 'by-link', flags(linked));
+    job(config, 'by-real', flags(resolved));
+    const both = [
+      { id: 'by-link', name: undefined },
+      { id: 'by-real', name: undefined },
+    ];
+    expect(jobsFromStore(path.join(home, '.claude'), linked)).toEqual(both);
+    expect(jobsFromStore(path.dirname(resolved), resolved)).toEqual(both);
+  });
 });

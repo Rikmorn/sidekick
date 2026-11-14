@@ -104,4 +104,18 @@ describe('sameFolder', () => {
     expect(sameFolder('/no/a', '/no/a/../a')).toBe(true);
     expect(sameFolder('/no/a', '/no/b')).toBe(false);
   });
+
+  test('a missing path under a link compares by its deepest existing folder', () => {
+    const base = tmp();
+    fs.mkdirSync(path.join(base, 'real'));
+    fs.symlinkSync(path.join(base, 'real'), path.join(base, 'link'));
+    const real = fs.realpathSync(path.join(base, 'real'));
+    const missing = path.join(base, 'link', '.claude', 'profiles');
+    expect(sameFolder(missing, path.join(real, '.claude', 'profiles'))).toBe(
+      true,
+    );
+    expect(sameFolder(missing, path.join(real, '.claude', 'other'))).toBe(
+      false,
+    );
+  });
 });

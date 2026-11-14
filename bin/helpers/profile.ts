@@ -435,7 +435,7 @@ const create: Verb = (rest, penv, out, err) => {
   // Both paths in the config's spelling, since git gives the top resolved.
   if (wanted === 'repo' && sameFolder(root.dir, oldUserStore)) {
     return refuse(err, [
-      `The repo store here, ${oldUserStore}, is the old user store's path, and every profile verb refuses while that folder holds a profile. Run new without --repo to write to ${path.join(sidekickHome(penv.env, penv.cwd, penv.home), 'profiles')}.`,
+      `The repo store here, ${oldUserStore}, is the old user store's path, and every profile verb that reads or writes a store refuses while that folder holds a profile. Run new without --repo to write to ${path.join(sidekickHome(penv.env, penv.cwd, penv.home), 'profiles')}.`,
     ]);
   }
   if (wanted === 'user' && !penv.env.SIDEKICK_PROFILES_DIR) {
@@ -526,6 +526,23 @@ const launch: Verb = (rest, penv, out, err) => {
 const isShell = (value: unknown): value is Shell =>
   SHELLS.some((shell) => shell === value);
 
+// Each name's own refusal, then the old store's refusal once, or each loadable
+// name's load issues. With no loadable name, no store is read.
+function aliasIssues(names: readonly string[], penv: ProfileEnv): string[] {
+  const named = names.flatMap((name) => aliasNameRefusal(name) ?? []);
+  const loadable = names.filter((name) => aliasNameRefusal(name) === undefined);
+  if (loadable.length === 0) return named;
+  const resolved = rootsFor(penv);
+  if (!resolved.ok) return [...named, ...resolved.issues];
+  return [
+    ...named,
+    ...loadable.flatMap((name) => {
+      const loaded = loadProfile(name, resolved.roots);
+      return loaded.ok ? [] : loaded.issues;
+    }),
+  ];
+}
+
 const alias: Verb = (rest, penv, out, err) => {
   const parsed = parseFlags(rest, { shell: { type: 'string' } });
   if (parsed === undefined) return usage(err);
@@ -535,12 +552,7 @@ const alias: Verb = (rest, penv, out, err) => {
       `unknown shell "${String(shell)}": use ${SHELLS.join(' or ')}`,
     ]);
   }
-  const issues = parsed.positionals.flatMap((name) => {
-    const refusal = aliasNameRefusal(name);
-    if (refusal !== undefined) return [refusal];
-    const loaded = load(name, penv);
-    return 'issues' in loaded ? loaded.issues : [];
-  });
+  const issues = aliasIssues(parsed.positionals, penv);
   if (issues.length > 0) return refuse(err, issues);
   out(withoutTrailingNewline(shellFunction(shell, parsed.positionals)));
   return 0;

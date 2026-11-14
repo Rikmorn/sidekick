@@ -25,14 +25,25 @@ export const sidekickHome = (
 
 const IGNORED = ['loops/*/records/', 'loops/*/state.json'];
 
-/** Whether `a` and `b` are one folder: equal real paths, or equal resolved paths when either is missing. */
-export function sameFolder(a: string, b: string): boolean {
+/**
+ * The real path of `p`, or of its deepest existing ancestor with the rest of
+ * `p` appended, so a missing path under a link resolves through the link.
+ */
+export function realPathOf(p: string): string {
+  const resolved = path.resolve(p);
   try {
-    return fs.realpathSync(a) === fs.realpathSync(b);
+    return fs.realpathSync(resolved);
   } catch {
-    return path.resolve(a) === path.resolve(b);
+    const parent = path.dirname(resolved);
+    return parent === resolved
+      ? resolved
+      : path.join(realPathOf(parent), path.basename(resolved));
   }
 }
+
+/** Whether `a` and `b` are one folder: equal by `realPathOf`. */
+export const sameFolder = (a: string, b: string): boolean =>
+  realPathOf(a) === realPathOf(b);
 
 const messageOf = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);

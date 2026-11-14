@@ -185,6 +185,21 @@ const holdsMarkdown = (dir: string): boolean => {
   });
 };
 
+// One `pluginDirs: …` line per entry that resolves to the path an earlier
+// entry resolves to.
+const repeatedPluginDirs = (
+  entries: readonly string[],
+  resolved: readonly string[],
+): string[] =>
+  resolved.flatMap((folder, i) => {
+    const first = resolved.indexOf(folder);
+    return first === i
+      ? []
+      : [
+          `pluginDirs: "${entries[i]}" names ${folder}, as "${entries[first]}" does: name each folder once`,
+        ];
+  });
+
 const readFolder = (
   name: string,
   root: StoreRoot,
@@ -193,8 +208,18 @@ const readFolder = (
   const dir = path.join(root.dir, name);
   const layout = checkLayout(dir);
   if (layout.length > 0) return { ok: false, issues: layout };
-  const read = readManifest(path.join(dir, MANIFEST_FILE));
+  const manifestFile = path.join(dir, MANIFEST_FILE);
+  const read = readManifest(manifestFile);
   if (!read.ok) return read;
+  const entries = read.manifest.pluginDirs ?? [];
+  const pluginDirs = entries.map((d) => path.resolve(dir, d));
+  const repeats = repeatedPluginDirs(entries, pluginDirs);
+  if (repeats.length > 0) {
+    return {
+      ok: false,
+      issues: repeats.map((issue) => `${manifestFile}: ${issue}`),
+    };
+  }
   return {
     ok: true,
     profile: {
@@ -204,9 +229,7 @@ const readFolder = (
       store: root.kind,
       shadows,
       manifest: read.manifest,
-      pluginDirs: (read.manifest.pluginDirs ?? []).map((d) =>
-        path.resolve(dir, d),
-      ),
+      pluginDirs,
       hasRules: holdsMarkdown(path.join(dir, '.claude', 'rules')),
     },
   };

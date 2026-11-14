@@ -16,10 +16,13 @@ store=${SIDEKICK_PROFILES_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sidekick/prof
 
 # Naming the store skips the old-store refusal, so a first call without the
 # variable lets the refusal speak. Its stderr, the move lines included, goes
-# through.
+# through. Its stdout, where list prints an invalid profile's line, goes to
+# stderr only when list refuses.
 if [ -z "${SIDEKICK_PROFILES_DIR:-}" ]; then
-  "$bin" profile list >/dev/null ||
+  first=$("$bin" profile list) || {
+    [ -z "$first" ] || printf '%s\n' "$first" >&2
     fail "profile list refused; fix or move what the lines before this one name, then run this again"
+  }
 fi
 
 listing=$(SIDEKICK_PROFILES_DIR=$store "$bin" profile list) ||

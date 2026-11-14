@@ -3945,13 +3945,16 @@ import * as path13 from "node:path";
 var configDir = (env, cwd, home) => path13.resolve(cwd, configDirOf(env, home));
 var sidekickHome = (env, cwd, home) => path13.join(configDir(env, cwd, home), "sidekick");
 var IGNORED = ["loops/*/records/", "loops/*/state.json"];
-function sameFolder(a, b) {
+function realPathOf(p) {
+  const resolved = path13.resolve(p);
   try {
-    return fs14.realpathSync(a) === fs14.realpathSync(b);
+    return fs14.realpathSync(resolved);
   } catch {
-    return path13.resolve(a) === path13.resolve(b);
+    const parent = path13.dirname(resolved);
+    return parent === resolved ? resolved : path13.join(realPathOf(parent), path13.basename(resolved));
   }
 }
+var sameFolder = (a, b) => realPathOf(a) === realPathOf(b);
 var messageOf2 = (e) => e instanceof Error ? e.message : String(e);
 function ensureSidekickRepo(dir, runGit) {
   try {
@@ -3999,22 +4002,21 @@ var readJob = (file) => {
   }
 };
 var underOrEqual = (flag, dir) => flag === dir || flag.startsWith(dir + path14.sep);
-function jobsFromStore(configFolder, oldStore) {
-  const jobsDir = path14.join(configFolder, "jobs");
-  let ids;
+var jobIds = (jobsDir) => {
   try {
-    ids = fs15.readdirSync(jobsDir);
+    return fs15.readdirSync(jobsDir).sort();
   } catch {
     return [];
   }
-  const found = [];
-  for (const id of ids.sort()) {
+};
+function jobsFromStore(configFolder, oldStore) {
+  const jobsDir = path14.join(configFolder, "jobs");
+  const realStore = realPathOf(oldStore);
+  const namesStore = (flag) => underOrEqual(flag, oldStore) || path14.isAbsolute(flag) && underOrEqual(realPathOf(flag), realStore);
+  return jobIds(jobsDir).flatMap((id) => {
     const job = readJob(path14.join(jobsDir, id, "state.json"));
-    if (job?.respawnFlags.some((flag) => underOrEqual(flag, oldStore))) {
-      found.push({ id, name: job.name });
-    }
-  }
-  return found;
+    return job?.respawnFlags.some(namesStore) ? [{ id, name: job.name }] : [];
+  });
 }
 var heldNames = (oldStore) => {
   try {
@@ -4508,14 +4510,30 @@ var holdsMarkdown = (dir) => {
     return e.name.endsWith(".md");
   });
 };
+var repeatedPluginDirs = (entries, resolved) => resolved.flatMap((folder, i) => {
+  const first = resolved.indexOf(folder);
+  return first === i ? [] : [
+    `pluginDirs: "${entries[i]}" names ${folder}, as "${entries[first]}" does: name each folder once`
+  ];
+});
 var readFolder = (name, root, shadows) => {
   const dir = path18.join(root.dir, name);
   const layout = checkLayout(dir);
   if (layout.length > 0)
     return { ok: false, issues: layout };
-  const read = readManifest(path18.join(dir, MANIFEST_FILE));
+  const manifestFile = path18.join(dir, MANIFEST_FILE);
+  const read = readManifest(manifestFile);
   if (!read.ok)
     return read;
+  const entries = read.manifest.pluginDirs ?? [];
+  const pluginDirs = entries.map((d) => path18.resolve(dir, d));
+  const repeats = repeatedPluginDirs(entries, pluginDirs);
+  if (repeats.length > 0) {
+    return {
+      ok: false,
+      issues: repeats.map((issue) => `${manifestFile}: ${issue}`)
+    };
+  }
   return {
     ok: true,
     profile: {
@@ -4525,7 +4543,7 @@ var readFolder = (name, root, shadows) => {
       store: root.kind,
       shadows,
       manifest: read.manifest,
-      pluginDirs: (read.manifest.pluginDirs ?? []).map((d) => path18.resolve(dir, d)),
+      pluginDirs,
       hasRules: holdsMarkdown(path18.join(dir, ".claude", "rules"))
     }
   };
@@ -4926,7 +4944,7 @@ var create = (rest2, penv, out, err) => {
   const oldUserStore = path19.join(configDir(penv.env, penv.cwd, penv.home), "profiles");
   if (wanted === "repo" && sameFolder(root.dir, oldUserStore)) {
     return refuse3(err, [
-      `The repo store here, ${oldUserStore}, is the old user store's path, and every profile verb refuses while that folder holds a profile. Run new without --repo to write to ${path19.join(sidekickHome(penv.env, penv.cwd, penv.home), "profiles")}.`
+      `The repo store here, ${oldUserStore}, is the old user store's path, and every profile verb that reads or writes a store refuses while that folder holds a profile. Run new without --repo to write to ${path19.join(sidekickHome(penv.env, penv.cwd, penv.home), "profiles")}.`
     ]);
   }
   if (wanted === "user" && !penv.env.SIDEKICK_PROFILES_DIR) {
@@ -5012,6 +5030,22 @@ var launch = (rest2, penv, out, err) => {
   return result.code;
 };
 var isShell = (value) => SHELLS.some((shell) => shell === value);
+function aliasIssues(names, penv) {
+  const named = names.flatMap((name) => aliasNameRefusal(name) ?? []);
+  const loadable = names.filter((name) => aliasNameRefusal(name) === undefined);
+  if (loadable.length === 0)
+    return named;
+  const resolved = rootsFor(penv);
+  if (!resolved.ok)
+    return [...named, ...resolved.issues];
+  return [
+    ...named,
+    ...loadable.flatMap((name) => {
+      const loaded = loadProfile(name, resolved.roots);
+      return loaded.ok ? [] : loaded.issues;
+    })
+  ];
+}
 var alias = (rest2, penv, out, err) => {
   const parsed = parseFlags(rest2, { shell: { type: "string" } });
   if (parsed === undefined)
@@ -5022,13 +5056,7 @@ var alias = (rest2, penv, out, err) => {
       `unknown shell "${String(shell)}": use ${SHELLS.join(" or ")}`
     ]);
   }
-  const issues = parsed.positionals.flatMap((name) => {
-    const refusal2 = aliasNameRefusal(name);
-    if (refusal2 !== undefined)
-      return [refusal2];
-    const loaded = load(name, penv);
-    return "issues" in loaded ? loaded.issues : [];
-  });
+  const issues = aliasIssues(parsed.positionals, penv);
   if (issues.length > 0)
     return refuse3(err, issues);
   out(withoutTrailingNewline(shellFunction(shell, parsed.positionals)));
@@ -10423,16 +10451,18 @@ function missingProfileHint(name, penv) {
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 function prepareProfile(opts, briefPath, penv, main, reads) {
+  const dirIssues = pluginDirIssues(opts.pluginDir);
   const lines = [];
   const collect = (line) => {
     lines.push(line);
   };
+  const refused = (issues) => ({
+    ok: false,
+    issues: [...dirIssues, ...lines, ...issues]
+  });
   const profile = loadForLaunch(opts.profile, penv, collect);
   if (profile === undefined) {
-    return {
-      ok: false,
-      issues: [...lines, ...missingProfileHint(opts.profile, penv)]
-    };
+    return refused(missingProfileHint(opts.profile, penv));
   }
   const bypass = bypassIssues(profile, opts.mode);
   const overlay = workerOverlay(profile.manifest.settings, {
@@ -10441,16 +10471,16 @@ function prepareProfile(opts, briefPath, penv, main, reads) {
     main,
     reads
   });
-  if ("issues" in overlay) {
-    return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };
-  }
+  if ("issues" in overlay)
+    return refused([...overlay.issues, ...bypass]);
+  if (dirIssues.length > 0)
+    return refused(bypass);
   const args = checkComposed(profile, penv, collect, {
     overlay: overlay.overlay,
     pluginDirs: opts.pluginDir === undefined ? [] : [opts.pluginDir]
   });
-  if (args === undefined || bypass.length > 0) {
-    return { ok: false, issues: [...lines, ...bypass] };
-  }
+  if (args === undefined || bypass.length > 0)
+    return refused(bypass);
   return { ok: true, args, notes: lines };
 }
 var SHORT_SHA = 7;
@@ -10471,7 +10501,6 @@ function checkDispatch(brief, briefPath, opts, wenv) {
     ...placeIssues(brief),
     ...listedNameIssues(listed, brief.name),
     ...modeIssues(opts.mode),
-    ...pluginDirIssues(opts.pluginDir),
     ...prepared.ok ? [] : prepared.issues
   ];
   const refused = issues.length > 0 || "issues" in facts || !prepared.ok;
@@ -10507,7 +10536,6 @@ function checkOnly(opts, wenv) {
       ...opts.allowPush ? [] : pushUrlIssues(wenv.runGit, at)
     ],
     ...modeIssues(opts.mode),
-    ...pluginDirIssues(opts.pluginDir),
     ...prepared.ok ? [] : prepared.issues
   ];
   if ("issues" in facts || head === undefined)
@@ -10871,7 +10899,7 @@ function parseDispatchArgs(rest2, cwd) {
   const parsed = parseFlags(rest2, {
     "permission-mode": { type: "string" },
     profile: { type: "string" },
-    "plugin-dir": { type: "string" },
+    "plugin-dir": { type: "string", multiple: true },
     "allow-push": { type: "boolean" },
     check: { type: "boolean" }
   });
@@ -10883,7 +10911,15 @@ function parseDispatchArgs(rest2, cwd) {
   }
   if (!check2 && parsed.positionals.length !== 1)
     return;
-  const pluginDir = stringFlag(parsed.values, "plugin-dir");
+  const pluginDirs = parsed.lists["plugin-dir"] ?? [];
+  if (pluginDirs.length > 1) {
+    return {
+      usageErrors: [
+        "--plugin-dir given more than once: dispatch takes one plugin folder"
+      ]
+    };
+  }
+  const pluginDir = pluginDirs.at(0);
   if (pluginDir === "")
     return;
   const shared = {

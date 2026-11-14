@@ -207,8 +207,10 @@ type Prepared =
   | { ok: false; issues: string[] };
 
 /**
- * Loads, overlays, and checks the profile. The lines the profile helpers print
- * are collected: issues on a refusal, warnings to print before the launch.
+ * Checks the `--plugin-dir` folder, then loads, overlays, and checks the
+ * profile. A folder the check refuses never reaches the `claude` checks. The
+ * lines the profile helpers print are collected: issues on a refusal,
+ * warnings to print before the launch.
  */
 function prepareProfile(
   opts: SharedOptions,
@@ -217,16 +219,18 @@ function prepareProfile(
   main: string | undefined,
   reads: string[],
 ): Prepared {
+  const dirIssues = pluginDirIssues(opts.pluginDir);
   const lines: string[] = [];
   const collect: Out = (line) => {
     lines.push(line);
   };
+  const refused = (issues: string[]): Prepared => ({
+    ok: false,
+    issues: [...dirIssues, ...lines, ...issues],
+  });
   const profile = loadForLaunch(opts.profile, penv, collect);
   if (profile === undefined) {
-    return {
-      ok: false,
-      issues: [...lines, ...missingProfileHint(opts.profile, penv)],
-    };
+    return refused(missingProfileHint(opts.profile, penv));
   }
   const bypass = bypassIssues(profile, opts.mode);
   const overlay = workerOverlay(profile.manifest.settings, {
@@ -235,16 +239,13 @@ function prepareProfile(
     main,
     reads,
   });
-  if ('issues' in overlay) {
-    return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };
-  }
+  if ('issues' in overlay) return refused([...overlay.issues, ...bypass]);
+  if (dirIssues.length > 0) return refused(bypass);
   const args = checkComposed(profile, penv, collect, {
     overlay: overlay.overlay,
     pluginDirs: opts.pluginDir === undefined ? [] : [opts.pluginDir],
   });
-  if (args === undefined || bypass.length > 0) {
-    return { ok: false, issues: [...lines, ...bypass] };
-  }
+  if (args === undefined || bypass.length > 0) return refused(bypass);
   return { ok: true, args, notes: lines };
 }
 
@@ -307,7 +308,6 @@ export function checkDispatch(
     ...placeIssues(brief),
     ...listedNameIssues(listed, brief.name),
     ...modeIssues(opts.mode),
-    ...pluginDirIssues(opts.pluginDir),
     ...(prepared.ok ? [] : prepared.issues),
   ];
   const refused = issues.length > 0 || 'issues' in facts || !prepared.ok;
@@ -367,7 +367,6 @@ export function checkOnly(
           ...(opts.allowPush ? [] : pushUrlIssues(wenv.runGit, at)),
         ]),
     ...modeIssues(opts.mode),
-    ...pluginDirIssues(opts.pluginDir),
     ...(prepared.ok ? [] : prepared.issues),
   ];
   if ('issues' in facts || head === undefined) return { issues };

@@ -90,8 +90,9 @@ function namesPlugin(profile: Profile, id: string): boolean {
   return isPlainObject(enabled) && Object.hasOwn(enabled, id);
 }
 
-// A clean room loads no user-scope plugin, so launch enables sidekick and its
-// dependencies, each the profile does not name; naming sidekick opts out of all.
+// A clean room loads no user-scope plugin, so launch enables sidekick and
+// its dependencies, each the profile does not name; naming sidekick opts out
+// of all.
 function pluginKeys(profile: Profile, source: SidekickSource): Settings {
   if (namesPlugin(profile, SIDEKICK_ID)) return {};
   const ids = [
