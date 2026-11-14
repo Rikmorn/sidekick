@@ -514,6 +514,95 @@ describe('profile launch', () => {
     ]);
     expect(launched?.opts.timeoutMs).toBe(60_000);
   });
+  test('--plugin-dir follows the profile plugin dirs and comes before --bg', () => {
+    const h = harness();
+    const dir = mkProfile(h.store, 'a', {
+      description: 'A',
+      pluginDirs: ['plugin'],
+    });
+    fs.mkdirSync(path.join(dir, 'plugin'));
+    fs.mkdirSync(path.join(h.penv.cwd, 'x'));
+    expect(
+      h.run('launch', '--bg', 'a', '--plugin-dir', './x', '--', 'hi'),
+    ).toBe(0);
+    const args = h.runner.calls.at(-1)?.args ?? [];
+    const pluginDirs = args.flatMap((a, i) =>
+      args[i - 1] === '--plugin-dir' ? [a] : [],
+    );
+    expect(pluginDirs).toEqual([
+      path.join(dir, 'plugin'),
+      path.join(h.penv.cwd, 'x'),
+    ]);
+    expect(
+      args.indexOf('--plugin-dir', args.indexOf('--settings')),
+    ).toBeLessThan(args.indexOf('--bg'));
+    expect(args.slice(-3)).toEqual(['--bg', '--', 'hi']);
+  });
+  test('the plugin check passes every plugin dir the launch passes', () => {
+    const h = harness();
+    const dir = mkProfile(h.store, 'a', {
+      description: 'A',
+      pluginDirs: ['plugin'],
+    });
+    fs.mkdirSync(path.join(dir, 'plugin'));
+    fs.mkdirSync(path.join(h.penv.cwd, 'x'));
+    expect(h.run('launch', '--bg', 'a', '--plugin-dir', 'x')).toBe(0);
+    const listed = h.runner.calls.find((c) => c.args.includes('plugin'));
+    expect(listed?.args.slice(0, 4)).toEqual([
+      '--plugin-dir',
+      path.join(dir, 'plugin'),
+      '--plugin-dir',
+      path.join(h.penv.cwd, 'x'),
+    ]);
+  });
+  test('a profile with only pluginDirs runs the plugin check', () => {
+    const h = harness();
+    const dir = mkProfile(h.store, 'a', {
+      description: 'A',
+      pluginDirs: ['plugin'],
+    });
+    fs.mkdirSync(path.join(dir, 'plugin'));
+    expect(h.run('argv', 'a')).toBe(0);
+    expect(callWords(h)).toEqual(['doctor', '--json']);
+  });
+  test('--plugin-dir that is not a folder is refused before any claude call', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A' });
+    expect(h.run('launch', '--bg', 'a', '--plugin-dir', 'nowhere')).toBe(1);
+    expect(h.err).toContain(
+      `--plugin-dir: ${path.join(h.penv.cwd, 'nowhere')} is not a folder`,
+    );
+    expect(h.runner.calls).toEqual([]);
+  });
+  test('an empty --plugin-dir is a usage error', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A' });
+    expect(h.run('launch', '--bg', 'a', '--plugin-dir', '')).toBe(1);
+    expect(h.err.join('\n')).toContain('usage:');
+  });
+  test('a missing pluginDirs entry refuses argv and launch, naming the manifest', () => {
+    const h = harness();
+    const dir = mkProfile(h.store, 'a', {
+      description: 'A',
+      pluginDirs: ['plugin'],
+    });
+    const message = `${path.join(dir, 'profile.json')}: pluginDirs: ${path.join(dir, 'plugin')} is not a folder`;
+    expect(h.run('argv', 'a')).toBe(1);
+    expect(h.err).toContain(message);
+    expect(h.written).toEqual([]);
+    expect(h.run('launch', '--bg', 'a')).toBe(1);
+    expect(h.runner.calls).toEqual([]);
+  });
+  test('show prints the resolved pluginDirs', () => {
+    const h = harness();
+    const dir = mkProfile(h.store, 'a', {
+      description: 'A',
+      pluginDirs: ['plugin'],
+    });
+    fs.mkdirSync(path.join(dir, 'plugin'));
+    expect(h.run('show', 'a')).toBe(0);
+    expect(h.out).toContain(`  ${path.join(dir, 'plugin')}`);
+  });
   test('launchTimeoutMs bounds the launch, and only the launch', () => {
     const h = harness({ launchTimeoutMs: 5_000 });
     mkProfile(h.store, 'a', { description: 'A' });

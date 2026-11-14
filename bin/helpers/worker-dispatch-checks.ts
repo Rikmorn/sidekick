@@ -13,6 +13,7 @@ import type { Runner } from './pm-data.js';
 import { checkComposed, loadForLaunch, type ProfileEnv } from './profile.js';
 import { isProfileName } from './profile-manifest.js';
 import { oldStoreIssues } from './profile-old-store.js';
+import { isFolder, pluginDirIssues } from './profile-role.js';
 import { type Profile, storeRoots } from './profile-store.js';
 import { BRIEF_LIMITS_HEADING, readBriefLimits } from './subagent-limits.js';
 import type { WorkerEnv } from './worker.js';
@@ -48,14 +49,6 @@ const MODE_LIST = PERMISSION_MODES.join(', ');
 /** The permission mode that pre-approves every tool call. */
 export const BYPASS = 'bypassPermissions';
 
-const isFolder = (dir: string): boolean => {
-  try {
-    return fs.statSync(dir).isDirectory();
-  } catch {
-    return false;
-  }
-};
-
 function modeIssues(mode: string | undefined): string[] {
   if (mode === undefined) {
     return [
@@ -67,11 +60,6 @@ function modeIssues(mode: string | undefined): string[] {
     ? []
     : [`--permission-mode "${mode}" is not one of ${MODE_LIST}`];
 }
-
-const pluginDirIssues = (dir: string | undefined): string[] =>
-  dir === undefined || isFolder(dir)
-    ? []
-    : [`--plugin-dir: ${dir} is not a folder`];
 
 const placeIssues = (brief: Brief): string[] =>
   brief.place === 'worktree'
@@ -250,7 +238,10 @@ function prepareProfile(
   if ('issues' in overlay) {
     return { ok: false, issues: [...lines, ...overlay.issues, ...bypass] };
   }
-  const args = checkComposed(profile, penv, collect, overlay.overlay);
+  const args = checkComposed(profile, penv, collect, {
+    overlay: overlay.overlay,
+    pluginDirs: opts.pluginDir === undefined ? [] : [opts.pluginDir],
+  });
   if (args === undefined || bypass.length > 0) {
     return { ok: false, issues: [...lines, ...bypass] };
   }

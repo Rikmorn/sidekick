@@ -223,9 +223,26 @@ describe('loadProfile', () => {
         store: 'user',
         shadows: undefined,
         manifest: { description: 'Clean room' },
+        pluginDirs: [],
         hasRules: false,
       },
     });
+  });
+
+  test('pluginDirs resolve against the profile folder, an absolute entry unchanged', () => {
+    const dir = profile(path.join(tmp, 'store'), 'p');
+    write(
+      path.join(dir, 'profile.json'),
+      JSON.stringify({
+        description: 'd',
+        pluginDirs: ['plugin', '/abs/p'],
+      }),
+    );
+    const r = loadProfile('p', users(path.join(tmp, 'store')));
+    expect(r.ok && r.profile.pluginDirs).toEqual([
+      path.join(dir, 'plugin'),
+      '/abs/p',
+    ]);
   });
 
   test('a relative SIDEKICK_PROFILES_DIR still gives an absolute dir', () => {

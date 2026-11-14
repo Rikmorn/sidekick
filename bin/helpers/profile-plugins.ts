@@ -48,6 +48,7 @@ const refuse = (...issues: string[]): CheckResult => ({ ok: false, issues });
 /** Report whether the manifest changes which plugins load, so the check applies. */
 export const needsPluginCheck = (manifest: ProfileManifest): boolean =>
   manifest.settingSources !== undefined ||
+  (manifest.pluginDirs?.length ?? 0) > 0 ||
   (manifest.settings !== undefined &&
     Object.hasOwn(manifest.settings, 'enabledPlugins'));
 
@@ -144,7 +145,14 @@ export function judgePluginList(
 export function checkPlugins(
   settings: Settings,
   target: PluginCheckTarget,
-  deps: { run: ClaudeRunner; cwd: string; tmpdir: string; skip: boolean },
+  deps: {
+    run: ClaudeRunner;
+    cwd: string;
+    tmpdir: string;
+    skip: boolean;
+    /** Passed as `--plugin-dir`, so the list covers the plugins the launch loads inline. */
+    pluginDirs?: readonly string[];
+  },
   timeoutMs = 30_000,
 ): CheckResult {
   if (deps.skip) return { ok: true, warnings: [SKIP_WARNING] };
@@ -155,6 +163,7 @@ export function checkPlugins(
     const sources = target.manifest.settingSources;
     const result = deps.run(
       [
+        ...(deps.pluginDirs ?? []).flatMap((dir) => ['--plugin-dir', dir]),
         '--settings',
         file,
         ...(sources === undefined

@@ -21,7 +21,7 @@ The two stores are one folder when the repo store is a link to the user store. T
 
 A name is 1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit. The name is also a folder name and a shell alias, which is why the rule is that strict.
 
-`profile.json` holds four keys, and the parser rejects any other:
+`profile.json` holds five keys, and the parser rejects any other:
 
 | Key | Meaning |
 |---|---|
@@ -29,6 +29,7 @@ A name is 1 to 64 lowercase letters, digits, and hyphens, starting with a letter
 | `settingSources` | Optional. A list of `user`, `project`, and `local`, without repeats. It becomes `--setting-sources`. |
 | `settings` | Optional object, passed through to `--settings`. It must not hold a `sidekick` key, because launch writes that one. |
 | `hide` | Optional. `agents` lists agent types the model is not offered, each named as the agent listing names it, such as `Explore`. `mods` lists sidekick mod parts that stay off: `board` and `desk`. Either list may be empty or left out. An agent name is a non-empty string, and neither list repeats an entry. |
+| `pluginDirs` | Optional. A list of non-empty plugin folders, without repeats. A relative entry resolves against the profile folder. Every launch passes each as `--plugin-dir`, and refuses a folder that does not exist. A role's plugin sits in its profile folder, usually `plugin/`. A role's stance stays in its rules. |
 
 Launch composes the settings from the profile's `settings` object, then adds its own keys:
 
@@ -85,7 +86,7 @@ sidekick profile list                       # every profile in both stores, with
 sidekick profile show <name>                # the folder, the store, the manifest, the composed settings, the plugin check, the arguments
 sidekick profile new <name> --description <text> [--repo]   # create the folder with a minimal manifest, in the user store or the repo's
 sidekick profile argv <name>                # the arguments for claude, NUL-terminated, after the checks
-sidekick profile launch --bg <name> [-n <session>] [-- <prompt>]
+sidekick profile launch --bg <name> [-n <session>] [--plugin-dir <dir>] [-- <prompt>]   # --plugin-dir loads an unreleased plugin after the profile's own
 sidekick profile alias [--shell zsh|bash] [<name>...]
 sidekick profile switch <name> [--session <id>]   # print the lines that resume this session under <name>
 ```
@@ -209,7 +210,7 @@ If `doctor` changes its output and the check refuses every launch, set `SIDEKICK
 
 Claude Code keeps a plugin disabled while a dependency it names is off, and shows the error in `plugin list` and `/plugin`'s Errors tab. That is the docs' account, cited in the 2026-10-14 report ("Plugin dependencies through `plugin list`"). So a profile that turns off a plugin's dependency loses that plugin too. This check refuses such a profile before it launches.
 
-`argv`, `launch`, and `switch` run it after the `doctor` check passes, and only when the manifest sets `settings.enabledPlugins` or `settingSources`. Any other profile loads the same plugins as an unprofiled session. `show` runs it without `doctor`. It prints `plugins: ok`, `plugins: refused` with the reasons, or why the check did not run. `show` exits 0 either way, since it launches nothing.
+`argv`, `launch`, and `switch` run it after the `doctor` check passes, and only when the manifest sets `settings.enabledPlugins`, `settingSources`, or a non-empty `pluginDirs`. Any other profile loads the same plugins as an unprofiled session. `show` runs it without `doctor`. It prints `plugins: ok`, `plugins: refused` with the reasons, or why the check did not run. `show` exits 0 either way, since it launches nothing.
 
 The check runs this in the current folder, where `<file>` is a copy of the composed settings in a temp folder the CLI removes afterwards:
 

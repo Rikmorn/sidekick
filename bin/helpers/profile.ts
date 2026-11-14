@@ -28,6 +28,7 @@ import {
   needsPluginCheck,
   PLUGIN_SKIP_VARIABLE,
 } from './profile-plugins.js';
+import { pluginDirIssues, rolePluginIssues } from './profile-role.js';
 import {
   aliasNameRefusal,
   type Shell,
@@ -54,7 +55,7 @@ import {
 import { listJobs } from './worker-jobs.js';
 
 export const PROFILE_USAGE_LINE =
-  'sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]|switch <name> [--session <id>]';
+  'sidekick profile list|show <name>|new <name> --description <text> [--repo]|argv <name>|launch --bg <name> [-n <session>] [--plugin-dir <dir>] [-- <prompt>]|alias [--shell zsh|bash] [<name>...]|switch <name> [--session <id>]';
 
 /** The bound on a `--bg` start, chosen as a generous minute. */
 export const LAUNCH_TIMEOUT_MS = 60_000;
@@ -199,10 +200,24 @@ const settingsCheck = (
 const skipsPluginCheck = (penv: ProfileEnv): boolean =>
   penv.env[PLUGIN_SKIP_VARIABLE] === '1';
 
+/** What a launch adds to the profile's own `pluginDirs` and settings. */
+export interface LaunchOptions {
+  overlay?: Settings;
+  /** The launch's plugin dirs beyond the profile's own. */
+  pluginDirs?: readonly string[];
+}
+
+// The profile's plugin dirs, then the launch's: the one list every plugin check and argument reads.
+const allPluginDirs = (
+  profile: Profile,
+  extra: readonly string[],
+): readonly string[] => [...profile.pluginDirs, ...extra];
+
 const pluginCheck = (
   profile: Profile,
   settings: ReturnType<typeof composed>['settings'],
   penv: ProfileEnv,
+  extra: readonly string[],
 ): CheckResult =>
   checkPlugins(
     settings,
@@ -212,6 +227,7 @@ const pluginCheck = (
       cwd: penv.cwd,
       tmpdir: penv.tmpdir,
       skip: skipsPluginCheck(penv),
+      pluginDirs: allPluginDirs(profile, extra),
     },
   );
 
@@ -220,10 +236,11 @@ function checkProfile(
   profile: Profile,
   settings: ReturnType<typeof composed>['settings'],
   penv: ProfileEnv,
+  extra: readonly string[],
 ): CheckResult {
   const checked = settingsCheck(settings, penv);
   if (!checked.ok || !needsPluginCheck(profile.manifest)) return checked;
-  const plugins = pluginCheck(profile, settings, penv);
+  const plugins = pluginCheck(profile, settings, penv, extra);
   return plugins.ok
     ? { ok: true, warnings: [...checked.warnings, ...plugins.warnings] }
     : plugins;
@@ -245,22 +262,28 @@ export function loadForLaunch(
   }
   const provenance = provenanceLine(loaded.profile);
   if (provenance !== undefined) err(provenance);
+  const role = rolePluginIssues(loaded.profile);
+  if (role.length > 0) {
+    refuse(err, role);
+    return undefined;
+  }
   return loaded.profile;
 }
 
 /**
- * Composes `profile`'s settings with the optional `overlay` and runs its
- * checks, printing the warnings, or the refusal, on `err`. Returns the launch
+ * Composes `profile`'s settings with the optional overlay and runs its
+ * checks, printing the warnings, or the refusal, on `err`. The plugin check
+ * sees the profile's plugin dirs and `opts.pluginDirs`. Returns the launch
  * arguments, or undefined when refused.
  */
 export function checkComposed(
   profile: Profile,
   penv: ProfileEnv,
   err: Out,
-  overlay?: Settings,
+  opts: LaunchOptions = {},
 ): string[] | undefined {
-  const { settings, args } = composed(profile, penv, overlay);
-  const checked = checkProfile(profile, settings, penv);
+  const { settings, args } = composed(profile, penv, opts.overlay);
+  const checked = checkProfile(profile, settings, penv, opts.pluginDirs ?? []);
   if (!checked.ok) {
     refuse(err, checked.issues);
     return undefined;
@@ -274,12 +297,12 @@ function checkedLaunch(
   name: string,
   penv: ProfileEnv,
   err: Out,
-  overlay?: Settings,
+  opts: LaunchOptions = {},
 ): string[] | undefined {
   const profile = loadForLaunch(name, penv, err);
   return profile === undefined
     ? undefined
-    : checkComposed(profile, penv, err, overlay);
+    : checkComposed(profile, penv, err, opts);
 }
 
 // The listing is read only when the session's name is the answer; a failed listing falls back to the id.
@@ -304,7 +327,7 @@ function pluginReport(
   if (skipsPluginCheck(penv)) {
     return [`plugins: not checked; ${PLUGIN_SKIP_VARIABLE}=1 is set`];
   }
-  const plugins = pluginCheck(profile, settings, penv);
+  const plugins = pluginCheck(profile, settings, penv, []);
   return plugins.ok
     ? ['plugins: ok', ...plugins.warnings.map((w) => `  ${w}`)]
     : ['plugins: refused', ...plugins.issues.map((i) => `  ${i}`)];
@@ -342,6 +365,10 @@ const show: Verb = (rest, penv, out, err) => {
   const { settings, args } = composed(profile, penv);
   out(`folder: ${profile.dir}`);
   out(`store: ${profile.store}`);
+  if (profile.pluginDirs.length > 0) {
+    out('pluginDirs:');
+    for (const dir of profile.pluginDirs) out(`  ${dir}`);
+  }
   out(`manifest: ${JSON.stringify(profile.manifest, null, 2)}`);
   out(`settings: ${JSON.stringify(settings, null, 2)}`);
   for (const line of pluginReport(profile, settings, penv)) out(line);
@@ -431,28 +458,42 @@ const launch: Verb = (rest, penv, out, err) => {
   const parsed = parseFlags(before, {
     bg: { type: 'boolean' },
     n: { type: 'string', short: 'n' },
+    'plugin-dir': { type: 'string' },
   });
   if (parsed === undefined || parsed.positionals.length !== 1) {
     return usage(err);
   }
+  const flaggedDir = parsed.values['plugin-dir'];
+  if (flaggedDir === '') return usage(err);
+  const extraDir =
+    typeof flaggedDir === 'string'
+      ? path.resolve(penv.cwd, flaggedDir)
+      : undefined;
   if (parsed.values.bg !== true) {
     return refuse(err, [
       'launch only starts background sessions: pass --bg.',
       'For an interactive start, use the shell function: skp <name> (sidekick profile alias prints it).',
     ]);
   }
+  const dirIssues = pluginDirIssues(extraDir);
+  if (dirIssues.length > 0) return refuse(err, dirIssues);
+  const extraDirs = extraDir === undefined ? [] : [extraDir];
   const main = mainOf(penv);
   const args = checkedLaunch(parsed.positionals[0], penv, err, {
-    env: {
-      ...NO_UPDATES_ENV,
-      ...(main === undefined ? {} : { SIDEKICK_MAIN: main.value }),
+    overlay: {
+      env: {
+        ...NO_UPDATES_ENV,
+        ...(main === undefined ? {} : { SIDEKICK_MAIN: main.value }),
+      },
     },
+    pluginDirs: extraDirs,
   });
   if (args === undefined) return 1;
   const { launchTimeoutMs = LAUNCH_TIMEOUT_MS } = penv;
   const sessionName = parsed.values.n;
   const result = penv.runClaude(
     bgArgs(args, {
+      pluginDirs: extraDirs,
       sessionName: typeof sessionName === 'string' ? sessionName : undefined,
       prompt: words.length > 0 ? words.join(' ') : undefined,
     }),

@@ -188,7 +188,7 @@ function launch(ready: Ready, wenv: WorkerEnv, out: Out, err: Out): number {
   if ('issues' in excluded) return refuse(err, excluded.issues);
   if (excluded.line !== undefined) out(excluded.line);
   const args = bgArgs(ready.args, {
-    pluginDir: ready.pluginDir,
+    pluginDirs: ready.pluginDir === undefined ? [] : [ready.pluginDir],
     permissionMode: ready.mode,
     worktree: ready.brief.name,
     sessionName: ready.brief.name,

@@ -91,13 +91,13 @@ sidekick pm gate --milestone "R6 — PM layer"   # can this milestone close?
 
 ## Profiles
 
-A profile is a folder of rules plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads the layers the profile names. Auto memory and the claude.ai connectors still load in a clean room. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning. When a profile sets `settings.enabledPlugins` or `settingSources`, the CLI also refuses one that leaves a plugin without its dependency, or names a plugin `claude plugin list` does not list.
+A profile is a folder of rules plus a `profile.json` manifest. `sidekick profile` hands it to `claude` through `--add-dir`, `--settings`, and `--setting-sources`, so a session loads the layers the profile names. Auto memory and the claude.ai connectors still load in a clean room. It checks the composed settings with `claude doctor` first, because Claude Code drops a wrongly typed settings object without a warning. When a profile sets `settings.enabledPlugins`, `settingSources`, or `pluginDirs`, the CLI also refuses one that leaves a plugin without its dependency, or names a plugin `claude plugin list` does not list.
 
 ```bash
 sidekick profile list                          # every profile in the repo and user stores
 sidekick profile show <name>                   # the folder, store, manifest, composed settings, plugin check, and arguments
 sidekick profile new <name> --description "…" [--repo]  # create a profile folder, in the repo store with --repo
-sidekick profile launch --bg <name> -- <prompt>   # start a background session
+sidekick profile launch --bg <name> [--plugin-dir <dir>] -- <prompt>   # start a background session
 sidekick profile alias --shell zsh <name>      # print the skp shell function, to paste into your shell startup file
 sidekick profile switch <name>                 # print the lines that resume this session under <name>
 ```

@@ -25,6 +25,7 @@ const profile = (
   dir: '/store/work',
   root: '/store',
   manifest: { description: 'd', ...manifest },
+  pluginDirs: [],
   hasRules: false,
   ...over,
 });
@@ -235,6 +236,21 @@ describe('launchArgs', () => {
     expect(args.slice(0, 3)).toEqual(['--add-dir', p.dir, '--settings']);
     expect(args.at(-2)).not.toBe('--add-dir');
     expect(args.at(-1)).not.toBe('--add-dir');
+  });
+
+  test('each profile plugin dir follows --add-dir as --plugin-dir, before --settings', () => {
+    const q = profile({}, { pluginDirs: ['/a', '/b'] });
+    const settings = composeSettings(q, { home: '/h' });
+    expect(launchArgs(q, settings)).toEqual([
+      '--add-dir',
+      q.dir,
+      '--plugin-dir',
+      '/a',
+      '--plugin-dir',
+      '/b',
+      '--settings',
+      JSON.stringify(settings),
+    ]);
   });
 
   test('the settings argument is the compact JSON of the settings', () => {
@@ -514,10 +530,10 @@ describe('bgArgs', () => {
     ]);
   });
 
-  test('plugin dir, permission mode, and worktree come before --bg', () => {
+  test('plugin dirs, permission mode, and worktree come before --bg', () => {
     expect(
       bgArgs(['x'], {
-        pluginDir: '/pl',
+        pluginDirs: ['/pl'],
         permissionMode: 'acceptEdits',
         worktree: 'w',
         sessionName: 's',

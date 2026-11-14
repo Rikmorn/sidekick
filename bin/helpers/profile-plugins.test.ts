@@ -238,6 +238,14 @@ describe('needsPluginCheck', () => {
       needsPluginCheck({ description: 'd', settings: { enabledPlugins: {} } }),
     ).toBe(true);
   });
+  test('is true with pluginDirs', () => {
+    expect(needsPluginCheck({ description: 'd', pluginDirs: ['p'] })).toBe(
+      true,
+    );
+  });
+  test('is false with an empty pluginDirs', () => {
+    expect(needsPluginCheck({ description: 'd', pluginDirs: [] })).toBe(false);
+  });
   test('is false with only settings.env', () => {
     expect(
       needsPluginCheck({ description: 'd', settings: { env: { A: '1' } } }),
@@ -352,6 +360,21 @@ describe('checkPlugins', () => {
         checkPlugins(settings, target({ description: 'd', settings }), h.deps),
       ).toEqual({ ok: true, warnings: [] });
     }
+  });
+
+  test('passes each plugin dir as --plugin-dir, before --settings', () => {
+    const h = harness(() => ok());
+    checkPlugins({}, target(manifest), {
+      ...h.deps,
+      pluginDirs: ['/a', '/b'],
+    });
+    expect(h.calls[0].args.slice(0, 5)).toEqual([
+      '--plugin-dir',
+      '/a',
+      '--plugin-dir',
+      '/b',
+      '--settings',
+    ]);
   });
 
   test('removes the temp folder after a pass', () => {

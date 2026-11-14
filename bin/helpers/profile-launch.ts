@@ -127,8 +127,8 @@ export function composeSettings(
 }
 
 /**
- * The arguments for `claude`: `--add-dir`, `--settings`, then
- * `--setting-sources` when the manifest sets it. `--add-dir` is never last, so
+ * The arguments for `claude`: `--add-dir`, one `--plugin-dir` per profile
+ * plugin dir, `--settings`, then `--setting-sources` when the manifest sets it. `--add-dir` is never last, so
  * whatever follows cannot be read as a second folder.
  */
 export function launchArgs(profile: Profile, settings: Settings): string[] {
@@ -136,6 +136,7 @@ export function launchArgs(profile: Profile, settings: Settings): string[] {
   return [
     '--add-dir',
     profile.dir,
+    ...profile.pluginDirs.flatMap((dir) => ['--plugin-dir', dir]),
     '--settings',
     JSON.stringify(settings),
     ...(sources === undefined ? [] : ['--setting-sources', sources.join(',')]),
@@ -346,8 +347,8 @@ export function checkSettings(
 }
 
 /**
- * The arguments for a background launch: the optional `--plugin-dir`,
- * `--permission-mode`, and `--worktree` after the base, then `--bg`, `-n
+ * The arguments for a background launch: one `--plugin-dir` per entry of
+ * `pluginDirs`, then the optional `--permission-mode`, and `--worktree` after the base, then `--bg`, `-n
  * <name>` when given, then the prompt after `--` so a leading dash cannot read
  * as a flag.
  */
@@ -356,13 +357,13 @@ export const bgArgs = (
   opts: {
     sessionName?: string;
     prompt?: string;
-    pluginDir?: string;
+    pluginDirs?: readonly string[];
     permissionMode?: string;
     worktree?: string;
   },
 ): string[] => [
   ...base,
-  ...(opts.pluginDir === undefined ? [] : ['--plugin-dir', opts.pluginDir]),
+  ...(opts.pluginDirs ?? []).flatMap((dir) => ['--plugin-dir', dir]),
   ...(opts.permissionMode === undefined
     ? []
     : ['--permission-mode', opts.permissionMode]),

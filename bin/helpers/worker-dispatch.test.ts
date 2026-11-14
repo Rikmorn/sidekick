@@ -645,6 +645,26 @@ describe('dispatch launches', () => {
     ]);
   });
 
+  test("the plugin check passes dispatch's --plugin-dir", () => {
+    const fx = fixture({ description: 'W', settingSources: ['project'] });
+    fs.mkdirSync(path.join(fx.top, 'plugin'));
+    const h = harness(fx);
+    expect(
+      h.dispatch(
+        fx.brief,
+        '--permission-mode',
+        'auto',
+        '--plugin-dir',
+        'plugin',
+      ),
+    ).toBe(0);
+    const listed = h.claude.calls.find((c) => c.args.at(-2) === 'list');
+    expect(listed?.args.slice(0, 2)).toEqual([
+      '--plugin-dir',
+      path.join(fx.top, 'plugin'),
+    ]);
+  });
+
   test('the finish line quotes a brief path with a space', () => {
     const fx = fixture();
     const spaced = path.join(fx.docs, 'my brief.md');

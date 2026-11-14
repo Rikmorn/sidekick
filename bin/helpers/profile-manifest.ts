@@ -55,6 +55,9 @@ const ManifestSchema = v.strictObject({
     ),
   ),
   hide: v.optional(HideSchema),
+  pluginDirs: v.optional(
+    uniqueList(v.pipe(v.string(), v.minLength(1, 'must not be empty'))),
+  ),
 });
 
 export type ProfileManifest = v.InferOutput<typeof ManifestSchema>;

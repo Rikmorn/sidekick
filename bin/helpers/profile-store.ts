@@ -34,6 +34,8 @@ export interface Profile {
   /** The folder of a same-named profile in a later root, which this one hides. */
   shadows: string | undefined;
   manifest: ProfileManifest;
+  /** The manifest's `pluginDirs`, each resolved against `dir`, in manifest order. */
+  pluginDirs: readonly string[];
   /** Whether `.claude/rules/` holds a `.md` file at any depth. */
   hasRules: boolean;
 }
@@ -202,6 +204,9 @@ const readFolder = (
       store: root.kind,
       shadows,
       manifest: read.manifest,
+      pluginDirs: (read.manifest.pluginDirs ?? []).map((d) =>
+        path.resolve(dir, d),
+      ),
       hasRules: holdsMarkdown(path.join(dir, '.claude', 'rules')),
     },
   };

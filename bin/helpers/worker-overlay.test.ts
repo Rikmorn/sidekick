@@ -91,6 +91,7 @@ describe('workerOverlay', () => {
       root: '/',
       store: 'user',
       shadows: undefined,
+      pluginDirs: [],
       hasRules: false,
       manifest: { description: 'd', settings },
     };
@@ -106,6 +107,7 @@ describe('workerOverlay', () => {
       root: '/',
       store: 'user',
       shadows: undefined,
+      pluginDirs: [],
       hasRules: false,
       manifest: {
         description: 'd',
