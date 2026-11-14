@@ -581,6 +581,20 @@ describe('profile launch', () => {
     expect(h.run('launch', '--bg', 'a', '--plugin-dir', '')).toBe(1);
     expect(h.err.join('\n')).toContain('usage:');
   });
+  test('a repeated --plugin-dir is a usage error naming the flag, before any claude call', () => {
+    const h = harness();
+    mkProfile(h.store, 'a', { description: 'A' });
+    fs.mkdirSync(path.join(h.penv.cwd, 'x'));
+    fs.mkdirSync(path.join(h.penv.cwd, 'y'));
+    expect(
+      h.run('launch', '--bg', 'a', '--plugin-dir', 'x', '--plugin-dir', 'y'),
+    ).toBe(1);
+    expect(h.err[0]).toBe(
+      '--plugin-dir given more than once: launch takes one plugin folder',
+    );
+    expect(h.err[1]).toStartWith('usage:');
+    expect(h.runner.calls).toEqual([]);
+  });
   test('argv writes each profile --plugin-dir after --add-dir, in manifest order', () => {
     const h = harness();
     const dir = mkProfile(h.store, 'a', {
@@ -1268,6 +1282,29 @@ describe('the old profile store refuses every verb', () => {
     expect(h.err).toHaveLength(2);
   });
 
+  test('an old store that is a relative link: the printed line, run through sh, lets list show the profile', () => {
+    const home = path.join(tmp(), "it's home");
+    mkProfile(path.join(home, 'dotfiles', 'profiles'), 'worker', {
+      description: 'W',
+    });
+    fs.mkdirSync(path.join(home, '.claude'));
+    const old = path.join(home, '.claude', 'profiles');
+    fs.symlinkSync(path.join('..', 'dotfiles', 'profiles'), old);
+    const refused = harness({ env: {}, home, cwd: home });
+    expect(refused.run('list')).toBe(1);
+    const shell = spawnSync('sh', ['-c', refused.err[1]], {
+      env: { PATH: process.env.PATH, HOME: home },
+      encoding: 'utf-8',
+    });
+    expect(shell.stderr).toBe('');
+    expect(shell.status).toBe(0);
+    expect(fs.existsSync(old)).toBe(false);
+    const after = harness({ env: {}, home, cwd: home });
+    expect(after.run('list')).toBe(0);
+    expect(after.err).toEqual([]);
+    expect(after.out.join('\n')).toContain('worker');
+  });
+
   test('a refused name makes no sidekick repo', () => {
     const home = tmp();
     const h = harness({ env: {}, home, cwd: home });
@@ -1293,10 +1330,27 @@ describe('profile new --repo where the repo store is the old user store path', (
     expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(1);
     const old = path.join(home, '.claude', 'profiles');
     expect(h.err).toEqual([
-      `${old} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path.join(home, '.claude', 'sidekick', 'profiles')}.`,
+      `The repo store here, ${old}, is the old user store's path, and every profile verb refuses while that folder holds a profile. Run new without --repo to write to ${path.join(home, '.claude', 'sidekick', 'profiles')}.`,
     ]);
     expect(fs.existsSync(path.join(old, 'x'))).toBe(false);
     expect(h.out).toEqual([]);
+  });
+
+  test('prints both paths in the config spelling when git gives the resolved one', () => {
+    const real = tmp();
+    fs.mkdirSync(path.join(real, '.claude', 'profiles'), { recursive: true });
+    const home = path.join(tmp(), 'home-link');
+    fs.symlinkSync(real, home);
+    const h = harness({
+      env: {},
+      home,
+      cwd: home,
+      workTree: { kind: 'inside', top: fs.realpathSync(real) },
+    });
+    expect(h.run('new', 'x', '--description', 'd', '--repo')).toBe(1);
+    expect(h.err).toEqual([
+      `The repo store here, ${path.join(home, '.claude', 'profiles')}, is the old user store's path, and every profile verb refuses while that folder holds a profile. Run new without --repo to write to ${path.join(home, '.claude', 'sidekick', 'profiles')}.`,
+    ]);
   });
 
   test('CLAUDE_CONFIG_DIR set to the repo .claude refuses the same way', () => {

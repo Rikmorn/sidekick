@@ -4,7 +4,7 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
 import * as fs45 from "node:fs";
-import { realpathSync as realpathSync11 } from "node:fs";
+import { realpathSync as realpathSync12 } from "node:fs";
 import * as os3 from "node:os";
 import * as path57 from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3729,17 +3729,17 @@ function memoryKeys(sources, memory) {
     ...sources.includes("user") ? {} : { permissions: { additionalDirectories: [memory.store] } }
   };
 }
-function namesSidekick(profile) {
+function namesPlugin(profile, id) {
   const enabled = profile.manifest.settings?.enabledPlugins;
-  return isPlainObject(enabled) && Object.hasOwn(enabled, SIDEKICK_ID);
+  return isPlainObject(enabled) && Object.hasOwn(enabled, id);
 }
 function pluginKeys(profile, source) {
-  if (namesSidekick(profile))
+  if (namesPlugin(profile, SIDEKICK_ID))
     return {};
   const ids = [
     ...source === "installed" ? [SIDEKICK_ID] : [],
     ...SIDEKICK_DEPENDENCY_IDS
-  ];
+  ].filter((id) => !namesPlugin(profile, id));
   return { enabledPlugins: Object.fromEntries(ids.map((id) => [id, true])) };
 }
 function launchKeys(profile, home, memory, source) {
@@ -4035,6 +4035,23 @@ var moveLines = (oldStore, newStore, names) => {
     return fs15.existsSync(to) ? `${shellQuote(to)} already exists: merge ${shellQuote(from)} into it by hand` : `mv ${shellQuote(from)} ${shellQuote(to)}`;
   });
 };
+var linkTarget = (oldStore) => {
+  try {
+    return fs15.lstatSync(oldStore).isSymbolicLink() ? fs15.realpathSync(oldStore) : undefined;
+  } catch {
+    return;
+  }
+};
+var relinkLines = (oldStore, newStore, target) => {
+  if (!fs15.existsSync(newStore)) {
+    return [
+      `mkdir -p ${shellQuote(path14.dirname(newStore))} && ln -s ${shellQuote(target)} ${shellQuote(newStore)} && rm ${shellQuote(oldStore)}`
+    ];
+  }
+  return [
+    `${shellQuote(oldStore)} links to ${shellQuote(target)}, and ${shellQuote(newStore)} already exists: merge the profiles in ${shellQuote(target)} into it by hand, then rm ${shellQuote(oldStore)}`
+  ];
+};
 function oldStoreIssues(env, cwd, home) {
   if (env.SIDEKICK_PROFILES_DIR)
     return [];
@@ -4046,9 +4063,10 @@ function oldStoreIssues(env, cwd, home) {
   const names = heldNames(oldStore);
   if (names.length === 0)
     return [];
+  const target = linkTarget(oldStore);
   return [
     `profiles still sit in the old store ${oldStore} (${names.join(", ")}); move them to ${newStore}, then run the command again`,
-    ...moveLines(oldStore, newStore, names),
+    ...target === undefined ? moveLines(oldStore, newStore, names) : relinkLines(oldStore, newStore, target),
     ...jobsFromStore(config, oldStore).map(({ id, name }) => `job ${id}${name === undefined ? "" : ` (${name})`} respawns from the old store: its respawn breaks after the move, so relaunch it once the store has moved`)
   ];
 }
@@ -4908,7 +4926,7 @@ var create = (rest2, penv, out, err) => {
   const oldUserStore = path19.join(configDir(penv.env, penv.cwd, penv.home), "profiles");
   if (wanted === "repo" && sameFolder(root.dir, oldUserStore)) {
     return refuse3(err, [
-      `${root.dir} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path19.join(sidekickHome(penv.env, penv.cwd, penv.home), "profiles")}.`
+      `The repo store here, ${oldUserStore}, is the old user store's path, and every profile verb refuses while that folder holds a profile. Run new without --repo to write to ${path19.join(sidekickHome(penv.env, penv.cwd, penv.home), "profiles")}.`
     ]);
   }
   if (wanted === "user" && !penv.env.SIDEKICK_PROFILES_DIR) {
@@ -4940,12 +4958,17 @@ var launch = (rest2, penv, out, err) => {
   const parsed = parseFlags(before, {
     bg: { type: "boolean" },
     n: { type: "string", short: "n" },
-    "plugin-dir": { type: "string" }
+    "plugin-dir": { type: "string", multiple: true }
   });
   if (parsed === undefined || parsed.positionals.length !== 1) {
     return usage(err);
   }
-  const flaggedDir = parsed.values["plugin-dir"];
+  const flaggedDirs = parsed.lists["plugin-dir"] ?? [];
+  if (flaggedDirs.length > 1) {
+    err("--plugin-dir given more than once: launch takes one plugin folder");
+    return usage(err);
+  }
+  const flaggedDir = flaggedDirs.at(0);
   if (flaggedDir === "")
     return usage(err);
   const extraDir = typeof flaggedDir === "string" ? path19.resolve(penv.cwd, flaggedDir) : undefined;
@@ -13347,7 +13370,7 @@ function isMainEntrypoint(importMetaUrl, argv1) {
   if (!argv1)
     return false;
   try {
-    return realpathSync11(fileURLToPath(importMetaUrl)) === realpathSync11(argv1);
+    return realpathSync12(fileURLToPath(importMetaUrl)) === realpathSync12(argv1);
   } catch {
     return false;
   }

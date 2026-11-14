@@ -432,9 +432,10 @@ const create: Verb = (rest, penv, out, err) => {
     configDir(penv.env, penv.cwd, penv.home),
     'profiles',
   );
+  // Both paths in the config's spelling, since git gives the top resolved.
   if (wanted === 'repo' && sameFolder(root.dir, oldUserStore)) {
     return refuse(err, [
-      `${root.dir} is the old user store's path, which sidekick refuses to read. Run new without --repo to write to ${path.join(sidekickHome(penv.env, penv.cwd, penv.home), 'profiles')}.`,
+      `The repo store here, ${oldUserStore}, is the old user store's path, and every profile verb refuses while that folder holds a profile. Run new without --repo to write to ${path.join(sidekickHome(penv.env, penv.cwd, penv.home), 'profiles')}.`,
     ]);
   }
   if (wanted === 'user' && !penv.env.SIDEKICK_PROFILES_DIR) {
@@ -468,12 +469,17 @@ const launch: Verb = (rest, penv, out, err) => {
   const parsed = parseFlags(before, {
     bg: { type: 'boolean' },
     n: { type: 'string', short: 'n' },
-    'plugin-dir': { type: 'string' },
+    'plugin-dir': { type: 'string', multiple: true },
   });
   if (parsed === undefined || parsed.positionals.length !== 1) {
     return usage(err);
   }
-  const flaggedDir = parsed.values['plugin-dir'];
+  const flaggedDirs = parsed.lists['plugin-dir'] ?? [];
+  if (flaggedDirs.length > 1) {
+    err('--plugin-dir given more than once: launch takes one plugin folder');
+    return usage(err);
+  }
+  const flaggedDir = flaggedDirs.at(0);
   if (flaggedDir === '') return usage(err);
   const extraDir =
     typeof flaggedDir === 'string'

@@ -84,19 +84,20 @@ function memoryKeys(
 /** Whether the launch loads sidekick from an installed plugin or from a `--plugin-dir`. */
 export type SidekickSource = 'installed' | 'inline';
 
-// Whether the profile's own enabledPlugins has the key `SIDEKICK_ID`, with any value.
-function namesSidekick(profile: Profile): boolean {
+// Whether the profile's own enabledPlugins has the key `id`, with any value.
+function namesPlugin(profile: Profile, id: string): boolean {
   const enabled: unknown = profile.manifest.settings?.enabledPlugins;
-  return isPlainObject(enabled) && Object.hasOwn(enabled, SIDEKICK_ID);
+  return isPlainObject(enabled) && Object.hasOwn(enabled, id);
 }
 
-// A clean room loads no user-scope plugin, so launch enables sidekick and its dependencies.
+// A clean room loads no user-scope plugin, so launch enables sidekick and its
+// dependencies, each the profile does not name; naming sidekick opts out of all.
 function pluginKeys(profile: Profile, source: SidekickSource): Settings {
-  if (namesSidekick(profile)) return {};
+  if (namesPlugin(profile, SIDEKICK_ID)) return {};
   const ids = [
     ...(source === 'installed' ? [SIDEKICK_ID] : []),
     ...SIDEKICK_DEPENDENCY_IDS,
-  ];
+  ].filter((id) => !namesPlugin(profile, id));
   return { enabledPlugins: Object.fromEntries(ids.map((id) => [id, true])) };
 }
 
@@ -161,8 +162,9 @@ export function composeSettings(
 
 /**
  * The arguments for `claude`: `--add-dir`, one `--plugin-dir` per profile
- * plugin dir, `--settings`, then `--setting-sources` when the manifest sets it. `--add-dir` is never last, so
- * whatever follows cannot be read as a second folder.
+ * plugin dir, `--settings`, then `--setting-sources` when the manifest sets
+ * it. `--add-dir` is never last, so whatever follows cannot be read as a
+ * second folder.
  */
 export function launchArgs(profile: Profile, settings: Settings): string[] {
   const sources = profile.manifest.settingSources;
@@ -380,10 +382,10 @@ export function checkSettings(
 }
 
 /**
- * The arguments for a background launch: one `--plugin-dir` per entry of
- * `pluginDirs`, then the optional `--permission-mode`, and `--worktree` after the base, then `--bg`, `-n
- * <name>` when given, then the prompt after `--` so a leading dash cannot read
- * as a flag.
+ * The arguments for a background launch: the base, one `--plugin-dir` per
+ * entry of `pluginDirs`, `--permission-mode` and `--worktree` when given,
+ * `--bg`, `-n <name>` when given, then the prompt after `--` so a leading
+ * dash cannot read as a flag.
  */
 export const bgArgs = (
   base: string[],

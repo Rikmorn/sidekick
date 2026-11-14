@@ -93,6 +93,33 @@ const moveLines = (
   });
 };
 
+// The real folder a linked old store points at; undefined when it is no link or cannot be read.
+const linkTarget = (oldStore: string): string | undefined => {
+  try {
+    return fs.lstatSync(oldStore).isSymbolicLink()
+      ? fs.realpathSync(oldStore)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+// A `mv` of a link moves the link, which a relative target then leaves dangling.
+const relinkLines = (
+  oldStore: string,
+  newStore: string,
+  target: string,
+): string[] => {
+  if (!fs.existsSync(newStore)) {
+    return [
+      `mkdir -p ${shellQuote(path.dirname(newStore))} && ln -s ${shellQuote(target)} ${shellQuote(newStore)} && rm ${shellQuote(oldStore)}`,
+    ];
+  }
+  return [
+    `${shellQuote(oldStore)} links to ${shellQuote(target)}, and ${shellQuote(newStore)} already exists: merge the profiles in ${shellQuote(target)} into it by hand, then rm ${shellQuote(oldStore)}`,
+  ];
+};
+
 /**
  * The lines that refuse a profile verb while the old store holds a profile,
  * empty when nothing refuses. They give the move to run and name each job whose
@@ -110,9 +137,12 @@ export function oldStoreIssues(
   if (!isFolder(oldStore) || sameFolder(oldStore, newStore)) return [];
   const names = heldNames(oldStore);
   if (names.length === 0) return [];
+  const target = linkTarget(oldStore);
   return [
     `profiles still sit in the old store ${oldStore} (${names.join(', ')}); move them to ${newStore}, then run the command again`,
-    ...moveLines(oldStore, newStore, names),
+    ...(target === undefined
+      ? moveLines(oldStore, newStore, names)
+      : relinkLines(oldStore, newStore, target)),
     ...jobsFromStore(config, oldStore).map(
       ({ id, name }) =>
         `job ${id}${name === undefined ? '' : ` (${name})`} respawns from the old store: its respawn breaks after the move, so relaunch it once the store has moved`,

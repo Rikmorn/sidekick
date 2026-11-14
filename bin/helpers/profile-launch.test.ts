@@ -194,6 +194,19 @@ describe('composeSettings', () => {
       expect(s.env).toEqual({ DISABLE_AUTOUPDATER: '1' });
     });
 
+    test('a dependency the profile turns off stays off, and launch enables the ids it does not name', () => {
+      const [off, ...others] = SIDEKICK_DEPENDENCY_IDS;
+      const s = composeSettings(clean({ enabledPlugins: { [off]: false } }), {
+        home: '/h',
+        sidekick: 'installed',
+      });
+      expect(s.enabledPlugins).toEqual({
+        [off]: false,
+        [SIDEKICK_ID]: true,
+        ...Object.fromEntries(others.map((id) => [id, true])),
+      });
+    });
+
     test("the profile's other enabledPlugins merge with launch's", () => {
       const s = composeSettings(clean({ enabledPlugins: { 'x@y': true } }), {
         home: '/h',

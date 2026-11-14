@@ -85,6 +85,39 @@ describe('oldStoreIssues', () => {
     expect(oldStoreIssues({}, home, home)).toEqual([]);
   });
 
+  test('re-links the new store to the real target when the old store is a relative link', () => {
+    const home = tmp();
+    const target = path.join(home, 'dotfiles', 'profiles');
+    profile(target, 'worker');
+    fs.mkdirSync(path.join(home, '.claude'));
+    const old = path.join(home, '.claude', 'profiles');
+    fs.symlinkSync(path.join('..', 'dotfiles', 'profiles'), old);
+    const fresh = path.join(home, '.claude', 'sidekick', 'profiles');
+    const lines = oldStoreIssues({}, home, home);
+    expect(lines[0]).toContain('worker');
+    expect(lines[1]).toBe(
+      `mkdir -p '${path.dirname(fresh)}' && ln -s '${fs.realpathSync(target)}' '${fresh}' && rm '${old}'`,
+    );
+    expect(lines).toHaveLength(2);
+  });
+
+  test('names the link target and leaves the merge to the hand when the new store exists', () => {
+    const home = tmp();
+    const target = path.join(home, 'dotfiles', 'profiles');
+    profile(target, 'a');
+    profile(target, 'b');
+    const fresh = path.join(home, '.claude', 'sidekick', 'profiles');
+    profile(fresh, 'b');
+    const old = path.join(home, '.claude', 'profiles');
+    fs.symlinkSync(path.join('..', 'dotfiles', 'profiles'), old);
+    const lines = oldStoreIssues({}, home, home);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain(`'${fs.realpathSync(target)}'`);
+    expect(lines[1]).toContain(`'${fresh}'`);
+    expect(lines[1]).toContain('by hand');
+    expect(lines[1]).not.toContain('mv ');
+  });
+
   test('gives nothing when SIDEKICK_PROFILES_DIR is set', () => {
     const home = tmp();
     profile(path.join(home, '.claude', 'profiles'), 'worker');
