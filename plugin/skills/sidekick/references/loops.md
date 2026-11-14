@@ -202,8 +202,8 @@ The in-repo and scratch tests compare paths without regard to case. They also st
 - **`sidekick`** must name its subcommand plainly, with no wildcard and no leading option in the next word. It refuses `sidekick worker` and `sidekick profile launch`, which start sessions, and `sidekick profile` before a wildcard. Its first two words compare lower-cased. `Bash(sidekick loop record fixer *)` passes.
 - **`gh`** must name its subcommand next, with no leading option and no wildcard. It refuses `gh extension` and `gh alias`, which run code. So put `-R` after the subcommand, as in `Bash(gh issue list -R <owner>/<repo>)`. The subcommand compares lower-cased.
 - **`find`** refuses with `-exec`, `-execdir`, `-ok`, `-okdir`, or a wildcard in any word. Each primary runs a command, and a wildcard could spell one.
-- **`rg`** refuses with `--pre` or a wildcard. ripgrep 14.1.1 ran a preprocessor command for `--pre <cmd>` and `--pre=<cmd>`, as measured while #363 was built.
-- **`fd`** refuses with `-x`, `-X`, `--exec`, `--exec-batch`, or a wildcard.
+- **`rg`** refuses with `--pre`, alone or joined to a value, or a wildcard in any word. ripgrep 14.1.1 ran a preprocessor command for `--pre <cmd>` and `--pre=<cmd>`, as measured while #363 was built.
+- **`fd`** refuses a single-dash word holding `x` or `X`, such as `-x`, `-X`, or `-Hx`. It also refuses `--exec` or `--exec-batch`, alone or joined to a value, and a wildcard in any word.
 - **`tar`** and **`ssh`** refuse outright. `tar` can run a command through its options, and `ssh` runs commands on another host.
 
 **`git`** gets the most tests, since git runs commands that its options, its config, and some subcommands name:
@@ -211,7 +211,7 @@ The in-repo and scratch tests compare paths without regard to case. They also st
 - A leading option refuses, such as `-c`, `-C`, or `--exec-path`, since one can set config or the exec path.
 - A wildcard in the subcommand refuses.
 - The subcommands `config`, `rebase`, `bisect`, `submodule`, `filter-branch`, `difftool`, and `mergetool` refuse. Each runs code of its own: hooks, tools, editors, or config.
-- The options `--upload-pack`, `--receive-pack`, `--exec`, `--open-files-in-pager`, and `--output` refuse anywhere in the rule. Each runs a command or writes a file. They refuse joined to a value, as in `--upload-pack=<cmd>`, and abbreviated as git allows, as in `--upl`. `git grep -O<cmd>` and `git fetch --upload-pack=<cmd>` each ran a command, as measured while #363 was built.
+- The options `--upload-pack`, `--receive-pack`, `--exec`, `--open-files-in-pager`, and `--output` refuse anywhere in the rule. Each runs a command or writes a file. They refuse joined to a value, as in `--upload-pack=<cmd>`. They also refuse as any prefix of at least one letter, since git takes an unambiguous abbreviation, so `--upl`, `--o`, and `--e` all refuse. `git grep -O<cmd>` and `git fetch --upload-pack=<cmd>` each ran a command, as measured while #363 was built.
 - A single-dash word holding a capital `O` refuses, since `-O` is `--open-files-in-pager`. A lower-case `-o` is a different option, and passes. In a `clone` rule, a single-dash word holding `u` refuses, since `-u` is `--upload-pack` there.
 - A wildcard after `fetch`, `pull`, `clone`, `ls-remote`, `push`, `archive`, `grep`, `log`, `diff`, `show`, or `format-patch` refuses, since it admits those options. Name the options the rule needs: `Bash(git log --oneline -20)` passes, and `Bash(git log *)` refuses.
 - The subcommand and the long options compare lower-cased. On a case-insensitive disk, `git MERGETOOL` runs mergetool, as measured while #363 was built.
