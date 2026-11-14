@@ -58,7 +58,7 @@ No project setting holds a shared install. A session in another repo still updat
 
 ## Profiles that leave out the user layer
 
-A profile whose `settingSources` drops `user` never reads `~/.claude/settings.json`, so a lock written there does not reach it. Put `DISABLE_AUTOUPDATER` in the profile's own `settings.env`. Whether the marketplace lock in `known_marketplaces.json` reaches such a session is unmeasured.
+A profile whose `settingSources` drops `user` never reads `~/.claude/settings.json`, so a lock written there does not reach it. Sidekick sets `DISABLE_AUTOUPDATER=1` in such a session's `env` at every launch of the profile, as `references/profiles.md` "The folder" lists. Whether the marketplace lock in `known_marketplaces.json` reaches such a session is unmeasured.
 
 ## Report it
 

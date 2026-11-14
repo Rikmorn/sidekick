@@ -16,7 +16,7 @@ sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | -
 - A relative brief path resolves against the current folder. The worker receives the absolute path.
 - `--permission-mode` is required. It takes the values `claude --permission-mode` accepts: `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`, or `manual`. "The permission mode" says which one to pass.
 - `--profile` names the profile the worker launches with, and defaults to `worker`. "A worker profile" suggests one.
-- `--plugin-dir <dir>` loads a plugin folder in the worker, for an orchestrator that tests unreleased plugin content.
+- `--plugin-dir <dir>` loads a plugin folder in the worker, for an orchestrator that tests unreleased plugin content. It takes one folder, and refuses a repeat as a usage error.
 - `--allow-push` leaves out the push block, on the operator's word for that dispatch.
 - `--check` runs the checks that need no brief and starts nothing; "What `--check` runs" says which. It takes no brief, and a brief given with it refuses with `--check takes no brief`.
 - `--no-report` lets `finish` run without a run report, for a worker stopped before it wrote one, on the operator's word.
@@ -72,7 +72,7 @@ Ask each repo for short worktree guidance in a file every session loads, such as
 - The name is free. No session in `claude agents --json --all` carries it, interactive sessions included, since a clash breaks addressing by name. Neither the folder `<main checkout>/.claude/worktrees/<name>` nor the branch `worktree-<name>`, which Claude Code's own creation would make, exists. For a leftover branch, check that its commits have landed, then delete it with `git branch -D worktree-<name>`, or dispatch under another name. A listing that does not parse is a refusal.
 - Unless `--allow-push`, no remote sets an explicit `pushurl`, as "The push block" explains.
 - `--permission-mode` is given and names a known mode, and `--plugin-dir`, when given, is an existing folder.
-- The profile loads, composes with the overlay, and passes the checks `profile launch` runs, the settings check and the plugin dependency check among them. `references/profiles.md` describes them. A missing profile refuses with a hint to run `sidekick profile new <name> --description <text>`. The hint is withheld while the old user store, `<config>/profiles`, still holds a profile, since that refusal speaks first.
+- The profile loads, composes with the overlay, and passes the checks `profile launch` runs, the settings check and the plugin dependency check among them. `references/profiles.md` describes them. Those two run `claude`, and only once `--plugin-dir` passes, so `claude` never sees a folder that is not one. A missing profile refuses with a hint to run `sidekick profile new <name> --description <text>`. The hint is withheld while the old user store, `<config>/profiles`, still holds a profile, since that refusal speaks first.
 - Unless `--allow-push`, the profile's own `settings.env.GIT_CONFIG_COUNT`, when set, is a string of digits.
 - `bypassPermissions` refuses a profile whose `settingSources` leaves out `user`. Claude Code refuses bypass in a background session unless user or managed settings record its acceptance. Such a profile drops that record (the dispatch probes, "Steering by message", from the docs).
 
