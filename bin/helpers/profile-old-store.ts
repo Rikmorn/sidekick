@@ -1,0 +1,121 @@
+/**
+ * The refusal that holds every profile verb while the old user store, `<config>/profiles`,
+ * still holds a profile. The profile store moved to `<config>/sidekick/profiles`.
+ */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as v from 'valibot';
+import { shellQuote } from './shell.js';
+import { configDir, sameFolder, sidekickHome } from './sidekick-home.js';
+
+// Claude Code's own undocumented file: read leniently, so a new field never hides a job.
+const JobState = v.looseObject({
+  respawnFlags: v.array(v.string()),
+  name: v.optional(v.string()),
+});
+
+const isFolder = (dir: string): boolean => {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+const readJob = (file: string): v.InferOutput<typeof JobState> | undefined => {
+  try {
+    const parsed = v.safeParse(
+      JobState,
+      JSON.parse(fs.readFileSync(file, 'utf-8')),
+    );
+    return parsed.success ? parsed.output : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const underOrEqual = (flag: string, dir: string): boolean =>
+  flag === dir || flag.startsWith(dir + path.sep);
+
+/**
+ * The jobs under `<configDir>/jobs` whose respawn flags name `oldStore` or a
+ * path under it. A record that cannot be read or parsed is skipped.
+ */
+export function jobsFromStore(
+  configFolder: string,
+  oldStore: string,
+): Array<{ id: string; name: string | undefined }> {
+  const jobsDir = path.join(configFolder, 'jobs');
+  let ids: string[];
+  try {
+    ids = fs.readdirSync(jobsDir);
+  } catch {
+    return [];
+  }
+  const found: Array<{ id: string; name: string | undefined }> = [];
+  for (const id of ids.sort()) {
+    const job = readJob(path.join(jobsDir, id, 'state.json'));
+    if (job?.respawnFlags.some((flag) => underOrEqual(flag, oldStore))) {
+      found.push({ id, name: job.name });
+    }
+  }
+  return found;
+}
+
+const heldNames = (oldStore: string): string[] => {
+  try {
+    return fs
+      .readdirSync(oldStore)
+      .filter((n) => !n.startsWith('.') && isFolder(path.join(oldStore, n)))
+      .sort();
+  } catch {
+    return [];
+  }
+};
+
+const moveLines = (
+  oldStore: string,
+  newStore: string,
+  names: string[],
+): string[] => {
+  if (!fs.existsSync(newStore)) {
+    return [
+      `mkdir -p ${shellQuote(path.dirname(newStore))} && mv ${shellQuote(oldStore)} ${shellQuote(newStore)}`,
+    ];
+  }
+  return names.map((name) => {
+    const from = path.join(oldStore, name);
+    const to = path.join(newStore, name);
+    return fs.existsSync(to)
+      ? `${shellQuote(to)} already exists: merge ${shellQuote(from)} into it by hand`
+      : `mv ${shellQuote(from)} ${shellQuote(to)}`;
+  });
+};
+
+/**
+ * The lines that refuse a profile verb while the old store holds a profile,
+ * empty when nothing refuses. They give the move to run and name each job whose
+ * respawn the move breaks.
+ */
+export function oldStoreIssues(
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  home: string,
+): string[] {
+  if (env.SIDEKICK_PROFILES_DIR) return [];
+  const config = configDir(env, cwd, home);
+  const oldStore = path.join(config, 'profiles');
+  const newStore = path.join(sidekickHome(env, cwd, home), 'profiles');
+  if (!isFolder(oldStore) || sameFolder(oldStore, newStore)) return [];
+  const names = heldNames(oldStore);
+  if (names.length === 0) return [];
+  return [
+    `profiles still sit in the old store ${oldStore} (${names.join(', ')}); move them to ${newStore}, then run the command again`,
+    ...moveLines(oldStore, newStore, names),
+    ...jobsFromStore(config, oldStore).map(
+      ({ id, name }) =>
+        `job ${id}${name === undefined ? '' : ` (${name})`} respawns from the old store: its respawn breaks after the move, so relaunch it once the store has moved`,
+    ),
+  ];
+}

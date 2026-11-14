@@ -62,7 +62,7 @@ const MANIFEST_FILE = 'profile.json';
 export const manifestPath = (dir: string): string =>
   path.join(dir, MANIFEST_FILE);
 
-const notAName = (name: string): string =>
+export const notAName = (name: string): string =>
   `"${name}" is not a profile name: use ${PROFILE_NAME_RULE}`;
 
 const HIDES_AGENTS =

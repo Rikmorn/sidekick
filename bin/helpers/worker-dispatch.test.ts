@@ -1365,3 +1365,19 @@ describe('dispatch --check', () => {
     expect(JSON.stringify(overlay)).not.toContain('Read(');
   });
 });
+
+describe('dispatch --check with the old profile store', () => {
+  test('refuses with the move and prints no profile new hint', () => {
+    const fx = fixture();
+    const home = tmp();
+    const worker = path.join(home, '.claude', 'profiles', 'worker');
+    fs.mkdirSync(worker, { recursive: true });
+    fs.writeFileSync(path.join(worker, 'profile.json'), '{"description":"W"}');
+    const h = harness(fx, { env: {}, home });
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(1);
+    expect(h.err[0]).toContain('old store');
+    expect(h.err.join('\n')).toContain('mv ');
+    expect(h.err.join('\n')).not.toContain('sidekick profile new');
+    expect(h.claude.launches()).toEqual([]);
+  });
+});

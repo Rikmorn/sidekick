@@ -1033,3 +1033,67 @@ describe('the repo store', () => {
     ]);
   });
 });
+
+describe('the old profile store refuses every verb', () => {
+  // A temp HOME whose old store holds `worker`, and no SIDEKICK_PROFILES_DIR.
+  function oldStoreHarness() {
+    const home = tmp();
+    mkProfile(path.join(home, '.claude', 'profiles'), 'worker', {
+      description: 'W',
+    });
+    const h = harness({ env: {}, home, cwd: home });
+    return { ...h, home };
+  }
+
+  const verbs: string[][] = [
+    ['list'],
+    ['show', 'worker'],
+    ['argv', 'worker'],
+    ['launch', '--bg', 'worker'],
+    ['switch', 'worker', '--session', 's1'],
+    ['new', 'x', '--description', 'd'],
+  ];
+
+  for (const verb of verbs) {
+    test(`${verb[0]} exits 1 and prints the move`, () => {
+      const h = oldStoreHarness();
+      expect(h.run(...verb)).toBe(1);
+      const fresh = path.join(h.home, '.claude', 'sidekick', 'profiles');
+      expect(h.err[0]).toContain('worker');
+      expect(h.err[1]).toBe(
+        `mkdir -p '${path.dirname(fresh)}' && mv '${path.join(h.home, '.claude', 'profiles')}' '${fresh}'`,
+      );
+      expect(h.out).toEqual([]);
+      expect(h.runner.calls).toEqual([]);
+      expect(fs.existsSync(path.join(h.home, '.claude', 'sidekick'))).toBe(
+        false,
+      );
+    });
+  }
+
+  test('a work tree topped at HOME, as a dotfiles repo is, refuses the same way', () => {
+    const home = tmp();
+    mkProfile(path.join(home, '.claude', 'profiles'), 'worker', {
+      description: 'W',
+    });
+    const h = harness({
+      env: {},
+      home,
+      cwd: home,
+      workTree: { kind: 'inside', top: home },
+    });
+    expect(h.run('list')).toBe(1);
+    expect(h.err[0]).toContain('worker');
+    expect(h.err).toHaveLength(2);
+  });
+
+  test('a refused name makes no sidekick repo', () => {
+    const home = tmp();
+    const h = harness({ env: {}, home, cwd: home });
+    expect(h.run('new', 'BAD', '--description', 'd')).toBe(1);
+    expect(h.err[0]).toContain('is not a profile name');
+    expect(fs.existsSync(path.join(home, '.claude', 'sidekick', '.git'))).toBe(
+      false,
+    );
+  });
+});

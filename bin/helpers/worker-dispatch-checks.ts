@@ -12,6 +12,7 @@ import { type ResolvedMain, resolveMain } from './main-session.js';
 import type { Runner } from './pm-data.js';
 import { checkComposed, loadForLaunch, type ProfileEnv } from './profile.js';
 import { isProfileName } from './profile-manifest.js';
+import { oldStoreIssues } from './profile-old-store.js';
 import { type Profile, storeRoots } from './profile-store.js';
 import { BRIEF_LIMITS_HEADING, readBriefLimits } from './subagent-limits.js';
 import type { WorkerEnv } from './worker.js';
@@ -199,6 +200,7 @@ function bypassIssues(profile: Profile, mode: string | undefined): string[] {
 
 /** The `profile new` hint, when no store root holds a folder of that name. */
 function missingProfileHint(name: string, penv: ProfileEnv): string[] {
+  if (oldStoreIssues(penv.env, penv.cwd, penv.home).length > 0) return [];
   const roots = storeRoots(
     'profiles',
     penv.env,

@@ -21,6 +21,8 @@ import {
   type Settings,
   SKIP_VARIABLE,
 } from './profile-launch.js';
+import { isProfileName } from './profile-manifest.js';
+import { oldStoreIssues } from './profile-old-store.js';
 import {
   checkPlugins,
   needsPluginCheck,
@@ -36,7 +38,9 @@ import {
   loadProfile,
   manifestPath,
   newProfile,
+  notAName,
   type Profile,
+  type StoreRoot,
   storeRoots,
 } from './profile-store.js';
 import type { WorkTreeRoot } from './rules.js';
@@ -127,14 +131,25 @@ const refuse = (err: Out, issues: string[]): number => {
   return 1;
 };
 
+// The roots to read, or the refusal while the old store still holds a profile.
+function rootsFor(
+  penv: ProfileEnv,
+): { ok: true; roots: StoreRoot[] } | { ok: false; issues: string[] } {
+  const issues = oldStoreIssues(penv.env, penv.cwd, penv.home);
+  if (issues.length > 0) return { ok: false, issues };
+  return {
+    ok: true,
+    roots: storeRoots('profiles', penv.env, penv.cwd, penv.home, penv.workTree),
+  };
+}
+
 function load(
   name: string,
   penv: ProfileEnv,
 ): { profile: Profile } | { issues: string[] } {
-  const loaded = loadProfile(
-    name,
-    storeRoots('profiles', penv.env, penv.cwd, penv.home, penv.workTree),
-  );
+  const resolved = rootsFor(penv);
+  if (!resolved.ok) return { issues: resolved.issues };
+  const loaded = loadProfile(name, resolved.roots);
   return loaded.ok ? { profile: loaded.profile } : { issues: loaded.issues };
 }
 
@@ -295,9 +310,9 @@ const oneLine = (text: string): string => text.replace(/\s*[\r\n]\s*/g, ' ');
 
 const list: Verb = (rest, penv, out, err) => {
   if (rest.length > 0) return usage(err);
-  const profiles = listProfiles(
-    storeRoots('profiles', penv.env, penv.cwd, penv.home, penv.workTree),
-  );
+  const resolved = rootsFor(penv);
+  if (!resolved.ok) return refuse(err, resolved.issues);
+  const profiles = listProfiles(resolved.roots);
   for (const p of profiles) {
     const shadowed =
       p.shadowedBy === undefined ? '' : `, shadowed by ${p.shadowedBy}`;
@@ -363,14 +378,13 @@ const create: Verb = (rest, penv, out, err) => {
     return usage(err);
   }
   const wanted = parsed.values.repo === true ? 'repo' : 'user';
+  const resolved = rootsFor(penv);
+  if (!resolved.ok) return refuse(err, resolved.issues);
+  if (!isProfileName(parsed.positionals[0])) {
+    return refuse(err, [notAName(parsed.positionals[0])]);
+  }
   // The user root is always present, so only a repo root can be missing.
-  const root = storeRoots(
-    'profiles',
-    penv.env,
-    penv.cwd,
-    penv.home,
-    penv.workTree,
-  ).find((r) => r.kind === wanted);
+  const root = resolved.roots.find((r) => r.kind === wanted);
   if (root === undefined) return refuse(err, [noRepoStore(penv)]);
   if (wanted === 'user' && !penv.env.SIDEKICK_PROFILES_DIR) {
     const issues = ensureSidekickRepo(
