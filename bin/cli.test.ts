@@ -478,6 +478,17 @@ describe('main: loop', () => {
       err: [],
     });
   });
+  test('loop start --all under an empty config says the store holds no loop, and runs no claude call', () => {
+    const config = madeDir();
+    const r = runLoop(['start', '--all'], config);
+    expect(r).toEqual({
+      code: 0,
+      out: [
+        `the loop store ${path.join(config, 'sidekick', 'loops')} holds no loop`,
+      ],
+      err: [],
+    });
+  });
   test('loop record stamps its line with the clock', () => {
     const config = madeDir();
     const dir = path.join(config, 'sidekick', 'loops', 'fixer');

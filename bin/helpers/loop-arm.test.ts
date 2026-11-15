@@ -45,6 +45,13 @@ const lenvOf = (env: Record<string, string> = {}): LoopEnv => ({
   write: () => {},
   now: () => NOW,
   bootTime: () => new Date(NOW.getTime() - DAY_MS),
+  sleep: () => {
+    throw new Error('arm never waits');
+  },
+  isAlive: () => {
+    throw new Error('arm reads no process');
+  },
+  pid: 4321,
 });
 
 const arm = (args: string[], env: Record<string, string> = {}) => {

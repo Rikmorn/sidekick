@@ -1,6 +1,6 @@
 /**
- * `sidekick loop list|show|record`: the verbs over the loop store. Usage errors
- * and refusals return 1, as the `profile` family's do.
+ * `sidekick loop list|show|record|arm|start`: the verbs over the loop store.
+ * Usage errors and refusals return 1, as the `profile` family's do.
  */
 
 import * as path from 'node:path';
@@ -24,6 +24,7 @@ import {
   RecordLineSchema,
   readRecords,
 } from './loop-record.js';
+import { runStart, START_USAGE_LINE } from './loop-start.js';
 import { type LoopState, readState, STATE_FILE } from './loop-state.js';
 import { loopNames, loopsRoot } from './loop-store.js';
 import { keyHits } from './memory-patterns.js';
@@ -31,14 +32,20 @@ import { type FlagOption, type ProfileEnv, parseFlags } from './profile.js';
 import { isProfileName, PROFILE_NAME_RULE } from './profile-manifest.js';
 import { configDir } from './sidekick-home.js';
 
-export const LOOP_USAGE_LINE = `sidekick loop list | show <name> [--since <YYYY-MM-DD>] | record <name> --kind <would|request|did|denied|note> --summary <text> [--class <class>] [--command <text>] [--unit <id>] | ${ARM_USAGE_LINE.replace('sidekick loop ', '')}`;
+export const LOOP_USAGE_LINE = `sidekick loop list | show <name> [--since <YYYY-MM-DD>] | record <name> --kind <would|request|did|denied|note> --summary <text> [--class <class>] [--command <text>] [--unit <id>] | ${ARM_USAGE_LINE.replace('sidekick loop ', '')} | ${START_USAGE_LINE.replace('sidekick loop ', '')}`;
 
-/** The profile family's environment, with a clock and the managed settings path the check and the listing read. */
+/** The profile family's environment, with a clock, the machine's seams `start` waits through, and the managed settings path the check and the listing read. */
 export interface LoopEnv extends ProfileEnv {
   /** The time `record` stamps a line with, and the end of `show`'s window. */
   now: () => Date;
   /** When the machine booted, which `start`'s reconcile compares with a session's `startedAt`. */
   bootTime: () => Date;
+  /** Blocks for `ms` milliseconds, between `start`'s polls. */
+  sleep: (ms: number) => void;
+  /** Whether process `pid` still runs: a start lock's holder, or a session `start` stopped. */
+  isAlive: (pid: number) => boolean;
+  /** This process's id, which the start lock records. */
+  pid: number;
   /** The managed settings file; unset, the check and the listing read Claude Code's own path. */
   managedFile?: string;
 }
@@ -541,7 +548,13 @@ const record: Verb = (rest, lenv, out, err) => {
   return 0;
 };
 
-const VERBS: Record<string, Verb> = { list, show, record, arm: runArm };
+const VERBS: Record<string, Verb> = {
+  list,
+  show,
+  record,
+  arm: runArm,
+  start: runStart,
+};
 
 /** Dispatch one `loop` verb; returns the process exit code. */
 export function runLoopCli(

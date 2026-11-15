@@ -44,8 +44,8 @@ export interface StartFlags {
  * One loop, prepared. `refused` holds the lines that say why. A paused loop
  * is never composed, so it carries no `args` or `hash`. `ready` holds the full
  * `claude` argument list for a fresh launch, its hash, the parsed `loop.json`
- * the arguments were compiled from, and every warning to print. `repo` is
- * where `claude` runs.
+ * and the profile the arguments were compiled from, and every warning to
+ * print. `repo` is where `claude` runs.
  */
 export type Prepared =
   | { kind: 'refused'; name: string; lines: string[] }
@@ -63,6 +63,7 @@ export type Prepared =
       dir: string;
       repo: string;
       manifest: LoopManifest;
+      profile: Profile;
       args: string[];
       hash: string;
       state: LoopState | undefined;
@@ -91,7 +92,8 @@ const refused = (name: string, lines: string[]): Refused => ({
   lines,
 });
 
-const sessionOf = (name: string): string => `loop-${name}`;
+/** The loop's session name, which its launch passes as `-n` and `--worktree`. */
+export const sessionOf = (name: string): string => `loop-${name}`;
 
 const messageOf = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
@@ -244,6 +246,7 @@ function prepareLaunch(loop: Loop, checked: Checked): Prepared {
     dir,
     repo: manifest.repo,
     manifest,
+    profile,
     args,
     hash,
     state,

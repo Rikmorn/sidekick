@@ -142,6 +142,13 @@ const lenvOf = (over: Partial<LoopEnv> = {}): LoopEnv => ({
   write: () => {},
   now: () => NOW,
   bootTime: () => BOOT,
+  sleep: () => {
+    throw new Error('prepare never waits');
+  },
+  isAlive: () => {
+    throw new Error('prepare reads no process');
+  },
+  pid: 4321,
   managedFile: managed,
   ...over,
 });
@@ -539,14 +546,15 @@ describe('prepareLoop: a loop ready to launch', () => {
     expect(printed).toEqual([]);
   });
 
-  test('carries the loop folder, the repo, the manifest, and no state when none exists', () => {
+  test('carries the loop folder, the repo, the manifest, the profile, and no state when none exists', () => {
     writeLoop();
-    writeProfile();
+    const profileDir = writeProfile();
     const p = readyOf(prepare());
     expect(p.name).toBe('fixer');
     expect(p.dir).toBe(loopDir());
     expect(p.repo).toBe(repo);
     expect(p.manifest).toEqual(manifestOf());
+    expect(p.profile.dir).toBe(profileDir);
     expect(p.state).toBeUndefined();
     expect(p.action).toEqual({
       kind: 'launch',
