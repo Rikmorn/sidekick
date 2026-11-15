@@ -15842,6 +15842,14 @@ function readReport(worker, worktree, attempt, maxBytes) {
   };
 }
 var withheld = (ids) => `(withheld: ${ids.join(", ")})`;
+var KEPT_CONTROLS = new Set([`
+`, "\t"]);
+var HEX = 16;
+var visible = (text) => [...text].map((ch) => isControl(ch) && !KEPT_CONTROLS.has(ch) ? `\\x${ch.charCodeAt(0).toString(HEX).padStart(2, "0")}` : ch).join("");
+var shownLine = (line) => {
+  const ids = keyHits(line);
+  return ids.length === 0 ? visible(line) : withheld(ids);
+};
 function shownLines(lines) {
   const shown2 = [];
   let inBlock = false;
@@ -15852,7 +15860,7 @@ function shownLines(lines) {
     if (blocked) {
       shown2.push(withheld(ids.includes(KEY_BLOCK) ? ids : [...ids, KEY_BLOCK]));
     } else {
-      shown2.push(ids.length === 0 ? line : withheld(ids));
+      shown2.push(shownLine(line));
     }
   }
   return shown2;
@@ -15901,8 +15909,7 @@ function headLines(ctx, worker) {
   const space = text.indexOf(" ");
   const sha = space === -1 ? text : text.slice(0, space);
   const subject = space === -1 ? "" : text.slice(space + 1);
-  const ids = keyHits(subject);
-  const shown2 = ids.length === 0 ? subject : withheld(ids);
+  const shown2 = shownLine(subject);
   const commit2 = shown2 === "" ? sha : `${sha} ${shown2}`;
   return { lines: [`head of ${branch}: ${commit2}`] };
 }

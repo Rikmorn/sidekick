@@ -134,6 +134,50 @@ describe('loop report prints', () => {
     expect(printed).not.toContain('MIIBOg');
   });
 
+  test('report escapes a control character in the report, keeping a tab', () => {
+    const fx = unitFixture({ report: false });
+    const text = [
+      '# Unit report',
+      '\u001b[2Jcleared \u001b[31mred\u001b[0m',
+      'a\u0085b\u007fc\u0007d\re',
+      'col\tcol',
+      '## Proposals',
+      'None.',
+    ];
+    fs.writeFileSync(inTree(fx), `${text.join('\n')}\n`);
+    const r = run(fx, reportArgs());
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([
+      header(inTree(fx)),
+      '# Unit report',
+      '\\x1b[2Jcleared \\x1b[31mred\\x1b[0m',
+      'a\\x85b\\x7fc\\x07d\\x0de',
+      'col\tcol',
+      '## Proposals',
+      'None.',
+      headLine(fx),
+    ]);
+  });
+
+  test('report escapes a control character in the commit subject', () => {
+    const fx = unitFixture();
+    git(
+      fx.worktree,
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-m',
+      'fix \u001b[2J now',
+    );
+    const sha = git(fx.worktree, 'rev-parse', 'HEAD');
+    const r = run(fx, reportArgs());
+    expect(r.code).toBe(0);
+    expect(r.out.at(-1)).toBe(
+      `head of worktree-${WORKER}: ${sha} fix \\x1b[2J now`,
+    );
+    expect(r.out.join('\n')).not.toContain('\u001b');
+  });
+
   test('report names a missing proposals section', () => {
     const fx = unitFixture({ report: false });
     fs.writeFileSync(inTree(fx), '# Unit report\n\nFixed the widget.\n');

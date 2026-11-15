@@ -4,7 +4,8 @@
  * report of the unit's attempt, from the worker's worktree while it exists,
  * else from the attempt's `report.md`, which `finish` saved. Then it prints
  * the worker branch's head commit, by hardened git after the chain check. A
- * line the key check flags prints withheld. A report with no `## Proposals`
+ * line the key check flags prints withheld, and every control character but
+ * a newline or a tab prints as `\xNN`. A report with no `## Proposals`
  * section ends with a line naming that gap. It reaps first, and a reap that
  * cannot run is a warning, so an overdue worker never hides its report.
  *
@@ -20,6 +21,7 @@ import type { LoopEnv } from './loop.js';
 import { UNIT_REPORT } from './loop-dispatch-attempt.js';
 import { envIssues } from './loop-dispatch-checks.js';
 import { reapFirstOrWarn } from './loop-reap.js';
+import { isControl } from './loop-record.js';
 import {
   loopNameIssues,
   type UnitContext,
@@ -240,6 +242,26 @@ function readReport(
 const withheld = (ids: readonly string[]): string =>
   `(withheld: ${ids.join(', ')})`;
 
+const KEPT_CONTROLS = new Set(['\n', '\t']);
+const HEX = 16;
+
+// Worker text with each control character but a newline or a tab shown as
+// `\xNN`, so none reaches a terminal as a command.
+const visible = (text: string): string =>
+  [...text]
+    .map((ch) =>
+      isControl(ch) && !KEPT_CONTROLS.has(ch)
+        ? `\\x${ch.charCodeAt(0).toString(HEX).padStart(2, '0')}`
+        : ch,
+    )
+    .join('');
+
+// A line as printed: withheld when the key check flags it, else made visible.
+const shownLine = (line: string): string => {
+  const ids = keyHits(line);
+  return ids.length === 0 ? visible(line) : withheld(ids);
+};
+
 // Each line as printed: one the key check flags is withheld, and so is every
 // line of a private key's block through its END line, or to the end without
 // one, since the check matches the block's header alone.
@@ -253,7 +275,7 @@ function shownLines(lines: string[]): string[] {
     if (blocked) {
       shown.push(withheld(ids.includes(KEY_BLOCK) ? ids : [...ids, KEY_BLOCK]));
     } else {
-      shown.push(ids.length === 0 ? line : withheld(ids));
+      shown.push(shownLine(line));
     }
   }
   return shown;
@@ -308,8 +330,7 @@ function headLines(
   const space = text.indexOf(' ');
   const sha = space === -1 ? text : text.slice(0, space);
   const subject = space === -1 ? '' : text.slice(space + 1);
-  const ids = keyHits(subject);
-  const shown = ids.length === 0 ? subject : withheld(ids);
+  const shown = shownLine(subject);
   const commit = shown === '' ? sha : `${sha} ${shown}`;
   return { lines: [`head of ${branch}: ${commit}`] };
 }
