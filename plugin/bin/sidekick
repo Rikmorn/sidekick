@@ -3977,7 +3977,12 @@ import * as fs14 from "node:fs";
 import * as path13 from "node:path";
 var configDir = (env, cwd, home) => path13.resolve(cwd, configDirOf(env, home));
 var sidekickHome = (env, cwd, home) => path13.join(configDir(env, cwd, home), "sidekick");
-var IGNORED = ["loops/*/records/", "loops/*/state.json"];
+var IGNORED = [
+  "loops/*/records/",
+  "loops/*/state.json",
+  "loops/*/armed.json",
+  "loops/*/start.lock"
+];
 function realPathOf(p) {
   const resolved = path13.resolve(p);
   try {
@@ -4002,16 +4007,26 @@ function ensureSidekickRepo(dir, runGit) {
     }
   }
   const ignore = path13.join(dir, ".gitignore");
-  if (!fs14.existsSync(ignore)) {
-    try {
-      fs14.writeFileSync(ignore, `${IGNORED.join(`
-`)}
-`);
-    } catch (e) {
-      return [`${ignore}: cannot write the file: ${messageOf2(e)}`];
-    }
+  try {
+    ensureIgnoreLines(ignore);
+  } catch (e) {
+    return [`${ignore}: cannot write the file: ${messageOf2(e)}`];
   }
   return [];
+}
+function ensureIgnoreLines(ignore) {
+  const existing = fs14.existsSync(ignore) ? fs14.readFileSync(ignore, "utf-8") : "";
+  const have = new Set(existing.split(`
+`));
+  const missing = IGNORED.filter((line) => !have.has(line));
+  if (missing.length === 0)
+    return;
+  const lead = existing === "" || existing.endsWith(`
+`) ? "" : `
+`;
+  fs14.appendFileSync(ignore, `${lead}${missing.join(`
+`)}
+`);
 }
 
 // bin/helpers/profile-old-store.ts
@@ -9537,7 +9552,12 @@ function ruleIssues(text, list2, repo, scratchRoots = SCRATCH_ROOTS) {
 // bin/helpers/loop-store.ts
 import * as fs36 from "node:fs";
 import * as path44 from "node:path";
-var RUNTIME_ENTRIES = ["records", "state.json"];
+var RUNTIME_ENTRIES = [
+  "records",
+  "state.json",
+  "armed.json",
+  "start.lock"
+];
 function loopsRoot(env, cwd, home) {
   const [root] = storeRoots("loops", env, cwd, home, { kind: "outside" });
   return root.dir;

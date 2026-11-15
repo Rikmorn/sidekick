@@ -9,7 +9,12 @@ import { isFolder } from './profile-role.js';
 import { storeRoots } from './profile-store.js';
 
 /** The runtime entries of a loop's folder; `IGNORED` in `sidekick-home.ts` must git-ignore each in every loop's folder. */
-export const RUNTIME_ENTRIES: readonly string[] = ['records', 'state.json'];
+export const RUNTIME_ENTRIES: readonly string[] = [
+  'records',
+  'state.json',
+  'armed.json',
+  'start.lock',
+];
 
 /** The folder that holds every loop's folder. */
 export function loopsRoot(

@@ -39,16 +39,29 @@ describe('sidekickHome', () => {
 });
 
 describe('ensureSidekickRepo', () => {
-  test('makes the folder a repo of its own with the two ignore lines', () => {
+  test('makes the folder a repo of its own with the four ignore lines', () => {
     const dir = path.join(tmp(), 'a', 'sidekick');
     expect(ensureSidekickRepo(dir, execRunner)).toEqual([]);
     expect(git(dir, 'rev-parse', '--show-toplevel')).toBe(dir);
     expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf-8')).toBe(
-      'loops/*/records/\nloops/*/state.json\n',
+      'loops/*/records/\nloops/*/state.json\nloops/*/armed.json\nloops/*/start.lock\n',
     );
   });
 
-  test('a second call keeps an edited .gitignore and the history', () => {
+  test('appends only the missing lines, keeps order, and copes with no final newline', () => {
+    const dir = path.join(tmp(), 'sidekick');
+    ensureSidekickRepo(dir, execRunner);
+    fs.writeFileSync(
+      path.join(dir, '.gitignore'),
+      'z\nloops/*/state.json\na\nloops/*/records/',
+    );
+    expect(ensureSidekickRepo(dir, execRunner)).toEqual([]);
+    expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf-8')).toBe(
+      'z\nloops/*/state.json\na\nloops/*/records/\nloops/*/armed.json\nloops/*/start.lock\n',
+    );
+  });
+
+  test('a second call keeps the history and the operator lines, appending missing ignore lines once', () => {
     const dir = path.join(tmp(), 'sidekick');
     ensureSidekickRepo(dir, execRunner);
     fs.writeFileSync(path.join(dir, '.gitignore'), 'mine\n');
@@ -67,8 +80,14 @@ describe('ensureSidekickRepo', () => {
     );
     const head = git(dir, 'rev-parse', 'HEAD');
     expect(ensureSidekickRepo(dir, execRunner)).toEqual([]);
+    const expected =
+      'mine\nloops/*/records/\nloops/*/state.json\nloops/*/armed.json\nloops/*/start.lock\n';
     expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf-8')).toBe(
-      'mine\n',
+      expected,
+    );
+    expect(ensureSidekickRepo(dir, execRunner)).toEqual([]);
+    expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf-8')).toBe(
+      expected,
     );
     expect(git(dir, 'rev-parse', 'HEAD')).toBe(head);
   });

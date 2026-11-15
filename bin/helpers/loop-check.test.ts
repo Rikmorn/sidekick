@@ -132,11 +132,13 @@ describe('checkLoop: a valid loop', () => {
     expect(check.profile?.store).toBe('user');
   });
 
-  test('passes a key-shaped line in a record file and in state.json', () => {
+  test('passes a key-shaped line in a record file, state.json, armed.json, and start.lock', () => {
     writeLoop();
     writeProfile(userStore());
     write(path.join(loopDir(), 'records', '2026-11-14.jsonl'), `${key()}\n`);
     write(path.join(loopDir(), 'state.json'), `{"note":"${key()}"}`);
+    write(path.join(loopDir(), 'armed.json'), `{"note":"${key()}"}`);
+    write(path.join(loopDir(), 'start.lock'), `{"note":"${key()}"}`);
     expect(checkLoop('fixer', deps).issues).toEqual([]);
   });
 

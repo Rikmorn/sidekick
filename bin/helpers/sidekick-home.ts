@@ -23,7 +23,12 @@ export const sidekickHome = (
   home: string,
 ): string => path.join(configDir(env, cwd, home), 'sidekick');
 
-const IGNORED = ['loops/*/records/', 'loops/*/state.json'];
+const IGNORED = [
+  'loops/*/records/',
+  'loops/*/state.json',
+  'loops/*/armed.json',
+  'loops/*/start.lock',
+];
 
 /**
  * The real path of `p`, or of its deepest existing ancestor with the rest of
@@ -50,7 +55,7 @@ const messageOf = (e: unknown): string =>
 
 /**
  * Makes `dir` a git repo of its own when it is not a work tree's top, and
- * writes its `.gitignore` when absent. Returns `<path>: <why>` lines, empty on
+ * adds the `.gitignore` lines it lacks. Returns `<path>: <why>` lines, empty on
  * success. Never commits.
  */
 export function ensureSidekickRepo(dir: string, runGit: Runner): string[] {
@@ -66,12 +71,22 @@ export function ensureSidekickRepo(dir: string, runGit: Runner): string[] {
     }
   }
   const ignore = path.join(dir, '.gitignore');
-  if (!fs.existsSync(ignore)) {
-    try {
-      fs.writeFileSync(ignore, `${IGNORED.join('\n')}\n`);
-    } catch (e) {
-      return [`${ignore}: cannot write the file: ${messageOf(e)}`];
-    }
+  try {
+    ensureIgnoreLines(ignore);
+  } catch (e) {
+    return [`${ignore}: cannot write the file: ${messageOf(e)}`];
   }
   return [];
+}
+
+// Appends the `IGNORED` lines the file lacks, keeping the operator's lines and their order.
+function ensureIgnoreLines(ignore: string): void {
+  const existing = fs.existsSync(ignore)
+    ? fs.readFileSync(ignore, 'utf-8')
+    : '';
+  const have = new Set(existing.split('\n'));
+  const missing = IGNORED.filter((line) => !have.has(line));
+  if (missing.length === 0) return;
+  const lead = existing === '' || existing.endsWith('\n') ? '' : '\n';
+  fs.appendFileSync(ignore, `${lead}${missing.join('\n')}\n`);
 }

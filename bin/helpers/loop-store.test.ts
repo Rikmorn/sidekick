@@ -50,6 +50,11 @@ describe('loopNames', () => {
 });
 
 describe('RUNTIME_ENTRIES', () => {
+  test('holds the records folder and the three runtime files', () => {
+    expect([...RUNTIME_ENTRIES].sort()).toEqual(
+      ['armed.json', 'records', 'start.lock', 'state.json'].sort(),
+    );
+  });
   test('the sidekick repo .gitignore ignores each entry in every loop folder', () => {
     const fakeGit: Runner = (_cmd, args) =>
       args[0] === 'init'
