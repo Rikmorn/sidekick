@@ -14,7 +14,7 @@ import {
   tokensOf,
 } from './desk-transcripts.js';
 import { MAX_OUTPUT, type Runner } from './pm-data.js';
-import { briefTarget, readBrief } from './worker-brief.js';
+import { briefTargetOf, readBrief } from './worker-brief.js';
 import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
 import type { WorkerRecord } from './worker-record.js';
 import { checkoutOf, headCommit, physical } from './worker-repo.js';
@@ -173,7 +173,7 @@ function countBase(
     ],
   });
   if ('issues' in read) return fallback('its brief cannot be read');
-  const target = briefTarget(read.brief);
+  const target = briefTargetOf(read.brief);
   // A target may start with `-`, so it never reaches git bare.
   if (target !== undefined) {
     return { rev: `refs/heads/${target}`, warnings: [] };

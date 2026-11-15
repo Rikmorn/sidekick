@@ -252,10 +252,10 @@ export function briefFileIssues(
 const UNIT_ID = /^[A-Za-z0-9._-]{1,64}$/;
 const UNITS_FOLDER = 'units';
 
-function realFolderOf(file: string): string | undefined {
-  const folder = path.dirname(file);
-  return fs.existsSync(folder) ? physical(folder) : undefined;
-}
+// The folder a file really sits in: its own last segment is resolved too, so a
+// symlinked file reads as the folder its target is in. A file not yet made
+// resolves through its nearest existing folder.
+const realFolderOf = (file: string): string => path.dirname(physical(file));
 
 /**
  * Checks a unit brief's files by real path. The brief, the unit file, and the
@@ -281,31 +281,29 @@ export function unitBriefFileIssues(
   ];
   for (const [field, file] of others) {
     const folder = realFolderOf(file);
-    if (home !== undefined && folder !== undefined && folder !== home) {
+    if (folder !== home) {
       issues.push(
         `${field}: ${file} is not in the folder ${home} that holds the brief; the brief, the unit file, and the rulings share one folder`,
       );
     }
   }
-  if (home !== undefined) {
-    const unitId = path.basename(path.dirname(home));
-    const shape =
-      path.basename(home) === brief.name &&
-      path.basename(path.dirname(path.dirname(home))) === UNITS_FOLDER &&
-      unitId !== '.' &&
-      unitId !== '..' &&
-      UNIT_ID.test(unitId);
-    if (!shape) {
-      issues.push(
-        `brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`,
-      );
-    }
+  const unitId = path.basename(path.dirname(home));
+  const shape =
+    path.basename(home) === brief.name &&
+    path.basename(path.dirname(path.dirname(home))) === UNITS_FOLDER &&
+    unitId !== '.' &&
+    unitId !== '..' &&
+    UNIT_ID.test(unitId);
+  if (!shape) {
+    issues.push(
+      `brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`,
+    );
   }
   return issues;
 }
 
 /** The branch a plan brief names to land in; a unit brief names none. */
-export const briefTarget = (brief: Brief): string | undefined =>
+export const briefTargetOf = (brief: Brief): string | undefined =>
   brief.kind === 'plan' ? brief.target : undefined;
 
 /** The workstream a plan brief names; a unit brief names none. */

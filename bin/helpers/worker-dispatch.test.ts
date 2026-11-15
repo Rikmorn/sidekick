@@ -675,6 +675,42 @@ describe('dispatch of a unit brief', () => {
   });
 });
 
+describe('dispatch of a unit brief outside a work tree', () => {
+  test('names the unit file issue beside the checkout issue', () => {
+    const fx = fixture();
+    const attempt = path.join(tmp(), 'loop', 'units', 'u-1', 'w1');
+    fs.mkdirSync(attempt, { recursive: true });
+    const unit = path.join(attempt, 'unit.md');
+    const brief = path.join(attempt, 'brief.md');
+    fs.writeFileSync(
+      brief,
+      briefText({
+        kind: 'unit',
+        name: 'w1',
+        unit,
+        rulings: path.join(attempt, 'rulings.md'),
+        baseline: fx.head,
+        skill: 'sidekick:sk-orient',
+        place: 'worktree',
+        report: 'docs/run-report.md',
+        orchestrator: 'orch',
+      }),
+    );
+    const outside = tmp();
+    const h = harness(fx, {
+      cwd: outside,
+      workTree: { kind: 'inside', top: outside },
+    });
+    const code = h.dispatch(brief, '--permission-mode', 'auto');
+    expect(code).toBe(1);
+    expect(h.err).toContain(`unit: ${unit} does not exist`);
+    expect(h.err.some((l) => l.includes('not inside a git work tree'))).toBe(
+      true,
+    );
+    expect(h.claude.launches()).toEqual([]);
+  });
+});
+
 describe('dispatch launches', () => {
   test('claude with the profile, the mode, the worktree, and the prompt, in that order', () => {
     const fx = fixture();

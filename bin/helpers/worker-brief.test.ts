@@ -4,10 +4,11 @@ import * as path from 'node:path';
 import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
 import {
-  type Brief,
   briefFileIssues,
+  type PlanBrief,
   parseFrontmatter,
   readBrief,
+  type UnitBrief,
   unitBriefFileIssues,
 } from './worker-brief.js';
 
@@ -168,8 +169,9 @@ describe('briefFileIssues', () => {
   };
   const setup = () => {
     const main = repo();
-    const b: Brief = {
+    const b: PlanBrief = {
       ...valid,
+      kind: 'plan',
       plan: fileIn(main, 'docs/plan.md'),
       spec: fileIn(main, 'docs/spec.md'),
       rulings: path.join(main, 'docs/rulings.md'),
@@ -276,7 +278,7 @@ describe('briefFileIssues', () => {
 });
 
 describe('the unit brief', () => {
-  const unitFields = {
+  const unitFields: UnitBrief = {
     kind: 'unit',
     name: 'w1',
     unit: '/loop/units/u-1/w1/unit.md',
@@ -333,17 +335,18 @@ describe('the unit brief', () => {
     expect(readIssues({ ...unitFields, place: 'in-place' })).toHaveLength(1);
   });
 
-  const attempt = (): { dir: string; b: Extract<Brief, { kind: 'unit' }> } => {
-    const dir = path.join(tmp(), 'loop', 'units', 'u-1', 'w1');
+  const attemptIn = (...segments: string[]): { dir: string; b: UnitBrief } => {
+    const dir = path.join(tmp(), ...segments);
     fs.mkdirSync(dir, { recursive: true });
     write(dir, 'unit.md', 'u');
-    const b = {
+    const b: UnitBrief = {
       ...unitFields,
       unit: path.join(dir, 'unit.md'),
       rulings: path.join(dir, 'rulings.md'),
-    } as Extract<Brief, { kind: 'unit' }>;
+    };
     return { dir, b };
   };
+  const attempt = () => attemptIn('loop', 'units', 'u-1', 'w1');
 
   test("a unit brief's files in one attempt folder pass", () => {
     const { dir, b } = attempt();
@@ -355,22 +358,57 @@ describe('the unit brief', () => {
     fs.mkdirSync(other);
     const issues = unitBriefFileIssues(b, path.join(other, 'brief.md'));
     expect(issues.some((i) => i.startsWith('brief:'))).toBe(true);
+    expect(issues.some((i) => i.startsWith('unit:'))).toBe(true);
     const out = unitBriefFileIssues(
       { ...b, rulings: path.join(other, 'rulings.md') },
       path.join(dir, 'brief.md'),
     );
     expect(out.some((i) => i.startsWith('rulings:'))).toBe(true);
   });
+  test('a symlinked unit file refuses, judged by its own real path', () => {
+    const { dir, b } = attempt();
+    const elsewhere = path.join(tmp(), 'real-unit.md');
+    fs.writeFileSync(elsewhere, 'u');
+    fs.rmSync(b.unit);
+    fs.symlinkSync(elsewhere, b.unit);
+    const issues = unitBriefFileIssues(b, path.join(dir, 'brief.md'));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatch(/^unit: /);
+  });
+  test('a symlinked brief refuses, judged by its own real path', () => {
+    const { dir, b } = attempt();
+    const elsewhere = path.join(tmp(), 'real-brief.md');
+    fs.writeFileSync(elsewhere, 'b');
+    const link = path.join(dir, 'brief.md');
+    fs.symlinkSync(elsewhere, link);
+    const issues = unitBriefFileIssues(b, link);
+    expect(issues.some((i) => i.startsWith('brief: '))).toBe(true);
+    expect(issues.some((i) => i.startsWith('unit: '))).toBe(true);
+  });
   test('a folder that is not units/<unit>/<worker> refuses', () => {
-    const dir = path.join(tmp(), 'loop', 'w1');
-    fs.mkdirSync(dir, { recursive: true });
-    write(dir, 'unit.md', 'u');
-    const b = {
-      ...unitFields,
-      unit: path.join(dir, 'unit.md'),
-      rulings: path.join(dir, 'rulings.md'),
-    } as Extract<Brief, { kind: 'unit' }>;
-    expect(unitBriefFileIssues(b, path.join(dir, 'brief.md')).length).toBe(1);
+    const { dir, b } = attemptIn('loop', 'w1');
+    expect(unitBriefFileIssues(b, path.join(dir, 'brief.md'))).toHaveLength(1);
+  });
+  test('a folder whose name differs from the worker refuses', () => {
+    const { dir, b } = attemptIn('loop', 'units', 'u-1', 'other');
+    const issues = unitBriefFileIssues(b, path.join(dir, 'brief.md'));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatch(/^brief: /);
+  });
+  test.each([
+    ['a space', 'u 1'],
+    ['a plus sign', 'u+1'],
+    ['over 64 characters', 'u'.repeat(65)],
+    ['a dot-dot', '..'],
+  ])('a unit id with %s refuses', (_why, id) => {
+    const { dir, b } = attemptIn('loop', 'units', id, 'w1');
+    const issues = unitBriefFileIssues(b, path.join(dir, 'brief.md'));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatch(/^brief: /);
+  });
+  test('a unit id of 64 characters passes', () => {
+    const { dir, b } = attemptIn('loop', 'units', 'u'.repeat(64), 'w1');
+    expect(unitBriefFileIssues(b, path.join(dir, 'brief.md'))).toEqual([]);
   });
   test('a unit brief whose unit file is missing refuses', () => {
     const { dir, b } = attempt();
@@ -378,5 +416,26 @@ describe('the unit brief', () => {
     const issues = unitBriefFileIssues(b, path.join(dir, 'brief.md'));
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatch(/^unit: .*does not exist/);
+  });
+  test("a unit brief whose rulings' folder is missing refuses", () => {
+    const { dir, b } = attempt();
+    const missing = path.join(dir, 'gone', 'rulings.md');
+    const issues = unitBriefFileIssues(
+      { ...b, rulings: missing },
+      path.join(dir, 'brief.md'),
+    );
+    expect(issues.some((i) => i.startsWith('rulings: the folder '))).toBe(true);
+  });
+  test('an unknown kind refuses', () => {
+    const issues = readIssues({ ...unitFields, kind: 'other' });
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues.join('\n')).toContain('kind');
+  });
+  test('an explicit kind: plan parses as a plan', () => {
+    const dir = tmp();
+    const r = readBrief(
+      write(dir, 'p.md', brief(lines({ kind: 'plan', ...valid }))),
+    );
+    expect('brief' in r && r.brief.kind).toBe('plan');
   });
 });

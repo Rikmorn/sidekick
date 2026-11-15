@@ -15,7 +15,7 @@ import { LAUNCH_TIMEOUT_MS } from './profile.js';
 import { bgArgs, type ClaudeResult } from './profile-launch.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
-import { briefTarget, readBrief } from './worker-brief.js';
+import { briefTargetOf, readBrief } from './worker-brief.js';
 import type { CheckOptions, DispatchOptions } from './worker-dispatch-args.js';
 import {
   BYPASS,
@@ -50,7 +50,7 @@ const DETACHED_LANDING =
 
 // The launching checkout is named only when it is not the main checkout.
 function landingLine(ready: Ready): string {
-  const target = briefTarget(ready.brief) ?? DETACHED_LANDING;
+  const target = briefTargetOf(ready.brief) ?? DETACHED_LANDING;
   const from =
     ready.launchTop === ready.mainTop
       ? ''

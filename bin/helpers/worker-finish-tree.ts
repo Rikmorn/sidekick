@@ -13,7 +13,7 @@ import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 import { shellArg } from './shell.js';
 import { heldBackup } from './worker-backup.js';
-import { type Brief, briefTarget } from './worker-brief.js';
+import { type Brief, briefTargetOf } from './worker-brief.js';
 import {
   discardCommandFor,
   type FinishMode,
@@ -110,7 +110,7 @@ function briefPlaces(read: BriefRead, worktree: string): BriefPlaces {
   return {
     folder,
     top,
-    target: briefTarget(read.brief),
+    target: briefTargetOf(read.brief),
     report,
     reportFrom: path.join(worktree, report),
     reportTo: top === undefined ? undefined : path.join(top, report),

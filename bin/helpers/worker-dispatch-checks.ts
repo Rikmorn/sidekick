@@ -169,14 +169,12 @@ function checkoutIssues(
   facts: CheckoutFacts,
 ): string[] {
   const { launchTop, mainTop } = facts;
-  // A unit brief names a unit file, not a plan or a target, so it skips the
-  // plan's file bounds and the target check.
-  const own =
-    brief.kind === 'plan'
-      ? briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit })
-      : unitBriefFileIssues(brief, briefPath);
+  // A unit brief skips the plan's file bounds and the target check; its own
+  // file check runs in `checkDispatch`, which needs no checkout facts.
   return [
-    ...own,
+    ...(brief.kind === 'plan'
+      ? briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit })
+      : []),
     ...limitsIssues(briefPath),
     ...baselineIssues(runGit, launchTop, brief.baseline),
     ...cleanIssues(runGit, launchTop),
@@ -316,6 +314,7 @@ export function checkDispatch(
     reads,
   );
   const issues = [
+    ...(brief.kind === 'unit' ? unitBriefFileIssues(brief, briefPath) : []),
     ...('issues' in facts
       ? facts.issues
       : checkoutIssues(brief, briefPath, opts, wenv.runGit, facts)),

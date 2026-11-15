@@ -2354,10 +2354,7 @@ function briefFileIssues(brief, bounds) {
 }
 var UNIT_ID = /^[A-Za-z0-9._-]{1,64}$/;
 var UNITS_FOLDER = "units";
-function realFolderOf(file) {
-  const folder = path4.dirname(file);
-  return fs4.existsSync(folder) ? physical(folder) : undefined;
-}
+var realFolderOf = (file) => path4.dirname(physical(file));
 function unitBriefFileIssues(brief, briefPath) {
   const issues = [];
   if (!fs4.existsSync(brief.unit)) {
@@ -2374,20 +2371,18 @@ function unitBriefFileIssues(brief, briefPath) {
   ];
   for (const [field, file] of others) {
     const folder = realFolderOf(file);
-    if (home !== undefined && folder !== undefined && folder !== home) {
+    if (folder !== home) {
       issues.push(`${field}: ${file} is not in the folder ${home} that holds the brief; the brief, the unit file, and the rulings share one folder`);
     }
   }
-  if (home !== undefined) {
-    const unitId = path4.basename(path4.dirname(home));
-    const shape = path4.basename(home) === brief.name && path4.basename(path4.dirname(path4.dirname(home))) === UNITS_FOLDER && unitId !== "." && unitId !== ".." && UNIT_ID.test(unitId);
-    if (!shape) {
-      issues.push(`brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`);
-    }
+  const unitId = path4.basename(path4.dirname(home));
+  const shape = path4.basename(home) === brief.name && path4.basename(path4.dirname(path4.dirname(home))) === UNITS_FOLDER && unitId !== "." && unitId !== ".." && UNIT_ID.test(unitId);
+  if (!shape) {
+    issues.push(`brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`);
   }
   return issues;
 }
-var briefTarget = (brief) => brief.kind === "plan" ? brief.target : undefined;
+var briefTargetOf = (brief) => brief.kind === "plan" ? brief.target : undefined;
 var briefWorkstreamOf = (brief) => brief.kind === "plan" ? brief.workstream : undefined;
 
 // bin/helpers/worker-listing.ts
@@ -2698,7 +2693,7 @@ function countBase(runGit, name, read, briefTop) {
   });
   if ("issues" in read)
     return fallback2("its brief cannot be read");
-  const target = briefTarget(read.brief);
+  const target = briefTargetOf(read.brief);
   if (target !== undefined) {
     return { rev: `refs/heads/${target}`, warnings: [] };
   }
@@ -13800,9 +13795,8 @@ function limitsIssues(briefPath) {
 }
 function checkoutIssues(brief, briefPath, opts, runGit, facts) {
   const { launchTop, mainTop } = facts;
-  const own = brief.kind === "plan" ? briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }) : unitBriefFileIssues(brief, briefPath);
   return [
-    ...own,
+    ...brief.kind === "plan" ? briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }) : [],
     ...limitsIssues(briefPath),
     ...baselineIssues(runGit, launchTop, brief.baseline),
     ...cleanIssues(runGit, launchTop),
@@ -13874,6 +13868,7 @@ function checkDispatch(brief, briefPath, opts, wenv) {
   const reads = brief.kind === "plan" ? [briefPath, brief.plan, brief.spec, brief.rulings] : [briefPath, brief.unit, brief.rulings];
   const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at2 }, main?.value, reads);
   const issues = [
+    ...brief.kind === "unit" ? unitBriefFileIssues(brief, briefPath) : [],
     ..."issues" in facts ? facts.issues : checkoutIssues(brief, briefPath, opts, wenv.runGit, facts),
     ...placeIssues(brief),
     ...listedNameIssues(listed, brief.name),
@@ -14127,7 +14122,7 @@ function relay(result, out, err) {
 var mainLines = (ready, wenv) => ready.main === undefined ? [] : [mainReport(ready.main, wenv.env, wenv.home)];
 var DETACHED_LANDING = "where the operator lands it (this checkout's HEAD is detached)";
 function landingLine(ready) {
-  const target = briefTarget(ready.brief) ?? DETACHED_LANDING;
+  const target = briefTargetOf(ready.brief) ?? DETACHED_LANDING;
   const from = ready.launchTop === ready.mainTop ? "" : ` · launched from ${ready.launchTop}`;
   return `lands in: ${target}${from}`;
 }
@@ -14638,7 +14633,7 @@ function briefPlaces(read, worktree) {
   return {
     folder,
     top,
-    target: briefTarget(read.brief),
+    target: briefTargetOf(read.brief),
     report: report2,
     reportFrom: path63.join(worktree, report2),
     reportTo: top === undefined ? undefined : path63.join(top, report2)
