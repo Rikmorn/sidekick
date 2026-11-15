@@ -13,8 +13,11 @@
  * Its last line names the backup ref.
  * In discard mode with no worktree found, it removes the session and the record
  * alone, through `worker-finish-gone.ts`.
- * The arguments, the target, the worktree checks, and the report each live in
- * a `worker-finish-*` module of their own.
+ * Once it reads the checkouts, it checks the repo's main git dir. Each git
+ * call into the worktree runs hardened, once the worktree's link to the repo
+ * holds.
+ * The arguments, the target, the link check, the worktree checks, and the
+ * report each live in a `worker-finish-*` module of their own.
  */
 
 import { configDirOf } from './main-session.js';
@@ -28,6 +31,13 @@ import {
   type FinishSubject,
   rerunCommand,
 } from './worker-finish-args.js';
+import {
+  adminNameOf,
+  chainAt,
+  chainNowIssues,
+  MAIN_GIT_DIR_LEAD,
+  worktreeEnv,
+} from './worker-finish-chain.js';
 import {
   clearGone,
   type Gone,
@@ -57,6 +67,7 @@ import {
   unprovenIssues,
   worktreeCheck,
 } from './worker-finish-tree.js';
+import { mainGitDirIssues } from './worker-git.js';
 import { LISTING, listJobs } from './worker-jobs.js';
 import { commitOf } from './worker-repo.js';
 import type {
@@ -169,6 +180,8 @@ function locate(
 ): Located | { issues: string[] } {
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   if ('issues' in facts) return facts;
+  const repo = mainGitDirIssues(wenv.runGit, facts);
+  if (repo.length > 0) return { issues: [MAIN_GIT_DIR_LEAD, ...repo] };
   const { mainTop, launchTop, commonDir } = facts;
   const job = findJob(wenv, mainTop, subject);
   if ('issues' in job) return job;
@@ -246,17 +259,26 @@ function allIssues(
 }
 
 // Every check of the worktree needs the job's id, so those run once it is
-// found. It prints the target line, through landedCheck.
+// found. Its git calls into the worktree run hardened, once the worktree's
+// link to the repo holds. It prints the target line, through landedCheck.
 function checkFinish(
-  name: string,
+  subject: Subject,
   located: Extract<Located, { kind: 'found' }>,
   opts: FinishOptions,
-  { wenv, out }: { wenv: WorkerEnv; out: Out },
+  { wenv: outside, out }: { wenv: WorkerEnv; out: Out },
 ): Ready | { issues: string[] } {
   const { places, job } = located;
   const { mainTop, worktree } = places;
-  const unlinked = unlinkedIssues(wenv.runGit, mainTop, worktree, job.id);
+  const { name } = subject;
+  const unlinked = unlinkedIssues(outside.runGit, mainTop, worktree, job.id);
   if (unlinked.length > 0) return { issues: unlinked };
+  const adminName = adminNameOf(subject);
+  const chain = chainAt(worktree, located.commonDir, adminName);
+  if (chain.kind === 'broken') return { issues: chain.lines };
+  const wenv =
+    chain.kind === 'linked'
+      ? worktreeEnv(outside, { worktree, gitDir: chain.gitDir })
+      : outside;
   // The partial check reads the head even when the landed check refuses, since
   // a refusal runs no step and so restores nothing.
   const head = commitOf(wenv.runGit, mainTop, `refs/heads/${places.branch}`);
@@ -274,6 +296,7 @@ function checkFinish(
   if ('issues' in landed || tree.issues.length > 0 || 'issues' in step) {
     return { issues: allIssues(landed, tree.issues, step) };
   }
+  if (chain.kind === 'gone') return { issues: chain.lines };
   return {
     id: job.id,
     state: job.state,
@@ -281,6 +304,8 @@ function checkFinish(
     mainTop,
     commonDir: located.commonDir,
     worktree,
+    gitDir: chain.gitDir,
+    adminName,
     branch: places.branch,
     head: landed.head,
     report: places.brief?.report,
@@ -293,9 +318,21 @@ function checkFinish(
 }
 
 // The job may have run on through checkFinish, and a discard destroys what it
-// left, so the worktree is checked again once its process is gone.
+// left, so the worktree is checked again once its process is gone: its link to
+// the repo first, since every other check runs git there.
 const recheckWorktree: Step = (ready, wenv) => {
-  const issues = [
+  const chain = chainNowIssues(ready);
+  const issues = chain.length > 0 ? chain : changedIssues(ready, wenv);
+  if (issues.length === 0) return [];
+  return [
+    'the worktree changed after finish checked it, so finish removed nothing:',
+    ...issues,
+  ];
+};
+
+// What changed in the worktree, its branch, or its report since checkFinish.
+function changedIssues(ready: Ready, wenv: WorkerEnv): string[] {
+  return [
     ...onBranchIssues(
       wenv.runGit,
       ready.worktree,
@@ -313,12 +350,7 @@ const recheckWorktree: Step = (ready, wenv) => {
     ),
     ...reportChangedIssues(ready),
   ];
-  if (issues.length === 0) return [];
-  return [
-    'the worktree changed after finish checked it, so finish removed nothing:',
-    ...issues,
-  ];
-};
+}
 
 // The landing line, under the target line landedCheck printed, so the operator
 // sees what the check found before any removal. Discard mode has no target.
@@ -377,10 +409,11 @@ function finishIssues(
   const located = locate(subject, opts, wenv);
   if ('issues' in located) return located.issues;
   if (located.kind === 'gone') return clearGone(located.gone, wenv, out);
-  const ready = checkFinish(subject.name, located, opts, { wenv, out });
+  const ready = checkFinish(subject, located, opts, { wenv, out });
   if ('issues' in ready) return ready.issues;
+  const inside = worktreeEnv(wenv, ready);
   for (const step of STEPS) {
-    const issues = step(ready, wenv, out);
+    const issues = step(ready, inside, out);
     if (issues.length > 0) return issues;
   }
   return [];

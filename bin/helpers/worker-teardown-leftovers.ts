@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
+import { HARDENED_GIT_FLAGS } from './worker-git.js';
 import { lockReasonOf, worktreeListed } from './worker-listing.js';
 import { removeRecord } from './worker-record.js';
 import { branchExists } from './worker-repo.js';
@@ -104,8 +105,13 @@ function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
   const files = unlocked ? leftoverIssues(runGit, ready) : [];
   // The files check takes seconds, and a session may lock the worktree meanwhile.
   const lock = unlocked && files.length === 0 ? lockNow(ready, wenv) : first;
+  // The flags keep the worker's hooks and fsmonitor out of the removal's own git status.
   const issues =
-    files.length > 0 ? files : removeGitWorktree(runGit, top, worktree, lock);
+    files.length > 0
+      ? files
+      : removeGitWorktree(runGit, top, worktree, lock, {
+          flags: HARDENED_GIT_FLAGS,
+        });
   if (issues.length === 0) return [];
   return [
     `claude rm said removed, but git still lists the worktree ${worktree}`,

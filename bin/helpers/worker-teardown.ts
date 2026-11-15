@@ -43,6 +43,10 @@ export interface Ready extends WorkerJob {
   commonDir: string;
   /** The worker's worktree, as git lists it. */
   worktree: string;
+  /** The worktree's admin folder, which its link named when finish checked it; each git call into the worktree names it. */
+  gitDir: string;
+  /** The name the admin folder must have: a unit worker's own; undefined for a plan worker. */
+  adminName: string | undefined;
   /** The worker's branch, a short name. */
   branch: string;
   head: string;

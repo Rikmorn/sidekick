@@ -64,13 +64,15 @@ const gitIssue = (verb: string, stderr: string): string =>
  * `--force`, so git refuses a worktree holding untracked files. A live lock
  * refuses before anything changes, and so does an `other` one: any lock but a
  * Claude Code session's that names a pid, another tool's naming a pid
- * included. Returns the issues, else [].
+ * included. `flags` lead the removal's arguments, and git passes `-c` ones on
+ * to the `git status` it runs in the worktree. Returns the issues, else [].
  */
 export function removeGitWorktree(
   runGit: Runner,
   top: string,
   path: string,
   lock: LockState,
+  { flags = [] }: { flags?: readonly string[] } = {},
 ): string[] {
   if (lock.kind === 'live') {
     return [`${path} is locked by a live session (pid ${lock.pid})`];
@@ -82,6 +84,6 @@ export function removeGitWorktree(
     const unlock = runGit('git', ['worktree', 'unlock', path], top);
     if (unlock.code !== 0) return [gitIssue('unlock', unlock.stderr)];
   }
-  const removed = runGit('git', ['worktree', 'remove', path], top);
+  const removed = runGit('git', [...flags, 'worktree', 'remove', path], top);
   return removed.code === 0 ? [] : [gitIssue('remove', removed.stderr)];
 }

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { git, removeTemps, repoWithWorktree } from './fixtures/worker/repo.js';
 import { execRunner } from './pm-data.js';
+import { HARDENED_GIT_FLAGS } from './worker-git.js';
 import { lockPid, lockStateOf, removeGitWorktree } from './worktree-lock.js';
 
 afterEach(removeTemps);
@@ -96,6 +97,24 @@ describe('removeGitWorktree', () => {
     const lock = lockStateOf(undefined, dead);
     expect(removeGitWorktree(execRunner, r.main, r.worktree, lock)).toEqual([]);
     expect(listed(r.main)).not.toContain(r.worktree);
+  });
+
+  test.each([
+    ['without flags runs', [], true],
+    ['with the hardened flags keeps out', HARDENED_GIT_FLAGS, false],
+  ])("a removal %s the repo's fsmonitor in its own git status", (_label, flags, ran) => {
+    const r = repoWithWorktree('');
+    const marker = path.join(r.main, 'fsmonitor-ran');
+    const hook = path.join(r.main, 'fsmonitor.sh');
+    fs.writeFileSync(hook, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`);
+    fs.chmodSync(hook, 0o755);
+    git(r.main, 'config', 'core.fsmonitor', hook);
+    const lock = lockStateOf(undefined, dead);
+    const removal = removeGitWorktree(execRunner, r.main, r.worktree, lock, {
+      flags,
+    });
+    expect(removal).toEqual([]);
+    expect(fs.existsSync(marker)).toBe(ran);
   });
 
   test('an untracked file refuses with git message and keeps the worktree', () => {

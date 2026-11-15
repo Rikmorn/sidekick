@@ -33,6 +33,7 @@ import {
 import { execRunner, MAX_OUTPUT, type Runner } from './pm-data.js';
 import { SHORT_SHA } from './worker-finish.js';
 import { judgeFor } from './worker-finish-target.js';
+import { HARDENED_GIT_FLAGS } from './worker-git.js';
 import {
   readRecords,
   type WorkerRecord,
@@ -41,6 +42,17 @@ import {
 
 afterEach(removeTemps);
 afterEach(removeBesides);
+
+// The worktree's admin folder, which the fixture's worktree takes as w1.
+const adminOf = (fx: Fixture): string =>
+  path.join(fx.top, '.git', 'worktrees', 'w1');
+
+// What finish puts before each git call into the worktree.
+const hardenedPrefix = (fx: Fixture): string[] => [
+  ...HARDENED_GIT_FLAGS,
+  `--git-dir=${adminOf(fx)}`,
+  `--work-tree=${fx.worktree}`,
+];
 
 // The target line when the brief names no target and `top` holds the brief.
 const headTarget = (top: string): string =>
@@ -1394,6 +1406,7 @@ describe('finish after a removal cut short', () => {
     expect(h.claude.statusAtRm[1]).toBe(`?? ${REPORT}`);
     const [restore] = restores(calls);
     expect(restore.args).toEqual([
+      ...hardenedPrefix(fx),
       '-C',
       fx.worktree,
       'checkout-index',
@@ -1474,6 +1487,7 @@ describe('finish after a removal cut short', () => {
     expect(fs.existsSync(fx.worktree)).toBe(false);
     const argv = restores(calls).flatMap((c) => c.args);
     expect(argv).toEqual([
+      ...hardenedPrefix(fx),
       '-C',
       fx.worktree,
       'checkout-index',
@@ -3180,5 +3194,158 @@ describe('finish and flagged files (#319)', () => {
     const h = harness(fx);
     expect(h.finish(fx.brief)).toBe(0);
     expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+});
+
+describe('finish runs git into the worktree hardened', () => {
+  // The lead of a refusal over a worktree whose link to the repo is broken.
+  const chainLead = (fx: Fixture): string =>
+    `the worktree ${fx.worktree} is not linked to its repo the way git links a worktree, so finish ran no git there and removed nothing:`;
+
+  interface GitCall {
+    args: string[];
+    cwd: string;
+  }
+
+  // Whether a recorded call runs git in the worktree: from inside it, or sent there by -C.
+  const intoWorktree = (fx: Fixture, call: GitCall): boolean =>
+    call.cwd.startsWith(fx.worktree) ||
+    call.args.some(
+      (arg, at) => arg === fx.worktree && call.args[at - 1] === '-C',
+    );
+
+  // Real git, with each call's arguments and folder kept.
+  function gitCalls(): { runGit: Runner; calls: GitCall[] } {
+    const calls: GitCall[] = [];
+    const runGit: Runner = (cmd, args, cwd, opts) => {
+      calls.push({ args, cwd });
+      return execRunner(cmd, args, cwd, opts);
+    };
+    return { runGit, calls };
+  }
+
+  // A copy of the main checkout's git dir, outside the repo.
+  function copyOfGitDir(fx: Fixture): string {
+    const copy = path.join(tmp(), 'copy.git');
+    fs.cpSync(path.join(fx.top, '.git'), copy, { recursive: true });
+    return copy;
+  }
+
+  test('finish runs every worktree git call hardened', () => {
+    const fx = fixture();
+    fx.integrate();
+    const { runGit, calls } = gitCalls();
+    const h = harness(fx, { runGit });
+    // claude rm leaves the worktree, so finish's own removal runs too.
+    h.claude.state.rm = [removed('nothing')];
+    expect(h.finish(fx.brief)).toBe(0);
+    const into = calls.filter((call) => intoWorktree(fx, call));
+    for (const verb of ['symbolic-ref', 'ls-files', 'status']) {
+      expect(into.some((call) => call.args.includes(verb))).toBe(true);
+    }
+    for (const call of into) {
+      expect(call.args.slice(0, hardenedPrefix(fx).length)).toEqual(
+        hardenedPrefix(fx),
+      );
+    }
+    const elsewhere = calls.filter((call) => !intoWorktree(fx, call));
+    for (const call of elsewhere) {
+      expect(call.args.some((arg) => arg.startsWith('--git-dir'))).toBe(false);
+    }
+    const removal = calls.filter((call) => call.args.includes('remove'));
+    expect(removal.map((call) => call.args)).toEqual([
+      [...HARDENED_GIT_FLAGS, 'worktree', 'remove', fx.worktree],
+    ]);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test("refuses a planted commondir in the worktree's admin folder alone, running no git there", () => {
+    const fx = fixture();
+    fx.integrate();
+    const copy = copyOfGitDir(fx);
+    fs.writeFileSync(path.join(adminOf(fx), 'commondir'), `${copy}\n`);
+    const { runGit, calls } = gitCalls();
+    const h = harness(fx, { runGit });
+    expectRefusedUntouched(h, fx, h.finish(fx.brief), chainLead(fx));
+    expect(h.err).toEqual([
+      chainLead(fx),
+      `${adminOf(fx)}/commondir points to ${copy}, not to the common git dir ${fx.top}/.git`,
+    ]);
+    expect(calls.filter((call) => intoWorktree(fx, call))).toEqual([]);
+  });
+
+  test('checks the chain again once the worker stops', () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    const gitdir = path.join(adminOf(fx), 'gitdir');
+    h.claude.state.whileStopping = () =>
+      fs.writeFileSync(gitdir, '/elsewhere-sk/.git\n');
+    expect(h.finish(fx.brief)).toBe(1);
+    expect(h.err).toEqual([
+      'the worktree changed after finish checked it, so finish removed nothing:',
+      `${gitdir} points to /elsewhere-sk/.git, not back to ${fx.worktree}/.git`,
+    ]);
+    expect(h.claude.named('rm')).toEqual([]);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+
+  test("refuses a unit worker's worktree whose admin folder carries another name", () => {
+    // Another worktree named w1 takes the admin folder w1 first, so the worker's takes w11.
+    const fx = fixture({
+      worktree: (top) => {
+        const other = path.join(tmp(), 'w1');
+        git(top, 'worktree', 'add', '-q', other, '-b', 'other');
+        return path.join(top, '.claude', 'worktrees', 'w1');
+      },
+    });
+    const home = path.join(tmp(), 'units', 'u1', 'w1');
+    fs.mkdirSync(home, { recursive: true });
+    const brief = path.join(home, 'brief.md');
+    fs.writeFileSync(
+      brief,
+      [
+        '---',
+        'kind: unit',
+        'name: w1',
+        `unit: ${path.join(home, 'unit.md')}`,
+        `rulings: ${path.join(home, 'rulings.md')}`,
+        `baseline: ${git(fx.top, 'rev-parse', 'HEAD')}`,
+        'skill: plug:skill',
+        'place: worktree',
+        `report: ${REPORT}`,
+        'orchestrator: orch',
+        '---',
+        '',
+      ].join('\n'),
+    );
+    const h = harness(fx);
+    expectRefusedUntouched(
+      h,
+      fx,
+      h.finish(brief, '--discard', '--no-report'),
+      chainLead(fx),
+    );
+    expect(h.err).toEqual([
+      chainLead(fx),
+      `${fx.worktree}/.git names the admin folder w11, not w1, the name it must have`,
+    ]);
+  });
+
+  test("refuses a main .git/commondir pointing at a copy, which moves git's common dir", () => {
+    const fx = fixture();
+    fx.integrate();
+    const copy = copyOfGitDir(fx);
+    const main = path.join(fx.top, '.git');
+    fs.writeFileSync(path.join(main, 'commondir'), `${copy}\n`);
+    const h = harness(fx);
+    const lead =
+      "the repo's main git dir does not check out, so finish removed nothing:";
+    expectRefusedUntouched(h, fx, h.finish(fx.brief), lead);
+    expect(h.err).toEqual([
+      lead,
+      `${main}/commondir exists, but a main git dir never holds one: git reads it to find the repository, so it may send git to another one`,
+      `git reports the common git dir ${copy}, but the main checkout's git dir is ${main}`,
+    ]);
   });
 });

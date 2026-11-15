@@ -3,10 +3,10 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs53 from "node:fs";
+import * as fs55 from "node:fs";
 import { realpathSync as realpathSync12 } from "node:fs";
 import * as os3 from "node:os";
-import * as path69 from "node:path";
+import * as path71 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -8094,7 +8094,7 @@ function lockStateOf(locked, isAlive) {
   return isAlive(pid) ? { kind: "live", pid } : { kind: "dead", pid };
 }
 var gitIssue2 = (verb, stderr) => `git worktree ${verb} failed: ${stderr.trim()}`;
-function removeGitWorktree(runGit, top, path37, lock) {
+function removeGitWorktree(runGit, top, path37, lock, { flags = [] } = {}) {
   if (lock.kind === "live") {
     return [`${path37} is locked by a live session (pid ${lock.pid})`];
   }
@@ -8106,7 +8106,7 @@ function removeGitWorktree(runGit, top, path37, lock) {
     if (unlock.code !== 0)
       return [gitIssue2("unlock", unlock.stderr)];
   }
-  const removed = runGit("git", ["worktree", "remove", path37], top);
+  const removed = runGit("git", [...flags, "worktree", "remove", path37], top);
   return removed.code === 0 ? [] : [gitIssue2("remove", removed.stderr)];
 }
 
@@ -14441,9 +14441,221 @@ function commandFor(opts, mode) {
 var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
-// bin/helpers/worker-finish-tree.ts
+// bin/helpers/worker-finish-chain.ts
+import * as fs50 from "node:fs";
+import * as path64 from "node:path";
+
+// bin/helpers/worker-git.ts
 import * as fs49 from "node:fs";
 import * as path63 from "node:path";
+var HARDENED_GIT_FLAGS = [
+  "-c",
+  "core.hooksPath=/dev/null",
+  "-c",
+  "core.fsmonitor=false"
+];
+var GITFILE_PREFIX = "gitdir: ";
+var COMMONDIR = "commondir";
+var GITDIR = "gitdir";
+function pointerText(file) {
+  try {
+    return { text: fs49.readFileSync(file, "utf-8").replace(/[\r\n]+$/, "") };
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    return { issue: `cannot read ${file}: ${why}` };
+  }
+}
+function isFolder4(at2) {
+  try {
+    return fs49.statSync(at2).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function lstatOf2(at2) {
+  try {
+    return fs49.lstatSync(at2);
+  } catch {
+    return;
+  }
+}
+function namedByGitFile(dotGit) {
+  const read = pointerText(dotGit);
+  if ("issue" in read)
+    return read;
+  if (!read.text.startsWith(GITFILE_PREFIX)) {
+    return {
+      issue: `${dotGit} does not start with "${GITFILE_PREFIX}", so it names no admin folder`
+    };
+  }
+  const named = read.text.slice(GITFILE_PREFIX.length);
+  return { dir: path63.resolve(physical(path63.dirname(dotGit)), named) };
+}
+function adminNamed(dotGit) {
+  const stat = lstatOf2(dotGit);
+  if (stat === undefined) {
+    return {
+      issue: `${dotGit} does not exist, so nothing links the worktree to its repo`
+    };
+  }
+  if (!stat.isFile()) {
+    return {
+      issue: `${dotGit} is not a file, so it is not the link git writes into a linked worktree`
+    };
+  }
+  const named = namedByGitFile(dotGit);
+  if ("issue" in named)
+    return named;
+  if (!isFolder4(named.dir)) {
+    return { issue: `${dotGit} names ${named.dir}, which is not a folder` };
+  }
+  return named;
+}
+var plantedLine = (file) => `${file} exists, but a main git dir never holds one: git reads it to find the repository, so it may send git to another one`;
+function plantedIssues(gitDir) {
+  const file = path63.join(gitDir, COMMONDIR);
+  return lstatOf2(file) === undefined ? [] : [plantedLine(file)];
+}
+function placeIssues2(dotGit, admin, commonDir, expected) {
+  const worktrees = path63.join(commonDir, "worktrees");
+  if (path63.dirname(physical(admin)) !== physical(worktrees)) {
+    return [
+      `${dotGit} names ${admin}, which is not directly under ${worktrees}, where git keeps each linked worktree's admin folder`
+    ];
+  }
+  const name = path63.basename(physical(admin));
+  if (expected === undefined || name === expected)
+    return [];
+  return [
+    `${dotGit} names the admin folder ${name}, not ${expected}, the name it must have`
+  ];
+}
+function pointerIssues(admin, file, want, wrong) {
+  const at2 = path63.join(admin, file);
+  const read = pointerText(at2);
+  if ("issue" in read)
+    return [read.issue];
+  const to = path63.resolve(physical(admin), read.text);
+  return physical(to) === physical(want) ? [] : [wrong(at2, to)];
+}
+var backIssues = (admin, dotGit, commonDir) => [
+  ...pointerIssues(admin, GITDIR, dotGit, (at2, to) => `${at2} points to ${to}, not back to ${dotGit}`),
+  ...pointerIssues(admin, COMMONDIR, commonDir, (at2, to) => `${at2} points to ${to}, not to the common git dir ${commonDir}`)
+];
+function chainOf(worktree, commonDir, expected) {
+  const dotGit = path63.join(worktree, ".git");
+  const planted = plantedIssues(commonDir);
+  const named = adminNamed(dotGit);
+  if ("issue" in named)
+    return { issues: [...planted, named.issue] };
+  const admin = named.dir;
+  const issues = [
+    ...planted,
+    ...placeIssues2(dotGit, admin, commonDir, expected),
+    ...backIssues(admin, dotGit, commonDir)
+  ];
+  return issues.length === 0 ? { gitDir: physical(admin) } : { issues };
+}
+function mainGitDir(runGit, facts) {
+  const launchGit = path63.join(facts.launchTop, ".git");
+  if (isFolder4(launchGit))
+    return { dir: launchGit };
+  const found = checkoutOf(runGit, facts.mainTop);
+  if ("top" in found) {
+    const dotGit = path63.join(found.top, ".git");
+    return isFolder4(dotGit) ? { dir: dotGit } : namedByGitFile(dotGit);
+  }
+  if (physical(facts.mainTop) === physical(facts.commonDir)) {
+    return { dir: facts.mainTop };
+  }
+  return {
+    issue: `git rev-parse --show-toplevel failed in the main checkout ${facts.mainTop}, so sidekick cannot find its git dir: ${found.issue}`
+  };
+}
+function mainGitDirIssues(runGit, facts) {
+  const main = mainGitDir(runGit, facts);
+  if ("issue" in main)
+    return [main.issue];
+  const differs = physical(main.dir) !== physical(facts.commonDir);
+  return [
+    ...plantedIssues(main.dir),
+    ...differs ? [
+      `git reports the common git dir ${facts.commonDir}, but the main checkout's git dir is ${main.dir}`
+    ] : []
+  ];
+}
+var VALUE_OPTIONS = new Set([
+  "-C",
+  "-c",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--config-env",
+  "--attr-source"
+]);
+function gitFolder(cwd, args) {
+  let folder = cwd;
+  let at2 = 0;
+  while (at2 < args.length && args[at2].startsWith("-")) {
+    if (args[at2] === "-C")
+      folder = path63.resolve(folder, args[at2 + 1] ?? "");
+    at2 += VALUE_OPTIONS.has(args[at2]) ? 2 : 1;
+  }
+  return folder;
+}
+function within2(folder, root) {
+  const rel = path63.relative(root, folder);
+  if (rel === "")
+    return true;
+  const leaves = rel === ".." || rel.startsWith(`..${path63.sep}`);
+  return !leaves && !path63.isAbsolute(rel);
+}
+function hardenedRunner(run, place) {
+  const root = physical(place.worktree);
+  const prefix = [
+    ...HARDENED_GIT_FLAGS,
+    `--git-dir=${place.gitDir}`,
+    `--work-tree=${root}`
+  ];
+  return (cmd, args, cwd, opts) => {
+    const inside = cmd === "git" && within2(physical(gitFolder(cwd, args)), root);
+    return run(cmd, inside ? [...prefix, ...args] : args, cwd, opts);
+  };
+}
+
+// bin/helpers/worker-finish-chain.ts
+var MAIN_GIT_DIR_LEAD = "the repo's main git dir does not check out, so finish removed nothing:";
+var adminNameOf = (subject) => subject.read?.brief.kind === "unit" ? subject.name : undefined;
+var worktreeEnv = (wenv, place) => ({
+  ...wenv,
+  runGit: hardenedRunner(wenv.runGit, place)
+});
+function chainAt(worktree, commonDir, adminName) {
+  const chain = chainOf(worktree, commonDir, adminName);
+  if (!("issues" in chain))
+    return { kind: "linked", gitDir: chain.gitDir };
+  const lines = [
+    `the worktree ${worktree} is not linked to its repo the way git links a worktree, so finish ran no git there and removed nothing:`,
+    ...chain.issues
+  ];
+  return fs50.existsSync(worktree) ? { kind: "broken", lines } : { kind: "gone", lines };
+}
+function chainNowIssues(ready) {
+  if (!fs50.existsSync(ready.worktree))
+    return [];
+  const chain = chainOf(ready.worktree, ready.commonDir, ready.adminName);
+  if ("issues" in chain)
+    return chain.issues;
+  if (chain.gitDir === ready.gitDir)
+    return [];
+  return [
+    `${path64.join(ready.worktree, ".git")} names the admin folder ${chain.gitDir}, not ${ready.gitDir}, the one finish checked`
+  ];
+}
+
+// bin/helpers/worker-finish-tree.ts
+import * as fs51 from "node:fs";
+import * as path65 from "node:path";
 
 // bin/helpers/worker-finish-target.ts
 function targetName(runGit, top, rev) {
@@ -14641,15 +14853,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report2 = path63.posix.normalize(read.brief.report);
+  const report2 = path65.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: briefTargetOf(read.brief),
     report: report2,
-    reportFrom: path63.join(worktree, report2),
-    reportTo: top === undefined ? undefined : path63.join(top, report2)
+    reportFrom: path65.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path65.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -14694,7 +14906,7 @@ function operatorIssues(name, tried, linked2) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs49.existsSync(worktree) && !fs49.existsSync(path63.join(worktree, ".git"));
+  const linkless = fs51.existsSync(worktree) && !fs51.existsSync(path65.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list3 = worktreeListed(runGit, top, worktree);
@@ -14895,12 +15107,12 @@ function clearGone(gone, wenv, out) {
 }
 
 // bin/helpers/worker-finish-report.ts
-import * as fs50 from "node:fs";
-import * as path64 from "node:path";
+import * as fs52 from "node:fs";
+import * as path66 from "node:path";
 var isMissing8 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs50.readFileSync(file) };
+    return { data: fs52.readFileSync(file) };
   } catch (e) {
     if (isMissing8(e))
       return { data: undefined };
@@ -14953,8 +15165,8 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs50.mkdirSync(path64.dirname(to), { recursive: true });
-    fs50.copyFileSync(from, to, fs50.constants.COPYFILE_EXCL);
+    fs52.mkdirSync(path66.dirname(to), { recursive: true });
+    fs52.copyFileSync(from, to, fs52.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${to}: ${why}`];
@@ -15016,8 +15228,8 @@ function copyChangedIssues(from, to, now) {
 }
 
 // bin/helpers/worker-finish-subject.ts
-import * as fs51 from "node:fs";
-import * as path65 from "node:path";
+import * as fs53 from "node:fs";
+import * as path67 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -15028,7 +15240,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path65.dirname(subject.brief);
+      const folder = path67.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -15046,8 +15258,8 @@ function recordedTop(runGit, commonDir, name) {
   const record3 = records.find((r) => r.name === name);
   if (record3 === undefined)
     return;
-  const folder = path65.dirname(record3.brief);
-  return fs51.existsSync(folder) ? topOf(runGit, folder) : undefined;
+  const folder = path67.dirname(record3.brief);
+  return fs53.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
   const { read } = subject;
@@ -15066,8 +15278,8 @@ function launcherOf(subject, facts, runGit) {
 }
 
 // bin/helpers/worker-teardown-leftovers.ts
-import * as fs52 from "node:fs";
-import * as path66 from "node:path";
+import * as fs54 from "node:fs";
+import * as path68 from "node:path";
 function clearSavedReport(ready) {
   const step = ready.reportStep;
   if (step.kind === "none" || step.kind === "no brief")
@@ -15075,9 +15287,9 @@ function clearSavedReport(ready) {
   if (step.from === step.to)
     return;
   try {
-    const saved = fs52.readFileSync(step.to);
-    if (fs52.readFileSync(step.from).equals(saved))
-      fs52.unlinkSync(step.from);
+    const saved = fs54.readFileSync(step.to);
+    if (fs54.readFileSync(step.from).equals(saved))
+      fs54.unlinkSync(step.from);
   } catch {}
 }
 function forgottenWayOut({
@@ -15085,7 +15297,7 @@ function forgottenWayOut({
   branch
 }) {
   const route = `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
-  const removable = nativeBranch(path66.basename(worktree));
+  const removable = nativeBranch(path68.basename(worktree));
   if (branch === removable)
     return route;
   return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`;
@@ -15130,7 +15342,9 @@ function worktreeGoneIssues(ready, wenv) {
     clearSavedReport(ready);
   const files = unlocked ? leftoverIssues(runGit, ready) : [];
   const lock = unlocked && files.length === 0 ? lockNow(ready, wenv) : first;
-  const issues = files.length > 0 ? files : removeGitWorktree(runGit, top, worktree, lock);
+  const issues = files.length > 0 ? files : removeGitWorktree(runGit, top, worktree, lock, {
+    flags: HARDENED_GIT_FLAGS
+  });
   if (issues.length === 0)
     return [];
   return [
@@ -15309,6 +15523,9 @@ function locate2(subject, opts, wenv) {
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   if ("issues" in facts)
     return facts;
+  const repo = mainGitDirIssues(wenv.runGit, facts);
+  if (repo.length > 0)
+    return { issues: [MAIN_GIT_DIR_LEAD, ...repo] };
   const { mainTop, launchTop, commonDir } = facts;
   const job = findJob(wenv, mainTop, subject);
   if ("issues" in job)
@@ -15365,12 +15582,18 @@ function allIssues(landed, worktreeIssues, step) {
     ..."issues" in step ? step.issues : []
   ];
 }
-function checkFinish(name, located, opts, { wenv, out }) {
+function checkFinish(subject, located, opts, { wenv: outside, out }) {
   const { places, job } = located;
   const { mainTop, worktree } = places;
-  const unlinked = unlinkedIssues(wenv.runGit, mainTop, worktree, job.id);
+  const { name } = subject;
+  const unlinked = unlinkedIssues(outside.runGit, mainTop, worktree, job.id);
   if (unlinked.length > 0)
     return { issues: unlinked };
+  const adminName = adminNameOf(subject);
+  const chain = chainAt(worktree, located.commonDir, adminName);
+  if (chain.kind === "broken")
+    return { issues: chain.lines };
+  const wenv = chain.kind === "linked" ? worktreeEnv(outside, { worktree, gitDir: chain.gitDir }) : outside;
   const head2 = commitOf(wenv.runGit, mainTop, `refs/heads/${places.branch}`);
   const branch = { name: places.branch, head: head2 };
   const landed = landedCheck(wenv, places, branch, opts, { id: job.id, out });
@@ -15380,6 +15603,8 @@ function checkFinish(name, located, opts, { wenv, out }) {
   if ("issues" in landed || tree.issues.length > 0 || "issues" in step) {
     return { issues: allIssues(landed, tree.issues, step) };
   }
+  if (chain.kind === "gone")
+    return { issues: chain.lines };
   return {
     id: job.id,
     state: job.state,
@@ -15387,6 +15612,8 @@ function checkFinish(name, located, opts, { wenv, out }) {
     mainTop,
     commonDir: located.commonDir,
     worktree,
+    gitDir: chain.gitDir,
+    adminName,
     branch: places.branch,
     head: landed.head,
     report: places.brief?.report,
@@ -15398,12 +15625,8 @@ function checkFinish(name, located, opts, { wenv, out }) {
   };
 }
 var recheckWorktree = (ready, wenv) => {
-  const issues = [
-    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.verdict.kind, ready.discardCommand, ready.id),
-    ...headMovedIssues(wenv.runGit, ready),
-    ...dirtyIssues(ready.worktree, statusBesideReport(wenv.runGit, ready), ready.partial, ready.verdict.kind),
-    ...reportChangedIssues(ready)
-  ];
+  const chain = chainNowIssues(ready);
+  const issues = chain.length > 0 ? chain : changedIssues(ready, wenv);
   if (issues.length === 0)
     return [];
   return [
@@ -15411,6 +15634,14 @@ var recheckWorktree = (ready, wenv) => {
     ...issues
   ];
 };
+function changedIssues(ready, wenv) {
+  return [
+    ...onBranchIssues(wenv.runGit, ready.worktree, ready.branch, ready.verdict.kind, ready.discardCommand, ready.id),
+    ...headMovedIssues(wenv.runGit, ready),
+    ...dirtyIssues(ready.worktree, statusBesideReport(wenv.runGit, ready), ready.partial, ready.verdict.kind),
+    ...reportChangedIssues(ready)
+  ];
+}
 var sayVerdict = (ready, _wenv, out) => {
   const { verdict } = ready;
   switch (verdict.kind) {
@@ -15453,11 +15684,12 @@ function finishIssues(opts, wenv, out) {
     return located.issues;
   if (located.kind === "gone")
     return clearGone(located.gone, wenv, out);
-  const ready = checkFinish(subject.name, located, opts, { wenv, out });
+  const ready = checkFinish(subject, located, opts, { wenv, out });
   if ("issues" in ready)
     return ready.issues;
+  const inside = worktreeEnv(wenv, ready);
   for (const step of STEPS) {
-    const issues = step(ready, wenv, out);
+    const issues = step(ready, inside, out);
     if (issues.length > 0)
       return issues;
   }
@@ -15547,7 +15779,7 @@ function isOwnBranch(runGit, top, branch, name) {
 }
 
 // bin/helpers/worktree-move-checks.ts
-import * as path67 from "node:path";
+import * as path69 from "node:path";
 var DIGITS = /^\d+$/;
 function parseMoveArgs(rest2) {
   const parsed = parseFlags(rest2, {
@@ -15605,7 +15837,7 @@ function whereItRuns(env, err) {
     return refuse10(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
   }
   const entry = repo.worktrees[at2];
-  return { repo, entry, name: path67.basename(entry.path) };
+  return { repo, entry, name: path69.basename(entry.path) };
 }
 var heldElsewhere = (place, branch) => place.repo.worktrees.some((entry) => entry !== place.entry && entry.branch === `${HEADS}${branch}`);
 function onBranchMoved(runGit, place, on, branch) {
@@ -16167,7 +16399,7 @@ function moveWorktree(args, env, out, err) {
 }
 
 // bin/helpers/worktree-remove-checks.ts
-import * as path68 from "node:path";
+import * as path70 from "node:path";
 var DISCARD = "--discard";
 var REMOTES2 = "refs/remotes/";
 function parseRemoveArgs(rest2) {
@@ -16215,8 +16447,8 @@ var alone = (repo, entry) => ({
   worktrees: [repo.worktrees[0], entry]
 });
 function resolveTarget3(repo, cwd, target) {
-  const asPath = path68.resolve(cwd, target);
-  const matches = repo.worktrees.filter((entry2) => path68.basename(entry2.path) === target || samePath(entry2.path, asPath));
+  const asPath = path70.resolve(cwd, target);
+  const matches = repo.worktrees.filter((entry2) => path70.basename(entry2.path) === target || samePath(entry2.path, asPath));
   if (matches.length === 0) {
     return refuse11(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
   }
@@ -16714,22 +16946,22 @@ function runWorktreeCli(rest2, env, out, err) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path69.dirname(fileURLToPath(entryFileUrl));
+  const here = path71.dirname(fileURLToPath(entryFileUrl));
   const candidates3 = [
-    path69.resolve(here, ".."),
-    path69.resolve(here, "..", "plugin")
+    path71.resolve(here, ".."),
+    path71.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs53.existsSync(path69.join(c, "rules")))
+    if (fs55.existsSync(path71.join(c, "rules")))
       return c;
   }
   return candidates3[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path69.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path71.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs53.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs55.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -16759,7 +16991,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs53.writeSync(1, buffer, offset);
+      offset += fs55.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -16780,7 +17012,7 @@ function profileEnvOf(ctx) {
 }
 function readProcessStdin() {
   try {
-    return fs53.readFileSync(0, "utf-8");
+    return fs55.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
@@ -16857,7 +17089,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path69.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path71.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;
