@@ -203,7 +203,21 @@ describe('checkLoop: the repo', () => {
     writeProfile(userStore());
     const commonDir = path.join(realPathOf(repo), '.git');
     expect(checkLoop('fixer', deps).issues).toEqual([
-      `${loopFile()}: repo: ${linked} keeps its git dir at ${commonDir}, as a linked worktree or a submodule does; name the main checkout's root`,
+      `${loopFile()}: repo: ${linked} keeps its git dir at ${commonDir}, as a linked worktree, a submodule, or a repo made with --separate-git-dir does; for a linked worktree or a submodule, name the main checkout's root, and for a --separate-git-dir repo, move its git dir to ${path.join(linked, '.git')}`,
+    ]);
+  });
+
+  test('refuses a --separate-git-dir repo with a fix that applies to it', () => {
+    const sep = path.join(tmp, 'sep');
+    const gitDir = path.join(realPathOf(tmp), 'sep-git');
+    fs.mkdirSync(sep);
+    git(sep, 'init', '--quiet', `--separate-git-dir=${gitDir}`);
+    writeLoop((m) => {
+      m.repo = sep;
+    });
+    writeProfile(userStore());
+    expect(checkLoop('fixer', deps).issues).toEqual([
+      `${loopFile()}: repo: ${sep} keeps its git dir at ${gitDir}, as a linked worktree, a submodule, or a repo made with --separate-git-dir does; for a linked worktree or a submodule, name the main checkout's root, and for a --separate-git-dir repo, move its git dir to ${path.join(sep, '.git')}`,
     ]);
   });
 
@@ -279,7 +293,7 @@ describe('checkLoop: the repo, as git spells it', () => {
     const elsewhere = path.join(realPathOf(tmp), 'elsewhere', '.git');
     const runGit = gitPrinting(realPathOf(dir), elsewhere);
     expect(checkLoop('fixer', { ...deps, runGit }).issues).toEqual([
-      `${loopFile()}: repo: ${dir} keeps its git dir at ${elsewhere}, as a linked worktree or a submodule does; name the main checkout's root`,
+      `${loopFile()}: repo: ${dir} keeps its git dir at ${elsewhere}, as a linked worktree, a submodule, or a repo made with --separate-git-dir does; for a linked worktree or a submodule, name the main checkout's root, and for a --separate-git-dir repo, move its git dir to ${path.join(dir, '.git')}`,
     ]);
   });
 });
@@ -295,15 +309,24 @@ describe('checkLoop: the profile', () => {
     expect(check.profile).toBeUndefined();
   });
 
-  test("refuses a profile the repo's .claude/profiles/ holds", () => {
+  test("refuses a profile only the repo's .claude/profiles/ holds, saying to keep it in the user store", () => {
     writeLoop();
-    writeProfile(userStore());
     const dir = writeProfile(path.join(repo, '.claude', 'profiles'));
     const check = checkLoop('fixer', deps);
     expect(check.issues).toEqual([
       `${loopFile()}: profile: "fixer" resolves to the repo store's ${dir}, whose plugin code the repo's commits can change; keep the loop's profile in ${userStore()}`,
     ]);
     expect(check.profile?.store).toBe('repo');
+  });
+
+  test("refuses a repo store profile that hides the user store's, saying to remove the repo's", () => {
+    writeLoop();
+    const hidden = writeProfile(userStore());
+    const dir = writeProfile(path.join(repo, '.claude', 'profiles'));
+    const check = checkLoop('fixer', deps);
+    expect(check.issues).toEqual([
+      `${loopFile()}: profile: "fixer" resolves to the repo store's ${dir}, whose plugin code the repo's commits can change; it hides the user store's ${hidden}, so remove or rename the repo store's profile`,
+    ]);
   });
 
   test("passes through a held profile's own load issues", () => {
@@ -505,6 +528,146 @@ describe('checkLoop: CLAUDE_CONFIG_DIR', () => {
     expect(check.warnings).toEqual([
       `${user}: sandbox.network.allowedDomains: github.com: ${GITHUB_HOST_WARNING}`,
     ]);
+  });
+});
+
+describe('checkLoop: MCP rules', () => {
+  const lists: [string, string, (m: Manifest, rule: string) => void][] = [
+    [
+      'reads',
+      'mandate.reads.0',
+      (m, rule) => {
+        m.mandate.reads = [rule];
+      },
+    ],
+    [
+      'allow',
+      'mandate.classes.triage.allow.0',
+      (m, rule) => {
+        m.mandate.classes.triage.allow = [rule];
+      },
+    ],
+    [
+      'never',
+      'mandate.never.0',
+      (m, rule) => {
+        m.mandate.never = [rule];
+      },
+    ],
+  ];
+
+  test.each(lists)('refuses a specifier in %s', (_list, at, set) => {
+    writeLoop((m) => set(m, 'mcp__github__get_issue(owner)'));
+    writeProfile(userStore());
+    expect(checkLoop('fixer', deps).issues).toEqual([
+      `${loopFile()}: ${at}: Claude Code skips an mcp__ rule that has parentheses when it loads a settings file, so the rule does nothing; write mcp__<server>, mcp__<server>__*, or mcp__<server>__<tool>.`,
+    ]);
+  });
+
+  // The profile `fixer` carries a role plugin `role` with a server `gh`.
+  const rolePlugin = (cfg = config): void => {
+    const profile = writeProfile(userStore(cfg), {
+      description: 'd',
+      pluginDirs: ['plugin'],
+    });
+    const plugin = path.join(profile, 'plugin');
+    writeJson(path.join(plugin, '.claude-plugin', 'plugin.json'), {
+      name: 'role',
+      version: '1.0.0',
+    });
+    writeJson(path.join(plugin, '.mcp.json'), {
+      mcpServers: { gh: { command: 'x' } },
+    });
+  };
+  const spelling =
+    'an MCP server "gh" of the role plugin "role" has tools spelled mcp__plugin_role_gh__<tool>, so mcp__gh matches none of them; write mcp__plugin_role_gh';
+
+  test.each(
+    lists,
+  )('refuses a plugin server by its bare name in %s', (_list, at, set) => {
+    writeLoop((m) => set(m, 'mcp__gh__view'));
+    rolePlugin();
+    expect(checkLoop('fixer', deps).issues).toEqual([
+      `${loopFile()}: ${at}: ${spelling}`,
+    ]);
+  });
+
+  test('refuses the bare server and its wildcard spelling', () => {
+    writeLoop((m) => {
+      m.mandate.reads = ['mcp__gh', 'mcp__gh__*'];
+    });
+    rolePlugin();
+    expect(checkLoop('fixer', deps).issues).toEqual([
+      `${loopFile()}: mandate.reads.0: ${spelling}`,
+      `${loopFile()}: mandate.reads.1: ${spelling}`,
+    ]);
+  });
+
+  test('passes the plugin spelling', () => {
+    writeLoop((m) => {
+      m.mandate.reads = ['mcp__plugin_role_gh__view', 'mcp__plugin_role_gh'];
+    });
+    rolePlugin();
+    expect(checkLoop('fixer', deps).issues).toEqual([]);
+  });
+
+  test("passes when the repo's .mcp.json also has the server", () => {
+    writeLoop((m) => {
+      m.mandate.reads = ['mcp__gh__view'];
+    });
+    rolePlugin();
+    writeJson(path.join(repo, '.mcp.json'), { mcpServers: { gh: {} } });
+    expect(checkLoop('fixer', deps).issues).toEqual([]);
+  });
+
+  // With CLAUDE_CONFIG_DIR unset the file is <home>/.claude.json; set, it is <config>/.claude.json.
+  const setups: [string, NodeJS.ProcessEnv, string][] = [
+    ['unset', {}, ''],
+    ['set', { CLAUDE_CONFIG_DIR: 'cfg' }, 'cfg'],
+  ];
+
+  describe.each(setups)('CLAUDE_CONFIG_DIR %s', (_name, envIn, cfgName) => {
+    const dirOf = (): string =>
+      cfgName === '' ? config : path.join(tmp, cfgName);
+    const env = (): NodeJS.ProcessEnv =>
+      cfgName === '' ? envIn : { CLAUDE_CONFIG_DIR: dirOf() };
+    const globalFile = (): string =>
+      cfgName === ''
+        ? path.join(home, '.claude.json')
+        : path.join(dirOf(), '.claude.json');
+    const run = (rule: string, content: string | undefined): string[] => {
+      writeLoop(
+        (m) => {
+          m.mandate.reads = [rule];
+        },
+        'fixer',
+        dirOf(),
+      );
+      rolePlugin(dirOf());
+      if (content !== undefined) write(globalFile(), content);
+      return checkLoop('fixer', { ...deps, env: env() }).issues;
+    };
+    const bare = 'mcp__gh__view';
+
+    test('passes when the user scope has the server', () => {
+      expect(run(bare, JSON.stringify({ mcpServers: { gh: {} } }))).toEqual([]);
+    });
+    test('passes when the local scope for the repo has the server', () => {
+      const cfg = { projects: { [repo]: { mcpServers: { gh: {} } } } };
+      expect(run(bare, JSON.stringify(cfg))).toEqual([]);
+    });
+    test("refuses when only another repo's local scope has the server", () => {
+      const cfg = { projects: { '/elsewhere': { mcpServers: { gh: {} } } } };
+      expect(run(bare, JSON.stringify(cfg))).toHaveLength(1);
+    });
+    test('reads a missing file as naming no server', () => {
+      expect(run(bare, undefined)).toHaveLength(1);
+      expect(run('mcp__plugin_role_gh__view', undefined)).toEqual([]);
+    });
+    test('reads a malformed file as naming no server', () => {
+      expect(run(bare, '{ not json')).toHaveLength(1);
+      expect(run('mcp__plugin_role_gh__view', '{ not json')).toEqual([]);
+    });
   });
 });
 

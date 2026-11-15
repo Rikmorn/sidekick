@@ -3,6 +3,7 @@
  * folder, its repo, and its profile. It leaves out the inherited listing.
  */
 
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { keptLayers, type Layer, summariseLayer } from './loop-layers.js';
 import {
@@ -10,8 +11,9 @@ import {
   type LoopManifest,
   readLoopManifest,
 } from './loop-manifest.js';
-import { type RuleList, ruleIssues } from './loop-rules.js';
+import { parseRule, type RuleList, ruleIssues } from './loop-rules.js';
 import { loopsRoot, RUNTIME_ENTRIES } from './loop-store.js';
+import { claudeJsonPath } from './memory-default.js';
 import { outsideRepo, revParseLine } from './outside-repo.js';
 import type { Runner } from './pm-data.js';
 import { isProfileName, PROFILE_NAME_RULE } from './profile-manifest.js';
@@ -99,7 +101,14 @@ export function checkLoop(name: string, deps: LoopDeps): LoopCheck {
       ),
       ...resolved.issues,
       ...keys,
-      ...mandateIssues(file, manifest),
+      ...mandateIssues(
+        file,
+        manifest,
+        resolved.profile === undefined
+          ? new Map()
+          : pluginServers(resolved.profile.pluginDirs),
+        otherServers(manifest.repo, deps),
+      ),
     ],
     warnings: [
       ...githubWarnings(`${file}: hosts`, manifest.hosts),
@@ -141,7 +150,7 @@ function mainCheckoutIssues(
   return sameRealPath(commonDir, realPathOf(path.join(repo, '.git')))
     ? []
     : [
-        `${where} keeps its git dir at ${commonDir}, as a linked worktree or a submodule does; name the main checkout's root`,
+        `${where} keeps its git dir at ${commonDir}, as a linked worktree, a submodule, or a repo made with --separate-git-dir does; for a linked worktree or a submodule, name the main checkout's root, and for a --separate-git-dir repo, move its git dir to ${path.join(repo, '.git')}`,
       ];
 }
 
@@ -172,10 +181,14 @@ function resolveProfile(
   }
   const { profile } = loaded;
   const userStore = path.join(sidekickHome(env, cwd, home), 'profiles');
+  const fix =
+    profile.shadows === undefined
+      ? `keep the loop's profile in ${userStore}`
+      : `it hides the user store's ${profile.shadows}, so remove or rename the repo store's profile`;
   const fromRepo =
     profile.store === 'repo'
       ? [
-          `${file}: profile: "${name}" resolves to the repo store's ${profile.dir}, whose plugin code the repo's commits can change; keep the loop's profile in ${userStore}`,
+          `${file}: profile: "${name}" resolves to the repo store's ${profile.dir}, whose plugin code the repo's commits can change; ${fix}`,
         ]
       : [];
   return { profile, issues: [...fromRepo, ...rolePluginIssues(profile)] };
@@ -199,14 +212,101 @@ function mandateLists(manifest: LoopManifest): RulesAt[] {
   ];
 }
 
-function mandateIssues(file: string, manifest: LoopManifest): string[] {
+const MCP_PREFIX = 'mcp__';
+const MCP_SEPARATOR = '__';
+
+// The server an `mcp__<server>…` rule names; undefined for another tool or a wildcard in the server part.
+function mcpServerOf(rule: string): string | undefined {
+  const tool = parseRule(rule)?.tool;
+  if (tool === undefined || !tool.startsWith(MCP_PREFIX)) return undefined;
+  const [server = ''] = tool.slice(MCP_PREFIX.length).split(MCP_SEPARATOR);
+  return server === '' || server.includes('*') ? undefined : server;
+}
+
+// A rule naming a plugin's server by its bare name matches no tool; the real spelling carries the plugin.
+function spellingIssues(
+  rule: string,
+  plugins: ReadonlyMap<string, string>,
+  others: ReadonlySet<string>,
+): string[] {
+  const server = mcpServerOf(rule);
+  const plugin = server === undefined ? undefined : plugins.get(server);
+  if (server === undefined || plugin === undefined || others.has(server)) {
+    return [];
+  }
+  return [
+    `an MCP server "${server}" of the role plugin "${plugin}" has tools spelled mcp__plugin_${plugin}_${server}__<tool>, so mcp__${server} matches none of them; write mcp__plugin_${plugin}_${server}`,
+  ];
+}
+
+function mandateIssues(
+  file: string,
+  manifest: LoopManifest,
+  plugins: ReadonlyMap<string, string>,
+  others: ReadonlySet<string>,
+): string[] {
   return mandateLists(manifest).flatMap(({ at, list, rules }) =>
     rules.flatMap((rule, i) =>
-      ruleIssues(rule, list, manifest.repo).map(
-        (why) => `${file}: ${at}.${i}: ${why}`,
-      ),
+      [
+        ...ruleIssues(rule, list, manifest.repo),
+        ...spellingIssues(rule, plugins, others),
+      ].map((why) => `${file}: ${at}.${i}: ${why}`),
     ),
   );
+}
+
+// Parses a JSON file; undefined when it is missing or malformed, which reads as naming nothing.
+function readJson(file: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function serverNames(holder: unknown): string[] {
+  return isRecord(holder) && isRecord(holder.mcpServers)
+    ? Object.keys(holder.mcpServers)
+    : [];
+}
+
+// Server name to plugin name, for each role plugin folder that has a manifest name and a `.mcp.json`.
+function pluginServers(pluginDirs: readonly string[]): Map<string, string> {
+  const entries = pluginDirs.flatMap((dir) => {
+    const manifest = readJson(path.join(dir, '.claude-plugin', 'plugin.json'));
+    const name =
+      isRecord(manifest) && typeof manifest.name === 'string'
+        ? manifest.name
+        : undefined;
+    if (name === undefined) return [];
+    return serverNames(readJson(path.join(dir, '.mcp.json'))).map(
+      (server): [string, string] => [server, name],
+    );
+  });
+  // The first plugin to declare a server names it.
+  return new Map(entries.reverse());
+}
+
+// Servers a bare `mcp__<server>` rule does match: the repo's `.mcp.json`, and the user and local scopes of the global config file.
+function otherServers(repo: string, deps: LoopDeps): Set<string> {
+  const globalFile = path.resolve(
+    deps.cwd,
+    claudeJsonPath(deps.env, deps.home),
+  );
+  const global = readJson(globalFile);
+  const projects =
+    isRecord(global) && isRecord(global.projects) ? global.projects : {};
+  const local = [repo, realPathOf(repo)].flatMap((key) =>
+    serverNames(projects[key]),
+  );
+  return new Set([
+    ...serverNames(readJson(path.join(repo, '.mcp.json'))),
+    ...serverNames(global),
+    ...local,
+  ]);
 }
 
 const inGithub = (host: string): boolean =>

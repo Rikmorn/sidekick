@@ -114,12 +114,13 @@ The check judges one loop from its folder, its repo, and its profile. It finds i
 
 - A loop name that breaks the name rule.
 - A `loop.json` that is missing, is not JSON, or fails the schema.
-- A `repo` that is not a main checkout's root. It must be a folder inside a git work tree, and the top of that work tree by real path. Its git common dir must be its own `.git`. Both compare without regard to case, since git prints a folder's real case and Node's `realpathSync` keeps the case it is given. A subfolder, a linked worktree, and a submodule each refuse, with the fix. The loop's own worktree and its workers' worktrees are made from the main checkout (#364, #367).
+- A `repo` that is not a main checkout's root. It must be a folder inside a git work tree, and the top of that work tree by real path. Its git common dir must be its own `.git`. Both compare without regard to case, since git prints a folder's real case and Node's `realpathSync` keeps the case it is given. A subfolder, a linked worktree, a submodule, and a repo made with `--separate-git-dir` each refuse, with the fix that applies. The first three name the main checkout's root. A `--separate-git-dir` repo is a main checkout already, so its fix is to move the git dir back to `<repo>/.git`. The loop's own worktree and its workers' worktrees are made from the main checkout (#364, #367).
 - A `profile` that no store holds. The search is the one a launch in `repo` makes: the repo store `<repo>/.claude/profiles/`, then the user store. `SIDEKICK_PROFILES_DIR` replaces both, as `references/profiles.md` §The folder says.
-- A profile the repo store holds, since the repo's commits can change its plugin code. Keep a loop's profile in the user store. Committed loops are out of scope (#374).
+- A profile the repo store holds, since the repo's commits can change its plugin code. Keep a loop's profile in the user store. When it hides a user-store profile of the same name, the user store already holds the profile. The refusal then says to remove or rename the repo store's one. Committed loops are out of scope (#374).
 - The profile's own load issues, and its role plugin's. Each `pluginDirs` entry must be a folder, and no file in one may hold a key.
 - The old-store refusal, while `<config>/profiles` still holds a profile, as every profile verb gives it.
 - A file in the loop's folder that the key check flags, outside `records/` and `state.json`. Like the profile scan, it skips `.git`, `node_modules`, links, binary files, and files over 1 MiB. The loop's folder sits in the sidekick folder, which can be a git repo, and a loop's definition needs no secret.
+- An `mcp__<server>` rule that names, by its bare name, a server only a role plugin's `.mcp.json` declares. Claude Code spells a plugin server's tools `mcp__plugin_<plugin>_<server>__<tool>`, so the bare rule matches none. The refusal names the right spelling. It passes when the server also appears in the repo's `.mcp.json`. It passes too when the server sits in the user or local scope of the global config file. That file is `<config>/.claude.json`, or `~/.claude.json` when `CLAUDE_CONFIG_DIR` is unset. A missing or malformed file names no server. Role plugins are the folders in the profile's `pluginDirs`.
 - Each rule the judge refuses, in `mandate.reads`, each class's `allow`, and `mandate.never`. "How the check judges a rule" gives every refusal and its reason.
 
 ### What the check warns on
@@ -139,6 +140,8 @@ These refuse in `reads`, in each class's `allow`, and in `never`:
 - **A rule that does not parse** as `Tool` or `Tool(specifier)`, such as `Bash(x` or `Bash()`.
 - **A `Write`, `NotebookEdit`, `MultiEdit`, `Glob`, or `Grep` rule with a path.** Such a rule never matches, so a deny spelled that way denies nothing. Write the bare tool, or the tool with `(*)`. The permissions docs say so under "`Write(path)`, `Glob(path)`, and `Grep(path)` rules don't match". Under `dontAsk`, a `Write` allow rule with a path matched nothing, and an `Edit(//<path>…)` rule covered `Write` ([the loop probes, §U9](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u9-what-dontask-denies-a-background-loop-and-the-rule-that-allows-each)).
 - **A `Read` or `Edit` rule whose path starts with exactly one slash.** By the permissions docs' §How path patterns match, one slash anchors at the settings source, not the filesystem root. Write `//` before an absolute path, as in `Edit(//Users/<you>/x/**)`, or `~/` for the home folder.
+
+- **An `mcp__` rule with parentheses.** Claude Code skips it when it loads a settings file, so a `never` entry denies nothing. Write `mcp__<server>`, `mcp__<server>__*`, or `mcp__<server>__<tool>`.
 
 In `never`, nothing else refuses, since a deny rule that matches more denies more.
 

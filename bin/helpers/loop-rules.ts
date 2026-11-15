@@ -242,6 +242,9 @@ const CLONE_UPLOAD_SHORT = /^-[^-]*u/;
 // A single-dash word holding x or X, fd's exec options.
 const FD_EXEC_SHORT = /^-[^-]*[xX]/;
 
+const MCP_PREFIX = 'mcp__';
+const MCP_SPECIFIER_ISSUE =
+  'Claude Code skips an mcp__ rule that has parentheses when it loads a settings file, so the rule does nothing; write mcp__<server>, mcp__<server>__*, or mcp__<server>__<tool>.';
 const UNPARSABLE_ISSUE = 'the rule does not parse as Tool or Tool(specifier).';
 const UNPLAIN_ISSUE =
   'quotes, backslashes, braces, and $ in the words a check reads hide the program from the check, so spell them plainly.';
@@ -338,6 +341,9 @@ function writeScopeIssues(specifier: string | undefined): string[] {
 // Faults of a rule's path form: never-matching and one-slash paths in every list, the write scope in reads and allow.
 function pathRuleIssues(rule: ParsedRule, list: RuleList): string[] {
   const { tool, specifier } = rule;
+  if (tool.startsWith(MCP_PREFIX) && specifier !== undefined) {
+    return [MCP_SPECIFIER_ISSUE];
+  }
   const hasPath = specifier !== undefined && specifier !== WILDCARD;
   if (hasPath && PATH_TOOLS.includes(tool)) {
     return [

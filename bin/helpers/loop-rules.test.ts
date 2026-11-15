@@ -24,6 +24,23 @@ const codeSpans = (node: MdNode): string[] => [
   ...('children' in node ? node.children.flatMap(codeSpans) : []),
 ];
 
+// The nodes under the "Runners" heading, up to the next heading of its depth or a shallower one.
+const runnersSection = (doc: string): MdNode[] => {
+  const nodes = fromMarkdown(doc).children;
+  const start = nodes.findIndex(
+    (n) =>
+      n.type === 'heading' &&
+      n.children.some((c) => c.type === 'text' && c.value === 'Runners'),
+  );
+  const heading = nodes[start];
+  if (heading?.type !== 'heading') return [];
+  const rest = nodes.slice(start + 1);
+  const end = rest.findIndex(
+    (n) => n.type === 'heading' && n.depth <= heading.depth,
+  );
+  return end < 0 ? rest : rest.slice(0, end);
+};
+
 let tmp: string;
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-loop-rules-'));
@@ -53,8 +70,14 @@ const REFUSED_ALL = [
   '',
   '1Bash',
   'Bash x',
+  'mcp__github__get_issue(owner)',
+  'mcp__github__*(x)',
+  'mcp__plugin_x_y__z(*)',
 ];
 const PASSING_ALL = [
+  'mcp__s',
+  'mcp__s__*',
+  'mcp__s__t',
   'Grep',
   'Edit(//Users/me/x/**)',
   'Read(//Users/me/x/**)',
@@ -478,6 +501,156 @@ const PASSING_WORK = [
   'Monitor(gh issue view:*)',
 ];
 
+// What each refused row is refused for: the first pattern a rule matches names the reason its issues must carry.
+const NO_SCRIPT_WORDS = new Set([
+  'bun',
+  'deno',
+  'npx',
+  'bunx',
+  'npm',
+  'pnpm',
+  'yarn',
+  'make',
+  'gmake',
+  'gnumake',
+  'eval',
+  'trap',
+  'awk',
+  'gawk',
+  'nawk',
+  'script',
+  'expect',
+  'tclsh',
+  'pypy',
+  'pypy3',
+  'pypy3.10',
+  'nocorrect',
+]);
+
+// The word a runner rule starts with, once a leading wrapper and a directory are dropped.
+const firstProgram = (rule: string): string => {
+  const inner = rule.slice(rule.indexOf('(') + 1);
+  const unwrapped = inner.replace(/^(?:env|nohup) (?=\/)/, '');
+  const [word = ''] = unwrapped.split(' ');
+  return (word.split('/').pop() ?? word).toLowerCase();
+};
+
+const SUBCOMMAND_CODE =
+  /^Bash\(git (config|bisect|difftool|filter-branch|mergetool|rebase|submodule)/i;
+const WILDCARD_GIT =
+  /git (log|fetch|archive|clone|diff|format-patch|grep|ls-remote|pull|push|show)\b.*\*/i;
+
+const REASONS: [RegExp, (m: RegExpExecArray) => string][] = [
+  [
+    /^$|^1Bash$|^Bash x$|^Bash\(\)$|^Bash\(x$|^Bash\(x\) y$/,
+    () => 'does not parse as Tool or Tool(specifier)',
+  ],
+  [/^mcp__/, () => 'skips an mcp__ rule that has parentheses'],
+  [
+    /^(Write|NotebookEdit|MultiEdit|Glob|Grep)\((?!\*\))/,
+    (m) => `a ${m[1]} rule with a path never matches`,
+  ],
+  [
+    /^(Read|Edit)\(\/(?!\/)/,
+    (m) => `a ${m[1]} path with one slash anchors at the settings source`,
+  ],
+  [
+    /^(Write|NotebookEdit|MultiEdit|Edit)(\(\*\))?$/,
+    () => 'a loop writes only its record',
+  ],
+  [/^Edit\(~/, () => 'a write path under ~ reaches the home folder'],
+  [/^Edit\((\.\/|\*\*|src)/, () => 'a relative write path anchors in the loop'],
+  [
+    /^Edit\(\/\/.*\/\.\.?\//,
+    () => 'a write path with . or .. segments can climb',
+  ],
+  [/^Edit\(/, () => 'a write path with a wildcard or nothing in it'],
+  [
+    /^(Bash|Monitor|PowerShell)\([A-Za-z_]\w*\+?=/,
+    () => 'a NAME=value word can change what a program loads',
+  ],
+  [
+    /^Bash\(\s+\)$/,
+    () => 'a rule must name a command after any NAME=value words',
+  ],
+  [
+    /^(Bash|Monitor|PowerShell)(\(\*\))?$/,
+    () =>
+      'must name a command, since the bare tool or (*) matches every command',
+  ],
+  [/['"\\{}]|\$(?!\()/, () => 'quotes, backslashes, braces, and $'],
+  [
+    /\$\(|`|<\(|>\(|[;&|\n]/,
+    () => 'a command substitution, process substitution',
+  ],
+  [
+    /^Bash\((!|\(|<|2>)/,
+    () => 'a redirect, parenthesis, or ! before or in the command word',
+  ],
+  [
+    /^Bash\((:\*|s\*|b\[a\]sh|ba\?h|bash\*|\/Users\/\*)/,
+    () => 'a wildcard (*, ?, or [...]) before or in the command word',
+  ],
+  [
+    /^Bash\(node \S*[*?[]/,
+    () => 'a wildcard (*, ?, or [...]) in a program path',
+  ],
+  [/^Bash\(~/, () => 'a command path starting with ~ is not expanded'],
+  [/^Bash\((\.\/|bin\/)/, () => 'a relative command path anchors in the loop'],
+  [/git-[a-z]/i, () => 'a git-<subcommand> program runs git <subcommand>'],
+  [
+    SUBCOMMAND_CODE,
+    (m) => `git ${(m[1] ?? '').toLowerCase()} can run code of its own`,
+  ],
+  [
+    /^Bash\(git \S+ .*(--(upload|receive|exec|open|out)|-[A-Za-z]*[Ou])/i,
+    () => 'a git option such as -O, -u on clone',
+  ],
+  [
+    WILDCARD_GIT,
+    (m) => `a wildcard after git ${(m[1] ?? '').toLowerCase()} admits options`,
+  ],
+  [
+    /^Bash\((?:env )?(?:\/usr\/bin\/)?git\b/i,
+    () => 'a git rule must name its subcommand',
+  ],
+  [
+    /^Bash\((?:env \/usr\/bin\/)?gh /i,
+    () => 'a gh rule must name its subcommand',
+  ],
+  [/sidekick/, () => 'a sidekick rule must name its subcommand'],
+  [/claude/i, () => 'a claude rule starts a Claude session'],
+  [/\b(ssh|slogin)\b/, () => 'an ssh rule runs commands on another host'],
+  [/tar\b/i, () => 'a tar rule can run a command through its options'],
+  [/\b(find|gfind)\b/i, () => 'a find rule with -exec, -execdir, -ok, -okdir'],
+  [/^Bash\(fd /, () => 'an fd rule with -x, -X, --exec, --exec-batch'],
+  [/^Bash\(rg /, () => 'an rg rule with --pre or a wildcard'],
+  [/\/\.\.?\//, () => 'a path with . or .. segments is resolved before links'],
+  [
+    /elsewhere\/repo/i,
+    () => 'a command inside the repo is code a worker can write',
+  ],
+  [
+    /\/(tmp|private\/|Users\/Shared|dev\/shm|var\/)/i,
+    () => 'a program in a worker-writable folder',
+  ],
+  [
+    /^(Bash|Monitor|PowerShell)\(/,
+    (m) =>
+      NO_SCRIPT_WORDS.has(firstProgram(m.input))
+        ? 'a rule starting with bun, npm, make, awk'
+        : 'a rule starting with a shell, interpreter, runner, or wrapper',
+  ],
+];
+
+const reasonOf = (rule: string): string | undefined => {
+  for (const [pattern, reason] of REASONS) {
+    const m = pattern.exec(rule);
+    if (m !== null) return reason(m);
+  }
+  return undefined;
+};
+
 const rows: Row[] = [
   ...REFUSED_ALL.map((r): Row => [r, ALL, true]),
   ...PASSING_ALL.map((r): Row => [r, ALL, false]),
@@ -577,7 +750,8 @@ describe('RUNNER_WORDS', () => {
 
   test('references/loops.md names each word in a code span', () => {
     const doc = fs.readFileSync(LOOPS_DOC, 'utf8');
-    const spans = new Set(fromMarkdown(doc).children.flatMap(codeSpans));
+    const spans = new Set(runnersSection(doc).flatMap(codeSpans));
+    expect(spans.size).toBeGreaterThan(0);
     expect(RUNNER_WORDS.filter((word) => !spans.has(word))).toEqual([]);
   });
 });
@@ -586,8 +760,13 @@ describe('ruleIssues', () => {
   test.each(rows)('%s in %j', (rule, lists, refused) => {
     for (const list of lists) {
       const issues = ruleIssues(rule, list, REPO);
-      if (refused) expect(issues.length).toBeGreaterThan(0);
-      else expect(issues).toEqual([]);
+      if (!refused) {
+        expect(issues).toEqual([]);
+        continue;
+      }
+      const reason = reasonOf(rule);
+      expect(reason).toBeDefined();
+      expect(issues.some((issue) => issue.includes(reason ?? ''))).toBe(true);
     }
   });
 

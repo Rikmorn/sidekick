@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs50 from "node:fs";
+import * as fs51 from "node:fs";
 import { realpathSync as realpathSync12 } from "node:fs";
 import * as os3 from "node:os";
 import * as path65 from "node:path";
@@ -8763,6 +8763,7 @@ function runHookCli(args, env, out, err) {
 import * as path48 from "node:path";
 
 // bin/helpers/loop-check.ts
+import * as fs37 from "node:fs";
 import * as path45 from "node:path";
 
 // bin/helpers/loop-layers.ts
@@ -9251,6 +9252,8 @@ var ONE_SLASH = /^\/(?!\/)/;
 var GIT_PAGER_SHORT = /^-[^-]*O/;
 var CLONE_UPLOAD_SHORT = /^-[^-]*u/;
 var FD_EXEC_SHORT = /^-[^-]*[xX]/;
+var MCP_PREFIX = "mcp__";
+var MCP_SPECIFIER_ISSUE = "Claude Code skips an mcp__ rule that has parentheses when it loads a settings file, so the rule does nothing; write mcp__<server>, mcp__<server>__*, or mcp__<server>__<tool>.";
 var UNPARSABLE_ISSUE = "the rule does not parse as Tool or Tool(specifier).";
 var UNPLAIN_ISSUE = "quotes, backslashes, braces, and $ in the words a check reads hide the program from the check, so spell them plainly.";
 var DOT_ISSUE = "a path with . or .. segments is resolved before links are followed, so spell the path without . or .. segments.";
@@ -9307,6 +9310,9 @@ function writeScopeIssues(specifier) {
 }
 function pathRuleIssues(rule, list2) {
   const { tool, specifier } = rule;
+  if (tool.startsWith(MCP_PREFIX) && specifier !== undefined) {
+    return [MCP_SPECIFIER_ISSUE];
+  }
   const hasPath = specifier !== undefined && specifier !== WILDCARD;
   if (hasPath && PATH_TOOLS.includes(tool)) {
     return [
@@ -9583,7 +9589,7 @@ function checkLoop(name, deps) {
       ...mainCheckoutIssues(`${file}: repo: ${manifest.repo}`, manifest.repo, deps.runGit),
       ...resolved2.issues,
       ...keys,
-      ...mandateIssues(file, manifest)
+      ...mandateIssues(file, manifest, resolved2.profile === undefined ? new Map : pluginServers(resolved2.profile.pluginDirs), otherServers(manifest.repo, deps))
     ],
     warnings: [
       ...githubWarnings(`${file}: hosts`, manifest.hosts),
@@ -9612,7 +9618,7 @@ function mainCheckoutIssues(where, repo, runGit) {
   }
   const commonDir = realPathOf(path45.resolve(repo, common.stdout.trim()));
   return sameRealPath(commonDir, realPathOf(path45.join(repo, ".git"))) ? [] : [
-    `${where} keeps its git dir at ${commonDir}, as a linked worktree or a submodule does; name the main checkout's root`
+    `${where} keeps its git dir at ${commonDir}, as a linked worktree, a submodule, or a repo made with --separate-git-dir does; for a linked worktree or a submodule, name the main checkout's root, and for a --separate-git-dir repo, move its git dir to ${path45.join(repo, ".git")}`
   ];
 }
 function resolveProfile(file, manifest, deps) {
@@ -9633,8 +9639,9 @@ function resolveProfile(file, manifest, deps) {
   }
   const { profile } = loaded;
   const userStore = path45.join(sidekickHome(env, cwd, home), "profiles");
+  const fix = profile.shadows === undefined ? `keep the loop's profile in ${userStore}` : `it hides the user store's ${profile.shadows}, so remove or rename the repo store's profile`;
   const fromRepo = profile.store === "repo" ? [
-    `${file}: profile: "${name}" resolves to the repo store's ${profile.dir}, whose plugin code the repo's commits can change; keep the loop's profile in ${userStore}`
+    `${file}: profile: "${name}" resolves to the repo store's ${profile.dir}, whose plugin code the repo's commits can change; ${fix}`
   ] : [];
   return { profile, issues: [...fromRepo, ...rolePluginIssues(profile)] };
 }
@@ -9650,8 +9657,62 @@ function mandateLists(manifest) {
     { at: "mandate.never", list: "never", rules: never }
   ];
 }
-function mandateIssues(file, manifest) {
-  return mandateLists(manifest).flatMap(({ at, list: list2, rules }) => rules.flatMap((rule, i) => ruleIssues(rule, list2, manifest.repo).map((why) => `${file}: ${at}.${i}: ${why}`)));
+var MCP_PREFIX2 = "mcp__";
+var MCP_SEPARATOR = "__";
+function mcpServerOf(rule) {
+  const tool = parseRule(rule)?.tool;
+  if (tool === undefined || !tool.startsWith(MCP_PREFIX2))
+    return;
+  const [server = ""] = tool.slice(MCP_PREFIX2.length).split(MCP_SEPARATOR);
+  return server === "" || server.includes("*") ? undefined : server;
+}
+function spellingIssues(rule, plugins, others) {
+  const server = mcpServerOf(rule);
+  const plugin2 = server === undefined ? undefined : plugins.get(server);
+  if (server === undefined || plugin2 === undefined || others.has(server)) {
+    return [];
+  }
+  return [
+    `an MCP server "${server}" of the role plugin "${plugin2}" has tools spelled mcp__plugin_${plugin2}_${server}__<tool>, so mcp__${server} matches none of them; write mcp__plugin_${plugin2}_${server}`
+  ];
+}
+function mandateIssues(file, manifest, plugins, others) {
+  return mandateLists(manifest).flatMap(({ at, list: list2, rules }) => rules.flatMap((rule, i) => [
+    ...ruleIssues(rule, list2, manifest.repo),
+    ...spellingIssues(rule, plugins, others)
+  ].map((why) => `${file}: ${at}.${i}: ${why}`)));
+}
+function readJson(file) {
+  try {
+    return JSON.parse(fs37.readFileSync(file, "utf8"));
+  } catch {
+    return;
+  }
+}
+var isRecord8 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+function serverNames(holder) {
+  return isRecord8(holder) && isRecord8(holder.mcpServers) ? Object.keys(holder.mcpServers) : [];
+}
+function pluginServers(pluginDirs) {
+  const entries = pluginDirs.flatMap((dir) => {
+    const manifest = readJson(path45.join(dir, ".claude-plugin", "plugin.json"));
+    const name = isRecord8(manifest) && typeof manifest.name === "string" ? manifest.name : undefined;
+    if (name === undefined)
+      return [];
+    return serverNames(readJson(path45.join(dir, ".mcp.json"))).map((server) => [server, name]);
+  });
+  return new Map(entries.reverse());
+}
+function otherServers(repo, deps) {
+  const globalFile = path45.resolve(deps.cwd, claudeJsonPath(deps.env, deps.home));
+  const global = readJson(globalFile);
+  const projects = isRecord8(global) && isRecord8(global.projects) ? global.projects : {};
+  const local = [repo, realPathOf(repo)].flatMap((key) => serverNames(projects[key]));
+  return new Set([
+    ...serverNames(readJson(path45.join(repo, ".mcp.json"))),
+    ...serverNames(global),
+    ...local
+  ]);
 }
 var inGithub = (host) => host === GITHUB || host.endsWith(`.${GITHUB}`);
 function reachesGithub(pattern) {
@@ -9673,7 +9734,7 @@ function layerWarnings(layer) {
 }
 
 // bin/helpers/loop-inherited.ts
-import * as fs37 from "node:fs";
+import * as fs38 from "node:fs";
 import * as path46 from "node:path";
 var BUILTIN_NOTE = [
   "Claude Code also loads built-in plugins, which `claude plugin list` does not show.",
@@ -9743,14 +9804,14 @@ function loadedIds(layers, composed2) {
   return [...merged].filter(([, on]) => on).map(([id]) => id);
 }
 function readPluginHooks(folder) {
-  if (!fs37.existsSync(folder)) {
+  if (!fs38.existsSync(folder)) {
     return { kind: "unreadable", why: "the folder is gone" };
   }
   const file = path46.join(folder, "hooks", "hooks.json");
-  if (!fs37.existsSync(file))
+  if (!fs38.existsSync(file))
     return { kind: "none" };
   try {
-    const parsed = JSON.parse(fs37.readFileSync(file, "utf8"));
+    const parsed = JSON.parse(fs38.readFileSync(file, "utf8"));
     if (!isPlainObject(parsed)) {
       return { kind: "unreadable", why: "hooks.json is not a JSON object" };
     }
@@ -9857,7 +9918,7 @@ function inheritedListing(manifest, profile, deps) {
 }
 
 // bin/helpers/loop-record.ts
-import * as fs38 from "node:fs";
+import * as fs39 from "node:fs";
 import * as path47 from "node:path";
 var MODEL_KINDS = [
   "would",
@@ -9948,15 +10009,15 @@ function recordFile(loopDir, at2) {
 var errorText3 = (e) => e instanceof Error ? e.message : String(e);
 var isMissing5 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function endsMidLine(file) {
-  const size = fs38.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
+  const size = fs39.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
   if (size === 0)
     return false;
   const last = Buffer.alloc(1);
-  const fd = fs38.openSync(file, "r");
+  const fd = fs39.openSync(file, "r");
   try {
-    fs38.readSync(fd, last, 0, 1, size - 1);
+    fs39.readSync(fd, last, 0, 1, size - 1);
   } finally {
-    fs38.closeSync(fd);
+    fs39.closeSync(fd);
   }
   return last[0] !== NEWLINE2;
 }
@@ -9967,10 +10028,10 @@ function appendRecord(loopDir, line) {
     throw new Error(`the record line does not fit the schema: ${issues.join("; ")}`);
   }
   const file = recordFile(loopDir, new Date(parsed.output.at));
-  fs38.mkdirSync(path47.dirname(file), { recursive: true });
+  fs39.mkdirSync(path47.dirname(file), { recursive: true });
   const lead = endsMidLine(file) ? `
 ` : "";
-  fs38.appendFileSync(file, `${lead}${JSON.stringify(parsed.output)}
+  fs39.appendFileSync(file, `${lead}${JSON.stringify(parsed.output)}
 `);
 }
 function parseLine(text) {
@@ -9991,7 +10052,7 @@ function localDays(since, until) {
 function readDay(loopDir, day) {
   const file = recordFile(loopDir, day);
   try {
-    const texts = fs38.readFileSync(file, "utf8").split(`
+    const texts = fs39.readFileSync(file, "utf8").split(`
 `).filter((text) => text.trim() !== "");
     return { texts };
   } catch (e) {
@@ -10370,11 +10431,11 @@ function runLoopCli(args, lenv, out, err) {
 }
 
 // bin/helpers/memory.ts
-import * as fs40 from "node:fs";
+import * as fs41 from "node:fs";
 import * as path50 from "node:path";
 
 // bin/helpers/memory-link.ts
-import * as fs39 from "node:fs";
+import * as fs40 from "node:fs";
 import * as path49 from "node:path";
 var messageOf5 = (error) => error instanceof Error ? error.message : String(error);
 function runLink(opts, deps, out, err) {
@@ -10448,14 +10509,14 @@ function runAction(action, runGit) {
       return finished.ok ? done : finished;
     }
     case "createFolder":
-      fs39.mkdirSync(action.folder, { recursive: true });
+      fs40.mkdirSync(action.folder, { recursive: true });
       return done;
     case "writeMarker":
       writeMarker(action.folder, action.root);
       return done;
     case "copyFile":
-      fs39.mkdirSync(path49.dirname(action.to), { recursive: true });
-      fs39.copyFileSync(action.from, action.to, fs39.constants.COPYFILE_EXCL);
+      fs40.mkdirSync(path49.dirname(action.to), { recursive: true });
+      fs40.copyFileSync(action.from, action.to, fs40.constants.COPYFILE_EXCL);
       return done;
     case "mergeKey": {
       const merged = mergeKey(action.file, action.value, action.expected);
@@ -10481,19 +10542,19 @@ function archive(action) {
   return { ok: true, lines: [phrase(action).done, why, ...listed] };
 }
 var FS_MOVES = {
-  rename: fs39.renameSync,
-  copy: (from, to) => fs39.cpSync(from, to, {
+  rename: fs40.renameSync,
+  copy: (from, to) => fs40.cpSync(from, to, {
     recursive: true,
     errorOnExist: true,
     force: false,
     verbatimSymlinks: true,
     preserveTimestamps: true
   }),
-  remove: (folder) => fs39.rmSync(folder, { recursive: true })
+  remove: (folder) => fs40.rmSync(folder, { recursive: true })
 };
 function moveFolder(from, to, moves = {}) {
   const { rename, copy, remove } = { ...FS_MOVES, ...moves };
-  fs39.mkdirSync(path49.dirname(to), { recursive: true });
+  fs40.mkdirSync(path49.dirname(to), { recursive: true });
   try {
     rename(from, to);
   } catch (error) {
@@ -10508,7 +10569,7 @@ function moveFolder(from, to, moves = {}) {
 var hasCode = (error, code) => error instanceof Error && ("code" in error) && error.code === code;
 function claim(from, to) {
   try {
-    fs39.mkdirSync(to);
+    fs40.mkdirSync(to);
   } catch (error) {
     const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf5(error)}`;
     throw new Error(message, { cause: error });
@@ -10540,10 +10601,10 @@ function keepIfChanged(from, to) {
   throw new Error(`${from} changed during the copy, so link kept it: ${changed.join(", ")}. ${to} holds the copy taken at the move, and a re-run archives what ${from} now holds.`);
 }
 function changedSince(from, to) {
-  return fs39.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+  return fs40.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
     const source = path49.join(from, entry.name);
     const copy = path49.join(to, entry.name);
-    const copied = fs39.lstatSync(copy, { throwIfNoEntry: false });
+    const copied = fs40.lstatSync(copy, { throwIfNoEntry: false });
     if (entry.isDirectory() && copied?.isDirectory() === true) {
       return changedSince(source, copy);
     }
@@ -10552,10 +10613,10 @@ function changedSince(from, to) {
 }
 function sameEntry(entry, source, copy, copied) {
   if (entry.isSymbolicLink()) {
-    return copied.isSymbolicLink() && fs39.readlinkSync(source) === fs39.readlinkSync(copy);
+    return copied.isSymbolicLink() && fs40.readlinkSync(source) === fs40.readlinkSync(copy);
   }
   if (entry.isFile()) {
-    return copied.isFile() && fs39.readFileSync(source).equals(fs39.readFileSync(copy));
+    return copied.isFile() && fs40.readFileSync(source).equals(fs40.readFileSync(copy));
   }
   return false;
 }
@@ -10708,9 +10769,9 @@ function withheldFindings(result, store) {
 }
 function isReadableDirectory(dir) {
   try {
-    if (!fs40.statSync(dir).isDirectory())
+    if (!fs41.statSync(dir).isDirectory())
       return false;
-    fs40.readdirSync(dir);
+    fs41.readdirSync(dir);
     return true;
   } catch {
     return false;
@@ -11137,31 +11198,31 @@ function renderReport(r) {
 }
 
 // bin/helpers/rules.ts
-import * as fs43 from "node:fs";
+import * as fs44 from "node:fs";
 import * as path53 from "node:path";
 
 // bin/helpers/rules-fs.ts
-import * as fs41 from "node:fs";
+import * as fs42 from "node:fs";
 import * as path51 from "node:path";
 var isOwnedRule = (name) => name.startsWith("sk-") && name.endsWith(".md");
 function statusOf(dir, name) {
-  const st = fs41.lstatSync(path51.join(dir, name), { throwIfNoEntry: false });
+  const st = fs42.lstatSync(path51.join(dir, name), { throwIfNoEntry: false });
   if (!st)
     return "absent";
   return st.isFile() ? "file" : "other";
 }
 var isRegularFile = (dir, name) => statusOf(dir, name) === "file";
 function ownedRulesIn(dir) {
-  const dirStat = fs41.statSync(dir, { throwIfNoEntry: false });
+  const dirStat = fs42.statSync(dir, { throwIfNoEntry: false });
   if (!dirStat)
     return [];
   if (!dirStat.isDirectory())
     return [];
-  return fs41.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
+  return fs42.readdirSync(dir).filter((n) => isOwnedRule(n) && isRegularFile(dir, n)).sort();
 }
 
 // bin/helpers/rules-overlap.ts
-import * as fs42 from "node:fs";
+import * as fs43 from "node:fs";
 import * as path52 from "node:path";
 var MIN_SHARED_HEADINGS = 2;
 var normalise2 = (s) => s.toLowerCase().replace(/[`*_]/g, "").replace(/[.:;!?]+$/, "").trim();
@@ -11198,20 +11259,20 @@ function signalsFor(file, body, rule) {
 }
 function findOverlap(src, dest) {
   const report2 = { pairs: [], extensions: [] };
-  const destStat = fs42.statSync(dest, { throwIfNoEntry: false });
+  const destStat = fs43.statSync(dest, { throwIfNoEntry: false });
   if (!destStat?.isDirectory())
     return report2;
   const rules = ownedRulesIn(src).map((name) => {
-    const body = fs42.readFileSync(path52.join(src, name), "utf-8");
+    const body = fs43.readFileSync(path52.join(src, name), "utf-8");
     return {
       name,
       headings: new Set(headingsOf(body)),
       opening: openingOf(body)
     };
   });
-  const others = fs42.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
+  const others = fs43.readdirSync(dest).filter((n) => n.endsWith(".md") && !isOwnedRule(n) && isRegularFile(dest, n)).sort();
   for (const file of others) {
-    const body = fs42.readFileSync(path52.join(dest, file), "utf-8");
+    const body = fs43.readFileSync(path52.join(dest, file), "utf-8");
     for (const rule of rules) {
       const signals = signalsFor(file, body, rule);
       if (signals.length === 0)
@@ -11273,13 +11334,13 @@ var PLUGIN_ONLY_RULES = [
   "sk-parallel-sessions.md",
   "sk-memory.md"
 ];
-var isRecord8 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var isRecord9 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText4 = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
   const file = path53.join(root, ".claude", "settings.json");
   let text;
   try {
-    text = fs43.readFileSync(file, "utf-8");
+    text = fs44.readFileSync(file, "utf-8");
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return { state: "not-enabled" };
@@ -11294,11 +11355,11 @@ function pluginEnablement(root) {
   } catch (e) {
     return { state: "unreadable", path: file, reason: errorText4(e) };
   }
-  if (!isRecord8(parsed)) {
+  if (!isRecord9(parsed)) {
     return { state: "unreadable", path: file, reason: "not a JSON object" };
   }
   const plugins = parsed.enabledPlugins;
-  const enabled = isRecord8(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
+  const enabled = isRecord9(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
   return { state: enabled ? "enabled" : "not-enabled" };
 }
 var EVERY_RULE = { leaveOut: [], leaveAsIs: [] };
@@ -11327,9 +11388,9 @@ function installRules(src, dest, scope = EVERY_RULE) {
     return { installed: [], removed: [], leftOut: [], skipped: [] };
   }
   const set = shippedOnly(scope, shipped);
-  fs43.mkdirSync(dest, { recursive: true });
+  fs44.mkdirSync(dest, { recursive: true });
   const byLowerCase = new Map;
-  for (const existing of fs43.readdirSync(dest)) {
+  for (const existing of fs44.readdirSync(dest)) {
     byLowerCase.set(existing.toLowerCase(), existing);
   }
   const installed = [];
@@ -11344,7 +11405,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
       skipped.push({ name, why: "not-a-regular-file" });
       continue;
     }
-    fs43.copyFileSync(path53.join(src, name), path53.join(dest, name));
+    fs44.copyFileSync(path53.join(src, name), path53.join(dest, name));
     installed.push(name);
   }
   const keep = new Set(shipped);
@@ -11352,7 +11413,7 @@ function installRules(src, dest, scope = EVERY_RULE) {
   const removed = owned.filter((n) => !keep.has(n));
   const leftOut = owned.filter((n) => set.leaveOut.includes(n));
   for (const name of [...removed, ...leftOut]) {
-    fs43.rmSync(path53.join(dest, name));
+    fs44.rmSync(path53.join(dest, name));
   }
   return { installed, removed, leftOut, skipped };
 }
@@ -11364,11 +11425,11 @@ function checkRules(src, dest, scope = EVERY_RULE) {
   const drift = [];
   for (const name of expected) {
     const there = path53.join(dest, name);
-    if (!fs43.existsSync(there)) {
+    if (!fs44.existsSync(there)) {
       drift.push({ kind: "missing", name });
       continue;
     }
-    const same = fs43.readFileSync(path53.join(src, name)).equals(fs43.readFileSync(there));
+    const same = fs44.readFileSync(path53.join(src, name)).equals(fs44.readFileSync(there));
     if (!same)
       drift.push({ kind: "stale", name });
   }
@@ -11421,7 +11482,7 @@ function scopeSet(scope, root) {
 var deliveryMode = (projectDest) => ownedRulesIn(projectDest).length > 0 ? "project" : "user";
 var realOrSelf = (p) => {
   try {
-    return fs43.realpathSync(p);
+    return fs44.realpathSync(p);
   } catch {
     return path53.resolve(p);
   }
@@ -11448,7 +11509,7 @@ function reportDuplicates(expected, dest, userDest, out) {
   out(`your user-level rules at ${userDest} also deliver ${shared} of these; Claude Code loads both copies here, which is expected where the repo keeps copies for colleagues without sidekick`);
 }
 function refuseNonDirectory(dir, out) {
-  const st = fs43.statSync(dir, { throwIfNoEntry: false });
+  const st = fs44.statSync(dir, { throwIfNoEntry: false });
   if (!st || st.isDirectory())
     return false;
   out(`${dir} exists and is not a directory; refusing to write rules there`);
@@ -11915,7 +11976,7 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 }
 
 // bin/helpers/worker-dispatch-checks.ts
-import * as fs44 from "node:fs";
+import * as fs45 from "node:fs";
 import * as path54 from "node:path";
 
 // bin/helpers/worker-facts.ts
@@ -12066,7 +12127,7 @@ function treeNameIssues(runGit, top, name) {
   const folder = nativeFolder(top, name);
   const branch = nativeBranch(name);
   return [
-    ...fs44.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...fs45.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [
       `name: the branch ${branch} already exists: once you have checked that its commits have landed, delete it with git branch -D ${branch}, or dispatch under another name`
     ] : []
@@ -12365,7 +12426,7 @@ function verifyWorktree(input) {
 }
 
 // bin/helpers/worker-exclude.ts
-import * as fs45 from "node:fs";
+import * as fs46 from "node:fs";
 import * as path56 from "node:path";
 var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
@@ -12373,7 +12434,7 @@ var reason7 = (e) => e instanceof Error ? e.message : String(e);
 var isMissing6 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readExclude(file) {
   try {
-    return { text: fs45.readFileSync(file, "utf-8") };
+    return { text: fs46.readFileSync(file, "utf-8") };
   } catch (e) {
     if (isMissing6(e))
       return { text: "" };
@@ -12389,8 +12450,8 @@ function appendExclude(file, text) {
 `) ? "" : `
 `;
   try {
-    fs45.mkdirSync(path56.dirname(file), { recursive: true });
-    fs45.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+    fs46.mkdirSync(path56.dirname(file), { recursive: true });
+    fs46.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
 `);
     return [];
   } catch (e) {
@@ -12749,7 +12810,7 @@ var rerunCommand = (opts) => commandFor(opts, opts.mode);
 var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-tree.ts
-import * as fs46 from "node:fs";
+import * as fs47 from "node:fs";
 import * as path59 from "node:path";
 
 // bin/helpers/worker-finish-target.ts
@@ -13001,7 +13062,7 @@ function operatorIssues(name, tried, linked2) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs46.existsSync(worktree) && !fs46.existsSync(path59.join(worktree, ".git"));
+  const linkless = fs47.existsSync(worktree) && !fs47.existsSync(path59.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list3 = worktreeListed(runGit, top, worktree);
@@ -13243,12 +13304,12 @@ function clearGone(gone, wenv, out) {
 }
 
 // bin/helpers/worker-finish-report.ts
-import * as fs47 from "node:fs";
+import * as fs48 from "node:fs";
 import * as path60 from "node:path";
 var isMissing7 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
-    return { data: fs47.readFileSync(file) };
+    return { data: fs48.readFileSync(file) };
   } catch (e) {
     if (isMissing7(e))
       return { data: undefined };
@@ -13301,8 +13362,8 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs47.mkdirSync(path60.dirname(to), { recursive: true });
-    fs47.copyFileSync(from, to, fs47.constants.COPYFILE_EXCL);
+    fs48.mkdirSync(path60.dirname(to), { recursive: true });
+    fs48.copyFileSync(from, to, fs48.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return [`cannot save the report to ${to}: ${why}`];
@@ -13364,7 +13425,7 @@ function copyChangedIssues(from, to, now) {
 }
 
 // bin/helpers/worker-finish-subject.ts
-import * as fs48 from "node:fs";
+import * as fs49 from "node:fs";
 import * as path61 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
@@ -13395,7 +13456,7 @@ function recordedTop(runGit, commonDir, name) {
   if (record3 === undefined)
     return;
   const folder = path61.dirname(record3.brief);
-  return fs48.existsSync(folder) ? topOf(runGit, folder) : undefined;
+  return fs49.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
   const { read } = subject;
@@ -13414,7 +13475,7 @@ function launcherOf(subject, facts, runGit) {
 }
 
 // bin/helpers/worker-teardown-leftovers.ts
-import * as fs49 from "node:fs";
+import * as fs50 from "node:fs";
 import * as path62 from "node:path";
 function clearSavedReport(ready) {
   const step = ready.reportStep;
@@ -13423,9 +13484,9 @@ function clearSavedReport(ready) {
   if (step.from === step.to)
     return;
   try {
-    const saved = fs49.readFileSync(step.to);
-    if (fs49.readFileSync(step.from).equals(saved))
-      fs49.unlinkSync(step.from);
+    const saved = fs50.readFileSync(step.to);
+    if (fs50.readFileSync(step.from).equals(saved))
+      fs50.unlinkSync(step.from);
   } catch {}
 }
 function forgottenWayOut({
@@ -15068,7 +15129,7 @@ function resolvePluginDir(entryFileUrl) {
     path65.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs50.existsSync(path65.join(c, "rules")))
+    if (fs51.existsSync(path65.join(c, "rules")))
       return c;
   }
   return candidates3[0];
@@ -15077,7 +15138,7 @@ var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
   const manifest = path65.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs50.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs51.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -15107,7 +15168,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs50.writeSync(1, buffer, offset);
+      offset += fs51.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -15128,7 +15189,7 @@ function profileEnvOf(ctx) {
 }
 function readProcessStdin() {
   try {
-    return fs50.readFileSync(0, "utf-8");
+    return fs51.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
