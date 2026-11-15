@@ -124,31 +124,115 @@ function loadedIds(
   return [...merged].filter(([, on]) => on).map(([id]) => id);
 }
 
-type PluginHooks =
-  | { kind: 'none' }
-  | { kind: 'read'; hooks: LayerSummary['hooks']; mod: boolean }
-  | { kind: 'unreadable'; why: string };
+// One approving hook and the file it came from; no label means `hooks/hooks.json`.
+interface FoundHook {
+  from: string | undefined;
+  hook: LayerSummary['hooks'][number];
+}
 
-// Reads `<folder>/hooks/hooks.json`: its approving hooks and whether it ships a mod.
-function readPluginHooks(folder: string): PluginHooks {
-  if (!fs.existsSync(folder)) {
-    return { kind: 'unreadable', why: 'the folder is gone' };
-  }
-  const file = path.join(folder, 'hooks', 'hooks.json');
-  if (!fs.existsSync(file)) return { kind: 'none' };
+interface PluginHooks {
+  hooks: FoundHook[];
+  mod: boolean;
+  problems: string[];
+}
+
+type JsonRead =
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; why: string };
+
+function readJsonObject(file: string): JsonRead {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!isPlainObject(parsed)) {
-      return { kind: 'unreadable', why: 'hooks.json is not a JSON object' };
-    }
-    return {
-      kind: 'read',
-      hooks: summariseLayer(parsed).hooks,
-      mod: Array.isArray(parsed.modules) && parsed.modules.length > 0,
-    };
+    return isPlainObject(parsed)
+      ? { ok: true, value: parsed }
+      : { ok: false, why: 'it is not a JSON object' };
   } catch (e) {
-    return { kind: 'unreadable', why: errorText(e) };
+    return { ok: false, why: errorText(e) };
   }
+}
+
+const foundIn = (
+  from: string | undefined,
+  layer: Record<string, unknown>,
+): FoundHook[] => summariseLayer(layer).hooks.map((hook) => ({ from, hook }));
+
+// The hooks one `plugin.json` `hooks` entry declares: an inline object, or a path to a file.
+function manifestEntryHooks(
+  folder: string,
+  entry: unknown,
+): { hooks: FoundHook[]; problems: string[] } {
+  if (isPlainObject(entry)) {
+    return { hooks: foundIn('plugin.json', { hooks: entry }), problems: [] };
+  }
+  if (typeof entry !== 'string') {
+    return {
+      hooks: [],
+      problems: ['its plugin.json hooks entry is neither an object nor a path'],
+    };
+  }
+  const file = path.resolve(folder, entry);
+  const read: JsonRead = fs.existsSync(file)
+    ? readJsonObject(file)
+    : { ok: false, why: 'the file is missing' };
+  return read.ok
+    ? { hooks: foundIn(entry, read.value), problems: [] }
+    : {
+        hooks: [],
+        problems: [`its hooks in ${entry} could not be read: ${read.why}`],
+      };
+}
+
+// Hooks in `.claude-plugin/plugin.json`; a missing file or a missing `hooks` key adds nothing.
+function readManifestHooks(folder: string): {
+  hooks: FoundHook[];
+  problems: string[];
+} {
+  const file = path.join(folder, '.claude-plugin', 'plugin.json');
+  if (!fs.existsSync(file)) return { hooks: [], problems: [] };
+  const manifest = readJsonObject(file);
+  if (!manifest.ok) {
+    return {
+      hooks: [],
+      problems: [`its plugin.json could not be read: ${manifest.why}`],
+    };
+  }
+  const declared = manifest.value.hooks;
+  if (declared === undefined) return { hooks: [], problems: [] };
+  const parts = (Array.isArray(declared) ? declared : [declared]).map((entry) =>
+    manifestEntryHooks(folder, entry),
+  );
+  return {
+    hooks: parts.flatMap((part) => part.hooks),
+    problems: parts.flatMap((part) => part.problems),
+  };
+}
+
+// A plugin's approving hooks from `hooks/hooks.json` and `plugin.json`; only `hooks.json` sets the mod mark.
+function readPluginHooks(folder: string): PluginHooks {
+  if (!fs.existsSync(folder)) {
+    return {
+      hooks: [],
+      mod: false,
+      problems: ['its hooks could not be read: the folder is gone'],
+    };
+  }
+  const manifest = readManifestHooks(folder);
+  const file = path.join(folder, 'hooks', 'hooks.json');
+  if (!fs.existsSync(file)) return { mod: false, ...manifest };
+  const read = readJsonObject(file);
+  if (!read.ok) {
+    const why = read.why.replace(/^it is /, 'hooks.json is ');
+    return {
+      hooks: manifest.hooks,
+      mod: false,
+      problems: [`its hooks could not be read: ${why}`, ...manifest.problems],
+    };
+  }
+  return {
+    hooks: [...foundIn(undefined, read.value), ...manifest.hooks],
+    mod: Array.isArray(read.value.modules) && read.value.modules.length > 0,
+    problems: manifest.problems,
+  };
 }
 
 const MOD_MARK =
@@ -167,20 +251,12 @@ function describePlugin(
   folder: string,
 ): { line: string; hooks: string[] } {
   const read = readPluginHooks(folder);
-  switch (read.kind) {
-    case 'none':
-      return { line: head, hooks: [] };
-    case 'unreadable':
-      return {
-        line: `${head}: its hooks could not be read: ${read.why}`,
-        hooks: [],
-      };
-    case 'read':
-      return {
-        line: `${head}${read.mod ? `: ${MOD_MARK}` : ''}`,
-        hooks: read.hooks.map((hook) => hookLine(source, hook)),
-      };
-  }
+  return {
+    line: [head, ...(read.mod ? [MOD_MARK] : []), ...read.problems].join(': '),
+    hooks: read.hooks.map(({ from, hook }) =>
+      hookLine(from === undefined ? source : `${source} (${from})`, hook),
+    ),
+  };
 }
 
 // An id's plugin line and hooks, by its folder from the plugin list.

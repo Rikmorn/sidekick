@@ -308,6 +308,122 @@ describe('inheritedListing', () => {
     expect(hasLine(out.lines, 'bad@m', 'hooks could not be read')).toBe(true);
   });
 
+  describe('hooks a plugin declares in plugin.json', () => {
+    const pre = (command: string) => ({
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command }] }],
+    });
+    const perm = (command: string) => ({
+      PermissionRequest: [{ hooks: [{ type: 'command', command }] }],
+    });
+    const withManifest = (
+      name: string,
+      hooks: unknown,
+      hooksFile?: unknown,
+    ) => {
+      const dir = plugin(name, hooksFile);
+      json(path.join(dir, '.claude-plugin', 'plugin.json'), { name, hooks });
+      return dir;
+    };
+    const runOne = (dir: string) =>
+      run(
+        profileWith({ settings: { enabledPlugins: { 'p@m': true } } }),
+        listed([{ id: 'p@m', installPath: dir }]),
+      );
+
+    test('lists an inline object with plugin.json as its source', () => {
+      const out = runOne(withManifest('p', pre('inline-cmd')));
+      expect(
+        hasLine(
+          sectionOf(out.lines, 'Hooks that can approve a call'),
+          'plugin p@m',
+          'plugin.json',
+          'PreToolUse',
+          'inline-cmd',
+        ),
+      ).toBe(true);
+    });
+
+    test('lists a path to a file with a top-level hooks key, with that file as its source', () => {
+      const dir = withManifest('p', './config/extra-hooks.json');
+      json(path.join(dir, 'config', 'extra-hooks.json'), {
+        hooks: perm('file-cmd'),
+      });
+      const out = runOne(dir);
+      expect(
+        hasLine(
+          sectionOf(out.lines, 'Hooks that can approve a call'),
+          './config/extra-hooks.json',
+          'PermissionRequest',
+          'file-cmd',
+        ),
+      ).toBe(true);
+    });
+
+    test('lists an array of an object and a path', () => {
+      const dir = withManifest('p', [pre('obj-cmd'), './h.json']);
+      json(path.join(dir, 'h.json'), { hooks: perm('path-cmd') });
+      const out = runOne(dir);
+      const hooks = sectionOf(out.lines, 'Hooks that can approve a call');
+      expect(hasLine(hooks, 'obj-cmd')).toBe(true);
+      expect(hasLine(hooks, 'path-cmd')).toBe(true);
+    });
+
+    test('names a missing or malformed file in the plugin line and goes on', () => {
+      const dir = withManifest('p', [
+        pre('kept-cmd'),
+        './missing.json',
+        './bad.json',
+      ]);
+      fs.writeFileSync(path.join(dir, 'bad.json'), '{nope');
+      const out = runOne(dir);
+      const plugins = sectionOf(out.lines, 'Plugins');
+      expect(
+        hasLine(plugins, 'p@m', './missing.json', 'could not be read'),
+      ).toBe(true);
+      expect(hasLine(plugins, 'p@m', './bad.json', 'could not be read')).toBe(
+        true,
+      );
+      expect(hasLine(out.lines, 'kept-cmd')).toBe(true);
+    });
+
+    test('lists hooks from both hooks/hooks.json and plugin.json', () => {
+      const dir = withManifest('p', pre('manifest-cmd'), {
+        hooks: perm('file-cmd'),
+      });
+      const out = runOne(dir);
+      expect(hasLine(out.lines, 'manifest-cmd')).toBe(true);
+      expect(hasLine(out.lines, 'file-cmd')).toBe(true);
+    });
+
+    test('takes the mod mark from hooks/hooks.json alone', () => {
+      const viaManifest = withManifest('a', { ...pre('x'), modules: ['m.ts'] });
+      expect(
+        hasLine(sectionOf(runOne(viaManifest).lines, 'Plugins'), 'ships a mod'),
+      ).toBe(false);
+      const viaFile = withManifest('b', pre('x'), { modules: ['m.ts'] });
+      expect(
+        hasLine(sectionOf(runOne(viaFile).lines, 'Plugins'), 'ships a mod'),
+      ).toBe(true);
+    });
+
+    test('adds nothing for a missing plugin.json or one with no hooks key', () => {
+      const none = plugin('n');
+      const bare = plugin('b');
+      json(path.join(bare, '.claude-plugin', 'plugin.json'), { name: 'b' });
+      for (const dir of [none, bare]) {
+        const out = runOne(dir);
+        expect(sectionOf(out.lines, 'Hooks that can approve a call')).toEqual([
+          'Hooks that can approve a call',
+          '  (none)',
+        ]);
+        expect(sectionOf(out.lines, 'Plugins')).toEqual([
+          'Plugins',
+          `  p@m (${dir})`,
+        ]);
+      }
+    });
+  });
+
   test('lists each loading id with its folder unknown when the plugin list fails', () => {
     const dir = plugin('d');
     const out = run(
