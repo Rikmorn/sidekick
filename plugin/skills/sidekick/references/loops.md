@@ -21,7 +21,7 @@ A loop lives in the loop store, one folder per loop:
 
 `<config>` is `CLAUDE_CONFIG_DIR`, or `~/.claude` when that is unset or empty. `SIDEKICK_PROFILES_DIR` moves the profile store only, never the loop store. A loop's name follows the profile name rule: 1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit. `list` skips files and hidden entries in the store.
 
-`records/`, `state.json`, `armed.json`, and `start.lock` are a loop's runtime entries. The sidekick folder's `.gitignore` keeps them out of its repo, as `loops/*/records/`, `loops/*/state.json`, `loops/*/armed.json`, and `loops/*/start.lock`. So a loop's record, state, arm, and lock stay local. `profile new` makes the sidekick folder a repo and writes those lines, as `references/profiles.md` §The sidekick folder says. A `start` that acts on a loop does the same before its commit, and adds any line the file lacks.
+`records/`, `state.json`, `armed.json`, and `start.lock` are a loop's runtime entries. The sidekick folder's `.gitignore` keeps them out of its repo, as `loops/*/records/`, `loops/*/state.json`, `loops/*/armed.json`, and `loops/*/start.lock`. So a loop's record, state, arm, and lock stay local. Two runs make the sidekick folder a repo: a `profile new` of a user profile, and a `start` that acts on a loop. Each adds any of those lines the folder's `.gitignore` lacks. `references/profiles.md` §The sidekick folder says when.
 
 No `sidekick loop` verb writes `loop.json`. You write it, through `sk-loop` once #366 ships.
 
@@ -353,7 +353,7 @@ The profile's own `permissions.allow` stays, since the layers' lists concatenate
 
 `start` passes no `--plugin-dir`. A loop that needs a development sidekick names that plugin folder in its profile's `pluginDirs`. The choice then holds across `start --all` and a reboot, and the hash covers it.
 
-**Trust.** In a repo Claude Code does not trust, `claude --bg` exits "Workspace not trusted" before the session starts ([the loop probes, §U19](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u19-finish---into-originmaster-after-a-loops-landing)). `start` then fails that loop and names the fix: run `claude` in the repo once and accept the trust prompt, then run `start` again. It removes the launch's `state.json` and keeps the store's commit. `start` never reads or writes `~/.claude.json`.
+**Trust.** In a repo Claude Code does not trust, `claude --bg` exits "Workspace not trusted" before the session starts ([the loop probes, §U19](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u19-finish---into-originmaster-after-a-loops-landing)). `start` then fails that loop and names the fix: run `claude` in the repo once and accept the trust prompt, then run `start` again. It removes the launch's `state.json` and keeps the store's commit. `start` judges trust only by the launch's own refusal, and never writes `~/.claude.json`. Its check reads the global config file only for MCP server names, as "What the check refuses" says.
 
 **Updates.** A loop runs with `DISABLE_AUTOUPDATER=1`, as every session sidekick starts unattended does. So it keeps the Claude Code build and the plugins it launched with. By the CLI reference, `claude respawn` restarts a session "to pick up an updated Claude Code binary", and keeps its launch flags. A respawned session kept its cron jobs and their ids in the loop probes (§U11). So to update a loop's Claude Code, run `claude respawn <job>` between ticks. Whether a respawn loads newer plugins is not measured. "Pausing, stopping, and updating a loop" says how to launch a loop fresh, which loads both.
 
@@ -394,13 +394,15 @@ An `armed.json` whose `launch` is not `state.json`'s is stale, and every reader 
 
 A definition has changed when the launch hash differs from the `hash` in `state.json`. The hash is SHA-256, in hex, over five inputs:
 
-1. `loop.json`'s bytes, so any edit relaunches, `schedule`, `tick`, `repo`, and `paused` included;
+1. `loop.json`'s bytes, so any edit relaunches, `schedule`, `tick`, and `repo` included;
 2. the `--record` flag, since a trial of a loop whose classes all record changes no argument;
 3. the whole argument list `start` passes to `claude`, which catches a compiler change in a newer sidekick;
 4. the profile's folder;
 5. each folder in the profile's `pluginDirs`.
 
 A folder hashes as its sorted relative paths and their contents. It skips `.git`, `node_modules`, and `.DS_Store` at any depth, and links. It also skips `.claude-plugin/types/` at the folder's top, which Claude Code 2.1.322 was seen to rewrite a second after it loaded a `--plugin-dir` plugin. A subfolder that cannot be read hashes as one marker of its own, so the rest of the folder still counts.
+
+A paused loop is never hashed, so its `state.json` keeps the hash of the launch before the pause.
 
 ### The reconcile
 
@@ -465,7 +467,7 @@ Both set exit 1. A paused loop that ends off never does. A paused loop that `sta
 ### Pausing, stopping, and updating a loop
 
 - **To pause a loop,** add `"paused": true` to its `loop.json`, then run `start <name>`. It stops a live session between ticks, and `--now` stops a mid-tick one at once. The row and `state.json` stay. The loop then stays off across `start --all` and a reboot.
-- **To resume it,** remove the key and run `start`. The edit changes the hash, so `start` removes the old row and launches fresh.
+- **To resume it,** remove the key and run `start`. When nothing else changed, a file restored to its bytes before the pause hashes as that launch did. So `start` respawns the stopped session while its cron jobs are alive and no boot has come since. Otherwise it removes the row and launches fresh, for `cron jobs gone` or `machine rebooted since it started`. Any other edit gives another hash, so `start` removes the row and launches fresh, for `definition changed`.
 - **To stop a loop at once,** run `claude stop <job>`. A later `start` would start it again, so add the pause too when it should stay off.
 - **To change a loop,** edit `loop.json`, its profile, or a folder in its `pluginDirs`, then run `start <name>`. It relaunches the loop between ticks, or refuses a mid-tick one, naming `--now`.
 - **To try a change first,** run `start <name> --record`, which relaunches the loop with every class in `record`. A plain `start` afterwards brings the acting loop back, since the record flag is in the hash.
