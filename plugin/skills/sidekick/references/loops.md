@@ -1,10 +1,10 @@
 # Loops
 
-A loop is one long-lived background session on Claude Code's own cron, which works one repo within a written mandate. This page covers what defines a loop and what it records: its folder, `loop.json`, the check, the inherited listing, and the record. `sidekick loop list`, `show`, and `record` read and write them. Issue #363 in the `Rikmorn/sidekick` repo built these pieces, and ADR-0014 and ADR-0015 in that repo bind them.
+A loop is one long-lived background session on Claude Code's own cron, which works one repo within a written mandate. This page covers what defines a loop, how it starts and keeps running, and what it records. Its sections are the folder, `loop.json`, the check, the inherited listing, starting and arming a loop, and the record. The verbs are `sidekick loop list`, `show`, `record`, `start`, and `arm`, and the `loop-arm` skill arms a running loop. Issues #363 and #364 in the `Rikmorn/sidekick` repo built these pieces, and ADR-0014 and ADR-0015 in that repo bind them.
 
-Later issues build the rest. #364 starts and arms a loop, #367 dispatches its workers, #377 lands their work, and #365 shows a loop on the desk. The `sk-loop` skill, which writes `loop.json` with you, is #366. Until #364 ships, nothing starts a loop.
+Later issues build the rest. #367 dispatches a loop's workers, #377 lands their work, and #365 shows a loop on the desk. The `sk-loop` skill, which writes `loop.json` with you, is #366.
 
-The measurements cited here come from two probe records in that repo, linked by permalink, both on Claude Code 2.1.322 on 2026-11-12. "The loop probes" is [`docs/research/loop/2026-11-12-loop-probes.md`](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md). "The operator-present probes" is [`2026-11-12-loop-probes-operator-run.md`](https://github.com/Rikmorn/sidekick/blob/e1725169edd5003d050f8b3d9ebd6f71b7379205/docs/research/loop/2026-11-12-loop-probes-operator-run.md) beside it. A fact measured on macOS while #363 was built, on 2026-11-14, says so where it appears.
+The measurements cited here come from two probe records in that repo, linked by permalink, both on Claude Code 2.1.322 on 2026-11-12. "The loop probes" is [`docs/research/loop/2026-11-12-loop-probes.md`](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md). "The operator-present probes" is [`2026-11-12-loop-probes-operator-run.md`](https://github.com/Rikmorn/sidekick/blob/e1725169edd5003d050f8b3d9ebd6f71b7379205/docs/research/loop/2026-11-12-loop-probes-operator-run.md) beside it. A fact measured on macOS while #363 was built, on 2026-11-14, says so where it appears. So does a fact from Claude Code's docs, fetched on 2026-11-15 while #364 was designed.
 
 ## The folder
 
@@ -14,12 +14,14 @@ A loop lives in the loop store, one folder per loop:
 <config>/sidekick/loops/<name>/
   loop.json      the definition
   records/       one <YYYY-MM-DD>.jsonl per local day
-  state.json     what sidekick loop start writes (#364)
+  state.json     what sidekick loop start launched
+  armed.json     the cron jobs sidekick loop arm reported
+  start.lock     present while a sidekick loop start acts on the loop
 ```
 
 `<config>` is `CLAUDE_CONFIG_DIR`, or `~/.claude` when that is unset or empty. `SIDEKICK_PROFILES_DIR` moves the profile store only, never the loop store. A loop's name follows the profile name rule: 1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit. `list` skips files and hidden entries in the store.
 
-`records/` and `state.json` are a loop's runtime entries. The sidekick folder's `.gitignore` keeps `loops/*/records/` and `loops/*/state.json` out of its repo, so a loop's record and state stay local. That file exists once `profile new` has made the sidekick folder a repo, as `references/profiles.md` §The sidekick folder says.
+`records/`, `state.json`, `armed.json`, and `start.lock` are a loop's runtime entries. The sidekick folder's `.gitignore` keeps them out of its repo, as `loops/*/records/`, `loops/*/state.json`, `loops/*/armed.json`, and `loops/*/start.lock`. So a loop's record, state, arm, and lock stay local. `profile new` makes the sidekick folder a repo and writes those lines, as `references/profiles.md` §The sidekick folder says. A `start` that acts on a loop does the same before its commit, and adds any line the file lacks.
 
 No `sidekick loop` verb writes `loop.json`. You write it, through `sk-loop` once #366 ships.
 
@@ -67,8 +69,9 @@ Every object is strict, so an unknown key at any level refuses. Every list entry
 | `mandate.reads` | Required. Allow rules for the loop's reads. |
 | `mandate.classes` | Required. A class name, which follows the profile name rule, maps to `{ "state", "allow" }`. `state` is `record`, `ask`, or `act`. `allow` holds at least one allow rule. |
 | `mandate.never` | Required. Deny rules. |
+| `paused` | Optional. `true` keeps the loop off: `start` stops it between ticks, and never launches or respawns it. "Pausing, stopping, and updating a loop" says how. `list` marks the loop `paused`, and a paused loop's issues do not make `list` exit 1. |
 
-A class's state is its rung on ADR-0015 Decision 2's ladder. A class in `record` writes what it would do, one in `ask` writes a request for the operator, and one in `act` acts. A promotion edits one class's state, then starts the loop again.
+A class's state is its rung on ADR-0015 Decision 2's ladder. A class in `record` writes what it would do, one in `ask` writes a request for the operator, and one in `act` acts. A promotion edits one class's state, then runs `sidekick loop start <name>`, which relaunches the loop between ticks.
 
 ### The schedule
 
@@ -108,40 +111,39 @@ A dispatch under `sidekick loop start --record` writes `dispatched` with `record
 
 ## The check
 
-The check judges one loop from its folder, its repo, and its profile. It finds issues, which refuse the loop, and warnings, which do not. Each reads `<path>: <why>`, naming the file and the field. The old-store refusal is the exception: its lines are the ones every profile verb prints, the commands that move the store among them. `list` and `show` run it, and `record` runs only the schema and its own argument checks.
+The check judges one loop from its folder, its repo, and its profile. It finds issues, which refuse the loop, and warnings, which do not. Each reads `<path>: <why>`, naming the file and the field. The old-store refusal is the exception: its lines are the ones every profile verb prints, the commands that move the store among them. `list`, `show`, and `start` run it, and `record` runs only its schemas and its own argument checks. `start` skips it for a paused loop, as "What `start` does" says.
 
 ### What the check refuses
 
 - A loop name that breaks the name rule.
 - A `loop.json` that is missing, is not JSON, or fails the schema.
-- A `repo` that is not a main checkout's root. It must be a folder inside a git work tree, and the top of that work tree by real path. Its git common dir must be its own `.git`. Both compare without regard to case, since git prints a folder's real case and Node's `realpathSync` keeps the case it is given. A subfolder, a linked worktree, a submodule, and a repo made with `--separate-git-dir` each refuse, with the fix that applies. The first three name the main checkout's root. A `--separate-git-dir` repo is a main checkout already, so its fix is to move the git dir back to `<repo>/.git`. The loop's own worktree and its workers' worktrees are made from the main checkout (#364, #367).
+- A `repo` that is not a main checkout's root. It must be a folder inside a git work tree, and the top of that work tree by real path. Its git common dir must be its own `.git`. Both compare without regard to case, since git prints a folder's real case and Node's `realpathSync` keeps the case it is given. A subfolder, a linked worktree, a submodule, and a repo made with `--separate-git-dir` each refuse, with the fix that applies. The first three name the main checkout's root. A `--separate-git-dir` repo is a main checkout already, so its fix is to move the git dir back to `<repo>/.git`. The loop's own worktree, which `start`'s launch makes, comes from the main checkout, and so do its workers' worktrees (#367).
 - A `profile` that no store holds. The search is the one a launch in `repo` makes: the repo store `<repo>/.claude/profiles/`, then the user store. `SIDEKICK_PROFILES_DIR` replaces both, as `references/profiles.md` §The folder says.
 - A profile the repo store holds, since the repo's commits can change its plugin code. Keep a loop's profile in the user store. When it hides a user-store profile of the same name, the user store already holds the profile. The refusal then says to remove or rename the repo store's one. Committed loops are out of scope (#374).
 - The profile's own load issues, and its role plugin's. Each `pluginDirs` entry must be a folder, and no file in one may hold a key.
 - The old-store refusal, while `<config>/profiles` still holds a profile, as every profile verb gives it.
-- A file in the loop's folder that the key check flags, outside `records/` and `state.json`. Like the profile scan, it skips `.git`, `node_modules`, links, binary files, and files over 1 MiB. The loop's folder sits in the sidekick folder, which can be a git repo, and a loop's definition needs no secret.
-- An `mcp__<server>` rule that names, by its bare name, a server only a role plugin's `.mcp.json` declares. Claude Code spells a plugin server's tools `mcp__plugin_<plugin>_<server>__<tool>`, so the bare rule matches none. The refusal names the right spelling. It passes when the server also appears in the repo's `.mcp.json`. It passes too when the server sits in the user or local scope of the global config file. That file is `<config>/.claude.json`, or `~/.claude.json` when `CLAUDE_CONFIG_DIR` is unset. A missing or malformed file names no server. Role plugins are the folders in the profile's `pluginDirs`.
+- A file in the loop's folder that the key check flags, outside its runtime entries. Like the profile scan, it skips `.git`, `node_modules`, links, binary files, and files over 1 MiB. The loop's folder sits in the sidekick folder, which can be a git repo, and a loop's definition needs no secret.
+- An `mcp__<server>` rule that names, by its bare name, a server only a role plugin's `.mcp.json` declares. Claude Code spells a plugin server's tools `mcp__plugin_<plugin>_<server>__<tool>`, so the bare rule matches none. The refusal names the right spelling. It passes when the server also appears in the repo's `.mcp.json`. It passes too when the server sits in the user or local scope of the global config file. That file is `.claude.json` in `CLAUDE_CONFIG_DIR`, or in the home folder when that is unset or empty. The check reads the legacy `<config>/.config.json` instead when that file has content, or is writable while `.claude.json` does not exist. A missing or malformed file names no server. Role plugins are the folders in the profile's `pluginDirs`.
 - Each rule the judge refuses, in `mandate.reads`, each class's `allow`, and `mandate.never`. "How the check judges a rule" gives every refusal and its reason.
 
 ### What the check warns on
 
 - **A host that lets workers reach GitHub.** That is a pattern matching `github.com` or a subdomain of it, so `*.com` and `*` warn too. The check reads `hosts`, and each kept layer's `sandbox.network.allowedDomains`. A worker that reaches origin can push by a spelling the push block misses (#367). A worker that never reaches it cannot push at all.
 - **A kept settings layer the check cannot read,** since it then cannot see which hosts that layer lets workers reach.
-- **In `show` alone, a `claude plugin list` that fails,** times out, or prints what the listing cannot parse. The listing then says it is incomplete.
+- **In `show` and `start`, which print the listing, a `claude plugin list` that fails,** times out, or prints what the listing cannot parse. The listing then says it is incomplete.
 
 ## How the check judges a rule
 
-ADR-0015 Decision 3 sets the aim: no allow rule may grant a shell, an interpreter, `sidekick worker`, or `claude`. The judge is a test of the words in a rule. A loop needs few rules: its reads, its classes, and the fixed `sidekick loop` verbs #364 adds. So the judge refuses wherever the cost to you is a narrower rule. "What the judge cannot see" names what it leaves open.
+ADR-0015 Decision 3 sets the aim: no allow rule may grant a shell, an interpreter, `sidekick worker`, or `claude`. The judge is a test of the words in a rule. A loop needs few rules: its reads and its classes, since `start` adds the fixed `sidekick loop` verbs itself, as "The compiled settings" says. So the judge refuses wherever the cost to you is a narrower rule. "What the judge cannot see" names what it leaves open.
 
 ### In every list
 
 These refuse in `reads`, in each class's `allow`, and in `never`:
 
 - **A rule that does not parse** as `Tool` or `Tool(specifier)`, such as `Bash(x` or `Bash()`.
+- **An `mcp__` rule with parentheses.** Claude Code skips it when it loads a settings file, so a `never` entry denies nothing. Write `mcp__<server>`, `mcp__<server>__*`, or `mcp__<server>__<tool>`.
 - **A `Write`, `NotebookEdit`, `MultiEdit`, `Glob`, or `Grep` rule with a path.** Such a rule never matches, so a deny spelled that way denies nothing. Write the bare tool, or the tool with `(*)`. The permissions docs say so under "`Write(path)`, `Glob(path)`, and `Grep(path)` rules don't match". Under `dontAsk`, a `Write` allow rule with a path matched nothing, and an `Edit(//<path>…)` rule covered `Write` ([the loop probes, §U9](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u9-what-dontask-denies-a-background-loop-and-the-rule-that-allows-each)).
 - **A `Read` or `Edit` rule whose path starts with exactly one slash.** By the permissions docs' §How path patterns match, one slash anchors at the settings source, not the filesystem root. Write `//` before an absolute path, as in `Edit(//Users/<you>/x/**)`, or `~/` for the home folder.
-
-- **An `mcp__` rule with parentheses.** Claude Code skips it when it loads a settings file, so a `never` entry denies nothing. Write `mcp__<server>`, `mcp__<server>__*`, or `mcp__<server>__<tool>`.
 
 In `never`, nothing else refuses, since a deny rule that matches more denies more.
 
@@ -205,7 +207,7 @@ The in-repo and scratch tests compare paths without regard to case. They also st
 #### Programs with checks of their own
 
 - **`claude`** refuses outright, since it starts a Claude session. That covers `Bash(claude respawn *)`, which a loop would need to respawn a stopped worker; #367 holds that open question.
-- **`sidekick`** must name its subcommand plainly, with no wildcard and no leading option in the next word. It refuses `sidekick worker` and `sidekick profile launch`, which start sessions, and `sidekick profile` before a wildcard. Its first two words compare lower-cased. `Bash(sidekick loop record fixer *)` passes.
+- **`sidekick`** must name its subcommand plainly, with no wildcard and no leading option in the next word. It refuses `sidekick worker` and `sidekick profile launch`, which start sessions, and `sidekick profile` before a wildcard. Its first two words compare lower-cased. `Bash(sidekick loop record fixer *)` passes, though a loop needs no such rule: `start` adds it, and the two `arm` rules, itself.
 - **`gh`** must name its subcommand next, with no leading option and no wildcard. It refuses `gh extension` and `gh alias`, which run code. So put `-R` after the subcommand, as in `Bash(gh issue list -R <owner>/<repo>)`. The subcommand compares lower-cased.
 - **`find`** and its GNU twin `gfind` refuse with `-exec`, `-execdir`, `-ok`, `-okdir`, or a wildcard in any word. Each primary runs a command, and a wildcard could spell one.
 - **`rg`** refuses with `--pre`, alone or joined to a value, or a wildcard in any word. ripgrep 14.1.1 ran a preprocessor command for `--pre <cmd>` and `--pre=<cmd>`, as measured while #363 was built.
@@ -236,7 +238,7 @@ The judge reads words, and it has limits you should plan for.
 
 ## The inherited listing
 
-`show` lists what a loop and its workers inherit beyond the mandate, since each item can widen what they may do. Both launch with the loop's profile from the loop's repo, so both inherit one set, believed from the launch shapes #364 and #367 plan. The listing blocks nothing. The operator chose listing over refusing, on 2026-11-14, to keep loops free of permission upkeep (#363).
+`show` lists what a loop and its workers inherit beyond the mandate, since each item can widen what they may do. `start` prints the same listing before each launch, relaunch, or respawn. Both launch with the loop's profile from the loop's repo, so both inherit one set. That holds for the loop by `start`'s launch, and is believed for the workers from the launch #367 plans. The listing blocks nothing. The operator chose listing over refusing, on 2026-11-14, to keep loops free of permission upkeep (#363).
 
 The listing has five sections:
 
@@ -268,13 +270,13 @@ A loop's workers are bounded by a fence, and the loop keeps its allow list. The 
 - **The fence leaves out the shared `.git`'s `config` and `hooks/`.** From a linked worktree, the sandbox may write the main repo's `.git` (§U10). A command written into its `config` or `hooks/` runs in every checkout of the repo, from the next `git` call that reads it. The loop, `land`'s push, and the operator's own main checkout would then run it unsandboxed. That is believed from git's documented behaviour, and not run.
 - **Classes are the loop's alone.** A worktree is disposable, so a worker's work inside it climbs no ladder. The `record`, `ask`, `act` ladder covers the outward actions, and only the loop takes those: labels, comments, closes, and landing. No class carries rules for workers, and `gates` are commands a worker reruns, not allow rules.
 
-The loop itself stays under `dontAsk` with its short allow list: its reads, its classes, and the fixed `sidekick loop` verbs #364 adds.
+The loop itself stays under `dontAsk` with its short allow list: its reads, its `act` classes, and the fixed `sidekick loop` verbs `start` adds.
 
 Three unknowns wait on #367's checks by hand. They are whether auto-allow approves a sandboxed call under `dontAsk`, and whether `gh` and `git` authenticate inside the sandbox. The third is whether a `denyWrite` on `.git/config` holds against `git config`.
 
 ## Managed settings
 
-A loop's `never` rules stay in its own launch settings, which #364 compiles. The operator ruled that on 2026-11-14, and ADR-0015 records it. A managed settings file stays an option, and sidekick never writes one.
+A loop's `never` rules stay in its own launch settings, which `start` compiles. The operator ruled that on 2026-11-14, and ADR-0015 records it. A managed settings file stays an option, and sidekick never writes one.
 
 What is measured, on Claude Code 2.1.322 on a personal subscription:
 
@@ -288,6 +290,204 @@ The loops' `never` rules stay out of the managed file itself for three reasons. 
 Until #394 settles it, a loop's `never` binds only while no loaded plugin's mod approves past it. sidekick's mods approve nothing (ADR-0012 Decision 2). The listing marks each plugin that ships a mod, so read those before you start a loop.
 
 When a managed file exists, the check and the listing read it as a kept layer. Its path is `/Library/Application Support/ClaudeCode/managed-settings.json`, where the operator-present probes wrote it on macOS.
+
+## Starting a loop
+
+`sidekick loop start` brings each loop it names to the state its definition asks for, and never runs two sessions for one loop.
+
+```text
+sidekick loop start (<name> | --all) [--record] [--now]
+```
+
+- **`<name>`** starts one loop, and **`--all`** every loop in the store, in name order. One loop's refusal never stops the others.
+- **`--record`** launches a trial, with every class compiled as `record`, as "The compiled settings" says.
+- **`--now`** stops or relaunches a session that is mid-tick, which `start` otherwise refuses to touch.
+
+Run it after every edit to `loop.json` or to the loop's profile, and after a reboot. It leaves a loop that already matches alone, so a second run changes nothing. Under `--all`, an empty store prints one line and exits 0. Any other argument is a usage error, `--plugin-dir` included.
+
+### What `start` does
+
+1. **It refuses a relative `CLAUDE_CONFIG_DIR`** before it reads anything. The loop's own `record` and `arm` resolve that path against the loop's worktree, so they would read another store than `start` writes. Set it to an absolute path.
+2. **It takes each loop's lock,** `start.lock` in the loop's folder, by an exclusive create. A lock whose process still runs refuses that loop, naming the pid. A lock whose process is gone is taken over, so a run cut short blocks no later one. A bad name, or a loop with no folder, refuses without a lock.
+3. **It reads the session listing once,** `claude agents --json --all`, for every loop. When the listing fails, every loop refuses, since `start` cannot tell a running loop from a stopped one without it.
+4. **It prepares each loop.** It runs the check, and refuses on any issue or on a `state.json` that does not parse. It compiles the mandate, then composes the launch as `profile launch` does from the loop's repo, and refuses where those checks refuse. It hashes the launch and chooses an action, as "The reconcile" says. A paused loop skips the check and the compose, so a pause works while other keys are wrong. Its preparation refuses only a `loop.json` that fails to parse, or a broken `state.json`.
+5. **It commits the sidekick folder,** once per run, before the first `claude` call that acts. The subject names each loop that acts, its action, and the first 12 characters of its hash, as in `loop start: fixer launch 3f2a9c1d0b7e`. A run in which no loop acts makes no commit. A failed commit warns, and the loops start anyway, since the history serves tracing.
+6. **It acts on each loop,** in name order. It first prints the loop's warnings, then the inherited listing before a launch, relaunch, or respawn. It releases each loop's lock once that loop's last write is done.
+7. **It waits for every fresh launch to arm,** all together, for up to 90 seconds, checking every 2. A launch has armed once an `armed.json` that carries its `launch` id exists. A respawn needs no wait, since its cron jobs come back with it ([the loop probes, §U11](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u11-a-one-shot-job-across-claude-stop-then-claude-respawn)).
+8. **It prints one line per loop,** as "What `start` prints" says, and exits 1 when any loop refused or failed.
+
+The warnings are the check's, the compose's, and two of `start`'s own:
+
+- **A rule that compiles into both `permissions.allow` and `permissions.deny`,** such as one an `act` class and a `record` class both name. A deny wins, so the loop never runs it.
+- **An `act` class whose rules allow `sidekick loop land`,** since a landing stays a request the operator runs (ADR-0015 Decision 5). Nothing warns under `--record`, since every class records.
+
+### The compiled settings
+
+`start` compiles `loop.json` into a settings overlay, which the launch's `--settings` layers over the profile's own `settings`. Under `dontAsk`, Claude Code denies each call that would otherwise prompt, unless a rule allows it ([the loop probes, §U9](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u9-what-dontask-denies-a-background-loop-and-the-rule-that-allows-each)). So Claude Code enforces the mandate itself.
+
+| Source | Compiles to |
+|---|---|
+| `mandate.reads` | `permissions.allow` |
+| A class in `act` | Its `allow` rules, into `permissions.allow` |
+| A class in `record` or `ask` | Its `allow` rules, into `permissions.deny` |
+| `mandate.never` | `permissions.deny` |
+| `--record` | Every class compiled as `record` |
+| Every loop | The keys in the list after this table |
+
+- **The fixed verbs,** allowed and pinned to the loop's name: `Bash(sidekick loop record <name> *)`, `Bash(sidekick loop arm <name>)`, and `Bash(sidekick loop arm <name> *)`. The bare `arm` form is there since `x *` is believed not to match a bare `x`.
+- **The self-deny:** `Edit(//<loop folder>/**)` and `Edit(//<profile folder>/**)`, each by its real path. So the loop's file tools never edit its `loop.json`, its runtime entries, or its profile. The verbs still write there, since an `Edit` rule binds the file tools, not a command's own process.
+- **`permissions.blockReadsOutsideWorkingDirectories: true`.** The permissions docs, as #364's design read them, let the built-in read-only commands run in every mode otherwise. With it, the loop reads only its worktree and its added folders, among them the profile's folder, which the launch passes as `--add-dir`. That is believed from the docs; no probe ran it.
+- **`env`:** `SIDEKICK_LOOP=<name>`, which `arm` checks, and `DISABLE_AUTOUPDATER=1`, as "The launch" says. `SIDEKICK_MAIN` is set empty, which sidekick reads as absent, so a daemon started from a main session's shell names no main.
+- **`crossSessionInbound: "accept"`.** `dontAsk` counts as prompting, so without it Claude Code holds a message from a sender that bypasses permissions (docs, cross-session messaging).
+
+The profile's own `permissions.allow` stays, since the layers' lists concatenate, and the inherited listing names those rules. Classes are the loop's alone, so the overlay holds no rule for workers.
+
+### The launch
+
+`start` runs `claude` from the loop's `repo`, with the composed settings and these arguments:
+
+- `--permission-mode dontAsk`;
+- `--worktree loop-<name>`, so the loop works in `.claude/worktrees/loop-<name>` of its repo;
+- `--bg` and `-n loop-<name>`;
+- the prompt `/sidekick:loop-arm <name>`, which arms the loop, as "Arming a loop" says.
+
+`start` passes no `--plugin-dir`. A loop that needs a development sidekick names that plugin folder in its profile's `pluginDirs`. The choice then holds across `start --all` and a reboot, and the hash covers it.
+
+**Trust.** In a repo Claude Code does not trust, `claude --bg` exits "Workspace not trusted" before the session starts ([the loop probes, §U19](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u19-finish---into-originmaster-after-a-loops-landing)). `start` then fails that loop and names the fix: run `claude` in the repo once and accept the trust prompt, then run `start` again. It removes the launch's `state.json` and keeps the store's commit. `start` never reads or writes `~/.claude.json`.
+
+**Updates.** A loop runs with `DISABLE_AUTOUPDATER=1`, as every session sidekick starts unattended does. So it keeps the Claude Code build and the plugins it launched with. By the CLI reference, `claude respawn` restarts a session "to pick up an updated Claude Code binary", and keeps its launch flags. A respawned session kept its cron jobs and their ids in the loop probes (§U11). So to update a loop's Claude Code, run `claude respawn <job>` between ticks. Whether a respawn loads newer plugins is not measured. "Pausing, stopping, and updating a loop" says how to launch a loop fresh, which loads both.
+
+### `state.json` and `armed.json`
+
+One writer writes each file, whole, through a temporary file and a rename.
+
+`state.json`, written by `start` alone:
+
+| Field | What it holds |
+|---|---|
+| `v` | `1` |
+| `launch` | A fresh id for each fresh launch or relaunch. An `armed.json` counts only while it carries the same one |
+| `job` | The background job id `claude --bg` printed; `null` until the launch returns, or when it printed none |
+| `session` | `loop-<name>` |
+| `launchedAt` | When this launch started |
+| `startedAt` | When the last launch or respawn started, which the reboot test reads |
+| `hash` | The launch hash |
+| `record` | Whether `--record` forced the launch |
+| `states` | Each class's state as launched: `record` for every class under `--record` |
+| `schedule`, `tick` | As launched, which `arm` and `record` read |
+
+`start` writes it before `claude --bg`, with `job` set to `null`, since the launch prompt's arm reads it at once. Once `claude` returns, `start` writes it again with the job id. A launch that exits non-zero removes the file, so no `state.json` names a launch that never ran. A launch that timed out may have started, so its file stays, with `job` still `null`. A respawn moves only `startedAt`.
+
+`armed.json`, written by `arm --armed` alone:
+
+| Field | What it holds |
+|---|---|
+| `v` | `1` |
+| `launch` | The launch id from `state.json` |
+| `at` | When `--armed` ran |
+| `tick`, `renewal` | The two cron job ids |
+| `renewalAt` | When the renewal fires |
+
+An `armed.json` whose `launch` is not `state.json`'s is stale, and every reader treats it as absent. A loop's cron jobs count as alive while its current `armed.json` is under six days old and its `renewalAt` is still ahead.
+
+### The launch hash
+
+A definition has changed when the launch hash differs from the `hash` in `state.json`. The hash is SHA-256, in hex, over five inputs:
+
+1. `loop.json`'s bytes, so any edit relaunches, `schedule`, `tick`, `repo`, and `paused` included;
+2. the `--record` flag, since a trial of a loop whose classes all record changes no argument;
+3. the whole argument list `start` passes to `claude`, which catches a compiler change in a newer sidekick;
+4. the profile's folder;
+5. each folder in the profile's `pluginDirs`.
+
+A folder hashes as its sorted relative paths and their contents. It skips `.git`, `node_modules`, and `.DS_Store` at any depth, and links. It also skips `.claude-plugin/types/` at the folder's top, which Claude Code 2.1.322 was seen to rewrite a second after it loaded a `--plugin-dir` plugin. A subfolder that cannot be read hashes as one marker of its own, so the rest of the folder still counts.
+
+### The reconcile
+
+`start` finds a loop's session in the listing. Its candidates are the row for `state.json`'s `job`, and every row named `loop-<name>`. Two or more candidates refuse, listing each, since `start` cannot tell which is the loop. A paused loop whose candidates are all stopped is left off instead. An interactive session by that name refuses too, and so does a row whose `pid` is not a number.
+
+A row with a `pid` is live, and one without is stopped. A live row is between ticks when its `status` reads `idle` ([the loop probes, §U12](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u12-what-tells-a-loop-mid-tick-from-one-between-ticks)). Any other status, or none, counts as mid-tick.
+
+A row by name is the launch's own only while `state.json`'s `job` is `null`. Once `job` is set and gone from the listing, a row by name is another launch, and counts as changed. A respawned job kept its id in the loop probes (§U11), so another id means another launch.
+
+The pause rows come first, so a pause wins whatever else holds:
+
+| Session | Definition | Other facts | Action |
+|---|---|---|---|
+| None, or stopped | Paused | | Leave it off |
+| Live, between ticks | Paused | | `claude stop`, keeping the row and `state.json` |
+| Live, mid-tick | Paused | | Refuse, naming `--now`; with `--now`, `claude stop` |
+| None | Not paused | | Launch fresh |
+| Live | Unchanged | | Leave it |
+| Live, between ticks | Changed, or no `state.json` | | Relaunch: `claude stop`, a wait for its process to exit, `claude rm`, then launch fresh |
+| Live, mid-tick | Changed, or no `state.json` | | Refuse, naming `--now`; with `--now`, relaunch |
+| Stopped | Unchanged | Jobs alive, and started since the boot | `claude respawn`, then set `startedAt` |
+| Stopped | Unchanged | Jobs not alive, or a boot since `startedAt` | `claude rm`, then launch fresh |
+| Stopped | Changed, or no `state.json` | | `claude rm`, then launch fresh |
+
+- **A boot since `startedAt` launches fresh,** until the reboot probe, U1 in #364, shows that a respawn keeps a loop's cron jobs across one. Sleep leaves the boot time alone, so a loop that lost its process to sleep is respawned.
+- **A live loop whose jobs are not alive is left, with a warning,** since a relaunch could race a fresh launch's arm. The warning names the fix: `claude stop <job>`, then `start <name>`, which launches it fresh.
+- **A relaunch waits up to 15 seconds for the stopped process to exit** before `claude rm`. `claude rm` kept a job stopped a moment before, as measured on Claude Code 2.1.300 on 2026-10-15.
+- **`start` judges `claude rm` by what it prints,** since its exit code does not say whether it removed the job. It never runs the `--discard-unpushed` line `rm` may offer.
+
+### What `start` prints
+
+Each loop ends with one summary line on stdout, after the wait for the arm:
+
+| Line | When |
+|---|---|
+| `<name>: left <job> (unchanged), armed` | Its session runs and matches its definition |
+| `<name>: launched <job> (new), armed` | A fresh launch, where no session was |
+| `<name>: launched <job> in place of <old> (<why>), armed` | A fresh launch after `claude rm` of a stopped session |
+| `<name>: relaunched <job> in place of <old> (<why>), armed` | A stop, a `claude rm`, and a fresh launch |
+| `<name>: respawned <job> (stopped, cron jobs alive), armed` | A `claude respawn` |
+| `<name>: paused` | A paused loop that ends off, stopped by this run or already off |
+| `<name>: refused` | `start` changed nothing for this loop |
+| `<name>: failed` | A `claude` call or a `state.json` write went wrong partway |
+
+A line ends `not armed` in place of `armed` when no current `armed.json` shows the loop's jobs alive. A launch whose `claude --bg` printed no job id reads `launched with no job id`. `<why>` is one of `new`, `definition changed`, `state.json names another job`, `no state.json records it`, `cron jobs gone`, and `machine rebooted since it started`. The lines that explain a refusal or a failure come first, on stderr, each led by `<name>: `.
+
+**`refused` and `failed` differ in what may stand.** A loop is `refused` when `start` changed nothing for it: no call acted on its session, and nothing was written for it. The check, the compose, a held lock, a failed listing, or the reconcile refused it. A loop is `failed` when a step that ran went wrong, so part of the action may stand:
+
+- a `claude stop` that failed, in a pause or a relaunch, so the session may still run;
+- a stopped process that still ran after 15 seconds, before any `rm`;
+- a `claude rm` that failed, timed out, or did not say it removed the job, so `start` launched nothing. Read what `rm` printed and settle the job by hand, since `start` never discards a job's work;
+- a `claude respawn` that failed;
+- a `state.json` write that failed before the launch, so nothing launched;
+- a `claude --bg` that failed or did not return in time, the trust refusal included.
+
+Both set exit 1. A paused loop that ends off never does. A paused loop that `start` could not stop does, since its session may still act: a mid-tick row without `--now` refuses, and a failed stop fails. After a `claude --bg` that failed, the next `start` launches the loop fresh. After one that timed out, it finds the session by its name, if one started.
+
+### How long `start` runs
+
+`start` can outlast a session's `Bash` call, which ends at 120 seconds unless it sets a longer timeout. The listing takes up to 30 seconds. A relaunch can take about 265 seconds: 10 for `claude stop`, 15 for the process to exit, 180 for `claude rm`, and 60 for `claude --bg`. The wait for the arm adds up to 90, and each loop's checks run `claude` too. So run `start` from a terminal, or in a session with a long `Bash` timeout. A run cut short is recoverable. The next `start` takes over its lock, and finds a session launched with no job id by its name.
+
+### Pausing, stopping, and updating a loop
+
+- **To pause a loop,** add `"paused": true` to its `loop.json`, then run `start <name>`. It stops a live session between ticks, and `--now` stops a mid-tick one at once. The row and `state.json` stay. The loop then stays off across `start --all` and a reboot.
+- **To resume it,** remove the key and run `start`. The edit changes the hash, so `start` removes the old row and launches fresh.
+- **To stop a loop at once,** run `claude stop <job>`. A later `start` would start it again, so add the pause too when it should stay off.
+- **To change a loop,** edit `loop.json`, its profile, or a folder in its `pluginDirs`, then run `start <name>`. It relaunches the loop between ticks, or refuses a mid-tick one, naming `--now`.
+- **To try a change first,** run `start <name> --record`, which relaunches the loop with every class in `record`. A plain `start` afterwards brings the acting loop back, since the record flag is in the hash.
+- **To update a loop's Claude Code,** run `claude respawn <job>` between ticks, as "The launch" says. To load newly installed plugins for certain, run `claude stop <job>` and `claude rm <job>`, then `start <name>`, which launches the loop fresh.
+
+## Arming a loop
+
+Only the model can make a cron job, so a loop arms itself. Its launch prompt, `/sidekick:loop-arm <name>`, runs the `loop-arm` skill. The skill leaves the session holding exactly one tick job and one renewal job, both made by that run. It reports them with `sidekick loop arm <name> --armed`. A recurring job expires seven days after it is made. So the renewal, a one-shot job six days out, runs the skill again, which remakes both jobs and restarts the tick job's seven days.
+
+```text
+sidekick loop arm <name>
+sidekick loop arm <name> --armed --tick <id> --renewal <id>
+```
+
+- **The plain form writes nothing.** It prints what the skill makes, one fact per line, each led by a label. They are the tick job's schedule and prompt from `state.json`, and the renewal's cron, local time, and prompt. Then come the ids in a current `armed.json`, which the skill deletes, and last the `--armed` command, with the two ids to fill in.
+- **`--armed` writes `armed.json`,** with the current launch, the time now, the two ids, and the renewal's time, computed as the plain form computes it. It prints `armed <name>: tick <id>, renewal <id>`, then the renewal's local time. Each id is 1 to 64 letters, digits, `-`, or `_`.
+
+The renewal fires six days from now, rounded up to the next minute, on a cron that names that local minute, hour, day, and month. `SIDEKICK_LOOP_RENEWAL_MINUTES`, a positive whole number of minutes, replaces the six days, so a hand test can fire a renewal early. Set it in the profile's `settings.env`. The reconcile reads `renewalAt` from `armed.json`, so it follows the setting, while the six-day test on `at` stays six days.
+
+Both forms refuse a bad name, and a `SIDEKICK_LOOP` that names another loop, so one loop cannot arm another. An unset or empty `SIDEKICK_LOOP` passes. They refuse a `SIDEKICK_LOOP_RENEWAL_MINUTES` that is not a positive whole number, naming it. They also refuse a missing or broken `state.json`, so `arm` arms only a loop `start` launched.
+
+`CronList` shows each job's id and its prompt, cut to the first 79 characters, and no creation time ([the loop probes, §U5](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u5-what-cronlist-shows-of-a-job)). So the skill finds its old jobs by the ids `arm` prints, or by their two prompts, and `armed.json` is the only clock for the renewal. It deletes the old jobs before it makes new ones, since a loop with two tick jobs ticks twice. When `arm` refuses, the skill stops, says why, and makes no job. It declares no `allowed-tools`: under `dontAsk`, `CronCreate`, `CronList`, and `CronDelete` ran with no rule (§U9), and the fixed verbs allow `arm`. Its frontmatter keeps the model from invoking it, so only a loop's launch prompt, its renewal, or you start it.
 
 ## The record
 
@@ -305,9 +505,9 @@ A loop's record is one JSON line per entry, in `records/<YYYY-MM-DD>.jsonl` in i
 | `failed` | `sidekick loop reap` and `land` (#367, #377) | `unit`, `reason` |
 | `discarded` | `sidekick loop discard` and `reap` (#367) | `unit`, `reason` |
 
-The bounds: `summary` and `reason` run 1 to 1,000 characters, and `command` 1 to 4,000. `unit` is 1 to 64 of letters, digits, `.`, `_`, and `-`. `commit` is a hex object id of 7 to 64 characters, so a SHA-256 id fits. `hash` stays absent until #364 writes `state.json`.
+The bounds: `summary` and `reason` run 1 to 1,000 characters, and `command` 1 to 4,000. `unit` is 1 to 64 of letters, digits, `.`, `_`, and `-`. `commit` is a hex object id of 7 to 64 characters, so a SHA-256 id fits. `hash` is the launch hash from `state.json`, which `record` stamps on each line the model writes once a `state.json` exists. A loop that `start` never launched writes lines without it.
 
-`summary`, `command`, `reason`, and `class` hold no control character: nothing from U+0000 to U+001F, and no U+007F. A terminal reads those as commands, so a line `show` prints could otherwise move the cursor and hide the lines before it.
+`summary`, `command`, `reason`, and `class` hold no control character. That is nothing from U+0000 to U+001F, no U+007F, and nothing from U+0080 to U+009F, the C1 controls. A terminal reads those as commands, so a line `show` prints could otherwise move the cursor and hide the lines before it.
 
 The caps count the four verb kinds, so the model never writes them, and `record` refuses each with the name of its writer. Every write checks its line against the schema first and refuses one that fails, so a line a verb writes always reads back. A write after a torn last line starts a new line, so only the torn line is lost.
 
@@ -322,22 +522,27 @@ sidekick loop record <name> --kind <would|request|did|denied|note> --summary <te
 
 It refuses:
 
-- a loop name that breaks the name rule, and a `loop.json` that fails to parse;
+- a loop name that breaks the name rule;
+- a `state.json` that fails to parse, and, when the loop has none, a `loop.json` that fails to parse;
 - any kind outside the five, naming the writer of each verb kind;
 - `would` and `did` without `--class`, and every kind but `note` without `--command`;
 - `note` with `--class` or `--command`, since its line holds a summary alone;
 - a value past its bound, outside its form, or holding a control character, naming the flag;
-- a `--class` that `loop.json` does not name;
-- `did` for a class whose state is not `act`, with the advice to record `would`, or to ask with `request`;
+- a `--class` the launch did not have, or, when no `state.json` exists, one `loop.json` does not name;
+- `did` for a class whose state was not `act`, with the advice to record `would`, or to ask with `request`;
 - text in `--summary`, `--command`, `--class`, or `--unit` that the key check flags, so keys stay out of the record and off the desk. The refusal names the flag and the check, never the text.
 
-`record` checks `loop.json` as it is now, not as the loop was started. So a class removed before the next `start` refuses records for that class until then, and the refusal names the cause. `record` runs no git and no `claude`, and skips the rest of the check. A loop whose profile goes bad mid-run therefore keeps its record, and each call stays cheap.
+Once a `state.json` exists, `record` judges by the launch and reads `state.json` alone. It stamps the launch's `hash`, and checks `--class` and the `did` rule against the launch's `states`. So a trial under `--record` records no `did`, and an edit to `loop.json` changes nothing until the next `start`. A class the launch lacked refuses until the loop restarts, and the refusal names the cause.
+
+Without a `state.json`, `record` checks `loop.json` as it is now. So a class removed from it refuses records for that class, and the refusal names the cause.
+
+`record` runs no git and no `claude`, and skips the rest of the check. A loop whose profile goes bad mid-run therefore keeps its record, and each call stays cheap.
 
 On success it prints one line: `recorded <kind>`, or for a request, `new request` or `repeat request`.
 
 ### When a request is new
 
-A request is new when no request with the same `class`, `command`, and `unit` sits in the record since the schedule's second-most-recent fire at or before now. An absent field matches only an absent field, and the window ends now. A tick runs at most half a period late, so the window covers the previous tick's lines and the current tick's own. `record` judges a request before it appends it, so the line never counts itself. A schedule without two fires in the past 366 days looks back 366 days instead.
+A request is new when no request with the same `class`, `command`, and `unit` sits in the record since the schedule's second-most-recent fire at or before now. The schedule is the launch's, from `state.json`, or `loop.json`'s when no `state.json` exists. An absent field matches only an absent field, and the window ends now. A tick runs at most half a period late, so the window covers the previous tick's lines and the current tick's own. `record` judges a request before it appends it, so the line never counts itself. A schedule without two fires in the past 366 days looks back 366 days instead.
 
 ## The verbs
 
@@ -345,9 +550,13 @@ A request is new when no request with the same `class`, `command`, and `unit` si
 sidekick loop list                                # every loop, with its repo, profile, schedule, classes, and verdict
 sidekick loop show <name> [--since <YYYY-MM-DD>]  # the definition, the check, the listing, and the records
 sidekick loop record <name> --kind <kind> --summary <text> [--class <class>] [--command <text>] [--unit <id>]
+sidekick loop start (<name> | --all) [--record] [--now]  # bring each loop to its definition
+sidekick loop arm <name> [--armed --tick <id> --renewal <id>]  # what a running loop's cron jobs are, and report them
 ```
 
-- **`list`** prints one line per loop: its name, `repo`, `profile`, `schedule`, each class with its state, then `ok` or `refused: <n> issues`. It runs the check without the inherited listing, so it runs git and no `claude`. An empty store prints one line saying so. `list` exits 1 when any loop is refused.
+- **`list`** prints one line per loop: its name, `repo`, `profile`, `schedule`, each class with its state, then `ok` or `refused: <n> issues`, and `paused` for a paused loop. It runs the check without the inherited listing, so it runs git and no `claude`. An empty store prints one line saying so. `list` exits 1 when any loop that is not paused is refused.
 - **`show`** prints the definition, the issues, the warnings, the inherited listing, then the records. A refused loop prints its issues first, and the rest still shows. A definition value the key check flags prints as `(withheld: <ids>)`, so `show` never prints the key. The records are those of the last 24 hours, or those since local midnight of `--since`. Each prints as one line: local time, kind, class, command or summary, and unit. After them come the count of skipped lines and each day file that could not be read. A line break in a definition value prints as a space. `show` exits 1 when the loop is refused.
 - **`record`** appends one line, as "`sidekick loop record`" says.
+- **`start`** launches, respawns, relaunches, pauses, or leaves each loop, as "Starting a loop" says.
+- **`arm`** prints a running loop's cron jobs, and records them with `--armed`, as "Arming a loop" says.
 - **A usage error** prints the usage and exits 1, as the `profile` family's do.

@@ -22,7 +22,7 @@ What each skill in the loop does when it runs. For each: what it reads, what it 
 | 7 Close the milestone | `sk-milestone` | The model or you, at the end of a milestone |
 | A pull request exists | `code-review:code-review` | You or the model, on a PR |
 
-`sidekick pm` is not a skill. It is the read side every sidekick skill calls, and `USAGE.md` §The commands says what each of its verbs prints. The CLI's other verbs serve the control centre. `sidekick profile` makes and launches profiles, and `sidekick worker` dispatches and finishes a worker. `sidekick loop` checks a loop's definition, and lists, shows, and records loops. `sidekick worktree` lists, moves, and removes worktrees. `sidekick desk` and `sidekick session` give the mods their snapshots. `sidekick memory link` moves a repo's auto-memory into the memory store; `README.md` §Memory covers it.
+`sidekick pm` is not a skill. It is the read side every sidekick skill calls, and `USAGE.md` §The commands says what each of its verbs prints. The CLI's other verbs serve the control centre. `sidekick profile` makes and launches profiles, and `sidekick worker` dispatches and finishes a worker. `sidekick loop` checks a loop's definition, and lists, shows, and records loops. Its `start` launches each loop and keeps it running, and its `arm` tells a running loop which cron jobs to make, then records them. `sidekick worktree` lists, moves, and removes worktrees. `sidekick desk` and `sidekick session` give the mods their snapshots. `sidekick memory link` moves a repo's auto-memory into the memory store; `README.md` §Memory covers it.
 
 ## sidekick's skills
 
@@ -208,6 +208,10 @@ Fires in a main session when you ask to start, reopen, finish, or remove a workt
 - **Done** lands the work by where the target lives: a push, a fast-forward `git push .`, or a fast-forward in the checkout that holds the target. Then it runs `sidekick worktree remove <name> --into <target>` from the main checkout. A pull request's worktree stays until it merges. When `ExitWorktree` finds no worktree session to leave, the session hands the rest of done to a session in the main checkout.
 
 In a dispatched worker, the brief answers it instead. Pauses for the target when neither you nor the repo's landing line names one, and for uncommitted work. It also pauses for a session in the main checkout before landing there, and for each refusal from `move` or `remove`. Ignored files that `remove` would lose, and any `--discard`, wait for your word. An unchanged support worktree goes without a pause.
+
+### `loop-arm`
+
+Fires only inside a loop. `sidekick loop start` launches each loop with `/sidekick:loop-arm <name>` as its prompt, and the skill's renewal cron job runs it again six days later. The model never invokes it on its own. It runs `sidekick loop arm <name>`, which prints the tick job's schedule and prompt from the loop's `state.json`. It also prints the renewal's cron and prompt, and the ids of the jobs the last arm made. The skill deletes those old jobs, found by id or by prompt. Then it makes one recurring tick job and one one-shot renewal with the cron tools. It reports both ids with `sidekick loop arm <name> --armed`, which writes `armed.json`, so `start` can tell the loop's jobs are alive. Never pauses, since it runs unattended under `dontAsk`. When `arm` refuses, it stops, says why in its reply, and makes no job.
 
 ### `sidekick`
 
