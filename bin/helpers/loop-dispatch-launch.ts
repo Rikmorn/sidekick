@@ -21,9 +21,9 @@ type Out = (line: string) => void;
 type Io = { out: Out; err: Out };
 
 // The exit of a refusal, and of a launch that refused without a code of its own.
-const REFUSED = 1;
+export const REFUSED = 1;
 
-const refuse = (err: Out, issues: string[]): number => {
+export const refuse = (err: Out, issues: string[]): number => {
   for (const issue of issues) err(issue);
   return REFUSED;
 };
@@ -128,10 +128,15 @@ function countTimedOut(d: Dispatch, a: Attempt, code: number, io: Io): number {
   try {
     recordStart(d, a, null);
   } catch (e) {
+    const leftover = removeAttempt(a.written);
+    const folder =
+      leftover.length === 0
+        ? 'its folder is removed'
+        : 'its folder could not be removed, as the lines above say';
     refuse(io.err, [
       `${lead}, and recording the attempt failed: ${messageOf(e)}`,
-      ...removeAttempt(a.written),
-      `The attempt does not count, and its folder is removed: if the worker started, find it with claude agents --json --all, then stop it with claude stop <id>.`,
+      ...leftover,
+      `The attempt does not count, and ${folder}: if the worker started, find it with claude agents --json --all, then stop it with claude stop <id>.`,
     ]);
     return failedCode(code);
   }

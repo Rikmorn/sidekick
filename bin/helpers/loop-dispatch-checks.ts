@@ -196,6 +196,14 @@ export function launchProfileIssues(
   penv: ProfileEnv,
   profile: Profile,
 ): string[] {
+  const { workTree } = penv;
+  if (workTree.kind !== 'inside') {
+    const why =
+      workTree.kind === 'failed' ? workTree.issue : 'git reports no work tree';
+    return [
+      `cannot tell whether ${penv.cwd} holds a profile store of its own, so the unit launch's profile lookup cannot be judged: ${why}`,
+    ];
+  }
   const lines: string[] = [];
   const loaded = loadForLaunch(profile.name, penv, (line) => lines.push(line));
   if (loaded === undefined) return lines;

@@ -69,7 +69,7 @@ let launchReply: (args: string[], cwd: string) => ClaudeResult;
 let issueState: string;
 let onLaunch: () => void;
 let gitCalls: { args: string[]; cwd: string; opts: RunOptions | undefined }[];
-let gitReply: (args: string[]) => RunResult | undefined;
+let gitReply: (args: string[], cwd: string) => RunResult | undefined;
 let stops: string[][];
 
 const result = (over: Partial<ClaudeResult> = {}): ClaudeResult => ({
@@ -170,7 +170,7 @@ const runGit: Runner = (cmd, args, cwd, opts) => {
   if (args.join(' ') === 'remote get-url origin') {
     return { code: 0, stdout: `${ORIGIN_URL}\n`, stderr: '' };
   }
-  return gitReply(args) ?? execRunner(cmd, args, cwd, opts);
+  return gitReply(args, cwd) ?? execRunner(cmd, args, cwd, opts);
 };
 
 const validLoop = () => ({
@@ -820,6 +820,29 @@ describe('loop dispatch dispatches', () => {
     expect(snapshot()).toEqual(before);
   });
 
+  test('a timed-out launch whose attempt can be neither recorded nor removed says what stays, and never claims the folder is removed', () => {
+    const records = path.join(loopDir(), 'records');
+    fs.mkdirSync(records);
+    const dir = attemptOf();
+    launchReply = () => {
+      fs.chmodSync(dir, 0o555);
+      return result({ code: 124, timedOut: true });
+    };
+    fs.chmodSync(records, 0o555);
+    try {
+      const r = dispatch();
+      expect(r.code).toBe(124);
+      const text = r.err.join('\n');
+      expect(text).toContain('recording the attempt failed');
+      expect(text).toContain('cannot remove');
+      expect(text).not.toContain('its folder is removed');
+      expect(text).toContain('claude agents --json --all');
+    } finally {
+      fs.chmodSync(records, 0o755);
+      fs.chmodSync(dir, 0o755);
+    }
+  });
+
   test('a start whose dispatched line cannot be written stops the worker as a stray, and removes the attempt folder', () => {
     const records = path.join(loopDir(), 'records');
     fs.mkdirSync(records);
@@ -991,6 +1014,22 @@ describe('loop dispatch, further', () => {
       `git symbolic-ref refs/remotes/origin/HEAD failed in ${loopTree}: git did not finish within 10 s`,
     );
     expect(r.err.join('\n')).not.toContain('is not set');
+  });
+
+  test('a work tree that cannot be read refuses the profile check instead of passing it', () => {
+    gitReply = (args, cwd) =>
+      args.join(' ').endsWith('rev-parse --show-toplevel') && cwd === loopTree
+        ? { code: 124, stdout: '', stderr: 'git did not finish within 10 s' }
+        : undefined;
+    const before = snapshot();
+    const r = dispatch();
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain(
+      `cannot tell whether ${loopTree} holds a profile store of its own`,
+    );
+    expect(r.err.join('\n')).toContain('git did not finish within 10 s');
+    expect(launches).toEqual([]);
+    expect(snapshot()).toEqual(before);
   });
 
   test("independent reasons are named together: the skill, the issue, and the loop's worktree", () => {

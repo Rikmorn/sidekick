@@ -23,7 +23,12 @@ import {
   loadLoop,
   skillIssues,
 } from './loop-dispatch-checks.js';
-import { launchAttempt, launchEnvOf } from './loop-dispatch-launch.js';
+import {
+  launchAttempt,
+  launchEnvOf,
+  REFUSED,
+  refuse,
+} from './loop-dispatch-launch.js';
 import {
   checkLoopTree,
   type LoopTree,
@@ -73,15 +78,9 @@ type Io = { out: Out; err: Out };
 const NAME_PREFIX_MAX = 33;
 const HEX_BYTES = 3;
 const ISSUE_NUMBER = /^[1-9][0-9]*$/;
-const REFUSED = 1;
 
 const usage = (err: Out): number => {
   err(`usage: ${DISPATCH_USAGE_LINE}`);
-  return REFUSED;
-};
-
-const refuse = (err: Out, issues: string[]): number => {
-  for (const issue of issues) err(issue);
   return REFUSED;
 };
 

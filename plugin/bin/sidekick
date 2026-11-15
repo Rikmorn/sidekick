@@ -13503,6 +13503,13 @@ function skillIssues(profile, skill) {
   ];
 }
 function launchProfileIssues(penv, profile) {
+  const { workTree } = penv;
+  if (workTree.kind !== "inside") {
+    const why = workTree.kind === "failed" ? workTree.issue : "git reports no work tree";
+    return [
+      `cannot tell whether ${penv.cwd} holds a profile store of its own, so the unit launch's profile lookup cannot be judged: ${why}`
+    ];
+  }
   const lines = [];
   const loaded = loadForLaunch(profile.name, penv, (line) => lines.push(line));
   if (loaded === undefined)
@@ -15088,10 +15095,12 @@ function countTimedOut(d, a, code, io) {
   try {
     recordStart(d, a, null);
   } catch (e) {
+    const leftover = removeAttempt(a.written);
+    const folder = leftover.length === 0 ? "its folder is removed" : "its folder could not be removed, as the lines above say";
     refuse11(io.err, [
       `${lead}, and recording the attempt failed: ${messageOf10(e)}`,
-      ...removeAttempt(a.written),
-      `The attempt does not count, and its folder is removed: if the worker started, find it with claude agents --json --all, then stop it with claude stop <id>.`
+      ...leftover,
+      `The attempt does not count, and ${folder}: if the worker started, find it with claude agents --json --all, then stop it with claude stop <id>.`
     ]);
     return failedCode(code);
   }
@@ -15275,15 +15284,9 @@ var DISPATCH_USAGE_LINE = "sidekick loop dispatch <name> --issue <n> --skill <pl
 var NAME_PREFIX_MAX = 33;
 var HEX_BYTES = 3;
 var ISSUE_NUMBER = /^[1-9][0-9]*$/;
-var REFUSED4 = 1;
 var usage3 = (err) => {
   err(`usage: ${DISPATCH_USAGE_LINE}`);
-  return REFUSED4;
-};
-var refuse12 = (err, issues) => {
-  for (const issue2 of issues)
-    err(issue2);
-  return REFUSED4;
+  return REFUSED3;
 };
 var issueIssues = (text) => ISSUE_NUMBER.test(text) && Number.isSafeInteger(Number(text)) ? [] : [
   `--issue ${text}: must be an issue number, a whole number of at least 1`
@@ -15327,14 +15330,14 @@ function loopDispatch(rest2, lenv, out, err, {
   if (call === undefined)
     return usage3(err);
   if ("issues" in call)
-    return refuse12(err, call.issues);
+    return refuse11(err, call.issues);
   const env = envIssues(lenv.env, call.name, "dispatch");
   if (env.length > 0)
-    return refuse12(err, env);
+    return refuse11(err, env);
   const runGit = timed(lenv.runGit, gitTimeoutMs);
   const loop = loadLoop(call.name, { ...lenv, runGit });
   if ("issues" in loop)
-    return refuse12(err, loop.issues);
+    return refuse11(err, loop.issues);
   const lock = takeLock(loop.dir, {
     pid: lenv.pid,
     now: lenv.now(),
@@ -15342,7 +15345,7 @@ function loopDispatch(rest2, lenv, out, err, {
     isAlive: lenv.isAlive
   }, UNITS_LOCK);
   if (lock.kind === "busy")
-    return refuse12(err, [lock.issue]);
+    return refuse11(err, [lock.issue]);
   const opts = { draw, draws, gitTimeoutMs, syncTimeoutMs };
   try {
     return underLock({ call, loop, lenv, runGit, opts }, { out, err });
@@ -15359,21 +15362,21 @@ function underLock(d, io) {
     lenv: d.lenv
   });
   if ("issues" in reaped)
-    return refuse12(io.err, reaped.issues);
+    return refuse11(io.err, reaped.issues);
   for (const line of reaped.lines)
     io.out(line);
   const counted2 = ledgerIssues(d.loop, d.call, d.lenv.now());
   if (counted2.length > 0)
-    return refuse12(io.err, counted2);
+    return refuse11(io.err, counted2);
   const ready = prepare(d);
   if ("issues" in ready)
-    return refuse12(io.err, ready.issues);
+    return refuse11(io.err, ready.issues);
   const placed = place(d, ready.tree);
   if ("issues" in placed)
-    return refuse12(io.err, placed.issues);
+    return refuse11(io.err, placed.issues);
   const named2 = drawName(d);
   if ("issues" in named2)
-    return refuse12(io.err, named2.issues);
+    return refuse11(io.err, named2.issues);
   const { worker } = named2;
   const written = writeAttempt({
     loopDir: d.loop.dir,
@@ -15390,7 +15393,7 @@ function underLock(d, io) {
     dispatchedAt: d.lenv.now()
   });
   if ("issues" in written)
-    return refuse12(io.err, written.issues);
+    return refuse11(io.err, written.issues);
   return launchAttempt(d, { worker, tree: ready.tree, written }, io);
 }
 function prepare(d) {
@@ -15450,7 +15453,7 @@ import * as path71 from "node:path";
 var START_USAGE_LINE = "sidekick loop start (<name> | --all) [--record] [--now]";
 var HASH_SHOWN = 12;
 var MS_PER_S = 1000;
-var REFUSED5 = { kind: "refused" };
+var REFUSED4 = { kind: "refused" };
 var NO_LISTING = "start cannot tell a running loop from a stopped one without the listing, so it changed no loop.";
 var STARTS_PROCESS = new Set([
   "launch",
@@ -15492,7 +15495,7 @@ function refuseUnheld(seat, flags, lenv, err) {
   const tell = prefixed(err, seat.name);
   if (seat.kind === "busy") {
     tell(seat.issue);
-    return REFUSED5;
+    return REFUSED4;
   }
   const prepared = prepareLoop(seat.name, flags, { lenv, rows: [], err: tell });
   const lines = prepared.kind === "refused" ? prepared.lines : [
@@ -15500,7 +15503,7 @@ function refuseUnheld(seat, flags, lenv, err) {
   ];
   for (const line of lines)
     tell(line);
-  return REFUSED5;
+  return REFUSED4;
 }
 function commitEntries(p) {
   switch (p.kind) {
@@ -15541,7 +15544,7 @@ function actOnHeld(held, flags, lenv, io) {
   if ("issues" in listed) {
     for (const line of [...listed.issues, NO_LISTING])
       io.err(line);
-    return held.map((seat) => ({ name: seat.name, outcome: REFUSED5 }));
+    return held.map((seat) => ({ name: seat.name, outcome: REFUSED4 }));
   }
   const rows = listed.jobs;
   const prepared = held.map((seat) => ({
@@ -15662,7 +15665,7 @@ var usage4 = (err) => {
   err(`usage: ${LOOP_USAGE_LINE}`);
   return 1;
 };
-var refuse13 = (err, issues) => {
+var refuse12 = (err, issues) => {
   for (const issue2 of issues)
     err(issue2);
   return 1;
@@ -15840,7 +15843,7 @@ var show2 = (rest2, lenv, out, err) => {
   const [name] = parsed.positionals;
   const refusal2 = nameRefusal(name);
   if (refusal2 !== undefined)
-    return refuse13(err, [refusal2]);
+    return refuse12(err, [refusal2]);
   const check2 = checkLoop(name, depsOf2(lenv));
   const listing = listingOf(check2, lenv);
   const definition = definitionLines(path72.join(check2.dir, LOOP_FILE), check2.manifest);
@@ -16021,21 +16024,21 @@ var record2 = (rest2, lenv, out, err) => {
     return usage4(err);
   const refusals = argRefusals(call);
   if (refusals.length > 0)
-    return refuse13(err, refusals);
+    return refuse12(err, refusals);
   const dir = loopDirOf(lenv, call.name);
   const basis = basisOf(dir);
   if (!basis.ok)
-    return refuse13(err, basis.issues);
+    return refuse12(err, basis.issues);
   const built = lineOf2(call.args, lenv.now(), basis.hash);
   if ("issues" in built)
-    return refuse13(err, built.issues);
+    return refuse12(err, built.issues);
   const { line } = built;
   const mandate = mandateRefusals(basis.mandate, line);
   if (mandate.length > 0)
-    return refuse13(err, mandate);
+    return refuse12(err, mandate);
   const cron = parseCron(basis.schedule);
   if (!cron.ok) {
-    return refuse13(err, [`${basis.mandate.file}: schedule: ${cron.issue}`]);
+    return refuse12(err, [`${basis.mandate.file}: schedule: ${cron.issue}`]);
   }
   return appendLocked({ name: call.name, dir, line, cron: cron.cron }, lenv, {
     out,
@@ -16045,7 +16048,7 @@ var record2 = (rest2, lenv, out, err) => {
 function appendLocked(w, lenv, io) {
   const lock = takeUnitsLock(w.dir, lenv);
   if (lock.kind === "busy")
-    return refuse13(io.err, [lock.issue]);
+    return refuse12(io.err, [lock.issue]);
   try {
     reapInFlight(w.name, w.dir, lenv, io);
     const line = { ...w.line, at: lenv.now().toISOString() };
@@ -17297,7 +17300,7 @@ var usage5 = (err) => {
   err(`usage: ${WORKER_USAGE_LINE}`);
   return 1;
 };
-var refuse14 = (err, lines) => {
+var refuse13 = (err, lines) => {
   for (const line of lines)
     err(line);
   return 1;
@@ -17318,7 +17321,7 @@ var finishVerb = (rest2, wenv, out, err) => {
   if (args === undefined)
     return usage5(err);
   if ("usageErrors" in args)
-    return refuse14(err, args.usageErrors);
+    return refuse13(err, args.usageErrors);
   return finish(args, wenv, out, err);
 };
 var VERBS5 = {
@@ -17388,7 +17391,7 @@ function parseMoveArgs(rest2) {
     return;
   return { kind: "branch", branch: positionals[0], from };
 }
-var refuse15 = (...lines) => ({ kind: "refused", lines });
+var refuse14 = (...lines) => ({ kind: "refused", lines });
 var ORIGIN2 = "origin";
 var SEPARATOR = " · ";
 var PATHS_CAP = 20;
@@ -17409,21 +17412,21 @@ function whereItRuns(env, err) {
   if (repo === undefined) {
     const issue2 = found.revParseIssue;
     if (issue2 !== undefined && !outsideRepo(issue2, env.cwd)) {
-      return refuse15(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue2}`, `fix what git reports, ${AGAIN_WAY}`);
+      return refuse14(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue2}`, `fix what git reports, ${AGAIN_WAY}`);
     }
-    return refuse15(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
+    return refuse14(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
   }
   const checkout = checkoutOf(env.runGit, env.cwd);
   if ("issue" in checkout) {
-    return refuse15(`${env.cwd} is in no work tree, as git says: ${gitWords(checkout.issue)}`, INSIDE_WAY);
+    return refuse14(`${env.cwd} is in no work tree, as git says: ${gitWords(checkout.issue)}`, INSIDE_WAY);
   }
   const top = physical(checkout.top);
   const at2 = repo.worktrees.findIndex((entry2) => physical(entry2.path) === top);
   if (at2 === 0) {
-    return refuse15(`${checkout.top} is the main checkout, not a linked worktree: ${INSIDE_WAY}`);
+    return refuse14(`${checkout.top} is the main checkout, not a linked worktree: ${INSIDE_WAY}`);
   }
   if (at2 === -1) {
-    return refuse15(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
+    return refuse14(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
   }
   const entry = repo.worktrees[at2];
   return { repo, entry, name: path76.basename(entry.path) };
@@ -17463,16 +17466,16 @@ function rerunLine(runGit, place2, args) {
 function workerRefusal(env, place2) {
   const brief = env.env.SIDEKICK_WORKER;
   if (brief !== undefined && brief !== "") {
-    return refuse15(`this session is a worker, as SIDEKICK_WORKER is set to ${brief}: ${BRIEF_WAY}`);
+    return refuse14(`this session is a worker, as SIDEKICK_WORKER is set to ${brief}: ${BRIEF_WAY}`);
   }
   const stored = readRecords(place2.repo.commonDir);
   const record3 = stored.records.find((candidate) => isWorkers(place2.repo.top, candidate.name, place2.entry));
   if (record3 !== undefined) {
-    return refuse15(`${place2.entry.path} is the worker ${record3.name}'s worktree: ${BRIEF_WAY}`);
+    return refuse14(`${place2.entry.path} is the worker ${record3.name}'s worktree: ${BRIEF_WAY}`);
   }
   if (stored.warnings.length === 0)
     return;
-  return refuse15(`a worker record would not read, so ${place2.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
+  return refuse14(`a worker record would not read, so ${place2.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
 }
 function branchRefusal(place2) {
   const { entry, name } = place2;
@@ -17480,15 +17483,15 @@ function branchRefusal(place2) {
   if (entry.branch === `${HEADS}${own}`)
     return;
   if (entry.branch === undefined) {
-    return refuse15(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
+    return refuse14(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
   }
-  return refuse15(`${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`, FRESH_WAY);
+  return refuse14(`${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`, FRESH_WAY);
 }
 function changesRefusal(runGit, place2) {
   const { entry } = place2;
   const status = statusEntriesIn(runGit, place2.repo.top, entry.path);
   if ("issue" in status) {
-    return refuse15(`git status failed in ${entry.path}, so move cannot tell whether it has changes: ${gitWords(status.issue)}`, `check git status in ${entry.path}, ${AGAIN_WAY}`);
+    return refuse14(`git status failed in ${entry.path}, so move cannot tell whether it has changes: ${gitWords(status.issue)}`, `check git status in ${entry.path}, ${AGAIN_WAY}`);
   }
   if (status.entries.length === 0)
     return;
@@ -17497,7 +17500,7 @@ function changesRefusal(runGit, place2) {
     kind: "exact",
     count: Math.max(0, paths.length - PATHS_CAP)
   };
-  return refuse15(`${entry.path} has tracked or untracked changes: ${paths.slice(0, PATHS_CAP).join(", ")}${omittedWords(omitted)}`, `take them out of the worktree or delete them, ${AGAIN_WAY}`);
+  return refuse14(`${entry.path} has tracked or untracked changes: ${paths.slice(0, PATHS_CAP).join(", ")}${omittedWords(omitted)}`, `take them out of the worktree or delete them, ${AGAIN_WAY}`);
 }
 var commitCount = (count2) => `${count2} ${count2 === 1 ? "commit" : "commits"}`;
 function onTopWords(runGit, dir, base, head2) {
@@ -17514,22 +17517,22 @@ function freshHead(runGit, place2) {
   const { entry, name } = place2;
   const created = creationCommit(runGit, entry.path, entry.branch);
   if ("issue" in created) {
-    return refuse15(`move cannot tell whether ${entry.path} is fresh: ${created.issue}`, FRESH_WAY);
+    return refuse14(`move cannot tell whether ${entry.path} is fresh: ${created.issue}`, FRESH_WAY);
   }
   if (entry.head === created.sha)
     return created.sha;
   const head2 = entry.head ?? "no commit";
   const onTop = onTopWords(runGit, entry.path, created.sha, head2);
-  return refuse15(`the HEAD of ${entry.path} is ${head2}, not ${nativeBranch(name)}'s creation commit ${created.sha}${onTop}`, FRESH_WAY);
+  return refuse14(`the HEAD of ${entry.path} is ${head2}, not ${nativeBranch(name)}'s creation commit ${created.sha}${onTop}`, FRESH_WAY);
 }
 function nameRefusal2(runGit, dir, branch) {
   const verdict = branchNameOf(runGit, dir, branch);
   if ("issue" in verdict) {
-    return refuse15(`git check-ref-format refuses ${branch}: ${verdict.issue}`, "choose another name");
+    return refuse14(`git check-ref-format refuses ${branch}: ${verdict.issue}`, "choose another name");
   }
   if (verdict.read === branch)
     return;
-  return refuse15(`git reads ${branch} as the branch ${verdict.read}: name it as ${verdict.read}`);
+  return refuse14(`git reads ${branch} as the branch ${verdict.read}: name it as ${verdict.read}`);
 }
 function branchNameOf(runGit, dir, name) {
   const result = runGit("git", ["check-ref-format", "--branch", name], dir);
@@ -17545,7 +17548,7 @@ function isPlainBranchName(runGit, dir, name) {
 function remotesOf(runGit, dir) {
   const result = runGit("git", ["remote"], dir);
   if (result.code !== 0) {
-    return refuse15(`git remote failed in ${dir}: ${gitWords(result.stderr)}`, `check git remote in ${dir}, ${AGAIN_WAY}`);
+    return refuse14(`git remote failed in ${dir}: ${gitWords(result.stderr)}`, `check git remote in ${dir}, ${AGAIN_WAY}`);
   }
   return result.stdout.split(`
 `).map((line) => line.trim()).filter((line) => line !== "");
@@ -17556,24 +17559,24 @@ function ambiguityRefusal(branch, remotes) {
   if (remote === undefined)
     return;
   if (remote === branch) {
-    return refuse15(`${branch} is a remote's name, so it reads as that remote: choose another name`);
+    return refuse14(`${branch} is a remote's name, so it reads as that remote: choose another name`);
   }
   const rest2 = branch.slice(remote.length + 1);
-  return refuse15(`${branch} begins with ${remote}/, a remote's name, so it reads as a branch of ${remote}: name it without the remote, as ${rest2}`);
+  return refuse14(`${branch} begins with ${remote}/, a remote's name, so it reads as a branch of ${remote}: name it without the remote, as ${rest2}`);
 }
-var fromRefusal = (branch, where) => refuse15(`${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`);
+var fromRefusal = (branch, where) => refuse14(`${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`);
 function ownNameRefusal(runGit, place2, heldAt, branch) {
   const { entry, name } = place2;
   const verdict = branchNameOf(runGit, entry.path, name);
   if ("read" in verdict && verdict.read === name)
     return;
   const why = "issue" in verdict ? `git refuses ${name} as a branch name: ${verdict.issue}` : `git reads ${name} as the branch ${verdict.read}`;
-  return refuse15(`${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`, `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`);
+  return refuse14(`${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`, `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`);
 }
 function localPlan(runGit, place2, branch) {
   const { entry, name } = place2;
   if (branch === nativeBranch(name)) {
-    return refuse15(`${branch} is the branch Claude Code made for this worktree, which move replaces: name the branch to move onto`);
+    return refuse14(`${branch} is the branch Claude Code made for this worktree, which move replaces: name the branch to move onto`);
   }
   const holder = place2.repo.worktrees.find((other) => other.branch === `${HEADS}${branch}`);
   if (holder === undefined)
@@ -17583,10 +17586,10 @@ function localPlan(runGit, place2, branch) {
     return badName;
   const sha = commitOf(runGit, entry.path, `${HEADS}${branch}`);
   if (sha === undefined) {
-    return refuse15(`${branch} names no commit, so move cannot branch from it`, `check ${branch} in ${holder.path}, ${AGAIN_WAY}`);
+    return refuse14(`${branch} names no commit, so move cannot branch from it`, `check ${branch} in ${holder.path}, ${AGAIN_WAY}`);
   }
   if (branchExists(runGit, entry.path, name)) {
-    return refuse15(`${holder.path} holds ${branch}, so move would create the branch ${name} at its commit, but ${name} exists`, `switch ${holder.path} to another branch, or start a worktree under another name, ${AGAIN_WAY}`);
+    return refuse14(`${holder.path} holds ${branch}, so move would create the branch ${name} at its commit, but ${name} exists`, `switch ${holder.path} to another branch, or start a worktree under another name, ${AGAIN_WAY}`);
   }
   return { kind: "held", branch, own: name, sha, heldAt: holder.path };
 }
@@ -17596,7 +17599,7 @@ function onOrigin(runGit, dir, branch) {
   if (result.code === NO_MATCH)
     return false;
   if (result.code !== 0) {
-    return refuse15(`git ls-remote origin failed, so move cannot tell whether origin has ${branch}: ${gitWords(result.stderr)}`, `check the remote origin, ${AGAIN_WAY}`);
+    return refuse14(`git ls-remote origin failed, so move cannot tell whether origin has ${branch}: ${gitWords(result.stderr)}`, `check the remote origin, ${AGAIN_WAY}`);
   }
   return result.stdout.split(`
 `).some((line) => line.split("\t")[1] === ref2);
@@ -17612,7 +17615,7 @@ function baseOf(runGit, dir, from, remotes) {
   }
   const sha = commitOf(runGit, dir, from);
   if (sha === undefined) {
-    return refuse15(`--from ${from} names no commit: give a branch, tag, or commit, or <remote>/<branch> for a remote's branch`);
+    return refuse14(`--from ${from} names no commit: give a branch, tag, or commit, or <remote>/<branch> for a remote's branch`);
   }
   return { kind: "local", rev: from, sha };
 }
@@ -17655,7 +17658,7 @@ function prMove(runGit, place2, number2) {
     return remotes;
   if (remotes.includes(ORIGIN2))
     return { kind: "pr", number: number2 };
-  return refuse15(`--pr reads pull requests from origin, and this repository has no remote named origin: add the GitHub remote as origin, ${AGAIN_WAY}`);
+  return refuse14(`--pr reads pull requests from origin, and this repository has no remote named origin: add the GitHub remote as origin, ${AGAIN_WAY}`);
 }
 function checkMove(args, env, err) {
   const { runGit } = env;
@@ -18009,7 +18012,7 @@ function parseRemoveArgs(rest2) {
     into: into.at(0)
   };
 }
-var refuse16 = (...lines) => ({ refused: lines });
+var refuse15 = (...lines) => ({ refused: lines });
 var INTO_WAY = "name a local branch, such as main, or a remote-tracking ref, such as origin/main";
 function refCommit(runGit, top, ref2) {
   const shown2 = runGit("git", ["show-ref", "--verify", "--hash", ref2], top);
@@ -18025,7 +18028,7 @@ function intoTargets(runGit, top, into) {
     if (sha !== undefined)
       return [{ name: into, sha, ref: ref2 }];
   }
-  return refuse16(`--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`, INTO_WAY);
+  return refuse15(`--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`, INTO_WAY);
 }
 function ownIntoLines(targets, entry) {
   return targets.filter((target) => target.ref === entry.branch).map((target) => `--into ${target.name} is the branch ${entry.path} is on, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in`);
@@ -18039,18 +18042,18 @@ function resolveTarget3(repo, cwd, target) {
   const asPath = path77.resolve(cwd, target);
   const matches = repo.worktrees.filter((entry2) => path77.basename(entry2.path) === target || samePath(entry2.path, asPath));
   if (matches.length === 0) {
-    return refuse16(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
+    return refuse15(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
   }
   if (matches.length > 1) {
     const paths = matches.map((entry2) => entry2.path).join(", ");
-    return refuse16(`${matches.length} worktrees match ${target}: ${paths}. Name one by its path`);
+    return refuse15(`${matches.length} worktrees match ${target}: ${paths}. Name one by its path`);
   }
   const [entry] = matches;
   if (entry === repo.worktrees[0]) {
-    return refuse16(`${entry.path} is the main checkout, which remove never takes`);
+    return refuse15(`${entry.path} is the main checkout, which remove never takes`);
   }
   if (insideOf(cwd, entry.path)) {
-    return refuse16(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`);
+    return refuse15(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`);
   }
   return entry;
 }
@@ -18133,13 +18136,13 @@ function backupKind(commits, branch, judging) {
         return "kept";
       if (discard2)
         return "discarded";
-      return refuse16(`${where} has ${commitCount2(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`, DISCARD_WAY);
+      return refuse15(`${where} has ${commitCount2(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`, DISCARD_WAY);
     case "unknown":
       if (stays)
         return "kept";
       if (discard2)
         return "discarded";
-      return refuse16(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
+      return refuse15(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
     default: {
       const _exhaustive = commits;
       throw new Error(`Unhandled commits: ${JSON.stringify(_exhaustive)}`);
@@ -18151,7 +18154,7 @@ function branchPlan2(env, repo, row2, judging) {
   const { entry, name } = row2;
   const head2 = entry.head === undefined ? undefined : commitOf(env.runGit, repo.top, entry.head);
   if (head2 === undefined) {
-    return refuse16(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
+    return refuse15(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
   }
   const branch = entry.branch?.replace(HEADS, "");
   const stays = branch !== undefined && !isOwnBranch(env.runGit, repo.top, branch, name);
@@ -18183,13 +18186,13 @@ function checkTarget(args, env, repo, out) {
     return entry;
   const ownInto = ownIntoLines(extra, entry);
   if (ownInto.length > 0)
-    return refuse16(...ownInto);
+    return refuse15(...ownInto);
   const nested = nestedLines(repo, entry);
   if (nested.length > 0)
-    return refuse16(...nested);
+    return refuse15(...nested);
   const { src, listing, skipWarnings } = readSources(env, alone(repo, entry));
   if ("error" in listing) {
-    return refuse16(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
+    return refuse15(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
   }
   for (const warning of [...listing.warnings, ...skipWarnings]) {
     out(warning);
@@ -18197,7 +18200,7 @@ function checkTarget(args, env, repo, out) {
   const [row2] = worktreeRows(src, env.runGit, extra);
   const kept = stateLines(row2.state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
-    return refuse16(...kept);
+    return refuse15(...kept);
   const checked2 = branchPlan2(env, repo, row2, { discard: args.discard, extra });
   if ("refused" in checked2)
     return checked2;
@@ -18215,25 +18218,25 @@ function movedLines(entry, head2, stopped) {
 function recheck(env, repo, checked2) {
   const { src, listing } = readSources(env, repo);
   if ("error" in listing) {
-    return refuse16(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
+    return refuse15(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
   }
   const now = listWorktrees(env.runGit, repo.top);
   if ("issue" in now) {
-    return refuse16(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
+    return refuse15(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
   }
   const entry = now.worktrees.find((e) => samePath(e.path, checked2.entry.path));
   if (entry === undefined) {
-    return refuse16(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
+    return refuse15(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
   }
   const moved = movedLines(entry, checked2.head, "so remove deleted nothing");
   if (moved.length > 0)
-    return refuse16(...moved);
+    return refuse15(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
   const one = { ...src, repo: alone(repo, entry) };
   const state = stateOf3(one, env.runGit, entry, lock);
   const kept = stateLines(state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
-    return refuse16(...kept);
+    return refuse15(...kept);
   return listing.rows;
 }
 
