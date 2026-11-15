@@ -15,6 +15,7 @@ import {
   type ClaudeRunner,
   checkSettings,
   composeSettings,
+  type LaunchExtras,
   launchArgs,
   type MemoryLaunch,
   NO_UPDATES_ENV,
@@ -178,8 +179,11 @@ function memoryLaunch(penv: ProfileEnv): MemoryLaunch | undefined {
   };
 }
 
-/** What a launch adds to the profile's own `pluginDirs` and settings. */
-export interface LaunchOptions {
+/**
+ * What a launch adds to the profile's own `pluginDirs`, settings, and
+ * folders, and the setting sources it loads in place of the manifest's.
+ */
+export interface LaunchOptions extends LaunchExtras {
   overlay?: Settings;
   /** The launch's plugin dirs beyond the profile's own. */
   pluginDirs?: readonly string[];
@@ -206,7 +210,13 @@ const composed = (
       ? 'inline'
       : 'installed',
   });
-  return { settings, args: launchArgs(profile, settings) };
+  return {
+    settings,
+    args: launchArgs(profile, settings, {
+      addDirs: opts.addDirs,
+      settingSources: opts.settingSources,
+    }),
+  };
 };
 
 const settingsCheck = (

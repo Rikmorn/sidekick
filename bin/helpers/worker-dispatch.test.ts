@@ -7,6 +7,7 @@ import { LAUNCH_TIMEOUT_MS } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { SIDEKICK_DEPENDENCY_IDS, SIDEKICK_ID } from './sidekick-plugin.js';
 import { runWorkerCli, WORKER_USAGE_LINE, type WorkerEnv } from './worker.js';
+import { dispatchUnit, type UnitLaunch } from './worker-dispatch.js';
 import {
   PUSH_DENY_RULE,
   PUSH_REWRITE_KEY,
@@ -192,7 +193,14 @@ function harness(fx: Fixture, over: Partial<WorkerEnv> = {}) {
       (l) => out.push(l),
       (l) => err.push(l),
     );
-  return { claude, out, err, dispatch };
+  const unit = (launch: UnitLaunch) =>
+    dispatchUnit(
+      launch,
+      wenv,
+      (l) => out.push(l),
+      (l) => err.push(l),
+    );
+  return { claude, out, err, dispatch, unit };
 }
 
 type Harness = ReturnType<typeof harness>;
@@ -621,32 +629,78 @@ describe('dispatch refuses', () => {
   });
 });
 
+/** An attempt's folder under a loop folder, holding a unit brief named `w1` and its unit file. */
+function unitAttempt(fx: Fixture) {
+  const attempt = path.join(tmp(), 'loop', 'units', 'u-1', 'w1');
+  fs.mkdirSync(attempt, { recursive: true });
+  const unit = path.join(attempt, 'unit.md');
+  fs.writeFileSync(unit, 'unit\n');
+  const brief = path.join(attempt, 'brief.md');
+  fs.writeFileSync(
+    brief,
+    briefText({
+      kind: 'unit',
+      name: 'w1',
+      unit,
+      rulings: path.join(attempt, 'rulings.md'),
+      baseline: fx.head,
+      skill: 'sidekick:sk-orient',
+      place: 'worktree',
+      report: 'docs/run-report.md',
+      orchestrator: 'orch',
+    }),
+  );
+  return { attempt, unit, brief };
+}
+
+/** A harness whose config folder and memory store sit in temp folders, so the unit fence's paths are known. */
+function unitHarness(fx: Fixture) {
+  const config = tmp();
+  const store = tmp();
+  const h = harness(fx, {
+    env: {
+      SIDEKICK_PROFILES_DIR: fx.store,
+      CLAUDE_CONFIG_DIR: config,
+      SIDEKICK_MEMORY_STORE: store,
+    },
+  });
+  return { ...h, config, store };
+}
+
+const unitLaunchOf = (
+  fx: Fixture,
+  at: ReturnType<typeof unitAttempt>,
+  over: Partial<UnitLaunch> = {},
+): UnitLaunch => ({
+  briefPath: at.brief,
+  profile: 'worker',
+  attemptDir: at.attempt,
+  hosts: ['registry.npmjs.org'],
+  launchFolder: fx.top,
+  ...over,
+});
+
 describe('dispatch of a unit brief', () => {
   test('a unit brief skips the target check', () => {
     const fx = fixture();
-    const attempt = path.join(tmp(), 'loop', 'units', 'u-1', 'w1');
-    fs.mkdirSync(attempt, { recursive: true });
-    fs.writeFileSync(path.join(attempt, 'unit.md'), 'unit\n');
-    const brief = path.join(attempt, 'brief.md');
-    fs.writeFileSync(
-      brief,
-      briefText({
-        kind: 'unit',
-        name: 'w1',
-        unit: path.join(attempt, 'unit.md'),
-        rulings: path.join(attempt, 'rulings.md'),
-        baseline: fx.head,
-        skill: 'sidekick:sk-orient',
-        place: 'worktree',
-        report: 'docs/run-report.md',
-        orchestrator: 'orch',
-      }),
-    );
-    const h = harness(fx);
-    const code = h.dispatch(brief, '--permission-mode', 'auto');
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    const launched = h.unit(unitLaunchOf(fx, at));
     expect(h.err.filter((l) => l.startsWith('target:'))).toEqual([]);
     expect(h.err).toEqual([]);
-    expect(code).toBe(0);
+    expect(launched).toEqual({ code: 0, job: JOB });
+  });
+
+  test('worker dispatch refuses a unit brief, naming loop dispatch', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = harness(fx);
+    const code = h.dispatch(at.brief, '--permission-mode', 'auto');
+    expectRefused(
+      h,
+      code,
+      `${at.brief}: a unit brief starts only through sidekick loop dispatch, which launches it inside its fence`,
+    );
   });
 
   test('a unit brief outside an attempt folder refuses', () => {
@@ -672,6 +726,268 @@ describe('dispatch of a unit brief', () => {
     expect(code).toBe(1);
     expect(h.err.some((l) => l.startsWith('brief: '))).toBe(true);
     expect(h.claude.launches()).toEqual([]);
+  });
+});
+
+describe('dispatchUnit', () => {
+  test('launches inside the fence, under dontAsk, with the attempt folder added and only the user source', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    expect(h.unit(unitLaunchOf(fx, at))).toEqual({ code: 0, job: JOB });
+    const launch = onlyLaunch(h);
+    expect(launch.args.slice(0, 5)).toEqual([
+      '--add-dir',
+      path.join(fx.store, 'worker'),
+      '--add-dir',
+      at.attempt,
+      '--settings',
+    ]);
+    expect(launch.args.slice(6)).toEqual([
+      '--setting-sources',
+      'user',
+      '--permission-mode',
+      'dontAsk',
+      '--worktree',
+      'w1',
+      '--bg',
+      '-n',
+      'w1',
+      '--',
+      `/sidekick:sk-worker --dispatched ${at.brief}`,
+    ]);
+    expect(launch.opts.cwd).toBe(fx.top);
+  });
+
+  test("its settings carry the fence, the worktree's Edit rule, and the unit's reads", () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    h.unit(unitLaunchOf(fx, at));
+    const settings = settingsOf(onlyLaunch(h));
+    const worktree = path.join(fx.top, '.claude', 'worktrees', 'w1');
+    expect(settings.sandbox).toEqual({
+      enabled: true,
+      autoAllowBashIfSandboxed: true,
+      allowUnsandboxedCommands: false,
+      failIfUnavailable: true,
+      network: { allowedDomains: ['registry.npmjs.org'] },
+    });
+    expect(settings.autoMemoryEnabled).toBe(false);
+    expect(settings.env).toEqual({
+      SIDEKICK_WORKER: at.brief,
+      DISABLE_AUTOUPDATER: '1',
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: PUSH_REWRITE_KEY,
+      GIT_CONFIG_VALUE_0: '',
+    });
+    const permissions = settings.permissions as Record<string, string[]>;
+    expect(permissions.allow).toEqual([
+      `Edit(/${worktree}/**)`,
+      ...[at.brief, at.unit, path.join(at.attempt, 'rulings.md')].map(
+        (p) => `Read(/${p})`,
+      ),
+    ]);
+    const common = path.join(fx.top, '.git');
+    for (const rule of [
+      `Edit(/${common}/commondir)`,
+      `Edit(/${common}/worktrees/*/gitdir)`,
+      `Edit(/${worktree}/.git)`,
+      `Edit(/${path.join(h.config, 'sidekick')}/**)`,
+      `Edit(/${path.join(fx.store, 'worker')}/**)`,
+      `Edit(/${at.attempt}/**)`,
+      `Read(/${h.store}/**)`,
+      `Edit(/${h.store}/**)`,
+      'Skill(superpowers:brainstorming)',
+      SAVE_SKILL_RULE,
+      'WebFetch',
+      'WebSearch',
+      PUSH_DENY_RULE,
+    ]) {
+      expect(permissions.deny).toContain(rule);
+    }
+  });
+
+  test("the profile's own allow rules stay out, and its deny rules stay in", () => {
+    const fx = fixture({
+      description: 'Worker',
+      settings: {
+        permissions: { allow: ['Bash(ls:*)'], deny: ['Bash(rm:*)'] },
+      },
+    });
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    h.unit(unitLaunchOf(fx, at));
+    const permissions = settingsOf(onlyLaunch(h)).permissions as Record<
+      string,
+      string[]
+    >;
+    expect(permissions.allow).not.toContain('Bash(ls:*)');
+    expect(permissions.deny).toContain('Bash(rm:*)');
+  });
+
+  test('a profile that keeps only project and local launches with the empty sources', () => {
+    const fx = fixture({
+      description: 'Worker',
+      settingSources: ['project', 'local'],
+    });
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    expect(h.unit(unitLaunchOf(fx, at)).code).toBe(0);
+    const args = onlyLaunch(h).args;
+    const i = args.indexOf('--setting-sources');
+    expect(args.slice(i, i + 2)).toEqual(['--setting-sources', '']);
+  });
+
+  test('onStart gets the job once claude reports a start, before the worktree check', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const events: string[] = [];
+    const inner = fakeClaude(fx.top);
+    const h = harness(fx, {
+      runClaude: (args, opts) => {
+        events.push(args.includes('--bg') ? 'launch' : String(args[0]));
+        return inner.run(args, opts);
+      },
+    });
+    const launched = h.unit(
+      unitLaunchOf(fx, at, { onStart: (job) => events.push(`start ${job}`) }),
+    );
+    expect(launched).toEqual({ code: 0, job: JOB });
+    const start = events.indexOf(`start ${JOB}`);
+    expect(start).toBe(events.indexOf('launch') + 1);
+    expect(events.slice(start + 1)).toContain('agents');
+    expect(events.filter((e) => e.startsWith('start '))).toHaveLength(1);
+  });
+
+  test('a launch that fails calls no onStart and returns no job', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    h.claude.state.launch = ok({ code: 3, stderr: 'no\n' });
+    const starts: (string | null)[] = [];
+    const launched = h.unit(
+      unitLaunchOf(fx, at, { onStart: (job) => starts.push(job) }),
+    );
+    expect(launched).toEqual({ code: 3, job: null });
+    expect(starts).toEqual([]);
+  });
+
+  test('an onStart that throws is named, and the worktree check still runs', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    const launched = h.unit(
+      unitLaunchOf(fx, at, {
+        onStart: () => {
+          throw new Error('disk full');
+        },
+      }),
+    );
+    expect(launched).toEqual({ code: 1, job: JOB });
+    expect(h.err).toContain(
+      'the worker started, but recording its start failed: disk full',
+    );
+    const calls = h.claude.calls;
+    const launchAt = calls.findIndex((c) => c.args.includes('--bg'));
+    expect(calls.slice(launchAt + 1).some((c) => c.args[0] === 'agents')).toBe(
+      true,
+    );
+  });
+
+  test('prints its own dispatched line and no plan lines', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    h.unit(unitLaunchOf(fx, at));
+    expect(h.out).toContain(
+      'worker w1 dispatched · permission mode dontAsk · pushes blocked',
+    );
+    for (const lead of ['lands in:', 'steer:', 'finish:', 'main:']) {
+      expect(h.out.some((l) => l.startsWith(lead))).toBe(false);
+    }
+  });
+
+  test('a stray unit worker is stopped, and the way out names no worker finish', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    h.claude.state.land = offBaselineLanding(fx, offBaseline(fx));
+    const launched = h.unit(unitLaunchOf(fx, at));
+    expect(launched).toEqual({ code: 1, job: JOB });
+    expect(h.claude.stops()).toHaveLength(1);
+    expect(h.err.join('\n')).not.toContain('sidekick worker finish');
+  });
+
+  test('refuses a plan brief, launching nothing', () => {
+    const fx = fixture();
+    const h = unitHarness(fx);
+    const launched = h.unit({
+      briefPath: fx.brief,
+      profile: 'worker',
+      attemptDir: fx.docs,
+      hosts: [],
+      launchFolder: fx.top,
+    });
+    expect(launched).toEqual({ code: 1, job: null });
+    expect(h.err).toEqual([
+      `${fx.brief}: a unit launch takes a unit brief, and this one is a plan brief`,
+    ]);
+    expect(h.claude.calls).toEqual([]);
+  });
+
+  test("names every reason, the profile's among them", () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    fs.writeFileSync(path.join(fx.top, 'a.txt'), 'changed\n');
+    const h = unitHarness(fx);
+    const launched = h.unit(unitLaunchOf(fx, at, { profile: 'nobody' }));
+    expect(launched).toEqual({ code: 1, job: null });
+    expect(h.err.join('\n')).toContain('uncommitted changes');
+    expect(h.err.join('\n')).toContain('no profile named "nobody"');
+    expect(h.claude.launches()).toEqual([]);
+  });
+});
+
+describe('an empty SIDEKICK_WORKER', () => {
+  test('an empty SIDEKICK_WORKER does not refuse dispatch', () => {
+    const fx = fixture();
+    const h = harness(fx, {
+      env: { SIDEKICK_PROFILES_DIR: fx.store, SIDEKICK_WORKER: '' },
+    });
+    expect(h.dispatch(fx.brief, '--permission-mode', 'auto')).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(onlyLaunch(h)).toBeDefined();
+  });
+
+  test('nor dispatch --check', () => {
+    const fx = fixture();
+    const h = harness(fx, {
+      env: { SIDEKICK_PROFILES_DIR: fx.store, SIDEKICK_WORKER: '' },
+    });
+    expect(h.dispatch('--check', '--permission-mode', 'auto')).toBe(0);
+    expect(h.err).toEqual([]);
+  });
+
+  test('nor a unit launch', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = harness(fx, {
+      env: { SIDEKICK_PROFILES_DIR: fx.store, SIDEKICK_WORKER: '' },
+    });
+    expect(h.unit(unitLaunchOf(fx, at)).code).toBe(0);
+  });
+
+  test('a non-empty one refuses a unit launch', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = harness(fx, {
+      env: { SIDEKICK_PROFILES_DIR: fx.store, SIDEKICK_WORKER: '/x/b.md' },
+    });
+    expect(h.unit(unitLaunchOf(fx, at))).toEqual({ code: 1, job: null });
+    expect(h.err).toEqual([
+      'SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)',
+    ]);
   });
 });
 

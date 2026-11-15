@@ -353,6 +353,59 @@ describe('launchArgs', () => {
     expect(launchArgs(p, composeSettings(p, { home: '/h' }))).toHaveLength(4);
   });
 
+  test('launchArgs passes extra add-dirs and replaces setting sources', () => {
+    const q = profile(
+      { settingSources: ['user', 'project', 'local'] },
+      { pluginDirs: ['/a'] },
+    );
+    const settings = composeSettings(q, { home: '/h' });
+    expect(
+      launchArgs(q, settings, {
+        addDirs: ['/x', '/y z'],
+        settingSources: ['user'],
+      }),
+    ).toEqual([
+      '--add-dir',
+      q.dir,
+      '--add-dir',
+      '/x',
+      '--add-dir',
+      '/y z',
+      '--plugin-dir',
+      '/a',
+      '--settings',
+      JSON.stringify(settings),
+      '--setting-sources',
+      'user',
+    ]);
+  });
+
+  test('replaced sources give the flag on a manifest without any, and none gives the empty string', () => {
+    const settings = composeSettings(p, { home: '/h' });
+    expect(
+      launchArgs(p, settings, { settingSources: ['user'] }).slice(4),
+    ).toEqual(['--setting-sources', 'user']);
+    expect(launchArgs(p, settings, { settingSources: [] }).slice(4)).toEqual([
+      '--setting-sources',
+      '',
+    ]);
+  });
+
+  test('extra add-dirs alone keep the manifest sources, and --add-dir is never last', () => {
+    const q = profile({ settingSources: ['project'] });
+    const args = launchArgs(q, composeSettings(q, { home: '/h' }), {
+      addDirs: ['/x'],
+    });
+    expect(args.slice(0, 5)).toEqual([
+      '--add-dir',
+      q.dir,
+      '--add-dir',
+      '/x',
+      '--settings',
+    ]);
+    expect(args.slice(-2)).toEqual(['--setting-sources', 'project']);
+  });
+
   test('a NUL in a value comes out escaped, with no raw NUL in any argument', () => {
     const q = profile({ settings: { note: 'a\u0000b' } });
     const args = launchArgs(q, composeSettings(q, { home: '/h' }));

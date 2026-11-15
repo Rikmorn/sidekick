@@ -2,13 +2,18 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { composeSettings } from './profile-launch.js';
+import { composeSettings, type Settings } from './profile-launch.js';
+import type { ProfileManifest } from './profile-manifest.js';
 import type { Profile } from './profile-store.js';
 import {
   PUSH_DENY_RULE,
   PUSH_REWRITE_KEY,
+  pathRule,
   readRule,
   SAVE_SKILL_RULE,
+  unitOverlay,
+  unitSettingSources,
+  withoutAllow,
   workerOverlay,
 } from './worker-overlay.js';
 
@@ -216,5 +221,286 @@ describe('workerOverlay reads', () => {
 
   test('the Skill rule names sk-save alone', () => {
     expect(SAVE_SKILL_RULE).toBe('Skill(sidekick:sk-save)');
+  });
+});
+
+describe('pathRule', () => {
+  test('escapes the path as readRule does, and appends the glob raw', () => {
+    expect(pathRule('Edit', '/a/[1] b', '/*/gitdir')).toBe(
+      'Edit(//a/\\[1\\] b/*/gitdir)',
+    );
+    expect(pathRule('Read', '/a/b.md')).toBe(readRule('/a/b.md'));
+  });
+});
+
+// Paths under a folder that does not exist, so each rule has one form.
+const unitOpts = {
+  briefPath: '/zz-unit/att/brief.md',
+  worktree: '/zz-unit/repo/.claude/worktrees/w1',
+  commonDir: '/zz-unit/repo/.git',
+  sidekickHome: '/zz-unit/config/sidekick',
+  memoryStore: '/zz-unit/store' as string | undefined,
+  hosts: ['api.example.com', 'registry.npmjs.org'],
+  reads: [
+    '/zz-unit/att/brief.md',
+    '/zz-unit/att/unit.md',
+    '/zz-unit/att/rulings.md',
+  ],
+  addedDirs: ['/zz-unit/profile', '/zz-unit/att'],
+};
+
+function unitOf(
+  settings: Settings | undefined,
+  o: typeof unitOpts = unitOpts,
+): Settings {
+  const built = unitOverlay(settings, o);
+  if ('issues' in built) throw new Error(built.issues.join('; '));
+  return built.overlay;
+}
+
+interface Permissions {
+  allow: string[];
+  deny: string[];
+  blockReadsOutsideWorkingDirectories?: boolean;
+}
+
+// A test reads back the shape the overlay builds.
+const permissionsOf = (overlay: Settings): Permissions =>
+  overlay.permissions as Permissions;
+
+const PATH_DENIES = [
+  'Edit(//zz-unit/repo/.git/commondir)',
+  'Edit(//zz-unit/repo/.git/worktrees/*/commondir)',
+  'Edit(//zz-unit/repo/.git/worktrees/*/gitdir)',
+  'Edit(//zz-unit/repo/.git/worktrees/*/config.worktree)',
+  'Edit(//zz-unit/repo/.claude/worktrees/w1/.git)',
+  'Edit(//zz-unit/repo/.git/config)',
+  'Edit(//zz-unit/repo/.git/hooks/**)',
+  'Edit(//zz-unit/repo/.git/sidekick/**)',
+  'Edit(//zz-unit/config/sidekick/**)',
+  'Edit(//zz-unit/profile/**)',
+  'Edit(//zz-unit/att/**)',
+  'Read(//zz-unit/store/**)',
+  'Edit(//zz-unit/store/**)',
+];
+
+const TOOL_DENIES = [
+  'Skill(superpowers:brainstorming)',
+  'Skill(superpowers:writing-plans)',
+  'Skill(superpowers:finishing-a-development-branch)',
+  'Skill(superpowers:diagnosing-superpowers)',
+  'Skill(sidekick:sk-save)',
+  'WebFetch',
+  'WebSearch',
+];
+
+describe('unitOverlay', () => {
+  test("the unit overlay sets the fence's sandbox keys", () => {
+    expect(unitOf(undefined).sandbox).toEqual({
+      enabled: true,
+      autoAllowBashIfSandboxed: true,
+      allowUnsandboxedCommands: false,
+      failIfUnavailable: true,
+      network: { allowedDomains: ['api.example.com', 'registry.npmjs.org'] },
+    });
+  });
+
+  test('no hosts lets no domain through', () => {
+    const sandbox = unitOf(undefined, { ...unitOpts, hosts: [] }).sandbox;
+    expect(sandbox).toMatchObject({ network: { allowedDomains: [] } });
+  });
+
+  test('it allows Edit only in the worktree', () => {
+    const { allow } = permissionsOf(unitOf(undefined));
+    expect(allow).toEqual([
+      'Edit(//zz-unit/repo/.claude/worktrees/w1/**)',
+      'Read(//zz-unit/att/brief.md)',
+      'Read(//zz-unit/att/unit.md)',
+      'Read(//zz-unit/att/rulings.md)',
+    ]);
+    expect(allow).not.toContain(SAVE_SKILL_RULE);
+  });
+
+  test("it denies git's redirect files, config, hooks, the common sidekick folder, the sidekick folder, and the memory store", () => {
+    const { deny } = permissionsOf(unitOf(undefined));
+    for (const rule of PATH_DENIES) expect(deny).toContain(rule);
+  });
+
+  test('it denies WebFetch, WebSearch, brainstorming, and sk-save', () => {
+    const { deny } = permissionsOf(unitOf(undefined));
+    for (const rule of TOOL_DENIES) expect(deny).toContain(rule);
+  });
+
+  test('the deny list holds those rules and the push rule, and nothing else', () => {
+    expect(permissionsOf(unitOf(undefined)).deny).toEqual([
+      ...PATH_DENIES,
+      ...TOOL_DENIES,
+      PUSH_DENY_RULE,
+    ]);
+  });
+
+  test('no memory store leaves out the store rules', () => {
+    const { deny } = permissionsOf(
+      unitOf(undefined, { ...unitOpts, memoryStore: undefined }),
+    );
+    expect(deny.filter((r) => r.includes('/zz-unit/store'))).toEqual([]);
+  });
+
+  test('it sets the read block and autoMemoryEnabled false', () => {
+    const overlay = unitOf(undefined);
+    expect(permissionsOf(overlay).blockReadsOutsideWorkingDirectories).toBe(
+      true,
+    );
+    expect(overlay.autoMemoryEnabled).toBe(false);
+  });
+
+  test('it keeps the push block', () => {
+    const overlay = unitOf({ env: { GIT_CONFIG_COUNT: '2' } });
+    expect(overlay.env).toEqual({
+      SIDEKICK_WORKER: '/zz-unit/att/brief.md',
+      DISABLE_AUTOUPDATER: '1',
+      GIT_CONFIG_COUNT: '3',
+      GIT_CONFIG_KEY_2: PUSH_REWRITE_KEY,
+      GIT_CONFIG_VALUE_2: '',
+    });
+    expect(permissionsOf(overlay).deny).toContain(PUSH_DENY_RULE);
+  });
+
+  test.each(['x', '-1', ''])('a profile count of %p refuses', (count) => {
+    expect(unitOverlay({ env: { GIT_CONFIG_COUNT: count } }, unitOpts)).toEqual(
+      {
+        issues: [
+          `the profile's GIT_CONFIG_COUNT is ${JSON.stringify(count)}, not a string of digits`,
+        ],
+      },
+    );
+  });
+
+  test('it carries the brief marker and no main, and branches from HEAD', () => {
+    const overlay = unitOf(undefined);
+    expect(overlay.env).not.toHaveProperty('SIDEKICK_MAIN');
+    expect(overlay.worktree).toEqual({ baseRef: 'head' });
+  });
+
+  test('its keys are the fence, the env, the worktree base, the permissions, and the memory switch', () => {
+    expect(Object.keys(unitOf(undefined)).sort()).toEqual([
+      'autoMemoryEnabled',
+      'env',
+      'permissions',
+      'sandbox',
+      'worktree',
+    ]);
+    expect(Object.keys(permissionsOf(unitOf(undefined))).sort()).toEqual([
+      'allow',
+      'blockReadsOutsideWorkingDirectories',
+      'deny',
+    ]);
+  });
+});
+
+describe('unitOverlay paths', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'unit-paths-'));
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  test('a path with a space under a symlinked folder gets both forms, escaped', () => {
+    const real = fs.realpathSync(dir);
+    const spaced = path.join(real, 'a b');
+    fs.mkdirSync(path.join(spaced, 'real'), { recursive: true });
+    fs.symlinkSync(path.join(spaced, 'real'), path.join(spaced, 'link'));
+    const worktree = path.join(spaced, 'link', 'wt');
+    const physicalTree = path.join(spaced, 'real', 'wt');
+    const { allow, deny } = permissionsOf(
+      unitOf(undefined, { ...unitOpts, worktree, reads: [] }),
+    );
+    expect(allow).toEqual([
+      `Edit(/${worktree}/**)`,
+      `Edit(/${physicalTree}/**)`,
+    ]);
+    expect(deny).toContain(`Edit(/${worktree}/.git)`);
+    expect(deny).toContain(`Edit(/${physicalTree}/.git)`);
+  });
+
+  test.if(fs.realpathSync('/var') !== '/var')(
+    'a path under /var also gets its /private/var form',
+    () => {
+      const { deny } = permissionsOf(
+        unitOf(undefined, { ...unitOpts, commonDir: '/var/zz-unit/.git' }),
+      );
+      expect(deny).toContain('Edit(//var/zz-unit/.git/hooks/**)');
+      expect(deny).toContain('Edit(//private/var/zz-unit/.git/hooks/**)');
+      expect(deny).toContain('Edit(//var/zz-unit/.git/worktrees/*/gitdir)');
+      expect(deny).toContain(
+        'Edit(//private/var/zz-unit/.git/worktrees/*/gitdir)',
+      );
+    },
+  );
+
+  test('a glob character in a folder name is escaped, and the glob after it is not', () => {
+    const { deny } = permissionsOf(
+      unitOf(undefined, { ...unitOpts, commonDir: '/zz-unit/[x]*/.git' }),
+    );
+    expect(deny).toContain(
+      'Edit(//zz-unit/\\[x\\]\\*/.git/worktrees/*/gitdir)',
+    );
+  });
+});
+
+describe('withoutAllow', () => {
+  test('withoutAllow drops only permissions.allow', () => {
+    const settings = {
+      model: 'sonnet',
+      env: { A: '1' },
+      permissions: { allow: ['Bash(ls:*)'], deny: ['Bash(rm:*)'], ask: ['X'] },
+    };
+    expect(withoutAllow(settings)).toEqual({
+      model: 'sonnet',
+      env: { A: '1' },
+      permissions: { deny: ['Bash(rm:*)'], ask: ['X'] },
+    });
+    expect(settings.permissions.allow).toEqual(['Bash(ls:*)']);
+  });
+
+  test('permissions holding only allow goes whole', () => {
+    expect(withoutAllow({ model: 'x', permissions: { allow: ['A'] } })).toEqual(
+      { model: 'x' },
+    );
+  });
+
+  test('settings without allow come back as they are, and none as empty', () => {
+    expect(withoutAllow({ permissions: { deny: ['B'] } })).toEqual({
+      permissions: { deny: ['B'] },
+    });
+    expect(withoutAllow({ model: 'x' })).toEqual({ model: 'x' });
+    expect(withoutAllow(undefined)).toEqual({});
+  });
+});
+
+describe('unitSettingSources', () => {
+  const withSources = (
+    settingSources: ProfileManifest['settingSources'],
+  ): Profile => ({
+    name: 'p',
+    dir: '/p',
+    root: '/',
+    store: 'user',
+    shadows: undefined,
+    pluginDirs: [],
+    hasRules: false,
+    manifest: { description: 'd', settingSources },
+  });
+
+  const cases: [ProfileManifest['settingSources'], string[]][] = [
+    [undefined, ['user']],
+    [['user', 'project', 'local'], ['user']],
+    [['local', 'user'], ['user']],
+    [['user'], ['user']],
+    [['project', 'local'], []],
+    [[], []],
+  ];
+
+  test.each(
+    cases,
+  )('unit setting sources leave out project and local: %p gives %p', (sources, expected) => {
+    expect(unitSettingSources(withSources(sources))).toEqual(expected);
   });
 });

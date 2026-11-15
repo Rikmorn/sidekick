@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { envWithoutRepoVars } from './git-env.js';
 import { withoutMarkers } from './main-session.js';
+import type { SettingSource } from './profile-manifest.js';
 import type { Profile } from './profile-store.js';
 import { SIDEKICK_DEPENDENCY_IDS, SIDEKICK_ID } from './sidekick-plugin.js';
 
@@ -161,17 +162,31 @@ export function composeSettings(
   );
 }
 
+/** What a launch adds to the profile's folders, and the setting sources it loads in place of the manifest's. */
+export interface LaunchExtras {
+  /** Folders passed as `--add-dir` after the profile's own. */
+  addDirs?: readonly string[];
+  settingSources?: readonly SettingSource[];
+}
+
 /**
- * The arguments for `claude`: `--add-dir`, one `--plugin-dir` per profile
- * plugin dir, `--settings`, then `--setting-sources` when the manifest sets
+ * The arguments for `claude`: `--add-dir` for the profile's folder and each
+ * of `extras.addDirs`, one `--plugin-dir` per profile plugin dir,
+ * `--settings`, then `--setting-sources` when `extras` or the manifest sets
  * it. `--add-dir` is never last, so whatever follows cannot be read as a
  * second folder.
  */
-export function launchArgs(profile: Profile, settings: Settings): string[] {
-  const sources = profile.manifest.settingSources;
+export function launchArgs(
+  profile: Profile,
+  settings: Settings,
+  extras: LaunchExtras = {},
+): string[] {
+  const sources = extras.settingSources ?? profile.manifest.settingSources;
   return [
-    '--add-dir',
-    profile.dir,
+    ...[profile.dir, ...(extras.addDirs ?? [])].flatMap((dir) => [
+      '--add-dir',
+      dir,
+    ]),
     ...profile.pluginDirs.flatMap((dir) => ['--plugin-dir', dir]),
     '--settings',
     JSON.stringify(settings),

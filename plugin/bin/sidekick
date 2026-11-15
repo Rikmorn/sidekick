@@ -6,7 +6,7 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 import * as fs55 from "node:fs";
 import { realpathSync as realpathSync12 } from "node:fs";
 import * as os3 from "node:os";
-import * as path71 from "node:path";
+import * as path72 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -3858,11 +3858,13 @@ function launchKeys(profile, home, memory, source) {
 function composeSettings(profile, opts) {
   return mergeSettings(profile.manifest.settings ?? {}, opts.overlay ?? {}, launchKeys(profile, opts.home, opts.memory, opts.sidekick ?? "installed"));
 }
-function launchArgs(profile, settings) {
-  const sources = profile.manifest.settingSources;
+function launchArgs(profile, settings, extras = {}) {
+  const sources = extras.settingSources ?? profile.manifest.settingSources;
   return [
-    "--add-dir",
-    profile.dir,
+    ...[profile.dir, ...extras.addDirs ?? []].flatMap((dir) => [
+      "--add-dir",
+      dir
+    ]),
     ...profile.pluginDirs.flatMap((dir) => ["--plugin-dir", dir]),
     "--settings",
     JSON.stringify(settings),
@@ -4930,7 +4932,13 @@ var composed = (profile, penv, opts = {}) => {
     memory: memoryLaunch(penv),
     sidekick: allPluginDirs(profile, opts.pluginDirs ?? []).some(isSidekickPlugin) ? "inline" : "installed"
   });
-  return { settings, args: launchArgs(profile, settings) };
+  return {
+    settings,
+    args: launchArgs(profile, settings, {
+      addDirs: opts.addDirs,
+      settingSources: opts.settingSources
+    })
+  };
 };
 var settingsCheck = (settings, penv) => checkSettings(settings, {
   run: penv.runClaude,
@@ -13622,7 +13630,7 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 
 // bin/helpers/worker-dispatch-checks.ts
 import * as fs47 from "node:fs";
-import * as path58 from "node:path";
+import * as path59 from "node:path";
 
 // bin/helpers/worker-facts.ts
 function checkoutFacts(runGit, cwd) {
@@ -13677,11 +13685,13 @@ function heldBranch(runGit, cwd) {
 }
 
 // bin/helpers/worker-overlay.ts
+import * as path58 from "node:path";
 var markers = (opts) => ({
   SIDEKICK_WORKER: opts.briefPath,
   ...opts.main === undefined ? {} : { SIDEKICK_MAIN: opts.main },
   ...NO_UPDATES_ENV
 });
+var WORKTREE_BASE = { worktree: { baseRef: "head" } };
 var PUSH_REWRITE_KEY = "url.sidekick-push-blocked::.pushInsteadOf";
 var SAVE_SKILL_RULE = "Skill(sidekick:sk-save)";
 var PUSH_DENY_RULE = "Bash(git push:*)";
@@ -13692,28 +13702,7 @@ function pushEnv(count2) {
     [`GIT_CONFIG_VALUE_${count2}`]: ""
   };
 }
-function readRule(absPath) {
-  const escaped = absPath.slice(1).replace(/[\\*?[\]]/g, "\\$&").replace(/ +$/, (spaces) => "\\ ".repeat(spaces.length));
-  return `Read(//${escaped})`;
-}
-function readRules(reads) {
-  const rules = reads.flatMap((p) => [readRule(p), readRule(physical(p))]);
-  return [...new Set(rules)];
-}
-function workerOverlay(profileSettings, opts) {
-  const base = { worktree: { baseRef: "head" } };
-  const allowRules = {
-    allow: [...readRules(opts.reads ?? []), SAVE_SKILL_RULE]
-  };
-  if (opts.allowPush) {
-    return {
-      overlay: {
-        ...base,
-        env: markers(opts),
-        permissions: allowRules
-      }
-    };
-  }
+function pushBlock(profileSettings) {
   const env = isPlainObject(profileSettings?.env) ? profileSettings.env : {};
   const raw = env.GIT_CONFIG_COUNT ?? "0";
   if (typeof raw !== "string" || !/^\d+$/.test(raw)) {
@@ -13723,14 +13712,120 @@ function workerOverlay(profileSettings, opts) {
       ]
     };
   }
+  return { env: pushEnv(Number(raw)) };
+}
+function pathRule(tool, absPath, glob = "") {
+  const escaped = absPath.slice(1).replace(/[\\*?[\]]/g, "\\$&").replace(/ +$/, (spaces) => "\\ ".repeat(spaces.length));
+  return `${tool}(//${escaped}${glob})`;
+}
+var unique = (rules) => [...new Set(rules)];
+var bothForms = (tool, absPath, glob = "") => [
+  pathRule(tool, absPath, glob),
+  pathRule(tool, physical(absPath), glob)
+];
+function readRules(reads) {
+  return unique(reads.flatMap((p) => bothForms("Read", p)));
+}
+function workerOverlay(profileSettings, opts) {
+  const allowRules = {
+    allow: [...readRules(opts.reads ?? []), SAVE_SKILL_RULE]
+  };
+  if (opts.allowPush) {
+    return {
+      overlay: {
+        ...WORKTREE_BASE,
+        env: markers(opts),
+        permissions: allowRules
+      }
+    };
+  }
+  const push = pushBlock(profileSettings);
+  if ("issues" in push)
+    return push;
   return {
     overlay: {
-      ...base,
-      env: { ...markers(opts), ...pushEnv(Number(raw)) },
+      ...WORKTREE_BASE,
+      env: { ...markers(opts), ...push.env },
       permissions: { ...allowRules, deny: [PUSH_DENY_RULE] }
     }
   };
 }
+var WAITING_SKILLS = [
+  "superpowers:brainstorming",
+  "superpowers:writing-plans",
+  "superpowers:finishing-a-development-branch",
+  "superpowers:diagnosing-superpowers"
+];
+var WEB_TOOLS = ["WebFetch", "WebSearch"];
+var UNDER = "/**";
+function gitDenies(commonDir, worktree) {
+  const worktrees = path58.join(commonDir, "worktrees");
+  return [
+    ...bothForms("Edit", path58.join(commonDir, "commondir")),
+    ...bothForms("Edit", worktrees, "/*/commondir"),
+    ...bothForms("Edit", worktrees, "/*/gitdir"),
+    ...bothForms("Edit", worktrees, "/*/config.worktree"),
+    ...bothForms("Edit", path58.join(worktree, ".git")),
+    ...bothForms("Edit", path58.join(commonDir, "config")),
+    ...bothForms("Edit", path58.join(commonDir, "hooks"), UNDER)
+  ];
+}
+function folderDenies(opts) {
+  const store = opts.memoryStore;
+  return [
+    ...bothForms("Edit", path58.join(opts.commonDir, "sidekick"), UNDER),
+    ...bothForms("Edit", opts.sidekickHome, UNDER),
+    ...opts.addedDirs.flatMap((dir) => bothForms("Edit", dir, UNDER)),
+    ...store === undefined ? [] : [
+      ...bothForms("Read", store, UNDER),
+      ...bothForms("Edit", store, UNDER)
+    ]
+  ];
+}
+var unitDenies = (opts) => unique([
+  ...gitDenies(opts.commonDir, opts.worktree),
+  ...folderDenies(opts),
+  ...WAITING_SKILLS.map((skill) => `Skill(${skill})`),
+  SAVE_SKILL_RULE,
+  ...WEB_TOOLS,
+  PUSH_DENY_RULE
+]);
+function unitOverlay(profileSettings, opts) {
+  const push = pushBlock(profileSettings);
+  if ("issues" in push)
+    return push;
+  return {
+    overlay: {
+      ...WORKTREE_BASE,
+      env: { ...markers({ briefPath: opts.briefPath }), ...push.env },
+      sandbox: {
+        enabled: true,
+        autoAllowBashIfSandboxed: true,
+        allowUnsandboxedCommands: false,
+        failIfUnavailable: true,
+        network: { allowedDomains: [...opts.hosts] }
+      },
+      permissions: {
+        allow: unique([
+          ...bothForms("Edit", opts.worktree, UNDER),
+          ...readRules(opts.reads)
+        ]),
+        deny: unitDenies(opts),
+        blockReadsOutsideWorkingDirectories: true
+      },
+      autoMemoryEnabled: false
+    }
+  };
+}
+function withoutAllow(settings) {
+  const { permissions, ...rest2 } = settings ?? {};
+  if (!isPlainObject(permissions))
+    return { ...settings };
+  const { allow: _allow, ...kept } = permissions;
+  return Object.keys(kept).length === 0 ? rest2 : { ...rest2, permissions: kept };
+}
+var UNIT_LEFT_OUT = ["project", "local"];
+var unitSettingSources = (profile) => (profile.manifest.settingSources ?? SETTING_SOURCES).filter((source) => !UNIT_LEFT_OUT.includes(source));
 
 // bin/helpers/worker-dispatch-checks.ts
 var PERMISSION_MODES = [
@@ -13831,10 +13926,46 @@ function missingProfileHint(name, penv) {
   if (oldStoreIssues(penv.env, penv.cwd, penv.home).length > 0)
     return [];
   const roots = storeRoots("profiles", penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder3(path58.join(root.dir, name)));
+  const held = roots.some((root) => isFolder3(path59.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
-function prepareProfile(opts, briefPath, penv, main, reads) {
+var planShape = (opts, briefPath, main, reads) => (profile) => {
+  const overlay = workerOverlay(profile.manifest.settings, {
+    briefPath,
+    allowPush: opts.allowPush,
+    main,
+    reads
+  });
+  if ("issues" in overlay)
+    return overlay;
+  const pluginDirs = opts.pluginDir === undefined ? [] : [opts.pluginDir];
+  return { profile, launch: { overlay: overlay.overlay, pluginDirs } };
+};
+var unitShape = (brief, briefPath, unit2, facts, penv) => (profile) => {
+  const overlay = unitOverlay(profile.manifest.settings, {
+    briefPath,
+    worktree: nativeFolder(facts.mainTop, brief.name),
+    commonDir: facts.commonDir,
+    sidekickHome: sidekickHome(penv.env, penv.cwd, penv.home),
+    memoryStore: path59.resolve(penv.cwd, storeRoot(penv.env, penv.home)),
+    hosts: unit2.hosts,
+    reads: [briefPath, brief.unit, brief.rulings],
+    addedDirs: [profile.dir, unit2.attemptDir]
+  });
+  if ("issues" in overlay)
+    return overlay;
+  const settings = withoutAllow(profile.manifest.settings);
+  return {
+    profile: { ...profile, manifest: { ...profile.manifest, settings } },
+    launch: {
+      overlay: overlay.overlay,
+      addDirs: [unit2.attemptDir],
+      settingSources: unitSettingSources(profile)
+    }
+  };
+};
+var named = () => ({ issues: [] });
+function prepareProfile(opts, penv, shape) {
   const dirIssues = pluginDirIssues(opts.pluginDir);
   const lines = [];
   const collect = (line) => {
@@ -13849,20 +13980,12 @@ function prepareProfile(opts, briefPath, penv, main, reads) {
     return refused2(missingProfileHint(opts.profile, penv));
   }
   const bypass = bypassIssues(profile, opts.mode);
-  const overlay = workerOverlay(profile.manifest.settings, {
-    briefPath,
-    allowPush: opts.allowPush,
-    main,
-    reads
-  });
-  if ("issues" in overlay)
-    return refused2([...overlay.issues, ...bypass]);
+  const shaped = shape(profile);
+  if ("issues" in shaped)
+    return refused2([...shaped.issues, ...bypass]);
   if (dirIssues.length > 0)
     return refused2(bypass);
-  const args = checkComposed(profile, penv, collect, {
-    overlay: overlay.overlay,
-    pluginDirs: opts.pluginDir === undefined ? [] : [opts.pluginDir]
-  });
+  const args = checkComposed(shaped.profile, penv, collect, shaped.launch);
   if (args === undefined || bypass.length > 0)
     return refused2(bypass);
   return { ok: true, args, notes: lines };
@@ -13870,17 +13993,28 @@ function prepareProfile(opts, briefPath, penv, main, reads) {
 var SHORT_SHA = 7;
 var CHECK_BRIEF = "check-brief.md";
 var insideWorkerIssue = "SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)";
-function checkDispatch(brief, briefPath, opts, wenv) {
-  if (wenv.env.SIDEKICK_WORKER !== undefined) {
-    return { issues: [insideWorkerIssue] };
+var insideWorker = (env) => env.SIDEKICK_WORKER !== undefined && env.SIDEKICK_WORKER !== "";
+var loopOnlyIssue = (briefPath) => `${briefPath}: a unit brief starts only through sidekick loop dispatch, which launches it inside its fence`;
+function shapeFor(brief, briefPath, ctx) {
+  if (brief.kind === "plan") {
+    const reads = [briefPath, brief.plan, brief.spec, brief.rulings];
+    return planShape(ctx.opts, briefPath, ctx.main, reads);
   }
+  if (ctx.unit === undefined || "issues" in ctx.facts)
+    return named;
+  return unitShape(brief, briefPath, ctx.unit, ctx.facts, ctx.penv);
+}
+function checkDispatch(brief, briefPath, opts, wenv, unit2) {
+  if (insideWorker(wenv.env))
+    return { issues: [insideWorkerIssue] };
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   const at2 = "issues" in facts ? wenv.cwd : facts.launchTop;
   const listed = listJobs(wenv.runClaude, at2);
   const main = resolveMain(wenv.env, "jobs" in listed ? listed.jobs : undefined);
-  const reads = brief.kind === "plan" ? [briefPath, brief.plan, brief.spec, brief.rulings] : [briefPath, brief.unit, brief.rulings];
-  const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at2 }, main?.value, reads);
+  const penv = { ...wenv, cwd: at2 };
+  const prepared = prepareProfile(opts, penv, shapeFor(brief, briefPath, { opts, main: main?.value, unit: unit2, facts, penv }));
   const issues = [
+    ...brief.kind === "unit" && unit2 === undefined ? [loopOnlyIssue(briefPath)] : [],
     ...brief.kind === "unit" ? unitBriefFileIssues(brief, briefPath) : [],
     ..."issues" in facts ? facts.issues : checkoutIssues(brief, briefPath, opts, wenv.runGit, facts),
     ...placeIssues(brief),
@@ -13907,13 +14041,12 @@ function checkDispatch(brief, briefPath, opts, wenv) {
 }
 var whereLine = (branch, head2) => branch ?? `detached HEAD at ${head2.slice(0, SHORT_SHA)}`;
 function checkOnly(opts, wenv) {
-  if (wenv.env.SIDEKICK_WORKER !== undefined) {
+  if (insideWorker(wenv.env))
     return { issues: [insideWorkerIssue] };
-  }
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   const at2 = "issues" in facts ? wenv.cwd : facts.launchTop;
   const head2 = "issues" in facts ? undefined : headCommit(wenv.runGit, at2);
-  const prepared = prepareProfile(opts, path58.join(at2, CHECK_BRIEF), { ...wenv, cwd: at2 }, undefined, []);
+  const prepared = prepareProfile(opts, { ...wenv, cwd: at2 }, planShape(opts, path59.join(at2, CHECK_BRIEF), undefined, []));
   const issues = [
     ..."issues" in facts ? facts.issues : [
       ...head2 === undefined ? [NO_COMMIT] : [],
@@ -13935,7 +14068,7 @@ function checkOnly(opts, wenv) {
 }
 
 // bin/helpers/worker-dispatch-verify.ts
-import * as path59 from "node:path";
+import * as path60 from "node:path";
 function checkoutAt(input, cwd) {
   if (cwd === physical(input.launchTop)) {
     return `the launching checkout ${input.launchTop}`;
@@ -13957,7 +14090,7 @@ function landingOnce(input, jobId, readTimeoutMs) {
   if (row2.cwd === undefined) {
     return { kind: "missing", saw: `the job ${jobId} lists no cwd` };
   }
-  const cwd = physical(path59.resolve(input.launchTop, row2.cwd));
+  const cwd = physical(path60.resolve(input.launchTop, row2.cwd));
   const checkout = checkoutAt(input, cwd);
   if (checkout !== undefined)
     return { kind: "checkout", checkout };
@@ -14073,7 +14206,7 @@ function verifyWorktree(input) {
 
 // bin/helpers/worker-exclude.ts
 import * as fs48 from "node:fs";
-import * as path60 from "node:path";
+import * as path61 from "node:path";
 var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
 var reason7 = (e) => e instanceof Error ? e.message : String(e);
@@ -14096,7 +14229,7 @@ function appendExclude(file, text) {
 `) ? "" : `
 `;
   try {
-    fs48.mkdirSync(path60.dirname(file), { recursive: true });
+    fs48.mkdirSync(path61.dirname(file), { recursive: true });
     fs48.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
 `);
     return [];
@@ -14109,7 +14242,7 @@ function appendExclude(file, text) {
 function ensureWorktreesExcluded(runGit, top, commonDir) {
   if (isIgnored(runGit, top))
     return { line: undefined };
-  const file = path60.join(commonDir, "info", "exclude");
+  const file = path61.join(commonDir, "info", "exclude");
   const read = readExclude(file);
   if ("issues" in read)
     return read;
@@ -14139,17 +14272,21 @@ function landingLine(ready) {
   const from = ready.launchTop === ready.mainTop ? "" : ` · launched from ${ready.launchTop}`;
   return `lands in: ${target}${from}`;
 }
+function dispatchedLine(ready) {
+  const pushes = ready.allowPush ? "pushes ALLOWED on the operator's word" : "pushes blocked";
+  return `worker ${ready.brief.name} dispatched · permission mode ${ready.mode} · ${pushes}`;
+}
 function summary2(ready) {
   const { brief, mode } = ready;
-  const pushes = ready.allowPush ? "pushes ALLOWED on the operator's word" : "pushes blocked";
   return [
-    `worker ${brief.name} dispatched · permission mode ${mode} · ${pushes}`,
+    dispatchedLine(ready),
     ...mode === BYPASS ? ["every tool call the worker makes is pre-approved"] : [],
     landingLine(ready),
     `steer: rulings in ${brief.rulings}, then message "${brief.name}" to point at them`,
     `finish: sidekick worker finish ${shellArg(ready.briefPath)}`
   ];
 }
+var startLines = (ready, wenv) => ready.brief.kind === "unit" ? [dispatchedLine(ready)] : [...mainLines(ready, wenv), ...summary2(ready)];
 var refuse8 = (err, issues) => {
   for (const issue2 of issues)
     err(issue2);
@@ -14168,8 +14305,12 @@ function keepRecord(ready, job, err) {
     err(written.issue);
 }
 function wayOut(ready, verdict, stopped) {
+  const byHook = verdict.cause === "creator";
+  if (ready.brief.kind === "unit") {
+    return byHook ? `${stopped} Remove its worktree with the hook's own removal.` : stopped;
+  }
   const discard = `sidekick worker finish ${shellArg(ready.briefPath)} --discard`;
-  return verdict.cause === "creator" ? `${stopped} Remove its worktree with the hook's own removal, then run: ${discard}` : `${stopped} Then run: ${discard}`;
+  return byHook ? `${stopped} Remove its worktree with the hook's own removal, then run: ${discard}` : `${stopped} Then run: ${discard}`;
 }
 function stopStray(ready, job, wenv, timeoutMs = 1e4) {
   const result = wenv.runClaude(["stop", job], {
@@ -14191,9 +14332,20 @@ function refuseStray(ready, verdict, wenv, err) {
     wayOut(ready, verdict, stopped)
   ]);
 }
-function afterStart(ready, result, wenv, { out, err }) {
+function started(onStart, job, err) {
+  try {
+    onStart?.(job);
+    return true;
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    err(`the worker started, but recording its start failed: ${why}`);
+    return false;
+  }
+}
+function afterStart(ready, result, wenv, { out, err, onStart }) {
   const job = jobIdFrom(result.stdout, ready.brief.name);
   keepRecord(ready, job, err);
+  const recorded = started(onStart, job, err);
   const verdict = verifyWorktree({
     runGit: wenv.runGit,
     runClaude: wenv.runClaude,
@@ -14205,21 +14357,21 @@ function afterStart(ready, result, wenv, { out, err }) {
     baseline: ready.brief.baseline
   });
   if (verdict.kind === "mismatch") {
-    return refuseStray(ready, verdict, wenv, err);
+    return { code: refuseStray(ready, verdict, wenv, err), job };
   }
-  for (const line of [...mainLines(ready, wenv), ...summary2(ready)]) {
+  for (const line of startLines(ready, wenv))
     out(line);
-  }
   if (verdict.kind === "unchecked")
     err(verdict.line);
-  return result.code;
+  return { code: recorded ? result.code : 1, job };
 }
-function launch3(ready, wenv, out, err) {
+function launch3(ready, wenv, { out, err, onStart }) {
   for (const note of ready.notes)
     err(note);
   const excluded = ensureWorktreesExcluded(wenv.runGit, ready.mainTop, ready.commonDir);
-  if ("issues" in excluded)
-    return refuse8(err, excluded.issues);
+  if ("issues" in excluded) {
+    return { code: refuse8(err, excluded.issues), job: null };
+  }
   if (excluded.line !== undefined)
     out(excluded.line);
   const args = bgArgs(ready.args, {
@@ -14235,8 +14387,8 @@ function launch3(ready, wenv, out, err) {
   });
   relay(result, out, err);
   if (result.code !== 0)
-    return result.code;
-  return afterStart(ready, result, wenv, { out, err });
+    return { code: result.code, job: null };
+  return afterStart(ready, result, wenv, { out, err, onStart });
 }
 function runCheck(opts, wenv, out, err) {
   const checked2 = checkOnly(opts, wenv);
@@ -14256,11 +14408,11 @@ function dispatch(opts, wenv, out, err) {
   const checked2 = checkDispatch(read.brief, read.path, opts, wenv);
   if ("issues" in checked2)
     return refuse8(err, checked2.issues);
-  return launch3(checked2, wenv, out, err);
+  return launch3(checked2, wenv, { out, err }).code;
 }
 
 // bin/helpers/worker-dispatch-args.ts
-import * as path61 from "node:path";
+import * as path62 from "node:path";
 var DEFAULT_WORKER_PROFILE = "worker";
 var stringFlag = (values, key) => {
   const value = values[key];
@@ -14296,13 +14448,13 @@ function parseDispatchArgs(rest2, cwd) {
   const shared = {
     mode: stringFlag(parsed.values, "permission-mode"),
     profile: stringFlag(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path61.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path62.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
   return check2 ? { ...shared, check: true } : {
     ...shared,
     check: false,
-    brief: path61.resolve(cwd, parsed.positionals[0])
+    brief: path62.resolve(cwd, parsed.positionals[0])
   };
 }
 
@@ -14346,7 +14498,7 @@ function writeBackup(runGit, top, ref2, head2) {
 var keepBackup = (ready, wenv) => writeBackup(wenv.runGit, ready.mainTop, readyBackup(ready), ready.head);
 
 // bin/helpers/worker-finish-args.ts
-import * as path62 from "node:path";
+import * as path63 from "node:path";
 var NEEDS_REPORT = "--name needs --no-report or --discard, since there is no brief to say where the run report goes";
 var NEEDS_INTO = "--name needs --into <rev> or --discard, since there is no brief to name the target";
 var stringFlag2 = (values, key) => {
@@ -14372,7 +14524,7 @@ function parseFinishArgs(rest2, cwd) {
   const shared = {
     noReport: values["no-report"] === true,
     mode: discard ? { kind: "discard" } : { kind: "landed", into },
-    worktree: worktree === undefined ? undefined : path62.resolve(cwd, worktree)
+    worktree: worktree === undefined ? undefined : path63.resolve(cwd, worktree)
   };
   const name = stringFlag2(values, "name");
   if (name !== undefined) {
@@ -14380,7 +14532,7 @@ function parseFinishArgs(rest2, cwd) {
   }
   if (positionals.length !== 1)
     return;
-  const brief = path62.resolve(cwd, positionals[0]);
+  const brief = path63.resolve(cwd, positionals[0]);
   return { subject: { kind: "brief", brief }, ...shared };
 }
 function byName3(name, shared) {
@@ -14443,11 +14595,11 @@ var discardCommandFor = (opts) => commandFor(opts, { kind: "discard" });
 
 // bin/helpers/worker-finish-chain.ts
 import * as fs50 from "node:fs";
-import * as path64 from "node:path";
+import * as path65 from "node:path";
 
 // bin/helpers/worker-git.ts
 import * as fs49 from "node:fs";
-import * as path63 from "node:path";
+import * as path64 from "node:path";
 var HARDENED_GIT_FLAGS = [
   "-c",
   "core.hooksPath=/dev/null",
@@ -14488,8 +14640,8 @@ function namedByGitFile(dotGit) {
       issue: `${dotGit} does not start with "${GITFILE_PREFIX}", so it names no admin folder`
     };
   }
-  const named = read.text.slice(GITFILE_PREFIX.length);
-  return { dir: path63.resolve(physical(path63.dirname(dotGit)), named) };
+  const named2 = read.text.slice(GITFILE_PREFIX.length);
+  return { dir: path64.resolve(physical(path64.dirname(dotGit)), named2) };
 }
 function adminNamed(dotGit) {
   const stat = lstatOf2(dotGit);
@@ -14503,27 +14655,27 @@ function adminNamed(dotGit) {
       issue: `${dotGit} is not a file, so it is not the link git writes into a linked worktree`
     };
   }
-  const named = namedByGitFile(dotGit);
-  if ("issue" in named)
-    return named;
-  if (!isFolder4(named.dir)) {
-    return { issue: `${dotGit} names ${named.dir}, which is not a folder` };
+  const named2 = namedByGitFile(dotGit);
+  if ("issue" in named2)
+    return named2;
+  if (!isFolder4(named2.dir)) {
+    return { issue: `${dotGit} names ${named2.dir}, which is not a folder` };
   }
-  return named;
+  return named2;
 }
 var plantedLine = (file) => `${file} exists, but a main git dir never holds one: git reads it to find the repository, so it may send git to another one`;
 function plantedIssues(gitDir) {
-  const file = path63.join(gitDir, COMMONDIR);
+  const file = path64.join(gitDir, COMMONDIR);
   return lstatOf2(file) === undefined ? [] : [plantedLine(file)];
 }
 function placeIssues2(dotGit, admin, commonDir, expected) {
-  const worktrees = path63.join(commonDir, "worktrees");
-  if (path63.dirname(physical(admin)) !== physical(worktrees)) {
+  const worktrees = path64.join(commonDir, "worktrees");
+  if (path64.dirname(physical(admin)) !== physical(worktrees)) {
     return [
       `${dotGit} names ${admin}, which is not directly under ${worktrees}, where git keeps each linked worktree's admin folder`
     ];
   }
-  const name = path63.basename(physical(admin));
+  const name = path64.basename(physical(admin));
   if (expected === undefined || name === expected)
     return [];
   return [
@@ -14531,11 +14683,11 @@ function placeIssues2(dotGit, admin, commonDir, expected) {
   ];
 }
 function pointerIssues(admin, file, want, wrong) {
-  const at2 = path63.join(admin, file);
+  const at2 = path64.join(admin, file);
   const read = pointerText(at2);
   if ("issue" in read)
     return [read.issue];
-  const to = path63.resolve(physical(admin), read.text);
+  const to = path64.resolve(physical(admin), read.text);
   return physical(to) === physical(want) ? [] : [wrong(at2, to)];
 }
 var backIssues = (admin, dotGit, commonDir) => [
@@ -14543,12 +14695,12 @@ var backIssues = (admin, dotGit, commonDir) => [
   ...pointerIssues(admin, COMMONDIR, commonDir, (at2, to) => `${at2} points to ${to}, not to the common git dir ${commonDir}`)
 ];
 function chainOf(worktree, commonDir, expected) {
-  const dotGit = path63.join(worktree, ".git");
+  const dotGit = path64.join(worktree, ".git");
   const planted = plantedIssues(commonDir);
-  const named = adminNamed(dotGit);
-  if ("issue" in named)
-    return { issues: [...planted, named.issue] };
-  const admin = named.dir;
+  const named2 = adminNamed(dotGit);
+  if ("issue" in named2)
+    return { issues: [...planted, named2.issue] };
+  const admin = named2.dir;
   const issues = [
     ...planted,
     ...placeIssues2(dotGit, admin, commonDir, expected),
@@ -14557,12 +14709,12 @@ function chainOf(worktree, commonDir, expected) {
   return issues.length === 0 ? { gitDir: physical(admin) } : { issues };
 }
 function mainGitDir(runGit, facts) {
-  const launchGit = path63.join(facts.launchTop, ".git");
+  const launchGit = path64.join(facts.launchTop, ".git");
   if (isFolder4(launchGit))
     return { dir: launchGit };
   const found = checkoutOf(runGit, facts.mainTop);
   if ("top" in found) {
-    const dotGit = path63.join(found.top, ".git");
+    const dotGit = path64.join(found.top, ".git");
     return isFolder4(dotGit) ? { dir: dotGit } : namedByGitFile(dotGit);
   }
   if (physical(facts.mainTop) === physical(facts.commonDir)) {
@@ -14598,17 +14750,17 @@ function gitFolder(cwd, args) {
   let at2 = 0;
   while (at2 < args.length && args[at2].startsWith("-")) {
     if (args[at2] === "-C")
-      folder = path63.resolve(folder, args[at2 + 1] ?? "");
+      folder = path64.resolve(folder, args[at2 + 1] ?? "");
     at2 += VALUE_OPTIONS.has(args[at2]) ? 2 : 1;
   }
   return folder;
 }
 function within2(folder, root) {
-  const rel = path63.relative(root, folder);
+  const rel = path64.relative(root, folder);
   if (rel === "")
     return true;
-  const leaves = rel === ".." || rel.startsWith(`..${path63.sep}`);
-  return !leaves && !path63.isAbsolute(rel);
+  const leaves = rel === ".." || rel.startsWith(`..${path64.sep}`);
+  return !leaves && !path64.isAbsolute(rel);
 }
 function hardenedRunner(run, place) {
   const root = physical(place.worktree);
@@ -14649,13 +14801,13 @@ function chainNowIssues(ready) {
   if (chain.gitDir === ready.gitDir)
     return [];
   return [
-    `${path64.join(ready.worktree, ".git")} names the admin folder ${chain.gitDir}, not ${ready.gitDir}, the one finish checked`
+    `${path65.join(ready.worktree, ".git")} names the admin folder ${chain.gitDir}, not ${ready.gitDir}, the one finish checked`
   ];
 }
 
 // bin/helpers/worker-finish-tree.ts
 import * as fs51 from "node:fs";
-import * as path65 from "node:path";
+import * as path66 from "node:path";
 
 // bin/helpers/worker-finish-target.ts
 function targetName(runGit, top, rev) {
@@ -14853,15 +15005,15 @@ function offBranchReason(mode, branch) {
   }
 }
 function briefPlaces(read, worktree) {
-  const report2 = path65.posix.normalize(read.brief.report);
+  const report2 = path66.posix.normalize(read.brief.report);
   const { folder, top } = read;
   return {
     folder,
     top,
     target: briefTargetOf(read.brief),
     report: report2,
-    reportFrom: path65.join(worktree, report2),
-    reportTo: top === undefined ? undefined : path65.join(top, report2)
+    reportFrom: path66.join(worktree, report2),
+    reportTo: top === undefined ? undefined : path66.join(top, report2)
   };
 }
 function placesFor(tops, found, read) {
@@ -14906,7 +15058,7 @@ function operatorIssues(name, tried, linked2) {
   ];
 }
 function unlinkedIssues(runGit, top, worktree, id) {
-  const linkless = fs51.existsSync(worktree) && !fs51.existsSync(path65.join(worktree, ".git"));
+  const linkless = fs51.existsSync(worktree) && !fs51.existsSync(path66.join(worktree, ".git"));
   if (!linkless)
     return [];
   const list3 = worktreeListed(runGit, top, worktree);
@@ -15108,7 +15260,7 @@ function clearGone(gone, wenv, out) {
 
 // bin/helpers/worker-finish-report.ts
 import * as fs52 from "node:fs";
-import * as path66 from "node:path";
+import * as path67 from "node:path";
 var isMissing8 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readIfPresent(file) {
   try {
@@ -15165,7 +15317,7 @@ function missingReportStep(brief, noReport, partial) {
 }
 function copyReport(from, to, out) {
   try {
-    fs52.mkdirSync(path66.dirname(to), { recursive: true });
+    fs52.mkdirSync(path67.dirname(to), { recursive: true });
     fs52.copyFileSync(from, to, fs52.constants.COPYFILE_EXCL);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
@@ -15229,7 +15381,7 @@ function copyChangedIssues(from, to, now) {
 
 // bin/helpers/worker-finish-subject.ts
 import * as fs53 from "node:fs";
-import * as path67 from "node:path";
+import * as path68 from "node:path";
 function topOf(runGit, folder) {
   const found = checkoutOf(runGit, folder);
   return "top" in found ? found.top : undefined;
@@ -15240,7 +15392,7 @@ function readSubject(subject, runGit) {
       const read = readBrief(subject.brief);
       if ("issues" in read)
         return read;
-      const folder = path67.dirname(subject.brief);
+      const folder = path68.dirname(subject.brief);
       const top = topOf(runGit, folder);
       const { brief } = read;
       return { name: brief.name, from: "brief", read: { brief, folder, top } };
@@ -15258,7 +15410,7 @@ function recordedTop(runGit, commonDir, name) {
   const record3 = records.find((r) => r.name === name);
   if (record3 === undefined)
     return;
-  const folder = path67.dirname(record3.brief);
+  const folder = path68.dirname(record3.brief);
   return fs53.existsSync(folder) ? topOf(runGit, folder) : undefined;
 }
 function launcherOf(subject, facts, runGit) {
@@ -15279,7 +15431,7 @@ function launcherOf(subject, facts, runGit) {
 
 // bin/helpers/worker-teardown-leftovers.ts
 import * as fs54 from "node:fs";
-import * as path68 from "node:path";
+import * as path69 from "node:path";
 function clearSavedReport(ready) {
   const step = ready.reportStep;
   if (step.kind === "none" || step.kind === "no brief")
@@ -15297,7 +15449,7 @@ function forgottenWayOut({
   branch
 }) {
   const route = `finish has forgotten the worker, so once you clear what stopped the removal, run sidekick worktree remove ${shellArg(worktree)}`;
-  const removable = nativeBranch(path68.basename(worktree));
+  const removable = nativeBranch(path69.basename(worktree));
   if (branch === removable)
     return route;
   return `${route}. remove leaves the branch ${branch} in place, since it deletes only ${removable} or a branch sidekick worktree move made for that worktree, and writes a backup ref for its head first`;
@@ -15779,7 +15931,7 @@ function isOwnBranch(runGit, top, branch, name) {
 }
 
 // bin/helpers/worktree-move-checks.ts
-import * as path69 from "node:path";
+import * as path70 from "node:path";
 var DIGITS = /^\d+$/;
 function parseMoveArgs(rest2) {
   const parsed = parseFlags(rest2, {
@@ -15837,7 +15989,7 @@ function whereItRuns(env, err) {
     return refuse10(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
   }
   const entry = repo.worktrees[at2];
-  return { repo, entry, name: path69.basename(entry.path) };
+  return { repo, entry, name: path70.basename(entry.path) };
 }
 var heldElsewhere = (place, branch) => place.repo.worktrees.some((entry) => entry !== place.entry && entry.branch === `${HEADS}${branch}`);
 function onBranchMoved(runGit, place, on, branch) {
@@ -16046,9 +16198,9 @@ function branchPlan(runGit, place, args, remotes) {
 }
 function branchMove(runGit, place, args) {
   const dir = place.entry.path;
-  const named = nameRefusal2(runGit, dir, args.branch);
-  if (named !== undefined)
-    return named;
+  const named2 = nameRefusal2(runGit, dir, args.branch);
+  if (named2 !== undefined)
+    return named2;
   const remotes = remotesOf(runGit, dir);
   if (!Array.isArray(remotes))
     return remotes;
@@ -16399,7 +16551,7 @@ function moveWorktree(args, env, out, err) {
 }
 
 // bin/helpers/worktree-remove-checks.ts
-import * as path70 from "node:path";
+import * as path71 from "node:path";
 var DISCARD = "--discard";
 var REMOTES2 = "refs/remotes/";
 function parseRemoveArgs(rest2) {
@@ -16447,8 +16599,8 @@ var alone = (repo, entry) => ({
   worktrees: [repo.worktrees[0], entry]
 });
 function resolveTarget3(repo, cwd, target) {
-  const asPath = path70.resolve(cwd, target);
-  const matches = repo.worktrees.filter((entry2) => path70.basename(entry2.path) === target || samePath(entry2.path, asPath));
+  const asPath = path71.resolve(cwd, target);
+  const matches = repo.worktrees.filter((entry2) => path71.basename(entry2.path) === target || samePath(entry2.path, asPath));
   if (matches.length === 0) {
     return refuse11(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
   }
@@ -16946,20 +17098,20 @@ function runWorktreeCli(rest2, env, out, err) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path71.dirname(fileURLToPath(entryFileUrl));
+  const here = path72.dirname(fileURLToPath(entryFileUrl));
   const candidates3 = [
-    path71.resolve(here, ".."),
-    path71.resolve(here, "..", "plugin")
+    path72.resolve(here, ".."),
+    path72.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs55.existsSync(path71.join(c, "rules")))
+    if (fs55.existsSync(path72.join(c, "rules")))
       return c;
   }
   return candidates3[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path71.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path72.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
     const parsed = safeParse(ManifestVersion, JSON.parse(fs55.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
@@ -17089,7 +17241,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path71.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path72.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;

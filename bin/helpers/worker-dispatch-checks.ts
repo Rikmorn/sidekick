@@ -2,31 +2,45 @@
  * The checks `sidekick worker dispatch` runs before it launches: the brief's
  * place and its `## Limits` section, the launching checkout, the worker's names, the permission mode, the
  * plugin folder, and the profile. Every check names each reason it refuses; a
- * pass hands the launch a `Ready`.
+ * pass hands the launch a `Ready`. A unit brief's profile check composes the
+ * launch inside the fence, from the context a unit launch passes.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readSection } from './hook.js';
 import { type ResolvedMain, resolveMain } from './main-session.js';
+import { storeRoot } from './memory-store.js';
 import type { Runner } from './pm-data.js';
-import { checkComposed, loadForLaunch, type ProfileEnv } from './profile.js';
+import {
+  checkComposed,
+  type LaunchOptions,
+  loadForLaunch,
+  type ProfileEnv,
+} from './profile.js';
 import { isProfileName } from './profile-manifest.js';
 import { oldStoreIssues } from './profile-old-store.js';
 import { isFolder, pluginDirIssues } from './profile-role.js';
 import { type Profile, storeRoots } from './profile-store.js';
+import { sidekickHome } from './sidekick-home.js';
 import { BRIEF_LIMITS_HEADING, readBriefLimits } from './subagent-limits.js';
 import type { WorkerEnv } from './worker.js';
 import {
   type Brief,
   briefFileIssues,
   type PlanBrief,
+  type UnitBrief,
   unitBriefFileIssues,
 } from './worker-brief.js';
 import type { CheckOptions, SharedOptions } from './worker-dispatch-args.js';
 import { type CheckoutFacts, checkoutFacts } from './worker-facts.js';
 import { listJobs } from './worker-jobs.js';
-import { workerOverlay } from './worker-overlay.js';
+import {
+  unitOverlay,
+  unitSettingSources,
+  withoutAllow,
+  workerOverlay,
+} from './worker-overlay.js';
 import {
   branchExists,
   commitOf,
@@ -215,18 +229,84 @@ type Prepared =
   | { ok: true; args: string[]; notes: string[] }
   | { ok: false; issues: string[] };
 
+// The profile a launch composes and the options it composes with, or why it cannot.
+type Shaped =
+  | { profile: Profile; launch: LaunchOptions }
+  | { issues: string[] };
+type Shape = (profile: Profile) => Shaped;
+
+// A plan worker: the profile as it is, the worker overlay, and dispatch's `--plugin-dir`.
+const planShape =
+  (
+    opts: SharedOptions,
+    briefPath: string,
+    main: string | undefined,
+    reads: readonly string[],
+  ): Shape =>
+  (profile) => {
+    const overlay = workerOverlay(profile.manifest.settings, {
+      briefPath,
+      allowPush: opts.allowPush,
+      main,
+      reads,
+    });
+    if ('issues' in overlay) return overlay;
+    const pluginDirs = opts.pluginDir === undefined ? [] : [opts.pluginDir];
+    return { profile, launch: { overlay: overlay.overlay, pluginDirs } };
+  };
+
+/** What a unit launch adds to dispatch's checks: the attempt's folder, which it adds, and the hosts its fence lets through. */
+export interface UnitContext {
+  attemptDir: string;
+  hosts: readonly string[];
+}
+
+// A unit worker: the profile less its allow rules, the unit overlay, the
+// attempt's folder added, and no `project` or `local` source.
+const unitShape =
+  (
+    brief: UnitBrief,
+    briefPath: string,
+    unit: UnitContext,
+    facts: CheckoutFacts,
+    penv: ProfileEnv,
+  ): Shape =>
+  (profile) => {
+    const overlay = unitOverlay(profile.manifest.settings, {
+      briefPath,
+      worktree: nativeFolder(facts.mainTop, brief.name),
+      commonDir: facts.commonDir,
+      sidekickHome: sidekickHome(penv.env, penv.cwd, penv.home),
+      memoryStore: path.resolve(penv.cwd, storeRoot(penv.env, penv.home)),
+      hosts: unit.hosts,
+      reads: [briefPath, brief.unit, brief.rulings],
+      addedDirs: [profile.dir, unit.attemptDir],
+    });
+    if ('issues' in overlay) return overlay;
+    const settings = withoutAllow(profile.manifest.settings);
+    return {
+      profile: { ...profile, manifest: { ...profile.manifest, settings } },
+      launch: {
+        overlay: overlay.overlay,
+        addDirs: [unit.attemptDir],
+        settingSources: unitSettingSources(profile),
+      },
+    };
+  };
+
+// The launch refuses for a reason the other checks name.
+const named: Shape = () => ({ issues: [] });
+
 /**
- * Checks the `--plugin-dir` folder, then loads, overlays, and checks the
- * profile. A folder the check refuses never reaches the `claude` checks. The
- * lines the profile helpers print are collected: issues on a refusal,
- * warnings to print before the launch.
+ * Checks the `--plugin-dir` folder, then loads the profile, shapes its launch,
+ * and checks it. A folder the check refuses never reaches the `claude`
+ * checks. The lines the profile helpers print are collected: issues on a
+ * refusal, warnings to print before the launch.
  */
 function prepareProfile(
   opts: SharedOptions,
-  briefPath: string,
   penv: ProfileEnv,
-  main: string | undefined,
-  reads: string[],
+  shape: Shape,
 ): Prepared {
   const dirIssues = pluginDirIssues(opts.pluginDir);
   const lines: string[] = [];
@@ -242,18 +322,10 @@ function prepareProfile(
     return refused(missingProfileHint(opts.profile, penv));
   }
   const bypass = bypassIssues(profile, opts.mode);
-  const overlay = workerOverlay(profile.manifest.settings, {
-    briefPath,
-    allowPush: opts.allowPush,
-    main,
-    reads,
-  });
-  if ('issues' in overlay) return refused([...overlay.issues, ...bypass]);
+  const shaped = shape(profile);
+  if ('issues' in shaped) return refused([...shaped.issues, ...bypass]);
   if (dirIssues.length > 0) return refused(bypass);
-  const args = checkComposed(profile, penv, collect, {
-    overlay: overlay.overlay,
-    pluginDirs: opts.pluginDir === undefined ? [] : [opts.pluginDir],
-  });
+  const args = checkComposed(shaped.profile, penv, collect, shaped.launch);
   if (args === undefined || bypass.length > 0) return refused(bypass);
   return { ok: true, args, notes: lines };
 }
@@ -282,19 +354,50 @@ const CHECK_BRIEF = 'check-brief.md';
 const insideWorkerIssue =
   'SIDEKICK_WORKER is set: a worker cannot dispatch workers of its own (#255)';
 
+// An empty marker is absent, as every other reader of it holds: a loop's
+// compiled env sets it empty.
+const insideWorker = (env: NodeJS.ProcessEnv): boolean =>
+  env.SIDEKICK_WORKER !== undefined && env.SIDEKICK_WORKER !== '';
+
+// The fence needs the loop's hosts, which only a unit launch passes.
+const loopOnlyIssue = (briefPath: string): string =>
+  `${briefPath}: a unit brief starts only through sidekick loop dispatch, which launches it inside its fence`;
+
+// The shape of a brief's launch. A unit brief without its launch's context,
+// or without the checkout's facts, is refused by the issue each names.
+function shapeFor(
+  brief: Brief,
+  briefPath: string,
+  ctx: {
+    opts: SharedOptions;
+    main: string | undefined;
+    unit: UnitContext | undefined;
+    facts: CheckoutFacts | { issues: string[] };
+    penv: ProfileEnv;
+  },
+): Shape {
+  if (brief.kind === 'plan') {
+    const reads = [briefPath, brief.plan, brief.spec, brief.rulings];
+    return planShape(ctx.opts, briefPath, ctx.main, reads);
+  }
+  if (ctx.unit === undefined || 'issues' in ctx.facts) return named;
+  return unitShape(brief, briefPath, ctx.unit, ctx.facts, ctx.penv);
+}
+
 /**
  * The checks run from the launching checkout, as the launch does; outside a
  * work tree, those that need no checkout still run from the current folder.
+ * A unit brief needs `unit`, which only a unit launch passes; a plan brief
+ * ignores it.
  */
 export function checkDispatch(
   brief: Brief,
   briefPath: string,
   opts: SharedOptions,
   wenv: WorkerEnv,
+  unit?: UnitContext,
 ): Ready | { issues: string[] } {
-  if (wenv.env.SIDEKICK_WORKER !== undefined) {
-    return { issues: [insideWorkerIssue] };
-  }
+  if (insideWorker(wenv.env)) return { issues: [insideWorkerIssue] };
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   const at = 'issues' in facts ? wenv.cwd : facts.launchTop;
   const listed = listJobs(wenv.runClaude, at);
@@ -302,18 +405,16 @@ export function checkDispatch(
     wenv.env,
     'jobs' in listed ? listed.jobs : undefined,
   );
-  const reads =
-    brief.kind === 'plan'
-      ? [briefPath, brief.plan, brief.spec, brief.rulings]
-      : [briefPath, brief.unit, brief.rulings];
+  const penv = { ...wenv, cwd: at };
   const prepared = prepareProfile(
     opts,
-    briefPath,
-    { ...wenv, cwd: at },
-    main?.value,
-    reads,
+    penv,
+    shapeFor(brief, briefPath, { opts, main: main?.value, unit, facts, penv }),
   );
   const issues = [
+    ...(brief.kind === 'unit' && unit === undefined
+      ? [loopOnlyIssue(briefPath)]
+      : []),
     ...(brief.kind === 'unit' ? unitBriefFileIssues(brief, briefPath) : []),
     ...('issues' in facts
       ? facts.issues
@@ -358,18 +459,14 @@ export function checkOnly(
   opts: CheckOptions,
   wenv: WorkerEnv,
 ): CheckPass | { issues: string[] } {
-  if (wenv.env.SIDEKICK_WORKER !== undefined) {
-    return { issues: [insideWorkerIssue] };
-  }
+  if (insideWorker(wenv.env)) return { issues: [insideWorkerIssue] };
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   const at = 'issues' in facts ? wenv.cwd : facts.launchTop;
   const head = 'issues' in facts ? undefined : headCommit(wenv.runGit, at);
   const prepared = prepareProfile(
     opts,
-    path.join(at, CHECK_BRIEF),
     { ...wenv, cwd: at },
-    undefined,
-    [],
+    planShape(opts, path.join(at, CHECK_BRIEF), undefined, []),
   );
   const issues = [
     ...('issues' in facts
