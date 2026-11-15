@@ -15971,6 +15971,16 @@ var refuse14 = (err, issues) => {
   return REFUSED7;
 };
 var messageOf13 = (e) => e instanceof Error ? e.message : String(e);
+function resumeEnvIssues(env, name) {
+  const loop = env.SIDEKICK_LOOP;
+  const isLoop = loop !== undefined && loop !== "";
+  return [
+    ...envIssues({ ...env, SIDEKICK_LOOP: undefined }, name, "resume"),
+    ...isLoop ? [
+      `SIDEKICK_LOOP is "${loop}": resume is the operator's and runs from a main, so a loop never clears a breaker`
+    ] : []
+  ];
+}
 function parseResume(rest2) {
   const parsed = parseFlags(rest2, { reason: { type: "string" } });
   if (parsed === undefined || parsed.positionals.length !== 1)
@@ -16019,7 +16029,7 @@ function loopResume(rest2, lenv, out, err) {
   const early = [
     ...loopNameIssues(call.name),
     ...reasonIssues(call.reason),
-    ...envIssues(lenv.env, call.name, "resume")
+    ...resumeEnvIssues(lenv.env, call.name)
   ];
   if (early.length > 0)
     return refuse14(err, early);

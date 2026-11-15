@@ -96,6 +96,17 @@ describe('loop resume', () => {
     expect(fs.existsSync(path.join(fx.loopDir, 'units.lock'))).toBe(false);
   });
 
+  test('an empty SIDEKICK_LOOP reads as unset, so the operator may resume', () => {
+    const fx = unitFixture();
+    failUnits(fx, 3);
+    const r = run(fx, resumeArgs(), {
+      env: { CLAUDE_CONFIG_DIR: fx.config, SIDEKICK_LOOP: '' },
+    });
+    expect(r.err).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(fx.ledger().at(-1)?.kind).toBe('resumed');
+  });
+
   test('resume reaps nothing, so it calls no claude, even past the work cap', () => {
     const fx = unitFixture({ dispatchedAgo: 240 });
     failUnits(fx, 3);
@@ -139,8 +150,16 @@ describe('loop resume refuses, changing nothing', () => {
     [
       "another loop's SIDEKICK_LOOP",
       resumeArgs(),
-      () => ({ env: { SIDEKICK_LOOP: 'other' } }),
-      'SIDEKICK_LOOP is "other", so this session cannot run loop resume for "fixer"',
+      (fx) => ({
+        env: { CLAUDE_CONFIG_DIR: fx.config, SIDEKICK_LOOP: 'other' },
+      }),
+      'SIDEKICK_LOOP is "other": resume is the operator\'s and runs from a main, so a loop never clears a breaker',
+    ],
+    [
+      "the loop's own SIDEKICK_LOOP, as its compiled env sets it",
+      resumeArgs(),
+      (fx) => ({ env: { CLAUDE_CONFIG_DIR: fx.config, SIDEKICK_LOOP: LOOP } }),
+      'SIDEKICK_LOOP is "fixer": resume is the operator\'s and runs from a main, so a loop never clears a breaker',
     ],
     [
       'a non-empty SIDEKICK_WORKER',

@@ -2,10 +2,12 @@
  * `sidekick loop resume <name> --reason <text>`: the operator's reset of a
  * tripped breaker, once its cause is settled. It writes `resumed` with the
  * reason, which restarts the count of units failed in a row. It refuses when
- * the breaker has not tripped, so the line always marks a real reset. It is
- * not among the loop's fixed verbs, so a loop cannot clear its own breaker.
- * It takes the units lock and reaps nothing, since a reap can stop a worker
- * or refuse, and neither belongs in the operator's reset.
+ * the breaker has not tripped, so the line always marks a real reset. A
+ * loop cannot clear its own breaker: `resume` refuses in any session whose
+ * `SIDEKICK_LOOP` is set, as every loop's compiled env sets it, and the
+ * loop's allow list names no `resume`. An empty value reads as unset. It
+ * takes the units lock and reaps nothing, since a reap can stop a worker or
+ * refuse, and neither belongs in the operator's reset.
  */
 
 import type { LoopEnv } from './loop.js';
@@ -34,6 +36,23 @@ const refuse = (err: Out, issues: string[]): number => {
 
 const messageOf = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
+
+// What in the environment refuses `resume`: a worker's marker, as for every
+// unit verb, and any loop's name, its own included, since the reset is the
+// operator's. `envIssues` sees no `SIDEKICK_LOOP`, so a loop's name refuses
+// once, with this line.
+function resumeEnvIssues(env: NodeJS.ProcessEnv, name: string): string[] {
+  const loop = env.SIDEKICK_LOOP;
+  const isLoop = loop !== undefined && loop !== '';
+  return [
+    ...envIssues({ ...env, SIDEKICK_LOOP: undefined }, name, 'resume'),
+    ...(isLoop
+      ? [
+          `SIDEKICK_LOOP is "${loop}": resume is the operator's and runs from a main, so a loop never clears a breaker`,
+        ]
+      : []),
+  ];
+}
 
 interface ResumeCall {
   name: string;
@@ -102,7 +121,7 @@ export function loopResume(
   const early = [
     ...loopNameIssues(call.name),
     ...reasonIssues(call.reason),
-    ...envIssues(lenv.env, call.name, 'resume'),
+    ...resumeEnvIssues(lenv.env, call.name),
   ];
   if (early.length > 0) return refuse(err, early);
   const ctx = unitContextOf(call.name, lenv);
