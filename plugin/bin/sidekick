@@ -12941,8 +12941,15 @@ var finishEnv = (call) => ({
   workTree: workTreeRootOf(call.cwd, call.lenv.runGit)
 });
 var handRoute2 = (worker, opts, repo) => `finish did not clear worker ${worker}, so the attempt closes and what remains is yours. List it with sidekick worktree list, and settle what finish names, such as uncommitted work to commit or remove. Then run ${discardCommandFor(opts)} in the loop's repo, ${repo}`;
-function liveLockIssue(call, worktree, worker) {
-  const pid = lockPid(lockReasonOf(call.lenv.runGit, call.cwd, worktree));
+function lockIssue(call, worktree, worker) {
+  const list2 = listWorktrees(call.lenv.runGit, call.cwd);
+  if ("issue" in list2) {
+    const why = list2.issue === "" ? "git printed nothing" : list2.issue;
+    return `git worktree list failed in ${call.cwd}, so discard cannot tell whether a process still holds the worktree of ${worker}, and the attempt stays in flight: ${why}. Run sidekick loop discard again once git lists the worktrees`;
+  }
+  const wanted = physical(worktree);
+  const entry = list2.worktrees.find((w) => physical(w.path) === wanted);
+  const pid = entry === undefined ? undefined : lockPid(entry.locked);
   if (pid === undefined || !call.lenv.isAlive(pid))
     return;
   return `the worktree of ${worker} is locked by pid ${pid}, which still runs, so the attempt stays in flight: run sidekick loop discard again once it exits`;
@@ -12962,9 +12969,9 @@ function runFinish(ctx, call, dir, worker) {
   const code = finish(opts, finishEnv(call), keep, keep);
   if (code === 0)
     return { removed: true, lines };
-  const live = liveLockIssue(call, worktree, worker);
-  if (live !== undefined)
-    return { issues: [...lines, live] };
+  const held = lockIssue(call, worktree, worker);
+  if (held !== undefined)
+    return { issues: [...lines, held] };
   return {
     removed: false,
     lines: [...lines, handRoute2(worker, opts, ctx.manifest.repo)]

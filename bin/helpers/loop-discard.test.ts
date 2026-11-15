@@ -17,6 +17,7 @@ import { git, removeTemps } from './fixtures/worker/repo.js';
 import { LOOP_USAGE_LINE, type LoopEnv, runLoopCli } from './loop.js';
 import { DISCARD_USAGE_LINE } from './loop-discard-verb.js';
 import { keyHits } from './memory-patterns.js';
+import { execRunner, type Runner } from './pm-data.js';
 import { ATTEMPT_REPORT } from './worker-brief.js';
 
 afterEach(removeTemps);
@@ -245,6 +246,31 @@ describe('loop discard keeps the attempt in flight while its worker may run', ()
     expect(r.code).toBe(1);
     expect(r.out).toEqual([]);
     expect(r.err.at(-1)).toBe(liveLockLine);
+    expect(snapshot(fx.loopDir)).toEqual(before);
+  });
+
+  test('a worktree listing that fails after a finish refusal writes nothing, naming the failure', () => {
+    const fx = unitFixture();
+    fs.writeFileSync(path.join(fx.worktree, 'wip.txt'), 'unsaved\n');
+    // The listing fails once finish has read the worktree's status, so finish
+    // refuses for the dirt, and the lock read that follows cannot list.
+    let statusSeen = false;
+    const runGit: Runner = (cmd, args, cwd, opts) => {
+      if (args.includes('status')) statusSeen = true;
+      const isListing = args.join(' ') === 'worktree list --porcelain -z';
+      if (statusSeen && isListing) {
+        return { code: 128, stdout: '', stderr: 'fatal: cannot list\n' };
+      }
+      return execRunner(cmd, args, cwd, opts);
+    };
+    const before = snapshot(fx.loopDir);
+    const r = run(fx, discardArgs(), { runGit });
+    expect(r.code).toBe(1);
+    expect(r.out).toEqual([]);
+    expect(r.err.join('\n')).toContain('wip.txt');
+    expect(r.err.at(-1)).toBe(
+      `git worktree list failed in ${fx.top}, so discard cannot tell whether a process still holds the worktree of ${WORKER}, and the attempt stays in flight: fatal: cannot list. Run sidekick loop discard again once git lists the worktrees`,
+    );
     expect(snapshot(fx.loopDir)).toEqual(before);
   });
 

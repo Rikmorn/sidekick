@@ -5,8 +5,8 @@
  * asked and `discarded`, which frees the loop's slot. When `finish` refuses,
  * as for work it will not lose, what it left stays, with the hand route; the
  * attempt closes anyway. While the worker may still run, or a live process
- * still holds the worktree's lock, nothing is written, so the slot never
- * frees under a running worker.
+ * may still hold the worktree's lock, nothing is written, so the slot never
+ * frees under a running worker. An unknown counts as may.
  */
 
 import * as fs from 'node:fs';
@@ -27,7 +27,8 @@ import { finish } from './worker-finish.js';
 import { discardCommandFor, type FinishOptions } from './worker-finish-args.js';
 import { leftoverRoute } from './worker-finish-gone.js';
 import { type Job, listJobs } from './worker-jobs.js';
-import { lockReasonOf } from './worker-listing.js';
+import { listWorktrees } from './worker-listing.js';
+import { physical } from './worker-repo.js';
 import { waitForExit } from './worker-teardown-stop.js';
 import { nativeFolder } from './worker-worktree.js';
 import { lockPid } from './worktree-lock.js';
@@ -111,13 +112,22 @@ const handRoute = (worker: string, opts: FinishOptions, repo: string): string =>
   `finish did not clear worker ${worker}, so the attempt closes and what remains is yours. List it with sidekick worktree list, and settle what finish names, such as uncommitted work to commit or remove. Then run ${discardCommandFor(opts)} in the loop's repo, ${repo}`;
 
 // A live process the worktree's lock names: `finish`'s own stop or wait fell
-// short, so the worker may still write there.
-function liveLockIssue(
+// short, so the worker may still write there. A listing git cannot give
+// leaves that unknown, which keeps the attempt open too. The lock is matched
+// by physical path, as `lockReasonOf` matches it.
+function lockIssue(
   call: JobCall,
   worktree: string,
   worker: string,
 ): string | undefined {
-  const pid = lockPid(lockReasonOf(call.lenv.runGit, call.cwd, worktree));
+  const list = listWorktrees(call.lenv.runGit, call.cwd);
+  if ('issue' in list) {
+    const why = list.issue === '' ? 'git printed nothing' : list.issue;
+    return `git worktree list failed in ${call.cwd}, so discard cannot tell whether a process still holds the worktree of ${worker}, and the attempt stays in flight: ${why}. Run sidekick loop discard again once git lists the worktrees`;
+  }
+  const wanted = physical(worktree);
+  const entry = list.worktrees.find((w) => physical(w.path) === wanted);
+  const pid = entry === undefined ? undefined : lockPid(entry.locked);
   if (pid === undefined || !call.lenv.isAlive(pid)) return undefined;
   return `the worktree of ${worker} is locked by pid ${pid}, which still runs, so the attempt stays in flight: run sidekick loop discard again once it exits`;
 }
@@ -144,8 +154,8 @@ function runFinish(
   };
   const code = finish(opts, finishEnv(call), keep, keep);
   if (code === 0) return { removed: true, lines };
-  const live = liveLockIssue(call, worktree, worker);
-  if (live !== undefined) return { issues: [...lines, live] };
+  const held = lockIssue(call, worktree, worker);
+  if (held !== undefined) return { issues: [...lines, held] };
   return {
     removed: false,
     lines: [...lines, handRoute(worker, opts, ctx.manifest.repo)],
@@ -214,8 +224,9 @@ function writeClosing(ctx: UnitContext, lines: RecordLine[]): string[] {
  * brief, without a report when the worktree holds none, then writes `failed`
  * when `failed` and `discarded`. A `finish` refusal leaves what `finish`
  * left and prints the hand route, and the attempt still closes. A worker
- * that may still run, a live process holding the worktree's lock, a listing
- * that cannot say, or a unit id that names a folder writes nothing.
+ * that may still run, a live process holding the worktree's lock, a session
+ * or worktree listing that cannot say, or a unit id that names a folder
+ * writes nothing.
  * `exitWaitMs` bounds the wait for a stopped process to exit.
  */
 export function discardAttempt(
