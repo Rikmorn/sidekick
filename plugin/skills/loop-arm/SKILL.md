@@ -38,4 +38,4 @@ Then make both jobs with `CronCreate`, passing each value as `arm` printed it. T
 
 Last, run the `--armed` line with those two ids in place of its placeholders. It writes `armed.json`, then prints `armed <name>: tick <id>, renewal <id>` and the renewal's time. End with those lines as your reply. If it refuses instead, keep the new jobs and reply with its lines, so the operator sees why `start` reports the loop not armed.
 
-Run each `sidekick loop arm` call through `Bash` alone, spelled as `arm` printed it. The loop's allow list holds exactly `sidekick loop arm <name>` and `sidekick loop arm <name> *`, and `dontAsk` denies any other spelling, such as a `cd` before it or a pipe after it.
+Run each `sidekick loop arm` call through `Bash` alone, spelled as `arm` printed it, since the loop's allow list names only `sidekick loop arm <name>` and `sidekick loop arm <name> *`.

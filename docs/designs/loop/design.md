@@ -658,7 +658,7 @@ Status: ruled 2026-11-11. The operator chose B. The text that follows is the pro
 
 **What B looks like.**
 
-- **The record is written by a verb, not by hand.** `sidekick loop record <name> --kind <kind> --class <class> --command <text> --summary <text>` appends one JSON line to `<loops>/<name>/records/<date>.jsonl`. The kinds are `would`, `request`, `did`, `denied`, and `note`. The verb stamps the time and the launch's hash from `state.json`, checks the class against `loop.json`, and refuses what fails. Launch allows the verb (S3).
+- **The record is written by a verb, not by hand.** `sidekick loop record <name> --kind <kind> --class <class> --command <text> --summary <text>` appends one JSON line to `<loops>/<name>/records/<date>.jsonl`. The kinds are `would`, `request`, `did`, `denied`, and `note`. The verb stamps the time and the launch's hash from `state.json`, checks the class against the launch's `states` once `state.json` exists, and refuses what fails. Launch allows the verb (S3).
 - **Requests are a snapshot, not a queue.** The open requests are the ones the latest tick wrote. Once the operator does the action, the next tick no longer asks, so no verb resolves a request. `record` reports when a request is new, which is the cue for the push.
 - **Health, as the desk computes it:**
   - dead, when no live session runs a started loop;

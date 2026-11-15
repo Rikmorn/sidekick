@@ -69,7 +69,7 @@ Every object is strict, so an unknown key at any level refuses. Every list entry
 | `mandate.reads` | Required. Allow rules for the loop's reads. |
 | `mandate.classes` | Required. A class name, which follows the profile name rule, maps to `{ "state", "allow" }`. `state` is `record`, `ask`, or `act`. `allow` holds at least one allow rule. |
 | `mandate.never` | Required. Deny rules. |
-| `paused` | Optional. `true` keeps the loop off: `start` stops it between ticks, and never launches or respawns it. "Pausing, stopping, and updating a loop" says how. `list` marks the loop `paused`, and a paused loop's issues do not make `list` exit 1. |
+| `paused` | Optional. `true` keeps the loop off: `start` stops it between ticks, and never launches or respawns it. Once the pause is lifted, `start` launches the loop fresh. "Pausing, stopping, and updating a loop" says how. `list` marks the loop `paused`, and a paused loop's issues do not make `list` exit 1. |
 
 A class's state is its rung on ADR-0015 Decision 2's ladder. A class in `record` writes what it would do, one in `ask` writes a request for the operator, and one in `act` acts. A promotion edits one class's state, then runs `sidekick loop start <name>`, which relaunches the loop between ticks.
 
@@ -123,7 +123,7 @@ The check judges one loop from its folder, its repo, and its profile. It finds i
 - The profile's own load issues, and its role plugin's. Each `pluginDirs` entry must be a folder, and no file in one may hold a key.
 - The old-store refusal, while `<config>/profiles` still holds a profile, as every profile verb gives it.
 - A file in the loop's folder that the key check flags, outside its runtime entries. Like the profile scan, it skips `.git`, `node_modules`, links, binary files, and files over 1 MiB. The loop's folder sits in the sidekick folder, which can be a git repo, and a loop's definition needs no secret.
-- An `mcp__<server>` rule that names, by its bare name, a server only a role plugin's `.mcp.json` declares. Claude Code spells a plugin server's tools `mcp__plugin_<plugin>_<server>__<tool>`, so the bare rule matches none. The refusal names the right spelling. It passes when the server also appears in the repo's `.mcp.json`. It passes too when the server sits in the user or local scope of the global config file. That file is `.claude.json` in `CLAUDE_CONFIG_DIR`, or in the home folder when that is unset or empty. The check reads the legacy `<config>/.config.json` instead when that file has content, or is writable while `.claude.json` does not exist. A missing or malformed file names no server. Role plugins are the folders in the profile's `pluginDirs`.
+- An `mcp__<server>` rule that names, by its bare name, a server only a role plugin declares. A plugin declares servers in its `.mcp.json`, with or without the `mcpServers` wrapper, and in the `mcpServers` key of its `plugin.json`. That key holds an inline map, a path to a JSON file, or an array of either. A path resolves against the plugin's root (the plugins docs, fetched on 2026-11-15). The check reads no MCP bundle, a `.mcpb` or `.dxt` file, so a bundle's servers escape it. Claude Code spells a plugin server's tools `mcp__plugin_<plugin>_<server>__<tool>`, so the bare rule matches none. The refusal names the right spelling. It passes when the server also appears in the repo's `.mcp.json`. It passes too when the server sits in the user or local scope of the global config file. That file is `.claude.json` in `CLAUDE_CONFIG_DIR`, or in the home folder when that is unset or empty. The check reads the legacy `<config>/.config.json` instead when that file has content, or is writable while `.claude.json` does not exist. A missing or malformed file names no server. Role plugins are the folders in the profile's `pluginDirs`.
 - Each rule the judge refuses, in `mandate.reads`, each class's `allow`, and `mandate.never`. "How the check judges a rule" gives every refusal and its reason.
 
 ### What the check warns on
@@ -308,10 +308,10 @@ Run it after every edit to `loop.json` or to the loop's profile, and after a reb
 ### What `start` does
 
 1. **It refuses a relative `CLAUDE_CONFIG_DIR`** before it reads anything. The loop's own `record` and `arm` resolve that path against the loop's worktree, so they would read another store than `start` writes. Set it to an absolute path.
-2. **It takes each loop's lock,** `start.lock` in the loop's folder, by an exclusive create. A lock whose process still runs refuses that loop, naming the pid. A lock whose process is gone is taken over, so a run cut short blocks no later one. A bad name, or a loop with no folder, refuses without a lock.
-3. **It reads the session listing once,** `claude agents --json --all`, for every loop. When the listing fails, every loop refuses, since `start` cannot tell a running loop from a stopped one without it.
-4. **It prepares each loop.** It runs the check, and refuses on any issue or on a `state.json` that does not parse. It compiles the mandate, then composes the launch as `profile launch` does from the loop's repo, and refuses where those checks refuse. It hashes the launch and chooses an action, as "The reconcile" says. A paused loop skips the check and the compose, so a pause works while other keys are wrong. Its preparation refuses only a `loop.json` that fails to parse, or a broken `state.json`.
-5. **It commits the sidekick folder,** once per run, before the first `claude` call that acts. The subject names each loop that acts, its action, and the first 12 characters of its hash, as in `loop start: fixer launch 3f2a9c1d0b7e`. A run in which no loop acts makes no commit. A failed commit warns, and the loops start anyway, since the history serves tracing.
+2. **It takes each loop's lock,** `start.lock` in the loop's folder, by an exclusive create. A lock taken since the last boot whose process still runs refuses that loop. The refusal names the lock file and the pid, and says to delete the file when no `start` runs. A lock whose process is gone is taken over, so a run cut short blocks no later one. So is a lock taken before the last boot, whatever its pid, since a reboot can hand that pid to another process. A bad name, or a loop with no folder, refuses without a lock.
+3. **It reads the session listing once,** `claude agents --json --all`, for every loop. When the listing fails, every loop refuses, since `start` cannot tell a running loop from a stopped one without it. `start` reads each row's status then, before the prepare and the commit. So a tick that starts between the listing and the stop is stopped without `--now`.
+4. **It prepares each loop.** It runs the check, and refuses on any issue or on a `state.json` that does not parse. It compiles the mandate, then composes the launch as `profile launch` does from the loop's repo, and refuses where those checks refuse. It hashes the launch and chooses an action, as "The reconcile" says. A paused loop skips the check and the compose, so a pause holds while the check would refuse other keys. A `loop.json` that does not parse, or fails its schema with an unknown key or a bad `schedule`, cannot say it is paused. The check then refuses it as usual. A paused loop's preparation refuses only a broken `state.json`.
+5. **It commits the sidekick folder,** once per run, before the first `claude` call that acts. The subject names each loop that acts and its action. A launch, relaunch, or respawn adds the first 12 characters of its hash, and a pause adds none, as in `loop start: fixer launch 3f2a9c1d0b7e, triage pause`. A run in which no loop acts makes no commit. A failed commit warns, and the loops start anyway, since the history serves tracing.
 6. **It acts on each loop,** in name order. It first prints the loop's warnings, then the inherited listing before a launch, relaunch, or respawn. It releases each loop's lock once that loop's last write is done.
 7. **It waits for every fresh launch to arm,** all together, for up to 90 seconds, checking every 2. A launch has armed once an `armed.json` that carries its `launch` id exists. A respawn needs no wait, since its cron jobs come back with it ([the loop probes, §U11](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u11-a-one-shot-job-across-claude-stop-then-claude-respawn)).
 8. **It prints one line per loop,** as "What `start` prints" says, and exits 1 when any loop refused or failed.
@@ -334,7 +334,7 @@ The warnings are the check's, the compose's, and two of `start`'s own:
 | `--record` | Every class compiled as `record` |
 | Every loop | The keys in the list after this table |
 
-- **The fixed verbs,** allowed and pinned to the loop's name: `Bash(sidekick loop record <name> *)`, `Bash(sidekick loop arm <name>)`, and `Bash(sidekick loop arm <name> *)`. The bare `arm` form is there since `x *` is believed not to match a bare `x`.
+- **The fixed verbs,** allowed and pinned to the loop's name: `Bash(sidekick loop record <name> *)`, `Bash(sidekick loop arm <name>)`, and `Bash(sidekick loop arm <name> *)`. Both `arm` forms are named, bare and with flags, so the allow list states each spelling the skill runs.
 - **The self-deny:** `Edit(//<loop folder>/**)` and `Edit(//<profile folder>/**)`, each by its real path. So the loop's file tools never edit its `loop.json`, its runtime entries, or its profile. The verbs still write there, since an `Edit` rule binds the file tools, not a command's own process.
 - **`permissions.blockReadsOutsideWorkingDirectories: true`.** The permissions docs, as #364's design read them, let the built-in read-only commands run in every mode otherwise. With it, the loop reads only its worktree and its added folders, among them the profile's folder, which the launch passes as `--add-dir`. That is believed from the docs; no probe ran it.
 - **`env`:** `SIDEKICK_LOOP=<name>`, which `arm` checks, and `DISABLE_AUTOUPDATER=1`, as "The launch" says. `SIDEKICK_MAIN` is set empty, which sidekick reads as absent, so a daemon started from a main session's shell names no main.
@@ -351,7 +351,7 @@ The profile's own `permissions.allow` stays, since the layers' lists concatenate
 - `--bg` and `-n loop-<name>`;
 - the prompt `/sidekick:loop-arm <name>`, which arms the loop, as "Arming a loop" says.
 
-`start` passes no `--plugin-dir`. A loop that needs a development sidekick names that plugin folder in its profile's `pluginDirs`. The choice then holds across `start --all` and a reboot, and the hash covers it.
+`start` takes no `--plugin-dir` flag of its own. Each entry in the profile's `pluginDirs` passes as one, so a loop that needs a development sidekick names that plugin folder there. The choice then holds across `start --all` and a reboot, and the hash covers it.
 
 **Trust.** In a repo Claude Code does not trust, `claude --bg` exits "Workspace not trusted" before the session starts ([the loop probes, §U19](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u19-finish---into-originmaster-after-a-loops-landing)). `start` then fails that loop and names the fix: run `claude` in the repo once and accept the trust prompt, then run `start` again. It removes the launch's `state.json` and keeps the store's commit. `start` judges trust only by the launch's own refusal, and never writes `~/.claude.json`. Its check reads the global config file only for MCP server names, as "What the check refuses" says.
 
@@ -375,8 +375,9 @@ One writer writes each file, whole, through a temporary file and a rename.
 | `record` | Whether `--record` forced the launch |
 | `states` | Each class's state as launched: `record` for every class under `--record` |
 | `schedule`, `tick` | As launched, which `arm` and `record` read |
+| `pausedAt` | When a run first found the loop paused and ended it off; absent until then |
 
-`start` writes it before `claude --bg`, with `job` set to `null`, since the launch prompt's arm reads it at once. Once `claude` returns, `start` writes it again with the job id. A launch that exits non-zero removes the file, so no `state.json` names a launch that never ran. A launch that timed out may have started, so its file stays, with `job` still `null`. A respawn moves only `startedAt`.
+`start` writes it before `claude --bg`, with `job` set to `null`, since the launch prompt's arm reads it at once. Once `claude` returns, `start` writes it again with the job id. A launch that exits non-zero removes the file, so no `state.json` names a launch that never ran. A launch that timed out may have started, so its file stays, with `job` still `null`. A respawn moves only `startedAt`. A paused run that ends off adds `pausedAt`, and a later paused run keeps the first time. Only a fresh launch clears it, since its new file has none.
 
 `armed.json`, written by `arm --armed` alone:
 
@@ -400,7 +401,11 @@ A definition has changed when the launch hash differs from the `hash` in `state.
 4. the profile's folder;
 5. each folder in the profile's `pluginDirs`.
 
-A folder hashes as its sorted relative paths and their contents. It skips `.git`, `node_modules`, and `.DS_Store` at any depth, and links. It also skips `.claude-plugin/types/` at the folder's top, which Claude Code 2.1.322 was seen to rewrite a second after it loaded a `--plugin-dir` plugin. A subfolder that cannot be read hashes as one marker of its own, so the rest of the folder still counts.
+A folder hashes as its sorted relative paths and their contents. It skips `.git`, `node_modules`, `.DS_Store`, and `.claude-plugin/types/` at any depth, and links. A subfolder that cannot be read hashes as one marker of its own, so the rest of the folder still counts.
+
+It also skips a plugin folder's root `tsconfig.json` that parses to exactly `{ "extends": "./.claude-plugin/types/tsconfig.json" }`, one key with that value. The plugin folders are each `pluginDirs` entry, and each folder in the profile's folder that holds `.claude-plugin/plugin.json`. Any other `tsconfig.json` counts, as does one that does not parse.
+
+Claude Code writes both into a `--plugin-dir` folder it loads ([the mod foundation probes, §Files the engine writes](https://github.com/Rikmorn/sidekick/blob/9fca66c6460aeaa7a44852bbeee32c1911de8fd3/docs/research/control-centre/2026-10-15-mod-foundation-probes.md#files-the-engine-writes), on Claude Code 2.1.300). It writes `.claude-plugin/types/`, whose MCP declarations list the tools of the servers that session connected. It writes the root `tsconfig.json` only where none exists, and leaves any other untouched. Hashing either would read a launched loop as changed. A role plugin usually sits inside its profile's folder, as `plugin/`. So both skips apply to the profile folder's hash, as to the plugin's own.
 
 A paused loop is never hashed, so its `state.json` keeps the hash of the launch before the pause.
 
@@ -412,15 +417,17 @@ A row with a `pid` is live, and one without is stopped. A live row is between ti
 
 A row by name is the launch's own only while `state.json`'s `job` is `null`. Once `job` is set and gone from the listing, a row by name is another launch, and counts as changed. A respawned job kept its id in the loop probes (§U11), so another id means another launch.
 
+A definition is unchanged while the hash matches `state.json`'s and `state.json` records no `pausedAt`. So once a pause is lifted, the launch before it counts as changed, whatever the hash says.
+
 The pause rows come first, so a pause wins whatever else holds:
 
 | Session | Definition | Other facts | Action |
 |---|---|---|---|
-| None, or stopped | Paused | | Leave it off |
-| Live, between ticks | Paused | | `claude stop`, keeping the row and `state.json` |
+| None, or stopped | Paused | | Leave it off; `state.json` records the pause |
+| Live, between ticks | Paused | | `claude stop`, keeping the row; `state.json` records the pause |
 | Live, mid-tick | Paused | | Refuse, naming `--now`; with `--now`, `claude stop` |
 | None | Not paused | | Launch fresh |
-| Live | Unchanged | | Leave it |
+| Live | Unchanged | | Leave it; not armed when it started before the boot |
 | Live, between ticks | Changed, or no `state.json` | | Relaunch: `claude stop`, a wait for its process to exit, `claude rm`, then launch fresh |
 | Live, mid-tick | Changed, or no `state.json` | | Refuse, naming `--now`; with `--now`, relaunch |
 | Stopped | Unchanged | Jobs alive, and started since the boot | `claude respawn`, then set `startedAt` |
@@ -428,7 +435,7 @@ The pause rows come first, so a pause wins whatever else holds:
 | Stopped | Changed, or no `state.json` | | `claude rm`, then launch fresh |
 
 - **A boot since `startedAt` launches fresh,** until the reboot probe, U1 in #364, shows that a respawn keeps a loop's cron jobs across one. Sleep leaves the boot time alone, so a loop that lost its process to sleep is respawned.
-- **A live loop whose jobs are not alive is left, with a warning,** since a relaunch could race a fresh launch's arm. The warning names the fix: `claude stop <job>`, then `start <name>`, which launches it fresh.
+- **A live loop whose jobs are not alive is left, with a warning,** since a relaunch could race a fresh launch's arm. So is a live loop that started before the last boot, though its `armed.json` reads alive, since whether cron jobs outlive a reboot is U1's question. The warning names the fix: `claude stop <job>`, then `start <name>`, which launches it fresh.
 - **A relaunch waits up to 15 seconds for the stopped process to exit** before `claude rm`. `claude rm` kept a job stopped a moment before, as measured on Claude Code 2.1.300 on 2026-10-15.
 - **`start` judges `claude rm` by what it prints,** since its exit code does not say whether it removed the job. It never runs the `--discard-unpushed` line `rm` may offer.
 
@@ -447,14 +454,16 @@ Each loop ends with one summary line on stdout, after the wait for the arm:
 | `<name>: refused` | `start` changed nothing for this loop |
 | `<name>: failed` | A `claude` call or a `state.json` write went wrong partway |
 
-A line ends `not armed` in place of `armed` when no current `armed.json` shows the loop's jobs alive. A launch whose `claude --bg` printed no job id reads `launched with no job id`. `<why>` is one of `new`, `definition changed`, `state.json names another job`, `no state.json records it`, `cron jobs gone`, and `machine rebooted since it started`. The lines that explain a refusal or a failure come first, on stderr, each led by `<name>: `.
+A line ends `not armed` in place of `armed` when no current `armed.json` shows the loop's jobs alive, or a live session started before the last boot. A launch whose `claude --bg` printed no job id reads `launched with no job id`, or `relaunched with no job id` after a relaunch. `<why>` is one of `new`, `definition changed`, `unpaused`, `state.json names another job`, `no state.json records it`, `cron jobs gone`, and `machine rebooted since it started`.
+
+The lines that explain a refusal or a failure come first, on stderr. A line about one loop starts with `<name>: `. A line about the whole run has no name: a usage error, a relative `CLAUDE_CONFIG_DIR`, a failed listing, and a failed commit of the sidekick folder.
 
 **`refused` and `failed` differ in what may stand.** A loop is `refused` when `start` changed nothing for it: no call acted on its session, and nothing was written for it. The check, the compose, a held lock, a failed listing, or the reconcile refused it. A loop is `failed` when a step that ran went wrong, so part of the action may stand:
 
 - a `claude stop` that failed, in a pause or a relaunch, so the session may still run;
 - a stopped process that still ran after 15 seconds, before any `rm`;
 - a `claude rm` that failed, timed out, or did not say it removed the job, so `start` launched nothing. Read what `rm` printed and settle the job by hand, since `start` never discards a job's work;
-- a `claude respawn` that failed;
+- a `claude respawn` that failed. Each `start` tries the respawn again while the loop's jobs read alive, so its lines name the way out: `claude rm <job>`, then `start <name>`, which launches the loop fresh;
 - a `state.json` write that failed before the launch, so nothing launched;
 - a `claude --bg` that failed or did not return in time, the trust refusal included.
 
@@ -466,8 +475,8 @@ Both set exit 1. A paused loop that ends off never does. A paused loop that `sta
 
 ### Pausing, stopping, and updating a loop
 
-- **To pause a loop,** add `"paused": true` to its `loop.json`, then run `start <name>`. It stops a live session between ticks, and `--now` stops a mid-tick one at once. The row and `state.json` stay. The loop then stays off across `start --all` and a reboot.
-- **To resume it,** remove the key and run `start`. When nothing else changed, a file restored to its bytes before the pause hashes as that launch did. So `start` respawns the stopped session while its cron jobs are alive and no boot has come since. Otherwise it removes the row and launches fresh, for `cron jobs gone` or `machine rebooted since it started`. Any other edit gives another hash, so `start` removes the row and launches fresh, for `definition changed`.
+- **To pause a loop,** add `"paused": true` to its `loop.json`, then run `start <name>`. It stops a live session between ticks, and `--now` stops a mid-tick one at once. The row stays, and `state.json` records `pausedAt`. The loop then stays off across `start --all` and a reboot.
+- **To resume it,** delete the key or set it to `false`, then run `start`. Since `state.json` records the pause, `start` launches the loop fresh, for `unpaused`, whatever else changed. It removes a stopped row first. A live one, such as a session you respawned by hand, it relaunches between ticks, or refuses mid-tick, naming `--now`.
 - **To stop a loop at once,** run `claude stop <job>`. A later `start` would start it again, so add the pause too when it should stay off.
 - **To change a loop,** edit `loop.json`, its profile, or a folder in its `pluginDirs`, then run `start <name>`. It relaunches the loop between ticks, or refuses a mid-tick one, naming `--now`.
 - **To try a change first,** run `start <name> --record`, which relaunches the loop with every class in `record`. A plain `start` afterwards brings the acting loop back, since the record flag is in the hash.
@@ -490,6 +499,8 @@ The renewal fires six days from now, rounded up to the next minute, on a cron th
 Both forms refuse a bad name, and a `SIDEKICK_LOOP` that names another loop, so one loop cannot arm another. An unset or empty `SIDEKICK_LOOP` passes. They refuse a `SIDEKICK_LOOP_RENEWAL_MINUTES` that is not a positive whole number, naming it. They also refuse a missing or broken `state.json`, so `arm` arms only a loop `start` launched.
 
 `CronList` shows each job's id and its prompt, cut to the first 79 characters, and no creation time ([the loop probes, §U5](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u5-what-cronlist-shows-of-a-job)). So the skill finds its old jobs by the ids `arm` prints, or by their two prompts, and `armed.json` is the only clock for the renewal. It deletes the old jobs before it makes new ones, since a loop with two tick jobs ticks twice. When `arm` refuses, the skill stops, says why, and makes no job. It declares no `allowed-tools`: under `dontAsk`, `CronCreate`, `CronList`, and `CronDelete` ran with no rule (§U9), and the fixed verbs allow `arm`. Its frontmatter keeps the model from invoking it, so only a loop's launch prompt, its renewal, or you start it.
+
+Run `/sidekick:loop-arm` only in the loop's own session. `arm` passes an unset `SIDEKICK_LOOP`, so in an ordinary session the skill makes the loop's cron jobs there. It also writes an `armed.json` that `start` trusts, so `start` then reports the loop armed while its own session may hold no jobs.
 
 ## The record
 
