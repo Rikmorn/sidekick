@@ -1,8 +1,9 @@
 /**
  * The worker's run report in `finish`. It decides whether the report is
- * copied, already in place, or absent, saves it in the checkout that holds the
- * brief, and checks that it did not change before the removal. Under `--name`
- * there is no brief to say where the report is, so none is read.
+ * copied, already in place, or absent, and saves it: a plan brief's in the
+ * checkout that holds the brief, a unit brief's in its attempt folder as
+ * `report.md`. It checks that the report did not change before the removal.
+ * Under `--name` there is no brief to say where the report is, so none is read.
  */
 
 import * as fs from 'node:fs';
@@ -12,8 +13,8 @@ import type { Out, Ready, Step } from './worker-teardown.js';
 
 /**
  * What saveReport does with the report, from where, and where the saved copy
- * goes. `saved earlier` is a partial removal's copy in the brief's checkout,
- * once the worktree's has gone. `no brief` is `--name`, which reads none.
+ * goes. `saved earlier` is a partial removal's saved copy, once the
+ * worktree's has gone. `no brief` is `--name`, which reads none.
  */
 export type ReportStep =
   | { kind: 'copy' | 'in place' | 'saved earlier'; from: string; to: string }
@@ -126,8 +127,8 @@ export function reportStep(
 const nowhereIssue = (brief: BriefPlaces): string =>
   `the brief's folder ${brief.folder} is in no git checkout, so finish has nowhere to save the run report at ${brief.reportFrom}: move the brief into a checkout of the repo, then run finish again`;
 
-// The worktree holds no report. In a partial removal, a copy in the brief's
-// checkout counts as saved earlier, with or without --no-report.
+// The worktree holds no report. In a partial removal, a copy where the report
+// is saved counts as saved earlier, with or without --no-report.
 function missingReportStep(
   brief: BriefPlaces,
   noReport: boolean,
@@ -185,7 +186,7 @@ export const saveReport: Step = (ready, _wenv, out) => {
 };
 
 // The worker's report now: still absent where the worktree held none, else
-// still the copy in the brief's checkout. Under --name no report was read, and
+// still the saved copy. Under --name no report was read, and
 // the worktree's status check sees any file that appears.
 export function reportChangedIssues(ready: Ready): string[] {
   const step = ready.reportStep;

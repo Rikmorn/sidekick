@@ -171,6 +171,9 @@ describe('compileLoop', () => {
     expect(Object.keys(env ?? {}).filter((k) => /worker/i.test(k))).toEqual([
       'SIDEKICK_WORKER',
     ]);
+    expect(Object.values(env ?? {}).filter((v) => /worker/i.test(v))).toEqual(
+      [],
+    );
   });
 });
 

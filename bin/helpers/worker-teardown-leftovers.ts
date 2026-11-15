@@ -105,7 +105,7 @@ function worktreeGoneIssues(ready: Ready, wenv: WorkerEnv): string[] {
   const files = unlocked ? leftoverIssues(runGit, ready) : [];
   // The files check takes seconds, and a session may lock the worktree meanwhile.
   const lock = unlocked && files.length === 0 ? lockNow(ready, wenv) : first;
-  // The flags keep the worker's hooks and fsmonitor out of the removal's own git status.
+  // The flags keep the worker's hooks, fsmonitor, and embedded repos out of the removal's own git status.
   const issues =
     files.length > 0
       ? files

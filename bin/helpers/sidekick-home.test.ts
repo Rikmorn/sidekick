@@ -47,7 +47,7 @@ describe('ensureSidekickRepo', () => {
     ).toContain('loops/*/units/');
   });
 
-  test('makes the folder a repo of its own with the five ignore lines', () => {
+  test('makes the folder a repo of its own with every ignore line', () => {
     const dir = path.join(tmp(), 'a', 'sidekick');
     expect(ensureSidekickRepo(dir, execRunner)).toEqual([]);
     expect(git(dir, 'rev-parse', '--show-toplevel')).toBe(dir);

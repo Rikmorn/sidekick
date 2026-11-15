@@ -330,7 +330,7 @@ const show: Verb = (rest, lenv, out, err) => {
 
 type VerbKind = Exclude<RecordLine['kind'], ModelKind>;
 
-// The verbs that write each kind the caps count; the model never writes them.
+// The verbs that write each kind the caps read; the model never writes them.
 const VERB_WRITERS = {
   dispatched: 'only sidekick loop dispatch writes it',
   answered: 'only sidekick loop answer writes it',

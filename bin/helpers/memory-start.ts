@@ -123,7 +123,8 @@ function briefWorkstream(env: NodeJS.ProcessEnv): string | undefined {
   return 'brief' in read ? briefWorkstreamOf(read.brief) : undefined;
 }
 
-// A unit worker reads issue text, so its start prints nothing and starts no snapshot. An unreadable brief counts as no unit.
+// A unit worker reads issue text, so its start prints nothing and starts no
+// snapshot. An unreadable brief counts as no unit.
 function isUnitWorker(env: NodeJS.ProcessEnv): boolean {
   const file = workerBrief(env);
   if (file === undefined) return false;
