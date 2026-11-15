@@ -97,6 +97,7 @@ const run = (
       HOME: tmp,
       RECORD: record,
       SHADOW_LOG: shadowLog,
+      TMPDIR: process.env.TMPDIR ?? os.tmpdir(),
       ...env,
     },
   });
