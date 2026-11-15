@@ -2248,6 +2248,7 @@ var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) =
 var WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 var WORKSTREAM = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var WorkerNameSchema = pipe(string(), regex(WORKER_NAME, `must match ${WORKER_NAME.source}`));
+var UnitIdSchema = pipe(string(), regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 of A-Z a-z 0-9 . _ -"));
 var BASELINE = pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters"));
 var PlanBriefSchema = strictObject({
   kind: literal("plan"),
@@ -2352,7 +2353,6 @@ function briefFileIssues(brief, bounds) {
   }
   return issues;
 }
-var UNIT_ID = /^[A-Za-z0-9._-]{1,64}$/;
 var UNITS_FOLDER = "units";
 var realFolderOf = (file) => path4.dirname(physical(file));
 function unitBriefFileIssues(brief, briefPath) {
@@ -2376,7 +2376,7 @@ function unitBriefFileIssues(brief, briefPath) {
     }
   }
   const unitId = path4.basename(path4.dirname(home));
-  const shape = path4.basename(home) === brief.name && path4.basename(path4.dirname(path4.dirname(home))) === UNITS_FOLDER && unitId !== "." && unitId !== ".." && UNIT_ID.test(unitId);
+  const shape = path4.basename(home) === brief.name && path4.basename(path4.dirname(path4.dirname(home))) === UNITS_FOLDER && unitId !== "." && unitId !== ".." && is(UnitIdSchema, unitId);
   if (!shape) {
     issues.push(`brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`);
   }
@@ -9251,21 +9251,23 @@ function holderOf(text) {
     return null;
   }
 }
+var holderWords = (file) => path42.basename(file) === LOCK_FILE ? { who: "start", again: "start" } : { who: "unit verb", again: "the verb" };
 function inspectLock(file, opts) {
   const text = readText4(file);
   if (text === null)
     return { kind: "free" };
   const holder = holderOf(text);
+  const { who, again } = holderWords(file);
   if (holder === null) {
     return {
       kind: "busy",
-      issue: `${file}: the lock file is unreadable; check that no start is running, then delete it`
+      issue: `${file}: the lock file is unreadable; check that no ${who} is running, then delete it`
     };
   }
   const isDead = holder.takenAt < opts.bootTime.getTime() || !opts.isAlive(holder.pid);
   return isDead ? { kind: "dead", text } : {
     kind: "busy",
-    issue: `${file}: another start holds the lock (pid ${holder.pid}); if no start is running, delete the file, then run start again`
+    issue: `${file}: another ${who} holds the lock (pid ${holder.pid}); if no ${who} is running, delete the file, then run ${again} again`
   };
 }
 function removeDead(file, dead) {
@@ -9284,10 +9286,10 @@ function removeDead(file, dead) {
     fs35.linkSync(grave, file);
   } catch {}
   fs35.rmSync(grave, { force: true });
-  return `${file}: another start took the lock first`;
+  return `${file}: another ${holderWords(file).who} took the lock first`;
 }
-function takeLock(loopDir, opts) {
-  const file = path42.join(loopDir, LOCK_FILE);
+function takeLock(loopDir, opts, lockFile = LOCK_FILE) {
+  const file = path42.join(loopDir, lockFile);
   const mine = JSON.stringify({ pid: opts.pid, at: opts.now.toISOString() });
   const release = () => {
     if (readText4(file) === mine)
@@ -10501,7 +10503,7 @@ var plain2 = check((s) => ![...s].some(isControl), "must hold no control charact
 var summary = pipe(string(), minLength(1), maxLength(1000), plain2);
 var command = pipe(string(), minLength(1), maxLength(4000), plain2);
 var className = pipe(string(), minLength(1), plain2);
-var unit = pipe(string(), regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 of A-Z a-z 0-9 . _ -"));
+var unit = UnitIdSchema;
 var issue = pipe(number(), integer(), minValue(1));
 var hash = pipe(string(), minLength(1));
 var reason6 = pipe(string(), minLength(1), maxLength(1000), plain2);

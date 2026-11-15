@@ -334,6 +334,12 @@ function holderOf(text: string): { pid: number; takenAt: number } | null {
   }
 }
 
+// What a lock's busy texts call its holder: `start` for the start lock, a neutral name for any other.
+const holderWords = (file: string): { who: string; again: string } =>
+  path.basename(file) === LOCK_FILE
+    ? { who: 'start', again: 'start' }
+    : { who: 'unit verb', again: 'the verb' };
+
 type Seen =
   | { kind: 'free' }
   | { kind: 'busy'; issue: string }
@@ -347,10 +353,11 @@ function inspectLock(
   const text = readText(file);
   if (text === null) return { kind: 'free' };
   const holder = holderOf(text);
+  const { who, again } = holderWords(file);
   if (holder === null) {
     return {
       kind: 'busy',
-      issue: `${file}: the lock file is unreadable; check that no start is running, then delete it`,
+      issue: `${file}: the lock file is unreadable; check that no ${who} is running, then delete it`,
     };
   }
   const isDead =
@@ -359,7 +366,7 @@ function inspectLock(
     ? { kind: 'dead', text }
     : {
         kind: 'busy',
-        issue: `${file}: another start holds the lock (pid ${holder.pid}); if no start is running, delete the file, then run start again`,
+        issue: `${file}: another ${who} holds the lock (pid ${holder.pid}); if no ${who} is running, delete the file, then run ${again} again`,
       };
 }
 
@@ -384,11 +391,11 @@ function removeDead(file: string, dead: string): string | null {
     // Another taker created a lock meanwhile; both now hold one.
   }
   fs.rmSync(grave, { force: true });
-  return `${file}: another start took the lock first`;
+  return `${file}: another ${holderWords(file).who} took the lock first`;
 }
 
 /**
- * Takes `<loopDir>/start.lock` with an exclusive create, recording `pid` and `now`.
+ * Takes `<loopDir>/<file>` (default `start.lock`) with an exclusive create, recording `pid` and `now`.
  * A lock taken before `bootTime`, or whose pid is dead, is taken over; one taken
  * since the boot whose pid is alive, or one that does not parse, is refused.
  * `release` removes the file only while it still holds this taker's text.
@@ -401,8 +408,9 @@ export function takeLock(
     bootTime: Date;
     isAlive: (pid: number) => boolean;
   },
+  lockFile: string = LOCK_FILE,
 ): Lock {
-  const file = path.join(loopDir, LOCK_FILE);
+  const file = path.join(loopDir, lockFile);
   const mine = JSON.stringify({ pid: opts.pid, at: opts.now.toISOString() });
   const release = (): void => {
     if (readText(file) === mine) fs.rmSync(file, { force: true });

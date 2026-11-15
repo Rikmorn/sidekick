@@ -8,7 +8,7 @@ import * as path from 'node:path';
 import * as v from 'valibot';
 import { localDate } from './local-date.js';
 import { type Cron, previousFire } from './loop-cron.js';
-import { WorkerNameSchema } from './worker-brief.js';
+import { UnitIdSchema, WorkerNameSchema } from './worker-brief.js';
 
 /** The kinds the model writes through `sidekick loop record`. */
 export const MODEL_KINDS = [
@@ -55,10 +55,7 @@ const plain = v.check(
 const summary = v.pipe(v.string(), v.minLength(1), v.maxLength(1000), plain);
 const command = v.pipe(v.string(), v.minLength(1), v.maxLength(4000), plain);
 const className = v.pipe(v.string(), v.minLength(1), plain);
-const unit = v.pipe(
-  v.string(),
-  v.regex(/^[A-Za-z0-9._-]{1,64}$/, 'must be 1 to 64 of A-Z a-z 0-9 . _ -'),
-);
+const unit = UnitIdSchema;
 const issue = v.pipe(v.number(), v.integer(), v.minValue(1));
 const hash = v.pipe(v.string(), v.minLength(1));
 const reason = v.pipe(v.string(), v.minLength(1), v.maxLength(1000), plain);

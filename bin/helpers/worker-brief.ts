@@ -73,6 +73,16 @@ export const WorkerNameSchema = v.pipe(
   v.regex(WORKER_NAME, `must match ${WORKER_NAME.source}`),
 );
 
+/**
+ * A unit id, the one rule for the loop record and the attempt's folder. The
+ * charset allows `.` and `..`, which name folders, so a caller that builds a
+ * path from an id refuses those two as well.
+ */
+export const UnitIdSchema = v.pipe(
+  v.string(),
+  v.regex(/^[A-Za-z0-9._-]{1,64}$/, 'must be 1 to 64 of A-Z a-z 0-9 . _ -'),
+);
+
 const BASELINE = v.pipe(
   v.string(),
   v.regex(/^[0-9a-f]{7,40}$/, 'must be a commit of 7 to 40 hex characters'),
@@ -248,8 +258,6 @@ export function briefFileIssues(
   return issues;
 }
 
-// A unit id, as the loop record names it.
-const UNIT_ID = /^[A-Za-z0-9._-]{1,64}$/;
 const UNITS_FOLDER = 'units';
 
 // The folder a file really sits in: its own last segment is resolved too, so a
@@ -293,7 +301,7 @@ export function unitBriefFileIssues(
     path.basename(path.dirname(path.dirname(home))) === UNITS_FOLDER &&
     unitId !== '.' &&
     unitId !== '..' &&
-    UNIT_ID.test(unitId);
+    v.is(UnitIdSchema, unitId);
   if (!shape) {
     issues.push(
       `brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`,
