@@ -30,8 +30,9 @@ export interface ReconcileInput {
 
 /**
  * Why a loop launches fresh: `new` when it has no row or no `state.json`,
- * `changed` when the hash differs, `jobs-gone` when its cron jobs are not
- * alive, and `rebooted` when the machine booted since the session started.
+ * `changed` when the hash differs or the row is not the job `state.json`
+ * names, `jobs-gone` when its cron jobs are not alive, and `rebooted` when the
+ * machine booted since the session started.
  */
 export type LaunchReason = 'new' | 'changed' | 'jobs-gone' | 'rebooted';
 
@@ -71,6 +72,11 @@ type Row =
   | { kind: 'live'; job: string; status: string | undefined }
   | { kind: 'stopped'; job: string };
 type LiveRow = Extract<Row, { kind: 'live' }>;
+// How the row stands against `state.json`: no file, the launch it records, or a row by name while the job it names is gone.
+type Origin =
+  | { kind: 'unrecorded' }
+  | { kind: 'recorded'; state: LoopState }
+  | { kind: 'other'; job: string };
 type Refuse = Extract<Action, { kind: 'refuse' }>;
 type Found = { kind: 'row'; row: Row } | Refuse;
 
@@ -82,7 +88,8 @@ const refuse = (lines: string[]): Refuse => ({ kind: 'refuse', lines });
  * `state.job` and each row named `loop-<name>`. A paused loop is `off` while no
  * candidate might run. Otherwise more than one candidate, an interactive
  * session, or a pid that is not a number refuses. A single row goes to the
- * pause rows when paused, else to the rest of the table.
+ * pause rows when paused, else to the rest of the table. There, a row by name
+ * counts as changed when `state.job` is set and gone from the listing.
  */
 export function chooseAction(input: ReconcileInput): Action {
   const job = input.state?.job ?? null;
@@ -151,9 +158,9 @@ function whileRunning(input: ReconcileInput, row: Row): Action {
     case 'none':
       return { kind: 'launch', remove: undefined, reason: 'new' };
     case 'live':
-      return liveAction(input, row);
+      return liveAction(input, row, originOf(input));
     case 'stopped':
-      return stoppedAction(input, row.job);
+      return stoppedAction(input, row.job, originOf(input));
     default: {
       const unhandled: never = row;
       throw new Error(`unhandled row ${JSON.stringify(unhandled)}`);
@@ -161,10 +168,25 @@ function whileRunning(input: ReconcileInput, row: Row): Action {
   }
 }
 
-// A live row with no `state.json` counts as changed, so it is relaunched, never removed while it runs.
-function liveAction(input: ReconcileInput, row: LiveRow): Action {
+// A row by name is the launch's own only while `state.job` is null: a respawn keeps a job's id (docs/research/loop/2026-11-12-loop-probes.md §U21).
+function originOf(input: ReconcileInput): Origin {
   const { state } = input;
-  const isUnchanged = state !== undefined && state.hash === input.hash;
+  if (state === undefined) return { kind: 'unrecorded' };
+  const { job } = state;
+  if (job === null || input.rows.some((r) => r.id === job)) {
+    return { kind: 'recorded', state };
+  }
+  return { kind: 'other', job };
+}
+
+// A live row that `state.json` does not record counts as changed, so it is relaunched, never removed while it runs.
+function liveAction(
+  input: ReconcileInput,
+  row: LiveRow,
+  origin: Origin,
+): Action {
+  const isUnchanged =
+    origin.kind === 'recorded' && origin.state.hash === input.hash;
   if (isUnchanged) {
     return {
       kind: 'leave',
@@ -173,18 +195,23 @@ function liveAction(input: ReconcileInput, row: LiveRow): Action {
     };
   }
   if (mayStop(row, input.stopNow)) return { kind: 'relaunch', job: row.job };
-  const why = relaunchWhy(input.name, row.job, state === undefined);
+  const why = relaunchWhy(input.name, row.job, origin);
   return refuse(notBetweenTicksLines(row, why, 'relaunch'));
 }
 
-function stoppedAction(input: ReconcileInput, job: string): Action {
-  const { state } = input;
+function stoppedAction(
+  input: ReconcileInput,
+  job: string,
+  origin: Origin,
+): Action {
   const launchOver = (reason: LaunchReason): Action => ({
     kind: 'launch',
     remove: job,
     reason,
   });
-  if (state === undefined) return launchOver('new');
+  if (origin.kind === 'unrecorded') return launchOver('new');
+  if (origin.kind === 'other') return launchOver('changed');
+  const { state } = origin;
   if (state.hash !== input.hash) return launchOver('changed');
   // An unreadable `startedAt` compares false, so it reads as a boot since.
   const startedSinceBoot =
@@ -204,10 +231,20 @@ const who = (name: string, job: string): string =>
 const pausedWhy = (name: string): string =>
   `${sessionOf(name)} is paused in loop.json, so start stops it between ticks.`;
 
-const relaunchWhy = (name: string, job: string, noState: boolean): string =>
-  noState
-    ? `${who(name, job)} is running, but no state.json records its launch, so start relaunches it between ticks.`
-    : `${who(name, job)} needs a relaunch, since its definition changed, and start relaunches only between ticks.`;
+function relaunchWhy(name: string, job: string, origin: Origin): string {
+  switch (origin.kind) {
+    case 'unrecorded':
+      return `${who(name, job)} is running, but no state.json records its launch, so start relaunches it between ticks.`;
+    case 'other':
+      return `${who(name, job)} is running, but state.json names job ${origin.job}, which the listing no longer shows, so start relaunches it between ticks.`;
+    case 'recorded':
+      return `${who(name, job)} needs a relaunch, since its definition changed, and start relaunches only between ticks.`;
+    default: {
+      const unhandled: never = origin;
+      throw new Error(`unhandled origin ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
 
 function statusLine(row: LiveRow): string {
   const { status } = row;

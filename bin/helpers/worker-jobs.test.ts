@@ -75,13 +75,58 @@ describe('listJobs', () => {
     ['a row that is an array', '[[]]', 'does not parse'],
     ['a field of the wrong type', '[{"name":7}]', 'does not parse'],
     ['a cwd of the wrong type', '[{"cwd":7}]', 'does not parse'],
-    ['a status of the wrong type', '[{"status":7}]', 'does not parse'],
   ])('refuses a listing that is %s', (_label, stdout, phrase) => {
     const result = listJobs(runner({ stdout }).run, '/repo');
     expect('issues' in result).toBe(true);
     if (!('issues' in result)) return;
     expect(result.issues[0]).toContain('claude agents --json --all');
     expect(result.issues[0]).toContain(phrase);
+  });
+
+  test.each([
+    ['a number', 7],
+    ['a boolean', true],
+    ['an object', { busy: true }],
+  ])('a status that is %s reads as undefined, leaving the row and the listing intact', (_label, status) => {
+    const listing = [
+      {
+        id: 'a',
+        kind: 'background',
+        name: 'loop-fixer',
+        cwd: '/repo/.claude/worktrees/loop-fixer',
+        sessionId: 'sess-a',
+        state: 'working',
+        pid: 4242,
+        status,
+      },
+      { id: 'b', kind: 'background', name: 'w1', pid: 7, status: 'busy' },
+    ];
+    expect(
+      listJobs(runner({ stdout: JSON.stringify(listing) }).run, '/repo'),
+    ).toStrictEqual({
+      jobs: [
+        {
+          id: 'a',
+          kind: 'background',
+          name: 'loop-fixer',
+          cwd: '/repo/.claude/worktrees/loop-fixer',
+          sessionId: 'sess-a',
+          state: 'working',
+          status: undefined,
+          pid: 4242,
+        },
+        {
+          id: 'b',
+          kind: 'background',
+          name: 'w1',
+          cwd: undefined,
+          sessionId: undefined,
+          state: undefined,
+          status: 'busy',
+          pid: 7,
+        },
+      ],
+    });
   });
 
   test('parses the status of a row, and reads a missing or null one as undefined', () => {

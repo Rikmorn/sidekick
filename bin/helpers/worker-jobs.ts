@@ -18,6 +18,9 @@ const OptionalText = v.nullish(v.string());
 // read a malformed pid as "cannot tell" (`sessionsInRepo` in memory-sessions.ts,
 // `chooseAction` in loop-reconcile.ts).
 const RawPid = v.optional(v.unknown());
+// A status of another type reads as undefined, as a malformed pid does, so no
+// caller fails on it; `chooseAction` reads an undefined status as not idle.
+const RawStatus = v.optional(v.unknown());
 
 const isMalformedPid = (pid: unknown): boolean =>
   pid !== undefined && pid !== null && typeof pid !== 'number';
@@ -33,7 +36,7 @@ const JobSchema = v.pipe(
     cwd: OptionalText,
     sessionId: OptionalText,
     state: OptionalText,
-    status: OptionalText,
+    status: RawStatus,
     pid: RawPid,
   }),
   v.transform((row) => ({
@@ -43,7 +46,7 @@ const JobSchema = v.pipe(
     cwd: row.cwd ?? undefined,
     sessionId: row.sessionId ?? undefined,
     state: row.state ?? undefined,
-    status: row.status ?? undefined,
+    status: typeof row.status === 'string' ? row.status : undefined,
     pid: typeof row.pid === 'number' ? row.pid : undefined,
     ...(isMalformedPid(row.pid) ? { pidMalformed: true } : {}),
   })),

@@ -342,20 +342,17 @@ describe('chooseAction: finding the row', () => {
     });
   });
 
-  test('a row by name stands in when state.job is gone from the listing', () => {
-    expect(
-      chooseAction(
-        input({ state: state({ job: 'gone' }), rows: [live({ id: 'job2' })] }),
-      ),
-    ).toEqual({ kind: 'leave', job: 'job2', armed: true });
-  });
-
-  test('a row by name stands in when state.job is null', () => {
+  test('a row by name stands in when state.job is null, as the launch it records', () => {
     expect(
       chooseAction(
         input({ state: state({ job: null }), rows: [live({ id: 'job2' })] }),
       ),
     ).toEqual({ kind: 'leave', job: 'job2', armed: true });
+    expect(
+      chooseAction(
+        input({ state: state({ job: null }), rows: [stopped({ id: 'job2' })] }),
+      ),
+    ).toEqual({ kind: 'respawn', job: 'job2' });
   });
 
   test('rows of other loops and sessions are not the loop', () => {
@@ -426,6 +423,52 @@ describe('chooseAction: finding the row', () => {
         expect(lines).not.toContain('--now');
       }
     }
+  });
+});
+
+describe('chooseAction: state.job set and gone, with a row by name', () => {
+  // The hash matches and the arm is alive, so only the missing job makes the row changed.
+  const gone = { state: state({ job: 'gone' }), hash: 'h1' };
+
+  test('a live row between ticks counts as changed and relaunches', () => {
+    expect(
+      chooseAction(input({ ...gone, rows: [live({ id: 'job2' })] })),
+    ).toEqual({ kind: 'relaunch', job: 'job2' });
+  });
+
+  test.each([
+    'busy',
+    'waiting',
+  ])('a live row with status %s refuses naming --now, and --now relaunches', (status) => {
+    const rows = [live({ id: 'job2', status })];
+    const lines = refusal(chooseAction(input({ ...gone, rows })));
+    expect(lines).toContain('job2');
+    expect(lines).toContain('state.json names job gone');
+    expect(lines).toContain(status);
+    expect(lines).toContain('--now');
+    expect(chooseAction(input({ ...gone, rows, stopNow: true }))).toEqual({
+      kind: 'relaunch',
+      job: 'job2',
+    });
+  });
+
+  test('a stopped row is removed and the loop launches fresh as changed, never respawned', () => {
+    expect(
+      chooseAction(input({ ...gone, rows: [stopped({ id: 'job2' })] })),
+    ).toEqual({ kind: 'launch', remove: 'job2', reason: 'changed' });
+  });
+
+  test('a paused loop still stops a live row, and is off over a stopped one', () => {
+    expect(
+      chooseAction(
+        input({ ...gone, paused: true, rows: [live({ id: 'job2' })] }),
+      ),
+    ).toEqual({ kind: 'pause', job: 'job2' });
+    expect(
+      chooseAction(
+        input({ ...gone, paused: true, rows: [stopped({ id: 'job2' })] }),
+      ),
+    ).toEqual({ kind: 'off' });
   });
 });
 
@@ -647,6 +690,20 @@ describe('chooseAction: never touches a session that might be live', () => {
       : 'a paused loop refuses with nothing that might run';
   }
 
+  // The name fallback: once `state.job` is set and gone, a row by name is never left or respawned as the launch.
+  function goneJobViolation(
+    action: Action,
+    rows: Job[],
+    st: LoopState | undefined,
+  ): string | undefined {
+    const job = st?.job ?? null;
+    const isGone = job !== null && !rows.some((r) => r.id === job);
+    const keepsRow = action.kind === 'leave' || action.kind === 'respawn';
+    return isGone && keepsRow
+      ? `${action.kind} on a row while state.json names ${job}, which is gone`
+      : undefined;
+  }
+
   test('no combination breaks the rules', () => {
     const found: string[] = [];
     for (const [label, rows] of rowSets) {
@@ -669,6 +726,7 @@ describe('chooseAction: never touches a session that might be live', () => {
                   );
                   const why =
                     violation(action, rows, st, stopNow) ??
+                    goneJobViolation(action, rows, st) ??
                     (paused ? pauseViolation(action, rows, st) : undefined);
                   if (why !== undefined) {
                     found.push(

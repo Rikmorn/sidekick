@@ -4736,6 +4736,7 @@ var LISTING_ARGS = ["agents", "--json", "--all"];
 var LISTING = `claude ${LISTING_ARGS.join(" ")}`;
 var OptionalText = nullish(string());
 var RawPid = optional(unknown());
+var RawStatus = optional(unknown());
 var isMalformedPid = (pid) => pid !== undefined && pid !== null && typeof pid !== "number";
 var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an object"), object({
   id: OptionalText,
@@ -4744,7 +4745,7 @@ var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an 
   cwd: OptionalText,
   sessionId: OptionalText,
   state: OptionalText,
-  status: OptionalText,
+  status: RawStatus,
   pid: RawPid
 }), transform((row) => ({
   id: row.id ?? undefined,
@@ -4753,7 +4754,7 @@ var JobSchema = pipe(unknown(), check((row) => !Array.isArray(row), "must be an 
   cwd: row.cwd ?? undefined,
   sessionId: row.sessionId ?? undefined,
   state: row.state ?? undefined,
-  status: row.status ?? undefined,
+  status: typeof row.status === "string" ? row.status : undefined,
   pid: typeof row.pid === "number" ? row.pid : undefined,
   ...isMalformedPid(row.pid) ? { pidMalformed: true } : {}
 })));
