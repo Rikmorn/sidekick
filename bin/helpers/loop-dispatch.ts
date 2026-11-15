@@ -1,8 +1,9 @@
 /**
  * `sidekick loop dispatch <name> --issue <n> --skill <plugin>:<skill>`: starts
  * one unit of a loop's work in a worker inside the fence, within caps the
- * loop's model cannot stretch. It checks the environment, the loop, the record
- * under the loop's units lock, the skill, the issue, and the loop's worktree.
+ * loop's model cannot stretch. It checks the environment and the loop, then,
+ * under the loop's units lock, reaps an overrun attempt and checks the
+ * record, the skill, the issue, and the loop's worktree.
  * Then it fast-forwards that worktree, picks the worker's name, writes the
  * attempt's folder, and launches (`loop-dispatch-launch.ts`). A refusal
  * names every reason it finds; until a `dispatched` line counts the attempt,
@@ -29,6 +30,7 @@ import {
   syncLoopTree,
 } from './loop-dispatch-tree.js';
 import { fetchUnitIssue, type UnitIssue } from './loop-issue.js';
+import { reapDue } from './loop-reap.js';
 import { sessionOf } from './loop-start-prepare.js';
 import { takeLock } from './loop-state.js';
 import {
@@ -166,7 +168,7 @@ export function loopDispatch(
   const call = parseCall(rest);
   if (call === undefined) return usage(err);
   if ('issues' in call) return refuse(err, call.issues);
-  const env = envIssues(lenv.env, call.name);
+  const env = envIssues(lenv.env, call.name, 'dispatch');
   if (env.length > 0) return refuse(err, env);
   const runGit = timed(lenv.runGit, gitTimeoutMs);
   const loop = loadLoop(call.name, { ...lenv, runGit });
@@ -190,9 +192,18 @@ export function loopDispatch(
   }
 }
 
-// Everything the lock covers: the record, the checks after it, the
-// worktree's move, the name, the attempt's folder, and the launch.
+// Everything the lock covers: the reap, the record, the checks after it,
+// the worktree's move, the name, the attempt's folder, and the launch.
 function underLock(d: Dispatch, io: Io): number {
+  const { dir: loopDir, manifest } = d.loop;
+  const reaped = reapDue({
+    name: d.call.name,
+    loopDir,
+    manifest,
+    lenv: d.lenv,
+  });
+  if ('issues' in reaped) return refuse(io.err, reaped.issues);
+  for (const line of reaped.lines) io.out(line);
   const counted = ledgerIssues(d.loop, d.call, d.lenv.now());
   if (counted.length > 0) return refuse(io.err, counted);
   const ready = prepare(d);

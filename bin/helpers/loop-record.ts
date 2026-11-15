@@ -60,7 +60,14 @@ const className = v.pipe(v.string(), v.minLength(1), plain);
 const unit = UnitIdSchema;
 const issue = v.pipe(v.number(), v.integer(), v.minValue(1));
 const hash = v.pipe(v.string(), v.minLength(1));
-const reason = v.pipe(v.string(), v.minLength(1), v.maxLength(1000), plain);
+/** The rule for a verb line's `reason`, which the verbs that take `--reason` check first. */
+export const ReasonSchema = v.pipe(
+  v.string(),
+  v.minLength(1),
+  v.maxLength(1000),
+  plain,
+);
+const reason = ReasonSchema;
 // 40 hex characters is a SHA-1 object id, and 64 a SHA-256 one.
 const commit = v.pipe(
   v.string(),

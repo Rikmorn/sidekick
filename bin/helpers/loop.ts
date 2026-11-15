@@ -1,6 +1,7 @@
 /**
- * `sidekick loop list|show|record|arm|start|dispatch`: the verbs over the loop
- * store. Usage errors and refusals return 1, as the `profile` family's do.
+ * `sidekick loop list|show|record|arm|start|dispatch|discard|reap`: the verbs
+ * over the loop store. Usage errors and refusals return 1, as the `profile`
+ * family's do.
  */
 
 import * as path from 'node:path';
@@ -9,6 +10,7 @@ import { localDate, localMinute } from './local-date.js';
 import { ARM_USAGE_LINE, runArm } from './loop-arm.js';
 import { checkLoop, type LoopCheck, type LoopDeps } from './loop-check.js';
 import { type Cron, parseCron } from './loop-cron.js';
+import { DISCARD_USAGE_LINE, loopDiscard } from './loop-discard-verb.js';
 import { DISPATCH_USAGE_LINE, loopDispatch } from './loop-dispatch.js';
 import { inheritedListing } from './loop-inherited.js';
 import {
@@ -16,6 +18,7 @@ import {
   type LoopManifest,
   readLoopManifest,
 } from './loop-manifest.js';
+import { loopReap, REAP_USAGE_LINE, reapInFlight } from './loop-reap.js';
 import {
   appendRecord,
   isNewRequest,
@@ -28,12 +31,13 @@ import {
 import { runStart, START_USAGE_LINE } from './loop-start.js';
 import { type LoopState, readState, STATE_FILE } from './loop-state.js';
 import { loopNames, loopsRoot } from './loop-store.js';
+import { takeUnitsLock } from './loop-unit-context.js';
 import { keyHits } from './memory-patterns.js';
 import { type FlagOption, type ProfileEnv, parseFlags } from './profile.js';
 import { isProfileName, PROFILE_NAME_RULE } from './profile-manifest.js';
 import { configDir } from './sidekick-home.js';
 
-export const LOOP_USAGE_LINE = `sidekick loop list | show <name> [--since <YYYY-MM-DD>] | record <name> --kind <would|request|did|denied|note> --summary <text> [--class <class>] [--command <text>] [--unit <id>] | ${ARM_USAGE_LINE.replace('sidekick loop ', '')} | ${START_USAGE_LINE.replace('sidekick loop ', '')} | ${DISPATCH_USAGE_LINE.replace('sidekick loop ', '')}`;
+export const LOOP_USAGE_LINE = `sidekick loop list | show <name> [--since <YYYY-MM-DD>] | record <name> --kind <would|request|did|denied|note> --summary <text> [--class <class>] [--command <text>] [--unit <id>] | ${ARM_USAGE_LINE.replace('sidekick loop ', '')} | ${START_USAGE_LINE.replace('sidekick loop ', '')} | ${DISPATCH_USAGE_LINE.replace('sidekick loop ', '')} | ${DISCARD_USAGE_LINE.replace('sidekick loop ', '')} | ${REAP_USAGE_LINE.replace('sidekick loop ', '')}`;
 
 /** The profile family's environment, with a clock, the machine's seams `start` waits through, and the managed settings path the check and the listing read. */
 export interface LoopEnv extends ProfileEnv {
@@ -555,11 +559,33 @@ const record: Verb = (rest, lenv, out, err) => {
   if (!cron.ok) {
     return refuse(err, [`${basis.mandate.file}: schedule: ${cron.issue}`]);
   }
-  const printed = successLine(dir, cron.cron, line);
-  appendRecord(dir, line);
-  out(printed);
-  return 0;
+  return appendLocked({ name: call.name, dir, line, cron: cron.cron }, lenv, {
+    out,
+    err,
+  });
 };
+
+// Under the units lock: the reap first, then the line, stamped once the reap
+// has written, so the day file keeps time order. A busy lock refuses, and
+// writes nothing.
+function appendLocked(
+  w: { name: string; dir: string; line: RecordLine; cron: Cron },
+  lenv: LoopEnv,
+  io: { out: Out; err: Out },
+): number {
+  const lock = takeUnitsLock(w.dir, lenv);
+  if (lock.kind === 'busy') return refuse(io.err, [lock.issue]);
+  try {
+    reapInFlight(w.name, w.dir, lenv, io);
+    const line: RecordLine = { ...w.line, at: lenv.now().toISOString() };
+    const printed = successLine(w.dir, w.cron, line);
+    appendRecord(w.dir, line);
+    io.out(printed);
+    return 0;
+  } finally {
+    lock.release();
+  }
+}
 
 const VERBS: Record<string, Verb> = {
   list,
@@ -568,6 +594,8 @@ const VERBS: Record<string, Verb> = {
   arm: runArm,
   start: runStart,
   dispatch: loopDispatch,
+  discard: loopDiscard,
+  reap: loopReap,
 };
 
 /** Dispatch one `loop` verb; returns the process exit code. */

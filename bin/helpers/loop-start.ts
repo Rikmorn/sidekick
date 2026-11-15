@@ -1,13 +1,15 @@
 /**
  * `sidekick loop start (<name> | --all) [--record] [--now]`: brings each loop
  * to the state its definition asks for, and never runs two sessions for one
- * loop. It takes each loop's lock, then the session listing once, prepares
- * every loop, commits the sidekick folder, acts on each loop's choice, waits
- * for the new launches to arm, and prints one line per loop.
+ * loop. It takes each loop's lock, reaps each loop's overrun attempt, then
+ * takes the session listing once, prepares every loop, commits the sidekick
+ * folder, acts on each loop's choice, waits for the new launches to arm, and
+ * prints one line per loop.
  */
 
 import * as path from 'node:path';
 import type { LoopEnv } from './loop.js';
+import { reapBeforeStart } from './loop-reap.js';
 import type { Action } from './loop-reconcile.js';
 import { actOn, type Launched, type Outcome } from './loop-start-act.js';
 import {
@@ -49,7 +51,7 @@ type Wanted =
 
 // A loop whose lock this start holds, one another start holds, or one with nothing to lock (a bad name or no folder), which `prepareLoop` refuses.
 type Seat =
-  | { kind: 'held'; name: string; release: () => void }
+  | { kind: 'held'; name: string; dir: string; release: () => void }
   | { kind: 'busy'; name: string; issue: string }
   | { kind: 'unheld'; name: string };
 type Held = Extract<Seat, { kind: 'held' }>;
@@ -95,7 +97,7 @@ function seatOf(name: string, root: string, lenv: LoopEnv): Seat {
     isAlive: lenv.isAlive,
   });
   return lock.kind === 'held'
-    ? { kind: 'held', name, release: lock.release }
+    ? { kind: 'held', name, dir, release: lock.release }
     : { kind: 'busy', name, issue: lock.issue };
 }
 
@@ -160,13 +162,19 @@ function commitStart(
   );
 }
 
-// The listing runs once, after every lock is taken, so no other start changes a row between the listing and the act. Each lock is released once its loop's last write is done.
+// Each loop's overrun attempt is reaped first. The listing runs once, after every lock is taken and every reap is done, so no other start changes a row between the listing and the act. Each lock is released once its loop's last write is done.
 function actOnHeld(
   held: readonly Held[],
   flags: StartFlags,
   lenv: LoopEnv,
   io: Io,
 ): Result[] {
+  for (const seat of held) {
+    reapBeforeStart(seat.name, seat.dir, lenv, {
+      out: prefixed(io.out, seat.name),
+      err: prefixed(io.err, seat.name),
+    });
+  }
   const listed = listJobs(lenv.runClaude, lenv.cwd);
   if ('issues' in listed) {
     for (const line of [...listed.issues, NO_LISTING]) io.err(line);

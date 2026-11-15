@@ -3395,6 +3395,30 @@ describe('finish saves the run report', () => {
     expect(fs.existsSync(fx.worktree)).toBe(false);
   });
 
+  test("finish --discard with a unit brief outside every checkout saves the worktree's report to the attempt folder", () => {
+    const fx = fixture();
+    const { attempt, brief } = unitAttempt(fx);
+    const h = harness(fx);
+    expect(h.finish(brief, '--discard')).toBe(0);
+    expect(h.err).toEqual([]);
+    const saved = path.join(attempt, ATTEMPT_REPORT);
+    expect(fs.readFileSync(saved, 'utf-8')).toBe(REPORT_TEXT);
+    expect(h.out).toContain(`report saved to ${saved}`);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test('finish --discard --no-report with a unit brief and no report in the worktree saves none', () => {
+    const fx = fixture();
+    const { attempt, brief } = unitAttempt(fx);
+    fs.rmSync(path.join(fx.worktree, 'unit-report.md'));
+    const h = harness(fx);
+    expect(h.finish(brief, '--discard', '--no-report')).toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out).toContain('no report to save: the worktree holds none');
+    expect(fs.existsSync(path.join(attempt, ATTEMPT_REPORT))).toBe(false);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
   test("a plan worker's report is saved as before", () => {
     const fx = fixture();
     fx.integrate();

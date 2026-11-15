@@ -31,21 +31,26 @@ const isSet = (value: string | undefined): value is string =>
   value !== undefined && value !== '';
 
 /**
- * What in the environment refuses a dispatch for loop `name`: a worker's
- * marker, since a worker dispatches nothing, and another loop's name. An empty
- * value reads as unset, as a loop's compiled env sets `SIDEKICK_WORKER`.
+ * What in the environment refuses unit verb `verb` for loop `name`: a
+ * worker's marker, since a worker runs no unit verb, and another loop's name,
+ * since a loop acts only on its own units. An empty value reads as unset, as
+ * a loop's compiled env sets `SIDEKICK_WORKER`.
  */
-export function envIssues(env: NodeJS.ProcessEnv, name: string): string[] {
+export function envIssues(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  verb: string,
+): string[] {
   const { SIDEKICK_WORKER: worker, SIDEKICK_LOOP: loop } = env;
   return [
     ...(isSet(worker)
       ? [
-          'SIDEKICK_WORKER is set: a worker dispatches nothing, so only a loop or the operator runs loop dispatch',
+          `SIDEKICK_WORKER is set: a worker runs no unit verb, so only a loop or the operator runs loop ${verb}`,
         ]
       : []),
     ...(isSet(loop) && loop !== name
       ? [
-          `SIDEKICK_LOOP is "${loop}", so this session cannot dispatch for "${name}": a loop dispatches only its own units`,
+          `SIDEKICK_LOOP is "${loop}", so this session cannot run loop ${verb} for "${name}": a loop acts only on its own units`,
         ]
       : []),
   ];

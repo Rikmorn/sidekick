@@ -651,6 +651,35 @@ describe('loop dispatch dispatches', () => {
     expect(fs.existsSync(path.join(loopDir(), 'units.lock'))).toBe(false);
   });
 
+  test('dispatch reaps an overrun attempt first, then dispatches', () => {
+    const old = 'fixer-000001';
+    record({
+      v: 1,
+      kind: 'dispatched',
+      at: at(4),
+      unit: 'triage-7',
+      worker: old,
+    });
+    const r = dispatch();
+    expect(r.err).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(r.out[0]).toBe(
+      `unit triage-7 · worker ${old} worked 240 minutes, past the work cap of 180 minutes, so reap stops and discards it`,
+    );
+    const read = readLedger(loopDir(), NOW);
+    if ('issues' in read) throw new Error(read.issues.join('\n'));
+    expect(
+      read.lines.map((l) => [l.kind, 'unit' in l ? l.unit : undefined]),
+    ).toEqual([
+      ['dispatched', 'triage-7'],
+      ['failed', 'triage-7'],
+      ['discarded', 'triage-7'],
+      ['dispatched', UNIT],
+    ]);
+    expect(stops).toEqual([]);
+    expect(launches).toHaveLength(1);
+  });
+
   test('a record-mode loop writes record: true', () => {
     writeJson(path.join(loopDir(), 'state.json'), stateOf({ record: true }));
     expect(dispatch().code).toBe(0);

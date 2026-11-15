@@ -5,9 +5,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { envWithoutRepoVars } from './git-env.js';
 import type { LoopEnv } from './loop.js';
+import { appendRecord } from './loop-record.js';
 import { runStart, START_USAGE_LINE } from './loop-start.js';
 import { configDirIssue } from './loop-start-prepare.js';
 import { type LoopState, readState, writeArmed } from './loop-state.js';
+import { readLedger } from './loop-units.js';
 import type { Runner } from './pm-data.js';
 import { LAUNCH_TIMEOUT_MS } from './profile.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
@@ -1090,5 +1092,85 @@ describe('runStart: the lock', () => {
     };
     expect(() => run(['fixer'])).toThrow('listing broke');
     expect(fs.existsSync(lockFile())).toBe(false);
+  });
+});
+
+describe('runStart: the reap', () => {
+  // A dispatched line four hours old, past the fixture's 180-minute work cap.
+  const overrun = (name: string): void => {
+    appendRecord(loopDir(name), {
+      v: 1,
+      kind: 'dispatched',
+      at: new Date(NOW.getTime() - 4 * HOUR_MS).toISOString(),
+      unit: 'u1',
+      worker: `${name}-000001`,
+    });
+  };
+  const kindsOf = (name: string): string[] => {
+    const read = readLedger(loopDir(name), clock);
+    if ('issues' in read) throw new Error(read.issues.join('\n'));
+    return read.lines.map((l) => l.kind);
+  };
+  const reaped = (name: string): string =>
+    `${name}: unit u1 · worker ${name}-000001 worked 240 minutes, past the work cap of 180 minutes, so reap stops and discards it`;
+
+  test('start reaps each loop before it acts', () => {
+    writeLoop('alpha');
+    writeLoop('beta');
+    writeProfile();
+    overrun('alpha');
+    overrun('beta');
+    const atLaunch: Record<string, string[]> = {};
+    reply.bg = (args) => {
+      atLaunch[loopOfBg(args)] = kindsOf(loopOfBg(args));
+      return DEFAULTS.bg(args);
+    };
+    const r = run(['--all']);
+    expect(r.code).toBe(0);
+    expect(atLaunch).toEqual({
+      alpha: ['dispatched', 'failed', 'discarded'],
+      beta: ['dispatched', 'failed', 'discarded'],
+    });
+    expect(r.out).toContain(reaped('alpha'));
+    expect(r.out).toContain(reaped('beta'));
+    expect(fs.existsSync(path.join(loopDir('alpha'), 'units.lock'))).toBe(
+      false,
+    );
+  });
+
+  test('an attempt within its time is left, and the loop launches', () => {
+    writeLoop();
+    writeProfile();
+    appendRecord(loopDir(), {
+      v: 1,
+      kind: 'dispatched',
+      at: new Date(NOW.getTime() - HOUR_MS).toISOString(),
+      unit: 'u1',
+      worker: 'fixer-000001',
+    });
+    const r = run(['fixer']);
+    expect(r.code).toBe(0);
+    expect(kindsOf('fixer')).toEqual(['dispatched']);
+    expect(calls.filter((c) => c.kind === 'agents')).toHaveLength(1);
+  });
+
+  test('a units.lock another verb holds leaves the reap to that verb, and start goes on', () => {
+    writeLoop();
+    writeProfile();
+    overrun('fixer');
+    write(
+      path.join(loopDir(), 'units.lock'),
+      JSON.stringify({ pid: OTHER_PID, at: NOW.toISOString() }),
+    );
+    alive.add(OTHER_PID);
+    const r = run(['fixer']);
+    expect(r.code).toBe(0);
+    expect(r.err).toContainEqual(
+      expect.stringMatching(
+        /^fixer: .*another unit verb holds the lock \(pid 999\).*; start leaves the reap to the verb that holds it$/,
+      ),
+    );
+    expect(kindsOf('fixer')).toEqual(['dispatched']);
+    expect(acted()).toEqual(['bg fixer']);
   });
 });

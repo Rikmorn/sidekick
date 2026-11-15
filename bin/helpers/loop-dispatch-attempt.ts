@@ -19,7 +19,8 @@ import {
 /** The run report's path in a unit worker's worktree, relative to its top. */
 export const UNIT_REPORT = 'unit-report.md';
 
-const BRIEF_FILE = 'brief.md';
+/** The unit brief's file in the attempt's folder. */
+export const BRIEF_FILE = 'brief.md';
 const UNIT_FILE = 'unit.md';
 const RULINGS_FILE = 'rulings.md';
 
