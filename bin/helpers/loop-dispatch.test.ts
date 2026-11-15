@@ -680,6 +680,33 @@ describe('loop dispatch dispatches', () => {
     expect(launches).toHaveLength(1);
   });
 
+  test('resume writes resumed and dispatch then passes the breaker', () => {
+    for (const n of [1, 2, 3]) {
+      record({
+        v: 1,
+        kind: 'failed',
+        at: at(n),
+        unit: `triage-${n}`,
+        reason: 'gate failed',
+      });
+    }
+    expect(dispatch().err.join('\n')).toContain('failedUnitsInARow:');
+    const err: string[] = [];
+    const resumed = runLoopCli(
+      ['resume', 'fixer', '--reason', 'the gate is fixed'],
+      lenvOf(),
+      () => {},
+      (l) => err.push(l),
+    );
+    expect(err).toEqual([]);
+    expect(resumed).toBe(0);
+    const r = dispatch();
+    expect(r.err).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(dispatchedLines()).toHaveLength(1);
+    expect(launches).toHaveLength(1);
+  });
+
   test('a record-mode loop writes record: true', () => {
     writeJson(path.join(loopDir(), 'state.json'), stateOf({ record: true }));
     expect(dispatch().code).toBe(0);

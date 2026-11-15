@@ -37,11 +37,19 @@ function readIfPresent(
   }
 }
 
-// What a unit worker's report may not be. `saveReport` copies with
-// `copyFileSync`, which follows a link, so a report that is a link, or a hard
-// link to a file elsewhere, would copy a file from outside the worktree into
-// the attempt folder, where `loop report` prints it. Every reason is named.
-function unitReportIssues(from: string, worktree: string): string[] {
+/**
+ * What a unit worker's report at `from` may not be: a symbolic link, not a
+ * regular file, outside `folder` by real path, or a file with more than one
+ * link. `finish` copies the report with `copyFileSync`, which follows a link,
+ * and `loop report` prints it, so either would carry a file from elsewhere
+ * into the loop's view. `label` names the folder, as "the worktree". A
+ * missing report is none of these. Every reason is named.
+ */
+export function unitReportIssues(
+  from: string,
+  folder: string,
+  label: string,
+): string[] {
   let stat: fs.Stats;
   try {
     stat = fs.lstatSync(from);
@@ -56,8 +64,8 @@ function unitReportIssues(from: string, worktree: string): string[] {
   } else if (!stat.isFile()) {
     issues.push(`${from} is not a regular file`);
   }
-  if (!isInside(from, worktree)) {
-    issues.push(`${from} is outside the worktree ${worktree} by real path`);
+  if (!isInside(from, folder)) {
+    issues.push(`${from} is outside ${label} ${folder} by real path`);
   }
   if (stat.isFile() && stat.nlink > 1) {
     issues.push(
@@ -88,7 +96,7 @@ export function reportStep(
   if (brief === undefined) return { kind: 'no brief' };
   const { reportFrom: from, reportTo: to } = brief;
   if (brief.unitWorktree !== undefined) {
-    const unsafe = unitReportIssues(from, brief.unitWorktree);
+    const unsafe = unitReportIssues(from, brief.unitWorktree, 'the worktree');
     if (unsafe.length > 0) {
       return {
         issues: [

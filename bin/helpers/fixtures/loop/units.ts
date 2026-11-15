@@ -1,10 +1,11 @@
 /**
- * Test-only. A loop with one unit's attempt in flight, for the `sidekick loop
- * discard` and `reap` tests: the loop's folder and `loop.json`, its repo, the
- * worker's worktree where Claude Code makes it, the attempt's folder as
+ * Test-only. A loop with one unit's attempt in flight, for the tests of the
+ * `sidekick loop` unit verbs: the loop's folder and `loop.json`, its repo,
+ * the worker's worktree where Claude Code makes it, the attempt's folder as
  * dispatch writes it, the `dispatched` line, and a fake `claude` that lists,
- * stops, and removes the worker as the real one would. `tsc` checks this
- * file and has no `bun:test` types, so the assertions stay in the test files.
+ * stops, respawns, and removes the worker as the real one would. `tsc`
+ * checks this file and has no `bun:test` types, so the assertions stay in
+ * the test files.
  */
 
 import * as fs from 'node:fs';
@@ -83,15 +84,18 @@ export interface ClaudeCall {
 }
 
 /**
- * Plays `agents --json --all` from `rows`, `stop` from `stopResult`, and
- * `rm` as a clean removal of the worker's worktree and branch. A stop that
- * runs clean ends the row's process. Any other call fails the test.
+ * Plays `agents --json --all` from `rows`, `stop` from `stopResult`,
+ * `respawn` from `respawnResult`, and `rm` as a clean removal of the
+ * worker's worktree and branch. A stop that runs clean ends the row's
+ * process, and a respawn that runs clean starts it again as `WORKER_PID`.
+ * Any other call fails the test.
  */
 function fakeClaude(top: string, worktree: string, alive: Set<number>) {
   const calls: ClaudeCall[] = [];
   const state = {
     rows: [] as Record<string, unknown>[],
     stopResult: ok(),
+    respawnResult: ok(),
   };
   const run: ClaudeRunner = (args, opts) => {
     calls.push({ args, cwd: opts.cwd });
@@ -106,6 +110,15 @@ function fakeClaude(top: string, worktree: string, alive: Set<number>) {
         return { ...rest, state: 'stopped' };
       });
       return state.stopResult;
+    }
+    if (verb === 'respawn') {
+      const { code, timedOut } = state.respawnResult;
+      if (code !== 0 || timedOut) return state.respawnResult;
+      state.rows = state.rows.map((row) =>
+        row.id === id ? { ...row, state: 'working', pid: WORKER_PID } : row,
+      );
+      alive.add(WORKER_PID);
+      return state.respawnResult;
     }
     if (verb === 'rm') {
       git(top, 'worktree', 'remove', '--force', '--force', worktree);

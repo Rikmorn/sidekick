@@ -42,8 +42,8 @@ const FIRST_C1 = 0x80;
 const LAST_C1 = 0x9f;
 const NEWLINE = 0x0a;
 
-// A C0 or C1 control, or DEL, reaches a terminal as a command, so a printed line could hide the lines before it.
-const isControl = (ch: string): boolean => {
+/** Whether `ch` is a C0 or C1 control, or DEL, which reaches a terminal as a command, so a printed line could hide the lines before it. */
+export const isControl = (ch: string): boolean => {
   const code = ch.charCodeAt(0);
   return (
     code <= LAST_C0 || code === DEL || (code >= FIRST_C1 && code <= LAST_C1)

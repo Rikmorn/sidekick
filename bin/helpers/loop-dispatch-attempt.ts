@@ -22,7 +22,8 @@ export const UNIT_REPORT = 'unit-report.md';
 /** The unit brief's file in the attempt's folder. */
 export const BRIEF_FILE = 'brief.md';
 const UNIT_FILE = 'unit.md';
-const RULINGS_FILE = 'rulings.md';
+/** The rulings file in the attempt's folder, which `sidekick loop answer` appends to and the brief names. */
+export const RULINGS_FILE = 'rulings.md';
 
 /** What one attempt's folder is written from. Every path is absolute. */
 export interface AttemptInput {

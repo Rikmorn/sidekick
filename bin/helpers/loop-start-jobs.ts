@@ -1,7 +1,8 @@
 /**
  * The `claude` calls `sidekick loop start` makes on a loop's existing job:
- * stop, the wait for its process to exit, remove, and respawn. Each returns
- * the lines that stop the loop, none on success.
+ * stop, the wait for its process to exit, remove, and respawn, which
+ * `sidekick loop wake` also makes on a stopped worker's job. Each returns the
+ * lines that stop the verb, none on success.
  */
 
 import type { LoopEnv } from './loop.js';
@@ -92,15 +93,19 @@ export function removeJob(
   ];
 }
 
+/** The `claude` verb that clears the row a failed respawn left: `stop` for one that may live on, else `rm`. */
+export type RowClear = 'stop' | 'rm';
+
 /**
  * `claude respawn`, which restarts a stopped job with its launch flags,
- * bounded as a launch is. A failure names the way out, since each `start`
- * would retry the respawn while the loop's arm stays alive.
+ * bounded as a launch is. A failure ends with the line `wayOut` words from
+ * the call that clears the row the respawn left, so each verb names its own
+ * way out. `what` names what may not run, as "the loop".
  */
-export function respawnJob(
+export function respawnWith(
   call: JobCall,
   job: string,
-  name: string,
+  failed: { what: string; wayOut: (clear: RowClear) => string },
   timeoutMs = launchLimit(call.lenv),
 ): string[] {
   const result = call.lenv.runClaude(['respawn', job], {
@@ -109,12 +114,28 @@ export function respawnJob(
   });
   if (ranClean(result)) return [];
   // A respawn that timed out may have left a live row, which `claude rm` would not remove.
-  const clear = result.timedOut ? 'stop' : 'rm';
+  const clear: RowClear = result.timedOut ? 'stop' : 'rm';
   return [
     ...withText(
-      `claude respawn ${job} ${failure(result)}, so the loop may not run`,
+      `claude respawn ${job} ${failure(result)}, so ${failed.what} may not run`,
       result,
     ),
-    `To launch the loop fresh instead, run claude ${clear} ${job}, then sidekick loop start ${name}.`,
+    failed.wayOut(clear),
   ];
 }
+
+/**
+ * `start`'s respawn of a loop's job. A failure names launching the loop
+ * fresh as the way out, since each `start` would retry the respawn while the
+ * loop's arm stays alive.
+ */
+export const respawnJob = (
+  call: JobCall,
+  job: string,
+  name: string,
+): string[] =>
+  respawnWith(call, job, {
+    what: 'the loop',
+    wayOut: (clear) =>
+      `To launch the loop fresh instead, run claude ${clear} ${job}, then sidekick loop start ${name}.`,
+  });

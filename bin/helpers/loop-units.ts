@@ -185,8 +185,8 @@ export function inFlight(lines: RecordLine[]): Attempt | undefined {
   return open.at(-1);
 }
 
-// Failed lines across units since the later of the last landed and the last resumed.
-function failedInARow(lines: RecordLine[]): number {
+/** `failed` lines across units since the later of the last `landed` and the last `resumed`. */
+export function failedInARow(lines: RecordLine[]): number {
   return lines.reduce(
     (count, line) =>
       line.kind === 'landed' || line.kind === 'resumed'

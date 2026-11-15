@@ -14,19 +14,14 @@ import * as path from 'node:path';
 import { BRIEF_FILE, UNIT_REPORT } from './loop-dispatch-attempt.js';
 import { appendRecord, type RecordLine } from './loop-record.js';
 import { callAt, type JobCall, stopJob } from './loop-start-jobs.js';
-import type { UnitContext } from './loop-unit-context.js';
-import {
-  type Attempt,
-  attemptDir,
-  readWorkerFile,
-  unitIdIssues,
-} from './loop-units.js';
+import { mayRun, type UnitContext, workerRows } from './loop-unit-context.js';
+import { type Attempt, attemptDir, unitIdIssues } from './loop-units.js';
 import { workTreeRootOf } from './rules.js';
 import type { WorkerEnv } from './worker.js';
 import { finish } from './worker-finish.js';
 import { discardCommandFor, type FinishOptions } from './worker-finish-args.js';
 import { leftoverRoute } from './worker-finish-gone.js';
-import { type Job, listJobs } from './worker-jobs.js';
+import type { Job } from './worker-jobs.js';
 import { listWorktrees } from './worker-listing.js';
 import { physical } from './worker-repo.js';
 import { waitForExit } from './worker-teardown-stop.js';
@@ -40,34 +35,6 @@ export type Discarded =
 
 const messageOf = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
-
-// The worker's rows in the listing: by the job `worker.json` names, or by its
-// session name when `worker.json` names none, as a timed-out launch leaves
-// it, or cannot be read.
-function workerRows(
-  call: JobCall,
-  dir: string,
-  worker: string,
-): { rows: Job[] } | { issues: string[] } {
-  const file = readWorkerFile(dir);
-  const job = 'issues' in file ? null : file.job;
-  const listed = listJobs(call.lenv.runClaude, call.cwd);
-  if ('issues' in listed) {
-    return {
-      issues: [
-        ...listed.issues,
-        `discard cannot tell whether worker ${worker} still runs, so the attempt stays in flight`,
-      ],
-    };
-  }
-  const isWorker = (row: Job): boolean =>
-    job === null ? row.name === worker : row.id === job;
-  return { rows: listed.jobs.filter(isWorker) };
-}
-
-// A row whose process runs, or whose pid the listing gave in a form no one can read.
-const mayRun = (row: Job): boolean =>
-  row.pid !== undefined || ('pidMalformed' in row && row.pidMalformed === true);
 
 // Stops each of the worker's rows whose process may run, and waits for a
 // listed process to exit. Returns the lines that keep the attempt in flight.
@@ -181,7 +148,14 @@ function settleWorker(
   const dir = attemptDir(ctx.loopDir, attempt.unit, worker);
   const call = callAt(ctx.manifest.repo, ctx.lenv);
   const found = workerRows(call, dir, worker);
-  if ('issues' in found) return found;
+  if ('issues' in found) {
+    return {
+      issues: [
+        ...found.issues,
+        `discard cannot tell whether worker ${worker} still runs, so the attempt stays in flight`,
+      ],
+    };
+  }
   const stopped = stopWorker(call, found.rows, worker, exitWaitMs);
   if (stopped.length > 0) return { issues: stopped };
   if (found.rows.length === 0) {

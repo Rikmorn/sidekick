@@ -9,24 +9,18 @@
  * the reap wrote.
  */
 
-import * as v from 'valibot';
 import type { LoopEnv } from './loop.js';
 import { discardAttempt } from './loop-discard.js';
 import { envIssues } from './loop-dispatch-checks.js';
 import { reapFirst } from './loop-reap.js';
-import { ReasonSchema } from './loop-record.js';
 import {
+  attemptInFlight,
   loopNameIssues,
+  reasonIssues,
   type UnitContext,
   unitContextOf,
 } from './loop-unit-context.js';
-import {
-  type Attempt,
-  inFlight,
-  readLedger,
-  unitIdIssues,
-} from './loop-units.js';
-import { keyHits } from './memory-patterns.js';
+import { type Attempt, unitIdIssues } from './loop-units.js';
 import { parseFlags } from './profile.js';
 
 export const DISCARD_USAGE_LINE =
@@ -61,23 +55,6 @@ function parseDiscard(rest: string[]): DiscardCall | undefined {
   return { name: parsed.positionals[0], unit, reason, failed: failed === true };
 }
 
-// The reason's own rule, then the key check, which names its ids and never the text.
-function reasonIssues(reason: string): string[] {
-  const parsed = v.safeParse(ReasonSchema, reason);
-  const rule = parsed.success
-    ? []
-    : parsed.issues.map((i) => `--reason: ${i.message}`);
-  const ids = keyHits(reason);
-  return [
-    ...rule,
-    ...(ids.length === 0
-      ? []
-      : [
-          `--reason holds text that looks like a key (${ids.join(', ')}): keep keys out of the record`,
-        ]),
-  ];
-}
-
 // Every refusal that reads no file: the name, the unit id, the reason, and the environment.
 const earlyIssues = (call: DiscardCall, env: NodeJS.ProcessEnv): string[] => [
   ...loopNameIssues(call.name),
@@ -85,13 +62,6 @@ const earlyIssues = (call: DiscardCall, env: NodeJS.ProcessEnv): string[] => [
   ...reasonIssues(call.reason),
   ...envIssues(env, call.name, 'discard'),
 ];
-
-const notInFlight = (unit: string, open: Attempt | undefined): string => {
-  const lead = `no attempt for unit ${unit} is in flight, so discard has nothing to close`;
-  if (open === undefined) return lead;
-  const who = open.worker === '' ? '(unnamed)' : open.worker;
-  return `${lead}; the attempt in flight is unit ${open.unit}, worker ${who}`;
-};
 
 // Under the units lock, once the reap has run: the unit's attempt, closed.
 // When the reap closed that very attempt, the discard is done.
@@ -108,17 +78,11 @@ function discardInFlight(
     );
     return 0;
   }
-  const ledger = readLedger(ctx.loopDir, ctx.lenv.now());
-  if ('issues' in ledger) {
-    return refuse(io.err, [
-      ...ledger.issues,
-      "discard cannot read the loop's record, so it cannot find the attempt in flight",
-    ]);
-  }
-  const open = inFlight(ledger.lines);
-  if (open === undefined || open.unit !== call.unit) {
-    return refuse(io.err, [notInFlight(call.unit, open)]);
-  }
+  const open = attemptInFlight(ctx, call.unit, {
+    verb: 'discard',
+    lacks: 'has nothing to close',
+  });
+  if ('issues' in open) return refuse(io.err, open.issues);
   const discarded = discardAttempt(ctx, open, call.reason, call.failed);
   if ('issues' in discarded) return refuse(io.err, discarded.issues);
   for (const line of discarded.lines) io.out(line);

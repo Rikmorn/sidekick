@@ -14,6 +14,7 @@ import {
   loopNameIssues,
   takeUnitsLock,
   type UnitContext,
+  underUnitsLock,
   unitContextOf,
 } from './loop-unit-context.js';
 import {
@@ -78,23 +79,42 @@ export function reapDue(ctx: UnitContext): Reaped {
 /**
  * Takes the units lock, reaps, then runs `act` under the same lock, with the
  * attempt the reap closed, if any. A busy lock, or a reap that cannot judge
- * or close the attempt, refuses before `act` runs.
+ * or close the attempt, refuses before `act` runs, so a verb never acts on
+ * an attempt the reap judged overdue.
  */
 export function reapFirst(
   ctx: UnitContext,
   io: Io,
   act: (reaped: Attempt | undefined) => number,
 ): number {
-  const lock = takeUnitsLock(ctx.loopDir, ctx.lenv);
-  if (lock.kind === 'busy') return refuse(io.err, [lock.issue]);
-  try {
+  return underUnitsLock(ctx, io.err, () => {
     const reaped = reapDue(ctx);
     if ('issues' in reaped) return refuse(io.err, reaped.issues);
     print(io.out, reaped.lines);
     return act(reaped.closed);
-  } finally {
-    lock.release();
-  }
+  });
+}
+
+/**
+ * As `reapFirst`, except that a reap that cannot judge or close the attempt
+ * prints why on `err` as a warning, and `act` still runs. It serves a verb
+ * that only reads, such as `report`, the loop's only view of its worker,
+ * which an overdue worker that will not stop must not block.
+ */
+export function reapFirstOrWarn(
+  ctx: UnitContext,
+  io: Io,
+  act: (reaped: Attempt | undefined) => number,
+): number {
+  return underUnitsLock(ctx, io.err, () => {
+    const reaped = reapDue(ctx);
+    if ('issues' in reaped) {
+      print(io.err, [REAP_SKIPPED, ...reaped.issues]);
+      return act(undefined);
+    }
+    print(io.out, reaped.lines);
+    return act(reaped.closed);
+  });
 }
 
 /**
