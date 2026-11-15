@@ -153,6 +153,19 @@ describe('parseLoopManifest', () => {
     ).toBe(true);
   });
 
+  test('paused is an optional boolean', () => {
+    expect(parseLoopManifest(example()).ok).toBe(true);
+    for (const paused of [true, false]) {
+      const read = parseLoopManifest(change((m) => (m.paused = paused)));
+      expect(read.ok && read.manifest.paused).toBe(paused);
+    }
+    expect(
+      issuesOf(change((m) => (m.paused = 'yes'))).some((i) =>
+        i.startsWith('paused: '),
+      ),
+    ).toBe(true);
+  });
+
   test('gates may be empty, and a missing gates refuses', () => {
     expect(parseLoopManifest(change((m) => (m.gates = []))).ok).toBe(true);
     expect(issuesOf(change((m) => delete m.gates)).length).toBeGreaterThan(0);

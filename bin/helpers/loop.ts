@@ -99,6 +99,7 @@ function listLine(name: string, check: LoopCheck): string {
       : `refused: ${plural(check.issues.length, 'issue')} (sidekick loop show ${name} lists them)`;
   const { manifest } = check;
   if (manifest === undefined) return `${name}  ${verdict}`;
+  const paused = manifest.paused === true ? ['paused'] : [];
   return [
     name,
     `repo: ${oneLine(manifest.repo)}`,
@@ -106,8 +107,13 @@ function listLine(name: string, check: LoopCheck): string {
     `schedule: ${manifest.schedule}`,
     `classes: ${classesText(manifest)}`,
     verdict,
+    ...paused,
   ].join('  ');
 }
+
+// A paused loop's issues are the operator's to settle later, so they do not fail the listing.
+const failsList = (check: LoopCheck): boolean =>
+  check.issues.length > 0 && check.manifest?.paused !== true;
 
 const list: Verb = (rest, lenv, out, err) => {
   if (rest.length > 0) return usage(err);
@@ -122,7 +128,7 @@ const list: Verb = (rest, lenv, out, err) => {
     check: checkLoop(name, depsOf(lenv)),
   }));
   for (const { name, check } of checked) out(listLine(name, check));
-  return checked.some(({ check }) => check.issues.length > 0) ? 1 : 0;
+  return checked.some(({ check }) => failsList(check)) ? 1 : 0;
 };
 
 // `show`

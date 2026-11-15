@@ -148,6 +148,8 @@ describe('the schema', () => {
     ['an ESC', 'a\u001b[2Kb'],
     ['a newline', 'a\nb'],
     ['a DEL', 'a\u007fb'],
+    ['a NEL (U+0085)', 'a\u0085b'],
+    ['a CSI (U+009B)', 'a\u009bb'],
   ];
   const carriers = (text: string): [string, Record<string, unknown>][] => [
     ['summary', { ...base(T), kind: 'note', summary: text }],
@@ -168,11 +170,17 @@ describe('the schema', () => {
           field,
         ]);
         expect(parsed.issues[0]?.message).toBe(
-          'must hold no control character (U+0000 to U+001F, or U+007F)',
+          'must hold no control character (U+0000 to U+001F, U+007F, or U+0080 to U+009F)',
         );
       });
     }
   }
+
+  test('a no-break space (U+00A0) passes', () => {
+    for (const [, input] of carriers('a\u00a0b')) {
+      expect(v.safeParse(RecordLineSchema, input).success).toBe(true);
+    }
+  });
 
   test('a field a newer writer added is stripped, not refused', () => {
     const parsed = v.safeParse(RecordLineSchema, {

@@ -242,6 +242,43 @@ describe('list', () => {
     expect(r.code).toBe(1);
   });
 
+  test('a paused loop lists paused beside its verdict', () => {
+    writeLoop((m) => {
+      Object.assign(m, { paused: true });
+    });
+    writeProfile();
+    const r = run(['list']);
+    expect(r.out).toEqual([
+      `fixer  repo: ${repo}  profile: fixer  schedule: 7 * * * *  classes: triage (record), integrate (ask), label (act)  ok  paused`,
+    ]);
+    expect(r.code).toBe(0);
+  });
+
+  test('a paused loop with issues does not make the listing return 1, an unpaused one does', () => {
+    writeLoop((m) => {
+      m.profile = 'gone';
+      Object.assign(m, { paused: true });
+    }, 'quiet');
+    writeProfile();
+    const only = run(['list']);
+    expect(only.out).toEqual([
+      `quiet  repo: ${repo}  profile: gone  schedule: 7 * * * *  classes: triage (record), integrate (ask), label (act)  refused: 1 issue (sidekick loop show quiet lists them)  paused`,
+    ]);
+    expect(only.code).toBe(0);
+    writeLoop((m) => {
+      m.profile = 'gone';
+    }, 'loud');
+    expect(run(['list']).code).toBe(1);
+  });
+
+  test('a paused: false loop lists as unpaused', () => {
+    writeLoop((m) => {
+      Object.assign(m, { paused: false });
+    });
+    writeProfile();
+    expect(run(['list']).out[0]?.endsWith('  ok')).toBe(true);
+  });
+
   test('a loop whose loop.json fails to parse still lists, with its issue count', () => {
     write(loopFile('broken'), '{');
     writeLoop(() => {}, 'good');
@@ -737,14 +774,14 @@ describe('record', () => {
       'an ESC in the summary',
       ['--kind', 'note', '--summary', 'a\u001b[1Ab'],
       [
-        '--summary: must hold no control character (U+0000 to U+001F, or U+007F)',
+        '--summary: must hold no control character (U+0000 to U+001F, U+007F, or U+0080 to U+009F)',
       ],
     ],
     [
       'a newline in the command',
       ['--kind', 'denied', '--summary', 's', '--command', 'a\nb'],
       [
-        '--command: must hold no control character (U+0000 to U+001F, or U+007F)',
+        '--command: must hold no control character (U+0000 to U+001F, U+007F, or U+0080 to U+009F)',
       ],
     ],
   ];

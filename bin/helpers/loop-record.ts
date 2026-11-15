@@ -35,16 +35,20 @@ const at = v.pipe(
 );
 const LAST_C0 = 0x1f;
 const DEL = 0x7f;
+const FIRST_C1 = 0x80;
+const LAST_C1 = 0x9f;
 const NEWLINE = 0x0a;
 
-// A C0 control or DEL reaches a terminal as a command, so a printed line could hide the lines before it.
+// A C0 or C1 control, or DEL, reaches a terminal as a command, so a printed line could hide the lines before it.
 const isControl = (ch: string): boolean => {
   const code = ch.charCodeAt(0);
-  return code <= LAST_C0 || code === DEL;
+  return (
+    code <= LAST_C0 || code === DEL || (code >= FIRST_C1 && code <= LAST_C1)
+  );
 };
 const plain = v.check(
   (s: string) => ![...s].some(isControl),
-  'must hold no control character (U+0000 to U+001F, or U+007F)',
+  'must hold no control character (U+0000 to U+001F, U+007F, or U+0080 to U+009F)',
 );
 
 const summary = v.pipe(v.string(), v.minLength(1), v.maxLength(1000), plain);

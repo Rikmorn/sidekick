@@ -102,6 +102,8 @@ const LoopSchema = v.strictObject({
   gates: v.array(nonEmpty),
   caps: CapsSchema,
   mandate: MandateSchema,
+  // A paused loop stays off: `loop start` keeps it off and `list` ignores its issues.
+  paused: v.optional(v.boolean()),
 });
 
 export type LoopManifest = v.InferOutput<typeof LoopSchema>;

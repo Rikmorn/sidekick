@@ -9021,7 +9021,8 @@ var LoopSchema = strictObject({
   hosts: optional(array(pipe(string(), regex(HOST, "must be a domain name, with an optional leading *."))), []),
   gates: array(nonEmpty),
   caps: CapsSchema,
-  mandate: MandateSchema
+  mandate: MandateSchema,
+  paused: optional(boolean())
 });
 function parseLoopManifest(raw) {
   const result = safeParse(LoopSchema, raw);
@@ -9977,12 +9978,14 @@ var ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 var at = pipe(string(), check((s) => ISO_UTC.test(s) && !Number.isNaN(Date.parse(s)), "must be an ISO 8601 UTC time"));
 var LAST_C0 = 31;
 var DEL = 127;
+var FIRST_C1 = 128;
+var LAST_C1 = 159;
 var NEWLINE2 = 10;
 var isControl = (ch) => {
   const code = ch.charCodeAt(0);
-  return code <= LAST_C0 || code === DEL;
+  return code <= LAST_C0 || code === DEL || code >= FIRST_C1 && code <= LAST_C1;
 };
-var plain = check((s) => ![...s].some(isControl), "must hold no control character (U+0000 to U+001F, or U+007F)");
+var plain = check((s) => ![...s].some(isControl), "must hold no control character (U+0000 to U+001F, U+007F, or U+0080 to U+009F)");
 var summary = pipe(string(), minLength(1), maxLength(1000), plain);
 var command = pipe(string(), minLength(1), maxLength(4000), plain);
 var className = pipe(string(), minLength(1), plain);
@@ -10161,15 +10164,18 @@ function listLine(name, check2) {
   const { manifest } = check2;
   if (manifest === undefined)
     return `${name}  ${verdict}`;
+  const paused = manifest.paused === true ? ["paused"] : [];
   return [
     name,
     `repo: ${oneLine3(manifest.repo)}`,
     `profile: ${manifest.profile}`,
     `schedule: ${manifest.schedule}`,
     `classes: ${classesText(manifest)}`,
-    verdict
+    verdict,
+    ...paused
   ].join("  ");
 }
+var failsList = (check2) => check2.issues.length > 0 && check2.manifest?.paused !== true;
 var list2 = (rest2, lenv, out, err) => {
   if (rest2.length > 0)
     return usage2(err);
@@ -10185,7 +10191,7 @@ var list2 = (rest2, lenv, out, err) => {
   }));
   for (const { name, check: check2 } of checked2)
     out(listLine(name, check2));
-  return checked2.some(({ check: check2 }) => check2.issues.length > 0) ? 1 : 0;
+  return checked2.some(({ check: check2 }) => failsList(check2)) ? 1 : 0;
 };
 var section2 = (title, entries) => [
   title,
