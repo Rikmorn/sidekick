@@ -9032,22 +9032,30 @@ function parseLoopManifest(raw) {
   };
 }
 var isMissing4 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
+var messageOf4 = (err) => err instanceof Error ? err.message : String(err);
+function readText3(file) {
+  try {
+    return { text: fs35.readFileSync(file, "utf8") };
+  } catch (err) {
+    return { why: isMissing4(err) ? "missing" : messageOf4(err) };
+  }
+}
+function decode(text) {
+  try {
+    return { raw: JSON.parse(text) };
+  } catch (err) {
+    return { why: `invalid JSON: ${messageOf4(err)}` };
+  }
+}
 function readLoopManifest(file) {
-  let text;
-  try {
-    text = fs35.readFileSync(file, "utf8");
-  } catch (err) {
-    const why = isMissing4(err) ? "missing" : err instanceof Error ? err.message : String(err);
-    return { ok: false, issues: [`${file}: ${why}`] };
+  const read = readText3(file);
+  if ("why" in read)
+    return { ok: false, issues: [`${file}: ${read.why}`] };
+  const decoded = decode(read.text);
+  if ("why" in decoded) {
+    return { ok: false, issues: [`${file}: ${decoded.why}`] };
   }
-  let raw;
-  try {
-    raw = JSON.parse(text);
-  } catch (err) {
-    const why = err instanceof Error ? err.message : String(err);
-    return { ok: false, issues: [`${file}: invalid JSON: ${why}`] };
-  }
-  const parsed = parseLoopManifest(raw);
+  const parsed = parseLoopManifest(decoded.raw);
   if (parsed.ok)
     return parsed;
   return { ok: false, issues: parsed.issues.map((i) => `${file}: ${i}`) };
@@ -10368,7 +10376,7 @@ import * as path50 from "node:path";
 // bin/helpers/memory-link.ts
 import * as fs39 from "node:fs";
 import * as path49 from "node:path";
-var messageOf4 = (error) => error instanceof Error ? error.message : String(error);
+var messageOf5 = (error) => error instanceof Error ? error.message : String(error);
 function runLink(opts, deps, out, err) {
   const gathered = gather2(opts, deps);
   if ("issue" in gathered) {
@@ -10405,7 +10413,7 @@ function gather2(opts, deps) {
   try {
     return { facts: gatherFacts(opts, deps) };
   } catch (error) {
-    return { issue: messageOf4(error) };
+    return { issue: messageOf5(error) };
   }
 }
 function applyAll(actions, runGit, out, err) {
@@ -10425,7 +10433,7 @@ function applyAction(action, runGit) {
   try {
     return runAction(action, runGit);
   } catch (error) {
-    return { ok: false, issue: messageOf4(error) };
+    return { ok: false, issue: messageOf5(error) };
   }
 }
 function runAction(action, runGit) {
@@ -10502,7 +10510,7 @@ function claim(from, to) {
   try {
     fs39.mkdirSync(to);
   } catch (error) {
-    const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf4(error)}`;
+    const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf5(error)}`;
     throw new Error(message, { cause: error });
   }
 }
@@ -10510,7 +10518,7 @@ function copyInto(from, to, copy, remove) {
   try {
     copy(from, to);
   } catch (error) {
-    const reason7 = messageOf4(error);
+    const reason7 = messageOf5(error);
     const failed = `copying across filesystems failed, so link left ${from} intact`;
     const leftover = removeOrSayWhy(to, remove);
     const message = leftover === undefined ? `${failed} and removed its partial copy at ${to}: ${reason7}` : `${failed}: ${reason7}. link could not remove its partial copy either, so delete ${to} by hand: ${leftover}`;
@@ -10522,7 +10530,7 @@ function removeOrSayWhy(folder, remove) {
     remove(folder);
     return;
   } catch (error) {
-    return messageOf4(error);
+    return messageOf5(error);
   }
 }
 function keepIfChanged(from, to) {
@@ -10555,7 +10563,7 @@ function removeSource(from, to, remove) {
   try {
     remove(from);
   } catch (error) {
-    throw new Error(`the copy at ${to} is whole, but removing ${from} failed: ${messageOf4(error)}. Keep ${to}; a re-run archives what is left of ${from}.`, { cause: error });
+    throw new Error(`the copy at ${to} is whole, but removing ${from} failed: ${messageOf5(error)}. Keep ${to}; a re-run archives what is left of ${from}.`, { cause: error });
   }
 }
 function commit2(action, runGit) {

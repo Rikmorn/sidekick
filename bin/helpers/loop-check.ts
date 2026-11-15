@@ -35,8 +35,8 @@ export interface LoopDeps {
  * A loop's check. `manifest` is set when `loop.json` parses, and `profile`
  * when the search finds a profile that loads, issues or not. Each issue and
  * warning reads `<path>: <why>`, except the old store's refusal, whose lines
- * pass through as every profile verb prints them: the shell commands that
- * move the store, and the jobs the move breaks.
+ * pass through as every profile verb prints them: a sentence naming the
+ * stores, the lines that move or relink the store, and the jobs the move breaks.
  */
 export interface LoopCheck {
   dir: string;

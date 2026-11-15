@@ -125,27 +125,36 @@ export function parseLoopManifest(raw: unknown): ManifestRead {
 const isMissing = (err: unknown): boolean =>
   err instanceof Error && 'code' in err && err.code === 'ENOENT';
 
+const messageOf = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
+// The file's text, or why it could not be read.
+function readText(file: string): { text: string } | { why: string } {
+  try {
+    return { text: fs.readFileSync(file, 'utf8') };
+  } catch (err) {
+    return { why: isMissing(err) ? 'missing' : messageOf(err) };
+  }
+}
+
+// The decoded JSON, or the parser's message.
+function decode(text: string): { raw: unknown } | { why: string } {
+  try {
+    return { raw: JSON.parse(text) };
+  } catch (err) {
+    return { why: `invalid JSON: ${messageOf(err)}` };
+  }
+}
+
 /** Read and parse a `loop.json`; every issue starts with the file's path. */
 export function readLoopManifest(file: string): ManifestRead {
-  let text: string;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch (err) {
-    const why = isMissing(err)
-      ? 'missing'
-      : err instanceof Error
-        ? err.message
-        : String(err);
-    return { ok: false, issues: [`${file}: ${why}`] };
+  const read = readText(file);
+  if ('why' in read) return { ok: false, issues: [`${file}: ${read.why}`] };
+  const decoded = decode(read.text);
+  if ('why' in decoded) {
+    return { ok: false, issues: [`${file}: ${decoded.why}`] };
   }
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (err) {
-    const why = err instanceof Error ? err.message : String(err);
-    return { ok: false, issues: [`${file}: invalid JSON: ${why}`] };
-  }
-  const parsed = parseLoopManifest(raw);
+  const parsed = parseLoopManifest(decoded.raw);
   if (parsed.ok) return parsed;
   return { ok: false, issues: parsed.issues.map((i) => `${file}: ${i}`) };
 }
