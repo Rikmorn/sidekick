@@ -11645,8 +11645,8 @@ function formatOverlap(report2) {
 function resolveDest(scope, cwd, claudeHome) {
   return scope === "project" ? path55.join(cwd, ".claude", "rules") : path55.join(claudeHome, "rules");
 }
-function workTreeRootOf(cwd) {
-  const result = execRunner("git", ["rev-parse", "--show-toplevel"], cwd);
+function workTreeRootOf(cwd, runGit = execRunner) {
+  const result = runGit("git", ["rev-parse", "--show-toplevel"], cwd);
   if (result.code === 0)
     return { kind: "inside", top: result.stdout.trim() };
   const issue = revParseLine(result.stderr);
@@ -15543,7 +15543,11 @@ function main(argv2, ctx, out, err) {
     return runProfileCli(rest2, profileEnvOf(ctx), out, err);
   }
   if (sub === "loop") {
-    return runLoopCli(rest2, { ...profileEnvOf(ctx), now: () => new Date }, out, err);
+    return runLoopCli(rest2, {
+      ...profileEnvOf(ctx),
+      now: () => new Date,
+      bootTime: () => new Date(Date.now() - os3.uptime() * 1000)
+    }, out, err);
   }
   if (sub === "worker") {
     return runWorkerCli(rest2, {

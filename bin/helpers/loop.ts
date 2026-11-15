@@ -37,6 +37,8 @@ export const LOOP_USAGE_LINE = `sidekick loop list | show <name> [--since <YYYY-
 export interface LoopEnv extends ProfileEnv {
   /** The time `record` stamps a line with, and the end of `show`'s window. */
   now: () => Date;
+  /** When the machine booted, which `start`'s reconcile compares with a session's `startedAt`. */
+  bootTime: () => Date;
   /** The managed settings file; unset, the check and the listing read Claude Code's own path. */
   managedFile?: string;
 }

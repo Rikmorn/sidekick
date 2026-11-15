@@ -159,7 +159,11 @@ export function main(
   if (sub === 'loop') {
     return runLoopCli(
       rest,
-      { ...profileEnvOf(ctx), now: () => new Date() },
+      {
+        ...profileEnvOf(ctx),
+        now: () => new Date(),
+        bootTime: () => new Date(Date.now() - os.uptime() * 1000),
+      },
       out,
       err,
     );

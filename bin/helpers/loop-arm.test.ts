@@ -44,6 +44,7 @@ const lenvOf = (env: Record<string, string> = {}): LoopEnv => ({
   },
   write: () => {},
   now: () => NOW,
+  bootTime: () => new Date(NOW.getTime() - DAY_MS),
 });
 
 const arm = (args: string[], env: Record<string, string> = {}) => {

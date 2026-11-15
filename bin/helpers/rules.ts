@@ -7,7 +7,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { outsideRepo, revParseLine } from './outside-repo.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 import { ownedRulesIn, statusOf } from './rules-fs.js';
 import { findOverlap, formatOverlap } from './rules-overlap.js';
 
@@ -39,9 +39,12 @@ export type WorkTreeRoot =
   | { kind: 'outside' }
   | { kind: 'failed'; issue: string };
 
-/** The top of the git work tree holding `cwd`, or why there is none. */
-export function workTreeRootOf(cwd: string): WorkTreeRoot {
-  const result = execRunner('git', ['rev-parse', '--show-toplevel'], cwd);
+/** The top of the git work tree holding `cwd`, or why there is none. `runGit` runs the one git call. */
+export function workTreeRootOf(
+  cwd: string,
+  runGit: Runner = execRunner,
+): WorkTreeRoot {
+  const result = runGit('git', ['rev-parse', '--show-toplevel'], cwd);
   if (result.code === 0) return { kind: 'inside', top: result.stdout.trim() };
   const issue = revParseLine(result.stderr);
   return outsideRepo(issue, cwd)

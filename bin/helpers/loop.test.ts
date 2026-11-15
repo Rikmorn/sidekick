@@ -81,6 +81,7 @@ const lenvOf = (over: Partial<LoopEnv> = {}): LoopEnv => ({
   },
   write: () => {},
   now: () => NOW,
+  bootTime: () => new Date(NOW.getTime() - HOUR_MS),
   managedFile: managed,
   ...over,
 });
