@@ -92,10 +92,15 @@ export function removeJob(
   ];
 }
 
-/** `claude respawn`, which restarts a stopped job with its launch flags, bounded as a launch is. */
+/**
+ * `claude respawn`, which restarts a stopped job with its launch flags,
+ * bounded as a launch is. A failure names the way out, since each `start`
+ * would retry the respawn while the loop's arm stays alive.
+ */
 export function respawnJob(
   call: JobCall,
   job: string,
+  name: string,
   timeoutMs = launchLimit(call.lenv),
 ): string[] {
   const result = call.lenv.runClaude(['respawn', job], {
@@ -104,8 +109,11 @@ export function respawnJob(
   });
   return ranClean(result)
     ? []
-    : withText(
-        `claude respawn ${job} ${failure(result)}, so the loop may not run`,
-        result,
-      );
+    : [
+        ...withText(
+          `claude respawn ${job} ${failure(result)}, so the loop may not run`,
+          result,
+        ),
+        `To launch the loop fresh instead, run claude rm ${job}, then sidekick loop start ${name}.`,
+      ];
 }

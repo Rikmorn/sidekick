@@ -30,6 +30,7 @@ const StateSchema = v.object({
   states: v.record(v.string(), v.picklist(CLASS_STATES)),
   schedule: nonEmpty,
   tick: nonEmpty,
+  pausedAt: v.optional(time),
 });
 
 const ArmedSchema = v.object({
@@ -41,7 +42,11 @@ const ArmedSchema = v.object({
   renewalAt: time,
 });
 
-/** The fields of `state.json`; `states` maps each class to its state as launched. */
+/**
+ * The fields of `state.json`; `states` maps each class to its state as
+ * launched. `pausedAt` is set once a paused run ends off, and only a fresh
+ * launch, whose new file lacks it, clears it.
+ */
 export type LoopState = v.InferOutput<typeof StateSchema>;
 export type Armed = v.InferOutput<typeof ArmedSchema>;
 

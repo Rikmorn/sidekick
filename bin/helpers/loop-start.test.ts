@@ -36,6 +36,8 @@ const WAIT = { armWaitMs: 300, pollMs: 100 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const OTHER_PID = 999;
 const LOOP_PID = 7;
+const UNARMED_WARNING =
+  'fixer: job job-1 runs, but start cannot show its cron jobs alive: no current armed.json shows them, or the machine booted since start launched or respawned it. So it may never tick. Stop it with claude stop job-1, then run sidekick loop start fixer, which launches it fresh.';
 
 type Verb = 'bg' | 'stop' | 'rm' | 'respawn';
 type Call = { kind: string; args: string[]; cwd: string; timeoutMs: number };
@@ -641,10 +643,23 @@ describe('runStart: a loop that runs', () => {
     expect(run(['fixer'])).toEqual({
       code: 0,
       out: ['fixer: left job-1 (unchanged), not armed'],
-      err: [
-        'fixer: job job-1 runs, but no current armed.json shows its cron jobs alive, so it may never tick. Stop it with claude stop job-1, then run sidekick loop start fixer, which launches it fresh.',
-      ],
+      err: [UNARMED_WARNING],
     });
+  });
+
+  test('a live loop started before the boot is left, not armed, though its arm is current', () => {
+    launchOnce();
+    clock = new Date(NOW.getTime() + 2 * HOUR_MS);
+    rows = [live('job-1')];
+    const r = run(['fixer'], {
+      bootTime: () => new Date(NOW.getTime() + HOUR_MS),
+    });
+    expect(r).toEqual({
+      code: 0,
+      out: ['fixer: left job-1 (unchanged), not armed'],
+      err: [UNARMED_WARNING],
+    });
+    expect(acted()).toEqual([]);
   });
 
   test('a changed live loop between ticks is relaunched: stop, rm, then --bg', () => {
@@ -768,10 +783,26 @@ describe('runStart: a loop that runs', () => {
     );
     expect(sleeps()).toEqual([]);
   });
+
+  test('a failed respawn fails the loop, naming claude rm, then start, as the way out', () => {
+    const first = launchOnce();
+    clock = new Date(NOW.getTime() + HOUR_MS);
+    rows = [stopped('job-1')];
+    reply.respawn = () => result({ code: 1, stderr: 'no such job' });
+    const r = run(['fixer']);
+    expect(r.code).toBe(1);
+    expect(r.err).toEqual([
+      'fixer: claude respawn job-1 failed with exit code 1, so the loop may not run:',
+      'fixer: no such job',
+      'fixer: To launch the loop fresh instead, run claude rm job-1, then sidekick loop start fixer.',
+    ]);
+    expect(r.out.at(-1)).toBe('fixer: failed');
+    expect(stateOf()).toEqual(first);
+  });
 });
 
 describe('runStart: a paused loop', () => {
-  test('a live one between ticks is stopped with claude stop alone, and keeps its state.json', () => {
+  test('a live one between ticks is stopped with claude stop alone, and its state.json records the pause', () => {
     const first = launchOnce();
     writeLoop('fixer', pause);
     rows = [live('job-1')];
@@ -782,8 +813,64 @@ describe('runStart: a paused loop', () => {
     });
     expect(acted()).toEqual(['stop job-1']);
     expect(calls.find((c) => c.kind === 'stop job-1')?.cwd).toBe(repo);
-    expect(stateOf()).toEqual(first);
+    expect(stateOf()).toEqual({ ...first, pausedAt: NOW.toISOString() });
     expect(lastSubject()).toBe('loop start: fixer pause');
+  });
+
+  test('one already off records the pause once, and a later start keeps its time', () => {
+    const first = launchOnce();
+    writeLoop('fixer', pause);
+    rows = [stopped('job-1')];
+    expect(run(['fixer']).out).toEqual(['fixer: paused']);
+    expect(stateOf()).toEqual({ ...first, pausedAt: NOW.toISOString() });
+    clock = new Date(NOW.getTime() + HOUR_MS);
+    expect(run(['fixer']).code).toBe(0);
+    expect(stateOf()?.pausedAt).toBe(NOW.toISOString());
+    expect(acted()).toEqual([]);
+  });
+
+  test.each([
+    ['deleting the paused line', () => writeLoop()],
+    [
+      'setting paused to false',
+      () => writeLoop('fixer', (m) => Object.assign(m, { paused: false })),
+    ],
+  ])('unpausing by %s removes the stopped row and launches fresh, without pausedAt', (_how, unpause) => {
+    const first = launchOnce();
+    writeLoop('fixer', pause);
+    rows = [live('job-1')];
+    expect(run(['fixer']).code).toBe(0);
+    forget();
+    unpause();
+    rows = [stopped('job-1')];
+    const r = run(['fixer']);
+    expect(r.code).toBe(0);
+    expect(acted()).toEqual(['rm job-1', 'bg fixer']);
+    expect(r.out.at(-1)).toBe(
+      'fixer: launched job-2 in place of job-1 (unpaused), armed',
+    );
+    const after = stateOf();
+    expect(after?.pausedAt).toBeUndefined();
+    expect(after?.launch).not.toBe(first.launch);
+  });
+
+  test('a pause taken with --now, then lifted, launches fresh', () => {
+    launchOnce();
+    writeLoop('fixer', pause);
+    rows = [live('job-1', { status: 'busy' })];
+    expect(run(['fixer', '--now']).code).toBe(0);
+    expect(acted()).toEqual(['stop job-1']);
+    expect(stateOf()?.pausedAt).toBe(NOW.toISOString());
+    forget();
+    writeLoop();
+    rows = [stopped('job-1')];
+    const r = run(['fixer']);
+    expect(r.code).toBe(0);
+    expect(acted()).toEqual(['rm job-1', 'bg fixer']);
+    expect(r.out.at(-1)).toBe(
+      'fixer: launched job-2 in place of job-1 (unpaused), armed',
+    );
+    expect(stateOf()?.pausedAt).toBeUndefined();
   });
 
   test("one whose repo is gone runs claude stop from start's own folder", () => {

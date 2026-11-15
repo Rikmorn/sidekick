@@ -101,12 +101,12 @@ export function actOn(prepared: Prepared, ctx: ActContext): Outcome {
   }
 }
 
-// A paused loop is never launched or respawned; its stop keeps the row and `state.json`.
+// A paused loop is never launched or respawned; its stop keeps the row, and `state.json` records the pause.
 function actPaused(p: Paused, ctx: ActContext): Outcome {
   const { action } = p;
   switch (action.kind) {
     case 'off':
-      return { kind: 'paused' };
+      return endPaused(p, ctx);
     case 'pause':
       return pause(p, action.job, ctx);
     case 'refuse':
@@ -159,7 +159,7 @@ function leave(
   if (!armed) {
     warn(
       ctx,
-      `job ${job} runs, but no current armed.json shows its cron jobs alive, so it may never tick. Stop it with claude stop ${job}, then run sidekick loop start ${ctx.name}, which launches it fresh.`,
+      `job ${job} runs, but start cannot show its cron jobs alive: no current armed.json shows them, or the machine booted since start launched or respawned it. So it may never tick. Stop it with claude stop ${job}, then run sidekick loop start ${ctx.name}, which launches it fresh.`,
     );
   }
   return { kind: 'left', job, armed };
@@ -183,6 +183,25 @@ function pause(p: Paused, job: string, ctx: ActContext): Outcome {
   const issues = stopJob(callAt(p.repo, ctx.lenv), job);
   if (issues.length > 0) return failing(ctx, issues);
   say(ctx, `stopped job ${job}`);
+  return endPaused(p, ctx);
+}
+
+// A paused run that ends off records the pause once, so the reconcile reads the launch as changed once the pause is lifted. A pause ending off never fails the loop, so a failed write only warns.
+function endPaused(p: Paused, ctx: ActContext): Outcome {
+  const { state } = p;
+  if (state === undefined || state.pausedAt !== undefined) {
+    return { kind: 'paused' };
+  }
+  const issues = writeState(p.dir, {
+    ...state,
+    pausedAt: ctx.lenv.now().toISOString(),
+  });
+  for (const issue of issues) {
+    warn(
+      ctx,
+      `${issue}; state.json records no pause, so once the pause is lifted start may respawn the old session instead of launching it fresh`,
+    );
+  }
   return { kind: 'paused' };
 }
 
@@ -197,7 +216,7 @@ function respawn(
     return refusing(ctx, [bug(action, 'with no state.json')]);
   }
   const { job } = action;
-  const unspawned = respawnJob(callAt(p.repo, ctx.lenv), job);
+  const unspawned = respawnJob(callAt(p.repo, ctx.lenv), job, p.name);
   if (unspawned.length > 0) return failing(ctx, unspawned);
   const issues = writeState(p.dir, {
     ...state,
@@ -255,9 +274,10 @@ function firstIssues(steps: readonly (() => string[])[]): string[] {
   return [];
 }
 
-// Why a live or stopped row counts as changed, as `originOf` in loop-reconcile.ts judges it.
+// Why a live or stopped row counts as changed, as `originOf` and `isUnchangedLaunch` in loop-reconcile.ts judge it; a recorded pause comes first.
 function changeWhy(p: Ready): string {
   if (p.state === undefined) return 'no state.json records it';
+  if (p.state.pausedAt !== undefined) return 'unpaused';
   return p.state.hash === p.hash
     ? 'state.json names another job'
     : 'definition changed';
@@ -297,7 +317,7 @@ function freshState(p: Ready, ctx: ActContext): LoopState {
   };
 }
 
-// Claude Code refuses an untrusted repo before the session starts (docs/research/loop/2026-11-12-loop-probes.md §U19), so start relays it and never reads ~/.claude.json.
+// Claude Code refuses an untrusted repo before the session starts (docs/research/loop/2026-11-12-loop-probes.md §U19), so start judges trust only by that refusal, and never writes ~/.claude.json.
 const trustLines = (p: Ready, result: ClaudeResult): string[] =>
   UNTRUSTED.test(printedStreams(result).join('\n'))
     ? [

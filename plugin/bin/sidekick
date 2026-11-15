@@ -9011,7 +9011,8 @@ var StateSchema = object({
   record: boolean(),
   states: record(string(), picklist(CLASS_STATES)),
   schedule: nonEmpty2,
-  tick: nonEmpty2
+  tick: nonEmpty2,
+  pausedAt: optional(time)
 });
 var ArmedSchema = object({
   v: literal(1),
@@ -10723,12 +10724,15 @@ function removeJob(call, job, timeoutMs = 180000) {
     `start never discards a job's work. Read what claude rm printed, settle job ${job} by hand, then run start again.`
   ];
 }
-function respawnJob(call, job, timeoutMs = launchLimit(call.lenv)) {
+function respawnJob(call, job, name, timeoutMs = launchLimit(call.lenv)) {
   const result = call.lenv.runClaude(["respawn", job], {
     cwd: call.cwd,
     timeoutMs
   });
-  return ranClean(result) ? [] : withText(`claude respawn ${job} ${failure(result)}, so the loop may not run`, result);
+  return ranClean(result) ? [] : [
+    ...withText(`claude respawn ${job} ${failure(result)}, so the loop may not run`, result),
+    `To launch the loop fresh instead, run claude rm ${job}, then sidekick loop start ${name}.`
+  ];
 }
 
 // bin/helpers/loop-start-prepare.ts
@@ -10816,14 +10820,13 @@ function originOf(input) {
   }
   return { kind: "other", job };
 }
+var isUnchangedLaunch = (state, hash2) => state.hash === hash2 && state.pausedAt === undefined;
+var startedSinceBoot = (state, bootTime) => Date.parse(state.startedAt) > bootTime.getTime();
 function liveAction(input, row, origin) {
-  const isUnchanged = origin.kind === "recorded" && origin.state.hash === input.hash;
+  const isUnchanged = origin.kind === "recorded" && isUnchangedLaunch(origin.state, input.hash);
   if (isUnchanged) {
-    return {
-      kind: "leave",
-      job: row.job,
-      armed: jobsAlive(input.armed, input.now)
-    };
+    const armed2 = jobsAlive(input.armed, input.now) && startedSinceBoot(origin.state, input.bootTime);
+    return { kind: "leave", job: row.job, armed: armed2 };
   }
   if (mayStop(row, input.stopNow))
     return { kind: "relaunch", job: row.job };
@@ -10841,13 +10844,13 @@ function stoppedAction(input, job, origin) {
   if (origin.kind === "other")
     return launchOver("changed");
   const { state } = origin;
-  if (state.hash !== input.hash)
+  if (!isUnchangedLaunch(state, input.hash))
     return launchOver("changed");
-  const startedSinceBoot = Date.parse(state.startedAt) > input.bootTime.getTime();
-  if (startedSinceBoot && jobsAlive(input.armed, input.now)) {
+  const sinceBoot = startedSinceBoot(state, input.bootTime);
+  if (sinceBoot && jobsAlive(input.armed, input.now)) {
     return { kind: "respawn", job };
   }
-  return launchOver(startedSinceBoot ? "jobs-gone" : "rebooted");
+  return launchOver(sinceBoot ? "jobs-gone" : "rebooted");
 }
 var mayStop = (row, stopNow) => row.status === BETWEEN_TICKS || stopNow;
 var who = (name, job) => `${sessionOf2(name)} (job ${job})`;
@@ -10859,7 +10862,7 @@ function relaunchWhy(name, job, origin) {
     case "other":
       return `${who(name, job)} is running, but state.json names job ${origin.job}, which the listing no longer shows, so start relaunches it between ticks.`;
     case "recorded":
-      return `${who(name, job)} needs a relaunch, since its definition changed, and start relaunches only between ticks.`;
+      return origin.state.pausedAt === undefined ? `${who(name, job)} needs a relaunch, since its definition changed, and start relaunches only between ticks.` : `${who(name, job)} runs, but state.json records a pause since its launch, so start relaunches it between ticks.`;
     default: {
       const unhandled = origin;
       throw new Error(`unhandled origin ${JSON.stringify(unhandled)}`);
@@ -11493,7 +11496,7 @@ function actPaused(p, ctx) {
   const { action } = p;
   switch (action.kind) {
     case "off":
-      return { kind: "paused" };
+      return endPaused(p, ctx);
     case "pause":
       return pause(p, action.job, ctx);
     case "refuse":
@@ -11539,7 +11542,7 @@ function actReady(p, ctx) {
 function leave(action, ctx) {
   const { job, armed: armed2 } = action;
   if (!armed2) {
-    warn2(ctx, `job ${job} runs, but no current armed.json shows its cron jobs alive, so it may never tick. Stop it with claude stop ${job}, then run sidekick loop start ${ctx.name}, which launches it fresh.`);
+    warn2(ctx, `job ${job} runs, but start cannot show its cron jobs alive: no current armed.json shows them, or the machine booted since start launched or respawned it. So it may never tick. Stop it with claude stop ${job}, then run sidekick loop start ${ctx.name}, which launches it fresh.`);
   }
   return { kind: "left", job, armed: armed2 };
 }
@@ -11562,6 +11565,20 @@ function pause(p, job, ctx) {
   if (issues.length > 0)
     return failing(ctx, issues);
   say(ctx, `stopped job ${job}`);
+  return endPaused(p, ctx);
+}
+function endPaused(p, ctx) {
+  const { state } = p;
+  if (state === undefined || state.pausedAt !== undefined) {
+    return { kind: "paused" };
+  }
+  const issues = writeState(p.dir, {
+    ...state,
+    pausedAt: ctx.lenv.now().toISOString()
+  });
+  for (const issue of issues) {
+    warn2(ctx, `${issue}; state.json records no pause, so once the pause is lifted start may respawn the old session instead of launching it fresh`);
+  }
   return { kind: "paused" };
 }
 function respawn(p, action, ctx) {
@@ -11570,7 +11587,7 @@ function respawn(p, action, ctx) {
     return refusing(ctx, [bug(action, "with no state.json")]);
   }
   const { job } = action;
-  const unspawned = respawnJob(callAt(p.repo, ctx.lenv), job);
+  const unspawned = respawnJob(callAt(p.repo, ctx.lenv), job, p.name);
   if (unspawned.length > 0)
     return failing(ctx, unspawned);
   const issues = writeState(p.dir, {
@@ -11622,6 +11639,8 @@ function firstIssues(steps) {
 function changeWhy(p) {
   if (p.state === undefined)
     return "no state.json records it";
+  if (p.state.pausedAt !== undefined)
+    return "unpaused";
   return p.state.hash === p.hash ? "state.json names another job" : "definition changed";
 }
 function reasonText(p, reason7) {

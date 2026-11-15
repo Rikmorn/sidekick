@@ -309,6 +309,57 @@ describe('chooseAction: the table', () => {
   });
 });
 
+describe('chooseAction: a state.json that records a pause, once the pause is lifted', () => {
+  const pausedState = state({ pausedAt: ago(HOUR_MS) });
+
+  test('a stopped row with the hash unchanged is removed, and the loop launches fresh as changed', () => {
+    expect(
+      chooseAction(input({ state: pausedState, rows: [stopped()] })),
+    ).toEqual({ kind: 'launch', remove: 'job1', reason: 'changed' });
+  });
+  test('a live row between ticks is relaunched, never left', () => {
+    expect(chooseAction(input({ state: pausedState }))).toEqual({
+      kind: 'relaunch',
+      job: 'job1',
+    });
+  });
+  test('a live row mid-tick refuses, naming the pause and --now, and --now relaunches it', () => {
+    const busy = input({
+      state: pausedState,
+      rows: [live({ status: 'busy' })],
+    });
+    expect(refusal(chooseAction(busy))).toBe(
+      [
+        'loop-fixer (job job1) runs, but state.json records a pause since its launch, so start relaunches it between ticks.',
+        'Job job1 is not between ticks: its status reads busy.',
+        'Run start again between ticks, or add --now to relaunch it at once.',
+      ].join('\n'),
+    );
+    expect(chooseAction({ ...busy, stopNow: true })).toEqual({
+      kind: 'relaunch',
+      job: 'job1',
+    });
+  });
+  test('no row launches fresh as new', () => {
+    expect(chooseAction(input({ state: pausedState, rows: [] }))).toEqual({
+      kind: 'launch',
+      remove: undefined,
+      reason: 'new',
+    });
+  });
+  test('while the loop is still paused, the pause rows hold as before', () => {
+    expect(
+      chooseAction(
+        input({ paused: true, state: pausedState, rows: [stopped()] }),
+      ),
+    ).toEqual({ kind: 'off' });
+    expect(chooseAction(input({ paused: true, state: pausedState }))).toEqual({
+      kind: 'pause',
+      job: 'job1',
+    });
+  });
+});
+
 describe('chooseAction: leave and the arm', () => {
   test.each([
     ['no current arm', undefined],
@@ -316,6 +367,18 @@ describe('chooseAction: leave and the arm', () => {
     ['a renewal time in the past', armed({ renewalAt: ago(60_000) })],
   ])('a live, unchanged loop with %s is left, not armed', (_label, arm) => {
     expect(chooseAction(input({ armed: arm }))).toEqual({
+      kind: 'leave',
+      job: 'job1',
+      armed: false,
+    });
+  });
+
+  test.each([
+    ['an hour before the boot', new Date(BOOT.getTime() - HOUR_MS)],
+    ['at the boot itself', BOOT],
+  ])('a live, unchanged loop started %s is left, not armed, though its arm is alive', (_label, at) => {
+    const st = state({ startedAt: at.toISOString() });
+    expect(chooseAction(input({ state: st }))).toEqual({
       kind: 'leave',
       job: 'job1',
       armed: false,
@@ -616,6 +679,7 @@ describe('chooseAction: never touches a session that might be live', () => {
     state(),
     state({ job: null }),
     state({ job: 'gone' }),
+    state({ pausedAt: ago(HOUR_MS) }),
   ];
   const arms: (Armed | undefined)[] = [
     armed(),
@@ -704,6 +768,17 @@ describe('chooseAction: never touches a session that might be live', () => {
       : undefined;
   }
 
+  // The unpause: once the pause is lifted, a launch whose state.json records it is never left or respawned.
+  function unpausedViolation(
+    action: Action,
+    st: LoopState | undefined,
+  ): string | undefined {
+    const keepsRow = action.kind === 'leave' || action.kind === 'respawn';
+    return st?.pausedAt !== undefined && keepsRow
+      ? `${action.kind} on a launch whose state.json records a pause`
+      : undefined;
+  }
+
   test('no combination breaks the rules', () => {
     const found: string[] = [];
     for (const [label, rows] of rowSets) {
@@ -727,7 +802,9 @@ describe('chooseAction: never touches a session that might be live', () => {
                   const why =
                     violation(action, rows, st, stopNow) ??
                     goneJobViolation(action, rows, st) ??
-                    (paused ? pauseViolation(action, rows, st) : undefined);
+                    (paused
+                      ? pauseViolation(action, rows, st)
+                      : unpausedViolation(action, st));
                   if (why !== undefined) {
                     found.push(
                       `${label}, state job ${st?.job}, paused ${paused}: ${why}`,

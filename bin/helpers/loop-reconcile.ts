@@ -30,15 +30,16 @@ export interface ReconcileInput {
 
 /**
  * Why a loop launches fresh: `new` when it has no row or no `state.json`,
- * `changed` when the hash differs or the row is not the job `state.json`
- * names, `jobs-gone` when its cron jobs are not alive, and `rebooted` when the
- * machine booted since the session started.
+ * `changed` when the hash differs, `state.json` records a pause the loop has
+ * left, or the row is not the job `state.json` names, `jobs-gone` when its
+ * cron jobs are not alive, and `rebooted` when the machine booted since the
+ * session started.
  */
 export type LaunchReason = 'new' | 'changed' | 'jobs-gone' | 'rebooted';
 
 /**
  * What `start` does to one loop, by `kind`:
- * - `leave`: nothing; `armed` false means the jobs are not alive, which `start` warns about.
+ * - `leave`: nothing; `armed` false means the jobs are not alive, or the session started before the boot, which `start` warns about.
  * - `off`: nothing, since the loop is paused and no session of it runs.
  * - `pause`: `claude stop <job>`, keeping the row and `state.json`.
  * - `respawn`: `claude respawn <job>`, then set `startedAt`.
@@ -179,6 +180,14 @@ function originOf(input: ReconcileInput): Origin {
   return { kind: 'other', job };
 }
 
+// A launch stands while its hash holds and its `state.json` records no pause, so an unpause launches fresh.
+const isUnchangedLaunch = (state: LoopState, hash: string): boolean =>
+  state.hash === hash && state.pausedAt === undefined;
+
+// An unreadable `startedAt` compares false, so it reads as a boot since.
+const startedSinceBoot = (state: LoopState, bootTime: Date): boolean =>
+  Date.parse(state.startedAt) > bootTime.getTime();
+
 // A live row that `state.json` does not record counts as changed, so it is relaunched, never removed while it runs.
 function liveAction(
   input: ReconcileInput,
@@ -186,13 +195,13 @@ function liveAction(
   origin: Origin,
 ): Action {
   const isUnchanged =
-    origin.kind === 'recorded' && origin.state.hash === input.hash;
+    origin.kind === 'recorded' && isUnchangedLaunch(origin.state, input.hash);
   if (isUnchanged) {
-    return {
-      kind: 'leave',
-      job: row.job,
-      armed: jobsAlive(input.armed, input.now),
-    };
+    // Whether cron jobs outlive a reboot is unmeasured (U1), so a session started before the boot reads not armed.
+    const armed =
+      jobsAlive(input.armed, input.now) &&
+      startedSinceBoot(origin.state, input.bootTime);
+    return { kind: 'leave', job: row.job, armed };
   }
   if (mayStop(row, input.stopNow)) return { kind: 'relaunch', job: row.job };
   const why = relaunchWhy(input.name, row.job, origin);
@@ -212,14 +221,12 @@ function stoppedAction(
   if (origin.kind === 'unrecorded') return launchOver('new');
   if (origin.kind === 'other') return launchOver('changed');
   const { state } = origin;
-  if (state.hash !== input.hash) return launchOver('changed');
-  // An unreadable `startedAt` compares false, so it reads as a boot since.
-  const startedSinceBoot =
-    Date.parse(state.startedAt) > input.bootTime.getTime();
-  if (startedSinceBoot && jobsAlive(input.armed, input.now)) {
+  if (!isUnchangedLaunch(state, input.hash)) return launchOver('changed');
+  const sinceBoot = startedSinceBoot(state, input.bootTime);
+  if (sinceBoot && jobsAlive(input.armed, input.now)) {
     return { kind: 'respawn', job };
   }
-  return launchOver(startedSinceBoot ? 'jobs-gone' : 'rebooted');
+  return launchOver(sinceBoot ? 'jobs-gone' : 'rebooted');
 }
 
 const mayStop = (row: LiveRow, stopNow: boolean): boolean =>
@@ -238,7 +245,9 @@ function relaunchWhy(name: string, job: string, origin: Origin): string {
     case 'other':
       return `${who(name, job)} is running, but state.json names job ${origin.job}, which the listing no longer shows, so start relaunches it between ticks.`;
     case 'recorded':
-      return `${who(name, job)} needs a relaunch, since its definition changed, and start relaunches only between ticks.`;
+      return origin.state.pausedAt === undefined
+        ? `${who(name, job)} needs a relaunch, since its definition changed, and start relaunches only between ticks.`
+        : `${who(name, job)} runs, but state.json records a pause since its launch, so start relaunches it between ticks.`;
     default: {
       const unhandled: never = origin;
       throw new Error(`unhandled origin ${JSON.stringify(unhandled)}`);
