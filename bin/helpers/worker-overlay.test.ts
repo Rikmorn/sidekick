@@ -456,11 +456,11 @@ describe('fenceSafeSettings', () => {
     model: 'sonnet',
     env: { A: '1' },
     enabledPlugins: { 'role@local': true },
-    permissions: { deny: ['Bash(rm:*)'] },
+    permissions: { deny: ['Bash(rm:*)'], ask: ['Y'] },
     sandbox: { filesystem: { denyRead: ['/r'], denyWrite: ['/w'] } },
   };
 
-  test('it keeps model, env, enabledPlugins, permissions.deny, and the sandbox read and write denies', () => {
+  test('it keeps model, env, enabledPlugins, permissions.deny and ask, and the sandbox read and write denies', () => {
     expect(fenceSafeSettings(kept)).toEqual({ settings: kept, dropped: [] });
   });
 
@@ -492,7 +492,6 @@ describe('fenceSafeSettings', () => {
       settings: kept,
       dropped: [
         'permissions.allow',
-        'permissions.ask',
         'permissions.additionalDirectories',
         'sandbox.enabled',
         'sandbox.excludedCommands',
@@ -531,6 +530,7 @@ describe('fenceSafeSettings', () => {
       'env',
       'enabledPlugins',
       'permissions.deny',
+      'permissions.ask',
       'sandbox.filesystem.denyRead',
       'sandbox.filesystem.denyWrite',
     ]);

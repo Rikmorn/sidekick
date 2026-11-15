@@ -12909,7 +12909,7 @@ var FENCE_SAFE = {
   model: true,
   env: true,
   enabledPlugins: true,
-  permissions: { deny: true },
+  permissions: { deny: true, ask: true },
   sandbox: { filesystem: { denyRead: true, denyWrite: true } }
 };
 var keyNames = (keep, at2 = "") => Object.entries(keep).flatMap(([key, rule]) => {

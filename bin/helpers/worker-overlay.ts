@@ -7,8 +7,8 @@
  * allows a push, the two blocks on `git push`. A unit worker's carries the
  * fence: the sandbox, one `Edit` allow rule for its worktree, the denies on
  * git's redirect files and the sidekick folder, the read block, and the push
- * block, which it always has. Its profile layer keeps only the keys that
- * cannot widen that fence.
+ * block, which it always has. Its profile layer keeps only a listed set of
+ * keys, none of which sets a fence key.
  */
 
 import * as path from 'node:path';
@@ -146,10 +146,11 @@ export function workerOverlay(
 
 /**
  * The skills a unit worker may not run, as superpowers 7.0.2 and this plugin
- * read on 2026-11-15. Each superpowers skill here, `sk-execute`, and
- * `sk-design` stops for a person's answer, and a unit worker has no person
- * to answer. `sk-track`, `sk-milestone`, and `sk-worktree` file, release, or
- * land, which its loop and the operator own. `sk-save` writes the memory
+ * read on 2026-11-15. Each superpowers skill here and `sk-execute` stops
+ * for a person's answer, and a unit worker has no person to answer.
+ * `sk-design` settles a change's design, which belongs before a unit, not
+ * inside one. `sk-track`, `sk-milestone`, and `sk-worktree` file, release,
+ * or land, which its loop and the operator own. `sk-save` writes the memory
  * store, and a unit's report is its record.
  */
 export const UNIT_DENIED_SKILLS = [
@@ -234,7 +235,8 @@ const unitDenies = (opts: UnitOverlayOptions): string[] =>
 /**
  * Builds the overlay a unit worker launches with: the sandbox fence with the
  * network open to `hosts` alone, `Edit` allowed in its worktree alone, the
- * denies spec §The unit overlay names, reads blocked outside its working
+ * denies on git's redirect files, sidekick's folders, the memory store, the
+ * listed skills, and the web tools, reads blocked outside its working
  * folders, Claude Code's auto memory off, and the push block. It carries no
  * recorded main and no `sk-save` allow rule. A profile count that is not a
  * string of digits refuses, as `workerOverlay` does.
@@ -275,14 +277,15 @@ interface Keep {
   readonly [key: string]: true | Keep;
 }
 
-// The profile keys that cannot widen a unit's fence. The overlay owns every
-// fence key, so the profile keeps only what narrows it or leaves it alone;
-// a key added to Claude Code later stays out until it is listed here.
+// The profile keys a unit launch keeps. The overlay owns every fence key, so
+// none of these sets one, and a key added to Claude Code later stays out
+// until it is listed here. `ask` only narrows: under `dontAsk` it denies its
+// call. A kept `env` still reaches every process the worker starts.
 const FENCE_SAFE: Keep = {
   model: true,
   env: true,
   enabledPlugins: true,
-  permissions: { deny: true },
+  permissions: { deny: true, ask: true },
   sandbox: { filesystem: { denyRead: true, denyWrite: true } },
 };
 

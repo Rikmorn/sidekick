@@ -799,7 +799,7 @@ describe('dispatchUnit', () => {
       `Read(/${h.store}/**)`,
       `Edit(/${h.store}/**)`,
       'Skill(superpowers:brainstorming)',
-      SAVE_SKILL_RULE,
+      'Skill(sidekick:sk-save)',
       'WebFetch',
       'WebSearch',
       PUSH_DENY_RULE,
@@ -922,6 +922,7 @@ describe('dispatchUnit', () => {
         enabledPlugins: { 'role@inline': true },
         permissions: {
           deny: ['Bash(rm:*)'],
+          ask: ['Bash(curl:*)'],
           additionalDirectories: ['/elsewhere'],
         },
         sandbox: {
@@ -961,11 +962,12 @@ describe('dispatchUnit', () => {
     const permissions = settings.permissions as Record<string, unknown>;
     expect(permissions).not.toHaveProperty('additionalDirectories');
     expect(permissions.deny).toContain('Bash(rm:*)');
+    expect(permissions.ask).toEqual(['Bash(curl:*)']);
     expect(settings.model).toBe('sonnet');
     expect(settings.env).toMatchObject({ ROLE: '1' });
     expect(settings.enabledPlugins).toEqual({ 'role@inline': true });
     expect(h.err).toContain(
-      'the unit launch leaves out profile "worker"\'s settings outside the keys it keeps (model, env, enabledPlugins, permissions.deny, sandbox.filesystem.denyRead, sandbox.filesystem.denyWrite): permissions.additionalDirectories, sandbox.excludedCommands, sandbox.network, sandbox.filesystem.allowWrite, hooks, enableAllProjectMcpServers, enabledMcpjsonServers, statusLine',
+      'the unit launch leaves out profile "worker"\'s settings outside the keys it keeps (model, env, enabledPlugins, permissions.deny, permissions.ask, sandbox.filesystem.denyRead, sandbox.filesystem.denyWrite): permissions.additionalDirectories, sandbox.excludedCommands, sandbox.network, sandbox.filesystem.allowWrite, hooks, enableAllProjectMcpServers, enabledMcpjsonServers, statusLine',
     );
   });
 
