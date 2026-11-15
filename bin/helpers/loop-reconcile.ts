@@ -41,7 +41,7 @@ export type LaunchReason = 'new' | 'changed' | 'jobs-gone' | 'rebooted';
  * What `start` does to one loop, by `kind`:
  * - `leave`: nothing; `armed` false means the jobs are not alive, or the session started before the boot, which `start` warns about.
  * - `off`: nothing, since the loop is paused and no session of it runs.
- * - `pause`: `claude stop <job>`, keeping the row and `state.json`.
+ * - `pause`: `claude stop <job>`, keeping the row; `state.json` stays, and `start` records the pause in it.
  * - `respawn`: `claude respawn <job>`, then set `startedAt`.
  * - `relaunch`: `claude stop <job>`, `claude rm <job>`, then a fresh launch.
  * - `launch`: `claude rm <remove>` when set, then a fresh launch. `remove` never names a row with a pid.
