@@ -621,6 +621,60 @@ describe('dispatch refuses', () => {
   });
 });
 
+describe('dispatch of a unit brief', () => {
+  test('a unit brief skips the target check', () => {
+    const fx = fixture();
+    const attempt = path.join(tmp(), 'loop', 'units', 'u-1', 'w1');
+    fs.mkdirSync(attempt, { recursive: true });
+    fs.writeFileSync(path.join(attempt, 'unit.md'), 'unit\n');
+    const brief = path.join(attempt, 'brief.md');
+    fs.writeFileSync(
+      brief,
+      briefText({
+        kind: 'unit',
+        name: 'w1',
+        unit: path.join(attempt, 'unit.md'),
+        rulings: path.join(attempt, 'rulings.md'),
+        baseline: fx.head,
+        skill: 'sidekick:sk-orient',
+        place: 'worktree',
+        report: 'docs/run-report.md',
+        orchestrator: 'orch',
+      }),
+    );
+    const h = harness(fx);
+    const code = h.dispatch(brief, '--permission-mode', 'auto');
+    expect(h.err.filter((l) => l.startsWith('target:'))).toEqual([]);
+    expect(h.err).toEqual([]);
+    expect(code).toBe(0);
+  });
+
+  test('a unit brief outside an attempt folder refuses', () => {
+    const fx = fixture();
+    const brief = path.join(fx.docs, 'u-brief.md');
+    fs.writeFileSync(path.join(fx.docs, 'unit.md'), 'unit\n');
+    fs.writeFileSync(
+      brief,
+      briefText({
+        kind: 'unit',
+        name: 'w1',
+        unit: path.join(fx.docs, 'unit.md'),
+        rulings: path.join(fx.docs, 'rulings.md'),
+        baseline: fx.head,
+        skill: 'sidekick:sk-orient',
+        place: 'worktree',
+        report: 'docs/run-report.md',
+        orchestrator: 'orch',
+      }),
+    );
+    const h = harness(fx);
+    const code = h.dispatch(brief, '--permission-mode', 'auto');
+    expect(code).toBe(1);
+    expect(h.err.some((l) => l.startsWith('brief: '))).toBe(true);
+    expect(h.claude.launches()).toEqual([]);
+  });
+});
+
 describe('dispatch launches', () => {
   test('claude with the profile, the mode, the worktree, and the prompt, in that order', () => {
     const fx = fixture();

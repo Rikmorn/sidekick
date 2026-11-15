@@ -2248,12 +2248,14 @@ var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) =
 var WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 var WORKSTREAM = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var WorkerNameSchema = pipe(string(), regex(WORKER_NAME, `must match ${WORKER_NAME.source}`));
-var BriefSchema = strictObject({
+var BASELINE = pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters"));
+var PlanBriefSchema = strictObject({
+  kind: literal("plan"),
   name: WorkerNameSchema,
   plan: AbsolutePath,
   spec: AbsolutePath,
   rulings: AbsolutePath,
-  baseline: pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters")),
+  baseline: BASELINE,
   skill: picklist(["subagent-driven-development", "executing-plans"]),
   place: union([
     literal("worktree"),
@@ -2266,6 +2268,27 @@ var BriefSchema = strictObject({
   report: RelativePath,
   orchestrator: pipe(string(), minLength(1, "must not be empty"))
 });
+var SKILL_PART_MAX = 48;
+var SKILL_PART = new RegExp(`^[a-z0-9][a-z0-9-]{0,${SKILL_PART_MAX - 1}}$`);
+var UNIT_SKILL_MESSAGE = `must be <plugin>:<skill>, each part of lower-case letters, digits, and hyphens, starting with a letter or digit, at most ${SKILL_PART_MAX} characters`;
+var UnitBriefSchema = strictObject({
+  kind: literal("unit"),
+  name: WorkerNameSchema,
+  unit: AbsolutePath,
+  rulings: AbsolutePath,
+  baseline: BASELINE,
+  skill: pipe(string(), check((s) => {
+    const parts = s.split(":");
+    return parts.length === 2 && parts.every((p) => SKILL_PART.test(p));
+  }, UNIT_SKILL_MESSAGE)),
+  place: literal("worktree", 'must be "worktree"'),
+  report: RelativePath,
+  orchestrator: pipe(string(), minLength(1, "must not be empty"))
+});
+var BriefSchema = variant("kind", [
+  PlanBriefSchema,
+  UnitBriefSchema
+]);
 function readBrief(file) {
   const abs = path4.resolve(file);
   let text;
@@ -2279,7 +2302,7 @@ function readBrief(file) {
   if ("issues" in parsed) {
     return { issues: parsed.issues.map((i) => `${abs}: ${i}`) };
   }
-  const result = safeParse(BriefSchema, parsed.fields);
+  const result = safeParse(BriefSchema, { kind: "plan", ...parsed.fields });
   if (!result.success) {
     return {
       issues: result.issues.map((issue) => {
@@ -2329,6 +2352,43 @@ function briefFileIssues(brief, bounds) {
   }
   return issues;
 }
+var UNIT_ID = /^[A-Za-z0-9._-]{1,64}$/;
+var UNITS_FOLDER = "units";
+function realFolderOf(file) {
+  const folder = path4.dirname(file);
+  return fs4.existsSync(folder) ? physical(folder) : undefined;
+}
+function unitBriefFileIssues(brief, briefPath) {
+  const issues = [];
+  if (!fs4.existsSync(brief.unit)) {
+    issues.push(`unit: ${brief.unit} does not exist`);
+  }
+  const rulingsDir = path4.dirname(brief.rulings);
+  if (!fs4.existsSync(rulingsDir)) {
+    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
+  }
+  const home = realFolderOf(briefPath);
+  const others = [
+    ["unit", brief.unit],
+    ["rulings", brief.rulings]
+  ];
+  for (const [field, file] of others) {
+    const folder = realFolderOf(file);
+    if (home !== undefined && folder !== undefined && folder !== home) {
+      issues.push(`${field}: ${file} is not in the folder ${home} that holds the brief; the brief, the unit file, and the rulings share one folder`);
+    }
+  }
+  if (home !== undefined) {
+    const unitId = path4.basename(path4.dirname(home));
+    const shape = path4.basename(home) === brief.name && path4.basename(path4.dirname(path4.dirname(home))) === UNITS_FOLDER && unitId !== "." && unitId !== ".." && UNIT_ID.test(unitId);
+    if (!shape) {
+      issues.push(`brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`);
+    }
+  }
+  return issues;
+}
+var briefTarget = (brief) => brief.kind === "plan" ? brief.target : undefined;
+var briefWorkstreamOf = (brief) => brief.kind === "plan" ? brief.workstream : undefined;
 
 // bin/helpers/worker-listing.ts
 function checkedOut(runGit, dir) {
@@ -2638,7 +2698,7 @@ function countBase(runGit, name, read, briefTop) {
   });
   if ("issues" in read)
     return fallback2("its brief cannot be read");
-  const { target } = read.brief;
+  const target = briefTarget(read.brief);
   if (target !== undefined) {
     return { rev: `refs/heads/${target}`, warnings: [] };
   }
@@ -2708,6 +2768,8 @@ function planTitle(name, read) {
   });
   if ("issues" in read)
     return noTitle(read.issues.join("; "));
+  if (read.brief.kind !== "plan")
+    return { warnings: [] };
   const { plan } = read.brief;
   try {
     const title = H1.exec(fs5.readFileSync(plan, "utf-8"))?.[1].trim();
@@ -7542,7 +7604,7 @@ function briefWorkstream(env) {
   if (file === undefined)
     return;
   const read = readBrief(file);
-  return "brief" in read ? read.brief.workstream : undefined;
+  return "brief" in read ? briefWorkstreamOf(read.brief) : undefined;
 }
 function staleLockWarning(store, now) {
   const lock = path34.join(store, ".git", "index.lock");
@@ -13705,12 +13767,13 @@ function limitsIssues(briefPath) {
 }
 function checkoutIssues(brief, briefPath, opts, runGit, facts) {
   const { launchTop, mainTop } = facts;
+  const own = brief.kind === "plan" ? briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }) : unitBriefFileIssues(brief, briefPath);
   return [
-    ...briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }),
+    ...own,
     ...limitsIssues(briefPath),
     ...baselineIssues(runGit, launchTop, brief.baseline),
     ...cleanIssues(runGit, launchTop),
-    ...targetIssues(brief, facts.branch),
+    ...brief.kind === "plan" ? targetIssues(brief, facts.branch) : [],
     ...treeNameIssues(runGit, mainTop, brief.name),
     ...opts.allowPush ? [] : pushUrlIssues(runGit, launchTop)
   ];
@@ -13775,7 +13838,7 @@ function checkDispatch(brief, briefPath, opts, wenv) {
   const at2 = "issues" in facts ? wenv.cwd : facts.launchTop;
   const listed = listJobs(wenv.runClaude, at2);
   const main = resolveMain(wenv.env, "jobs" in listed ? listed.jobs : undefined);
-  const reads = [briefPath, brief.plan, brief.spec, brief.rulings];
+  const reads = brief.kind === "plan" ? [briefPath, brief.plan, brief.spec, brief.rulings] : [briefPath, brief.unit, brief.rulings];
   const prepared = prepareProfile(opts, briefPath, { ...wenv, cwd: at2 }, main?.value, reads);
   const issues = [
     ..."issues" in facts ? facts.issues : checkoutIssues(brief, briefPath, opts, wenv.runGit, facts),
@@ -14031,7 +14094,7 @@ function relay(result, out, err) {
 var mainLines = (ready, wenv) => ready.main === undefined ? [] : [mainReport(ready.main, wenv.env, wenv.home)];
 var DETACHED_LANDING = "where the operator lands it (this checkout's HEAD is detached)";
 function landingLine(ready) {
-  const target = ready.brief.target ?? DETACHED_LANDING;
+  const target = briefTarget(ready.brief) ?? DETACHED_LANDING;
   const from = ready.launchTop === ready.mainTop ? "" : ` · launched from ${ready.launchTop}`;
   return `lands in: ${target}${from}`;
 }
@@ -14542,7 +14605,7 @@ function briefPlaces(read, worktree) {
   return {
     folder,
     top,
-    target: read.brief.target,
+    target: briefTarget(read.brief),
     report: report2,
     reportFrom: path63.join(worktree, report2),
     reportTo: top === undefined ? undefined : path63.join(top, report2)

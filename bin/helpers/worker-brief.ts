@@ -73,15 +73,19 @@ export const WorkerNameSchema = v.pipe(
   v.regex(WORKER_NAME, `must match ${WORKER_NAME.source}`),
 );
 
-export const BriefSchema = v.strictObject({
+const BASELINE = v.pipe(
+  v.string(),
+  v.regex(/^[0-9a-f]{7,40}$/, 'must be a commit of 7 to 40 hex characters'),
+);
+
+/** A plan brief: a plan's worker, which the brief's own fields name. */
+export const PlanBriefSchema = v.strictObject({
+  kind: v.literal('plan'),
   name: WorkerNameSchema,
   plan: AbsolutePath,
   spec: AbsolutePath,
   rulings: AbsolutePath,
-  baseline: v.pipe(
-    v.string(),
-    v.regex(/^[0-9a-f]{7,40}$/, 'must be a commit of 7 to 40 hex characters'),
-  ),
+  baseline: BASELINE,
   skill: v.picklist(['subagent-driven-development', 'executing-plans']),
   place: v.union(
     [
@@ -105,7 +109,41 @@ export const BriefSchema = v.strictObject({
   orchestrator: v.pipe(v.string(), v.minLength(1, 'must not be empty')),
 });
 
-export type Brief = v.InferOutput<typeof BriefSchema>;
+// One part of a unit's `<plugin>:<skill>`. A unit id is `<skill part>-<issue>`
+// and must fit 64 characters of `[A-Za-z0-9._-]`, so the part stays inside
+// that charset and at most SKILL_PART_MAX characters.
+const SKILL_PART_MAX = 48;
+const SKILL_PART = new RegExp(`^[a-z0-9][a-z0-9-]{0,${SKILL_PART_MAX - 1}}$`);
+const UNIT_SKILL_MESSAGE = `must be <plugin>:<skill>, each part of lower-case letters, digits, and hyphens, starting with a letter or digit, at most ${SKILL_PART_MAX} characters`;
+
+/** A unit brief: a loop's worker, which runs one unit's skill. */
+export const UnitBriefSchema = v.strictObject({
+  kind: v.literal('unit'),
+  name: WorkerNameSchema,
+  unit: AbsolutePath,
+  rulings: AbsolutePath,
+  baseline: BASELINE,
+  skill: v.pipe(
+    v.string(),
+    v.check((s) => {
+      const parts = s.split(':');
+      return parts.length === 2 && parts.every((p) => SKILL_PART.test(p));
+    }, UNIT_SKILL_MESSAGE),
+  ),
+  place: v.literal('worktree', 'must be "worktree"'),
+  report: RelativePath,
+  orchestrator: v.pipe(v.string(), v.minLength(1, 'must not be empty')),
+});
+
+/** The worker brief, discriminated on `kind`; a brief without `kind` is a plan brief. */
+export const BriefSchema = v.variant('kind', [
+  PlanBriefSchema,
+  UnitBriefSchema,
+]);
+
+export type PlanBrief = v.InferOutput<typeof PlanBriefSchema>;
+export type UnitBrief = v.InferOutput<typeof UnitBriefSchema>;
+export type Brief = PlanBrief | UnitBrief;
 
 /** Reads and validates a brief. Every issue names the brief's path. */
 export function readBrief(
@@ -123,7 +161,8 @@ export function readBrief(
   if ('issues' in parsed) {
     return { issues: parsed.issues.map((i) => `${abs}: ${i}`) };
   }
-  const result = v.safeParse(BriefSchema, parsed.fields);
+  // A brief written before units has no `kind`, and is a plan brief.
+  const result = v.safeParse(BriefSchema, { kind: 'plan', ...parsed.fields });
   if (!result.success) {
     return {
       issues: result.issues.map((issue) => {
@@ -176,7 +215,10 @@ function checkoutIssue(
  * sit in the launching checkout; the plan and the spec sit in it or in the main
  * checkout. Each is judged by the checkout git says holds it, never by prefix.
  */
-export function briefFileIssues(brief: Brief, bounds: BriefBounds): string[] {
+export function briefFileIssues(
+  brief: PlanBrief,
+  bounds: BriefBounds,
+): string[] {
   const { briefPath, launchTop, mainTop, runGit } = bounds;
   const issues: string[] = [];
   if (!fs.existsSync(brief.plan)) {
@@ -205,3 +247,67 @@ export function briefFileIssues(brief: Brief, bounds: BriefBounds): string[] {
   }
   return issues;
 }
+
+// A unit id, as the loop record names it.
+const UNIT_ID = /^[A-Za-z0-9._-]{1,64}$/;
+const UNITS_FOLDER = 'units';
+
+function realFolderOf(file: string): string | undefined {
+  const folder = path.dirname(file);
+  return fs.existsSync(folder) ? physical(folder) : undefined;
+}
+
+/**
+ * Checks a unit brief's files by real path. The brief, the unit file, and the
+ * rulings sit in one folder, `units/<unit>/<worker>/` under a loop's folder.
+ * The unit file must exist, and so must the rulings' folder.
+ */
+export function unitBriefFileIssues(
+  brief: UnitBrief,
+  briefPath: string,
+): string[] {
+  const issues: string[] = [];
+  if (!fs.existsSync(brief.unit)) {
+    issues.push(`unit: ${brief.unit} does not exist`);
+  }
+  const rulingsDir = path.dirname(brief.rulings);
+  if (!fs.existsSync(rulingsDir)) {
+    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
+  }
+  const home = realFolderOf(briefPath);
+  const others: [string, string][] = [
+    ['unit', brief.unit],
+    ['rulings', brief.rulings],
+  ];
+  for (const [field, file] of others) {
+    const folder = realFolderOf(file);
+    if (home !== undefined && folder !== undefined && folder !== home) {
+      issues.push(
+        `${field}: ${file} is not in the folder ${home} that holds the brief; the brief, the unit file, and the rulings share one folder`,
+      );
+    }
+  }
+  if (home !== undefined) {
+    const unitId = path.basename(path.dirname(home));
+    const shape =
+      path.basename(home) === brief.name &&
+      path.basename(path.dirname(path.dirname(home))) === UNITS_FOLDER &&
+      unitId !== '.' &&
+      unitId !== '..' &&
+      UNIT_ID.test(unitId);
+    if (!shape) {
+      issues.push(
+        `brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`,
+      );
+    }
+  }
+  return issues;
+}
+
+/** The branch a plan brief names to land in; a unit brief names none. */
+export const briefTarget = (brief: Brief): string | undefined =>
+  brief.kind === 'plan' ? brief.target : undefined;
+
+/** The workstream a plan brief names; a unit brief names none. */
+export const briefWorkstreamOf = (brief: Brief): string | undefined =>
+  brief.kind === 'plan' ? brief.workstream : undefined;

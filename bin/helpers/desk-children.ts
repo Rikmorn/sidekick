@@ -14,7 +14,7 @@ import {
   tokensOf,
 } from './desk-transcripts.js';
 import { MAX_OUTPUT, type Runner } from './pm-data.js';
-import { readBrief } from './worker-brief.js';
+import { briefTarget, readBrief } from './worker-brief.js';
 import { listWorktrees, type WorktreeEntry } from './worker-listing.js';
 import type { WorkerRecord } from './worker-record.js';
 import { checkoutOf, headCommit, physical } from './worker-repo.js';
@@ -173,7 +173,7 @@ function countBase(
     ],
   });
   if ('issues' in read) return fallback('its brief cannot be read');
-  const { target } = read.brief;
+  const target = briefTarget(read.brief);
   // A target may start with `-`, so it never reaches git bare.
   if (target !== undefined) {
     return { rev: `refs/heads/${target}`, warnings: [] };
@@ -290,6 +290,8 @@ function planTitle(
     warnings: [`${name}: no plan title: ${why}`],
   });
   if ('issues' in read) return noTitle(read.issues.join('; '));
+  // A unit brief names no plan, so it has no title to show.
+  if (read.brief.kind !== 'plan') return { warnings: [] };
   const { plan } = read.brief;
   try {
     const title = H1.exec(fs.readFileSync(plan, 'utf-8'))?.[1].trim();

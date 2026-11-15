@@ -42,7 +42,7 @@ import {
   type ViewDeps,
 } from './memory-view.js';
 import type { Runner } from './pm-data.js';
-import { readBrief } from './worker-brief.js';
+import { briefWorkstreamOf, readBrief } from './worker-brief.js';
 
 export type { StartParts, StartSource } from './memory-start-render.js';
 export { renderStart } from './memory-start-render.js';
@@ -120,7 +120,7 @@ function briefWorkstream(env: NodeJS.ProcessEnv): string | undefined {
   const file = workerBrief(env);
   if (file === undefined) return undefined;
   const read = readBrief(file);
-  return 'brief' in read ? read.brief.workstream : undefined;
+  return 'brief' in read ? briefWorkstreamOf(read.brief) : undefined;
 }
 
 function staleLockWarning(store: string, now: number): string[] {

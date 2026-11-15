@@ -8,6 +8,7 @@ import {
   briefFileIssues,
   parseFrontmatter,
   readBrief,
+  unitBriefFileIssues,
 } from './worker-brief.js';
 
 afterEach(removeTemps);
@@ -81,7 +82,10 @@ describe('readBrief', () => {
   test('reads a valid brief, with and without setup', () => {
     const dir = tmp();
     const a = readBrief(write(dir, 'a.md', brief(lines(valid))));
-    expect(a).toEqual({ brief: valid, path: path.join(dir, 'a.md') });
+    expect(a).toEqual({
+      brief: { kind: 'plan', ...valid },
+      path: path.join(dir, 'a.md'),
+    });
     const b = readBrief(
       write(dir, 'b.md', brief(lines({ ...valid, setup: 'bun install' }))),
     );
@@ -268,5 +272,111 @@ describe('briefFileIssues', () => {
     const plan = path.join(main, 'docs', '..', path.relative(main, outside));
     const issues = issuesFor({ ...b, plan }, briefPath, main, main);
     expect(issues.join('\n')).toContain('plan');
+  });
+});
+
+describe('the unit brief', () => {
+  const unitFields = {
+    kind: 'unit',
+    name: 'w1',
+    unit: '/loop/units/u-1/w1/unit.md',
+    rulings: '/loop/units/u-1/w1/rulings.md',
+    baseline: 'abcdef1',
+    skill: 'sidekick:sk-orient',
+    place: 'worktree',
+    report: 'docs/report.md',
+    orchestrator: 'seat',
+  };
+
+  test('a brief without kind parses as a plan', () => {
+    const dir = tmp();
+    const r = readBrief(write(dir, 'a.md', brief(lines(valid))));
+    expect('brief' in r && r.brief.kind).toBe('plan');
+  });
+  test('a unit brief parses with its fields', () => {
+    const dir = tmp();
+    const r = readBrief(write(dir, 'u.md', brief(lines(unitFields))));
+    expect(r).toEqual({ brief: unitFields, path: path.join(dir, 'u.md') });
+  });
+  test.each([
+    'plan',
+    'spec',
+    'target',
+    'workstream',
+    'setup',
+  ])('a unit brief refuses plan, spec, target, workstream, and setup: %s', (key) => {
+    const issues = readIssues({ ...unitFields, [key]: 'x' });
+    expect(issues.length).toBe(1);
+    expect(issues[0]).toContain(key);
+  });
+  test.each([
+    'orient',
+    'sidekick:',
+    ':sk-orient',
+    'a:b:c',
+    'Sidekick:x',
+    'a:-b',
+  ])('a unit skill must be <plugin>:<skill>: %s', (skill) => {
+    const issues = readIssues({ ...unitFields, skill });
+    expect(issues.length).toBe(1);
+    expect(issues[0]).toContain('skill');
+  });
+  test('a unit skill part longer than 48 characters refuses', () => {
+    expect(
+      readIssues({ ...unitFields, skill: `p:${'a'.repeat(49)}` }),
+    ).toHaveLength(1);
+    expect(readIssues({ ...unitFields, skill: `p:${'a'.repeat(48)}` })).toEqual(
+      [],
+    );
+  });
+  test('a unit place other than worktree refuses', () => {
+    expect(readIssues({ ...unitFields, place: 'in-place' })).toHaveLength(1);
+  });
+
+  const attempt = (): { dir: string; b: Extract<Brief, { kind: 'unit' }> } => {
+    const dir = path.join(tmp(), 'loop', 'units', 'u-1', 'w1');
+    fs.mkdirSync(dir, { recursive: true });
+    write(dir, 'unit.md', 'u');
+    const b = {
+      ...unitFields,
+      unit: path.join(dir, 'unit.md'),
+      rulings: path.join(dir, 'rulings.md'),
+    } as Extract<Brief, { kind: 'unit' }>;
+    return { dir, b };
+  };
+
+  test("a unit brief's files in one attempt folder pass", () => {
+    const { dir, b } = attempt();
+    expect(unitBriefFileIssues(b, path.join(dir, 'brief.md'))).toEqual([]);
+  });
+  test("a unit brief's files outside one attempt folder refuse", () => {
+    const { dir, b } = attempt();
+    const other = path.join(tmp(), 'elsewhere');
+    fs.mkdirSync(other);
+    const issues = unitBriefFileIssues(b, path.join(other, 'brief.md'));
+    expect(issues.some((i) => i.startsWith('brief:'))).toBe(true);
+    const out = unitBriefFileIssues(
+      { ...b, rulings: path.join(other, 'rulings.md') },
+      path.join(dir, 'brief.md'),
+    );
+    expect(out.some((i) => i.startsWith('rulings:'))).toBe(true);
+  });
+  test('a folder that is not units/<unit>/<worker> refuses', () => {
+    const dir = path.join(tmp(), 'loop', 'w1');
+    fs.mkdirSync(dir, { recursive: true });
+    write(dir, 'unit.md', 'u');
+    const b = {
+      ...unitFields,
+      unit: path.join(dir, 'unit.md'),
+      rulings: path.join(dir, 'rulings.md'),
+    } as Extract<Brief, { kind: 'unit' }>;
+    expect(unitBriefFileIssues(b, path.join(dir, 'brief.md')).length).toBe(1);
+  });
+  test('a unit brief whose unit file is missing refuses', () => {
+    const { dir, b } = attempt();
+    fs.rmSync(path.join(dir, 'unit.md'));
+    const issues = unitBriefFileIssues(b, path.join(dir, 'brief.md'));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatch(/^unit: .*does not exist/);
   });
 });

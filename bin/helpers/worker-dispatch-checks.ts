@@ -17,7 +17,12 @@ import { isFolder, pluginDirIssues } from './profile-role.js';
 import { type Profile, storeRoots } from './profile-store.js';
 import { BRIEF_LIMITS_HEADING, readBriefLimits } from './subagent-limits.js';
 import type { WorkerEnv } from './worker.js';
-import { type Brief, briefFileIssues } from './worker-brief.js';
+import {
+  type Brief,
+  briefFileIssues,
+  type PlanBrief,
+  unitBriefFileIssues,
+} from './worker-brief.js';
 import type { CheckOptions, SharedOptions } from './worker-dispatch-args.js';
 import { type CheckoutFacts, checkoutFacts } from './worker-facts.js';
 import { listJobs } from './worker-jobs.js';
@@ -126,7 +131,7 @@ const pushUrlIssues = (runGit: Runner, top: string): string[] =>
   );
 
 /** Compared here, never passed to git: the schema allows a leading dash. */
-function targetIssues(brief: Brief, branch: string | undefined): string[] {
+function targetIssues(brief: PlanBrief, branch: string | undefined): string[] {
   if (branch === undefined) {
     return brief.target === undefined
       ? []
@@ -164,12 +169,18 @@ function checkoutIssues(
   facts: CheckoutFacts,
 ): string[] {
   const { launchTop, mainTop } = facts;
+  // A unit brief names a unit file, not a plan or a target, so it skips the
+  // plan's file bounds and the target check.
+  const own =
+    brief.kind === 'plan'
+      ? briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit })
+      : unitBriefFileIssues(brief, briefPath);
   return [
-    ...briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }),
+    ...own,
     ...limitsIssues(briefPath),
     ...baselineIssues(runGit, launchTop, brief.baseline),
     ...cleanIssues(runGit, launchTop),
-    ...targetIssues(brief, facts.branch),
+    ...(brief.kind === 'plan' ? targetIssues(brief, facts.branch) : []),
     ...treeNameIssues(runGit, mainTop, brief.name),
     ...(opts.allowPush ? [] : pushUrlIssues(runGit, launchTop)),
   ];
@@ -293,7 +304,10 @@ export function checkDispatch(
     wenv.env,
     'jobs' in listed ? listed.jobs : undefined,
   );
-  const reads = [briefPath, brief.plan, brief.spec, brief.rulings];
+  const reads =
+    brief.kind === 'plan'
+      ? [briefPath, brief.plan, brief.spec, brief.rulings]
+      : [briefPath, brief.unit, brief.rulings];
   const prepared = prepareProfile(
     opts,
     briefPath,
