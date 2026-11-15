@@ -10775,7 +10775,7 @@ var limits = (a, dir) => [
   "## Limits",
   "",
   `- Write only inside this worktree, ${a.worktree}.`,
-  `- Read this worktree, the role's own skills, and the attempt's folder, ${dir}, which holds this brief, the unit file, and the rulings file. The fence blocks reads anywhere else.`,
+  `- Read only this worktree, the role's own skills, and the attempt's folder, ${dir}, which holds this brief, the unit file, and the rulings file.`,
   "- Make no GitHub write: no issue, comment, label, or board change.",
   "- Never push. Never amend a commit; a fix is a new commit.",
   hostsLine(a.hosts)
@@ -11787,341 +11787,23 @@ function skillIssues(profile, skill) {
     `--skill ${skill}: ${file} does not exist, so the plugin "${plugin2}" holds no skill "${name}"`
   ];
 }
-function launchProfileIssues(penv, tree, profile) {
-  const roots = storeRoots("profiles", penv.env, tree, penv.home, {
-    kind: "inside",
-    top: tree
-  });
-  const loaded = loadProfile(profile.name, roots);
-  if (!loaded.ok)
-    return loaded.issues;
-  const { dir } = loaded.profile;
+function launchProfileIssues(penv, profile) {
+  const lines = [];
+  const loaded = loadForLaunch(profile.name, penv, (line) => lines.push(line));
+  if (loaded === undefined)
+    return lines;
+  const { dir } = loaded;
   return sameFolder(dir, profile.dir) ? [] : [
     `the unit launch would load profile "${profile.name}" from ${dir}, not ${profile.dir}, which the loop's check judged: a repo's own profile can run code from the repo's commits as the role's, so remove ${dir} from origin's default branch, or name another profile in loop.json`
   ];
-}
-
-// bin/helpers/loop-dispatch-tree.ts
-import * as path57 from "node:path";
-
-// bin/helpers/worker-git.ts
-import * as fs47 from "node:fs";
-import * as path56 from "node:path";
-var HARDENED_GIT_FLAGS = [
-  "-c",
-  "core.hooksPath=/dev/null",
-  "-c",
-  "core.fsmonitor=false",
-  "-c",
-  "diff.ignoreSubmodules=all"
-];
-var GITFILE_PREFIX = "gitdir: ";
-var COMMONDIR = "commondir";
-var GITDIR = "gitdir";
-function pointerText(file) {
-  try {
-    return { text: fs47.readFileSync(file, "utf-8").replace(/[\r\n]+$/, "") };
-  } catch (error) {
-    const why = error instanceof Error ? error.message : String(error);
-    return { issue: `cannot read ${file}: ${why}` };
-  }
-}
-function isFolder4(at2) {
-  try {
-    return fs47.statSync(at2).isDirectory();
-  } catch {
-    return false;
-  }
-}
-function lstatOf2(at2) {
-  try {
-    return fs47.lstatSync(at2);
-  } catch {
-    return;
-  }
-}
-function namedByGitFile(dotGit) {
-  const read = pointerText(dotGit);
-  if ("issue" in read)
-    return read;
-  if (!read.text.startsWith(GITFILE_PREFIX)) {
-    return {
-      issue: `${dotGit} does not start with "${GITFILE_PREFIX}", so it names no admin folder`
-    };
-  }
-  const named = read.text.slice(GITFILE_PREFIX.length);
-  return { dir: path56.resolve(physical(path56.dirname(dotGit)), named) };
-}
-function adminNamed(dotGit) {
-  const stat = lstatOf2(dotGit);
-  if (stat === undefined) {
-    return {
-      issue: `${dotGit} does not exist, so nothing links the worktree to its repo`
-    };
-  }
-  if (!stat.isFile()) {
-    return {
-      issue: `${dotGit} is not a file, so it is not the link git writes into a linked worktree`
-    };
-  }
-  const named = namedByGitFile(dotGit);
-  if ("issue" in named)
-    return named;
-  if (!isFolder4(named.dir)) {
-    return { issue: `${dotGit} names ${named.dir}, which is not a folder` };
-  }
-  return named;
-}
-var plantedLine = (file) => `${file} exists, but a main git dir never holds one: git reads it to find the repository, so it may send git to another one`;
-function plantedIssues(gitDir) {
-  const file = path56.join(gitDir, COMMONDIR);
-  return lstatOf2(file) === undefined ? [] : [plantedLine(file)];
-}
-function placeIssues(dotGit, admin, commonDir, expected) {
-  const worktrees = path56.join(commonDir, "worktrees");
-  if (path56.dirname(physical(admin)) !== physical(worktrees)) {
-    return [
-      `${dotGit} names ${admin}, which is not directly under ${worktrees}, where git keeps each linked worktree's admin folder`
-    ];
-  }
-  const name = path56.basename(physical(admin));
-  if (expected === undefined || name === expected)
-    return [];
-  return [
-    `${dotGit} names the admin folder ${name}, not ${expected}, the name it must have`
-  ];
-}
-function pointerIssues(admin, file, want, wrong) {
-  const at2 = path56.join(admin, file);
-  const read = pointerText(at2);
-  if ("issue" in read)
-    return [read.issue];
-  const to = path56.resolve(physical(admin), read.text);
-  return physical(to) === physical(want) ? [] : [wrong(at2, to)];
-}
-var backIssues = (admin, dotGit, commonDir) => [
-  ...pointerIssues(admin, GITDIR, dotGit, (at2, to) => `${at2} points to ${to}, not back to ${dotGit}`),
-  ...pointerIssues(admin, COMMONDIR, commonDir, (at2, to) => `${at2} points to ${to}, not to the common git dir ${commonDir}`)
-];
-function chainOf(worktree, commonDir, expected) {
-  const dotGit = path56.join(worktree, ".git");
-  const planted = plantedIssues(commonDir);
-  const named = adminNamed(dotGit);
-  if ("issue" in named)
-    return { issues: [...planted, named.issue] };
-  const admin = named.dir;
-  const issues = [
-    ...planted,
-    ...placeIssues(dotGit, admin, commonDir, expected),
-    ...backIssues(admin, dotGit, commonDir)
-  ];
-  return issues.length === 0 ? { gitDir: physical(admin) } : { issues };
-}
-function mainGitDir(runGit, facts) {
-  const launchGit = path56.join(facts.launchTop, ".git");
-  if (isFolder4(launchGit))
-    return { dir: launchGit };
-  const found = checkoutOf(runGit, facts.mainTop);
-  if ("top" in found) {
-    const dotGit = path56.join(found.top, ".git");
-    return isFolder4(dotGit) ? { dir: dotGit } : namedByGitFile(dotGit);
-  }
-  if (physical(facts.mainTop) === physical(facts.commonDir)) {
-    return { dir: facts.mainTop };
-  }
-  return {
-    issue: `git rev-parse --show-toplevel failed in the main checkout ${facts.mainTop}, so sidekick cannot find its git dir: ${found.issue}`
-  };
-}
-function mainGitDirIssues(runGit, facts) {
-  const main = mainGitDir(runGit, facts);
-  if ("issue" in main)
-    return [main.issue];
-  const differs = physical(main.dir) !== physical(facts.commonDir);
-  return [
-    ...plantedIssues(main.dir),
-    ...differs ? [
-      `git reports the common git dir ${facts.commonDir}, but the main checkout's git dir is ${main.dir}`
-    ] : []
-  ];
-}
-var VALUE_OPTIONS = new Set([
-  "-C",
-  "-c",
-  "--git-dir",
-  "--work-tree",
-  "--namespace",
-  "--config-env",
-  "--attr-source"
-]);
-function gitFolder(cwd, args) {
-  let folder = cwd;
-  let at2 = 0;
-  while (at2 < args.length && args[at2].startsWith("-")) {
-    if (args[at2] === "-C")
-      folder = path56.resolve(folder, args[at2 + 1] ?? "");
-    at2 += VALUE_OPTIONS.has(args[at2]) ? 2 : 1;
-  }
-  return folder;
-}
-function within2(folder, root) {
-  const rel = path56.relative(root, folder);
-  if (rel === "")
-    return true;
-  const leaves = rel === ".." || rel.startsWith(`..${path56.sep}`);
-  return !leaves && !path56.isAbsolute(rel);
-}
-var gitRunsIn = (worktree, cwd, args) => within2(physical(gitFolder(cwd, args)), physical(worktree));
-function hardenedRunner(run, place) {
-  const root = physical(place.worktree);
-  const prefix = [
-    ...HARDENED_GIT_FLAGS,
-    `--git-dir=${place.gitDir}`,
-    `--work-tree=${root}`
-  ];
-  return (cmd, args, cwd, opts) => {
-    const inside = cmd === "git" && gitRunsIn(root, cwd, args);
-    return run(cmd, inside ? [...prefix, ...args] : args, cwd, opts);
-  };
-}
-
-// bin/helpers/loop-dispatch-tree.ts
-var ORIGIN_HEAD = "refs/remotes/origin/HEAD";
-var REMOTES2 = "refs/remotes/";
-var NO = 1;
-var failed = (what, folder, stderr) => `${what} failed in ${folder}: ${stderr.trim() === "" ? "git printed nothing" : stderr.trim()}`;
-function branchIssues(run, folder, branch) {
-  const held = run("git", ["symbolic-ref", "-q", "HEAD"], folder);
-  if (held.code !== 0 && held.code !== NO) {
-    return [failed("git symbolic-ref HEAD", folder, held.stderr)];
-  }
-  const ref = held.code === 0 ? held.stdout.trim() : undefined;
-  if (ref === `${HEADS}${branch}`)
-    return [];
-  const what = ref === undefined ? "a detached HEAD" : `the branch ${shortBranch(ref)}`;
-  return [
-    `${folder} holds ${what}, not ${branch}: switch it back with git switch ${branch} in that folder`
-  ];
-}
-var cleanIssues = (run, folder) => isTrackedClean(run, folder) ? [] : [
-  `${folder}: tracked files have uncommitted changes, and the loop's worktree holds nothing of its own: once nothing in them is needed, discard them with git restore --staged --worktree . in that folder`
-];
-function checkLoopTree(repo, name, runGit) {
-  const session = sessionOf3(name);
-  const folder = nativeFolder(repo, session);
-  if (!isFolder3(folder)) {
-    return {
-      issues: [
-        `${folder} does not exist: Claude Code makes the loop's worktree when sidekick loop start launches the loop, so run sidekick loop start ${name}`
-      ]
-    };
-  }
-  const chain = chainOf(folder, realPathOf(path57.join(repo, ".git")), session);
-  if ("issues" in chain) {
-    return {
-      issues: [
-        ...chain.issues,
-        `${folder}: the loop's worktree no longer links to ${repo} as git made it, so dispatch runs no git in it`
-      ]
-    };
-  }
-  const run = hardenedRunner(runGit, {
-    worktree: folder,
-    gitDir: chain.gitDir
-  });
-  const branch = nativeBranch(session);
-  const issues = [
-    ...branchIssues(run, folder, branch),
-    ...cleanIssues(run, folder)
-  ];
-  return issues.length > 0 ? { issues } : { folder, branch, runGit: run };
-}
-function relationOf(tree, head2, tip) {
-  const isAncestor = (a, b) => {
-    const r = tree.runGit("git", ["merge-base", "--is-ancestor", a, b], tree.folder);
-    if (r.code === 0)
-      return true;
-    if (r.code === NO)
-      return false;
-    return { issue: failed("git merge-base", tree.folder, r.stderr) };
-  };
-  const behind = isAncestor(head2, tip);
-  if (typeof behind !== "boolean")
-    return behind;
-  if (behind)
-    return "behind";
-  const ahead = isAncestor(tip, head2);
-  if (typeof ahead !== "boolean")
-    return ahead;
-  return ahead ? "ahead" : "diverged";
-}
-function standingIssue(tree, relation, shown2) {
-  const { folder, branch } = tree;
-  const how = relation === "ahead" ? `is ahead of ${shown2} by commits of its own` : `has diverged from ${shown2}`;
-  return `${folder}: ${branch} ${how}, and the loop's worktree holds nothing of its own: keep those commits on a branch of their own, then move ${branch} to origin's tip with git reset --keep ${shown2} in that folder`;
-}
-function originTip(tree, repo) {
-  const ref = tree.runGit("git", ["symbolic-ref", "-q", ORIGIN_HEAD], tree.folder);
-  if (ref.code !== 0) {
-    return {
-      issues: [
-        `${ORIGIN_HEAD} is not set in ${repo}, so dispatch cannot tell origin's default branch: run git remote set-head origin --auto in ${repo}`
-      ]
-    };
-  }
-  const target = ref.stdout.trim();
-  const tip = commitOf(tree.runGit, tree.folder, target);
-  if (tip === undefined) {
-    return {
-      issues: [`${ORIGIN_HEAD} names ${target}, which names no commit`]
-    };
-  }
-  const shown2 = target.startsWith(REMOTES2) ? target.slice(REMOTES2.length) : target;
-  return { shown: shown2, tip };
-}
-function fastForward(tree, head2, { shown: shown2, tip }) {
-  if (head2 === tip)
-    return { baseline: head2 };
-  const relation = relationOf(tree, head2, tip);
-  if (typeof relation !== "string")
-    return { issues: [relation.issue] };
-  if (relation !== "behind") {
-    return { issues: [standingIssue(tree, relation, shown2)] };
-  }
-  const merged = tree.runGit("git", ["merge", "--ff-only", "--quiet", tip], tree.folder);
-  if (merged.code !== 0) {
-    return {
-      issues: [failed("git merge --ff-only", tree.folder, merged.stderr)]
-    };
-  }
-  const moved = headCommit(tree.runGit, tree.folder);
-  return moved === tip ? { baseline: moved } : { issues: [`${tree.folder}: HEAD is not ${tip} after the fast-forward`] };
-}
-function syncLoopTree(tree, repo, fetchTimeoutMs = 60000) {
-  const fetched = tree.runGit("git", ["fetch", "--quiet", "origin"], tree.folder, {
-    timeoutMs: fetchTimeoutMs
-  });
-  if (fetched.code !== 0) {
-    return {
-      issues: [failed("git fetch origin", tree.folder, fetched.stderr)]
-    };
-  }
-  const origin = originTip(tree, repo);
-  if ("issues" in origin)
-    return origin;
-  const head2 = headCommit(tree.runGit, tree.folder);
-  if (head2 === undefined) {
-    return { issues: [`${tree.folder}: HEAD names no commit`] };
-  }
-  return fastForward(tree, head2, origin);
 }
 
 // bin/helpers/loop-start-act.ts
 import { randomUUID as randomUUID2 } from "node:crypto";
 
 // bin/helpers/loop-inherited.ts
-import * as fs48 from "node:fs";
-import * as path58 from "node:path";
+import * as fs47 from "node:fs";
+import * as path56 from "node:path";
 var BUILTIN_NOTE = [
   "Claude Code also loads built-in plugins, which `claude plugin list` does not show.",
   "On Claude Code 2.1.322, two of them handled tool calls: `cc-plugin-plugin-authoring` and `cc-plugin-privacy` (R11 loop probes, U9).",
@@ -12191,7 +11873,7 @@ function loadedIds(layers, composed2) {
 }
 function readJsonObject(file) {
   try {
-    const parsed = JSON.parse(fs48.readFileSync(file, "utf8"));
+    const parsed = JSON.parse(fs47.readFileSync(file, "utf8"));
     return isPlainObject(parsed) ? { ok: true, value: parsed } : { ok: false, why: "it is not a JSON object" };
   } catch (e) {
     return { ok: false, why: errorText4(e) };
@@ -12208,16 +11890,16 @@ function manifestEntryHooks(folder, entry) {
       problems: ["its plugin.json hooks entry is neither an object nor a path"]
     };
   }
-  const file = path58.resolve(folder, entry);
-  const read = fs48.existsSync(file) ? readJsonObject(file) : { ok: false, why: "the file is missing" };
+  const file = path56.resolve(folder, entry);
+  const read = fs47.existsSync(file) ? readJsonObject(file) : { ok: false, why: "the file is missing" };
   return read.ok ? { hooks: foundIn(entry, read.value), problems: [] } : {
     hooks: [],
     problems: [`its hooks in ${entry} could not be read: ${read.why}`]
   };
 }
 function readManifestHooks(folder) {
-  const file = path58.join(folder, ".claude-plugin", "plugin.json");
-  if (!fs48.existsSync(file))
+  const file = path56.join(folder, ".claude-plugin", "plugin.json");
+  if (!fs47.existsSync(file))
     return { hooks: [], problems: [] };
   const manifest = readJsonObject(file);
   if (!manifest.ok) {
@@ -12236,7 +11918,7 @@ function readManifestHooks(folder) {
   };
 }
 function readPluginHooks(folder) {
-  if (!fs48.existsSync(folder)) {
+  if (!fs47.existsSync(folder)) {
     return {
       hooks: [],
       mod: false,
@@ -12244,8 +11926,8 @@ function readPluginHooks(folder) {
     };
   }
   const manifest = readManifestHooks(folder);
-  const file = path58.join(folder, "hooks", "hooks.json");
-  if (!fs48.existsSync(file))
+  const file = path56.join(folder, "hooks", "hooks.json");
+  if (!fs47.existsSync(file))
     return { mod: false, ...manifest };
   const read = readJsonObject(file);
   if (!read.ok) {
@@ -12713,8 +12395,8 @@ function recordJob(p, state, result, ctx) {
 }
 
 // bin/helpers/worker-dispatch-checks.ts
-import * as fs49 from "node:fs";
-import * as path60 from "node:path";
+import * as fs48 from "node:fs";
+import * as path58 from "node:path";
 
 // bin/helpers/worker-facts.ts
 function checkoutFacts(runGit, cwd) {
@@ -12769,7 +12451,7 @@ function heldBranch(runGit, cwd) {
 }
 
 // bin/helpers/worker-overlay.ts
-import * as path59 from "node:path";
+import * as path57 from "node:path";
 var markers = (opts) => ({
   SIDEKICK_WORKER: opts.briefPath,
   ...opts.main === undefined ? {} : { SIDEKICK_MAIN: opts.main },
@@ -12849,21 +12531,21 @@ var UNIT_DENIED_SKILLS = [
 var WEB_TOOLS = ["WebFetch", "WebSearch"];
 var UNDER = "/**";
 function gitDenies(commonDir, worktree) {
-  const worktrees = path59.join(commonDir, "worktrees");
+  const worktrees = path57.join(commonDir, "worktrees");
   return [
-    ...bothForms("Edit", path59.join(commonDir, "commondir")),
+    ...bothForms("Edit", path57.join(commonDir, "commondir")),
     ...bothForms("Edit", worktrees, "/*/commondir"),
     ...bothForms("Edit", worktrees, "/*/gitdir"),
     ...bothForms("Edit", worktrees, "/*/config.worktree"),
-    ...bothForms("Edit", path59.join(worktree, ".git")),
-    ...bothForms("Edit", path59.join(commonDir, "config")),
-    ...bothForms("Edit", path59.join(commonDir, "hooks"), UNDER)
+    ...bothForms("Edit", path57.join(worktree, ".git")),
+    ...bothForms("Edit", path57.join(commonDir, "config")),
+    ...bothForms("Edit", path57.join(commonDir, "hooks"), UNDER)
   ];
 }
 function folderDenies(opts) {
   const store = opts.memoryStore;
   return [
-    ...bothForms("Edit", path59.join(opts.commonDir, "sidekick"), UNDER),
+    ...bothForms("Edit", path57.join(opts.commonDir, "sidekick"), UNDER),
     ...bothForms("Edit", opts.sidekickHome, UNDER),
     ...opts.addedDirs.flatMap((dir) => bothForms("Edit", dir, UNDER)),
     ...store === undefined ? [] : [
@@ -12965,7 +12647,7 @@ function modeIssues(mode) {
   const known = PERMISSION_MODES.some((m) => m === mode);
   return known ? [] : [`--permission-mode "${mode}" is not one of ${MODE_LIST}`];
 }
-var placeIssues2 = (brief) => brief.place === "worktree" ? [] : [
+var placeIssues = (brief) => brief.place === "worktree" ? [] : [
   `place: "${brief.place}" is not "worktree"; dispatch starts a worker only in a worktree of its own`
 ];
 var NO_COMMIT = "baseline: this checkout's HEAD has no commit yet";
@@ -12977,14 +12659,14 @@ function baselineIssues(runGit, top, baseline) {
     `baseline: ${baseline} does not resolve to this checkout's HEAD (${head2})`
   ];
 }
-var cleanIssues2 = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
+var cleanIssues = (runGit, top) => isTrackedClean(runGit, top) ? [] : [
   "tracked files have uncommitted changes, which the worker's worktree would not carry: commit them first"
 ];
 function treeNameIssues(runGit, top, name) {
   const folder = nativeFolder(top, name);
   const branch = nativeBranch(name);
   return [
-    ...fs49.existsSync(folder) ? [`name: ${folder} already exists`] : [],
+    ...fs48.existsSync(folder) ? [`name: ${folder} already exists`] : [],
     ...branchExists(runGit, top, branch) ? [
       `name: the branch ${branch} already exists: once you have checked that its commits have landed, delete it with git branch -D ${branch}, or dispatch under another name`
     ] : []
@@ -13028,7 +12710,7 @@ function checkoutIssues(brief, briefPath, opts, runGit, facts) {
     ...brief.kind === "plan" ? briefFileIssues(brief, { briefPath, launchTop, mainTop, runGit }) : [],
     ...limitsIssues(briefPath),
     ...baselineIssues(runGit, launchTop, brief.baseline),
-    ...cleanIssues2(runGit, launchTop),
+    ...cleanIssues(runGit, launchTop),
     ...brief.kind === "plan" ? targetIssues(brief, facts.branch) : [],
     ...treeNameIssues(runGit, mainTop, brief.name),
     ...opts.allowPush ? [] : pushUrlIssues(runGit, launchTop)
@@ -13047,7 +12729,7 @@ function missingProfileHint(name, penv) {
   if (oldStoreIssues(penv.env, penv.cwd, penv.home).length > 0)
     return [];
   const roots = storeRoots("profiles", penv.env, penv.cwd, penv.home, penv.workTree);
-  const held = roots.some((root) => isFolder3(path60.join(root.dir, name)));
+  const held = roots.some((root) => isFolder3(path58.join(root.dir, name)));
   return isProfileName(name) && !held ? [`create it with: sidekick profile new ${name} --description <text>`] : [];
 }
 var planShape = (opts, briefPath, main, reads) => (profile) => {
@@ -13075,7 +12757,7 @@ var unitShape = (brief, briefPath, unit2, facts, penv) => (profile) => {
     worktree: nativeFolder(facts.mainTop, brief.name),
     commonDir: facts.commonDir,
     sidekickHome: sidekickHome(penv.env, penv.cwd, penv.home),
-    memoryStore: path60.resolve(penv.cwd, storeRoot(penv.env, penv.home)),
+    memoryStore: path58.resolve(penv.cwd, storeRoot(penv.env, penv.home)),
     hosts: unit2.hosts,
     reads: [briefPath, brief.unit, brief.rulings],
     addedDirs: [profile.dir, unit2.attemptDir]
@@ -13146,7 +12828,7 @@ function checkDispatch(brief, briefPath, opts, wenv, unit2) {
     ...brief.kind === "unit" && unit2 === undefined ? [loopOnlyIssue(briefPath)] : [],
     ...brief.kind === "unit" ? unitBriefFileIssues(brief, briefPath) : [],
     ..."issues" in facts ? facts.issues : checkoutIssues(brief, briefPath, opts, wenv.runGit, facts),
-    ...placeIssues2(brief),
+    ...placeIssues(brief),
     ...listedNameIssues(listed, brief.name),
     ...modeIssues(opts.mode),
     ...prepared.ok ? [] : prepared.issues
@@ -13175,11 +12857,11 @@ function checkOnly(opts, wenv) {
   const facts = checkoutFacts(wenv.runGit, wenv.cwd);
   const at2 = "issues" in facts ? wenv.cwd : facts.launchTop;
   const head2 = "issues" in facts ? undefined : headCommit(wenv.runGit, at2);
-  const prepared = prepareProfile(opts, { ...wenv, cwd: at2 }, planShape(opts, path60.join(at2, CHECK_BRIEF), undefined, []));
+  const prepared = prepareProfile(opts, { ...wenv, cwd: at2 }, planShape(opts, path58.join(at2, CHECK_BRIEF), undefined, []));
   const issues = [
     ..."issues" in facts ? facts.issues : [
       ...head2 === undefined ? [NO_COMMIT] : [],
-      ...cleanIssues2(wenv.runGit, at2),
+      ...cleanIssues(wenv.runGit, at2),
       ...opts.allowPush ? [] : pushUrlIssues(wenv.runGit, at2)
     ],
     ...modeIssues(opts.mode),
@@ -13197,7 +12879,7 @@ function checkOnly(opts, wenv) {
 }
 
 // bin/helpers/worker-dispatch-verify.ts
-import * as path61 from "node:path";
+import * as path59 from "node:path";
 function checkoutAt(input, cwd) {
   if (cwd === physical(input.launchTop)) {
     return `the launching checkout ${input.launchTop}`;
@@ -13219,7 +12901,7 @@ function landingOnce(input, jobId, readTimeoutMs) {
   if (row.cwd === undefined) {
     return { kind: "missing", saw: `the job ${jobId} lists no cwd` };
   }
-  const cwd = physical(path61.resolve(input.launchTop, row.cwd));
+  const cwd = physical(path59.resolve(input.launchTop, row.cwd));
   const checkout = checkoutAt(input, cwd);
   if (checkout !== undefined)
     return { kind: "checkout", checkout };
@@ -13334,15 +13016,15 @@ function verifyWorktree(input) {
 }
 
 // bin/helpers/worker-exclude.ts
-import * as fs50 from "node:fs";
-import * as path62 from "node:path";
+import * as fs49 from "node:fs";
+import * as path60 from "node:path";
 var EXCLUDE_ENTRY = `${WORKTREES_FOLDER}/`;
 var isIgnored = (runGit, top) => runGit("git", ["check-ignore", "-q", "--no-index", `${WORKTREES_FOLDER}/x`], top).code === 0;
 var reason7 = (e) => e instanceof Error ? e.message : String(e);
 var isMissing7 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function readExclude(file) {
   try {
-    return { text: fs50.readFileSync(file, "utf-8") };
+    return { text: fs49.readFileSync(file, "utf-8") };
   } catch (e) {
     if (isMissing7(e))
       return { text: "" };
@@ -13358,8 +13040,8 @@ function appendExclude(file, text) {
 `) ? "" : `
 `;
   try {
-    fs50.mkdirSync(path62.dirname(file), { recursive: true });
-    fs50.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
+    fs49.mkdirSync(path60.dirname(file), { recursive: true });
+    fs49.appendFileSync(file, `${separator}${EXCLUDE_ENTRY}
 `);
     return [];
   } catch (e) {
@@ -13371,7 +13053,7 @@ function appendExclude(file, text) {
 function ensureWorktreesExcluded(runGit, top, commonDir) {
   if (isIgnored(runGit, top))
     return { line: undefined };
-  const file = path62.join(commonDir, "info", "exclude");
+  const file = path60.join(commonDir, "info", "exclude");
   const read = readExclude(file);
   if ("issues" in read)
     return read;
@@ -13453,15 +13135,15 @@ function stopStray(ready, job, wenv, timeoutMs = 1e4) {
 }
 function stopping(ready, job, wenv) {
   const stop = `claude stop ${shellArg(job)}`;
-  const failed2 = stopStray(ready, job, wenv);
-  const stopped = failed2.length === 0 ? `dispatch stopped the worker with ${stop}.` : `Stop the worker with ${stop}.`;
-  return { failed: failed2, stopped };
+  const failed = stopStray(ready, job, wenv);
+  const stopped = failed.length === 0 ? `dispatch stopped the worker with ${stop}.` : `Stop the worker with ${stop}.`;
+  return { failed, stopped };
 }
 function refuseStray(ready, verdict, wenv, err) {
-  const { failed: failed2, stopped } = stopping(ready, verdict.job, wenv);
+  const { failed, stopped } = stopping(ready, verdict.job, wenv);
   return refuse8(err, [
     ...verdict.lines,
-    ...failed2,
+    ...failed,
     wayOut(ready, verdict.cause, stopped)
   ]);
 }
@@ -13471,8 +13153,8 @@ function refuseUnrecorded(ready, job, why, { wenv, err }) {
     const unstopped = `claude printed no job id for "${ready.brief.name}", so dispatch could not stop it: find its id with claude agents --json --all, then stop it with claude stop <id>.`;
     return refuse8(err, [lead, wayOut(ready, "unrecorded", unstopped)]);
   }
-  const { failed: failed2, stopped } = stopping(ready, job, wenv);
-  return refuse8(err, [lead, ...failed2, wayOut(ready, "unrecorded", stopped)]);
+  const { failed, stopped } = stopping(ready, job, wenv);
+  return refuse8(err, [lead, ...failed, wayOut(ready, "unrecorded", stopped)]);
 }
 function runOnStart(onStart, job) {
   try {
@@ -13485,9 +13167,9 @@ function runOnStart(onStart, job) {
 function afterStart(ready, result, wenv, { out, err, onStart }) {
   const job = jobIdFrom(result.stdout, ready.brief.name);
   keepRecord(ready, job, err);
-  const failed2 = runOnStart(onStart, job);
-  if (failed2 !== undefined) {
-    return { code: refuseUnrecorded(ready, job, failed2, { wenv, err }), job };
+  const failed = runOnStart(onStart, job);
+  if (failed !== undefined) {
+    return { code: refuseUnrecorded(ready, job, failed, { wenv, err }), job };
   }
   const verdict = verifyWorktree({
     runGit: wenv.runGit,
@@ -13554,6 +13236,11 @@ function dispatch(opts, wenv, out, err) {
   return launch3(checked2, wenv, { out, err }).code;
 }
 var UNIT_MODE = "dontAsk";
+var unitLaunchEnv = (wenv, launchFolder) => ({
+  ...wenv,
+  cwd: launchFolder,
+  workTree: workTreeRootOf(launchFolder, wenv.runGit)
+});
 function dispatchUnit(unit2, wenv, out, err) {
   const read = readBrief(unit2.briefPath);
   if ("issues" in read)
@@ -13568,15 +13255,445 @@ function dispatchUnit(unit2, wenv, out, err) {
     pluginDir: undefined,
     allowPush: false
   };
-  const checked2 = checkDispatch(read.brief, read.path, opts, {
-    ...wenv,
-    cwd: unit2.launchFolder,
-    workTree: workTreeRootOf(unit2.launchFolder, wenv.runGit)
-  }, { attemptDir: unit2.attemptDir, hosts: unit2.hosts });
+  const checked2 = checkDispatch(read.brief, read.path, opts, unitLaunchEnv(wenv, unit2.launchFolder), { attemptDir: unit2.attemptDir, hosts: unit2.hosts });
   if ("issues" in checked2) {
     return { code: refuse8(err, checked2.issues), job: null };
   }
   return launch3(checked2, wenv, { out, err, onStart: unit2.onStart });
+}
+
+// bin/helpers/loop-dispatch-launch.ts
+var REFUSED = 1;
+var refuse9 = (err, issues) => {
+  for (const issue2 of issues)
+    err(issue2);
+  return REFUSED;
+};
+var failedCode = (code) => code === 0 ? REFUSED : code;
+var messageOf9 = (e) => e instanceof Error ? e.message : String(e);
+var launchEnvOf = (lenv, tree) => ({
+  ...lenv,
+  runGit: tree.runGit
+});
+var watching = (wenv, seen) => ({
+  ...wenv,
+  runClaude: (args, opts) => {
+    const result = wenv.runClaude(args, opts);
+    if (args.includes("--bg"))
+      seen.launch = result;
+    return result;
+  }
+});
+function recordStart(d, a, job) {
+  const at2 = d.lenv.now().toISOString();
+  const issues = writeWorkerFile(a.written.dir, {
+    v: 1,
+    worker: a.worker,
+    job,
+    issue: d.call.issue,
+    dispatchedAt: at2
+  });
+  if (issues.length > 0)
+    throw new Error(issues.join("; "));
+  appendRecord(d.loop.dir, {
+    v: 1,
+    at: at2,
+    kind: "dispatched",
+    unit: d.call.unit,
+    worker: a.worker,
+    issue: d.call.issue,
+    ...d.loop.state.record ? { record: true } : {}
+  });
+}
+var againCommand = (call) => `sidekick loop dispatch ${call.name} --issue ${call.issue} --skill ${call.skill}`;
+var discardCommand = (call) => `sidekick loop discard ${call.name} --unit ${call.unit} --reason <text>`;
+function launch4(d, a, seen, io) {
+  try {
+    return dispatchUnit({
+      briefPath: a.written.briefPath,
+      profile: d.loop.manifest.profile,
+      attemptDir: a.written.dir,
+      hosts: d.loop.manifest.hosts,
+      launchFolder: a.tree.folder,
+      onStart: (job) => {
+        recordStart(d, a, job);
+        seen.recorded = true;
+      }
+    }, watching(launchEnvOf(d.lenv, a.tree), seen), io.out, io.err);
+  } catch (e) {
+    if (!seen.recorded)
+      removeAttempt(a.written);
+    throw e;
+  }
+}
+function countTimedOut(d, a, code, io) {
+  const lead = `claude --bg did not return in time, so dispatch cannot tell whether worker ${a.worker} started`;
+  try {
+    recordStart(d, a, null);
+  } catch (e) {
+    refuse9(io.err, [
+      `${lead}, and recording the attempt failed: ${messageOf9(e)}`,
+      ...removeAttempt(a.written),
+      `The attempt does not count, and its folder is removed: if the worker started, find it with claude agents --json --all, then stop it with claude stop <id>.`
+    ]);
+    return failedCode(code);
+  }
+  refuse9(io.err, [
+    `${lead}. The attempt now counts: its dispatched line is written and its folder kept, so the next dispatch waits. Once you have checked for the worker, give up on the attempt with ${discardCommand(d.call)}`
+  ]);
+  return failedCode(code);
+}
+function dropUnstarted(d, a, result, { code, err }) {
+  const removed = removeAttempt(a.written);
+  const fix = result === undefined ? [] : untrustedLines(a.tree.folder, againCommand(d.call), result);
+  refuse9(err, [...removed, ...fix]);
+  return failedCode(code);
+}
+function reportStarted(d, a, launched, io) {
+  if (launched.code !== 0) {
+    return refuse9(io.err, [
+      `the attempt stays in flight, since its dispatched line is written: give up on it with ${discardCommand(d.call)}`
+    ]);
+  }
+  const { unit: unit2, name } = d.call;
+  const job = launched.job ?? "(none printed)";
+  io.out(`unit ${unit2} · worker ${a.worker} · job ${job}`);
+  io.out(`next: once the worker messages, read its report with sidekick loop report ${name} --unit ${unit2}`);
+  io.out(`to give up on it: ${discardCommand(d.call)}`);
+  return 0;
+}
+function launchAttempt(d, a, io) {
+  const seen = { recorded: false, launch: undefined };
+  const launched = launch4(d, a, seen, io);
+  if (seen.recorded)
+    return reportStarted(d, a, launched, io);
+  if (seen.launch?.timedOut === true) {
+    return countTimedOut(d, a, launched.code, io);
+  }
+  return dropUnstarted(d, a, seen.launch, {
+    code: launched.code,
+    err: io.err
+  });
+}
+
+// bin/helpers/loop-dispatch-tree.ts
+import * as path62 from "node:path";
+
+// bin/helpers/worker-git.ts
+import * as fs50 from "node:fs";
+import * as path61 from "node:path";
+var HARDENED_GIT_FLAGS = [
+  "-c",
+  "core.hooksPath=/dev/null",
+  "-c",
+  "core.fsmonitor=false",
+  "-c",
+  "diff.ignoreSubmodules=all"
+];
+var GITFILE_PREFIX = "gitdir: ";
+var COMMONDIR = "commondir";
+var GITDIR = "gitdir";
+function pointerText(file) {
+  try {
+    return { text: fs50.readFileSync(file, "utf-8").replace(/[\r\n]+$/, "") };
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    return { issue: `cannot read ${file}: ${why}` };
+  }
+}
+function isFolder4(at2) {
+  try {
+    return fs50.statSync(at2).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function lstatOf2(at2) {
+  try {
+    return fs50.lstatSync(at2);
+  } catch {
+    return;
+  }
+}
+function namedByGitFile(dotGit) {
+  const read = pointerText(dotGit);
+  if ("issue" in read)
+    return read;
+  if (!read.text.startsWith(GITFILE_PREFIX)) {
+    return {
+      issue: `${dotGit} does not start with "${GITFILE_PREFIX}", so it names no admin folder`
+    };
+  }
+  const named2 = read.text.slice(GITFILE_PREFIX.length);
+  return { dir: path61.resolve(physical(path61.dirname(dotGit)), named2) };
+}
+function adminNamed(dotGit) {
+  const stat = lstatOf2(dotGit);
+  if (stat === undefined) {
+    return {
+      issue: `${dotGit} does not exist, so nothing links the worktree to its repo`
+    };
+  }
+  if (!stat.isFile()) {
+    return {
+      issue: `${dotGit} is not a file, so it is not the link git writes into a linked worktree`
+    };
+  }
+  const named2 = namedByGitFile(dotGit);
+  if ("issue" in named2)
+    return named2;
+  if (!isFolder4(named2.dir)) {
+    return { issue: `${dotGit} names ${named2.dir}, which is not a folder` };
+  }
+  return named2;
+}
+var plantedLine = (file) => `${file} exists, but a main git dir never holds one: git reads it to find the repository, so it may send git to another one`;
+function plantedIssues(gitDir) {
+  const file = path61.join(gitDir, COMMONDIR);
+  return lstatOf2(file) === undefined ? [] : [plantedLine(file)];
+}
+function placeIssues2(dotGit, admin, commonDir, expected) {
+  const worktrees = path61.join(commonDir, "worktrees");
+  if (path61.dirname(physical(admin)) !== physical(worktrees)) {
+    return [
+      `${dotGit} names ${admin}, which is not directly under ${worktrees}, where git keeps each linked worktree's admin folder`
+    ];
+  }
+  const name = path61.basename(physical(admin));
+  if (expected === undefined || name === expected)
+    return [];
+  return [
+    `${dotGit} names the admin folder ${name}, not ${expected}, the name it must have`
+  ];
+}
+function pointerIssues(admin, file, want, wrong) {
+  const at2 = path61.join(admin, file);
+  const read = pointerText(at2);
+  if ("issue" in read)
+    return [read.issue];
+  const to = path61.resolve(physical(admin), read.text);
+  return physical(to) === physical(want) ? [] : [wrong(at2, to)];
+}
+var backIssues = (admin, dotGit, commonDir) => [
+  ...pointerIssues(admin, GITDIR, dotGit, (at2, to) => `${at2} points to ${to}, not back to ${dotGit}`),
+  ...pointerIssues(admin, COMMONDIR, commonDir, (at2, to) => `${at2} points to ${to}, not to the common git dir ${commonDir}`)
+];
+function chainOf(worktree, commonDir, expected) {
+  const dotGit = path61.join(worktree, ".git");
+  const planted = plantedIssues(commonDir);
+  const named2 = adminNamed(dotGit);
+  if ("issue" in named2)
+    return { issues: [...planted, named2.issue] };
+  const admin = named2.dir;
+  const issues = [
+    ...planted,
+    ...placeIssues2(dotGit, admin, commonDir, expected),
+    ...backIssues(admin, dotGit, commonDir)
+  ];
+  return issues.length === 0 ? { gitDir: physical(admin) } : { issues };
+}
+function mainGitDir(runGit, facts) {
+  const launchGit = path61.join(facts.launchTop, ".git");
+  if (isFolder4(launchGit))
+    return { dir: launchGit };
+  const found = checkoutOf(runGit, facts.mainTop);
+  if ("top" in found) {
+    const dotGit = path61.join(found.top, ".git");
+    return isFolder4(dotGit) ? { dir: dotGit } : namedByGitFile(dotGit);
+  }
+  if (physical(facts.mainTop) === physical(facts.commonDir)) {
+    return { dir: facts.mainTop };
+  }
+  return {
+    issue: `git rev-parse --show-toplevel failed in the main checkout ${facts.mainTop}, so sidekick cannot find its git dir: ${found.issue}`
+  };
+}
+function mainGitDirIssues(runGit, facts) {
+  const main = mainGitDir(runGit, facts);
+  if ("issue" in main)
+    return [main.issue];
+  const differs = physical(main.dir) !== physical(facts.commonDir);
+  return [
+    ...plantedIssues(main.dir),
+    ...differs ? [
+      `git reports the common git dir ${facts.commonDir}, but the main checkout's git dir is ${main.dir}`
+    ] : []
+  ];
+}
+var VALUE_OPTIONS = new Set([
+  "-C",
+  "-c",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--config-env",
+  "--attr-source"
+]);
+function gitFolder(cwd, args) {
+  let folder = cwd;
+  let at2 = 0;
+  while (at2 < args.length && args[at2].startsWith("-")) {
+    if (args[at2] === "-C")
+      folder = path61.resolve(folder, args[at2 + 1] ?? "");
+    at2 += VALUE_OPTIONS.has(args[at2]) ? 2 : 1;
+  }
+  return folder;
+}
+function within2(folder, root) {
+  const rel = path61.relative(root, folder);
+  if (rel === "")
+    return true;
+  const leaves = rel === ".." || rel.startsWith(`..${path61.sep}`);
+  return !leaves && !path61.isAbsolute(rel);
+}
+var gitRunsIn = (worktree, cwd, args) => within2(physical(gitFolder(cwd, args)), physical(worktree));
+function hardenedRunner(run, place) {
+  const root = physical(place.worktree);
+  const prefix = [
+    ...HARDENED_GIT_FLAGS,
+    `--git-dir=${place.gitDir}`,
+    `--work-tree=${root}`
+  ];
+  return (cmd, args, cwd, opts) => {
+    const inside = cmd === "git" && gitRunsIn(root, cwd, args);
+    return run(cmd, inside ? [...prefix, ...args] : args, cwd, opts);
+  };
+}
+
+// bin/helpers/loop-dispatch-tree.ts
+var ORIGIN_HEAD = "refs/remotes/origin/HEAD";
+var REMOTES2 = "refs/remotes/";
+var NO = 1;
+var failed = (what, folder, stderr) => `${what} failed in ${folder}: ${stderr.trim() === "" ? "git printed nothing" : stderr.trim()}`;
+function branchIssues(run, folder, branch) {
+  const held = run("git", ["symbolic-ref", "-q", "HEAD"], folder);
+  if (held.code !== 0 && held.code !== NO) {
+    return [failed("git symbolic-ref HEAD", folder, held.stderr)];
+  }
+  const ref = held.code === 0 ? held.stdout.trim() : undefined;
+  if (ref === `${HEADS}${branch}`)
+    return [];
+  const what = ref === undefined ? "a detached HEAD" : `the branch ${shortBranch(ref)}`;
+  return [
+    `${folder} holds ${what}, not ${branch}: switch it back with git switch ${branch} in that folder`
+  ];
+}
+var cleanIssues2 = (run, folder) => isTrackedClean(run, folder) ? [] : [
+  `${folder}: tracked files have uncommitted changes, and the loop's worktree holds nothing of its own: once nothing in them is needed, discard them with git restore --staged --worktree . in that folder`
+];
+function checkLoopTree(repo, name, runGit) {
+  const session = sessionOf3(name);
+  const folder = nativeFolder(repo, session);
+  if (!isFolder3(folder)) {
+    return {
+      issues: [
+        `${folder} does not exist: Claude Code makes the loop's worktree when sidekick loop start launches the loop, so run sidekick loop start ${name}`
+      ]
+    };
+  }
+  const chain = chainOf(folder, realPathOf(path62.join(repo, ".git")), session);
+  if ("issues" in chain) {
+    return {
+      issues: [
+        ...chain.issues,
+        `${folder}: the loop's worktree no longer links to ${repo} as git made it, so dispatch runs no git in it`
+      ]
+    };
+  }
+  const run = hardenedRunner(runGit, {
+    worktree: folder,
+    gitDir: chain.gitDir
+  });
+  const branch = nativeBranch(session);
+  const issues = [
+    ...branchIssues(run, folder, branch),
+    ...cleanIssues2(run, folder)
+  ];
+  return issues.length > 0 ? { issues } : { folder, branch, runGit: run };
+}
+function relationOf(tree, head2, tip) {
+  const isAncestor = (a, b) => {
+    const r = tree.runGit("git", ["merge-base", "--is-ancestor", a, b], tree.folder);
+    if (r.code === 0)
+      return true;
+    if (r.code === NO)
+      return false;
+    return { issue: failed("git merge-base", tree.folder, r.stderr) };
+  };
+  const behind = isAncestor(head2, tip);
+  if (typeof behind !== "boolean")
+    return behind;
+  if (behind)
+    return "behind";
+  const ahead = isAncestor(tip, head2);
+  if (typeof ahead !== "boolean")
+    return ahead;
+  return ahead ? "ahead" : "diverged";
+}
+function standingIssue(tree, relation, shown2) {
+  const { folder, branch } = tree;
+  const how = relation === "ahead" ? `is ahead of ${shown2} by commits of its own` : `has diverged from ${shown2}`;
+  return `${folder}: ${branch} ${how}, and the loop's worktree holds nothing of its own: keep those commits on a branch of their own, then move ${branch} to origin's tip with git reset --keep ${shown2} in that folder`;
+}
+function originTip(tree, repo) {
+  const ref = tree.runGit("git", ["symbolic-ref", "-q", ORIGIN_HEAD], tree.folder);
+  if (ref.code === NO) {
+    return {
+      issues: [
+        `${ORIGIN_HEAD} is not set in ${repo}, so dispatch cannot tell origin's default branch: run git remote set-head origin --auto in ${repo}`
+      ]
+    };
+  }
+  if (ref.code !== 0) {
+    return {
+      issues: [
+        failed(`git symbolic-ref ${ORIGIN_HEAD}`, tree.folder, ref.stderr)
+      ]
+    };
+  }
+  const target = ref.stdout.trim();
+  const tip = commitOf(tree.runGit, tree.folder, target);
+  if (tip === undefined) {
+    return {
+      issues: [`${ORIGIN_HEAD} names ${target}, which names no commit`]
+    };
+  }
+  const shown2 = target.startsWith(REMOTES2) ? target.slice(REMOTES2.length) : target;
+  return { shown: shown2, tip };
+}
+function fastForward(tree, head2, { shown: shown2, tip }, timeoutMs) {
+  if (head2 === tip)
+    return { baseline: head2 };
+  const relation = relationOf(tree, head2, tip);
+  if (typeof relation !== "string")
+    return { issues: [relation.issue] };
+  if (relation !== "behind") {
+    return { issues: [standingIssue(tree, relation, shown2)] };
+  }
+  const merged = tree.runGit("git", ["merge", "--ff-only", "--quiet", tip], tree.folder, { timeoutMs });
+  if (merged.code !== 0) {
+    return {
+      issues: [failed("git merge --ff-only", tree.folder, merged.stderr)]
+    };
+  }
+  const moved = headCommit(tree.runGit, tree.folder);
+  return moved === tip ? { baseline: moved } : { issues: [`${tree.folder}: HEAD is not ${tip} after the fast-forward`] };
+}
+function syncLoopTree(tree, repo, timeoutMs) {
+  const fetched = tree.runGit("git", ["fetch", "--quiet", "origin"], tree.folder, { timeoutMs });
+  if (fetched.code !== 0) {
+    return {
+      issues: [failed("git fetch origin", tree.folder, fetched.stderr)]
+    };
+  }
+  const origin = originTip(tree, repo);
+  if ("issues" in origin)
+    return origin;
+  const head2 = headCommit(tree.runGit, tree.folder);
+  if (head2 === undefined) {
+    return { issues: [`${tree.folder}: HEAD names no commit`] };
+  }
+  return fastForward(tree, head2, origin, timeoutMs);
 }
 
 // bin/helpers/loop-dispatch.ts
@@ -13584,15 +13701,15 @@ var DISPATCH_USAGE_LINE = "sidekick loop dispatch <name> --issue <n> --skill <pl
 var NAME_PREFIX_MAX = 33;
 var HEX_BYTES = 3;
 var ISSUE_NUMBER = /^[1-9][0-9]*$/;
-var REFUSED = 1;
+var REFUSED2 = 1;
 var usage3 = (err) => {
   err(`usage: ${DISPATCH_USAGE_LINE}`);
-  return REFUSED;
+  return REFUSED2;
 };
-var refuse9 = (err, issues) => {
+var refuse10 = (err, issues) => {
   for (const issue2 of issues)
     err(issue2);
-  return REFUSED;
+  return REFUSED2;
 };
 var issueIssues = (text) => ISSUE_NUMBER.test(text) && Number.isSafeInteger(Number(text)) ? [] : [
   `--issue ${text}: must be an issue number, a whole number of at least 1`
@@ -13630,20 +13747,20 @@ function loopDispatch(rest2, lenv, out, err, {
   draw = () => randomBytes2(HEX_BYTES).toString("hex"),
   draws = 5,
   gitTimeoutMs = 1e4,
-  fetchTimeoutMs = 60000
+  syncTimeoutMs = 60000
 } = {}) {
   const call = parseCall(rest2);
   if (call === undefined)
     return usage3(err);
   if ("issues" in call)
-    return refuse9(err, call.issues);
+    return refuse10(err, call.issues);
   const env = envIssues(lenv.env, call.name);
   if (env.length > 0)
-    return refuse9(err, env);
+    return refuse10(err, env);
   const runGit = timed(lenv.runGit, gitTimeoutMs);
   const loop = loadLoop(call.name, { ...lenv, runGit });
   if ("issues" in loop)
-    return refuse9(err, loop.issues);
+    return refuse10(err, loop.issues);
   const lock = takeLock(loop.dir, {
     pid: lenv.pid,
     now: lenv.now(),
@@ -13651,8 +13768,8 @@ function loopDispatch(rest2, lenv, out, err, {
     isAlive: lenv.isAlive
   }, UNITS_LOCK);
   if (lock.kind === "busy")
-    return refuse9(err, [lock.issue]);
-  const opts = { draw, draws, gitTimeoutMs, fetchTimeoutMs };
+    return refuse10(err, [lock.issue]);
+  const opts = { draw, draws, gitTimeoutMs, syncTimeoutMs };
   try {
     return underLock({ call, loop, lenv, runGit, opts }, { out, err });
   } finally {
@@ -13662,16 +13779,16 @@ function loopDispatch(rest2, lenv, out, err, {
 function underLock(d, io) {
   const counted2 = ledgerIssues(d.loop, d.call, d.lenv.now());
   if (counted2.length > 0)
-    return refuse9(io.err, counted2);
+    return refuse10(io.err, counted2);
   const ready = prepare(d);
   if ("issues" in ready)
-    return refuse9(io.err, ready.issues);
+    return refuse10(io.err, ready.issues);
   const placed = place(d, ready.tree);
   if ("issues" in placed)
-    return refuse9(io.err, placed.issues);
+    return refuse10(io.err, placed.issues);
   const named2 = drawName(d);
   if ("issues" in named2)
-    return refuse9(io.err, named2.issues);
+    return refuse10(io.err, named2.issues);
   const { worker } = named2;
   const written = writeAttempt({
     loopDir: d.loop.dir,
@@ -13688,7 +13805,7 @@ function underLock(d, io) {
     dispatchedAt: d.lenv.now()
   });
   if ("issues" in written)
-    return refuse9(io.err, written.issues);
+    return refuse10(io.err, written.issues);
   return launchAttempt(d, { worker, tree: ready.tree, written }, io);
 }
 function prepare(d) {
@@ -13707,10 +13824,10 @@ function prepare(d) {
   return { issue: fetched.issue, tree };
 }
 function place(d, tree) {
-  const synced = syncLoopTree(tree, d.loop.manifest.repo, d.opts.fetchTimeoutMs);
+  const synced = syncLoopTree(tree, d.loop.manifest.repo, d.opts.syncTimeoutMs);
   if ("issues" in synced)
     return synced;
-  const shadowed = launchProfileIssues(d.lenv, tree.folder, d.loop.profile);
+  const shadowed = launchProfileIssues(unitLaunchEnv(launchEnvOf(d.lenv, tree), tree.folder), d.loop.profile);
   return shadowed.length > 0 ? { issues: shadowed } : synced;
 }
 function nameIssues(d, listed, worker) {
@@ -13742,103 +13859,13 @@ function drawName(d) {
     ]
   };
 }
-var workerEnvOf = (lenv, seen) => ({
-  env: lenv.env,
-  cwd: lenv.cwd,
-  home: lenv.home,
-  workTree: lenv.workTree,
-  tmpdir: lenv.tmpdir,
-  runClaude: (args, opts) => {
-    const result = lenv.runClaude(args, opts);
-    if (args.includes("--bg"))
-      seen.launch = result;
-    return result;
-  },
-  runGit: lenv.runGit,
-  write: lenv.write,
-  launchTimeoutMs: lenv.launchTimeoutMs,
-  sleep: lenv.sleep,
-  isAlive: lenv.isAlive
-});
-function recordStart(d, a, job) {
-  const at2 = d.lenv.now().toISOString();
-  const issues = writeWorkerFile(a.written.dir, {
-    v: 1,
-    worker: a.worker,
-    job,
-    issue: d.call.issue,
-    dispatchedAt: at2
-  });
-  if (issues.length > 0)
-    throw new Error(issues.join("; "));
-  appendRecord(d.loop.dir, {
-    v: 1,
-    at: at2,
-    kind: "dispatched",
-    unit: d.call.unit,
-    worker: a.worker,
-    issue: d.call.issue,
-    ...d.loop.state.record ? { record: true } : {}
-  });
-}
-var againCommand = (call) => `sidekick loop dispatch ${call.name} --issue ${call.issue} --skill ${call.skill}`;
-var discardCommand = (call) => `sidekick loop discard ${call.name} --unit ${call.unit} --reason <text>`;
-function launch4(d, a, seen, io) {
-  try {
-    return dispatchUnit({
-      briefPath: a.written.briefPath,
-      profile: d.loop.manifest.profile,
-      attemptDir: a.written.dir,
-      hosts: d.loop.manifest.hosts,
-      launchFolder: a.tree.folder,
-      onStart: (job) => {
-        recordStart(d, a, job);
-        seen.recorded = true;
-      }
-    }, workerEnvOf(d.lenv, seen), io.out, io.err);
-  } catch (e) {
-    if (!seen.recorded)
-      removeAttempt(a.written);
-    throw e;
-  }
-}
-function unrecordedLines(d, a, result) {
-  if (result === undefined)
-    return [];
-  return [
-    ...untrustedLines(a.tree.folder, againCommand(d.call), result),
-    ...result.timedOut ? [
-      `claude --bg did not return in time, so dispatch cannot tell whether worker ${a.worker} started, and removed its attempt's folder: find it with claude agents --json --all, then stop it with claude stop <id>`
-    ] : []
-  ];
-}
-function launchAttempt(d, a, io) {
-  const seen = { recorded: false, launch: undefined };
-  const launched = launch4(d, a, seen, io);
-  if (!seen.recorded) {
-    const removed = removeAttempt(a.written);
-    refuse9(io.err, [...removed, ...unrecordedLines(d, a, seen.launch)]);
-    return launched.code === 0 ? REFUSED : launched.code;
-  }
-  if (launched.code !== 0) {
-    return refuse9(io.err, [
-      `the attempt stays in flight, since its dispatched line is written: give up on it with ${discardCommand(d.call)}`
-    ]);
-  }
-  const { unit: unit2, name } = d.call;
-  const job = launched.job ?? "(none printed)";
-  io.out(`unit ${unit2} · worker ${a.worker} · job ${job}`);
-  io.out(`next: once the worker messages, read its report with sidekick loop report ${name} --unit ${unit2}`);
-  io.out(`to give up on it: ${discardCommand(d.call)}`);
-  return 0;
-}
 
 // bin/helpers/loop-start.ts
 import * as path63 from "node:path";
 var START_USAGE_LINE = "sidekick loop start (<name> | --all) [--record] [--now]";
 var HASH_SHOWN = 12;
 var MS_PER_S = 1000;
-var REFUSED2 = { kind: "refused" };
+var REFUSED3 = { kind: "refused" };
 var NO_LISTING = "start cannot tell a running loop from a stopped one without the listing, so it changed no loop.";
 var STARTS_PROCESS = new Set([
   "launch",
@@ -13880,7 +13907,7 @@ function refuseUnheld(seat, flags, lenv, err) {
   const tell = prefixed(err, seat.name);
   if (seat.kind === "busy") {
     tell(seat.issue);
-    return REFUSED2;
+    return REFUSED3;
   }
   const prepared = prepareLoop(seat.name, flags, { lenv, rows: [], err: tell });
   const lines = prepared.kind === "refused" ? prepared.lines : [
@@ -13888,7 +13915,7 @@ function refuseUnheld(seat, flags, lenv, err) {
   ];
   for (const line of lines)
     tell(line);
-  return REFUSED2;
+  return REFUSED3;
 }
 function commitEntries(p) {
   switch (p.kind) {
@@ -13923,7 +13950,7 @@ function actOnHeld(held, flags, lenv, io) {
   if ("issues" in listed) {
     for (const line of [...listed.issues, NO_LISTING])
       io.err(line);
-    return held.map((seat) => ({ name: seat.name, outcome: REFUSED2 }));
+    return held.map((seat) => ({ name: seat.name, outcome: REFUSED3 }));
   }
   const rows = listed.jobs;
   const prepared = held.map((seat) => ({
@@ -14044,7 +14071,7 @@ var usage4 = (err) => {
   err(`usage: ${LOOP_USAGE_LINE}`);
   return 1;
 };
-var refuse10 = (err, issues) => {
+var refuse11 = (err, issues) => {
   for (const issue2 of issues)
     err(issue2);
   return 1;
@@ -14222,7 +14249,7 @@ var show2 = (rest2, lenv, out, err) => {
   const [name] = parsed.positionals;
   const refusal2 = nameRefusal(name);
   if (refusal2 !== undefined)
-    return refuse10(err, [refusal2]);
+    return refuse11(err, [refusal2]);
   const check2 = checkLoop(name, depsOf2(lenv));
   const listing = listingOf(check2, lenv);
   const definition = definitionLines(path64.join(check2.dir, LOOP_FILE), check2.manifest);
@@ -14403,21 +14430,21 @@ var record2 = (rest2, lenv, out, err) => {
     return usage4(err);
   const refusals = argRefusals(call);
   if (refusals.length > 0)
-    return refuse10(err, refusals);
+    return refuse11(err, refusals);
   const dir = loopDirOf(lenv, call.name);
   const basis = basisOf(dir);
   if (!basis.ok)
-    return refuse10(err, basis.issues);
+    return refuse11(err, basis.issues);
   const built = lineOf2(call.args, lenv.now(), basis.hash);
   if ("issues" in built)
-    return refuse10(err, built.issues);
+    return refuse11(err, built.issues);
   const { line } = built;
   const mandate = mandateRefusals(basis.mandate, line);
   if (mandate.length > 0)
-    return refuse10(err, mandate);
+    return refuse11(err, mandate);
   const cron = parseCron(basis.schedule);
   if (!cron.ok) {
-    return refuse10(err, [`${basis.mandate.file}: schedule: ${cron.issue}`]);
+    return refuse11(err, [`${basis.mandate.file}: schedule: ${cron.issue}`]);
   }
   const printed2 = successLine(dir, cron.cron, line);
   appendRecord(dir, line);
@@ -14446,7 +14473,7 @@ import * as path66 from "node:path";
 // bin/helpers/memory-link.ts
 import * as fs52 from "node:fs";
 import * as path65 from "node:path";
-var messageOf9 = (error) => error instanceof Error ? error.message : String(error);
+var messageOf10 = (error) => error instanceof Error ? error.message : String(error);
 function runLink(opts, deps, out, err) {
   const gathered = gather2(opts, deps);
   if ("issue" in gathered) {
@@ -14483,7 +14510,7 @@ function gather2(opts, deps) {
   try {
     return { facts: gatherFacts(opts, deps) };
   } catch (error) {
-    return { issue: messageOf9(error) };
+    return { issue: messageOf10(error) };
   }
 }
 function applyAll(actions, runGit, out, err) {
@@ -14503,7 +14530,7 @@ function applyAction(action, runGit) {
   try {
     return runAction(action, runGit);
   } catch (error) {
-    return { ok: false, issue: messageOf9(error) };
+    return { ok: false, issue: messageOf10(error) };
   }
 }
 function runAction(action, runGit) {
@@ -14580,7 +14607,7 @@ function claim(from, to) {
   try {
     fs52.mkdirSync(to);
   } catch (error) {
-    const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf9(error)}`;
+    const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf10(error)}`;
     throw new Error(message, { cause: error });
   }
 }
@@ -14588,7 +14615,7 @@ function copyInto(from, to, copy, remove) {
   try {
     copy(from, to);
   } catch (error) {
-    const reason8 = messageOf9(error);
+    const reason8 = messageOf10(error);
     const failed2 = `copying across filesystems failed, so link left ${from} intact`;
     const leftover = removeOrSayWhy(to, remove);
     const message = leftover === undefined ? `${failed2} and removed its partial copy at ${to}: ${reason8}` : `${failed2}: ${reason8}. link could not remove its partial copy either, so delete ${to} by hand: ${leftover}`;
@@ -14600,7 +14627,7 @@ function removeOrSayWhy(folder, remove) {
     remove(folder);
     return;
   } catch (error) {
-    return messageOf9(error);
+    return messageOf10(error);
   }
 }
 function keepIfChanged(from, to) {
@@ -14633,7 +14660,7 @@ function removeSource(from, to, remove) {
   try {
     remove(from);
   } catch (error) {
-    throw new Error(`the copy at ${to} is whole, but removing ${from} failed: ${messageOf9(error)}. Keep ${to}; a re-run archives what is left of ${from}.`, { cause: error });
+    throw new Error(`the copy at ${to} is whole, but removing ${from} failed: ${messageOf10(error)}. Keep ${to}; a re-run archives what is left of ${from}.`, { cause: error });
   }
 }
 function commit2(action, runGit) {
@@ -16884,7 +16911,7 @@ var usage5 = (err) => {
   err(`usage: ${WORKER_USAGE_LINE}`);
   return 1;
 };
-var refuse11 = (err, lines) => {
+var refuse12 = (err, lines) => {
   for (const line of lines)
     err(line);
   return 1;
@@ -16905,7 +16932,7 @@ var finishVerb = (rest2, wenv, out, err) => {
   if (args === undefined)
     return usage5(err);
   if ("usageErrors" in args)
-    return refuse11(err, args.usageErrors);
+    return refuse12(err, args.usageErrors);
   return finish(args, wenv, out, err);
 };
 var VERBS5 = {
@@ -16975,7 +17002,7 @@ function parseMoveArgs(rest2) {
     return;
   return { kind: "branch", branch: positionals[0], from };
 }
-var refuse12 = (...lines) => ({ kind: "refused", lines });
+var refuse13 = (...lines) => ({ kind: "refused", lines });
 var ORIGIN2 = "origin";
 var SEPARATOR = " · ";
 var PATHS_CAP = 20;
@@ -16996,21 +17023,21 @@ function whereItRuns(env, err) {
   if (repo === undefined) {
     const issue2 = found.revParseIssue;
     if (issue2 !== undefined && !outsideRepo(issue2, env.cwd)) {
-      return refuse12(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue2}`, `fix what git reports, ${AGAIN_WAY}`);
+      return refuse13(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue2}`, `fix what git reports, ${AGAIN_WAY}`);
     }
-    return refuse12(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
+    return refuse13(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
   }
   const checkout = checkoutOf(env.runGit, env.cwd);
   if ("issue" in checkout) {
-    return refuse12(`${env.cwd} is in no work tree, as git says: ${gitWords(checkout.issue)}`, INSIDE_WAY);
+    return refuse13(`${env.cwd} is in no work tree, as git says: ${gitWords(checkout.issue)}`, INSIDE_WAY);
   }
   const top = physical(checkout.top);
   const at2 = repo.worktrees.findIndex((entry2) => physical(entry2.path) === top);
   if (at2 === 0) {
-    return refuse12(`${checkout.top} is the main checkout, not a linked worktree: ${INSIDE_WAY}`);
+    return refuse13(`${checkout.top} is the main checkout, not a linked worktree: ${INSIDE_WAY}`);
   }
   if (at2 === -1) {
-    return refuse12(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
+    return refuse13(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
   }
   const entry = repo.worktrees[at2];
   return { repo, entry, name: path74.basename(entry.path) };
@@ -17050,16 +17077,16 @@ function rerunLine(runGit, place2, args) {
 function workerRefusal(env, place2) {
   const brief = env.env.SIDEKICK_WORKER;
   if (brief !== undefined && brief !== "") {
-    return refuse12(`this session is a worker, as SIDEKICK_WORKER is set to ${brief}: ${BRIEF_WAY}`);
+    return refuse13(`this session is a worker, as SIDEKICK_WORKER is set to ${brief}: ${BRIEF_WAY}`);
   }
   const stored = readRecords(place2.repo.commonDir);
   const record3 = stored.records.find((candidate) => isWorkers(place2.repo.top, candidate.name, place2.entry));
   if (record3 !== undefined) {
-    return refuse12(`${place2.entry.path} is the worker ${record3.name}'s worktree: ${BRIEF_WAY}`);
+    return refuse13(`${place2.entry.path} is the worker ${record3.name}'s worktree: ${BRIEF_WAY}`);
   }
   if (stored.warnings.length === 0)
     return;
-  return refuse12(`a worker record would not read, so ${place2.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
+  return refuse13(`a worker record would not read, so ${place2.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
 }
 function branchRefusal(place2) {
   const { entry, name } = place2;
@@ -17067,15 +17094,15 @@ function branchRefusal(place2) {
   if (entry.branch === `${HEADS}${own}`)
     return;
   if (entry.branch === undefined) {
-    return refuse12(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
+    return refuse13(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
   }
-  return refuse12(`${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`, FRESH_WAY);
+  return refuse13(`${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`, FRESH_WAY);
 }
 function changesRefusal(runGit, place2) {
   const { entry } = place2;
   const status = statusEntriesIn(runGit, place2.repo.top, entry.path);
   if ("issue" in status) {
-    return refuse12(`git status failed in ${entry.path}, so move cannot tell whether it has changes: ${gitWords(status.issue)}`, `check git status in ${entry.path}, ${AGAIN_WAY}`);
+    return refuse13(`git status failed in ${entry.path}, so move cannot tell whether it has changes: ${gitWords(status.issue)}`, `check git status in ${entry.path}, ${AGAIN_WAY}`);
   }
   if (status.entries.length === 0)
     return;
@@ -17084,7 +17111,7 @@ function changesRefusal(runGit, place2) {
     kind: "exact",
     count: Math.max(0, paths.length - PATHS_CAP)
   };
-  return refuse12(`${entry.path} has tracked or untracked changes: ${paths.slice(0, PATHS_CAP).join(", ")}${omittedWords(omitted)}`, `take them out of the worktree or delete them, ${AGAIN_WAY}`);
+  return refuse13(`${entry.path} has tracked or untracked changes: ${paths.slice(0, PATHS_CAP).join(", ")}${omittedWords(omitted)}`, `take them out of the worktree or delete them, ${AGAIN_WAY}`);
 }
 var commitCount = (count2) => `${count2} ${count2 === 1 ? "commit" : "commits"}`;
 function onTopWords(runGit, dir, base, head2) {
@@ -17101,22 +17128,22 @@ function freshHead(runGit, place2) {
   const { entry, name } = place2;
   const created = creationCommit(runGit, entry.path, entry.branch);
   if ("issue" in created) {
-    return refuse12(`move cannot tell whether ${entry.path} is fresh: ${created.issue}`, FRESH_WAY);
+    return refuse13(`move cannot tell whether ${entry.path} is fresh: ${created.issue}`, FRESH_WAY);
   }
   if (entry.head === created.sha)
     return created.sha;
   const head2 = entry.head ?? "no commit";
   const onTop = onTopWords(runGit, entry.path, created.sha, head2);
-  return refuse12(`the HEAD of ${entry.path} is ${head2}, not ${nativeBranch(name)}'s creation commit ${created.sha}${onTop}`, FRESH_WAY);
+  return refuse13(`the HEAD of ${entry.path} is ${head2}, not ${nativeBranch(name)}'s creation commit ${created.sha}${onTop}`, FRESH_WAY);
 }
 function nameRefusal2(runGit, dir, branch) {
   const verdict = branchNameOf(runGit, dir, branch);
   if ("issue" in verdict) {
-    return refuse12(`git check-ref-format refuses ${branch}: ${verdict.issue}`, "choose another name");
+    return refuse13(`git check-ref-format refuses ${branch}: ${verdict.issue}`, "choose another name");
   }
   if (verdict.read === branch)
     return;
-  return refuse12(`git reads ${branch} as the branch ${verdict.read}: name it as ${verdict.read}`);
+  return refuse13(`git reads ${branch} as the branch ${verdict.read}: name it as ${verdict.read}`);
 }
 function branchNameOf(runGit, dir, name) {
   const result = runGit("git", ["check-ref-format", "--branch", name], dir);
@@ -17132,7 +17159,7 @@ function isPlainBranchName(runGit, dir, name) {
 function remotesOf(runGit, dir) {
   const result = runGit("git", ["remote"], dir);
   if (result.code !== 0) {
-    return refuse12(`git remote failed in ${dir}: ${gitWords(result.stderr)}`, `check git remote in ${dir}, ${AGAIN_WAY}`);
+    return refuse13(`git remote failed in ${dir}: ${gitWords(result.stderr)}`, `check git remote in ${dir}, ${AGAIN_WAY}`);
   }
   return result.stdout.split(`
 `).map((line) => line.trim()).filter((line) => line !== "");
@@ -17143,24 +17170,24 @@ function ambiguityRefusal(branch, remotes) {
   if (remote === undefined)
     return;
   if (remote === branch) {
-    return refuse12(`${branch} is a remote's name, so it reads as that remote: choose another name`);
+    return refuse13(`${branch} is a remote's name, so it reads as that remote: choose another name`);
   }
   const rest2 = branch.slice(remote.length + 1);
-  return refuse12(`${branch} begins with ${remote}/, a remote's name, so it reads as a branch of ${remote}: name it without the remote, as ${rest2}`);
+  return refuse13(`${branch} begins with ${remote}/, a remote's name, so it reads as a branch of ${remote}: name it without the remote, as ${rest2}`);
 }
-var fromRefusal = (branch, where) => refuse12(`${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`);
+var fromRefusal = (branch, where) => refuse13(`${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`);
 function ownNameRefusal(runGit, place2, heldAt, branch) {
   const { entry, name } = place2;
   const verdict = branchNameOf(runGit, entry.path, name);
   if ("read" in verdict && verdict.read === name)
     return;
   const why = "issue" in verdict ? `git refuses ${name} as a branch name: ${verdict.issue}` : `git reads ${name} as the branch ${verdict.read}`;
-  return refuse12(`${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`, `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`);
+  return refuse13(`${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`, `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`);
 }
 function localPlan(runGit, place2, branch) {
   const { entry, name } = place2;
   if (branch === nativeBranch(name)) {
-    return refuse12(`${branch} is the branch Claude Code made for this worktree, which move replaces: name the branch to move onto`);
+    return refuse13(`${branch} is the branch Claude Code made for this worktree, which move replaces: name the branch to move onto`);
   }
   const holder = place2.repo.worktrees.find((other) => other.branch === `${HEADS}${branch}`);
   if (holder === undefined)
@@ -17170,10 +17197,10 @@ function localPlan(runGit, place2, branch) {
     return badName;
   const sha = commitOf(runGit, entry.path, `${HEADS}${branch}`);
   if (sha === undefined) {
-    return refuse12(`${branch} names no commit, so move cannot branch from it`, `check ${branch} in ${holder.path}, ${AGAIN_WAY}`);
+    return refuse13(`${branch} names no commit, so move cannot branch from it`, `check ${branch} in ${holder.path}, ${AGAIN_WAY}`);
   }
   if (branchExists(runGit, entry.path, name)) {
-    return refuse12(`${holder.path} holds ${branch}, so move would create the branch ${name} at its commit, but ${name} exists`, `switch ${holder.path} to another branch, or start a worktree under another name, ${AGAIN_WAY}`);
+    return refuse13(`${holder.path} holds ${branch}, so move would create the branch ${name} at its commit, but ${name} exists`, `switch ${holder.path} to another branch, or start a worktree under another name, ${AGAIN_WAY}`);
   }
   return { kind: "held", branch, own: name, sha, heldAt: holder.path };
 }
@@ -17183,7 +17210,7 @@ function onOrigin(runGit, dir, branch) {
   if (result.code === NO_MATCH)
     return false;
   if (result.code !== 0) {
-    return refuse12(`git ls-remote origin failed, so move cannot tell whether origin has ${branch}: ${gitWords(result.stderr)}`, `check the remote origin, ${AGAIN_WAY}`);
+    return refuse13(`git ls-remote origin failed, so move cannot tell whether origin has ${branch}: ${gitWords(result.stderr)}`, `check the remote origin, ${AGAIN_WAY}`);
   }
   return result.stdout.split(`
 `).some((line) => line.split("\t")[1] === ref2);
@@ -17199,7 +17226,7 @@ function baseOf(runGit, dir, from, remotes) {
   }
   const sha = commitOf(runGit, dir, from);
   if (sha === undefined) {
-    return refuse12(`--from ${from} names no commit: give a branch, tag, or commit, or <remote>/<branch> for a remote's branch`);
+    return refuse13(`--from ${from} names no commit: give a branch, tag, or commit, or <remote>/<branch> for a remote's branch`);
   }
   return { kind: "local", rev: from, sha };
 }
@@ -17242,7 +17269,7 @@ function prMove(runGit, place2, number2) {
     return remotes;
   if (remotes.includes(ORIGIN2))
     return { kind: "pr", number: number2 };
-  return refuse12(`--pr reads pull requests from origin, and this repository has no remote named origin: add the GitHub remote as origin, ${AGAIN_WAY}`);
+  return refuse13(`--pr reads pull requests from origin, and this repository has no remote named origin: add the GitHub remote as origin, ${AGAIN_WAY}`);
 }
 function checkMove(args, env, err) {
   const { runGit } = env;
@@ -17596,7 +17623,7 @@ function parseRemoveArgs(rest2) {
     into: into.at(0)
   };
 }
-var refuse13 = (...lines) => ({ refused: lines });
+var refuse14 = (...lines) => ({ refused: lines });
 var INTO_WAY = "name a local branch, such as main, or a remote-tracking ref, such as origin/main";
 function refCommit(runGit, top, ref2) {
   const shown2 = runGit("git", ["show-ref", "--verify", "--hash", ref2], top);
@@ -17612,7 +17639,7 @@ function intoTargets(runGit, top, into) {
     if (sha !== undefined)
       return [{ name: into, sha, ref: ref2 }];
   }
-  return refuse13(`--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`, INTO_WAY);
+  return refuse14(`--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`, INTO_WAY);
 }
 function ownIntoLines(targets, entry) {
   return targets.filter((target) => target.ref === entry.branch).map((target) => `--into ${target.name} is the branch ${entry.path} is on, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in`);
@@ -17626,18 +17653,18 @@ function resolveTarget3(repo, cwd, target) {
   const asPath = path75.resolve(cwd, target);
   const matches = repo.worktrees.filter((entry2) => path75.basename(entry2.path) === target || samePath(entry2.path, asPath));
   if (matches.length === 0) {
-    return refuse13(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
+    return refuse14(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
   }
   if (matches.length > 1) {
     const paths = matches.map((entry2) => entry2.path).join(", ");
-    return refuse13(`${matches.length} worktrees match ${target}: ${paths}. Name one by its path`);
+    return refuse14(`${matches.length} worktrees match ${target}: ${paths}. Name one by its path`);
   }
   const [entry] = matches;
   if (entry === repo.worktrees[0]) {
-    return refuse13(`${entry.path} is the main checkout, which remove never takes`);
+    return refuse14(`${entry.path} is the main checkout, which remove never takes`);
   }
   if (insideOf(cwd, entry.path)) {
-    return refuse13(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`);
+    return refuse14(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`);
   }
   return entry;
 }
@@ -17720,13 +17747,13 @@ function backupKind(commits, branch, judging) {
         return "kept";
       if (discard2)
         return "discarded";
-      return refuse13(`${where} has ${commitCount2(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`, DISCARD_WAY);
+      return refuse14(`${where} has ${commitCount2(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`, DISCARD_WAY);
     case "unknown":
       if (stays)
         return "kept";
       if (discard2)
         return "discarded";
-      return refuse13(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
+      return refuse14(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
     default: {
       const _exhaustive = commits;
       throw new Error(`Unhandled commits: ${JSON.stringify(_exhaustive)}`);
@@ -17738,7 +17765,7 @@ function branchPlan2(env, repo, row2, judging) {
   const { entry, name } = row2;
   const head2 = entry.head === undefined ? undefined : commitOf(env.runGit, repo.top, entry.head);
   if (head2 === undefined) {
-    return refuse13(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
+    return refuse14(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
   }
   const branch = entry.branch?.replace(HEADS, "");
   const stays = branch !== undefined && !isOwnBranch(env.runGit, repo.top, branch, name);
@@ -17770,13 +17797,13 @@ function checkTarget(args, env, repo, out) {
     return entry;
   const ownInto = ownIntoLines(extra, entry);
   if (ownInto.length > 0)
-    return refuse13(...ownInto);
+    return refuse14(...ownInto);
   const nested = nestedLines(repo, entry);
   if (nested.length > 0)
-    return refuse13(...nested);
+    return refuse14(...nested);
   const { src, listing, skipWarnings } = readSources(env, alone(repo, entry));
   if ("error" in listing) {
-    return refuse13(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
+    return refuse14(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
   }
   for (const warning of [...listing.warnings, ...skipWarnings]) {
     out(warning);
@@ -17784,7 +17811,7 @@ function checkTarget(args, env, repo, out) {
   const [row2] = worktreeRows(src, env.runGit, extra);
   const kept = stateLines(row2.state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
-    return refuse13(...kept);
+    return refuse14(...kept);
   const checked2 = branchPlan2(env, repo, row2, { discard: args.discard, extra });
   if ("refused" in checked2)
     return checked2;
@@ -17802,25 +17829,25 @@ function movedLines(entry, head2, stopped) {
 function recheck(env, repo, checked2) {
   const { src, listing } = readSources(env, repo);
   if ("error" in listing) {
-    return refuse13(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
+    return refuse14(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
   }
   const now = listWorktrees(env.runGit, repo.top);
   if ("issue" in now) {
-    return refuse13(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
+    return refuse14(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
   }
   const entry = now.worktrees.find((e) => samePath(e.path, checked2.entry.path));
   if (entry === undefined) {
-    return refuse13(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
+    return refuse14(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
   }
   const moved = movedLines(entry, checked2.head, "so remove deleted nothing");
   if (moved.length > 0)
-    return refuse13(...moved);
+    return refuse14(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
   const one = { ...src, repo: alone(repo, entry) };
   const state = stateOf3(one, env.runGit, entry, lock);
   const kept = stateLines(state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
-    return refuse13(...kept);
+    return refuse14(...kept);
   return listing.rows;
 }
 

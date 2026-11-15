@@ -14,10 +14,16 @@ import {
 } from './loop-dispatch.js';
 import { appendRecord, type RecordLine } from './loop-record.js';
 import { readLedger, readWorkerFile } from './loop-units.js';
-import { execRunner, type Runner } from './pm-data.js';
+import {
+  execRunner,
+  type Runner,
+  type RunOptions,
+  type RunResult,
+} from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { readBriefLimits } from './subagent-limits.js';
 import { readBrief } from './worker-brief.js';
+import { HARDENED_GIT_FLAGS } from './worker-git.js';
 
 // The operator's git config and this worktree's repo variables stay out of the fixtures.
 const GIT_ENV = {
@@ -62,6 +68,9 @@ let pluginList: ClaudeResult;
 let launchReply: (args: string[], cwd: string) => ClaudeResult;
 let issueState: string;
 let onLaunch: () => void;
+let gitCalls: { args: string[]; cwd: string; opts: RunOptions | undefined }[];
+let gitReply: (args: string[]) => RunResult | undefined;
+let stops: string[][];
 
 const result = (over: Partial<ClaudeResult> = {}): ClaudeResult => ({
   code: 0,
@@ -118,7 +127,10 @@ const fakeClaude: ClaudeRunner = (args, opts) => {
   if (args.at(-1) === 'doctor') return doctorPasses(args);
   if (args.at(-3) === 'plugin' && args.at(-2) === 'list') return pluginList;
   if (args[0] === 'agents') return result({ stdout: JSON.stringify(rows) });
-  if (args[0] === 'stop') return result();
+  if (args[0] === 'stop') {
+    stops.push(args);
+    return result();
+  }
   if (args.includes('--bg')) {
     launches.push({ args, cwd: opts.cwd });
     onLaunch();
@@ -147,16 +159,18 @@ const issueData = () => ({
 });
 
 // gh answers from the fixture, and origin reads as a GitHub repo, while every
-// other git call runs for real against the bare origin.
+// other git call is kept and runs for real against the bare origin, unless
+// `gitReply` answers it.
 const runGit: Runner = (cmd, args, cwd, opts) => {
   if (cmd === 'gh') {
     ghCalls.push(args);
     return { code: 0, stdout: JSON.stringify(issueData()), stderr: '' };
   }
+  gitCalls.push({ args, cwd, opts });
   if (args.join(' ') === 'remote get-url origin') {
     return { code: 0, stdout: `${ORIGIN_URL}\n`, stderr: '' };
   }
-  return execRunner(cmd, args, cwd, opts);
+  return gitReply(args) ?? execRunner(cmd, args, cwd, opts);
 };
 
 const validLoop = () => ({
@@ -250,6 +264,9 @@ beforeEach(() => {
   launchReply = nativeLanding;
   issueState = 'OPEN';
   onLaunch = () => {};
+  gitCalls = [];
+  gitReply = () => undefined;
+  stops = [];
 });
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -724,15 +741,73 @@ describe('loop dispatch dispatches', () => {
     expect(dispatchedLines()).toEqual([]);
   });
 
-  test('a launch that does not return in time leaves nothing, and says how to find a worker that started', () => {
+  test('a launch that times out counts as an attempt: dispatched lands, the folder stays, and the next dispatch refuses as in flight', () => {
     launchReply = () => result({ code: 124, timedOut: true });
-    const before = snapshot();
     const r = dispatch();
     expect(r.code).toBe(124);
     expect(r.err.join('\n')).toContain(
-      `cannot tell whether worker ${WORKER} started, and removed its attempt's folder: find it with claude agents --json --all`,
+      `claude --bg did not return in time, so dispatch cannot tell whether worker ${WORKER} started. The attempt now counts`,
     );
+    expect(r.err.join('\n')).toContain(
+      `give up on the attempt with sidekick loop discard fixer --unit ${UNIT} --reason <text>`,
+    );
+    expect(r.err.join('\n')).not.toContain('claude stop');
+    expect(fs.readdirSync(attemptOf()).sort()).toEqual([
+      'brief.md',
+      'unit.md',
+      'worker.json',
+    ]);
+    expect(readWorkerFile(attemptOf())).toEqual(
+      expect.objectContaining({ worker: WORKER, job: null, issue: ISSUE }),
+    );
+    expect(dispatchedLines()).toEqual([
+      expect.objectContaining({ unit: UNIT, worker: WORKER, issue: ISSUE }),
+    ]);
+    launchReply = nativeLanding;
+    const next = dispatch(ARGS, {}, { draw: () => 'def456' });
+    expect(next.code).toBe(1);
+    expect(next.err.join('\n')).toContain(
+      `in flight: unit ${UNIT}, worker ${WORKER}`,
+    );
+    expect(launches).toHaveLength(1);
+  });
+
+  test('a timed-out launch whose attempt cannot be recorded leaves nothing, and says how to stop a worker that started', () => {
+    const records = path.join(loopDir(), 'records');
+    fs.mkdirSync(records);
+    launchReply = () => result({ code: 124, timedOut: true });
+    const before = snapshot();
+    fs.chmodSync(records, 0o555);
+    try {
+      const r = dispatch();
+      expect(r.code).toBe(124);
+      expect(r.err.join('\n')).toContain('recording the attempt failed');
+      expect(r.err.join('\n')).toContain(
+        'find it with claude agents --json --all, then stop it with claude stop <id>',
+      );
+    } finally {
+      fs.chmodSync(records, 0o755);
+    }
     expect(snapshot()).toEqual(before);
+  });
+
+  test('a start whose dispatched line cannot be written stops the worker as a stray, and removes the attempt folder', () => {
+    const records = path.join(loopDir(), 'records');
+    fs.mkdirSync(records);
+    const before = snapshot();
+    fs.chmodSync(records, 0o555);
+    try {
+      const r = dispatch();
+      expect(r.code).toBe(1);
+      expect(r.err.join('\n')).toContain(
+        'the worker started, but recording its start failed',
+      );
+      expect(stops).toEqual([['stop', JOB]]);
+    } finally {
+      fs.chmodSync(records, 0o755);
+    }
+    expect(snapshot()).toEqual(before);
+    expect(dispatchedLines()).toEqual([]);
   });
 
   test("a refusal by the launch's own checks removes the attempt folder it wrote, and the unit folder it made", () => {
@@ -806,16 +881,101 @@ describe('loop dispatch dispatches', () => {
       report: UNIT_REPORT,
       orchestrator: 'loop-fixer',
     });
-    const limits = readBriefLimits(briefPath, readSection);
-    expect(limits).toBeDefined();
-    expect(limits).toContain(workerTree());
-    expect(limits).toContain('registry.npmjs.org');
-    expect(limits).toContain('push');
+    expect(readBriefLimits(briefPath, readSection)).toBe(
+      [
+        '## Limits',
+        '',
+        `- Write only inside this worktree, ${workerTree()}.`,
+        `- Read only this worktree, the role's own skills, and the attempt's folder, ${attempt}, which holds this brief, the unit file, and the rulings file.`,
+        '- Make no GitHub write: no issue, comment, label, or board change.',
+        '- Never push. Never amend a commit; a fix is a new commit.',
+        '- The network reaches only these hosts: registry.npmjs.org.',
+      ].join('\n'),
+    );
     const text = fs.readFileSync(briefPath, 'utf8');
     expect(text).toContain('`bun run test`');
     expect(text).toContain('timeout');
     expect(text).toContain('## Proposals');
     expect(text).not.toMatch(/cannot (label|comment|close)/);
+  });
+});
+
+describe('loop dispatch, further', () => {
+  test('a loop with no hosts says its worker reaches no host', () => {
+    writeJson(path.join(loopDir(), 'loop.json'), {
+      ...validLoop(),
+      hosts: [],
+    });
+    expect(dispatch().code).toBe(0);
+    const limits = readBriefLimits(
+      path.join(attemptOf(), 'brief.md'),
+      readSection,
+    );
+    expect(limits).toContain('- The network reaches no host.');
+  });
+
+  test("every git call into the loop's worktree runs hardened, the launch's own checks included", () => {
+    expect(dispatch().code).toBe(0);
+    const inside = gitCalls.filter(
+      (c) => c.cwd === loopTree || c.cwd.startsWith(`${loopTree}/`),
+    );
+    for (const call of inside) {
+      expect(call.args.slice(0, HARDENED_GIT_FLAGS.length)).toEqual([
+        ...HARDENED_GIT_FLAGS,
+      ]);
+    }
+    const shown = inside.map((c) => c.args.join(' '));
+    expect(
+      shown.some((a) =>
+        a.endsWith(
+          'rev-parse --path-format=absolute --show-toplevel --git-common-dir',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      shown.some((a) => a.endsWith('status --porcelain --untracked-files=no')),
+    ).toBe(true);
+  });
+
+  test('the fetch and the fast-forward both take the sync limit', () => {
+    commitOnOrigin('c.txt', 'c\n');
+    const r = dispatch(
+      ARGS,
+      {},
+      { draw: () => 'abc123', syncTimeoutMs: 12_345 },
+    );
+    expect(r.code).toBe(0);
+    const limitOf = (verb: string) =>
+      gitCalls.find((c) => c.args.includes(verb))?.opts?.timeoutMs;
+    expect(limitOf('fetch')).toBe(12_345);
+    expect(limitOf('merge')).toBe(12_345);
+  });
+
+  test("an origin/HEAD read that fails for another reason names git's failure, not a missing ref", () => {
+    gitReply = (args) =>
+      args.includes('symbolic-ref') && args.includes('refs/remotes/origin/HEAD')
+        ? { code: 124, stdout: '', stderr: 'git did not finish within 10 s' }
+        : undefined;
+    const r = dispatch();
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain(
+      `git symbolic-ref refs/remotes/origin/HEAD failed in ${loopTree}: git did not finish within 10 s`,
+    );
+    expect(r.err.join('\n')).not.toContain('is not set');
+  });
+
+  test("independent reasons are named together: the skill, the issue, and the loop's worktree", () => {
+    issueState = 'CLOSED';
+    write(path.join(loopTree, 'a.txt'), 'changed\n');
+    const r = dispatch(['fixer', '--issue', '42', '--skill', 'fixer:nope']);
+    expect(r.code).toBe(1);
+    const said = r.err.join('\n');
+    expect(said).toContain(path.join('skills', 'nope', 'SKILL.md'));
+    expect(said).toContain('issue #42 is closed');
+    expect(said).toContain(
+      `${loopTree}: tracked files have uncommitted changes`,
+    );
+    expect(launches).toEqual([]);
   });
 });
 

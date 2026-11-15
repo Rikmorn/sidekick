@@ -349,6 +349,19 @@ export interface UnitLaunch {
 }
 
 /**
+ * The environment a unit launch's checks read, the profile store's lookup
+ * among them: the work tree that holds `launchFolder`, by `wenv`'s git.
+ */
+export const unitLaunchEnv = (
+  wenv: WorkerEnv,
+  launchFolder: string,
+): WorkerEnv => ({
+  ...wenv,
+  cwd: launchFolder,
+  workTree: workTreeRootOf(launchFolder, wenv.runGit),
+});
+
+/**
  * Launches a unit brief's worker through dispatch's own checks and launch,
  * from `launchFolder`, inside the fence: mode `dontAsk`, the push block on,
  * no `--plugin-dir`, the profile's fence-safe keys alone, the attempt's
@@ -380,11 +393,7 @@ export function dispatchUnit(
     read.brief,
     read.path,
     opts,
-    {
-      ...wenv,
-      cwd: unit.launchFolder,
-      workTree: workTreeRootOf(unit.launchFolder, wenv.runGit),
-    },
+    unitLaunchEnv(wenv, unit.launchFolder),
     { attemptDir: unit.attemptDir, hosts: unit.hosts },
   );
   if ('issues' in checked) {

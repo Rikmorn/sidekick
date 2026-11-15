@@ -84,7 +84,7 @@ const limits = (a: AttemptInput, dir: string): string[] => [
   '## Limits',
   '',
   `- Write only inside this worktree, ${a.worktree}.`,
-  `- Read this worktree, the role's own skills, and the attempt's folder, ${dir}, which holds this brief, the unit file, and the rulings file. The fence blocks reads anywhere else.`,
+  `- Read only this worktree, the role's own skills, and the attempt's folder, ${dir}, which holds this brief, the unit file, and the rulings file.`,
   '- Make no GitHub write: no issue, comment, label, or board change.',
   '- Never push. Never amend a commit; a fix is a new commit.',
   hostsLine(a.hosts),

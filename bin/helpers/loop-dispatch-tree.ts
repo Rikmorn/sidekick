@@ -26,8 +26,9 @@ export interface LoopTree {
 const ORIGIN_HEAD = 'refs/remotes/origin/HEAD';
 const REMOTES = 'refs/remotes/';
 
-// git exits 1 from `symbolic-ref -q` on a detached HEAD, and from
-// `merge-base --is-ancestor` when the first commit is not an ancestor.
+// git exits 1 from `symbolic-ref -q` on a detached HEAD or a ref that is not
+// set, and from `merge-base --is-ancestor` when the first commit is not an
+// ancestor.
 const NO = 1;
 
 const failed = (what: string, folder: string, stderr: string): string =>
@@ -140,10 +141,17 @@ function originTip(
     ['symbolic-ref', '-q', ORIGIN_HEAD],
     tree.folder,
   );
-  if (ref.code !== 0) {
+  if (ref.code === NO) {
     return {
       issues: [
         `${ORIGIN_HEAD} is not set in ${repo}, so dispatch cannot tell origin's default branch: run git remote set-head origin --auto in ${repo}`,
+      ],
+    };
+  }
+  if (ref.code !== 0) {
+    return {
+      issues: [
+        failed(`git symbolic-ref ${ORIGIN_HEAD}`, tree.folder, ref.stderr),
       ],
     };
   }
@@ -160,10 +168,13 @@ function originTip(
   return { shown, tip };
 }
 
+// A checkout cut short leaves `index.lock` behind, so the fast-forward takes
+// the sync's own limit, which the caller sets for slow work.
 function fastForward(
   tree: LoopTree,
   head: string,
   { shown, tip }: { shown: string; tip: string },
+  timeoutMs: number,
 ): { baseline: string } | { issues: string[] } {
   if (head === tip) return { baseline: head };
   const relation = relationOf(tree, head, tip);
@@ -175,6 +186,7 @@ function fastForward(
     'git',
     ['merge', '--ff-only', '--quiet', tip],
     tree.folder,
+    { timeoutMs },
   );
   if (merged.code !== 0) {
     return {
@@ -191,20 +203,19 @@ function fastForward(
  * Fetches origin, then fast-forwards the loop's worktree to the branch
  * `refs/remotes/origin/HEAD` names, and returns the commit it then sits at. A
  * worktree that is ahead or has diverged refuses. The fetch and the
- * fast-forward are dispatch's only writes before its attempt's folder.
+ * fast-forward are dispatch's only writes before its attempt's folder, and
+ * each runs within `timeoutMs`.
  */
 export function syncLoopTree(
   tree: LoopTree,
   repo: string,
-  fetchTimeoutMs = 60_000,
+  timeoutMs: number,
 ): { baseline: string } | { issues: string[] } {
   const fetched = tree.runGit(
     'git',
     ['fetch', '--quiet', 'origin'],
     tree.folder,
-    {
-      timeoutMs: fetchTimeoutMs,
-    },
+    { timeoutMs },
   );
   if (fetched.code !== 0) {
     return {
@@ -217,5 +228,5 @@ export function syncLoopTree(
   if (head === undefined) {
     return { issues: [`${tree.folder}: HEAD names no commit`] };
   }
-  return fastForward(tree, head, origin);
+  return fastForward(tree, head, origin, timeoutMs);
 }

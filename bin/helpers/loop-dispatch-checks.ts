@@ -14,9 +14,9 @@ import { sessionOf } from './loop-start-prepare.js';
 import { type LoopState, readState, STATE_FILE } from './loop-state.js';
 import { loopsRoot } from './loop-store.js';
 import { type Attempt, capIssues, inFlight, readLedger } from './loop-units.js';
-import type { ProfileEnv } from './profile.js';
+import { loadForLaunch, type ProfileEnv } from './profile.js';
 import { isFolder, pluginNameOf } from './profile-role.js';
-import { loadProfile, type Profile, storeRoots } from './profile-store.js';
+import type { Profile } from './profile-store.js';
 import { sameFolder } from './sidekick-home.js';
 
 /** The loop a dispatch runs for, as its check and its launch's state give it. */
@@ -181,23 +181,20 @@ export function skillIssues(profile: Profile, skill: string): string[] {
 }
 
 /**
- * Whether the unit launch, which reads the profile store from the loop's
- * worktree, loads the profile folder the loop's check judged. A repo store
- * there would hide the user store's profile, and its plugins would run code
- * from origin's branch as the role's.
+ * Whether the unit launch loads the profile folder the loop's check judged.
+ * `penv` is the launch's own environment, so the lookup is the launch's. It
+ * reads the profile store from the loop's worktree, where a repo store
+ * would hide the user store's profile, and its plugins would run code from
+ * origin's branch as the role's.
  */
 export function launchProfileIssues(
-  penv: Pick<ProfileEnv, 'env' | 'home'>,
-  tree: string,
+  penv: ProfileEnv,
   profile: Profile,
 ): string[] {
-  const roots = storeRoots('profiles', penv.env, tree, penv.home, {
-    kind: 'inside',
-    top: tree,
-  });
-  const loaded = loadProfile(profile.name, roots);
-  if (!loaded.ok) return loaded.issues;
-  const { dir } = loaded.profile;
+  const lines: string[] = [];
+  const loaded = loadForLaunch(profile.name, penv, (line) => lines.push(line));
+  if (loaded === undefined) return lines;
+  const { dir } = loaded;
   return sameFolder(dir, profile.dir)
     ? []
     : [

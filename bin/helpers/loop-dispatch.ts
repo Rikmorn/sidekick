@@ -4,20 +4,16 @@
  * loop's model cannot stretch. It checks the environment, the loop, the record
  * under the loop's units lock, the skill, the issue, and the loop's worktree.
  * Then it fast-forwards that worktree, picks the worker's name, writes the
- * attempt's folder, and launches. The `dispatched` line lands once `claude`
- * reports a start. A refusal names every reason it finds; until a start is
- * recorded, the loop's folder ends as it began.
+ * attempt's folder, and launches (`loop-dispatch-launch.ts`). A refusal
+ * names every reason it finds; until a `dispatched` line counts the attempt,
+ * the loop's folder ends as it began.
  */
 
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as v from 'valibot';
 import type { LoopEnv } from './loop.js';
-import {
-  removeAttempt,
-  type Written,
-  writeAttempt,
-} from './loop-dispatch-attempt.js';
+import { writeAttempt } from './loop-dispatch-attempt.js';
 import {
   type DispatchLoop,
   envIssues,
@@ -26,14 +22,13 @@ import {
   loadLoop,
   skillIssues,
 } from './loop-dispatch-checks.js';
+import { launchAttempt, launchEnvOf } from './loop-dispatch-launch.js';
 import {
   checkLoopTree,
   type LoopTree,
   syncLoopTree,
 } from './loop-dispatch-tree.js';
 import { fetchUnitIssue, type UnitIssue } from './loop-issue.js';
-import { appendRecord } from './loop-record.js';
-import { untrustedLines } from './loop-start-act.js';
 import { sessionOf } from './loop-start-prepare.js';
 import { takeLock } from './loop-state.js';
 import {
@@ -41,15 +36,12 @@ import {
   deriveUnitId,
   UNITS_LOCK,
   unitIdIssues,
-  writeWorkerFile,
 } from './loop-units.js';
 import type { Runner } from './pm-data.js';
 import { parseFlags } from './profile.js';
-import type { ClaudeResult } from './profile-launch.js';
 import { isProfileName, PROFILE_NAME_RULE } from './profile-manifest.js';
-import type { WorkerEnv } from './worker.js';
 import { UnitBriefSchema, WorkerNameSchema } from './worker-brief.js';
-import { dispatchUnit, type Launched } from './worker-dispatch.js';
+import { unitLaunchEnv } from './worker-dispatch.js';
 import { workerNameIssues } from './worker-dispatch-checks.js';
 import { listJobs } from './worker-jobs.js';
 import { nativeFolder } from './worker-worktree.js';
@@ -65,10 +57,10 @@ export interface UnitDispatchOptions {
   draw?: () => string;
   /** How many names to draw before refusing. */
   draws?: number;
-  /** The limit on each git and gh call but the fetch. */
+  /** The limit on each git and gh call but the sync's two. */
   gitTimeoutMs?: number;
-  /** The limit on the fetch of origin. */
-  fetchTimeoutMs?: number;
+  /** The limit on the fetch of origin, and on the fast-forward of the loop's worktree. */
+  syncTimeoutMs?: number;
 }
 
 type Out = (line: string) => void;
@@ -79,7 +71,6 @@ type Io = { out: Out; err: Out };
 const NAME_PREFIX_MAX = 33;
 const HEX_BYTES = 3;
 const ISSUE_NUMBER = /^[1-9][0-9]*$/;
-// The exit of a refusal, and of a launch that refused without a code of its own.
 const REFUSED = 1;
 
 const usage = (err: Out): number => {
@@ -93,7 +84,7 @@ const refuse = (err: Out, issues: string[]): number => {
 };
 
 /** One dispatch's arguments, checked. */
-interface Call {
+export interface Call {
   name: string;
   issue: number;
   skill: string;
@@ -141,7 +132,7 @@ function parseCall(rest: string[]): Call | { issues: string[] } | undefined {
 }
 
 /** One dispatch past its first checks: the call, the loop, and what it runs with. */
-interface Dispatch {
+export interface Dispatch {
   call: Call;
   loop: DispatchLoop;
   lenv: LoopEnv;
@@ -169,7 +160,7 @@ export function loopDispatch(
     draw = () => randomBytes(HEX_BYTES).toString('hex'),
     draws = 5,
     gitTimeoutMs = 10_000,
-    fetchTimeoutMs = 60_000,
+    syncTimeoutMs = 60_000,
   }: UnitDispatchOptions = {},
 ): number {
   const call = parseCall(rest);
@@ -191,7 +182,7 @@ export function loopDispatch(
     UNITS_LOCK,
   );
   if (lock.kind === 'busy') return refuse(err, [lock.issue]);
-  const opts = { draw, draws, gitTimeoutMs, fetchTimeoutMs };
+  const opts = { draw, draws, gitTimeoutMs, syncTimeoutMs };
   try {
     return underLock({ call, loop, lenv, runGit, opts }, { out, err });
   } finally {
@@ -254,13 +245,12 @@ function place(
   d: Dispatch,
   tree: LoopTree,
 ): { baseline: string } | { issues: string[] } {
-  const synced = syncLoopTree(
-    tree,
-    d.loop.manifest.repo,
-    d.opts.fetchTimeoutMs,
-  );
+  const synced = syncLoopTree(tree, d.loop.manifest.repo, d.opts.syncTimeoutMs);
   if ('issues' in synced) return synced;
-  const shadowed = launchProfileIssues(d.lenv, tree.folder, d.loop.profile);
+  const shadowed = launchProfileIssues(
+    unitLaunchEnv(launchEnvOf(d.lenv, tree), tree.folder),
+    d.loop.profile,
+  );
   return shadowed.length > 0 ? { issues: shadowed } : synced;
 }
 
@@ -301,133 +291,4 @@ function drawName(d: Dispatch): { worker: string } | { issues: string[] } {
       `dispatch drew ${d.opts.draws} worker names and its name checks refused each; the reasons above are the last one's`,
     ],
   };
-}
-
-/** What the launch saw: whether the start was recorded, and `claude --bg`'s own result. */
-interface Seen {
-  recorded: boolean;
-  launch: ClaudeResult | undefined;
-}
-
-// The environment the unit launch runs with; it keeps `claude --bg`'s result
-// for the lines after the launch.
-const workerEnvOf = (lenv: LoopEnv, seen: Seen): WorkerEnv => ({
-  env: lenv.env,
-  cwd: lenv.cwd,
-  home: lenv.home,
-  workTree: lenv.workTree,
-  tmpdir: lenv.tmpdir,
-  runClaude: (args, opts) => {
-    const result = lenv.runClaude(args, opts);
-    if (args.includes('--bg')) seen.launch = result;
-    return result;
-  },
-  runGit: lenv.runGit,
-  write: lenv.write,
-  launchTimeoutMs: lenv.launchTimeoutMs,
-  sleep: lenv.sleep,
-  isAlive: lenv.isAlive,
-});
-
-/** The worker's name, the loop's worktree it launches from, and what dispatch wrote for it. */
-interface Attempt {
-  worker: string;
-  tree: LoopTree;
-  written: Written;
-}
-
-// Once `claude` reports a start: the job into `worker.json`, then the
-// `dispatched` line. A throw stops the worker as a stray.
-function recordStart(d: Dispatch, a: Attempt, job: string | null): void {
-  const at = d.lenv.now().toISOString();
-  const issues = writeWorkerFile(a.written.dir, {
-    v: 1,
-    worker: a.worker,
-    job,
-    issue: d.call.issue,
-    dispatchedAt: at,
-  });
-  if (issues.length > 0) throw new Error(issues.join('; '));
-  appendRecord(d.loop.dir, {
-    v: 1,
-    at,
-    kind: 'dispatched',
-    unit: d.call.unit,
-    worker: a.worker,
-    issue: d.call.issue,
-    ...(d.loop.state.record ? { record: true as const } : {}),
-  });
-}
-
-const againCommand = (call: Call): string =>
-  `sidekick loop dispatch ${call.name} --issue ${call.issue} --skill ${call.skill}`;
-
-const discardCommand = (call: Call): string =>
-  `sidekick loop discard ${call.name} --unit ${call.unit} --reason <text>`;
-
-// The unit launch. A throw before the start is recorded removes the
-// attempt's folder before it passes on.
-function launch(d: Dispatch, a: Attempt, seen: Seen, io: Io): Launched {
-  try {
-    return dispatchUnit(
-      {
-        briefPath: a.written.briefPath,
-        profile: d.loop.manifest.profile,
-        attemptDir: a.written.dir,
-        hosts: d.loop.manifest.hosts,
-        launchFolder: a.tree.folder,
-        onStart: (job) => {
-          recordStart(d, a, job);
-          seen.recorded = true;
-        },
-      },
-      workerEnvOf(d.lenv, seen),
-      io.out,
-      io.err,
-    );
-  } catch (e) {
-    if (!seen.recorded) removeAttempt(a.written);
-    throw e;
-  }
-}
-
-// What to do about a launch whose start no line records, from what claude printed.
-function unrecordedLines(
-  d: Dispatch,
-  a: Attempt,
-  result: ClaudeResult | undefined,
-): string[] {
-  if (result === undefined) return [];
-  return [
-    ...untrustedLines(a.tree.folder, againCommand(d.call), result),
-    ...(result.timedOut
-      ? [
-          `claude --bg did not return in time, so dispatch cannot tell whether worker ${a.worker} started, and removed its attempt's folder: find it with claude agents --json --all, then stop it with claude stop <id>`,
-        ]
-      : []),
-  ];
-}
-
-function launchAttempt(d: Dispatch, a: Attempt, io: Io): number {
-  const seen: Seen = { recorded: false, launch: undefined };
-  const launched = launch(d, a, seen, io);
-  // A start no line records leaves nothing in the loop's folder.
-  if (!seen.recorded) {
-    const removed = removeAttempt(a.written);
-    refuse(io.err, [...removed, ...unrecordedLines(d, a, seen.launch)]);
-    return launched.code === 0 ? REFUSED : launched.code;
-  }
-  if (launched.code !== 0) {
-    return refuse(io.err, [
-      `the attempt stays in flight, since its dispatched line is written: give up on it with ${discardCommand(d.call)}`,
-    ]);
-  }
-  const { unit, name } = d.call;
-  const job = launched.job ?? '(none printed)';
-  io.out(`unit ${unit} · worker ${a.worker} · job ${job}`);
-  io.out(
-    `next: once the worker messages, read its report with sidekick loop report ${name} --unit ${unit}`,
-  );
-  io.out(`to give up on it: ${discardCommand(d.call)}`);
-  return 0;
 }
