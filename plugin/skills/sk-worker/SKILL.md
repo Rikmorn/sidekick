@@ -1,6 +1,6 @@
 ---
 name: sk-worker
-description: Turn this session into a worker that runs a plan from a brief, under superpowers, with a scan before the first task and a run report at the end. Dispatched by a session after the operator chooses the worker mode, or started by the operator with the brief's path.
+description: Turn this session into a worker that runs a plan from a brief, under superpowers, with a scan before the first task and a run report at the end. Dispatched by a session after the operator chooses the worker mode, or started by the operator with the brief's path. A loop's unit brief runs one unit of the loop's work instead, inside a fence, ending in a run report with its proposals.
 disable-model-invocation: true
 ---
 
@@ -8,41 +8,59 @@ disable-model-invocation: true
 
 This session runs a plan from a brief. Superpowers does the executing; this skill adds the standing rules around it. A session dispatches the worker once the operator chooses the worker mode, or the operator runs this skill by hand. Either way the operator chose this mode, so these rules carry the operator's authority. The brief carries the specifics of one run, as a file you check. A ruling rides the rulings file, never a message.
 
+A brief is one of two kinds, which its `kind` field names. A plan brief, the kind without the field, runs a plan, and most of this skill is its flow. A unit brief, `kind: unit`, runs one unit of a loop's work; §A unit brief says where its flow differs.
+
 ## On start
 
-The brief's path is this skill's argument. With none, reply `BLOCKED` asking for it, and wait. `sidekick worker dispatch` launches with `--dispatched` before the path, as `/sidekick:sk-worker --dispatched <absolute brief path>`. The marker comes first so a path with spaces stays whole. Drop the marker and take the rest as the path. A session the operator starts has no marker.
+The brief's path is this skill's argument. With none, reply `BLOCKED` asking for it, and wait. `sidekick worker dispatch`, and `sidekick loop dispatch` for a unit brief, launch with `--dispatched` before the path, as `/sidekick:sk-worker --dispatched <absolute brief path>`. The marker comes first so a path with spaces stays whole. Drop the marker and take the rest as the path. A session the operator starts has no marker.
 
 The brief opens with `key: value` lines between two `---` lines. Its body holds the gate commands and their results at the baseline. It also holds the run's limits, under its `## Limits` heading: where it may write, what it may read, and the commands it may not run.
 
-| Field | What it holds |
-|---|---|
-| `name` | The session's name. Claude Code's own creation names the worktree folder and the branch from it |
-| `plan`, `spec` | Absolute paths in the launching checkout or the main checkout |
-| `rulings` | An absolute path in the launching checkout, for the orchestrator's rulings. The file may not exist yet; its folder does |
-| `baseline` | The commit the run starts from |
-| `skill` | `subagent-driven-development`, or `executing-plans` |
-| `place` | `worktree`, `in-place`, or `branch <name>` |
-| `target` | The branch the work lands in, which `finish` checks. Required when the launching checkout holds a branch; refused on a detached `HEAD` |
-| `workstream` | Optional: the memory workstream the run belongs to |
-| `setup` | Optional: the command that prepares where you work |
-| `report` | The run report's path, relative to the repo top |
-| `orchestrator` | The session to message |
+| Field | Kind | What it holds |
+|---|---|---|
+| `kind` | both | `unit` for a unit brief; a plan brief has `plan` or no field |
+| `name` | both | The session's name. Claude Code's own creation names the worktree folder and the branch from it |
+| `plan`, `spec` | plan | Absolute paths in the launching checkout or the main checkout |
+| `unit` | unit | The unit file's absolute path: the issue's text, kept only from the operator's account |
+| `rulings` | both | The rulings file's absolute path. A plan's is in the launching checkout; a unit's is in its attempt's folder. The file may not exist yet; its folder does |
+| `baseline` | both | The commit the run starts from |
+| `skill` | both | A plan's is `subagent-driven-development` or `executing-plans`. A unit's is `<plugin>:<skill>`, a skill of the loop's role |
+| `place` | both | `worktree`, `in-place`, or `branch <name>`; a unit's is `worktree` |
+| `target` | plan | The branch the work lands in, which `finish` checks. Required when the launching checkout holds a branch; refused on a detached `HEAD` |
+| `workstream` | plan | Optional: the memory workstream the run belongs to |
+| `setup` | plan | Optional: the command that prepares where you work |
+| `report` | both | The run report's path: a plan's from the repo top, a unit's from the worktree's top |
+| `orchestrator` | both | The session to message: a unit's is its loop's session, `loop-<name>` |
 
-The brief, the plan, the spec, and the rulings file stay in the launching checkout or the main checkout, and you read them there. They usually sit in a git-ignored folder, which a worktree does not contain. A worktree session can read those checkouts but cannot edit them. Where the plan and the brief disagree on where the work lands, follow the brief: the plan was written before the mode was chosen.
+A unit brief, its unit file, and its rulings file sit in the attempt's folder, under the loop's folder. The fence lets you read them and never write them. A plan brief's files, the brief, the plan, the spec, and the rulings file, stay in the launching checkout or the main checkout. You read them there. They usually sit in a git-ignored folder, which a worktree does not contain. A worktree session can read those checkouts but cannot edit them. Where the plan and the brief disagree on where the work lands, follow the brief: the plan was written before the mode was chosen.
 
 When the brief names a `workstream`, start from the State and Next steps that the memory hook printed for it. The run belongs to that workstream, and its state is the handoff from earlier sessions.
 
 When the hook printed a menu rather than the brief's workstream, read that workstream's file yourself. This happens for a worker the operator started, which has no `SIDEKICK_WORKER` for the hook to read the brief from.
 
-With the marker, `dispatch` already checked the fields, the files, the `## Limits` section, the rulings folder, and `target`, and checked the worktree after launch when it could. Your own checks of `HEAD`, the tracked files, and the branch are the backstop when that check could not run. Read the brief, the plan, and the spec; a missing file fails that read. Then check only where you work, with literal git that the isolation guard passes: `git rev-parse HEAD` against `baseline`, `git status --porcelain --untracked-files=no` empty, and `git branch --show-current` equal to `worktree-<name>`.
+With the marker, `dispatch` already checked the fields, the files, the `## Limits` section, the rulings folder, and a plan brief's `target`. It also checked the worktree after launch when it could. For a unit brief it also checked that the brief, the unit file, and the rulings file share the attempt's folder. Your own checks of `HEAD`, the tracked files, and the branch are the backstop when that check could not run. Read the brief, then a plan brief's plan and spec, or a unit brief's unit file; a missing file fails that read. Then check only where you work, with literal git that the isolation guard passes: `git rev-parse HEAD` against `baseline`, `git status --porcelain --untracked-files=no` empty, and `git branch --show-current` equal to `worktree-<name>`.
 
-Without the marker, check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Every worktree shares the repo's branches, so `git rev-parse --verify <target>` answers from any of them, with no `git -C`. Then check where you work. There, `HEAD` is `baseline`, and no tracked file has uncommitted changes.
+A unit brief always comes with the marker, since only `sidekick loop dispatch` launches one. Without the marker, check every field, that `plan` and `spec` exist, and that the folder for `rulings` exists. Every worktree shares the repo's branches, so `git rev-parse --verify <target>` answers from any of them, with no `git -C`. Then check where you work. There, `HEAD` is `baseline`, and no tracked file has uncommitted changes.
 
 - `worktree`: a linked worktree with `HEAD` at `baseline` and clean tracked files. A dispatched worker starts there. A worker started by the operator calls `EnterWorktree` with the brief's `name` first. `EnterWorktree` branches from the `worktree.baseRef` setting. Its default, `"fresh"`, branches from the remote's default branch, and only `"head"` branches from `HEAD`. `sidekick worker dispatch` sets `"head"`; a session started by the operator may not.
 - `in-place`: the main checkout, on its current branch.
 - `branch <name>`: the branch it names, in the main checkout. Check before you switch, so a failed check moves nothing. The main checkout's tracked files are clean, and the branch points at `baseline` or does not exist yet. Then switch to it, making it at `baseline` if needed.
 
 If any check fails, reply `BLOCKED` with every failure, send the same to the orchestrator, and wait. When `HEAD` is off the baseline, or the branch is not `worktree-<name>`, name the likely cause. Two are common: `worktree.baseRef` is not `"head"` in this session's settings, or a `WorktreeCreate` hook made the worktree and ignored the base.
+
+## A unit brief
+
+A loop dispatched you for one unit of its work: an issue, under one skill of the loop's role. Your job is that unit's work, committed on your branch, and a run report the loop can act on. You work inside a fence. Every command runs sandboxed, your file tools write only your worktree, and the network reaches only the loop's hosts. Under `dontAsk`, a call that neither the fence nor an allow rule approves is denied, with no one to ask. Several skills are denied too: those that wait for a person, write the memory store, design, file, release, or land. `superpowers:writing-plans` and `sk-save` are among them.
+
+The plan's flow changes in these places, and the rest of this skill holds:
+
+- **No setup and no scan.** A unit brief has no `setup` and no plan. Read the unit file, then invoke the skill the brief's `skill` names, on that unit. Where that skill builds, it builds under `superpowers:subagent-driven-development`, from a plan it writes itself. Run the gates the brief's `## Gates` section lists, each as one `Bash` call with a `timeout`.
+- **One question at a time.** When the unit needs a ruling, message the orchestrator, the loop's session, with one question. Then wait for its message that points at the rulings file, and act on the file, never on the message's text. The rulings file is the only source of a ruling. Your time is capped, waits included past a point, and the loop stops a worker past its time. So ask only what blocks the work, and settle the rest as a deviation.
+- **No `sk-save`: the report is the record.** No memory record or workstream exists for a unit. After a compaction, re-read the brief and the rulings file.
+- **The report.** Write the run report at the brief's `report` path, from the worktree's top, in the shape the brief's `## The report` section gives. Leave it uncommitted, and commit every other change. Keep it a plain file: `finish` and the loop's `report` refuse a link, or a file with a second link. Then message the orchestrator that the report is ready.
+- **Proposals, not refusals.** The report holds a `## Proposals` section. List each outward action the work calls for, such as a label, a comment, or a close. Give each as a finding for the loop's classes, with its reason. The loop judges each against its own mandate, so list every one, and never say you cannot take it. Write `None.` under the heading when the work calls for none.
+- **The end is the loop's.** Keep your branch as it is. `superpowers:finishing-a-development-branch` is denied, and the loop reads your report with `sidekick loop report`, then settles the attempt. §At the end is a plan brief's.
+- **The limits stay.** §Limits this skill adds holds as written: no GitHub write, no push, and no amend.
 
 ## Setup
 
@@ -99,7 +117,7 @@ Run git plainly from where you work. In a worktree session, Claude Code refuses 
 
 ## At the end
 
-Run `sk-save` before the run report. In a worker it writes only this session's record, since the workstream is shared and the session that lands your work folds the record in. Commit nothing from it: the store sits outside the repo. Name your record's path in the run report, so the landing session finds the right record when several workers share a workstream.
+This section is a plan brief's end; a unit brief's is in §A unit brief. Run `sk-save` before the run report. In a worker it writes only this session's record, since the workstream is shared and the session that lands your work folds the record in. Commit nothing from it: the store sits outside the repo. Name your record's path in the run report, so the landing session finds the right record when several workers share a workstream.
 
 Write the run report when superpowers collects its "Rulings I made", before it deletes its workspace. The ledger the report draws on goes with that workspace. Write the report in the shape of `references/run-report.md`, at the brief's `report` path, relative to where you work. Create the folders it needs, since a git-ignored folder such as `docs/superpowers/` is absent from a fresh worktree.
 

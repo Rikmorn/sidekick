@@ -2,6 +2,8 @@
 
 `sidekick worker` starts a plan's worker and clears it away. `dispatch` checks a brief, then starts `sk-worker` as a background session in a worktree of its own, with pushes blocked. `finish` runs once the worker's branch is integrated. It saves the run report to the brief's `report` path, then removes the worker's session, desk record, worktree, and branch. `sk-execute` §Hand off to a worker runs both, after the operator chooses the worker mode. `sk-worker` holds the worker's own rules.
 
+A loop's unit worker runs from a unit brief instead. `sidekick loop dispatch` launches it inside a fence, and `sidekick loop discard` and `reap` clear it through `finish`, as "A unit brief" says. #367 in the `Rikmorn/sidekick` repo built it.
+
 Issues #206 and #218 in the `Rikmorn/sidekick` repo decided the shape. Most measurements behind these claims are in `docs/research/control-centre/2026-10-14-dispatched-worker-probes.md` in that repo, called "the dispatch probes" here. They ran on Claude Code 2.1.299. The report beside them, `2026-10-14-dispatched-worker-bench.md`, ran the verbs end to end on 2.1.300. It is called "the dispatch bench" here. The report `2026-10-15-desk-probes.md` in the same folder is called "the desk probes" here. It ran on 2.1.300 and grades each answer as measured or read. One answer cited here is a read.
 
 ## The verbs
@@ -12,7 +14,7 @@ sidekick worker dispatch --check --permission-mode <mode> [--profile <name>] [--
 sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | --discard] [--worktree <path>]
 ```
 
-- Both run from any checkout of the repo: the main checkout or a linked worktree, from its top or any folder under it. `dispatch` refuses inside a worker, where `SIDEKICK_WORKER` is set, naming Rikmorn/sidekick#255. `finish` runs its `claude` calls at the main checkout.
+- Both run from any checkout of the repo: the main checkout or a linked worktree, from its top or any folder under it. `dispatch` refuses inside a worker, where `SIDEKICK_WORKER` is set and not empty, naming Rikmorn/sidekick#255. An empty value reads as absent, as every reader of it holds, so a loop's compiled settings set it empty. `finish` runs its `claude` calls at the main checkout.
 - A relative brief path resolves against the current folder. The worker receives the absolute path.
 - `--permission-mode` is required. It takes the values `claude --permission-mode` accepts: `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`, or `manual`. "The permission mode" says which one to pass.
 - `--profile` names the profile the worker launches with, and defaults to `worker`. "A worker profile" suggests one.
@@ -29,12 +31,13 @@ sidekick worker finish (<brief> | --name <name>) [--no-report] [--into <rev> | -
 
 ## The brief
 
-The brief is a Markdown file in the launching checkout, named `<plan>-brief.md`. The orchestrator writes it, `dispatch` checks it, and a dispatched worker relies on those checks and checks only its own worktree, as `sk-worker` §On start describes. A worker the operator starts checks the brief itself. It opens with a frontmatter between two `---` lines. The body follows, carrying the gate commands and their results at the baseline, and the run's limits. Those go under a `## Limits` heading: where the worker may write, what it may read, and the commands it may not run. `dispatch` requires that section, and the subagent start hook hands it to every subagent but `web-fetch`.
+A brief is one of two kinds, which its `kind` field names. A plan brief runs a plan, and a unit brief runs one unit of a loop's work, as "A unit brief" says. A plan brief is a Markdown file in the launching checkout, named `<plan>-brief.md`. The orchestrator writes it, `dispatch` checks it, and a dispatched worker relies on those checks and checks only its own worktree, as `sk-worker` §On start describes. A worker the operator starts checks the brief itself. It opens with a frontmatter between two `---` lines. The body follows, carrying the gate commands and their results at the baseline, and the run's limits. Those go under a `## Limits` heading: where the worker may write, what it may read, and the commands it may not run. `dispatch` requires that section, and the subagent start hook hands it to every subagent but `web-fetch`.
 
-The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI parses it itself, since it ships no YAML parser. A key is lower-case letters, and the value is the rest of the line after the first `: `, trimmed. Blank lines are skipped, and Windows line endings and trailing spaces parse the same. Any other line, a repeated key, or an unknown key refuses the brief.
+The frontmatter is flat `key: value` lines, a strict subset of YAML. The CLI parses it itself, since it ships no YAML parser. A key is lower-case letters, and the value is the rest of the line after the first `: `, trimmed. Blank lines are skipped, and Windows line endings and trailing spaces parse the same. Any other line, a repeated key, or an unknown key refuses the brief. A plan brief's fields:
 
 | Field | Required | Form |
 |---|---|---|
+| `kind` | no | `plan`. A brief without `kind` is a plan brief, so a brief written before units parses unchanged |
 | `name` | yes | `^[a-z0-9][a-z0-9-]{0,39}$`. The session name. Claude Code's own creation names the worktree folder and the branch from it, as `.claude/worktrees/<name>` and `worktree-<name>` |
 | `plan`, `spec` | yes | Absolute paths to existing files inside the launching checkout or the main checkout |
 | `rulings` | yes | An absolute path inside the launching checkout. The file may not exist yet; its folder must |
@@ -57,6 +60,30 @@ Ask each repo for short worktree guidance in a file every session loads, such as
 
 `sk-worktree` reads that guidance first. Ask also that the repo's linters, builds, and container contexts ignore `.claude/worktrees/` without skipping the files inside a worktree.
 
+### A unit brief
+
+`sidekick loop dispatch` writes a unit brief, `kind: unit`, for one unit of a loop's work, and it alone launches one. `sidekick worker dispatch` refuses a unit brief and names `sidekick loop dispatch`, since the fence needs the loop's hosts. `references/loops.md` §`sidekick loop dispatch` says what that verb checks first.
+
+| Field | Form |
+|---|---|
+| `kind` | `unit` |
+| `name` | The worker's name, under the plan brief's rule |
+| `unit` | The unit file's absolute path. The file must exist |
+| `rulings` | The rulings file's absolute path. The file may not exist yet; its folder must |
+| `baseline` | The commit the loop's worktree sits at after `dispatch`'s fast-forward, as 7 to 40 lower-case hex characters |
+| `skill` | `<plugin>:<skill>`, a skill of the role's plugin. Each part is lower-case letters, digits, and hyphens, starting with a letter or digit, at most 48 characters |
+| `place` | `worktree` |
+| `report` | The run report's path from the worktree's top, with no `..` segment. `dispatch` writes `unit-report.md` |
+| `orchestrator` | The loop's session, `loop-<name>` |
+
+Every field is required. A unit brief has no `plan`, `spec`, `target`, `workstream`, or `setup`, and each refuses as an unknown key.
+
+- **Its bounds.** The brief, the unit file, and the rulings file sit in one folder, the attempt's folder `<loop folder>/units/<unit id>/<name>/`. Each is judged by its own real path, so a link to a file elsewhere refuses. The plan brief's checkout rule and its `target` check do not apply. `dispatch`'s other checks hold, run from the loop's worktree: the `## Limits` section, `baseline` against its `HEAD`, clean tracked files, the free name, and the `pushurl` check.
+- **Its launch.** `dispatch` launches the worker from the loop's worktree, in mode `dontAsk`, with the push block on and no `--plugin-dir` of its own. It composes the unit overlay in place of the plan overlay, and adds the attempt's folder as one more `--add-dir`. It keeps only the profile's fence-safe keys, and loads no `project` or `local` settings layer. `references/loops.md` §The workers' fence gives each key. Once the worktree check passes, `dispatch` prints `worker <name> dispatched · permission mode dontAsk · pushes blocked`, and `sidekick loop dispatch` prints the rest.
+- **Steering and stopping.** The loop's verbs steer, wake, read, and clear a unit worker: `answer`, `wake`, `report`, `discard`, and `reap`. `references/loops.md` §Units says what each does.
+- **`finish` and a unit brief.** `sidekick loop discard` and `reap` run `finish`'s discard with the unit brief. `finish` saves a unit's report to the attempt's folder as `report.md`, not to a checkout, so the refusal for a brief in no checkout skips it. Its other steps hold as for a plan brief.
+- **The report guard.** A unit's report must be a plain file inside its folder. `finish` and `sidekick loop report` refuse one that is a symbolic link, is not a regular file, or lies outside its folder by real path. They also refuse one with more than one link, since a hard link sits inside the worktree yet holds a file from elsewhere. `sidekick loop report` also caps the bytes it reads, at 100,000. Each check guards a file the worker wrote, which sidekick reads outside the fence.
+
 ## `dispatch`
 
 ### What it checks
@@ -64,6 +91,7 @@ Ask each repo for short worktree guidance in a file every session loads, such as
 `dispatch` refuses with every reason it finds, and exits 1. A brief that does not parse stops the checks there. Otherwise every one of these must hold:
 
 - It runs outside a worker, as "The verbs" says.
+- The brief is a plan brief. A unit brief refuses and names `sidekick loop dispatch`, as "A unit brief" says.
 - `plan` and `spec` exist, and the folder of `rulings` exists. The brief and the rulings file's folder lie in the launching checkout. The plan and the spec lie in the launching checkout or the main checkout. Each is judged by the checkout git says holds it, not by its path prefix.
 - `place` is `worktree`.
 - The brief has a `## Limits` section with something under it. A `### Limits` heading, or a longer one such as `## Limits that bind the run`, does not count.
@@ -163,7 +191,7 @@ Once the checks pass, `dispatch` acts in this order:
 - `n` is the profile's own `settings.env.GIT_CONFIG_COUNT`, or 0 when it sets none. So the block's entry follows the profile's own entries. `--allow-push` leaves out the three `GIT_CONFIG_*` keys and the deny rule.
 - The `allow` rules let the worker read the brief, the plan, the spec, and the rulings file with no prompt. Each has a rule for its absolute path, and a second for its physical path when that differs. The rule `Skill(sidekick:sk-save)` lets the worker run `sk-save` with no prompt, at its end and when the context monitor asks. It is in `allow` with or without `--allow-push`. No other allow rule exists.
 - `worktree.baseRef: "head"` branches the worktree from the launching checkout's `HEAD`. The default, `"fresh"`, would branch from the remote's default branch.
-- `SIDEKICK_WORKER` marks the session as a worker, for the mods' role and for the context monitor. At the critical warning, the context monitor then tells it to carry on rather than stop to tell the user, since no one watches it. It also says to keep superpowers' ledger current and to re-read the brief after a compaction. The variable also tells the subagent start hook which brief to read.
+- `SIDEKICK_WORKER` marks the session as a worker, for the mods' role and for the context monitor. At the critical warning, the context monitor then tells it to carry on rather than stop to tell the user, since no one watches it. It also says to keep superpowers' ledger current and to re-read the brief after a compaction. A unit worker's warning asks instead for its run report now, and to re-read the rulings file too, with no `sk-save`. The variable also tells the subagent start hook which brief to read.
 - `SIDEKICK_MAIN` names the worker's main: the dispatching session's name as `claude agents --json --all` lists it, or its session id's first 8 characters without one. A worker that dispatches passes its own main on. `dispatch` adds the key only when it runs inside a session. It spawns `claude` without either marker in its environment, so the overlay is their only way in. The worker's identity row names the main from it, as `docs/reference/USAGE.md` §Mains and workers in the `Rikmorn/sidekick` repo says.
 - `DISABLE_AUTOUPDATER` keeps the worker from updating Claude Code or any plugin. Claude Code shows an update's notice only in the session that ran it, and nobody watches a worker. So updates happen in sessions the operator starts, and `references/versions.md` says how to lock a version when one goes wrong.
 
@@ -195,7 +223,7 @@ Pass the orchestrating session's own mode. A message from a session in another p
 
 ## `finish`
 
-`finish` reads the brief's `name`, `report`, and `target`, or takes the name from `--name`. It finds the worker's worktree and branch as "How `finish` finds the worktree" says. It removes the worker's session, desk record, worktree, and branch, and, unless `--discard`, only once the work has landed. It also requires the work to be committed and reported. Every branch it deletes stays in a backup ref, as "The backup refs" says. `finish` needs git 2.40 or later for its landed check, which passes git's `--attr-source` option.
+`finish` reads the brief's `name`, `report`, and `target`, or takes the name from `--name`. It finds the worker's worktree and branch as "How `finish` finds the worktree" says. It removes the worker's session, desk record, worktree, and branch, and, unless `--discard`, only once the work has landed. It also requires the work to be committed and reported. Every branch it deletes stays in a backup ref, as "The backup refs" says. `finish` needs git 2.40 or later for its landed check, which passes git's `--attr-source` option. A unit brief names no `target`, and its report goes to its attempt's folder, as "A unit brief" says. Every git call `finish` makes into the worktree runs hardened, as "Hardened git" says.
 
 ### How `finish` finds the worktree
 
@@ -221,7 +249,8 @@ A `--worktree <path>` that matches nothing refuses in both modes. The refusal li
 - **Landed.** The target is `--into <rev>`, else the brief's `target`, else the `HEAD` of the brief's checkout, detached or not. `finish` prints which one it used, and why, as soon as the target resolves, before it walks the history. Any refusal then follows that line. `finish` accepts the first of three checks that passes. The branch's head is an ancestor of the target. Else a simulated merge of the head into the target's tip adds nothing. Else the same merge adds nothing against a commit in the target's history since the merge base. Only commits that touched a file the branch changed count, newest first, up to 200. So a rebase or squash landing counts, even after the target edited near the landed lines. The simulated merge reads no in-tree attributes. A landing that changed the worker's content refuses, as does a walk that reaches its cap. Nothing is lost: the worktree stays. The refusal names `sidekick worker finish <brief> --discard`, the operator's call. It names `claude rm <id>` instead when the branch does not exist, since `--discard` needs the branch.
 - **Clean.** `git status` in the worktree lists nothing but the report, untracked files included. `git status` hides flagged files, so `finish` reads them apart. The worktree holds no skip-worktree file with edits, and no assume-unchanged file on disk, since nothing can tell whether one holds edits. A missing flagged file is clean, since the commit holds its content. It also holds no ignored file that the main checkout lacks or holds with other contents, outside `node_modules`, `.DS_Store` files, and the folders in `<common git dir>/sidekick/disposable`. The report is exempt there too, and takes no place among the 20. The refusal names up to 20 such files, then `and at least 1 more` when the scan stopped there, as `sidekick worktree list` words it. It also names that list's path. Each kind of flagged file refuses on a line of its own, since `git add` alone refuses a skip-worktree file and stages nothing for an assume-unchanged one. For a skip-worktree file, clear the flag with `git update-index --no-skip-worktree -- <file>`, then commit the edit, or discard it with `git restore -- <file>`, and run `finish` again. For an assume-unchanged file, clear it with `--no-assume-unchanged`, then run `finish` again.
 - **Reported.** The report exists at `<worktree>/<report>`, unless `--no-report`.
-- **No other report.** No different file sits at `<the brief's checkout>/<report>`. An identical one is fine, so this check lets a re-run through.
+- **No other report.** No different file sits at `<the brief's checkout>/<report>`, or for a unit brief at `<attempt folder>/report.md`. An identical one is fine, so this check lets a re-run through.
+- **A plain report, for a unit brief.** The report passes the guard "A unit brief" names.
 
 With `--discard`, the landed check is skipped on the operator's word. The job, the branch, the on-branch check, the clean check, and the report all still hold, and so does the backup. In that mode, the off-branch and missing-branch refusals name `claude rm <id>` as the hand route. The uncommitted-work refusal does not name `claude rm <id>`: it says to commit the work so that the backup ref keeps it, or remove it, then run `finish` again.
 
@@ -229,14 +258,14 @@ With `--discard`, the landed check is skipped on the operator's word. The job, t
 
 The steps run in order, and the first that fails stops the rest. In landed mode the line `target: <name> (<why>)` comes first, printed during the Landed check in "What it checks". The steps follow it with the landing line, `<branch> landed in <name> at <short sha>`. In discard mode `finish` prints `<branch> is discarded on your word`. It then prints what became of the report, then each removal: the session, the worktree, and the branch. On a re-run that restores deleted files, a `restored N deleted files` line comes between the report line and the session line. Its last line names the backup ref, as "The backup refs" says.
 
-1. It copies the report to `<the brief's checkout>/<report>`, creating its folders. That puts it beside the plan when the plan sits in that checkout too.
+1. It copies the report to `<the brief's checkout>/<report>`, creating its folders. That puts it beside the plan when the plan sits in that checkout too. A unit's report goes to `<attempt folder>/report.md`.
 2. It stops the job with `claude stop <id>`. A worker whose turn has ended lists as `done` while its process idles and holds the worktree's lock (the dispatch bench). So `finish` skips the stop only when the listing says `stopped` or `done` and the process the lock names has exited. A failing `stop` refuses before anything is removed. `claude stop` keeps a 30-second limit.
 3. It waits up to 15 seconds for the process that the worktree's lock names to exit. `claude rm` keeps a worktree whose lock names a running process (the dispatch probes, "Stopping and cleanup").
-4. It checks the worktree again: its branch, that branch's head, its status, and the report. The worker may have run on after the first check, so a change there means nothing is removed.
+4. It checks the worktree again: its link to the repo, as "Hardened git" says, then its branch, that branch's head, its status, and the report. The worker may have run on after the first check, so a change there means nothing is removed.
 5. It writes the backup ref for the verified head, create-only, and in a partial removal restores the deleted files from the index.
 6. It runs `claude rm <id>` with no time limit, since any limit can cut its delete short. Output that starts `removed` succeeds. For commits that no remote holds, `claude rm` keeps the worktree and prints a `--discard-unpushed <sha>@<worktree id>` line. `finish` runs that line only when `<sha>` equals the head it verified. Any other answer refuses, printing `claude rm`'s text.
 7. It deletes the worker's record, as "The record" says. A missing record is fine.
-8. It checks with `git worktree list` whether the worktree is gone. When git still lists it, `finish` reads the lock. It unlocks a Claude Code session's lock whose process has exited, or removes a worktree with no lock, with `git worktree remove`. Before it, `finish` deletes the worktree's copy of the run report when the saved copy holds the same bytes. The saved copy may be this run's or an earlier run's. That one file only, since it would otherwise block the removal. Then it reads the worktree's files again, ignored and flagged ones included, as `sidekick worktree remove` does. Any file the removal would lose refuses, and the refusal names it. It reads the lock once more after that check, since a session may lock the worktree meanwhile, and unlocks only from that reading. Git deletes an ignored file without a word, and passes a flagged file whatever it holds, so this check guards both. `finish` never passes `--force`, so git still refuses a worktree holding a change that git status lists, made after that check. A lock whose process runs keeps the refusal, as does any lock that is not a Claude Code session's, one naming a pid included. The record is forgotten by then, so each refusal before the worktree is gone ends with `sidekick worktree remove <path>`, to run once what stopped the removal is cleared. `remove` deletes only the worktree's own branch: `worktree-<folder>`, or a branch `sidekick worktree move` marked for that worktree. For a worker on any other branch, such as a worktrunk worker's, the line gains a clause. It says that `remove` leaves that branch in place, and writes a backup ref for its head first. It deletes a leftover branch with `git update-ref -d` at the verified head, which refuses a branch that moved, then removes the `branch.<branch>` config section.
+8. It checks with `git worktree list` whether the worktree is gone. When git still lists it, `finish` reads the lock. It unlocks a Claude Code session's lock whose process has exited, or removes a worktree with no lock, with `git worktree remove`. That call carries the hardened `-c` flags. Before it, `finish` deletes the worktree's copy of the run report when the saved copy holds the same bytes. The saved copy may be this run's or an earlier run's. That one file only, since it would otherwise block the removal. Then it reads the worktree's files again, ignored and flagged ones included, as `sidekick worktree remove` does. Any file the removal would lose refuses, and the refusal names it. It reads the lock once more after that check, since a session may lock the worktree meanwhile, and unlocks only from that reading. Git deletes an ignored file without a word, and passes a flagged file whatever it holds, so this check guards both. `finish` never passes `--force`, so git still refuses a worktree holding a change that git status lists, made after that check. A lock whose process runs keeps the refusal, as does any lock that is not a Claude Code session's, one naming a pid included. The record is forgotten by then, so each refusal before the worktree is gone ends with `sidekick worktree remove <path>`, to run once what stopped the removal is cleared. `remove` deletes only the worktree's own branch: `worktree-<folder>`, or a branch `sidekick worktree move` marked for that worktree. For a worker on any other branch, such as a worktrunk worker's, the line gains a clause. It says that `remove` leaves that branch in place, and writes a backup ref for its head first. It deletes a leftover branch with `git update-ref -d` at the verified head, which refuses a branch that moved, then removes the `branch.<branch>` config section.
 
 The Bash tool stops a foreground call at 120 seconds by default and 600 at most, and `claude rm` may run longer. Run `finish` with the Bash tool's `run_in_background`.
 
@@ -253,6 +282,22 @@ The exit code of `claude rm` does not say whether it removed or kept, so `finish
 ### What it does not guard
 
 Git-ignored files that the check skips go with the worktree: `node_modules` and `.DS_Store` files at any depth, and each folder in `<common git dir>/sidekick/disposable`. `finish` neither checks nor saves them. Only the commits, once landed, and the run report survive. Ignored files elsewhere refuse the removal while the main checkout lacks them or holds other contents, as §What it checks says. The branch stays as a backup ref. Anything worth keeping belongs in a commit or in the report, as `sk-worker` §At the end says.
+
+### Hardened git
+
+Git finds a linked worktree's repository through files the worker can write. The worktree's `.git` file names an admin folder under `<common git dir>/worktrees/`, whose `gitdir` and `commondir` files point back. A `commondir` planted in the main git dir moves git from the main checkout too. Each can send git to another repository's config and hooks. So every git call sidekick makes into a worker's worktree, or into a loop's worktree, checks that chain first, then runs hardened. That covers `finish`, and the loop's `dispatch`, `report`, `discard`, and `reap`.
+
+- **The flags.** Each such call carries `-c core.hooksPath=/dev/null -c core.fsmonitor=false -c diff.ignoreSubmodules=all`. Then come `--git-dir`, naming the admin folder the chain check found, and `--work-tree`, naming the worktree. A call counts as one into the worktree when git works in it, or in a folder under it, by real path. Git works where it runs, or where a leading `-C` points.
+- **The chain check.** It reads files, never git, which would follow the links under test, and compares each path by its real path. The worktree's `.git` must be a file that names a folder directly under `<common git dir>/worktrees/`. That folder's `gitdir` must lead back to the worktree's `.git`, and its `commondir` to the common git dir. A `commondir` in the common git dir refuses, since a main git dir never holds one. For a unit worker and a loop's worktree, the admin folder must also carry its expected name: the worker's name, or `loop-<name>`. A plan worker's may take another, as when another worktree took the name first. So may a unit worker's under `finish --name`, which reads no brief. A broken chain refuses, naming the file at each break, and the verb runs no git there.
+- **The main git dir.** `finish` also derives the main checkout's git dir from files: `<top>/.git` when that is a folder, or the folder a `.git` file there names. It refuses when that folder holds a `commondir`, naming it, or when git reports another common dir, naming both. A `commondir` planted there moved `git rev-parse --git-common-dir`, measured on git 2.50.1 while #367 was built, so git's own answer is not the check.
+- **After the stop.** `finish` reads the chain again once the job is gone. A chain that broke, or that now names another admin folder, refuses before anything is removed.
+
+What stays outside the hardening:
+
+- **`sidekick worktree remove`** runs its git unhardened.
+- **Programs the flags do not name.** The flags cover hooks, fsmonitor, and embedded repos, not every program git config can name. A filter driver, or `diff.external`, in the common config still runs where a call reaches it. For a unit worker, the fence's deny on `<common git dir>/config` is the guard. A plan worker has no fence.
+- **Work inside an embedded repo.** `diff.ignoreSubmodules=all` keeps an embedded repo's own config out of each call. It also means `finish`'s clean check no longer sees work inside an embedded repo.
+- **A `commondir` rewritten after the chain check.** It would send a later call elsewhere. Three things bound it: hooks and fsmonitor stay off, a unit worker's fence denies the write, and `discard` and `reap` stop the worker before `finish` runs.
 
 ## The record
 

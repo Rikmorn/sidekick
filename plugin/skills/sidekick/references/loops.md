@@ -1,8 +1,8 @@
 # Loops
 
-A loop is one long-lived background session on Claude Code's own cron, which works one repo within a written mandate. This page covers what defines a loop, how it starts and keeps running, and what it records. Its sections are the folder, `loop.json`, the check, the inherited listing, starting and arming a loop, and the record. The verbs are `sidekick loop list`, `show`, `record`, `start`, and `arm`, and the `loop-arm` skill arms a running loop. Issues #363 and #364 in the `Rikmorn/sidekick` repo built these pieces, and ADR-0014 and ADR-0015 in that repo bind them.
+A loop is one long-lived background session on Claude Code's own cron, which works one repo within a written mandate. This page covers what defines a loop, how it starts and keeps running, how it runs its units, and what it records. Its sections are the folder, `loop.json`, the check, the inherited listing, the workers' fence, starting and arming a loop, the record, and units. The verbs are `sidekick loop list`, `show`, `record`, `start`, and `arm`. The unit verbs are `dispatch`, `answer`, `wake`, `report`, `discard`, and `reap`, and the operator's `resume` clears a tripped breaker. The `loop-arm` skill arms a running loop. Issues #363, #364, and #367 in the `Rikmorn/sidekick` repo built these pieces, and ADR-0014 and ADR-0015 in that repo bind them.
 
-Later issues build the rest. #367 dispatches a loop's workers, #377 lands their work, and #365 shows a loop on the desk. The `sk-loop` skill, which writes `loop.json` with you, is #366.
+Later issues build the rest. #377 lands a worker's work, and #365 shows a loop on the desk. The `sk-loop` skill, which writes `loop.json` with you, is #366.
 
 The measurements cited here come from two probe records in that repo, linked by permalink, both on Claude Code 2.1.322 on 2026-11-12. "The loop probes" is [`docs/research/loop/2026-11-12-loop-probes.md`](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md). "The operator-present probes" is [`2026-11-12-loop-probes-operator-run.md`](https://github.com/Rikmorn/sidekick/blob/e1725169edd5003d050f8b3d9ebd6f71b7379205/docs/research/loop/2026-11-12-loop-probes-operator-run.md) beside it. A fact measured on macOS while #363 was built, on 2026-11-14, says so where it appears. So does a fact from Claude Code's docs, fetched on 2026-11-15 while #364 was designed.
 
@@ -14,11 +14,14 @@ A loop lives in the loop store, one folder per loop:
 <config>/sidekick/loops/<name>/
   loop.json      the definition
   records/       one <YYYY-MM-DD>.jsonl per local day
+  units/         one folder per unit, holding one folder per attempt
   state.json     what sidekick loop start launched
   armed.json     the cron jobs sidekick loop arm reported
   start.lock     present while a sidekick loop start acts on the loop
-  units.lock     present while a unit verb writes the loop's record
+  units.lock     present while a unit verb, record, or start's reap reads or writes the record
 ```
+
+An attempt's folder, `units/<unit id>/<worker>/`, holds one attempt at a unit. `dispatch` writes `unit.md`, the unit's text, `brief.md`, the unit brief, and `worker.json`. `answer` adds `rulings.md`, and `finish` saves the worker's run report there as `report.md`. `worker.json` names the worker, its job id, the issue, and the time of dispatch. Its job is `null` until `claude` reports a start, and stays `null` after a launch that timed out.
 
 `<config>` is `CLAUDE_CONFIG_DIR`, or `~/.claude` when that is unset or empty. `SIDEKICK_PROFILES_DIR` moves the profile store only, never the loop store. A loop's name follows the profile name rule: 1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit. `list` skips files and hidden entries in the store.
 
@@ -65,7 +68,7 @@ Every object is strict, so an unknown key at any level refuses. Every list entry
 | `schedule` | Required. A five-field cron expression, read as "The schedule" says. |
 | `tick` | Required. `/` and a skill name, `/<plugin>:<skill>` or `/<skill>`, then optionally a space and arguments. Each name is letters, digits, `-`, and `_`, starting with a letter or digit. A cron-fired tick reaches the model as a slash command ([the loop probes, §U9](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u9-what-dontask-denies-a-background-loop-and-the-rule-that-allows-each)). |
 | `hosts` | Optional, empty by default. Domain names, each with at least one dot and an optional leading `*.`. They are the hosts the workers' sandbox may reach, as "The workers' fence" says. |
-| `gates` | Required, and may be empty. The commands a worker reruns before it reports a tested commit (#367), and whose files `land --check` reports (#377). They are not allow rules: workers run them inside the fence. |
+| `gates` | Required, and may be empty. The commands a worker reruns before it reports a tested commit, which `dispatch` lists in the unit brief, and whose files `land --check` reports (#377). They are not allow rules: workers run them inside the fence. A gate spelled with a leading variable assignment, through `make VAR=…`, or with `eval` leaves the sandbox's auto-allow (Claude Code's sandboxing docs, fetched on 2026-11-12). `dontAsk` then denies it, unless an inherited allow rule matches it. So spell each gate without one. The check does not refuse such a gate. |
 | `caps` | Required. "The caps" says what each counts. |
 | `mandate.reads` | Required. Allow rules for the loop's reads. |
 | `mandate.classes` | Required. A class name, which follows the profile name rule, maps to `{ "state", "allow" }`. `state` is `record`, `ask`, or `act`. `allow` holds at least one allow rule. |
@@ -101,14 +104,17 @@ The five caps are required, and each is a whole number of at least 1.
 | Cap | What it counts |
 |---|---|
 | `attemptsPerUnit` | Attempts at one unit. An attempt is one `dispatched` line for the unit. |
-| `workMinutesPerUnit` | A unit's working time, from its `dispatched` line, less its waits. A wait opens at a `request` line for the unit and closes at the next `answered` line for it, or runs to now. Waits count only up to `waitMinutesPerUnit` in total; past that, waiting counts as working. |
+| `workMinutesPerUnit` | A unit's working time: the wall time since its `dispatched` line, less its waits. A wait opens at a `request` line for the unit, and closes at the next `answered` line for the unit and its worker, or runs to now. Waits count only up to `waitMinutesPerUnit` in total; past that, waiting counts as working. |
 | `waitMinutesPerUnit` | The most waiting that does not count as working time. |
 | `unitsPerDay` | Units dispatched in one day: the operator's local calendar day, the one that names each record file. |
-| `failedUnitsInARow` | Units that fail one after another. |
+| `failedUnitsInARow` | `failed` lines across units, since the later of the last `landed` line and the last `resumed` line. |
 
 A dispatch under `sidekick loop start --record` writes `dispatched` with `record: true`. It counts toward `unitsPerDay`, since it still spends. Its failures count toward `failedUnitsInARow`, since its worker does real work in its worktree. It does not count toward `attemptsPerUnit`: nothing it builds can land, so the unit's real attempts are still to come.
 
-#367 and #377 count the caps from the lines their verbs write, never from the model's lines.
+The caps count only the lines sidekick's verbs write, never the model's, so the model cannot stretch them. Each count reads every day file in `records/`, and `dispatch` refuses when one cannot be read, since a count that skips a file undercounts. `dispatch` refuses at any cap's limit, and while an attempt is in flight, since one worker runs at a time.
+
+- **The clock.** `reap` closes an attempt once its working time passes `workMinutesPerUnit`. So an attempt runs at most the work cap plus the wait cap, whatever the model writes. A finished unit that waits past both caps for the operator's landing is reaped too; #377 stops the clock once `land --check` records a tested commit.
+- **The breaker.** `reap` writes `failed`, and so does `discard --failed`, the route #377 gives a failed rebase or gate. A plain `discarded` line neither breaks the run nor extends it. Once the run reaches the cap, `dispatch` refuses until the operator runs `sidekick loop resume <name>`, which writes `resumed`. Under `start --record` nothing lands, so a trial loop stops after that many failures until the operator resumes it.
 
 ## The check
 
@@ -118,7 +124,7 @@ The check judges one loop from its folder, its repo, and its profile. It finds i
 
 - A loop name that breaks the name rule.
 - A `loop.json` that is missing, is not JSON, or fails the schema.
-- A `repo` that is not a main checkout's root. It must be a folder inside a git work tree, and the top of that work tree by real path. Its git common dir must be its own `.git`. Both compare without regard to case, since git prints a folder's real case and Node's `realpathSync` keeps the case it is given. A subfolder, a linked worktree, a submodule, and a repo made with `--separate-git-dir` each refuse, with the fix that applies. The first three name the main checkout's root. A `--separate-git-dir` repo is a main checkout already, so its fix is to move the git dir back to `<repo>/.git`. The loop's own worktree, which `start`'s launch makes, comes from the main checkout, and so do its workers' worktrees (#367).
+- A `repo` that is not a main checkout's root. It must be a folder inside a git work tree, and the top of that work tree by real path. Its git common dir must be its own `.git`. Both compare without regard to case, since git prints a folder's real case and Node's `realpathSync` keeps the case it is given. A subfolder, a linked worktree, a submodule, and a repo made with `--separate-git-dir` each refuse, with the fix that applies. The first three name the main checkout's root. A `--separate-git-dir` repo is a main checkout already, so its fix is to move the git dir back to `<repo>/.git`. The loop's own worktree, which `start`'s launch makes, comes from the main checkout, and so do its workers' worktrees.
 - A `profile` that no store holds. The search is the one a launch in `repo` makes: the repo store `<repo>/.claude/profiles/`, then the user store. `SIDEKICK_PROFILES_DIR` replaces both, as `references/profiles.md` §The folder says.
 - A profile the repo store holds, since the repo's commits can change its plugin code. Keep a loop's profile in the user store. When it hides a user-store profile of the same name, the user store already holds the profile. The refusal then says to remove or rename the repo store's one. Committed loops are out of scope (#374).
 - The profile's own load issues, and its role plugin's. Each `pluginDirs` entry must be a folder, and no file in one may hold a key.
@@ -129,7 +135,7 @@ The check judges one loop from its folder, its repo, and its profile. It finds i
 
 ### What the check warns on
 
-- **A host that lets workers reach GitHub.** That is a pattern matching `github.com` or a subdomain of it, so `*.com` and `*` warn too. The check reads `hosts`, and each kept layer's `sandbox.network.allowedDomains`. A worker that reaches origin can push by a spelling the push block misses (#367). A worker that never reaches it cannot push at all.
+- **A host that lets workers reach GitHub.** That is a pattern matching `github.com` or a subdomain of it, so `*.com` and `*` warn too. The check reads `hosts`, and each kept layer's `sandbox.network.allowedDomains`. A worker that reaches origin can push by a spelling the push block misses, as "The workers' fence" says. A worker that never reaches it cannot push at all.
 - **A kept settings layer the check cannot read,** since it then cannot see which hosts that layer lets workers reach.
 - **In `show` and `start`, which print the listing, a `claude plugin list` that fails,** times out, or prints what the listing cannot parse. The listing then says it is incomplete.
 
@@ -207,8 +213,8 @@ The in-repo and scratch tests compare paths without regard to case. They also st
 
 #### Programs with checks of their own
 
-- **`claude`** refuses outright, since it starts a Claude session. That covers `Bash(claude respawn *)`, which a loop would need to respawn a stopped worker; #367 holds that open question.
-- **`sidekick`** must name its subcommand plainly, with no wildcard and no leading option in the next word. It refuses `sidekick worker` and `sidekick profile launch`, which start sessions, and `sidekick profile` before a wildcard. Its first two words compare lower-cased. `Bash(sidekick loop record fixer *)` passes, though a loop needs no such rule: `start` adds it, and the two `arm` rules, itself.
+- **`claude`** refuses outright, since it starts a Claude session. That covers `Bash(claude respawn *)`, which also matches `--all` and every other session. A loop respawns its stopped worker with `sidekick loop wake`, a fixed verb, as "Units" says.
+- **`sidekick`** must name its subcommand plainly, with no wildcard and no leading option in the next word. It refuses `sidekick worker` and `sidekick profile launch`, which start sessions, and `sidekick profile` before a wildcard. Its first two words compare lower-cased. `Bash(sidekick loop record fixer *)` passes, though a loop needs no such rule: `start` adds it itself, with the two `arm` rules and the unit verbs' rules.
 - **`gh`** must name its subcommand next, with no leading option and no wildcard. It refuses `gh extension` and `gh alias`, which run code. So put `-R` after the subcommand, as in `Bash(gh issue list -R <owner>/<repo>)`. The subcommand compares lower-cased.
 - **`find`** and its GNU twin `gfind` refuse with `-exec`, `-execdir`, `-ok`, `-okdir`, or a wildcard in any word. Each primary runs a command, and a wildcard could spell one.
 - **`rg`** refuses with `--pre`, alone or joined to a value, or a wildcard in any word. ripgrep 14.1.1 ran a preprocessor command for `--pre <cmd>` and `--pre=<cmd>`, as measured while #363 was built.
@@ -234,18 +240,18 @@ The judge reads words, and it has limits you should plan for.
 - **The test is textual.** It reads the words a rule holds, not the files they name. So a link to a refused program, or a copy of one, passes under another name. `Bash(/Users/<you>/bin/tool *)` passes even when `tool` links to `bash`.
 - **A trailing `*` admits any option.** After any `git` or `gh` subcommand, a `*` matches any words, options included. A `Bash(git commit *)` rule matched a message the model extended onto a new line ([the loop probes, §U9](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u9-what-dontask-denies-a-background-loop-and-the-rule-that-allows-each)). So `Bash(gh issue edit * --add-label *)` also matches an edit that sets `--body`. Name the options a rule needs.
 - **A scoped `Edit` rule is yours to judge.** `Edit(//Users/<you>/**)` passes, and it reaches the home folder's `.claude/` too. A scoped `Edit` rule that reaches a script another rule runs also stays open. With `Edit(//Users/<you>/tools/**)` and `Bash(node /Users/<you>/tools/f.js)`, the loop can rewrite the script, then run it.
-- **Any git rule runs the commands git config names.** `core.fsmonitor` runs on `git status`, `core.pager` on paged output, and textconv drivers on `git diff` and `git show`. A linked worktree shares its main checkout's `.git/config` and `.git/hooks/`. So a worker that could write the shared `.git/config` would reach every git rule the loop holds. That is believed from git's documentation, and not run. #367's fence closes it, as "The workers' fence" says.
+- **Any git rule runs the commands git config names.** `core.fsmonitor` runs on `git status`, `core.pager` on paged output, and textconv drivers on `git diff` and `git show`. A linked worktree shares its main checkout's `.git/config` and `.git/hooks/`. So a worker that could write the shared `.git/config` would reach every git rule the loop holds. That is believed from git's documentation, and not run. The workers' fence denies a unit worker that write, as "The workers' fence" says.
 - **The judge weighs code, not reach.** It refuses rules that run code or start sessions. It does not weigh what an allowed command changes elsewhere. `Bash(gh api *)` passes, and by gh's manual `gh api` calls any GitHub endpoint the token reaches. A class's state bounds that, on the `record`, `ask`, `act` ladder.
 
 ## The inherited listing
 
-`show` lists what a loop and its workers inherit beyond the mandate, since each item can widen what they may do. `start` prints the same listing before each launch, relaunch, or respawn. Both launch with the loop's profile from the loop's repo, so both inherit one set. That holds for the loop by `start`'s launch, and is believed for the workers from the launch #367 plans. The listing blocks nothing. The operator chose listing over refusing, on 2026-11-14, to keep loops free of permission upkeep (#363).
+`show` lists what a loop and its workers inherit beyond the mandate, since each item can widen what they may do. `start` prints the same listing before each launch, relaunch, or respawn. The loop inherits the whole set, by `start`'s launch. A unit worker inherits less: it loads no `project` or `local` settings layer, and keeps from the profile's `settings` only the keys "The workers' fence" lists. So for a unit worker, the lines from the user settings, the managed file, and the profile's kept keys apply. So do the plugins those layers and the role enable. The listing blocks nothing. The operator chose listing over refusing, on 2026-11-14, to keep loops free of permission upkeep (#363).
 
 The listing has five sections:
 
 1. **Allow rules** from each settings layer the profile keeps. Those are the user settings, the repo's `.claude/settings.json`, and its `.claude/settings.local.json`, as `settingSources` keeps them, all three when it is absent. Then come the profile's own `settings`, and the managed settings file when one exists. Each rule names its layer and file.
 2. **Hooks that can approve a call:** the `PreToolUse` and `PermissionRequest` hooks in those layers and in each loaded plugin's `hooks/hooks.json`, each with its source. The listing also reads the `hooks` a plugin declares in its `.claude-plugin/plugin.json`. That is an inline object, a path to a file with a top-level `hooks` key, or an array of both. A path resolves against the plugin's root, and its hooks name that file as their source. A file that is missing or malformed gets a line on the plugin, and the listing goes on. A hook can approve a call that no rule allows.
-3. **What widens the workers' fence,** from each kept layer and the profile's `settings`. That is `permissions.additionalDirectories`, `sandbox.filesystem.allowWrite`, `sandbox.network.allowedDomains`, `Edit` allow rules, and file-write allow rules for every path. A rule prints once per layer, so `Edit(*)` prints only as a file-write rule for every path. Under the fence these matter more than a worker's allow rules. A sandboxed command may write an added directory unless a rule denies it ([the loop probes, §U15](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u15-an-overlay-against-a-sandboxed-write-into-an-added-directory)).
+3. **What widens the workers' fence,** from each kept layer and the profile's `settings`. That is `permissions.additionalDirectories`, `sandbox.filesystem.allowWrite`, `sandbox.network.allowedDomains`, `Edit` allow rules, and file-write allow rules for every path. A rule prints once per layer, so `Edit(*)` prints only as a file-write rule for every path. Under the fence these matter more than a worker's allow rules. A sandboxed command may write an added directory unless a rule denies it ([the loop probes, §U15](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u15-an-overlay-against-a-sandboxed-write-into-an-added-directory)). A unit worker's launch drops every such key from the profile's `settings`, and loads no project or local layer. So for a unit worker, only the user settings' and the managed file's entries apply.
 4. **Plugins** the loop loads, each with its folder. A plugin that ships a mod, a `modules` entry in its `hooks.json`, carries a mark. On a personal subscription, a mod can approve a call past a deny rule ([the loop probes, §U24's control](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u24s-control-a-deny-rule-against-a-hooks-approval-and-a-mods)).
 5. **Built-ins,** as a fixed note.
 
@@ -263,17 +269,73 @@ It is a dated note, not a listing. `claude plugin list --json` lists no `@builti
 
 ## The workers' fence
 
-A loop's workers are bounded by a fence, and the loop keeps its allow list. The operator ruled this on 2026-11-14, revising ADR-0015 Decision 4 for workers, and #367 builds it.
+A loop's unit workers are bounded by a fence, and the loop keeps its allow list. The operator ruled this on 2026-11-14, revising ADR-0015 Decision 4 for workers, and #367 built it. `sidekick loop dispatch` launches each unit worker under `dontAsk`, with a settings overlay that holds the fence. Each path rule takes the `//` form, once for the path as given, and once more for its real path when that differs. This section is the contract a role's author reads: what the fence holds, what the launch keeps, and what still escapes it.
 
-- **A unit worker runs sandboxed,** with auto-allow on, `autoAllowBashIfSandboxed: true`, and the unsandboxed retry off, `allowUnsandboxedCommands: false`. Any command runs inside the fence, which the OS enforces whatever the command's spelling.
-- **One `Edit(//<worktree>/**)` rule lets its file tools work in its own worktree.** The sandbox bounds a command's writes, not the `Edit` and `Write` tools, which follow permission rules ([the loop probes, §U15](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u15-an-overlay-against-a-sandboxed-write-into-an-added-directory)).
-- **Its network reaches only `loop.json`'s `hosts`.** With the retry off, Claude Code ignores network entries from the repo's project and local settings. It keeps those from user settings, managed settings, and `--settings` ([the loop probes, §U10](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u10-sidekicks-gates-inside-the-sandbox)). So the hosts reach a worker through its launch settings. A host in the user settings, the managed settings, or the profile's own `settings` widens the fence, and the inherited listing names each one.
-- **The fence leaves out the shared `.git`'s `config` and `hooks/`.** From a linked worktree, the sandbox may write the main repo's `.git` (§U10). A command written into its `config` or `hooks/` runs in every checkout of the repo, from the next `git` call that reads it. The loop, `land`'s push, and the operator's own main checkout would then run it unsandboxed. That is believed from git's documented behaviour, and not run.
-- **Classes are the loop's alone.** A worktree is disposable, so a worker's work inside it climbs no ladder. The `record`, `ask`, `act` ladder covers the outward actions, and only the loop takes those: labels, comments, closes, and landing. No class carries rules for workers, and `gates` are commands a worker reruns, not allow rules.
+The loop itself stays under `dontAsk` with its short allow list: its reads, its `act` classes, and the fixed `sidekick loop` verbs `start` adds. Classes are the loop's alone. A worktree is disposable, so a worker's work inside it climbs no ladder. The `record`, `ask`, `act` ladder covers the outward actions, and only the loop takes those: labels, comments, closes, and landing. No class carries rules for workers, and `gates` are commands a worker reruns, not allow rules.
 
-The loop itself stays under `dontAsk` with its short allow list: its reads, its `act` classes, and the fixed `sidekick loop` verbs `start` adds.
+### What the overlay sets
 
-Three unknowns wait on #367's checks by hand. They are whether auto-allow approves a sandboxed call under `dontAsk`, and whether `gh` and `git` authenticate inside the sandbox. The third is whether a `denyWrite` on `.git/config` holds against `git config`.
+- **`sandbox`:** `enabled: true`, `autoAllowBashIfSandboxed: true`, `allowUnsandboxedCommands: false`, and `failIfUnavailable: true`, with `network.allowedDomains` from `loop.json`'s `hosts`. Every command runs inside the sandbox, which the OS enforces whatever the command's spelling. With the retry off, Claude Code ignores network entries from the repo's project and local settings. It keeps those from user settings, managed settings, and `--settings` ([the loop probes, §U10](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u10-sidekicks-gates-inside-the-sandbox)). So the hosts reach a worker through its launch settings, and a host in the user or managed settings widens the fence.
+- **`permissions.allow`:** `Edit(//<worktree>/**)`, so the file tools work in the worker's own worktree, and a `Read` rule each for the brief, the unit file, and the rulings file. The sandbox bounds a command's writes, not the `Edit` and `Write` tools, which follow permission rules ([the loop probes, §U15](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u15-an-overlay-against-a-sandboxed-write-into-an-added-directory)).
+- **`permissions.deny`,** each an `Edit` rule unless named, where `<common>` is the repo's common git dir:
+  - git's redirect files, which would send git, the worker's and sidekick's alike, to another git dir or config: `<common>/commondir`, `<common>/worktrees/*/commondir`, `<common>/worktrees/*/gitdir`, `<common>/worktrees/*/config.worktree`, and the worker's own `<worktree>/.git`;
+  - `<common>/config` and `<common>/hooks/**`, as a belt over the sandbox. By Claude Code's sandboxing docs, fetched on 2026-11-12, a linked worktree's sandbox may write the shared `.git`, but not those two;
+  - `<common>/sidekick/**`, which holds the desk's records and `finish`'s `disposable` list;
+  - the sidekick folder, `<config>/sidekick/**`, which holds the profiles, their role plugins, the loops, and every attempt's folder;
+  - each folder the launch adds, the profile's folder and the attempt's folder, so the worker reads them and never writes them;
+  - the memory store, `SIDEKICK_MEMORY_STORE` or `~/sk-memory-store`, as both a `Read` and an `Edit` rule, since the user layer may add it as a working folder;
+  - each skill the table after this list names, as a `Skill` rule;
+  - `WebFetch` and `WebSearch`, since `allowedDomains` binds neither, and an inherited layer may allow them;
+  - `Bash(git push:*)`, the push block's rule.
+- **`permissions.blockReadsOutsideWorkingDirectories: true`,** so the worker reads only its worktree and the folders the launch adds. That is why the launch adds the attempt's folder, rather than allowing it. By the settings docs, as #367's design read them, an allow rule does not lift the block.
+- **`autoMemoryEnabled: false`,** so Claude Code's own auto memory loads nothing into a worker that reads issue text.
+- **`env`:** `SIDEKICK_WORKER`, naming the brief, `DISABLE_AUTOUPDATER=1`, and the push block's `GIT_CONFIG_*` entries. It names no main.
+- **`worktree.baseRef: "head"`,** so the worktree branches from the loop's worktree, which `dispatch` has moved to origin's tip.
+
+The denied skills, as superpowers 7.0.2 and sidekick read on 2026-11-15:
+
+| Skill | Why a unit worker may not run it |
+|---|---|
+| `superpowers:brainstorming` | It stops for a person's answer, and a unit worker has no one to ask |
+| `superpowers:writing-plans` | It stops for a person's choice of how to execute |
+| `superpowers:finishing-a-development-branch` | It stops for a person's choice of how to integrate |
+| `superpowers:diagnosing-superpowers` | It works with a person on what went wrong |
+| `sidekick:sk-execute` | It stops for the operator's choice of mode |
+| `sidekick:sk-design` | A change's design belongs before a unit, not inside one |
+| `sidekick:sk-track` | It files and closes issues, which the loop and the operator own |
+| `sidekick:sk-milestone` | It opens and releases milestones, which the operator owns |
+| `sidekick:sk-worktree` | It lands work, which the loop and the operator own |
+| `sidekick:sk-save` | It writes the memory store, and a unit's run report is its record |
+
+### What the launch keeps
+
+- **The setting sources** are the profile's, or all three when it names none, less `project` and `local`. So the repo's hooks, its MCP approvals, and its local settings never load in a unit worker. The repo's hooks would run worktree code outside the sandbox.
+- **The profile's `settings`** keep only `model`, `env`, `enabledPlugins`, `permissions.deny`, `permissions.ask`, `sandbox.filesystem.denyRead`, and `sandbox.filesystem.denyWrite`. None of those sets a fence key, so the overlay owns every one. Every other key drops, and a key Claude Code adds later stays out until sidekick lists it. `permissions.ask` only narrows, since under `dontAsk` an `ask` rule denies its call. `dispatch` prints one line naming the keys it dropped. Nothing refuses, so one profile serves the loop and its units.
+- **The plugins.** The profile's `pluginDirs` load as in every profile launch, and `dispatch` passes no `--plugin-dir` of its own.
+
+### For a role's author
+
+- **The denied skills stay denied,** whatever the role's skill asks. `superpowers:writing-plans` is among them, so a role skill that builds writes its own plan.
+- **Keep a role's commands in its plugin folder.** A hook or MCP server in the role's plugin that runs a path inside the repo runs worker-written code outside the sandbox.
+- **Spell each gate plainly,** as `gates` says, so auto-allow approves it.
+
+### What still escapes the fence
+
+- **The user layer.** The overlay owns every fence key, but the user layer can still widen the fence while a unit keeps the `user` source. Section 3 of the inherited listing names each such key.
+- **The environment.** The profile's `env`, and the user layer's, reach every process the worker starts, MCP servers included. An `env` value that names a path inside the repo, such as a `NODE_OPTIONS` `--require`, runs worker-written code outside the sandbox.
+- **The role's MCP servers** run outside the sandbox, with their own network. They are the role's declared capability, and the inherited listing names them, as the operator ruled for the loop on 2026-11-14.
+- **User-layer hooks** run outside the sandbox too. Keep their commands outside the repo, as under `~/.claude`, where a sandboxed command cannot write.
+- **The push block binds one spelling.** Under auto-allow, a sandboxed `git` call needs no allow rule, so the deny rule refuses only its own spelling of a push. The guarantee is `hosts` leaving out origin's host, which the check warns on.
+- **Refs, `HEAD`, and the main index.** The sandbox lets a linked worktree write the shared `.git`, so a worker can still move refs, `HEAD`, or the main index inside the repo. The operator accepted that risk on 2026-11-15. #404, in `backlog`, gives a worker a git dir of its own.
+- **A `commondir` rewritten after a chain check.** sidekick's git into a worker's worktree checks git's links first, then runs hardened, as `references/workers.md` §Hardened git says. A `commondir` rewritten after that check would send a later call elsewhere. Hooks and fsmonitor stay off, the fence denies the write, and `discard` and `reap` stop the worker before `finish` runs.
+
+### What waits on the check by hand
+
+Three unknowns wait on #367's check by hand, after it lands, on the Claude Code build of that day:
+
+- whether auto-allow approves a sandboxed call under `dontAsk`;
+- whether `gh` and `git` authenticate inside the sandbox;
+- whether the fence's deny on `.git/config` holds against `git config`.
 
 ## Managed settings
 
@@ -294,7 +356,7 @@ When a managed file exists, the check and the listing read it as a kept layer. I
 
 ## Starting a loop
 
-`sidekick loop start` brings each loop it names to the state its definition asks for, and never runs two sessions for one loop.
+`sidekick loop start` brings each loop it names to the state its definition asks for, and never runs two sessions for one loop. It reaps each loop's overrun attempt first, as "What `start` does" says.
 
 ```text
 sidekick loop start (<name> | --all) [--record] [--now]
@@ -310,12 +372,13 @@ Run it after every edit to `loop.json` or to the loop's profile, and after a reb
 
 1. **It refuses a relative `CLAUDE_CONFIG_DIR`** before it reads anything. The loop's own `record` and `arm` resolve that path against the loop's worktree, so they would read another store than `start` writes. Set it to an absolute path.
 2. **It takes each loop's lock,** `start.lock` in the loop's folder, by an exclusive create. A lock taken since the last boot whose process still runs refuses that loop. The refusal names the lock file and the pid, and says to delete the file when no `start` runs. A lock whose process is gone is taken over, so a run cut short blocks no later one. So is a lock taken before the last boot, whatever its pid, since a reboot can hand that pid to another process. A bad name, or a loop with no folder, refuses without a lock.
-3. **It reads the session listing once,** `claude agents --json --all`, for every loop. When the listing fails, every loop refuses, since `start` cannot tell a running loop from a stopped one without it. `start` reads each row's status then, before the prepare and the commit. So a tick that starts between the listing and the stop is stopped without `--now`.
-4. **It prepares each loop.** It runs the check, and refuses on any issue or on a `state.json` that does not parse. It compiles the mandate, then composes the launch as `profile launch` does from the loop's repo, and refuses where those checks refuse. It hashes the launch and chooses an action, as "The reconcile" says. A paused loop skips the check and the compose, so a pause holds while the check would refuse other keys. A `loop.json` that does not parse, or fails its schema with an unknown key or a bad `schedule`, cannot say it is paused. The check then refuses it as usual. A paused loop's preparation refuses only a broken `state.json`.
-5. **It commits the sidekick folder,** once per run, before the first `claude` call that acts. The subject names each loop that acts and its action. A launch, relaunch, or respawn adds the first 12 characters of its hash, and a pause adds none, as in `loop start: fixer launch 3f2a9c1d0b7e, triage pause`. A run in which no loop acts makes no commit. A failed commit warns, and the loops start anyway, since the history serves tracing.
-6. **It acts on each loop,** in name order. It first prints the loop's warnings, then the inherited listing before a launch, relaunch, or respawn. It releases each loop's lock once that loop's last write is done.
-7. **It waits for every fresh launch to arm,** all together, for up to 90 seconds, checking every 2. A launch has armed once an `armed.json` that carries its `launch` id exists. A respawn needs no wait, since its cron jobs come back with it ([the loop probes, §U11](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u11-a-one-shot-job-across-claude-stop-then-claude-respawn)).
-8. **It prints one line per loop,** as "What `start` prints" says, and exits 1 when any loop refused or failed.
+3. **It reaps each loop** under that loop's units lock, as `sidekick loop reap` does, so a reboot clears an overrun attempt before a relaunch. The reap reads `loop.json` only while an attempt is in flight, and it runs for a paused loop too. Its lines start with `<name>: `. A units lock another verb holds leaves the reap to that verb, which reaps first, and `start` goes on. A reap that cannot run prints why, and `start` goes on.
+4. **It reads the session listing once,** `claude agents --json --all`, for every loop. When the listing fails, every loop refuses, since `start` cannot tell a running loop from a stopped one without it. `start` reads each row's status then, before the prepare and the commit. So a tick that starts between the listing and the stop is stopped without `--now`.
+5. **It prepares each loop.** It runs the check, and refuses on any issue or on a `state.json` that does not parse. It compiles the mandate, then composes the launch as `profile launch` does from the loop's repo, and refuses where those checks refuse. It hashes the launch and chooses an action, as "The reconcile" says. A paused loop skips the check and the compose, so a pause holds while the check would refuse other keys. A `loop.json` that does not parse, or fails its schema with an unknown key or a bad `schedule`, cannot say it is paused. The check then refuses it as usual. A paused loop's preparation refuses only a broken `state.json`.
+6. **It commits the sidekick folder,** once per run, before the first `claude` call that acts. The subject names each loop that acts and its action. A launch, relaunch, or respawn adds the first 12 characters of its hash, and a pause adds none, as in `loop start: fixer launch 3f2a9c1d0b7e, triage pause`. A run in which no loop acts makes no commit. A failed commit warns, and the loops start anyway, since the history serves tracing.
+7. **It acts on each loop,** in name order. It first prints the loop's warnings, then the inherited listing before a launch, relaunch, or respawn. It releases each loop's lock once that loop's last write is done.
+8. **It waits for every fresh launch to arm,** all together, for up to 90 seconds, checking every 2. A launch has armed once an `armed.json` that carries its `launch` id exists. A respawn needs no wait, since its cron jobs come back with it ([the loop probes, §U11](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u11-a-one-shot-job-across-claude-stop-then-claude-respawn)).
+9. **It prints one line per loop,** as "What `start` prints" says, and exits 1 when any loop refused or failed.
 
 The warnings are the check's, the compose's, and two of `start`'s own:
 
@@ -335,10 +398,10 @@ The warnings are the check's, the compose's, and two of `start`'s own:
 | `--record` | Every class compiled as `record` |
 | Every loop | The keys in the list after this table |
 
-- **The fixed verbs,** allowed and pinned to the loop's name: `Bash(sidekick loop record <name> *)`, `Bash(sidekick loop arm <name>)`, and `Bash(sidekick loop arm <name> *)`. Both `arm` forms are named, bare and with flags, so the allow list states each spelling the skill runs.
+- **The fixed verbs,** allowed and pinned to the loop's name: `Bash(sidekick loop record <name> *)`, `Bash(sidekick loop arm <name>)`, and `Bash(sidekick loop arm <name> *)`. Both `arm` forms are named, bare and with flags, so the allow list states each spelling the skill runs. The unit verbs follow, pinned the same way: `Bash(sidekick loop dispatch <name> *)`, the same form for `answer`, `wake`, `report`, and `discard`, and the bare `Bash(sidekick loop reap <name>)`, since `reap` takes no argument. `resume` has no rule: it is the operator's alone, and refuses in a loop's session anyway.
 - **The self-deny:** `Edit(//<loop folder>/**)` and `Edit(//<profile folder>/**)`, each by its real path. So the loop's file tools never edit its `loop.json`, its runtime entries, or its profile. The verbs still write there, since an `Edit` rule binds the file tools, not a command's own process.
 - **`permissions.blockReadsOutsideWorkingDirectories: true`.** The permissions docs, as #364's design read them, let the built-in read-only commands run in every mode otherwise. With it, the loop reads only its worktree and its added folders, among them the profile's folder, which the launch passes as `--add-dir`. That is believed from the docs; no probe ran it.
-- **`env`:** `SIDEKICK_LOOP=<name>`, which `arm` checks, and `DISABLE_AUTOUPDATER=1`, as "The launch" says. `SIDEKICK_MAIN` is set empty, which sidekick reads as absent, so a daemon started from a main session's shell names no main.
+- **`env`:** `SIDEKICK_LOOP=<name>`, which `arm` checks, and `DISABLE_AUTOUPDATER=1`, as "The launch" says. `SIDEKICK_MAIN` and `SIDEKICK_WORKER` are set empty, which sidekick reads as absent. So a daemon started from a main's or a worker's shell names neither, and the loop's own `dispatch` does not refuse it as a worker.
 - **`crossSessionInbound: "accept"`.** `dontAsk` counts as prompting, so without it Claude Code holds a message from a sender that bypasses permissions (docs, cross-session messaging).
 
 The profile's own `permissions.allow` stays, since the layers' lists concatenate, and the inherited listing names those rules. Classes are the loop's alone, so the overlay holds no rule for workers.
@@ -472,7 +535,7 @@ Both set exit 1. A paused loop that ends off never does. A paused loop that `sta
 
 ### How long `start` runs
 
-`start` can outlast a session's `Bash` call, which ends at 120 seconds unless it sets a longer timeout. The listing takes up to 30 seconds. A relaunch can take about 265 seconds: 10 for `claude stop`, 15 for the process to exit, 180 for `claude rm`, and 60 for `claude --bg`. The wait for the arm adds up to 90, and each loop's checks run `claude` too. So run `start` from a terminal, or in a session with a long `Bash` timeout. A run cut short is recoverable. The next `start` takes over its lock, and finds a session launched with no job id by its name.
+`start` can outlast a session's `Bash` call, which ends at 120 seconds unless it sets a longer timeout. The listing takes up to 30 seconds. A relaunch can take about 265 seconds: 10 for `claude stop`, 15 for the process to exit, 180 for `claude rm`, and 60 for `claude --bg`. The wait for the arm adds up to 90, and each loop's checks run `claude` too. A reap that stops an overrun worker adds its own stop and `finish`, whose `claude rm` has no limit. So run `start` from a terminal, or in a session with a long `Bash` timeout. A run cut short is recoverable. The next `start` takes over its lock, and finds a session launched with no job id by its name.
 
 ### Pausing, stopping, and updating a loop
 
@@ -514,12 +577,16 @@ A loop's record is one JSON line per entry, in `records/<YYYY-MM-DD>.jsonl` in i
 | `did` | The model: what a class in `act` did | `summary`, `class`, `command`, `unit?`, `hash?` |
 | `denied` | The model: a call Claude Code denied, so a mandate gap shows | `summary`, `command`, `class?`, `unit?`, `hash?` |
 | `note` | The model: anything else worth keeping | `summary`, `unit?`, `hash?` |
-| `dispatched` | `sidekick loop dispatch` (#367) | `unit`, `record?: true` |
+| `dispatched` | `sidekick loop dispatch` | `unit`, `record?: true`, `worker?`, `issue?` |
+| `answered` | `sidekick loop answer` | `unit`, `worker` |
+| `resumed` | `sidekick loop resume` | `reason` |
 | `landed` | `sidekick loop land` (#377) | `unit`, `commit` |
-| `failed` | `sidekick loop reap` and `land` (#367, #377) | `unit`, `reason` |
-| `discarded` | `sidekick loop discard` and `reap` (#367) | `unit`, `reason` |
+| `failed` | `sidekick loop reap`, `discard --failed`, and `land` (#377) | `unit`, `reason`, `worker?` |
+| `discarded` | `sidekick loop discard` and `reap` | `unit`, `reason`, `worker?` |
 
-The bounds: `summary` and `reason` run 1 to 1,000 characters, and `command` 1 to 4,000. `unit` is 1 to 64 of letters, digits, `.`, `_`, and `-`. `commit` is a hex object id of 7 to 64 characters, so a SHA-256 id fits. `hash` is the launch hash from `state.json`, which `record` stamps on each line the model writes once a `state.json` exists. A loop that `start` never launched writes lines without it.
+The unit verbs write `worker` on every line, and `dispatch` writes `issue`. A closing line without a `worker`, such as `landed`, closes the unit's attempt whatever its worker.
+
+The bounds: `summary` and `reason` run 1 to 1,000 characters, and `command` 1 to 4,000. `unit` is 1 to 64 of letters, digits, `.`, `_`, and `-`. `worker` follows the worker name rule in `references/workers.md` §The brief, and `issue` is a whole number of at least 1. `commit` is a hex object id of 7 to 64 characters, so a SHA-256 id fits. `hash` is the launch hash from `state.json`, which `record` stamps on each line the model writes once a `state.json` exists. A loop that `start` never launched writes lines without it.
 
 `summary`, `command`, `reason`, and `class` hold no control character. That is nothing from U+0000 to U+001F, no U+007F, and nothing from U+0080 to U+009F, the C1 controls. A terminal reads those as commands, so a line `show` prints could otherwise move the cursor and hide the lines before it.
 
@@ -546,17 +613,180 @@ It refuses:
 - `did` for a class whose state was not `act`, with the advice to record `would`, or to ask with `request`;
 - text in `--summary`, `--command`, `--class`, or `--unit` that the key check flags, so keys stay out of the record and off the desk. The refusal names the flag and the check, never the text.
 
-Once a `state.json` exists, `record` judges by the launch and reads `state.json` alone. It stamps the launch's `hash`, and checks `--class` and the `did` rule against the launch's `states`. So a trial under `--record` records no `did`, and an edit to `loop.json` changes nothing until the next `start`. A class the launch lacked refuses until the loop restarts, and the refusal names the cause.
+Once a `state.json` exists, `record` judges the line by the launch, from `state.json`, not `loop.json`. It stamps the launch's `hash`, and checks `--class` and the `did` rule against the launch's `states`. So a trial under `--record` records no `did`, and an edit to `loop.json` changes nothing until the next `start`. A class the launch lacked refuses until the loop restarts, and the refusal names the cause.
 
 Without a `state.json`, `record` checks `loop.json` as it is now. So a class removed from it refuses records for that class, and the refusal names the cause.
 
-`record` runs no git and no `claude`, and skips the rest of the check. A loop whose profile goes bad mid-run therefore keeps its record, and each call stays cheap.
+`record` takes the units lock, and refuses while another verb holds it. It reaps first, as the unit verbs do, then stamps its line, so the day file keeps time order. The reap reads the record, and `loop.json` only while an attempt is in flight. An attempt past its time is stopped and discarded, so then `record` runs `claude`, git, and `finish`. A reap that cannot run prints why on stderr, and the line is still written. Otherwise `record` runs no git and no `claude`, and skips the rest of the check. A loop whose profile goes bad mid-run therefore keeps its record, and each call stays cheap.
 
-On success it prints one line: `recorded <kind>`, or for a request, `new request` or `repeat request`.
+On success it prints the reap's lines, if any, then one line: `recorded <kind>`, or for a request, `new request` or `repeat request`.
 
 ### When a request is new
 
 A request is new when no request with the same `class`, `command`, and `unit` sits in the record since the schedule's second-most-recent fire at or before now. The schedule is the launch's, from `state.json`, or `loop.json`'s when no `state.json` exists. An absent field matches only an absent field, and the window ends now. A tick runs at most half a period late, so the window covers the previous tick's lines and the current tick's own. `record` judges a request before it appends it, so the line never counts itself. A schedule without two fires in the past 366 days looks back 366 days instead.
+
+## Units
+
+A loop runs its work one unit at a time. A unit is one issue under one skill of the loop's role. `dispatch` derives the unit's id, `<skill>-<issue>`, such as `fix-bug-42` for `--skill fixer:fix-bug --issue 42`, and the other verbs take it as `--unit`. Each attempt at a unit runs in one worker, from a unit brief, inside the workers' fence. An attempt is in flight from its `dispatched` line until a `landed`, `failed`, or `discarded` line for its unit that names its worker or no worker.
+
+```text
+sidekick loop dispatch <name> --issue <n> --skill <plugin>:<skill>
+sidekick loop answer <name> --unit <id> <text>
+sidekick loop wake <name> --unit <id>
+sidekick loop report <name> --unit <id>
+sidekick loop discard <name> --unit <id> --reason <text> [--failed]
+sidekick loop reap <name>
+sidekick loop resume <name> --reason <text>
+```
+
+Every unit verb refuses a name that breaks the name rule, and a `--unit` outside the unit id rule or of `.` or `..`. It refuses a non-empty `SIDEKICK_WORKER`, since a worker runs no unit verb. It refuses a `SIDEKICK_LOOP` that names another loop, since a loop acts only on its own units. It reads the loop from the store the environment names, and refuses when that store holds no such loop. A refusal names every reason it finds.
+
+- **The units lock.** Each unit verb, `record`, and `start`'s reap take `units.lock` in the loop's folder, by an exclusive create, while they read the record and write verb lines. A lock whose process is gone, or that was taken before the last boot, is taken over, as `start.lock` is. A lock another verb holds refuses, except in `start`.
+- **The reap runs first.** `dispatch`, `answer`, `wake`, `report`, `discard`, `reap`, and `record` reap the attempt in flight first, under the same lock, as "`sidekick loop reap`" says. So the work cap holds whenever the loop does anything, and its role's tick need not remember to reap. A loop that does nothing at all leaves an overrunning worker to run on until its next verb, or the next `start`.
+- **When the reap cannot run,** because it cannot read the record or close the attempt, it refuses `dispatch`, `answer`, `wake`, `discard`, and `reap`. Each would act on an attempt the reap judged overdue. `report` and `record` print why on stderr and go on, so an overdue worker that will not stop never hides its report. `resume` reaps nothing.
+
+### `sidekick loop dispatch`
+
+```text
+sidekick loop dispatch <name> --issue <n> --skill <plugin>:<skill>
+```
+
+It starts one unit in a worker. `--skill` names the unit's job, since one role can carry several, such as a fix and a triage. The derived id gives a triage and a fix on one issue a cap each. The loop cannot reset the attempts cap by renaming a unit.
+
+It checks, in this order, and writes nothing in the loop's folder until every check passes, but for what its reap writes:
+
+1. **The arguments.** The name follows the name rule, and `--issue` is a whole number of at least 1. `--skill` is `<plugin>:<skill>`, each part lower-case letters, digits, and hyphens, starting with a letter or digit, at most 48 characters. The derived unit id follows the unit id rule.
+2. **The environment,** as every unit verb checks it.
+3. **The loop.** Its folder exists in the store the environment names, and the check passes as `start` runs it. Its `state.json` exists and names `loop-<name>`, so `dispatch` runs only for a loop `start` launched. A daemon whose `CLAUDE_CONFIG_DIR` differs from `start`'s therefore refuses, rather than writing another store.
+4. **The lock, the reap, and the record.** It takes the units lock and reaps first. Then the record must be readable, with no attempt in flight and each cap under its limit, as "The caps" says. An attempt in flight refuses, naming `report` and `discard` for it.
+5. **The skill, the issue, and the loop's worktree,** each reason named together:
+   - `--skill` names a skill of the role. The `pluginDirs` entry whose `.claude-plugin/plugin.json` names `<plugin>` holds `skills/<skill>/SKILL.md`.
+   - The issue passes the read "The issue's text" says.
+   - The loop's worktree, `<repo>/.claude/worktrees/loop-<name>`, exists, and its link to the repo holds, with the admin folder `loop-<name>`. It holds the branch `worktree-loop-<name>`, and its tracked files are clean. `start` never checks it, so this is its first check. Each git call into it runs hardened, as `references/workers.md` §Hardened git says.
+6. **The move.** It fetches `origin`, then fast-forwards the loop's worktree to the branch `refs/remotes/origin/HEAD` names. A worktree that is ahead or has diverged refuses, since the loop's worktree holds nothing of its own. An unset `origin/HEAD` refuses, naming `git remote set-head origin --auto`. The fetch and the fast-forward each run within 60 seconds, and every other git call within 10.
+7. **The profile, from the moved worktree.** The unit launch looks the profile up from the loop's worktree, as every launch looks it up from where it runs. It refuses when that lookup finds the profile anywhere but the folder the loop's check judged, such as a repo store on origin's branch. A repo's own profile can run code from the repo's commits as the role's. It also refuses when it cannot tell whether the worktree holds a profile store.
+
+Then it acts:
+
+8. **The name.** It draws up to 33 characters of the loop's name, less any trailing hyphen, then a hyphen and 6 random hex characters. A name that the worker name rule, `worker dispatch`'s name checks, or an existing attempt folder refuses is drawn again, up to 5 draws.
+9. **The attempt's folder.** It writes `unit.md`, `brief.md`, and `worker.json`, with no job yet. The brief's body holds its `## Limits`, the question channel, the loop's `gates`, and what the run report holds. It says to run each gate as one `Bash` call with a `timeout`.
+10. **The launch.** It launches the worker through `worker dispatch`'s own checks and launch, inside the fence, from the loop's worktree, as `references/workers.md` §A unit brief says. So the worker branches from origin's tip. Once `claude` reports a start, it writes the job into `worker.json`, then `dispatched` with the unit, the worker, and the issue. Under `start --record`, the line also holds `record: true`. That line lands before the worktree check, so a stray stopped on the wrong worktree still counts as an attempt.
+
+Once the worker has started in its worktree, it prints the reap's lines, the profile keys the launch dropped on stderr, and `claude`'s output. Then come `worker <worker> dispatched · permission mode dontAsk · pushes blocked` and three lines of its own, and it exits 0:
+
+```text
+unit <unit> · worker <worker> · job <job>
+next: once the worker messages, read its report with sidekick loop report <name> --unit <unit>
+to give up on it: sidekick loop discard <name> --unit <unit> --reason <text>
+```
+
+When the launch goes wrong:
+
+- **A launch that failed** removes the attempt's folder and writes no line. "Workspace not trusted" in `claude`'s output adds the fix line `start` gives, for the loop's worktree.
+- **A launch that timed out** may have started a worker, so the attempt counts. `dispatch` keeps the folder, writes `worker.json` with `job: null`, and writes `dispatched`. It exits non-zero, saying that the attempt now counts, and names `sidekick loop discard`. Until `reap` or `discard` closes it, the attempt costs one attempt at the unit and one of the day's units, and blocks the next dispatch. When that line cannot be written, the folder goes, and the refusal says how to find and stop the worker.
+- **A start that cannot be recorded** stops the worker as a stray and refuses, and the folder goes.
+- **A worker on the wrong worktree** is stopped, as `references/workers.md` §`dispatch` says. Its `dispatched` line stands, so the attempt stays in flight, and `dispatch` names `sidekick loop discard` for it.
+
+#### The issue's text
+
+A unit's text is an issue, fetched and filtered in code, so only the operator's own account reaches a worker. `dispatch` reads it with one GraphQL query through `gh`, on the repo's `origin`, within 30 seconds. The trusted account is that query's `viewer`, the account `gh` is logged in as. The read refuses:
+
+- an issue whose author is another account;
+- an issue last edited by another account, or by one that no longer exists;
+- a title renamed by another account, or by one that no longer exists;
+- a closed issue;
+- an issue with more than 100 comments, or more than 100 title renames, the most one read takes;
+- text the key check flags, in the title, the body, or a kept comment, naming the check and never the text.
+
+Comments written, or last edited, by another account are dropped, and the unit file says how many were. The unit file holds the issue's title, its URL, its body, and each kept comment under its author and time.
+
+### `sidekick loop answer`
+
+```text
+sidekick loop answer <name> --unit <id> <text>
+```
+
+It rules on a question from the unit's worker. The operator's main runs it, and so may the loop, when its role rules a question itself. The text is one argument, and must not be empty. It may hold newlines and tabs, and no other control character. It runs to 20,000 characters, and the key check refuses it.
+
+Under the lock, after the reap, it needs the unit's attempt in flight, with a worker. It appends `## Ruling, <local date and time>` and the text to the attempt's `rulings.md`, and creates the file when needed. It never follows a link there. Then it writes `answered`, which closes the attempt's wait, and prints `unit <unit> · worker <worker> · answered in <rulings file>`. Its last line is the next step:
+
+- **In the loop's own session,** run `sidekick loop wake <name> --unit <unit>`, then message the worker to read the rulings file.
+- **Elsewhere,** where `SIDEKICK_LOOP` is unset or empty, message `loop-<name>`, so the loop wakes its worker and points it at the file.
+
+When the ruling is in the file but the `answered` line cannot be written, it says so. Running `answer` again would append the ruling a second time, and the wait stays open until an `answered` line closes it.
+
+### `sidekick loop wake`
+
+```text
+sidekick loop wake <name> --unit <id>
+```
+
+It wakes the unit's worker, once a ruling waits for it. Under the lock, after the reap, it needs the unit's attempt in flight, with a worker. It finds the worker's rows in `claude agents --json --all`, by the job `worker.json` names. When that job is `null`, or the file cannot be read, it finds them by the worker's session name.
+
+- **A row whose process may run,** with a `pid` or one the listing gives in a form it cannot read, is left alone. It prints that the worker runs, and exits 0.
+- **One stopped job** is respawned with `claude respawn <job>`, from the loop's worktree, within the limit `start` gives a respawn. It prints `worker <worker> was stopped, so wake respawned its job <job>`.
+- **No row, rows with no job id, or several jobs by the worker's name** refuse, and name `discard`. So does a respawn that fails, and a listing that fails.
+
+It never takes `--all`, and never names another job.
+
+### `sidekick loop report`
+
+```text
+sidekick loop report <name> --unit <id>
+```
+
+It prints a unit's run report. That is the loop's only view of its worker, since the loop cannot read the worker's worktree. It reads the unit's attempt in flight, else the unit's newest attempt by the record, so it serves a closed attempt too.
+
+- **The report** is the worker's `unit-report.md` while its worktree exists, else the attempt's `report.md`, which `finish` saved. A worktree that holds none falls through to the attempt's file too. Each read passes the report guard `references/workers.md` §A unit brief names, and a refused report never falls through. The output opens `report of unit <unit> · worker <worker>, from <file>:`.
+- **The branch head.** It then prints `head of worktree-<worker>: <commit> <subject>`, from `git log -1` by the hardened git. That runs after the chain check, with the admin folder named for the worker. A worktree that is gone prints a line saying so instead.
+- **What it withholds.** A line the key check flags prints as `(withheld: <ids>)`, and so does the commit subject. A private key's block withholds every line from its header through its `END` line.
+- **Control characters.** Every line it prints, on stdout and stderr alike, shows each control character but a newline or a tab as `\xNN`. A chain refusal can quote paths the worker wrote, so stderr is escaped too.
+- **The gap line.** A report with no `## Proposals` heading ends with a line saying that it proposes no outward action. Read that as a gap in the report, not as nothing to do.
+
+A reap that cannot run prints why on stderr, and the report still prints. `report` exits 1 when the branch head cannot be read, after the report has printed.
+
+### `sidekick loop discard`
+
+```text
+sidekick loop discard <name> --unit <id> --reason <text> [--failed]
+```
+
+It gives up on the unit's attempt in flight. `--failed` marks the attempt failed, as for a rebase that cannot settle or a gate that fails after it (#377), so the breaker counts it. A discard without it, such as a role's requeue, does not count. `--reason` follows the record's rule for `reason`, and the key check refuses it.
+
+Under the lock, after the reap, it needs the unit's attempt in flight. When the reap closed that very attempt, it says so, and exits 0. Otherwise:
+
+1. **It stops the worker.** It finds the worker's rows as `wake` does, and stops each whose process may run with `claude stop`. It waits up to 15 seconds for a listed process to exit.
+2. **It runs `finish`'s discard** with the unit brief, without a report when the worktree holds no `unit-report.md`. A clean worktree is removed, with its branch kept as a backup ref, and its report saved to the attempt's folder.
+3. **It closes the attempt.** It writes `failed` under `--failed`, then `discarded`, each with the unit, the worker, and the reason. That frees the loop's slot.
+
+It prints `finish`'s lines, then `unit <unit> · worker <worker> · discarded`, or `failed, then discarded`.
+
+- **A refusal from `finish`,** such as for uncommitted or ignored work, leaves the stopped worker's worktree in place, and the attempt closes anyway. It prints `finish`'s lines and the hand route: list the worktree with `sidekick worktree list`, and settle what `finish` names. Then run `sidekick worker finish <brief> --discard` in the loop's repo.
+- **A worker with no session left** has nothing to stop and no session for `finish` to find. The attempt closes, with the route for any worktree or branch the worker left.
+- **While the worker may still run, it writes nothing,** and the attempt stays in flight until the worker is stopped by hand. That covers a stop that fails, and a process still running 15 seconds after it. It covers a session listing that fails, and a `finish` refusal while a live process holds the worktree's lock or `git worktree list` fails. Run `discard` again once the worker has stopped.
+- **A record that cannot be written** after `finish` ran names `sidekick loop show <name>`, which shows whether the attempt closed.
+
+### `sidekick loop reap`
+
+```text
+sidekick loop reap <name>
+```
+
+It closes the attempt in flight once its working time passes `workMinutesPerUnit`, as "The caps" counts it. It writes `failed` with the reason, then discards as `discard --failed` does. An attempt within its time is left alone. A worker with no session left is reaped the same way once past its time.
+
+It prints, per attempt it reaps, a lead line, then the discard's lines, with the hand route for a dirty worktree. The lead reads `unit <unit> · worker <worker> worked <n> minutes, past the work cap of <m> minutes, so reap stops and discards it`. It prints nothing when nothing is due. A reap whose stop or session listing fails writes nothing, and the attempt stays in flight until the worker is stopped by hand.
+
+Each unit verb and `record` reap first, and `start` reaps each loop before it acts, so a reboot clears an overrun before a relaunch.
+
+### `sidekick loop resume`
+
+```text
+sidekick loop resume <name> --reason <text>
+```
+
+It resets a tripped breaker once its cause is settled. The operator runs it from a main: it refuses in any loop's session, its own included, where `SIDEKICK_LOOP` is set and not empty. It is not a fixed verb either, so a loop cannot clear its own breaker. It refuses an untripped breaker, naming the count and the cap, so its line always marks a real reset. `--reason` follows the record's rule, and the key check refuses it.
+
+It takes the units lock and reaps nothing, since a reap can stop a worker or refuse, and neither belongs in the operator's reset. It writes `resumed` with the reason, which restarts the count of units failed in a row. It prints `loop <name> resumed: the count of units failed in a row restarts at 0`.
 
 ## The verbs
 
@@ -566,11 +796,19 @@ sidekick loop show <name> [--since <YYYY-MM-DD>]  # the definition, the check, t
 sidekick loop record <name> --kind <kind> --summary <text> [--class <class>] [--command <text>] [--unit <id>]
 sidekick loop start (<name> | --all) [--record] [--now]  # bring each loop to its definition
 sidekick loop arm <name> [--armed --tick <id> --renewal <id>]  # what a running loop's cron jobs are, and report them
+sidekick loop dispatch <name> --issue <n> --skill <plugin>:<skill>  # start one unit in a fenced worker
+sidekick loop answer <name> --unit <id> <text>    # a ruling for the unit's worker
+sidekick loop wake <name> --unit <id>             # respawn the unit's stopped worker
+sidekick loop report <name> --unit <id>           # the unit's run report and its branch head
+sidekick loop discard <name> --unit <id> --reason <text> [--failed]  # give up on the unit's attempt
+sidekick loop reap <name>                         # close an attempt past its work cap
+sidekick loop resume <name> --reason <text>       # the operator's reset of a tripped breaker
 ```
 
 - **`list`** prints one line per loop: its name, `repo`, `profile`, `schedule`, each class with its state, then `ok` or `refused: <n> issues`, and `paused` for a paused loop. It runs the check without the inherited listing, so it runs git and no `claude`. An empty store prints one line saying so. `list` exits 1 when any loop that is not paused is refused.
-- **`show`** prints the definition, the issues, the warnings, the inherited listing, then the records. A refused loop prints its issues first, and the rest still shows. A definition value the key check flags prints as `(withheld: <ids>)`, so `show` never prints the key. The records are those of the last 24 hours, or those since local midnight of `--since`. Each prints as one line: local time, kind, class, command or summary, and unit. After them come the count of skipped lines and each day file that could not be read. A line break in a definition value prints as a space. `show` exits 1 when the loop is refused.
+- **`show`** prints the definition, the issues, the warnings, the inherited listing, then the records. A refused loop prints its issues first, and the rest still shows. A definition value the key check flags prints as `(withheld: <ids>)`, so `show` never prints the key. The records are those of the last 24 hours, or those since local midnight of `--since`. Each prints as one line: local time, kind, class, command or summary, and unit. A verb's line shows its own fields instead, such as the worker, the issue, and the reason. After them come the count of skipped lines and each day file that could not be read. A line break in a definition value prints as a space. `show` exits 1 when the loop is refused.
 - **`record`** appends one line, as "`sidekick loop record`" says.
 - **`start`** launches, respawns, relaunches, pauses, or leaves each loop, as "Starting a loop" says.
 - **`arm`** prints a running loop's cron jobs, and records them with `--armed`, as "Arming a loop" says.
+- **`dispatch`, `answer`, `wake`, `report`, `discard`, `reap`, and `resume`** run a loop's units, as "Units" says.
 - **A usage error** prints the usage and exits 1, as the `profile` family's do.
