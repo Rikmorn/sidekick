@@ -273,18 +273,33 @@ function serverNames(holder: unknown): string[] {
     : [];
 }
 
-// Server name to plugin name, for each role plugin folder that has a manifest name and a `.mcp.json`.
+// A plugin's server file holds its servers under `mcpServers`, or as the file's top level (plugins docs, "MCP servers", fetched 2026-11-15).
+function pluginFileServers(holder: unknown): string[] {
+  if (!isRecord(holder)) return [];
+  return Object.keys(isRecord(holder.mcpServers) ? holder.mcpServers : holder);
+}
+
+// `plugin.json`'s `mcpServers`: an inline map, a path resolved against the plugin's root, or an array of either. A bundle or a URL parses as no JSON file, so it names none.
+function manifestServers(dir: string, declared: unknown): string[] {
+  const entries = Array.isArray(declared) ? declared : [declared];
+  return entries.flatMap((entry) => {
+    if (typeof entry === 'string') {
+      return pluginFileServers(readJson(path.resolve(dir, entry)));
+    }
+    return isRecord(entry) ? Object.keys(entry) : [];
+  });
+}
+
+// Server name to plugin name, for each role plugin folder whose manifest has a name: the servers of its `.mcp.json`, then those its manifest declares.
 function pluginServers(pluginDirs: readonly string[]): Map<string, string> {
   const entries = pluginDirs.flatMap((dir) => {
     const manifest = readJson(path.join(dir, '.claude-plugin', 'plugin.json'));
-    const name =
-      isRecord(manifest) && typeof manifest.name === 'string'
-        ? manifest.name
-        : undefined;
-    if (name === undefined) return [];
-    return serverNames(readJson(path.join(dir, '.mcp.json'))).map(
-      (server): [string, string] => [server, name],
-    );
+    if (!isRecord(manifest) || typeof manifest.name !== 'string') return [];
+    const { name } = manifest;
+    return [
+      ...pluginFileServers(readJson(path.join(dir, '.mcp.json'))),
+      ...manifestServers(dir, manifest.mcpServers),
+    ].map((server): [string, string] => [server, name]);
   });
   // The first plugin to declare a server names it.
   return new Map(entries.reverse());

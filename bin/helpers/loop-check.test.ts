@@ -613,6 +613,85 @@ describe('checkLoop: MCP rules', () => {
     expect(checkLoop('fixer', deps).issues).toEqual([]);
   });
 
+  describe('a server the role plugin declares in plugin.json', () => {
+    // The role plugin `role` with no `.mcp.json`, its manifest's `mcpServers` set to `declared`.
+    const declaring = (
+      declared: unknown,
+      files: Record<string, unknown> = {},
+    ) => {
+      const profile = writeProfile(userStore(), {
+        description: 'd',
+        pluginDirs: ['plugin'],
+      });
+      const plugin = path.join(profile, 'plugin');
+      writeJson(path.join(plugin, '.claude-plugin', 'plugin.json'), {
+        name: 'role',
+        version: '1.0.0',
+        mcpServers: declared,
+      });
+      for (const [file, value] of Object.entries(files)) {
+        writeJson(path.join(plugin, file), value);
+      }
+    };
+    const issuesFor = (rule: string): string[] => {
+      writeLoop((m) => {
+        m.mandate.reads = [rule];
+      });
+      return checkLoop('fixer', deps).issues;
+    };
+    const refused = (): string[] => [
+      `${loopFile()}: mandate.reads.0: ${spelling}`,
+    ];
+
+    test('refuses one declared inline', () => {
+      declaring({ gh: { command: 'x' } });
+      expect(issuesFor('mcp__gh__view')).toEqual(refused());
+    });
+    test("refuses one in a JSON file it names, resolved against the plugin's root", () => {
+      declaring('./mcp/servers.json', {
+        'mcp/servers.json': { mcpServers: { gh: { command: 'x' } } },
+      });
+      expect(issuesFor('mcp__gh__view')).toEqual(refused());
+    });
+    test('refuses one in a named file that holds the map without a wrapper', () => {
+      declaring('./servers.json', { 'servers.json': { gh: { command: 'x' } } });
+      expect(issuesFor('mcp__gh__view')).toEqual(refused());
+    });
+    test('refuses one in an array that mixes a path and an inline map', () => {
+      declaring(['./a.json', { gh: { command: 'x' } }], {
+        'a.json': { mcpServers: { other: {} } },
+      });
+      expect(issuesFor('mcp__gh__view')).toEqual(refused());
+      expect(issuesFor('mcp__other')).toEqual([
+        `${loopFile()}: mandate.reads.0: an MCP server "other" of the role plugin "role" has tools spelled mcp__plugin_role_other__<tool>, so mcp__other matches none of them; write mcp__plugin_role_other`,
+      ]);
+    });
+    test.each([
+      ['a bundle path', './servers/db.mcpb'],
+      ['a bundle URL', 'https://example.com/db.mcpb'],
+      ['a missing file', './gone.json'],
+    ])('reads %s as naming no server', (_label, declared) => {
+      declaring(declared);
+      expect(issuesFor('mcp__gh__view')).toEqual([]);
+    });
+    test('passes the plugin spelling', () => {
+      declaring({ gh: { command: 'x' } });
+      expect(issuesFor('mcp__plugin_role_gh__view')).toEqual([]);
+    });
+  });
+
+  test("refuses a server in the role plugin's .mcp.json written without the wrapper", () => {
+    rolePlugin();
+    const plugin = path.join(userStore(), 'fixer', 'plugin');
+    writeJson(path.join(plugin, '.mcp.json'), { gh: { command: 'x' } });
+    writeLoop((m) => {
+      m.mandate.reads = ['mcp__gh__view'];
+    });
+    expect(checkLoop('fixer', deps).issues).toEqual([
+      `${loopFile()}: mandate.reads.0: ${spelling}`,
+    ]);
+  });
+
   test("passes when the repo's .mcp.json also has the server", () => {
     writeLoop((m) => {
       m.mandate.reads = ['mcp__gh__view'];

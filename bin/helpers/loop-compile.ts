@@ -25,7 +25,7 @@ export function effectiveStates(
   );
 }
 
-/** The verbs every loop may run, pinned to its name. The bare `arm` form is listed because `x *` is believed not to match a bare `x`. */
+/** The verbs every loop may run, pinned to its name. Both `arm` spellings the skill runs, bare and with flags, are named, so the allow list is explicit. */
 export function fixedVerbRules(name: string): string[] {
   return [
     `Bash(sidekick loop record ${name} *)`,

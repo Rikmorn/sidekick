@@ -10124,13 +10124,30 @@ var isRecord9 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 function serverNames(holder) {
   return isRecord9(holder) && isRecord9(holder.mcpServers) ? Object.keys(holder.mcpServers) : [];
 }
+function pluginFileServers(holder) {
+  if (!isRecord9(holder))
+    return [];
+  return Object.keys(isRecord9(holder.mcpServers) ? holder.mcpServers : holder);
+}
+function manifestServers(dir, declared) {
+  const entries = Array.isArray(declared) ? declared : [declared];
+  return entries.flatMap((entry) => {
+    if (typeof entry === "string") {
+      return pluginFileServers(readJson(path47.resolve(dir, entry)));
+    }
+    return isRecord9(entry) ? Object.keys(entry) : [];
+  });
+}
 function pluginServers(pluginDirs) {
   const entries = pluginDirs.flatMap((dir) => {
     const manifest = readJson(path47.join(dir, ".claude-plugin", "plugin.json"));
-    const name = isRecord9(manifest) && typeof manifest.name === "string" ? manifest.name : undefined;
-    if (name === undefined)
+    if (!isRecord9(manifest) || typeof manifest.name !== "string")
       return [];
-    return serverNames(readJson(path47.join(dir, ".mcp.json"))).map((server) => [server, name]);
+    const { name } = manifest;
+    return [
+      ...pluginFileServers(readJson(path47.join(dir, ".mcp.json"))),
+      ...manifestServers(dir, manifest.mcpServers)
+    ].map((server) => [server, name]);
   });
   return new Map(entries.reverse());
 }
