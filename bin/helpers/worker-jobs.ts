@@ -13,10 +13,10 @@ export const LISTING_ARGS = ['agents', '--json', '--all'];
 export const LISTING = `claude ${LISTING_ARGS.join(' ')}`;
 
 const OptionalText = v.nullish(v.string());
-// A pid of another type parses to `pidMalformed`, not to a failed listing: no
-// caller but `sessionsInRepo` reads a pid, and a dispatch must not fail on it.
-// `link` treats a malformed pid on an in-repo row as "cannot tell" (see
-// `sessionsInRepo` in memory-sessions.ts).
+// A pid of another type parses to `pidMalformed`, not to a failed listing, so a
+// dispatch, which reads no pid, does not fail on it. `link` and `loop start`
+// read a malformed pid as "cannot tell" (`sessionsInRepo` in memory-sessions.ts,
+// `chooseAction` in loop-reconcile.ts).
 const RawPid = v.optional(v.unknown());
 
 const isMalformedPid = (pid: unknown): boolean =>
@@ -33,6 +33,7 @@ const JobSchema = v.pipe(
     cwd: OptionalText,
     sessionId: OptionalText,
     state: OptionalText,
+    status: OptionalText,
     pid: RawPid,
   }),
   v.transform((row) => ({
@@ -42,6 +43,7 @@ const JobSchema = v.pipe(
     cwd: row.cwd ?? undefined,
     sessionId: row.sessionId ?? undefined,
     state: row.state ?? undefined,
+    status: row.status ?? undefined,
     pid: typeof row.pid === 'number' ? row.pid : undefined,
     ...(isMalformedPid(row.pid) ? { pidMalformed: true } : {}),
   })),

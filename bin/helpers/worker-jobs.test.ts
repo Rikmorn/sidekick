@@ -51,6 +51,7 @@ describe('listJobs', () => {
           cwd: '/repo/.claude/worktrees/w1',
           sessionId: 'abc',
           state: 'done',
+          status: undefined,
           pid: undefined,
         },
         {
@@ -60,6 +61,7 @@ describe('listJobs', () => {
           cwd: undefined,
           sessionId: undefined,
           state: undefined,
+          status: 'idle',
           pid: 4242,
         },
       ],
@@ -73,12 +75,39 @@ describe('listJobs', () => {
     ['a row that is an array', '[[]]', 'does not parse'],
     ['a field of the wrong type', '[{"name":7}]', 'does not parse'],
     ['a cwd of the wrong type', '[{"cwd":7}]', 'does not parse'],
+    ['a status of the wrong type', '[{"status":7}]', 'does not parse'],
   ])('refuses a listing that is %s', (_label, stdout, phrase) => {
     const result = listJobs(runner({ stdout }).run, '/repo');
     expect('issues' in result).toBe(true);
     if (!('issues' in result)) return;
     expect(result.issues[0]).toContain('claude agents --json --all');
     expect(result.issues[0]).toContain(phrase);
+  });
+
+  test('parses the status of a row, and reads a missing or null one as undefined', () => {
+    const listing = [
+      { id: 'a', kind: 'background', pid: 1, status: 'busy' },
+      { id: 'b', kind: 'background', pid: 2, status: 'waiting' },
+      { id: 'c', kind: 'background' },
+      { id: 'd', kind: 'background', pid: null, status: null },
+    ];
+    const result = listJobs(
+      runner({ stdout: JSON.stringify(listing) }).run,
+      '/repo',
+    );
+    if (!('jobs' in result)) throw new Error(result.issues.join(' '));
+    expect(result.jobs.map((j) => [j.id, j.status])).toEqual([
+      ['a', 'busy'],
+      ['b', 'waiting'],
+      ['c', undefined],
+      ['d', undefined],
+    ]);
+    expect(result.jobs.map((j) => 'status' in j)).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   test('a pid of the wrong type parses, flagged, so callers that ignore pids still succeed', () => {
