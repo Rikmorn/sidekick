@@ -91,6 +91,7 @@ function seatOf(name: string, root: string, lenv: LoopEnv): Seat {
   const lock = takeLock(dir, {
     pid: lenv.pid,
     now: lenv.now(),
+    bootTime: lenv.bootTime(),
     isAlive: lenv.isAlive,
   });
   return lock.kind === 'held'

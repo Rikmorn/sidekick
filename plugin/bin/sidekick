@@ -9081,46 +9081,74 @@ var currentArmed = (state, armed) => armed.kind === "ok" && armed.value.launch =
 var sha256 = (data) => createHash("sha256").update(data).digest("hex");
 var SKIPPED_NAMES = new Set([".git", "node_modules", ".DS_Store"]);
 var TYPES_DIR = ".claude-plugin/types";
+var MANIFEST = path42.join(".claude-plugin", "plugin.json");
+var TSCONFIG = "tsconfig.json";
+var ENGINE_EXTENDS = "./.claude-plugin/types/tsconfig.json";
 var UNREADABLE = "unreadable";
-function filesUnder3(root, rel) {
+var isSkipped = (child, name) => SKIPPED_NAMES.has(name) || child === TYPES_DIR || child.endsWith(`/${TYPES_DIR}`);
+var holdsManifest = (dir) => fs35.statSync(path42.join(dir, MANIFEST), { throwIfNoEntry: false })?.isFile() === true;
+var isRecord8 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+function isEngineTsconfig(bytes) {
+  try {
+    const parsed = JSON.parse(bytes.toString("utf-8"));
+    return isRecord8(parsed) && Object.keys(parsed).length === 1 && parsed.extends === ENGINE_EXTENDS;
+  } catch {
+    return false;
+  }
+}
+var readBytes = (file) => {
+  try {
+    return fs35.readFileSync(file);
+  } catch {
+    return null;
+  }
+};
+function fileEntry(root, child, mayBeEngine) {
+  const bytes = readBytes(path42.join(root, child));
+  if (bytes === null)
+    return [[child, UNREADABLE]];
+  return mayBeEngine && isEngineTsconfig(bytes) ? [] : [[child, sha256(bytes)]];
+}
+function filesUnder3(root, rel, isPlugin) {
+  const dir = path42.resolve(root, rel);
   let entries;
   try {
-    entries = fs35.readdirSync(path42.join(root, rel), { withFileTypes: true });
+    entries = fs35.readdirSync(dir, { withFileTypes: true });
   } catch (e) {
     if (rel === "")
       throw e;
     return [[`${rel}/`, UNREADABLE]];
   }
+  const atPlugin = isPlugin(dir);
   return entries.flatMap((entry) => {
     const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
-    if (SKIPPED_NAMES.has(entry.name) || child === TYPES_DIR)
+    if (isSkipped(child, entry.name))
       return [];
     if (entry.isDirectory())
-      return filesUnder3(root, child);
+      return filesUnder3(root, child, isPlugin);
     if (!entry.isFile())
       return [];
-    try {
-      return [[child, sha256(fs35.readFileSync(path42.join(root, child)))]];
-    } catch {
-      return [[child, UNREADABLE]];
-    }
+    return fileEntry(root, child, atPlugin && entry.name === TSCONFIG);
   });
 }
 var byPath = (a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
-function folderDigest(dir) {
+function folderDigest(dir, isPlugin) {
   try {
-    return filesUnder3(dir, "").sort(byPath);
+    return filesUnder3(dir, "", isPlugin).sort(byPath);
   } catch {
     return null;
   }
 }
 function launchHash(input) {
+  const plugins = new Set(input.pluginDirs.map((dir) => path42.resolve(dir)));
+  const isPluginDir = (dir) => plugins.has(dir);
+  const inProfile = (dir) => isPluginDir(dir) || holdsManifest(dir);
   return sha256(JSON.stringify([
     input.loopJson,
     input.record,
     input.args,
-    folderDigest(input.profileDir),
-    input.pluginDirs.map(folderDigest)
+    folderDigest(input.profileDir, inProfile),
+    input.pluginDirs.map((dir) => folderDigest(dir, isPluginDir))
   ]));
 }
 var TAKEOVER_ATTEMPTS = 3;
@@ -9140,29 +9168,40 @@ var readText4 = (file) => {
     return null;
   }
 };
-function pidOf(text) {
+var HolderSchema = object({
+  pid: pipe(number(), integer(), minValue(1)),
+  at: optional(unknown())
+});
+function holderOf(text) {
   try {
-    const parsed = safeParse(object({ pid: pipe(number(), integer(), minValue(1)) }), JSON.parse(text));
-    return parsed.success ? parsed.output.pid : null;
+    const parsed = safeParse(HolderSchema, JSON.parse(text));
+    if (!parsed.success)
+      return null;
+    const { pid, at } = parsed.output;
+    return {
+      pid,
+      takenAt: typeof at === "string" ? Date.parse(at) : Number.NaN
+    };
   } catch {
     return null;
   }
 }
-function inspectLock(file, isAlive) {
+function inspectLock(file, opts) {
   const text = readText4(file);
   if (text === null)
     return { kind: "free" };
-  const pid = pidOf(text);
-  if (pid === null) {
+  const holder = holderOf(text);
+  if (holder === null) {
     return {
       kind: "busy",
       issue: `${file}: the lock file is unreadable; check that no start is running, then delete it`
     };
   }
-  return isAlive(pid) ? {
+  const isDead = holder.takenAt < opts.bootTime.getTime() || !opts.isAlive(holder.pid);
+  return isDead ? { kind: "dead", text } : {
     kind: "busy",
-    issue: `${file}: another start holds the lock (pid ${pid})`
-  } : { kind: "dead", text };
+    issue: `${file}: another start holds the lock (pid ${holder.pid}); if no start is running, delete the file, then run start again`
+  };
 }
 function removeDead(file, dead) {
   const grave = `${file}.${randomUUID()}.dead`;
@@ -9201,7 +9240,7 @@ function takeLock(loopDir, opts) {
         };
       }
     }
-    const seen = inspectLock(file, opts.isAlive);
+    const seen = inspectLock(file, opts);
     if (seen.kind === "busy")
       return seen;
     if (seen.kind === "dead") {
@@ -10080,14 +10119,14 @@ function readJson(file) {
     return;
   }
 }
-var isRecord8 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var isRecord9 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 function serverNames(holder) {
-  return isRecord8(holder) && isRecord8(holder.mcpServers) ? Object.keys(holder.mcpServers) : [];
+  return isRecord9(holder) && isRecord9(holder.mcpServers) ? Object.keys(holder.mcpServers) : [];
 }
 function pluginServers(pluginDirs) {
   const entries = pluginDirs.flatMap((dir) => {
     const manifest = readJson(path47.join(dir, ".claude-plugin", "plugin.json"));
-    const name = isRecord8(manifest) && typeof manifest.name === "string" ? manifest.name : undefined;
+    const name = isRecord9(manifest) && typeof manifest.name === "string" ? manifest.name : undefined;
     if (name === undefined)
       return [];
     return serverNames(readJson(path47.join(dir, ".mcp.json"))).map((server) => [server, name]);
@@ -10097,7 +10136,7 @@ function pluginServers(pluginDirs) {
 function otherServers(repo, deps) {
   const globalFile = path47.resolve(deps.cwd, claudeJsonPath(deps.env, deps.home));
   const global = readJson(globalFile);
-  const projects = isRecord8(global) && isRecord8(global.projects) ? global.projects : {};
+  const projects = isRecord9(global) && isRecord9(global.projects) ? global.projects : {};
   const local = [repo, realPathOf(repo)].flatMap((key) => serverNames(projects[key]));
   return new Set([
     ...serverNames(readJson(path47.join(repo, ".mcp.json"))),
@@ -11009,7 +11048,7 @@ var PLUGIN_ONLY_RULES = [
   "sk-parallel-sessions.md",
   "sk-memory.md"
 ];
-var isRecord9 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var isRecord10 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var errorText4 = (e) => e instanceof Error ? e.message : String(e);
 function pluginEnablement(root) {
   const file = path52.join(root, ".claude", "settings.json");
@@ -11030,11 +11069,11 @@ function pluginEnablement(root) {
   } catch (e) {
     return { state: "unreadable", path: file, reason: errorText4(e) };
   }
-  if (!isRecord9(parsed)) {
+  if (!isRecord10(parsed)) {
     return { state: "unreadable", path: file, reason: "not a JSON object" };
   }
   const plugins = parsed.enabledPlugins;
-  const enabled = isRecord9(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
+  const enabled = isRecord10(plugins) && Object.entries(plugins).some(([key, on]) => key.startsWith("sidekick@") && on === true);
   return { state: enabled ? "enabled" : "not-enabled" };
 }
 var EVERY_RULE = { leaveOut: [], leaveAsIs: [] };
@@ -11547,7 +11586,7 @@ function relaunch(p, job, ctx) {
   const call = callAt(p.repo, ctx.lenv);
   const issues = firstIssues([
     () => stopJob2(call, job),
-    () => waitStopped(call, job, pidOf2(job, ctx.rows)),
+    () => waitStopped(call, job, pidOf(job, ctx.rows)),
     () => removeJob(call, job)
   ]);
   if (issues.length > 0)
@@ -11571,7 +11610,7 @@ function launch2(p, action, ctx) {
     why: reasonText(p, reason7)
   });
 }
-var pidOf2 = (job, rows) => rows.find((row) => row.id === job)?.pid;
+var pidOf = (job, rows) => rows.find((row) => row.id === job)?.pid;
 function firstIssues(steps) {
   for (const step of steps) {
     const issues = step();
@@ -11705,6 +11744,7 @@ function seatOf(name, root, lenv) {
   const lock = takeLock(dir, {
     pid: lenv.pid,
     now: lenv.now(),
+    bootTime: lenv.bootTime(),
     isAlive: lenv.isAlive
   });
   return lock.kind === "held" ? { kind: "held", name, release: lock.release } : { kind: "busy", name, issue: lock.issue };

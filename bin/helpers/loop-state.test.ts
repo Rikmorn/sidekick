@@ -245,6 +245,103 @@ describe('launchHash', () => {
     write(path.join(tmp, 'plug', 'skills', '.DS_Store'), 'y');
     expect(hash()).toBe(before);
   });
+  test('holds when .claude-plugin/types changes in a plugin inside the profile folder', () => {
+    const types = path.join(
+      tmp,
+      'profile',
+      'plugin',
+      '.claude-plugin',
+      'types',
+    );
+    write(path.join(types, '..', 'plugin.json'), '{"name":"role"}');
+    write(path.join(types, 'x.d.ts'), 'x');
+    const before = hash();
+    write(path.join(types, 'x.d.ts'), 'rewritten');
+    write(path.join(types, 'claude-code', 'index.d.ts'), 'new');
+    expect(hash()).toBe(before);
+  });
+
+  describe("a plugin folder's root tsconfig.json that the engine writes", () => {
+    const ENGINE = { extends: './.claude-plugin/types/tsconfig.json' };
+    const spellings: [string, string][] = [
+      ['compact', JSON.stringify(ENGINE)],
+      ['with a trailing newline', `${JSON.stringify(ENGINE)}\n`],
+      ['indented', `${JSON.stringify(ENGINE, null, 2)}\n`],
+      [
+        'with odd spacing',
+        '  {"extends" :\t"./.claude-plugin/types/tsconfig.json"}  ',
+      ],
+    ];
+    // A plugin inside the profile folder, found by its manifest.
+    const nested = (): string => path.join(tmp, 'profile', 'plugin');
+    beforeEach(() => {
+      write(path.join(nested(), '.claude-plugin', 'plugin.json'), '{}');
+    });
+
+    test.each(
+      spellings,
+    )('is skipped in a pluginDirs folder, %s', (_l, text) => {
+      const before = hash();
+      write(path.join(tmp, 'plug', 'tsconfig.json'), text);
+      expect(hash()).toBe(before);
+    });
+    test.each(
+      spellings,
+    )('is skipped in a plugin inside the profile folder, %s', (_l, text) => {
+      const before = hash();
+      write(path.join(nested(), 'tsconfig.json'), text);
+      expect(hash()).toBe(before);
+    });
+    test('is skipped in a pluginDirs folder inside the profile folder that has no manifest', () => {
+      const bare = path.join(tmp, 'profile', 'bare');
+      write(path.join(bare, 'a.md'), 'a');
+      const before = hash({ pluginDirs: [bare] });
+      write(path.join(bare, 'tsconfig.json'), JSON.stringify(ENGINE));
+      expect(hash({ pluginDirs: [bare] })).toBe(before);
+    });
+    test.each([
+      ['another extends', '{"extends":"./tsconfig.base.json"}'],
+      ['an extra key', JSON.stringify({ ...ENGINE, include: ['hooks'] })],
+      [
+        'text that does not parse',
+        '{ "extends": "./.claude-plugin/types/tsconfig.json"',
+      ],
+      ['an array', JSON.stringify([ENGINE])],
+    ])('counts when it holds %s', (_l, text) => {
+      const before = hash();
+      write(path.join(tmp, 'plug', 'tsconfig.json'), text);
+      const mid = hash();
+      expect(mid).not.toBe(before);
+      write(path.join(nested(), 'tsconfig.json'), text);
+      expect(hash()).not.toBe(mid);
+    });
+    test("counts at the root of a folder that is not a plugin's", () => {
+      const before = hash();
+      write(path.join(tmp, 'profile', 'tsconfig.json'), JSON.stringify(ENGINE));
+      const mid = hash();
+      expect(mid).not.toBe(before);
+      write(
+        path.join(tmp, 'profile', 'sub', 'tsconfig.json'),
+        JSON.stringify(ENGINE),
+      );
+      expect(hash()).not.toBe(mid);
+    });
+    test('counts deeper in a plugin', () => {
+      const before = hash();
+      write(
+        path.join(tmp, 'plug', 'skills', 'tsconfig.json'),
+        JSON.stringify(ENGINE),
+      );
+      const mid = hash();
+      expect(mid).not.toBe(before);
+      write(
+        path.join(nested(), 'hooks', 'tsconfig.json'),
+        JSON.stringify(ENGINE),
+      );
+      expect(hash()).not.toBe(mid);
+    });
+  });
+
   test('file order on disk cannot change it', () => {
     const one = fs.mkdtempSync(path.join(tmp, 'o-'));
     for (const f of ['b', 'a', 'c']) write(path.join(one, f), f);
@@ -278,10 +375,14 @@ describe('launchHash', () => {
 describe('takeLock', () => {
   const alive = (pids: number[]) => (pid: number) => pids.includes(pid);
   const now = new Date('2026-11-15T10:00:00.000Z');
+  const bootTime = new Date('2026-11-15T08:00:00.000Z');
   const lockFile = (): string => path.join(tmp, LOCK_FILE);
+  const lockAt = (pid: number, at: string): void => {
+    fs.writeFileSync(lockFile(), JSON.stringify({ pid, at }));
+  };
 
   test('takes a free lock, records pid and time, and release removes it', () => {
-    const lock = takeLock(tmp, { pid: 11, now, isAlive: alive([]) });
+    const lock = takeLock(tmp, { pid: 11, now, bootTime, isAlive: alive([]) });
     expect(lock.kind).toBe('held');
     expect(JSON.parse(fs.readFileSync(lockFile(), 'utf8'))).toEqual({
       pid: 11,
@@ -293,27 +394,37 @@ describe('takeLock', () => {
   });
   test('takes a lock whose pid is dead', () => {
     fs.writeFileSync(lockFile(), JSON.stringify({ pid: 7, at: 'x' }));
-    const lock = takeLock(tmp, { pid: 11, now, isAlive: alive([]) });
+    const lock = takeLock(tmp, { pid: 11, now, bootTime, isAlive: alive([]) });
     expect(lock.kind).toBe('held');
     expect(JSON.parse(fs.readFileSync(lockFile(), 'utf8')).pid).toBe(11);
     expect(leftovers(tmp, [LOCK_FILE])).toEqual([]);
   });
   test('refuses a lock whose pid is alive, naming the pid', () => {
     fs.writeFileSync(lockFile(), JSON.stringify({ pid: 7, at: 'x' }));
-    const lock = takeLock(tmp, { pid: 11, now, isAlive: alive([7]) });
+    const lock = takeLock(tmp, { pid: 11, now, bootTime, isAlive: alive([7]) });
     expect(lock.kind).toBe('busy');
     if (lock.kind === 'busy') expect(lock.issue).toContain('7');
     expect(JSON.parse(fs.readFileSync(lockFile(), 'utf8')).pid).toBe(7);
   });
   test('a second taker is refused while the first holds', () => {
-    const first = takeLock(tmp, { pid: 11, now, isAlive: alive([11]) });
-    const second = takeLock(tmp, { pid: 12, now, isAlive: alive([11, 12]) });
+    const first = takeLock(tmp, {
+      pid: 11,
+      now,
+      bootTime,
+      isAlive: alive([11]),
+    });
+    const second = takeLock(tmp, {
+      pid: 12,
+      now,
+      bootTime,
+      isAlive: alive([11, 12]),
+    });
     expect(first.kind).toBe('held');
     expect(second.kind).toBe('busy');
   });
   test('refuses a lock it cannot read, naming the file', () => {
     fs.writeFileSync(lockFile(), 'garbage');
-    const lock = takeLock(tmp, { pid: 11, now, isAlive: alive([]) });
+    const lock = takeLock(tmp, { pid: 11, now, bootTime, isAlive: alive([]) });
     expect(lock.kind).toBe('busy');
     if (lock.kind === 'busy') expect(lock.issue).toContain(lockFile());
     expect(fs.readFileSync(lockFile(), 'utf8')).toBe('garbage');
@@ -325,6 +436,7 @@ describe('takeLock', () => {
     const lock = takeLock(tmp, {
       pid: 11,
       now,
+      bootTime,
       isAlive: (pid) => {
         fs.writeFileSync(lockFile(), mine);
         return pid === 99;
@@ -335,7 +447,7 @@ describe('takeLock', () => {
     expect(leftovers(tmp, [LOCK_FILE])).toEqual([]);
   });
   test('release leaves a lock another taker holds', () => {
-    const lock = takeLock(tmp, { pid: 11, now, isAlive: alive([]) });
+    const lock = takeLock(tmp, { pid: 11, now, bootTime, isAlive: alive([]) });
     fs.writeFileSync(lockFile(), JSON.stringify({ pid: 12, at: 'z' }));
     if (lock.kind === 'held') lock.release();
     expect(JSON.parse(fs.readFileSync(lockFile(), 'utf8')).pid).toBe(12);
@@ -344,8 +456,33 @@ describe('takeLock', () => {
     const lock = takeLock(path.join(tmp, 'none'), {
       pid: 11,
       now,
+      bootTime,
       isAlive: alive([]),
     });
     expect(lock.kind).toBe('busy');
+  });
+  test('takes over a lock taken before the boot, though its pid runs again', () => {
+    lockAt(7, '2026-11-15T07:59:59.000Z');
+    const lock = takeLock(tmp, { pid: 11, now, bootTime, isAlive: alive([7]) });
+    expect(lock.kind).toBe('held');
+    expect(JSON.parse(fs.readFileSync(lockFile(), 'utf8')).pid).toBe(11);
+    expect(leftovers(tmp, [LOCK_FILE])).toEqual([]);
+  });
+  test('refuses a lock taken since the boot whose pid runs, naming the file and the fix', () => {
+    lockAt(7, '2026-11-15T08:00:01.000Z');
+    expect(
+      takeLock(tmp, { pid: 11, now, bootTime, isAlive: alive([7]) }),
+    ).toEqual({
+      kind: 'busy',
+      issue: `${lockFile()}: another start holds the lock (pid 7); if no start is running, delete the file, then run start again`,
+    });
+    expect(JSON.parse(fs.readFileSync(lockFile(), 'utf8')).pid).toBe(7);
+  });
+  test('judges a lock whose time does not parse by its pid alone', () => {
+    lockAt(7, 'not a time');
+    const busy = takeLock(tmp, { pid: 11, now, bootTime, isAlive: alive([7]) });
+    expect(busy.kind).toBe('busy');
+    const taken = takeLock(tmp, { pid: 11, now, bootTime, isAlive: alive([]) });
+    expect(taken.kind).toBe('held');
   });
 });

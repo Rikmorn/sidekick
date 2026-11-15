@@ -158,28 +158,82 @@ const sha256 = (data: string | Buffer): string =>
 
 const SKIPPED_NAMES = new Set(['.git', 'node_modules', '.DS_Store']);
 const TYPES_DIR = '.claude-plugin/types';
+const MANIFEST = path.join('.claude-plugin', 'plugin.json');
+const TSCONFIG = 'tsconfig.json';
+// The one key of the `tsconfig.json` Claude Code writes into a `--plugin-dir` folder that has none (docs/research/control-centre/2026-10-15-mod-foundation-probes.md §Files the engine writes).
+const ENGINE_EXTENDS = './.claude-plugin/types/tsconfig.json';
 const UNREADABLE = 'unreadable';
 
-// Regular files by relative path, skipping links, `.git`, `node_modules`, `.DS_Store` (Finder writes it anywhere), and the types folder Claude Code rewrites.
+// Whether a folder, by its absolute path, is a plugin folder whose root `tsconfig.json` the engine may have written.
+type IsPluginFolder = (dir: string) => boolean;
+
+// Links, `.git`, `node_modules`, `.DS_Store` (Finder writes it anywhere), and the types folder Claude Code rewrites, each at any depth.
+const isSkipped = (child: string, name: string): boolean =>
+  SKIPPED_NAMES.has(name) ||
+  child === TYPES_DIR ||
+  child.endsWith(`/${TYPES_DIR}`);
+
+const holdsManifest = (dir: string): boolean =>
+  fs.statSync(path.join(dir, MANIFEST), { throwIfNoEntry: false })?.isFile() ===
+  true;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// The parsed value is compared, so spacing and a trailing newline cannot defeat the skip.
+function isEngineTsconfig(bytes: Buffer): boolean {
+  try {
+    const parsed: unknown = JSON.parse(bytes.toString('utf-8'));
+    return (
+      isRecord(parsed) &&
+      Object.keys(parsed).length === 1 &&
+      parsed.extends === ENGINE_EXTENDS
+    );
+  } catch {
+    return false;
+  }
+}
+
+const readBytes = (file: string): Buffer | null => {
+  try {
+    return fs.readFileSync(file);
+  } catch {
+    return null;
+  }
+};
+
+function fileEntry(
+  root: string,
+  child: string,
+  mayBeEngine: boolean,
+): [string, string][] {
+  const bytes = readBytes(path.join(root, child));
+  if (bytes === null) return [[child, UNREADABLE]];
+  return mayBeEngine && isEngineTsconfig(bytes) ? [] : [[child, sha256(bytes)]];
+}
+
+// Regular files by relative path, past the skipped entries and a plugin folder's engine `tsconfig.json`.
 // A subfolder that cannot be listed digests as one unreadable entry; the root's failure reaches the caller.
-function filesUnder(root: string, rel: string): [string, string][] {
+function filesUnder(
+  root: string,
+  rel: string,
+  isPlugin: IsPluginFolder,
+): [string, string][] {
+  const dir = path.resolve(root, rel);
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true });
+    entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch (e) {
     if (rel === '') throw e;
     return [[`${rel}/`, UNREADABLE]];
   }
+  const atPlugin = isPlugin(dir);
   return entries.flatMap((entry): [string, string][] => {
     const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
-    if (SKIPPED_NAMES.has(entry.name) || child === TYPES_DIR) return [];
-    if (entry.isDirectory()) return filesUnder(root, child);
+    if (isSkipped(child, entry.name)) return [];
+    if (entry.isDirectory()) return filesUnder(root, child, isPlugin);
     if (!entry.isFile()) return [];
-    try {
-      return [[child, sha256(fs.readFileSync(path.join(root, child)))]];
-    } catch {
-      return [[child, UNREADABLE]];
-    }
+    return fileEntry(root, child, atPlugin && entry.name === TSCONFIG);
   });
 }
 
@@ -187,23 +241,35 @@ const byPath = (a: [string, string], b: [string, string]): number =>
   a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
 
 // A missing or unreadable folder is `null`, so it hashes as missing; an empty folder is `[]`.
-function folderDigest(dir: string): [string, string][] | null {
+function folderDigest(
+  dir: string,
+  isPlugin: IsPluginFolder,
+): [string, string][] | null {
   try {
-    return filesUnder(dir, '').sort(byPath);
+    return filesUnder(dir, '', isPlugin).sort(byPath);
   } catch {
     return null;
   }
 }
 
-/** SHA-256 hex of the launch's five inputs, framed as one JSON value so no two inputs share a byte stream. */
+/**
+ * SHA-256 hex of the launch's five inputs, framed as one JSON value so no two
+ * inputs share a byte stream. The plugin folders, whose root `tsconfig.json`
+ * is skipped when it is the engine's, are each `pluginDirs` entry and each
+ * folder in the profile's folder that holds `.claude-plugin/plugin.json`.
+ */
 export function launchHash(input: HashInput): string {
+  const plugins = new Set(input.pluginDirs.map((dir) => path.resolve(dir)));
+  const isPluginDir: IsPluginFolder = (dir) => plugins.has(dir);
+  const inProfile: IsPluginFolder = (dir) =>
+    isPluginDir(dir) || holdsManifest(dir);
   return sha256(
     JSON.stringify([
       input.loopJson,
       input.record,
       input.args,
-      folderDigest(input.profileDir),
-      input.pluginDirs.map(folderDigest),
+      folderDigest(input.profileDir, inProfile),
+      input.pluginDirs.map((dir) => folderDigest(dir, isPluginDir)),
     ]),
   );
 }
@@ -234,13 +300,21 @@ const readText = (file: string): string | null => {
   }
 };
 
-function pidOf(text: string): number | null {
+const HolderSchema = v.object({
+  pid: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  at: v.optional(v.unknown()),
+});
+
+// The holder's pid, and when it took the lock in ms; an `at` that is not a time reads as NaN.
+function holderOf(text: string): { pid: number; takenAt: number } | null {
   try {
-    const parsed = v.safeParse(
-      v.object({ pid: v.pipe(v.number(), v.integer(), v.minValue(1)) }),
-      JSON.parse(text),
-    );
-    return parsed.success ? parsed.output.pid : null;
+    const parsed = v.safeParse(HolderSchema, JSON.parse(text));
+    if (!parsed.success) return null;
+    const { pid, at } = parsed.output;
+    return {
+      pid,
+      takenAt: typeof at === 'string' ? Date.parse(at) : Number.NaN,
+    };
   } catch {
     return null;
   }
@@ -251,22 +325,28 @@ type Seen =
   | { kind: 'busy'; issue: string }
   | { kind: 'dead'; text: string };
 
-function inspectLock(file: string, isAlive: (pid: number) => boolean): Seen {
+// A lock taken before the boot is dead whatever its pid, since a pid may be reused after a reboot; NaN compares false, so an unreadable time leaves the pid to judge.
+function inspectLock(
+  file: string,
+  opts: { bootTime: Date; isAlive: (pid: number) => boolean },
+): Seen {
   const text = readText(file);
   if (text === null) return { kind: 'free' };
-  const pid = pidOf(text);
-  if (pid === null) {
+  const holder = holderOf(text);
+  if (holder === null) {
     return {
       kind: 'busy',
       issue: `${file}: the lock file is unreadable; check that no start is running, then delete it`,
     };
   }
-  return isAlive(pid)
-    ? {
+  const isDead =
+    holder.takenAt < opts.bootTime.getTime() || !opts.isAlive(holder.pid);
+  return isDead
+    ? { kind: 'dead', text }
+    : {
         kind: 'busy',
-        issue: `${file}: another start holds the lock (pid ${pid})`,
-      }
-    : { kind: 'dead', text };
+        issue: `${file}: another start holds the lock (pid ${holder.pid}); if no start is running, delete the file, then run start again`,
+      };
 }
 
 // Moves the dead lock aside by rename, which one taker wins. A rename that moved a different lock puts it back, so a taker never removes a live holder's lock.
@@ -295,12 +375,18 @@ function removeDead(file: string, dead: string): string | null {
 
 /**
  * Takes `<loopDir>/start.lock` with an exclusive create, recording `pid` and `now`.
- * A lock whose pid is dead is taken over; one whose pid is alive, or that does not parse, is refused.
+ * A lock taken before `bootTime`, or whose pid is dead, is taken over; one taken
+ * since the boot whose pid is alive, or one that does not parse, is refused.
  * `release` removes the file only while it still holds this taker's text.
  */
 export function takeLock(
   loopDir: string,
-  opts: { pid: number; now: Date; isAlive: (pid: number) => boolean },
+  opts: {
+    pid: number;
+    now: Date;
+    bootTime: Date;
+    isAlive: (pid: number) => boolean;
+  },
 ): Lock {
   const file = path.join(loopDir, LOCK_FILE);
   const mine = JSON.stringify({ pid: opts.pid, at: opts.now.toISOString() });
@@ -319,7 +405,7 @@ export function takeLock(
         };
       }
     }
-    const seen = inspectLock(file, opts.isAlive);
+    const seen = inspectLock(file, opts);
     if (seen.kind === 'busy') return seen;
     if (seen.kind === 'dead') {
       const issue = removeDead(file, seen.text);

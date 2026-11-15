@@ -424,11 +424,23 @@ describe('runStart: what refuses before a loop is prepared', () => {
       code: 1,
       out: ['fixer: refused'],
       err: [
-        `fixer: ${lockFile()}: another start holds the lock (pid ${OTHER_PID})`,
+        `fixer: ${lockFile()}: another start holds the lock (pid ${OTHER_PID}); if no start is running, delete the file, then run start again`,
       ],
     });
     expect(calls).toEqual([]);
     expect(fs.readFileSync(lockFile(), 'utf-8')).toBe(theirs);
+  });
+
+  test('a lock taken before the boot is taken over, though its pid runs again', () => {
+    writeLoop();
+    writeProfile();
+    const before = new Date(BOOT.getTime() - HOUR_MS).toISOString();
+    write(lockFile(), JSON.stringify({ pid: OTHER_PID, at: before }));
+    alive.add(OTHER_PID);
+    const r = run(['fixer']);
+    expect(r.code).toBe(0);
+    expect(acted()).toEqual(['bg fixer']);
+    expect(fs.existsSync(lockFile())).toBe(false);
   });
 
   test('a loop with no folder refuses with the check, and leaves no folder or lock behind', () => {
