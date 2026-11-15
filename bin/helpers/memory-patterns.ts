@@ -116,6 +116,9 @@ export const GATE_CHECKS: readonly Check[] = [
   { patterns: [STRAY_TAG], readings: [withoutFlags] },
 ];
 
+/** The key check's id for a private key's header line, the one line of the key it matches. */
+export const PRIVATE_KEY_BLOCK = 'private-key-block';
+
 export const KEYS: readonly Pattern[] = [
   {
     id: 'aws-access-key',
@@ -134,7 +137,7 @@ export const KEYS: readonly Pattern[] = [
   { id: 'slack-bot-token', re: /xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/ },
   // gitleaks' header alone: its lazy body quantifier is quadratic on repeated headers, and any bound on it misses a longer key.
   {
-    id: 'private-key-block',
+    id: PRIVATE_KEY_BLOCK,
     re: /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i,
   },
 ];

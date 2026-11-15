@@ -6,12 +6,14 @@ import {
   NOW,
   snapshot,
   UNIT,
+  UNNAMED_UNIT,
   type UnitFixture,
   unitFixture,
+  unnamedInFlight,
   WORKER,
 } from './fixtures/loop/units.js';
 import { removeTemps } from './fixtures/worker/repo.js';
-import { localMinute } from './local-date.js';
+import { localDate, localMinute } from './local-date.js';
 import { LOOP_USAGE_LINE, type LoopEnv, runLoopCli } from './loop.js';
 import { ANSWER_USAGE_LINE } from './loop-answer.js';
 import { keyHits } from './memory-patterns.js';
@@ -236,6 +238,42 @@ describe('loop answer refuses, changing nothing', () => {
       `cannot write the ruling to ${rulingsOf(fx)}:`,
     );
     expect(fs.readFileSync(target, 'utf8')).toBe('kept\n');
+    expect(fx.ledger().map((l) => l.kind)).toEqual(['dispatched']);
+  });
+
+  test('answer refuses an attempt whose record names no worker, writing nothing', () => {
+    const fx = unitFixture();
+    unnamedInFlight(fx);
+    const before = snapshot(fx.loopDir);
+    const r = run(fx, answerArgs('ok', UNNAMED_UNIT));
+    expect(r).toEqual({
+      code: 1,
+      out: [],
+      err: [
+        `the attempt in flight for unit ${UNNAMED_UNIT} names no worker, so answer has no rulings file to write`,
+      ],
+    });
+    expect(snapshot(fx.loopDir)).toEqual(before);
+  });
+
+  test('a record that cannot be written after the ruling says the ruling is in, and that a re-run appends it again', () => {
+    const fx = unitFixture();
+    const day = path.join(fx.loopDir, 'records', `${localDate(NOW)}.jsonl`);
+    fs.chmodSync(day, 0o444);
+    const r = run(fx, answerArgs('Go ahead.'));
+    fs.chmodSync(day, 0o644);
+    expect(r.code).toBe(1);
+    expect(r.out).toEqual([]);
+    expect(r.err).toHaveLength(1);
+    expect(r.err[0]).toStartWith(
+      `the ruling is already in ${rulingsOf(fx)}, but answer cannot write the record in ${fx.loopDir}:`,
+    );
+    expect(r.err[0]).toEndWith(
+      ". Running answer again appends the ruling a second time, and the attempt's wait stays open until an answered line closes it",
+    );
+    expect(fs.readFileSync(rulingsOf(fx), 'utf8')).toBe(
+      `${heading}\n\nGo ahead.\n`,
+    );
     expect(fx.ledger().map((l) => l.kind)).toEqual(['dispatched']);
   });
 

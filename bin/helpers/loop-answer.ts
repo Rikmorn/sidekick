@@ -150,7 +150,7 @@ function writeAnswered(
     return [];
   } catch (e) {
     return [
-      `the ruling is in ${rulings}, but answer cannot write the record in ${ctx.loopDir}: ${messageOf(e)}. The attempt's wait stays open until an answered line closes it`,
+      `the ruling is already in ${rulings}, but answer cannot write the record in ${ctx.loopDir}: ${messageOf(e)}. Running answer again appends the ruling a second time, and the attempt's wait stays open until an answered line closes it`,
     ];
   }
 }

@@ -253,6 +253,33 @@ export function unitFixture({
 
 export type UnitFixture = ReturnType<typeof unitFixture>;
 
+/** The unit whose attempt `unnamedInFlight` puts in flight. */
+export const UNNAMED_UNIT = 'triage-7';
+
+/**
+ * Closes the fixture's attempt, then puts one in flight for `UNNAMED_UNIT`
+ * whose `dispatched` line names no worker, as only a hand-written record has
+ * it. Both lines fall within the work cap, so no reap touches them.
+ */
+export function unnamedInFlight(fx: UnitFixture): void {
+  const ago = (minutes: number): string =>
+    new Date(NOW.getTime() - minutes * MINUTE_MS).toISOString();
+  appendRecord(fx.loopDir, {
+    v: 1,
+    at: ago(50),
+    kind: 'discarded',
+    unit: UNIT,
+    worker: WORKER,
+    reason: 'requeued',
+  });
+  appendRecord(fx.loopDir, {
+    v: 1,
+    at: ago(10),
+    kind: 'dispatched',
+    unit: UNNAMED_UNIT,
+  });
+}
+
 /** Every entry under `dir`, a folder as `<path>/`, a file with its text. */
 export function snapshot(dir: string): Record<string, string> {
   const walk = (at: string): [string, string][] =>

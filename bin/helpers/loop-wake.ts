@@ -76,14 +76,22 @@ function chooseRow(rows: Job[], worker: string, discard: string): Choice {
   const jobs = rows.flatMap((row) => (row.id === undefined ? [] : [row.id]));
   const [job] = jobs;
   if (jobs.length === 1 && job !== undefined) return { kind: 'respawn', job };
-  const why =
-    jobs.length === 0
-      ? `the listing holds no session for worker ${worker}, so wake has nothing to respawn`
-      : `the listing holds ${jobs.length} sessions named ${worker}, so wake cannot tell which to respawn`;
   return {
     kind: 'refused',
-    issue: `${why}: give up on the attempt with ${discard}`,
+    issue: `${unwakeable(rows.length, jobs.length, worker)}: give up on the attempt with ${discard}`,
   };
+}
+
+// Why no one job is left to respawn: no row at all, rows with no job id, or
+// several jobs of the worker's name.
+function unwakeable(rows: number, jobs: number, worker: string): string {
+  if (rows === 0) {
+    return `the listing holds no session for worker ${worker}, so wake has nothing to respawn`;
+  }
+  if (jobs === 0) {
+    return `the listing holds worker ${worker} only as a session with no job id, which respawn cannot take, so wake has nothing to respawn`;
+  }
+  return `the listing holds ${jobs} sessions named ${worker}, so wake cannot tell which to respawn`;
 }
 
 // `claude respawn` for the worker's own job, from the loop's worktree.

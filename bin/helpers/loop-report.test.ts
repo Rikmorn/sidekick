@@ -3,17 +3,23 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   LOOP,
+  MINUTE_MS,
+  NOW,
   REPORT_TEXT,
   snapshot,
   UNIT,
+  UNNAMED_UNIT,
   type UnitFixture,
   unitFixture,
+  unnamedInFlight,
   WORKER,
 } from './fixtures/loop/units.js';
 import { git, removeTemps, tmp } from './fixtures/worker/repo.js';
 import { LOOP_USAGE_LINE, type LoopEnv, runLoopCli } from './loop.js';
+import { appendRecord } from './loop-record.js';
 import { loopReport, REPORT_USAGE_LINE } from './loop-report.js';
 import { keyHits } from './memory-patterns.js';
+import { execRunner, type Runner } from './pm-data.js';
 
 afterEach(removeTemps);
 
@@ -332,6 +338,84 @@ describe('loop report refuses', () => {
     });
   });
 
+  test("a broken link's worker-written path prints with its control characters escaped", () => {
+    const fx = unitFixture();
+    const named = path.join(tmp(), 'away\u001b[2J');
+    fs.writeFileSync(path.join(fx.worktree, '.git'), `gitdir: ${named}\n`);
+    const r = run(fx, reportArgs());
+    expect(r.code).toBe(1);
+    const printed = r.err.join('\n');
+    expect(printed).toContain('away\\x1b[2J');
+    expect(printed).not.toContain('\u001b');
+  });
+
+  test('a git log that fails prints the report, then names the failure', () => {
+    const fx = unitFixture();
+    const runGit: Runner = (cmd, args, cwd, opts) =>
+      args.includes('--no-show-signature')
+        ? { code: 128, stdout: '', stderr: 'fatal: bad object\n' }
+        : execRunner(cmd, args, cwd, opts);
+    const r = run(fx, reportArgs(), { runGit });
+    expect(r.code).toBe(1);
+    expect(r.out).toEqual([header(inTree(fx)), ...reportLines]);
+    expect(r.err).toEqual([
+      `git log worktree-${WORKER} failed in ${fx.worktree}: fatal: bad object`,
+    ]);
+  });
+
+  test('report reads the newest of several attempts by the record', () => {
+    const fx = unitFixture();
+    const second = 'fixer-000002';
+    const ago = (minutes: number): string =>
+      new Date(NOW.getTime() - minutes * MINUTE_MS).toISOString();
+    const close = { unit: UNIT, reason: 'requeued' };
+    appendRecord(fx.loopDir, {
+      v: 1,
+      at: ago(50),
+      kind: 'discarded',
+      worker: WORKER,
+      ...close,
+    });
+    appendRecord(fx.loopDir, {
+      v: 1,
+      at: ago(40),
+      kind: 'dispatched',
+      unit: UNIT,
+      worker: second,
+    });
+    appendRecord(fx.loopDir, {
+      v: 1,
+      at: ago(30),
+      kind: 'discarded',
+      worker: second,
+      ...close,
+    });
+    const dir = path.join(fx.loopDir, 'units', UNIT, second);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'report.md'), REPORT_TEXT);
+    const r = run(fx, reportArgs());
+    expect(r.err).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(r.out).toEqual([
+      `report of unit ${UNIT} · worker ${second}, from ${path.join(dir, 'report.md')}:`,
+      ...reportLines,
+      `the worktree of ${second} is gone, so report reads no branch head`,
+    ]);
+  });
+
+  test('report refuses an attempt whose record names no worker', () => {
+    const fx = unitFixture();
+    unnamedInFlight(fx);
+    const r = run(fx, reportArgs(UNNAMED_UNIT));
+    expect(r).toEqual({
+      code: 1,
+      out: [],
+      err: [
+        `unit ${UNNAMED_UNIT}'s attempt names no worker, so report has no report to read`,
+      ],
+    });
+  });
+
   test('a worktree whose link to the repo is broken prints the report, and runs no git there', () => {
     const fx = unitFixture();
     const elsewhere = tmp();
@@ -368,6 +452,14 @@ describe('loop report refuses', () => {
       reportArgs(),
       () => ({ env: { SIDEKICK_LOOP: 'other' } }),
       'SIDEKICK_LOOP is "other", so this session cannot run loop report for "fixer"',
+    ],
+    [
+      'a non-empty SIDEKICK_WORKER',
+      reportArgs(),
+      (fx) => ({
+        env: { CLAUDE_CONFIG_DIR: fx.config, SIDEKICK_WORKER: fx.brief },
+      }),
+      'SIDEKICK_WORKER is set: a worker runs no unit verb, so only a loop or the operator runs loop report',
     ],
   ];
 

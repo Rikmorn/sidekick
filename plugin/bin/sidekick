@@ -4375,6 +4375,7 @@ var GATE_CHECKS = [
   { patterns: INJECTION, readings: [tagsDecoded, invisibleStripped] },
   { patterns: [STRAY_TAG], readings: [withoutFlags] }
 ];
+var PRIVATE_KEY_BLOCK = "private-key-block";
 var KEYS = [
   {
     id: "aws-access-key",
@@ -4392,7 +4393,7 @@ var KEYS = [
   },
   { id: "slack-bot-token", re: /xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/ },
   {
-    id: "private-key-block",
+    id: PRIVATE_KEY_BLOCK,
     re: /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i
   }
 ];
@@ -13853,7 +13854,7 @@ function writeAnswered(ctx, answer, at2) {
     return [];
   } catch (e) {
     return [
-      `the ruling is in ${rulings}, but answer cannot write the record in ${ctx.loopDir}: ${messageOf10(e)}. The attempt's wait stays open until an answered line closes it`
+      `the ruling is already in ${rulings}, but answer cannot write the record in ${ctx.loopDir}: ${messageOf10(e)}. Running answer again appends the ruling a second time, and the attempt's wait stays open until an answered line closes it`
     ];
   }
 }
@@ -15698,65 +15699,13 @@ function drawName(d) {
 }
 
 // bin/helpers/loop-report.ts
-import * as fs59 from "node:fs";
 import * as path72 from "node:path";
-var REPORT_USAGE_LINE = "sidekick loop report <name> --unit <id>";
-var REFUSED6 = 1;
+
+// bin/helpers/loop-report-read.ts
+import * as fs59 from "node:fs";
 var READ_NO_FOLLOW = fs59.constants.O_RDONLY | fs59.constants.O_NOFOLLOW | fs59.constants.O_NONBLOCK;
-var PROPOSALS = /^##\s+Proposals\s*$/i;
-var KEY_BLOCK = "private-key-block";
-var KEY_BLOCK_END = /-----END[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i;
-var GAP = "the report has no ## Proposals section, so it proposes no outward action: read that as a gap in the report, not as nothing to do";
-var refuse13 = (err, issues) => {
-  for (const issue2 of issues)
-    err(issue2);
-  return REFUSED6;
-};
-var print2 = (sink, lines) => {
-  for (const line of lines)
-    sink(line);
-};
 var messageOf12 = (e) => e instanceof Error ? e.message : String(e);
 var codeOf = (e) => e instanceof Error && ("code" in e) && typeof e.code === "string" ? e.code : undefined;
-function parseReport(rest2) {
-  const parsed = parseFlags(rest2, { unit: { type: "string" } });
-  if (parsed === undefined || parsed.positionals.length !== 1)
-    return;
-  const { unit: unit2 } = parsed.values;
-  if (typeof unit2 !== "string")
-    return;
-  return { name: parsed.positionals[0], unit: unit2 };
-}
-function reportedWorker(ctx, unit2) {
-  const ledger = readLedger(ctx.loopDir, ctx.lenv.now());
-  if ("issues" in ledger) {
-    return {
-      issues: [
-        ...ledger.issues,
-        "report cannot read the loop's record, so it cannot find the unit's attempt"
-      ]
-    };
-  }
-  const open = inFlight(ledger.lines);
-  const isOpen = open !== undefined && open.unit === unit2;
-  const workers = ledger.lines.flatMap((line) => line.kind === "dispatched" && line.unit === unit2 ? [line.worker ?? ""] : []);
-  const worker = isOpen ? open.worker : workers.at(-1);
-  if (worker === undefined) {
-    return {
-      issues: [
-        `the record holds no attempt for unit ${unit2}, so report has nothing to print`
-      ]
-    };
-  }
-  if (worker === "") {
-    return {
-      issues: [
-        `unit ${unit2}'s attempt names no worker, so report has no report to read`
-      ]
-    };
-  }
-  return { worker };
-}
 var notPlain = (file) => `a unit report must be a plain file inside its folder, so report prints nothing from ${file}`;
 function openNoFollow(file) {
   try {
@@ -15822,6 +15771,64 @@ function readPlain(place2, maxBytes) {
     fs59.closeSync(opened.fd);
   }
 }
+
+// bin/helpers/loop-report.ts
+var REPORT_USAGE_LINE = "sidekick loop report <name> --unit <id>";
+var REFUSED6 = 1;
+var PROPOSALS = /^##\s+Proposals\s*$/i;
+var KEY_BLOCK_END = /-----END[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i;
+var GAP = "the report has no ## Proposals section, so it proposes no outward action: read that as a gap in the report, not as nothing to do";
+var KEPT_CONTROLS = new Set([`
+`, "\t"]);
+var HEX = 16;
+var refuse13 = (err, issues) => {
+  for (const issue2 of issues)
+    err(issue2);
+  return REFUSED6;
+};
+var print2 = (sink, lines) => {
+  for (const line of lines)
+    sink(line);
+};
+function parseReport(rest2) {
+  const parsed = parseFlags(rest2, { unit: { type: "string" } });
+  if (parsed === undefined || parsed.positionals.length !== 1)
+    return;
+  const { unit: unit2 } = parsed.values;
+  if (typeof unit2 !== "string")
+    return;
+  return { name: parsed.positionals[0], unit: unit2 };
+}
+function reportedWorker(ctx, unit2) {
+  const ledger = readLedger(ctx.loopDir, ctx.lenv.now());
+  if ("issues" in ledger) {
+    return {
+      issues: [
+        ...ledger.issues,
+        "report cannot read the loop's record, so it cannot find the unit's attempt"
+      ]
+    };
+  }
+  const open = inFlight(ledger.lines);
+  const isOpen = open !== undefined && open.unit === unit2;
+  const workers = ledger.lines.flatMap((line) => line.kind === "dispatched" && line.unit === unit2 ? [line.worker ?? ""] : []);
+  const worker = isOpen ? open.worker : workers.at(-1);
+  if (worker === undefined) {
+    return {
+      issues: [
+        `the record holds no attempt for unit ${unit2}, so report has nothing to print`
+      ]
+    };
+  }
+  if (worker === "") {
+    return {
+      issues: [
+        `unit ${unit2}'s attempt names no worker, so report has no report to read`
+      ]
+    };
+  }
+  return { worker };
+}
 function readReport(worker, worktree, attempt, maxBytes) {
   const inTree = {
     file: path72.join(worktree, UNIT_REPORT),
@@ -15849,28 +15856,21 @@ function readReport(worker, worktree, attempt, maxBytes) {
   };
 }
 var withheld = (ids) => `(withheld: ${ids.join(", ")})`;
-var KEPT_CONTROLS = new Set([`
-`, "\t"]);
-var HEX = 16;
 var visible = (text) => [...text].map((ch) => isControl(ch) && !KEPT_CONTROLS.has(ch) ? `\\x${ch.charCodeAt(0).toString(HEX).padStart(2, "0")}` : ch).join("");
-var shownLine = (line) => {
-  const ids = keyHits(line);
-  return ids.length === 0 ? visible(line) : withheld(ids);
-};
+var visibleSink = (sink) => (line) => sink(visible(line));
+var shownWith = (line, ids) => ids.length === 0 ? line : withheld(ids);
+var shownLine = (line) => shownWith(line, keyHits(line));
+var blockLine = (ids) => withheld(ids.includes(PRIVATE_KEY_BLOCK) ? ids : [...ids, PRIVATE_KEY_BLOCK]);
 function shownLines(lines) {
-  const shown2 = [];
-  let inBlock = false;
-  for (const line of lines) {
+  return lines.reduce((acc, line) => {
     const ids = keyHits(line);
-    const blocked = inBlock || ids.includes(KEY_BLOCK);
-    inBlock = blocked && !KEY_BLOCK_END.test(line);
-    if (blocked) {
-      shown2.push(withheld(ids.includes(KEY_BLOCK) ? ids : [...ids, KEY_BLOCK]));
-    } else {
-      shown2.push(shownLine(line));
-    }
-  }
-  return shown2;
+    const blocked = acc.inBlock || ids.includes(PRIVATE_KEY_BLOCK);
+    acc.shown.push(blocked ? blockLine(ids) : shownWith(line, ids));
+    return {
+      shown: acc.shown,
+      inBlock: blocked && !KEY_BLOCK_END.test(line)
+    };
+  }, { shown: [], inBlock: false }).shown;
 }
 var linesOf = (text) => {
   const lines = text.split(`
@@ -15878,29 +15878,8 @@ var linesOf = (text) => {
   return text.endsWith(`
 `) ? lines.slice(0, -1) : lines;
 };
-function headLines(ctx, worker) {
-  const { repo } = ctx.manifest;
-  const worktree = nativeFolder(repo, worker);
-  if (!isFolder3(worktree)) {
-    return {
-      lines: [
-        `the worktree of ${worker} is gone, so report reads no branch head`
-      ]
-    };
-  }
-  const chain = chainOf(worktree, realPathOf(path72.join(repo, ".git")), worker);
-  if ("issues" in chain) {
-    return {
-      issues: [
-        `the worktree ${worktree} is not linked to its repo the way git links a worktree, so report runs no git there:`,
-        ...chain.issues
-      ]
-    };
-  }
-  const run = hardenedRunner(ctx.lenv.runGit, {
-    worktree,
-    gitDir: chain.gitDir
-  });
+function headCommit2(ctx, worktree, worker, gitDir) {
+  const run = hardenedRunner(ctx.lenv.runGit, { worktree, gitDir });
   const branch = nativeBranch(worker);
   const args = ["log", "-1", "--no-show-signature", "--format=%H %s"];
   const result = run("git", [...args, `${HEADS}${branch}`, "--"], worktree);
@@ -15915,10 +15894,28 @@ function headLines(ctx, worker) {
   const text = result.stdout.replace(/\n$/, "");
   const space = text.indexOf(" ");
   const sha = space === -1 ? text : text.slice(0, space);
-  const subject = space === -1 ? "" : text.slice(space + 1);
-  const shown2 = shownLine(subject);
+  const shown2 = space === -1 ? "" : shownLine(text.slice(space + 1));
   const commit2 = shown2 === "" ? sha : `${sha} ${shown2}`;
   return { lines: [`head of ${branch}: ${commit2}`] };
+}
+function headLines(ctx, worker) {
+  const { repo } = ctx.manifest;
+  const worktree = nativeFolder(repo, worker);
+  if (!isFolder3(worktree)) {
+    return {
+      lines: [
+        `the worktree of ${worker} is gone, so report reads no branch head`
+      ]
+    };
+  }
+  const chain = chainOf(worktree, realPathOf(path72.join(repo, ".git")), worker);
+  const head2 = "issues" in chain ? {
+    issues: [
+      `the worktree ${worktree} is not linked to its repo the way git links a worktree, so report runs no git there:`,
+      ...chain.issues
+    ]
+  } : headCommit2(ctx, worktree, worker, chain.gitDir);
+  return "issues" in head2 ? { issues: head2.issues.map(shownLine) } : head2;
 }
 function printReport(ctx, call, io, maxBytes) {
   const found = reportedWorker(ctx, call.unit);
@@ -15942,7 +15939,9 @@ function printReport(ctx, call, io, maxBytes) {
     io.out(GAP);
   return "issues" in head2 ? REFUSED6 : 0;
 }
-function loopReport(rest2, lenv, out, err, { maxBytes = 1e5 } = {}) {
+function loopReport(rest2, lenv, rawOut, rawErr, { maxBytes = 1e5 } = {}) {
+  const out = visibleSink(rawOut);
+  const err = visibleSink(rawErr);
   const call = parseReport(rest2);
   if (call === undefined) {
     err(`usage: ${REPORT_USAGE_LINE}`);
@@ -16275,11 +16274,19 @@ function chooseRow(rows, worker, discard2) {
   const [job] = jobs;
   if (jobs.length === 1 && job !== undefined)
     return { kind: "respawn", job };
-  const why = jobs.length === 0 ? `the listing holds no session for worker ${worker}, so wake has nothing to respawn` : `the listing holds ${jobs.length} sessions named ${worker}, so wake cannot tell which to respawn`;
   return {
     kind: "refused",
-    issue: `${why}: give up on the attempt with ${discard2}`
+    issue: `${unwakeable(rows.length, jobs.length, worker)}: give up on the attempt with ${discard2}`
   };
+}
+function unwakeable(rows, jobs, worker) {
+  if (rows === 0) {
+    return `the listing holds no session for worker ${worker}, so wake has nothing to respawn`;
+  }
+  if (jobs === 0) {
+    return `the listing holds worker ${worker} only as a session with no job id, which respawn cannot take, so wake has nothing to respawn`;
+  }
+  return `the listing holds ${jobs} sessions named ${worker}, so wake cannot tell which to respawn`;
 }
 function respawnWorker(ctx, call, worker, job, io) {
   const loopTree = nativeFolder(ctx.manifest.repo, sessionOf3(call.name));

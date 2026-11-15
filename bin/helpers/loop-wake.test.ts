@@ -7,8 +7,10 @@ import {
   NOW,
   snapshot,
   UNIT,
+  UNNAMED_UNIT,
   type UnitFixture,
   unitFixture,
+  unnamedInFlight,
   WORKER,
   WORKER_PID,
 } from './fixtures/loop/units.js';
@@ -120,6 +122,36 @@ describe('loop wake', () => {
     expect(snapshot(fx.loopDir)).toEqual(before);
   });
 
+  test('wake refuses a job: null worker whose only row is a session with no job id', () => {
+    const fx = unitFixture({ job: null, listed: false });
+    fx.claude.state.rows.push({ kind: 'interactive', name: WORKER });
+    const r = run(fx, wakeArgs());
+    expect(r).toEqual({
+      code: 1,
+      out: [],
+      err: [
+        `the listing holds worker ${WORKER} only as a session with no job id, which respawn cannot take, so wake has nothing to respawn: give up on the attempt with ${discardLine}`,
+      ],
+    });
+    expect(fx.claude.named('respawn')).toEqual([]);
+  });
+
+  test('wake refuses an attempt whose record names no worker, listing nothing', () => {
+    const fx = unitFixture();
+    unnamedInFlight(fx);
+    const before = snapshot(fx.loopDir);
+    const r = run(fx, wakeArgs(UNNAMED_UNIT));
+    expect(r).toEqual({
+      code: 1,
+      out: [],
+      err: [
+        `the attempt in flight for unit ${UNNAMED_UNIT} names no worker, so wake has no session to respawn`,
+      ],
+    });
+    expect(fx.claude.calls).toEqual([]);
+    expect(snapshot(fx.loopDir)).toEqual(before);
+  });
+
   test('wake refuses a job: null worker with two stopped sessions of its name, naming neither job', () => {
     const fx = unitFixture({ job: null, running: false });
     fx.claude.state.rows.push({ ...otherRow, name: WORKER });
@@ -202,6 +234,14 @@ describe('loop wake refuses, changing nothing', () => {
       wakeArgs(),
       () => ({ env: { SIDEKICK_LOOP: 'other' } }),
       'SIDEKICK_LOOP is "other", so this session cannot run loop wake for "fixer"',
+    ],
+    [
+      'a non-empty SIDEKICK_WORKER',
+      wakeArgs(),
+      (fx) => ({
+        env: { CLAUDE_CONFIG_DIR: fx.config, SIDEKICK_WORKER: fx.brief },
+      }),
+      'SIDEKICK_WORKER is set: a worker runs no unit verb, so only a loop or the operator runs loop wake',
     ],
     [
       'a units.lock another verb holds',
