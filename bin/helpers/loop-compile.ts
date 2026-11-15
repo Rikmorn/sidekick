@@ -25,12 +25,24 @@ export function effectiveStates(
   );
 }
 
-/** The verbs every loop may run, pinned to its name. Both `arm` spellings the skill runs, bare and with flags, are named, so the allow list is explicit. */
+/**
+ * The verbs every loop may run, pinned to its name. Both `arm` spellings the
+ * skill runs, bare and with flags, are named, so the allow list is explicit.
+ * The unit verbs `dispatch`, `answer`, `wake`, `report`, and `discard` always
+ * take arguments, so they get the `*` form; `reap` takes none, so it gets the
+ * bare form. `resume` is the operator's alone and has no rule.
+ */
 export function fixedVerbRules(name: string): string[] {
   return [
     `Bash(sidekick loop record ${name} *)`,
     `Bash(sidekick loop arm ${name})`,
     `Bash(sidekick loop arm ${name} *)`,
+    `Bash(sidekick loop dispatch ${name} *)`,
+    `Bash(sidekick loop answer ${name} *)`,
+    `Bash(sidekick loop wake ${name} *)`,
+    `Bash(sidekick loop report ${name} *)`,
+    `Bash(sidekick loop discard ${name} *)`,
+    `Bash(sidekick loop reap ${name})`,
   ];
 }
 
@@ -69,8 +81,9 @@ export function compileLoop(input: CompileInput): Settings {
     env: {
       SIDEKICK_LOOP: name,
       ...NO_UPDATES_ENV,
-      // An empty value reads as absent, which covers a daemon started from a main's shell.
+      // An empty value reads as absent, which covers a daemon started from a main's or a worker's shell.
       SIDEKICK_MAIN: '',
+      SIDEKICK_WORKER: '',
     },
     crossSessionInbound: 'accept',
   };

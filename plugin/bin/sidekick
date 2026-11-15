@@ -10936,7 +10936,13 @@ function fixedVerbRules(name) {
   return [
     `Bash(sidekick loop record ${name} *)`,
     `Bash(sidekick loop arm ${name})`,
-    `Bash(sidekick loop arm ${name} *)`
+    `Bash(sidekick loop arm ${name} *)`,
+    `Bash(sidekick loop dispatch ${name} *)`,
+    `Bash(sidekick loop answer ${name} *)`,
+    `Bash(sidekick loop wake ${name} *)`,
+    `Bash(sidekick loop report ${name} *)`,
+    `Bash(sidekick loop discard ${name} *)`,
+    `Bash(sidekick loop reap ${name})`
   ];
 }
 var editDeny = (dir) => `Edit(//${realPathOf(dir).replace(/^\/+/, "")}/**)`;
@@ -10963,7 +10969,8 @@ function compileLoop(input) {
     env: {
       SIDEKICK_LOOP: name,
       ...NO_UPDATES_ENV,
-      SIDEKICK_MAIN: ""
+      SIDEKICK_MAIN: "",
+      SIDEKICK_WORKER: ""
     },
     crossSessionInbound: "accept"
   };

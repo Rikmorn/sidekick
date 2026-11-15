@@ -73,7 +73,25 @@ describe('fixedVerbRules', () => {
       'Bash(sidekick loop record lp *)',
       'Bash(sidekick loop arm lp)',
       'Bash(sidekick loop arm lp *)',
+      'Bash(sidekick loop dispatch lp *)',
+      'Bash(sidekick loop answer lp *)',
+      'Bash(sidekick loop wake lp *)',
+      'Bash(sidekick loop report lp *)',
+      'Bash(sidekick loop discard lp *)',
+      'Bash(sidekick loop reap lp)',
     ]);
+  });
+
+  test('the fixed verbs include the unit verbs pinned to the name', () => {
+    const rules = fixedVerbRules('lp');
+    for (const verb of ['dispatch', 'answer', 'wake', 'report', 'discard']) {
+      expect(rules).toContain(`Bash(sidekick loop ${verb} lp *)`);
+    }
+    expect(rules).toContain('Bash(sidekick loop reap lp)');
+  });
+
+  test('resume is not a fixed verb', () => {
+    expect(fixedVerbRules('lp').join('\n')).not.toContain('resume');
   });
 });
 
@@ -137,15 +155,22 @@ describe('compileLoop', () => {
       SIDEKICK_LOOP: 'lp',
       DISABLE_AUTOUPDATER: '1',
       SIDEKICK_MAIN: '',
+      SIDEKICK_WORKER: '',
     });
     expect(s.crossSessionInbound).toBe('accept');
     expect(permissions(s).blockReadsOutsideWorkingDirectories).toBe(true);
   });
 
-  test('names no worker anywhere', () => {
-    expect(JSON.stringify(compileLoop(input())).toLowerCase()).not.toContain(
-      'worker',
-    );
+  test('the compiled env sets SIDEKICK_WORKER empty', () => {
+    expect(compileLoop(input()).env).toHaveProperty('SIDEKICK_WORKER', '');
+  });
+
+  test('names no worker beyond the emptied env key', () => {
+    const { env, ...rest } = compileLoop(input());
+    expect(JSON.stringify(rest).toLowerCase()).not.toContain('worker');
+    expect(Object.keys(env ?? {}).filter((k) => /worker/i.test(k))).toEqual([
+      'SIDEKICK_WORKER',
+    ]);
   });
 });
 
