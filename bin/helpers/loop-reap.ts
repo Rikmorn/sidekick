@@ -16,7 +16,12 @@ import {
   type UnitContext,
   unitContextOf,
 } from './loop-unit-context.js';
-import { inFlight, readLedger, workingMinutes } from './loop-units.js';
+import {
+  type Attempt,
+  inFlight,
+  readLedger,
+  workingMinutes,
+} from './loop-units.js';
 import { parseFlags } from './profile.js';
 
 export const REAP_USAGE_LINE = 'sidekick loop reap <name>';
@@ -24,8 +29,10 @@ export const REAP_USAGE_LINE = 'sidekick loop reap <name>';
 type Out = (line: string) => void;
 type Io = { out: Out; err: Out };
 
-/** What a reap printed: one lead and the discard's lines per attempt it reaped; or why it could not judge or close one. */
-export type Reaped = { lines: string[] } | { issues: string[] };
+/** What a reap printed, one lead and the discard's lines, and the attempt it closed, if any; or why it could not judge or close one. */
+export type Reaped =
+  | { lines: string[]; closed: Attempt | undefined }
+  | { issues: string[] };
 
 const REFUSED = 1;
 const CANNOT_TIME =
@@ -53,32 +60,38 @@ export function reapDue(ctx: UnitContext): Reaped {
   const ledger = readLedger(ctx.loopDir, now);
   if ('issues' in ledger) return { issues: [...ledger.issues, CANNOT_TIME] };
   const open = inFlight(ledger.lines);
-  if (open === undefined) return { lines: [] };
+  if (open === undefined) return { lines: [], closed: undefined };
   const { caps } = ctx.manifest;
   const worked = workingMinutes(ledger.lines, open, caps, now);
-  if (worked <= caps.workMinutesPerUnit) return { lines: [] };
+  if (worked <= caps.workMinutesPerUnit) {
+    return { lines: [], closed: undefined };
+  }
   const reason = `worked ${Math.ceil(worked)} minutes, past the work cap of ${caps.workMinutesPerUnit} minutes`;
   const who = open.worker === '' ? '(unnamed)' : open.worker;
   const lead = `unit ${open.unit} · worker ${who} ${reason}, so reap stops and discards it`;
   const discarded = discardAttempt(ctx, open, reason, true);
   return 'issues' in discarded
     ? { issues: [lead, ...discarded.issues] }
-    : { lines: [lead, ...discarded.lines] };
+    : { lines: [lead, ...discarded.lines], closed: open };
 }
 
 /**
- * Takes the units lock, reaps, then runs `act` under the same lock. A busy
- * lock, or a reap that cannot judge or close the attempt, refuses before
- * `act` runs.
+ * Takes the units lock, reaps, then runs `act` under the same lock, with the
+ * attempt the reap closed, if any. A busy lock, or a reap that cannot judge
+ * or close the attempt, refuses before `act` runs.
  */
-export function reapFirst(ctx: UnitContext, io: Io, act: () => number): number {
+export function reapFirst(
+  ctx: UnitContext,
+  io: Io,
+  act: (reaped: Attempt | undefined) => number,
+): number {
   const lock = takeUnitsLock(ctx.loopDir, ctx.lenv);
   if (lock.kind === 'busy') return refuse(io.err, [lock.issue]);
   try {
     const reaped = reapDue(ctx);
     if ('issues' in reaped) return refuse(io.err, reaped.issues);
     print(io.out, reaped.lines);
-    return act();
+    return act(reaped.closed);
   } finally {
     lock.release();
   }

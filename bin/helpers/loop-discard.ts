@@ -2,10 +2,11 @@
  * Closing a unit's attempt, as `sidekick loop discard` and `reap` do. It
  * stops the worker first, so nothing it does races `finish`'s checks, then
  * runs `finish`'s discard with the unit brief, then writes `failed` when
- * asked and `discarded`, which frees the loop's slot. A worktree holding
- * work `finish` will not lose is left, its worker stopped, with the hand
- * route; the attempt closes anyway. While the worker may still run, nothing
- * is written, so the slot never frees under a running worker.
+ * asked and `discarded`, which frees the loop's slot. When `finish` refuses,
+ * as for work it will not lose, what it left stays, with the hand route; the
+ * attempt closes anyway. While the worker may still run, or a live process
+ * still holds the worktree's lock, nothing is written, so the slot never
+ * frees under a running worker.
  */
 
 import * as fs from 'node:fs';
@@ -14,15 +15,22 @@ import { BRIEF_FILE, UNIT_REPORT } from './loop-dispatch-attempt.js';
 import { appendRecord, type RecordLine } from './loop-record.js';
 import { callAt, type JobCall, stopJob } from './loop-start-jobs.js';
 import type { UnitContext } from './loop-unit-context.js';
-import { type Attempt, attemptDir, readWorkerFile } from './loop-units.js';
+import {
+  type Attempt,
+  attemptDir,
+  readWorkerFile,
+  unitIdIssues,
+} from './loop-units.js';
 import { workTreeRootOf } from './rules.js';
 import type { WorkerEnv } from './worker.js';
 import { finish } from './worker-finish.js';
 import { discardCommandFor, type FinishOptions } from './worker-finish-args.js';
 import { leftoverRoute } from './worker-finish-gone.js';
 import { type Job, listJobs } from './worker-jobs.js';
+import { lockReasonOf } from './worker-listing.js';
 import { waitForExit } from './worker-teardown-stop.js';
 import { nativeFolder } from './worker-worktree.js';
+import { lockPid } from './worktree-lock.js';
 
 /** What a discard did: whether `finish` removed the worker, and its lines; or why the attempt stays in flight. */
 export type Discarded =
@@ -96,23 +104,37 @@ const finishEnv = (call: JobCall): WorkerEnv => ({
   workTree: workTreeRootOf(call.cwd, call.lenv.runGit),
 });
 
-const handRoute = (worker: string, opts: FinishOptions): string =>
-  `the worktree of ${worker} is left as it was, its worker stopped, and the attempt closes anyway. List it with sidekick worktree list, then once its work is committed or removed, run ${discardCommandFor(opts)}`;
+// `finish` resolves the repo from the folder it runs in, so the route names
+// the loop's repo. It holds for every refusal: dirty work, a broken link, or
+// a teardown cut short.
+const handRoute = (worker: string, opts: FinishOptions, repo: string): string =>
+  `finish did not clear worker ${worker}, so the attempt closes and what remains is yours. List it with sidekick worktree list, and settle what finish names, such as uncommitted work to commit or remove. Then run ${discardCommandFor(opts)} in the loop's repo, ${repo}`;
+
+// A live process the worktree's lock names: `finish`'s own stop or wait fell
+// short, so the worker may still write there.
+function liveLockIssue(
+  call: JobCall,
+  worktree: string,
+  worker: string,
+): string | undefined {
+  const pid = lockPid(lockReasonOf(call.lenv.runGit, call.cwd, worktree));
+  if (pid === undefined || !call.lenv.isAlive(pid)) return undefined;
+  return `the worktree of ${worker} is locked by pid ${pid}, which still runs, so the attempt stays in flight: run sidekick loop discard again once it exits`;
+}
 
 // `finish`'s discard with the unit brief, its lines kept in the order printed.
+// A refusal closes the attempt, unless a live process still holds the
+// worktree's lock.
 function runFinish(
   ctx: UnitContext,
   call: JobCall,
   dir: string,
   worker: string,
-): { removed: boolean; lines: string[] } {
-  const report = path.join(
-    nativeFolder(ctx.manifest.repo, worker),
-    UNIT_REPORT,
-  );
+): Discarded {
+  const worktree = nativeFolder(ctx.manifest.repo, worker);
   const opts: FinishOptions = {
     subject: { kind: 'brief', brief: path.join(dir, BRIEF_FILE) },
-    noReport: !holdsEntry(report),
+    noReport: !holdsEntry(path.join(worktree, UNIT_REPORT)),
     mode: { kind: 'discard' },
     worktree: undefined,
   };
@@ -121,9 +143,13 @@ function runFinish(
     lines.push(line);
   };
   const code = finish(opts, finishEnv(call), keep, keep);
-  return code === 0
-    ? { removed: true, lines }
-    : { removed: false, lines: [...lines, handRoute(worker, opts)] };
+  if (code === 0) return { removed: true, lines };
+  const live = liveLockIssue(call, worktree, worker);
+  if (live !== undefined) return { issues: [...lines, live] };
+  return {
+    removed: false,
+    lines: [...lines, handRoute(worker, opts, ctx.manifest.repo)],
+  };
 }
 
 // Stops the worker, then clears it with `finish`; a worker with no row left
@@ -186,9 +212,10 @@ function writeClosing(ctx: UnitContext, lines: RecordLine[]): string[] {
 /**
  * Closes `attempt`: stops its worker, runs `finish`'s discard with the unit
  * brief, without a report when the worktree holds none, then writes `failed`
- * when `failed` and `discarded`. A `finish` refusal leaves the stopped
- * worker and prints the hand route, and the attempt still closes. A worker
- * that may still run, or a listing that cannot say, writes nothing.
+ * when `failed` and `discarded`. A `finish` refusal leaves what `finish`
+ * left and prints the hand route, and the attempt still closes. A worker
+ * that may still run, a live process holding the worktree's lock, a listing
+ * that cannot say, or a unit id that names a folder writes nothing.
  * `exitWaitMs` bounds the wait for a stopped process to exit.
  */
 export function discardAttempt(
@@ -198,6 +225,16 @@ export function discardAttempt(
   failed: boolean,
   exitWaitMs = 15_000,
 ): Discarded {
+  // The record's schema lets `.` and `..` through, and the unit names a folder.
+  const unitIssues = unitIdIssues(attempt.unit);
+  if (unitIssues.length > 0) {
+    return {
+      issues: [
+        ...unitIssues,
+        `discard touches no path for unit "${attempt.unit}" and writes nothing: the dispatched line that names it needs the operator's hand, in ${ctx.loopDir}/records`,
+      ],
+    };
+  }
   const settled = settleWorker(ctx, attempt, exitWaitMs);
   if ('issues' in settled) return settled;
   const at = ctx.lenv.now().toISOString();

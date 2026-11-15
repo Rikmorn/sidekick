@@ -112,7 +112,7 @@ describe('loop discard closes the attempt', () => {
     expect(git(fx.top, 'branch', '--list', `worktree-${WORKER}`)).not.toBe('');
     expect(r.out.join('\n')).toContain('wip.txt');
     expect(r.out).toContain(
-      `the worktree of ${WORKER} is left as it was, its worker stopped, and the attempt closes anyway. List it with sidekick worktree list, then once its work is committed or removed, run sidekick worker finish ${fx.brief} --discard`,
+      `finish did not clear worker ${WORKER}, so the attempt closes and what remains is yours. List it with sidekick worktree list, and settle what finish names, such as uncommitted work to commit or remove. Then run sidekick worker finish ${fx.brief} --discard in the loop's repo, ${fx.top}`,
     );
     expect(closing(fx).map((l) => l.kind)).toEqual(['discarded']);
     expect(r.out.at(-1)).toBe(`unit ${UNIT} · worker ${WORKER} · discarded`);
@@ -124,7 +124,7 @@ describe('loop discard closes the attempt', () => {
     const r = run(fx, discardArgs());
     expect(r.code).toBe(0);
     expect(r.out.join('\n')).toContain(
-      `run sidekick worker finish ${fx.brief} --no-report --discard`,
+      `run sidekick worker finish ${fx.brief} --no-report --discard in the loop's repo, ${fx.top}`,
     );
   });
 
@@ -201,6 +201,61 @@ describe('loop discard keeps the attempt in flight while its worker may run', ()
     );
     expect(verbs(fx)).toEqual(['agents', 'stop']);
     expect(snapshot(fx.loopDir)).toEqual(before);
+  });
+
+  // Claude Code's lock reason, naming the session's process.
+  const lockFor = (fx: UnitFixture, pid: number): void => {
+    git(
+      fx.top,
+      'worktree',
+      'lock',
+      '--reason',
+      `claude session ${WORKER} (pid ${pid} start 2026-11-15T08:20:00Z)`,
+      fx.worktree,
+    );
+  };
+  const LOCK_PID = 4242;
+  const liveLockLine = `the worktree of ${WORKER} is locked by pid ${LOCK_PID}, which still runs, so the attempt stays in flight: run sidekick loop discard again once it exits`;
+
+  test("a finish whose own wait for the worktree's lock runs out writes no record line, and prints no hand route", () => {
+    const fx = unitFixture();
+    // A pid the listing gives in a form no one can read: stopped, never waited on.
+    fx.claude.state.rows = fx.claude.state.rows.map((row) => ({
+      ...row,
+      pid: 'not-a-pid',
+    }));
+    lockFor(fx, LOCK_PID);
+    const r = run(fx, discardArgs(), { isAlive: (pid) => pid === LOCK_PID });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain(
+      `the worktree's lock still names a running process, pid ${LOCK_PID}, after 15 s: run finish again once it exits`,
+    );
+    expect(r.err.at(-1)).toBe(liveLockLine);
+    expect(r.err.join('\n')).not.toContain('finish did not clear');
+    expect(closing(fx)).toEqual([]);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+  });
+
+  test('a finish refusal while a live process holds the lock writes nothing', () => {
+    const fx = unitFixture();
+    fs.writeFileSync(path.join(fx.worktree, 'wip.txt'), 'unsaved\n');
+    lockFor(fx, LOCK_PID);
+    const before = snapshot(fx.loopDir);
+    const r = run(fx, discardArgs(), { isAlive: (pid) => pid === LOCK_PID });
+    expect(r.code).toBe(1);
+    expect(r.out).toEqual([]);
+    expect(r.err.at(-1)).toBe(liveLockLine);
+    expect(snapshot(fx.loopDir)).toEqual(before);
+  });
+
+  test('a lock naming a process that has exited does not hold the attempt open', () => {
+    const fx = unitFixture();
+    fs.writeFileSync(path.join(fx.worktree, 'wip.txt'), 'unsaved\n');
+    lockFor(fx, LOCK_PID);
+    const r = run(fx, discardArgs());
+    expect(r.code).toBe(0);
+    expect(r.out.join('\n')).toContain(`finish did not clear worker ${WORKER}`);
+    expect(closing(fx).map((l) => l.kind)).toEqual(['discarded']);
   });
 
   test('a listing that fails writes nothing', () => {

@@ -158,6 +158,35 @@ describe('loop reap', () => {
     expect(snapshot(fx.loopDir)).toEqual(before);
   });
 
+  test('reap refuses an overdue attempt whose unit id names a folder, touching no path and writing nothing', () => {
+    const fx = unitFixture({ dispatchedAgo: 60 });
+    appendRecord(fx.loopDir, {
+      v: 1,
+      at: ago(50),
+      kind: 'discarded',
+      unit: UNIT,
+      worker: WORKER,
+      reason: 'requeued',
+    });
+    appendRecord(fx.loopDir, {
+      v: 1,
+      at: ago(240),
+      kind: 'dispatched',
+      unit: '..',
+      worker: 'fixer-000002',
+    });
+    const before = snapshot(fx.loopDir);
+    const r = run(fx, ['reap', LOOP]);
+    expect(r.code).toBe(1);
+    expect(r.err).toEqual([
+      'unit .. · worker fixer-000002 worked 240 minutes, past the work cap of 180 minutes, so reap stops and discards it',
+      'unit: .. names a folder, not a unit',
+      `discard touches no path for unit ".." and writes nothing: the dispatched line that names it needs the operator's hand, in ${fx.loopDir}/records`,
+    ]);
+    expect(fx.claude.calls).toEqual([]);
+    expect(snapshot(fx.loopDir)).toEqual(before);
+  });
+
   test('reap refuses a record it cannot read, naming the file', () => {
     const fx = unitFixture({ dispatchedAgo: 240 });
     fs.mkdirSync(path.join(fx.loopDir, 'records', '2026-11-13.jsonl'));
@@ -213,7 +242,7 @@ describe('loop reap', () => {
 });
 
 describe('every unit verb reaps first', () => {
-  test('discard reaps an overdue attempt first, so it finds none left to close', () => {
+  test('discard of an overdue unit lets its reap close the attempt, and says so', () => {
     const fx = unitFixture({ dispatchedAgo: 240 });
     const r = run(fx, [
       'discard',
@@ -223,9 +252,28 @@ describe('every unit verb reaps first', () => {
       '--reason',
       'requeued',
     ]);
+    expect(r.err).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(r.out[0]).toBe(reapLead(240));
+    expect(r.out.at(-1)).toBe(
+      `reap closed unit ${UNIT}'s attempt as failed, past its work cap, so discard has nothing more to close`,
+    );
+    expect(kinds(fx)).toEqual(['dispatched', 'failed', 'discarded']);
+  });
+
+  test("discard of another unit refuses once the reap has closed the overdue one, keeping the reap's lines", () => {
+    const fx = unitFixture({ dispatchedAgo: 240 });
+    const r = run(fx, [
+      'discard',
+      LOOP,
+      '--unit',
+      'triage-7',
+      '--reason',
+      'requeued',
+    ]);
     expect(r.out[0]).toBe(reapLead(240));
     expect(r.err).toEqual([
-      `no attempt for unit ${UNIT} is in flight, so discard has nothing to close`,
+      'no attempt for unit triage-7 is in flight, so discard has nothing to close',
     ]);
     expect(r.code).toBe(1);
     expect(kinds(fx)).toEqual(['dispatched', 'failed', 'discarded']);

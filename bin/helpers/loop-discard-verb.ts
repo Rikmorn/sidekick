@@ -3,8 +3,10 @@
  * gives up on the unit's attempt in flight, as `discardAttempt` closes it.
  * `--failed` writes `failed` before `discarded`, so the breaker counts it;
  * a plain discard, such as a role's requeue, does not. It reaps first,
- * under the units lock, as every unit verb does. A refusal names every
- * reason it finds, and changes nothing.
+ * under the units lock, as every unit verb does; when the reap closes the
+ * unit's own attempt, the discard is done. A refusal names every reason it
+ * finds. One before the reap changes nothing, and one after it keeps what
+ * the reap wrote.
  */
 
 import * as v from 'valibot';
@@ -92,7 +94,20 @@ const notInFlight = (unit: string, open: Attempt | undefined): string => {
 };
 
 // Under the units lock, once the reap has run: the unit's attempt, closed.
-function discardInFlight(ctx: UnitContext, call: DiscardCall, io: Io): number {
+// When the reap closed that very attempt, the discard is done.
+function discardInFlight(
+  ctx: UnitContext,
+  call: DiscardCall,
+  io: Io,
+  reaped: Attempt | undefined,
+): number {
+  const isReaped = reaped !== undefined && reaped.unit === call.unit;
+  if (isReaped) {
+    io.out(
+      `reap closed unit ${call.unit}'s attempt as failed, past its work cap, so discard has nothing more to close`,
+    );
+    return 0;
+  }
   const ledger = readLedger(ctx.loopDir, ctx.lenv.now());
   if ('issues' in ledger) {
     return refuse(io.err, [
@@ -110,7 +125,7 @@ function discardInFlight(ctx: UnitContext, call: DiscardCall, io: Io): number {
   return 0;
 }
 
-/** Runs `discard`; returns 0 once the attempt closed, a worktree left for the operator included, else 1. */
+/** Runs `discard`; returns 0 once the attempt closed, by the reap or with a worktree left for the operator included, else 1. */
 export function loopDiscard(
   rest: string[],
   lenv: LoopEnv,
@@ -127,5 +142,5 @@ export function loopDiscard(
   const ctx = unitContextOf(call.name, lenv);
   if ('issues' in ctx) return refuse(err, ctx.issues);
   const io = { out, err };
-  return reapFirst(ctx, io, () => discardInFlight(ctx, call, io));
+  return reapFirst(ctx, io, (reaped) => discardInFlight(ctx, call, io, reaped));
 }

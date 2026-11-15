@@ -6,8 +6,10 @@
  * record, the skill, the issue, and the loop's worktree.
  * Then it fast-forwards that worktree, picks the worker's name, writes the
  * attempt's folder, and launches (`loop-dispatch-launch.ts`). A refusal
- * names every reason it finds; until a `dispatched` line counts the attempt,
- * the loop's folder ends as it began.
+ * names every reason it finds. Until a `dispatched` line counts the attempt,
+ * the loop's folder ends as it began, but for what the reap writes when it
+ * closes an overrun attempt: its `failed` and `discarded` lines, and the
+ * worker's report saved to that attempt's folder.
  */
 
 import { randomBytes } from 'node:crypto';
@@ -37,13 +39,8 @@ import {
 import { fetchUnitIssue, type UnitIssue } from './loop-issue.js';
 import { reapDue } from './loop-reap.js';
 import { sessionOf } from './loop-start-prepare.js';
-import { takeLock } from './loop-state.js';
-import {
-  attemptDir,
-  deriveUnitId,
-  UNITS_LOCK,
-  unitIdIssues,
-} from './loop-units.js';
+import { takeUnitsLock } from './loop-unit-context.js';
+import { attemptDir, deriveUnitId, unitIdIssues } from './loop-units.js';
 import type { Runner } from './pm-data.js';
 import { parseFlags } from './profile.js';
 import { isProfileName, PROFILE_NAME_RULE } from './profile-manifest.js';
@@ -172,16 +169,7 @@ export function loopDispatch(
   const runGit = timed(lenv.runGit, gitTimeoutMs);
   const loop = loadLoop(call.name, { ...lenv, runGit });
   if ('issues' in loop) return refuse(err, loop.issues);
-  const lock = takeLock(
-    loop.dir,
-    {
-      pid: lenv.pid,
-      now: lenv.now(),
-      bootTime: lenv.bootTime(),
-      isAlive: lenv.isAlive,
-    },
-    UNITS_LOCK,
-  );
+  const lock = takeUnitsLock(loop.dir, lenv);
   if (lock.kind === 'busy') return refuse(err, [lock.issue]);
   const opts = { draw, draws, gitTimeoutMs, syncTimeoutMs };
   try {

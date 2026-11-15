@@ -12940,12 +12940,18 @@ var finishEnv = (call) => ({
   cwd: call.cwd,
   workTree: workTreeRootOf(call.cwd, call.lenv.runGit)
 });
-var handRoute2 = (worker, opts) => `the worktree of ${worker} is left as it was, its worker stopped, and the attempt closes anyway. List it with sidekick worktree list, then once its work is committed or removed, run ${discardCommandFor(opts)}`;
+var handRoute2 = (worker, opts, repo) => `finish did not clear worker ${worker}, so the attempt closes and what remains is yours. List it with sidekick worktree list, and settle what finish names, such as uncommitted work to commit or remove. Then run ${discardCommandFor(opts)} in the loop's repo, ${repo}`;
+function liveLockIssue(call, worktree, worker) {
+  const pid = lockPid(lockReasonOf(call.lenv.runGit, call.cwd, worktree));
+  if (pid === undefined || !call.lenv.isAlive(pid))
+    return;
+  return `the worktree of ${worker} is locked by pid ${pid}, which still runs, so the attempt stays in flight: run sidekick loop discard again once it exits`;
+}
 function runFinish(ctx, call, dir, worker) {
-  const report2 = path61.join(nativeFolder(ctx.manifest.repo, worker), UNIT_REPORT);
+  const worktree = nativeFolder(ctx.manifest.repo, worker);
   const opts = {
     subject: { kind: "brief", brief: path61.join(dir, BRIEF_FILE) },
-    noReport: !holdsEntry(report2),
+    noReport: !holdsEntry(path61.join(worktree, UNIT_REPORT)),
     mode: { kind: "discard" },
     worktree: undefined
   };
@@ -12954,7 +12960,15 @@ function runFinish(ctx, call, dir, worker) {
     lines.push(line);
   };
   const code = finish(opts, finishEnv(call), keep, keep);
-  return code === 0 ? { removed: true, lines } : { removed: false, lines: [...lines, handRoute2(worker, opts)] };
+  if (code === 0)
+    return { removed: true, lines };
+  const live = liveLockIssue(call, worktree, worker);
+  if (live !== undefined)
+    return { issues: [...lines, live] };
+  return {
+    removed: false,
+    lines: [...lines, handRoute2(worker, opts, ctx.manifest.repo)]
+  };
 }
 function settleWorker(ctx, attempt, exitWaitMs) {
   const { worker } = attempt;
@@ -13002,6 +13016,15 @@ function writeClosing(ctx, lines) {
   }
 }
 function discardAttempt(ctx, attempt, reason7, failed, exitWaitMs = 15000) {
+  const unitIssues = unitIdIssues(attempt.unit);
+  if (unitIssues.length > 0) {
+    return {
+      issues: [
+        ...unitIssues,
+        `discard touches no path for unit "${attempt.unit}" and writes nothing: the dispatched line that names it needs the operator's hand, in ${ctx.loopDir}/records`
+      ]
+    };
+  }
   const settled = settleWorker(ctx, attempt, exitWaitMs);
   if ("issues" in settled)
     return settled;
@@ -13611,16 +13634,17 @@ function reapDue(ctx) {
     return { issues: [...ledger.issues, CANNOT_TIME] };
   const open = inFlight(ledger.lines);
   if (open === undefined)
-    return { lines: [] };
+    return { lines: [], closed: undefined };
   const { caps } = ctx.manifest;
   const worked = workingMinutes(ledger.lines, open, caps, now);
-  if (worked <= caps.workMinutesPerUnit)
-    return { lines: [] };
+  if (worked <= caps.workMinutesPerUnit) {
+    return { lines: [], closed: undefined };
+  }
   const reason7 = `worked ${Math.ceil(worked)} minutes, past the work cap of ${caps.workMinutesPerUnit} minutes`;
   const who2 = open.worker === "" ? "(unnamed)" : open.worker;
   const lead = `unit ${open.unit} · worker ${who2} ${reason7}, so reap stops and discards it`;
   const discarded = discardAttempt(ctx, open, reason7, true);
-  return "issues" in discarded ? { issues: [lead, ...discarded.issues] } : { lines: [lead, ...discarded.lines] };
+  return "issues" in discarded ? { issues: [lead, ...discarded.issues] } : { lines: [lead, ...discarded.lines], closed: open };
 }
 function reapFirst(ctx, io, act) {
   const lock = takeUnitsLock(ctx.loopDir, ctx.lenv);
@@ -13631,7 +13655,7 @@ function reapFirst(ctx, io, act) {
     if ("issues" in reaped)
       return refuse8(io.err, reaped.issues);
     print(io.out, reaped.lines);
-    return act();
+    return act(reaped.closed);
   } finally {
     lock.release();
   }
@@ -13721,7 +13745,12 @@ var notInFlight = (unit2, open) => {
   const who2 = open.worker === "" ? "(unnamed)" : open.worker;
   return `${lead}; the attempt in flight is unit ${open.unit}, worker ${who2}`;
 };
-function discardInFlight(ctx, call, io) {
+function discardInFlight(ctx, call, io, reaped) {
+  const isReaped = reaped !== undefined && reaped.unit === call.unit;
+  if (isReaped) {
+    io.out(`reap closed unit ${call.unit}'s attempt as failed, past its work cap, so discard has nothing more to close`);
+    return 0;
+  }
   const ledger = readLedger(ctx.loopDir, ctx.lenv.now());
   if ("issues" in ledger) {
     return refuse9(io.err, [
@@ -13753,7 +13782,7 @@ function loopDiscard(rest2, lenv, out, err) {
   if ("issues" in ctx)
     return refuse9(err, ctx.issues);
   const io = { out, err };
-  return reapFirst(ctx, io, () => discardInFlight(ctx, call, io));
+  return reapFirst(ctx, io, (reaped) => discardInFlight(ctx, call, io, reaped));
 }
 
 // bin/helpers/loop-dispatch.ts
@@ -15382,12 +15411,7 @@ function loopDispatch(rest2, lenv, out, err, {
   const loop = loadLoop(call.name, { ...lenv, runGit });
   if ("issues" in loop)
     return refuse11(err, loop.issues);
-  const lock = takeLock(loop.dir, {
-    pid: lenv.pid,
-    now: lenv.now(),
-    bootTime: lenv.bootTime(),
-    isAlive: lenv.isAlive
-  }, UNITS_LOCK);
+  const lock = takeUnitsLock(loop.dir, lenv);
   if (lock.kind === "busy")
     return refuse11(err, [lock.issue]);
   const opts = { draw, draws, gitTimeoutMs, syncTimeoutMs };
