@@ -21,7 +21,7 @@ A loop lives in the loop store, one folder per loop:
 
 `<config>` is `CLAUDE_CONFIG_DIR`, or `~/.claude` when that is unset or empty. `SIDEKICK_PROFILES_DIR` moves the profile store only, never the loop store. A loop's name follows the profile name rule: 1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit. `list` skips files and hidden entries in the store.
 
-`records/`, `state.json`, `armed.json`, and `start.lock` are a loop's runtime entries. The sidekick folder's `.gitignore` keeps them out of its repo, as `loops/*/records/`, `loops/*/state.json`, `loops/*/armed.json`, and `loops/*/start.lock`. So a loop's record, state, arm, and lock stay local. Two runs make the sidekick folder a repo: a `profile new` of a user profile, and a `start` that acts on a loop. Each adds any of those lines the folder's `.gitignore` lacks. `references/profiles.md` §The sidekick folder says when.
+`records/`, `units/`, `state.json`, `armed.json`, and `start.lock` are a loop's runtime entries. The sidekick folder's `.gitignore` keeps them out of its repo, as `loops/*/records/`, `loops/*/units/`, `loops/*/state.json`, `loops/*/armed.json`, and `loops/*/start.lock`. So a loop's record, units, state, arm, and lock stay local. Two runs make the sidekick folder a repo: a `profile new` of a user profile, and a `start` that acts on a loop. Each adds any of those lines the folder's `.gitignore` lacks. `references/profiles.md` §The sidekick folder says when.
 
 No `sidekick loop` verb writes `loop.json`. You write it, through `sk-loop` once #366 ships.
 
@@ -522,7 +522,7 @@ The bounds: `summary` and `reason` run 1 to 1,000 characters, and `command` 1 to
 
 `summary`, `command`, `reason`, and `class` hold no control character. That is nothing from U+0000 to U+001F, no U+007F, and nothing from U+0080 to U+009F, the C1 controls. A terminal reads those as commands, so a line `show` prints could otherwise move the cursor and hide the lines before it.
 
-The caps count the four verb kinds, so the model never writes them, and `record` refuses each with the name of its writer. Every write checks its line against the schema first and refuses one that fails, so a line a verb writes always reads back. A write after a torn last line starts a new line, so only the torn line is lost.
+The caps read the verb kinds (`dispatched`, `answered`, `resumed`, `landed`, `failed`, and `discarded`), so the model never writes them, and `record` refuses each with the name of its writer. Every write checks its line against the schema first and refuses one that fails, so a line a verb writes always reads back. A write after a torn last line starts a new line, so only the torn line is lost.
 
 The reader skips a line that is not JSON or fails the schema, and counts the skips, so one bad line hides nothing else. A day file that exists and cannot be read, such as a folder in its place, is named instead of read. A line holding a field a newer writer added still reads, without that field.
 

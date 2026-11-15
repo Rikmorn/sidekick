@@ -12281,7 +12281,7 @@ function parseRecordArgs(rest2) {
   };
 }
 function kindRefusal(kind) {
-  const writer = isVerbKind(kind) ? `${VERB_WRITERS[kind]}, since the caps count it; ` : "";
+  const writer = isVerbKind(kind) ? `${VERB_WRITERS[kind]}, since the caps read it; ` : "";
   return `--kind ${kind}: ${writer}record writes ${MODEL_KIND_LIST}`;
 }
 function flagRefusals(kind, args) {

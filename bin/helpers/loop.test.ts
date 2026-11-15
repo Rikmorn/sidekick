@@ -670,42 +670,42 @@ describe('record', () => {
       'a verb kind, dispatched',
       ['--kind', 'dispatched', '--summary', 's'],
       [
-        '--kind dispatched: only sidekick loop dispatch writes it, since the caps count it; record writes would, request, did, denied, and note',
+        '--kind dispatched: only sidekick loop dispatch writes it, since the caps read it; record writes would, request, did, denied, and note',
       ],
     ],
     [
       'a verb kind, landed',
       ['--kind', 'landed', '--summary', 's'],
       [
-        '--kind landed: only sidekick loop land writes it, since the caps count it; record writes would, request, did, denied, and note',
+        '--kind landed: only sidekick loop land writes it, since the caps read it; record writes would, request, did, denied, and note',
       ],
     ],
     [
       'a verb kind, failed',
       ['--kind', 'failed', '--summary', 's'],
       [
-        '--kind failed: only sidekick loop reap, sidekick loop discard --failed, and sidekick loop land write it, since the caps count it; record writes would, request, did, denied, and note',
+        '--kind failed: only sidekick loop reap, sidekick loop discard --failed, and sidekick loop land write it, since the caps read it; record writes would, request, did, denied, and note',
       ],
     ],
     [
       'a verb kind, discarded',
       ['--kind', 'discarded', '--summary', 's'],
       [
-        '--kind discarded: only sidekick loop discard and sidekick loop reap write it, since the caps count it; record writes would, request, did, denied, and note',
+        '--kind discarded: only sidekick loop discard and sidekick loop reap write it, since the caps read it; record writes would, request, did, denied, and note',
       ],
     ],
     [
       'a verb kind, answered',
       ['--kind', 'answered', '--summary', 's'],
       [
-        '--kind answered: only sidekick loop answer writes it, since the caps count it; record writes would, request, did, denied, and note',
+        '--kind answered: only sidekick loop answer writes it, since the caps read it; record writes would, request, did, denied, and note',
       ],
     ],
     [
       'a verb kind, resumed',
       ['--kind', 'resumed', '--summary', 's'],
       [
-        '--kind resumed: only sidekick loop resume writes it, since the caps count it; record writes would, request, did, denied, and note',
+        '--kind resumed: only sidekick loop resume writes it, since the caps read it; record writes would, request, did, denied, and note',
       ],
     ],
     [

@@ -386,7 +386,7 @@ function parseRecordArgs(rest: string[]): RecordCall | undefined {
 
 function kindRefusal(kind: string): string {
   const writer = isVerbKind(kind)
-    ? `${VERB_WRITERS[kind]}, since the caps count it; `
+    ? `${VERB_WRITERS[kind]}, since the caps read it; `
     : '';
   return `--kind ${kind}: ${writer}record writes ${MODEL_KIND_LIST}`;
 }

@@ -85,6 +85,26 @@ describe('the schema', () => {
     expect(out.success && out.output).toEqual(line);
   });
 
+  test.each([
+    'failed',
+    'discarded',
+  ] as const)('%s keeps an optional worker and refuses a bad one', (kind) => {
+    const line = {
+      ...base(T),
+      kind,
+      unit: 'u1',
+      reason: 'boom',
+      worker: 'fix-u1',
+    };
+    const kept = v.safeParse(RecordLineSchema, line);
+    expect(kept.success && kept.output).toEqual(line);
+    const bare = v.safeParse(RecordLineSchema, { ...line, worker: undefined });
+    expect(bare.success).toBe(true);
+    expect(
+      v.safeParse(RecordLineSchema, { ...line, worker: 'Bad Name' }).success,
+    ).toBe(false);
+  });
+
   test('answered and resumed parse and append', () => {
     for (const line of units) appendRecord(dir, line);
     const read = readRecords(
