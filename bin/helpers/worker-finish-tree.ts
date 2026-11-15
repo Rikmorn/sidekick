@@ -13,7 +13,7 @@ import * as path from 'node:path';
 import type { Runner } from './pm-data.js';
 import { shellArg } from './shell.js';
 import { heldBackup } from './worker-backup.js';
-import { type Brief, briefTargetOf } from './worker-brief.js';
+import { ATTEMPT_REPORT, type Brief, briefTargetOf } from './worker-brief.js';
 import {
   discardCommandFor,
   type FinishMode,
@@ -82,7 +82,7 @@ export interface BriefPlaces extends BriefAt {
   report: string;
   /** `<worktree>/<report>` */
   reportFrom: string;
-  /** `<top>/<report>`; undefined when no checkout holds the brief. */
+  /** A plan brief's `<top>/<report>`, undefined when no checkout holds the brief; a unit brief's `<attempt folder>/report.md`. */
   reportTo: string | undefined;
 }
 
@@ -103,6 +103,15 @@ export interface BriefRead {
   top: string | undefined;
 }
 
+// A unit's report is saved in its attempt folder, which is the brief's own
+// folder and needs no checkout; a plan's goes in the checkout holding the brief.
+function reportToOf(read: BriefRead, report: string): string | undefined {
+  if (read.brief.kind === 'unit') {
+    return path.join(read.folder, ATTEMPT_REPORT);
+  }
+  return read.top === undefined ? undefined : path.join(read.top, report);
+}
+
 function briefPlaces(read: BriefRead, worktree: string): BriefPlaces {
   // git status prints paths in this form.
   const report = path.posix.normalize(read.brief.report);
@@ -113,7 +122,7 @@ function briefPlaces(read: BriefRead, worktree: string): BriefPlaces {
     target: briefTargetOf(read.brief),
     report,
     reportFrom: path.join(worktree, report),
-    reportTo: top === undefined ? undefined : path.join(top, report),
+    reportTo: reportToOf(read, report),
   };
 }
 

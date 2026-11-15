@@ -2354,6 +2354,7 @@ function briefFileIssues(brief, bounds) {
   }
   return issues;
 }
+var ATTEMPT_REPORT = "report.md";
 var UNITS_FOLDER = "units";
 var realFolderOf = (file) => path4.dirname(physical(file));
 function unitBriefFileIssues(brief, briefPath) {
@@ -16021,6 +16022,12 @@ function offBranchReason(mode, branch) {
     }
   }
 }
+function reportToOf(read, report3) {
+  if (read.brief.kind === "unit") {
+    return path70.join(read.folder, ATTEMPT_REPORT);
+  }
+  return read.top === undefined ? undefined : path70.join(read.top, report3);
+}
 function briefPlaces(read, worktree) {
   const report3 = path70.posix.normalize(read.brief.report);
   const { folder, top } = read;
@@ -16030,7 +16037,7 @@ function briefPlaces(read, worktree) {
     target: briefTargetOf(read.brief),
     report: report3,
     reportFrom: path70.join(worktree, report3),
-    reportTo: top === undefined ? undefined : path70.join(top, report3)
+    reportTo: reportToOf(read, report3)
   };
 }
 function placesFor(tops, found, read) {

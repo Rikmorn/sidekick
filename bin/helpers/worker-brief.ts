@@ -262,6 +262,9 @@ export function briefFileIssues(
   return issues;
 }
 
+/** The run report's file name in a unit's attempt folder, where `finish` saves it and the loop verbs read it. */
+export const ATTEMPT_REPORT = 'report.md';
+
 const UNITS_FOLDER = 'units';
 
 // The folder a file really sits in: its own last segment is resolved too, so a

@@ -31,6 +31,7 @@ import {
   tmp,
 } from './fixtures/worker/repo.js';
 import { execRunner, MAX_OUTPUT, type Runner } from './pm-data.js';
+import { ATTEMPT_REPORT } from './worker-brief.js';
 import { SHORT_SHA } from './worker-finish.js';
 import { judgeFor } from './worker-finish-target.js';
 import { gitRunsIn, HARDENED_GIT_FLAGS } from './worker-git.js';
@@ -3344,5 +3345,62 @@ describe('finish runs git into the worktree hardened', () => {
       `${main}/commondir exists, but a main git dir never holds one: git reads it to find the repository, so it may send git to another one`,
       `git reports the common git dir ${copy}, but the main checkout's git dir is ${main}`,
     ]);
+  });
+});
+
+// A unit worker's brief in an attempt folder outside every checkout, naming a
+// run report the worktree holds at `unit-report.md`.
+function unitAttempt(fx: Fixture): { attempt: string; brief: string } {
+  const attempt = path.join(tmp(), 'loop', 'units', 'u-1', 'w1');
+  fs.mkdirSync(attempt, { recursive: true });
+  fs.writeFileSync(path.join(attempt, 'unit.md'), 'unit\n');
+  const brief = path.join(attempt, 'brief.md');
+  fs.writeFileSync(
+    brief,
+    [
+      '---',
+      'kind: unit',
+      'name: w1',
+      `unit: ${path.join(attempt, 'unit.md')}`,
+      `rulings: ${path.join(attempt, 'rulings.md')}`,
+      `baseline: ${fx.head}`,
+      'skill: sidekick:sk-orient',
+      'place: worktree',
+      'report: unit-report.md',
+      'orchestrator: orch',
+      '---',
+      '',
+    ].join('\n'),
+  );
+  // The fixture's plan report is not this worker's.
+  fs.rmSync(path.join(fx.worktree, REPORT));
+  fs.writeFileSync(path.join(fx.worktree, 'unit-report.md'), REPORT_TEXT);
+  return { attempt, brief };
+}
+
+describe('finish saves the run report', () => {
+  test("a unit worker's report is saved to its attempt folder", () => {
+    const fx = fixture();
+    fx.integrate();
+    const { attempt, brief } = unitAttempt(fx);
+    const h = harness(fx);
+    // A unit brief names no target, and landing a unit is another verb's.
+    const code = h.finish(brief, '--into', git(fx.top, 'symbolic-ref', 'HEAD'));
+    expect(h.err).toEqual([]);
+    expect(code).toBe(0);
+    const saved = path.join(attempt, ATTEMPT_REPORT);
+    expect(fs.readFileSync(saved, 'utf-8')).toBe(REPORT_TEXT);
+    expect(h.out).toContain(`report saved to ${saved}`);
+    expect(fs.existsSync(path.join(fx.top, 'unit-report.md'))).toBe(false);
+    expect(fs.existsSync(fx.worktree)).toBe(false);
+  });
+
+  test("a plan worker's report is saved as before", () => {
+    const fx = fixture();
+    fx.integrate();
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(savedReport(fx)).toBe(REPORT_TEXT);
+    expect(h.out).toContain(`report saved to ${path.join(fx.top, REPORT)}`);
   });
 });
