@@ -380,13 +380,39 @@ describe('chooseAction: finding the row', () => {
     }
   });
 
-  test('two rows by that name refuse a paused loop too', () => {
-    const rows = [stopped({ id: 'job2' }), stopped({ id: 'job3' })];
-    const lines = refusal(
-      chooseAction(input({ paused: true, state: undefined, rows })),
-    );
-    expect(lines).toContain('job2');
-    expect(lines).toContain('job3');
+  test('a paused loop whose candidates are all stopped is off, however many there are', () => {
+    const byName = [stopped({ id: 'job2' }), stopped({ id: 'job3' })];
+    const jobAndName = [stopped({ name: 'renamed' }), stopped({ id: 'job2' })];
+    for (const [st, rows] of [
+      [undefined, byName],
+      [state({ job: null }), byName],
+      [state(), jobAndName],
+    ] as const) {
+      for (const stopNow of [false, true]) {
+        expect(
+          chooseAction(input({ paused: true, stopNow, state: st, rows })),
+        ).toEqual({ kind: 'off' });
+      }
+    }
+  });
+
+  test.each([
+    ['live', live({ id: 'job3' })],
+    [
+      'with a pid that is not a number',
+      stopped({ id: 'job3', pidMalformed: true }),
+    ],
+    ['interactive', stopped({ id: undefined, kind: 'interactive' })],
+  ])('a paused loop with several candidates, one %s, refuses, listing them', (_label, other) => {
+    const rows = [stopped({ id: 'job2' }), other];
+    for (const stopNow of [false, true]) {
+      const lines = refusal(
+        chooseAction(input({ paused: true, stopNow, state: undefined, rows })),
+      );
+      expect(lines).toContain('job2');
+      expect(lines).toContain(other.id ?? 'interactive');
+      expect(lines).not.toContain('--now');
+    }
   });
 
   test('a row for state.job beside another row by that name refuses, listing both', () => {
@@ -528,6 +554,19 @@ describe('chooseAction: never touches a session that might be live', () => {
     ],
     ['a live row by name, the job gone', [live({ id: 'job2' })]],
     ['a stopped row by name, the job gone', [stopped({ id: 'job2' })]],
+    ['two stopped rows by name', [stopped(), stopped({ id: 'job2' })]],
+    [
+      'the job stopped, a stopped row by name',
+      [stopped({ name: 'x' }), stopped({ id: 'j' })],
+    ],
+    [
+      'a stopped row and a malformed pid by name',
+      [stopped(), stopped({ id: 'job2', pidMalformed: true })],
+    ],
+    [
+      'a stopped row and an interactive one by name',
+      [stopped(), stopped({ id: undefined, kind: 'interactive' })],
+    ],
   ];
   const states: (LoopState | undefined)[] = [
     undefined,
@@ -595,6 +634,19 @@ describe('chooseAction: never touches a session that might be live', () => {
     }
   }
 
+  // The pause rule: a paused loop ends off, is stopped, or refuses, and refuses only while some candidate might run.
+  function pauseViolation(
+    action: Action,
+    rows: Job[],
+    st: LoopState | undefined,
+  ): string | undefined {
+    if (action.kind === 'off' || action.kind === 'pause') return undefined;
+    if (action.kind !== 'refuse') return `a paused loop gives ${action.kind}`;
+    return rows.some((r) => isCandidate(st, r) && mightRun(r))
+      ? undefined
+      : 'a paused loop refuses with nothing that might run';
+  }
+
   test('no combination breaks the rules', () => {
     const found: string[] = [];
     for (const [label, rows] of rowSets) {
@@ -615,7 +667,9 @@ describe('chooseAction: never touches a session that might be live', () => {
                       stopNow,
                     }),
                   );
-                  const why = violation(action, rows, st, stopNow);
+                  const why =
+                    violation(action, rows, st, stopNow) ??
+                    (paused ? pauseViolation(action, rows, st) : undefined);
                   if (why !== undefined) {
                     found.push(
                       `${label}, state job ${st?.job}, paused ${paused}: ${why}`,

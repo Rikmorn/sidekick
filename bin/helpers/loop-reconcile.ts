@@ -78,13 +78,17 @@ const sessionOf = (name: string): string => `loop-${name}`;
 const refuse = (lines: string[]): Refuse => ({ kind: 'refuse', lines });
 
 /**
- * What `start` does to one loop. The row is the listing's row for
- * `state.job`, else the one named `loop-<name>`. More than one candidate, an
- * interactive session, or a pid that is not a number refuses. Otherwise the
- * pause rows decide first, then the rest of the table.
+ * What `start` does to one loop. Its candidates are the listing's row for
+ * `state.job` and each row named `loop-<name>`. A paused loop is `off` while no
+ * candidate might run. Otherwise more than one candidate, an interactive
+ * session, or a pid that is not a number refuses. A single row goes to the
+ * pause rows when paused, else to the rest of the table.
  */
 export function chooseAction(input: ReconcileInput): Action {
-  const found = findRow(input);
+  const job = input.state?.job ?? null;
+  const candidates = candidatesOf(input, job);
+  if (input.paused && candidates.every(isStopped)) return { kind: 'off' };
+  const found = pickRow(input.name, candidates, job);
   if (found.kind === 'refuse') return found;
   return input.paused
     ? whilePaused(input, found.row)
@@ -92,20 +96,27 @@ export function chooseAction(input: ReconcileInput): Action {
 }
 
 // Every row that could be the loop's session: the job `state.json` names, and each row by the loop's name.
-function findRow(input: ReconcileInput): Found {
-  const job = input.state?.job ?? null;
+function candidatesOf(input: ReconcileInput, job: string | null): Job[] {
   const byJob = job === null ? [] : input.rows.filter((r) => r.id === job);
   const byName = input.rows.filter((r) => r.name === sessionOf(input.name));
-  const candidates =
-    byJob.length > 0
-      ? [...byJob, ...byName.filter((r) => !byJob.includes(r))]
-      : byName;
+  return byJob.length > 0
+    ? [...byJob, ...byName.filter((r) => !byJob.includes(r))]
+    : byName;
+}
+
+// A row start can act on and whose process is known to be gone.
+const isStopped = (row: Job): boolean =>
+  row.id !== undefined && row.pidMalformed !== true && row.pid === undefined;
+
+function pickRow(
+  name: string,
+  candidates: readonly Job[],
+  job: string | null,
+): Found {
   const [first, ...others] = candidates;
   if (first === undefined) return { kind: 'row', row: { kind: 'none' } };
-  if (others.length > 0) {
-    return refuse(severalLines(input.name, candidates, job));
-  }
-  return classify(input.name, first);
+  if (others.length > 0) return refuse(severalLines(name, candidates, job));
+  return classify(name, first);
 }
 
 function classify(name: string, row: Job): Found {
