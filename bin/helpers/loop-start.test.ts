@@ -799,6 +799,19 @@ describe('runStart: a loop that runs', () => {
     expect(r.out.at(-1)).toBe('fixer: failed');
     expect(stateOf()).toEqual(first);
   });
+
+  test('a respawn that timed out advises claude stop, then start, and never claude rm', () => {
+    launchOnce();
+    clock = new Date(NOW.getTime() + HOUR_MS);
+    rows = [stopped('job-1')];
+    reply.respawn = () => result({ code: 1, timedOut: true });
+    const r = run(['fixer']);
+    expect(r.code).toBe(1);
+    expect(r.err.at(-1)).toBe(
+      'fixer: To launch the loop fresh instead, run claude stop job-1, then sidekick loop start fixer.',
+    );
+    expect(r.err.join('\n')).not.toContain('claude rm');
+  });
 });
 
 describe('runStart: a paused loop', () => {

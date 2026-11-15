@@ -178,9 +178,18 @@ const isSkipped = (child: string, name: string): boolean =>
   child === TYPES_DIR ||
   child.endsWith(`/${TYPES_DIR}`);
 
-const holdsManifest = (dir: string): boolean =>
-  fs.statSync(path.join(dir, MANIFEST), { throwIfNoEntry: false })?.isFile() ===
-  true;
+// `throwIfNoEntry: false` still throws EACCES, and a throw here would hash the whole folder as missing.
+const holdsManifest = (dir: string): boolean => {
+  try {
+    return (
+      fs
+        .statSync(path.join(dir, MANIFEST), { throwIfNoEntry: false })
+        ?.isFile() === true
+    );
+  } catch {
+    return false;
+  }
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);

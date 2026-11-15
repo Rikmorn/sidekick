@@ -69,7 +69,7 @@ Every object is strict, so an unknown key at any level refuses. Every list entry
 | `mandate.reads` | Required. Allow rules for the loop's reads. |
 | `mandate.classes` | Required. A class name, which follows the profile name rule, maps to `{ "state", "allow" }`. `state` is `record`, `ask`, or `act`. `allow` holds at least one allow rule. |
 | `mandate.never` | Required. Deny rules. |
-| `paused` | Optional. `true` keeps the loop off: `start` stops it between ticks, and never launches or respawns it. Once the pause is lifted, `start` launches the loop fresh. "Pausing, stopping, and updating a loop" says how. `list` marks the loop `paused`, and a paused loop's issues do not make `list` exit 1. |
+| `paused` | Optional. `true` keeps the loop off: `start` stops it between ticks, and never launches or respawns it. A fresh launch follows only once a `start` has ended the loop off and recorded `pausedAt`. "Pausing, stopping, and updating a loop" says how. `list` marks the loop `paused`, and a paused loop's issues do not make `list` exit 1. |
 
 A class's state is its rung on ADR-0015 Decision 2's ladder. A class in `record` writes what it would do, one in `ask` writes a request for the operator, and one in `act` acts. A promotion edits one class's state, then runs `sidekick loop start <name>`, which relaunches the loop between ticks.
 
@@ -425,7 +425,7 @@ The pause rows come first, so a pause wins whatever else holds:
 |---|---|---|---|
 | None, or stopped | Paused | | Leave it off; `state.json` records the pause |
 | Live, between ticks | Paused | | `claude stop`, keeping the row; `state.json` records the pause |
-| Live, mid-tick | Paused | | Refuse, naming `--now`; with `--now`, `claude stop` |
+| Live, mid-tick | Paused | | Refuse, naming `--now`; with `--now`, `claude stop`, then `state.json` records the pause |
 | None | Not paused | | Launch fresh |
 | Live | Unchanged | | Leave it; not armed when it started before the boot |
 | Live, between ticks | Changed, or no `state.json` | | Relaunch: `claude stop`, a wait for its process to exit, `claude rm`, then launch fresh |
@@ -463,7 +463,7 @@ The lines that explain a refusal or a failure come first, on stderr. A line abou
 - a `claude stop` that failed, in a pause or a relaunch, so the session may still run;
 - a stopped process that still ran after 15 seconds, before any `rm`;
 - a `claude rm` that failed, timed out, or did not say it removed the job, so `start` launched nothing. Read what `rm` printed and settle the job by hand, since `start` never discards a job's work;
-- a `claude respawn` that failed. Each `start` tries the respawn again while the loop's jobs read alive, so its lines name the way out: `claude rm <job>`, then `start <name>`, which launches the loop fresh;
+- a `claude respawn` that failed. Each `start` tries the respawn again while the loop's jobs read alive, so its lines name the way out: `claude rm <job>`, then `start <name>`, which launches the loop fresh. After a respawn that timed out, the first step is `claude stop <job>` instead, since the respawn may have left a live row;
 - a `state.json` write that failed before the launch, so nothing launched;
 - a `claude --bg` that failed or did not return in time, the trust refusal included.
 

@@ -107,13 +107,14 @@ export function respawnJob(
     cwd: call.cwd,
     timeoutMs,
   });
-  return ranClean(result)
-    ? []
-    : [
-        ...withText(
-          `claude respawn ${job} ${failure(result)}, so the loop may not run`,
-          result,
-        ),
-        `To launch the loop fresh instead, run claude rm ${job}, then sidekick loop start ${name}.`,
-      ];
+  if (ranClean(result)) return [];
+  // A respawn that timed out may have left a live row, which `claude rm` would not remove.
+  const clear = result.timedOut ? 'stop' : 'rm';
+  return [
+    ...withText(
+      `claude respawn ${job} ${failure(result)}, so the loop may not run`,
+      result,
+    ),
+    `To launch the loop fresh instead, run claude ${clear} ${job}, then sidekick loop start ${name}.`,
+  ];
 }

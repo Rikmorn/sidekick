@@ -9087,7 +9087,13 @@ var TSCONFIG = "tsconfig.json";
 var ENGINE_EXTENDS = "./.claude-plugin/types/tsconfig.json";
 var UNREADABLE = "unreadable";
 var isSkipped = (child, name) => SKIPPED_NAMES.has(name) || child === TYPES_DIR || child.endsWith(`/${TYPES_DIR}`);
-var holdsManifest = (dir) => fs35.statSync(path42.join(dir, MANIFEST), { throwIfNoEntry: false })?.isFile() === true;
+var holdsManifest = (dir) => {
+  try {
+    return fs35.statSync(path42.join(dir, MANIFEST), { throwIfNoEntry: false })?.isFile() === true;
+  } catch {
+    return false;
+  }
+};
 var isRecord8 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 function isEngineTsconfig(bytes) {
   try {
@@ -10746,9 +10752,12 @@ function respawnJob(call, job, name, timeoutMs = launchLimit(call.lenv)) {
     cwd: call.cwd,
     timeoutMs
   });
-  return ranClean(result) ? [] : [
+  if (ranClean(result))
+    return [];
+  const clear = result.timedOut ? "stop" : "rm";
+  return [
     ...withText(`claude respawn ${job} ${failure(result)}, so the loop may not run`, result),
-    `To launch the loop fresh instead, run claude rm ${job}, then sidekick loop start ${name}.`
+    `To launch the loop fresh instead, run claude ${clear} ${job}, then sidekick loop start ${name}.`
   ];
 }
 

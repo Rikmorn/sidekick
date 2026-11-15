@@ -363,6 +363,20 @@ describe('launchHash', () => {
       fs.chmodSync(locked, 0o755);
     }
   });
+  test('an unreadable .claude-plugin folder does not hide edits elsewhere in the profile folder', () => {
+    const locked = path.join(tmp, 'profile', 'sub', '.claude-plugin');
+    write(path.join(locked, 'plugin.json'), '{}');
+    fs.chmodSync(locked, 0o000);
+    try {
+      const before = hash();
+      expect(hash()).toBe(before);
+      write(path.join(tmp, 'profile', 'profile.json'), '{"edited":true}');
+      expect(hash()).not.toBe(before);
+      expect(before).not.toBe(hash({ profileDir: path.join(tmp, 'gone') }));
+    } finally {
+      fs.chmodSync(locked, 0o755);
+    }
+  });
   test('a missing folder hashes as missing, deterministically', () => {
     const gone = path.join(tmp, 'gone');
     expect(hash({ profileDir: gone })).toBe(hash({ profileDir: gone }));
