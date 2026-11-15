@@ -27,13 +27,15 @@ const FALLBACK_WINDOW_DAYS = 366;
 
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
-const at = v.pipe(
+/** An ISO 8601 UTC time, the rule for a record line's `at`. */
+export const IsoUtcSchema = v.pipe(
   v.string(),
   v.check(
     (s) => ISO_UTC.test(s) && !Number.isNaN(Date.parse(s)),
     'must be an ISO 8601 UTC time',
   ),
 );
+const at = IsoUtcSchema;
 const LAST_C0 = 0x1f;
 const DEL = 0x7f;
 const FIRST_C1 = 0x80;
@@ -241,32 +243,43 @@ function readDay(loopDir: string, day: Date): DayRead {
 }
 
 /**
- * Lines with `at` in `[since, until]`, oldest first. A line that is not JSON
- * or fails the schema is skipped and counted. A day file that exists and
- * cannot be read goes in `unreadable`.
+ * Every line of the day files for `days`, oldest first, whatever its `at`. A
+ * line that is not JSON or fails the schema is skipped and counted. A day file
+ * that exists and cannot be read goes in `unreadable`.
+ */
+export function readDayFiles(loopDir: string, days: Date[]): RecordRead {
+  const reads = days.map((day) => readDay(loopDir, day));
+  const parsed = reads.flatMap((day) =>
+    'texts' in day ? day.texts.map((text) => parseLine(text)) : [],
+  );
+  const lines = parsed
+    .filter((line): line is RecordLine => line !== undefined)
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  return {
+    lines,
+    skipped: parsed.filter((line) => line === undefined).length,
+    unreadable: reads.flatMap((day) =>
+      'unreadable' in day ? [day.unreadable] : [],
+    ),
+  };
+}
+
+/**
+ * Lines with `at` in `[since, until]`, oldest first, from the day files for
+ * the local days between them. Skips and unreadable files are as `readDayFiles`.
  */
 export function readRecords(
   loopDir: string,
   since: Date,
   until: Date,
 ): RecordRead {
-  const days = localDays(since, until).map((day) => readDay(loopDir, day));
-  const parsed = days.flatMap((day) =>
-    'texts' in day ? day.texts.map((text) => parseLine(text)) : [],
-  );
-  const lines = parsed
-    .filter((line): line is RecordLine => line !== undefined)
-    .filter((line) => {
+  const read = readDayFiles(loopDir, localDays(since, until));
+  return {
+    ...read,
+    lines: read.lines.filter((line) => {
       const time = Date.parse(line.at);
       return time >= since.getTime() && time <= until.getTime();
-    })
-    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  return {
-    lines,
-    skipped: parsed.filter((line) => line === undefined).length,
-    unreadable: days.flatMap((day) =>
-      'unreadable' in day ? [day.unreadable] : [],
-    ),
+    }),
   };
 }
 

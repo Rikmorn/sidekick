@@ -2249,6 +2249,7 @@ var WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 var WORKSTREAM = /^[a-z0-9][a-z0-9-]{0,63}$/;
 var WorkerNameSchema = pipe(string(), regex(WORKER_NAME, `must match ${WORKER_NAME.source}`));
 var UnitIdSchema = pipe(string(), regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 of A-Z a-z 0-9 . _ -"));
+var isFolderSafeUnitId = (id) => is(UnitIdSchema, id) && id !== "." && id !== "..";
 var BASELINE = pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters"));
 var PlanBriefSchema = strictObject({
   kind: literal("plan"),
@@ -2376,7 +2377,7 @@ function unitBriefFileIssues(brief, briefPath) {
     }
   }
   const unitId = path4.basename(path4.dirname(home));
-  const shape = path4.basename(home) === brief.name && path4.basename(path4.dirname(path4.dirname(home))) === UNITS_FOLDER && unitId !== "." && unitId !== ".." && is(UnitIdSchema, unitId);
+  const shape = path4.basename(home) === brief.name && path4.basename(path4.dirname(path4.dirname(home))) === UNITS_FOLDER && isFolderSafeUnitId(unitId);
   if (!shape) {
     issues.push(`brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`);
   }
@@ -4039,6 +4040,7 @@ var IGNORED = [
   "loops/*/state.json",
   "loops/*/armed.json",
   "loops/*/start.lock",
+  "loops/*/units.lock",
   "loops/*/units/"
 ];
 function realPathOf(p) {
@@ -9327,6 +9329,7 @@ var RUNTIME_ENTRIES = [
   "state.json",
   "armed.json",
   "start.lock",
+  "units.lock",
   "units"
 ];
 function loopsRoot(env, cwd, home) {
@@ -10489,7 +10492,8 @@ var MINUTE_MS3 = 60000;
 var DAY_MS = 24 * 60 * MINUTE_MS3;
 var FALLBACK_WINDOW_DAYS = 366;
 var ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
-var at = pipe(string(), check((s) => ISO_UTC.test(s) && !Number.isNaN(Date.parse(s)), "must be an ISO 8601 UTC time"));
+var IsoUtcSchema = pipe(string(), check((s) => ISO_UTC.test(s) && !Number.isNaN(Date.parse(s)), "must be an ISO 8601 UTC time"));
+var at = IsoUtcSchema;
 var LAST_C0 = 31;
 var DEL = 127;
 var FIRST_C1 = 128;
@@ -10640,17 +10644,24 @@ function readDay(loopDir, day) {
     return isMissing6(e) ? { texts: [] } : { unreadable: `${file}: ${errorText3(e)}` };
   }
 }
-function readRecords2(loopDir, since, until) {
-  const days = localDays(since, until).map((day) => readDay(loopDir, day));
-  const parsed = days.flatMap((day) => ("texts" in day) ? day.texts.map((text) => parseLine(text)) : []);
-  const lines = parsed.filter((line) => line !== undefined).filter((line) => {
-    const time2 = Date.parse(line.at);
-    return time2 >= since.getTime() && time2 <= until.getTime();
-  }).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+function readDayFiles(loopDir, days) {
+  const reads = days.map((day) => readDay(loopDir, day));
+  const parsed = reads.flatMap((day) => ("texts" in day) ? day.texts.map((text) => parseLine(text)) : []);
+  const lines = parsed.filter((line) => line !== undefined).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   return {
     lines,
     skipped: parsed.filter((line) => line === undefined).length,
-    unreadable: days.flatMap((day) => ("unreadable" in day) ? [day.unreadable] : [])
+    unreadable: reads.flatMap((day) => ("unreadable" in day) ? [day.unreadable] : [])
+  };
+}
+function readRecords2(loopDir, since, until) {
+  const read = readDayFiles(loopDir, localDays(since, until));
+  return {
+    ...read,
+    lines: read.lines.filter((line) => {
+      const time2 = Date.parse(line.at);
+      return time2 >= since.getTime() && time2 <= until.getTime();
+    })
   };
 }
 function windowStart(cron, at2) {

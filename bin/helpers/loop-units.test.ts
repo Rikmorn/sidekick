@@ -163,7 +163,7 @@ describe('capIssues', () => {
       dispatched(2, 'fix-1', 'w2', true),
       discarded(3),
     ];
-    expect(capIssues(lines, caps, 'fix-1', at0(10))).toEqual([]);
+    expect(capIssues(lines, caps, 'fix-1', at0(10), 'l')).toEqual([]);
   });
   test('attempts at the cap refuse', () => {
     const lines = [
@@ -172,10 +172,10 @@ describe('capIssues', () => {
       dispatched(2, 'fix-1', 'w2'),
       discarded(3),
     ];
-    const issues = capIssues(lines, caps, 'fix-1', at0(10));
+    const issues = capIssues(lines, caps, 'fix-1', at0(10), 'l');
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain('attemptsPerUnit');
-    expect(capIssues(lines, caps, 'fix-2', at0(10))).toEqual([]);
+    expect(capIssues(lines, caps, 'fix-2', at0(10), 'l')).toEqual([]);
   });
   test('units per day counts record dispatches', () => {
     const lines = [
@@ -186,7 +186,7 @@ describe('capIssues', () => {
       dispatched(4, 'c-1', 'w3'),
       discarded(5, 'c-1'),
     ];
-    const issues = capIssues(lines, caps, 'd-1', at0(10));
+    const issues = capIssues(lines, caps, 'd-1', at0(10), 'l');
     expect(issues.some((i) => i.includes('unitsPerDay'))).toBe(true);
   });
   test('units per day ignores dispatches of another local day', () => {
@@ -196,8 +196,34 @@ describe('capIssues', () => {
     };
     const lines = [old, old, old];
     expect(
-      capIssues(lines, { ...caps, attemptsPerUnit: 99 }, 'z-1', at0(10)),
+      capIssues(lines, { ...caps, attemptsPerUnit: 99 }, 'z-1', at0(10), 'l'),
     ).toEqual([]);
+  });
+  test('units per day splits at local midnight', () => {
+    const local = (day: number, h: number, m: number): string =>
+      new Date(2026, 10, day, h, m).toISOString();
+    const lines: RecordLine[] = [
+      { ...dispatched(0, 'a-1'), at: local(15, 23, 58) },
+      { ...dispatched(0, 'b-1'), at: local(15, 23, 59) },
+      { ...dispatched(0, 'c-1'), at: local(16, 0, 1) },
+    ];
+    const two = { ...caps, unitsPerDay: 2 };
+    const before = capIssues(
+      lines,
+      two,
+      'z-1',
+      new Date(2026, 10, 15, 23, 59),
+      'l',
+    );
+    const after = capIssues(
+      lines,
+      two,
+      'z-1',
+      new Date(2026, 10, 16, 0, 30),
+      'l',
+    );
+    expect(before.some((i) => i.includes('unitsPerDay'))).toBe(true);
+    expect(after.some((i) => i.includes('unitsPerDay'))).toBe(false);
   });
   test('the breaker names the way out', () => {
     const lines = [failed(0, 'a-1'), failed(1, 'b-1')];
@@ -297,12 +323,20 @@ describe('readLedger', () => {
   });
   test('refuses an unreadable day file, naming it', () => {
     const dir = path.join(tmp, 'records');
-    fs.mkdirSync(path.join(dir, '2026-11-14.jsonl'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '2026-11-10.jsonl'), { recursive: true });
     appendRecord(tmp, dispatched(0));
     const read = readLedger(tmp, at0(1));
     expect('issues' in read && read.issues.join('\n')).toContain(
-      '2026-11-14.jsonl',
+      '2026-11-10.jsonl',
     );
+  });
+  test('reads a day file named for a later local day than now', () => {
+    const dir = path.join(tmp, 'records');
+    fs.mkdirSync(dir);
+    const line = JSON.stringify(dispatched(0));
+    fs.writeFileSync(path.join(dir, '2030-01-01.jsonl'), `${line}\n`);
+    const read = readLedger(tmp, at0(1));
+    expect('lines' in read && read.lines).toHaveLength(1);
   });
   test('a records path that is not a folder refuses', () => {
     fs.writeFileSync(path.join(tmp, 'records'), 'x');

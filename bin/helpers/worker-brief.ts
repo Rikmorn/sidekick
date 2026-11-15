@@ -83,6 +83,10 @@ export const UnitIdSchema = v.pipe(
   v.regex(/^[A-Za-z0-9._-]{1,64}$/, 'must be 1 to 64 of A-Z a-z 0-9 . _ -'),
 );
 
+/** True when `id` is a unit id that is also safe as a folder name: `.` and `..` name folders. */
+export const isFolderSafeUnitId = (id: string): boolean =>
+  v.is(UnitIdSchema, id) && id !== '.' && id !== '..';
+
 const BASELINE = v.pipe(
   v.string(),
   v.regex(/^[0-9a-f]{7,40}$/, 'must be a commit of 7 to 40 hex characters'),
@@ -299,9 +303,7 @@ export function unitBriefFileIssues(
   const shape =
     path.basename(home) === brief.name &&
     path.basename(path.dirname(path.dirname(home))) === UNITS_FOLDER &&
-    unitId !== '.' &&
-    unitId !== '..' &&
-    v.is(UnitIdSchema, unitId);
+    isFolderSafeUnitId(unitId);
   if (!shape) {
     issues.push(
       `brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`,

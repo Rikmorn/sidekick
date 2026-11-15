@@ -17,11 +17,12 @@ A loop lives in the loop store, one folder per loop:
   state.json     what sidekick loop start launched
   armed.json     the cron jobs sidekick loop arm reported
   start.lock     present while a sidekick loop start acts on the loop
+  units.lock     present while a unit verb writes the loop's record
 ```
 
 `<config>` is `CLAUDE_CONFIG_DIR`, or `~/.claude` when that is unset or empty. `SIDEKICK_PROFILES_DIR` moves the profile store only, never the loop store. A loop's name follows the profile name rule: 1 to 64 lowercase letters, digits, and hyphens, starting with a letter or digit. `list` skips files and hidden entries in the store.
 
-`records/`, `units/`, `state.json`, `armed.json`, and `start.lock` are a loop's runtime entries. The sidekick folder's `.gitignore` keeps them out of its repo, as `loops/*/records/`, `loops/*/units/`, `loops/*/state.json`, `loops/*/armed.json`, and `loops/*/start.lock`. So a loop's record, units, state, arm, and lock stay local. Two runs make the sidekick folder a repo: a `profile new` of a user profile, and a `start` that acts on a loop. Each adds any of those lines the folder's `.gitignore` lacks. `references/profiles.md` §The sidekick folder says when.
+`records/`, `units/`, `state.json`, `armed.json`, `start.lock`, and `units.lock` are a loop's runtime entries. The sidekick folder's `.gitignore` keeps them out of its repo, as `loops/*/records/`, `loops/*/units/`, `loops/*/state.json`, `loops/*/armed.json`, `loops/*/start.lock`, and `loops/*/units.lock`. So a loop's record, units, state, arm, and locks stay local. Two runs make the sidekick folder a repo: a `profile new` of a user profile, and a `start` that acts on a loop. Each adds any of those lines the folder's `.gitignore` lacks. `references/profiles.md` §The sidekick folder says when.
 
 No `sidekick loop` verb writes `loop.json`. You write it, through `sk-loop` once #366 ships.
 

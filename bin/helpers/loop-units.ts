@@ -9,8 +9,13 @@ import * as path from 'node:path';
 import * as v from 'valibot';
 import { localDate } from './local-date.js';
 import type { LoopManifest } from './loop-manifest.js';
-import { type RecordLine, readRecords } from './loop-record.js';
-import { UnitIdSchema, WorkerNameSchema } from './worker-brief.js';
+import { IsoUtcSchema, type RecordLine, readDayFiles } from './loop-record.js';
+import { writeWhole } from './loop-state.js';
+import {
+  isFolderSafeUnitId,
+  UnitIdSchema,
+  WorkerNameSchema,
+} from './worker-brief.js';
 
 /** The folder under a loop's folder that holds each unit's attempts. */
 export const UNITS_DIR = 'units';
@@ -33,12 +38,10 @@ const issuesOf = (issues: v.BaseIssue<unknown>[]): string[] =>
 /** What refuses a unit id: the record's rule, and `.` and `..`, which name folders. */
 export function unitIdIssues(id: string): string[] {
   const parsed = v.safeParse(UnitIdSchema, id);
-  const issues = parsed.success
+  if (!parsed.success) return parsed.issues.map((i) => `unit: ${i.message}`);
+  return isFolderSafeUnitId(id)
     ? []
-    : parsed.issues.map((issue) => `unit: ${issue.message}`);
-  return id === '.' || id === '..'
-    ? [...issues, `unit: ${id} names a folder, not a unit`]
-    : issues;
+    : [`unit: ${id} names a folder, not a unit`];
 }
 
 /** `<skill part>-<issue>`, where the skill part is the text after `:`. */
@@ -62,10 +65,7 @@ export const WorkerFileSchema = v.strictObject({
   worker: WorkerNameSchema,
   job: v.nullable(v.string()),
   issue: v.pipe(v.number(), v.integer(), v.minValue(1)),
-  dispatchedAt: v.pipe(
-    v.string(),
-    v.check((s) => !Number.isNaN(Date.parse(s)), 'must be an ISO time'),
-  ),
+  dispatchedAt: IsoUtcSchema,
 });
 export type WorkerFile = v.InferOutput<typeof WorkerFileSchema>;
 
@@ -90,11 +90,7 @@ export function writeWorkerFile(dir: string, file: WorkerFile): string[] {
   if (!parsed.success) return issuesOf(parsed.issues);
   try {
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, WORKER_FILE),
-      `${JSON.stringify(parsed.output, null, 2)}\n`,
-    );
-    return [];
+    return writeWhole(path.join(dir, WORKER_FILE), parsed.output);
   } catch (e) {
     return [`${path.join(dir, WORKER_FILE)}: ${messageOf(e)}`];
   }
@@ -119,9 +115,10 @@ function dayOf(name: string): Date {
 }
 
 /**
- * Every line of every day file up to `now`, oldest first. Refuses when the
- * records folder cannot be listed or any day file is unreadable, since a count
- * that skips a file undercounts.
+ * Every line of every day file in `records/`, whatever the date its name
+ * carries, with `at` up to `now`, oldest first. A line that does not parse is
+ * skipped, as `readRecords` does. Refuses when the folder cannot be listed or
+ * any day file is unreadable, since a count that skips a file undercounts.
  */
 export function readLedger(
   loopDir: string,
@@ -129,17 +126,18 @@ export function readLedger(
 ): { lines: RecordLine[] } | { issues: string[] } {
   const names = dayFiles(loopDir);
   if ('issue' in names) return { issues: [names.issue] };
-  const first = names
-    .map(dayOf)
-    .reduce<Date | undefined>(
-      (min, day) => (min === undefined || day < min ? day : min),
-      undefined,
-    );
-  if (first === undefined) return { lines: [] };
-  const read = readRecords(loopDir, first, now);
+  if (names.length === 0) return { lines: [] };
+  const read = readDayFiles(
+    loopDir,
+    names.map((name) => dayOf(name)),
+  );
   return read.unreadable.length > 0
     ? { issues: read.unreadable }
-    : { lines: read.lines };
+    : {
+        lines: read.lines.filter(
+          (line) => Date.parse(line.at) <= now.getTime(),
+        ),
+      };
 }
 
 /** One dispatched worker's attempt at a unit. */
@@ -185,7 +183,7 @@ export function inFlight(lines: RecordLine[]): Attempt | undefined {
   return open.at(-1);
 }
 
-/** Failed lines across units since the later of the last landed and the last resumed. */
+// Failed lines across units since the later of the last landed and the last resumed.
 function failedInARow(lines: RecordLine[]): number {
   return lines.reduce(
     (count, line) =>
@@ -212,7 +210,7 @@ export function capIssues(
   caps: Caps,
   unit: string,
   now: Date,
-  loopName = '<name>',
+  loopName: string,
 ): string[] {
   const dispatches = lines.filter((line) => line.kind === 'dispatched');
   const attempts = dispatches.filter(
@@ -222,7 +220,6 @@ export function capIssues(
   const todays = dispatches.filter(
     (line) => localDate(new Date(line.at)) === today,
   ).length;
-  const failures = failedInARow(lines);
   const issues: string[] = [];
   if (attempts >= caps.attemptsPerUnit) {
     issues.push(
@@ -236,7 +233,7 @@ export function capIssues(
   }
   if (breakerTripped(lines, caps)) {
     issues.push(
-      `failedUnitsInARow: ${failures} units failed in a row, the cap is ${caps.failedUnitsInARow}; run sidekick loop resume ${loopName} --reason <text> once the cause is fixed`,
+      `failedUnitsInARow: ${failedInARow(lines)} units failed in a row, the cap is ${caps.failedUnitsInARow}; run sidekick loop resume ${loopName} --reason <text> once the cause is fixed`,
     );
   }
   return issues;

@@ -108,8 +108,8 @@ export const readState = (loopDir: string): StateRead<LoopState> =>
 export const readArmed = (loopDir: string): StateRead<Armed> =>
   readFileOf(path.join(loopDir, ARMED_FILE), ArmedSchema);
 
-// A crash between the write and the rename leaves the temporary file behind.
-function writeWhole(file: string, value: unknown): string[] {
+/** Writes `value` as JSON whole, through a temporary file and a rename; a crash between them leaves the temporary file. Returns issues, empty on success. */
+export function writeWhole(file: string, value: unknown): string[] {
   const temp = `${file}.${randomUUID()}.tmp`;
   try {
     fs.writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`);
@@ -334,7 +334,6 @@ function holderOf(text: string): { pid: number; takenAt: number } | null {
   }
 }
 
-// What a lock's busy texts call its holder: `start` for the start lock, a neutral name for any other.
 const holderWords = (file: string): { who: string; again: string } =>
   path.basename(file) === LOCK_FILE
     ? { who: 'start', again: 'start' }
@@ -395,7 +394,7 @@ function removeDead(file: string, dead: string): string | null {
 }
 
 /**
- * Takes `<loopDir>/<file>` (default `start.lock`) with an exclusive create, recording `pid` and `now`.
+ * Takes `<loopDir>/<lockFile>` (default `start.lock`) with an exclusive create, recording `pid` and `now`.
  * A lock taken before `bootTime`, or whose pid is dead, is taken over; one taken
  * since the boot whose pid is alive, or one that does not parse, is refused.
  * `release` removes the file only while it still holds this taker's text.
