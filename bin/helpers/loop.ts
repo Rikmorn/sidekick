@@ -6,6 +6,7 @@
 import * as path from 'node:path';
 import * as v from 'valibot';
 import { localDate, localMinute } from './local-date.js';
+import { ARM_USAGE_LINE, runArm } from './loop-arm.js';
 import { checkLoop, type LoopCheck, type LoopDeps } from './loop-check.js';
 import { type Cron, parseCron } from './loop-cron.js';
 import { inheritedListing } from './loop-inherited.js';
@@ -23,14 +24,14 @@ import {
   RecordLineSchema,
   readRecords,
 } from './loop-record.js';
+import { type LoopState, readState, STATE_FILE } from './loop-state.js';
 import { loopNames, loopsRoot } from './loop-store.js';
 import { keyHits } from './memory-patterns.js';
 import { type FlagOption, type ProfileEnv, parseFlags } from './profile.js';
 import { isProfileName, PROFILE_NAME_RULE } from './profile-manifest.js';
 import { configDir } from './sidekick-home.js';
 
-export const LOOP_USAGE_LINE =
-  'sidekick loop list | show <name> [--since <YYYY-MM-DD>] | record <name> --kind <would|request|did|denied|note> --summary <text> [--class <class>] [--command <text>] [--unit <id>]';
+export const LOOP_USAGE_LINE = `sidekick loop list | show <name> [--since <YYYY-MM-DD>] | record <name> --kind <would|request|did|denied|note> --summary <text> [--class <class>] [--command <text>] [--unit <id>] | ${ARM_USAGE_LINE.replace('sidekick loop ', '')}`;
 
 /** The profile family's environment, with a clock and the managed settings path the check and the listing read. */
 export interface LoopEnv extends ProfileEnv {
@@ -410,6 +411,7 @@ function argRefusals({ name, args }: RecordCall): string[] {
 function lineOf(
   args: RecordArgs,
   at: Date,
+  launchHash: string | undefined,
 ): { line: RecordLine } | { issues: string[] } {
   const candidate = {
     v: 1,
@@ -419,6 +421,7 @@ function lineOf(
     ...(args.class === undefined ? {} : { class: args.class }),
     ...(args.command === undefined ? {} : { command: args.command }),
     ...(args.unit === undefined ? {} : { unit: args.unit }),
+    ...(launchHash === undefined ? {} : { hash: launchHash }),
   };
   const parsed = v.safeParse(RecordLineSchema, candidate);
   if (parsed.success) return { line: parsed.output };
@@ -429,21 +432,45 @@ function lineOf(
   };
 }
 
-// `record` checks loop.json as it is now, not as the loop was started.
-function mandateRefusals(
-  file: string,
-  manifest: LoopManifest,
-  line: RecordLine,
-): string[] {
+// What the class and `did` checks run against: the launch's states, or loop.json's as it is now.
+interface Mandate {
+  file: string;
+  states: Record<string, string>;
+  removed: string;
+  where: string;
+}
+
+const launchMandate = (file: string, states: LoopState['states']): Mandate => ({
+  file,
+  states,
+  where: 'states',
+  removed:
+    'record checks the launch, so a class the launch lacked refuses until the loop restarts',
+});
+
+const manifestMandate = (file: string, manifest: LoopManifest): Mandate => ({
+  file,
+  states: Object.fromEntries(
+    Object.entries(manifest.mandate.classes).map(([name, cls]) => [
+      name,
+      cls.state,
+    ]),
+  ),
+  where: 'mandate.classes',
+  removed:
+    'record checks loop.json as it is now, so a class removed since the loop started refuses until its next start',
+});
+
+function mandateRefusals(mandate: Mandate, line: RecordLine): string[] {
   if (!('class' in line) || line.class === undefined) return [];
-  const { classes } = manifest.mandate;
+  const { file, states, removed, where } = mandate;
   const named = line.class;
-  if (!Object.hasOwn(classes, named)) {
+  if (!Object.hasOwn(states, named)) {
     return [
-      `--class ${named}: ${file} names no class "${named}" in mandate.classes; record checks loop.json as it is now, so a class removed since the loop started refuses until its next start`,
+      `--class ${named}: ${file} names no class "${named}" in ${where}; ${removed}`,
     ];
   }
-  const { state } = classes[named];
+  const state = states[named];
   if (line.kind === 'did' && state !== 'act') {
     return [
       `--kind did: class "${named}" is in state ${state} in ${file}; did needs a class in act, so record it as would or ask with request`,
@@ -461,30 +488,58 @@ function successLine(dir: string, cron: Cron, line: RecordLine): string {
     : 'repeat request';
 }
 
+// What record judges by: the launch's `state.json` when one exists, else `loop.json` as it is now.
+type Basis =
+  | { ok: true; mandate: Mandate; schedule: string; hash: string | undefined }
+  | { ok: false; issues: string[] };
+
+function basisOf(dir: string): Basis {
+  const state = readState(dir);
+  if (state.kind === 'broken') return { ok: false, issues: [state.issue] };
+  if (state.kind === 'ok') {
+    return {
+      ok: true,
+      mandate: launchMandate(path.join(dir, STATE_FILE), state.value.states),
+      schedule: state.value.schedule,
+      hash: state.value.hash,
+    };
+  }
+  const file = path.join(dir, LOOP_FILE);
+  const read = readLoopManifest(file);
+  if (!read.ok) return { ok: false, issues: read.issues };
+  return {
+    ok: true,
+    mandate: manifestMandate(file, read.manifest),
+    schedule: read.manifest.schedule,
+    hash: undefined,
+  };
+}
+
 const record: Verb = (rest, lenv, out, err) => {
   const call = parseRecordArgs(rest);
   if (call === undefined) return usage(err);
   const refusals = argRefusals(call);
   if (refusals.length > 0) return refuse(err, refusals);
-  const built = lineOf(call.args, lenv.now());
-  if ('issues' in built) return refuse(err, built.issues);
   const dir = loopDirOf(lenv, call.name);
-  const file = path.join(dir, LOOP_FILE);
-  const read = readLoopManifest(file);
-  if (!read.ok) return refuse(err, read.issues);
+  const basis = basisOf(dir);
+  if (!basis.ok) return refuse(err, basis.issues);
+  const built = lineOf(call.args, lenv.now(), basis.hash);
+  if ('issues' in built) return refuse(err, built.issues);
   const { line } = built;
-  const mandate = mandateRefusals(file, read.manifest, line);
+  const mandate = mandateRefusals(basis.mandate, line);
   if (mandate.length > 0) return refuse(err, mandate);
   // The schema already ran parseCron on the schedule, so this refuses only if the two drift apart.
-  const cron = parseCron(read.manifest.schedule);
-  if (!cron.ok) return refuse(err, [`${file}: schedule: ${cron.issue}`]);
+  const cron = parseCron(basis.schedule);
+  if (!cron.ok) {
+    return refuse(err, [`${basis.mandate.file}: schedule: ${cron.issue}`]);
+  }
   const printed = successLine(dir, cron.cron, line);
   appendRecord(dir, line);
   out(printed);
   return 0;
 };
 
-const VERBS: Record<string, Verb> = { list, show, record };
+const VERBS: Record<string, Verb> = { list, show, record, arm: runArm };
 
 /** Dispatch one `loop` verb; returns the process exit code. */
 export function runLoopCli(

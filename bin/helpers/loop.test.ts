@@ -844,3 +844,106 @@ describe('record', () => {
 test('this test file holds no literal key', () => {
   expect(keyHits(fs.readFileSync(import.meta.path, 'utf8'))).toEqual([]);
 });
+
+describe('record with a state.json', () => {
+  const LAUNCH_HASH = 'a'.repeat(64);
+  const writeState = (
+    states: Record<string, string>,
+    over: Record<string, unknown> = {},
+  ): string =>
+    writeJson(path.join(loopDir(), 'state.json'), {
+      v: 1,
+      launch: 'L1',
+      job: 'job1',
+      session: 'loop-fixer',
+      launchedAt: NOW.toISOString(),
+      startedAt: NOW.toISOString(),
+      hash: LAUNCH_HASH,
+      record: false,
+      states,
+      schedule: '7 * * * *',
+      tick: '/fixer:tick',
+      ...over,
+    });
+  const linesToday = (): RecordLine[] =>
+    readRecords(loopDir(), new Date(2026, 10, 14), NOW).lines;
+  const did = (cls: string): string[] => [
+    'record',
+    'fixer',
+    '--kind',
+    'did',
+    '--summary',
+    's',
+    '--class',
+    cls,
+    '--command',
+    'c',
+  ];
+
+  test('stamps the launch hash on a model line', () => {
+    writeLoop();
+    writeState({ triage: 'record', label: 'act' });
+    const r = run(['record', 'fixer', '--kind', 'note', '--summary', 's']);
+    expect(r).toEqual({ code: 0, out: ['recorded note'], err: [] });
+    expect(linesToday().map((l) => ('hash' in l ? l.hash : undefined))).toEqual(
+      [LAUNCH_HASH],
+    );
+  });
+
+  test('refuses did for a class the launch ran in record, though loop.json now says act', () => {
+    writeLoop((m) => {
+      m.mandate.classes.triage.state = 'act';
+    });
+    writeState({ triage: 'record', label: 'act' });
+    const r = run(did('triage'));
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('class "triage" is in state record');
+    expect(r.err.join('\n')).toContain('state.json');
+    expect(linesToday()).toEqual([]);
+  });
+
+  test('accepts a class the launch had that loop.json has since dropped', () => {
+    writeLoop((m) => {
+      delete m.mandate.classes.label;
+    });
+    writeState({ triage: 'record', label: 'act' });
+    expect(run(did('label')).code).toBe(0);
+  });
+
+  test('refuses a class the launch lacked, naming state.json', () => {
+    writeLoop();
+    writeState({ triage: 'record' });
+    const r = run(did('label'));
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('state.json names no class "label"');
+  });
+
+  test('judges a request by the launch schedule, with no loop.json at all', () => {
+    writeState({ triage: 'record' }, { schedule: '0 0 * * *' });
+    const r = run([
+      'record',
+      'fixer',
+      '--kind',
+      'request',
+      '--summary',
+      's',
+      '--command',
+      'c',
+    ]);
+    expect(r).toEqual({ code: 0, out: ['new request'], err: [] });
+  });
+
+  test('a broken state.json refuses, naming the file', () => {
+    writeLoop();
+    write(path.join(loopDir(), 'state.json'), '{nope');
+    const r = run(['record', 'fixer', '--kind', 'note', '--summary', 's']);
+    expect(r.code).toBe(1);
+    expect(r.err.join('\n')).toContain('state.json');
+  });
+
+  test('without a state.json a line carries no hash', () => {
+    writeLoop();
+    run(['record', 'fixer', '--kind', 'note', '--summary', 's']);
+    expect(linesToday().map((l) => 'hash' in l)).toEqual([false]);
+  });
+});
