@@ -243,6 +243,20 @@ describe('launchHash', () => {
     for (const f of ['c', 'a', 'b']) write(path.join(two, f), f);
     expect(hash({ profileDir: two })).toBe(hash({ profileDir: one }));
   });
+  test('an unreadable subfolder does not hide edits to the other files', () => {
+    const locked = path.join(tmp, 'profile', 'locked');
+    write(path.join(locked, 'x.txt'), 'x');
+    fs.chmodSync(locked, 0o000);
+    try {
+      const before = hash();
+      expect(hash()).toBe(before);
+      write(path.join(tmp, 'profile', 'sub', 'a.txt'), 'edited');
+      expect(hash()).not.toBe(before);
+      expect(before).not.toBe(hash({ profileDir: path.join(tmp, 'gone') }));
+    } finally {
+      fs.chmodSync(locked, 0o755);
+    }
+  });
   test('a missing folder hashes as missing, deterministically', () => {
     const gone = path.join(tmp, 'gone');
     expect(hash({ profileDir: gone })).toBe(hash({ profileDir: gone }));

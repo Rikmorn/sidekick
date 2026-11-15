@@ -161,20 +161,26 @@ const TYPES_DIR = '.claude-plugin/types';
 const UNREADABLE = 'unreadable';
 
 // Regular files by relative path, skipping links, `.git`, `node_modules`, and the types folder Claude Code rewrites.
+// A subfolder that cannot be listed digests as one unreadable entry; the root's failure reaches the caller.
 function filesUnder(root: string, rel: string): [string, string][] {
-  return fs
-    .readdirSync(path.join(root, rel), { withFileTypes: true })
-    .flatMap((entry): [string, string][] => {
-      const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
-      if (SKIPPED_NAMES.has(entry.name) || child === TYPES_DIR) return [];
-      if (entry.isDirectory()) return filesUnder(root, child);
-      if (!entry.isFile()) return [];
-      try {
-        return [[child, sha256(fs.readFileSync(path.join(root, child)))]];
-      } catch {
-        return [[child, UNREADABLE]];
-      }
-    });
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true });
+  } catch (e) {
+    if (rel === '') throw e;
+    return [[`${rel}/`, UNREADABLE]];
+  }
+  return entries.flatMap((entry): [string, string][] => {
+    const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
+    if (SKIPPED_NAMES.has(entry.name) || child === TYPES_DIR) return [];
+    if (entry.isDirectory()) return filesUnder(root, child);
+    if (!entry.isFile()) return [];
+    try {
+      return [[child, sha256(fs.readFileSync(path.join(root, child)))]];
+    } catch {
+      return [[child, UNREADABLE]];
+    }
+  });
 }
 
 const byPath = (a: [string, string], b: [string, string]): number =>
