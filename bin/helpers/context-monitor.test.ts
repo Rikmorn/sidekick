@@ -327,6 +327,20 @@ describe('warningText', () => {
     );
   });
 
+  test('the monitor asks a unit worker for its report, not sk-save', () => {
+    const unit = { report: 'unit-report.md', rulings: '/loop/u1/rulings.md' };
+    const text = warningText('critical', 760000, W(1000000), BRIEF, unit);
+    expect(text).toBe(
+      'sidekick: context is 76% full (760,000 of 1,000,000 tokens). There is no need to stop. Where it fits, finish the current step before starting a new one. This session is a worker that no one watches: do not stop to tell the user. Write your run report now, at `unit-report.md` from the top of your worktree. After a compaction, re-read the brief at `/repo/docs/superpowers/plans/x-brief.md` and the rulings file at `/loop/u1/rulings.md`. Do not run sk-save: the report is the record.',
+    );
+  });
+
+  test("a plan worker's text is unchanged", () => {
+    expect(warningText('critical', 760000, W(1000000), BRIEF, undefined)).toBe(
+      WORKER_CRITICAL,
+    );
+  });
+
   test('a worker at the warning level gets the unchanged text', () => {
     expect(warningText('warning', 670000, W(1000000), BRIEF)).toBe(
       warningText('warning', 670000, W(1000000)),
@@ -411,6 +425,38 @@ describe('postToolBatchContext', () => {
     expect(postToolBatchContext(f.event(), empty).context).toBe(
       warningText('critical', 760, W(1000)),
     );
+  });
+
+  test('reads a unit brief from SIDEKICK_WORKER; an unreadable brief gives the plan text', () => {
+    const f = fixture();
+    f.append(usage(748));
+    const brief = path.join(f.dir, 'unit-brief.md');
+    fs.writeFileSync(
+      brief,
+      [
+        '---',
+        'kind: unit',
+        'name: w1',
+        'unit: /loop/u1/unit.md',
+        'rulings: /loop/u1/rulings.md',
+        'baseline: abc1234',
+        'skill: plug:skill',
+        'place: worktree',
+        'report: unit-report.md',
+        'orchestrator: orch',
+        '---',
+        '',
+      ].join('\n'),
+    );
+    const env = { ...f.monitor.env, SIDEKICK_WORKER: brief };
+    const text = postToolBatchContext(f.event(), { ...f.monitor, env }).context;
+    expect(text).toContain('Write your run report now, at `unit-report.md`');
+    expect(text).not.toContain('Run sk-save now');
+    fs.rmSync(f.latchFile);
+    const missing = { ...f.monitor.env, SIDEKICK_WORKER: BRIEF };
+    expect(
+      postToolBatchContext(f.event(), { ...f.monitor, env: missing }).context,
+    ).toBe(warningText('critical', 760, W(1000), BRIEF));
   });
 
   test('measures against the gauge value, and falls back when it names another session', () => {

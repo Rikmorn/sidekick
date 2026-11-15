@@ -123,6 +123,14 @@ function briefWorkstream(env: NodeJS.ProcessEnv): string | undefined {
   return 'brief' in read ? briefWorkstreamOf(read.brief) : undefined;
 }
 
+// A unit worker reads issue text, so its start prints nothing and starts no snapshot. An unreadable brief counts as no unit.
+function isUnitWorker(env: NodeJS.ProcessEnv): boolean {
+  const file = workerBrief(env);
+  if (file === undefined) return false;
+  const read = readBrief(file);
+  return 'brief' in read && read.brief.kind === 'unit';
+}
+
 function staleLockWarning(store: string, now: number): string[] {
   const lock = path.join(store, '.git', 'index.lock');
   try {
@@ -245,7 +253,7 @@ function missingSettingText(
 
 function gather(stdin: string, deps: StartDeps): StartResult {
   const event = parseEvent(stdin);
-  if (event === undefined) return {};
+  if (event === undefined || isUnitWorker(deps.env)) return {};
   const view = repoView(event.cwd, deps);
   const base = { sessionId: event.session_id, source: event.source };
   const empty = {

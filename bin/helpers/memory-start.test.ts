@@ -1514,6 +1514,32 @@ describe("the lint's cached count at session start", () => {
     expect(context).not.toContain('Memory lint:');
   });
 
+  test('the memory hook prints nothing in a unit worker', () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:nope');
+    const brief = path.join(tmp, 'unit-brief.md');
+    fs.writeFileSync(
+      brief,
+      [
+        '---',
+        'kind: unit',
+        'name: w1',
+        `unit: ${tmp}/unit.md`,
+        `rulings: ${tmp}/rulings.md`,
+        'baseline: abc1234',
+        'skill: plug:skill',
+        'place: worktree',
+        'report: unit-report.md',
+        'orchestrator: orch',
+        '---',
+        '',
+      ].join('\n'),
+    );
+    const env = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: brief };
+    const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
+    expect(result).toEqual({});
+  });
+
   test('a worker reads no cache and prints no line; an empty SIDEKICK_WORKER is no worker', () => {
     const { store, repo } = cachedLinked();
     cacheFindings(store, [finding('dead-link', 'proj')]);

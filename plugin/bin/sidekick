@@ -986,12 +986,12 @@ import * as fs5 from "node:fs";
 import * as path6 from "node:path";
 
 // bin/helpers/desk-transcripts.ts
-import * as fs2 from "node:fs";
-import * as path2 from "node:path";
+import * as fs4 from "node:fs";
+import * as path4 from "node:path";
 
 // bin/helpers/context-monitor.ts
-import * as fs from "node:fs";
-import * as path from "node:path";
+import * as fs3 from "node:fs";
+import * as path3 from "node:path";
 
 // plugin/hooks/gauge/contract.ts
 var CONTEXT_LIMIT_VAR = "SIDEKICK_CONTEXT_LIMIT";
@@ -1023,6 +1023,247 @@ function parseContextLimit(raw) {
     return;
   }
 }
+
+// bin/helpers/worker-brief.ts
+import * as fs2 from "node:fs";
+import * as path2 from "node:path";
+
+// bin/helpers/worker-repo.ts
+import * as fs from "node:fs";
+import * as path from "node:path";
+var WORKTREES_FOLDER = ".claude/worktrees";
+function commitOf(runGit, top, rev) {
+  const result = runGit("git", ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`], top);
+  return result.code === 0 ? result.stdout.trim() : undefined;
+}
+var headCommit = (runGit, top) => commitOf(runGit, top, "HEAD");
+function isTrackedClean(runGit, top) {
+  const result = runGit("git", ["status", "--porcelain", "--untracked-files=no"], top);
+  return result.code === 0 && result.stdout.trim() === "";
+}
+var branchExists = (runGit, top, branch) => runGit("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], top).code === 0;
+var HEADS = "refs/heads/";
+function checkoutOf(runGit, folder) {
+  const result = runGit("git", ["rev-parse", "--path-format=absolute", "--show-toplevel"], folder);
+  if (result.code !== 0)
+    return { issue: result.stderr.trim() };
+  return { top: result.stdout.replace(/\n$/, "") };
+}
+function physical(p) {
+  const abs = path.resolve(p);
+  const rest = [];
+  let dir = abs;
+  for (;; ) {
+    try {
+      return path.join(fs.realpathSync(dir), ...rest);
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir)
+        return abs;
+      rest.unshift(path.basename(dir));
+      dir = parent;
+    }
+  }
+}
+var PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
+function remotesWithPushUrl(runGit, top) {
+  const result = runGit("git", ["config", "--get-regexp", "^remote\\..+\\.pushurl$"], top);
+  if (result.code !== 0)
+    return [];
+  const names = result.stdout.split(`
+`).map((line) => PUSH_URL_KEY.exec(line.split(" ")[0])?.[1]).filter((name) => name !== undefined);
+  return [...new Set(names)];
+}
+function creationCommit(runGit, top, ref) {
+  if (ref === undefined) {
+    return { issue: "the worktree has a detached HEAD, so no branch reflog" };
+  }
+  const result = runGit("git", ["reflog", "show", "--format=%H", ref], top);
+  if (result.code !== 0) {
+    return { issue: `git reflog show ${ref} failed: ${result.stderr.trim()}` };
+  }
+  const oldest = result.stdout.trim().split(`
+`).at(-1) ?? "";
+  if (oldest === "") {
+    return {
+      issue: `${ref} has no reflog to read its creation commit from`
+    };
+  }
+  return { sha: oldest };
+}
+
+// bin/helpers/worker-brief.ts
+var FENCE = "---";
+var KEY_LINE = /^([a-z]+):(?: (.*))?$/;
+function parseFrontmatter(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trimEnd());
+  if (lines[0] !== FENCE) {
+    return { issues: ["the brief must open with a --- line"] };
+  }
+  const end = lines.indexOf(FENCE, 1);
+  if (end === -1) {
+    return { issues: ["the brief's frontmatter has no closing --- line"] };
+  }
+  const fields = {};
+  const issues = [];
+  for (const [i, line] of lines.slice(1, end).entries()) {
+    if (line === "")
+      continue;
+    const match = KEY_LINE.exec(line);
+    const key = match?.[1];
+    if (key === undefined) {
+      issues.push(`line ${i + 2}: "${line}" is not "key: value" with a lower-case key`);
+    } else if (Object.hasOwn(fields, key)) {
+      issues.push(`line ${i + 2}: the key "${key}" is repeated`);
+    } else {
+      fields[key] = (match?.[2] ?? "").trim();
+    }
+  }
+  return issues.length > 0 ? { issues } : { fields };
+}
+var AbsolutePath = pipe(string(), check((s) => path2.isAbsolute(s), "must be an absolute path"));
+var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) => !path2.isAbsolute(s), "must be relative to the repo top"), check((s) => !s.split(/[\\/]/).includes(".."), 'must not have a ".." segment'));
+var WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+var WORKSTREAM = /^[a-z0-9][a-z0-9-]{0,63}$/;
+var WorkerNameSchema = pipe(string(), regex(WORKER_NAME, `must match ${WORKER_NAME.source}`));
+var UnitIdSchema = pipe(string(), regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 of A-Z a-z 0-9 . _ -"));
+var isFolderSafeUnitId = (id) => is(UnitIdSchema, id) && id !== "." && id !== "..";
+var BASELINE = pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters"));
+var PlanBriefSchema = strictObject({
+  kind: literal("plan"),
+  name: WorkerNameSchema,
+  plan: AbsolutePath,
+  spec: AbsolutePath,
+  rulings: AbsolutePath,
+  baseline: BASELINE,
+  skill: picklist(["subagent-driven-development", "executing-plans"]),
+  place: union([
+    literal("worktree"),
+    literal("in-place"),
+    pipe(string(), regex(/^branch \S+$/))
+  ], 'must be "worktree", "in-place", or "branch <name>"'),
+  target: optional(pipe(string(), regex(/^\S+$/, "must be a non-empty branch name with no whitespace"))),
+  workstream: optional(pipe(string(), regex(WORKSTREAM, `must match ${WORKSTREAM.source}`))),
+  setup: optional(pipe(string(), minLength(1))),
+  report: RelativePath,
+  orchestrator: pipe(string(), minLength(1, "must not be empty"))
+});
+var SKILL_PART_MAX = 48;
+var SKILL_PART = new RegExp(`^[a-z0-9][a-z0-9-]{0,${SKILL_PART_MAX - 1}}$`);
+var UNIT_SKILL_MESSAGE = `must be <plugin>:<skill>, each part of lower-case letters, digits, and hyphens, starting with a letter or digit, at most ${SKILL_PART_MAX} characters`;
+var UnitBriefSchema = strictObject({
+  kind: literal("unit"),
+  name: WorkerNameSchema,
+  unit: AbsolutePath,
+  rulings: AbsolutePath,
+  baseline: BASELINE,
+  skill: pipe(string(), check((s) => {
+    const parts = s.split(":");
+    return parts.length === 2 && parts.every((p) => SKILL_PART.test(p));
+  }, UNIT_SKILL_MESSAGE)),
+  place: literal("worktree", 'must be "worktree"'),
+  report: RelativePath,
+  orchestrator: pipe(string(), minLength(1, "must not be empty"))
+});
+var BriefSchema = variant("kind", [
+  PlanBriefSchema,
+  UnitBriefSchema
+]);
+function readBrief(file) {
+  const abs = path2.resolve(file);
+  let text;
+  try {
+    text = fs2.readFileSync(abs, "utf-8");
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    return { issues: [`${abs}: cannot read the brief: ${why}`] };
+  }
+  const parsed = parseFrontmatter(text);
+  if ("issues" in parsed) {
+    return { issues: parsed.issues.map((i) => `${abs}: ${i}`) };
+  }
+  const result = safeParse(BriefSchema, { kind: "plan", ...parsed.fields });
+  if (!result.success) {
+    return {
+      issues: result.issues.map((issue) => {
+        const field = issue.path?.map((p) => String(p.key)).join(".");
+        return field ? `${abs}: field "${field}" ${issue.message}` : `${abs}: ${issue.message}`;
+      })
+    };
+  }
+  return { brief: result.output, path: abs };
+}
+function checkoutIssue(runGit, field, file, allowed) {
+  const folder = path2.dirname(file);
+  if (!fs2.existsSync(folder))
+    return [];
+  const found = checkoutOf(runGit, folder);
+  const held = "top" in found ? physical(found.top) : undefined;
+  if (held !== undefined && allowed.some((a) => physical(a.top) === held)) {
+    return [];
+  }
+  const where = allowed.map((a) => `the ${a.label} ${a.top}`).join(" or ");
+  const is2 = held === undefined ? "in no git checkout" : `in the checkout ${held}`;
+  return [`${field}: ${file} is ${is2}; it must be in ${where}`];
+}
+function briefFileIssues(brief, bounds) {
+  const { briefPath, launchTop, mainTop, runGit } = bounds;
+  const issues = [];
+  if (!fs2.existsSync(brief.plan)) {
+    issues.push(`plan: ${brief.plan} does not exist`);
+  }
+  if (!fs2.existsSync(brief.spec)) {
+    issues.push(`spec: ${brief.spec} does not exist`);
+  }
+  const rulingsDir = path2.dirname(brief.rulings);
+  if (!fs2.existsSync(rulingsDir)) {
+    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
+  }
+  const launching = { label: "launching checkout", top: launchTop };
+  const either = physical(launchTop) === physical(mainTop) ? [launching] : [launching, { label: "main checkout", top: mainTop }];
+  const named = [
+    ["brief", briefPath, [launching]],
+    ["plan", brief.plan, either],
+    ["spec", brief.spec, either],
+    ["rulings", brief.rulings, [launching]]
+  ];
+  for (const [field, file, allowed] of named) {
+    issues.push(...checkoutIssue(runGit, field, file, allowed));
+  }
+  return issues;
+}
+var ATTEMPT_REPORT = "report.md";
+var UNITS_FOLDER = "units";
+var realFolderOf = (file) => path2.dirname(physical(file));
+function unitBriefFileIssues(brief, briefPath) {
+  const issues = [];
+  if (!fs2.existsSync(brief.unit)) {
+    issues.push(`unit: ${brief.unit} does not exist`);
+  }
+  const rulingsDir = path2.dirname(brief.rulings);
+  if (!fs2.existsSync(rulingsDir)) {
+    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
+  }
+  const home = realFolderOf(briefPath);
+  const others = [
+    ["unit", brief.unit],
+    ["rulings", brief.rulings]
+  ];
+  for (const [field, file] of others) {
+    const folder = realFolderOf(file);
+    if (folder !== home) {
+      issues.push(`${field}: ${file} is not in the folder ${home} that holds the brief; the brief, the unit file, and the rulings share one folder`);
+    }
+  }
+  const unitId = path2.basename(path2.dirname(home));
+  const shape = path2.basename(home) === brief.name && path2.basename(path2.dirname(path2.dirname(home))) === UNITS_FOLDER && isFolderSafeUnitId(unitId);
+  if (!shape) {
+    issues.push(`brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`);
+  }
+  return issues;
+}
+var briefTargetOf = (brief) => brief.kind === "plan" ? brief.target : undefined;
+var briefWorkstreamOf = (brief) => brief.kind === "plan" ? brief.workstream : undefined;
 
 // bin/helpers/context-monitor.ts
 var LEVELS = [
@@ -1111,27 +1352,33 @@ function nextLatch(latched, tokens, limit) {
 function workerTail(brief) {
   return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`. Run sk-save now, so a compaction, or a later worker on the same workstream, continues from your record.`;
 }
-function warningText(level, tokens, limit, workerBrief) {
+function unitTail(brief, unit) {
+  return `This session is a worker that no one watches: do not stop to tell the user. Write your run report now, at \`${unit.report}\` from the top of your worktree. After a compaction, re-read the brief at \`${brief}\` and the rulings file at \`${unit.rulings}\`. Do not run sk-save: the report is the record.`;
+}
+function warningText(level, tokens, limit, workerBrief, unit) {
   const percent = Math.floor(tokens * 100 / limit.tokens);
   const format = (n) => n.toLocaleString("en-US");
   const where = limit.kind === "compaction" ? "of the way to compaction" : "full";
   const lead = `sidekick: context is ${percent}% ${where} (${format(tokens)} of ${format(limit.tokens)} tokens). There is no need to stop. Where it fits, finish the current step before starting a new one.`;
   if (level !== "critical")
     return lead;
-  return workerBrief === undefined ? `${lead} At the next natural pause, tell the user that context is running low, and offer to save it with sk-save.` : `${lead} ${workerTail(workerBrief)}`;
+  if (workerBrief === undefined) {
+    return `${lead} At the next natural pause, tell the user that context is running low, and offer to save it with sk-save.`;
+  }
+  return unit === undefined ? `${lead} ${workerTail(workerBrief)}` : `${lead} ${unitTail(workerBrief, unit)}`;
 }
 var SESSION_ID = /^[A-Za-z0-9-]{1,128}$/;
 var TAIL_BYTES = [256 * 1024, 512 * 1024, 1024 * 1024, 2 * 1024 * 1024];
 function readTail(fd, size, bytes) {
   const length = Math.min(size, bytes);
   const buffer = Buffer.alloc(length);
-  fs.readSync(fd, buffer, 0, length, size - length);
+  fs3.readSync(fd, buffer, 0, length, size - length);
   return buffer.toString("utf-8");
 }
 function findInTail(transcript, pick) {
-  const fd = fs.openSync(transcript, "r");
+  const fd = fs3.openSync(transcript, "r");
   try {
-    const { size } = fs.fstatSync(fd);
+    const { size } = fs3.fstatSync(fd);
     for (const bytes of TAIL_BYTES) {
       const found = newestIn(readTail(fd, size, bytes), pick);
       if (found !== undefined || bytes >= size)
@@ -1139,7 +1386,7 @@ function findInTail(transcript, pick) {
     }
     return;
   } finally {
-    fs.closeSync(fd);
+    fs3.closeSync(fd);
   }
 }
 function readTailEntry(transcript) {
@@ -1147,7 +1394,7 @@ function readTailEntry(transcript) {
 }
 function readLatch(file) {
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
+    const parsed = JSON.parse(fs3.readFileSync(file, "utf-8"));
     if (!isRecord2(parsed))
       return {};
     const { level, canary } = parsed;
@@ -1159,22 +1406,30 @@ function readLatch(file) {
     return {};
   }
 }
-var LATCH_FLAGS = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW;
+var LATCH_FLAGS = fs3.constants.O_WRONLY | fs3.constants.O_CREAT | fs3.constants.O_TRUNC | fs3.constants.O_NOFOLLOW;
 function writeLatch(file, latch) {
   if (latch.level === undefined && latch.canary === undefined) {
-    fs.rmSync(file, { force: true });
+    fs3.rmSync(file, { force: true });
     return;
   }
-  const fd = fs.openSync(file, LATCH_FLAGS, 384);
+  const fd = fs3.openSync(file, LATCH_FLAGS, 384);
   try {
-    fs.writeFileSync(fd, JSON.stringify(latch));
+    fs3.writeFileSync(fd, JSON.stringify(latch));
   } finally {
-    fs.closeSync(fd);
+    fs3.closeSync(fd);
   }
 }
 var CANARY_TEXT = "sidekick: its mods are not running in this session, so the identity row, the exact compaction point, and the desk are missing. Unless an admin setting turns mods off here, run bun run check:mods in the sidekick repo.";
 function gaugeRuns(monitor, sessionId) {
   return parseContextLimit(monitor.env[CONTEXT_LIMIT_VAR])?.session === sessionId;
+}
+function unitPathsOf(briefFile) {
+  if (briefFile === undefined)
+    return;
+  const read = readBrief(briefFile);
+  if (!("brief" in read) || read.brief.kind !== "unit")
+    return;
+  return { report: read.brief.report, rulings: read.brief.rulings };
 }
 function warn(transcript, sessionId, monitor, latched) {
   try {
@@ -1190,9 +1445,10 @@ function warn(transcript, sessionId, monitor, latched) {
     const next = nextLatch(latched, tokens, limit.tokens);
     if (next.speak === undefined)
       return { level: next.latch };
-    const brief = monitor.env.SIDEKICK_WORKER;
+    const raw = monitor.env.SIDEKICK_WORKER;
+    const brief = raw === "" ? undefined : raw;
     return {
-      text: warningText(next.speak, tokens, limit, brief === "" ? undefined : brief),
+      text: warningText(next.speak, tokens, limit, brief, next.speak === "critical" ? unitPathsOf(brief) : undefined),
       level: next.latch
     };
   } catch {
@@ -1208,7 +1464,7 @@ function postToolBatchContext(stdin, monitor) {
     if (typeof sessionId !== "string" || !SESSION_ID.test(sessionId)) {
       return {};
     }
-    const latchFile = path.join(monitor.tmpdir, `sidekick-ctx-${sessionId}.json`);
+    const latchFile = path3.join(monitor.tmpdir, `sidekick-ctx-${sessionId}.json`);
     const latched = readLatch(latchFile);
     const warning = warn(transcript, sessionId, monitor, latched.level);
     const speaksCanary = latched.canary === undefined && !gaugeRuns(monitor, sessionId);
@@ -1234,7 +1490,7 @@ var reason = (e) => e instanceof Error ? e.message : String(e);
 var isMissing = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function projectFolders(projects) {
   try {
-    const entries = fs2.readdirSync(projects, { withFileTypes: true });
+    const entries = fs4.readdirSync(projects, { withFileTypes: true });
     return {
       folders: entries.filter((e) => e.isDirectory()).map((e) => e.name),
       warnings: []
@@ -1250,19 +1506,19 @@ function projectFolders(projects) {
 }
 function modifiedAt(file) {
   try {
-    return fs2.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
+    return fs4.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
   } catch {
     return;
   }
 }
 function transcriptFinder(configDir) {
-  const projects = path2.join(configDir, "projects");
+  const projects = path4.join(configDir, "projects");
   const { folders, warnings } = projectFolders(projects);
   const find = (sessionId) => {
     if (!SESSION_ID2.test(sessionId))
       return;
     for (const folder of folders) {
-      const file = path2.join(projects, folder, `${sessionId}.jsonl`);
+      const file = path4.join(projects, folder, `${sessionId}.jsonl`);
       const mtimeMs = modifiedAt(file);
       if (mtimeMs !== undefined)
         return { file, mtimeMs };
@@ -1335,16 +1591,16 @@ function askedOf(sessionId, find) {
 }
 var NEWLINE = 10;
 function wholeLinesFrom(file, maxBytes) {
-  const fd = fs2.openSync(file, "r");
+  const fd = fs4.openSync(file, "r");
   try {
     const buffer = Buffer.alloc(maxBytes);
-    const read = fs2.readSync(fd, buffer, 0, maxBytes, 0);
+    const read = fs4.readSync(fd, buffer, 0, maxBytes, 0);
     const bytes = buffer.subarray(0, read);
     const end = read < maxBytes ? read : bytes.lastIndexOf(NEWLINE) + 1;
     return bytes.subarray(0, end).toString("utf-8").split(`
 `);
   } finally {
-    fs2.closeSync(fd);
+    fs4.closeSync(fd);
   }
 }
 function placeOf(entry) {
@@ -2145,247 +2401,6 @@ function fetchStatusUpdates(run, cwd, projectId) {
     throw e;
   }
 }
-
-// bin/helpers/worker-brief.ts
-import * as fs4 from "node:fs";
-import * as path4 from "node:path";
-
-// bin/helpers/worker-repo.ts
-import * as fs3 from "node:fs";
-import * as path3 from "node:path";
-var WORKTREES_FOLDER = ".claude/worktrees";
-function commitOf(runGit, top, rev) {
-  const result = runGit("git", ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`], top);
-  return result.code === 0 ? result.stdout.trim() : undefined;
-}
-var headCommit = (runGit, top) => commitOf(runGit, top, "HEAD");
-function isTrackedClean(runGit, top) {
-  const result = runGit("git", ["status", "--porcelain", "--untracked-files=no"], top);
-  return result.code === 0 && result.stdout.trim() === "";
-}
-var branchExists = (runGit, top, branch) => runGit("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], top).code === 0;
-var HEADS = "refs/heads/";
-function checkoutOf(runGit, folder) {
-  const result = runGit("git", ["rev-parse", "--path-format=absolute", "--show-toplevel"], folder);
-  if (result.code !== 0)
-    return { issue: result.stderr.trim() };
-  return { top: result.stdout.replace(/\n$/, "") };
-}
-function physical(p) {
-  const abs = path3.resolve(p);
-  const rest2 = [];
-  let dir = abs;
-  for (;; ) {
-    try {
-      return path3.join(fs3.realpathSync(dir), ...rest2);
-    } catch {
-      const parent = path3.dirname(dir);
-      if (parent === dir)
-        return abs;
-      rest2.unshift(path3.basename(dir));
-      dir = parent;
-    }
-  }
-}
-var PUSH_URL_KEY = /^remote\.(.+)\.pushurl$/;
-function remotesWithPushUrl(runGit, top) {
-  const result = runGit("git", ["config", "--get-regexp", "^remote\\..+\\.pushurl$"], top);
-  if (result.code !== 0)
-    return [];
-  const names = result.stdout.split(`
-`).map((line) => PUSH_URL_KEY.exec(line.split(" ")[0])?.[1]).filter((name) => name !== undefined);
-  return [...new Set(names)];
-}
-function creationCommit(runGit, top, ref) {
-  if (ref === undefined) {
-    return { issue: "the worktree has a detached HEAD, so no branch reflog" };
-  }
-  const result = runGit("git", ["reflog", "show", "--format=%H", ref], top);
-  if (result.code !== 0) {
-    return { issue: `git reflog show ${ref} failed: ${result.stderr.trim()}` };
-  }
-  const oldest = result.stdout.trim().split(`
-`).at(-1) ?? "";
-  if (oldest === "") {
-    return {
-      issue: `${ref} has no reflog to read its creation commit from`
-    };
-  }
-  return { sha: oldest };
-}
-
-// bin/helpers/worker-brief.ts
-var FENCE = "---";
-var KEY_LINE = /^([a-z]+):(?: (.*))?$/;
-function parseFrontmatter(text) {
-  const lines = text.split(/\r?\n/).map((l) => l.trimEnd());
-  if (lines[0] !== FENCE) {
-    return { issues: ["the brief must open with a --- line"] };
-  }
-  const end = lines.indexOf(FENCE, 1);
-  if (end === -1) {
-    return { issues: ["the brief's frontmatter has no closing --- line"] };
-  }
-  const fields = {};
-  const issues = [];
-  for (const [i, line] of lines.slice(1, end).entries()) {
-    if (line === "")
-      continue;
-    const match = KEY_LINE.exec(line);
-    const key = match?.[1];
-    if (key === undefined) {
-      issues.push(`line ${i + 2}: "${line}" is not "key: value" with a lower-case key`);
-    } else if (Object.hasOwn(fields, key)) {
-      issues.push(`line ${i + 2}: the key "${key}" is repeated`);
-    } else {
-      fields[key] = (match?.[2] ?? "").trim();
-    }
-  }
-  return issues.length > 0 ? { issues } : { fields };
-}
-var AbsolutePath = pipe(string(), check((s) => path4.isAbsolute(s), "must be an absolute path"));
-var RelativePath = pipe(string(), minLength(1, "must not be empty"), check((s) => !path4.isAbsolute(s), "must be relative to the repo top"), check((s) => !s.split(/[\\/]/).includes(".."), 'must not have a ".." segment'));
-var WORKER_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
-var WORKSTREAM = /^[a-z0-9][a-z0-9-]{0,63}$/;
-var WorkerNameSchema = pipe(string(), regex(WORKER_NAME, `must match ${WORKER_NAME.source}`));
-var UnitIdSchema = pipe(string(), regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 of A-Z a-z 0-9 . _ -"));
-var isFolderSafeUnitId = (id) => is(UnitIdSchema, id) && id !== "." && id !== "..";
-var BASELINE = pipe(string(), regex(/^[0-9a-f]{7,40}$/, "must be a commit of 7 to 40 hex characters"));
-var PlanBriefSchema = strictObject({
-  kind: literal("plan"),
-  name: WorkerNameSchema,
-  plan: AbsolutePath,
-  spec: AbsolutePath,
-  rulings: AbsolutePath,
-  baseline: BASELINE,
-  skill: picklist(["subagent-driven-development", "executing-plans"]),
-  place: union([
-    literal("worktree"),
-    literal("in-place"),
-    pipe(string(), regex(/^branch \S+$/))
-  ], 'must be "worktree", "in-place", or "branch <name>"'),
-  target: optional(pipe(string(), regex(/^\S+$/, "must be a non-empty branch name with no whitespace"))),
-  workstream: optional(pipe(string(), regex(WORKSTREAM, `must match ${WORKSTREAM.source}`))),
-  setup: optional(pipe(string(), minLength(1))),
-  report: RelativePath,
-  orchestrator: pipe(string(), minLength(1, "must not be empty"))
-});
-var SKILL_PART_MAX = 48;
-var SKILL_PART = new RegExp(`^[a-z0-9][a-z0-9-]{0,${SKILL_PART_MAX - 1}}$`);
-var UNIT_SKILL_MESSAGE = `must be <plugin>:<skill>, each part of lower-case letters, digits, and hyphens, starting with a letter or digit, at most ${SKILL_PART_MAX} characters`;
-var UnitBriefSchema = strictObject({
-  kind: literal("unit"),
-  name: WorkerNameSchema,
-  unit: AbsolutePath,
-  rulings: AbsolutePath,
-  baseline: BASELINE,
-  skill: pipe(string(), check((s) => {
-    const parts = s.split(":");
-    return parts.length === 2 && parts.every((p) => SKILL_PART.test(p));
-  }, UNIT_SKILL_MESSAGE)),
-  place: literal("worktree", 'must be "worktree"'),
-  report: RelativePath,
-  orchestrator: pipe(string(), minLength(1, "must not be empty"))
-});
-var BriefSchema = variant("kind", [
-  PlanBriefSchema,
-  UnitBriefSchema
-]);
-function readBrief(file) {
-  const abs = path4.resolve(file);
-  let text;
-  try {
-    text = fs4.readFileSync(abs, "utf-8");
-  } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return { issues: [`${abs}: cannot read the brief: ${why}`] };
-  }
-  const parsed = parseFrontmatter(text);
-  if ("issues" in parsed) {
-    return { issues: parsed.issues.map((i) => `${abs}: ${i}`) };
-  }
-  const result = safeParse(BriefSchema, { kind: "plan", ...parsed.fields });
-  if (!result.success) {
-    return {
-      issues: result.issues.map((issue) => {
-        const field = issue.path?.map((p) => String(p.key)).join(".");
-        return field ? `${abs}: field "${field}" ${issue.message}` : `${abs}: ${issue.message}`;
-      })
-    };
-  }
-  return { brief: result.output, path: abs };
-}
-function checkoutIssue(runGit, field, file, allowed) {
-  const folder = path4.dirname(file);
-  if (!fs4.existsSync(folder))
-    return [];
-  const found = checkoutOf(runGit, folder);
-  const held = "top" in found ? physical(found.top) : undefined;
-  if (held !== undefined && allowed.some((a) => physical(a.top) === held)) {
-    return [];
-  }
-  const where = allowed.map((a) => `the ${a.label} ${a.top}`).join(" or ");
-  const is2 = held === undefined ? "in no git checkout" : `in the checkout ${held}`;
-  return [`${field}: ${file} is ${is2}; it must be in ${where}`];
-}
-function briefFileIssues(brief, bounds) {
-  const { briefPath, launchTop, mainTop, runGit } = bounds;
-  const issues = [];
-  if (!fs4.existsSync(brief.plan)) {
-    issues.push(`plan: ${brief.plan} does not exist`);
-  }
-  if (!fs4.existsSync(brief.spec)) {
-    issues.push(`spec: ${brief.spec} does not exist`);
-  }
-  const rulingsDir = path4.dirname(brief.rulings);
-  if (!fs4.existsSync(rulingsDir)) {
-    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
-  }
-  const launching = { label: "launching checkout", top: launchTop };
-  const either = physical(launchTop) === physical(mainTop) ? [launching] : [launching, { label: "main checkout", top: mainTop }];
-  const named = [
-    ["brief", briefPath, [launching]],
-    ["plan", brief.plan, either],
-    ["spec", brief.spec, either],
-    ["rulings", brief.rulings, [launching]]
-  ];
-  for (const [field, file, allowed] of named) {
-    issues.push(...checkoutIssue(runGit, field, file, allowed));
-  }
-  return issues;
-}
-var ATTEMPT_REPORT = "report.md";
-var UNITS_FOLDER = "units";
-var realFolderOf = (file) => path4.dirname(physical(file));
-function unitBriefFileIssues(brief, briefPath) {
-  const issues = [];
-  if (!fs4.existsSync(brief.unit)) {
-    issues.push(`unit: ${brief.unit} does not exist`);
-  }
-  const rulingsDir = path4.dirname(brief.rulings);
-  if (!fs4.existsSync(rulingsDir)) {
-    issues.push(`rulings: the folder ${rulingsDir} does not exist`);
-  }
-  const home = realFolderOf(briefPath);
-  const others = [
-    ["unit", brief.unit],
-    ["rulings", brief.rulings]
-  ];
-  for (const [field, file] of others) {
-    const folder = realFolderOf(file);
-    if (folder !== home) {
-      issues.push(`${field}: ${file} is not in the folder ${home} that holds the brief; the brief, the unit file, and the rulings share one folder`);
-    }
-  }
-  const unitId = path4.basename(path4.dirname(home));
-  const shape = path4.basename(home) === brief.name && path4.basename(path4.dirname(path4.dirname(home))) === UNITS_FOLDER && isFolderSafeUnitId(unitId);
-  if (!shape) {
-    issues.push(`brief: ${home} must be <loop folder>/${UNITS_FOLDER}/<unit>/${brief.name}, with a unit id of 1 to 64 of A-Z a-z 0-9 . _ -`);
-  }
-  return issues;
-}
-var briefTargetOf = (brief) => brief.kind === "plan" ? brief.target : undefined;
-var briefWorkstreamOf = (brief) => brief.kind === "plan" ? brief.workstream : undefined;
 
 // bin/helpers/worker-listing.ts
 function checkedOut(runGit, dir) {
@@ -7636,6 +7651,13 @@ function briefWorkstream(env) {
   const read = readBrief(file);
   return "brief" in read ? briefWorkstreamOf(read.brief) : undefined;
 }
+function isUnitWorker(env) {
+  const file = workerBrief(env);
+  if (file === undefined)
+    return false;
+  const read = readBrief(file);
+  return "brief" in read && read.brief.kind === "unit";
+}
 function staleLockWarning(store, now) {
   const lock = path34.join(store, ".git", "index.lock");
   try {
@@ -7728,7 +7750,7 @@ function missingSettingText(view) {
 }
 function gather(stdin, deps) {
   const event = parseEvent(stdin);
-  if (event === undefined)
+  if (event === undefined || isUnitWorker(deps.env))
     return {};
   const view = repoView(event.cwd, deps);
   const base = { sessionId: event.session_id, source: event.source };

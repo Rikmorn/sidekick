@@ -13,6 +13,7 @@ import {
   type LimitKind,
   parseContextLimit,
 } from '../../plugin/hooks/gauge/contract.js';
+import { readBrief } from './worker-brief.js';
 
 export type Level = 'warning' | 'critical';
 
@@ -154,6 +155,17 @@ function workerTail(brief: string): string {
   return `This session is a worker that no one watches: do not stop to tell the user. Keep superpowers' ledger current, and after a compaction re-read the brief at \`${brief}\`. Run sk-save now, so a compaction, or a later worker on the same workstream, continues from your record.`;
 }
 
+/** The paths a unit worker's brief names, which its critical text points at. */
+export interface UnitPaths {
+  report: string;
+  rulings: string;
+}
+
+// A unit's report is its record, so it never runs sk-save.
+function unitTail(brief: string, unit: UnitPaths): string {
+  return `This session is a worker that no one watches: do not stop to tell the user. Write your run report now, at \`${unit.report}\` from the top of your worktree. After a compaction, re-read the brief at \`${brief}\` and the rulings file at \`${unit.rulings}\`. Do not run sk-save: the report is the record.`;
+}
+
 /**
  * The advisory the model receives at a level. A worker's brief path swaps the
  * critical text's "tell the user" for the worker text.
@@ -163,6 +175,7 @@ export function warningText(
   tokens: number,
   limit: Limit,
   workerBrief?: string,
+  unit?: UnitPaths,
 ): string {
   // Integer arithmetic first: 0.57 * 100 is 56.99999999999999.
   const percent = Math.floor((tokens * 100) / limit.tokens);
@@ -171,9 +184,12 @@ export function warningText(
     limit.kind === 'compaction' ? 'of the way to compaction' : 'full';
   const lead = `sidekick: context is ${percent}% ${where} (${format(tokens)} of ${format(limit.tokens)} tokens). There is no need to stop. Where it fits, finish the current step before starting a new one.`;
   if (level !== 'critical') return lead;
-  return workerBrief === undefined
-    ? `${lead} At the next natural pause, tell the user that context is running low, and offer to save it with sk-save.`
-    : `${lead} ${workerTail(workerBrief)}`;
+  if (workerBrief === undefined) {
+    return `${lead} At the next natural pause, tell the user that context is running low, and offer to save it with sk-save.`;
+  }
+  return unit === undefined
+    ? `${lead} ${workerTail(workerBrief)}`
+    : `${lead} ${unitTail(workerBrief, unit)}`;
 }
 
 export interface MonitorEnv {
@@ -283,6 +299,14 @@ interface Warning {
   level: Level | undefined;
 }
 
+// The unit brief's paths; an unreadable or plan brief gives the plan worker's text.
+function unitPathsOf(briefFile: string | undefined): UnitPaths | undefined {
+  if (briefFile === undefined) return undefined;
+  const read = readBrief(briefFile);
+  if (!('brief' in read) || read.brief.kind !== 'unit') return undefined;
+  return { report: read.brief.report, rulings: read.brief.rulings };
+}
+
 // The advisory the transcript's figure earns; the latched level stands when
 // there is no figure or no limit.
 function warn(
@@ -300,13 +324,15 @@ function warn(
     if (limit === undefined) return { level: latched };
     const next = nextLatch(latched, tokens, limit.tokens);
     if (next.speak === undefined) return { level: next.latch };
-    const brief = monitor.env.SIDEKICK_WORKER;
+    const raw = monitor.env.SIDEKICK_WORKER;
+    const brief = raw === '' ? undefined : raw;
     return {
       text: warningText(
         next.speak,
         tokens,
         limit,
-        brief === '' ? undefined : brief,
+        brief,
+        next.speak === 'critical' ? unitPathsOf(brief) : undefined,
       ),
       level: next.latch,
     };
