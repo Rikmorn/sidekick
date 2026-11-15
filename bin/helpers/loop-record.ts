@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import * as v from 'valibot';
 import { localDate } from './local-date.js';
 import { type Cron, previousFire } from './loop-cron.js';
+import { WorkerNameSchema } from './worker-brief.js';
 
 /** The kinds the model writes through `sidekick loop record`. */
 export const MODEL_KINDS = [
@@ -58,6 +59,7 @@ const unit = v.pipe(
   v.string(),
   v.regex(/^[A-Za-z0-9._-]{1,64}$/, 'must be 1 to 64 of A-Z a-z 0-9 . _ -'),
 );
+const issue = v.pipe(v.number(), v.integer(), v.minValue(1));
 const hash = v.pipe(v.string(), v.minLength(1));
 const reason = v.pipe(v.string(), v.minLength(1), v.maxLength(1000), plain);
 // 40 hex characters is a SHA-1 object id, and 64 a SHA-256 one.
@@ -119,10 +121,31 @@ export const RecordLineSchema = v.variant('kind', [
     kind: v.literal('dispatched'),
     unit,
     record: v.optional(v.literal(true)),
+    worker: v.optional(WorkerNameSchema),
+    issue: v.optional(issue),
   }),
+  v.object({
+    ...head,
+    kind: v.literal('answered'),
+    unit,
+    worker: WorkerNameSchema,
+  }),
+  v.object({ ...head, kind: v.literal('resumed'), reason }),
   v.object({ ...head, kind: v.literal('landed'), unit, commit }),
-  v.object({ ...head, kind: v.literal('failed'), unit, reason }),
-  v.object({ ...head, kind: v.literal('discarded'), unit, reason }),
+  v.object({
+    ...head,
+    kind: v.literal('failed'),
+    unit,
+    reason,
+    worker: v.optional(WorkerNameSchema),
+  }),
+  v.object({
+    ...head,
+    kind: v.literal('discarded'),
+    unit,
+    reason,
+    worker: v.optional(WorkerNameSchema),
+  }),
 ]);
 export type RecordLine = v.InferOutput<typeof RecordLineSchema>;
 

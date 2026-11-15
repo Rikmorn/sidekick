@@ -28,6 +28,7 @@ const IGNORED = [
   'loops/*/state.json',
   'loops/*/armed.json',
   'loops/*/start.lock',
+  'loops/*/units/',
 ];
 
 /**

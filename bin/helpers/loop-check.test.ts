@@ -80,6 +80,7 @@ const validLoop = () => ({
   caps: {
     attemptsPerUnit: 2,
     workMinutesPerUnit: 180,
+    waitMinutesPerUnit: 1440,
     unitsPerDay: 4,
     failedUnitsInARow: 3,
   },

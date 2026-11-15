@@ -35,6 +35,7 @@ const loop = (): LoopManifest => {
     caps: {
       attemptsPerUnit: 1,
       workMinutesPerUnit: 1,
+      waitMinutesPerUnit: 1,
       unitsPerDay: 1,
       failedUnitsInARow: 1,
     },

@@ -45,6 +45,18 @@ const nine: RecordLine[] = [
   { ...base(T), kind: 'discarded', unit: 'u1', reason: 'no' },
 ];
 
+const units: RecordLine[] = [
+  {
+    ...base(T),
+    kind: 'dispatched',
+    unit: 'u1',
+    worker: 'fix-u1',
+    issue: 12,
+  },
+  { ...base(T), kind: 'answered', unit: 'u1', worker: 'fix-u1' },
+  { ...base(T), kind: 'resumed', reason: 'the operator asked' },
+];
+
 describe('the schema', () => {
   test('MODEL_KINDS names the five model kinds', () => {
     expect([...MODEL_KINDS]).toEqual([
@@ -67,7 +79,35 @@ describe('the schema', () => {
     expect(read.lines).toEqual(nine);
   });
 
+  test('dispatched keeps worker and issue', () => {
+    const line = units[0];
+    const out = v.safeParse(RecordLineSchema, line);
+    expect(out.success && out.output).toEqual(line);
+  });
+
+  test('answered and resumed parse and append', () => {
+    for (const line of units) appendRecord(dir, line);
+    const read = readRecords(
+      dir,
+      new Date(2026, 10, 14),
+      new Date(2026, 10, 14, 23, 59),
+    );
+    expect(read.skipped).toBe(0);
+    expect(read.lines).toEqual(units);
+  });
+
   const bad: [string, unknown][] = [
+    ['answered without worker', { ...base(T), kind: 'answered', unit: 'u' }],
+    ['answered without unit', { ...base(T), kind: 'answered', worker: 'w' }],
+    ['resumed without reason', { ...base(T), kind: 'resumed' }],
+    [
+      'dispatched with issue 0',
+      { ...base(T), kind: 'dispatched', unit: 'u', issue: 0 },
+    ],
+    [
+      'dispatched with a bad worker',
+      { ...base(T), kind: 'dispatched', unit: 'u', worker: 'Bad Name' },
+    ],
     [
       'would without class',
       { ...base(T), kind: 'would', summary: 's', command: 'x' },

@@ -49,14 +49,16 @@ const cap = v.pipe(
  * - An attempt is one `dispatched` line for a unit.
  * - A dispatch under `start --record` writes `dispatched` with `record: true`.
  *   It counts toward `unitsPerDay` and `failedUnitsInARow`, not `attemptsPerUnit`.
- * - Working time runs from a unit's `dispatched` line, less the time its worker
- *   waits on an answer.
+ * - Working time runs from a unit's `dispatched` line, less its waits. A wait
+ *   opens at a `request` line for the unit and closes at the next `answered`
+ *   line for it, or runs to now. Waits count only up to `waitMinutesPerUnit`
+ *   in total; past that, waiting counts as working.
  * - A day is the operator's local calendar day, the day that names each record file.
  */
 const CapsSchema = v.strictObject({
   attemptsPerUnit: cap,
   workMinutesPerUnit: cap,
-  waitMinutesPerUnit: v.optional(cap),
+  waitMinutesPerUnit: cap,
   unitsPerDay: cap,
   failedUnitsInARow: cap,
 });

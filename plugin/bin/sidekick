@@ -4043,7 +4043,8 @@ var IGNORED = [
   "loops/*/records/",
   "loops/*/state.json",
   "loops/*/armed.json",
-  "loops/*/start.lock"
+  "loops/*/start.lock",
+  "loops/*/units/"
 ];
 function realPathOf(p) {
   const resolved = path13.resolve(p);
@@ -8992,7 +8993,7 @@ var cap = pipe(number(), integer("must be a whole number"), minValue(1, "must be
 var CapsSchema = strictObject({
   attemptsPerUnit: cap,
   workMinutesPerUnit: cap,
-  waitMinutesPerUnit: optional(cap),
+  waitMinutesPerUnit: cap,
   unitsPerDay: cap,
   failedUnitsInARow: cap
 });
@@ -9328,7 +9329,8 @@ var RUNTIME_ENTRIES = [
   "records",
   "state.json",
   "armed.json",
-  "start.lock"
+  "start.lock",
+  "units"
 ];
 function loopsRoot(env, cwd, home) {
   const [root] = storeRoots("loops", env, cwd, home, { kind: "outside" });
@@ -10505,6 +10507,7 @@ var summary = pipe(string(), minLength(1), maxLength(1000), plain2);
 var command = pipe(string(), minLength(1), maxLength(4000), plain2);
 var className = pipe(string(), minLength(1), plain2);
 var unit = pipe(string(), regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 of A-Z a-z 0-9 . _ -"));
+var issue = pipe(number(), integer(), minValue(1));
 var hash = pipe(string(), minLength(1));
 var reason6 = pipe(string(), minLength(1), maxLength(1000), plain2);
 var commit = pipe(string(), regex(/^[0-9a-f]{7,64}$/i, "must be a hex object id of 7 to 64 characters"));
@@ -10557,11 +10560,32 @@ var RecordLineSchema = variant("kind", [
     ...head,
     kind: literal("dispatched"),
     unit,
-    record: optional(literal(true))
+    record: optional(literal(true)),
+    worker: optional(WorkerNameSchema),
+    issue: optional(issue)
   }),
+  object({
+    ...head,
+    kind: literal("answered"),
+    unit,
+    worker: WorkerNameSchema
+  }),
+  object({ ...head, kind: literal("resumed"), reason: reason6 }),
   object({ ...head, kind: literal("landed"), unit, commit }),
-  object({ ...head, kind: literal("failed"), unit, reason: reason6 }),
-  object({ ...head, kind: literal("discarded"), unit, reason: reason6 })
+  object({
+    ...head,
+    kind: literal("failed"),
+    unit,
+    reason: reason6,
+    worker: optional(WorkerNameSchema)
+  }),
+  object({
+    ...head,
+    kind: literal("discarded"),
+    unit,
+    reason: reason6,
+    worker: optional(WorkerNameSchema)
+  })
 ]);
 function recordFile(loopDir, at2) {
   return path49.join(loopDir, RECORDS_DIR, `${localDate(at2)}.jsonl`);
@@ -10584,7 +10608,7 @@ function endsMidLine(file) {
 function appendRecord(loopDir, line) {
   const parsed = safeParse(RecordLineSchema, line);
   if (!parsed.success) {
-    const issues = parsed.issues.map((issue) => `${getDotPath(issue) ?? "kind"}: ${issue.message}`);
+    const issues = parsed.issues.map((issue2) => `${getDotPath(issue2) ?? "kind"}: ${issue2.message}`);
     throw new Error(`the record line does not fit the schema: ${issues.join("; ")}`);
   }
   const file = recordFile(loopDir, new Date(parsed.output.at));
@@ -11122,8 +11146,8 @@ function workTreeRootOf(cwd, runGit = execRunner) {
   const result = runGit("git", ["rev-parse", "--show-toplevel"], cwd);
   if (result.code === 0)
     return { kind: "inside", top: result.stdout.trim() };
-  const issue = revParseLine(result.stderr);
-  return outsideRepo(issue, cwd) ? { kind: "outside" } : { kind: "failed", issue };
+  const issue2 = revParseLine(result.stderr);
+  return outsideRepo(issue2, cwd) ? { kind: "outside" } : { kind: "failed", issue: issue2 };
 }
 function repoRootOf(cwd, warn2) {
   const root = workTreeRootOf(cwd);
@@ -11664,8 +11688,8 @@ function endPaused(p, ctx) {
     ...state,
     pausedAt: ctx.lenv.now().toISOString()
   });
-  for (const issue of issues) {
-    warn2(ctx, `${issue}; state.json records no pause, so once the pause is lifted start may respawn the old session instead of launching it fresh`);
+  for (const issue2 of issues) {
+    warn2(ctx, `${issue2}; state.json records no pause, so once the pause is lifted start may respawn the old session instead of launching it fresh`);
   }
   return { kind: "paused" };
 }
@@ -11682,8 +11706,8 @@ function respawn(p, action, ctx) {
     ...state,
     startedAt: ctx.lenv.now().toISOString()
   });
-  for (const issue of issues) {
-    warn2(ctx, `${issue}; startedAt keeps the time of the last start`);
+  for (const issue2 of issues) {
+    warn2(ctx, `${issue2}; startedAt keeps the time of the last start`);
   }
   return { kind: "respawned", job };
 }
@@ -11807,8 +11831,8 @@ function recordJob(p, state, result, ctx) {
   }
   const recorded = { ...state, job };
   const issues = writeState(p.dir, recorded);
-  for (const issue of issues)
-    warn2(ctx, issue);
+  for (const issue2 of issues)
+    warn2(ctx, issue2);
   if (issues.length > 0)
     warn2(ctx, `${KEEPS_NULL}.`);
   return recorded;
@@ -11894,8 +11918,8 @@ function commitStart(prepared, lenv, err) {
   const isCommitted = issues.length === 0 && snapshotStore(store, commit2, lenv.runGit) !== "failed";
   if (isCommitted)
     return;
-  for (const issue of issues)
-    err(issue);
+  for (const issue2 of issues)
+    err(issue2);
   err(`git could not commit the sidekick folder ${store}, so its history lacks this start; the loops start anyway.`);
 }
 function actOnHeld(held, flags, lenv, io) {
@@ -11982,9 +12006,9 @@ function runStart(rest2, lenv, out, err, {
     err(`usage: ${START_USAGE_LINE}`);
     return 1;
   }
-  const issue = configDirIssue(lenv.env);
-  if (issue !== undefined) {
-    err(issue);
+  const issue2 = configDirIssue(lenv.env);
+  if (issue2 !== undefined) {
+    err(issue2);
     return 1;
   }
   const root = loopsRoot(lenv.env, lenv.cwd, lenv.home);
@@ -12025,8 +12049,8 @@ var usage3 = (err) => {
   return 1;
 };
 var refuse7 = (err, issues) => {
-  for (const issue of issues)
-    err(issue);
+  for (const issue2 of issues)
+    err(issue2);
   return 1;
 };
 var nameRefusal = (name) => isProfileName(name) ? undefined : `"${name}" is not a loop name: use ${PROFILE_NAME_RULE}`;
@@ -12106,6 +12130,7 @@ function definitionLines(file, manifest) {
   ]);
 }
 var unitText = (unit2) => unit2 === undefined ? undefined : `unit ${unit2}`;
+var workerText = (worker) => worker === undefined ? undefined : `worker ${worker}`;
 function recordParts(line) {
   switch (line.kind) {
     case "would":
@@ -12122,13 +12147,19 @@ function recordParts(line) {
     case "dispatched":
       return [
         line.record === true ? "under start --record" : undefined,
+        workerText(line.worker),
+        line.issue === undefined ? undefined : `issue ${line.issue}`,
         unitText(line.unit)
       ];
+    case "answered":
+      return [workerText(line.worker), unitText(line.unit)];
+    case "resumed":
+      return [line.reason];
     case "landed":
       return [`commit ${line.commit}`, unitText(line.unit)];
     case "failed":
     case "discarded":
-      return [line.reason, unitText(line.unit)];
+      return [line.reason, workerText(line.worker), unitText(line.unit)];
     default: {
       const unhandled = line;
       throw new Error(`unhandled record ${JSON.stringify(unhandled)}`);
@@ -12213,8 +12244,10 @@ var show2 = (rest2, lenv, out, err) => {
 };
 var VERB_WRITERS = {
   dispatched: "only sidekick loop dispatch writes it",
+  answered: "only sidekick loop answer writes it",
+  resumed: "only sidekick loop resume writes it",
   landed: "only sidekick loop land writes it",
-  failed: "only sidekick loop reap and sidekick loop land write it",
+  failed: "only sidekick loop reap, sidekick loop discard --failed, and sidekick loop land write it",
   discarded: "only sidekick loop discard and sidekick loop reap write it"
 };
 var isModelKind = (kind) => MODEL_KINDS.some((known) => known === kind);
@@ -12303,7 +12336,7 @@ function lineOf2(args, at2, launchHash2) {
   if (parsed.success)
     return { line: parsed.output };
   return {
-    issues: parsed.issues.map((issue) => `--${getDotPath(issue) ?? "kind"}: ${issue.message}`)
+    issues: parsed.issues.map((issue2) => `--${getDotPath(issue2) ?? "kind"}: ${issue2.message}`)
   };
 }
 var launchMandate = (file, states) => ({
@@ -13007,17 +13040,17 @@ function leaf(mark, ref2, text, age) {
     children: []
   };
 }
-function markOf(issue) {
-  if (!isOpenWork(issue))
+function markOf(issue2) {
+  if (!isOpenWork(issue2))
     return "done";
-  return issue.status === IN_PROGRESS ? "running" : "later";
+  return issue2.status === IN_PROGRESS ? "running" : "later";
 }
-function issueNode(issue) {
-  const node = leaf(markOf(issue), `#${issue.number}`, issue.title ?? "no card", issue.ageDays);
-  return issue.awaitsRelease ? { ...node, right: RELEASE_CHECK, weight: "quiet" } : node;
+function issueNode(issue2) {
+  const node = leaf(markOf(issue2), `#${issue2.number}`, issue2.title ?? "no card", issue2.ageDays);
+  return issue2.awaitsRelease ? { ...node, right: RELEASE_CHECK, weight: "quiet" } : node;
 }
-function titledNode(issue, mark, age) {
-  return leaf(mark, `#${issue.number}`, issue.title, age);
+function titledNode(issue2, mark, age) {
+  return leaf(mark, `#${issue2.number}`, issue2.title, age);
 }
 function quiet(mark, text, children2 = []) {
   return { mark, ref: null, text, right: null, weight: "quiet", children: children2 };
@@ -13565,8 +13598,8 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
   }
   const listing = listJobs(senv.runClaude, senv.cwd, timeoutMs);
   if ("issues" in listing) {
-    for (const issue of listing.issues)
-      err(issue);
+    for (const issue2 of listing.issues)
+      err(issue2);
     return 1;
   }
   const name = listing.jobs.find((job) => job.sessionId === self)?.name;
@@ -13592,10 +13625,10 @@ function checkoutFacts(runGit, cwd) {
     "--git-common-dir"
   ], cwd);
   if (result.code !== 0) {
-    const issue = revParseLine(result.stderr);
+    const issue2 = revParseLine(result.stderr);
     return {
       issues: [
-        outsideRepo(issue, cwd) ? "not inside a git work tree: run sidekick worker from a checkout of the repo" : `git rev-parse failed in ${cwd}: ${issue}; fix what git reports, then run sidekick worker again`
+        outsideRepo(issue2, cwd) ? "not inside a git work tree: run sidekick worker from a checkout of the repo" : `git rev-parse failed in ${cwd}: ${issue2}; fix what git reports, then run sidekick worker again`
       ]
     };
   }
@@ -14110,8 +14143,8 @@ function summary2(ready) {
   ];
 }
 var refuse8 = (err, issues) => {
-  for (const issue of issues)
-    err(issue);
+  for (const issue2 of issues)
+    err(issue2);
   return 1;
 };
 function keepRecord(ready, job, err) {
@@ -14547,9 +14580,9 @@ function repoOf2(env, err) {
   const found = findRepo(env.runGit, env.cwd);
   for (const warning of found.warnings)
     err(warning);
-  const issue = found.revParseIssue;
-  if (issue !== undefined) {
-    err(outsideRepo(issue, env.cwd) ? `${env.cwd} is not inside a git repository` : `git rev-parse failed in ${env.cwd}: ${issue}; fix what git reports, then run the command again`);
+  const issue2 = found.revParseIssue;
+  if (issue2 !== undefined) {
+    err(outsideRepo(issue2, env.cwd) ? `${env.cwd} is not inside a git repository` : `git rev-parse failed in ${env.cwd}: ${issue2}; fix what git reports, then run the command again`);
   }
   return found.repo;
 }
@@ -15424,8 +15457,8 @@ function finishIssues(opts, wenv, out) {
 }
 function finish(opts, wenv, out, err) {
   const issues = finishIssues(opts, wenv, out);
-  for (const issue of issues)
-    err(issue);
+  for (const issue2 of issues)
+    err(issue2);
   return issues.length === 0 ? 0 : 1;
 }
 
@@ -15545,9 +15578,9 @@ function whereItRuns(env, err) {
     err(warning);
   const repo = found.repo;
   if (repo === undefined) {
-    const issue = found.revParseIssue;
-    if (issue !== undefined && !outsideRepo(issue, env.cwd)) {
-      return refuse10(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue}`, `fix what git reports, ${AGAIN_WAY}`);
+    const issue2 = found.revParseIssue;
+    if (issue2 !== undefined && !outsideRepo(issue2, env.cwd)) {
+      return refuse10(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue2}`, `fix what git reports, ${AGAIN_WAY}`);
     }
     return refuse10(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
   }

@@ -129,6 +129,7 @@ const validLoop = () => ({
   caps: {
     attemptsPerUnit: 2,
     workMinutesPerUnit: 180,
+    waitMinutesPerUnit: 1440,
     unitsPerDay: 4,
     failedUnitsInARow: 3,
   },
@@ -371,7 +372,7 @@ describe('show', () => {
       '  tick: /fixer:tick',
       '  hosts: ["registry.npmjs.org"]',
       '  gates: ["bun run test"]',
-      '  caps: {"attemptsPerUnit":2,"workMinutesPerUnit":180,"unitsPerDay":4,"failedUnitsInARow":3}',
+      '  caps: {"attemptsPerUnit":2,"workMinutesPerUnit":180,"waitMinutesPerUnit":1440,"unitsPerDay":4,"failedUnitsInARow":3}',
       '  mandate.reads: ["Bash(gh issue view *)"]',
       '  mandate.classes.triage: {"state":"record","allow":["Bash(gh issue edit * --add-label *)"]}',
       '  mandate.classes.integrate: {"state":"ask","allow":["Bash(gh issue close *)"]}',
@@ -395,6 +396,38 @@ describe('show', () => {
     ).toEqual(BUILTIN_NOTE.map((line) => `    ${line}`));
     expect(r.out.slice(builtins + 1 + BUILTIN_NOTE.length)).toEqual(lastDay());
     expect(calls.claude).toEqual([['plugin', 'list', '--json']]);
+  });
+
+  test('show prints answered and resumed lines', () => {
+    writeLoop();
+    writeProfile();
+    const stamp = (minutes: number) =>
+      at(new Date(NOW.getTime() - minutes * 60 * 1000));
+    appendRecord(loopDir(), {
+      ...stamp(30),
+      kind: 'dispatched',
+      unit: 'u5',
+      worker: 'fix-u5',
+      issue: 12,
+    });
+    appendRecord(loopDir(), {
+      ...stamp(20),
+      kind: 'answered',
+      unit: 'u5',
+      worker: 'fix-u5',
+    });
+    appendRecord(loopDir(), {
+      ...stamp(10),
+      kind: 'resumed',
+      reason: 'the operator asked',
+    });
+    const r = run(['show', 'fixer']);
+    expect(r.code).toBe(0);
+    expect(r.out.slice(-3)).toEqual([
+      `  ${localMinute(new Date(NOW.getTime() - 30 * 60 * 1000))}  dispatched  worker fix-u5  issue 12  unit u5`,
+      `  ${localMinute(new Date(NOW.getTime() - 20 * 60 * 1000))}  answered  worker fix-u5  unit u5`,
+      `  ${localMinute(new Date(NOW.getTime() - 10 * 60 * 1000))}  resumed  the operator asked`,
+    ]);
   });
 
   test('--since reaches back to that local midnight', () => {
@@ -651,7 +684,7 @@ describe('record', () => {
       'a verb kind, failed',
       ['--kind', 'failed', '--summary', 's'],
       [
-        '--kind failed: only sidekick loop reap and sidekick loop land write it, since the caps count it; record writes would, request, did, denied, and note',
+        '--kind failed: only sidekick loop reap, sidekick loop discard --failed, and sidekick loop land write it, since the caps count it; record writes would, request, did, denied, and note',
       ],
     ],
     [
@@ -659,6 +692,20 @@ describe('record', () => {
       ['--kind', 'discarded', '--summary', 's'],
       [
         '--kind discarded: only sidekick loop discard and sidekick loop reap write it, since the caps count it; record writes would, request, did, denied, and note',
+      ],
+    ],
+    [
+      'a verb kind, answered',
+      ['--kind', 'answered', '--summary', 's'],
+      [
+        '--kind answered: only sidekick loop answer writes it, since the caps count it; record writes would, request, did, denied, and note',
+      ],
+    ],
+    [
+      'a verb kind, resumed',
+      ['--kind', 'resumed', '--summary', 's'],
+      [
+        '--kind resumed: only sidekick loop resume writes it, since the caps count it; record writes would, request, did, denied, and note',
       ],
     ],
     [

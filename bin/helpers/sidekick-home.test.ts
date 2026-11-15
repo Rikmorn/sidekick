@@ -39,12 +39,20 @@ describe('sidekickHome', () => {
 });
 
 describe('ensureSidekickRepo', () => {
-  test('makes the folder a repo of its own with the four ignore lines', () => {
+  test('the ignore lines include loops/*/units/', () => {
+    const dir = path.join(tmp(), 'u', 'sidekick');
+    ensureSidekickRepo(dir, execRunner);
+    expect(
+      fs.readFileSync(path.join(dir, '.gitignore'), 'utf-8').split('\n'),
+    ).toContain('loops/*/units/');
+  });
+
+  test('makes the folder a repo of its own with the five ignore lines', () => {
     const dir = path.join(tmp(), 'a', 'sidekick');
     expect(ensureSidekickRepo(dir, execRunner)).toEqual([]);
     expect(git(dir, 'rev-parse', '--show-toplevel')).toBe(dir);
     expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf-8')).toBe(
-      'loops/*/records/\nloops/*/state.json\nloops/*/armed.json\nloops/*/start.lock\n',
+      'loops/*/records/\nloops/*/state.json\nloops/*/armed.json\nloops/*/start.lock\nloops/*/units/\n',
     );
   });
 
@@ -57,7 +65,7 @@ describe('ensureSidekickRepo', () => {
     );
     expect(ensureSidekickRepo(dir, execRunner)).toEqual([]);
     expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf-8')).toBe(
-      'z\nloops/*/state.json\na\nloops/*/records/\nloops/*/armed.json\nloops/*/start.lock\n',
+      'z\nloops/*/state.json\na\nloops/*/records/\nloops/*/armed.json\nloops/*/start.lock\nloops/*/units/\n',
     );
   });
 
@@ -81,7 +89,7 @@ describe('ensureSidekickRepo', () => {
     const head = git(dir, 'rev-parse', 'HEAD');
     expect(ensureSidekickRepo(dir, execRunner)).toEqual([]);
     const expected =
-      'mine\nloops/*/records/\nloops/*/state.json\nloops/*/armed.json\nloops/*/start.lock\n';
+      'mine\nloops/*/records/\nloops/*/state.json\nloops/*/armed.json\nloops/*/start.lock\nloops/*/units/\n';
     expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf-8')).toBe(
       expected,
     );

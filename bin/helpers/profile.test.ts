@@ -354,7 +354,7 @@ describe('profile new', () => {
     const folder = path.join(home, '.claude', 'sidekick');
     expect(fs.existsSync(path.join(folder, '.git'))).toBe(true);
     expect(fs.readFileSync(path.join(folder, '.gitignore'), 'utf-8')).toBe(
-      'loops/*/records/\nloops/*/state.json\nloops/*/armed.json\nloops/*/start.lock\n',
+      'loops/*/records/\nloops/*/state.json\nloops/*/armed.json\nloops/*/start.lock\nloops/*/units/\n',
     );
     expect(
       fs.existsSync(path.join(folder, 'profiles', 'x', 'profile.json')),

@@ -180,6 +180,9 @@ function definitionLines(file: string, manifest: LoopManifest | undefined) {
 const unitText = (unit: string | undefined): string | undefined =>
   unit === undefined ? undefined : `unit ${unit}`;
 
+const workerText = (worker: string | undefined): string | undefined =>
+  worker === undefined ? undefined : `worker ${worker}`;
+
 // What a record line says beside its time and kind: class, command or summary, unit.
 function recordParts(line: RecordLine): (string | undefined)[] {
   switch (line.kind) {
@@ -197,13 +200,19 @@ function recordParts(line: RecordLine): (string | undefined)[] {
     case 'dispatched':
       return [
         line.record === true ? 'under start --record' : undefined,
+        workerText(line.worker),
+        line.issue === undefined ? undefined : `issue ${line.issue}`,
         unitText(line.unit),
       ];
+    case 'answered':
+      return [workerText(line.worker), unitText(line.unit)];
+    case 'resumed':
+      return [line.reason];
     case 'landed':
       return [`commit ${line.commit}`, unitText(line.unit)];
     case 'failed':
     case 'discarded':
-      return [line.reason, unitText(line.unit)];
+      return [line.reason, workerText(line.worker), unitText(line.unit)];
     default: {
       const unhandled: never = line;
       throw new Error(`unhandled record ${JSON.stringify(unhandled)}`);
@@ -314,8 +323,11 @@ type VerbKind = Exclude<RecordLine['kind'], ModelKind>;
 // The verbs that write each kind the caps count; the model never writes them.
 const VERB_WRITERS = {
   dispatched: 'only sidekick loop dispatch writes it',
+  answered: 'only sidekick loop answer writes it',
+  resumed: 'only sidekick loop resume writes it',
   landed: 'only sidekick loop land writes it',
-  failed: 'only sidekick loop reap and sidekick loop land write it',
+  failed:
+    'only sidekick loop reap, sidekick loop discard --failed, and sidekick loop land write it',
   discarded: 'only sidekick loop discard and sidekick loop reap write it',
 } satisfies Record<VerbKind, string>;
 

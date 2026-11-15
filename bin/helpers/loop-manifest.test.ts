@@ -124,6 +124,7 @@ describe('parseLoopManifest', () => {
   test.each([
     'attemptsPerUnit',
     'workMinutesPerUnit',
+    'waitMinutesPerUnit',
     'unitsPerDay',
     'failedUnitsInARow',
   ])('caps.%s is required', (cap) => {
@@ -135,13 +136,13 @@ describe('parseLoopManifest', () => {
     expect(issuesOf(raw).some((i) => i.startsWith(`caps.${cap}: `))).toBe(true);
   });
 
-  test('waitMinutesPerUnit may be absent', () => {
+  test('a loop.json without waitMinutesPerUnit refuses', () => {
     const raw = change((m) => {
       const caps = asObj(m, 'caps');
       delete caps.waitMinutesPerUnit;
       m.caps = caps;
     });
-    expect(parseLoopManifest(raw).ok).toBe(true);
+    expect(parseLoopManifest(raw).ok).toBe(false);
   });
 
   test.each([0, 1.5, -1])('a cap of %p refuses', (n) => {

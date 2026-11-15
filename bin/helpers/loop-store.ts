@@ -14,6 +14,7 @@ export const RUNTIME_ENTRIES: readonly string[] = [
   'state.json',
   'armed.json',
   'start.lock',
+  'units',
 ];
 
 /** The folder that holds every loop's folder. */

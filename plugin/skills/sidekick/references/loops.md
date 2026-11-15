@@ -95,13 +95,13 @@ Each field takes `*`, a number, a range `a-b`, a step on either such as `*/15`, 
 
 ## The caps
 
-The four required caps, and the optional fifth, are whole numbers of at least 1.
+The five caps are required, and each is a whole number of at least 1.
 
 | Cap | What it counts |
 |---|---|
 | `attemptsPerUnit` | Attempts at one unit. An attempt is one `dispatched` line for the unit. |
-| `workMinutesPerUnit` | A unit's working time, from its `dispatched` line, less the time its worker waits on an answer. #367 defines the lines that bound a wait. |
-| `waitMinutesPerUnit` | Optional. The time a unit's worker waits on an answer. |
+| `workMinutesPerUnit` | A unit's working time, from its `dispatched` line, less its waits. A wait opens at a `request` line for the unit and closes at the next `answered` line for it, or runs to now. Waits count only up to `waitMinutesPerUnit` in total; past that, waiting counts as working. |
+| `waitMinutesPerUnit` | The most waiting that does not count as working time. |
 | `unitsPerDay` | Units dispatched in one day: the operator's local calendar day, the one that names each record file. |
 | `failedUnitsInARow` | Units that fail one after another. |
 
