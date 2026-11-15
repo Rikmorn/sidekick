@@ -9,6 +9,7 @@ type Person = { login: string } | null;
 type Comment = {
   author: Person;
   editor: Person;
+  lastEditedAt: string | null;
   body: string;
   createdAt: string;
 };
@@ -19,6 +20,8 @@ type IssueShape = {
   url: string;
   author: Person;
   editor: Person;
+  lastEditedAt: string | null;
+  renames: { totalCount: number; nodes: { actor?: Person }[] };
   comments: { totalCount: number; nodes: Comment[] };
 };
 
@@ -30,21 +33,27 @@ const issueOf = (over: Partial<IssueShape> = {}): IssueShape => ({
   url: 'https://github.com/acme/widgets/issues/7',
   author: who(ME),
   editor: null,
+  lastEditedAt: null,
+  renames: { totalCount: 0, nodes: [] },
   comments: { totalCount: 0, nodes: [] },
   ...over,
 });
 const comment = (over: Partial<Comment> = {}): Comment => ({
   author: who(ME),
   editor: null,
+  lastEditedAt: null,
   body: 'A note.',
   createdAt: '2026-11-15T10:00:00Z',
   ...over,
 });
 
-const respond = (issue: IssueShape | null): RunResult => ({
+const respond = (
+  issue: IssueShape | null,
+  repository: { issue: IssueShape | null } | null = { issue },
+): RunResult => ({
   code: 0,
   stdout: JSON.stringify({
-    data: { viewer: { login: ME }, repository: { issue } },
+    data: { viewer: { login: ME }, repository },
   }),
   stderr: '',
 });
@@ -70,6 +79,7 @@ describe('fetchUnitIssue', () => {
       respond(
         issueOf({
           editor: who(ME),
+          lastEditedAt: '2026-11-15T09:00:00Z',
           comments: { totalCount: 1, nodes: [comment()] },
         }),
       ),
@@ -103,6 +113,67 @@ describe('fetchUnitIssue', () => {
   test('a deleted author refuses', () => {
     const r = fetchWith(issueOf({ author: null }));
     expect('issues' in r).toBe(true);
+  });
+
+  test('an issue with no editor but an edit time refuses', () => {
+    const r = fetchWith(issueOf({ editor: null, lastEditedAt: '2026-11-15' }));
+    expect(r).toEqual({ issues: [expect.stringContaining('last edited')] });
+  });
+
+  test('a rename by another account, or a deleted one, refuses', () => {
+    for (const actor of [who('mallory'), null, undefined]) {
+      const r = fetchWith(
+        issueOf({ renames: { totalCount: 1, nodes: [{ actor }] } }),
+      );
+      expect(r).toEqual({ issues: [expect.stringContaining('renamed')] });
+    }
+  });
+
+  test('a rename by the viewer passes', () => {
+    const r = fetchWith(
+      issueOf({ renames: { totalCount: 1, nodes: [{ actor: who(ME) }] } }),
+    );
+    expect('issue' in r).toBe(true);
+  });
+
+  test('more than 100 renames refuses, naming the cap', () => {
+    const r = fetchWith(
+      issueOf({
+        renames: { totalCount: 101, nodes: [{ actor: who(ME) }] },
+      }),
+    );
+    expect(r).toEqual({
+      issues: [expect.stringContaining('100 title renames')],
+    });
+  });
+
+  test('a comment with no editor but an edit time is dropped', () => {
+    const r = fetchWith(
+      issueOf({
+        comments: {
+          totalCount: 2,
+          nodes: [
+            comment({ body: 'edited', lastEditedAt: '2026-11-15' }),
+            comment({ body: 'plain' }),
+          ],
+        },
+      }),
+    );
+    if (!('issue' in r)) throw new Error(r.issues.join('; '));
+    expect(r.issue.comments.map((c) => c.body)).toEqual(['plain']);
+    expect(r.issue.dropped).toBe(1);
+  });
+
+  test('a key in the title refuses', () => {
+    const r = fetchWith(issueOf({ title: `ghp_${'a'.repeat(36)}` }));
+    if (!('issues' in r)) throw new Error('expected refusal');
+    expect(r.issues[0]).toContain('title');
+    expect(r.issues.join('\n')).not.toContain('aaaa');
+  });
+
+  test('a null repository refuses', () => {
+    const r = fetchUnitIssue(stub(respond(null, null)).run, '/repo', 7);
+    expect(r).toEqual({ issues: [expect.stringContaining('no issue')] });
   });
 
   test('an issue last edited by another account refuses', () => {
@@ -199,6 +270,12 @@ describe('fetchUnitIssue', () => {
       7,
     );
     expect(timed).toEqual({ issues: [expect.stringContaining('timed out')] });
+    const silent = fetchUnitIssue(
+      stub({ code: TIMED_OUT, stdout: '', stderr: '' }).run,
+      '/repo',
+      7,
+    );
+    expect(silent).toEqual({ issues: [expect.stringContaining('timed out')] });
   });
 
   test('a response that does not parse refuses', () => {
