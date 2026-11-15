@@ -317,13 +317,26 @@ function freshState(p: Ready, ctx: ActContext): LoopState {
   };
 }
 
-// Claude Code refuses an untrusted repo before the session starts (docs/research/loop/2026-11-12-loop-probes.md §U19), so start judges trust only by that refusal, and never writes ~/.claude.json.
-const trustLines = (p: Ready, result: ClaudeResult): string[] =>
+/**
+ * The fix line for a launch Claude Code refused in `folder` because it does
+ * not trust it as a workspace, else none. `again` is the command to run once
+ * the folder is trusted. Claude Code refuses an untrusted folder before the
+ * session starts (docs/research/loop/2026-11-12-loop-probes.md §U19), so
+ * sidekick judges trust only by that refusal, and never writes ~/.claude.json.
+ */
+export const untrustedLines = (
+  folder: string,
+  again: string,
+  result: ClaudeResult,
+): string[] =>
   UNTRUSTED.test(printedStreams(result).join('\n'))
     ? [
-        `Claude Code does not trust ${p.repo} as a workspace. Run claude in ${p.repo} once and accept the trust prompt, then run sidekick loop start ${p.name} again.`,
+        `Claude Code does not trust ${folder} as a workspace. Run claude in ${folder} once and accept the trust prompt, then run ${again} again.`,
       ]
     : [];
+
+const trustLines = (p: Ready, result: ClaudeResult): string[] =>
+  untrustedLines(p.repo, `sidekick loop start ${p.name}`, result);
 
 // `state.json` lands before the launch, since the launch prompt's arm reads it at once. A launch that exits non-zero is taken as never run, so its file goes; any job the file before it named was removed or gone from the listing. One that timed out may have started, so its file stays.
 function launchFresh(p: Ready, ctx: ActContext, how: How): Outcome {

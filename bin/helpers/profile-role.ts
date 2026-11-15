@@ -1,10 +1,12 @@
 /**
  * What a profile's role adds to a launch: the plugin folders its manifest and
- * the launch name, and the checks on them.
+ * the launch name, the checks on them, and the name each folder's plugin
+ * manifest gives.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as v from 'valibot';
 import { keyHits } from './memory-patterns.js';
 import type { Profile } from './profile-store.js';
 
@@ -99,4 +101,34 @@ export function rolePluginIssues(
       ? keyIssues(dir, ROLE_PLUGIN_ADVICE, { maxBytes })
       : [`${manifestFile}: pluginDirs: ${dir} is not a folder`],
   );
+}
+
+const PLUGIN_MANIFEST = path.join('.claude-plugin', 'plugin.json');
+
+// `v.object` strips the manifest's other keys, which this read never needs.
+const PluginNameSchema = v.object({
+  name: v.pipe(v.string(), v.minLength(1, 'must not be empty')),
+});
+
+function readJsonFile(file: string): { value: unknown } | { issue: string } {
+  try {
+    return { value: JSON.parse(fs.readFileSync(file, 'utf8')) };
+  } catch (e) {
+    return { issue: `${file}: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/** The `name` the plugin folder `dir` gives in `.claude-plugin/plugin.json`, or why it gives none. */
+export function pluginNameOf(
+  dir: string,
+): { name: string } | { issue: string } {
+  const file = path.join(dir, PLUGIN_MANIFEST);
+  const read = readJsonFile(file);
+  if ('issue' in read) return read;
+  const parsed = v.safeParse(PluginNameSchema, read.value);
+  if (parsed.success) return { name: parsed.output.name };
+  const why = parsed.issues
+    .map((i) => `${v.getDotPath(i) ?? '(root)'}: ${i.message}`)
+    .join('; ');
+  return { issue: `${file}: ${why}` };
 }

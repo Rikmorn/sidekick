@@ -3,7 +3,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { keyHits } from './memory-patterns.js';
-import { isFolder, pluginDirIssues, rolePluginIssues } from './profile-role.js';
+import {
+  isFolder,
+  pluginDirIssues,
+  pluginNameOf,
+  rolePluginIssues,
+} from './profile-role.js';
 import type { Profile } from './profile-store.js';
 
 let tmp: string;
@@ -32,6 +37,33 @@ describe('isFolder', () => {
     expect(isFolder(tmp)).toBe(true);
     expect(isFolder(file)).toBe(false);
     expect(isFolder(path.join(tmp, 'none'))).toBe(false);
+  });
+});
+
+describe('pluginNameOf', () => {
+  const manifest = (dir: string, text: string): void => {
+    fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), text);
+  };
+
+  test('reads the name the manifest gives, past its other keys', () => {
+    manifest(tmp, '{"name":"fixer","version":"1.0.0"}');
+    expect(pluginNameOf(tmp)).toEqual({ name: 'fixer' });
+  });
+
+  test.each([
+    ['a missing manifest', null, 'ENOENT'],
+    ['a manifest that is not JSON', '{nope', 'JSON'],
+    ['a manifest with no name', '{"version":"1"}', 'name'],
+    ['an empty name', '{"name":""}', 'must not be empty'],
+  ])('%s gives the reason, naming the file', (_label, text, why) => {
+    if (text !== null) manifest(tmp, text);
+    const read = pluginNameOf(tmp);
+    if (!('issue' in read)) throw new Error('expected an issue');
+    expect(read.issue).toStartWith(
+      path.join(tmp, '.claude-plugin', 'plugin.json'),
+    );
+    expect(read.issue).toContain(why);
   });
 });
 

@@ -138,6 +138,22 @@ function listedNameIssues(
     : [];
 }
 
+/**
+ * What refuses `name` for a new worker of the repo whose main checkout is
+ * `mainTop`: the worktree folder or the branch Claude Code would make for it
+ * exists, or the listing names a session so. These are dispatch's own name
+ * checks, for a caller that picks the name.
+ */
+export const workerNameIssues = (
+  runGit: Runner,
+  mainTop: string,
+  listed: ReturnType<typeof listJobs>,
+  name: string,
+): string[] => [
+  ...treeNameIssues(runGit, mainTop, name),
+  ...listedNameIssues(listed, name),
+];
+
 /** Git ignores a pushInsteadOf rewrite for a remote with an explicit pushurl. */
 const pushUrlIssues = (runGit: Runner, top: string): string[] =>
   remotesWithPushUrl(runGit, top).map(

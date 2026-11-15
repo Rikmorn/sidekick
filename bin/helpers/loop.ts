@@ -1,6 +1,6 @@
 /**
- * `sidekick loop list|show|record|arm|start`: the verbs over the loop store.
- * Usage errors and refusals return 1, as the `profile` family's do.
+ * `sidekick loop list|show|record|arm|start|dispatch`: the verbs over the loop
+ * store. Usage errors and refusals return 1, as the `profile` family's do.
  */
 
 import * as path from 'node:path';
@@ -9,6 +9,7 @@ import { localDate, localMinute } from './local-date.js';
 import { ARM_USAGE_LINE, runArm } from './loop-arm.js';
 import { checkLoop, type LoopCheck, type LoopDeps } from './loop-check.js';
 import { type Cron, parseCron } from './loop-cron.js';
+import { DISPATCH_USAGE_LINE, loopDispatch } from './loop-dispatch.js';
 import { inheritedListing } from './loop-inherited.js';
 import {
   LOOP_FILE,
@@ -32,7 +33,7 @@ import { type FlagOption, type ProfileEnv, parseFlags } from './profile.js';
 import { isProfileName, PROFILE_NAME_RULE } from './profile-manifest.js';
 import { configDir } from './sidekick-home.js';
 
-export const LOOP_USAGE_LINE = `sidekick loop list | show <name> [--since <YYYY-MM-DD>] | record <name> --kind <would|request|did|denied|note> --summary <text> [--class <class>] [--command <text>] [--unit <id>] | ${ARM_USAGE_LINE.replace('sidekick loop ', '')} | ${START_USAGE_LINE.replace('sidekick loop ', '')}`;
+export const LOOP_USAGE_LINE = `sidekick loop list | show <name> [--since <YYYY-MM-DD>] | record <name> --kind <would|request|did|denied|note> --summary <text> [--class <class>] [--command <text>] [--unit <id>] | ${ARM_USAGE_LINE.replace('sidekick loop ', '')} | ${START_USAGE_LINE.replace('sidekick loop ', '')} | ${DISPATCH_USAGE_LINE.replace('sidekick loop ', '')}`;
 
 /** The profile family's environment, with a clock, the machine's seams `start` waits through, and the managed settings path the check and the listing read. */
 export interface LoopEnv extends ProfileEnv {
@@ -566,6 +567,7 @@ const VERBS: Record<string, Verb> = {
   record,
   arm: runArm,
   start: runStart,
+  dispatch: loopDispatch,
 };
 
 /** Dispatch one `loop` verb; returns the process exit code. */
