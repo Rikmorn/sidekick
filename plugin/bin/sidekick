@@ -13750,11 +13750,17 @@ function workerOverlay(profileSettings, opts) {
     }
   };
 }
-var WAITING_SKILLS = [
+var UNIT_DENIED_SKILLS = [
   "superpowers:brainstorming",
   "superpowers:writing-plans",
   "superpowers:finishing-a-development-branch",
-  "superpowers:diagnosing-superpowers"
+  "superpowers:diagnosing-superpowers",
+  "sidekick:sk-execute",
+  "sidekick:sk-design",
+  "sidekick:sk-track",
+  "sidekick:sk-milestone",
+  "sidekick:sk-worktree",
+  "sidekick:sk-save"
 ];
 var WEB_TOOLS = ["WebFetch", "WebSearch"];
 var UNDER = "/**";
@@ -13785,8 +13791,7 @@ function folderDenies(opts) {
 var unitDenies = (opts) => unique([
   ...gitDenies(opts.commonDir, opts.worktree),
   ...folderDenies(opts),
-  ...WAITING_SKILLS.map((skill) => `Skill(${skill})`),
-  SAVE_SKILL_RULE,
+  ...UNIT_DENIED_SKILLS.map((skill) => `Skill(${skill})`),
   ...WEB_TOOLS,
   PUSH_DENY_RULE
 ]);
@@ -13817,13 +13822,41 @@ function unitOverlay(profileSettings, opts) {
     }
   };
 }
-function withoutAllow(settings) {
-  const { permissions, ...rest2 } = settings ?? {};
-  if (!isPlainObject(permissions))
-    return { ...settings };
-  const { allow: _allow, ...kept } = permissions;
-  return Object.keys(kept).length === 0 ? rest2 : { ...rest2, permissions: kept };
+var FENCE_SAFE = {
+  model: true,
+  env: true,
+  enabledPlugins: true,
+  permissions: { deny: true },
+  sandbox: { filesystem: { denyRead: true, denyWrite: true } }
+};
+var keyNames = (keep, at2 = "") => Object.entries(keep).flatMap(([key, rule]) => {
+  const name = at2 === "" ? key : `${at2}.${key}`;
+  return rule === true ? [name] : keyNames(rule, name);
+});
+var FENCE_SAFE_KEYS = keyNames(FENCE_SAFE);
+function keepEntry(key, value, keep, at2) {
+  const name = at2 === "" ? key : `${at2}.${key}`;
+  const rule = Object.hasOwn(keep, key) ? keep[key] : undefined;
+  if (rule === true)
+    return { entries: [[key, value]], dropped: [] };
+  if (rule === undefined || !isPlainObject(value)) {
+    return { entries: [], dropped: [name] };
+  }
+  const inner = keepOnly(value, rule, name);
+  const held = Object.keys(inner.settings).length > 0;
+  return {
+    entries: held ? [[key, inner.settings]] : [],
+    dropped: inner.dropped
+  };
 }
+function keepOnly(settings, keep, at2) {
+  const parts = Object.entries(settings).map(([key, value]) => keepEntry(key, value, keep, at2));
+  return {
+    settings: Object.fromEntries(parts.flatMap((part) => part.entries)),
+    dropped: parts.flatMap((part) => part.dropped)
+  };
+}
+var fenceSafeSettings = (settings) => keepOnly(settings ?? {}, FENCE_SAFE, "");
 var UNIT_LEFT_OUT = ["project", "local"];
 var unitSettingSources = (profile) => (profile.manifest.settingSources ?? SETTING_SOURCES).filter((source) => !UNIT_LEFT_OUT.includes(source));
 
@@ -13939,8 +13972,15 @@ var planShape = (opts, briefPath, main, reads) => (profile) => {
   if ("issues" in overlay)
     return overlay;
   const pluginDirs = opts.pluginDir === undefined ? [] : [opts.pluginDir];
-  return { profile, launch: { overlay: overlay.overlay, pluginDirs } };
+  return {
+    profile,
+    launch: { overlay: overlay.overlay, pluginDirs },
+    notes: []
+  };
 };
+var leftOutNotes = (profile, dropped) => dropped.length === 0 ? [] : [
+  `the unit launch leaves out profile "${profile}"'s settings outside the keys it keeps (${FENCE_SAFE_KEYS.join(", ")}): ${dropped.join(", ")}`
+];
 var unitShape = (brief, briefPath, unit2, facts, penv) => (profile) => {
   const overlay = unitOverlay(profile.manifest.settings, {
     briefPath,
@@ -13954,14 +13994,15 @@ var unitShape = (brief, briefPath, unit2, facts, penv) => (profile) => {
   });
   if ("issues" in overlay)
     return overlay;
-  const settings = withoutAllow(profile.manifest.settings);
+  const { settings, dropped } = fenceSafeSettings(profile.manifest.settings);
   return {
     profile: { ...profile, manifest: { ...profile.manifest, settings } },
     launch: {
       overlay: overlay.overlay,
       addDirs: [unit2.attemptDir],
       settingSources: unitSettingSources(profile)
-    }
+    },
+    notes: leftOutNotes(profile.name, dropped)
   };
 };
 var named = () => ({ issues: [] });
@@ -13988,7 +14029,7 @@ function prepareProfile(opts, penv, shape) {
   const args = checkComposed(shaped.profile, penv, collect, shaped.launch);
   if (args === undefined || bypass.length > 0)
     return refused2(bypass);
-  return { ok: true, args, notes: lines };
+  return { ok: true, args, notes: [...shaped.notes, ...lines] };
 }
 var SHORT_SHA = 7;
 var CHECK_BRIEF = "check-brief.md";
@@ -14304,8 +14345,8 @@ function keepRecord(ready, job, err) {
   if ("issue" in written)
     err(written.issue);
 }
-function wayOut(ready, verdict, stopped) {
-  const byHook = verdict.cause === "creator";
+function wayOut(ready, cause, stopped) {
+  const byHook = cause === "creator";
   if (ready.brief.kind === "unit") {
     return byHook ? `${stopped} Remove its worktree with the hook's own removal.` : stopped;
   }
@@ -14322,30 +14363,44 @@ function stopStray(ready, job, wenv, timeoutMs = 1e4) {
   const lead = `claude stop ${shellArg(job)} ${failure(result)}, so the worker may still run`;
   return withText(lead, result);
 }
+function stopping(ready, job, wenv) {
+  const stop = `claude stop ${shellArg(job)}`;
+  const failed = stopStray(ready, job, wenv);
+  const stopped = failed.length === 0 ? `dispatch stopped the worker with ${stop}.` : `Stop the worker with ${stop}.`;
+  return { failed, stopped };
+}
 function refuseStray(ready, verdict, wenv, err) {
-  const stop = `claude stop ${shellArg(verdict.job)}`;
-  const stopFailed = stopStray(ready, verdict.job, wenv);
-  const stopped = stopFailed.length === 0 ? `dispatch stopped the worker with ${stop}.` : `Stop the worker with ${stop}.`;
+  const { failed, stopped } = stopping(ready, verdict.job, wenv);
   return refuse8(err, [
     ...verdict.lines,
-    ...stopFailed,
-    wayOut(ready, verdict, stopped)
+    ...failed,
+    wayOut(ready, verdict.cause, stopped)
   ]);
 }
-function started(onStart, job, err) {
+function refuseUnrecorded(ready, job, why, { wenv, err }) {
+  const lead = `the worker started, but recording its start failed: ${why}`;
+  if (job === null) {
+    const unstopped = `claude printed no job id for "${ready.brief.name}", so dispatch could not stop it: find its id with claude agents --json --all, then stop it with claude stop <id>.`;
+    return refuse8(err, [lead, wayOut(ready, "unrecorded", unstopped)]);
+  }
+  const { failed, stopped } = stopping(ready, job, wenv);
+  return refuse8(err, [lead, ...failed, wayOut(ready, "unrecorded", stopped)]);
+}
+function runOnStart(onStart, job) {
   try {
     onStart?.(job);
-    return true;
+    return;
   } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    err(`the worker started, but recording its start failed: ${why}`);
-    return false;
+    return e instanceof Error ? e.message : String(e);
   }
 }
 function afterStart(ready, result, wenv, { out, err, onStart }) {
   const job = jobIdFrom(result.stdout, ready.brief.name);
   keepRecord(ready, job, err);
-  const recorded = started(onStart, job, err);
+  const failed = runOnStart(onStart, job);
+  if (failed !== undefined) {
+    return { code: refuseUnrecorded(ready, job, failed, { wenv, err }), job };
+  }
   const verdict = verifyWorktree({
     runGit: wenv.runGit,
     runClaude: wenv.runClaude,
@@ -14363,7 +14418,7 @@ function afterStart(ready, result, wenv, { out, err, onStart }) {
     out(line);
   if (verdict.kind === "unchecked")
     err(verdict.line);
-  return { code: recorded ? result.code : 1, job };
+  return { code: result.code, job };
 }
 function launch3(ready, wenv, { out, err, onStart }) {
   for (const note of ready.notes)

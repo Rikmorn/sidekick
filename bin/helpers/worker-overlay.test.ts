@@ -6,6 +6,8 @@ import { composeSettings, type Settings } from './profile-launch.js';
 import type { ProfileManifest } from './profile-manifest.js';
 import type { Profile } from './profile-store.js';
 import {
+  FENCE_SAFE_KEYS,
+  fenceSafeSettings,
   PUSH_DENY_RULE,
   PUSH_REWRITE_KEY,
   pathRule,
@@ -13,7 +15,6 @@ import {
   SAVE_SKILL_RULE,
   unitOverlay,
   unitSettingSources,
-  withoutAllow,
   workerOverlay,
 } from './worker-overlay.js';
 
@@ -289,6 +290,11 @@ const TOOL_DENIES = [
   'Skill(superpowers:writing-plans)',
   'Skill(superpowers:finishing-a-development-branch)',
   'Skill(superpowers:diagnosing-superpowers)',
+  'Skill(sidekick:sk-execute)',
+  'Skill(sidekick:sk-design)',
+  'Skill(sidekick:sk-track)',
+  'Skill(sidekick:sk-milestone)',
+  'Skill(sidekick:sk-worktree)',
   'Skill(sidekick:sk-save)',
   'WebFetch',
   'WebSearch',
@@ -445,33 +451,89 @@ describe('unitOverlay paths', () => {
   });
 });
 
-describe('withoutAllow', () => {
-  test('withoutAllow drops only permissions.allow', () => {
+describe('fenceSafeSettings', () => {
+  const kept = {
+    model: 'sonnet',
+    env: { A: '1' },
+    enabledPlugins: { 'role@local': true },
+    permissions: { deny: ['Bash(rm:*)'] },
+    sandbox: { filesystem: { denyRead: ['/r'], denyWrite: ['/w'] } },
+  };
+
+  test('it keeps model, env, enabledPlugins, permissions.deny, and the sandbox read and write denies', () => {
+    expect(fenceSafeSettings(kept)).toEqual({ settings: kept, dropped: [] });
+  });
+
+  test('it drops every other key, naming each', () => {
     const settings = {
-      model: 'sonnet',
-      env: { A: '1' },
-      permissions: { allow: ['Bash(ls:*)'], deny: ['Bash(rm:*)'], ask: ['X'] },
+      ...kept,
+      hooks: { PreToolUse: [] },
+      enableAllProjectMcpServers: true,
+      enabledMcpjsonServers: ['x'],
+      statusLine: { type: 'command', command: 'x' },
+      permissions: {
+        deny: ['Bash(rm:*)'],
+        allow: ['Bash(*)'],
+        ask: ['Y'],
+        additionalDirectories: ['/elsewhere'],
+      },
+      sandbox: {
+        enabled: false,
+        excludedCommands: ['docker'],
+        network: { allowedDomains: ['evil.example'] },
+        filesystem: {
+          denyRead: ['/r'],
+          denyWrite: ['/w'],
+          allowWrite: ['/'],
+        },
+      },
     };
-    expect(withoutAllow(settings)).toEqual({
-      model: 'sonnet',
-      env: { A: '1' },
-      permissions: { deny: ['Bash(rm:*)'], ask: ['X'] },
+    expect(fenceSafeSettings(settings)).toEqual({
+      settings: kept,
+      dropped: [
+        'permissions.allow',
+        'permissions.ask',
+        'permissions.additionalDirectories',
+        'sandbox.enabled',
+        'sandbox.excludedCommands',
+        'sandbox.network',
+        'sandbox.filesystem.allowWrite',
+        'hooks',
+        'enableAllProjectMcpServers',
+        'enabledMcpjsonServers',
+        'statusLine',
+      ],
     });
-    expect(settings.permissions.allow).toEqual(['Bash(ls:*)']);
+    expect(settings.permissions.allow).toEqual(['Bash(*)']);
   });
 
-  test('permissions holding only allow goes whole', () => {
-    expect(withoutAllow({ model: 'x', permissions: { allow: ['A'] } })).toEqual(
-      { model: 'x' },
-    );
+  test('a kept parent that is not an object, or holds nothing kept, goes whole', () => {
+    expect(
+      fenceSafeSettings({ permissions: ['x'], sandbox: { network: {} } }),
+    ).toEqual({ settings: {}, dropped: ['permissions', 'sandbox.network'] });
   });
 
-  test('settings without allow come back as they are, and none as empty', () => {
-    expect(withoutAllow({ permissions: { deny: ['B'] } })).toEqual({
-      permissions: { deny: ['B'] },
+  test('a key named as an Object property is dropped like any other', () => {
+    const settings = JSON.parse('{"constructor":{"x":1},"__proto__":{"y":2}}');
+    expect(fenceSafeSettings(settings)).toEqual({
+      settings: {},
+      dropped: ['constructor', '__proto__'],
     });
-    expect(withoutAllow({ model: 'x' })).toEqual({ model: 'x' });
-    expect(withoutAllow(undefined)).toEqual({});
+  });
+
+  test('no settings keep nothing and drop nothing', () => {
+    expect(fenceSafeSettings(undefined)).toEqual({ settings: {}, dropped: [] });
+  });
+
+  test('the kept names read as the keys it keeps', () => {
+    expect(FENCE_SAFE_KEYS).toEqual([
+      'model',
+      'env',
+      'enabledPlugins',
+      'permissions.deny',
+      'sandbox.filesystem.denyRead',
+      'sandbox.filesystem.denyWrite',
+    ]);
   });
 });
 

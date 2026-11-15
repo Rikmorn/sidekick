@@ -15,6 +15,7 @@
 import { mainReport } from './main-session.js';
 import { LAUNCH_TIMEOUT_MS } from './profile.js';
 import { bgArgs, type ClaudeResult } from './profile-launch.js';
+import { workTreeRootOf } from './rules.js';
 import { shellArg } from './shell.js';
 import type { WorkerEnv } from './worker.js';
 import { briefTargetOf, readBrief } from './worker-brief.js';
@@ -112,11 +113,15 @@ function keepRecord(ready: Ready, job: string | null, err: Out): void {
 
 type Mismatch = Extract<WorktreeVerdict, { kind: 'mismatch' }>;
 
+// Why dispatch stops a worker it started: the worktree check's cause, or a
+// start its caller could not record.
+type StrayCause = Mismatch['cause'] | 'unrecorded';
+
 // The last refusal line. Only a hook made the worktree for `creator`, and only
 // the hook's own removal clears what it made. A unit's discard is its loop's
 // verb, which its caller names.
-function wayOut(ready: Ready, verdict: Mismatch, stopped: string): string {
-  const byHook = verdict.cause === 'creator';
+function wayOut(ready: Ready, cause: StrayCause, stopped: string): string {
+  const byHook = cause === 'creator';
   if (ready.brief.kind === 'unit') {
     return byHook
       ? `${stopped} Remove its worktree with the hook's own removal.`
@@ -147,6 +152,22 @@ function stopStray(
   return withText(lead, result);
 }
 
+// Stops the job, and returns a failed stop's lines, then the sentence that
+// says the stop ran or how to run it.
+function stopping(
+  ready: Ready,
+  job: string,
+  wenv: WorkerEnv,
+): { failed: string[]; stopped: string } {
+  const stop = `claude stop ${shellArg(job)}`;
+  const failed = stopStray(ready, job, wenv);
+  const stopped =
+    failed.length === 0
+      ? `dispatch stopped the worker with ${stop}.`
+      : `Stop the worker with ${stop}.`;
+  return { failed, stopped };
+}
+
 // The record written before the check stays, so the desk shows the stray and
 // `finish --discard` finds it.
 function refuseStray(
@@ -155,17 +176,30 @@ function refuseStray(
   wenv: WorkerEnv,
   err: Out,
 ): number {
-  const stop = `claude stop ${shellArg(verdict.job)}`;
-  const stopFailed = stopStray(ready, verdict.job, wenv);
-  const stopped =
-    stopFailed.length === 0
-      ? `dispatch stopped the worker with ${stop}.`
-      : `Stop the worker with ${stop}.`;
+  const { failed, stopped } = stopping(ready, verdict.job, wenv);
   return refuse(err, [
     ...verdict.lines,
-    ...stopFailed,
-    wayOut(ready, verdict, stopped),
+    ...failed,
+    wayOut(ready, verdict.cause, stopped),
   ]);
+}
+
+// A worker whose start its caller could not record runs outside what the
+// record counts, so it is stopped as a stray. With no job id there is
+// nothing to stop by, and the line says how to find it.
+function refuseUnrecorded(
+  ready: Ready,
+  job: string | null,
+  why: string,
+  { wenv, err }: { wenv: WorkerEnv; err: Out },
+): number {
+  const lead = `the worker started, but recording its start failed: ${why}`;
+  if (job === null) {
+    const unstopped = `claude printed no job id for "${ready.brief.name}", so dispatch could not stop it: find its id with claude agents --json --all, then stop it with claude stop <id>.`;
+    return refuse(err, [lead, wayOut(ready, 'unrecorded', unstopped)]);
+  }
+  const { failed, stopped } = stopping(ready, job, wenv);
+  return refuse(err, [lead, ...failed, wayOut(ready, 'unrecorded', stopped)]);
 }
 
 /** What a launch returned: the exit code, and the job id once `claude` reported a start. */
@@ -174,19 +208,23 @@ export interface Launched {
   job: string | null;
 }
 
-/** Called once `claude` reports a start, before the worktree check, with the job id it printed. */
+/**
+ * Called once `claude` reports a start, before the worktree check, with the
+ * job id it printed. A throw stops the worker as a stray, and the launch
+ * refuses.
+ */
 export type OnStart = (job: string | null) => void;
 
-// The worktree check runs whatever `onStart` does, so a throw is named and
-// fails the launch.
-function started(onStart: OnStart | undefined, job: string | null, err: Out) {
+// Runs `onStart`, and returns why it threw, or undefined when it ran clean.
+function runOnStart(
+  onStart: OnStart | undefined,
+  job: string | null,
+): string | undefined {
   try {
     onStart?.(job);
-    return true;
+    return undefined;
   } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    err(`the worker started, but recording its start failed: ${why}`);
-    return false;
+    return e instanceof Error ? e.message : String(e);
   }
 }
 
@@ -202,7 +240,10 @@ function afterStart(
 ): Launched {
   const job = jobIdFrom(result.stdout, ready.brief.name);
   keepRecord(ready, job, err);
-  const recorded = started(onStart, job, err);
+  const failed = runOnStart(onStart, job);
+  if (failed !== undefined) {
+    return { code: refuseUnrecorded(ready, job, failed, { wenv, err }), job };
+  }
   const verdict = verifyWorktree({
     runGit: wenv.runGit,
     runClaude: wenv.runClaude,
@@ -218,7 +259,7 @@ function afterStart(
   }
   for (const line of startLines(ready, wenv)) out(line);
   if (verdict.kind === 'unchecked') err(verdict.line);
-  return { code: recorded ? result.code : 1, job };
+  return { code: result.code, job };
 }
 
 // Excludes the worktrees folder, starts the worker from the launching checkout,
@@ -310,11 +351,12 @@ export interface UnitLaunch {
 /**
  * Launches a unit brief's worker through dispatch's own checks and launch,
  * from `launchFolder`, inside the fence: mode `dontAsk`, the push block on,
- * no `--plugin-dir`, the profile less its allow rules, the attempt's folder
- * added, and no `project` or `local` source. None of those can be passed in.
- * `wenv`'s `workTree` should describe `launchFolder`, since the profile store
- * is read from it. Returns 1 on a refusal, before the launch or after it,
- * else `claude`'s exit code, with the job once `claude` reported a start.
+ * no `--plugin-dir`, the profile's fence-safe keys alone, the attempt's
+ * folder added, and no `project` or `local` source. None of those can be
+ * passed in. The checks, the profile store's lookup among them, read the
+ * work tree that holds `launchFolder`. The profile keys left out print on
+ * `err` before the launch. Returns 1 on a refusal, before the launch or after
+ * it, else `claude`'s exit code, with the job once `claude` reported a start.
  */
 export function dispatchUnit(
   unit: UnitLaunch,
@@ -338,7 +380,11 @@ export function dispatchUnit(
     read.brief,
     read.path,
     opts,
-    { ...wenv, cwd: unit.launchFolder },
+    {
+      ...wenv,
+      cwd: unit.launchFolder,
+      workTree: workTreeRootOf(unit.launchFolder, wenv.runGit),
+    },
     { attemptDir: unit.attemptDir, hosts: unit.hosts },
   );
   if ('issues' in checked) {

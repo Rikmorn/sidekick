@@ -36,9 +36,10 @@ import type { CheckOptions, SharedOptions } from './worker-dispatch-args.js';
 import { type CheckoutFacts, checkoutFacts } from './worker-facts.js';
 import { listJobs } from './worker-jobs.js';
 import {
+  FENCE_SAFE_KEYS,
+  fenceSafeSettings,
   unitOverlay,
   unitSettingSources,
-  withoutAllow,
   workerOverlay,
 } from './worker-overlay.js';
 import {
@@ -229,9 +230,10 @@ type Prepared =
   | { ok: true; args: string[]; notes: string[] }
   | { ok: false; issues: string[] };
 
-// The profile a launch composes and the options it composes with, or why it cannot.
+// The profile a launch composes, the options it composes with, and the lines
+// to print before it, or why it cannot.
 type Shaped =
-  | { profile: Profile; launch: LaunchOptions }
+  | { profile: Profile; launch: LaunchOptions; notes: string[] }
   | { issues: string[] };
 type Shape = (profile: Profile) => Shaped;
 
@@ -252,7 +254,11 @@ const planShape =
     });
     if ('issues' in overlay) return overlay;
     const pluginDirs = opts.pluginDir === undefined ? [] : [opts.pluginDir];
-    return { profile, launch: { overlay: overlay.overlay, pluginDirs } };
+    return {
+      profile,
+      launch: { overlay: overlay.overlay, pluginDirs },
+      notes: [],
+    };
   };
 
 /** What a unit launch adds to dispatch's checks: the attempt's folder, which it adds, and the hosts its fence lets through. */
@@ -261,7 +267,14 @@ export interface UnitContext {
   hosts: readonly string[];
 }
 
-// A unit worker: the profile less its allow rules, the unit overlay, the
+const leftOutNotes = (profile: string, dropped: readonly string[]): string[] =>
+  dropped.length === 0
+    ? []
+    : [
+        `the unit launch leaves out profile "${profile}"'s settings outside the keys it keeps (${FENCE_SAFE_KEYS.join(', ')}): ${dropped.join(', ')}`,
+      ];
+
+// A unit worker: the profile's fence-safe keys alone, the unit overlay, the
 // attempt's folder added, and no `project` or `local` source.
 const unitShape =
   (
@@ -283,7 +296,7 @@ const unitShape =
       addedDirs: [profile.dir, unit.attemptDir],
     });
     if ('issues' in overlay) return overlay;
-    const settings = withoutAllow(profile.manifest.settings);
+    const { settings, dropped } = fenceSafeSettings(profile.manifest.settings);
     return {
       profile: { ...profile, manifest: { ...profile.manifest, settings } },
       launch: {
@@ -291,6 +304,7 @@ const unitShape =
         addDirs: [unit.attemptDir],
         settingSources: unitSettingSources(profile),
       },
+      notes: leftOutNotes(profile.name, dropped),
     };
   };
 
@@ -327,7 +341,7 @@ function prepareProfile(
   if (dirIssues.length > 0) return refused(bypass);
   const args = checkComposed(shaped.profile, penv, collect, shaped.launch);
   if (args === undefined || bypass.length > 0) return refused(bypass);
-  return { ok: true, args, notes: lines };
+  return { ok: true, args, notes: [...shaped.notes, ...lines] };
 }
 
 /** Everything the launch needs once the checks pass. */

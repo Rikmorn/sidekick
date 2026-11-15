@@ -873,7 +873,7 @@ describe('dispatchUnit', () => {
     expect(starts).toEqual([]);
   });
 
-  test('an onStart that throws is named, and the worktree check still runs', () => {
+  test('an onStart that throws stops the worker as a stray and refuses, naming why', () => {
     const fx = fixture();
     const at = unitAttempt(fx);
     const h = unitHarness(fx);
@@ -888,11 +888,137 @@ describe('dispatchUnit', () => {
     expect(h.err).toContain(
       'the worker started, but recording its start failed: disk full',
     );
-    const calls = h.claude.calls;
-    const launchAt = calls.findIndex((c) => c.args.includes('--bg'));
-    expect(calls.slice(launchAt + 1).some((c) => c.args[0] === 'agents')).toBe(
-      true,
+    expect(h.err).toContain(
+      `dispatch stopped the worker with claude stop ${JOB}.`,
     );
+    expect(h.claude.stops().map((c) => c.args)).toEqual([['stop', JOB]]);
+    expect(h.out.some((l) => l.startsWith('worker w1 dispatched'))).toBe(false);
+    expect(h.err.join('\n')).not.toContain('sidekick worker finish');
+  });
+
+  test('an onStart that throws with no job id names how to stop the worker', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    h.claude.state.launch = ok({ stdout: 'backgrounded\n' });
+    const launched = h.unit(
+      unitLaunchOf(fx, at, {
+        onStart: () => {
+          throw new Error('disk full');
+        },
+      }),
+    );
+    expect(launched).toEqual({ code: 1, job: null });
+    expect(h.claude.stops()).toEqual([]);
+    expect(h.err.join('\n')).toContain('claude agents --json --all');
+  });
+
+  test('the profile layer keeps only its fence-safe keys, and dispatch names the keys it left out', () => {
+    const fx = fixture({
+      description: 'Worker',
+      settings: {
+        model: 'sonnet',
+        env: { ROLE: '1' },
+        enabledPlugins: { 'role@inline': true },
+        permissions: {
+          deny: ['Bash(rm:*)'],
+          additionalDirectories: ['/elsewhere'],
+        },
+        sandbox: {
+          excludedCommands: ['docker'],
+          network: { allowedDomains: ['evil.example'] },
+          filesystem: {
+            denyRead: ['/secret'],
+            denyWrite: ['/locked'],
+            allowWrite: ['/'],
+          },
+        },
+        hooks: { PreToolUse: [] },
+        enableAllProjectMcpServers: true,
+        enabledMcpjsonServers: ['repo-server'],
+        statusLine: { type: 'command', command: 'x' },
+      },
+    });
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    expect(h.unit(unitLaunchOf(fx, at)).code).toBe(0);
+    const settings = settingsOf(onlyLaunch(h));
+    for (const key of [
+      'hooks',
+      'enableAllProjectMcpServers',
+      'enabledMcpjsonServers',
+      'statusLine',
+    ]) {
+      expect(settings).not.toHaveProperty(key);
+    }
+    const sandbox = settings.sandbox as Record<string, unknown>;
+    expect(sandbox).not.toHaveProperty('excludedCommands');
+    expect(sandbox.network).toEqual({ allowedDomains: ['registry.npmjs.org'] });
+    expect(sandbox.filesystem).toEqual({
+      denyRead: ['/secret'],
+      denyWrite: ['/locked'],
+    });
+    const permissions = settings.permissions as Record<string, unknown>;
+    expect(permissions).not.toHaveProperty('additionalDirectories');
+    expect(permissions.deny).toContain('Bash(rm:*)');
+    expect(settings.model).toBe('sonnet');
+    expect(settings.env).toMatchObject({ ROLE: '1' });
+    expect(settings.enabledPlugins).toEqual({ 'role@inline': true });
+    expect(h.err).toContain(
+      'the unit launch leaves out profile "worker"\'s settings outside the keys it keeps (model, env, enabledPlugins, permissions.deny, sandbox.filesystem.denyRead, sandbox.filesystem.denyWrite): permissions.additionalDirectories, sandbox.excludedCommands, sandbox.network, sandbox.filesystem.allowWrite, hooks, enableAllProjectMcpServers, enabledMcpjsonServers, statusLine',
+    );
+  });
+
+  test('a profile with only fence-safe keys prints no left-out line', () => {
+    const fx = fixture({ description: 'Worker', settings: { model: 'x' } });
+    const at = unitAttempt(fx);
+    const h = unitHarness(fx);
+    h.unit(unitLaunchOf(fx, at));
+    expect(h.err.some((l) => l.includes('leaves out'))).toBe(false);
+  });
+
+  test('the profile store is read from the launch folder, not the caller', () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const repoProfile = path.join(fx.top, '.claude', 'profiles', 'loopy');
+    fs.mkdirSync(repoProfile, { recursive: true });
+    fs.writeFileSync(
+      path.join(repoProfile, 'profile.json'),
+      '{"description":"Loop"}',
+    );
+    const elsewhere = tmp();
+    const h = harness(fx, {
+      env: { CLAUDE_CONFIG_DIR: tmp(), SIDEKICK_MEMORY_STORE: tmp() },
+      cwd: elsewhere,
+      workTree: { kind: 'outside' },
+    });
+    expect(h.unit(unitLaunchOf(fx, at, { profile: 'loopy' })).code).toBe(0);
+    expect(onlyLaunch(h).args.slice(0, 2)).toEqual(['--add-dir', repoProfile]);
+  });
+
+  test("from a linked worktree, the Edit allow and the .git denies point under the main checkout's worktrees", () => {
+    const fx = fixture();
+    const at = unitAttempt(fx);
+    const loopTree = path.join(fx.top, '.claude', 'worktrees', 'loop-l');
+    git(fx.top, 'worktree', 'add', '-q', loopTree, '-b', 'worktree-loop-l');
+    const h = unitHarness(fx);
+    const launched = h.unit(unitLaunchOf(fx, at, { launchFolder: loopTree }));
+    expect(launched).toEqual({ code: 0, job: JOB });
+    const launch = onlyLaunch(h);
+    expect(launch.opts.cwd).toBe(loopTree);
+    const permissions = settingsOf(launch).permissions as Record<
+      string,
+      string[]
+    >;
+    const worker = path.join(fx.top, '.claude', 'worktrees', 'w1');
+    expect(permissions.allow[0]).toBe(`Edit(/${worker}/**)`);
+    expect(permissions.deny).toContain(`Edit(/${worker}/.git)`);
+    expect(permissions.deny).toContain(
+      `Edit(/${path.join(fx.top, '.git')}/worktrees/*/gitdir)`,
+    );
+    const all = [...permissions.allow, ...permissions.deny].join('\n');
+    expect(all).not.toContain(path.join(loopTree, '.claude'));
+    expect(all).not.toContain(path.join(loopTree, '.git'));
   });
 
   test('prints its own dispatched line and no plan lines', () => {

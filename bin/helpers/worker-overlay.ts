@@ -7,7 +7,8 @@
  * allows a push, the two blocks on `git push`. A unit worker's carries the
  * fence: the sandbox, one `Edit` allow rule for its worktree, the denies on
  * git's redirect files and the sidekick folder, the read block, and the push
- * block, which it always has.
+ * block, which it always has. Its profile layer keeps only the keys that
+ * cannot widen that fence.
  */
 
 import * as path from 'node:path';
@@ -144,15 +145,24 @@ export function workerOverlay(
 }
 
 /**
- * The superpowers skills that stop for a person's answer and cannot finish
- * without it, as superpowers 7.0.2 reads on 2026-11-15. A unit worker has no
- * person to answer.
+ * The skills a unit worker may not run, as superpowers 7.0.2 and this plugin
+ * read on 2026-11-15. Each superpowers skill here, `sk-execute`, and
+ * `sk-design` stops for a person's answer, and a unit worker has no person
+ * to answer. `sk-track`, `sk-milestone`, and `sk-worktree` file, release, or
+ * land, which its loop and the operator own. `sk-save` writes the memory
+ * store, and a unit's report is its record.
  */
-export const WAITING_SKILLS = [
+export const UNIT_DENIED_SKILLS = [
   'superpowers:brainstorming',
   'superpowers:writing-plans',
   'superpowers:finishing-a-development-branch',
   'superpowers:diagnosing-superpowers',
+  'sidekick:sk-execute',
+  'sidekick:sk-design',
+  'sidekick:sk-track',
+  'sidekick:sk-milestone',
+  'sidekick:sk-worktree',
+  'sidekick:sk-save',
 ] as const;
 
 // `allowedDomains` binds neither tool, and an inherited layer may allow them.
@@ -216,8 +226,7 @@ const unitDenies = (opts: UnitOverlayOptions): string[] =>
   unique([
     ...gitDenies(opts.commonDir, opts.worktree),
     ...folderDenies(opts),
-    ...WAITING_SKILLS.map((skill) => `Skill(${skill})`),
-    SAVE_SKILL_RULE,
+    ...UNIT_DENIED_SKILLS.map((skill) => `Skill(${skill})`),
     ...WEB_TOOLS,
     PUSH_DENY_RULE,
   ]);
@@ -260,17 +269,76 @@ export function unitOverlay(
   };
 }
 
-/**
- * The profile's settings less `permissions.allow`, so a unit worker runs only
- * what the fence and the overlay allow. `permissions` goes whole when it held
- * nothing else. Pure: the settings are left unchanged.
- */
-export function withoutAllow(settings: Settings | undefined): Settings {
-  const { permissions, ...rest } = settings ?? {};
-  if (!isPlainObject(permissions)) return { ...settings };
-  const { allow: _allow, ...kept } = permissions;
-  return Object.keys(kept).length === 0 ? rest : { ...rest, permissions: kept };
+// Which keys a settings object keeps: `true` keeps the whole value, and a
+// nested `Keep` keeps only its own keys of a value that is an object.
+interface Keep {
+  readonly [key: string]: true | Keep;
 }
+
+// The profile keys that cannot widen a unit's fence. The overlay owns every
+// fence key, so the profile keeps only what narrows it or leaves it alone;
+// a key added to Claude Code later stays out until it is listed here.
+const FENCE_SAFE: Keep = {
+  model: true,
+  env: true,
+  enabledPlugins: true,
+  permissions: { deny: true },
+  sandbox: { filesystem: { denyRead: true, denyWrite: true } },
+};
+
+const keyNames = (keep: Keep, at = ''): string[] =>
+  Object.entries(keep).flatMap(([key, rule]) => {
+    const name = at === '' ? key : `${at}.${key}`;
+    return rule === true ? [name] : keyNames(rule, name);
+  });
+
+/** The dotted names of the profile keys a unit launch keeps. */
+export const FENCE_SAFE_KEYS: readonly string[] = keyNames(FENCE_SAFE);
+
+interface Kept {
+  settings: Settings;
+  /** The dotted name of each key left out, in the settings' own order. */
+  dropped: string[];
+}
+
+function keepEntry(
+  key: string,
+  value: unknown,
+  keep: Keep,
+  at: string,
+): { entries: [string, unknown][]; dropped: string[] } {
+  const name = at === '' ? key : `${at}.${key}`;
+  // An own-key lookup, so a key such as `constructor` is not read off the prototype.
+  const rule = Object.hasOwn(keep, key) ? keep[key] : undefined;
+  if (rule === true) return { entries: [[key, value]], dropped: [] };
+  if (rule === undefined || !isPlainObject(value)) {
+    return { entries: [], dropped: [name] };
+  }
+  const inner = keepOnly(value, rule, name);
+  const held = Object.keys(inner.settings).length > 0;
+  return {
+    entries: held ? [[key, inner.settings]] : [],
+    dropped: inner.dropped,
+  };
+}
+
+function keepOnly(settings: Settings, keep: Keep, at: string): Kept {
+  const parts = Object.entries(settings).map(([key, value]) =>
+    keepEntry(key, value, keep, at),
+  );
+  return {
+    settings: Object.fromEntries(parts.flatMap((part) => part.entries)),
+    dropped: parts.flatMap((part) => part.dropped),
+  };
+}
+
+/**
+ * The profile settings a unit launch keeps, `FENCE_SAFE_KEYS`, and the
+ * dotted names of the keys it leaves out. It keeps by an allow-list, so a key
+ * nobody listed stays out. Pure: the settings are left unchanged.
+ */
+export const fenceSafeSettings = (settings: Settings | undefined): Kept =>
+  keepOnly(settings ?? {}, FENCE_SAFE, '');
 
 // The repo's hooks would run worktree code outside the sandbox, and its local
 // settings would load what the repo's own sessions allow.
