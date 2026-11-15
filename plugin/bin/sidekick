@@ -14604,7 +14604,9 @@ var HARDENED_GIT_FLAGS = [
   "-c",
   "core.hooksPath=/dev/null",
   "-c",
-  "core.fsmonitor=false"
+  "core.fsmonitor=false",
+  "-c",
+  "diff.ignoreSubmodules=all"
 ];
 var GITFILE_PREFIX = "gitdir: ";
 var COMMONDIR = "commondir";
@@ -14762,6 +14764,7 @@ function within2(folder, root) {
   const leaves = rel === ".." || rel.startsWith(`..${path64.sep}`);
   return !leaves && !path64.isAbsolute(rel);
 }
+var gitRunsIn = (worktree, cwd, args) => within2(physical(gitFolder(cwd, args)), physical(worktree));
 function hardenedRunner(run, place) {
   const root = physical(place.worktree);
   const prefix = [
@@ -14770,7 +14773,7 @@ function hardenedRunner(run, place) {
     `--work-tree=${root}`
   ];
   return (cmd, args, cwd, opts) => {
-    const inside = cmd === "git" && within2(physical(gitFolder(cwd, args)), root);
+    const inside = cmd === "git" && gitRunsIn(root, cwd, args);
     return run(cmd, inside ? [...prefix, ...args] : args, cwd, opts);
   };
 }

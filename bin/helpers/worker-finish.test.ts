@@ -33,7 +33,7 @@ import {
 import { execRunner, MAX_OUTPUT, type Runner } from './pm-data.js';
 import { SHORT_SHA } from './worker-finish.js';
 import { judgeFor } from './worker-finish-target.js';
-import { HARDENED_GIT_FLAGS } from './worker-git.js';
+import { gitRunsIn, HARDENED_GIT_FLAGS } from './worker-git.js';
 import {
   readRecords,
   type WorkerRecord,
@@ -3207,12 +3207,9 @@ describe('finish runs git into the worktree hardened', () => {
     cwd: string;
   }
 
-  // Whether a recorded call runs git in the worktree: from inside it, or sent there by -C.
+  // Whether a recorded call runs git in the worktree, as the hardened runner judges it.
   const intoWorktree = (fx: Fixture, call: GitCall): boolean =>
-    call.cwd.startsWith(fx.worktree) ||
-    call.args.some(
-      (arg, at) => arg === fx.worktree && call.args[at - 1] === '-C',
-    );
+    gitRunsIn(fx.worktree, call.cwd, call.args);
 
   // Real git, with each call's arguments and folder kept.
   function gitCalls(): { runGit: Runner; calls: GitCall[] } {

@@ -13,9 +13,12 @@
  * Its last line names the backup ref.
  * In discard mode with no worktree found, it removes the session and the record
  * alone, through `worker-finish-gone.ts`.
- * Once it reads the checkouts, it checks the repo's main git dir. Each git
- * call into the worktree runs hardened, once the worktree's link to the repo
- * holds.
+ * Once it reads the checkouts, it checks the repo's main git dir. Once it has
+ * found the worktree and the worktree's link to the repo holds, each git call
+ * finish makes into the worktree runs hardened. The `git status` that `git
+ * worktree remove` runs there takes the `-c` flags alone. The calls that read
+ * the checkouts first, `readSubject`'s and `checkoutFacts`, run as they are,
+ * even when finish runs inside the worktree.
  * The arguments, the target, the link check, the worktree checks, and the
  * report each live in a `worker-finish-*` module of their own.
  */

@@ -1,8 +1,8 @@
 /**
  * The link check of `sidekick worker finish`. Once finish finds the worker's
- * worktree, it runs git there only through the hardened runner, after the
- * worktree's link to the repo holds, and it reads that link again once the
- * job is gone.
+ * worktree and the worktree's link to the repo holds, each git call finish
+ * makes there runs through the hardened runner. finish reads that link again
+ * once the job is gone.
  */
 
 import * as fs from 'node:fs';

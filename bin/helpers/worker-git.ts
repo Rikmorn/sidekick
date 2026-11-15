@@ -4,9 +4,9 @@
  * under `<common>/worktrees/`, whose `gitdir` and `commondir` files point back,
  * and a `commondir` in the main git dir sends git elsewhere from the main
  * checkout. A planted one sends git to another repository's config and hooks.
- * So sidekick checks those files first, then runs each git call into the
- * worktree with hooks and fsmonitor off and with the git dir and work tree
- * named outright.
+ * So sidekick checks those files first, then runs each git call it makes into
+ * the worktree with hooks, fsmonitor, and embedded repos off, and with the git
+ * dir and work tree named outright.
  */
 
 import * as fs from 'node:fs';
@@ -15,12 +15,19 @@ import type { Runner } from './pm-data.js';
 import type { CheckoutFacts } from './worker-facts.js';
 import { checkoutOf, physical } from './worker-repo.js';
 
-/** The flags that keep a git call from running the repo's hooks or its fsmonitor. */
+/**
+ * The flags that keep a git call from running the repo's hooks or its
+ * fsmonitor, or from reaching into an embedded repo, whose own config may
+ * name a filter git would run. So such a call sees no work inside an
+ * embedded repo.
+ */
 export const HARDENED_GIT_FLAGS: readonly string[] = [
   '-c',
   'core.hooksPath=/dev/null',
   '-c',
   'core.fsmonitor=false',
+  '-c',
+  'diff.ignoreSubmodules=all',
 ];
 
 const GITFILE_PREFIX = 'gitdir: ';
@@ -275,10 +282,19 @@ function within(folder: string, root: string): boolean {
 }
 
 /**
- * `run`, with each git call whose folder is the worktree or below it, by real
- * path, led by `HARDENED_GIT_FLAGS`, `--git-dir`, and `--work-tree`. The
- * folder is the call's `cwd`, then each `-C` before the subcommand. Every
- * other call passes through unchanged.
+ * Whether git, run with `args` from `cwd`, works in `worktree` or below it, by
+ * real path. git works in `cwd`, then in each `-C` before the subcommand.
+ */
+export const gitRunsIn = (
+  worktree: string,
+  cwd: string,
+  args: string[],
+): boolean => within(physical(gitFolder(cwd, args)), physical(worktree));
+
+/**
+ * `run`, with each git call that `gitRunsIn` the worktree led by
+ * `HARDENED_GIT_FLAGS`, `--git-dir`, and `--work-tree`. Every other call
+ * passes through unchanged.
  */
 export function hardenedRunner(run: Runner, place: GitPlace): Runner {
   const root = physical(place.worktree);
@@ -288,8 +304,7 @@ export function hardenedRunner(run: Runner, place: GitPlace): Runner {
     `--work-tree=${root}`,
   ];
   return (cmd, args, cwd, opts) => {
-    const inside =
-      cmd === 'git' && within(physical(gitFolder(cwd, args)), root);
+    const inside = cmd === 'git' && gitRunsIn(root, cwd, args);
     return run(cmd, inside ? [...prefix, ...args] : args, cwd, opts);
   };
 }

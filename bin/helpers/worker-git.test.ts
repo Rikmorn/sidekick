@@ -106,6 +106,61 @@ describe('hardenedRunner', () => {
     );
   });
 
+  test("a hardened status runs no filter an embedded repo's own config names", () => {
+    const r = repoWithWorktree('');
+    const nested = path.join(r.worktree, 'nested');
+    fs.mkdirSync(nested);
+    git(nested, 'init', '-q');
+    git(nested, 'config', 'user.name', 'test');
+    git(nested, 'config', 'user.email', 'test@example.com');
+    git(nested, 'config', 'commit.gpgsign', 'false');
+    fs.writeFileSync(path.join(nested, 'n.txt'), 'n\n');
+    git(nested, 'add', 'n.txt');
+    git(nested, 'commit', '-q', '-m', 'n');
+    // Staged as a gitlink alone: no .gitmodules.
+    git(r.worktree, 'add', 'nested');
+    const marker = path.join(r.main, 'filter-ran');
+    git(nested, 'config', 'filter.x.clean', `touch '${marker}'; cat`);
+    fs.writeFileSync(path.join(nested, '.gitattributes'), '* filter=x\n');
+    // A same-size edit, so git reads the content, through the filter, to compare it.
+    fs.writeFileSync(path.join(nested, 'n.txt'), 'm\n');
+    // Plain git status in the worktree reaches into the embedded repo.
+    git(r.worktree, 'status', '--porcelain');
+    expect(fs.existsSync(marker)).toBe(true);
+    fs.rmSync(marker);
+    const gitDir = path.join(r.commonDir, 'worktrees', 'side');
+    const hard = hardenedRunner(execRunner, { worktree: r.worktree, gitDir });
+    const shapes: [string[], string][] = [
+      [
+        [
+          '-C',
+          r.worktree,
+          'status',
+          '--porcelain',
+          '-z',
+          '--untracked-files=all',
+        ],
+        r.main,
+      ],
+      [
+        [
+          '-C',
+          r.worktree,
+          'status',
+          '--porcelain',
+          '-z',
+          '--ignored',
+          '--untracked-files=normal',
+        ],
+        r.worktree,
+      ],
+    ];
+    for (const [args, cwd] of shapes) {
+      expect(hard('git', args, cwd).code).toBe(0);
+    }
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
   test('a hardened call reaches the worktree through real git', () => {
     const r = repoWithWorktree('');
     fs.writeFileSync(path.join(r.worktree, 'new.txt'), 'x\n');
