@@ -156,11 +156,11 @@ export interface HashInput {
 const sha256 = (data: string | Buffer): string =>
   createHash('sha256').update(data).digest('hex');
 
-const SKIPPED_NAMES = new Set(['.git', 'node_modules']);
+const SKIPPED_NAMES = new Set(['.git', 'node_modules', '.DS_Store']);
 const TYPES_DIR = '.claude-plugin/types';
 const UNREADABLE = 'unreadable';
 
-// Regular files by relative path, skipping links, `.git`, `node_modules`, and the types folder Claude Code rewrites.
+// Regular files by relative path, skipping links, `.git`, `node_modules`, `.DS_Store` (Finder writes it anywhere), and the types folder Claude Code rewrites.
 // A subfolder that cannot be listed digests as one unreadable entry; the root's failure reaches the caller.
 function filesUnder(root: string, rel: string): [string, string][] {
   let entries: fs.Dirent[];

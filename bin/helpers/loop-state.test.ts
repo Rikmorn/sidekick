@@ -236,6 +236,15 @@ describe('launchHash', () => {
     write(path.join(tmp, 'plug', '.claude-plugin', 'types', 't.d.ts'), 'y');
     expect(hash()).toBe(before);
   });
+  test('holds when a .DS_Store appears in a profile or plugin folder, at any depth', () => {
+    const before = hash();
+    write(path.join(tmp, 'profile', '.DS_Store'), 'x');
+    write(path.join(tmp, 'plug', '.DS_Store'), 'x');
+    write(path.join(tmp, 'plug', 'skills', '.DS_Store'), 'x');
+    expect(hash()).toBe(before);
+    write(path.join(tmp, 'plug', 'skills', '.DS_Store'), 'y');
+    expect(hash()).toBe(before);
+  });
   test('file order on disk cannot change it', () => {
     const one = fs.mkdtempSync(path.join(tmp, 'o-'));
     for (const f of ['b', 'a', 'c']) write(path.join(one, f), f);
