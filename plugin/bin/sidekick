@@ -4,7 +4,7 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
 import * as fs60 from "node:fs";
-import { realpathSync as realpathSync12 } from "node:fs";
+import { realpathSync as realpathSync13 } from "node:fs";
 import * as os3 from "node:os";
 import * as path78 from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12012,7 +12012,8 @@ function briefPlaces(read, worktree) {
     target: briefTargetOf(read.brief),
     report: report2,
     reportFrom: path57.join(worktree, report2),
-    reportTo: reportToOf(read, report2)
+    reportTo: reportToOf(read, report2),
+    unitWorktree: read.brief.kind === "unit" ? worktree : undefined
   };
 }
 function placesFor(tops, found, read) {
@@ -12271,10 +12272,53 @@ function readIfPresent(file) {
     return { issue: `cannot read ${file}: ${why}` };
   }
 }
+function unitReportIssues(from, worktree) {
+  let stat;
+  try {
+    stat = fs48.lstatSync(from);
+  } catch (e) {
+    if (isMissing7(e))
+      return [];
+    const why = e instanceof Error ? e.message : String(e);
+    return [`cannot read ${from}: ${why}`];
+  }
+  const issues = [];
+  if (stat.isSymbolicLink()) {
+    issues.push(`${from} is a symbolic link`);
+  } else if (!stat.isFile()) {
+    issues.push(`${from} is not a regular file`);
+  }
+  if (!isInside5(from, worktree)) {
+    issues.push(`${from} is outside the worktree ${worktree} by real path`);
+  }
+  if (stat.isFile() && stat.nlink > 1) {
+    issues.push(`${from} has ${stat.nlink} links, so it may be a hard link to a file elsewhere`);
+  }
+  return issues;
+}
+function isInside5(file, folder) {
+  try {
+    const root = fs48.realpathSync(folder);
+    return fs48.realpathSync(file).startsWith(root + path58.sep);
+  } catch {
+    return false;
+  }
+}
 function reportStep(brief, noReport, partial) {
   if (brief === undefined)
     return { kind: "no brief" };
   const { reportFrom: from, reportTo: to } = brief;
+  if (brief.unitWorktree !== undefined) {
+    const unsafe = unitReportIssues(from, brief.unitWorktree);
+    if (unsafe.length > 0) {
+      return {
+        issues: [
+          ...unsafe,
+          `a unit worker's report must be a plain file inside its worktree, so finish copies nothing from elsewhere: replace it with the report's text, then run finish again`
+        ]
+      };
+    }
+  }
   const worker = readIfPresent(from);
   if ("issue" in worker)
     return { issues: [worker.issue] };
@@ -18563,7 +18607,7 @@ function isMainEntrypoint(importMetaUrl, argv1) {
   if (!argv1)
     return false;
   try {
-    return realpathSync12(fileURLToPath(importMetaUrl)) === realpathSync12(argv1);
+    return realpathSync13(fileURLToPath(importMetaUrl)) === realpathSync13(argv1);
   } catch {
     return false;
   }

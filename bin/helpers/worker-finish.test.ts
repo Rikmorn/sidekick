@@ -3419,6 +3419,89 @@ describe('finish saves the run report', () => {
     expect(fs.existsSync(fx.worktree)).toBe(false);
   });
 
+  // A unit worker's worktree report is replaced by `make`, which gets the
+  // worktree's report path and a file outside the worktree.
+  const refusedUnitReport = (
+    make: (report: string, outside: string) => void,
+    reasons: string[],
+  ): void => {
+    const fx = fixture();
+    const { attempt, brief } = unitAttempt(fx);
+    const report = path.join(fx.worktree, 'unit-report.md');
+    const outside = path.join(tmp(), 'secret.txt');
+    fs.writeFileSync(outside, 'secret\n');
+    fs.rmSync(report);
+    make(report, outside);
+    const h = harness(fx);
+    expect(h.finish(brief, '--discard')).toBe(1);
+    const text = h.err.join('\n');
+    expect(text).toContain(report);
+    for (const reason of reasons) expect(text).toContain(reason);
+    expect(fs.existsSync(path.join(attempt, ATTEMPT_REPORT))).toBe(false);
+    expect(fs.existsSync(fx.worktree)).toBe(true);
+  };
+
+  test("a unit worker's report that is a symbolic link refuses", () => {
+    refusedUnitReport(
+      (report, outside) => fs.symlinkSync(outside, report),
+      ['is a symbolic link'],
+    );
+  });
+
+  test("a unit worker's report that is a hard link refuses", () => {
+    refusedUnitReport(
+      (report, outside) => fs.linkSync(outside, report),
+      ['has 2 links'],
+    );
+  });
+
+  test("a unit worker's report that is a folder refuses", () => {
+    refusedUnitReport(
+      (report) => fs.mkdirSync(report),
+      ['is not a regular file'],
+    );
+  });
+
+  test("a unit worker's report reached through a linked folder refuses", () => {
+    const fx = fixture();
+    const { attempt, brief } = unitAttempt(fx);
+    const away = path.join(tmp(), 'away');
+    fs.mkdirSync(away);
+    fs.writeFileSync(path.join(away, 'r.md'), 'secret\n');
+    fs.symlinkSync(away, path.join(fx.worktree, 'via'));
+    fs.writeFileSync(
+      brief,
+      fs.readFileSync(brief, 'utf-8').replace('unit-report.md', 'via/r.md'),
+    );
+    const h = harness(fx);
+    expect(h.finish(brief, '--discard')).toBe(1);
+    expect(h.err.join('\n')).toContain('is outside the worktree');
+    expect(fs.existsSync(path.join(attempt, ATTEMPT_REPORT))).toBe(false);
+  });
+
+  test("a unit worker's plain report still saves to the attempt folder, with --no-report as before", () => {
+    const fx = fixture();
+    const { attempt, brief } = unitAttempt(fx);
+    const h = harness(fx);
+    expect(h.finish(brief, '--discard')).toBe(0);
+    expect(fs.readFileSync(path.join(attempt, ATTEMPT_REPORT), 'utf-8')).toBe(
+      REPORT_TEXT,
+    );
+  });
+
+  test("a plan worker's report that is a symbolic link behaves as before", () => {
+    const fx = fixture();
+    fx.integrate();
+    const outside = path.join(tmp(), 'linked.md');
+    fs.writeFileSync(outside, REPORT_TEXT);
+    const report = path.join(fx.worktree, REPORT);
+    fs.rmSync(report);
+    fs.symlinkSync(outside, report);
+    const h = harness(fx);
+    expect(h.finish(fx.brief)).toBe(0);
+    expect(savedReport(fx)).toBe(REPORT_TEXT);
+  });
+
   test("a plan worker's report is saved as before", () => {
     const fx = fixture();
     fx.integrate();

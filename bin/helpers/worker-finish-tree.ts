@@ -84,6 +84,8 @@ export interface BriefPlaces extends BriefAt {
   reportFrom: string;
   /** A plan brief's `<top>/<report>`, undefined when no checkout holds the brief; a unit brief's `<attempt folder>/report.md`. */
   reportTo: string | undefined;
+  /** The worktree's path where the report must be a plain file inside it, which is a unit brief's alone; undefined for a plan brief. */
+  unitWorktree: string | undefined;
 }
 
 /** The checkouts finish reads, and where the worker's worktree, branch, and brief sit. */
@@ -123,6 +125,7 @@ function briefPlaces(read: BriefRead, worktree: string): BriefPlaces {
     report,
     reportFrom: path.join(worktree, report),
     reportTo: reportToOf(read, report),
+    unitWorktree: read.brief.kind === 'unit' ? worktree : undefined,
   };
 }
 

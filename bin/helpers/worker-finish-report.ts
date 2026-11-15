@@ -37,6 +37,47 @@ function readIfPresent(
   }
 }
 
+// What a unit worker's report may not be. `saveReport` copies with
+// `copyFileSync`, which follows a link, so a report that is a link, or a hard
+// link to a file elsewhere, would copy a file from outside the worktree into
+// the attempt folder, where `loop report` prints it. Every reason is named.
+function unitReportIssues(from: string, worktree: string): string[] {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(from);
+  } catch (e) {
+    if (isMissing(e)) return [];
+    const why = e instanceof Error ? e.message : String(e);
+    return [`cannot read ${from}: ${why}`];
+  }
+  const issues: string[] = [];
+  if (stat.isSymbolicLink()) {
+    issues.push(`${from} is a symbolic link`);
+  } else if (!stat.isFile()) {
+    issues.push(`${from} is not a regular file`);
+  }
+  if (!isInside(from, worktree)) {
+    issues.push(`${from} is outside the worktree ${worktree} by real path`);
+  }
+  if (stat.isFile() && stat.nlink > 1) {
+    issues.push(
+      `${from} has ${stat.nlink} links, so it may be a hard link to a file elsewhere`,
+    );
+  }
+  return issues;
+}
+
+// Whether `file`'s real path lies inside `folder`'s; a path that cannot be
+// resolved counts as outside.
+function isInside(file: string, folder: string): boolean {
+  try {
+    const root = fs.realpathSync(folder);
+    return fs.realpathSync(file).startsWith(root + path.sep);
+  } catch {
+    return false;
+  }
+}
+
 // An identical report already in place is not a refusal, so this check lets a
 // re-run through after a failed step.
 export function reportStep(
@@ -46,6 +87,17 @@ export function reportStep(
 ): ReportStep | { issues: string[] } {
   if (brief === undefined) return { kind: 'no brief' };
   const { reportFrom: from, reportTo: to } = brief;
+  if (brief.unitWorktree !== undefined) {
+    const unsafe = unitReportIssues(from, brief.unitWorktree);
+    if (unsafe.length > 0) {
+      return {
+        issues: [
+          ...unsafe,
+          `a unit worker's report must be a plain file inside its worktree, so finish copies nothing from elsewhere: replace it with the report's text, then run finish again`,
+        ],
+      };
+    }
+  }
   const worker = readIfPresent(from);
   if ('issue' in worker) return { issues: [worker.issue] };
   if (worker.data === undefined) {
