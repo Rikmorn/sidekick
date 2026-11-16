@@ -13669,7 +13669,7 @@ var finishEnv = (call) => ({
   cwd: call.cwd,
   workTree: workTreeRootOf(call.cwd, call.lenv.runGit)
 });
-var handRoute2 = (worker, opts, repo) => `finish did not clear worker ${worker}, so the attempt closes and what remains is yours. List it with sidekick worktree list, and settle what finish names, such as uncommitted work to commit or remove. Then run ${discardCommandFor(opts)} in the loop's repo, ${repo}`;
+var handRoute2 = (worker, opts, repo) => `finish did not clear worker ${worker}, so the attempt closes and what remains is yours. Inspect it with sidekick worktree list, not with plain git there, which runs what the worker planted, such as an embedded repo's filter. Settle what finish names, such as uncommitted work to copy out or remove. Then run ${discardCommandFor(opts)} in the loop's repo, ${repo}`;
 function lockIssue(call, worktree, worker) {
   const list2 = listWorktrees(call.lenv.runGit, call.cwd);
   if ("issue" in list2) {

@@ -72,9 +72,10 @@ const finishEnv = (call: JobCall): WorkerEnv => ({
 
 // `finish` resolves the repo from the folder it runs in, so the route names
 // the loop's repo. It holds for every refusal: dirty work, a broken link, or
-// a teardown cut short.
+// a teardown cut short. Plain git in a worker's worktree runs what the worker
+// planted, so the route reads it through sidekick's hardened git.
 const handRoute = (worker: string, opts: FinishOptions, repo: string): string =>
-  `finish did not clear worker ${worker}, so the attempt closes and what remains is yours. List it with sidekick worktree list, and settle what finish names, such as uncommitted work to commit or remove. Then run ${discardCommandFor(opts)} in the loop's repo, ${repo}`;
+  `finish did not clear worker ${worker}, so the attempt closes and what remains is yours. Inspect it with sidekick worktree list, not with plain git there, which runs what the worker planted, such as an embedded repo's filter. Settle what finish names, such as uncommitted work to copy out or remove. Then run ${discardCommandFor(opts)} in the loop's repo, ${repo}`;
 
 // A live process the worktree's lock names: `finish`'s own stop or wait fell
 // short, so the worker may still write there. A listing git cannot give

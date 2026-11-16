@@ -113,7 +113,7 @@ describe('loop discard closes the attempt', () => {
     expect(git(fx.top, 'branch', '--list', `worktree-${WORKER}`)).not.toBe('');
     expect(r.out.join('\n')).toContain('wip.txt');
     expect(r.out).toContain(
-      `finish did not clear worker ${WORKER}, so the attempt closes and what remains is yours. List it with sidekick worktree list, and settle what finish names, such as uncommitted work to commit or remove. Then run sidekick worker finish ${fx.brief} --discard in the loop's repo, ${fx.top}`,
+      `finish did not clear worker ${WORKER}, so the attempt closes and what remains is yours. Inspect it with sidekick worktree list, not with plain git there, which runs what the worker planted, such as an embedded repo's filter. Settle what finish names, such as uncommitted work to copy out or remove. Then run sidekick worker finish ${fx.brief} --discard in the loop's repo, ${fx.top}`,
     );
     expect(closing(fx).map((l) => l.kind)).toEqual(['discarded']);
     expect(r.out.at(-1)).toBe(`unit ${UNIT} · worker ${WORKER} · discarded`);
