@@ -68,6 +68,7 @@ let pluginList: ClaudeResult;
 let launchReply: (args: string[], cwd: string) => ClaudeResult;
 let issueState: string;
 let onLaunch: () => void;
+let onChecks: () => void;
 let gitCalls: { args: string[]; cwd: string; opts: RunOptions | undefined }[];
 let gitReply: (args: string[], cwd: string) => RunResult | undefined;
 let stops: string[][];
@@ -124,7 +125,10 @@ const doctorPasses = (args: string[]): ClaudeResult => {
 };
 
 const fakeClaude: ClaudeRunner = (args, opts) => {
-  if (args.at(-1) === 'doctor') return doctorPasses(args);
+  if (args.at(-1) === 'doctor') {
+    onChecks();
+    return doctorPasses(args);
+  }
   if (args.at(-3) === 'plugin' && args.at(-2) === 'list') return pluginList;
   if (args[0] === 'agents') return result({ stdout: JSON.stringify(rows) });
   if (args[0] === 'stop') {
@@ -264,6 +268,7 @@ beforeEach(() => {
   launchReply = nativeLanding;
   issueState = 'OPEN';
   onLaunch = () => {};
+  onChecks = () => {};
   gitCalls = [];
   gitReply = () => undefined;
   stops = [];
@@ -340,11 +345,14 @@ const record = (...lines: RecordLine[]): void => {
   for (const l of lines) appendRecord(loopDir(), l);
 };
 
-const dispatchedLines = () => {
+const recordLines = () => {
   const read = readLedger(loopDir(), NOW);
   if ('issues' in read) throw new Error(read.issues.join('\n'));
-  return read.lines.filter((l) => l.kind === 'dispatched');
+  return read.lines;
 };
+
+const dispatchedLines = () =>
+  recordLines().filter((l) => l.kind === 'dispatched');
 
 describe('loop dispatch refuses, changing nothing in the loop folder', () => {
   // The third column is the text the refusal holds, read late when it names a fixture path.
@@ -866,17 +874,87 @@ describe('loop dispatch dispatches', () => {
     expect(fs.existsSync(path.join(named, 'units', UNIT, worker))).toBe(true);
   });
 
-  test("Workspace not trusted adds start's fix line, and leaves nothing", () => {
+  test("a launch claude refuses, Workspace not trusted among them, writes dispatched then discarded, keeps start's fix line, and the next dispatch passes", () => {
     launchReply = () =>
       result({ code: 1, stderr: 'Error: Workspace not trusted. Run claude\n' });
-    const before = snapshot();
     const r = dispatch();
     expect(r.code).toBe(1);
     expect(r.err).toContain(
       `Claude Code does not trust ${loopTree} as a workspace. Run claude in ${loopTree} once and accept the trust prompt, then run sidekick loop dispatch fixer --issue 42 --skill ${SKILL} again.`,
     );
-    expect(snapshot()).toEqual(before);
-    expect(dispatchedLines()).toEqual([]);
+    expect(r.err.join('\n')).toContain(
+      `the launch was refused, so dispatch closed the attempt of worker ${WORKER}, which still counts as one of unit ${UNIT}'s attempts`,
+    );
+    expect(recordLines()).toEqual([
+      expect.objectContaining({
+        kind: 'dispatched',
+        unit: UNIT,
+        worker: WORKER,
+      }),
+      expect.objectContaining({
+        kind: 'discarded',
+        unit: UNIT,
+        worker: WORKER,
+        reason: 'the launch was refused',
+      }),
+    ]);
+    expect(fs.existsSync(attemptOf())).toBe(true);
+    launchReply = nativeLanding;
+    const next = dispatch(ARGS, {}, { draw: () => 'def456' });
+    expect(next.err).toEqual([]);
+    expect(next.code).toBe(0);
+  });
+
+  test('a refused launch whose discarded line cannot be written keeps the attempt in flight, and names loop discard', () => {
+    const records = path.join(loopDir(), 'records');
+    const dayFiles = () =>
+      fs.readdirSync(records).map((name) => path.join(records, name));
+    // The dispatched line is written by now, so its day file exists.
+    launchReply = () => {
+      for (const file of dayFiles()) fs.chmodSync(file, 0o444);
+      return result({ code: 1, stderr: 'Error: boom\n' });
+    };
+    try {
+      const r = dispatch();
+      expect(r.code).toBe(1);
+      expect(r.err.join('\n')).toContain(
+        `the attempt stays in flight: give up on it with sidekick loop discard fixer --unit ${UNIT} --reason <text>`,
+      );
+    } finally {
+      for (const file of dayFiles()) fs.chmodSync(file, 0o644);
+    }
+    expect(recordLines().map((l) => l.kind)).toEqual(['dispatched']);
+  });
+
+  test('a launch that never returns leaves dispatched and the folder, so the next dispatch refuses as in flight', () => {
+    let during: { lines: RecordLine[]; file: unknown } | undefined;
+    launchReply = () => {
+      // What a dispatch the Bash tool ends here leaves on disk.
+      during = {
+        lines: recordLines(),
+        file: readWorkerFile(attemptOf()),
+      };
+      throw new Error('the Bash tool ended dispatch');
+    };
+    expect(() => dispatch()).toThrow('the Bash tool ended dispatch');
+    expect(during?.lines).toEqual([
+      expect.objectContaining({
+        kind: 'dispatched',
+        unit: UNIT,
+        worker: WORKER,
+        issue: ISSUE,
+      }),
+    ]);
+    expect(during?.file).toEqual(
+      expect.objectContaining({ worker: WORKER, job: null, issue: ISSUE }),
+    );
+    expect(fs.existsSync(attemptOf())).toBe(true);
+    launchReply = nativeLanding;
+    const next = dispatch(ARGS, {}, { draw: () => 'def456' });
+    expect(next.code).toBe(1);
+    expect(next.err.join('\n')).toContain(
+      `in flight: unit ${UNIT}, worker ${WORKER}`,
+    );
   });
 
   test('a launch that times out counts as an attempt: dispatched lands, the folder stays, and the next dispatch refuses as in flight', () => {
@@ -910,49 +988,7 @@ describe('loop dispatch dispatches', () => {
     expect(launches).toHaveLength(1);
   });
 
-  test('a timed-out launch whose attempt cannot be recorded leaves nothing, and says how to stop a worker that started', () => {
-    const records = path.join(loopDir(), 'records');
-    fs.mkdirSync(records);
-    launchReply = () => result({ code: 124, timedOut: true });
-    const before = snapshot();
-    fs.chmodSync(records, 0o555);
-    try {
-      const r = dispatch();
-      expect(r.code).toBe(124);
-      expect(r.err.join('\n')).toContain('recording the attempt failed');
-      expect(r.err.join('\n')).toContain(
-        'find it with claude agents --json --all, then stop it with claude stop <id>',
-      );
-    } finally {
-      fs.chmodSync(records, 0o755);
-    }
-    expect(snapshot()).toEqual(before);
-  });
-
-  test('a timed-out launch whose attempt can be neither recorded nor removed says what stays, and never claims the folder is removed', () => {
-    const records = path.join(loopDir(), 'records');
-    fs.mkdirSync(records);
-    const dir = attemptOf();
-    launchReply = () => {
-      fs.chmodSync(dir, 0o555);
-      return result({ code: 124, timedOut: true });
-    };
-    fs.chmodSync(records, 0o555);
-    try {
-      const r = dispatch();
-      expect(r.code).toBe(124);
-      const text = r.err.join('\n');
-      expect(text).toContain('recording the attempt failed');
-      expect(text).toContain('cannot remove');
-      expect(text).not.toContain('its folder is removed');
-      expect(text).toContain('claude agents --json --all');
-    } finally {
-      fs.chmodSync(records, 0o755);
-      fs.chmodSync(dir, 0o755);
-    }
-  });
-
-  test('a start whose dispatched line cannot be written stops the worker as a stray, and removes the attempt folder', () => {
+  test('an attempt whose dispatched line cannot be written launches nothing, and leaves the loop folder as it was', () => {
     const records = path.join(loopDir(), 'records');
     fs.mkdirSync(records);
     const before = snapshot();
@@ -961,14 +997,60 @@ describe('loop dispatch dispatches', () => {
       const r = dispatch();
       expect(r.code).toBe(1);
       expect(r.err.join('\n')).toContain(
-        'the worker started, but recording its start failed',
+        'recording the attempt failed, so dispatch launched nothing',
       );
-      expect(stops).toEqual([['stop', JOB]]);
     } finally {
       fs.chmodSync(records, 0o755);
     }
+    expect(launches).toEqual([]);
     expect(snapshot()).toEqual(before);
+  });
+
+  test('an attempt that can be neither recorded nor removed launches nothing, and names what stays', () => {
+    const dir = attemptOf();
+    // The launch's own checks run once the attempt's folder is written.
+    onChecks = () => fs.chmodSync(dir, 0o555);
+    try {
+      const r = dispatch();
+      expect(r.code).toBe(1);
+      const text = r.err.join('\n');
+      expect(text).toContain(
+        'recording the attempt failed, so dispatch launched nothing',
+      );
+      expect(text).toContain(`cannot remove ${path.join(dir, 'brief.md')}`);
+    } finally {
+      fs.chmodSync(dir, 0o755);
+    }
+    expect(launches).toEqual([]);
     expect(dispatchedLines()).toEqual([]);
+  });
+
+  test('a start whose job cannot be recorded stops the worker as a stray, keeps the attempt counted, and names loop discard', () => {
+    const dir = attemptOf();
+    launchReply = (args, cwd) => {
+      fs.chmodSync(dir, 0o555);
+      return nativeLanding(args, cwd);
+    };
+    try {
+      const r = dispatch();
+      expect(r.code).toBe(1);
+      const text = r.err.join('\n');
+      expect(text).toContain(
+        'the worker started, but recording its start failed',
+      );
+      expect(text).toContain(
+        `give up on it with sidekick loop discard fixer --unit ${UNIT} --reason <text>`,
+      );
+      expect(stops).toEqual([['stop', JOB]]);
+    } finally {
+      fs.chmodSync(dir, 0o755);
+    }
+    expect(dispatchedLines()).toEqual([
+      expect.objectContaining({ unit: UNIT, worker: WORKER }),
+    ]);
+    expect(readWorkerFile(dir)).toEqual(
+      expect.objectContaining({ worker: WORKER, job: null }),
+    );
   });
 
   test("a refusal by the launch's own checks removes the attempt folder it wrote, and the unit folder it made", () => {

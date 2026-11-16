@@ -184,8 +184,8 @@ function refuseStray(
   ]);
 }
 
-// A worker whose start its caller could not record runs outside what the
-// record counts, so it is stopped as a stray. With no job id there is
+// A start its caller could not record leaves that record short of the
+// worker, so the worker is stopped as a stray. With no job id there is
 // nothing to stop by, and the line says how to find it.
 function refuseUnrecorded(
   ready: Ready,
@@ -214,6 +214,20 @@ export interface Launched {
  * refuses.
  */
 export type OnStart = (job: string | null) => void;
+
+/**
+ * Called once dispatch's checks pass, right before `claude --bg` runs. The
+ * lines it returns refuse the launch, and nothing starts.
+ */
+export type BeforeLaunch = () => string[];
+
+/** What a launch reports to its caller, beside its output. */
+interface LaunchHooks {
+  out: Out;
+  err: Out;
+  onStart?: OnStart;
+  beforeLaunch?: BeforeLaunch;
+}
 
 // Runs `onStart`, and returns why it threw, or undefined when it ran clean.
 function runOnStart(
@@ -265,11 +279,8 @@ function afterStart(
 // Excludes the worktrees folder, starts the worker from the launching checkout,
 // and relays claude; the summary prints only once claude reports a start and
 // the worktree check does not refuse it.
-function launch(
-  ready: Ready,
-  wenv: WorkerEnv,
-  { out, err, onStart }: { out: Out; err: Out; onStart?: OnStart },
-): Launched {
+function launch(ready: Ready, wenv: WorkerEnv, hooks: LaunchHooks): Launched {
+  const { out, err, onStart } = hooks;
   for (const note of ready.notes) err(note);
   const excluded = ensureWorktreesExcluded(
     wenv.runGit,
@@ -280,6 +291,8 @@ function launch(
     return { code: refuse(err, excluded.issues), job: null };
   }
   if (excluded.line !== undefined) out(excluded.line);
+  const blocked = hooks.beforeLaunch?.() ?? [];
+  if (blocked.length > 0) return { code: refuse(err, blocked), job: null };
   const args = bgArgs(ready.args, {
     pluginDirs: ready.pluginDir === undefined ? [] : [ready.pluginDir],
     permissionMode: ready.mode,
@@ -345,6 +358,7 @@ export interface UnitLaunch {
   hosts: readonly string[];
   /** The loop's worktree, which the checks and the launch run from. */
   launchFolder: string;
+  beforeLaunch?: BeforeLaunch;
   onStart?: OnStart;
 }
 
@@ -368,8 +382,10 @@ export const unitLaunchEnv = (
  * folder added, and no `project` or `local` source. None of those can be
  * passed in. The checks, the profile store's lookup among them, read the
  * work tree that holds `launchFolder`. The profile keys left out print on
- * `err` before the launch. Returns 1 on a refusal, before the launch or after
- * it, else `claude`'s exit code, with the job once `claude` reported a start.
+ * `err` before the launch. `beforeLaunch` runs once the checks pass, and
+ * `onStart` once `claude` reports a start. Returns 1 on a refusal, before
+ * the launch or after it, else `claude`'s exit code, with the job once
+ * `claude` reported a start.
  */
 export function dispatchUnit(
   unit: UnitLaunch,
@@ -399,5 +415,10 @@ export function dispatchUnit(
   if ('issues' in checked) {
     return { code: refuse(err, checked.issues), job: null };
   }
-  return launch(checked, wenv, { out, err, onStart: unit.onStart });
+  return launch(checked, wenv, {
+    out,
+    err,
+    beforeLaunch: unit.beforeLaunch,
+    onStart: unit.onStart,
+  });
 }
