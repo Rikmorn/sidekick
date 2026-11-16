@@ -302,6 +302,8 @@ const TOOL_DENIES = [
   ...DENIED_SKILLS.flatMap((skill) => [`Skill(${skill})`, `Skill(${skill} *)`]),
   'WebFetch',
   'WebSearch',
+  'EnterWorktree',
+  'ExitWorktree',
 ];
 
 describe('unitOverlay', () => {
@@ -342,6 +344,12 @@ describe('unitOverlay', () => {
   test("it denies git's redirect files, config, hooks, the common sidekick folder, the sidekick folder, and the memory store", () => {
     const { deny } = permissionsOf(unitOf(undefined));
     for (const rule of PATH_DENIES) expect(deny).toContain(rule);
+  });
+
+  test('it denies EnterWorktree and ExitWorktree, so the worker stays in the worktree it starts in', () => {
+    const { deny } = permissionsOf(unitOf(undefined));
+    expect(deny).toContain('EnterWorktree');
+    expect(deny).toContain('ExitWorktree');
   });
 
   test('it denies WebFetch, WebSearch, brainstorming, and sk-save', () => {

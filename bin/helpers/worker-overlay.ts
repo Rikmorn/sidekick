@@ -169,6 +169,10 @@ export const UNIT_DENIED_SKILLS = [
 // `allowedDomains` binds neither tool, and an inherited layer may allow them.
 const WEB_TOOLS = ['WebFetch', 'WebSearch'];
 
+// A unit worker starts in its worktree and works nowhere else, and the fetch
+// hook's own git before `EnterWorktree` runs unhardened.
+const WORKTREE_TOOLS = ['EnterWorktree', 'ExitWorktree'];
+
 // Everything under a folder.
 const UNDER = '/**';
 
@@ -236,16 +240,17 @@ const unitDenies = (opts: UnitOverlayOptions): string[] =>
     ...folderDenies(opts),
     ...UNIT_DENIED_SKILLS.flatMap(skillDenies),
     ...WEB_TOOLS,
+    ...WORKTREE_TOOLS,
     PUSH_DENY_RULE,
   ]);
 
 /**
  * Builds the overlay a unit worker launches with: the sandbox fence with the
  * network open to `hosts` alone and six loosening keys pinned off, `Edit`
- * allowed in its worktree alone, the
- * denies on git's redirect files, sidekick's folders, the memory store, the
- * listed skills, and the web tools, reads blocked outside its working
- * folders, Claude Code's auto memory off, and the push block. It carries no
+ * allowed in its worktree alone, the denies on git's redirect files,
+ * sidekick's folders, the memory store, the listed skills, the web tools,
+ * and the worktree tools, reads blocked outside its working folders, Claude
+ * Code's auto memory off, and the push block. It carries no
  * recorded main and no `sk-save` allow rule. A profile count that is not a
  * string of digits refuses, as `workerOverlay` does.
  */

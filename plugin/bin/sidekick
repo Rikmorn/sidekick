@@ -14622,6 +14622,7 @@ var UNIT_DENIED_SKILLS = [
   "sidekick:sk-save"
 ];
 var WEB_TOOLS = ["WebFetch", "WebSearch"];
+var WORKTREE_TOOLS = ["EnterWorktree", "ExitWorktree"];
 var UNDER = "/**";
 function gitDenies(commonDir, worktree) {
   const worktrees = path67.join(commonDir, "worktrees");
@@ -14656,6 +14657,7 @@ var unitDenies = (opts) => unique([
   ...folderDenies(opts),
   ...UNIT_DENIED_SKILLS.flatMap(skillDenies),
   ...WEB_TOOLS,
+  ...WORKTREE_TOOLS,
   PUSH_DENY_RULE
 ]);
 function unitOverlay(profileSettings, opts) {
