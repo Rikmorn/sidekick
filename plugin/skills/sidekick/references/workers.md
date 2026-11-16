@@ -296,7 +296,7 @@ The desk and `sidekick worktree list`, `move`, and `remove` run no chain check. 
 
 What stays outside the hardening:
 
-- **sidekick's git in the main checkout,** or in a loop's repo top, runs plain. That covers `finish`'s landed check and branch deletes, `dispatch`'s name checks, and `discard`'s worktree listing. They read no worker's work tree, but they read the refs and replace refs a worker can write. So a replace ref planted in the shared repo can change what `finish`'s landed check sees.
+- **The other verbs' git in the main checkout,** or in a loop's repo top, runs plain, outside the desk and `sidekick worktree`. That covers `finish`'s landed check and branch deletes, `dispatch`'s name checks, and `discard`'s worktree listing. They read no worker's work tree, but they read the refs and replace refs a worker can write. So a replace ref planted in the shared repo can change what `finish`'s landed check sees.
 - **Plain git you run yourself** in a leftover unit worktree runs what the worker planted there, such as an embedded repo's filter. Inspect one with `sidekick worktree list`, whose git carries the flags.
 - **Programs the flags do not name.** The flags cover hooks, fsmonitor, embedded repos, and replace refs, not every program git config can name. A filter driver, or `diff.external`, in the common config still runs where a call reaches it. For a unit worker, the fence's deny on `<common git dir>/config` is the guard. A plan worker has no fence.
 - **A grafts file.** The flags turn replace refs off, not `<common git dir>/info/grafts`, which rewrites commits' parents. A loop's `dispatch` refuses one, and `finish` does not check for one.
