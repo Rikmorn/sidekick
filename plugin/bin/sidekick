@@ -10096,13 +10096,17 @@ var booleanEntries = (value) => Object.fromEntries(Object.entries(isPlainObject(
 function summariseLayer(settings) {
   const permissions = objectAt(settings, "permissions");
   const sandbox = objectAt(settings, "sandbox");
+  const network = objectAt(sandbox, "network");
   const allow = stringsOf(permissions.allow);
   return {
     allow,
     hooks: hooksOf(settings),
     addedDirectories: stringsOf(permissions.additionalDirectories),
     sandboxWrites: stringsOf(objectAt(sandbox, "filesystem").allowWrite),
-    allowedDomains: stringsOf(objectAt(sandbox, "network").allowedDomains),
+    allowedDomains: stringsOf(network.allowedDomains),
+    excludedCommands: stringsOf(sandbox.excludedCommands),
+    unixSockets: stringsOf(network.allowUnixSockets),
+    machLookups: stringsOf(network.allowMachLookup),
     editAllows: allow.filter((rule) => rule.startsWith("Edit(")),
     enabledPlugins: booleanEntries(settings.enabledPlugins)
   };
@@ -14201,7 +14205,10 @@ function inheritedListing(manifest, profile, deps) {
       ["sandbox write", summary2.sandboxWrites],
       ["allowed domain", summary2.allowedDomains],
       ["Edit allow", summary2.editAllows.filter((rule) => !isBareWrite(rule))],
-      ["file-write allow for every path", summary2.allow.filter(isBareWrite)]
+      ["file-write allow for every path", summary2.allow.filter(isBareWrite)],
+      ["sandbox-excluded command", summary2.excludedCommands],
+      ["allowed Unix socket", summary2.unixSockets],
+      ["allowed Mach lookup", summary2.machLookups]
     ];
     for (const [kind, entries] of widenings) {
       fence.push(...entries.map((entry) => `${source}: ${kind}: ${entry}`));
@@ -15425,8 +15432,11 @@ function launchAttempt(d, a, io) {
 
 // bin/helpers/loop-dispatch-tree.ts
 import * as path71 from "node:path";
-var ORIGIN_HEAD = "refs/remotes/origin/HEAD";
-var REMOTES2 = "refs/remotes/";
+var ASK_ORIGIN = ["ls-remote", "--symref", "origin", "HEAD"];
+var SYMREF = /^ref: refs\/heads\/(.+)$/;
+var OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+var NOT_IN_REF = /[\s~^:?*[\\]|\.\.|@\{/;
+var isBranchName = (name) => !NOT_IN_REF.test(name) && ![...name].some(isControl);
 var NO = 1;
 var failed = (what, folder, stderr) => `${what} failed in ${folder}: ${stderr.trim() === "" ? "git printed nothing" : stderr.trim()}`;
 function branchIssues(run, folder, branch) {
@@ -15499,31 +15509,41 @@ function standingIssue(tree, relation, shown2) {
   const how = relation === "ahead" ? `is ahead of ${shown2} by commits of its own` : `has diverged from ${shown2}`;
   return `${folder}: ${branch} ${how}, and the loop's worktree holds nothing of its own: keep those commits on a branch of their own, then move ${branch} to origin's tip with git reset --keep ${shown2} in that folder`;
 }
-function originTip(tree, repo) {
-  const ref = tree.runGit("git", ["symbolic-ref", "-q", ORIGIN_HEAD], tree.folder);
-  if (ref.code === NO) {
-    return {
-      issues: [
-        `${ORIGIN_HEAD} is not set in ${repo}, so dispatch cannot tell origin's default branch: run git remote set-head origin --auto in ${repo}`
-      ]
-    };
+function parseReport(stdout) {
+  const values = stdout.split(`
+`).filter((line) => line !== "").map((line) => line.split("\t")).filter(([, name]) => name === "HEAD").map(([value]) => value);
+  const branches = values.flatMap((value) => {
+    const named2 = SYMREF.exec(value);
+    return named2 !== null && isBranchName(named2[1]) ? [named2[1]] : [];
+  });
+  const tips = values.filter((value) => OBJECT_ID.test(value));
+  const isOneOfEach = values.length === 2 && branches.length === 1 && tips.length === 1;
+  return isOneOfEach ? { branch: branches[0], tip: tips[0] } : undefined;
+}
+function askOrigin(tree, timeoutMs) {
+  const asked = tree.runGit("git", ASK_ORIGIN, tree.folder, { timeoutMs });
+  const shown2 = `git ${ASK_ORIGIN.join(" ")}`;
+  if (asked.code !== 0) {
+    return { issues: [failed(shown2, tree.folder, asked.stderr)] };
   }
-  if (ref.code !== 0) {
-    return {
-      issues: [
-        failed(`git symbolic-ref ${ORIGIN_HEAD}`, tree.folder, ref.stderr)
-      ]
-    };
-  }
-  const target = ref.stdout.trim();
-  const tip = commitOf(tree.runGit, tree.folder, target);
-  if (tip === undefined) {
-    return {
-      issues: [`${ORIGIN_HEAD} names ${target}, which names no commit`]
-    };
-  }
-  const shown2 = target.startsWith(REMOTES2) ? target.slice(REMOTES2.length) : target;
-  return { shown: shown2, tip };
+  const report2 = parseReport(asked.stdout);
+  return report2 ?? {
+    issues: [
+      `${shown2} in ${tree.folder} printed no branch and commit for origin's HEAD, so dispatch cannot tell origin's default branch`
+    ]
+  };
+}
+function trackingIssues(tree, repo, { branch, tip }) {
+  const tracking = `refs/remotes/origin/${branch}`;
+  const isHere = commitOf(tree.runGit, tree.folder, tip) === tip;
+  const tracked = commitOf(tree.runGit, tree.folder, tracking);
+  if (isHere && tracked === tip)
+    return [];
+  const where = tracked === undefined ? `${tracking} names no commit` : `${tracking} is at ${tracked}`;
+  const here = isHere ? `${tip} is in ${repo}` : `${tip} is not in ${repo}`;
+  return [
+    `origin reports ${branch} at ${tip}, but after the fetch ${where}, and ${here}: origin may have moved during the fetch, so run dispatch again`
+  ];
 }
 function fastForward(tree, head2, { shown: shown2, tip }, timeoutMs) {
   if (head2 === tip)
@@ -15544,20 +15564,24 @@ function fastForward(tree, head2, { shown: shown2, tip }, timeoutMs) {
   return moved === tip ? { baseline: moved } : { issues: [`${tree.folder}: HEAD is not ${tip} after the fast-forward`] };
 }
 function syncLoopTree(tree, repo, timeoutMs) {
+  const report2 = askOrigin(tree, timeoutMs);
+  if ("issues" in report2)
+    return report2;
   const fetched = tree.runGit("git", ["fetch", "--quiet", "origin"], tree.folder, { timeoutMs });
   if (fetched.code !== 0) {
     return {
       issues: [failed("git fetch origin", tree.folder, fetched.stderr)]
     };
   }
-  const origin = originTip(tree, repo);
-  if ("issues" in origin)
-    return origin;
+  const tracking = trackingIssues(tree, repo, report2);
+  if (tracking.length > 0)
+    return { issues: tracking };
   const head2 = headCommit(tree.runGit, tree.folder);
   if (head2 === undefined) {
     return { issues: [`${tree.folder}: HEAD names no commit`] };
   }
-  return fastForward(tree, head2, origin, timeoutMs);
+  const shown2 = `origin/${report2.branch}`;
+  return fastForward(tree, head2, { shown: shown2, tip: report2.tip }, timeoutMs);
 }
 
 // bin/helpers/loop-dispatch.ts
@@ -15816,7 +15840,7 @@ var print2 = (sink, lines) => {
   for (const line of lines)
     sink(line);
 };
-function parseReport(rest2) {
+function parseReport2(rest2) {
   const parsed = parseFlags(rest2, { unit: { type: "string" } });
   if (parsed === undefined || parsed.positionals.length !== 1)
     return;
@@ -15968,7 +15992,7 @@ function printReport(ctx, call, io, maxBytes) {
 function loopReport(rest2, lenv, rawOut, rawErr, { maxBytes = 1e5 } = {}) {
   const out = visibleSink(rawOut);
   const err = visibleSink(rawErr);
-  const call = parseReport(rest2);
+  const call = parseReport2(rest2);
   if (call === undefined) {
     err(`usage: ${REPORT_USAGE_LINE}`);
     return REFUSED6;
@@ -18722,7 +18746,7 @@ function moveWorktree(args, env, out, err) {
 // bin/helpers/worktree-remove-checks.ts
 import * as path79 from "node:path";
 var DISCARD = "--discard";
-var REMOTES3 = "refs/remotes/";
+var REMOTES2 = "refs/remotes/";
 function parseRemoveArgs(rest2) {
   const parsed = parseFlags(rest2, {
     discard: { type: "boolean" },
@@ -18752,7 +18776,7 @@ function refCommit(runGit, top, ref2) {
 function intoTargets(runGit, top, into) {
   if (into === undefined)
     return [];
-  for (const ref2 of [`${HEADS}${into}`, `${REMOTES3}${into}`]) {
+  for (const ref2 of [`${HEADS}${into}`, `${REMOTES2}${into}`]) {
     const sha = refCommit(runGit, top, ref2);
     if (sha !== undefined)
       return [{ name: into, sha, ref: ref2 }];
