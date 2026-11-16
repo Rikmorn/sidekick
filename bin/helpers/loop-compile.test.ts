@@ -10,6 +10,7 @@ import {
   overlapRules,
 } from './loop-compile.js';
 import type { LoopManifest } from './loop-manifest.js';
+import { ruleIssues } from './loop-rules.js';
 import { realPathOf } from './sidekick-home.js';
 
 const manifest = (
@@ -92,6 +93,12 @@ describe('fixedVerbRules', () => {
 
   test('resume is not a fixed verb', () => {
     expect(fixedVerbRules('lp').join('\n')).not.toContain('resume');
+  });
+
+  test('a fixed verb the judge refuses in a mandate list still lands in the compiled settings', () => {
+    const rule = 'Bash(sidekick loop dispatch lp *)';
+    expect(ruleIssues(rule, 'allow', '/repo')).not.toEqual([]);
+    expect(permissions(compileLoop(input())).allow).toContain(rule);
   });
 });
 

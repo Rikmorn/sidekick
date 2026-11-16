@@ -373,9 +373,16 @@ interface ProgramCheck {
 
 const EVERY_WORD = Number.POSITIVE_INFINITY;
 
+// The verbs a loop may run are its compiled fixed verbs, pinned to its name,
+// and the landing, which a class grants as a request (ADR-0015 Decision 5).
+const LAND_VERB = 'land';
+const LOOP_RULE_ISSUE =
+  "a sidekick loop rule could grant a verb the loop must not run, such as resume, and the loop's compiled settings grant its own verbs, so name no sidekick loop verb but land.";
+
 const sidekickIssues = (rest: readonly string[]): string[] => {
   const [next, second] = rest.slice(0, 2).map((w) => w.toLowerCase());
   if (next === undefined) return [];
+  if (next === 'loop') return second === LAND_VERB ? [] : [LOOP_RULE_ISSUE];
   const launches =
     next === 'profile' &&
     second !== undefined &&
