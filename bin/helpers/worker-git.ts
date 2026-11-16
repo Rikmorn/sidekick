@@ -5,8 +5,8 @@
  * and a `commondir` in the main git dir sends git elsewhere from the main
  * checkout. A planted one sends git to another repository's config and hooks.
  * So sidekick checks those files first, then runs each git call it makes into
- * the worktree with hooks, fsmonitor, and embedded repos off, and with the git
- * dir and work tree named outright.
+ * the worktree with hooks, fsmonitor, embedded repos, and replace refs off,
+ * and with the git dir and work tree named outright.
  */
 
 import * as fs from 'node:fs';
@@ -17,8 +17,9 @@ import { checkoutOf, physical } from './worker-repo.js';
 
 /**
  * The flags that keep a git call from running the repo's hooks or its
- * fsmonitor, or from reaching into an embedded repo, whose own config may
- * name a filter git would run. So such a call sees no work inside an
+ * fsmonitor, from reaching into an embedded repo, whose own config may name a
+ * filter git would run, and from reading replace refs, which a worker can
+ * plant to change what a commit holds. So such a call sees no work inside an
  * embedded repo.
  */
 export const HARDENED_GIT_FLAGS: readonly string[] = [
@@ -28,6 +29,8 @@ export const HARDENED_GIT_FLAGS: readonly string[] = [
   'core.fsmonitor=false',
   '-c',
   'diff.ignoreSubmodules=all',
+  '-c',
+  'core.useReplaceRefs=false',
 ];
 
 const GITFILE_PREFIX = 'gitdir: ';

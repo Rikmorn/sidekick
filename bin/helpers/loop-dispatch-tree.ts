@@ -7,6 +7,7 @@
  * chain check.
  */
 
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { isControl } from './loop-record.js';
 import { sessionOf } from './loop-start-prepare.js';
@@ -65,11 +66,55 @@ const cleanIssues = (run: Runner, folder: string): string[] =>
         `${folder}: tracked files have uncommitted changes, and the loop's worktree holds nothing of its own: once nothing in them is needed, discard them with git restore --staged --worktree . in that folder`,
       ];
 
+const hasEntry = (at: string): boolean => {
+  try {
+    fs.lstatSync(at);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// Replace refs and a grafts file change what a commit holds, or its parents,
+// for every git call but the hardened ones. Claude Code makes the next
+// worker's worktree with git of its own, so either would reach it.
+function rewriteIssues(
+  run: Runner,
+  folder: string,
+  { repo, commonDir }: { repo: string; commonDir: string },
+): string[] {
+  const listed = run(
+    'git',
+    ['for-each-ref', '--format=%(refname)', 'refs/replace/'],
+    folder,
+  );
+  const refs =
+    listed.code === 0
+      ? listed.stdout.split('\n').filter((line) => line !== '')
+      : [];
+  const grafts = path.join(commonDir, 'info', 'grafts');
+  return [
+    ...(listed.code === 0
+      ? []
+      : [failed('git for-each-ref refs/replace/', folder, listed.stderr)]),
+    ...refs.map(
+      (ref) =>
+        `${ref} replaces an object for every git call that reads replace refs, the next worker's worktree included: once you know where it came from, delete it with git update-ref -d ${ref} in ${repo}`,
+    ),
+    ...(hasEntry(grafts)
+      ? [
+          `${grafts} rewrites commits' parents for every git call, the next worker's worktree included: once you know where it came from, remove it`,
+        ]
+      : []),
+  ];
+}
+
 /**
  * Checks the loop's worktree, `<repo>/.claude/worktrees/loop-<name>`: it
  * exists, its link to the repo holds with the admin folder's name
  * `loop-<name>`, it holds the branch `worktree-loop-<name>`, and its tracked
- * files are clean. `start` never checks it, so this is its first check.
+ * files are clean. The shared repo holds no replace ref and no grafts file.
+ * `start` never checks it, so this is its first check.
  */
 export function checkLoopTree(
   repo: string,
@@ -85,7 +130,8 @@ export function checkLoopTree(
       ],
     };
   }
-  const chain = chainOf(folder, realPathOf(path.join(repo, '.git')), session);
+  const commonDir = realPathOf(path.join(repo, '.git'));
+  const chain = chainOf(folder, commonDir, session);
   if ('issues' in chain) {
     return {
       issues: [
@@ -102,6 +148,7 @@ export function checkLoopTree(
   const issues = [
     ...branchIssues(run, folder, branch),
     ...cleanIssues(run, folder),
+    ...rewriteIssues(run, folder, { repo, commonDir }),
   ];
   return issues.length > 0 ? { issues } : { folder, branch, runGit: run };
 }

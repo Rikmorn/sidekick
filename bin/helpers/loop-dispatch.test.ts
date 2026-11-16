@@ -23,7 +23,7 @@ import {
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { readBriefLimits } from './subagent-limits.js';
 import { readBrief } from './worker-brief.js';
-import { HARDENED_GIT_FLAGS } from './worker-git.js';
+import { HARDENED_GIT_FLAGS, hardenedRunner } from './worker-git.js';
 
 // The operator's git config and this worktree's repo variables stay out of the fixtures.
 const GIT_ENV = {
@@ -323,6 +323,16 @@ function snapshot(dir: string = loopDir()): Record<string, string> {
 
 const head = (where: string): string => git(where, 'rev-parse', 'HEAD');
 
+// A commit of a worker's own in the shared repo, on no branch, whose a.txt
+// reads "planted".
+const plantedCommit = (): string => {
+  write(path.join(repo, 'a.txt'), 'planted\n');
+  git(repo, 'commit', '-q', '-am', 'planted');
+  const planted = head(repo);
+  git(repo, 'reset', '-q', '--hard', 'HEAD~1');
+  return planted;
+};
+
 const at = (hoursAgo: number): string =>
   new Date(NOW.getTime() - hoursAgo * HOUR_MS).toISOString();
 
@@ -578,6 +588,25 @@ describe('loop dispatch refuses, changing nothing in the loop folder', () => {
         return undefined;
       },
       "cannot tell origin's default branch",
+    ],
+    [
+      'a replace ref in the shared repo refuses',
+      () => {
+        // The worker replaces the tip the next fast-forward goes to.
+        const tip = commitOnOrigin('c.txt', 'c\n');
+        git(repo, 'fetch', '-q', 'origin');
+        git(repo, 'replace', tip, plantedCommit());
+        return undefined;
+      },
+      () => `refs/replace/${head(seed)}`,
+    ],
+    [
+      'a grafts file in the shared repo refuses',
+      () => {
+        write(path.join(repo, '.git', 'info', 'grafts'), `${head(seed)}\n`);
+        return undefined;
+      },
+      () => path.join(repo, '.git', 'info', 'grafts'),
     ],
   ];
 
@@ -1147,6 +1176,18 @@ describe('loop dispatch, further', () => {
     expect(launches).toEqual([]);
     expect(snapshot()).toEqual(before);
     expect(head(loopTree)).toBe(loopHead);
+  });
+
+  test("a hardened read in the loop's worktree ignores a replace ref", () => {
+    const tip = head(loopTree);
+    git(repo, 'replace', tip, plantedCommit());
+    expect(git(loopTree, 'show', `${tip}:a.txt`)).toBe('planted');
+    const hardened = hardenedRunner(execRunner, {
+      worktree: loopTree,
+      gitDir: path.join(repo, '.git', 'worktrees', 'loop-fixer'),
+    });
+    const read = hardened('git', ['show', `${tip}:a.txt`], loopTree);
+    expect(read).toMatchObject({ code: 0, stdout: 'a\n' });
   });
 
   test("an ls-remote that fails names git's failure, and fetches nothing", () => {

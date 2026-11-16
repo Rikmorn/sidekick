@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/cli.ts
-import * as fs62 from "node:fs";
+import * as fs63 from "node:fs";
 import { realpathSync as realpathSync13 } from "node:fs";
 import * as os3 from "node:os";
 import * as path80 from "node:path";
@@ -12265,7 +12265,9 @@ var HARDENED_GIT_FLAGS = [
   "-c",
   "core.fsmonitor=false",
   "-c",
-  "diff.ignoreSubmodules=all"
+  "diff.ignoreSubmodules=all",
+  "-c",
+  "core.useReplaceRefs=false"
 ];
 var GITFILE_PREFIX = "gitdir: ";
 var COMMONDIR = "commondir";
@@ -13997,7 +13999,7 @@ function loopDiscard(rest2, lenv, out, err) {
 
 // bin/helpers/loop-dispatch.ts
 import { randomBytes as randomBytes2 } from "node:crypto";
-import * as fs58 from "node:fs";
+import * as fs59 from "node:fs";
 
 // bin/helpers/loop-start-act.ts
 import { randomUUID as randomUUID2 } from "node:crypto";
@@ -15436,6 +15438,7 @@ function launchAttempt(d, a, io) {
 }
 
 // bin/helpers/loop-dispatch-tree.ts
+import * as fs58 from "node:fs";
 import * as path71 from "node:path";
 var ASK_ORIGIN = ["ls-remote", "--symref", "origin", "HEAD"];
 var SYMREF = /^ref: refs\/heads\/(.+)$/;
@@ -15460,6 +15463,27 @@ function branchIssues(run, folder, branch) {
 var cleanIssues2 = (run, folder) => isTrackedClean(run, folder) ? [] : [
   `${folder}: tracked files have uncommitted changes, and the loop's worktree holds nothing of its own: once nothing in them is needed, discard them with git restore --staged --worktree . in that folder`
 ];
+var hasEntry = (at2) => {
+  try {
+    fs58.lstatSync(at2);
+    return true;
+  } catch {
+    return false;
+  }
+};
+function rewriteIssues(run, folder, { repo, commonDir }) {
+  const listed = run("git", ["for-each-ref", "--format=%(refname)", "refs/replace/"], folder);
+  const refs = listed.code === 0 ? listed.stdout.split(`
+`).filter((line) => line !== "") : [];
+  const grafts = path71.join(commonDir, "info", "grafts");
+  return [
+    ...listed.code === 0 ? [] : [failed("git for-each-ref refs/replace/", folder, listed.stderr)],
+    ...refs.map((ref) => `${ref} replaces an object for every git call that reads replace refs, the next worker's worktree included: once you know where it came from, delete it with git update-ref -d ${ref} in ${repo}`),
+    ...hasEntry(grafts) ? [
+      `${grafts} rewrites commits' parents for every git call, the next worker's worktree included: once you know where it came from, remove it`
+    ] : []
+  ];
+}
 function checkLoopTree(repo, name, runGit) {
   const session = sessionOf3(name);
   const folder = nativeFolder(repo, session);
@@ -15470,7 +15494,8 @@ function checkLoopTree(repo, name, runGit) {
       ]
     };
   }
-  const chain = chainOf(folder, realPathOf(path71.join(repo, ".git")), session);
+  const commonDir = realPathOf(path71.join(repo, ".git"));
+  const chain = chainOf(folder, commonDir, session);
   if ("issues" in chain) {
     return {
       issues: [
@@ -15486,7 +15511,8 @@ function checkLoopTree(repo, name, runGit) {
   const branch = nativeBranch(session);
   const issues = [
     ...branchIssues(run, folder, branch),
-    ...cleanIssues2(run, folder)
+    ...cleanIssues2(run, folder),
+    ...rewriteIssues(run, folder, { repo, commonDir })
   ];
   return issues.length > 0 ? { issues } : { folder, branch, runGit: run };
 }
@@ -15730,7 +15756,7 @@ function nameIssues(d, listed, worker) {
   const dir = attemptDir(d.loop.dir, d.call.unit, worker);
   return [
     ...workerNameIssues(d.runGit, d.loop.manifest.repo, listed, worker),
-    ...fs58.existsSync(dir) ? [`name: ${dir} already exists`] : []
+    ...fs59.existsSync(dir) ? [`name: ${dir} already exists`] : []
   ];
 }
 function drawName(d) {
@@ -15757,14 +15783,14 @@ function drawName(d) {
 import * as path72 from "node:path";
 
 // bin/helpers/loop-report-read.ts
-import * as fs59 from "node:fs";
-var READ_NO_FOLLOW = fs59.constants.O_RDONLY | fs59.constants.O_NOFOLLOW | fs59.constants.O_NONBLOCK;
+import * as fs60 from "node:fs";
+var READ_NO_FOLLOW = fs60.constants.O_RDONLY | fs60.constants.O_NOFOLLOW | fs60.constants.O_NONBLOCK;
 var messageOf12 = (e) => e instanceof Error ? e.message : String(e);
 var codeOf = (e) => e instanceof Error && ("code" in e) && typeof e.code === "string" ? e.code : undefined;
 var notPlain = (file) => `a unit report must be a plain file inside its folder, so report prints nothing from ${file}`;
 function openNoFollow(file) {
   try {
-    return { fd: fs59.openSync(file, READ_NO_FOLLOW) };
+    return { fd: fs60.openSync(file, READ_NO_FOLLOW) };
   } catch (e) {
     const code = codeOf(e);
     if (code === "ENOENT")
@@ -15780,13 +15806,13 @@ function readUpTo(fd, limit) {
   let filled = 0;
   let last = -1;
   while (last !== 0 && filled < limit) {
-    last = fs59.readSync(fd, buffer, filled, limit - filled, null);
+    last = fs60.readSync(fd, buffer, filled, limit - filled, null);
     filled += last;
   }
   return buffer.subarray(0, filled);
 }
 function readOpened(fd, file, maxBytes) {
-  const stat = fs59.fstatSync(fd);
+  const stat = fs60.fstatSync(fd);
   if (!stat.isFile()) {
     return { issues: [`${file} is not a regular file`, notPlain(file)] };
   }
@@ -15823,7 +15849,7 @@ function readPlain(place2, maxBytes) {
   } catch (e) {
     return { issues: [`cannot read ${file}: ${messageOf12(e)}`] };
   } finally {
-    fs59.closeSync(opened.fd);
+    fs60.closeSync(opened.fd);
   }
 }
 
@@ -16836,11 +16862,11 @@ function runLoopCli(args, lenv, out, err) {
 }
 
 // bin/helpers/memory.ts
-import * as fs61 from "node:fs";
+import * as fs62 from "node:fs";
 import * as path76 from "node:path";
 
 // bin/helpers/memory-link.ts
-import * as fs60 from "node:fs";
+import * as fs61 from "node:fs";
 import * as path75 from "node:path";
 var messageOf14 = (error) => error instanceof Error ? error.message : String(error);
 function runLink(opts, deps, out, err) {
@@ -16914,14 +16940,14 @@ function runAction(action, runGit) {
       return finished.ok ? done : finished;
     }
     case "createFolder":
-      fs60.mkdirSync(action.folder, { recursive: true });
+      fs61.mkdirSync(action.folder, { recursive: true });
       return done;
     case "writeMarker":
       writeMarker(action.folder, action.root);
       return done;
     case "copyFile":
-      fs60.mkdirSync(path75.dirname(action.to), { recursive: true });
-      fs60.copyFileSync(action.from, action.to, fs60.constants.COPYFILE_EXCL);
+      fs61.mkdirSync(path75.dirname(action.to), { recursive: true });
+      fs61.copyFileSync(action.from, action.to, fs61.constants.COPYFILE_EXCL);
       return done;
     case "mergeKey": {
       const merged = mergeKey(action.file, action.value, action.expected);
@@ -16947,19 +16973,19 @@ function archive(action) {
   return { ok: true, lines: [phrase(action).done, why, ...listed] };
 }
 var FS_MOVES = {
-  rename: fs60.renameSync,
-  copy: (from, to) => fs60.cpSync(from, to, {
+  rename: fs61.renameSync,
+  copy: (from, to) => fs61.cpSync(from, to, {
     recursive: true,
     errorOnExist: true,
     force: false,
     verbatimSymlinks: true,
     preserveTimestamps: true
   }),
-  remove: (folder) => fs60.rmSync(folder, { recursive: true })
+  remove: (folder) => fs61.rmSync(folder, { recursive: true })
 };
 function moveFolder(from, to, moves = {}) {
   const { rename, copy, remove } = { ...FS_MOVES, ...moves };
-  fs60.mkdirSync(path75.dirname(to), { recursive: true });
+  fs61.mkdirSync(path75.dirname(to), { recursive: true });
   try {
     rename(from, to);
   } catch (error) {
@@ -16974,7 +17000,7 @@ function moveFolder(from, to, moves = {}) {
 var hasCode = (error, code) => error instanceof Error && ("code" in error) && error.code === code;
 function claim(from, to) {
   try {
-    fs60.mkdirSync(to);
+    fs61.mkdirSync(to);
   } catch (error) {
     const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf14(error)}`;
     throw new Error(message, { cause: error });
@@ -17006,10 +17032,10 @@ function keepIfChanged(from, to) {
   throw new Error(`${from} changed during the copy, so link kept it: ${changed.join(", ")}. ${to} holds the copy taken at the move, and a re-run archives what ${from} now holds.`);
 }
 function changedSince(from, to) {
-  return fs60.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
+  return fs61.readdirSync(from, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).flatMap((entry) => {
     const source = path75.join(from, entry.name);
     const copy = path75.join(to, entry.name);
-    const copied = fs60.lstatSync(copy, { throwIfNoEntry: false });
+    const copied = fs61.lstatSync(copy, { throwIfNoEntry: false });
     if (entry.isDirectory() && copied?.isDirectory() === true) {
       return changedSince(source, copy);
     }
@@ -17018,10 +17044,10 @@ function changedSince(from, to) {
 }
 function sameEntry(entry, source, copy, copied) {
   if (entry.isSymbolicLink()) {
-    return copied.isSymbolicLink() && fs60.readlinkSync(source) === fs60.readlinkSync(copy);
+    return copied.isSymbolicLink() && fs61.readlinkSync(source) === fs61.readlinkSync(copy);
   }
   if (entry.isFile()) {
-    return copied.isFile() && fs60.readFileSync(source).equals(fs60.readFileSync(copy));
+    return copied.isFile() && fs61.readFileSync(source).equals(fs61.readFileSync(copy));
   }
   return false;
 }
@@ -17174,9 +17200,9 @@ function withheldFindings(result, store) {
 }
 function isReadableDirectory(dir) {
   try {
-    if (!fs61.statSync(dir).isDirectory())
+    if (!fs62.statSync(dir).isDirectory())
       return false;
-    fs61.readdirSync(dir);
+    fs62.readdirSync(dir);
     return true;
   } catch {
     return false;
@@ -19302,7 +19328,7 @@ function resolvePluginDir(entryFileUrl) {
     path80.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs62.existsSync(path80.join(c, "rules")))
+    if (fs63.existsSync(path80.join(c, "rules")))
       return c;
   }
   return candidates3[0];
@@ -19311,7 +19337,7 @@ var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
   const manifest = path80.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
-    const parsed = safeParse(ManifestVersion, JSON.parse(fs62.readFileSync(manifest, "utf-8")));
+    const parsed = safeParse(ManifestVersion, JSON.parse(fs63.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
   } catch {
     return "unknown";
@@ -19341,7 +19367,7 @@ function writeStdout(chunk) {
   const buffer = Buffer.from(chunk);
   for (let offset = 0;offset < buffer.length; ) {
     try {
-      offset += fs62.writeSync(1, buffer, offset);
+      offset += fs63.writeSync(1, buffer, offset);
     } catch (e) {
       if (!(e instanceof Error && ("code" in e) && e.code === "EAGAIN"))
         throw e;
@@ -19362,7 +19388,7 @@ function profileEnvOf(ctx) {
 }
 function readProcessStdin() {
   try {
-    return fs62.readFileSync(0, "utf-8");
+    return fs63.readFileSync(0, "utf-8");
   } catch {
     return "";
   }
