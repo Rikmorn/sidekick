@@ -24,9 +24,9 @@ function underUnits(root: string, file: string): boolean {
 /**
  * Whether `SIDEKICK_WORKER` names a unit brief: one that reads as a unit
  * brief, or a path under a loop's units folder in the loop store
- * `sidekick loop` uses, read or not. Dispatch removes an attempt's folder
- * while its worker's start hooks may still run, so the path alone counts.
- * An empty value reads as no worker.
+ * `sidekick loop` uses, read or not. A unit brief that cannot be read, such
+ * as one removed by hand while its worker runs, still marks a unit worker,
+ * so the path alone counts. An empty value reads as no worker.
  */
 export function isUnitWorker(
   env: NodeJS.ProcessEnv,

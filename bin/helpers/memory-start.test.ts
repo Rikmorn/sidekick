@@ -1160,7 +1160,7 @@ describe('memoryStartContext', () => {
     expect(result).toEqual({});
   });
 
-  test("the memory hook prints nothing for a brief under a loop's units folder that cannot be read, as after dispatch removes a stray's attempt", () => {
+  test("the memory hook prints nothing for a brief under a loop's units folder that cannot be read", () => {
     const { store, repo } = linked();
     const home = path.join(tmp, 'home');
     const brief = path.join(
