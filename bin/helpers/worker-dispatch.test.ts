@@ -771,7 +771,15 @@ describe('dispatchUnit', () => {
       autoAllowBashIfSandboxed: true,
       allowUnsandboxedCommands: false,
       failIfUnavailable: true,
-      network: { allowedDomains: ['registry.npmjs.org'] },
+      allowAppleEvents: false,
+      allowNestedUserNamespaces: false,
+      enableWeakerNestedSandbox: false,
+      enableWeakerNetworkIsolation: false,
+      filesystem: { disabled: false },
+      network: {
+        allowedDomains: ['registry.npmjs.org'],
+        allowAllUnixSockets: false,
+      },
     });
     expect(settings.autoMemoryEnabled).toBe(false);
     expect(settings.env).toEqual({
@@ -956,10 +964,14 @@ describe('dispatchUnit', () => {
     }
     const sandbox = settings.sandbox as Record<string, unknown>;
     expect(sandbox).not.toHaveProperty('excludedCommands');
-    expect(sandbox.network).toEqual({ allowedDomains: ['registry.npmjs.org'] });
+    expect(sandbox.network).toEqual({
+      allowedDomains: ['registry.npmjs.org'],
+      allowAllUnixSockets: false,
+    });
     expect(sandbox.filesystem).toEqual({
       denyRead: ['/secret'],
       denyWrite: ['/locked'],
+      disabled: false,
     });
     const permissions = settings.permissions as Record<string, unknown>;
     expect(permissions).not.toHaveProperty('additionalDirectories');

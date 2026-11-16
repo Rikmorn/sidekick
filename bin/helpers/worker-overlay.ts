@@ -241,7 +241,8 @@ const unitDenies = (opts: UnitOverlayOptions): string[] =>
 
 /**
  * Builds the overlay a unit worker launches with: the sandbox fence with the
- * network open to `hosts` alone, `Edit` allowed in its worktree alone, the
+ * network open to `hosts` alone and six loosening keys pinned off, `Edit`
+ * allowed in its worktree alone, the
  * denies on git's redirect files, sidekick's folders, the memory store, the
  * listed skills, and the web tools, reads blocked outside its working
  * folders, Claude Code's auto memory off, and the push block. It carries no
@@ -263,7 +264,17 @@ export function unitOverlay(
         autoAllowBashIfSandboxed: true,
         allowUnsandboxedCommands: false,
         failIfUnavailable: true,
-        network: { allowedDomains: [...opts.hosts] },
+        // Keys that would loosen the sandbox, pinned off over the user layer,
+        // which ranks below `--settings`.
+        allowAppleEvents: false,
+        allowNestedUserNamespaces: false,
+        enableWeakerNestedSandbox: false,
+        enableWeakerNetworkIsolation: false,
+        filesystem: { disabled: false },
+        network: {
+          allowedDomains: [...opts.hosts],
+          allowAllUnixSockets: false,
+        },
       },
       permissions: {
         allow: unique([

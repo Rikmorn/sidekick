@@ -159,11 +159,11 @@ describe('keptLayers', () => {
 // (§Hook handler fields: five types, `command`, `http` with `url`, `mcp_tool`
 // with `server` and `tool`, `prompt` and `agent` with `prompt`), and
 // https://code.claude.com/docs/en/settings-reference (§enabledPlugins: an
-// object mapping `plugin@marketplace` to a Boolean). `sandbox.excludedCommands`,
-// `sandbox.network.allowUnixSockets`, and `sandbox.network.allowMachLookup` are
-// arrays of strings, and `sandbox.network.allowAllUnixSockets` and
-// `sandbox.network.allowLocalBinding` Booleans, in the settings schema Claude
-// Code 2.1.325 bundles, read on 2026-11-16.
+// object mapping `plugin@marketplace` to a Boolean). The sandbox keys that
+// loosen the fence take the shapes the settings schema bundled in Claude Code
+// 2.1.325 gives, read from that build on 2026-11-16: Booleans, arrays of
+// strings, port numbers, and the objects `credentials` and
+// `network.tlsTerminate`.
 describe('summariseLayer', () => {
   const empty = {
     allow: [],
@@ -171,11 +171,7 @@ describe('summariseLayer', () => {
     addedDirectories: [],
     sandboxWrites: [],
     allowedDomains: [],
-    excludedCommands: [],
-    unixSockets: [],
-    machLookups: [],
-    allUnixSockets: false,
-    localBinding: false,
+    sandboxLooseners: [],
     editAllows: [],
     enabledPlugins: {},
   };
@@ -208,15 +204,27 @@ describe('summariseLayer', () => {
       PostToolUse: [{ hooks: [{ type: 'command', command: 'ignored' }] }],
     },
     sandbox: {
-      filesystem: { allowWrite: ['~/.kube', 1], denyWrite: ['/no'] },
+      filesystem: {
+        allowWrite: ['~/.kube', 1],
+        denyWrite: ['/no'],
+        disabled: true,
+      },
       network: {
         allowedDomains: ['github.com', false],
         allowUnixSockets: ['/var/run/docker.sock', null],
         allowMachLookup: ['com.apple.CoreSimulator.*', 2],
         allowAllUnixSockets: true,
         allowLocalBinding: true,
+        httpProxyPort: 8080,
+        socksProxyPort: 1080,
+        tlsTerminate: { caCertPath: '/ca.pem' },
       },
       excludedCommands: ['docker *', {}],
+      allowAppleEvents: true,
+      allowNestedUserNamespaces: true,
+      credentials: { envVars: [{ name: 'TOKEN', mode: 'allow' }] },
+      enableWeakerNestedSandbox: true,
+      enableWeakerNetworkIsolation: true,
     },
     enabledPlugins: { 'a@m': true, 'b@m': false, 'c@m': 'yes' },
   };
@@ -251,11 +259,31 @@ describe('summariseLayer', () => {
       addedDirectories: ['/mem'],
       sandboxWrites: ['~/.kube'],
       allowedDomains: ['github.com'],
-      excludedCommands: ['docker *'],
-      unixSockets: ['/var/run/docker.sock'],
-      machLookups: ['com.apple.CoreSimulator.*'],
-      allUnixSockets: true,
-      localBinding: true,
+      sandboxLooseners: [
+        { key: 'sandbox.allowAppleEvents', values: ['true'] },
+        { key: 'sandbox.allowNestedUserNamespaces', values: ['true'] },
+        { key: 'sandbox.credentials', values: ['set, with keys envVars'] },
+        { key: 'sandbox.enableWeakerNestedSandbox', values: ['true'] },
+        { key: 'sandbox.enableWeakerNetworkIsolation', values: ['true'] },
+        { key: 'sandbox.excludedCommands', values: ['docker *'] },
+        { key: 'sandbox.filesystem.disabled', values: ['true'] },
+        { key: 'sandbox.network.allowAllUnixSockets', values: ['true'] },
+        { key: 'sandbox.network.allowLocalBinding', values: ['true'] },
+        {
+          key: 'sandbox.network.allowMachLookup',
+          values: ['com.apple.CoreSimulator.*'],
+        },
+        {
+          key: 'sandbox.network.allowUnixSockets',
+          values: ['/var/run/docker.sock'],
+        },
+        { key: 'sandbox.network.httpProxyPort', values: ['8080'] },
+        { key: 'sandbox.network.socksProxyPort', values: ['1080'] },
+        {
+          key: 'sandbox.network.tlsTerminate',
+          values: ['set, with keys caCertPath'],
+        },
+      ],
       editAllows: ['Edit(//tmp/x/**)'],
       enabledPlugins: { 'a@m': true, 'b@m': false },
     });
@@ -288,15 +316,28 @@ describe('summariseLayer', () => {
       },
       {
         sandbox: {
-          filesystem: { allowWrite: 'x' },
+          filesystem: { allowWrite: 'x', disabled: 'yes' },
           network: {
             allowedDomains: 1,
             allowUnixSockets: 'x',
             allowMachLookup: {},
             allowAllUnixSockets: 'yes',
             allowLocalBinding: 1,
+            httpProxyPort: '8080',
+            socksProxyPort: true,
+            tlsTerminate: 'on',
           },
           excludedCommands: 'x',
+          allowAppleEvents: 1,
+          credentials: [],
+        },
+      },
+      {
+        sandbox: {
+          network: { allowUnixSockets: [], allowAllUnixSockets: false },
+          excludedCommands: [3],
+          enableWeakerNestedSandbox: false,
+          credentials: null,
         },
         hooks: { PreToolUse: [{ hooks: [null, 'x'] }] },
       },

@@ -78,22 +78,51 @@ export interface LayerSummary {
   addedDirectories: string[];
   sandboxWrites: string[];
   allowedDomains: string[];
-  /** `sandbox.excludedCommands`: commands that run outside the sandbox. */
-  excludedCommands: string[];
-  /** `sandbox.network.allowUnixSockets`: sockets a sandboxed command may reach. */
-  unixSockets: string[];
-  /** `sandbox.network.allowMachLookup`: macOS services a sandboxed command may reach. */
-  machLookups: string[];
-  /** `sandbox.network.allowAllUnixSockets` is true: a sandboxed command may reach every socket. */
-  allUnixSockets: boolean;
-  /** `sandbox.network.allowLocalBinding` is true: a sandboxed command may bind a localhost port. */
-  localBinding: boolean;
+  /** Each `SANDBOX_LOOSENERS` key the layer sets, by its full path, with its values as printed. */
+  sandboxLooseners: { key: string; values: string[] }[];
   editAllows: string[];
   enabledPlugins: Record<string, boolean>;
 }
 
+type LoosenerShape = 'flag' | 'list' | 'port' | 'object';
+
+/**
+ * The keys under `sandbox` that loosen it, each with its schema's shape. They
+ * are the keys Claude Code 2.1.325's own settings collector lists as loosening
+ * the sandbox, read from that build on 2026-11-16, with `excludedCommands`
+ * and `network.allowLocalBinding` beside them.
+ */
+export const SANDBOX_LOOSENERS: readonly (readonly [string, LoosenerShape])[] =
+  [
+    ['allowAppleEvents', 'flag'],
+    ['allowNestedUserNamespaces', 'flag'],
+    ['credentials', 'object'],
+    ['enableWeakerNestedSandbox', 'flag'],
+    ['enableWeakerNetworkIsolation', 'flag'],
+    ['excludedCommands', 'list'],
+    ['filesystem.disabled', 'flag'],
+    ['network.allowAllUnixSockets', 'flag'],
+    ['network.allowLocalBinding', 'flag'],
+    ['network.allowMachLookup', 'list'],
+    ['network.allowUnixSockets', 'list'],
+    ['network.httpProxyPort', 'port'],
+    ['network.socksProxyPort', 'port'],
+    ['network.tlsTerminate', 'object'],
+  ];
+
 const objectAt = (value: unknown, key: string): Settings =>
   isPlainObject(value) && isPlainObject(value[key]) ? value[key] : {};
+
+// The value at a dotted path, through objects alone.
+const valueAt = (settings: Settings, dotted: string): unknown => {
+  const keys = dotted.split('.');
+  const last = keys.pop() ?? '';
+  const holder = keys.reduce<Settings>(
+    (at, key) => objectAt(at, key),
+    settings,
+  );
+  return Object.hasOwn(holder, last) ? holder[last] : undefined;
+};
 
 const stringsOf = (value: unknown): string[] =>
   Array.isArray(value)
@@ -105,6 +134,29 @@ const stringOf = (value: unknown): string | undefined =>
 
 const listOf = (value: unknown): unknown[] =>
   Array.isArray(value) ? value : [];
+
+// A loosening key's values as printed: a flag that is on, each string of a
+// list, a port, or an object by its keys alone, since `credentials` may name
+// where secrets live. A value of another shape, or one that loosens nothing,
+// prints nothing.
+const LOOSENER_VALUES: Record<LoosenerShape, (value: unknown) => string[]> = {
+  flag: (value) => (value === true ? ['true'] : []),
+  list: stringsOf,
+  port: (value) => (typeof value === 'number' ? [String(value)] : []),
+  object: (value) => {
+    if (!isPlainObject(value)) return [];
+    const keys = Object.keys(value);
+    return [keys.length === 0 ? 'set' : `set, with keys ${keys.join(', ')}`];
+  },
+};
+
+const sandboxLooseners = (
+  sandbox: Settings,
+): LayerSummary['sandboxLooseners'] =>
+  SANDBOX_LOOSENERS.flatMap(([dotted, shape]) => {
+    const values = LOOSENER_VALUES[shape](valueAt(sandbox, dotted));
+    return values.length === 0 ? [] : [{ key: `sandbox.${dotted}`, values }];
+  });
 
 // A hook handler as one line: its command, or its type with the field that says what it runs.
 function describeHandler(handler: unknown): string | undefined {
@@ -151,19 +203,14 @@ const booleanEntries = (value: unknown): Record<string, boolean> =>
 export function summariseLayer(settings: Settings): LayerSummary {
   const permissions = objectAt(settings, 'permissions');
   const sandbox = objectAt(settings, 'sandbox');
-  const network = objectAt(sandbox, 'network');
   const allow = stringsOf(permissions.allow);
   return {
     allow,
     hooks: hooksOf(settings),
     addedDirectories: stringsOf(permissions.additionalDirectories),
     sandboxWrites: stringsOf(objectAt(sandbox, 'filesystem').allowWrite),
-    allowedDomains: stringsOf(network.allowedDomains),
-    excludedCommands: stringsOf(sandbox.excludedCommands),
-    unixSockets: stringsOf(network.allowUnixSockets),
-    machLookups: stringsOf(network.allowMachLookup),
-    allUnixSockets: network.allowAllUnixSockets === true,
-    localBinding: network.allowLocalBinding === true,
+    allowedDomains: stringsOf(objectAt(sandbox, 'network').allowedDomains),
+    sandboxLooseners: sandboxLooseners(sandbox),
     editAllows: allow.filter((rule) => rule.startsWith('Edit(')),
     enabledPlugins: booleanEntries(settings.enabledPlugins),
   };

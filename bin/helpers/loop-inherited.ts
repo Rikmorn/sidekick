@@ -47,8 +47,6 @@ const EXEMPT_SUFFIXES = ['@builtin', '@inline'];
 // A bare file-write rule, alone or with `(*)`, allows every path.
 const BARE_WRITE = /^(?:Edit|Write|MultiEdit|NotebookEdit)(?:\(\*\))?$/;
 const isBareWrite = (rule: string): boolean => BARE_WRITE.test(rule);
-// A Boolean key loosens the sandbox only when it is on.
-const whenOn = (on: boolean): string[] => (on ? ['true'] : []);
 
 const PluginListSchema = v.array(
   v.looseObject({ id: v.string(), installPath: v.nullish(v.string()) }),
@@ -353,11 +351,10 @@ export function inheritedListing(
       ['allowed domain', summary.allowedDomains],
       ['Edit allow', summary.editAllows.filter((rule) => !isBareWrite(rule))],
       ['file-write allow for every path', summary.allow.filter(isBareWrite)],
-      ['sandbox-excluded command', summary.excludedCommands],
-      ['allowed Unix socket', summary.unixSockets],
-      ['allowed Mach lookup', summary.machLookups],
-      ['sandbox.network.allowAllUnixSockets', whenOn(summary.allUnixSockets)],
-      ['sandbox.network.allowLocalBinding', whenOn(summary.localBinding)],
+      ...summary.sandboxLooseners.map(({ key, values }): [string, string[]] => [
+        key,
+        values,
+      ]),
     ];
     for (const [kind, entries] of widenings) {
       fence.push(...entries.map((entry) => `${source}: ${kind}: ${entry}`));

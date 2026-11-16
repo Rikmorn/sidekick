@@ -305,13 +305,21 @@ const TOOL_DENIES = [
 ];
 
 describe('unitOverlay', () => {
-  test("the unit overlay sets the fence's sandbox keys", () => {
+  test("the unit overlay sets the fence's sandbox keys, and pins the keys that would loosen it off", () => {
     expect(unitOf(undefined).sandbox).toEqual({
       enabled: true,
       autoAllowBashIfSandboxed: true,
       allowUnsandboxedCommands: false,
       failIfUnavailable: true,
-      network: { allowedDomains: ['api.example.com', 'registry.npmjs.org'] },
+      allowAppleEvents: false,
+      allowNestedUserNamespaces: false,
+      enableWeakerNestedSandbox: false,
+      enableWeakerNetworkIsolation: false,
+      filesystem: { disabled: false },
+      network: {
+        allowedDomains: ['api.example.com', 'registry.npmjs.org'],
+        allowAllUnixSockets: false,
+      },
     });
   });
 

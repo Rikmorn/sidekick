@@ -271,42 +271,60 @@ describe('inheritedListing', () => {
     ]);
   });
 
-  test("names each layer's sandbox exceptions in the fence, and a socket or binding key only when true", () => {
+  // The keys Claude Code 2.1.325's own settings collector lists as loosening
+  // the sandbox, read from that build on 2026-11-16, with `excludedCommands`
+  // and `network.allowLocalBinding` beside them.
+  test('names every key that loosens the sandbox, by its path, from each layer that sets it', () => {
     const user = path.join(configDir, 'settings.json');
-    const exceptions = {
+    json(user, {
       sandbox: {
+        allowAppleEvents: true,
+        allowNestedUserNamespaces: true,
+        credentials: { files: [] },
+        enableWeakerNestedSandbox: true,
+        enableWeakerNetworkIsolation: true,
         excludedCommands: ['docker *'],
+        filesystem: { disabled: true },
         network: {
-          allowUnixSockets: ['/var/run/docker.sock'],
-          allowMachLookup: ['com.apple.CoreSimulator.*'],
           allowAllUnixSockets: true,
           allowLocalBinding: true,
+          allowMachLookup: ['com.apple.CoreSimulator.*'],
+          allowUnixSockets: ['/var/run/docker.sock'],
+          httpProxyPort: 8080,
+          socksProxyPort: 1080,
+          tlsTerminate: {},
         },
       },
-    };
-    json(user, exceptions);
+    });
+    const profile = profileWith({
+      settings: { sandbox: { network: { allowLocalBinding: true } } },
+    });
+    const own = path.join(profile.dir, 'profile.json');
     json(managed, {
       sandbox: {
         excludedCommands: ['podman *'],
         network: { allowAllUnixSockets: false, allowLocalBinding: false },
       },
     });
-    const profile = profileWith({ settings: exceptions });
-    const own = path.join(profile.dir, 'profile.json');
     const out = run(profile, listed([]));
     expect(sectionOf(out.lines, "What widens the workers' fence")).toEqual([
       "What widens the workers' fence",
-      `  user (${user}): sandbox-excluded command: docker *`,
-      `  user (${user}): allowed Unix socket: /var/run/docker.sock`,
-      `  user (${user}): allowed Mach lookup: com.apple.CoreSimulator.*`,
+      `  user (${user}): sandbox.allowAppleEvents: true`,
+      `  user (${user}): sandbox.allowNestedUserNamespaces: true`,
+      `  user (${user}): sandbox.credentials: set, with keys files`,
+      `  user (${user}): sandbox.enableWeakerNestedSandbox: true`,
+      `  user (${user}): sandbox.enableWeakerNetworkIsolation: true`,
+      `  user (${user}): sandbox.excludedCommands: docker *`,
+      `  user (${user}): sandbox.filesystem.disabled: true`,
       `  user (${user}): sandbox.network.allowAllUnixSockets: true`,
       `  user (${user}): sandbox.network.allowLocalBinding: true`,
-      `  profile (${own}): sandbox-excluded command: docker *`,
-      `  profile (${own}): allowed Unix socket: /var/run/docker.sock`,
-      `  profile (${own}): allowed Mach lookup: com.apple.CoreSimulator.*`,
-      `  profile (${own}): sandbox.network.allowAllUnixSockets: true`,
+      `  user (${user}): sandbox.network.allowMachLookup: com.apple.CoreSimulator.*`,
+      `  user (${user}): sandbox.network.allowUnixSockets: /var/run/docker.sock`,
+      `  user (${user}): sandbox.network.httpProxyPort: 8080`,
+      `  user (${user}): sandbox.network.socksProxyPort: 1080`,
+      `  user (${user}): sandbox.network.tlsTerminate: set`,
       `  profile (${own}): sandbox.network.allowLocalBinding: true`,
-      `  managed (${managed}): sandbox-excluded command: podman *`,
+      `  managed (${managed}): sandbox.excludedCommands: podman *`,
     ]);
   });
 
