@@ -19373,7 +19373,8 @@ function runWorktreeCli(rest2, env, out, err) {
   const [name, ...args] = rest2;
   if (name === undefined || !Object.hasOwn(VERBS6, name))
     return usage6(err);
-  return VERBS6[name](args, env, out, err);
+  const hardened = { ...env, runGit: withHardenedFlags(env.runGit) };
+  return VERBS6[name](args, hardened, out, err);
 }
 
 // bin/cli.ts

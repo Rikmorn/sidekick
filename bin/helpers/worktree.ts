@@ -8,6 +8,7 @@
  */
 
 import type { Runner } from './pm-data.js';
+import { withHardenedFlags } from './worker-git.js';
 import type { WorktreeEntry } from './worker-listing.js';
 import { HEADS } from './worker-repo.js';
 import { moveWorktree, parseMoveArgs } from './worktree-move.js';
@@ -197,7 +198,11 @@ const VERBS: Record<string, Verb> = {
   remove: removeVerb,
 };
 
-/** Dispatch one `worktree` verb; returns the process exit code. */
+/**
+ * Dispatch one `worktree` verb; returns the process exit code. Every git call
+ * a verb makes carries the hardened flags, since a worktree it inspects may be
+ * one a worker wrote, its embedded repos included.
+ */
 export function runWorktreeCli(
   rest: string[],
   env: WorktreeEnv,
@@ -206,5 +211,6 @@ export function runWorktreeCli(
 ): number {
   const [name, ...args] = rest;
   if (name === undefined || !Object.hasOwn(VERBS, name)) return usage(err);
-  return VERBS[name](args, env, out, err);
+  const hardened = { ...env, runGit: withHardenedFlags(env.runGit) };
+  return VERBS[name](args, hardened, out, err);
 }

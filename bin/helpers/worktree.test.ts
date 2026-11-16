@@ -6,12 +6,14 @@ import {
   danglingWorktree,
   danglingWorktreeLines,
   git,
+  plantEmbeddedFilter,
   removeTemps,
   repo,
   tmp,
 } from './fixtures/worker/repo.js';
-import { execRunner } from './pm-data.js';
+import { execRunner, type Runner } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
+import { HARDENED_GIT_FLAGS } from './worker-git.js';
 import { recordsDir, writeRecord } from './worker-record.js';
 import { runWorktreeCli, WORKTREE_USAGE_LINE } from './worktree.js';
 import { skipListPath } from './worktree-ignored.js';
@@ -30,6 +32,7 @@ function run(
   args: string[],
   claude: ClaudeResult = NO_SESSIONS,
   isAlive: (pid: number) => boolean = () => false,
+  runGit: Runner = execRunner,
 ) {
   const calls: { args: string[]; timeoutMs: number }[] = [];
   const runClaude: ClaudeRunner = (claudeArgs, opts) => {
@@ -40,7 +43,7 @@ function run(
   const err: string[] = [];
   const code = runWorktreeCli(
     args,
-    { cwd, runGit: execRunner, runClaude, isAlive, env: {} },
+    { cwd, runGit, runClaude, isAlive, env: {} },
     (l) => out.push(l),
     (l) => err.push(l),
   );
@@ -429,6 +432,41 @@ describe('worktree list: the frame', () => {
     expect(err).toEqual([
       `git rev-parse failed in ${dir}: fatal: invalid gitfile format: ${dir}/.git; fix what git reports, then run the command again`,
     ]);
+  });
+});
+
+describe('worktree list: hardened git', () => {
+  test('every git call list makes carries the hardened flags', () => {
+    const main = repo();
+    commit(addWorktree(main, 'r10-x'), 'x.txt');
+    const calls: string[][] = [];
+    const recording: Runner = (cmd, gitArgs, at, opts) => {
+      calls.push(gitArgs);
+      return execRunner(cmd, gitArgs, at, opts);
+    };
+    const { code } = run(main, ['list'], NO_SESSIONS, () => false, recording);
+    expect(code).toBe(0);
+    expect(calls.some((c) => c.includes('status'))).toBe(true);
+    const unflagged = calls.filter(
+      (c) =>
+        JSON.stringify(c.slice(0, HARDENED_GIT_FLAGS.length)) !==
+        JSON.stringify(HARDENED_GIT_FLAGS),
+    );
+    expect(unflagged).toEqual([]);
+  });
+
+  test("list runs no filter that an embedded repo's own config names in a worktree it inspects", () => {
+    const main = repo();
+    const dir = addWorktree(main, 'left');
+    const marker = plantEmbeddedFilter(dir, main);
+    // Plain status runs it, so the fixture plants what it must.
+    git(dir, 'status', '--porcelain');
+    expect(fs.existsSync(marker)).toBe(true);
+    fs.rmSync(marker);
+    const { code, out } = run(main, ['list']);
+    expect(code).toBe(0);
+    expect(lineFor(out, 'left')).toStartWith('left · ');
+    expect(fs.existsSync(marker)).toBe(false);
   });
 });
 

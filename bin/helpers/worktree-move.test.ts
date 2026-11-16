@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  afterHardenedFlags,
   brokenGitFile,
   git,
   removeTemps,
@@ -731,14 +732,16 @@ interface Moved {
 }
 
 // Runs `sidekick worktree move` from `cwd` through the CLI's dispatch,
-// recording each git call and asserting it ran no claude.
+// recording each git call after the hardened flags it must carry, and
+// asserting it ran no claude.
 function move(cwd: string, rest: string[], runGit: Runner = execRunner): Moved {
   const calls: string[][] = [];
   const limited: string[] = [];
   const recording: Runner = (cmd, args, dir, opts) => {
-    calls.push(args);
+    const bare = afterHardenedFlags(args);
+    calls.push(bare);
     if (opts?.timeoutMs !== undefined) {
-      limited.push(`${args[0]} ${opts.timeoutMs}`);
+      limited.push(`${bare[0]} ${opts.timeoutMs}`);
     }
     return runGit(cmd, args, dir, opts);
   };
@@ -1179,7 +1182,7 @@ describe('move: refusals and failures', () => {
   test('a switch that exits 0 but leaves HEAD on worktree-w1 marks nothing and drops nothing', () => {
     const f = fixture();
     const noSwitch: Runner = (cmd, args, dir) =>
-      args[0] === 'switch'
+      afterHardenedFlags(args)[0] === 'switch'
         ? { code: 0, stdout: '', stderr: '' }
         : execRunner(cmd, args, dir);
     const moved = move(f.dir, ['feat'], noSwitch);

@@ -14,6 +14,7 @@ import {
   type Runner,
   type RunOptions,
 } from '../../pm-data.js';
+import { HARDENED_GIT_FLAGS } from '../../worker-git.js';
 
 const made: string[] = [];
 
@@ -153,6 +154,19 @@ export function plantEmbeddedFilter(
   fs.writeFileSync(path.join(nested, '.gitattributes'), '* filter=x\n');
   fs.writeFileSync(path.join(nested, 'n.txt'), 'm\n');
   return marker;
+}
+
+/**
+ * A git call's arguments after the `HARDENED_GIT_FLAGS` that lead them; throws
+ * when they do not lead, so a recorder that strips them also asserts them.
+ */
+export function afterHardenedFlags(args: string[]): string[] {
+  const lead = args.slice(0, HARDENED_GIT_FLAGS.length);
+  const isHardened = HARDENED_GIT_FLAGS.every((flag, at) => lead[at] === flag);
+  if (!isHardened) {
+    throw new Error(`git ran without the hardened flags: ${args.join(' ')}`);
+  }
+  return args.slice(HARDENED_GIT_FLAGS.length);
 }
 
 /** One call a `recording` runner saw. */

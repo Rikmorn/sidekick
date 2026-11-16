@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
+import {
+  afterHardenedFlags,
+  git,
+  removeTemps,
+  repo,
+  tmp,
+} from './fixtures/worker/repo.js';
 import { execRunner, type Runner, type RunResult } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
 import { refSegment } from './worker-backup.js';
@@ -47,9 +53,11 @@ function run(cwd: string, args: string[], fakes: Fakes = {}) {
     listings += 1;
     return fakes.listing?.(listings) ?? NO_SESSIONS;
   };
+  // Each git call must carry the hardened flags; events and fakes see what follows them.
   const runGit: Runner = (cmd, gitArgs, at) => {
-    events.push(`git ${gitArgs.join(' ')}`);
-    return fakes.git?.(gitArgs) ?? execRunner(cmd, gitArgs, at);
+    const bare = afterHardenedFlags(gitArgs);
+    events.push(`git ${bare.join(' ')}`);
+    return fakes.git?.(bare) ?? execRunner(cmd, gitArgs, at);
   };
   const out: string[] = [];
   const err: string[] = [];
