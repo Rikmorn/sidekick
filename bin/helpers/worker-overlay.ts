@@ -223,11 +223,18 @@ function folderDenies(opts: UnitOverlayOptions): string[] {
   ];
 }
 
+// `Skill(name)` matches the skill called bare, and `Skill(name *)` a call
+// with arguments, so each denied skill takes both.
+const skillDenies = (skill: string): string[] => [
+  `Skill(${skill})`,
+  `Skill(${skill} *)`,
+];
+
 const unitDenies = (opts: UnitOverlayOptions): string[] =>
   unique([
     ...gitDenies(opts.commonDir, opts.worktree),
     ...folderDenies(opts),
-    ...UNIT_DENIED_SKILLS.map((skill) => `Skill(${skill})`),
+    ...UNIT_DENIED_SKILLS.flatMap(skillDenies),
     ...WEB_TOOLS,
     PUSH_DENY_RULE,
   ]);

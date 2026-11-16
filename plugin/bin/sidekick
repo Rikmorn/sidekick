@@ -14595,10 +14595,14 @@ function folderDenies(opts) {
     ]
   ];
 }
+var skillDenies = (skill) => [
+  `Skill(${skill})`,
+  `Skill(${skill} *)`
+];
 var unitDenies = (opts) => unique([
   ...gitDenies(opts.commonDir, opts.worktree),
   ...folderDenies(opts),
-  ...UNIT_DENIED_SKILLS.map((skill) => `Skill(${skill})`),
+  ...UNIT_DENIED_SKILLS.flatMap(skillDenies),
   ...WEB_TOOLS,
   PUSH_DENY_RULE
 ]);

@@ -285,17 +285,21 @@ const PATH_DENIES = [
   'Edit(//zz-unit/store/**)',
 ];
 
+const DENIED_SKILLS = [
+  'superpowers:brainstorming',
+  'superpowers:writing-plans',
+  'superpowers:finishing-a-development-branch',
+  'superpowers:diagnosing-superpowers',
+  'sidekick:sk-execute',
+  'sidekick:sk-design',
+  'sidekick:sk-track',
+  'sidekick:sk-milestone',
+  'sidekick:sk-worktree',
+  'sidekick:sk-save',
+];
+
 const TOOL_DENIES = [
-  'Skill(superpowers:brainstorming)',
-  'Skill(superpowers:writing-plans)',
-  'Skill(superpowers:finishing-a-development-branch)',
-  'Skill(superpowers:diagnosing-superpowers)',
-  'Skill(sidekick:sk-execute)',
-  'Skill(sidekick:sk-design)',
-  'Skill(sidekick:sk-track)',
-  'Skill(sidekick:sk-milestone)',
-  'Skill(sidekick:sk-worktree)',
-  'Skill(sidekick:sk-save)',
+  ...DENIED_SKILLS.flatMap((skill) => [`Skill(${skill})`, `Skill(${skill} *)`]),
   'WebFetch',
   'WebSearch',
 ];
@@ -335,6 +339,14 @@ describe('unitOverlay', () => {
   test('it denies WebFetch, WebSearch, brainstorming, and sk-save', () => {
     const { deny } = permissionsOf(unitOf(undefined));
     for (const rule of TOOL_DENIES) expect(deny).toContain(rule);
+  });
+
+  test('it denies each skill bare and with arguments', () => {
+    const { deny } = permissionsOf(unitOf(undefined));
+    expect(deny).toContain('Skill(superpowers:writing-plans)');
+    expect(deny).toContain('Skill(superpowers:writing-plans *)');
+    expect(deny).toContain('Skill(sidekick:sk-save)');
+    expect(deny).toContain('Skill(sidekick:sk-save *)');
   });
 
   test('the deny list holds those rules and the push rule, and nothing else', () => {
