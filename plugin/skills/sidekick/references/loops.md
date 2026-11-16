@@ -321,6 +321,7 @@ The list follows superpowers 7.0.2 and sidekick, as read on 2026-11-15. By Claud
 - **The denied skills are denied** whatever the role's skill asks, as far as a `Skill` deny holds. "What waits on the check by hand" leaves that open. `superpowers:writing-plans` is among them, so a role skill that builds writes its own plan.
 - **Keep a role's commands in its plugin folder.** A hook or MCP server in the role's plugin that runs a path inside the repo runs worker-written code outside the sandbox.
 - **Spell each gate plainly,** as `gates` says, so auto-allow approves it.
+- **Run each unit verb with a long `Bash` timeout,** since each can outlast a call's default 120 seconds, as "How long a unit verb runs" says.
 
 ### What still escapes the fence
 
@@ -688,7 +689,7 @@ Then it acts:
 
 8. **The name.** It draws up to 33 characters of the loop's name, less any trailing hyphen, then a hyphen and 6 random hex characters. A name that the worker name rule, `worker dispatch`'s name checks, or an existing attempt folder refuses is drawn again, up to 5 draws.
 9. **The attempt's folder.** It writes `unit.md`, `brief.md`, and `worker.json`, with no job yet. The brief's body holds its `## Limits`, the question channel, the loop's `gates`, and what the run report holds. It says to run each gate as one `Bash` call with a `timeout`.
-10. **The launch.** It launches the worker through `worker dispatch`'s own checks and launch, inside the fence, from the loop's worktree, as `references/workers.md` §A unit brief says. So the worker branches from origin's tip. Once `claude` reports a start, it writes the job into `worker.json`, then `dispatched` with the unit, the worker, and the issue. Under `start --record`, the line also holds `record: true`. That line lands before the worktree check, so a stray stopped on the wrong worktree still counts as an attempt.
+10. **The launch.** It launches the worker through `worker dispatch`'s own checks and launch, inside the fence, from the loop's worktree, as `references/workers.md` §A unit brief says. So the worker branches from origin's tip. Once those checks pass, right before `claude --bg` runs, it writes `worker.json` with `job: null`, then `dispatched` with the unit, the worker, and the issue. Under `start --record`, the line also holds `record: true`. Once `claude` reports a start, it writes the job into `worker.json`. So the attempt counts before any worker can start. A dispatch ended during the launch leaves it counted, and so does a stray stopped on the wrong worktree.
 
 Once the worker has started in its worktree, it prints the reap's lines, the profile keys the launch dropped on stderr, and `claude`'s output. Then come `worker <worker> dispatched · permission mode dontAsk · pushes blocked` and three lines of its own, and it exits 0:
 
@@ -700,9 +701,11 @@ to give up on it: sidekick loop discard <name> --unit <unit> --reason <text>
 
 When the launch goes wrong:
 
-- **A launch that failed** removes the attempt's folder and writes no line. "Workspace not trusted" in `claude`'s output adds the fix line `start` gives, for the loop's worktree.
-- **A launch that timed out** may have started a worker, so the attempt counts. `dispatch` keeps the folder, writes `worker.json` with `job: null`, and writes `dispatched`. It exits non-zero, saying that the attempt now counts, and names `sidekick loop discard`. Until `reap` or `discard` closes it, the attempt costs one attempt at the unit and one of the day's units, and blocks the next dispatch. When that line cannot be written, the folder goes, and the refusal says how to find and stop the worker.
-- **A start that cannot be recorded** stops the worker as a stray and refuses, and the folder goes.
+- **A refusal by the launch's own checks,** or a `dispatched` line that cannot be written, launches nothing. The attempt's folder goes, and no line counts it.
+- **A launch `claude` refuses,** "Workspace not trusted" among them, writes `discarded` straight after, with the reason "the launch was refused". That frees the slot, and the attempt still counts, since the loop tried. It costs one attempt at the unit and one of the day's units. So a refusal that repeats reaches the attempts cap and goes to the operator. "Workspace not trusted" in `claude`'s output adds the fix line `start` gives, for the loop's worktree. When the `discarded` line cannot be written, the attempt stays in flight, and `dispatch` names `sidekick loop discard`.
+- **A launch that timed out** may have started a worker, and its `dispatched` line already counts it. `dispatch` keeps the folder, with `job: null` in `worker.json`. It exits non-zero, saying that the attempt now counts, and names `sidekick loop discard`. Until `reap` or `discard` closes it, the attempt costs one attempt at the unit and one of the day's units, and blocks the next dispatch.
+- **A dispatch ended during the launch,** as by the `Bash` tool's timeout, leaves the same: the folder, `job: null`, and the `dispatched` line. `discard` finds the worker by its session name and closes the attempt, and so does `reap` once the attempt passes its work cap.
+- **A start whose job cannot be recorded** stops the worker as a stray and refuses. Its `dispatched` line stands, so `dispatch` names `sidekick loop discard`, which clears the stray's worktree and closes the attempt.
 - **A worker on the wrong worktree** is stopped, as `references/workers.md` §`dispatch` says. Its `dispatched` line stands, so the attempt stays in flight, and `dispatch` names `sidekick loop discard` for it.
 
 #### The issue's text
@@ -805,6 +808,15 @@ sidekick loop resume <name> --reason <text>
 It resets a tripped breaker once its cause is settled. The operator runs it from a main: it refuses in any loop's session, its own included, where `SIDEKICK_LOOP` is set and not empty. It is not a fixed verb either, so a loop cannot clear its own breaker. It refuses an untripped breaker, naming the count and the cap, so its line always marks a real reset. `--reason` follows the record's rule, and the key check refuses it.
 
 It takes the units lock and reaps nothing, since a reap can stop a worker or refuse, and neither belongs in the operator's reset. It writes `resumed` with the reason, which restarts the count of units failed in a row. It prints `loop <name> resumed: the count of units failed in a row restarts at 0`.
+
+### How long a unit verb runs
+
+Each unit verb can outlast a `Bash` call's default 120 seconds, so a loop runs each with the `Bash` tool's longest `timeout`, 600000 milliseconds. Even that does not cover the worst case. The limits below are the code's, as read on 2026-11-16:
+
+- **`dispatch`** gives `ls-remote`, the fetch, and the fast-forward 60 seconds each, and every other git call 10. The issue read takes up to 30 seconds, and so do the session listing for the name, `claude plugin list`, and `claude doctor`. The launch takes up to 60 seconds. The worktree check after it reads the session listing up to 30 times, a second apart, each read up to 10 seconds. A stray's stop takes up to 10 more. Those alone pass ten minutes.
+- **A reap,** which every unit verb and `record` run first, stops the worker within 10 seconds and waits up to 15 for its process. Then `finish` lists the sessions and stops the job within 30 seconds each, and waits up to 15 more. Its `claude rm` runs with no limit. So `discard` and `reap` have no worst case a timeout covers.
+
+A verb the `Bash` tool ends leaves what its next run settles. A dispatch ended during the launch leaves a counted attempt, which `discard` closes, as "`sidekick loop dispatch`" says. A launch `claude` refuses counts as an attempt too. A `discard` or `reap` ended during `finish` writes no closing line, so the attempt stays in flight, and the next `discard` runs `finish` again.
 
 ## The verbs
 
