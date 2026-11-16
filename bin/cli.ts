@@ -143,7 +143,10 @@ export function main(
     out(readVersion(pluginDir));
     return 0;
   }
-  if (sub === 'pm') return runPmCli(rest, { cwd: ctx.cwd }, out, err);
+  if (sub === 'pm') {
+    const home = ctx.env.HOME || os.homedir();
+    return runPmCli(rest, { cwd: ctx.cwd, env: ctx.env, home }, out, err);
+  }
   if (sub === 'hook') {
     const readStdin = ctx.readStdin ?? readProcessStdin;
     return runHookCli(

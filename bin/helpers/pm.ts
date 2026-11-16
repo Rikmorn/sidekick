@@ -6,6 +6,7 @@
  * `--report`; the skills do the judgement and the writes.
  */
 
+import * as os from 'node:os';
 import * as v from 'valibot';
 import {
   type BoardGlance,
@@ -53,6 +54,7 @@ import {
 import { renderReport } from './pm-report.js';
 import { pickupView } from './pm-view.js';
 import { repoRootOf } from './rules.js';
+import { isUnitWorker } from './unit-worker.js';
 
 /** By-name `item-edit --field --value` lands here; older `gh` writes by id. */
 export const GH_MIN = '2.98.0';
@@ -225,7 +227,17 @@ export interface PmEnv {
   cwd: string;
   now?: Date;
   run?: Runner;
+  /** The process environment; absent reads as no worker. */
+  env?: NodeJS.ProcessEnv;
+  /** The home folder the loop store sits under, with `env`. */
+  home?: string;
 }
+
+// A unit worker reads issue text anyone may write, so the board's titles,
+// and the session-start hook's turn toward picking up work, stay out of it.
+const isUnitWorkerOf = (env: PmEnv): boolean =>
+  env.env !== undefined &&
+  isUnitWorker(env.env, env.cwd, env.home ?? os.homedir());
 
 const VERBS = new Set(['board', 'pickup', 'lint', 'gate']);
 
@@ -291,6 +303,7 @@ export function runPmCli(
     err(PM_USAGE);
     return 1;
   }
+  if (verb === 'pickup' && isUnitWorkerOf(env)) return 0;
   const emit = (o: unknown): void => out(JSON.stringify(o, null, 2));
   try {
     const info = discover(run, env.cwd, err);

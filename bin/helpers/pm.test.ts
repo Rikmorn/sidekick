@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import * as path from 'node:path';
 import { parseGlance } from '../../plugin/hooks/board/contract.js';
 import {
   type FixtureMap,
@@ -23,7 +24,7 @@ import {
   tiers,
 } from './pm.js';
 import { type BriefInput, renderBrief } from './pm-brief.js';
-import type { Item, LinkedBoard, Milestone } from './pm-data.js';
+import type { Item, LinkedBoard, Milestone, Runner } from './pm-data.js';
 import { LINT_IDS } from './pm-lint.js';
 import type { Plans } from './pm-plans.js';
 
@@ -1318,6 +1319,53 @@ describe('pickup --brief', () => {
     );
     expect(b.out[0]?.split('\n')).toHaveLength(6);
   });
+  test('pickup prints nothing in a unit worker, and asks git and gh nothing', () => {
+    const home = tmp();
+    const brief = path.join(
+      home,
+      '.claude',
+      'sidekick',
+      'loops',
+      'fixer',
+      'units',
+      'fix-bug-42',
+      'w1',
+      'brief.md',
+    );
+    const calls: string[][] = [];
+    const run: Runner = (cmd, args) => {
+      calls.push([cmd, ...args]);
+      return { code: 1, stdout: '', stderr: 'no call expected' };
+    };
+    for (const flags of [['--brief'], ['--glance'], ['--report'], []]) {
+      const c = capture();
+      const env = { cwd: '/', run, env: { SIDEKICK_WORKER: brief }, home };
+      expect(runPmCli(['pickup', ...flags], env, c.o, c.e)).toBe(0);
+      expect(c.out).toEqual([]);
+      expect(c.err).toEqual([]);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  test("a plan worker's pickup, and a main's, still print the brief", () => {
+    const home = tmp();
+    const brief = path.join(home, 'docs', 'w1-brief.md');
+    for (const env of [{ SIDEKICK_WORKER: brief }, {}]) {
+      const b = capture();
+      const pmEnv = {
+        cwd: '/',
+        run: fixtureRunner(sidekickMap()),
+        now: new Date('2026-09-19T12:00:00Z'),
+        env,
+        home,
+      };
+      expect(runPmCli(['pickup', '--brief'], pmEnv, b.o, b.e)).toBe(0);
+      expect(b.out[0]?.split('\n')[0]).toBe(
+        'sidekick · Rikmorn/sidekick · board #2',
+      );
+    }
+  });
+
   test('--brief is silent in an untracked repo, like --quiet', () => {
     const c = capture();
     expect(

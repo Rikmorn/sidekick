@@ -5,8 +5,8 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 // bin/cli.ts
 import * as fs63 from "node:fs";
 import { realpathSync as realpathSync13 } from "node:fs";
-import * as os3 from "node:os";
-import * as path80 from "node:path";
+import * as os4 from "node:os";
+import * as path81 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/valibot/dist/index.mjs
@@ -17365,6 +17365,9 @@ function runMemoryCli(argv2, ctx, out, err) {
   }, out, err);
 }
 
+// bin/helpers/pm.ts
+import * as os3 from "node:os";
+
 // bin/helpers/pm-brief.ts
 var PER_TIER_MAX = 5;
 function ref(i) {
@@ -17727,6 +17730,28 @@ function renderReport(r) {
 `);
 }
 
+// bin/helpers/unit-worker.ts
+import * as path77 from "node:path";
+function underUnits(root, file) {
+  const holds = (from, to) => {
+    const parts = path77.relative(from, to).split(path77.sep);
+    const [loop = "", units, ...rest2] = parts;
+    const inside = loop !== "" && loop !== ".." && !path77.isAbsolute(loop);
+    return inside && units === UNITS_DIR && rest2.length > 0;
+  };
+  return holds(root, file) || holds(realPathOf(root), realPathOf(file));
+}
+function isUnitWorker2(env, cwd, home) {
+  const named2 = env.SIDEKICK_WORKER;
+  if (named2 === undefined || named2 === "")
+    return false;
+  const file = path77.resolve(cwd, named2);
+  const read = readBrief(file);
+  if ("brief" in read && read.brief.kind === "unit")
+    return true;
+  return underUnits(loopsRoot(env, cwd, home), file);
+}
+
 // bin/helpers/pm.ts
 var GH_MIN = "2.98.0";
 function chooseBoard(boards, viewer, repo) {
@@ -17817,6 +17842,7 @@ function discover(run, cwd, warn3) {
 }
 var PM_USAGE_LINE = "sidekick pm <board|pickup|lint|gate> [--quiet] [--brief|--report|--glance] [--milestone <title>]";
 var PM_USAGE = `usage: ${PM_USAGE_LINE}`;
+var isUnitWorkerOf = (env) => env.env !== undefined && isUnitWorker2(env.env, env.cwd, env.home ?? os3.homedir());
 var VERBS4 = new Set(["board", "pickup", "lint", "gate"]);
 function releaseChecks(run, cwd, board, ms) {
   if (parsePlansHeader(ms.description).parse !== "ok")
@@ -17849,6 +17875,8 @@ function runPmCli(args, env, out, err) {
     err(PM_USAGE);
     return 1;
   }
+  if (verb === "pickup" && isUnitWorkerOf(env))
+    return 0;
   const emit = (o) => out(JSON.stringify(o, null, 2));
   try {
     const info = discover(run, env.cwd, err);
@@ -18131,7 +18159,7 @@ function runSessionCli(rest2, senv, out, err, timeoutMs = LISTING_TIMEOUT_MS) {
 }
 
 // bin/helpers/worker-dispatch-args.ts
-import * as path77 from "node:path";
+import * as path78 from "node:path";
 var DEFAULT_WORKER_PROFILE = "worker";
 var stringFlag2 = (values, key) => {
   const value = values[key];
@@ -18167,13 +18195,13 @@ function parseDispatchArgs(rest2, cwd) {
   const shared = {
     mode: stringFlag2(parsed.values, "permission-mode"),
     profile: stringFlag2(parsed.values, "profile") ?? DEFAULT_WORKER_PROFILE,
-    pluginDir: pluginDir === undefined ? undefined : path77.resolve(cwd, pluginDir),
+    pluginDir: pluginDir === undefined ? undefined : path78.resolve(cwd, pluginDir),
     allowPush: parsed.values["allow-push"] === true
   };
   return check2 ? { ...shared, check: true } : {
     ...shared,
     check: false,
-    brief: path77.resolve(cwd, parsed.positionals[0])
+    brief: path78.resolve(cwd, parsed.positionals[0])
   };
 }
 
@@ -18254,7 +18282,7 @@ function isOwnBranch(runGit, top, branch, name) {
 }
 
 // bin/helpers/worktree-move-checks.ts
-import * as path78 from "node:path";
+import * as path79 from "node:path";
 var DIGITS = /^\d+$/;
 function parseMoveArgs(rest2) {
   const parsed = parseFlags(rest2, {
@@ -18312,7 +18340,7 @@ function whereItRuns(env, err) {
     return refuse18(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
   }
   const entry = repo.worktrees[at2];
-  return { repo, entry, name: path78.basename(entry.path) };
+  return { repo, entry, name: path79.basename(entry.path) };
 }
 var heldElsewhere = (place2, branch) => place2.repo.worktrees.some((entry) => entry !== place2.entry && entry.branch === `${HEADS}${branch}`);
 function onBranchMoved(runGit, place2, on, branch) {
@@ -18874,7 +18902,7 @@ function moveWorktree(args, env, out, err) {
 }
 
 // bin/helpers/worktree-remove-checks.ts
-import * as path79 from "node:path";
+import * as path80 from "node:path";
 var DISCARD = "--discard";
 var REMOTES2 = "refs/remotes/";
 function parseRemoveArgs(rest2) {
@@ -18922,8 +18950,8 @@ var alone = (repo, entry) => ({
   worktrees: [repo.worktrees[0], entry]
 });
 function resolveTarget3(repo, cwd, target) {
-  const asPath = path79.resolve(cwd, target);
-  const matches = repo.worktrees.filter((entry2) => path79.basename(entry2.path) === target || samePath(entry2.path, asPath));
+  const asPath = path80.resolve(cwd, target);
+  const matches = repo.worktrees.filter((entry2) => path80.basename(entry2.path) === target || samePath(entry2.path, asPath));
   if (matches.length === 0) {
     return refuse19(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
   }
@@ -19422,20 +19450,20 @@ function runWorktreeCli(rest2, env, out, err) {
 
 // bin/cli.ts
 function resolvePluginDir(entryFileUrl) {
-  const here = path80.dirname(fileURLToPath(entryFileUrl));
+  const here = path81.dirname(fileURLToPath(entryFileUrl));
   const candidates3 = [
-    path80.resolve(here, ".."),
-    path80.resolve(here, "..", "plugin")
+    path81.resolve(here, ".."),
+    path81.resolve(here, "..", "plugin")
   ];
   for (const c of candidates3) {
-    if (fs63.existsSync(path80.join(c, "rules")))
+    if (fs63.existsSync(path81.join(c, "rules")))
       return c;
   }
   return candidates3[0];
 }
 var ManifestVersion = object({ version: string() });
 function readVersion(pluginDir) {
-  const manifest = path80.join(pluginDir, ".claude-plugin", "plugin.json");
+  const manifest = path81.join(pluginDir, ".claude-plugin", "plugin.json");
   try {
     const parsed = safeParse(ManifestVersion, JSON.parse(fs63.readFileSync(manifest, "utf-8")));
     return parsed.success ? parsed.output.version : "unknown";
@@ -19478,9 +19506,9 @@ function profileEnvOf(ctx) {
   return {
     env: ctx.env,
     cwd: ctx.cwd,
-    home: ctx.env.HOME || os3.homedir(),
+    home: ctx.env.HOME || os4.homedir(),
     workTree: workTreeRootOf(ctx.cwd),
-    tmpdir: ctx.tmpdir ?? os3.tmpdir(),
+    tmpdir: ctx.tmpdir ?? os4.tmpdir(),
     runClaude: ctx.runClaude ?? execClaude,
     runGit: execRunner,
     write: ctx.write ?? writeStdout
@@ -19500,11 +19528,13 @@ function main(argv2, ctx, out, err) {
     out(readVersion(pluginDir));
     return 0;
   }
-  if (sub === "pm")
-    return runPmCli(rest2, { cwd: ctx.cwd }, out, err);
+  if (sub === "pm") {
+    const home = ctx.env.HOME || os4.homedir();
+    return runPmCli(rest2, { cwd: ctx.cwd, env: ctx.env, home }, out, err);
+  }
   if (sub === "hook") {
     const readStdin = ctx.readStdin ?? readProcessStdin;
-    return runHookCli(rest2, { readStdin, pluginDir, env: ctx.env, tmpdir: ctx.tmpdir ?? os3.tmpdir() }, out, err);
+    return runHookCli(rest2, { readStdin, pluginDir, env: ctx.env, tmpdir: ctx.tmpdir ?? os4.tmpdir() }, out, err);
   }
   if (sub === "profile") {
     return runProfileCli(rest2, profileEnvOf(ctx), out, err);
@@ -19513,7 +19543,7 @@ function main(argv2, ctx, out, err) {
     return runLoopCli(rest2, {
       ...profileEnvOf(ctx),
       now: () => new Date,
-      bootTime: () => new Date(Date.now() - os3.uptime() * 1000),
+      bootTime: () => new Date(Date.now() - os4.uptime() * 1000),
       sleep: sleepSync,
       isAlive: processIsAlive,
       pid: process.pid
@@ -19556,7 +19586,7 @@ function main(argv2, ctx, out, err) {
     return runMemoryCli(rest2, {
       env: ctx.env,
       cwd: ctx.cwd,
-      home: ctx.env.HOME || os3.homedir(),
+      home: ctx.env.HOME || os4.homedir(),
       runClaude: ctx.runClaude ?? execClaude
     }, out, err);
   }
@@ -19565,7 +19595,7 @@ function main(argv2, ctx, out, err) {
     return 1;
   }
   const claudeHome = configDirOf(ctx.env);
-  const src = ctx.env.SIDEKICK_RULES_DIR || path80.join(pluginDir, "rules");
+  const src = ctx.env.SIDEKICK_RULES_DIR || path81.join(pluginDir, "rules");
   return runRulesCli(rest2, { src, cwd: ctx.cwd, claudeHome }, out);
 }
 var _importMetaMain = "main" in import.meta && typeof __require.main == __require.module === "boolean" ? __require.main == __require.module : undefined;
