@@ -295,6 +295,22 @@ export const gitRunsIn = (
 ): boolean => within(physical(gitFolder(cwd, args)), physical(worktree));
 
 /**
+ * `run`, with every git call led by `HARDENED_GIT_FLAGS`; other commands pass
+ * through unchanged. For a reader of worktrees sidekick did not just create,
+ * such as the desk and `sidekick worktree`, which inspect worktrees a worker
+ * may have written.
+ */
+export function withHardenedFlags(run: Runner): Runner {
+  return (cmd, args, cwd, opts) =>
+    run(
+      cmd,
+      cmd === 'git' ? [...HARDENED_GIT_FLAGS, ...args] : args,
+      cwd,
+      opts,
+    );
+}
+
+/**
  * `run`, with each git call that `gitRunsIn` the worktree led by
  * `HARDENED_GIT_FLAGS`, `--git-dir`, and `--work-tree`. Every other call
  * passes through unchanged.

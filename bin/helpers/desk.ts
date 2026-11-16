@@ -35,6 +35,7 @@ import {
   type ClaudeRunner,
   printedStreams,
 } from './profile-launch.js';
+import { withHardenedFlags } from './worker-git.js';
 import { LISTING, LISTING_ARGS } from './worker-jobs.js';
 import { listWorktrees } from './worker-listing.js';
 import {
@@ -218,7 +219,11 @@ function repoNamesOf(
   );
 }
 
-function takeSnapshot(denv: DeskEnv, self: string | undefined): DeskSnapshot {
+// A worker can write its worktree and parts of the shared `.git`, and a
+// session's folder may be a worker's worktree, so every git call the desk
+// makes carries the hardened flags.
+function takeSnapshot(plain: DeskEnv, self: string | undefined): DeskSnapshot {
+  const denv = { ...plain, runGit: withHardenedFlags(plain.runGit) };
   const listing = readListing(denv.runClaude, denv.cwd);
   if ('error' in listing) {
     return { version: DESK_VERSION, ok: false, error: listing.error };

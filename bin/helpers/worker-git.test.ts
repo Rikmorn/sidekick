@@ -16,6 +16,7 @@ import {
   HARDENED_GIT_FLAGS,
   hardenedRunner,
   mainGitDirIssues,
+  withHardenedFlags,
 } from './worker-git.js';
 
 afterEach(removeTemps);
@@ -49,6 +50,31 @@ function folders(): { top: string; wt: string; alias: string } {
 }
 
 const GIT_DIR = '/repo/.git/worktrees/wt';
+
+describe('withHardenedFlags', () => {
+  test('it leads every git call with the hardened flags, wherever it runs, and leaves other commands alone', () => {
+    const { run, calls } = recorder();
+    const flagged = withHardenedFlags(run);
+    flagged('git', ['status', '--porcelain'], '/anywhere');
+    flagged('git', ['-C', '/w', 'log'], '/top', { timeoutMs: 5 });
+    flagged('gh', ['issue', 'view', '1'], '/w');
+    expect(calls).toEqual([
+      {
+        cmd: 'git',
+        args: [...HARDENED_GIT_FLAGS, 'status', '--porcelain'],
+        cwd: '/anywhere',
+        opts: undefined,
+      },
+      {
+        cmd: 'git',
+        args: [...HARDENED_GIT_FLAGS, '-C', '/w', 'log'],
+        cwd: '/top',
+        opts: { timeoutMs: 5 },
+      },
+      { cmd: 'gh', args: ['issue', 'view', '1'], cwd: '/w', opts: undefined },
+    ]);
+  });
+});
 
 describe('hardenedRunner', () => {
   test('the hardened runner prefixes git calls in the worktree', () => {

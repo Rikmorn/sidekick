@@ -158,8 +158,11 @@ interface Base {
   warnings: string[];
 }
 
-// What the commit count measures against: the brief's target branch, else the
-// HEAD of the brief's checkout, else the main checkout's HEAD.
+// What the commit count measures against: a unit brief's baseline, the
+// commit its loop's dispatch branched it from in this repo; else the brief's
+// target branch, else the HEAD of the brief's checkout, else the main
+// checkout's HEAD. A unit brief's checkout is sidekick's own folder, never
+// the loop's repo.
 function countBase(
   runGit: Runner,
   name: string,
@@ -173,6 +176,10 @@ function countBase(
     ],
   });
   if ('issues' in read) return fallback('its brief cannot be read');
+  // A baseline is hex alone, so it never reaches git as an option.
+  if (read.brief.kind === 'unit') {
+    return { rev: read.brief.baseline, warnings: [] };
+  }
   const target = briefTargetOf(read.brief);
   // A target may start with `-`, so it never reaches git bare.
   if (target !== undefined) {

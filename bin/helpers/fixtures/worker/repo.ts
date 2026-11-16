@@ -127,6 +127,34 @@ export function repoWithWorktree(gitignore: string): {
   return { main, worktree, commonDir: path.join(main, '.git') };
 }
 
+/**
+ * Plants what a worker can in `worktree`: an embedded repo, staged as a
+ * gitlink alone with no `.gitmodules`, whose own config names a clean filter
+ * that every file takes, and a same-size edit, so git reads the file through
+ * the filter to compare it. Returns the marker file the filter makes, in
+ * `markerDir`. Plain `git status` in the worktree runs the filter.
+ */
+export function plantEmbeddedFilter(
+  worktree: string,
+  markerDir: string,
+): string {
+  const nested = path.join(worktree, 'nested');
+  fs.mkdirSync(nested);
+  git(nested, 'init', '-q');
+  git(nested, 'config', 'user.name', 'test');
+  git(nested, 'config', 'user.email', 'test@example.com');
+  git(nested, 'config', 'commit.gpgsign', 'false');
+  fs.writeFileSync(path.join(nested, 'n.txt'), 'n\n');
+  git(nested, 'add', 'n.txt');
+  git(nested, 'commit', '-q', '-m', 'n');
+  git(worktree, 'add', 'nested');
+  const marker = path.join(markerDir, 'filter-ran');
+  git(nested, 'config', 'filter.x.clean', `touch '${marker}'; cat`);
+  fs.writeFileSync(path.join(nested, '.gitattributes'), '* filter=x\n');
+  fs.writeFileSync(path.join(nested, 'n.txt'), 'm\n');
+  return marker;
+}
+
 /** One call a `recording` runner saw. */
 export interface RecordedCall {
   args: string[];

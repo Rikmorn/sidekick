@@ -6,9 +6,16 @@ import {
   RUN_TIMEOUT_MS,
 } from '../../plugin/hooks/desk/contract.js';
 import { DESK_USAGE_LINE, type DeskEnv, runDeskCli } from './desk.js';
-import { git, removeTemps, repo, tmp } from './fixtures/worker/repo.js';
+import {
+  git,
+  plantEmbeddedFilter,
+  removeTemps,
+  repo,
+  tmp,
+} from './fixtures/worker/repo.js';
 import { execRunner, type Runner } from './pm-data.js';
 import type { ClaudeResult, ClaudeRunner } from './profile-launch.js';
+import { HARDENED_GIT_FLAGS } from './worker-git.js';
 import { recordsDir, writeRecord } from './worker-record.js';
 
 afterEach(removeTemps);
@@ -93,6 +100,23 @@ const briefText = (name: string, plan: string, baseline: string): string =>
     'skill: subagent-driven-development',
     'place: worktree',
     'report: docs/run-report.md',
+    'orchestrator: orch',
+    '---',
+    '',
+  ].join('\n');
+
+// A unit brief, as a loop's dispatch writes it; its paths need not exist.
+const unitBriefText = (name: string, baseline: string): string =>
+  [
+    '---',
+    'kind: unit',
+    `name: ${name}`,
+    'unit: /x/unit.md',
+    'rulings: /x/rulings.md',
+    `baseline: ${baseline}`,
+    'skill: plug:skill',
+    'place: worktree',
+    'report: unit-report.md',
     'orchestrator: orch',
     '---',
     '',
@@ -430,7 +454,7 @@ describe('runDeskCli: children', () => {
 describe('runDeskCli: git in a worker', () => {
   // `git help status` §BACKGROUND REFRESH: status writes the refreshed index
   // under a lock, which can fail the worker's own commit.
-  test("git status runs without optional locks, so it never takes the worker's index lock", () => {
+  test("git status runs hardened and without optional locks, so it runs nothing the worker planted and never takes the worker's index lock", () => {
     const fx = repoFixture();
     const gitCalls: string[][] = [];
     const recording: Runner = (cmd, args, cwd) => {
@@ -439,8 +463,65 @@ describe('runDeskCli: git in a worker', () => {
     };
     snapshotOf(harness(fx.top, listing([childRow()]), tmp(), recording));
     expect(gitCalls.filter((args) => args.includes('status'))).toEqual([
-      ['--no-optional-locks', 'status', '--porcelain'],
+      [...HARDENED_GIT_FLAGS, '--no-optional-locks', 'status', '--porcelain'],
     ]);
+  });
+
+  test('every git call the desk makes carries the hardened flags', () => {
+    const fx = repoFixture();
+    const gitCalls: string[][] = [];
+    const recording: Runner = (cmd, args, cwd) => {
+      gitCalls.push(args);
+      return execRunner(cmd, args, cwd);
+    };
+    snapshotOf(harness(fx.top, listing([childRow()]), tmp(), recording));
+    expect(gitCalls.length).toBeGreaterThan(0);
+    const unflagged = gitCalls.filter(
+      (args) =>
+        JSON.stringify(args.slice(0, HARDENED_GIT_FLAGS.length)) !==
+        JSON.stringify(HARDENED_GIT_FLAGS),
+    );
+    expect(unflagged).toEqual([]);
+  });
+
+  test("the desk runs no filter that an embedded repo's own config names in a worker's worktree", () => {
+    const fx = repoFixture();
+    const marker = plantEmbeddedFilter(fx.worktree, fx.top);
+    // Plain status runs it, so the fixture plants what it must.
+    git(fx.worktree, 'status', '--porcelain');
+    expect(fs.existsSync(marker)).toBe(true);
+    fs.rmSync(marker);
+    const s = snapshotOf(harness(fx.top, listing([childRow()])));
+    expect(s.children.map((c) => c.name)).toEqual(['w1']);
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+});
+
+describe('runDeskCli: a unit worker', () => {
+  test("a unit record's commits count from its brief's baseline, in the loop's repo", () => {
+    const fx = repoFixture();
+    const base = git(fx.top, 'rev-parse', 'HEAD');
+    // The main checkout moves on after the base, so a count from its HEAD differs.
+    fs.writeFileSync(path.join(fx.top, 'later.txt'), 'l\n');
+    git(fx.top, 'add', 'later.txt');
+    git(fx.top, 'commit', '-q', '-m', 'later');
+    // The brief sits outside the repo, as a loop's attempt folder does.
+    const brief = path.join(tmp(), 'brief.md');
+    fs.writeFileSync(brief, unitBriefText('u1', base));
+    const worktree = fx.addWorker('u1', 'cccc0004', { brief });
+    for (const file of ['u1.txt', 'u2.txt']) {
+      fs.writeFileSync(path.join(worktree, file), 'u\n');
+      git(worktree, 'add', file);
+      git(worktree, 'commit', '-q', '-m', file);
+    }
+    const rows = [
+      childRow(),
+      childRow({ id: 'cccc0004', name: 'u1', sessionId: undefined }),
+    ];
+    const s = snapshotOf(harness(fx.top, listing(rows)));
+    // `later`, then the worker's own two.
+    expect(s.children.find((c) => c.name === 'u1')?.unintegrated).toBe(3);
+    expect(s.warnings).toEqual([]);
   });
 });
 
@@ -548,7 +629,8 @@ describe('runDeskCli: finding the worktree', () => {
       `w5: its worktree ${folder} is on w5, which nothing shows is its branch, so no commits are counted`,
     ]);
     const counts = calls.filter((args) => args.includes('rev-list'));
-    expect(counts.map((args) => args[2])).toEqual([
+    // The hardened flags lead each call, so the range sits after the subcommand.
+    expect(counts.map((args) => args[args.indexOf('rev-list') + 2])).toEqual([
       expect.stringMatching(/\.\.refs\/heads\/worktree-w1$/),
     ]);
   });
@@ -607,9 +689,9 @@ describe('runDeskCli: finding the worktree', () => {
       return execRunner(cmd, args, cwd);
     };
     snapshotOf(harness(fx.top, listing([childRow()]), tmp(), recording));
-    expect(
-      calls.find((args) => args.includes('rev-list'))?.slice(0, 3),
-    ).toEqual([
+    const count = calls.find((args) => args.includes('rev-list')) ?? [];
+    const at = count.indexOf('rev-list');
+    expect(count.slice(at, at + 3)).toEqual([
       'rev-list',
       '--count',
       'refs/heads/--all..refs/heads/worktree-w1',
