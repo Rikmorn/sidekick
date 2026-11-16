@@ -533,7 +533,8 @@ describe('loop dispatch refuses, changing nothing in the loop folder', () => {
         git(loopTree, 'commit', '-q', '-m', 'own');
         return undefined;
       },
-      'is ahead of origin/main',
+      // The full ref, since a worker can shadow the short name.
+      "is ahead of refs/remotes/origin/main by commits of its own, and the loop's worktree holds nothing of its own: keep those commits on a branch of their own, then move worktree-loop-fixer to origin's tip with git reset --keep refs/remotes/origin/main in that folder",
     ],
     [
       'the loop worktree diverged from origin refuses',
@@ -544,7 +545,7 @@ describe('loop dispatch refuses, changing nothing in the loop folder', () => {
         commitOnOrigin('c.txt', 'c\n');
         return undefined;
       },
-      'has diverged from origin/main',
+      'has diverged from refs/remotes/origin/main',
     ],
     [
       'a missing loop worktree refuses',
@@ -567,11 +568,38 @@ describe('loop dispatch refuses, changing nothing in the loop folder', () => {
       () => {
         gitReply = (args) =>
           args.includes('ls-remote')
-            ? { code: 0, stdout: 'not a ref line\n', stderr: '' }
+            ? { code: 0, stdout: 'not a ref\u0007 line\n', stderr: '' }
+            : undefined;
+        return undefined;
+      },
+      'printed what dispatch cannot read as one branch and its commit, so dispatch cannot tell origin\'s default branch: "not a ref\\u0007 line\\n"',
+    ],
+    [
+      'an ls-remote line with a column too many refuses',
+      () => {
+        const tip = head(seed);
+        gitReply = (args) =>
+          args.includes('ls-remote')
+            ? {
+                code: 0,
+                stdout: `ref: refs/heads/main\tHEAD\textra\n${tip}\tHEAD\n`,
+                stderr: '',
+              }
             : undefined;
         return undefined;
       },
       "cannot tell origin's default branch",
+    ],
+    [
+      'a long ls-remote answer is cut short in the refusal',
+      () => {
+        gitReply = (args) =>
+          args.includes('ls-remote')
+            ? { code: 0, stdout: 'x'.repeat(5000), stderr: '' }
+            : undefined;
+        return undefined;
+      },
+      `"${'x'.repeat(200)}" (cut short)`,
     ],
     [
       'a reported branch that would read as revision syntax refuses',
@@ -1176,6 +1204,27 @@ describe('loop dispatch, further', () => {
     expect(launches).toEqual([]);
     expect(snapshot()).toEqual(before);
     expect(head(loopTree)).toBe(loopHead);
+  });
+
+  test('a fetch refspec that never maps the default branch refuses on every run, and the refusal names both causes', () => {
+    git(
+      repo,
+      'config',
+      'remote.origin.fetch',
+      '+refs/heads/*:refs/remotes/elsewhere/*',
+    );
+    const tip = commitOnOrigin('c.txt', 'c\n');
+    for (const _run of [1, 2]) {
+      const r = dispatch();
+      expect(r.code).toBe(1);
+      const said = r.err.join('\n');
+      expect(said).toContain(`origin reports main at ${tip}`);
+      expect(said).toContain('origin may have moved during the fetch');
+      expect(said).toContain(
+        `remote.origin.fetch in ${repo} may not map refs/heads/main to refs/remotes/origin/main`,
+      );
+    }
+    expect(launches).toEqual([]);
   });
 
   test("a hardened read in the loop's worktree ignores a replace ref", () => {

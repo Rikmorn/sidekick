@@ -30,6 +30,10 @@ const ASK_ORIGIN = ['ls-remote', '--symref', 'origin', 'HEAD'];
 // `<object id>\tHEAD`.
 const SYMREF = /^ref: refs\/heads\/(.+)$/;
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const REPORT_COLUMNS = 2;
+// A `\uXXXX` escape: four hex digits.
+const HEX = 16;
+const UNICODE_DIGITS = 4;
 // Characters and sequences git's ref names forbid. A branch without them, or
 // a control character, carries no revision syntax into the tracking ref's
 // lookup, and prints plainly.
@@ -195,12 +199,15 @@ interface OriginReport {
 }
 
 // The `HEAD` lines of `ls-remote --symref`: one names the branch, one the
-// commit. Anything else reads as no report.
+// commit. Every line holds a value and a name, so a line with any other
+// number of columns, or anything else, reads as no report.
 function parseReport(stdout: string): OriginReport | undefined {
-  const values = stdout
+  const rows = stdout
     .split('\n')
     .filter((line) => line !== '')
-    .map((line) => line.split('\t'))
+    .map((line) => line.split('\t'));
+  if (rows.some((row) => row.length !== REPORT_COLUMNS)) return undefined;
+  const values = rows
     .filter(([, name]) => name === 'HEAD')
     .map(([value]) => value);
   const branches = values.flatMap((value) => {
@@ -228,11 +235,29 @@ function askOrigin(
   return (
     report ?? {
       issues: [
-        `${shown} in ${tree.folder} printed no branch and commit for origin's HEAD, so dispatch cannot tell origin's default branch`,
+        `${shown} in ${tree.folder} printed what dispatch cannot read as one branch and its commit, so dispatch cannot tell origin's default branch: ${quoted(asked.stdout)}`,
       ],
     }
   );
 }
+
+// What git printed, quoted with every control character escaped, and cut at
+// `max` characters, since origin decides how much it prints.
+function quoted(text: string, max = 200): string {
+  const chars = [...text];
+  const json = JSON.stringify(chars.slice(0, max).join(''));
+  // JSON escapes C0 controls, but not DEL or C1.
+  const escaped = [...json]
+    .map((ch) =>
+      isControl(ch)
+        ? `\\u${ch.charCodeAt(0).toString(HEX).padStart(UNICODE_DIGITS, '0')}`
+        : ch,
+    )
+    .join('');
+  return chars.length > max ? `${escaped} (cut short)` : escaped;
+}
+
+const trackingRef = (branch: string): string => `refs/remotes/origin/${branch}`;
 
 // After the fetch, the commit origin reported is here, and the branch's
 // tracking ref is at it.
@@ -241,7 +266,7 @@ function trackingIssues(
   repo: string,
   { branch, tip }: OriginReport,
 ): string[] {
-  const tracking = `refs/remotes/origin/${branch}`;
+  const tracking = trackingRef(branch);
   const isHere = commitOf(tree.runGit, tree.folder, tip) === tip;
   const tracked = commitOf(tree.runGit, tree.folder, tracking);
   if (isHere && tracked === tip) return [];
@@ -251,7 +276,7 @@ function trackingIssues(
       : `${tracking} is at ${tracked}`;
   const here = isHere ? `${tip} is in ${repo}` : `${tip} is not in ${repo}`;
   return [
-    `origin reports ${branch} at ${tip}, but after the fetch ${where}, and ${here}: origin may have moved during the fetch, so run dispatch again`,
+    `origin reports ${branch} at ${tip}, but after the fetch ${where}, and ${here}: origin may have moved during the fetch, so run dispatch again; or remote.origin.fetch in ${repo} may not map refs/heads/${branch} to ${tracking}, and then dispatch refuses on every run until it does`,
   ];
 }
 
@@ -319,6 +344,8 @@ export function syncLoopTree(
   if (head === undefined) {
     return { issues: [`${tree.folder}: HEAD names no commit`] };
   }
-  const shown = `origin/${report.branch}`;
+  // The full ref, since a worker can shadow the short name, such as with a
+  // tag or branch named `origin/<branch>`.
+  const shown = trackingRef(report.branch);
   return fastForward(tree, head, { shown, tip: report.tip }, timeoutMs);
 }

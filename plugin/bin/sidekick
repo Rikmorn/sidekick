@@ -15481,6 +15481,9 @@ import * as path71 from "node:path";
 var ASK_ORIGIN = ["ls-remote", "--symref", "origin", "HEAD"];
 var SYMREF = /^ref: refs\/heads\/(.+)$/;
 var OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+var REPORT_COLUMNS = 2;
+var HEX = 16;
+var UNICODE_DIGITS = 4;
 var NOT_IN_REF = /[\s~^:?*[\\]|\.\.|@\{/;
 var isBranchName = (name) => !NOT_IN_REF.test(name) && ![...name].some(isControl);
 var NO = 1;
@@ -15579,8 +15582,11 @@ function standingIssue(tree, relation, shown2) {
   return `${folder}: ${branch} ${how}, and the loop's worktree holds nothing of its own: keep those commits on a branch of their own, then move ${branch} to origin's tip with git reset --keep ${shown2} in that folder`;
 }
 function parseReport(stdout) {
-  const values = stdout.split(`
-`).filter((line) => line !== "").map((line) => line.split("\t")).filter(([, name]) => name === "HEAD").map(([value]) => value);
+  const rows = stdout.split(`
+`).filter((line) => line !== "").map((line) => line.split("\t"));
+  if (rows.some((row) => row.length !== REPORT_COLUMNS))
+    return;
+  const values = rows.filter(([, name]) => name === "HEAD").map(([value]) => value);
   const branches = values.flatMap((value) => {
     const named2 = SYMREF.exec(value);
     return named2 !== null && isBranchName(named2[1]) ? [named2[1]] : [];
@@ -15598,12 +15604,19 @@ function askOrigin(tree, timeoutMs) {
   const report2 = parseReport(asked.stdout);
   return report2 ?? {
     issues: [
-      `${shown2} in ${tree.folder} printed no branch and commit for origin's HEAD, so dispatch cannot tell origin's default branch`
+      `${shown2} in ${tree.folder} printed what dispatch cannot read as one branch and its commit, so dispatch cannot tell origin's default branch: ${quoted(asked.stdout)}`
     ]
   };
 }
+function quoted(text, max = 200) {
+  const chars = [...text];
+  const json = JSON.stringify(chars.slice(0, max).join(""));
+  const escaped = [...json].map((ch) => isControl(ch) ? `\\u${ch.charCodeAt(0).toString(HEX).padStart(UNICODE_DIGITS, "0")}` : ch).join("");
+  return chars.length > max ? `${escaped} (cut short)` : escaped;
+}
+var trackingRef = (branch) => `refs/remotes/origin/${branch}`;
 function trackingIssues(tree, repo, { branch, tip }) {
-  const tracking = `refs/remotes/origin/${branch}`;
+  const tracking = trackingRef(branch);
   const isHere = commitOf(tree.runGit, tree.folder, tip) === tip;
   const tracked = commitOf(tree.runGit, tree.folder, tracking);
   if (isHere && tracked === tip)
@@ -15611,7 +15624,7 @@ function trackingIssues(tree, repo, { branch, tip }) {
   const where = tracked === undefined ? `${tracking} names no commit` : `${tracking} is at ${tracked}`;
   const here = isHere ? `${tip} is in ${repo}` : `${tip} is not in ${repo}`;
   return [
-    `origin reports ${branch} at ${tip}, but after the fetch ${where}, and ${here}: origin may have moved during the fetch, so run dispatch again`
+    `origin reports ${branch} at ${tip}, but after the fetch ${where}, and ${here}: origin may have moved during the fetch, so run dispatch again; or remote.origin.fetch in ${repo} may not map refs/heads/${branch} to ${tracking}, and then dispatch refuses on every run until it does`
   ];
 }
 function fastForward(tree, head2, { shown: shown2, tip }, timeoutMs) {
@@ -15649,7 +15662,7 @@ function syncLoopTree(tree, repo, timeoutMs) {
   if (head2 === undefined) {
     return { issues: [`${tree.folder}: HEAD names no commit`] };
   }
-  const shown2 = `origin/${report2.branch}`;
+  const shown2 = trackingRef(report2.branch);
   return fastForward(tree, head2, { shown: shown2, tip: report2.tip }, timeoutMs);
 }
 
@@ -15899,7 +15912,7 @@ var KEY_BLOCK_END = /-----END[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i;
 var GAP = "the report has no ## Proposals section, so it proposes no outward action: read that as a gap in the report, not as nothing to do";
 var KEPT_CONTROLS = new Set([`
 `, "\t"]);
-var HEX = 16;
+var HEX2 = 16;
 var refuse13 = (err, issues) => {
   for (const issue2 of issues)
     err(issue2);
@@ -15975,7 +15988,7 @@ function readReport(worker, worktree, attempt, maxBytes) {
   };
 }
 var withheld = (ids) => `(withheld: ${ids.join(", ")})`;
-var visible = (text) => [...text].map((ch) => isControl(ch) && !KEPT_CONTROLS.has(ch) ? `\\x${ch.charCodeAt(0).toString(HEX).padStart(2, "0")}` : ch).join("");
+var visible = (text) => [...text].map((ch) => isControl(ch) && !KEPT_CONTROLS.has(ch) ? `\\x${ch.charCodeAt(0).toString(HEX2).padStart(2, "0")}` : ch).join("");
 var visibleSink = (sink) => (line) => sink(visible(line));
 var shownWith = (line, ids) => ids.length === 0 ? line : withheld(ids);
 var shownLine = (line) => shownWith(line, keyHits(line));
