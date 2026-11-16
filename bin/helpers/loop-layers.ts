@@ -78,6 +78,12 @@ export interface LayerSummary {
   addedDirectories: string[];
   sandboxWrites: string[];
   allowedDomains: string[];
+  /** `sandbox.excludedCommands`: commands that run outside the sandbox. */
+  excludedCommands: string[];
+  /** `sandbox.network.allowUnixSockets`: sockets a sandboxed command may reach. */
+  unixSockets: string[];
+  /** `sandbox.network.allowMachLookup`: macOS services a sandboxed command may reach. */
+  machLookups: string[];
   editAllows: string[];
   enabledPlugins: Record<string, boolean>;
 }
@@ -141,13 +147,17 @@ const booleanEntries = (value: unknown): Record<string, boolean> =>
 export function summariseLayer(settings: Settings): LayerSummary {
   const permissions = objectAt(settings, 'permissions');
   const sandbox = objectAt(settings, 'sandbox');
+  const network = objectAt(sandbox, 'network');
   const allow = stringsOf(permissions.allow);
   return {
     allow,
     hooks: hooksOf(settings),
     addedDirectories: stringsOf(permissions.additionalDirectories),
     sandboxWrites: stringsOf(objectAt(sandbox, 'filesystem').allowWrite),
-    allowedDomains: stringsOf(objectAt(sandbox, 'network').allowedDomains),
+    allowedDomains: stringsOf(network.allowedDomains),
+    excludedCommands: stringsOf(sandbox.excludedCommands),
+    unixSockets: stringsOf(network.allowUnixSockets),
+    machLookups: stringsOf(network.allowMachLookup),
     editAllows: allow.filter((rule) => rule.startsWith('Edit(')),
     enabledPlugins: booleanEntries(settings.enabledPlugins),
   };

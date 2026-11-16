@@ -271,6 +271,34 @@ describe('inheritedListing', () => {
     ]);
   });
 
+  test("names each layer's sandbox exclusions, Unix sockets, and Mach lookups in the fence", () => {
+    const user = path.join(configDir, 'settings.json');
+    const exceptions = {
+      sandbox: {
+        excludedCommands: ['docker *'],
+        network: {
+          allowUnixSockets: ['/var/run/docker.sock'],
+          allowMachLookup: ['com.apple.CoreSimulator.*'],
+        },
+      },
+    };
+    json(user, exceptions);
+    json(managed, { sandbox: { excludedCommands: ['podman *'] } });
+    const profile = profileWith({ settings: exceptions });
+    const own = path.join(profile.dir, 'profile.json');
+    const out = run(profile, listed([]));
+    expect(sectionOf(out.lines, "What widens the workers' fence")).toEqual([
+      "What widens the workers' fence",
+      `  user (${user}): sandbox-excluded command: docker *`,
+      `  user (${user}): allowed Unix socket: /var/run/docker.sock`,
+      `  user (${user}): allowed Mach lookup: com.apple.CoreSimulator.*`,
+      `  profile (${own}): sandbox-excluded command: docker *`,
+      `  profile (${own}): allowed Unix socket: /var/run/docker.sock`,
+      `  profile (${own}): allowed Mach lookup: com.apple.CoreSimulator.*`,
+      `  managed (${managed}): sandbox-excluded command: podman *`,
+    ]);
+  });
+
   test('says an enabled plugin with no install path is not installed', () => {
     const out = run(
       profileWith({ settings: { enabledPlugins: { 'ghost@m': true } } }),

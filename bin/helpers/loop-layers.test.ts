@@ -159,7 +159,10 @@ describe('keptLayers', () => {
 // (§Hook handler fields: five types, `command`, `http` with `url`, `mcp_tool`
 // with `server` and `tool`, `prompt` and `agent` with `prompt`), and
 // https://code.claude.com/docs/en/settings-reference (§enabledPlugins: an
-// object mapping `plugin@marketplace` to a Boolean).
+// object mapping `plugin@marketplace` to a Boolean). `sandbox.excludedCommands`,
+// `sandbox.network.allowUnixSockets`, and `sandbox.network.allowMachLookup` are
+// arrays of strings in the settings schema Claude Code 2.1.325 bundles, read
+// on 2026-11-16.
 describe('summariseLayer', () => {
   const empty = {
     allow: [],
@@ -167,6 +170,9 @@ describe('summariseLayer', () => {
     addedDirectories: [],
     sandboxWrites: [],
     allowedDomains: [],
+    excludedCommands: [],
+    unixSockets: [],
+    machLookups: [],
     editAllows: [],
     enabledPlugins: {},
   };
@@ -200,7 +206,12 @@ describe('summariseLayer', () => {
     },
     sandbox: {
       filesystem: { allowWrite: ['~/.kube', 1], denyWrite: ['/no'] },
-      network: { allowedDomains: ['github.com', false] },
+      network: {
+        allowedDomains: ['github.com', false],
+        allowUnixSockets: ['/var/run/docker.sock', null],
+        allowMachLookup: ['com.apple.CoreSimulator.*', 2],
+      },
+      excludedCommands: ['docker *', {}],
     },
     enabledPlugins: { 'a@m': true, 'b@m': false, 'c@m': 'yes' },
   };
@@ -235,6 +246,9 @@ describe('summariseLayer', () => {
       addedDirectories: ['/mem'],
       sandboxWrites: ['~/.kube'],
       allowedDomains: ['github.com'],
+      excludedCommands: ['docker *'],
+      unixSockets: ['/var/run/docker.sock'],
+      machLookups: ['com.apple.CoreSimulator.*'],
       editAllows: ['Edit(//tmp/x/**)'],
       enabledPlugins: { 'a@m': true, 'b@m': false },
     });
@@ -268,7 +282,12 @@ describe('summariseLayer', () => {
       {
         sandbox: {
           filesystem: { allowWrite: 'x' },
-          network: { allowedDomains: 1 },
+          network: {
+            allowedDomains: 1,
+            allowUnixSockets: 'x',
+            allowMachLookup: {},
+          },
+          excludedCommands: 'x',
         },
         hooks: { PreToolUse: [{ hooks: [null, 'x'] }] },
       },

@@ -351,6 +351,9 @@ export function inheritedListing(
       ['allowed domain', summary.allowedDomains],
       ['Edit allow', summary.editAllows.filter((rule) => !isBareWrite(rule))],
       ['file-write allow for every path', summary.allow.filter(isBareWrite)],
+      ['sandbox-excluded command', summary.excludedCommands],
+      ['allowed Unix socket', summary.unixSockets],
+      ['allowed Mach lookup', summary.machLookups],
     ];
     for (const [kind, entries] of widenings) {
       fence.push(...entries.map((entry) => `${source}: ${kind}: ${entry}`));
