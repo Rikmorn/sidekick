@@ -1134,6 +1134,42 @@ describe('memoryStartContext', () => {
     expect(result.context).not.toContain("the worker's brief");
   });
 
+  test('the memory hook prints nothing in a unit worker', () => {
+    const { store, repo, folder } = linked();
+    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:nope');
+    const brief = path.join(tmp, 'unit-brief.md');
+    fs.writeFileSync(
+      brief,
+      [
+        '---',
+        'kind: unit',
+        'name: w1',
+        `unit: ${tmp}/unit.md`,
+        `rulings: ${tmp}/rulings.md`,
+        'baseline: abc1234',
+        'skill: plug:skill',
+        'place: worktree',
+        'report: unit-report.md',
+        'orchestrator: orch',
+        '---',
+        '',
+      ].join('\n'),
+    );
+    const env = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: brief };
+    const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
+    expect(result).toEqual({});
+  });
+
+  test('a SIDEKICK_WORKER naming a brief that cannot be read prints as a plan worker does', () => {
+    const { store, repo } = linked();
+    // A folder in the brief's place reads as an error, not as a missing file.
+    const brief = mkdir('unreadable-brief.md');
+    const env = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: brief };
+    const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
+    expect(result.context).toContain('Your record is');
+    expect(result.snapshot?.store).toBe(store);
+  });
+
   test('a detached HEAD skips the branch tier without throwing', () => {
     const { store, repo, folder } = linked();
     workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:main');
@@ -1512,42 +1548,6 @@ describe("the lint's cached count at session start", () => {
     const context = contextOf(store, repo, { runGit });
     expect(context).toContain('Your record is');
     expect(context).not.toContain('Memory lint:');
-  });
-
-  test('the memory hook prints nothing in a unit worker', () => {
-    const { store, repo, folder } = linked();
-    workstreamFile(path.join(folder, 'alpha.md'), 'alpha', 'proj:nope');
-    const brief = path.join(tmp, 'unit-brief.md');
-    fs.writeFileSync(
-      brief,
-      [
-        '---',
-        'kind: unit',
-        'name: w1',
-        `unit: ${tmp}/unit.md`,
-        `rulings: ${tmp}/rulings.md`,
-        'baseline: abc1234',
-        'skill: plug:skill',
-        'place: worktree',
-        'report: unit-report.md',
-        'orchestrator: orch',
-        '---',
-        '',
-      ].join('\n'),
-    );
-    const env = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: brief };
-    const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
-    expect(result).toEqual({});
-  });
-
-  test('a SIDEKICK_WORKER naming a brief that cannot be read prints as a plan worker does', () => {
-    const { store, repo } = linked();
-    // A folder in the brief's place reads as an error, not as a missing file.
-    const brief = mkdir('unreadable-brief.md');
-    const env = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: brief };
-    const result = memoryStartContext(eventFor(repo), depsFor(store, { env }));
-    expect(result.context).toContain('Your record is');
-    expect(result.snapshot?.store).toBe(store);
   });
 
   test('a worker reads no cache and prints no line; an empty SIDEKICK_WORKER is no worker', () => {
