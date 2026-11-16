@@ -220,8 +220,9 @@ function parseReport(stdout: string): OriginReport | undefined {
   return isOneOfEach ? { branch: branches[0], tip: tips[0] } : undefined;
 }
 
-// Origin's own report of its default branch, so no local ref a worker can
-// move decides the base. It reaches origin, so it takes the sync's limit.
+// Origin's own report of its default branch and its commit, so the base
+// never follows the local symref, which a worker can repoint. It reaches
+// origin, so it takes the sync's limit.
 function askOrigin(
   tree: LoopTree,
   timeoutMs: number,
